@@ -9,6 +9,7 @@ export type Button = { code: string; glyph: string; what: string };
 /** Every key a touch button can press: its glyph and what it does. */
 const LABEL: Record<string, [glyph: string, what: string]> = {
   KeyF: ["Grab", "Pick up, put down, plug in, unplug"],
+  Space: ["Bowl", "Wind up to bowl the roll you carry; press again to let go"],
   KeyQ: ["↶", "Turn left (coiling: over)"],
   KeyE: ["↷", "Turn right (coiling: under)"],
   KeyC: ["⤓", "Crouch"],
@@ -38,8 +39,8 @@ const LABEL: Record<string, [glyph: string, what: string]> = {
 };
 for (let n = 1; n <= 7; n++) LABEL[`Digit${n}`] = [String(n), `Select ${n}`];
 
-/** The hands pad, on every level: grab, turn, crouch, switch, strike and the truck. The cable jobs ride on F, Q and E. */
-export const HANDS = ["KeyF", "KeyQ", "KeyE", "KeyC", "KeyP", "KeyL", "KeyT"];
+/** The hands pad, on every level: grab, bowl, turn, crouch, switch, strike and the truck. The cable jobs ride on F, Space, Q and E. */
+export const HANDS = ["KeyF", "Space", "KeyQ", "KeyE", "KeyC", "KeyP", "KeyL", "KeyT"];
 
 /** Each venue's own keys, the ones its card lists. The garage has none. */
 const VENUE: Record<string, string[]> = {

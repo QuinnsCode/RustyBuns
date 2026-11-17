@@ -51,6 +51,8 @@ export const GEAR_SIZES = {
   "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
   "di-box": [0.1, 0.05, 0.13],
+  "mic-condenser": [0.05, 0.19, 0.05],
+  "wedge-12-passive": [0.6, 0.35, 0.42],
   "deck-media": [0.329, 0.118, 0.453],
   turntable: [0.453, 0.169, 0.353],
   "mixer-dj": [0.333, 0.108, 0.414],
@@ -348,8 +350,8 @@ function sub(): Build {
 
 /** A floor monitor: a wedge whose long sloped face (the grille) looks up at the player, the woofer and the horn side
  * by side behind it, caps on its corners, a handle set into the back and the jack plate beside it. */
-function wedge(): Build {
-  const [w, h, d] = GEAR_SIZES["wedge-12"], b: Build = { pieces: [], marks: [] };
+function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] };
   const lo = 0.08, backTop = -d / 2 + 0.07;
   b.pieces.push(prism("paint", [[-d / 2, 0.012], [d / 2, 0.012], [d / 2, lo], [backTop, h], [-d / 2, h]], w - 0.004, 0, 0.008));
   // the slope's own frame: x across, y up the slope from the front edge, z out of it
@@ -365,7 +367,8 @@ function wedge(): Build {
   }
   b.pieces.push(...pocket([0, h * 0.62, -d / 2], [0, 0, -1], 0.14, 0.05));
   plate(b, w * 0.3, h * 0.2, [w * 0.28, h * 0.25, -d / 2 - 0.004]);
-  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
+  // powered: mains and a signal in and thru; passive: two speaker jacks, in and the link on
+  jacks(b, id === "wedge-12" ? ["power-in", "xlr-in", "xlr-out"] : ["speaker-in", "speaker-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
   mark(b, "grab", [0, h * 0.62, -d / 2 - 0.02], [0, 0, -1]);
   return b;
 }
@@ -570,6 +573,18 @@ function micStand(): Build {
   b.pieces.push(rod("knob", tip, [tip[0] - 0.012, tip[1] + 0.012, 0], 0.012, 6));
   mark(b, "mic", [tip[0] - 0.012, tip[1] + 0.014, 0], [-0.7, 0.7, 0]);
   mark(b, "grab", [0, mast * 0.7, 0], [1, 0, 0]);
+  return b;
+}
+
+/** A condenser vocal mic standing on its tail: a body tube, a ring, a ball of mesh on top, the XLR in its tail. */
+function micCondenser(): Build {
+  const [w, h] = GEAR_SIZES["mic-condenser"], b: Build = { pieces: [], marks: [] }, r = w / 2;
+  b.pieces.push(disc("metal", r * 0.62, h * 0.55, "y", [0, h * 0.275, 0], 16), disc("chrome", r * 0.72, 0.008, "y", [0, h * 0.56, 0], 16));
+  b.pieces.push(disc("grille", r, h * 0.36, "y", [0, h * 0.78, 0], 18), disc("chrome", r * 1.0, 0.006, "y", [0, h * 0.6, 0], 18));
+  b.pieces.push(disc("light", 0.002, 0.003, "z", [0, h * 0.45, r * 0.62], 6));
+  // the XLR in the tail, a plug comes up into it from below
+  b.marks.push({ name: "jack:xlr-out", at: [0, -0.008, 0], out: [0, -1, 0] });
+  mark(b, "grab", [0, h * 0.35, 0], [1, 0, 0]);
   return b;
 }
 
@@ -824,7 +839,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
   "sub-18": sub,
-  "wedge-12": wedge,
+  "wedge-12": () => wedge(),
   "amp-head": ampHead,
   "cab-4x12": cab4x12,
   "amp-rack-4u": ampRack,
@@ -843,6 +858,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
+  "mic-condenser": micCondenser,
+  "wedge-12-passive": () => wedge("wedge-12-passive"),
   "deck-media": deckMedia,
   turntable,
   "mixer-dj": mixerDj,

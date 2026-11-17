@@ -1,8 +1,13 @@
 // The cable feel test (feel.html): one room, a sound board, an amp rack, a wedge and a mic on a riser, wall power, and
 // four rolls of cable at their real weight. Pick a roll up, plug its end, bowl it, carry the rest, plug it in. It is
-// the place to tune how cable feels before the game takes it (#5029). `window.feel` plays it without a mouse.
+// the place to tune how cable feels before the game takes it (#5029). `window.feel` plays it without a mouse. The gear
+// is @rustybuns/models' (jacks where the models put them), and the hands are the game's (src/hands).
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
+import { GEAR_SIZES, gear, gearJacks, type GearId } from "@rustybuns/models/gear";
+import { bundleR } from "../cables/draw.ts";
+import { REST } from "../hands/grip.ts";
+import { handsView, type Hold } from "../hands/view.ts";
 import { CABLE, ROLL_R, bowl, leftM, newRoll, rollKg, stepRoll, throwSpeed, type CableKind, type Roll } from "../cables/roll.ts";
 import type { Solid, Vec } from "../cables/rope.ts";
 
@@ -48,29 +53,49 @@ box(16, 0.1, 17, 0x8d8a84, 0, -0.1, -0.5, false);                     // concret
 box(RISER.w, RISER.h, RISER.d, 0x4a3a2c, RISER.x, 0, RISER.z);        // the stage riser
 box(16, 4, 0.2, 0x2a2f3a, 0, 0, -9.1, false); box(0.2, 4, 17, 0x252a34, 8.1, 0, -0.5, false); box(0.2, 4, 17, 0x252a34, -8.1, 0, -0.5, false);
 box(1.6, 0.78, 0.8, 0x3b3f47, 0, 0, 3.2);                             // the desk's table
-box(1.2, 0.14, 0.6, 0x1d2026, 0, 0.78, 3.2, false);                   // the sound board
-box(0.6, 1.0, 0.8, 0x18191c, 5.2, 0, -3.0);                           // the amp rack, close to the stage
-box(0.6, 0.36, 0.45, 0x1b1c20, -1.2, RISER.h, -5.0);                  // the wedge
-box(0.03, 1.45, 0.03, 0x9a9da3, 0.8, RISER.h, -5.2, false);           // the mic stand
+/** A model of real gear set down at (x, y, z) turned `rot`; solid unless it is thin (a stand). */
+function model(id: GearId, x: number, y: number, z: number, rot: number, solid = true) {
+  const g = gear(id);
+  g.position.set(x, y, z); g.rotation.y = rot;
+  scene.add(g);
+  g.updateMatrixWorld(true);
+  const [w, h, d] = GEAR_SIZES[id];
+  if (solid) solids.push({ x, z, y, rot, w, h, d });
+  return g;
+}
+/** Where a model's jack is in the room: a touch out from its panel, as the game's cables.ts reads it. */
+function jackOf(g: THREE.Object3D, name: string): Vec {
+  const o = gearJacks(g).get(name);
+  if (!o) throw new Error(`no ${name} on ${g.name}`);
+  const p = o.getWorldPosition(new THREE.Vector3()), out = new THREE.Vector3(0, 0, 1).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()));
+  return { x: p.x + out.x * 0.03, y: p.y + out.y * 0.03, z: p.z + out.z * 0.03 };
+}
+// The board faces you at the desk, its jacks to the stage; the rack and the wedge turn their jack panels to the room.
+const board = model("mixer-small", 0, 0.78, 3.2, 0, false);
+const rack = model("amp-rack-4u", 5.2, 0, -3.0, Math.PI);
+const wedge = model("wedge-12", -1.2, RISER.h, -5.0, Math.PI);
+model("mic-stand", 0.8, RISER.h, -5.2, 0, false);
 box(0.05, 0.05, 0.18, 0x2b2d31, 0.8, RISER.h + 1.45, -5.2, false);    // the mic
 box(0.25, 0.5, 0.4, 0xb5482f, 7.85, 0.3, 2, false);                   // the wall distro
 box(1.3, 0.5, 0.6, 0x23262c, -3.4, 0, 6.4);                           // the cable case
-label("SOUND BOARD", 0, 1.35, 3.2); label("AMP RACK", 5.2, 1.4, -3.0); label("WEDGE", -1.2, 1.15, -5.0);
+label("SOUND BOARD", 0, 1.35, 3.2); label("AMP RACK", 5.2, 0.9, -3.0); label("WEDGE", -1.2, 1.15, -5.0);
 label("MIC", 0.8, 2.2, -5.2); label("POWER", 7.6, 1.2, 2); label("CABLES", -3.4, 0.9, 6.4);
 
 type Jack = { id: string; kind: CableKind; at: Vec; mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial> };
-const JACK_COLOR: Record<CableKind, number> = { power: 0xff8a3c, xlr: 0x6fd3ff, speaker: 0x8fe38a };
-function jack(id: string, kind: CableKind, x: number, y: number, z: number): Jack {
+const JACK_COLOR: Record<CableKind, number> = { power: 0xff8a3c, cord: 0xff8a3c, xlr: 0x6fd3ff, instrument: 0x6fd3ff, speaker: 0x8fe38a };
+function jack(id: string, kind: CableKind, at: Vec): Jack {
+  const { x, y, z } = at;
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshStandardMaterial({ color: JACK_COLOR[kind], emissive: JACK_COLOR[kind], emissiveIntensity: 0.5 }));
   mesh.position.set(x, y, z);
   scene.add(mesh);
   return { id, kind, at: { x, y, z }, mesh };
 }
 const jacks = [
-  jack("power.out", "power", 7.7, 0.55, 2), jack("rack.power", "power", 5.0, 0.25, -2.58),
-  jack("desk.out", "xlr", 0.35, 0.86, 2.78), jack("rack.in", "xlr", 5.2, 0.6, -2.58),
-  jack("rack.out", "speaker", 5.4, 0.6, -2.58), jack("wedge.in", "speaker", -0.86, RISER.h + 0.2, -5.0),
-  jack("mic.out", "xlr", 0.8, RISER.h + 1.45, -5.08), jack("desk.in", "xlr", -0.35, 0.86, 2.78),
+  jack("power.out", "power", { x: 7.7, y: 0.55, z: 2 }), jack("rack.power", "power", jackOf(rack, "power-in")),
+  jack("desk.out", "xlr", jackOf(board, "xlr-out-1")), jack("rack.in", "xlr", jackOf(rack, "xlr-in-1")),
+  // The wedge here is passive, fed from the rack: its speaker input sits where the powered model has its signal in.
+  jack("rack.out", "speaker", jackOf(rack, "speaker-out-1")), jack("wedge.in", "speaker", jackOf(wedge, "xlr-in")),
+  jack("mic.out", "xlr", { x: 0.8, y: RISER.h + 1.45, z: -5.08 }), jack("desk.in", "xlr", jackOf(board, "xlr-in-1")),
 ];
 /** What has to be joined, in the order a sound crew does it: power first, then signal toward the speaker. */
 const LINKS: { a: string; b: string; text: string }[] = [
@@ -83,7 +108,7 @@ const LINKS: { a: string; b: string; text: string }[] = [
 // ---- the cables -----------------------------------------------------------------------------------------------
 type End = "coil" | "hand" | "loose" | Jack;
 type Run = { key: string; roll: Roll; a: End; b: End; tube: THREE.Mesh; coil: THREE.Mesh; plugA: THREE.Mesh; plugB: THREE.Mesh; sum: number; mat: THREE.MeshStandardMaterial };
-const CABLE_COLOR: Record<CableKind, number> = { power: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24 };
+const CABLE_COLOR: Record<CableKind, number> = { power: 0x161616, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24 };
 const rnd = mulberry32(11);
 function run(key: string, kind: CableKind, lengthM: number, x: number, z: number): Run {
   const mat = new THREE.MeshStandardMaterial({ color: CABLE_COLOR[kind], roughness: 0.55, emissive: 0x2bd96b, emissiveIntensity: 0 });
@@ -223,18 +248,35 @@ const joined = (a: string, b: string) => runs.some((r) => typeof r.a === "object
 const links = () => LINKS.map((l) => ({ text: l.text, ok: joined(l.a, l.b) }));
 
 // ---- drawing --------------------------------------------------------------------------------------------------
+scene.add(camera);
+const hands = handsView(scene, camera);
+/** What the hands hold: a roll hooked on the right hand's fingers (the left on its end once that is out), a plug
+ * ready at a lit jack, a fist round a cable you walk, or nothing. The wrist drops with what the cable weighs on it. */
+function holding(): Hold {
+  const r = hold?.run, roll = r?.roll, kg = carryKg() + pullKg();
+  if (!roll) return { right: REST, left: REST, kg: 0 };
+  if (hold?.part === "roll") return { right: { kind: "roll" }, left: roll.tailIn ? REST : { kind: "cable", radius: CABLE[roll.kind].radius }, kg };
+  const h = hand();
+  return { right: jackNear(roll.kind) ? { kind: "plug" } : { kind: "cable", radius: CABLE[roll.kind].radius }, left: REST, kg, lead: { at: [h.x, h.y, h.z], color: CABLE_COLOR[roll.kind] } };
+}
+let seen = { x: you.x, z: you.z, t: 0, v: 0 };
 function draw() {
   const y = floorY(you.x, you.z) + EYE - carryKg() * 0.004 - charge * 0.12;
   camera.position.set(you.x, y, you.z);
   camera.rotation.set(you.pitch, you.yaw, 0);
+  const now = performance.now() / 1000, dt = now - seen.t;
+  if (dt > 0) seen = { x: you.x, z: you.z, t: now, v: dt > 0.5 ? 0 : seen.v * 0.8 + (Math.hypot(you.x - seen.x, you.z - seen.z) / dt) * 0.2 };
+  hands.update(holding(), now, seen.v);
+  const grip = hold?.part === "roll" ? hands.gripAt() : null;
   const held = hold?.run.roll.kind;
   for (const j of jacks) { const fits = held === j.kind && !taken(j); j.mesh.material.emissiveIntensity = fits ? 2.2 : taken(j) ? 0.1 : 0.5; j.mesh.scale.setScalar(fits ? 1.5 : 1); }
   for (const r of runs) {
     const roll = r.roll, pts = roll.rope.pts, c = CABLE[roll.kind];
     const keep: THREE.Vector3[] = [];
     let sum = 0;
-    for (const p of pts) {
-      const last = keep.at(-1);
+    const inHand = grip && hold?.run === r, mouth = pts.at(-1)!, bottom = inHand ? { x: grip.x, y: grip.y - 2 * (ROLL_R - 0.03), z: grip.z } : null;
+    for (const p0 of pts) {
+      const p = bottom && roll.state !== "out" && Math.hypot(p0.x - mouth.x, p0.y - mouth.y, p0.z - mouth.z) < 1e-3 ? bottom : p0, last = keep.at(-1);
       if (!last || Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) > 0.03) { keep.push(new THREE.Vector3(p.x, p.y, p.z)); sum += p.x * 3 + p.y * 5 + p.z * 7; }
     }
     r.tube.visible = keep.length > 1;
@@ -245,10 +287,18 @@ function draw() {
     }
     const left = leftM(roll), up = roll.state === "rolling" || roll.state === "held";
     r.coil.visible = left > 0.3;
-    r.coil.position.set(roll.x, roll.state === "held" ? roll.y - 0.1 : roll.y, roll.z);
-    r.coil.rotation.set(up ? 0 : Math.PI / 2, up ? (roll.state === "held" ? you.yaw : roll.dir + Math.PI / 2) : 0, up ? -roll.spin : 0);
-    const fat = (0.35 + 0.65 * Math.sqrt(left / roll.rope.lengthM)) * (0.6 + c.radius * 40);
-    r.coil.scale.set(1, 1, fat);
+    // In your hand the coil hangs off the fingers, swung out to the side; rolling, it leans off its edge as it slows.
+    if (inHand) r.coil.position.set(grip.x, grip.y - (ROLL_R - 0.03), grip.z);
+    else r.coil.position.set(roll.x, roll.state === "held" ? roll.y - 0.1 : roll.y, roll.z);
+    const lean = roll.state === "rolling" ? (Math.sign(roll.lean) || 1) * Math.min(0.6, 0.18 + 0.35 / (1 + roll.v) + Math.abs(roll.lean)) : 0;
+    r.coil.rotation.set(up ? lean : Math.PI / 2, up ? (roll.state === "held" ? you.yaw + 0.6 : roll.dir + Math.PI / 2) : 0, up && roll.state !== "held" ? -roll.spin : 0);
+    // As thick as the cable left on it makes the bundle; a new torus every few metres paid out.
+    const tube = bundleR(left, c.radius);
+    if (Math.abs(tube - (r.coil.userData.tube ?? 0)) > tube * 0.08) {
+      r.coil.geometry.dispose();
+      r.coil.geometry = new THREE.TorusGeometry(ROLL_R - 0.03, tube, 10, 32);
+      r.coil.userData.tube = tube;
+    }
     r.plugA.position.copy(pts[0]!); r.plugB.position.copy(pts.at(-1)!);
     r.plugA.visible = !roll.tailIn; r.plugB.visible = roll.state === "out" || roll.state === "tied";
     r.mat.emissiveIntensity = done ? 0.25 + 0.2 * Math.sin(performance.now() / 180) : 0;
