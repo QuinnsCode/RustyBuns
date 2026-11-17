@@ -1,6 +1,7 @@
 // How a Qollab Studio room looks (#5008): the light, what every surface is made of, and the camera's lens and film.
 // A room is data (room.ts); this turns its sizes and materials into something that should read as a photo of a real
-// small studio: tone mapped light, ceiling downlights with soft shadows, reflections off a generated room environment,
+// small studio: tone mapped light, ceiling downlights set off the walls so they wash them, soft shadows, contact shadows
+// and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers and curtains hung where its data says, and on high a little bloom, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
@@ -12,6 +13,9 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
+import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
+import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import { mulberry32 } from "@rustybuns/util";
 import type { Side, StudioDef } from "./room.ts";
 import { MATERIALS } from "./sound.ts";
@@ -270,7 +274,114 @@ function hang(def: StudioDef, group: THREE.Group) {
   }
 }
 
-export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number }
+// ---- light that stays put, baked once: where things meet the floor, and the room's own reflections ----
+
+/**
+ * The floor's contact shadows and ambient occlusion, baked once from below: everything within `reach` of the floor is
+ * drawn looking up, darker the lower it is, then blurred twice, a little for the dark line where a leg or a wall meets
+ * the floor and a lot for the soft shade under a desk or a kit. Two planes just over the floor carry them. The people
+ * aren't in the room yet when it is baked, so only what stands still is. Returns the bake's texels across.
+ */
+function ground(renderer: THREE.WebGLRenderer, scene: THREE.Scene, group: THREE.Group, def: StudioDef, high: boolean): number {
+  const { w, d } = def.size, n = high ? 1024 : 512, reach = 1.1;
+  const target = () => new THREE.WebGLRenderTarget(n, n, { type: THREE.HalfFloatType });
+  const [a, b] = [target(), target()];
+  const cam = new THREE.OrthographicCamera(-w / 2, w / 2, d / 2, -d / 2, 0.01, reach + 0.02);
+  cam.position.y = -0.02; // just under the floor, so a box standing on it is seen by its underside, not clipped
+  cam.rotation.x = Math.PI / 2; // looking up from the floor, so the undersides of what stands on it are what it sees
+  // black, its alpha how near the floor it is, falling off as a square so only what's close casts much
+  const depth = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
+  depth.onBeforeCompile = (s) => {
+    s.fragmentShader = s.fragmentShader.replace("gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );", "float k = 1.0 - fragCoordZ; gl_FragColor = vec4( vec3( 0.0 ), k * k );");
+  };
+  const was = { target: renderer.getRenderTarget(), alpha: renderer.getClearAlpha(), color: renderer.getClearColor(new THREE.Color()), bg: scene.background, over: scene.overrideMaterial, shadows: renderer.shadowMap.autoUpdate };
+  // the glass casts nothing, and what lies flat on the floor (the floor, a rug) is the floor
+  const hidden: THREE.Object3D[] = [], box = new THREE.Box3();
+  scene.updateMatrixWorld();
+  scene.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !o.visible) return;
+    box.setFromObject(o);
+    if ((o.material instanceof THREE.Material && o.material.transparent) || (box.max.y - box.min.y < 0.03 && box.min.y < 0.03)) { o.visible = false; hidden.push(o); }
+  });
+  scene.background = null; scene.overrideMaterial = depth; renderer.shadowMap.autoUpdate = false;
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(a); renderer.clear(); renderer.render(scene, cam);
+  scene.overrideMaterial = was.over;
+  // blur, ping-ponging the two targets: `px` texels each way, horizontally then vertically
+  const blurH = new ShaderPass(HorizontalBlurShader), blurV = new ShaderPass(VerticalBlurShader);
+  const quad = new FullScreenQuad();
+  const blur = (px: number) => {
+    for (const [pass, from, to, key] of [[blurH, a, b, "h"], [blurV, b, a, "v"]] as const) {
+      pass.uniforms.tDiffuse.value = from.texture; pass.uniforms[key].value = px / n;
+      quad.material = pass.material; renderer.setRenderTarget(to); renderer.clear(); quad.render(renderer);
+    }
+  };
+  const copy = (src: THREE.WebGLRenderTarget) => { const c = target(); quad.material = new THREE.MeshBasicMaterial({ map: src.texture, transparent: true, blending: THREE.NoBlending }); renderer.setRenderTarget(c); renderer.clear(); quad.render(renderer); return c; };
+  const k = n / 1024; // the blurs are in centimetres: a texel is about 1 cm on high in a 10 m room
+  blur(0.9 * k); blur(0.6 * k);
+  const tight = copy(a);
+  for (let i = 0; i < 5; i++) blur((2 + i) * k);
+  renderer.setRenderTarget(was.target); renderer.setClearColor(was.color, was.alpha);
+  scene.background = was.bg; renderer.shadowMap.autoUpdate = was.shadows;
+  for (const o of hidden) o.visible = true;
+  quad.dispose(); depth.dispose(); b.dispose();
+  // the tight line is dark; the wide shade is lighter, since the downlights and the bounce still reach under things
+  for (const [rt, opacity] of [[tight, 1], [a, 0.8]] as const) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(rt.texture, opacity));
+    m.rotation.x = -Math.PI / 2; m.scale.y = -1; m.position.y = 0.002; m.name = "ground";
+    group.add(m);
+  }
+  return n;
+}
+
+/** A see-through black that darkens what's under it by its texture's alpha: drawn over a surface, never hiding it. */
+function shade(map: THREE.Texture, opacity: number) {
+  return new THREE.MeshBasicMaterial({ color: 0x000000, map, transparent: true, opacity, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
+}
+
+let fade: THREE.CanvasTexture | null = null;
+/**
+ * The shade light doesn't reach into a room's corners: along the foot and the top of every outside wall, and up
+ * each corner where two walls meet, a band that fades out over half a metre or so.
+ */
+function corners(def: StudioDef, group: THREE.Group) {
+  // one gradient, dark at its bottom edge, eased so it melts into the wall
+  fade ??= canvasTex(64, (g) => {
+    for (let y = 0; y < 64; y++) { const t = 1 - y / 63; g.fillStyle = `rgba(0,0,0,${(t * t * t).toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
+  }, false);
+  fade.wrapS = fade.wrapT = THREE.ClampToEdgeWrapping;
+  const { h } = def.size, mat = shade(fade, 0.55);
+  for (const side of ["front", "back", "left", "right"] as const) {
+    const s = sideOf(def, side), wall = new THREE.Group();
+    wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
+    group.add(wall);
+    const band = (wide: number, tall: number, x: number, y: number, turn: number) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(wide, tall), mat);
+      m.position.set(x, y, 0.062); m.rotation.z = turn; m.name = "corner"; wall.add(m);
+    };
+    band(s.len, 0.7, 0, 0.35, 0); // the foot
+    band(s.len, 0.6, 0, h - 0.3, Math.PI); // the top, dark side up
+    // the corners, dark side toward each end: the plane turned on its side, so its "wide" runs up the wall
+    band(h, 0.6, -s.len / 2 + 0.36, h / 2, -Math.PI / 2);
+    band(h, 0.6, s.len / 2 - 0.36, h / 2, Math.PI / 2);
+  }
+}
+
+/**
+ * Where the ceiling's downlights go in a room `w` by `d` metres: a grid of cans, at most three each way. In a room
+ * of a normal size the outer ones sit about a metre off the walls, as an installer sets them, so each throws a scallop
+ * of light down its wall; a hall too big for nine cans keeps them evenly spread instead.
+ */
+export function cans(w: number, d: number): [number, number][] {
+  const row = (len: number) => {
+    const k = Math.max(1, Math.min(3, Math.round(len / 3.2))), inset = len > 12 ? len / (2 * k) : Math.min(1.1, len / 4);
+    return Array.from({ length: k }, (_, i) => (k === 1 ? 0 : -len / 2 + inset + (i * (len - 2 * inset)) / (k - 1)));
+  };
+  const xs = row(w), zs = row(d);
+  return xs.flatMap((x) => zs.map((z): [number, number] => [x, z]));
+}
+
+export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
 export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }
@@ -295,19 +406,17 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   group.name = "look";
   scene.add(group);
   hang(def, group);
-  scene.add(new THREE.HemisphereLight(0xfff1de, 0x3a2c22, 0.25));
+  corners(def, group);
+  scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
 
-  // downlights in the ceiling: a grid of cans, at most nine, each a warm spot with a soft edge; on high the ones
-  // nearest the middle throw shadows
-  const { w, d, h } = def.size;
-  const nx = Math.max(1, Math.min(3, Math.round(w / 3.2))), nz = Math.max(1, Math.min(3, Math.round(d / 3.2)));
+  // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows
+  const { w, d, h } = def.size, spots = cans(w, d);
   const can = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), rim = new THREE.TorusGeometry(0.095, 0.012, 6, 24);
   const bulb = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#ffe6c4", emissiveIntensity: 6 }), trim = surface("metal", "#d9d6d0");
   const lights: THREE.SpotLight[] = [];
-  const per = (w * d) / (nx * nz), power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
-  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
-    const x = (i + 0.5) * (w / nx) - w / 2, z = (j + 0.5) * (d / nz) - d / 2;
-    const l = new THREE.SpotLight(0xffe2c0, power, 0, Math.PI * 0.36, 0.85, 2);
+  const per = (w * d) / spots.length, power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
+  for (const [x, z] of spots) {
+    const l = new THREE.SpotLight(0xffe2c0, power, 0, Math.PI * 0.3, 0.7, 2);
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x, 0, z);
     group.add(l, l.target);
@@ -323,6 +432,18 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     l.shadow.bias = -0.0004; l.shadow.normalBias = 0.03; l.shadow.radius = 4;
     l.shadow.camera.near = 0.2; l.shadow.camera.far = h + 1;
   }
+
+  // baked once the room stands: the shade where things meet the floor, then the reflections, taken from this room
+  // under its own lights (from head height in the middle, lit by the generated room as its first bounce), so the
+  // floor and the glass show the walls, the lights and the gear in front of them rather than a white box
+  const bake = ground(renderer, scene, group, def, high);
+  const pm2 = new THREE.PMREMGenerator(renderer);
+  bulb.emissiveIntensity = 1.2; // the cans as the room sees them: bright, not a sun smeared across every reflection
+  const roomEnv = pm2.fromScene(scene, 0.02, 0.05, Math.hypot(w, d, h), { size: high ? 256 : 128, position: new THREE.Vector3(0, Math.min(1.5, h / 2), 0) });
+  pm2.dispose();
+  bulb.emissiveIntensity = 6;
+  scene.environment = roomEnv.texture;
+  scene.environmentIntensity = 0.5; // the downlights light the room already: this is their bounce
 
   // the post: a little bloom on the lights, the lens's vignette and grain
   const post: string[] = [];
@@ -387,6 +508,6 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       renderer.setSize(wpx, hpx, false);
       if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(wpx, hpx); }
     },
-    state: () => ({ quality, lights: lights.length + lamps.length, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps }),
+    state: () => ({ quality, lights: lights.length + lamps.length, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: "room" }),
   };
 }
