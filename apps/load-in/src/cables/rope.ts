@@ -42,10 +42,11 @@ function lieOn(p: Vec, s: Solid, THICK: number) {
 }
 
 /**
- * One tick: gravity, the floor and the boxes, and the step between points. `pins` holds the ends that are held
+ * One tick: gravity, the floor and the boxes, and the step between points. `pins.mid` holds one point part way along
+ * (a coil's mouth, where cable leaves it: the cable hangs from there). `pins` holds the ends that are held
  * (index 0 and the last), each at a fixed place; an unpinned end lies loose.
  */
-export function stepRope(r: Rope, dt: number, pins: { a?: Vec; b?: Vec }, solids: readonly Solid[]) {
+export function stepRope(r: Rope, dt: number, pins: { a?: Vec; b?: Vec; mid?: { i: number; at: Vec } }, solids: readonly Solid[]) {
   const { pts, prev } = r, n = pts.length, L = seg(r), f = r.feel, th = f?.thick ?? THICK;
   for (let i = 0; i < n; i++) {
     const p = pts[i]!, q = prev[i]!;
@@ -59,12 +60,13 @@ export function stepRope(r: Rope, dt: number, pins: { a?: Vec; b?: Vec }, solids
   for (let it = 0; it < ITER; it++) {
     if (pins.a) Object.assign(pts[0]!, pins.a);
     if (pins.b) Object.assign(pts[n - 1]!, pins.b);
+    if (pins.mid) Object.assign(pts[pins.mid.i]!, pins.mid.at);
     for (let i = 0; i < n - 1; i++) {
       const p = pts[i]!, q = pts[i + 1]!;
       const dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z, d = Math.hypot(dx, dy, dz);
       // A rope, not a rod: points closer than a step stay put (slack), farther ones pull together.
       if (d <= L || d === 0) continue;
-      const pa = i === 0 && pins.a ? 0 : 1, pb = i + 1 === n - 1 && pins.b ? 0 : 1;
+      const pa = (i === 0 && pins.a) || pins.mid?.i === i ? 0 : 1, pb = (i + 1 === n - 1 && pins.b) || pins.mid?.i === i + 1 ? 0 : 1;
       if (pa + pb === 0) continue;
       const k = (d - L) / d / (pa + pb);
       p.x += dx * k * pa; p.y += dy * k * pa; p.z += dz * k * pa;

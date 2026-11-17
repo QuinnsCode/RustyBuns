@@ -26,6 +26,10 @@ export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument" | "rca
 /** The coil's radius in metres, what an arm can put into a throw (joules) and the fastest it swings (m/s). */
 export const ROLL_R = 0.2, ARM_J = 90, ARM_MS = 8;
 /** Rolling drag (a floppy coil on a deck, as a share of its weight) and the speed under which it falls over. */
+/** How far past its own length the laid cable must be stretched before another step of it pays out. */
+const PAY_TAUT = 1.02;
+/** The fastest cable comes off a coil, m/s. */
+const PAY_MS = 12;
 const ROLL_DRAG = 0.07, TOPPLE_MS = 0.35, G = 9.8;
 /** Friction of cable dragged along a floor, as a share of its weight. */
 const DRAG_MU = 0.6;
@@ -45,6 +49,8 @@ export interface Roll {
   paid: number;
   /** The coil's centre, its heading (radians, 0 is +z), speed, how far it has turned, and its drift to one side. */
   x: number; y: number; z: number; dir: number; v: number; spin: number; lean: number;
+  /** Whether the slack a plugged-in cable is left with has been given (once, when its inner end goes into a jack). */
+  slacked?: boolean;
   /** What dragging the laid cable weighs on your hand this tick, in kg. */
   pullKg: number;
 }
@@ -55,6 +61,7 @@ export function newRoll(kind: CableKind, lengthM: number, at: { x: number; z: nu
   return { kind, rope, state: "down", tailIn: true, paid: 0, x: at.x, y: c.radius, z: at.z, dir: 0, v: 0, spin: 0, lean: 0, pullKg: 0 };
 }
 
+const dist = (p: Vec, q: Vec) => Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
 const step = (r: Roll) => r.rope.lengthM / (r.rope.pts.length - 1);
 /** Metres still on the coil, and what the coil weighs. */
 export const leftM = (r: Roll) => (r.state === "out" ? 0 : (r.rope.pts.length - 1 - r.paid) * step(r));
@@ -99,15 +106,29 @@ export function stepRoll(r: Roll, dt: number, pins: { a?: Vec; b?: Vec }, solids
     if (hit || r.v < TOPPLE_MS) { if (!hit) events.push("topple"); r.state = "down"; r.v = 0; r.y += CABLE[r.kind].radius - ROLL_R; }
   }
   const before = pts.map((p) => ({ x: p.x, z: p.z }));
-  stepRope(r.rope, dt, pins, solids);
+  // The coil holds the cable where it leaves it: without this the hanging cable sags away from the coil every tick,
+  // and the coil pays out to follow it (two metres for each one walked).
+  const held = r.state !== "out" && !r.tailIn && r.paid + 1 < n ? { i: r.paid + 1, at: mouth(r) } : undefined;
+  stepRope(r.rope, dt, { ...pins, mid: held }, solids);
   if (r.state !== "out") {
     const m = mouth(r);
-    if (!r.tailIn) for (;;) {
-      const p = pts[r.paid]!, dx = m.x - p.x, dy = m.y - p.y, dz = m.z - p.z, d = Math.hypot(dx, dy, dz);
-      if (d <= L || r.paid >= n - 1) break;
-      const q = pts[++r.paid]!, k = L / d;
-      q.x = p.x + dx * k; q.y = p.y + dy * k; q.z = p.z + dz * k;
-      Object.assign(prev[r.paid]!, q);
+    if (!r.tailIn) {
+      // The coil pays out when the cable already off it is pulled taut: its path, end to mouth, longer than the cable
+      // laid so far. A hanging or slack cable pays nothing (a coil held still keeps its cable), and a loose end with
+      // nothing holding it just drags behind you.
+      let laid = dist(pts[r.paid]!, m);
+      for (let i = 0; i < r.paid; i++) laid += dist(pts[i]!, pts[i + 1]!);
+      // No faster than PAY_MS (one step a tick at 60 a second; faster than any arm bowls): a stretch that is only the solver catching up
+      // with a jump settles over the next ticks and is not paid for all at once.
+      let want = Math.min(r.paid + Math.max(1, Math.ceil((PAY_MS * dt) / L)), Math.ceil(laid / (L * PAY_TAUT)) - 1);
+      // Plugged in, a run is left some slack (half a metre and a twentieth of its length), so it lies on the floor
+      // and does not hang tight between two jacks.
+      if (r.state === "tied" && !r.slacked) { want = Math.max(want, r.paid) + Math.ceil((0.5 + laid * 0.05) / L); r.slacked = true; }
+      if (r.state !== "tied") r.slacked = false;
+      while (r.paid < n - 1 && r.paid < want) {
+        r.paid++;
+        Object.assign(pts[r.paid]!, m); Object.assign(prev[r.paid]!, m);
+      }
     }
     if (r.paid >= n - 1) { r.state = "out"; events.push("out"); }
     else for (let i = r.tailIn ? 0 : r.paid + 1; i < n; i++) {
