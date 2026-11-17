@@ -84,6 +84,30 @@ test("every effect into the lead amp on the riff: converged and bounded, its kno
   expect(out.every(Number.isFinite)).toBe(true);
 });
 
+test("an expression pedal's CC sweep rocks the wah from heel to toe and never rebuilds it", () => {
+  const lead = AMPS[1], tone = (hz: number) => sine(hz, 0.15, 0.05);
+  const s: AmpSettings = { amp: "lead", pedal: "wah", drive: 0, knobs: { ...lead.knobs, gain: 1 }, bypass: false, oversample: 2, swaps: {}, mic: { at: 0.3, angle: 0 } };
+  const live = applySettings(s, null, SR), out = new Float32Array(tone(0).length);
+  /** How much louder 1.8 kHz comes out than 570 Hz, the treadle where CC `cc` put it. */
+  const tilt = (cc: number) => {
+    const next = applySettings({ ...s, drive: (cc / 127) * 10 }, live, SR);
+    expect([cc, next.rig === live.rig, next.keys.join() === live.keys.join()]).toEqual([cc, true, true]);
+    const level = (hz: number) => { next.rig.process(tone(hz), out); return rms(out, out.length / 2, out.length); };
+    return level(1800) / level(570);
+  };
+  for (let cc = 0; cc <= 127; cc += 8) applySettings({ ...s, drive: (cc / 127) * 10 }, live, SR);
+  const heel = tilt(0), toe = tilt(127);
+  expect(heel).toBeLessThan(1);
+  expect(toe / heel).toBeGreaterThan(4);
+  // The pedal's own peak, turned the way the rig turns it (a `setPot` on one circuit): ~570 Hz to ~1.8 kHz.
+  const c = new Circuit(pedal("wah").net(0), 192000), hzs = Array.from({ length: 25 }, (_, i) => 400 * 2 ** (i / 10));
+  const peak = (at: number) => { c.setPot(0, at); const g = hzs.map((hz) => gainAt(c, hz)); return hzs[g.indexOf(Math.max(...g))]; };
+  expect(peak(1)).toBeGreaterThan(450);
+  expect(peak(1)).toBeLessThan(700);
+  expect(peak(0)).toBeGreaterThan(1500);
+  expect(peak(0)).toBeLessThan(2200);
+});
+
 test("the Rust solver says which part it doesn't have yet", () => {
   expect(() => encodeNetlist(pedal("trem").net(4))).toThrow("the Rust solver has no VarR yet");
   expect(encodeNetlist(pedal("germ").net(4)).length).toBeGreaterThan(4); // transistors are in Rust (#4826)
