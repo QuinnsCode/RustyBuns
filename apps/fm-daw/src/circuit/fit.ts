@@ -164,6 +164,59 @@ export function distance(a: Features, target: Features): number {
 /** The front panel a profile is played at; noise off, so two renders of the same circuit match exactly. */
 export const FIT_KNOBS = (amp: AmpDef): Knobs => ({ ...amp.knobs, noise: 0 });
 
+/**
+ * The tone-knob settings a profile records after the amp's own, one take each:
+ * bass up with treble down, then treble up with bass down, mid swung the other
+ * way each time. At one setting the tone stack's four parts trade off against
+ * each other; more settings pull them apart (#4943). The player turns the
+ * knobs between takes; gain and master stay put.
+ */
+export const TONE_SETTINGS: Pick<Knobs, "bass" | "mid" | "treble">[] = [
+  { bass: 10, mid: 2, treble: 1 },
+  { bass: 1, mid: 10, treble: 10 },
+];
+
+/**
+ * One recording of the probe through the amp, and the knobs it was played at.
+ * `anyLevel`: the recording's level means nothing (a real capture, where the
+ * interface's input gain sets it), so each render is scaled to its loudness
+ * before scoring. Our own renders keep their level, which holds the power drive.
+ */
+export interface Take { knobs: Knobs; recording: Float32Array; anyLevel?: boolean }
+
+const rms = (x: Float32Array) => { let s = 0; for (const v of x) s += v * v; return Math.sqrt(s / x.length) + 1e-12; };
+
+/** A take worked out once for a whole fit: its knobs, features, and the loudness a render is scaled to (0: left as is). */
+export interface Target { knobs: Knobs; f: Features; level: number }
+
+/** The front panels of a profile's takes: the amp's own, then each of `settings`. */
+export function takeKnobs(amp: AmpDef, settings = TONE_SETTINGS): Knobs[] {
+  const own = FIT_KNOBS(amp);
+  return [own, ...settings.map((t) => ({ ...own, ...t }))];
+}
+
+/** Our own amp's takes, rendered: what a fit back to itself is scored against. */
+export function selfTakes(amp: AmpDef, p: Probe, settings = TONE_SETTINGS): Take[] {
+  return takeKnobs(amp, settings).map((knobs) => ({ knobs, recording: render(amp, p, knobs) }));
+}
+
+/** The tone stack's values, and V1's coupling cap that trades off against them: what the second stage of `fit` moves alone. */
+export const TONE_PARTS = ["tone slope", "tone cTreble", "tone cBass", "tone cMid", "V1 cc"];
+
+/** Each take's knobs and features, worked out once for a whole fit. */
+export function targetsOf(takes: Take[], p: Probe): Target[] {
+  return takes.map((t) => ({ knobs: t.knobs, f: features(t.recording, p), level: t.anyLevel ? rms(t.recording) : 0 }));
+}
+
+/** An amp's mean distance from the takes, each rendered at that take's knobs. */
+export function takesDistance(amp: AmpDef, p: Probe, targets: Target[]): number {
+  return targets.reduce((sum, t) => {
+    const out = render(amp, p, t.knobs);
+    if (t.level) { const g = t.level / rms(out); for (let i = 0; i < out.length; i++) out[i] *= g; }
+    return sum + distance(features(out, p), t.f);
+  }, 0) / targets.length;
+}
+
 /** Plays the probe through an amp at 2× oversampling (fitting speed; the amp page runs 4×). */
 export function render(amp: AmpDef, p: Probe, knobs = FIT_KNOBS(amp)): Float32Array {
   return runRig(buildRig(amp, knobs), p.signal, p.sampleRate, 2).out;
@@ -178,6 +231,12 @@ export interface FitOptions {
   seed?: number;
   /** Only these values move (by name); the rest stay as started. All of them when left out. */
   only?: string[];
+  /**
+   * Generations of a second search over `TONE_PARTS` alone, from where the
+   * first one ended and inside ×/÷ 1.5 of it, with the gain staging held (0
+   * skips it). Five values settle where thirteen don't. Default 40.
+   */
+  toneGenerations?: number;
   onGeneration?: (g: number, best: number) => void;
 }
 
@@ -191,30 +250,40 @@ export interface FitResult {
 }
 
 /**
- * Fits `start`'s values to a target recording `target` of `p`. The search is
- * separable CMA-ES over each value's log, scaled to [0, 1] inside ×/÷ `span`
- * of where it started; then the parts snap to E24, and each part is tried one
- * step up and down while that lowers the distance.
+ * Fits `start`'s values to recordings of `p` (`takes`, each at its own knobs;
+ * the score is their mean). The search is separable CMA-ES over each value's
+ * log, scaled to [0, 1] inside ×/÷ `span` of where it started; then a second,
+ * smaller one over the tone stack alone (`toneGenerations`); then the parts
+ * snap to E24, and each part is tried one step up and down while that lowers
+ * the distance.
  */
-export function fit(start: AmpDef, p: Probe, target: Float32Array, opts: FitOptions = {}): FitResult {
+export function fit(start: AmpDef, p: Probe, takes: Take[], opts: FitOptions = {}): FitResult {
   const span = opts.span ?? 3, seed = opts.seed ?? 1;
   const base = valuesOf(start);
   const free = base.map((v, i) => (opts.only && !opts.only.includes(v.name) ? -1 : i)).filter((i) => i >= 0);
-  const want = features(target, p);
+  const wants = targetsOf(takes, p);
   let evaluations = 0;
-  const score = (vals: number[]) => { evaluations++; return distance(features(render(withValues(start, vals), p), p), want); };
-  const decode = (u: ArrayLike<number>) => {
-    const vals = base.map((v) => v.value);
-    free.forEach((i, j) => { vals[i] = base[i].value * span ** (2 * Math.min(1, Math.max(0, u[j])) - 1); });
-    return vals;
+  const score = (vals: number[]) => { evaluations++; return takesDistance(withValues(start, vals), p, wants); };
+  const search = (from: number[], idx: number[], within: number, generations: number, s: number) => {
+    const decode = (u: ArrayLike<number>) => {
+      const vals = from.slice();
+      idx.forEach((i, j) => { vals[i] = from[i] * within ** (2 * Math.min(1, Math.max(0, u[j])) - 1); });
+      return vals;
+    };
+    const best = sepCmaEs(idx.length, (u) => {
+      let out = 0;
+      for (let j = 0; j < u.length; j++) { const c = Math.min(1, Math.max(0, u[j])); out += (u[j] - c) ** 2; }
+      return score(decode(u)) + out;
+    }, { generations, population: opts.population ?? 24, seed: s, onGeneration: opts.onGeneration });
+    return { vals: decode(best.x), f: best.f };
   };
-  const best = sepCmaEs(free.length, (u) => {
-    let out = 0;
-    for (let j = 0; j < u.length; j++) { const c = Math.min(1, Math.max(0, u[j])); out += (u[j] - c) ** 2; }
-    return score(decode(u)) + out;
-  }, { generations: opts.generations ?? 90, population: opts.population ?? 24, seed, onGeneration: opts.onGeneration });
-  const vals = decode(best.x);
-  const fitted = best.f;
+  let { vals, f: fitted } = search(base.map((v) => v.value), free, span, opts.generations ?? 90, seed);
+  const tone = free.filter((i) => TONE_PARTS.includes(base[i].name));
+  const toneGens = opts.toneGenerations ?? 40;
+  if (tone.length && toneGens > 0) {
+    const again = search(vals, tone, 1.5, toneGens, seed + 1);
+    if (again.f < fitted) ({ vals, f: fitted } = again);
+  }
   for (const i of free) if (base[i].part) vals[i] = eValue(vals[i]);
   let snapped = score(vals);
   for (let pass = 0, moved = true; moved && pass < 4; pass++) {
