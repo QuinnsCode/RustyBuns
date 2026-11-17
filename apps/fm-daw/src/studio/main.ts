@@ -170,6 +170,29 @@ function thing(s: Spot): THREE.Group {
       tube(0.011, v(x, 0.02, z), v(x, 1.06, z), metal);
       for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2; tube(0.009, v(x, 0.3, z), v(x + Math.cos(a) * 0.25, 0.01, z + Math.sin(a) * 0.25), metal); }
     }
+    // a worn rug under the kit with a darker border, so it doesn't creep on the boards
+    box(2.3, 0.008, 2, surface("carpet", "#3a2420"), 0, 0.004, 0.25);
+    box(2.0, 0.009, 1.7, surface("carpet", "#6a3a2c"), 0, 0.0045, 0.25);
+    // two overheads on boom stands, their cables down the stands and across the floor to a stage box at the glass
+    const stagebox = box(0.3, 0.12, 0.16, surface("steel", "#26282c"), 0.95, 0.06, -0.9);
+    many(new THREE.CylinderGeometry(0.011, 0.011, 0.012, 10).rotateX(Math.PI / 2), surface("metal", "#9a9da2"), [-0.1, -0.03, 0.04, 0.11].map((x) => [x, 0.02, 0.083]), stagebox);
+    const rubber = surface("rubber", "#0f1012");
+    const cable = (pts: [number, number, number][]) => put(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => v(x, y, z))), pts.length * 10, 0.0035, 5), rubber), 0, 0, 0);
+    for (const [side, plug] of [[-1, -0.1], [1, 0.11]] as const) {
+      const foot = v(side * 0.98, 0, -0.42), top = v(foot.x, 1.45, foot.z), tip = v(side * 0.38, 1.78, -0.12), tail = top.clone().lerp(tip, -0.35);
+      for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2 + 0.4; tube(0.009, v(foot.x, 0.32, foot.z), v(foot.x + Math.cos(a) * 0.3, 0.01, foot.z + Math.sin(a) * 0.3), blackSteel); }
+      tube(0.011, v(foot.x, 0.02, foot.z), top, blackSteel);
+      tube(0.008, tail, tip, blackSteel);
+      put(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.06, 14), blackSteel), tail.x, tail.y, tail.z);
+      put(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.13, 12), surface("metal", "#a9acb0")), tip.x, tip.y - 0.07, tip.z);
+      cable([[tip.x, tip.y - 0.13, tip.z], [tip.x + side * 0.05, tip.y - 0.2, tip.z], [top.x - side * 0.03, top.y - 0.1, top.z], [foot.x - side * 0.02, 0.6, foot.z], [foot.x - side * 0.05, 0.004, foot.z + 0.06],
+        [foot.x * 0.6, 0.004, -0.7 + side * 0.04], [0.95 + plug, 0.004, -0.8], [0.95 + plug, 0.02, -0.82]]);
+    }
+    // the kick's and the snare's mics on short stands, wired to the same box
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.016, 0.14, 12).rotateX(Math.PI / 2), rubber), 0.12, 0.22, -0.52);
+    tube(0.008, v(0.12, 0.02, -0.52), v(0.12, 0.2, -0.52), blackSteel);
+    cable([[0.12, 0.2, -0.46], [0.16, 0.05, -0.52], [0.4, 0.004, -0.62], [0.82, 0.004, -0.78], [0.92, 0.02, -0.82]]);
+    cable([[-0.3, 0.68, 0.5], [-0.25, 0.3, 0.5], [-0.15, 0.004, 0.42], [0.4, 0.004, 0.0], [0.6, 0.004, -0.55], [0.99, 0.004, -0.79], [0.99, 0.02, -0.82]]);
   } else if (s.kind === "keys") {
     // a stage synth: a textured plastic case with walnut cheeks, a sloped steel panel of knobs and a small screen
     // behind the keys, on a black steel X stand
