@@ -472,10 +472,14 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(nearSpot(amy)?.id).toBe("keys");
   expect(sit(amy, "keys")).toEqual({ ok: true });
   expect(amy.me.cam).toBe("first");
+  // first person, seated: her eyes sit back over the seat and look down at where her hands play, not across the keys
+  const hands = [keys.at[0], 0.9, keys.at[1] - 0.5], eyes = cameraPose(amy);
+  expect(eyes.at[2]).toBeGreaterThan(keys.at[1]);
+  expect(Math.abs(eyes.pitch - Math.atan2(hands[1] - eyes.at[1], eyes.at[2] - hands[2]))).toBeLessThan(0.1);
   // V, seated: the camera goes up beside her shoulder, not behind her head, and looks down at her hands on the keys,
   // past her own head, hidden so it doesn't hide them
   toggleCam(amy);
-  const over = cameraPose(amy), hands = [keys.at[0], 0.9, keys.at[1] - 0.5];
+  const over = cameraPose(amy);
   expect(Math.abs(over.at[0] - keys.at[0])).toBeGreaterThan(0.3);
   expect(over.head).toBe(0);
   // close in, at about her ear, so her hands and the keys fill the frame
