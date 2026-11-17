@@ -1,12 +1,17 @@
 // What every sky page shares: the day-and-night sky (Sky.tsx) behind glass panels whose paper and ink follow the same
-// clock, so a panel is white paper at noon and smoked glass at midnight. Type is one family, Lexend, from Google Fonts
-// (the Worker's CSP lets those two hosts in): tight and heavy for greetings and card names, light for the word mark.
+// clock, so a panel is white paper at noon and smoked glass at midnight. Type is one family, Lexend, served from eqosys itself
+// (public/fonts, OFL): tight and heavy for greetings and card names, light for the word mark.
 // The sign-in page (Login.tsx) and the home page (pages.tsx) each add their own rules on top of this one.
 import { NAME } from "../env.ts";
 import { CYCLE, Sky, skyCss } from "./Sky.tsx";
 import { ThemeSwitch, themeCss } from "./Theme.tsx";
 
-const FONTS = "https://fonts.googleapis.com/css2?family=Lexend:wght@300..700&display=swap";
+// Lexend's variable font, cut the way Google Fonts cuts it: Latin, preloaded, and Latin Extended, fetched only for a name that needs it.
+// Ours, not Google's: a first visit opens no other host before the page draws, and nothing leaves eqosys.
+const LATIN = "/fonts/lexend-latin.woff2";
+const FONTS = `@font-face{font-family:Lexend;font-style:normal;font-weight:300 700;font-display:swap;src:url(${LATIN}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Lexend;font-style:normal;font-weight:300 700;font-display:swap;src:url(/fonts/lexend-latin-ext.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+`;
 
 /** What the page says hello with, for the hour the sky shows (t0 is seconds into the cycle: 0 sunrise, half sunset). */
 export const greeting = (t0: number) => {
@@ -55,9 +60,8 @@ main input:focus,main select:focus{outline:none;border-color:color-mix(in oklab,
 /** The sky, the fonts and the shared glass rules, with the page's own `css` after them. */
 export const Glass = ({ t0, css, children }: { t0: number; css: string; children: React.ReactNode }) => (
   <>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-    <link rel="stylesheet" href={FONTS} precedence="default" />
-    <style dangerouslySetInnerHTML={{ __html: skyCss(t0) + CSS + themeCss + css }} />
+    <link rel="preload" href={LATIN} as="font" type="font/woff2" crossOrigin="" />
+    <style dangerouslySetInnerHTML={{ __html: FONTS + skyCss(t0) + CSS + themeCss + css }} />
     <Sky />
     <ThemeSwitch />
     {children}

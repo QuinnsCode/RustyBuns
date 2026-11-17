@@ -68,7 +68,7 @@ const Social = ({ ask, social }: { ask: Ask | null; social: string[] }) => (
 );
 
 /** `appleTop`: on an iPhone, iPad or Mac the buttons (Apple's first) sit above the email form, since Face ID is one tap. */
-export function Login({ ask, me, social, appleTop, error, t0, friend }: { ask: Ask | null; me: Me | null; social: string[]; appleTop?: boolean; error?: string; t0: number; /** Whose friend link brought them here. */ friend?: string }) {
+export function Login({ ask, me, social, appleTop, error, t0, friend, opens = "in" }: { ask: Ask | null; me: Me | null; social: string[]; appleTop?: boolean; error?: string; t0: number; /** Whose friend link brought them here. */ friend?: string; /** The form it opens on (handle.ts opensOn). */ opens?: "in" | "new" }) {
   const app = ask?.app.name;
   const top = !!appleTop && social[0] === "apple";
   const hello = greeting(t0);
@@ -88,7 +88,7 @@ export function Login({ ask, me, social, appleTop, error, t0, friend }: { ask: A
             </>
           ) : (
             <>
-              <div className="sw"><input type="radio" name="tab" id="t-in" defaultChecked={!friend} /><input type="radio" name="tab" id="t-new" defaultChecked={!!friend} /></div>
+              <div className="sw"><input type="radio" name="tab" id="t-in" defaultChecked={opens === "in"} /><input type="radio" name="tab" id="t-new" defaultChecked={opens === "new"} /></div>
               <div className="f-in">
                 <h1>{hello}</h1>
                 <p className="lead">{app ? <>Sign in to go on to <b>{app}</b>.</> : friend ? <>Sign in to be friends with <b>{friend}</b>.</> : "One account for every Q app."}</p>

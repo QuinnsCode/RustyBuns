@@ -78,8 +78,8 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const eqosysUrl = () => (kept.get("eqosys") || url).replace(/\/$/, "");
   /** Whether eqosys would send a player back here: the online game, or a local eqosys for a page on this machine. */
   const canSignIn = () => from.includes(location.origin) || !!kept.get("eqosys");
-  /** The page without the handoff's query, where eqosys sends the player back. It must be one of the app's `returns` in eqosys's
-   * APPS (each origin's root unless it says otherwise), so sign in from that page. */
+  /** The page without its query, where eqosys sends the player back. It must be one of the app's `returns` in eqosys's APPS
+   * (each origin's root unless it says otherwise), so sign in from that page. Its query and hash are kept here and put back. */
   const here = () => `${location.origin}${location.pathname}`;
 
   /** Off to eqosys. `then` is what the player was doing ("play"), picked up again when they come back. */
@@ -87,8 +87,8 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
     once.put("verifier", verifier); once.put("state", state); once.put("then", then);
-    // A quiet check leaves on its own, so the page's query (an invite's room code) comes back with it.
-    if (quiet) once.put("quiet", `${location.search}${location.hash}` || "?");
+    // The page's query and hash (an invite's room code, a deep link) come back with the player: right where they were.
+    once.put("where", `${location.search}${location.hash}` || "?");
     const q = new URLSearchParams({ app, return: here(), challenge: b64url(await digest(verifier)), state, ...(quiet ? { prompt: "none" } : {}) });
     location.assign(`${eqosysUrl()}/login?${q}`);
   }
@@ -138,9 +138,10 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     const q = new URLSearchParams(location.search);
     const code = q.get("code"), state = q.get("state"), refused = q.get("error") === "login_required";
     if ((code === null && !refused) || state === null) return stale();
-    const quiet = once.take("quiet");
+    // Where the page was when it left for eqosys, for this sign-in only: a stale one from a sign-in never finished stays out.
+    const started = once.take("state"), where = once.take("where");
     q.delete("code"); q.delete("state"); if (refused) q.delete("error");
-    const rest = quiet && quiet !== "?" ? quiet : `${q.size ? "?" + q : ""}${location.hash}`;
+    const rest = where && where !== "?" && state === started ? where : `${q.size ? "?" + q : ""}${location.hash}`;
     history.replaceState(null, "", `${location.pathname}${rest}`);
     // This is `signInHere`'s window: hand the code to the page that opened it and go. That page holds the verifier, so the
     // code is no use to anyone else listening. A window that can't close itself becomes the game, signed in by then.
@@ -152,7 +153,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
       return new Promise(() => {});
     }
     const verifier = once.take("verifier"), then = once.take("then");
-    if (!verifier || state !== once.take("state")) return { login: null, then, error: "That sign-in didn't start here. Try again." };
+    if (!verifier || state !== started) return { login: null, then, error: "That sign-in didn't start here. Try again." };
     // The quiet check found nobody signed in on eqosys: a guest, and the run-out login is let go so the page doesn't ask again.
     if (refused || code === null) { keep(null); return null; }
     return trade(code, verifier, then);

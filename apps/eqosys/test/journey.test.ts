@@ -136,13 +136,17 @@ test("a sign-in that brings no name gets one friends can read, and Apple's hidde
   expect(nameFor("x7k2p9qz4m@privaterelay.appleid.com")).toBe(hidden);
 });
 
-test("already signed in: an app she uses gets her straight back with no page; a new one, or one asking to switch account, shows it", async () => {
+test("already signed in: an app she uses, or any of our games, gets her straight back with no page; a suite she never opened, or switching account, shows it", async () => {
   const { conf, call } = await boot();
-  const { askOf, handle, socialMark, SOCIAL_COOKIE } = await import("../src/handle.ts");
+  const { askOf, handle, opensOn, socialMark, KNOWN_COOKIE, SOCIAL_COOKIE } = await import("../src/handle.ts");
   const login = (form: Record<string, string>, cookie: string) =>
     handle(new Request(`${ORIGIN}/login?${new URLSearchParams(form)}`, { headers: { cookie } }), conf);
   const park = await asks("park-hide-seek", PARK);
   const up = await call("/do/signup", { form: { ...park.form, name: "Ada", email: "ada@example.com", password: PASSWORD } });
+  // This browser has an account here now: the next sign-in page opens on Sign in, not the new-account form a stranger sees.
+  expect(up.cookie).toContain(`${KNOWN_COOKIE}=1`);
+  expect([{ known: false, friend: false }, { known: true, friend: false }, { known: true, friend: true }, { known: false, friend: false, error: "bad" }, { known: true, friend: false, error: "taken" }].map(opensOn))
+    .toEqual(["new", "in", "new", "in", "new"]);
 
   // Her game's token ran out and it sends her back through eqosys: a code comes straight back, and it trades in.
   const again = await asks("park-hide-seek", PARK);
@@ -153,7 +157,12 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(new URL(to).searchParams.get("state")).toBe("s1");
   expect((await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(to), verifier: again.verifier } })).res.status).toBe(200);
 
-  // An app she has never opened, from a link: the page (null here) asks first. Signed out: the page. "Switch account": the page.
+  // One of our games she has never opened: she pressed Sign in in it, so the code comes straight back, no Continue.
+  const golf = { ...again.form, app: "alien-disc-golf", return: "https://alien-disc-golf.notryanquinn.workers.dev/" };
+  const first = (await login(golf, up.cookie))!;
+  expect(first.status).toBe(303);
+  expect(codeIn(first.headers.get("location")!)).toMatch(/^eq_/);
+  // A suite she has never opened, from a link: the page (null here) asks first. Signed out: the page. "Switch account": the page.
   const crm = await asks("qcrm", QCRM);
   expect(await login(crm.form, up.cookie)).toBeNull();
   expect(await login(again.form, "")).toBeNull();
@@ -170,8 +179,7 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   const ask = await askOf((k) => ({ ...crm.form } as Record<string, string>)[k], conf);
   if (!ask || ask === "bad") throw new Error("ask");
   const marked = `${up.cookie}; ${SOCIAL_COOKIE}=${await socialMark(conf, ask)}`;
-  const golf = { ...crm.form, app: "alien-disc-golf", return: "https://alien-disc-golf.notryanquinn.workers.dev/" };
-  expect(await login(golf, marked)).toBeNull();
+  expect(await login({ ...crm.form, app: "qntbr", return: "https://qntbr.com/api/auth/callback/eqosys" }, marked)).toBeNull();
   const on = (await login(crm.form, marked))!;
   expect(on.status).toBe(303);
   expect(on.headers.getSetCookie().some((c) => c.startsWith(`${SOCIAL_COOKIE}=;`) && c.includes("Max-Age=0"))).toBe(true);

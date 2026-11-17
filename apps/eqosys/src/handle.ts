@@ -3,11 +3,11 @@
 //
 // The handoff, the way OAuth does it with PKCE, minus the parts nobody here needs yet:
 //   1. the app sends the person to /login?app=<id>&return=<url on its origin>&challenge=<S256 of a verifier>&state=<anything>
-//   2. they sign in or sign up here (or are already), and press Continue
+//   2. they sign in or sign up here (or are already: then one of our own games goes straight on, anything else asks Continue)
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { HOME, playOf, returnTo, type QApp } from "./apps.ts";
+import { HOME, ourApp, playOf, returnTo, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
@@ -26,7 +26,7 @@ import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
 import { jwksOf, sign } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
 import { bool, check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
-import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
+import { dossierHeaders, regionAt } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
@@ -75,6 +75,17 @@ const cookieOf = (req: Request, name: string) =>
   (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1) ?? null;
 const socialMarkIn = (req: Request) => cookieOf(req, SOCIAL_COOKIE);
 
+/** Set on every sign-in, and kept after signing out: this browser has had an account here, so the sign-in page opens on Sign in.
+ * One without it is most likely someone new, and opens on the new-account form. It says nothing about who. */
+export const KNOWN_COOKIE = "eqosys.known";
+export const knownCookie = (req: Request) =>
+  `${KNOWN_COOKIE}=1; Path=/; Max-Age=${400 * 24 * 3600}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
+export const knownHere = (req: Request) => cookieOf(req, KNOWN_COOKIE) === "1";
+/** Which form the sign-in page opens on: a friend's link, a browser with no account here yet, or a sign-up that didn't go
+ * through, the new-account form; anyone else, Sign in. */
+export const opensOn = (o: { known: boolean; friend: boolean; error?: string }): "in" | "new" =>
+  o.friend || o.error === "taken" || (!o.known && !o.error) ? "new" : "in";
+
 /** The friend link this browser opened (/add/<id>/<key>), kept half an hour while its person signs in or makes an account.
  * Opening a link only keeps it: being friends takes their own press of "Be friends" on the Friends tab (/do/add), so a
  * page that sends a browser to somebody's link makes nobody a friend. A link a game copied names it (`?app=<id>`): the
@@ -100,10 +111,12 @@ export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; 
   return l && name !== null ? { ...l, name, game: (await gameOf(conf, app))?.name ?? null } : null;
 }
 
-/** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or this browser
- * just pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
+/** Whether someone already signed in goes on to the app without seeing the page: it is one of our own games (they pressed Sign in
+ * in it, and it is ours, so nothing to ask), they have used it before, or this browser just pressed "Continue with…" for it.
+ * A first visit to a suite or a studio's game still asks, so nobody is handed to somebody else's app they never picked. */
 async function goesStraightOn(conf: Env, userId: string, a: Ask, mark: string | null) {
   if (a.pick) return false;
+  if (a.app.kind === "game" && ourApp(a.app.id) === a.app) return true;
   if (mark && mark === await socialMark(conf, a)) return true;
   return !!(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(userId, a.app.id).first<number>("n"));
 }
@@ -118,14 +131,18 @@ const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. A studio's game still in the making sends only its studio on. */
-async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response, home = "/") {
-  if (!ask) { await link(conf, userId, null, region); return see(home, from); }
-  if (!(await mayUse(conf, ask.app, userId))) return see("/?e=making", from);
-  const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, region)]);
-  const to = new URL(ask.back);
-  to.searchParams.set("code", code);
-  if (ask.state) to.searchParams.set("state", ask.state);
-  return see(to.href, from);
+async function onward(req: Request, conf: Env, userId: string, ask: Ask | null, from?: Response, home = "/") {
+  const out = await (async () => {
+    if (!ask) { await link(conf, userId, null, regionAt(req)); return see(home, from); }
+    if (!(await mayUse(conf, ask.app, userId))) return see("/?e=making", from);
+    const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, regionAt(req))]);
+    const to = new URL(ask.back);
+    to.searchParams.set("code", code);
+    if (ask.state) to.searchParams.set("state", ask.state);
+    return see(to.href, from);
+  })();
+  if (!knownHere(req)) out.headers.append("set-cookie", knownCookie(req));
+  return out;
 }
 
 const Signed = obj({ user: obj({ id: str(200) }) });
@@ -278,7 +295,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const me = ask ? await meOf(req, conf) : null;
     const mark = socialMarkIn(req);
     if (me && ask && await goesStraightOn(conf, me.id, ask, mark)) {
-      const out = await onward(conf, regionAt(req), me.id, ask);
+      const out = await onward(req, conf, me.id, ask);
       if (mark) out.headers.append("set-cookie", socialCookie(req, "", 0));
       return out;
     }
@@ -330,7 +347,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     // signing in who never saved one; an app asked for keeps going.
     if (!signed) return back(act === "signup" ? "taken" : "bad");
     const first = act === "signup" || !await savedAvatar(conf, signed.user.id);
-    return onward(conf, regionAt(req), signed.user.id, ask, res!, first ? "/?tab=account&new=1" : "/");
+    return onward(req, conf, signed.user.id, ask, res!, first ? "/?tab=account&new=1" : "/");
   }
 
   if (act === "social") {
@@ -351,7 +368,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const me = await meOf(req, conf);
   if (!me) return back("in");
 
-  if (act === "continue") return onward(conf, regionAt(req), me.id, ask);
+  if (act === "continue") return onward(req, conf, me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
   // The friend link this browser opened: "Be friends" makes the two friends at once, "No thanks" (`no`) forgets the link.
   // Either way, a link a game copied goes on to that game; a refusal stays on the Friends tab to say why.
