@@ -299,16 +299,57 @@ function stitchGeo(pts: V3[], normals: V3[], width = 0.012) {
 }
 
 /** A tube along a curve, its section `rx` across by `ry` (in the curve's normal plane, ry along `up`), each scaled by `size(i)`. */
-function tubeGeo(pts: V3[], rx: number, ry: number, up: (i: number) => V3, closed = false, round = 10, size = (_i: number): [number, number] => [1, 1]) {
+function tubeGeo(pts: V3[], rx: number, ry: number, up: (i: number) => V3, round = 10) {
   const rows: V3[][] = [];
   pts.forEach((p, i) => {
-    const a = pts[closed ? (i - 1 + pts.length) % pts.length : Math.max(0, i - 1)]!, b = pts[closed ? (i + 1) % pts.length : Math.min(pts.length - 1, i + 1)]!;
+    const a = pts[Math.max(0, i - 1)]!, b = pts[Math.min(pts.length - 1, i + 1)]!;
     const tan = b.clone().sub(a).normalize(), u = up(i).clone().addScaledVector(tan, -up(i).dot(tan)).normalize(), s = V().crossVectors(tan, u);
-    const [sx, sy] = size(i);
-    rows.push(Array.from({ length: round + 1 }, (_, k) => { const a2 = (k / round) * TAU; return p.clone().addScaledVector(s, Math.cos(a2) * rx * sx).addScaledVector(u, Math.sin(a2) * ry * sy); }));
+    rows.push(Array.from({ length: round + 1 }, (_, k) => { const a2 = (k / round) * TAU; return p.clone().addScaledVector(s, Math.cos(a2) * rx).addScaledVector(u, Math.sin(a2) * ry); }));
   });
-  if (closed) rows.push(rows[0]!.map((p) => p.clone()));
   return gridGeo(rows);
+}
+
+// A closed loop's frame at point i: the tangent (over a few points either side, so a flat band turns round a tight bend
+// without twisting), `up` (world up, square to it) and `out` (across, away from the loop's middle).
+function loopFrame(pts: V3[], i: number, reach = 4) {
+  const n = pts.length, tan = pts[(i + reach) % n]!.clone().sub(pts[(i - reach + n) % n]!).normalize();
+  const up = V(0, 1, 0).addScaledVector(tan, -tan.y).normalize();
+  return { up, out: V().crossVectors(tan, up) };
+}
+
+// A hood's opening edge as fleece makes it: a flat band, two layers folded over at the opening, with the drawcord's
+// channel a slight ridge just behind the fold, thinning and sloping down to where it is sewn to the shell. `pts` is the
+// loop of the band's middle; `w(i)` (about -1..1) widens and flattens it where it bunches, `lift(i)` ripples it.
+const BAND = { fold: -0.024, edge: 0.03, r: 0.011, drop: 0.01 };
+function bandAt(t: number, top: boolean, w = 0) {
+  const { fold, edge, r, drop } = BAND, s = lerp(fold + r, edge * (1 + 0.15 * w), t), fall = -drop * t ** 1.5;
+  const half = r * (1 - 0.3 * w);
+  // Lofty fleece: both faces bulge, thinning late toward the seam, so the band never comes to a wire-thin edge.
+  const face = half * (1 - 0.55 * t ** 1.6);
+  return top ? [s, face + 0.005 * Math.exp(-(((t - 0.22) / 0.11) ** 2)) + fall] : [s, -face + fall];
+}
+function bandGeo(pts: V3[], w: (i: number) => number, lift: (i: number) => number) {
+  const T = 10, F = 8;
+  const rows = pts.map((p, i) => {
+    const { up, out } = loopFrame(pts, i), wi = w(i), half = BAND.r * (1 - 0.3 * wi);
+    // Round the loop's section: along the underside to the fold, round it, and out along the top.
+    const prof = [
+      ...Array.from({ length: T }, (_, k) => bandAt(1 - k / T, false, wi)),
+      ...Array.from({ length: F + 1 }, (_, k) => { const a = -Math.PI / 2 - (k / F) * Math.PI; return [BAND.fold + BAND.r + half * Math.cos(a), half * Math.sin(a)]; }),
+      ...Array.from({ length: T }, (_, k) => bandAt((k + 1) / T, true, wi)),
+    ];
+    prof.push(prof[0]!);
+    return prof.map(([s, u]) => p.clone().addScaledVector(out, s!).addScaledVector(up, u! + lift(i)));
+  });
+  rows.push(rows[0]!.map((p) => p.clone()));
+  return gridGeo(rows);
+}
+// A line along the band's top at `t` (0 the fold, 1 its sewn edge) and its normals: for the band's topstitching.
+function bandLine(pts: V3[], t: number, w: (i: number) => number, lift: (i: number) => number): [V3[], V3[]] {
+  const frames = pts.map((_, i) => loopFrame(pts, i));
+  const line = pts.map((p, i) => { const [s, u] = bandAt(t, true, w(i)); return p.clone().addScaledVector(frames[i]!.out, s!).addScaledVector(frames[i]!.up, u! + lift(i)); });
+  line.push(line[0]!.clone());
+  return [line, [...frames.map((f) => f.up), frames[0]!.up]];
 }
 
 // ---- the parts -----------------------------------------------------------------------------------------------
@@ -572,9 +613,13 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
   };
   const rim = Array.from({ length: 96 }, (_, i) => rimAt((i / 96) * TAU));
   const hoodMat = m.plain();
-  // Its roll is soft, not an even pipe: fatter where it bunches, squashed where it lies on the shoulders.
-  const roll = (i: number): [number, number] => { const w = loopNoise((i / 96) * TAU, 2.3); return [1 + 0.2 * w, 1 - 0.3 * w]; };
-  add(tubeGeo(rim, 0.034, 0.02, () => V(0, 1, 0), true, 14, roll), hoodMat);
+  // The band is soft, not an even pipe: wider and flatter where it bunches, rippling a little along its length,
+  // and round the front, where nothing joins it from below, sitting up on the cloth it lies on (a flat band there sank
+  // into the shoulders' cloth where the old round roll stood clear of it).
+  const sitUp = (ph: number) => 0.022 * (1 - backness(ph));
+  const bunch = (i: number) => loopNoise((i / rim.length) * TAU, 2.3), ripple = (i: number) => 0.003 * Math.sin((i / rim.length) * TAU * 11) + sitUp((i / rim.length) * TAU);
+  add(bandGeo(rim, bunch, ripple), hoodMat);
+  add(stitchGeo(...bandLine(rim, 0.72, bunch, ripple), 0.008), m.stitch);
 
   // The back of the body at (x, y), for laying the hood on it.
   const backAt = (x: number, y: number) => {
@@ -585,7 +630,7 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
     const u = 1 - t;
     return a.clone().multiplyScalar(u * u * u).addScaledVector(b, 3 * u * u * t).addScaledVector(c2, 3 * u * t * t).addScaledVector(d, t * t * t);
   };
-  const S = 32, Q = 24, Lh = 0.6, Wh = 0.33, SPAN = 1.85;
+  const S = 64, Q = 48, Lh = 0.6, Wh = 0.33, SPAN = 1.85;
   const phOf = (s: number) => Math.PI + s * SPAN;
 
   // The lining: from the neckline back to the lip, sagging into a bowl where the head would go.
@@ -625,7 +670,9 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
       const crease = Math.abs(Math.sin(s * 5.2 + 0.5 + 0.9 * q + 0.6 * noise(s * 2, q * 3))) - 0.62;
       const long = Math.max(...[-1, 1].map((k) => Math.exp(-(((s - k * (0.72 - 0.5 * q)) / 0.11) ** 2)))) * Math.sin(Math.PI * q) ** 0.7;
       const sag = 0.012 * Math.sin(q * 13 + s * s * 4) * smooth(0.3, 0.5, q) * (1 - smooth(0.8, 0.95, q)) * b;
-      const depth = (0.045 * crease * gather + 0.035 * long + sag + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
+      // The centre seam's stitching pulls the cloth beside it into small slanting puckers.
+      const pucker = 0.008 * Math.sin(q * 62 + Math.abs(s) * 28 + 2 * noise(q * 5, 4.1)) * Math.exp(-(((Math.abs(s) - 0.05) / 0.045) ** 2)) * smooth(0.06, 0.18, q) * (1 - smooth(0.82, 0.95, q));
+      const depth = (0.045 * crease * gather + 0.035 * long + sag + pucker + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
       p.addScaledVector(V(0, 1 - smooth(0.12, 0.45, q), -1).normalize(), depth);
       // The middle drifts a little side to side as it hangs, so the centre seam isn't ruler-straight.
       p.x += 0.008 * noise(q * 4 + 3, 1.7) * b * smooth(0.1, 0.45, q);
@@ -660,7 +707,7 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
   const cordMat = new THREE.MeshStandardMaterial({ color: "#ecebe8", roughness: 0.85 });
   const tipMat = new THREE.MeshStandardMaterial({ color: "#a8a29e", roughness: 0.35, metalness: 0.8 });
   for (const s of [-1, 1]) {
-    const start = rimAt(s * 0.32);
+    const start = rimAt(s * 0.32).add(V(0, sitUp(s * 0.32), 0));
     const n = s < 0 ? 22 : 19;
     const pts = Array.from({ length: n }, (_, k) => {
       const t = k / (n - 1), y = start.y - 0.012 - k * 0.019;

@@ -177,7 +177,17 @@ button { cursor: pointer; }
 .pedal.spring { background: linear-gradient(160deg, #8a95a3, #4a535e); }
 .pedal-knobs { display: flex; gap: 4px; }
 .pedal .mode { min-width: 74px; text-transform: capitalize; }
-.floor.loop { padding-top: 18px; }
+/* the board: each tile in a slot with its grip and load on top; after the amp, the loop */
+.slot { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 6px; border-radius: 14px; }
+.slot.in-loop { background: rgba(79, 179, 217, 0.08); box-shadow: inset 0 0 0 1px rgba(79, 179, 217, 0.25); }
+.slot-top { display: flex; align-items: center; justify-content: space-between; width: 100%; min-width: 0; }
+.grip { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--dim); cursor: grab; touch-action: none; }
+.grip:hover { color: var(--ink); background: var(--glass); }
+.floor.sorting, .floor.sorting .grip { cursor: grabbing; user-select: none; }
+.slot-load { font: 500 11px/1 var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+.slot-load.warn { color: var(--warn); }
+.pedal.amp-slot { align-content: center; min-height: 100%; color: var(--ink); background: var(--glass); border: 1px solid var(--edge); }
+@media (max-width: 520px) { .floor { gap: 10px; } .slot { padding: 4px; } }
 .pedal-led { width: 10px; height: 10px; border-radius: 50%; background: #3a0f0c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); }
 .pedal.lit .pedal-led { background: #ff3b2b; box-shadow: 0 0 10px #ff3b2b, 0 0 2px #fff inset; }
 .pedal-name { font: 700 1.05rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }

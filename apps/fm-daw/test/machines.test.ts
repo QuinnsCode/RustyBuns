@@ -1,7 +1,12 @@
-// The effects loop's machines (src/circuit/machines.ts): what makes each one
+// The effects loop's machines (packages/gear/src/circuit/machines.ts): what makes each one
 // sound like the machine, checked on what comes out.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Bbd, SpringReverb, TapeEcho } from "@rustybuns/gear/circuit";
+import { AMPS } from "../src/circuit/amps.ts";
+import { MACHINES } from "../src/circuit/circuits.ts";
+import { riff } from "../src/circuit/riff.ts";
+import { rigSpec } from "../src/amp/live.ts";
+import type { AmpSettings } from "../src/amp/messages.ts";
 
 setDefaultTimeout(60_000);
 const SR = 48000;
@@ -63,4 +68,21 @@ test("bucket brigade: the delay is the stages over twice the clock, and the comp
     for (let i = Math.round(SR * 0.08); i < Math.round(SR * 0.095); i++) peak = Math.max(peak, Math.abs(out[i]));
     expect(peak / level / 0.6).toBeCloseTo(1, 1); // the wet is 0.6 of the dry
   }
+});
+
+test("the machines' boards (circuits/spring.tsx, tape.tsx) play like the netlists gear writes, and the amp plays them", () => {
+  const x = riff(SR).subarray(0, SR / 2);
+  const play = (m: { run(x: number): number }) => Float64Array.from(x, (v) => m.run(v * 0.5));
+  const spring = (c = {}) => { const r = new SpringReverb(SR, c); r.set({ kind: "spring", dwell: 8, mix: 8 }); return r; };
+  const tape = (c = {}) => { const t = new TapeEcho(SR, c); t.set({ kind: "tape", time: 3, repeats: 9, mix: 8, heads: [1, 3] }); return t; };
+  for (const [name, make] of [["spring", spring], ["tape", tape]] as const) {
+    const board = play(make(MACHINES)), written = play(make());
+    let worst = 0;
+    for (let i = 0; i < x.length; i++) worst = Math.max(worst, Math.abs(board[i] - written[i]));
+    // The board numbers its nodes in another order, so the rounding differs by a few nanovolts; the circuit does not.
+    expect({ name, same: worst < 1e-6 }).toEqual({ name, same: true });
+  }
+  const amp = AMPS[0];
+  const settings: AmpSettings = { amp: amp.id, pedal: null, drive: 0, knobs: { ...amp.knobs }, bypass: false, oversample: 4, swaps: {}, mic: { at: 0.3, angle: 0 }, loop: [{ kind: "spring", dwell: 5, mix: 6 }] };
+  expect(rigSpec(settings).spec.machines).toBe(MACHINES);
 });

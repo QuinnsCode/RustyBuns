@@ -7,10 +7,12 @@ import { TsEq, withEqLane, type EqStage } from "./eq.ts";
 import { LinearEq } from "./linear.ts";
 import { audible, loopBeats, type Project } from "../project.ts";
 import { TakeDeck } from "../take.ts";
+import { AmpInserts } from "../amp/insert.ts";
 
 /**
  * The project as it plays, offline. `takes` gives a take's sound by id (the page keeps it): each track's take
- * is mixed in after the engine and before the master EQ, as the audio thread does, so the bounce sounds like playback.
+ * is mixed in after the engine and before the master EQ (through its Amp insert when it has one), as the audio thread
+ * does, so the bounce sounds like playback.
  */
 export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined): Float32Array {
   const frames = Math.round(seconds * sampleRate);
@@ -23,6 +25,8 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   eq.reset();
   const deck = new TakeDeck(p.tracks.length, sampleRate);
   p.tracks.forEach((t, ti) => { if (t.take) deck.set(ti, takes?.(t.take.id) ?? null, t.take.beat); });
+  const amps = new AmpInserts(p.tracks.length, sampleRate);
+  p.tracks.forEach((t, ti) => { if (t.amp) amps.set(ti, t.amp); });
   const hears = audible(p), beats = loopBeats(p);
   let at = 0;
   const all = renderPattern(engine, sampleRate, (frames + late) / sampleRate, (seq) => {
@@ -34,7 +38,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     seq.setEqAuto(p.eqAuto ?? []);
     seq.onEq = (i, v) => { const d = withEqLane(played, i, v); if (d !== played) { played = d; eq.set(d); } };
   }, send, (block, n) => {
-    if (deck.any) deck.mix(block, n, (at / sampleRate) * (p.bpm / 60), p.bpm, beats, (t) => hears[t], masterGain);
+    if (deck.any) amps.mix(deck, block, n, (at / sampleRate) * (p.bpm / 60), p.bpm, beats, (t) => hears[t], masterGain, true);
     at += n;
     eq.process(block, n);
   });

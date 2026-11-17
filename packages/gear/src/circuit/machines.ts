@@ -80,10 +80,23 @@ export type BbdSpec = { kind: "bbd"; mode: BbdMode; rate: number; depth: number 
 export type LoopSpec = SpringSpec | TapeSpec | BbdSpec;
 
 /** One machine in the loop: a line-level sample in, one out. `set` turns its knobs. */
-export interface Machine { readonly kind: LoopSpec["kind"]; run(x: number): number; set(spec: LoopSpec): void; readonly misses: number }
+export interface Machine {
+  readonly kind: LoopSpec["kind"];
+  run(x: number): number;
+  set(spec: LoopSpec): void;
+  readonly misses: number;
+  /** Its LFO this far on (radians), if it has one: a stereo pair's right side runs half a turn behind. */
+  turn?(radians: number): void;
+}
 
-export function machine(spec: LoopSpec, sampleRate: number): Machine {
-  const m = spec.kind === "spring" ? new SpringReverb(sampleRate) : spec.kind === "tape" ? new TapeEcho(sampleRate) : new Bbd(sampleRate);
+/**
+ * The circuits inside the machines, in place of the ones written here (`springDriver`, `springRecovery`,
+ * `recordAmp`): FM DAW reads its own from tscircuit boards. Each takes the input and output roles of the one it replaces.
+ */
+export interface MachineCircuits { springDriver?: Netlist; springRecovery?: Netlist; recordAmp?: Netlist }
+
+export function machine(spec: LoopSpec, sampleRate: number, circuits: MachineCircuits = {}): Machine {
+  const m = spec.kind === "spring" ? new SpringReverb(sampleRate, circuits) : spec.kind === "tape" ? new TapeEcho(sampleRate, circuits) : new Bbd(sampleRate);
   m.set(spec);
   return m;
 }
@@ -154,9 +167,9 @@ export class SpringReverb implements Machine {
   private transformer: Biquad;
   private dwell = 0.5;
   private mix = 0.4;
-  constructor(sr: number) {
-    this.driver = new Stage(springDriver(), sr);
-    this.recovery = new Stage(springRecovery(), sr);
+  constructor(sr: number, circuits: MachineCircuits = {}) {
+    this.driver = new Stage(circuits.springDriver ?? springDriver(), sr);
+    this.recovery = new Stage(circuits.springRecovery ?? springRecovery(), sr);
     // Two springs of different lengths (a long and a short tank), so their echoes don't line up.
     this.springs = [new Spring(sr, 0.0331, 0.72), new Spring(sr, 0.0413, 0.68)];
     this.transformer = Biquad.make("hp", 180, 0.7, sr);
@@ -270,8 +283,8 @@ export class TapeEcho implements Machine {
   private mix = 0.4;
   private heads = [1, 0, 1];
   private tuned = 0;
-  constructor(private sr: number) {
-    this.record = new Stage(recordAmp(), sr);
+  constructor(private sr: number, circuits: MachineCircuits = {}) {
+    this.record = new Stage(circuits.recordAmp ?? recordAmp(), sr);
     this.tapeM = new Hysteresis(sr);
     // Longest echo: the far head at the slowest speed, plus room for wow.
     this.tape = new Float32Array(Math.ceil(sr * (HEAD_GAPS[2] / (NOMINAL_SPEED / 4)) * 1.1) + 8);
@@ -382,6 +395,7 @@ export class Bbd implements Machine {
     this.rate = spec.rate / 10;
     this.depth = spec.depth / 10;
   }
+  turn(radians: number): void { const tau = 2 * Math.PI; this.lfo = (((this.lfo + radians) % tau) + tau) % tau; }
   /** The delay now, in seconds. */
   delaySeconds(): number {
     const m = BBD_MODES[this.mode];

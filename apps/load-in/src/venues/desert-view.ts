@@ -164,7 +164,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
       // The night on show time: twelve hours in twelve seconds; the lasers and the wall stop when the fuel does.
       const h = night ? Math.min(night.hours, (now - night.at) / 1000) : 0, dark = !!night && !night.dawn && h >= night.hours;
       if (night) skyAt(h, night.dawn || h < night.hours);
-      const on = !dark && playing(w, cs).size > 0, top = Math.max(0, ...w.items.filter((i) => i.gear.startsWith("top-")).map((i) => i.y + 0.72));
+      const on = !dark && playing(w, cs).size > 0, top = Math.max(0, ...w.items.filter((i) => i.key.startsWith("top-")).map((i) => i.y + 0.5));
       lasers.forEach((l, k) => {
         l.visible = on && (!night || h < 11.5);
         l.position.set(-1.2 + k * 0.6, top + 0.1, 1);
@@ -184,7 +184,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
-        + `<small>F push the cart, G tape the joints near you, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
+        + `<small>F push the cart or a stack's dolly, G tape the joints near you, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
     },
     doors() {
       view.update();
