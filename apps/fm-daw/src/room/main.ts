@@ -3,7 +3,9 @@
 // a jack to pull a cable out of it, walk the cable to another jack and click there; look at a knob and drag. The
 // room's patch is the sesh's Studio (../studio.ts), kept in this browser for now. What you hear is the walk back
 // from the cab (room.ts `listen`): that amp and its pedal run their circuits in Q Amp's audio thread, and nothing
-// else does. `window.qstudio` is the harness (scripts/probe.ts HANDLES).
+// else does. That sound comes up through FM DAW's desk (../mixer.ts): Tab opens it, a strip for you and one for each
+// aux return (Space, or the gear cabled between the desk's aux-send and aux-return jacks). `window.qstudio` is the
+// harness (scripts/probe.ts HANDLES).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./studio.css";
@@ -11,6 +13,10 @@ import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
 import workletUrl from "../amp/worklet.ts?worker&url";
+import deskWorkletUrl from "./desk-worklet.ts?worker&url";
+import type { ToDesk } from "./desk-worklet.ts";
+import { Desk, deskFor, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
+import { drawDesk } from "./desk.ts";
 import type { FromAmp, ToAmp } from "../amp/messages.ts";
 import { DEFAULT_ROOM } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
@@ -20,7 +26,7 @@ import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
-const KEY = "q-studio", CONTROLS = "q-studio.controls";
+const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 
 // Bench pedals: each board read here is kept by its gear id, so a saved patch that names one finds it again.
@@ -67,7 +73,19 @@ const save = () => {
   try { localStorage.setItem(KEY, JSON.stringify(savedPatch)); } catch { /* not kept, fine */ }
 };
 
-let phase: "menu" | "play" = "menu";
+// The desk: a channel for you (the guitar, through whatever the room plays) and the aux returns, kept in this browser.
+const SOURCES: Source[] = [{ id: "you", name: "You: guitar", source: "player" }];
+const keptDesk = () => { try { return check(Desk, JSON.parse(localStorage.getItem(DESK) ?? "null")); } catch { return null; } };
+let desk = deskFor(SOURCES, keptDesk());
+let deskKey = "";
+let drawn = "";
+function setDesk(d: Desk) {
+  desk = d;
+  try { localStorage.setItem(DESK, JSON.stringify(d)); } catch { /* not kept, fine */ }
+  drawn = "";
+}
+
+let phase: "menu" | "play" | "desk" = "menu";
 let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let dragging: { id: string; knob: string } | null = null;
@@ -154,6 +172,7 @@ function highlight(a: Aim | null) {
 // ---- sound: Q Amp's audio thread, fed only when the chain is whole ----
 let ctx: AudioContext | null = null;
 let node: AudioWorkletNode | null = null;
+let deskNode: AudioWorkletNode | null = null;
 let riffNode: AudioBufferSourceNode | null = null;
 let panner: PannerNode | null = null;
 let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
@@ -167,17 +186,44 @@ async function speakers(up: boolean) {
   if (!ctx) {
     ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
+    await ctx.audioWorklet.addModule(deskWorkletUrl);
+    deskNode = new AudioWorkletNode(ctx, "q-desk", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     node.port.onmessage = (e: MessageEvent<FromAmp>) => { meter = e.data; };
     panner = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
-    node.connect(panner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
+    node.connect(deskNode).connect(panner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
     const data = riff(ctx.sampleRate), buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
     buf.copyToChannel(data, 0);
     riffNode = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true });
     riffNode.start();
-    heardKey = "";
+    heardKey = ""; deskKey = "";
   }
   await ctx.resume();
+}
+
+/** The desk's audio thread gets the desk and what each aux has cabled in, when either changes. */
+function deskSound(h: Heard) {
+  const cabled = Array.from({ length: desk.returns.length }, (_, i) => h.returns.find((r) => r.aux === i + 1)?.settings ?? null);
+  const m: ToDesk = { t: "desk", desk, channel: "you", cabled };
+  const key = JSON.stringify(m);
+  if (!deskNode || key === deskKey) return;
+  deskKey = key;
+  deskNode.port.postMessage(m);
+}
+
+/** The desk view, drawn again when the desk or what is cabled into its returns changes. */
+function deskView(h: Heard) {
+  $("desk").hidden = phase !== "desk";
+  if (phase !== "desk") return;
+  const cabled = desk.returns.map((r) => { const x = h.returns.find((y) => y.aux === r.aux); return x?.whole ? x.chain.slice(1, -1).map(nameOfId).join(" > ") : x?.problems[0] ?? ""; });
+  const key = JSON.stringify([desk, cabled]);
+  if (key === drawn) return;
+  drawn = key;
+  drawDesk($("desk-strips"), desk, cabled, setDesk);
+}
+const nameOfId = (id: string) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; };
+function openDesk(open: boolean) {
+  if (open) { phase = "desk"; menu(); document.exitPointerLock?.(); } else play();
 }
 
 /** The worklet runs the rig only for a whole chain; otherwise the riff is unplugged and it passes silence through. */
@@ -220,6 +266,7 @@ document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (e.repeat) return;
   if (e.code === "KeyM") void speakers(!speakersUp);
+  if (e.code === "Tab" && phase !== "menu") { e.preventDefault(); openDesk(phase !== "desk"); return; }
   if (phase !== "play") return;
   if (e.code === "KeyF") say(use(room));
   if (e.code === "KeyG") say(drop(room));
@@ -258,7 +305,7 @@ function hint(a: Aim | null): string {
   return h ? "Right-click or G lets go of the cable" : "";
 }
 
-function menu() { $("menu").hidden = phase === "play"; }
+function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; }
 function play() { phase = "play"; menu(); lock(); }
 
 function resize() {
@@ -292,6 +339,8 @@ function frame(now: number) {
   highlight(a);
   const heard = listen(room.studio.patch);
   sound(heard);
+  deskSound(heard);
+  deskView(heard);
   glow(heard);
   camera.position.set(room.you.x, EYE, room.you.z);
   camera.rotation.set(room.you.pitch, room.you.yaw, 0);
@@ -327,7 +376,13 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, ...snapshot(room), meter: { out: meter.out, load: meter.load } }),
+  state: () => ({ phase, speakers: speakersUp, ...snapshot(room), meter: { out: meter.out, load: meter.load }, desk, returns: listen(room.studio.patch).returns }),
+  /** The desk view open or shut (Tab). */
+  desk: (open: boolean) => openDesk(open),
+  /** A channel's controls (`you` is the guitar's), an aux send 0 to 1, or a return's fader 0 to 1 (0.75 is 0 dB). */
+  channel: (id: string, ch: Parameters<typeof withChannel>[2]) => setDesk(withChannel(desk, id, ch)),
+  send: (id: string, aux: number, v: number) => setDesk(withSend(desk, id, aux, v)),
+  returnFader: (aux: number, v: number) => setDesk(withReturn(desk, aux, { fader: v })),
   /** Into the room, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z); the seconds it took. The rack is the back wall (z = -3), the door end is z = 3. */
@@ -360,11 +415,12 @@ window.qstudio = harness;
 
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
 $("play").addEventListener("click", play);
+$("desk-close").addEventListener("click", () => openDesk(false));
 $("speakers").addEventListener("click", () => void speakers(!speakersUp));
 menu();
 resize();
