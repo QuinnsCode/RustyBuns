@@ -182,6 +182,11 @@ function paint(name: string, base: THREE.Color): Painted | null {
 }
 
 const mats = new Map<string, THREE.MeshStandardMaterial>();
+type Kit = (name: string, color?: string) => THREE.MeshStandardMaterial | null;
+let kit: Kit | null = null;
+/** Gear surfaces (metal, plastic, rubber, tolex, cloth, steel, ply, grille) from the photo-texture kit (gear-kit.ts):
+ * set once before the room is built, and `surface()` asks it first. Left unset (tests, a tool page), they're flat. */
+export function useKit(k: Kit) { kit = k; }
 /**
  * A material by what it is made of: a room material (sound.ts's names: floorboards, wood, carpet, foam, curtain, brick,
  * concrete, stone, tile, plaster, drywall, ceilingTile, glass) or `metal`, `chrome`, `plastic`, `rubber`, `fabric`,
@@ -192,6 +197,8 @@ export function surface(name: string, color?: string): THREE.MeshStandardMateria
   const known = name in MATERIALS ? MATERIALS[name as keyof typeof MATERIALS].color : "#808080";
   const id = `${name}:${color ?? known}`, hit = mats.get(id);
   if (hit) return hit;
+  const fromKit = kit?.(name, color);
+  if (fromKit) { mats.set(id, fromKit); return fromKit; }
   const c = new THREE.Color(color ?? known), l = LOOKS[name];
   let m: THREE.MeshStandardMaterial;
   // glass is nearly clear: blended in linear light a few percent of a pale tint fogs the dark room behind it; its
@@ -452,7 +459,8 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   if (high) {
     composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
     composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.35, 2.2));
+    // only light sources bloom (the cans glow at 6): a lit surface under a can, like white keys, stays crisp
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.18, 0.35, 4));
     composer.addPass(new OutputPass());
     film = new ShaderPass({
       uniforms: { tDiffuse: { value: null }, t: { value: 0 } },

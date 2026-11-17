@@ -2,7 +2,7 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cans, metreUV, pickQuality, type Quality } from "../src/studio/look.ts";
+import { cans, metreUV, pickQuality, surface, useKit, type Quality } from "../src/studio/look.ts";
 
 test("the link picks the quality, then what this browser chose last, else high unless it's a phone", () => {
   const cases: [string, string | null, boolean, Quality][] = [
@@ -36,4 +36,16 @@ test("the downlights sit a metre off the walls of a small room, so they wash the
   const [hx, , hn] = offWall(26, 32); // the scoring hall: three across, each in the middle of its third
   expect(hx).toBeCloseTo(26 / 6); expect(hn).toBe(9);
   expect(cans(2.4, 2.4)).toEqual([[0, 0]]); // a booth: one can, in the middle
+});
+
+test("gear surfaces come from the photo-texture kit once it's set, and the room's own surfaces stay as they were", () => {
+  const asked: string[] = [];
+  useKit((name, color) => {
+    asked.push(`${name} ${color}`);
+    return name === "tolex" ? new THREE.MeshStandardMaterial({ name: "kit-tolex" }) : null;
+  });
+  expect(surface("tolex", "#1a1a1b").name).toBe("kit-tolex");
+  expect(surface("tolex", "#1a1a1b")).toBe(surface("tolex", "#1a1a1b")); // one material per colour, asked for once
+  expect(surface("rubber", "#1a1a1b").name).toBe("rubber"); // the kit hasn't got it: look.ts makes its own
+  expect(asked).toEqual(["tolex #1a1a1b", "rubber #1a1a1b"]);
 });

@@ -37,7 +37,8 @@ import { isMuted, leaders, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
-import { dress, loadQuality, metreUV, saveQuality, surface, type Quality } from "./look.ts";
+import { dress, loadQuality, metreUV, saveQuality, surface, useKit, type Quality } from "./look.ts";
+import { gearKit } from "./gear-kit.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -126,40 +127,136 @@ function thing(s: Spot): THREE.Group {
   inFront.position.set(b.cx, 0, b.cz); inFront.rotation.y = b.turn;
   g.add(inFront);
   const put = (o: THREE.Object3D, x: number, y: number, z: number) => { o.position.set(x, y, z); inFront.add(o); return o; };
+  // what the gear is made of comes from the photo-texture kit through look.ts (tolex, grille cloth, painted steel,
+  // brushed metal, textured plastic, rubber); boxes get UVs in metres so the grain comes out its real size
+  const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, to: THREE.Object3D = inFront) => {
+    const o = new THREE.Mesh(metreUV(new THREE.BoxGeometry(w, h, d)), mat);
+    o.position.set(x, y, z); to.add(o); return o;
+  };
+  // many of one small part (keys, knobs, faders) in one draw call
+  const many = (geo: THREE.BufferGeometry, mat: THREE.Material, at: [number, number, number][], to: THREE.Object3D = inFront, colors?: string[]) => {
+    const o = new THREE.InstancedMesh(geo, mat, at.length), p = new THREE.Matrix4();
+    at.forEach(([x, y, z], i) => { o.setMatrixAt(i, p.makeTranslation(x, y, z)); if (colors) o.setColorAt(i, new THREE.Color(colors[i % colors.length])); });
+    to.add(o); return o;
+  };
+  const tube = (r: number, a: THREE.Vector3, z: THREE.Vector3, mat: THREE.Material, to: THREE.Object3D = inFront) => {
+    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(z), 10), mat);
+    o.position.copy(a).add(z).multiplyScalar(0.5);
+    o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), z.clone().sub(a).normalize());
+    to.add(o); return o;
+  };
+  const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const blackSteel = surface("steel", "#1b1c1f"), metal = surface("metal", "#b9bcc0"), knob = surface("plastic", "#121314");
   if (s.kind === "drums") {
-    const shell = std(t.color, { roughness: 0.4 }), head = std("#ece6d8");
+    // lacquered shells under a clear coat, coated heads, chrome hoops, brass cymbals on stands
+    const shell = new THREE.MeshPhysicalMaterial({ color: t.color, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
+    const head = std("#e2ddd0", { roughness: 0.75 }), hoop = surface("chrome", "#d8dadc");
     // laid out from the stool (+z here): the kick out past the drummer's feet, the snare over their left knee, the
     // floor tom by their right, two toms over the kick and the cymbals up either side, every head tipped toward them
-    put(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 20), shell), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
-    for (const [x, y, z, r, tip] of [[-0.3, 0.62, 0.3, 0.17, 0.12], [0.5, 0.5, 0.25, 0.2, 0], [-0.17, 0.82, -0.05, 0.12, 0.35], [0.17, 0.82, -0.05, 0.12, 0.35]])
-      put(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.16, 18), head), x, y, z).rotation.x = tip;
-    for (const [x, z] of [[-0.62, 0.05], [0.68, -0.15]]) put(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.01, 20), std("#d8b04a", { metalness: 0.7, roughness: 0.3 })), x, 1.08, z).rotation.x = 0.2;
-  } else if (s.kind === "keys") {
-    put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.12, t.d), m), 0, t.h - 0.06, 0);
-    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
-    const white = std("#f4f1ea", { roughness: 0.5 }), black = std("#16191c", { roughness: 0.4 });
-    const n = 29, kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
-    for (let i = 0; i < n; i++) {
-      put(new THREE.Mesh(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white), x0 + i * kw, t.h + 0.011, z);
-      if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) put(new THREE.Mesh(new THREE.BoxGeometry(kw * 0.58, 0.02, t.d * 0.3), black), x0 + (i + 0.5) * kw, t.h + 0.032, z - t.d * 0.1);
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 28), shell), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.255, 0.41, 28, 1, true), head), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
+    for (const z of [-0.4, 0]) put(new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.012, 6, 28), hoop), 0, 0.27, z - 0.2);
+    for (const [x, y, z, r, tip] of [[-0.3, 0.62, 0.3, 0.17, 0.12], [0.5, 0.5, 0.25, 0.2, 0], [-0.17, 0.82, -0.05, 0.12, 0.35], [0.17, 0.82, -0.05, 0.12, 0.35]] as const) {
+      const drum = put(new THREE.Group(), x, y, z);
+      drum.rotation.x = tip;
+      const face = new THREE.Mesh(new THREE.CircleGeometry(r * 0.98, 24).rotateX(-Math.PI / 2), head), ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.004, 0.008, 6, 24).rotateX(Math.PI / 2), hoop);
+      face.position.y = 0.081; ring.position.y = 0.08;
+      drum.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.16, 24), shell), face, ring);
+      if (y < 0.7) tube(0.012, v(0, -0.08, 0), v(0, -y, 0), metal, drum); // the floor tom's and snare's legs
     }
-    for (const x of [-t.w / 2 + 0.08, t.w / 2 - 0.08]) put(new THREE.Mesh(new THREE.BoxGeometry(0.05, t.h - 0.12, 0.05), m), x, (t.h - 0.12) / 2, 0);
+    const brass = std("#c39a46", { metalness: 1, roughness: 0.32 });
+    for (const [x, z] of [[-0.62, 0.05], [0.68, -0.15]]) {
+      put(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.23, 0.02, 32), brass), x, 1.08, z).rotation.x = 0.2;
+      tube(0.011, v(x, 0.02, z), v(x, 1.06, z), metal);
+      for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2; tube(0.009, v(x, 0.3, z), v(x + Math.cos(a) * 0.25, 0.01, z + Math.sin(a) * 0.25), metal); }
+    }
+  } else if (s.kind === "keys") {
+    // a stage synth: a textured plastic case with walnut cheeks, a sloped steel panel of knobs and a small screen
+    // behind the keys, on a black steel X stand
+    const top = t.h;
+    box(t.w - 0.08, 0.1, t.d, surface("plastic", t.color), 0, top - 0.05, 0);
+    for (const x of [-t.w / 2 + 0.02, t.w / 2 - 0.02]) box(0.04, 0.13, t.d, surface("ply", "#5b3a24"), x, top - 0.035, 0);
+    const panel = box(t.w - 0.08, 0.02, t.d * 0.36, surface("steel", "#26282c"), 0, top + 0.02, -t.d * 0.3);
+    panel.rotation.x = 0.18;
+    const knobs: [number, number, number][] = [];
+    for (let i = 0; i < 14; i++) knobs.push([-t.w / 2 + 0.22 + i * 0.065, 0.02, (i % 2 ? 0.03 : -0.03)]);
+    many(new THREE.CylinderGeometry(0.012, 0.013, 0.022, 14), knob, knobs, panel);
+    const screen = box(0.16, 0.004, 0.05, surface("screen", "#7ab8d8"), t.w / 2 - 0.22, 0.012, 0, panel);
+    screen.userData.glow = 1;
+    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
+    const white = std("#e2ddd0", { roughness: 0.45 }), black = std("#0a0a0b", { roughness: 0.38, envMapIntensity: 0.4 });
+    const n = 29, kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18, whites: [number, number, number][] = [], blacks: [number, number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      whites.push([x0 + i * kw, top + 0.011, z]);
+      if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) blacks.push([x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
+    }
+    many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites);
+    many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
+    const legH = top - 0.1;
+    for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
+    for (const x of [-0.42, 0.42]) for (const y of [0.02, legH]) tube(0.018, v(x, y, -0.22), v(x, y, 0.22), blackSteel);
   } else if (s.kind === "booth") {
-    put(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, t.h, 8), m), 0, t.h / 2, 0);
-    put(new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.1, 6, 12), std("#16191c")), 0, t.h + 0.05, 0);
+    tube(0.012, v(0, 0.03, 0), v(0, t.h, 0), blackSteel);
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);
+    put(new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.09, 6, 16), surface("metal", "#8e9298")), 0, t.h + 0.07, 0);
+    put(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 20), blackSteel), 0, t.h + 0.04, 0).rotation.x = Math.PI / 2;
+  } else if (s.kind === "bass") {
+    // a 2x12 cab in black tolex with a grille cloth front and metal corners, an amp head on top: brushed
+    // faceplate, a row of black knobs, a red jewel light
+    const cabH = t.h * 0.7, headH = t.h - cabH, front = -t.d / 2;
+    box(t.w, cabH, t.d, surface("tolex", "#1a1a1a"), 0, cabH / 2, 0);
+    box(t.w - 0.07, cabH - 0.07, 0.006, surface("cloth", "#5a5444"), 0, cabH / 2, front - 0.002);
+    for (const x of [-1, 1]) for (const y of [0.025, cabH - 0.025]) box(0.05, 0.05, 0.05, metal, x * (t.w / 2 - 0.02), y, front + 0.022);
+    box(t.w * 0.96, headH - 0.01, t.d * 0.8, surface("tolex", "#1a1a1a"), 0, cabH + headH / 2, 0);
+    const face = box(t.w * 0.96 - 0.04, headH * 0.55, 0.004, surface("metal", "#c9c6bd"), 0, cabH + headH / 2, -t.d * 0.4 - 0.002);
+    const caps: [number, number, number][] = [];
+    for (let i = 0; i < 8; i++) caps.push([-t.w * 0.38 + i * t.w * 0.09, 0, -0.012]);
+    many(new THREE.CylinderGeometry(0.014, 0.015, 0.02, 14).rotateX(Math.PI / 2), knob, caps, face);
+    const jewel = box(0.018, 0.018, 0.01, surface("screen", "#ff3a2a"), t.w * 0.4, 0, -0.006, face);
+    jewel.userData.glow = 1;
+    box(0.2, 0.025, 0.035, surface("rubber", "#151515"), 0, t.h + 0.012, 0);
+  } else if (s.kind === "desk") {
+    // a mixing console: a steel body, a sloped work surface of channel strips (knobs with coloured caps, a fader
+    // in a slot each), a lit meter bridge behind and a padded armrest in front, where the engineer sits (+z)
+    const bodyH = t.h - 0.1;
+    box(t.w, bodyH, t.d * 0.9, surface("steel", t.color), 0, bodyH / 2, -t.d * 0.05);
+    const deck = new THREE.Group();
+    deck.position.set(0, t.h - 0.06, 0); deck.rotation.x = 0.14;
+    inFront.add(deck);
+    box(t.w, 0.03, t.d * 0.8, surface("steel", "#34363b"), 0, 0, -0.02, deck);
+    const ch = Math.floor((t.w - 0.24) / 0.1), x0 = -(ch - 1) * 0.05, knobs: [number, number, number][] = [], slots: [number, number, number][] = [], faders: [number, number, number][] = [], leds: [number, number, number][] = [];
+    for (let c = 0; c < ch; c++) {
+      const x = x0 + c * 0.1;
+      for (let r = 0; r < 6; r++) knobs.push([x, 0.026, -t.d * 0.36 + r * 0.045]);
+      slots.push([x, 0.016, t.d * 0.2]);
+      faders.push([x, 0.03, t.d * 0.2 + ((c * 37) % 9) * 0.008 - 0.03]);
+      for (let k = 0; k < 6; k++) leds.push([x, 0.07 + k * 0.016, -t.d * 0.42 + 0.033]);
+    }
+    many(new THREE.CylinderGeometry(0.012, 0.014, 0.022, 14), knob, knobs, deck);
+    many(new THREE.CylinderGeometry(0.007, 0.007, 0.004, 10).translate(0, 0.012, 0), std("#ffffff", { roughness: 0.5 }), knobs, deck, ["#c8c4b8", "#b8402e", "#c8c4b8", "#3a6ab0", "#3a6ab0", "#d8a83a"]);
+    many(new THREE.BoxGeometry(0.008, 0.002, 0.11), std("#050505"), slots, deck);
+    many(new THREE.BoxGeometry(0.024, 0.02, 0.016), surface("plastic", "#cfcfcc"), faders, deck);
+    box(t.w, 0.2, 0.06, surface("steel", "#2a2c30"), 0, 0.1, -t.d * 0.42, deck);
+    many(new THREE.BoxGeometry(0.03, 0.01, 0.004), surface("screen", "#5ad06a"), leds, deck).userData.glow = 0.6;
+    box(t.w, 0.05, 0.09, surface("tolex", "#1d1b19"), 0, t.h - 0.025, t.d / 2 - 0.045);
   } else {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, t.d), m), 0, t.h / 2, 0);
-    if (s.kind === "desk") for (let i = 0; i < 12; i++) put(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.12), std("#c8a46a")), -t.w / 2 + 0.3 + i * 0.16, t.h + 0.015, 0.1);
-    if (s.kind === "bass") put(new THREE.Mesh(new THREE.CircleGeometry(t.w * 0.32, 20), std("#16191c")), 0, t.h * 0.45, -t.d / 2 - 0.001).rotation.y = Math.PI;
     if (s.kind === "couch") put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.5, 0.2), m), 0, t.h + 0.25, t.d / 2 - 0.1);
   }
   if (s.kind !== "couch" && s.kind !== "booth") {
-    // the seat: a stool, or the desk's chair
-    at(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.06, 16), std("#2e3439")), s.at[0], 0.45, s.at[1]);
-    at(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), std("#8a8f94", { metalness: 0.6 })), s.at[0], 0.225, s.at[1]);
+    // the seat: a stool in black vinyl on a metal post, a foot ring and three feet
+    at(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.16, 0.07, 24), surface("tolex", "#141414")), s.at[0], 0.46, s.at[1]);
+    at(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.43, 10), metal), s.at[0], 0.215, s.at[1]);
+    at(new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.009, 6, 24), metal), s.at[0], 0.22, s.at[1]).rotation.x = Math.PI / 2;
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2 + 0.3, foot = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.24), blackSteel);
+      foot.rotation.y = a;
+      at(foot, s.at[0] + Math.sin(a) * 0.12, 0.012, s.at[1] + Math.cos(a) * 0.12);
+    }
   }
   return g;
 }
+useKit(gearKit(loadQuality()));
 buildRoom();
 const picture = dress(renderer, scene, camera, def, loadQuality());
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
@@ -495,7 +592,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
