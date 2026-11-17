@@ -135,6 +135,8 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 .stick .knob { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: var(--spot); opacity: .8; }
 .touch-pad { position: absolute; right: 10px; display: grid; grid-template-columns: repeat(4, 3rem); gap: 6px; pointer-events: auto; }
 .touch-pad.hands { bottom: 48px; }
+/* Look at your arms, on a phone: a hold button under the settings gear, clear of both pads. */
+#arms.touch { position: absolute; top: 100px; right: 10px; width: 3rem; height: 3rem; min-height: 44px; padding: 0; pointer-events: auto; }
 .touch-pad.venue { bottom: calc(48px + 2 * 3rem + 18px); grid-template-columns: repeat(5, 2.75rem); }
 .touch-pad button { height: 3rem; min-height: 44px; padding: 0 !important; font: 700 1rem var(--pen) !important; color: var(--chalk) !important; background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), rgba(34, 33, 37, .88) !important; border: 0 !important; border-radius: 2px !important; touch-action: none; user-select: none; -webkit-user-select: none; }
 .touch-pad.venue button { height: 2.75rem; font-size: .95rem !important; }
