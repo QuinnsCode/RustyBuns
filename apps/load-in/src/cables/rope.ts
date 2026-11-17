@@ -11,7 +11,12 @@ export type Vec = { x: number; y: number; z: number };
 /** A box the rope lies on: centre on the floor, turn, and size. */
 export type Solid = { x: number; z: number; y: number; rot: number; w: number; h: number; d: number };
 
-export interface Rope { pts: Vec[]; prev: Vec[]; lengthM: number }
+/**
+ * `feel` is the cable's weight on the floor (cables/roll.ts sets it from kg per metre): `grip` is how much of its
+ * speed a point lying down keeps each tick (a feeder stops dead, a mic cable slithers), `stick` the speed in m/s a
+ * lying point has to be pulled at before it moves at all, and `thick` the cable's radius. Without it: the thin rope.
+ */
+export interface Rope { pts: Vec[]; prev: Vec[]; lengthM: number; feel?: { grip: number; stick: number; thick: number } }
 
 /** A rope of `lengthM`, every point at `at` (a coil in a case). */
 export function newRope(lengthM: number, at: Vec): Rope {
@@ -22,7 +27,7 @@ export function newRope(lengthM: number, at: Vec): Rope {
 const seg = (r: Rope) => r.lengthM / (r.pts.length - 1);
 
 /** Lift a point out of a box onto its top, or out of its nearest side if it's below the top by more than a step. */
-function lieOn(p: Vec, s: Solid) {
+function lieOn(p: Vec, s: Solid, THICK: number) {
   const top = s.y + s.h + THICK;
   if (p.y >= top || p.y < s.y - 0.01) return;
   const c = Math.cos(s.rot), sn = Math.sin(s.rot), dx = p.x - s.x, dz = p.z - s.z;
@@ -41,11 +46,12 @@ function lieOn(p: Vec, s: Solid) {
  * (index 0 and the last), each at a fixed place; an unpinned end lies loose.
  */
 export function stepRope(r: Rope, dt: number, pins: { a?: Vec; b?: Vec }, solids: readonly Solid[]) {
-  const { pts, prev } = r, n = pts.length, L = seg(r);
+  const { pts, prev } = r, n = pts.length, L = seg(r), f = r.feel, th = f?.thick ?? THICK;
   for (let i = 0; i < n; i++) {
     const p = pts[i]!, q = prev[i]!;
-    const onFloor = p.y <= THICK + 1e-3;
-    const k = onFloor ? FLOOR_GRIP : 0.98;
+    // A weighted cable also grips whatever it lies on (a riser's deck), not only the floor.
+    const onFloor = p.y <= th + 1e-3 || (f !== undefined && Math.abs(p.y - q.y) < 1e-5);
+    const k = onFloor ? f?.grip ?? FLOOR_GRIP : 0.98;
     const vx = (p.x - q.x) * k, vy = (p.y - q.y) * 0.98, vz = (p.z - q.z) * k;
     q.x = p.x; q.y = p.y; q.z = p.z;
     p.x += vx; p.y += vy - GRAVITY * dt * dt; p.z += vz;
@@ -65,9 +71,14 @@ export function stepRope(r: Rope, dt: number, pins: { a?: Vec; b?: Vec }, solids
       q.x -= dx * k * pb; q.y -= dy * k * pb; q.z -= dz * k * pb;
     }
     for (const p of pts) {
-      if (p.y < THICK) p.y = THICK;
-      for (const s of solids) lieOn(p, s);
+      if (p.y < th) p.y = th;
+      for (const s of solids) lieOn(p, s, th);
     }
+  }
+  // Static friction: a lying point the pull didn't move fast enough stays where it lay.
+  if (f?.stick) for (let i = 0; i < n; i++) {
+    const p = pts[i]!, q = prev[i]!;
+    if (Math.abs(p.y - q.y) < 1e-4 && Math.hypot(p.x - q.x, p.z - q.z) < f.stick * dt) { p.x = q.x; p.z = q.z; }
   }
   if (pins.a) Object.assign(pts[0]!, pins.a);
   if (pins.b) Object.assign(pts[n - 1]!, pins.b);
