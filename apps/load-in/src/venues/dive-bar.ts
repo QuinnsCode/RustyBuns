@@ -6,7 +6,7 @@ import { clamp } from "@rustybuns/util";
 import { type Area, type Band, type CrowdField, type Grid, type Source, coverage, coverageThrough, gear as catalog, source } from "@rustybuns/gear";
 import { REACH, type Item, type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
-import { type CrowdSpot, crowdOf, expected, regions, roomWith } from "../crowd/crowd.ts";
+import { type CrowdSpot, comingTonight, crowdOf, expected, regions, roomWith } from "../crowd/crowd.ts";
 
 export type Zone = { x0: number; x1: number; z0: number; z1: number };
 
@@ -198,7 +198,7 @@ export const CROWD: CrowdSpot = {
 };
 
 /** The crowd the room is set for: the one that came in, else the one expected at doors. */
-const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD);
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD, comingTonight(w, CROWD));
 
 /** Mids and highs over the floor with the room full: each top heard through the bodies in its way, at 2 kHz (where the voice and the snare live). */
 export const heatFull = (w: World, field: CrowdField = crowdField(w)): Grid => coverageThrough(sources(w), field, FLOOR, 2000);
@@ -215,8 +215,8 @@ export function crowdState(w: World, s = scores(w)) {
   const level = (g: Grid) => (z: Zone) => r1(mean(cellsIn(g, z)));
   const people = c ? c.people : 0;
   return {
-    in: !!c, count: people, expected: CROWD.capacity,
-    empty: roomWith(CROWD, 0), full: roomWith(CROWD, c?.people ?? CROWD.capacity),
+    in: !!c, count: people, expected: comingTonight(w, CROWD),
+    empty: roomWith(CROWD, 0), full: roomWith(CROWD, c?.people ?? comingTonight(w, CROWD)),
     regions: c ? regions(c, (z) => ({ soundcheck: level(s.empty)(z), full: level(s.fullGrid)(z) }), TARGET, WINDOW) : [],
   };
 }

@@ -22,7 +22,12 @@ export type CrowdSpot = {
 
 export type Crowd = { spot: CrowdSpot; people: number; field: CrowdField; since: number };
 
-const crowds = new WeakMap<World, Crowd>();
+const crowds = new WeakMap<World, Crowd>(), tonights = new WeakMap<World, number>();
+
+/** Tonight's crowd on this floor: what the tour said (`tour.ts` `crowd`: the house plus your following), else a full floor. */
+export const comingTonight = (w: World, spot: CrowdSpot) => tonights.get(w) ?? spot.capacity;
+/** The tour says how many are coming tonight. */
+export const expectTonight = (w: World, people: number) => void tonights.set(w, Math.max(0, Math.round(people)));
 
 /** The crowd in the room, or null before the doors open. */
 export const crowdOf = (w: World): Crowd | null => crowds.get(w) ?? null;
@@ -32,8 +37,8 @@ export function expected(spot: CrowdSpot, people = spot.capacity): CrowdField {
   return fillFloor(spot.floor, people, spot.stageZ);
 }
 
-/** Doors open: `people` (the tour's following, else the room's capacity) walk in and take the floor; you walk slower through them. */
-export function letIn(w: World, spot: CrowdSpot, people = spot.capacity): Crowd {
+/** Doors open: `people` (tonight's crowd unless given) walk in and take the floor; you walk slower through them. */
+export function letIn(w: World, spot: CrowdSpot, people = comingTonight(w, spot)): Crowd {
   const field = expected(spot, people), c = { spot, people: Math.round(headcount(field)), field, since: w.t };
   crowds.set(w, c);
   w.underfoot = (x, z) => walkShare(densityAt(field, x, z));

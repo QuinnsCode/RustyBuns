@@ -6,7 +6,7 @@
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown, type World, walkTo } from "../src/sim.ts";
 import { CROWD, DIVE_BAR, PASS, aim, crowdState, master, raise, scores, settle } from "../src/venues/dive-bar.ts";
-import { letIn } from "../src/crowd/crowd.ts";
+import { expectTonight, letIn } from "../src/crowd/crowd.ts";
 import { hear, switchedOnIsFed } from "../src/audio/hear.ts";
 
 const DEG = Math.PI / 180;
@@ -44,6 +44,11 @@ test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and wi
   // Where the back of the crowd will stand: the tops' highs as they reach you, empty.
   walkTo(w, 0.5, 8);
   const emptyBack = hear(w, new Set(["top-l", "top-r", "sub"]), switchedOnIsFed);
+
+  // On tour, the floor holds what the tour says is coming (an early night: forty), not the full ninety.
+  const early = newWorld(DIVE_BAR);
+  expectTonight(early, 40);
+  expect(letIn(early, CROWD).people).toBe(40);
 
   // Doors: ninety in, packed at the stage. The room tightens (Sabine) and the crowd is loud on its own.
   letIn(w, CROWD);
