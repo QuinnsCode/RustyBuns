@@ -11,6 +11,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { memWatch, type MemStats } from "@rustybuns/shell-bun/memwatch";
 import { history, type History } from "@rustybuns/shell-bun/history";
+import { reaperStats, type ReaperStats } from "./reaper.ts";
 
 export const PTY_MEM_FILE = "pty-host-mem.json";
 
@@ -37,6 +38,8 @@ export interface OfficeMem {
   office: MemStats;
   /** Each floor's pty host, null before its first sample. */
   ptyHosts: { floor: string; mem: PtyHostMem | null }[];
+  /** The swap gauge and what the reaper ended (live/reaper.ts, #4905). */
+  reaper: ReaperStats;
 }
 
 /** Start the office's watch (once) and return what /__rb/mem serves. */
@@ -53,6 +56,7 @@ export function officeMem(dataDir: string, floors: () => Iterable<{ id: string; 
   return () => ({
     office: watch.stats(),
     ptyHosts: [...floors()].map((f) => ({ floor: f.id, mem: readPtyHostMem(path.join(f.dir, ".agent-office")) })),
+    reaper: reaperStats(),
   });
 }
 

@@ -140,9 +140,10 @@ async function prepare(tag: string) {
 
   // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone, and the
   // node_modules of every worktree no worker sits at (one kept for work git can't see on main still had 3-5 GB of them)
-  prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\n");
+  // #4905: and first, everything still running in its worktree (its claude, the dev servers and watchers it started) ends
+  prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\nimport { endIn as __rbEndIn } from '../rb-reaper.js';\n");
   patch("workers/manager.js", "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos);\n",
-    "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
+    "        return __rbEndIn(w.info.worktree?.path ? path.join(this.trees.dir, w.info.worktree.path) : '').then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos)).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
@@ -156,11 +157,13 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage, watchStalls as __rbWatchStalls } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage, startReaper as __rbReaper, watchStalls as __rbWatchStalls } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
     "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n" +
     // #4306: a worker whose turn hung, or that a notice stopped owing work, is told to carry on; other sessions are a toast
     "    if (process.env.AGENT_OFFICE_STALL_WATCH !== 'off')\n        __rbWatchStalls(() => ctx.floors.values(), (f, m) => { for (const fl of f ? [f] : ctx.floors.values()) ctx.toastFloor(fl, m, 'warn'); });\n" +
+    // #4905: every 5 minutes, processes of worktrees nobody sits at end, and swap over 80% is said on the floor
+    "    if (process.env.AGENT_OFFICE_REAPER !== 'off')\n        __rbReaper(() => ctx.floors.values(), (m) => { for (const fl of ctx.floors.values()) ctx.toastFloor(fl, m, 'warn'); });\n" +
     "    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
   patch("http/router.js", "            for (const route of signedIn)\n",
     "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbBuilderRoute(req.method, url) ?? await __rbConnectRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
@@ -384,7 +387,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {

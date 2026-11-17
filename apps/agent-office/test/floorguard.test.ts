@@ -37,11 +37,14 @@ beforePinned(async () => {
 // unset keeps home to people; most tests here send workers home as an agent, so they opt out
 beforeEach(() => {
   process.env.AGENT_OFFICE_PEOPLE_ONLY = "";
+  // this Mac's own swap mustn't hold the hires here (#4905)
+  process.env.AGENT_OFFICE_SWAP_HOLD = "off";
   // every send-home is logged (#2201): into a temp folder, not the app's sandbox/
   process.env.OFFICE_BOX_DIR = mkdtempSync(path.join(tmpdir(), "rb-box-"));
 });
 afterEach(() => {
   delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
+  delete process.env.AGENT_OFFICE_SWAP_HOLD;
   delete process.env.AGENT_OFFICE_ASK_FIRST;
   delete process.env.OFFICE_BOX_DIR;
 });

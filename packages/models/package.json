@@ -14,7 +14,7 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "description": "three.js models apps share (the rocket roadster; shrubs and cacti; Load In's sound gear; the Qollab Studio character) and the shapes and GLB writer model scripts build with. Plain TS on three; each app brings its own materials.",
+  "description": "three.js models apps share (the rocket roadster; shrubs and cacti; Load In's sound gear; Qollab Studio's keyboard synths and its character) and the shapes and GLB writer model scripts build with. Plain TS on three; each app brings its own materials.",
   "shelf": { "name": "Models", "picture": "skate-tech-park" },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -24,6 +24,7 @@
     "./catalog": "./src/catalog.ts",
     "./scenery": "./src/scenery.ts",
     "./gear": "./src/gear.ts",
+    "./synth": "./src/synth.ts",
     "./character": "./src/character.ts"
   },
   "dependencies": {

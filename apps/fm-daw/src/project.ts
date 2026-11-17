@@ -5,6 +5,7 @@ import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str,
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
+import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { RUNG, type Rung } from "./rewind.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
@@ -38,8 +39,9 @@ export interface TrackDoc {
  * eq: Shape, the master EQ before it: a slot per band, null when empty (src/engine/eq.ts).
  * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
  * eqLinear: Shape in linear phase (src/engine/linear.ts), only there when on.
+ * instruments: the ones made in the jam room (src/studio/made.ts), each a seat at its track; only there when there are some.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -53,6 +55,8 @@ export type Op =
   | { t: "eqPhase"; linear: boolean }
   /** A recorded take onto a track (its chunks went first), or null to take it off. */
   | { t: "take"; track: number; take: TakeRef | null }
+  /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
+  | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
@@ -145,7 +149,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw, eqLinear: bool(false) });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -155,7 +159,14 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])) };
+}
+
+/** instruments only when there are some, so a groove nobody made one in reads as it did, one per track. */
+function madeOf(list: Instrument[]): { instruments?: Instrument[] } {
+  const seen = new Set<number>(), ids = new Set<string>();
+  const kept = list.filter((x) => !seen.has(x.track) && !ids.has(x.id) && (seen.add(x.track), ids.add(x.id), true));
+  return kept.length ? { instruments: kept } : {};
 }
 
 /** A take only on a beat inside the loop, and no more than MAX_TAKES of them, first tracks first. */
@@ -190,6 +201,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("take"), track: TRACK, take: nul(takeRef(MAX_BARS * BEATS_PER_BAR)) }),
+  obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -332,6 +344,13 @@ export function apply(p: Project, op: Op): Project {
       if (op.take && op.take.beat >= loopBeats(p)) return p;
       if (op.take && p.tracks.filter((t, i) => t.take && i !== op.track).length >= MAX_TAKES) return p;
       return withTrack(p, op.track, (t) => { const { take: _, ...rest } = t; return op.take ? { ...rest, take: op.take } : rest; });
+    }
+    case "instrument": {
+      const { inst } = op;
+      const was = (p.instruments ?? []).filter((x) => x.id !== inst.id && x.track !== inst.track);
+      const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}) }));
+      // the oldest goes when the room is full
+      return { ...next, ...madeOf([...was, inst].slice(-MAX_MADE)) };
     }
     case "replace":
       return sanitize(op.project) ?? p;
