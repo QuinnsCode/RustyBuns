@@ -58,7 +58,7 @@ export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights, sh
 
   function paint() {
     const got = earned(nights()), all = Object.keys(FLASH).length;
-    el("ink-earned").textContent = got.length ? `${got.length} of ${all} earned on tour. Next: pass a new rung.` : `Pass a gig to earn your first. ${all} to collect.`;
+    el("ink-earned").textContent = got.length === all ? `All ${all} earned: a full tour on your arms.` : got.length ? `${got.length} of ${all} earned on tour. Next: pass a new rung.` : `Pass a gig to earn your first. ${all} to collect.`;
     arm.value = look.arm; at.value = String(look.at); size.value = String(look.size);
     el<HTMLElement>("ink-off").hidden = !look.own;
     const worn = look.shoes ?? "black";
