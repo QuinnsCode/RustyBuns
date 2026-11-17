@@ -6,7 +6,7 @@ import { connectSocket, SEAT_CLOSE, seatClosed, type Link } from "@rustybuns/uti
 import type { World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
 import { readServer, type Sent, type ServerMsg } from "./room.ts";
-import { hear, outbox, poseOf, synced } from "./sync.ts";
+import { hear, outbox, poseOf, synced, type Booth } from "./sync.ts";
 import { who } from "../eqosys.ts";
 
 const SEND_MS = 50;
@@ -15,7 +15,7 @@ export const roomCode = (search: string) => (new URLSearchParams(search).get("ro
 
 export interface Online { readonly room: string; status: "joining" | "in" | "off"; note: string; tick(w: World, now: number): void; close(): void }
 
-export function joinCrew(room: string, level: string, world: () => World, cables: () => Cables, onChange: () => void, switches?: () => Set<string>): Online {
+export function joinCrew(room: string, level: string, world: () => World, cables: () => Cables, onChange: () => void, switches?: () => Set<string>, booth?: () => Booth | null): Online {
   const s = synced();
   // A signed-in player goes by their eqosys token, a guest by an id this tab keeps (two tabs, two roadies).
   const url = () => {
@@ -27,7 +27,7 @@ export function joinCrew(room: string, level: string, world: () => World, cables
     room, status: "joining", note: "",
     tick(w, now) {
       if (!link.open) return;
-      for (const m of outbox(w, s, cables(), switches?.())) link.send(m);
+      for (const m of outbox(w, s, cables(), switches?.(), booth?.())) link.send(m);
       if (now - sentAt >= SEND_MS) { sentAt = now; link.send(poseOf(w)); }
     },
     close: () => link.close(1000),
@@ -35,9 +35,12 @@ export function joinCrew(room: string, level: string, world: () => World, cables
   const link: Link<Sent> = connectSocket<ServerMsg, Sent>(url, {
     decode: readServer,
     onOpen: () => { on.status = "in"; on.note = ""; s.held = null; onChange(); },
-    onMessage: (m) => { hear(world(), s, m, cables(), switches?.()); if (m.t === "refused") { on.note = m.why; } onChange(); },
+    onMessage: (m) => { hear(world(), s, m, cables(), switches?.(), booth?.()); if (m.t === "refused") { on.note = m.why; } onChange(); },
     onClose: (e) => {
       world().crew = [];
+      const b = booth?.();
+      if (b) Object.assign(b, { room: false, dj: null, want: false });
+      s.djWant = false;
       on.note = seatClosed(e.code) ?? (e.seen ? "Lost the crew room; trying again." : `No crew room ${room} here; playing alone.`);
       on.status = e.code === SEAT_CLOSE.replaced || !e.seen ? "off" : "joining";
       onChange();

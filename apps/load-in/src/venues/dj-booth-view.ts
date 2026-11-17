@@ -3,6 +3,7 @@
 // the decks as the sound source (audio/decks.ts) through the speakers you wired. main.ts calls `djBoothView` once per
 // world, `key` for a key, `tick(dt)` each frame, and hands `audio` to the sound system.
 import * as THREE from "three";
+import type { Booth } from "../crew/sync.ts";
 import { esc } from "@rustybuns/util";
 import { gearParts } from "@rustybuns/models/gear";
 import { type BoothJudged, boothOf, judgeBoothCables } from "./dj-booth.ts";
@@ -123,7 +124,17 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
   let last = "";
   const atBooth = () => { const y = getWorld().you; return Math.abs(y.x - b.head.x) < 1 && Math.abs(y.z - b.head.z) < 0.7; };
 
+  /** The decks as the crew room sees them: alone (no room) the decks are yours; in a room, one DJ at a time. */
+  const shared: Booth = { decks, want: false, room: false, dj: null, note: "" };
+  /** Whether your hands may move the decks: always alone; in a room, when the seat is yours or free (touching them asks for it). */
+  const mine = (): Answer => {
+    if (!shared.room || shared.dj?.me) return { ok: true };
+    if (shared.dj) return { ok: false, why: `${shared.dj.name || "someone"} is on the decks` };
+    shared.want = true;
+    return { ok: true };
+  };
   const view = {
+    shared,
     /** Hand this to the sound system: the decks' sound, made once the page's audio has started. */
     audio: (ctx: AudioContext) => (sound?.stop(), (sound = deckSound(ctx)).node),
     /** At the decks: 1 and 2 start and stop a deck, Z and X move the crossfader. */
@@ -149,6 +160,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       const lines = [
         `<b>DJ booth (${b.kind === "vinyl" ? "turntables" : "media players"})</b>`,
         deckLine(0), deckLine(1),
+        // In a crew room: who has the decks.
+        ...(shared.room ? [shared.dj?.me ? '<span class="pass">You are on the decks</span>' : shared.dj ? `${esc(shared.dj.name || "Someone")} is on the decks` : "The decks are free: touch them to take them"] : []),
         `Crossfader ${decks.cross === 0 ? "centre" : decks.cross < 0 ? `${Math.round(-decks.cross * 100)}% to A` : `${Math.round(decks.cross * 100)}% to B`}, master ${j.live ? "to the speakers" : "goes nowhere yet"}`,
         j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader</small>",
       ];
@@ -161,6 +174,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     state: () => ({
       kind: b.kind,
       decks: decks.deck.map((k, i) => ({ deck: i + 1, track: TRACKS[i]!.name, playing: k.playing, pitch: k.pitch, bpm: Math.round(bpmOf(decks, i + 1) * 10) / 10, beat: Math.round(k.beat * 10) / 10, channel: j.routing[KEYS[i]!] ?? null })),
+      /** In a crew room: who is on the decks (null when the seat is free), and whether that is you. */
+      shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
       fader: [...decks.fader], cross: decks.cross, mix: m.gain, meter: m.meter, hum: j.hum, distort: j.distort, live: j.live,
       problems: j.problems.map((p) => p.message),
     }),
@@ -169,14 +184,19 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       play: (n: number, on?: boolean): Answer => {
         const key = KEYS[n - 1];
         if (!key) return { ok: false, why: "deck 1 or 2" };
+        const seat = mine();
+        if (!seat.ok) return seat;
         j = judgeBoothCables(getWorld(), getCables());
         if (on !== false && j.dead.includes(key)) return { ok: false, why: `${key} has no power` };
         play(decks, n, on ?? !decks.deck[n - 1]!.playing);
         return { ok: true };
       },
-      fader: (ch: number, v: number) => setFader(decks, ch, v),
-      cross: (v: number) => setCross(decks, v),
-      pitch: (n: number, pct: number) => setPitch(decks, n, pct),
+      fader: (ch: number, v: number) => { if (mine().ok) setFader(decks, ch, v); },
+      cross: (v: number) => { if (mine().ok) setCross(decks, v); },
+      pitch: (n: number, pct: number) => { if (mine().ok) setPitch(decks, n, pct); },
+      /** In a crew room: ask for the DJ seat, or give it up. */
+      take: () => { shared.want = true; },
+      leave: () => { shared.want = false; },
       range: PITCH_RANGE,
     },
     dispose() {

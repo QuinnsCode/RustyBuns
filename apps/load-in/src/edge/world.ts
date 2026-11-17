@@ -41,6 +41,11 @@ export class World {
     if (m.t === "pose") this.crew.pose(who.id, m);
     else if (m.t === "drop") this.crew.drop(who.id, m);
     else if (m.t === "switch") this.crew.throw(who.id, m);
+    else if (m.t === "decks") this.crew.spin(who.id, m, Date.now());
+    else if (m.t === "dj") {
+      const got = this.crew.seat(who.id, m.take);
+      if (!got.ok) this.seats.send(ws, { t: "refused", key: "decks", why: got.why });
+    }
     else {
       const got = m.t === "end" ? this.crew.end(who.id, m) : this.crew.grab(who.id, m);
       if (!got.ok) this.seats.send(ws, { t: "refused", key: m.key, why: got.why });
@@ -64,7 +69,7 @@ export class World {
     this.dirty = false;
     for (const ws of this.seats.open()) {
       const who = this.seats.who(ws);
-      if (who) this.seats.send(ws, this.crew.view(who.id));
+      if (who) this.seats.send(ws, this.crew.view(who.id, Date.now()));
     }
   }
 }

@@ -31,13 +31,28 @@ export type EndMsg = Of<typeof EndMsg>;
 /** A switch thrown on your page: an amp, a powered speaker, a desk. The room keeps it, so the whole crew hears the same system. */
 export const SwitchMsg = obj({ t: oneOf(["switch"]), key, on: bool() });
 export type SwitchMsg = Of<typeof SwitchMsg>;
-export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg | SwitchMsg;
+/** Taking the DJ seat, or leaving it: one pair of hands on the decks at a time. */
+export const DjMsg = obj({ t: oneOf(["dj"]), take: bool() });
+export type DjMsg = Of<typeof DjMsg>;
+const deckSet = () => ({
+  deck: arr(obj({ playing: bool(), pitch: num(-8, 8), beat: num(0, 1e6) }), 2, { min: 2 }),
+  fader: arr(num(0, 1), 4, { min: 4 }), cross: num(-1, 1),
+});
+/** The decks as the DJ's page has them now: what plays, how fast, where in the track, and the mixer. */
+export const DecksMsg = obj({ t: oneOf(["decks"]), ...deckSet() });
+export type DecksMsg = Of<typeof DecksMsg>;
+/** The decks as the room keeps them: the DJ's last word, when it came on the room's clock (ms), and a count. */
+export const Spun = obj({ n: int(1, 1e9), at: num(0, 1e15), ...deckSet() });
+export type Spun = Of<typeof Spun>;
+export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg | SwitchMsg | DjMsg | DecksMsg;
 /** Whether an end says all it needs to: the jack it is in, or where it lies. */
 export const whole = (e: WireEnd) => (e.at === "plug" ? !!e.plug : e.at === "loose" ? e.x !== undefined && e.y !== undefined && e.z !== undefined : true);
 
 /** A message off the wire, or null if it isn't one. */
 export function readSent(raw: unknown): Sent | null {
-  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end", "switch"]) }), raw)?.t;
+  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end", "switch", "dj", "decks"]) }), raw)?.t;
+  if (t === "dj") return check(DjMsg, raw);
+  if (t === "decks") return check(DecksMsg, raw);
   if (t === "switch") return check(SwitchMsg, raw);
   if (t === "end") { const m = check(EndMsg, raw); return m && whole(m.to) ? m : null; }
   return t === "pose" ? check(PoseMsg, raw) : t === "grab" ? check(GrabMsg, raw) : t === "drop" ? check(DropMsg, raw) : null;
@@ -62,7 +77,9 @@ export type Wire = Of<typeof Wire>;
 export const Thrown = obj({ key, n: int(1, 1e9), on: bool() });
 export type Thrown = Of<typeof Thrown>;
 
-const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100), switches: arr(Thrown, 500) });
+const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100), switches: arr(Thrown, 500),
+  /** Who is on the decks (their id and name), the decks as last set, and the room's clock now (ms). */
+  dj: nul(str(200)), djName: str(200, { min: 0 }), decks: opt(Spun), clock: num(0, 1e15) });
 const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
 export type ServerMsg = Of<typeof ViewMsg> | Of<typeof RefusedMsg>;
 /** The room's message read on the page. */
@@ -76,6 +93,8 @@ export class Crew {
   /** Who holds each piece: one id, or two on a team carry. */
   private hands = new Map<string, string[]>();
   private switches = new Map<string, Thrown>();
+  private dj: string | null = null;
+  private spun: Spun | undefined;
   private placed = new Map<string, Placed>();
   private wires = new Map<string, Wire>();
 
@@ -95,6 +114,8 @@ export class Crew {
 
   /** Gone: whatever they held is let go of where it is (the other end, on a team carry, stays in a friend's hands). */
   leave(id: string) {
+    // The DJ walking out frees the seat; what was playing plays on.
+    if (this.dj === id) this.dj = null;
     this.mates.delete(id);
     for (const [k, ids] of this.hands) {
       const rest = ids.filter((h) => h !== id);
@@ -155,6 +176,22 @@ export class Crew {
     return { ok: true };
   }
 
+  /** Take the DJ seat or leave it. One DJ at a time: the refusal names who is on the decks. */
+  seat(id: string, take: boolean): { ok: true } | { ok: false; why: string } {
+    if (!this.mates.has(id)) return { ok: false, why: "not in the crew" };
+    if (!take) { if (this.dj === id) this.dj = null; return { ok: true }; }
+    if (this.dj && this.dj !== id) return { ok: false, why: `${this.mates.get(this.dj)?.name ?? "someone"} is on the decks` };
+    this.dj = id;
+    return { ok: true };
+  }
+
+  /** The DJ's word on the decks, kept with the room's time (`now`, ms). Ignored from anyone else. */
+  spin(id: string, m: DecksMsg, now: number): boolean {
+    if (this.dj !== id) return false;
+    this.spun = { n: (this.spun?.n ?? 0) + 1, at: now, deck: m.deck, fader: m.fader, cross: m.cross };
+    return true;
+  }
+
   /** Throw a switch: the last hand on it wins. */
   throw(id: string, m: SwitchMsg) {
     if (!this.mates.has(id)) return;
@@ -167,7 +204,8 @@ export class Crew {
   }
 
   /** The room as `id` sees it: everyone else, every piece set down so far, and every cable touched. */
-  view(id: string): Extract<ServerMsg, { t: "view" }> {
-    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()], switches: [...this.switches.values()] };
+  view(id: string, now = 0): Extract<ServerMsg, { t: "view" }> {
+    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()], switches: [...this.switches.values()],
+      dj: this.dj, djName: this.dj ? this.mates.get(this.dj)?.name ?? "" : "", decks: this.spun, clock: now };
   }
 }
