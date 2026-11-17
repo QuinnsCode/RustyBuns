@@ -56,8 +56,8 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
 .room.is-on { border-color: var(--accent); box-shadow: var(--glow); }
 .room strong { font: 600 1.05rem/1.1 var(--silk); letter-spacing: .02em; }
 .room-serial { font: .7rem var(--mono); color: var(--dim); letter-spacing: .08em; }
-.stencil { font: 700 .74rem var(--mono); letter-spacing: .16em; color: var(--red);
-  background: linear-gradient(180deg, var(--red) 0 47%, transparent 47% 55%, var(--red) 55%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.stencil { font: 800 .8rem var(--mono); letter-spacing: .12em; color: var(--red);
+  background: linear-gradient(180deg, var(--red) 0 48%, transparent 48% 53%, var(--red) 53%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 
 .stage { position: relative; min-width: 0; }
 .stage canvas { display: block; width: 100%; height: 100%; }
