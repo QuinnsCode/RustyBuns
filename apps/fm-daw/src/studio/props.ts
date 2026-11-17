@@ -107,6 +107,7 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       g.add(glow(shade, 0.6));
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 8), m("glass", "#fff1d0"));
       bulb.position.y = h - 0.16;
+      bulb.userData.lamp = true; // look.ts hangs a light in it
       g.add(glow(bulb, 1.5));
       break;
     }
