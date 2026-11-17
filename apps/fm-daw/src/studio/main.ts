@@ -1,7 +1,8 @@
 // Qollab Studio's jam room (/jam.html): walk in as your avatar, sit at an instrument and play the sesh's FM DAW track
 // for it with your computer keys or a MIDI keyboard, so everyone in the sesh hears it. Over the shoulder while you
 // walk, first person when you sit, V either way. Your body, seat and notes go on the sesh's live line; the room
-// (src/studio/rooms/) is data. ?room=<sesh> (or /jam.html opened from a sesh) is the sesh you jam in.
+// (src/studio/rooms/) is data. ?room=<sesh> (or /jam.html opened from a sesh) is the sesh you jam in; ?studio=<id> is the
+// room (?studio=yours is the one you built in /rooms.html).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "../room/studio.css";
@@ -19,13 +20,15 @@ import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, walkTo } from "./jam.ts";
 import { figure, type Figure } from "./figure.ts";
 import { thingBox, wallPieces, type Spot } from "./room.ts";
-import { ROOMS, LIVE_ROOM } from "./rooms/live.ts";
+import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
+import { yours } from "./builder.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
 
-const def = ROOMS[new URLSearchParams(location.search).get("studio") ?? ""] ?? LIVE_ROOM;
+const pick = new URLSearchParams(location.search).get("studio") ?? "";
+const def = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 const jam = newJam(def);
 const name = localMe().name || "Someone";
 function myLook(): Avatar {

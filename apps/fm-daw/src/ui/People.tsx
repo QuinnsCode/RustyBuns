@@ -1,7 +1,7 @@
 // Who's in the sesh and what each may do. A leader toggles each person's play, edit, mix and lead, answers a
 // raised hand Yes or No, and can hand the lead on. Everyone else sees their own grants and raises a hand for
 // what they don't have. The World checks every grant (src/grants.ts); this only shows them and asks.
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { nameOf, type ChatView } from "../chat.ts";
 import { CANS, leaders, may, type Can, type GrantClient, type GrantServer } from "../grants.ts";
 import type { Floor } from "../project.ts";
@@ -15,6 +15,16 @@ const TIP: Record<Can, string> = {
 
 export function People(props: { grants: GrantServer; floor: Floor; chat: ChatView; maker: boolean; onGrant(m: GrantClient): void }) {
   const [open, setOpen] = useState(false);
+  // the panel opens from the button; where the status bar wraps the button far right on a phone, slide it back on screen
+  const panel = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    el.style.left = "0px";
+    const r = el.getBoundingClientRect(), gutter = 16;
+    const over = r.right - (innerWidth - gutter);
+    if (over > 0) el.style.left = `${-Math.min(over, r.left - gutter)}px`;
+  });
   const { grants, asks, here } = props.grants;
   const you = props.chat.you ?? undefined;
   const lead = may(grants, props.floor, you, props.maker, "lead");
@@ -28,7 +38,7 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
         <Icon name="users" />{hands > 0 && lead ? <span className="people-n">{hands}</span> : null}
       </button>
       {open && (
-        <div className="people" role="dialog" aria-label="People in this sesh">
+        <div className="people" ref={panel} role="dialog" aria-label="People in this sesh">
           {here.map((id) => {
             const mine = id === you, isLead = heads.includes(id), asked = asks[id];
             return (

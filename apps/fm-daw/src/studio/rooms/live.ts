@@ -7,12 +7,15 @@ export const LIVE_ROOM: StudioDef = {
   name: "The live room",
   size: { w: 10, d: 9, h: 3.4 },
   colors: { floor: "#7a5a3e", walls: "#3c3f46", ceiling: "#24262b", trim: "#c8a46a" },
+  about: "Our own room: a wooden floor, drywall walls, an acoustic tile ceiling, absorbers on the side walls, a vocal booth lined in absorbers, and the control room behind a glass wall.",
+  materials: { floor: "floorboards", ceiling: "ceilingTile", walls: { front: "drywall", back: "drywall", left: "drywall", right: "drywall" } },
+  panels: [{ wall: "left", material: "foam", m2: 4 }, { wall: "right", material: "curtain", m2: 6 }, { wall: "back", material: "foam", m2: 8 }],
   walls: [
     // the control room's window, with its door at the right end
     { from: [-5, -1.5], to: [5, -1.5], glass: true, gaps: [[8.1, 9.1]] },
     // the vocal booth: glass toward the room, a door on its side
     { from: [-5, 2.4], to: [-2.6, 2.4], glass: true },
-    { from: [-2.6, 2.4], to: [-2.6, 4.5], gaps: [[0.9, 1.8]] },
+    { from: [-2.6, 2.4], to: [-2.6, 4.5], gaps: [[0.9, 1.8]], material: "foam" },
   ],
   spots: [
     { id: "drums", kind: "drums", label: "the kit", at: [-0.6, 0.4], yaw: 0, thing: { w: 1.6, d: 1.1, h: 0.8, ahead: 0.8, color: "#b23a2e" } },
@@ -24,6 +27,3 @@ export const LIVE_ROOM: StudioDef = {
   ],
   door: { at: [0, 3.8], yaw: 0 },
 };
-
-/** Every room, by id. */
-export const ROOMS: Record<string, StudioDef> = { [LIVE_ROOM.id]: LIVE_ROOM };
