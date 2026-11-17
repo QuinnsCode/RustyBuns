@@ -4,6 +4,7 @@
 // likeness: the same rule as the games.
 import { boothWalls } from "../builder.ts";
 import type { StudioDef } from "../room.ts";
+import { CONSOLE_ROOM } from "./console-room.ts";
 import { DESK_CONCERT } from "./desk-concert.ts";
 import { all, colors, seat } from "./kit.ts";
 import { LIVE_ROOM } from "./live.ts";
@@ -71,7 +72,7 @@ export const BARN: StudioDef = {
   door: { at: [-1, 6], yaw: 0 },
 };
 
-export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT, ORCHESTRA_ROOM];
+export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT, ORCHESTRA_ROOM, CONSOLE_ROOM];
 /** Every room, by id. */
 export const ROOMS: Record<string, StudioDef> = Object.fromEntries(ROOM_LIST.map((r) => [r.id, r]));
 export { LIVE_ROOM };
