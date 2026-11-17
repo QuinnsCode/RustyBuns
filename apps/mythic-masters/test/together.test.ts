@@ -85,9 +85,12 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
 
     // A takes a contract and reads its first sign: B is on it too, in B's own journey.
     // Land beside the campfire 386 m from the board first, as fast travel does (a jump the room vouches for), 10 m off
-    // so it does not rest us there and stop the walk.
+    // so it does not rest us there and stop the walk. The room believes a sign only from the way on from it (#4165),
+    // so A walks over to the first sign's path (67 m) and reads it there.
     const board = "mythicMasters.world.teleport(19083, 2025); await new Promise((r) => setTimeout(r, 400));";
-    await a.eval(`(async () => { ${board} mythicMasters.together.hunt("1.19074.1638", 1); })()`);
+    await a.eval(`(async () => { mythicMasters.world.peace(true); ${board} })()`);
+    await stride(a, 19147, 2005, 5);
+    await a.eval(`mythicMasters.together.hunt("1.19074.1638", 1)`);
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 1);
 
     // The server drops (a deploy, a blip): both walk on alone, then find each other again by themselves.
@@ -104,7 +107,9 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
     expect((await b.eval<Look>(look)).online.friends.map((f) => f.lead)).toEqual(["hodag"]);
     // Back in, A lands by the board, picks a bush there and reads the next sign: B's bush is bare and B is a sign
     // further on too. (A bush is told only from beside it.)
-    await back.eval(`(async () => { ${board} mythicMasters.together.pick("272,28"); mythicMasters.together.hunt("1.19074.1638", 2); })()`);
+    await back.eval(`(async () => { mythicMasters.world.peace(true); ${board} mythicMasters.together.pick("272,28"); })()`);
+    await stride(back, 19170, 2079, 5); // the second sign, 100 m off
+    await back.eval(`mythicMasters.together.hunt("1.19074.1638", 2)`);
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "272,28"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
 
@@ -123,19 +128,20 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
     await stride(b, 20002, 6206, 15);
     await until(() => b.eval<number | null>(stage), (s) => s === 0);
 
-    // One fight at one den, joined together. Both land by the campfire 377 m from the first contract's lair, and each tells
-    // the other it read the last sign, so the Rougarou waits there for both. They walk over at a pace the room believes;
-    // A walks into it, and B hears who is fighting what, and where. B walks in too: the same creature at the same level,
+    // One fight at one den, joined together. Both land by the campfire 377 m from the first contract's lair and walk over
+    // at a pace the room believes; there each tells the other it read the last sign (believed that close to the lair), so
+    // the Rougarou waits there for both. A walks into it, and B hears who is fighting what, and where. B walks in too: the same creature at the same level,
     // and the same health: A wears it down to half, and B's creature is down to half too (#4063). A's fight ends (worn
     // down, so it is quick), and B hears how it went.
     const first = "1.19074.1638", lair = { x: 19426, z: 2391.2 }, fire = { x: 19490, z: 2763 };
-    const ready = (dx: number) => `(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(${fire.x + dx}, ${fire.z}); ${settle} mythicMasters.together.hunt("${first}", 3); })()`;
+    const ready = (dx: number) => `(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(${fire.x + dx}, ${fire.z}); ${settle} })()`;
     await Promise.all([back.eval(ready(12)), b.eval(ready(-12))]);
+    // To 25 m short of the lair, then on with the wild ones awake.
+    await Promise.all([stride(back, lair.x, lair.z, 25), stride(b, lair.x, lair.z, 25)]);
+    await Promise.all([back.eval(`mythicMasters.together.hunt("${first}", 3)`), b.eval(`mythicMasters.together.hunt("${first}", 3)`)]);
     const lastSign = `(() => { const s = mythicMasters.world.state(); return { stage: mythicMasters.journey.state()?.hunts?.["${first}"] ?? null, x: Math.round(s.x), z: Math.round(s.z), r: s.region, room: mythicMasters.together.state()?.status }; })()`;
     type Sign = { stage: number | null };
     await Promise.all([until(() => back.eval<Sign>(lastSign), (s) => s.stage === 3), until(() => b.eval<Sign>(lastSign), (s) => s.stage === 3)]);
-    // To 25 m short of the lair, then on with the wild ones awake.
-    await Promise.all([stride(back, lair.x, lair.z, 25), stride(b, lair.x, lair.z, 25)]);
     type Trip = { kind: string; foe: { id: string; level: number } } | null;
     const into = `(async () => { const w = mythicMasters.world; w.peace(false); for (let i = 0; i < 10 && !mythicMasters.journey.trip(); i++) { const s = w.state(); w.teleport(s.x + (${lair.x} - s.x) / 2, s.z + (${lair.z} - s.z) / 2); await new Promise((r) => setTimeout(r, 400)); } return mythicMasters.journey.trip(); })()`;
     const aTrip = await back.eval<Trip>(into);
