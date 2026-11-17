@@ -99,7 +99,7 @@ type Ctx = { [k: string]: any };
 
 /** The avatar head to toe on a 2D canvas context at (x, y) (its feet, centred), `h` tall: the editor's preview. `star` spreads arms and legs like the old anatomy drawing: the little one in a profile's header. */
 export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, star = false) {
-  const u = h / 100, w = a.build === "round" ? 34 : a.build === "slim" ? 24 : 28, legH = a.build === "tall" ? 30 : a.build === "short" ? 16 : 24;
+  const u = h / 100, w = a.build === "round" ? 34 : a.build === "slim" ? 24 : 28, legH = (a.build === "tall" ? 30 : a.build === "short" ? 16 : 24) + (a.height ?? 0) * 1.5;
   const box = (px: number, py: number, pw: number, ph: number, c: string, r = 0) => { g.fillStyle = c; g.beginPath(); g.roundRect(x + px * u, y + py * u, pw * u, ph * u, r * u); g.fill(); };
   const headY = -(legH + 26 + 36), cy = headY + 18;
   // A limb hung from a pivot, swung `turn` radians: its own colour, then a hand or shoe at the end.
@@ -129,12 +129,15 @@ export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, s
   if (a.hair === "long") box(-21, headY + 8, 42, 40, hc, 12);
   if (a.hair === "bob") box(-21, headY + 8, 42, 26, hc, 12);
   if (a.hair === "pigtails") { box(-30, headY + 20, 10, 24, hc, 5); box(20, headY + 20, 10, 24, hc, 5); }
-  if (a.hair === "locs") for (let i = -3; i <= 3; i++) box(i * 6.2 - 2.5, headY + 4, 5, 34 + (3 - Math.abs(i)) * 2, hc, 2.5);
+  // locs hang at the sides and behind, parted round the face
+  if (a.hair === "locs") for (const sx of [-1, 1]) for (let j = 0; j < 3; j++) box(sx * (16 + j * 2.6) - 2.5, headY + 6 - j * 2, 5, 34 - j * 4, hc, 2.5);
   if (a.hair === "braids") for (const s of [-1, 1]) for (let j = 0; j < 4; j++) { g.fillStyle = hc; g.beginPath(); g.arc(x + s * 21 * u, y + (headY + 16 + j * 8) * u, 4.4 * u, 0, 7); g.fill(); }
   if (a.hair === "mullet") box(-22, headY + 14, 44, 30, hc, 8);
   if (a.hair === "ponytail") box(14, headY + 8, 11, 30, hc, 5.5);
   if (a.hair === "afro") { g.fillStyle = hc; g.beginPath(); g.arc(x, y + (headY + 14) * u, 27 * u, 0, 7); g.fill(); }
-  box(-18, headY, 36, 36, a.skin, 15);
+  const hb = headBox(a.face);
+  g.fillStyle = a.skin; g.beginPath(); g.roundRect(x + hb.x * u, y + (headY + hb.y) * u, hb.w * u, hb.h * u, typeof hb.r === "number" ? hb.r * u : hb.r.map((r) => r * u)); g.fill();
+  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(x + s * (hb.w / 2) * u, y + (cy + 1) * u, 3 * u, 4.2 * u, 0, 0, 7); g.fill(); }
   // hair on top
   g.fillStyle = hc;
   if (["short", "bob", "long", "pigtails", "bun", "ponytail", "space-buns", "locs", "braids", "topknot"].includes(a.hair)) box(-19, headY - 2, 38, 13, hc, 8);
@@ -167,37 +170,97 @@ export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, s
   else if (a.hat === "halo") { g.strokeStyle = "#f4d03a"; g.lineWidth = 3 * u; g.beginPath(); g.ellipse(x, y + (headY - 8) * u, 14 * u, 4 * u, 0, 0, 7); g.stroke(); }
 }
 
-/** Eyes, mouth and glasses, centred on (x, cy) with `u` pixels a unit: the face of the 2D figure, and the texture on the 3D head. */
+/** A #rrggbb colour moved `k` (0..1) toward `to`: a brow in a darker hair colour, a nose a shade off the skin. */
+function shade(c: string, to: string, k: number) {
+  const n = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16) || 0;
+  return `#${[0, 1, 2].map((i) => Math.round(n(c, i) + (n(to, i) - n(c, i)) * k).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The head's outline for its face shape, on a 36 by 36 box at (0, top): where it sits, how big, and its corners. */
+function headBox(face: string | undefined): { x: number; y: number; w: number; h: number; r: number | number[] } {
+  if (face === "oval") return { x: -16.5, y: -1, w: 33, h: 38, r: 16 };
+  if (face === "long") return { x: -15.5, y: -3, w: 31, h: 41, r: 14 };
+  if (face === "square") return { x: -18, y: 0, w: 36, h: 36, r: 8 };
+  if (face === "heart") return { x: -18.5, y: 0, w: 37, h: 36, r: [13, 13, 19, 19] };
+  return { x: -18.5, y: 0, w: 37, h: 36, r: 16 };
+}
+
+/**
+ * The face on (x, cy) with `u` pixels a unit: the 2D figure's face, and the texture on the 3D crowd's heads. It draws what
+ * the face maker picks (#5009): eyes, brows, nose, mouth, cheeks, facial hair and glasses, each moved and sized by its sliders.
+ */
 export function drawFace(g: Ctx, a: Avatar, x: number, cy: number, u: number) {
-  g.fillStyle = "#16191c"; g.strokeStyle = "#16191c"; g.lineWidth = 2 * u; g.lineCap = "round";
-  for (const s of [-1, 1]) {
-    const ex = x + s * 8 * u, ey = cy - 2 * u;
-    if (a.eyes === "dot") { g.beginPath(); g.arc(ex, ey, 2.2 * u, 0, 7); g.fill(); }
-    else if (a.eyes === "wide") { g.fillStyle = "#fff"; g.beginPath(); g.arc(ex, ey, 4 * u, 0, 7); g.fill(); g.fillStyle = "#16191c"; g.beginPath(); g.arc(ex, ey, 2 * u, 0, 7); g.fill(); }
-    else if (a.eyes === "sleepy") { g.beginPath(); g.moveTo(ex - 3 * u, ey); g.lineTo(ex + 3 * u, ey); g.stroke(); }
-    else if (a.eyes === "happy") { g.beginPath(); g.arc(ex, ey + 1.5 * u, 3 * u, Math.PI, 0); g.stroke(); }
-    else if (a.eyes === "wink") { if (s < 0) { g.beginPath(); g.arc(ex, ey, 2.2 * u, 0, 7); g.fill(); } else { g.beginPath(); g.moveTo(ex - 3 * u, ey); g.lineTo(ex + 3 * u, ey); g.stroke(); } }
-    else { g.beginPath(); g.arc(ex, ey, 2 * u, 0, 7); g.fill(); g.beginPath(); g.moveTo(ex - 4 * u, ey + (s < 0 ? -5 : -2) * u); g.lineTo(ex + 4 * u, ey + (s < 0 ? -2 : -5) * u); g.stroke(); }
+  const tune = (k: (typeof TUNE)[number]) => a[k] ?? 0, ink = "#16191c";
+  const eyeK = 1 + tune("eyeSize") * 0.13, gap = 8 + tune("eyeGap") * 0.9, eyeY = cy - (2 + tune("eyeHeight") * 1.1) * u;
+  const mouthK = 1 + tune("mouthSize") * 0.14, my = cy + (9 - tune("mouthHeight") * 1.1) * u;
+  const noseK = 1 + tune("noseSize") * 0.15, noseY = (eyeY + my) / 2 + 0.5 * u;
+  const line = (c: string, w: number) => { g.strokeStyle = c; g.lineWidth = w * u; g.lineCap = "round"; };
+  const dot = (px: number, py: number, r: number, c: string) => { g.fillStyle = c; g.beginPath(); g.arc(px, py, r * u, 0, 7); g.fill(); };
+  const hair = a.hairColor ?? "#2e3439";
+  // under the features: cheeks, then facial hair
+  if (a.cheeks === "blush") for (const s of [-1, 1]) { g.globalAlpha = 0.45; dot(x + s * (gap + 4) * u, eyeY + 7 * u, 3.2, "#f06a7a"); g.globalAlpha = 1; }
+  if (a.cheeks === "freckles") for (const s of [-1, 1]) for (const [dx, dy] of [[0, 0], [2.4, 1], [1.2, -1.6], [-1.6, -0.6]] as const) dot(x + s * (gap + 2 + dx) * u, eyeY + (6 + dy) * u, 0.55, shade(a.skin, "#5a3420", 0.55));
+  if (a.beard && a.beard !== "none") {
+    const c = a.beard === "stubble" ? shade(a.skin, hair, 0.38) : hair;
+    g.fillStyle = c;
+    if (a.beard === "full" || a.beard === "stubble") { g.beginPath(); g.moveTo(x - 17 * u, cy - 1 * u); g.quadraticCurveTo(x - 16 * u, cy + 18 * u, x, cy + 19 * u); g.quadraticCurveTo(x + 16 * u, cy + 18 * u, x + 17 * u, cy - 1 * u); g.lineTo(x + 13 * u, cy + 2 * u); g.quadraticCurveTo(x, my + 7 * mouthK * u, x - 13 * u, cy + 2 * u); g.fill(); }
+    if (a.beard === "goatee") { g.beginPath(); g.ellipse(x, my + 5 * u, 4.5 * u, 4 * u, 0, 0, 7); g.fill(); }
+    if (a.beard === "sideburns") for (const s of [-1, 1]) { g.beginPath(); g.roundRect(x + (s < 0 ? -18 : 14.5) * u, cy - 8 * u, 3.5 * u, 12 * u, 1.5 * u); g.fill(); }
+    if (a.beard === "mustache" || a.beard === "full" || a.beard === "goatee") for (const s of [-1, 1]) { g.beginPath(); g.ellipse(x + s * 2.8 * u, my - 3.4 * u, 3.4 * u, 1.6 * u, -s * 0.3, 0, 7); g.fill(); }
   }
-  const my = cy + 9 * u;
-  if (a.mouth === "smile") { g.beginPath(); g.arc(x, my - 3 * u, 5 * u, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke(); }
-  else if (a.mouth === "grin") { g.fillStyle = "#fff"; g.beginPath(); g.arc(x, my - 3 * u, 6 * u, 0, Math.PI); g.fill(); g.stroke(); }
-  else if (a.mouth === "flat") { g.beginPath(); g.moveTo(x - 4 * u, my); g.lineTo(x + 4 * u, my); g.stroke(); }
-  else if (a.mouth === "o") { g.beginPath(); g.arc(x, my, 2.8 * u, 0, 7); g.stroke(); }
-  else if (a.mouth === "tongue") { g.beginPath(); g.arc(x, my - 3 * u, 5 * u, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke(); g.fillStyle = "#e8590c"; g.beginPath(); g.arc(x + 2 * u, my + 3 * u, 2.4 * u, 0, 7); g.fill(); }
-  else { g.beginPath(); g.arc(x, my + 3 * u, 5 * u, 1.15 * Math.PI, 1.85 * Math.PI); g.stroke(); }
-  // glasses
-  if (a.glasses !== "none") {
-    g.strokeStyle = a.glasses === "shades" ? "#16191c" : "#2e3439"; g.lineWidth = 1.6 * u;
-    for (const s of [-1, 1]) {
-      const ex = x + s * 8 * u, ey = cy - 2 * u;
-      if (a.glasses === "round") { g.beginPath(); g.arc(ex, ey, 5.5 * u, 0, 7); g.stroke(); }
-      else if (a.glasses === "square") g.strokeRect(ex - 5.5 * u, ey - 4.5 * u, 11 * u, 9 * u);
-      else if (a.glasses === "monocle") { if (s > 0) { g.beginPath(); g.arc(ex, ey, 5.5 * u, 0, 7); g.stroke(); g.beginPath(); g.moveTo(ex + 3 * u, ey + 5 * u); g.lineTo(ex + 6 * u, ey + 14 * u); g.stroke(); } }
-      else if (a.glasses === "vr") { if (s < 0) { g.fillStyle = "#2e3439"; g.beginPath(); g.roundRect(x - 17 * u, ey - 6 * u, 34 * u, 13 * u, 4 * u); g.fill(); g.fillStyle = "#8a5cff"; g.fillRect(x - 14 * u, ey - 2 * u, 28 * u, 3 * u); } }
-      else if (a.glasses === "pixel") { g.fillStyle = "#16191c"; for (const [dx, dy, w, h] of [[-7, -3, 14, 3], [-7, 0, 11, 3], [-6, 3, 8, 3]] as const) g.fillRect(ex + dx * u, ey + dy * u, w * u, h * u); }
-      else { g.fillStyle = "#16191c"; g.fillRect(ex - 6 * u, ey - 4 * u, 12 * u, 8 * u); }
+  // eyes, and the brows over them in the hair's colour (angry eyes bring theirs down in the middle)
+  const brows = a.eyes === "angry" ? "angry" : a.brows ?? "soft", browY = eyeY - (5 + tune("browHeight") * 0.9) * eyeK * u;
+  for (const s of [-1, 1]) {
+    const ex = x + s * gap * u, ey = eyeY, k = eyeK;
+    const kind = a.eyes === "wink" ? (s < 0 ? "dot" : "happy") : a.eyes;
+    line(ink, 2 * k);
+    if (kind === "dot" || kind === "angry") { g.fillStyle = ink; g.beginPath(); g.ellipse(ex, ey, 2.3 * k * u, 2.8 * k * u, 0, 0, 7); g.fill(); dot(ex + 0.8 * k * u, ey - 1 * k * u, 0.8 * k, "#fff"); }
+    else if (kind === "wide") { dot(ex, ey, 4 * k, "#fff"); dot(ex, ey, 2.1 * k, ink); dot(ex + 0.7 * k * u, ey - 0.8 * k * u, 0.7 * k, "#fff"); }
+    else if (kind === "sleepy") { g.beginPath(); g.arc(ex, ey - 1 * k * u, 3 * k * u, 0.1 * Math.PI, 0.9 * Math.PI); g.stroke(); g.beginPath(); g.moveTo(ex + s * 2.9 * k * u, ey - 0.2 * k * u); g.lineTo(ex + s * 4.2 * k * u, ey - 1.6 * k * u); g.stroke(); } // content, closed in a soft curve with a lash
+    else { g.beginPath(); g.arc(ex, ey + 1.5 * k * u, 3 * k * u, Math.PI, 0); g.stroke(); } // happy
+    if (brows === "none") continue;
+    const bc = shade(hair, ink, 0.35), bx = ex + s * 0.3 * u;
+    line(bc, brows === "thick" ? 2.6 : 1.7);
+    g.beginPath();
+    if (brows === "arched") g.arc(bx, browY + 2.4 * u, 3.4 * u, Math.PI * 1.2, Math.PI * 1.8);
+    else {
+      const tilt = brows === "worried" ? -s * 1.4 : brows === "angry" ? s * 1.8 : brows === "soft" ? s * 0.4 : 0, half = brows === "flat" ? 3.6 : 3.2;
+      g.moveTo(bx - half * u, browY + (s < 0 ? -tilt : tilt) * u * -0.5); g.lineTo(bx + half * u, browY + (s < 0 ? tilt : -tilt) * u * -0.5);
     }
-    if (a.glasses !== "monocle" && a.glasses !== "vr") { g.beginPath(); g.moveTo(x - 3 * u, cy - 2 * u); g.lineTo(x + 3 * u, cy - 2 * u); g.stroke(); }
+    g.stroke();
+  }
+  // the nose: a shade off the skin, so it reads without an outline
+  if (a.nose && a.nose !== "none") {
+    g.fillStyle = shade(a.skin, "#c0604a", 0.28); const k = noseK * u;
+    g.beginPath();
+    if (a.nose === "pointy") { g.moveTo(x, noseY - 3 * k); g.lineTo(x + 2.2 * k, noseY + 1.6 * k); g.lineTo(x - 1.4 * k, noseY + 1.6 * k); }
+    else if (a.nose === "wide") g.ellipse(x, noseY, 3.4 * k, 1.8 * k, 0, 0, 7);
+    else if (a.nose === "round") g.arc(x, noseY, 2.5 * k, 0, 7);
+    else g.ellipse(x, noseY, 1.8 * k, 1.4 * k, 0, 0, 7); // button
+    g.fill();
+  }
+  // the mouth
+  const m = mouthK * u;
+  line(ink, 2 * mouthK);
+  if (a.mouth === "smile") { g.beginPath(); g.arc(x, my - 3 * m, 5 * m, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke(); }
+  else if (a.mouth === "grin") { g.fillStyle = "#5a1f1f"; g.beginPath(); g.arc(x, my - 3 * m, 6 * m, 0, Math.PI); g.closePath(); g.fill(); g.stroke(); dot(x, my + 1.4 * m, 2.4 * mouthK, "#e86a6a"); }
+  else if (a.mouth === "flat") { g.beginPath(); g.moveTo(x - 4 * m, my); g.lineTo(x + 4 * m, my); g.stroke(); }
+  else if (a.mouth === "o") { g.beginPath(); g.arc(x, my, 2.8 * m, 0, 7); g.stroke(); }
+  else if (a.mouth === "tongue") { g.beginPath(); g.arc(x, my - 3 * m, 5 * m, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke(); dot(x + 2 * m, my + 3 * m, 2.4 * mouthK, "#e86a6a"); }
+  else { g.beginPath(); g.arc(x, my + 3 * m, 5 * m, 1.15 * Math.PI, 1.85 * Math.PI); g.stroke(); }
+  // glasses, on the eyes wherever the sliders put them
+  if (a.glasses !== "none") {
+    const k = Math.max(1, eyeK * 0.95);
+    line(a.glasses === "shades" ? ink : "#2e3439", 1.6);
+    for (const s of [-1, 1]) {
+      const ex = x + s * gap * u, ey = eyeY;
+      if (a.glasses === "round") { g.beginPath(); g.arc(ex, ey, 5.5 * k * u, 0, 7); g.stroke(); }
+      else if (a.glasses === "square") g.strokeRect(ex - 5.5 * k * u, ey - 4.5 * k * u, 11 * k * u, 9 * k * u);
+      else if (a.glasses === "monocle") { if (s > 0) { g.strokeStyle = "#c9a227"; g.beginPath(); g.arc(ex, ey, 5.5 * k * u, 0, 7); g.stroke(); g.beginPath(); g.moveTo(ex + 3 * u, ey + 5 * u); g.lineTo(ex + 6 * u, ey + 14 * u); g.stroke(); } }
+      else if (a.glasses === "vr") { if (s < 0) { g.fillStyle = "#2e3439"; g.beginPath(); g.roundRect(x - 17 * u, ey - 6 * u, 34 * u, 13 * u, 4 * u); g.fill(); g.fillStyle = "#8a5cff"; g.fillRect(x - 14 * u, ey - 2 * u, 28 * u, 3 * u); } }
+      else if (a.glasses === "pixel") { g.fillStyle = ink; for (const [dx, dy, w, h] of [[-7, -3, 14, 3], [-7, 0, 11, 3], [-6, 3, 8, 3]] as const) g.fillRect(ex + dx * u, ey + dy * u, w * u, h * u); }
+      else { g.fillStyle = ink; g.fillRect(ex - 6 * k * u, ey - 4 * k * u, 12 * k * u, 8 * k * u); }
+    }
+    if (a.glasses !== "monocle" && a.glasses !== "vr") { g.beginPath(); g.moveTo(x - (gap - 5.5 * k) * u, eyeY); g.lineTo(x + (gap - 5.5 * k) * u, eyeY); g.stroke(); }
   }
 }

@@ -30,7 +30,7 @@ import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
-import { avatarRoute } from "./avatar.ts";
+import { avatarRoute, savedAvatar } from "./avatar.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -326,8 +326,11 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
       : auth.api.signInEmail({ body: { email, password }, asResponse: true })).catch(() => null);
     const signed = res?.ok ? check(Signed, await res.clone().json().catch(() => null)) : null;
-    // Someone new who came to eqosys itself makes their character first (the picker on the Me tab); an app asked for keeps going.
-    return signed ? onward(conf, regionAt(req), signed.user.id, ask, res!, act === "signup" ? "/?tab=account&new=1" : "/") : back(act === "signup" ? "taken" : "bad");
+    // Someone new who came to eqosys itself makes their character first (the picker on the Me tab), and so does someone
+    // signing in who never saved one; an app asked for keeps going.
+    if (!signed) return back(act === "signup" ? "taken" : "bad");
+    const first = act === "signup" || !await savedAvatar(conf, signed.user.id);
+    return onward(conf, regionAt(req), signed.user.id, ask, res!, first ? "/?tab=account&new=1" : "/");
   }
 
   if (act === "social") {

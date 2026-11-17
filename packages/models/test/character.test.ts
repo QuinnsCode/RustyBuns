@@ -1,7 +1,8 @@
 // The character wears every part the picker offers (the face maker's too, with its sliders at both ends), stands on the
 // floor as a chunky toy with a big head, and its poses do what they say: sitting brings the hips down to a seat with the
 // feet still on the floor, playing brings the hands up in front, walking moves the legs. It is alive: it turns its head
-// to look at someone, and beams while a note sounds.
+// to look at someone, and beams while a note sounds. Its hands have four fingers that tap the keys in turn, its glasses
+// reach back to its ears, and a hat tucks a tall style under it.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { defaultAvatar, FACE, PARTS, TUNE, TUNE_STEPS, type Avatar } from "@rustybuns/util/avatar";
@@ -92,4 +93,25 @@ test("no hair covers the face: looking at an eye from in front, the first thing 
     expect([hair, face, m instanceof THREE.MeshStandardMaterial ? m.color.getHexString() : "nothing"]).not.toEqual([hair, face, "c23a6b"]);
     c.dispose();
   }
+});
+
+test("four fingers a hand, tapping the keys one after another; glasses reach back to the ears; a hat tucks tall hair under it", () => {
+  const a = defaultAvatar("Ada");
+  const c = character({ ...a, glasses: "round" });
+  const fingers = named(c.group, "finger");
+  expect(fingers).toHaveLength(8);
+  // on keys, at one moment the fingers of a hand are curled by different amounts: they tap in turn
+  c.pose({ t: 1.3, seated: true, play: "keys" });
+  const curls = fingers.slice(0, 4).map((f) => Math.abs(f.rotation.z).toFixed(2));
+  expect(new Set(curls).size).toBeGreaterThan(2);
+  // the glasses' arms run from the frames in front of the eyes back to the sides of the head
+  c.group.updateMatrixWorld(true);
+  const eye = at(named(c.group, "eye")[0]!), temples = named(c.group, "temple");
+  expect(temples).toHaveLength(2);
+  for (const tm of temples) { const b = box(tm); expect(b.max.z).toBeGreaterThan(eye.z + 0.15); expect(Math.max(Math.abs(b.min.x), Math.abs(b.max.x))).toBeGreaterThan(0.2); }
+  c.dispose();
+  // a beanie over spikes, a crest or a bun stands no taller than over short hair: nothing pokes through it
+  const top = (hair: string, hat: string) => { const f = character({ ...a, hair, hat }); f.pose({ t: 0 }); const y = box(f.head).max.y; f.dispose(); return y; };
+  for (const hat of ["beanie", "cap", "hardhat"]) for (const hair of ["spiky", "mohawk", "flat-top", "bun", "topknot", "pompadour"])
+    expect([hat, hair, top(hair, hat) <= top("short", hat) + 0.001]).toEqual([hat, hair, true]);
 });
