@@ -336,12 +336,13 @@ test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
     const ts = new Rig(spec, SR), rust = new WasmRig(x, spec, SR);
     const a = new Float32Array(input.length), b = new Float32Array(input.length);
     ts.process(input, a, half); rust.process(input, b, half);
-    // Halfway: every knob Q Amp turns live (a volume, the power drive, the hiss, a rebuilt circuit, a pot inside one, the mic), and a 16 ohm cab.
+    // Halfway: every knob Q Amp turns live (a volume, the power drive, the hiss, a rebuilt circuit, a pot inside one, the mic, the bias trem), and a 16 ohm cab.
     const last = spec.links.length - 1;
     for (const r of [ts, rust]) {
       r.setGain(last, 0.5); r.setPower(spec.power ? 3 : 0); r.setNoise(2); r.setLink(0, spec.links[0].net); r.setPot(0, 0, 0.2);
       if (spec.cab) r.setMic({ at: 0.8, angle: 30 });
       if (spec.output?.load) r.setLoad(16);
+      if (spec.output?.trem) r.setTrem({ hz: tremHz(9), depth: 1 });
     }
     ts.process(input.subarray(half), a.subarray(half)); rust.process(input.subarray(half), b.subarray(half));
     let diff = 0, top = 0;
