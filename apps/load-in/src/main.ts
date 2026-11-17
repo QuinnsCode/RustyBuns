@@ -29,6 +29,8 @@ import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
 import { DESERT, desertState } from "./venues/desert.ts";
 import { type DesertView, desertView } from "./venues/desert-view.ts";
+import { DJ_BOOTH, DJ_BOOTH_MEDIA } from "./venues/dj-booth.ts";
+import { type DjBoothView, djBoothView } from "./venues/dj-booth-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -55,7 +57,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, amphitheatre: amphi.AMPHITHEATRE };
+const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, "dj-booth": DJ_BOOTH, "dj-booth-media": DJ_BOOTH_MEDIA, amphitheatre: amphi.AMPHITHEATRE };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -151,6 +153,8 @@ let ar: ArenaView | null = null;
 let arena: SmallArenaView | null = null;
 let foh: ShowView | null = null;
 let amp: AmphitheatreView | null = null;
+/** The DJ booth's view: the decks, their moving parts and their sound. */
+let dj: DjBoothView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number, key?: string): THREE.Object3D {
   if (cable.hasModel(id)) {
@@ -192,6 +196,9 @@ function buildItems() {
   camera.updateProjectionMatrix();
   foh?.dispose();
   foh = world.level === SHOW ? showView(scene, $("hud"), () => world) : null;
+  dj?.dispose();
+  dj = world.level === DJ_BOOTH || world.level === DJ_BOOTH_MEDIA ? djBoothView(scene, $("hud"), () => world, () => cables, (k) => meshes.get(k), say) : null;
+  sound.feed(dj ? dj.audio : null);
   touch.venue(world.level.name);
 }
 buildItems();
@@ -257,7 +264,7 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? ar?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -333,6 +340,7 @@ function press(code: string) {
   if (big?.key(code)) return;
   if (gig?.key(code)) return;
   if (foh?.key(code)) return;
+  if (!world.held && !cable.inHand(cables) && dj?.key(code)) return;
   if (code === "KeyF") grab();
   if (code === "Space") { if (windup) letGo(); else if (cable.carried(cables)) windup = { power: 0 }; }
   if ((code === "KeyQ" || code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, code === "KeyQ" ? "over" : "under"));
@@ -457,6 +465,7 @@ function frame(now: number) {
   big?.tick();
   gig?.tick();
   ar?.tick();
+  dj?.tick(dt);
   draw();
   sound.update(heard());
   requestAnimationFrame(frame);
@@ -510,7 +519,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -620,7 +629,7 @@ const harness = {
   },
   /** First gig, at any distance: switch the desk's 48 V phantom. */
   phantom: (on: boolean) => (gig ? (gig.phantom(on), true) : false),
-  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, amphitheatre). */
+  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, dj-booth, dj-booth-media, amphitheatre). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
@@ -641,6 +650,8 @@ const harness = {
   reset: () => { switchedOn.clear(); load(world.level); },
   /** The show: the desk and the stage, without the keys (desk.nudge(channel, { fader, send, trim }), desk.notch(channel, hz), desk.start(), desk.fix(kind), desk.run(seconds)). */
   get desk() { return foh?.desk ?? null; },
+  /** The DJ booth's decks: play(deck, on?), fader(channel, 0..1), cross(-1..1), pitch(deck, per cent); state().decks reads them. */
+  get decks() { return dj?.decks ?? null; },
 };
 window.loadIn = harness;
 

@@ -18,8 +18,10 @@ export type CableKind = keyof typeof CABLE;
 /** Power runs this long or longer are a feeder (a generator to a distro); shorter ones are a cord. */
 export const FEEDER_M = 20;
 /** Which roll a game cable (@rustybuns/gear's kind) is: a long power run is a feeder, a short one a cord. */
-export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument", lengthM: number): CableKind =>
-  kind === "power" ? (lengthM >= FEEDER_M ? "power" : "cord") : kind;
+export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital", lengthM: number): CableKind =>
+  kind === "power" ? (lengthM >= FEEDER_M ? "power" : "cord")
+  // A DJ deck's thin leads (RCA pair, ground wire, digital coax) coil like an instrument cable.
+  : kind === "rca" || kind === "ground" || kind === "digital" ? "instrument" : kind;
 
 /** The coil's radius in metres, what an arm can put into a throw (joules) and the fastest it swings (m/s). */
 export const ROLL_R = 0.2, ARM_J = 90, ARM_MS = 8;

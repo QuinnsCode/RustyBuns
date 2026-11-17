@@ -11,8 +11,9 @@ import { ampWatts, circuitLoad, generatorLoad, parallel, type Circuit } from "./
  */
 export type Placed = { id: string; gear: string; lift?: boolean; phantom?: boolean };
 
-/** What a cable is: mains, speaker, mic (XLR), or a quarter-inch instrument/line lead. */
-export type CableKind = "power" | "speaker" | "xlr" | "instrument";
+/** What a cable is: mains, speaker, mic (XLR), a quarter-inch instrument/line lead, a DJ deck's RCA pair, a turntable's
+ * ground wire, or a deck's digital (coax) lead. */
+export type CableKind = "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital";
 
 /** An end of a cable: [item or outlet id, jack name]. */
 export type End = readonly [string, string];
@@ -23,7 +24,7 @@ export type Cable = { kind: CableKind; lengthM: number; from: End; to: End };
 /** A wall outlet on a named circuit; outlets that share a circuit share its breaker. `off` when its breaker has tripped. */
 export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number; off?: boolean };
 
-export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "no-phantom" | "thump";
+export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "no-phantom" | "thump" | "level";
 
 /** `circuit` is set on a breaker problem: the outlet circuit's name, or the generator's id. */
 export type Problem = { kind: ProblemKind; items: string[]; jack?: string; circuit?: string; message: string };
@@ -40,19 +41,24 @@ export function cableFor(kind: string): CableKind {
   if (kind.startsWith("power")) return "power";
   if (kind.startsWith("speaker")) return "speaker";
   if (kind.startsWith("xlr")) return "xlr";
+  if (kind.startsWith("rca") || kind.startsWith("phono")) return "rca";
+  if (kind.startsWith("ground")) return "ground";
+  if (kind.startsWith("digital")) return "digital";
   return "instrument";
 }
 
 const isOut = (kind: string) => kind.endsWith("-out");
 
 /** Gear that makes a signal of its own when it has power (a desk: its playback). */
-const SOURCES = new Set(["mixer-small", "guitar", "amp-head"]);
+const SOURCES = new Set(["mixer-small", "guitar", "amp-head", "deck-media", "turntable"]);
 const DESKS = new Set(["mixer-small"]);
 const deskIn = (kind: string) => kind === "xlr-in" || kind === "line-in";
 
-/** Gear that passes a signal through: each output jack and the input it carries. */
-const THROUGH: Record<string, Record<string, string>> = {
-  "di-box": { "xlr-out": "inst-in", "line-out": "inst-in" },
+const DJ_INS = ["phono-in", "rca-in"].flatMap((k) => [1, 2, 3, 4].map((n) => `${k}-${n}`));
+/** Gear that passes a signal through: each output jack and the inputs it carries (any one of them with sound will do). */
+const THROUGH: Record<string, Record<string, readonly string[]>> = {
+  "di-box": { "xlr-out": ["inst-in"], "line-out": ["inst-in"] },
+  "mixer-dj": Object.fromEntries([1, 2, 3, 4].map((n) => [`xlr-out-${n}`, DJ_INS])),
 };
 
 type Link = { cable: Cable; out: End; in: End };
@@ -117,7 +123,7 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
   for (const domain of ["power", "signal"] as const) {
     const next = new Map<string, Set<string>>();
     for (const l of links) {
-      if ((l.cable.kind === "power") !== (domain === "power")) continue;
+      if (l.cable.kind === "ground" || (l.cable.kind === "power") !== (domain === "power")) continue;
       next.set(l.out[0], (next.get(l.out[0]) ?? new Set()).add(l.in[0]));
     }
     const state = new Map<string, 1 | 2>();
@@ -161,6 +167,18 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     const amp = drives.get(`${p.id}\0line-out`)?.find(earthed);
     const desk = drives.get(`${p.id}\0xlr-out`)?.find(earthed);
     if (amp && desk) say("hum", [p.id, amp[0], desk[0]], `${amp[0]} and ${desk[0]} make a ground loop through ${p.id}: it hums. Lift its ground`, "xlr-out");
+  }
+
+  // DJ decks into a mixer: a turntable's millivolts want a phono input (a line input barely hears it) and its ground wire
+  // on that mixer's post, or the channel hums; a media player's line level into a phono input overloads it.
+  for (const l of links) {
+    const deck = items.get(l.out[0])?.deck, kind = jackKind(l.in[1]);
+    if (!deck || l.cable.kind !== "rca" || (kind !== "phono-in" && kind !== "rca-in")) continue;
+    const id = l.out[0], mixer = l.in[0];
+    if (deck.out === "line" && kind === "phono-in") say("level", [id, mixer], `${id} is line level into ${mixer} ${l.in[1]}: the phono stage overloads and it distorts. Use a line input`, l.in[1]);
+    if (deck.out === "phono" && kind === "rca-in") say("level", [id, mixer], `${id} is phono level into ${mixer} ${l.in[1]}: a line input barely hears it. Use a phono input`, l.in[1]);
+    const grounded = links.some((g) => g.cable.kind === "ground" && g.out[0] === id && g.in[0] === mixer);
+    if (deck.out === "phono" && !grounded) say("hum", [id, mixer], `${id} has no ground wire on ${mixer}'s post: it hums at the mains frequency (50/60 Hz)`, "ground-out");
   }
 
   // Phantom: a condenser takes its 48 V down the XLR from the desk input it lands on. With the desk's 48 V off (or the
@@ -214,7 +232,7 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
       if (g.mic) on = !g.mic.phantom || phantomOn(id);
       else if (mics.length && mics.every((j) => items.get(from(id, j)![0])?.mic)) on = mics.some((j) => inSignal(id, j, seen));
       else if (SOURCES.has(g.id)) on = true;
-      else if (via) on = inSignal(id, via, seen);
+      else if (via) on = via.some((j) => inSignal(id, j, seen));
       else if (g.amp) on = inSignal(id, jack.replace("speaker-out", "xlr-in"), seen);
       else if (kind === "xlr-out") on = inSignal(id, "xlr-in", seen);
       else if (kind === "speaker-out") on = inSignal(id, "speaker-in", seen);
