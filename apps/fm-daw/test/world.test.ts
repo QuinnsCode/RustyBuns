@@ -4,6 +4,7 @@ import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun
 import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
+import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 
 class Sock {
   readyState = 1; sent: any[] = []; closed: number | null = null; att: unknown;
@@ -340,4 +341,81 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   world.webSocketMessage(back, JSON.stringify({ t: "floor", state: "free" }));
   await settle();
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();
+});
+
+test("a recorded take: its sound reaches the room in chunks before it lands on a track, a late joiner gets it, and it goes when it's off every track", async () => {
+  const { world, join, leave, store } = await setup();
+  const a = (await join()).ws, b = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  const s16 = new Int16Array(3 * TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
+  const chunks = toChunks("take0001", s16);
+  const place = (ws: Sock, id: string, track = 3) => world.webSocketMessage(ws, JSON.stringify({ t: "op", op: { t: "take", track, take: { id, beat: 2, frames: s16.length } } }));
+
+  // a take whose sound isn't all here yet goes nowhere, and the player is put back in step
+  b.sent = []; a.sent = [];
+  world.webSocketMessage(a, JSON.stringify(chunks[0]));
+  place(a, "take0001");
+  expect(a.sent.map((m) => m.t)).toEqual(["snapshot"]);
+  for (const c of chunks.slice(1)) world.webSocketMessage(a, JSON.stringify(c));
+  place(a, "take0001");
+  await settle();
+  expect(b.sent.map((m) => m.t)).toEqual([...chunks.map(() => "takeBytes"), "op"]);
+  const heard = new TakeInbox();
+  expect(b.sent.filter((m) => m.t === "takeBytes").map((m) => heard.add(m)).at(-1)?.length).toBe(s16.length);
+
+  // someone who comes in later gets the groove, then the take's sound
+  const c = (await join()).ws;
+  await settle();
+  expect(c.sent.find((m) => m.t === "snapshot")?.project.tracks[3].take).toEqual({ id: "take0001", beat: 2, frames: s16.length });
+  expect(c.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
+
+  // off the track, its sound stays for undo while anyone's in, and goes with the last one out
+  world.webSocketMessage(a, JSON.stringify({ t: "op", op: { t: "take", track: 3, take: null } }));
+  expect(store.has("take:take0001:0")).toBe(true);
+  for (const ws of [a, b, c]) leave(ws);
+  await settle();
+  expect([...store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
+});
+
+test("studio: friends share one patch, two can't carry one amp, a held lead is in its player's hand, and it's kept", async () => {
+  const { bucket, worldEnv } = await edge();
+  const { world, join, leave, store } = await setup(worldEnv, "grand-amber-lynx");
+  const a = (await join()).ws, b = (await join()).ws;
+  const act = (ws: Sock, op: object) => world.webSocketMessage(ws, JSON.stringify({ t: "studio", op }));
+  a.sent = []; b.sent = [];
+  act(a, { t: "bring", id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 });
+  const from = b.sent[0]?.from;
+  expect(b.sent).toEqual([{ t: "studio-op", from, op: { t: "bring", id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 } }]);
+  expect(a.sent).toEqual(b.sent);                                 // the world's word, to the one who did it too
+  b.sent = [];
+  act(b, { t: "pick", id: "amp-1" });                             // a has it: b is put back in step instead
+  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } } }]);
+  act(a, { t: "put", at: [2, 0, 3], turn: 1.5 });
+  act(a, { t: "bring", id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 });
+  act(a, { t: "put", at: [1, 0, 1], turn: 0 });
+  // a pulls a cable out of the pedal and walks the free end over: b sees it in a's hand
+  b.sent = [];
+  act(a, { t: "lead", from: ["fuzz-1", "out"] });
+  world.webSocketMessage(a, JSON.stringify({ t: "live", e: { t: "body", at: [1.5, 1.7, 2], yaw: 0.3 } }));
+  expect(b.sent).toEqual([{ t: "studio-op", from, op: { t: "lead", from: ["fuzz-1", "out"] } }, { t: "live", from, e: { t: "body", at: [1.5, 1.7, 2], yaw: 0.3 } }]);
+  act(b, { t: "lead", from: ["fuzz-1", "out"] });                 // that jack's cable is in a's hand
+  expect(b.sent.at(-1).t).toBe("studio-all");
+  act(a, { t: "plug", to: ["amp-1", "in"] });
+  act(b, { t: "knob", id: "amp-1", knob: "gain", v: 0.8 });
+  act(b, { t: "knob", id: "amp-1", knob: "gain", v: 7 });         // off the dial: dropped
+  act(b, { t: "lead", from: ["amp-1", "speaker-out"] });
+  leave(b);                                                       // the lead falls out of b's hand
+  await settle();
+  const patch = {
+    placed: [{ id: "amp-1", gear: "q-amp", at: [2, 0, 3], turn: 1.5 }, { id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 }],
+    cables: [{ from: ["fuzz-1", "out"], to: ["amp-1", "in"] }],
+    knobs: { "amp-1": { gain: 0.8 } },
+  };
+  leave(a);
+  await settle();
+  expect(store.get("studio")).toEqual(patch);
+  // the Durable Object is reset: the studio comes back from the bucket, nobody holding anything
+  expect(JSON.parse(bucket.get("sesh/grand-amber-lynx.json")!).studio).toEqual(patch);
+  const fresh = await setup(worldEnv, "grand-amber-lynx");
+  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} } });
 });

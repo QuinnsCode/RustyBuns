@@ -1,7 +1,7 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
-import { AMPS, PEDALS, buildRig } from "../circuit/amps.ts";
-import { POWER_VOLTS, Rig } from "../circuit/rig.ts";
+import { AMPS, DEFAULT_ROOM, PEDALS, buildRig, type PedalDef } from "../circuit/amps.ts";
+import { POWER_VOLTS, Rig } from "@rustybuns/gear/circuit";
 import type { AmpSettings } from "./messages.ts";
 
 /** Volts at the speaker for full scale: the power stage's ceiling plus the cabinet's bumps. */
@@ -17,26 +17,30 @@ export function limit(x: number): number {
 }
 
 /** The rig playing now, and what it was built from. */
-export interface Live { rig: Rig; chain: string; keys: string[] }
+export interface Live { rig: Rig; chain: string; keys: string[]; mic: string }
 
 /**
  * The rig for these settings. A different amp, a pedal in or out, or a new
  * oversampling builds a new chain; otherwise only links whose parts changed are
- * rebuilt (a tone knob: the tone stack; Drive: the pedal), and pots and the
- * power stage are just set.
+ * rebuilt (a tone knob: the tone stack; the pedal's knob or a part swap: the pedal, an LFO keeping its phase),
+ * a moved mic makes a new impulse response, and pots and the power stage are just set.
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
-  const def = PEDALS.find((p) => p.id === s.pedal);
-  const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive });
+  const bench = s.bench;
+  const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
+  // The loop's machines are switched and turned in place, never a new chain: a tape keeps its echoes.
+  const spec = { ...buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps }, { ...DEFAULT_ROOM, mic: s.mic }), loop: s.loop ?? [] };
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
-  const keys = spec.links.map((l) => JSON.stringify(l.net));
-  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys };
+  const keys = spec.links.map((l) => JSON.stringify([l.net, l.mods ?? []])), mic = JSON.stringify(s.mic);
+  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic };
+  if (mic !== live.mic) live.rig.setMic(s.mic);
   spec.links.forEach((l, i) => {
-    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net);
+    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net, l.mods);
     live.rig.setGain(i, l.gain ?? 1);
   });
   live.rig.setPower(spec.power);
   live.rig.setNoise(spec.noise ?? 0);
-  return { rig: live.rig, chain, keys };
+  live.rig.setLoop(spec.loop);
+  return { rig: live.rig, chain, keys, mic };
 }
