@@ -8,6 +8,8 @@ Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deplo
 
 **Your ink** (`src/you/`): each rung of the tour you pass puts a flash tattoo on a forearm, and the Ink scrap on the menu takes one picture of your own (kept in this browser only). Hold I to look at your arms.
 
+**A live set** (`src/crew/`, `src/audio/decks.ts`): in a crew room one player at a time has the DJ seat, and the decks are shared, so every page plays the same mix in step and each player hears it from where they stand. A late joiner lands in time; a handover does not restart the track.
+
 ## Run it
 
 ```

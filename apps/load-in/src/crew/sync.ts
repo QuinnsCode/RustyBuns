@@ -3,6 +3,15 @@
 import { heldItem, holdPose, seeCrew, type World } from "../sim.ts";
 import { endAt, setEnd, type Cables, type EndAt } from "../cables/cables.ts";
 import { whole, type Sent, type ServerMsg, type Wire, type WireEnd } from "./room.ts";
+import { tickDecks, type Decks } from "../audio/decks.ts";
+
+/**
+ * The decks on this page, as the crew room sees them (venues/dj-booth-view.ts owns one): its deck state, whether you
+ * want the DJ seat, and what the room last said: whether there is a room at all, and who is on the decks.
+ */
+export type Booth = { decks: Decks; want: boolean; room: boolean; dj: { me: boolean; name: string } | null; note: string };
+/** What the DJ's hands set (not where the track has got to): a change here is worth telling the room. */
+const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch]), d.fader, d.cross]);
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -14,8 +23,10 @@ export interface Synced {
   ends: Map<string, string>; pending: Map<string, string>; wires: Map<string, Wire>;
   /** Each switch as the room last had it from or for this page, and the newest count taken per switch. */
   on: Map<string, boolean>; thrown: Map<string, number>;
+  /** The seat you last asked for, the decks' controls you last sent, and the newest decks count taken. */
+  djWant: boolean; sentDecks: string; spun: number;
 }
-export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map() });
+export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map(), djWant: false, sentDecks: "", spun: 0 });
 
 const ENDS = ["a", "b"] as const;
 /** One end as a short word to compare: yours is "hand:", a friend's "hand:<their id>". */
@@ -56,8 +67,18 @@ function hearWire(w: World, c: Cables, s: Synced, wire: Omit<Wire, "n">, force: 
 }
 
 /** What changed in your hands since last time, as messages: the cable ends you moved, a drop where the piece landed, then a grab. */
-export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>): Sent[] {
+export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>, booth?: Booth | null): Sent[] {
   const now = w.held?.key ?? null, out: Sent[] = c ? cableOutbox(w, c, s) : [];
+  if (booth) {
+    if (booth.want !== s.djWant) { s.djWant = booth.want; out.push({ t: "dj", take: booth.want }); }
+    // On the decks, every move of your hands goes to the room with where each track is right now.
+    const set = hands(booth.decks);
+    if (booth.dj?.me && set !== s.sentDecks) {
+      s.sentDecks = set;
+      const d = booth.decks;
+      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat) })), fader: [...d.fader], cross: d.cross });
+    }
+  }
   // The switches you threw (`on` is what is switched on, on your page).
   if (on) for (const key of new Set([...on, ...s.on.keys()])) {
     if (on.has(key) === (s.on.get(key) ?? false)) continue;
@@ -84,13 +105,38 @@ export function poseOf(w: World): Sent {
 /** A message from the room. A view moves your friends and the pieces they carry or set down; a piece set down that was in
  * your hands (the friend on the other end put it down) leaves them, and each cable's ends go where the room says. A
  * refusal takes back the grab, or puts the cable end back where the room has it. */
-export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<string>) {
+export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<string>, booth?: Booth | null) {
+  if (m.t === "refused" && m.key === "decks") {
+    // Someone else has the seat: stop asking, and say who.
+    s.djWant = false;
+    if (booth) { booth.want = false; booth.note = m.why; }
+    return;
+  }
   if (m.t === "refused") {
     if (w.held?.key === m.key) { w.held = null; s.held = null; }
     if (c?.runs.some((r) => r.key === m.key)) hearWire(w, c, s, s.wires.get(m.key) ?? { key: m.key, ...CASED }, true);
     return;
   }
   s.you = m.you;
+  if (booth) {
+    const mine = m.dj === m.you;
+    booth.room = true;
+    booth.dj = m.dj ? { me: mine, name: m.djName } : null;
+    if (mine) booth.note = "";
+    // Anyone not on the decks plays what the DJ last set, moved on by the time since: in step, wherever they joined.
+    if (m.decks && m.decks.n > s.spun) {
+      s.spun = m.decks.n;
+      if (!mine) {
+        const d = booth.decks;
+        m.decks.deck.forEach((k, i) => Object.assign(d.deck[i]!, k));
+        m.decks.fader.forEach((v, i) => { d.fader[i] = v; });
+        d.cross = m.decks.cross;
+        tickDecks(d, Math.max(0, m.clock - m.decks.at) / 1000);
+      }
+    }
+    // Off the decks, the next time you take them your first move is told whole.
+    if (!mine) s.sentDecks = "";
+  }
   if (c) for (const wire of m.cables) {
     if (wire.n <= (s.wires.get(wire.key)?.n ?? 0) || !whole(wire.a) || !whole(wire.b)) continue;
     s.wires.set(wire.key, wire);
