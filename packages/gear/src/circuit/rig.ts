@@ -74,7 +74,16 @@ export interface RigSpec {
   noise?: number;
   /** The effects loop, in order: machines between the last link and the power stage. */
   loop?: LoopSpec[];
+  /** Links run side by side instead of one after another (a splitter's sides), each blended back in (`Blend`). */
+  blends?: Blend[];
 }
+
+/**
+ * Links side by side: from link `at`, `lanes[k]` links in a row make side k, every side is fed the same
+ * signal, and their swings are summed back, side k times `mix[k]`. A side of 0 links is the dry signal.
+ * `{ at: 0, lanes: [1, 1], mix: [0.5, 0.5] }` is the first two links in parallel, half of each.
+ */
+export interface Blend { at: number; lanes: number[]; mix: number[] }
 
 export interface RigRun {
   out: Float32Array;
@@ -104,6 +113,11 @@ export class Rig {
   private swing: Float64Array;
   /** Each link's resting output voltage. */
   private rest: number[] = [];
+  /** The link whose resting output each link's input rests at, or -1 for 0 V (the jack, or a blend's sum). */
+  private feed: Int32Array;
+  /** The blend each link starts, or -1. */
+  private blendAt: Int32Array;
+  private blends: Blend[];
   private peaks: Float64Array;
   private up: Biquad[];
   private down: Biquad[];
@@ -128,8 +142,25 @@ export class Rig {
     for (const c of this.circuits) c.noise = this.noise;
     this.mods = spec.links.map((l, i) => this.startMods(i, l.mods));
     this.swing = new Float64Array(this.circuits.length);
-    // Rest state, stage by stage: each one's input is the last one's resting output.
-    this.circuits.forEach((c, i) => this.rest.push(c.settle(i ? this.rest[i - 1] : 0)));
+    const n = this.circuits.length;
+    this.blends = (spec.blends ?? []).map((b) => ({ ...b }));
+    this.blendAt = new Int32Array(n).fill(-1);
+    this.feed = new Int32Array(n);
+    // Who feeds whom: one after another, except inside a blend, where each side starts from what fed the blend.
+    for (let i = 0, prev = -1; i < n; ) {
+      const b = this.blends.findIndex((x) => x.at === i);
+      if (b < 0) { this.feed[i] = prev; prev = i++; continue; }
+      const bl = this.blends[b];
+      if (bl.mix.length !== bl.lanes.length) throw new Error(`blend at link ${i}: ${bl.lanes.length} sides, ${bl.mix.length} mixes`);
+      this.blendAt[i] = b;
+      let j = i;
+      for (const len of bl.lanes) for (let k = 0; k < len; k++, j++) this.feed[j] = k ? j - 1 : prev;
+      if (j > n || j === i) throw new Error(`blend at link ${i} runs to link ${j} of ${n}`);
+      prev = -1;
+      i = j;
+    }
+    // Rest state, stage by stage: each one's input is what feeds it at rest.
+    this.circuits.forEach((c, i) => this.rest.push(c.settle(this.restIn(i))));
     this.peaks = new Float64Array(this.circuits.length);
     this.up = butter8(0.45 * sampleRate, hi);
     this.down = butter8(0.45 * sampleRate, hi);
@@ -145,6 +176,8 @@ export class Rig {
   /** Pot `pot` (in netlist order) of link `i`, 0 to 1: it glides there over about 10 ms. */
   setPot(i: number, pot: number, at: number): void { this.circuits[i]?.setPot(pot, at); }
   setPower(p: number): void { this.power = p; }
+  /** How much of each side blend `b` sums back (a split's Blend knob). */
+  setMix(b: number, mix: number[]): void { const bl = this.blends[b]; if (bl && mix.length === bl.lanes.length) this.blends[b] = { ...bl, mix }; }
   /** The bias tremolo on the power tubes (rate in Hz, depth 0 to 1), or none. The LFO keeps its phase. */
   setTrem(t?: Trem): void { this.amp.setTrem(t); }
   /** Ohms on the speaker jack, 0 for nothing plugged in. Play through an open jack and the amp blows (`fault`). */
@@ -175,7 +208,20 @@ export class Rig {
     this.circuits[i] = c;
     this.mods[i] = this.startMods(i, mods);
     this.mods[i].forEach((m, k) => { if (old[k]) m.phase = old[k].phase; });
-    this.rest[i] = c.settle(i ? this.rest[i - 1] : 0);
+    this.rest[i] = c.settle(this.restIn(i));
+  }
+
+  /** The voltage link `i`'s input rests at. */
+  private restIn(i: number): number { const f = this.feed[i]; return f < 0 ? 0 : this.rest[f]; }
+
+  /** One oversampled step of link `i`: `x` in, resting at `r`, through its volume pot. */
+  private stepLink(i: number, x: number, r: number): number {
+    // A volume pot after the coupling cap: it scales the swing, not the resting voltage.
+    const y = this.circuits[i].step(r + (x - r) * this.gains[i]);
+    const sw = Math.abs(y - this.rest[i]);
+    if (sw > this.peaks[i]) this.peaks[i] = sw;
+    if (sw > this.swing[i]) this.swing[i] = sw;
+    return y;
   }
 
   /** Link `i`'s mods, each control set to its resting value. */
@@ -191,9 +237,9 @@ export class Rig {
 
   /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
   process(input: Float32Array, output: Float32Array, n = input.length): void {
-    const { circuits, gains, rest, peaks, up, down, up2, down2, amp, cab, oversample, mods, swing, sampleRate, loop } = this;
+    const { circuits, rest, up, down, up2, down2, amp, cab, oversample, mods, swing, sampleRate, loop, blendAt, blends } = this;
     const looped = loop.length > 0;
-    const last = rest.length - 1;
+    const count = circuits.length;
     for (let s = 0; s < n; s++) {
       let acc = 0;
       for (let i = 0; i < mods.length; i++) {
@@ -203,15 +249,21 @@ export class Rig {
       for (let k = 0; k < oversample; k++) {
         // Zero-stuffed upsampling: the sample, then silence, smoothed by the low-pass (×oversample keeps the level).
         let x = chain(up, k === 0 ? input[s] * this.inputVolts * oversample : 0);
-        for (let i = 0; i < circuits.length; i++) {
-          // A volume pot after the coupling cap: it scales the swing, not the resting voltage.
-          const r = i ? rest[i - 1] : 0;
-          x = circuits[i].step(r + (x - r) * gains[i]);
-          const sw = Math.abs(x - rest[i]);
-          if (sw > peaks[i]) peaks[i] = sw;
-          if (sw > swing[i]) swing[i] = sw;
+        // `xr` is the voltage `x` rests at: the last link's resting output, or 0 after a blend's sum.
+        let xr = 0;
+        for (let i = 0; i < count; ) {
+          const b = blendAt[i];
+          if (b < 0) { x = this.stepLink(i, x, xr); xr = rest[i++]; continue; }
+          const { lanes, mix } = blends[b];
+          let sum = 0;
+          for (let l = 0; l < lanes.length; l++) {
+            let y = x, yr = xr;
+            for (const end = i + lanes[l]; i < end; i++) { y = this.stepLink(i, y, yr); yr = rest[i]; }
+            sum += mix[l] * (y - yr);
+          }
+          x = sum; xr = 0;
         }
-        if (last >= 0) x -= rest[last];
+        x -= xr;
         if (this.power > 0 && !looped) x = amp.step(x, this.power);
         acc = chain(down, x);
       }

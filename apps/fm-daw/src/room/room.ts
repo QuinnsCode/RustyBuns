@@ -5,7 +5,7 @@
 // return to its send (the gear cabled into FM DAW's desk, #4902). Only the gear on that walk runs its circuits and
 // machines, and gear cabled into nothing costs nothing.
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
-import type { AmpSettings } from "../amp/messages.ts";
+import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { BenchPedal } from "../circuit/bench.ts";
@@ -17,7 +17,7 @@ export type Face = "front" | "back" | "left" | "right" | "top";
 export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face }
 /** A knob 0 to 1 (the patch's range); `circuit` is its 0 to 10 name in the amp or pedal it drives. */
 export interface KnobDef { name: string; label: string; at: Vec3; face: Face; dflt: number }
-export type Kind = "guitar" | "pedal" | "amp" | "cab" | "machine" | "desk";
+export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk";
 /** The loop machines (Q Amp's Q Bucket, Q Tape, Q Spring) as boxes of their own. */
 export type MachineKind = LoopSpec["kind"];
 /** A piece of studio gear: its size (w, h, d in metres, standing on its bottom face), jacks and knobs, and the circuit or machine it runs. */
@@ -58,6 +58,24 @@ function machineGear(loop: MachineKind, name: string, size: Vec3, kg: number, kn
   };
 }
 
+/**
+ * Q Split: one signal to two sides and back. `send-a` and `send-b` carry the input out to the pedals on each side,
+ * `return-a` and `return-b` bring them back, and Blend sets how much of each comes out (0 all A, 1 all B). A side cabled
+ * straight from its send to its return is the dry signal. Pedals one after another need no box: cable them in a row.
+ */
+const SPLIT: GearDef = {
+  id: "split", name: "Q Split", kind: "split", size: [0.16, 0.06, 0.2], kg: 0.6,
+  jacks: [
+    { name: "in", dir: "in", at: [0.08, 0.035, -0.04], face: "right" },
+    { name: "out", dir: "out", at: [-0.08, 0.035, -0.04], face: "left" },
+    { name: "send-a", dir: "out", at: [-0.05, 0.035, 0.1], face: "front" },
+    { name: "return-a", dir: "in", at: [-0.017, 0.035, 0.1], face: "front" },
+    { name: "send-b", dir: "out", at: [0.017, 0.035, 0.1], face: "front" },
+    { name: "return-b", dir: "in", at: [0.05, 0.035, 0.1], face: "front" },
+  ],
+  knobs: [{ name: "blend", label: "Blend", at: [0, 0.06, -0.05], face: "top", dflt: 0.5 }],
+};
+
 /** How many tracks the desk's patch bay has inserts for: `send-1` out to the gear, back into `return-1`. */
 export const DESK_TRACKS = 4;
 const DESK: GearDef = {
@@ -73,6 +91,7 @@ const DESK: GearDef = {
 export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries([
   { id: "guitar", name: "Guitar", kind: "guitar", size: [0.34, 1.0, 0.06], kg: 3.5, jacks: [{ name: "out", dir: "out", at: [0.1, 0.22, 0.03], face: "front" }], knobs: [] } satisfies GearDef,
   ...PEDALS.map(pedalGear),
+  SPLIT,
   ...AMPS.map(ampGear),
   machineGear("bbd", "Q Bucket", [0.14, 0.07, 0.2], 0.7, [["mode", "Mode", 0], ["rate", "Rate", 0.3], ["depth", "Depth", 0.5]]),
   machineGear("tape", "Q Tape", [0.34, 0.14, 0.22], 4, [["time", "Time", 0.4], ["repeats", "Repeats", 0.4], ["mix", "Mix", 0.4]]),
@@ -134,16 +153,22 @@ export const REACH = 2.1;
 /** The wall rack: a frame against the back wall, its shelves' tops in metres. */
 export const RACK = { x0: -2, x1: 2, z0: -HALF_D, z1: -HALF_D + 0.45, shelves: [0.45, 0.95, 1.45] };
 
+/** The pedal wall: ledges on the left wall, where the pedals and Q Split hang until you take one down. */
+export const PEDAL_WALL = { x0: -HALF_W, x1: -HALF_W + 0.25, z0: -1.9, z1: -0.1, shelves: [1.0, 1.4] };
+/** Everything with shelves: what blocks your walk and what a box set down can land on. */
+const SHELVING = [RACK, PEDAL_WALL];
+
 const at = (x: number, y: number, z: number) => [x, y, z];
-const rackZ = (RACK.z0 + RACK.z1) / 2;
-/** The room as it starts: the amps, pedals and machines on the rack, the cab and the desk on the floor, the guitar on its stand, no cables. */
+const rackZ = (RACK.z0 + RACK.z1) / 2, wallX = (PEDAL_WALL.x0 + PEDAL_WALL.x1) / 2, facing = Math.PI / 2;
+/** The room as it starts: the pedals on the pedal wall, the amps and machines on the rack, the cab and the desk on the floor, the guitar on its stand, no cables. */
 export function startPatch(): Patch {
   return {
     placed: [
-      { id: "drive", gear: "pedal-drive", at: at(-1.2, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "fuzz", gear: "pedal-fuzz", at: at(-0.9, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "dist", gear: "pedal-dist", at: at(-0.6, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "comp", gear: "pedal-comp", at: at(-0.3, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "drive", gear: "pedal-drive", at: at(wallX, PEDAL_WALL.shelves[0], -1.7), turn: facing },
+      { id: "fuzz", gear: "pedal-fuzz", at: at(wallX, PEDAL_WALL.shelves[0], -1.35), turn: facing },
+      { id: "dist", gear: "pedal-dist", at: at(wallX, PEDAL_WALL.shelves[0], -1.0), turn: facing },
+      { id: "comp", gear: "pedal-comp", at: at(wallX, PEDAL_WALL.shelves[0], -0.65), turn: facing },
+      { id: "split", gear: "split", at: at(wallX, PEDAL_WALL.shelves[0], -0.3), turn: facing },
       { id: "bucket", gear: "machine-bbd", at: at(0.05, RACK.shelves[0], rackZ), turn: 0 },
       { id: "tape", gear: "machine-tape", at: at(0.5, RACK.shelves[0], rackZ), turn: 0 },
       { id: "spring", gear: "machine-spring", at: at(1.2, RACK.shelves[0], rackZ), turn: 0 },
@@ -289,7 +314,8 @@ function solids(r: Room): Rect[] {
     const g = gearOf(p);
     return g ? [{ cx: p.at[0], cz: p.at[2], hw: g.size[0] / 2, hd: g.size[2] / 2, turn: p.turn }] : [];
   });
-  return [{ cx: (RACK.x0 + RACK.x1) / 2, cz: (RACK.z0 + RACK.z1) / 2, hw: (RACK.x1 - RACK.x0) / 2, hd: (RACK.z1 - RACK.z0) / 2, turn: 0 }, ...gear];
+  const shelving = SHELVING.map((s) => ({ cx: (s.x0 + s.x1) / 2, cz: (s.z0 + s.z1) / 2, hw: (s.x1 - s.x0) / 2, hd: (s.z1 - s.z0) / 2, turn: 0 }));
+  return [...shelving, ...gear];
 }
 
 /** Push you out of the walls, the rack and the gear standing on the floor. */
@@ -354,7 +380,7 @@ function sitsOn(q: Placed, p: Placed): boolean {
 function landing(r: Room, id: string, x: number, z: number, fromY: number): number {
   let y = 0;
   const below = (top: number) => { if (top <= fromY + 0.08 && top > y) y = top; };
-  if (x >= RACK.x0 && x <= RACK.x1 && z >= RACK.z0 && z <= RACK.z1) RACK.shelves.forEach(below);
+  for (const s of SHELVING) if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) s.shelves.forEach(below);
   for (const p of r.studio.patch.placed) {
     const g = gearOf(p);
     if (g && p.id !== id && sitsOn({ id, gear: "", at: [x, 0, z], turn: 0 }, p)) below(p.at[1] + g.size[1]);
@@ -507,8 +533,8 @@ export function loopSpec(g: GearDef, knobs: Record<string, number> = {}): LoopSp
  * What the room plays. First a cab: back from its input to an amp's speaker out, from the amp's input back
  * through pedals and machines to the guitar (and, if the amp's return has a cable in, its loop back to its send).
  * Then, if no cab plays, the desk: back from a track's return through pedals, machines and an amp's line out to
- * that track's send. The rig runs one pedal, then the amp, then the machines in cable order (#4827 makes the
- * order yours); anything else is a problem and is silent.
+ * that track's send. Pedals run in cable order, any number of them; a Q Split runs the pedals on its two sides side
+ * by side and blends them back. Then the amp, then the machines in cable order. Anything else is a problem and is silent.
  */
 export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
   const byId = new Map(patch.placed.map((p) => [p.id, p]));
@@ -521,6 +547,22 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
 
   /** Back from input jack `into` to the source jack: the gear between, first first, or why it stops. */
   type Walk = { items: string[]; amp: string | null; why: string | null };
+  /** Each Q Split on a walk: the pedals on side A and side B, first first. */
+  const sides = new Map<string, string[][]>(), inSplit = new Set<string>();
+  /** A walk's items with each split's side pedals after it. */
+  const expand = (ids: string[]) => ids.flatMap((id) => [id, ...(sides.get(id)?.flat() ?? [])]);
+  /** A split's two sides, or why it doesn't pass a signal. */
+  const splitSides = (id: string): string[][] | string => {
+    const got: string[][] = [];
+    for (const side of ["a", "b"]) {
+      const w = walk([id, `return-${side}`], (e) => same(e, [id, `send-${side}`]), false);
+      if (w.why) return w.why;
+      const odd = w.items.find((x) => kind(x)?.kind !== "pedal");
+      if (odd) return `${name(odd)} is on ${name(id)}'s side ${side.toUpperCase()}: a split's sides take pedals`;
+      got.push(w.items);
+    }
+    return got;
+  };
   const walk = (into: End, source: (e: End) => boolean, lineAmp: boolean): Walk => {
     const items: string[] = [];
     let amp: string | null = null, at = other(into), who = into[0];
@@ -528,7 +570,15 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
     while (at) {
       if (source(at)) return { items, amp, why: null };
       const g = kind(at[0]);
-      const box = (g?.kind === "pedal" || g?.kind === "machine") && at[1] === "out";
+      const split = g?.kind === "split" && at[1] === "out" && !items.includes(at[0]) && !inSplit.has(at[0]);
+      if (split) {
+        inSplit.add(at[0]);
+        const got = splitSides(at[0]);
+        inSplit.delete(at[0]);
+        if (typeof got === "string") return { items, amp, why: got };
+        sides.set(at[0], got);
+      }
+      const box = (g?.kind === "pedal" || g?.kind === "machine" || split) && at[1] === "out";
       const line = lineAmp && !amp && g?.kind === "amp" && at[1] === "line";
       if ((!box && !line) || items.includes(at[0])) return { items, amp, why: `${name(who)}'s ${who === into[0] && into[1] !== "in" ? into[1] : "input"} goes to ${name(at[0])}'s ${at[1]}` };
       if (line) amp = at[0];
@@ -543,27 +593,36 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
   /** The rig for a whole chain: `amp` (or straight into the desk), the pedals and machines on it, the amp's loop. */
   const rig = (amp: string | null, items: string[], loop: string[]): { settings: AmpSettings; running: string[]; problems: string[] } => {
     const problems: string[] = [];
-    const pedals = items.filter((id) => kind(id)?.kind === "pedal");
+    const isFront = (id: string) => kind(id)?.kind === "pedal" || kind(id)?.kind === "split";
+    const fronts = items.filter(isFront);
     const machines = [...items.filter((id) => kind(id)?.kind === "machine"), ...loop];
     const ampAt = amp ? items.indexOf(amp) : -1;
-    const late = items.filter((id, i) => (kind(id)?.kind === "pedal" && (i > ampAt && ampAt >= 0 || items.slice(0, i).some((x) => kind(x)?.kind === "machine"))) || (kind(id)?.kind === "machine" && i < ampAt));
-    if (late.length) problems.push(`the rig plays the pedal, then the amp, then the machines for now (#4827): ${late.map(name).join(", ")} moved to its place`);
+    const late = items.filter((id, i) => (isFront(id) && (i > ampAt && ampAt >= 0 || items.slice(0, i).some((x) => kind(x)?.kind === "machine"))) || (kind(id)?.kind === "machine" && i < ampAt));
+    if (late.length) problems.push(`the rig plays the pedals, then the amp, then the machines for now: ${late.map(name).join(", ")} moved to its place`);
     const kinds = machines.map((id) => kind(id)?.loop);
     const twice = machines.filter((_, i) => kinds.indexOf(kinds[i]) !== i);
     if (twice.length) problems.push(`one of each machine plays for now: ${twice.map(name).join(", ")} passed straight through`);
     const runMachines = machines.filter((id) => !twice.includes(id));
-    const ped = pedals[0], pedDef = ped ? kind(ped) : undefined;
-    if (pedals.length > 1) problems.push(`the rig runs one pedal for now (#4827): ${pedals.slice(1).map(name).join(", ")} passed straight through`);
-    const onBench = pedDef?.circuit === "bench", benchAt = onBench && ped ? byId.get(ped) : undefined;
-    const bench = benchAt && benchNet(patch, benchAt);
-    const drive = ped && pedDef && !onBench ? (patch.knobs[ped]?.drive ?? pedDef.knobs[0].dflt) * 10 : 0;
+    /** A pedal as the board plays it: its circuit at its knob, or a bench board's netlist at its pots. */
+    const pedalOf = (id: string): BoardPedal => {
+      const g = kind(id), at = byId.get(id);
+      if (g?.circuit === "bench" && at) return { pedal: "bench", drive: 0, bench: benchNet(patch, at) };
+      return { pedal: g?.circuit ?? "", drive: (patch.knobs[id]?.drive ?? g?.knobs[0]?.dflt ?? 0.5) * 10 };
+    };
+    const board: BoardStep[] = fronts.map((id) => {
+      const s = sides.get(id);
+      if (!s) return pedalOf(id);
+      const b = patch.knobs[id]?.blend ?? 0.5;
+      return { split: s.map((side) => side.map(pedalOf)), mix: [1 - b, b] };
+    });
+    const onBoard = fronts.flatMap((id) => [id, ...(sides.get(id)?.flat() ?? [])]);
     const ampDef = AMPS.find((a) => a.id === (amp && kind(amp)?.circuit)) ?? AMPS[0];
     const turned = (k: keyof Knobs) => (amp ? (patch.knobs[amp]?.[k] ?? ampDef.knobs[k] / 10) * 10 : ampDef.knobs[k]);
     const knobs: Knobs = { gain: turned("gain"), bass: turned("bass"), mid: turned("mid"), treble: turned("treble"), master: turned("master"), noise: turned("noise"), rate: turned("rate"), depth: turned("depth") };
     const specs = runMachines.flatMap((id) => { const g = kind(id), s = g && loopSpec(g, patch.knobs[id]); return s ? [s] : []; });
     return {
-      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, ...(bench ? { bench } : {}), drive, swaps: {}, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample, loop: specs, ...(amp ? {} : { direct: true }) },
-      running: [...(ped ? [ped] : []), ...(amp ? [amp] : []), ...runMachines],
+      settings: { amp: ampDef.id, pedal: null, drive: 0, swaps: {}, board, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample, loop: specs, ...(amp ? {} : { direct: true }) },
+      running: [...onBoard, ...(amp ? [amp] : []), ...runMachines],
       problems,
     };
   };
@@ -572,7 +631,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
   const ampLoop = (amp: string): Walk => {
     if (!other([amp, "return"])) return { items: [], amp: null, why: null };
     const w = walk([amp, "return"], (e) => same(e, [amp, "send"]), false);
-    const pedal = w.items.find((id) => kind(id)?.kind === "pedal");
+    const pedal = w.items.find((id) => kind(id)?.kind === "pedal" || kind(id)?.kind === "split");
     if (!w.why && pedal) return { ...w, why: `${name(pedal)} is in ${name(amp)}'s loop: the loop takes machines (Q Bucket, Q Tape, Q Spring)` };
     return w.why ? { ...w, why: `${name(amp)}'s loop is open (its return is in, so nothing else gets through): ${w.why}` } : w;
   };
@@ -591,7 +650,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
     if (loop.why) { fail(loop.why); continue; }
     const guitar = other(front.items.length ? [front.items[0], "in"] : [src[0], "in"]);
     const r = rig(src[0], [...front.items, src[0]], loop.items);
-    found = { playing: true, chain: [guitar?.[0] ?? "guitar", ...front.items, src[0], ...loop.items, cab.id], ...r };
+    found = { playing: true, chain: [guitar?.[0] ?? "guitar", ...expand(front.items), src[0], ...loop.items, cab.id], ...r };
     break;
   }
   if (!cabs.length) fail("no speaker cab in the room");
@@ -604,7 +663,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
       const w = walk(ret, (e) => same(e, send), true);
       const loop = !w.why && w.amp ? ampLoop(w.amp) : null;
       const problem = w.why ?? loop?.why ?? (w.items.length ? null : `track ${t}'s send goes straight back into its return: nothing in the insert`);
-      const chain = [desk.id, ...w.items, ...(loop?.items ?? []), desk.id];
+      const chain = [desk.id, ...expand(w.items), ...(loop?.items ?? []), desk.id];
       inserts.push({ track: t, chain: problem ? [] : chain, whole: !problem, problems: problem ? [problem] : [] });
       if (!found && !problem) found = { playing: true, chain, ...rig(w.amp, w.items, loop?.items ?? []) };
     }

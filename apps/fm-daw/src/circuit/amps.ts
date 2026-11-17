@@ -5,7 +5,8 @@
 // describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type StageSpec, type Swaps, type ToneSpec } from "./circuits.ts";
 import { germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "./effects.ts";
-import { DEFAULT_MIC, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { DEFAULT_MIC, type Blend, type Link, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import type { BoardPedal, BoardStep } from "../amp/messages.ts";
 
 /**
  * The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`).
@@ -115,6 +116,27 @@ export const tremOf = (amp: AmpDef, knobs: Knobs) => (amp.trem ? { hz: tremHz(kn
 /** The cab and the jack: where the mic sits, and the ohms on the speaker jack (0 for nothing plugged in). */
 export interface Room { mic: Mic; load: number }
 export const DEFAULT_ROOM: Room = { mic: DEFAULT_MIC, load: 8 };
+
+/**
+ * A board's pedals as rig links, in order, with a `Blend` for each split: what goes ahead of the amp's links.
+ * An unknown pedal is left out; a split with no pedal on either side is no split.
+ */
+export function boardLinks(board: readonly BoardStep[]): { links: Link[]; blends: Blend[] } {
+  const links: Link[] = [], blends: Blend[] = [];
+  const one = (p: BoardPedal): number => {
+    const def = PEDALS.find((d) => d.id === p.pedal);
+    if (p.pedal === "bench" && p.bench) links.push({ net: p.bench });
+    else if (def) links.push({ net: def.net(p.drive), mods: def.mods?.(p.drive) });
+    else return 0;
+    return 1;
+  };
+  for (const st of board) {
+    if (!("split" in st)) { one(st); continue; }
+    const at = links.length, lanes = st.split.map((side) => side.reduce((n, p) => n + one(p), 0));
+    if (links.length > at) blends.push({ at, lanes, mix: st.mix });
+  }
+  return { links, blends };
+}
 
 /** A pedal (or none, and with the player's part swaps) into an amp, with these knobs, into a cab. */
 export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number; swaps?: Swaps }, room: Room = DEFAULT_ROOM): RigSpec {

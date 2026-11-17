@@ -1,6 +1,6 @@
 // Qollab Studio's gear room as a player walks it: to the rack, the amp down onto the cab, the guitar through a pedal into the
 // amp and the amp into the cab by looking and clicking, a knob turned, and a cable pulled out again; then gear
-// cabled into the desk's track inserts (#4902).
+// cabled into the desk's track inserts (#4902); then two pedals off the pedal wall, in a row and then side by side on Q Split.
 import { expect, test } from "bun:test";
 import { applySettings } from "../src/amp/live.ts";
 import { aimed, benchIn, drop, gearOf, item, lead, listen, lookAt, newRoom, pickUp, plug, putDown, setKnob, snapshot, unplug, use, walkTo, type Room } from "../src/room/room.ts";
@@ -31,7 +31,8 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
   // Guitar out -> Q Fuzz in, fuzz out -> amp in, amp speaker -> cab in.
   walkTo(r, -1.2, 0.9);
   expect(click(r, "guitar", "out")).toEqual({ ok: true });
-  walkTo(r, -0.9, -2.1);
+  // The pedals hang on the pedal wall.
+  walkTo(r, -2.4, 0.9); walkTo(r, -2.7, -1.35);
   expect(click(r, "fuzz", "out")).toEqual({ ok: false, why: "two outputs: Guitar's out and Q Fuzz's out" });
   expect(click(r, "fuzz", "in")).toEqual({ ok: true });
   expect(click(r, "fuzz", "out")).toEqual({ ok: true });
@@ -45,7 +46,7 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
 
   const heard = listen(r.studio.patch);
   expect(heard).toMatchObject({ playing: true, chain: ["guitar", "fuzz", "lead", "cab"], running: ["fuzz", "lead"], problems: [] });
-  expect(heard.settings).toMatchObject({ amp: "lead", pedal: "fuzz", drive: 7, bypass: false });
+  expect(heard.settings).toMatchObject({ amp: "lead", board: [{ pedal: "fuzz", drive: 7 }], bypass: false });
 
   // Back at the front, look at the gain knob and turn it down.
   walkTo(r, 2.3, 0.3); walkTo(r, 1.2, 0.2);
@@ -101,7 +102,7 @@ test("cable gear into the desk's track inserts: Q Tape on track 1, Q Squeeze int
   unplug(r, ["desk", "return-1"]); drop(r);
   const amp = listen(r.studio.patch, 2);
   expect(amp).toMatchObject({ playing: true, chain: ["desk", "comp", "lead", "spring", "desk"], running: ["comp", "lead", "spring"] });
-  expect(amp.settings).toMatchObject({ amp: "lead", pedal: "comp", loop: [{ kind: "spring" }] });
+  expect(amp.settings).toMatchObject({ amp: "lead", board: [{ pedal: "comp" }], loop: [{ kind: "spring" }] });
   expect(amp.settings?.direct).toBeUndefined();
   expect(play(amp).misses).toBe(0);
 
@@ -135,13 +136,92 @@ test("a board off the bench stands on the floor, its knobs turn, and cabled in i
   }
   const heard = listen(r.studio.patch);
   expect(heard).toMatchObject({ playing: true, chain: ["guitar", "bench-1", "lead", "cab"], running: ["bench-1", "lead"], problems: [] });
-  expect(heard.settings).toMatchObject({ pedal: "bench", drive: 0 });
   // What the worklet runs is the board at the knobs as the room has them: Drive at 9, Level centred.
-  expect(heard.settings?.bench).toEqual(b.pedal.net({ DRIVE: 0.9, LEVEL: 0.5 }));
+  expect(heard.settings?.board).toEqual([{ pedal: "bench", drive: 0, bench: b.pedal.net({ DRIVE: 0.9, LEVEL: 0.5 }) }]);
 
   // Hands full, no second pedal; free again, a second one gets its own id.
   expect(pickUp(r, "bench-1")).toEqual({ ok: true });
   expect(benchIn(r, b.pedal)).toEqual({ ok: false, why: "your hands are full" });
   putDown(r);
   expect(benchIn(r, b.pedal)).toMatchObject({ ok: true, id: "bench-2" });
+});
+
+test("two pedals off the pedal wall: in a row, reordered while it plays, then side by side on Q Split, and each sounds different", () => {
+  const r = newRoom();
+  const cable = (a: string, aj: string, b: string, bj: string) => { expect(lead(r, [a, aj])).toEqual({ ok: true }); expect(plug(r, [b, bj])).toEqual({ ok: true }); };
+  const pull = (id: string, jack: string) => { unplug(r, [id, jack]); drop(r); };
+  // A plucked note into the rig; `live` carries on from the last settings, as the audio thread does.
+  const n = 9600, x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = 0.5 * Math.exp(-i / 4000) * Math.sin((2 * Math.PI * 110 * i) / 48000);
+  let live: ReturnType<typeof applySettings> | null = null;
+  const play = () => {
+    const h = listen(r.studio.patch, 2);
+    expect(h.problems).toEqual([]);
+    live = applySettings(h.settings!, live, 48000);
+    const y = new Float32Array(n);
+    live.rig.process(x, y, n);
+    const out = Array.from(y, (v) => v / live!.scale);
+    expect(Math.max(...out.map(Math.abs))).toBeLessThan(5);
+    expect(live.rig.misses).toBe(0);
+    return { heard: h, out };
+  };
+  const apart = (a: number[], b: number[]) => Math.sqrt(a.reduce((s, v, i) => s + (v - b[i]) ** 2, 0) / a.length) / Math.sqrt(a.reduce((s, v) => s + v * v, 0) / a.length);
+
+  // Take Q Drive, Q Fuzz and Q Split down off the wall and set each on the floor, a step apart.
+  const takeDown = (id: string, yaw: number) => {
+    expect(item(r, id)!.at[1]).toBe(1);
+    expect(pickUp(r, id)).toEqual({ ok: true });
+    r.you.yaw = yaw; r.you.pitch = -0.8;
+    expect(putDown(r)).toEqual({ ok: true });
+    expect(item(r, id)!.at[1]).toBe(0);
+  };
+  walkTo(r, -2.4, 0.9); walkTo(r, -2.7, -1.0);
+  takeDown("drive", 0);
+  takeDown("fuzz", -1.2);
+
+  // In a row: guitar, Q Drive, Q Fuzz, the lead amp, the cab.
+  cable("guitar", "out", "drive", "in");
+  cable("drive", "out", "fuzz", "in");
+  cable("fuzz", "out", "lead", "in");
+  cable("lead", "speaker", "cab", "in");
+  const series = play();
+  expect(series.heard).toMatchObject({ chain: ["guitar", "drive", "fuzz", "lead", "cab"], running: ["drive", "fuzz", "lead"] });
+  expect(series.heard.settings?.board).toEqual([{ pedal: "drive", drive: 3 }, { pedal: "fuzz", drive: 7 }]);
+
+  // Swap them while it plays: Q Fuzz first, then Q Drive. Same rig, its two pedals swapped in place.
+  for (const [id, jack] of [["guitar", "out"], ["drive", "out"], ["fuzz", "out"]] as const) pull(id, jack);
+  cable("guitar", "out", "fuzz", "in");
+  cable("fuzz", "out", "drive", "in");
+  cable("drive", "out", "lead", "in");
+  const rig = live!.rig, swapped = play();
+  expect(live!.rig).toBe(rig);
+  expect(swapped.heard.chain).toEqual(["guitar", "fuzz", "drive", "lead", "cab"]);
+
+  // Side by side: the guitar into Q Split, Q Drive on side A, Q Fuzz on side B, the split into the amp.
+  for (const [id, jack] of [["guitar", "out"], ["fuzz", "out"], ["drive", "out"]] as const) pull(id, jack);
+  takeDown("split", -2.4);
+  cable("guitar", "out", "split", "in");
+  cable("split", "send-a", "drive", "in");
+  cable("drive", "out", "split", "return-a");
+  cable("split", "send-b", "fuzz", "in");
+  expect(listen(r.studio.patch).problems).toEqual(["nothing plugged into Q Split's return-b"]);
+  cable("fuzz", "out", "split", "return-b");
+  cable("split", "out", "lead", "in");
+  const parallel = play();
+  expect(parallel.heard).toMatchObject({ chain: ["guitar", "split", "drive", "fuzz", "lead", "cab"], running: ["split", "drive", "fuzz", "lead"] });
+  expect(parallel.heard.settings?.board).toEqual([{ split: [[{ pedal: "drive", drive: 3 }], [{ pedal: "fuzz", drive: 7 }]], mix: [0.5, 0.5] }]);
+
+  // Three different sounds out of the same two pedals.
+  expect(apart(series.out, parallel.out)).toBeGreaterThan(0.1);
+  expect(apart(swapped.out, parallel.out)).toBeGreaterThan(0.1);
+  expect(apart(series.out, swapped.out)).toBeGreaterThan(0.1);
+
+  // Blend all the way to side A: just Q Drive is heard. A machine on a side is a problem, and silent.
+  setKnob(r, "split", "blend", 0);
+  expect(listen(r.studio.patch).settings?.board).toMatchObject([{ mix: [1, 0] }]);
+  pull("split", "send-b");
+  cable("split", "send-b", "tape", "in");
+  pull("fuzz", "out");
+  cable("tape", "out", "split", "return-b");
+  expect(listen(r.studio.patch)).toMatchObject({ playing: false, problems: ["Q Tape is on Q Split's side B: a split's sides take pedals"] });
 });
