@@ -161,6 +161,8 @@ buildRoom();
 // ---- people: you, and everyone the live line says is here ----
 interface Drawn { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }
 const drawn = new Map<number | "me", Drawn>();
+/** Whoever is playing, for everyone else to look at (null: nobody is). */
+let watched: THREE.Vector3 | null = null;
 function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, yaw: number, seated: boolean, playing: boolean, dt: number, t: number, snap: boolean) {
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
@@ -174,7 +176,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
   d.fig.group.position.set(d.x, 0, d.z);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.speed, seated, playing, t });
+  d.fig.pose({ speed: d.speed, seated, playing, t, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
@@ -448,6 +450,8 @@ function frame(now: number) {
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
   // you: seen over your shoulder with no tag of your own, and not at all once a wall behind pulls the camera into your head
   const c = cameraPose(jam);
+  const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
+  watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
   if (c.boom > 0.7) drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
   else dropPerson("me");
   for (const [peer, o] of jam.others) {

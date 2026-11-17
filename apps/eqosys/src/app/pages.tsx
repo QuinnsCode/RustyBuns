@@ -296,7 +296,12 @@ const HOME_CSS = `
 .home .ch-swatch[aria-pressed=true]{border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--paper),0 0 0 2px var(--acc)}
 .home .ch-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem}.home .ch-bar .ui-btn{display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap;min-height:2.75rem}
 .home .ch-note{white-space:nowrap;color:var(--ink);opacity:.75;font-size:.9rem}
-@media(max-width:30rem){.home .ch-row{grid-template-columns:minmax(0,1fr)}.home .ch-stage{max-height:55vh}}
+.home .ch-tabs{display:flex;gap:.35rem;overflow-x:auto;padding:.15rem;border-radius:999px;background:color-mix(in oklab,var(--rim) 35%,transparent)}
+.home .ch-tab{flex:1 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;white-space:nowrap;font:inherit;font-weight:600;min-height:2.6rem;padding:.3rem .8rem;border:0;border-radius:999px;background:transparent;color:inherit;cursor:pointer}
+.home .ch-tab[aria-selected=true]{background:var(--paper);box-shadow:0 1px 3px rgb(0 0 0/.18)}
+.home .ch-panel{display:grid;gap:.55rem;min-width:0}.home .ch-panel[hidden]{display:none}
+.home .ch-slider{display:flex;align-items:center;min-height:2.5rem}.home .ch-slider input{width:100%;accent-color:var(--acc)}
+@media(max-width:30rem){.home .ch-row{grid-template-columns:minmax(0,1fr)}.home .ch-stage{max-height:55vh}.home .ch-tab{padding:.3rem .55rem;gap:.3rem}}
 .home .row input{flex:1;min-width:10rem}
 .home .link{display:grid;gap:.4rem;min-width:min(100%,16rem)}.home .link input{width:100%;font-family:ui-monospace,monospace;font-size:.82rem}
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
