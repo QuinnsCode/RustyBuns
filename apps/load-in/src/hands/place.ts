@@ -60,7 +60,12 @@ export function viewFrame(what: What["kind"], kg: number, t: number, speed: numb
       f = frame([0.15, -0.2 - drop, -0.4], [0.35, -0.5 - tip, 0.8], [-0.45, 0.8, -0.35]);
       break;
     // A coil hanging off the fingers, palm up and toward you.
-    case "roll": case "handle":
+    // A coil hangs a forearm's length below the fist, so the fist rides higher and further out than for a handle:
+    // you see most of the coil, not only its top.
+    case "roll":
+      f = frame([0.23, -0.13 - drop, -0.5], [0.2, -0.6 - tip, 0.78], [1, 0.2 + tip, 0]);
+      break;
+    case "handle":
       f = frame([0.2, -0.27 - drop, -0.34], [0.25, -0.55 - tip, 0.8], [1, 0.2 + tip, 0]);
       break;
     default:

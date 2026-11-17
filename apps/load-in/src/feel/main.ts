@@ -327,7 +327,7 @@ function hud() {
   let hint = "";
   if (roll && hold?.part === "roll") {
     const j = jackNear(roll.kind);
-    hint = j ? `F plug ${roll.tailIn ? "the end" : "it"} into ${j.id}` : roll.tailIn ? "Walk to where this cable starts. F at a lit jack plugs the end in" : "Hold the mouse or Space to wind up, let go to bowl. F puts it down";
+    hint = j ? `F plug ${roll.tailIn ? "the end" : "it"} into ${j.id}` : roll.tailIn ? "Carry it to a lit jack: F plugs the end in" : "Hold to wind up, let go to bowl. F puts it down";
   } else if (roll) hint = jackNear(roll.kind) ? `F plug into ${jackNear(roll.kind)!.id}` : "Walk the end to a lit jack. F lets go";
   else hint = runs.some((q) => q.roll.state === "down" && flat(you, q.roll) < 1.9) ? "F pick up the roll" : flat(you, { x: 0, z: 3.2 }) < 2 ? "P switches 48 V phantom" : "";
   $("hint").textContent = hint;

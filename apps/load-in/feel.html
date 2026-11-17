@@ -29,6 +29,8 @@
   #hint { margin: 0; font-size: 17px; }
   #said { margin: 0; font: 600 14px var(--pen); }
   #weight { margin: 0; font: 700 17px var(--mono); font-variant-numeric: tabular-nums; }
+  /* One line each on a phone: nothing in the foot wraps. */
+  @media (max-width: 600px) { #hint { font-size: 13px; } #said { font-size: 12px; } #weight { font-size: 13px; } #hint, #weight { white-space: nowrap; } }
   #power { width: min(260px, 70%); height: 12px; border: 2px solid var(--ink); background: linear-gradient(90deg, var(--spot) calc(var(--p, 0) * 100%), var(--paper) 0); }
   #done { margin: 0; padding: 8px 20px 4px; font-size: 30px; --tilt: -2deg; }
   #pad { display: none; gap: 6px; pointer-events: auto; max-width: 100%; }
