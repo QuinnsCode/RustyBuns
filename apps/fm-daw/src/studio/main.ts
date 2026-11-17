@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
 import { cleanAvatar, defaultAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
-import { apply, type Live, type Project } from "../project.ts";
+import { apply, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
@@ -22,6 +22,10 @@ import { figure, type Figure } from "./figure.ts";
 import { thingBox, wallPieces, type Spot } from "./room.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
+import { addCommands } from "@rustybuns/util/commands";
+import { synth } from "@rustybuns/models/synth";
+import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
+import { madeSpot } from "./instrument.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -189,13 +193,54 @@ function onGone(from: number) {
   gone(jam, from);
   dropPerson(from);
 }
+// ---- made instruments: a seat at its track, and a synth grown from its seed (src/studio/instrument.ts) ----
+const madeGroup = new THREE.Group();
+scene.add(madeGroup);
+let madeKey = "";
+function drawMade() {
+  syncRoom(player);
+  const key = JSON.stringify(project.instruments ?? []);
+  if (key === madeKey) return;
+  madeKey = key;
+  for (const c of [...madeGroup.children]) {
+    madeGroup.remove(c);
+    c.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); for (const mt of [o.material].flat()) mt.dispose(); } });
+  }
+  for (const m of project.instruments ?? []) {
+    const s = madeSpot(m), b = thingBox(s), model = synth(m.seed, m.voice).group;
+    // the keys face the seat: the model's front is +z, the seat looks down -z at yaw 0
+    model.position.set(b.cx, 0, b.cz); model.rotation.y = s.yaw;
+    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.06, 16), std("#2e3439"));
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), std("#8a8f94", { metalness: 0.6 }));
+    seat.position.set(s.at[0], 0.45, s.at[1]); leg.position.set(s.at[0], 0.225, s.at[1]);
+    madeGroup.add(model, seat, leg);
+  }
+}
+function groove(p: Project) { project = p; out?.send(loadMsg(p)); drawMade(); }
+
+// ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
+const rights: Rights = { floor: null, grants: null, me: null, asked: null };
+const back = lookBack((ago) => net?.rewind(ago));
+const player: Player = {
+  jam, base: def, name,
+  project: () => project,
+  rights: () => ({ ...rights, floor: status.floor ?? null }),
+  live: (e) => live(e),
+  edit: (op: Op) => { net?.send(op); groove(apply(project, op)); },
+  ask: (can) => net?.grant({ t: "ask", can }),
+  rewind: back.rewind,
+  wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+};
+addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
+
 net = connect({
+  onGrants(m) { rights.grants = m.grants; rights.asked = (rights.me && m.asks[rights.me]) || null; },
+  onRewound: back.answer,
   onSnapshot(p) {
     if (!p) { net?.init(project); return; }
-    project = p;
-    out?.send(loadMsg(p));
+    groove(p);
   },
-  onOp(op) { project = apply(project, op); out?.send(loadMsg(project)); },
+  onOp(op) { groove(apply(project, op)); },
   onLive,
   onGone,
   onStatus(s) {
@@ -203,7 +248,7 @@ net = connect({
     if (s.state === "online" && s.peers > status.peers) wear();
     status = s;
   },
-  onChat() {},
+  onChat(m) { if (m.t === "chat") rights.me = m.you; },
   onTakeBytes() {},
   hello: () => ({ key: myKey(), name }),
 });
