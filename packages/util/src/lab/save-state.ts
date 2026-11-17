@@ -80,3 +80,39 @@ export function roundTrip<S extends object, I>(core: Core<S, I>, start: () => S,
   for (let i = at; i < to; i++) { core.step(s, input(i)); core.step(copy, input(i)); }
   return firstDiff(s, copy);
 }
+
+/**
+ * Rewind (#4782): step a sim through this and it keeps a save every `every` frames, the last `keep` of them, and the
+ * inputs since the oldest. `back(n)` loads the nearest save at or before `n` frames ago and replays the logged inputs up
+ * to it, so the state comes back exactly, not just near. What came after is dropped: stepping on from there is a new branch.
+ */
+export function rewinder<S extends object, I>(core: Core<S, I>, every = 60, keep = 10) {
+  let saves: { frame: number; bytes: Uint8Array }[] = [], inputs: I[] = [], first = 0, frame = 0;
+  return {
+    /** Frames stepped so far (less any rewound). */
+    get frame() { return frame; },
+    /** The oldest frame `back` can still reach. */
+    get oldest() { return saves[0]?.frame ?? frame; },
+    step(s: S, input: I) {
+      if (frame % every === 0 && saves.at(-1)?.frame !== frame) {
+        saves.push({ frame, bytes: save(s) });
+        if (saves.length > keep) { saves.shift(); inputs = inputs.slice(saves[0]!.frame - first); first = saves[0]!.frame; }
+      }
+      inputs.push(input);
+      core.step(s, input);
+      frame++;
+    },
+    /** The state `n` frames back (no further than `oldest`), as a new object; `like` is the state now. */
+    back(n: number, like: S): S {
+      const to = Math.max(this.oldest, frame - n);
+      const at = saves.findLast((v) => v.frame <= to);
+      if (!at) return like;
+      const s = load(at.bytes, like);
+      for (let f = at.frame; f < to; f++) core.step(s, inputs[f - first]!);
+      saves = saves.filter((v) => v.frame <= to);
+      inputs.length = to - first;
+      frame = to;
+      return s;
+    },
+  };
+}

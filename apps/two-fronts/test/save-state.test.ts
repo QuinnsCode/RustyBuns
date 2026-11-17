@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { firstDiff, load, roundTrip, save } from "@rustybuns/util/lab/save-state";
+import { firstDiff, load, rewinder, roundTrip, save } from "@rustybuns/util/lab/save-state";
 import { NO_PODS, orbitPods, type BattleSpec } from "../src/battle/contract.ts";
 import { startBattle, step, type Input } from "../src/battle/sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceInput } from "../src/battle/space.ts";
@@ -44,6 +44,25 @@ test("the round-trip catches a battle whose dice live outside its state, and the
   let dice = 99;
   const leaky = { step: (s: ReturnType<typeof startBattle>, i: Input) => { s.seed = dice; step(s, i); dice = s.seed; } };
   expect(roundTrip(leaky, () => startBattle(spec()), ground, 1200, 1500)).not.toBeNull();
+});
+
+// Rewind (#4782): a save every second and the inputs between, so going back lands on the very state of that frame.
+test("rewinding a battle lands on the state it had then, and stops at the oldest save it kept", () => {
+  const straight = startBattle(spec());
+  for (let i = 0; i < 2500; i++) step(straight, ground(i));
+  let b = startBattle(spec());
+  const r = rewinder({ step }, 60, 10);
+  for (let i = 0; i < 3000; i++) r.step(b, ground(i));
+  b = r.back(500, b);
+  expect(r.frame).toBe(2500);
+  expect(firstDiff(straight, b)).toBeNull();
+  // Played on from there, it is the same battle again.
+  for (let i = 2500; i < 2800; i++) { r.step(b, ground(i)); step(straight, ground(i)); }
+  expect(firstDiff(straight, b)).toBeNull();
+  // It kept the saves from 2400 on (ten, then the ones after 2500 dropped), so that is as far back as it goes.
+  r.back(99_999, b);
+  expect(r.frame).toBe(r.oldest);
+  expect(r.frame).toBe(2400);
 });
 
 test("a save keeps what JSON would lose, and won't load into another sim", () => {
