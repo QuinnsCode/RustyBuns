@@ -80,6 +80,8 @@ export function mix(d: Decks, keys: readonly [string, string], routing: Readonly
   return { gain: Object.fromEntries(Object.entries(gain).map(([k, v]) => [k, r(v)])), meter: meter.map(r) as Mix["meter"], hum: buzz };
 }
 
+/** How loud the cued deck is in the headphones (a linear gain). */
+export const CUE_GAIN = 0.4;
 /** The mains hum, Hz: the outlets here are 120 V, 60 Hz. */
 export const HUM_HZ = 60;
 
@@ -108,11 +110,16 @@ export function deckSound(ctx: AudioContext) {
     humGain.gain.value = 0;
     hum.connect(shape).connect(humGain).connect(out);
     hum.start();
-    return { buf, beatS: 60 / t.bpm, dry, clip, wet, gain, hum, humGain, src: null as AudioBufferSourceNode | null };
+    // The headphone cue: the deck before its fader, straight to your ears and not through any speaker.
+    const cue = ctx.createGain();
+    cue.gain.value = 0;
+    dry.connect(cue).connect(ctx.destination);
+    return { buf, beatS: 60 / t.bpm, dry, clip, wet, gain, cue, hum, humGain, src: null as AudioBufferSourceNode | null };
   });
   return {
     node: out as AudioNode,
-    update(d: Decks, m: Mix, keys: readonly [string, string], distort: readonly string[]) {
+    /** `cue` is the deck in the headphones (1 or 2), or 0 for none. */
+    update(d: Decks, m: Mix, keys: readonly [string, string], distort: readonly string[], cue = 0) {
       const t = ctx.currentTime;
       lanes.forEach((l, i) => {
         const k = d.deck[i]!;
@@ -134,11 +141,12 @@ export function deckSound(ctx: AudioContext) {
         l.dry.gain.setTargetAtTime(bad ? 0 : 1, t, 0.02);
         l.wet.gain.setTargetAtTime(bad ? 1 : 0, t, 0.02);
         l.gain.gain.setTargetAtTime(m.gain[keys[i]!] ?? 0, t, 0.03);
+        l.cue.gain.setTargetAtTime(cue === i + 1 ? CUE_GAIN : 0, t, 0.02);
         l.humGain.gain.setTargetAtTime((m.hum[keys[i]!] ?? 0) * 0.25, t, 0.05);
       });
     },
     stop() {
-      for (const l of lanes) l.src?.stop(), l.hum.stop();
+      for (const l of lanes) l.src?.stop(), l.hum.stop(), l.cue.disconnect();
       out.disconnect();
     },
   };
