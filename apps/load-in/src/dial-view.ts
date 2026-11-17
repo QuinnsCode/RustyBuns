@@ -22,7 +22,7 @@ export function savedDial(): Dial {
 /** Three buttons that turn the dial; `onChange` after each turn. */
 export function mountDial(parent: HTMLElement, onChange: (d: Dial) => void = () => {}) {
   const box = document.createElement("div");
-  box.className = "dial";
+  box.className = "dial paper";
   box.setAttribute("role", "radiogroup");
   box.setAttribute("aria-label", "Cozy to sim");
   const paint = () => { for (const b of box.querySelectorAll("button")) b.setAttribute("aria-checked", String(b.dataset.dial === currentDial())); };
@@ -49,7 +49,7 @@ export function mountDial(parent: HTMLElement, onChange: (d: Dial) => void = () 
 export function mountClock(parent: HTMLElement) {
   const el = document.createElement("p");
   el.id = "clock";
-  el.className = "clock";
+  el.className = "clock paper tape";
   const tip = `Doors open when this reaches 0:00. Each minute late costs ${PAY_PER_MIN * 100}% of the pay and ${MOOD_PER_MIN} points of crowd mood.`;
   el.innerHTML = `<span class="time"></span><span class="tip" title="${tip}" aria-label="${tip}">i</span>`;
   parent.appendChild(el);

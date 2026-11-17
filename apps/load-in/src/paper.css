@@ -1,0 +1,161 @@
+/* Sound Guy Simulator's look: a set list written in marker on paper and taped down, on a photocopied punk tour flyer.
+   The game (style.css imports this) and the cable feel test (feel.html links it; scripts/feel-page.ts inlines it)
+   share it. Grain, halftone, torn edges and tape are drawn here in CSS and inline SVG: nothing is downloaded but the
+   fonts, and each font has a fallback that still reads.
+
+   Classes for any view (a new level's card uses these, not its own colours):
+   .paper       a sheet of set-list paper: off-white, torn top edge, soft shadow, tilted by --tilt (set your own)
+   .tape        a strip of black gaffer holding the top-left corner of a .paper (.tape-r: the top-right corner)
+   .gaff        a label written in white paint pen on a strip of gaffer: for one line over the room (hints, weights)
+   .flyer       a photocopied tour flyer: newsprint, grain, a halftone corner, two spot colours
+   .flyer-title the flyer's big condensed letters, a little off-register
+   .venue-name  the one spiky metal-flyer flourish: a venue's name
+   .stub        a ticket stub button (notched ends, a perforated line)
+   .struck      done: a marker line through it
+   .circled     the one that matters now: a marker ring round it (one line of text)
+   .underlined  the next one, underlined twice (wraps, so use it on long lines)
+   .marker      the thick marker face, for headings on paper
+   .pen         the pen face, for lines on paper (its numbers are tabular)
+   .num         numbers that tick (clock, dB, kg): a typewriter face, fixed width
+   .pass .warn .trip   ink colours on paper: green tick, orange note, red fault
+   The game's .bar-card (every venue's card) is a taped .paper too. */
+
+:root {
+  --paper: #f5f0e4;
+  --paper-edge: #e4dccb;
+  --newsprint: #ece5d3;
+  --ink: #1d1b18;
+  --ink-soft: #57524a;
+  --gaff: #222125;
+  --chalk: #f7f3ea;
+  --spot: #ff5b1a;        /* safety orange */
+  --spot-ink: #c43d06;    /* the orange dark enough to write with on paper */
+  --blue: #1748c4;        /* process blue */
+  --pass-ink: #1c7a3a;
+  --warn-ink: #c43d06;
+  --trip-ink: #b0001e;
+  --marker: "Permanent Marker", "Marker Felt", "Comic Sans MS", system-ui, sans-serif;
+  --pen: "Shantell Sans", "Bradley Hand", "Segoe Print", "Comic Sans MS", system-ui, sans-serif;
+  --mono: "Courier Prime", "Courier New", ui-monospace, monospace;
+  --slab: "Anton", "Impact", "Haettenschweiler", "Arial Narrow", sans-serif;
+  --metal: "Metal Mania", "Anton", "Impact", fantasy;
+  --shadow: drop-shadow(0 3px 4px rgba(0, 0, 0, .45)) drop-shadow(0 1px 1px rgba(0, 0, 0, .35));
+  /* A ragged torn edge (black = kept), stretched along the top of a sheet. */
+  --torn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M0 10V4l5-2 4 3 6-3 5 2 4-3 7 3 5-1 4 2 6-3 5 3 3-2 6 1 5-3 4 3 7-2 4 2 5-3 6 3 4-1 5 2 6-4 4 3 5-1 6 2 4-3 5 2 7-1 4 3 5-3 6 2 3-2 6 3 5-2 4 1 6-3 5 3 4-1 7 2 4-2 3 1V10z'/%3E%3C/svg%3E");
+  /* Paper fibre and photocopy toner: fractal noise as black specks. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --toner: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2.4 -1.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* A row of spikes, for under a venue's name. */
+  --spikes: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 10' preserveAspectRatio='none'%3E%3Cpath d='M0 0h24L21 3 18 10 15 3 12 0 9 3 6 10 3 3z' fill='%231748c4'/%3E%3C/svg%3E");
+}
+
+/* The sheet: the paper is drawn on ::before (so the torn mask leaves the text and the shadow alone), the tape on ::after. */
+.paper, .bar-card {
+  position: relative;
+  isolation: isolate;
+  color: var(--ink);
+  font-family: var(--pen);
+  rotate: var(--tilt, -.6deg);
+  filter: var(--shadow);
+}
+.paper::before, .bar-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--grain), linear-gradient(175deg, var(--paper) 60%, var(--paper-edge));
+  -webkit-mask: var(--torn) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% calc(100% - 6px) no-repeat;
+  mask: var(--torn) top / 100% 7px no-repeat, linear-gradient(#000 0 0) bottom / 100% calc(100% - 6px) no-repeat;
+}
+.tape::after, .tape-r::after, .bar-card::after {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: -16px;
+  width: 54px;
+  height: 17px;
+  rotate: -38deg;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .14), transparent 45%), var(--gaff);
+  opacity: .93;
+  clip-path: polygon(0 8%, 6% 0, 3% 30%, 7% 55%, 2% 80%, 5% 100%, 95% 100%, 100% 85%, 96% 60%, 99% 35%, 94% 12%, 98% 0, 3% 0);
+  pointer-events: none;
+}
+.tape-r::after { left: auto; right: -16px; rotate: 38deg; }
+
+.gaff {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), var(--gaff);
+  color: var(--chalk);
+  font-family: var(--marker);
+  letter-spacing: .02em;
+  padding: 3px 14px 4px;
+  clip-path: polygon(0 4%, 1.5% 0, 98.5% 2%, 100% 0, 99% 50%, 100% 100%, 98% 96%, 1% 100%, 0 96%, 1% 50%);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .4);
+}
+
+.flyer {
+  position: relative;
+  isolation: isolate;
+  color: var(--ink);
+  background: var(--toner), var(--grain), var(--newsprint);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .55);
+}
+/* A halftone corner in process blue, fading out across the sheet. */
+.flyer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle, var(--blue) 1.4px, transparent 1.9px) 0 0 / 7px 7px;
+  opacity: .3;
+  -webkit-mask: radial-gradient(circle at 100% 0, #000, transparent 55%);
+  mask: radial-gradient(circle at 100% 0, #000, transparent 55%);
+  pointer-events: none;
+}
+.flyer-title {
+  font-family: var(--slab);
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: .9;
+  letter-spacing: .01em;
+  color: var(--ink);
+  text-shadow: 3px 2px 0 var(--spot);
+}
+.venue-name {
+  display: inline-block;
+  font-family: var(--metal);
+  font-weight: 400;
+  color: var(--blue);
+  text-shadow: 2px 1px 0 var(--spot);
+  padding-bottom: .32em;
+  background: var(--spikes) bottom / 100% .3em no-repeat;
+}
+
+.stub {
+  position: relative;
+  font: 400 26px/1 var(--slab);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ink);
+  background: var(--grain), var(--spot);
+  border: 0;
+  border-radius: 0;
+  padding: 12px 34px 12px 30px;
+  min-height: 52px;
+  -webkit-mask: radial-gradient(circle 9px at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat, radial-gradient(circle 9px at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle 9px at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat, radial-gradient(circle 9px at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  box-shadow: inset -22px 0 0 -20px var(--ink);
+}
+.stub::after { content: ""; position: absolute; top: 6px; bottom: 6px; right: 22px; border-right: 2px dashed rgba(29, 27, 24, .55); }
+.stub small { display: block; font: 700 11px/1 var(--mono); letter-spacing: .14em; margin-bottom: 4px; }
+
+.marker { font-family: var(--marker); font-weight: 400; }
+.pen { font-family: var(--pen); }
+.pen, .num { font-variant-numeric: tabular-nums; }
+.num { font-family: var(--mono); font-weight: 700; }
+.struck { text-decoration: line-through; text-decoration-thickness: .16em; text-decoration-color: rgba(176, 0, 30, .75); color: var(--ink-soft); }
+.underlined { text-decoration: underline double var(--spot-ink); text-decoration-thickness: 2px; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.circled { position: relative; display: inline-block; }
+.circled::after { content: ""; position: absolute; inset: -5px -9px; border: 2.5px solid var(--spot-ink); border-radius: 50% 46% 52% 48% / 55% 48% 52% 45%; rotate: -2deg; pointer-events: none; }
+.paper .pass, .bar-card .pass, .pass.paper { color: var(--pass-ink); }
+.paper .warn, .bar-card .warn, .warn.paper { color: var(--warn-ink); }
+.paper .trip, .bar-card .trip, .trip.paper { color: var(--trip-ink); }

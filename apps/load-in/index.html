@@ -4,35 +4,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sound Guy Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Courier+Prime:wght@400;700&family=Metal+Mania&family=Permanent+Marker&family=Shantell+Sans:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
   <main>
     <canvas id="stage" aria-label="Sound Guy Simulator"></canvas>
     <div id="hud">
-      <p id="next" hidden></p>
+      <p id="next" class="underlined" hidden></p>
       <div id="cross"></div>
-      <p id="hint"></p>
-      <p id="carry"></p>
-      <button id="speakers" type="button">Speakers are down. Click, or press M, to bring them up.</button>
+      <p id="hint" class="gaff"></p>
+      <p id="carry" class="gaff"></p>
+      <button id="speakers" class="gaff" type="button">Speakers are down. Click, or press M, to bring them up.</button>
       <div id="controls-host"></div>
     </div>
     <section id="menu">
-      <h1 id="title">Sound Guy Simulator</h1>
-      <p>Get the gear in. Pick it up, carry it, set it down where it goes.</p>
-      <p class="keys">WASD walk, mouse look, F pick up or put down, Q / E turn it, P switch on what you look at, M speakers up or down, C crouch, Esc lets go of the mouse.</p>
-      <button id="play">Play</button>
-      <div id="dial-host"></div>
-      <div id="tour-host"></div>
-      <div id="account"></div>
-      <div id="party" hidden>
-        <button id="make">Make a party</button>
-        <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
-        <p id="code"></p>
-        <p id="crew"></p>
-        <button id="start" hidden>Start</button>
+      <div class="flyer">
+        <p class="kicker">Live sound, real cables, all ages</p>
+        <h1 id="title" class="flyer-title"><span>Sound Guy</span> <span>Simulator</span></h1>
+        <p class="blurb">Get the gear in. Pick it up, carry it, set it down where it goes.</p>
+        <div id="tour-host"></div>
+        <div class="ticket-row">
+          <button id="play" class="stub" type="button"><small aria-hidden="true">Admit one</small>Play</button>
+          <div id="dial-host"></div>
+        </div>
+        <p class="keys paper tape-r"><b>How to work</b>WASD walk, mouse look, F pick up or put down, Q / E turn it, P switch on what you look at, M speakers up or down, C crouch, Esc lets go of the mouse.</p>
+        <div class="flyer-foot">
+          <div id="account"></div>
+          <div id="party" class="paper tape" hidden>
+            <button id="make" type="button">Make a party</button>
+            <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
+            <p id="code" class="num"></p>
+            <p id="crew"></p>
+            <button id="start" hidden>Start</button>
+          </div>
+          <p id="note"></p>
+        </div>
       </div>
-      <p id="note"></p>
     </section>
   </main>
   <script type="module" src="/src/main.ts"></script>

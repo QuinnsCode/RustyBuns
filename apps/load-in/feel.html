@@ -7,47 +7,53 @@
 <title>Cable Feel Test</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-  /* One screen: the room fills it, a job sheet top left, what is in your hands along the bottom. A stage at load-in, so one dark look. */
-  :root {
-    color-scheme: dark;
-    --deck: #10141c; --panel: rgba(14, 18, 27, .84); --line: #2c3545; --chalk: #f2ede4; --dim: #a3acba;
-    --gaff: #ffb224; --live: #53d98a;
-    --ui: "Barlow", system-ui, sans-serif; --stencil: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
-  }
+  /* One screen: the room fills it, the patch list taped top left like a set list (done runs struck through, the next
+     one underlined twice), what is in your hands on gaffer along the bottom. The look is src/paper.css. */
+  :root { color-scheme: dark; --deck: #0f0e10; }
   [hidden] { display: none !important; }
   html, body { height: 100%; }
-  body { margin: 0; overflow: hidden; background: var(--deck); color: var(--chalk); font: 15px/1.4 var(--ui); }
+  body { margin: 0; overflow: hidden; background: var(--deck); color: var(--chalk); font: 15px/1.4 var(--pen); }
   #room { position: relative; width: 100%; height: 100%; }
   #stage { width: 100%; height: 100%; display: block; touch-action: none; }
-  #hud { position: absolute; inset: 0; pointer-events: none; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; grid-template-rows: auto 1fr auto; }
-  #sheet { justify-self: start; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gaff); padding: 8px 14px 10px; max-width: min(19rem, 100%); }
-  #sheet h2 { margin: 0 0 4px; font: 600 13px var(--stencil); letter-spacing: .14em; text-transform: uppercase; color: var(--gaff); }
-  #list { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 14px; }
-  #list li::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; border: 1.5px solid var(--dim); border-radius: 50%; }
-  #list li.ok { color: var(--live); }
-  #list li.ok::before { background: var(--live); border-color: var(--live); }
-  #cross { align-self: center; justify-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--chalk); opacity: .8; }
-  #foot { display: grid; gap: 4px; justify-items: center; text-align: center; text-shadow: 0 1px 3px #000; }
-  #hint { margin: 0; font-size: 18px; font-weight: 600; min-height: 1.4em; }
-  #said { margin: 0; color: var(--dim); min-height: 1.4em; }
-  #weight { margin: 0; font: 600 20px var(--stencil); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
-  #power { width: min(260px, 70%); height: 10px; border: 1px solid var(--chalk); background: linear-gradient(90deg, var(--gaff) calc(var(--p, 0) * 100%), transparent 0); }
-  #done { margin: 0; font: 600 26px var(--stencil); letter-spacing: .08em; text-transform: uppercase; color: var(--live); }
-  #pad { display: none; gap: 8px; pointer-events: auto; }
+  #hud { position: absolute; inset: 0; pointer-events: none; padding-block: 14px; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); display: grid; grid-template-rows: auto 1fr auto; }
+  #sheet { justify-self: start; padding: 14px 16px 10px; max-width: min(19rem, 100%); box-sizing: border-box; --tilt: -1.3deg; }
+  #sheet h2 { margin: 0 0 4px; font: 400 20px var(--marker); color: var(--ink); }
+  #list { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 14px; font-weight: 600; counter-reset: run; }
+  #list li { counter-increment: run; }
+  #list li::before { content: counter(run) "."; display: inline-block; width: 1.4em; font: 400 15px var(--marker); color: var(--ink-soft); }
+  #list li.ok { text-decoration: line-through; text-decoration-thickness: .16em; text-decoration-color: rgba(176, 0, 30, .75); color: var(--ink-soft); }
+  #list li:not(.ok):not(li:not(.ok) ~ li) { text-decoration: underline double var(--spot-ink); text-decoration-thickness: 2px; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+  #cross { align-self: center; justify-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--chalk); box-shadow: 0 0 0 1.5px var(--ink); }
+  #foot { display: grid; gap: 6px; justify-items: center; text-align: center; }
+  #foot .gaff:empty { display: none; }
+  #hint { margin: 0; font-size: 17px; }
+  #said { margin: 0; font: 600 14px var(--pen); }
+  #weight { margin: 0; font: 700 17px var(--mono); font-variant-numeric: tabular-nums; }
+  #power { width: min(260px, 70%); height: 12px; border: 2px solid var(--ink); background: linear-gradient(90deg, var(--spot) calc(var(--p, 0) * 100%), var(--paper) 0); }
+  #done { margin: 0; padding: 8px 20px 4px; font-size: 30px; --tilt: -2deg; }
+  #pad { display: none; gap: 6px; pointer-events: auto; max-width: 100%; }
+  #pad button { font: 700 14px var(--pen); padding: 8px 10px; }
   @media (pointer: coarse) { #pad { display: flex; } }
-  button { font: 600 15px var(--ui); color: var(--chalk); background: #1b2230; border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; }
-  button:focus-visible { outline: 2px solid var(--gaff); outline-offset: 2px; }
-  #menu { position: absolute; inset: 0; display: grid; place-content: center; justify-items: start; gap: 10px; background: rgba(10, 13, 19, .88); padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
-  #menu > * { max-width: 34rem; margin: 0; }
-  #menu h1 { font: 600 clamp(34px, 7vw, 56px)/1 var(--stencil); letter-spacing: .02em; text-transform: uppercase; text-wrap: balance; }
-  #menu .eyebrow { font: 600 13px var(--stencil); letter-spacing: .16em; text-transform: uppercase; color: var(--gaff); }
-  #menu table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  button { font: 400 15px var(--marker); color: var(--chalk); background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), var(--gaff); border: 0; border-radius: 2px; min-height: 44px; padding: 8px 14px; white-space: nowrap; }
+  button:focus-visible { outline: 3px solid var(--spot); outline-offset: 2px; }
+  #menu { position: absolute; inset: 0; overflow: auto; display: grid; place-items: center; box-sizing: border-box; padding: 20px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); background: radial-gradient(ellipse at 50% 40%, rgba(12, 10, 12, .55), rgba(8, 7, 9, .9)); }
+  #menu .flyer { display: grid; justify-items: start; gap: 12px; width: min(36rem, 100%); box-sizing: border-box; padding: 24px 26px 22px; rotate: -.5deg; }
+  #menu .flyer > * { margin: 0; max-width: 34rem; }
+  #menu .eyebrow { font: 700 13px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--blue); }
+  #menu h1 { font-size: clamp(46px, 11vw, 76px); text-wrap: balance; }
+  #menu h1 span { display: block; }
+  #menu h1 span + span { color: var(--spot); text-shadow: 3px 2px 0 var(--ink); }
+  #menu .blurb { font: 600 17px/1.4 var(--pen); }
+  #menu table { border-collapse: separate; border-spacing: 0; font: 700 15px var(--mono); font-variant-numeric: tabular-nums; padding: 12px 14px 8px; --tilt: 1deg; }
   #menu td { padding: 2px 18px 2px 0; }
-  #menu td:first-child { color: var(--dim); }
-  #menu .keys { color: var(--dim); }
-  #play { background: var(--gaff); color: #1a1408; border-color: var(--gaff); font-size: 17px; padding: 12px 28px; }
+  #menu td:first-child { font: 600 15px var(--pen); }
+  #menu .keys { font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+  #play.stub { margin-top: 4px; }
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@600&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Courier+Prime:wght@400;700&family=Metal+Mania&family=Permanent+Marker&family=Shantell+Sans:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/src/paper.css">
 <!--/page-->
 </head>
 <body>
@@ -55,14 +61,14 @@
 <div id="room">
   <canvas id="stage" aria-label="A room with a stage, a sound board, an amp rack and four rolls of cable"></canvas>
   <div id="hud">
-    <div id="sheet"><h2>Patch list</h2><ul id="list"></ul></div>
+    <div id="sheet" class="paper tape"><h2>Patch list</h2><ul id="list"></ul></div>
     <div id="cross"></div>
     <div id="foot">
-      <p id="done" hidden>The wedge is live</p>
-      <p id="hint"></p>
+      <p id="done" class="paper flyer-title" hidden>The wedge is live</p>
+      <p id="hint" class="gaff"></p>
       <div id="power" hidden></div>
-      <p id="said"></p>
-      <p id="weight"></p>
+      <p id="said" class="gaff"></p>
+      <p id="weight" class="gaff"></p>
       <div id="pad">
         <button id="t-use" type="button">Grab / plug</button>
         <button id="t-bowl" type="button">Hold to bowl</button>
@@ -72,16 +78,18 @@
     </div>
   </div>
   <section id="menu">
+    <div class="flyer">
     <p class="eyebrow">Sound Guy Simulator, feel test</p>
-    <h1>Bowl the cable out</h1>
-    <p>Pick up a roll, plug its end in where the run starts, bowl the roll toward where it ends, then carry what is left and plug that in. Power first, then signal.</p>
-    <table>
+    <h1 class="flyer-title"><span>Bowl the</span> <span>cable out</span></h1>
+    <p class="blurb">Pick up a roll, plug its end in where the run starts, bowl the roll toward where it ends, then carry what is left and plug that in. Power first, then signal.</p>
+    <table class="paper tape-r">
       <tr><td>Power feeder</td><td>15 m</td><td>16.5 kg</td></tr>
       <tr><td>Speaker cable</td><td>10 m</td><td>2.1 kg</td></tr>
       <tr><td>Mic cable</td><td>15 m</td><td>0.9 kg</td></tr>
     </table>
     <p class="keys">WASD walk. Click the room to look (or drag). F grabs, plugs and puts down. Hold the mouse or Space to wind up, let go to bowl. P at the board for 48 V. R starts over. On a phone: left thumb walks, right thumb looks.</p>
-    <button id="play" type="button">Start the load-in</button>
+    <button id="play" class="stub" type="button"><small aria-hidden="true">Admit one</small>Start the load-in</button>
+    </div>
   </section>
 </div>
 <script type="module" src="/src/feel/main.ts"></script>
