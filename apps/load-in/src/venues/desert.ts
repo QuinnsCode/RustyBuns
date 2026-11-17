@@ -12,6 +12,7 @@ import { doors, showScore } from "../clock.ts";
 import { type Cables, jacks } from "../cables/cables.ts";
 import { type Zone, cellsIn, mean, sources } from "./dive-bar.ts";
 import { load, playing, tripped } from "./park.ts";
+import { crowdOf, type CrowdSpot } from "../crowd/crowd.ts";
 
 export const DESERT: Level = {
   name: "desert",
@@ -53,6 +54,22 @@ export const ZONES = {
   /** The tents out front and to the right, where people sleep before their shift: in the right-hand tops' spill. */
   camp: { x0: 20, x1: 30, z0: 8, z1: 18 },
 } satisfies Record<string, Zone>;
+
+/**
+ * The dance floor's crowd: up to 500 on its 14 by 14 m (2.5 a square metre at the peak of the night), packed toward
+ * the wall. Open desert, so the "room" is all absorption: people change no reverb here, they only stand in the sound.
+ */
+export const DANCE_FLOOR: CrowdSpot = {
+  floor: { ...ZONES.floor, nx: 14, nz: 14 },
+  stageZ: ZONES.floor.z0 - 0.5,
+  capacity: 500,
+  room: { w: 200, d: 200, h: 100, alpha: 1 },
+  regions: [
+    { name: "front", zone: { ...ZONES.floor, z1: 10.5 } },
+    { name: "middle", zone: { ...ZONES.floor, z0: 10.5, z1: 15.5 } },
+    { name: "back", zone: { ...ZONES.floor, z0: 15.5 } },
+  ],
+};
 
 /** Mids and highs on the floor, dB SPL: loud, a sound system's night, not a club's. */
 export const TARGET = 102;
@@ -181,5 +198,7 @@ export type Show = ReturnType<typeof show>;
 /** What the harness adds for the desert: the generator's load, the fuel and the score. */
 export function desertState(w: World, c: Cables) {
   const l = load(w, c);
-  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips }, fuel: fuel(w, c), campLimit: CAMP_LIMIT, ...score(w, c) };
+  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips }, fuel: fuel(w, c), campLimit: CAMP_LIMIT, ...score(w, c),
+    /** People on the dance floor once the night has started (null before show time). */
+    crowd: crowdOf(w)?.people ?? null };
 }
