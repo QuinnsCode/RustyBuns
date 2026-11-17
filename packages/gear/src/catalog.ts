@@ -61,6 +61,8 @@ export type Gear = {
   generator?: { kva: number; powerFactor: number; tankL: number; idleLph: number; perKwh: number };
   /** A fuel can: the litres it holds full. */
   can?: { litres: number };
+  /** A microphone: a condenser needs 48 V phantom power from the desk input it plugs into, or it makes no sound. */
+  mic?: { phantom: boolean };
   /** Gear that rolls instead of being lifted: small wheels sink in sand, balloon tyres ride over it. */
   wheels?: "small" | "balloon";
   /** A DJ deck: what level its RCA out is, a turntable's tiny phono signal (it wants a phono input and its ground wire on
@@ -194,6 +196,17 @@ const list: Gear[] = [
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 95, maxSpl: 122, ratedWatts: 300, ohms: null, coverage: { h: 100, v: 70 }, lowCut: 70, highCut: 20000, rearLoss: 18 },
     draw: { idle: 15, loud: 90 },
+  },
+  // The first gig: a small-diaphragm condenser on a stand (it runs off the desk's 48 V phantom, about 5 mA, through the
+  // same XLR that carries its signal), and a passive wedge that needs an amp channel, unlike the powered wedge-12.
+  { id: "mic-condenser", what: "condenser vocal mic", size: box(0.05, 0.19, 0.05), kg: 0.4, jacks: { "xlr-out": 1 }, mic: { phantom: true } },
+  {
+    id: "wedge-12-passive",
+    what: '12" passive floor monitor',
+    size: box(0.6, 0.35, 0.42),
+    kg: 18,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 97, maxSpl: 126, ratedWatts: 400, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 65, highCut: 20000, rearLoss: 20 },
   },
   { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // The DJ booth: two decks of one kind either side of a four-channel mixer. A turntable's cartridge puts out a few

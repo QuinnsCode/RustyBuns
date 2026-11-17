@@ -14,6 +14,7 @@ import { World as Room } from "../src/edge/world.ts";
 import { readServer } from "../src/crew/room.ts";
 import { hear, outbox, poseOf, synced, type Synced } from "../src/crew/sync.ts";
 import { APP } from "../src/eqosys.ts";
+import { hear as heard } from "../src/audio/hear.ts";
 
 class Sock implements RoomSocket {
   readyState = 1;
@@ -29,7 +30,7 @@ let real: unknown;
 beforeAll(() => { real = Reflect.get(globalThis, "WebSocketPair"); Reflect.set(globalThis, "WebSocketPair", FakePair); });
 afterAll(() => { Reflect.set(globalThis, "WebSocketPair", real); });
 
-interface Page { name: string; w: World; c: Cables; s: Synced; ws: Sock }
+interface Page { name: string; w: World; c: Cables; s: Synced; ws: Sock; on: Set<string> }
 
 /** A crew room on stand-in sockets, a page per friend who joins, and `pump`: one round of the wire, where each page
  * sends its cable ends, grabs, drops and pose, and the room sends each its view. */
@@ -43,12 +44,12 @@ function crewRoom(level: Level) {
     if (seat instanceof Response) throw new Error(`refused ${seat.status}`);
     await room.fetch(seat.request);
     const w = newWorld(level);
-    return { name, w, c: newCables(w), s: synced(), ws: socks.at(-1) as Sock };
+    return { name, w, c: newCables(w), s: synced(), ws: socks.at(-1) as Sock, on: new Set() };
   };
   const pump = (...pages: Page[]) => {
-    for (const p of pages) for (const m of [...outbox(p.w, p.s, p.c), poseOf(p.w)]) room.webSocketMessage(p.ws, JSON.stringify(m));
+    for (const p of pages) for (const m of [...outbox(p.w, p.s, p.c, p.on), poseOf(p.w)]) room.webSocketMessage(p.ws, JSON.stringify(m));
     room.flush();
-    for (const p of pages) for (const raw of p.ws.inbox.splice(0)) { const m = readServer(JSON.parse(raw)); if (m) hear(p.w, p.s, m, p.c); }
+    for (const p of pages) for (const raw of p.ws.inbox.splice(0)) { const m = readServer(JSON.parse(raw)); if (m) hear(p.w, p.s, m, p.c, p.on); }
   };
   return { join, pump };
 }
@@ -168,4 +169,31 @@ test("two run one power cable: Ada takes it to the wall, Bea walks the far end t
   expect(cableState(ada.w, ada.c).fed).toEqual(cableState(bea.w, bea.c).fed);
   const power = (p: Page) => cableState(p.w, p.c).hazards.filter((h) => h.cable === "power-10").map((h) => h.walkway);
   expect([power(ada), power(bea)]).toEqual([["the way in"], ["the way in"]]);
+});
+
+test("one switches the speaker on and the whole crew hears it, each from where they stand", async () => {
+  setDial("cozy");
+  const { join, pump } = crewRoom(newWorld().level);
+  const ada = await join("Ada", "guest-ada-0003"), bea = await join("Bea", "guest-bea-0003");
+  const level = (p: Page) => heard(p.w, p.on).speakers.find((sp) => sp.key === "top")!;
+
+  // Ada stands in front of the powered top in the garage and switches it on. Bea is still out by the truck.
+  walkTo(ada.w, 2.0, 5.0);
+  pump(ada, bea);
+  expect(level(bea).fed).toBe(false);
+  ada.on.add("top");
+  pump(ada, bea);
+  expect([...bea.on]).toEqual(["top"]);
+  expect(level(bea).fed).toBe(true);
+  // The same speaker: loud for Ada in front of it, quieter for Bea 7 m back, and quiet and dull behind the box.
+  const far = level(bea);
+  expect(far.db!).toBeLessThan(level(ada).db! - 4);
+  walkTo(bea.w, 0, 6); walkTo(bea.w, 1.0, 1.5);
+  expect(level(bea).db!).toBeLessThan(far.db! - 4);
+  expect(level(bea).offAxis).toBeGreaterThan(far.offAxis + 10);
+
+  // Bea switches it off: it goes quiet on Ada's page too.
+  bea.on.delete("top");
+  pump(bea, ada);
+  expect(level(ada).fed).toBe(false);
 });

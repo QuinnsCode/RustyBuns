@@ -5,8 +5,11 @@
 import { gear as catalog, jackNames, type Gear } from "./catalog.ts";
 import { ampWatts, circuitLoad, generatorLoad, parallel, type Circuit } from "./power.ts";
 
-/** One box on the floor: its own id (two tops are two items) and the catalog gear it is. `lift`: a DI's ground lift is pressed. */
-export type Placed = { id: string; gear: string; lift?: boolean };
+/**
+ * One box on the floor: its own id (two tops are two items) and the catalog gear it is. `lift`: a DI's ground lift is
+ * pressed. `phantom`: a desk's 48 V is on, on every XLR input (a small desk has one switch for them all).
+ */
+export type Placed = { id: string; gear: string; lift?: boolean; phantom?: boolean };
 
 /** What a cable is: mains, speaker, mic (XLR), a quarter-inch instrument/line lead, a DJ deck's RCA pair, a turntable's
  * ground wire, or a deck's digital (coax) lead. */
@@ -21,7 +24,7 @@ export type Cable = { kind: CableKind; lengthM: number; from: End; to: End };
 /** A wall outlet on a named circuit; outlets that share a circuit share its breaker. `off` when its breaker has tripped. */
 export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number; off?: boolean };
 
-export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "level";
+export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "no-phantom" | "thump" | "level";
 
 /** `circuit` is set on a breaker problem: the outlet circuit's name, or the generator's id. */
 export type Problem = { kind: ProblemKind; items: string[]; jack?: string; circuit?: string; message: string };
@@ -46,8 +49,10 @@ export function cableFor(kind: string): CableKind {
 
 const isOut = (kind: string) => kind.endsWith("-out");
 
-/** Gear that makes a signal of its own when it has power. */
+/** Gear that makes a signal of its own when it has power (a desk: its playback). */
 const SOURCES = new Set(["mixer-small", "guitar", "amp-head", "deck-media", "turntable"]);
+const DESKS = new Set(["mixer-small"]);
+const deskIn = (kind: string) => kind === "xlr-in" || kind === "line-in";
 
 const DJ_INS = ["phono-in", "rca-in"].flatMap((k) => [1, 2, 3, 4].map((n) => `${k}-${n}`));
 /** Gear that passes a signal through: each output jack and the inputs it carries (any one of them with sound will do). */
@@ -176,6 +181,21 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     if (deck.out === "phono" && !grounded) say("hum", [id, mixer], `${id} has no ground wire on ${mixer}'s post: it hums at the mains frequency (50/60 Hz)`, "ground-out");
   }
 
+  // Phantom: a condenser takes its 48 V down the XLR from the desk input it lands on. With the desk's 48 V off (or the
+  // desk dark) it makes no sound at all.
+  const byId = new Map(placed.map((p) => [p.id, p]));
+  const phantomAt = (mic: string): End | undefined => (drives.get(`${mic}\0xlr-out`) ?? []).find(([id]) => DESKS.has(items.get(id)?.id ?? ""));
+  const phantomOn = (mic: string) => {
+    const desk = phantomAt(mic);
+    return !!desk && !!byId.get(desk[0])?.phantom && powered(desk[0]);
+  };
+  for (const [id, g] of items) {
+    const desk = phantomAt(id);
+    if (g.mic?.phantom && desk && !byId.get(desk[0])?.phantom) {
+      say("no-phantom", [id, desk[0]], `${id} is a condenser on ${desk[0]} ${desk[1]} with 48 V off: no phantom, no sound`, desk[1]);
+    }
+  }
+
   // Each breaker and generator against what hangs off it.
   const loads = new Map<string, string[]>();
   for (const [id, g] of items) {
@@ -207,7 +227,11 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     if (g && powered(id)) {
       const kind = jackKind(jack);
       const via = THROUGH[g.id]?.[jack];
-      if (SOURCES.has(g.id)) on = true;
+      // A desk whose inputs are all mics is only as live as its mics: no backing track to hide behind.
+      const mics = DESKS.has(g.id) ? jackNames(g).filter((j) => deskIn(jackKind(j)) && from(id, j)) : [];
+      if (g.mic) on = !g.mic.phantom || phantomOn(id);
+      else if (mics.length && mics.every((j) => items.get(from(id, j)![0])?.mic)) on = mics.some((j) => inSignal(id, j, seen));
+      else if (SOURCES.has(g.id)) on = true;
       else if (via) on = via.some((j) => inSignal(id, j, seen));
       else if (g.amp) on = inSignal(id, jack.replace("speaker-out", "xlr-in"), seen);
       else if (kind === "xlr-out") on = inSignal(id, "xlr-in", seen);
@@ -255,4 +279,52 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     else fed.set(id, ampOf.has(id) && inSignal(id, "speaker-in", new Set()));
   }
   return { fed, problems };
+}
+
+/** One flick of a power switch, in the order they happened. */
+export type Flick = { id: string; on: boolean };
+
+/**
+ * Switch-on order: power before signal, and amps on last and off first. Anything that feeds an amp (a desk, a DI; a
+ * powered box's own amp counts as an amp) sends a pop down the line as it switches, and if an amp after it is already
+ * on, the speaker thumps: the kind that tears a cone. `flicks` are the switches in the order you threw them; each thump
+ * names the gear switched and the amp that passed it on.
+ */
+export function thumps(placed: readonly Placed[], cables: readonly Cable[], flicks: readonly Flick[]): Problem[] {
+  const gearOf = new Map(placed.map((p) => [p.id, catalog(p.gear)]));
+  const isAmp = (id: string) => {
+    const g = gearOf.get(id);
+    return !!g?.amp || (g?.speaker?.ohms === null && !!g.draw);
+  };
+  // Where each item's signal goes, over signal and speaker cables (not mains).
+  const next = new Map<string, Set<string>>();
+  for (const c of cables) {
+    if (c.kind === "power") continue;
+    const a = isOut(jackKind(c.from[1])), b = isOut(jackKind(c.to[1]));
+    if (a === b) continue;
+    const [o, i] = a ? [c.from[0], c.to[0]] : [c.to[0], c.from[0]];
+    next.set(o, (next.get(o) ?? new Set()).add(i));
+  }
+  const ampsAfter = (id: string) => {
+    const out: string[] = [], seen = new Set([id]), todo = [...(next.get(id) ?? [])];
+    while (todo.length) {
+      const n = todo.pop()!;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      if (isAmp(n)) out.push(n);
+      todo.push(...(next.get(n) ?? []));
+    }
+    return out;
+  };
+  const on = new Set<string>(), problems: Problem[] = [];
+  for (const f of flicks) {
+    if (f.on === on.has(f.id)) continue;
+    for (const amp of ampsAfter(f.id)) {
+      if (!on.has(amp)) continue;
+      problems.push({ kind: "thump", items: [f.id, amp], message: `${f.id} switched ${f.on ? "on" : "off"} with ${amp} on: it thumps. Amps go on last and off first` });
+    }
+    if (f.on) on.add(f.id);
+    else on.delete(f.id);
+  }
+  return problems;
 }

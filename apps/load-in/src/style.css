@@ -1,56 +1,142 @@
-:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #e6edf3; background: #0b111c; }
-body { margin: 0; height: 100dvh; overflow: hidden; }
+/* Sound Guy Simulator: the menu is a punk tour flyer pasted over the room, the HUD a set list taped to the stage.
+   The look (colour and font tokens, and the classes .paper .tape .gaff .flyer .flyer-title .venue-name .stub
+   .struck .circled .underlined .marker .pen .num .pass .warn .trip) is in paper.css, one line each at its top.
+   A new level's card is a `.bar-card` (paper with tape, set below) and writes its lines with those classes. */
+@import "./paper.css";
+
+:root { color-scheme: dark; font-family: var(--pen); color: var(--chalk); background: #0b0a0c; }
+body { margin: 0; height: 100dvh; overflow: hidden; background: #0b0a0c; }
 main { position: relative; width: 100vw; height: 100dvh; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+[hidden], #menu[hidden] { display: none !important; }
+
+/* Buttons on paper (not the eqosys badge or the controls panel, which bring their own look). */
+:where(#menu, #hud) button:not(:where(#account, #controls-host) *), #menu input {
+  font: 600 15px var(--pen);
+  min-height: 44px;
+  padding: .4rem .9rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 4px 7px 5px 8px / 7px 4px 8px 5px;
+  cursor: pointer;
+}
+#menu input { cursor: text; }
+:where(#menu, #hud) :focus-visible:not(:where(#account, #controls-host) *) { outline: 3px solid var(--blue); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  :where(#menu, #hud) button { transition: rotate .12s, translate .12s; }
+  :where(#menu, #hud) button:not(:where(#account, #controls-host) *):hover { rotate: -1.5deg; translate: 0 -1px; }
+}
+
+/* ---- HUD: the set list ---- */
 #hud { position: absolute; inset: 0; pointer-events: none; }
-#cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #e6edf3cc; }
-#hint, #carry { position: absolute; left: 0; right: 0; margin: 0; text-align: center; text-shadow: 0 1px 3px #000; }
-#hint { top: calc(50% + 22px); font-size: 18px; font-weight: 600; }
-#carry { bottom: 18px; font-size: 16px; font-variant-numeric: tabular-nums; }
-#next { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); margin: 0; padding: 8px 16px; border-radius: 12px; background: rgba(11, 17, 28, .8); border: 1px solid #4cc9f0; font-size: 20px; font-weight: 600; white-space: nowrap; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 600px) { #next { font-size: 16px; top: 48px; } }
+#cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--chalk); box-shadow: 0 0 0 1.5px var(--ink); }
+#hint, #carry { position: absolute; left: 50%; translate: -50% 0; margin: 0; width: max-content; max-width: calc(100vw - 40px); text-align: center; box-sizing: border-box; }
+#hint:empty, #carry:empty { display: none; }
+#hint { top: calc(50% + 24px); font-size: 17px; }
+#carry { bottom: 16px; font: 700 14px var(--mono); font-variant-numeric: tabular-nums; }
+
+/* The Next line: the song we're on, written on a strip and underlined twice. */
+#next { position: absolute; top: 54px; left: 50%; translate: -50% 0; rotate: .8deg; color: var(--ink); background: var(--grain), var(--paper); box-shadow: 0 3px 6px rgba(0, 0, 0, .45); margin: 0; padding: 10px 18px 7px 16px; font-size: 20px; font-weight: 600; white-space: nowrap; max-width: calc(100vw - 40px); box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
+#next::before { content: "Next"; margin-right: .5em; font: 400 .8em var(--marker); color: var(--spot-ink); }
+@media (max-width: 600px) { #next { font-size: 15px; top: 52px; padding: 8px 12px 5px; } }
+
 #controls-host { position: absolute; top: 10px; right: 10px; pointer-events: auto; }
-#menu { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: .6rem; padding: 16px; background: rgba(11, 17, 28, .82); text-align: center; }
-#menu .keys { color: #9fb0c3; max-width: 34rem; }
-#menu[hidden], [hidden] { display: none !important; }
-#party { display: grid; gap: .4rem; justify-items: center; }
-#join { display: flex; gap: .4rem; }
-button, input { font: inherit; padding: .45rem .9rem; border-radius: 8px; border: 1px solid #2b3a52; background: #16223a; color: inherit; }
-button:hover { border-color: #4cc9f0; }
-#note { color: #f4a261; min-height: 1.2em; }
-.bar-card { position: absolute; top: 10px; left: 10px; display: grid; gap: 2px; padding: 8px 12px; border-radius: 10px; background: rgba(11, 17, 28, .78); font-size: 14px; font-variant-numeric: tabular-nums; max-width: min(17rem, calc(100vw - 90px)); }
-.bar-card .pass { color: #6fdc8c; font-weight: 600; }
-.bar-card .warn { color: #f08a5d; font-weight: 600; }
-.bar-card small { color: #9fb0c3; }
-@media (max-width: 600px) { .bar-card { top: 48px; font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
-#speakers { position: absolute; left: 10px; bottom: 48px; max-width: min(22rem, calc(100vw - 20px)); pointer-events: auto; text-align: left; background: #16223aee; }
-.bar-card .trip { color: #f06a5a; font-weight: 600; }
+
+/* Every venue's card: a sheet off the pad, taped at the corner. Each card leans its own way. */
+.bar-card {
+  position: absolute; top: 14px; left: 16px; display: grid; gap: 1px; padding: 12px 14px 9px;
+  font-size: 14px; line-height: 1.3; font-variant-numeric: tabular-nums; max-width: min(17rem, calc(100vw - 90px));
+  --tilt: -1.2deg;
+}
+.bar-card > b:first-child, .bar-card > div:first-child > b:first-child { font: 400 17px var(--marker); margin-bottom: 2px; }
+.bar-card .pass, .bar-card .warn, .bar-card .trip { font-weight: 700; }
+.bar-card small { color: var(--ink-soft); font-size: 12px; margin-top: 3px; }
+.bar-card > div:first-child { display: grid; gap: 1px; }
+.strike-card { left: auto; right: 16px; top: 60px; --tilt: 1.4deg; }
+.show-card { --tilt: -.5deg; }
+.show-card meter { width: 7rem; vertical-align: middle; accent-color: var(--spot); }
+@media (max-width: 600px) { .bar-card { top: 92px; left: 12px; font-size: 12px; padding: 10px 10px 7px; } .bar-card > b:first-child { font-size: 15px; } .bar-card small { display: none; } .strike-card { right: 12px; top: 92px; } }
+
+/* The clock to doors: a scrap with typed digits, fixed width; red marker once doors have passed. */
+.clock { position: absolute; top: 10px; left: 50%; translate: -50% 0; --tilt: -.8deg; margin: 0; padding: 8px 12px 4px; font: 700 16px var(--mono); font-variant-numeric: tabular-nums; white-space: pre; display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+.clock .time { min-width: 13ch; }
+.clock.late { color: var(--trip-ink); }
+.clock .tip { display: inline-grid; place-items: center; width: 1.2em; height: 1.2em; border-radius: 50%; border: 1.5px solid currentColor; font: 400 .75em var(--marker); cursor: help; }
 .at-show #speakers, .show-on #clock { display: none; }
-.show-card meter { width: 7rem; vertical-align: middle; }
-.dial { display: inline-flex; border: 1px solid #2b3a52; border-radius: 10px; overflow: hidden; }
-.dial button { border: 0; border-radius: 0; background: transparent; padding: .45rem 1rem; }
-.dial button[aria-checked="true"] { background: #4cc9f0; color: #0b111c; font-weight: 600; }
-.clock { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); margin: 0; padding: 4px 10px; border-radius: 8px; background: rgba(11, 17, 28, .78); font-variant-numeric: tabular-nums; white-space: pre; display: flex; gap: 8px; align-items: center; pointer-events: auto; }
-.clock .time { min-width: 7.5ch; }
-.clock.late { color: #ff6b6b; }
-.clock .tip { display: inline-grid; place-items: center; width: 1.1em; height: 1.1em; border-radius: 50%; border: 1px solid currentColor; font-size: .75em; cursor: help; }
-.strike-card { left: auto; right: 10px; top: 52px; }
-.tour { display: grid; gap: 4px; justify-items: center; max-width: min(34rem, calc(100vw - 32px)); font-variant-numeric: tabular-nums; }
-.tour .pass { color: #6fdc8c; }
-.tour .warn { color: #f4a261; }
-.tour .shop { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; }
-.tour .shop button { padding: .3rem .7rem; font-size: 14px; }
-.bar-card > div:first-child { display: grid; gap: 2px; }
-/* Touch play (touch.ts): only where the pointer is a finger. The stick appears where the left thumb lands; the hands
-   pad sits bottom right, the venue's pad over it, buttons big enough to hit. */
+
+/* Speakers down: a gaffer label you can press. */
+#speakers.gaff { position: absolute; left: 12px; bottom: 52px; min-height: 44px; max-width: min(22rem, calc(100vw - 24px)); pointer-events: auto; text-align: left; font: 400 15px var(--marker); color: var(--chalk); border: 0; border-radius: 0; padding: 6px 16px; background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), var(--gaff); }
+
+/* ---- Menu: the flyer ---- */
+#menu { position: absolute; inset: 0; overflow: auto; display: grid; place-items: center; padding: 20px 16px 28px; box-sizing: border-box; background: radial-gradient(ellipse at 50% 40%, rgba(12, 10, 12, .55), rgba(8, 7, 9, .9)); }
+#menu > .flyer {
+  width: min(64rem, 100%); box-sizing: border-box; padding: 26px 30px 24px; rotate: -.4deg;
+  display: grid; gap: 14px 34px; align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "kicker" "title" "blurb" "gig" "row" "home" "keys" "foot";
+}
+@media (min-width: 900px) {
+  #menu > .flyer { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-areas: "kicker home" "title home" "blurb home" "gig home" "row keys" "foot foot"; }
+}
+#tour-host, #tour-host > .tour { display: contents; }
+.flyer .kicker { grid-area: kicker; margin: 0; font: 700 13px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--blue); }
+#title { grid-area: title; margin: 0; font-size: clamp(54px, 9vw, 104px); }
+#title span { display: block; }
+#title span + span { color: var(--spot); text-shadow: 3px 2px 0 var(--ink); rotate: -1.5deg; translate: .12em 0; }
+.flyer .blurb { grid-area: blurb; margin: 0; font: 400 19px/1.3 var(--marker); max-width: 30rem; }
+.flyer .ticket-row { grid-area: row; display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: center; }
+.flyer .keys { grid-area: keys; margin: 0; padding: 14px 16px 10px; font-size: 14px; line-height: 1.4; --tilt: .9deg; }
+.flyer .keys b { font: 400 15px var(--marker); display: block; }
+.flyer-foot { grid-area: foot; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+#note { color: var(--trip-ink); font-weight: 700; margin: 0; min-height: 1.2em; }
+
+/* Tonight's gig, like a listing on the flyer. */
+.gig { grid-area: gig; margin: 0; display: grid; gap: 2px; justify-items: start; }
+.gig .when { font: 700 14px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.gig .venue-name { font-size: clamp(34px, 5vw, 48px); line-height: 1.05; }
+.gig .terms { font: 600 16px var(--pen); }
+
+/* Home base: a sheet taped onto the flyer. */
+.tour .home { grid-area: home; display: grid; gap: 5px; padding: 18px 18px 14px; font-size: 15px; font-variant-numeric: tabular-nums; --tilt: 1.3deg; }
+.tour .home > b:first-child { font: 400 22px var(--marker); }
+.tour .pass { color: var(--pass-ink); font-weight: 700; }
+.tour .warn { color: var(--warn-ink); font-weight: 700; }
+.tour .shop { display: flex; flex-wrap: wrap; gap: 8px; }
+.tour .shop button { font-size: 13px; padding: .3rem .65rem; border-style: dashed; background: #fffaf0; }
+
+/* The dial: a strip with three stops, the one you're on ringed in marker. */
+.dial { display: inline-flex; padding: 8px 10px 4px; gap: 4px; --tilt: 1.5deg; }
+.dial button { position: relative; border: 0 !important; background: transparent !important; font: 400 18px var(--marker) !important; padding: .35rem .85rem !important; }
+.dial button[aria-checked="true"] { color: var(--spot-ink); }
+.dial button[aria-checked="true"]::after { content: ""; position: absolute; inset: 4px 2px; border: 2.5px solid var(--spot-ink); border-radius: 50% 46% 52% 48% / 55% 48% 52% 45%; rotate: -3deg; pointer-events: none; }
+
+/* The party: a scrap with a code written on it. */
+#party { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 14px 14px 10px; --tilt: -1deg; }
+#party p { margin: 0; color: var(--ink); }
+#party p:empty { display: none; }
+#join { display: flex; gap: 6px; }
+#joincode { width: 9rem; text-transform: uppercase; font-family: var(--mono); }
+
+@media (max-width: 600px) {
+  #menu { padding: 12px 10px 24px; place-items: start center; }
+  #menu > .flyer { padding: 20px 16px 18px; gap: 12px; rotate: 0deg; }
+  .flyer .blurb { font-size: 17px; }
+  .flyer .kicker { font-size: 11px; letter-spacing: .08em; }
+  .tour .home { font-size: 14px; padding: 16px 14px 12px; }
+  .stub { font-size: 22px; padding: 10px 30px 10px 24px; }
+}
+
+/* ---- Touch play (touch.ts): only where the pointer is a finger. The stick appears where the left thumb lands; the
+   hands pad sits bottom right, the venue's pad over it, buttons big enough to hit. Gaffer squares with paint pen. ---- */
 .touch { display: none; }
-@media (pointer: coarse) { .touch { display: block; } .bar-card small { display: none; } #speakers { max-width: calc(50vw - 40px); } }
-.stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 2px solid #e6edf355; background: #0b111c40; }
-.stick .knob { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: #4cc9f0aa; }
+@media (pointer: coarse) { .touch { display: block; } .bar-card small { display: none; } #speakers.gaff { max-width: calc(50vw - 30px); font-size: 13px; } }
+.stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 2px dashed rgba(247, 243, 234, .45); background: rgba(10, 9, 11, .25); }
+.stick .knob { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: var(--spot); opacity: .8; }
 .touch-pad { position: absolute; right: 10px; display: grid; grid-template-columns: repeat(4, 3rem); gap: 6px; pointer-events: auto; }
 .touch-pad.hands { bottom: 48px; }
-.touch-pad.venue { bottom: calc(48px + 2 * 3rem + 18px); grid-template-columns: repeat(5, 2.6rem); }
-.touch-pad button { height: 3rem; padding: 0; border-radius: 10px; font-size: 1.1rem; background: #16223acc; touch-action: none; user-select: none; -webkit-user-select: none; }
-.touch-pad.venue button { height: 2.6rem; font-size: .95rem; }
-.touch-pad button[aria-pressed="true"] { background: #4cc9f0; color: #0b111c; }
-@media (pointer: coarse) and (orientation: landscape) { .touch-pad.venue { grid-template-columns: repeat(8, 2.6rem); } }
+.touch-pad.venue { bottom: calc(48px + 2 * 3rem + 18px); grid-template-columns: repeat(5, 2.75rem); }
+.touch-pad button { height: 3rem; min-height: 44px; padding: 0 !important; font: 700 1rem var(--pen) !important; color: var(--chalk) !important; background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), rgba(34, 33, 37, .88) !important; border: 0 !important; border-radius: 2px !important; touch-action: none; user-select: none; -webkit-user-select: none; }
+.touch-pad.venue button { height: 2.75rem; font-size: .95rem !important; }
+.touch-pad button[aria-pressed="true"] { background: var(--spot) !important; color: var(--ink) !important; }
+@media (pointer: coarse) and (orientation: landscape) { .touch-pad.venue { grid-template-columns: repeat(8, 2.75rem); } }

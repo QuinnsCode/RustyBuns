@@ -12,8 +12,10 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 export interface Synced {
   held: string | null; seen: Map<string, number>; you: string;
   ends: Map<string, string>; pending: Map<string, string>; wires: Map<string, Wire>;
+  /** Each switch as the room last had it from or for this page, and the newest count taken per switch. */
+  on: Map<string, boolean>; thrown: Map<string, number>;
 }
-export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map() });
+export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map() });
 
 const ENDS = ["a", "b"] as const;
 /** One end as a short word to compare: yours is "hand:", a friend's "hand:<their id>". */
@@ -54,8 +56,14 @@ function hearWire(w: World, c: Cables, s: Synced, wire: Omit<Wire, "n">, force: 
 }
 
 /** What changed in your hands since last time, as messages: the cable ends you moved, a drop where the piece landed, then a grab. */
-export function outbox(w: World, s: Synced, c?: Cables): Sent[] {
+export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>): Sent[] {
   const now = w.held?.key ?? null, out: Sent[] = c ? cableOutbox(w, c, s) : [];
+  // The switches you threw (`on` is what is switched on, on your page).
+  if (on) for (const key of new Set([...on, ...s.on.keys()])) {
+    if (on.has(key) === (s.on.get(key) ?? false)) continue;
+    s.on.set(key, on.has(key));
+    out.push({ t: "switch", key, on: on.has(key) });
+  }
   if (now === s.held) return out;
   const was = s.held && w.items.find((i) => i.key === s.held);
   if (was) out.push({ t: "drop", key: was.key, x: r3(was.x), y: r3(was.y), z: r3(was.z), rot: r3(was.rot) });
@@ -76,7 +84,7 @@ export function poseOf(w: World): Sent {
 /** A message from the room. A view moves your friends and the pieces they carry or set down; a piece set down that was in
  * your hands (the friend on the other end put it down) leaves them, and each cable's ends go where the room says. A
  * refusal takes back the grab, or puts the cable end back where the room has it. */
-export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables) {
+export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<string>) {
   if (m.t === "refused") {
     if (w.held?.key === m.key) { w.held = null; s.held = null; }
     if (c?.runs.some((r) => r.key === m.key)) hearWire(w, c, s, s.wires.get(m.key) ?? { key: m.key, ...CASED }, true);
@@ -87,6 +95,13 @@ export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables) {
     if (wire.n <= (s.wires.get(wire.key)?.n ?? 0) || !whole(wire.a) || !whole(wire.b)) continue;
     s.wires.set(wire.key, wire);
     hearWire(w, c, s, wire, false);
+  }
+  // A switch a friend threw is thrown on your page too: one system, heard by each from where they stand.
+  if (on) for (const t of m.switches) {
+    if (t.n <= (s.thrown.get(t.key) ?? 0)) continue;
+    s.thrown.set(t.key, t.n);
+    s.on.set(t.key, t.on);
+    if (t.on) on.add(t.key); else on.delete(t.key);
   }
   for (const p of m.placed) {
     if (p.n <= (s.seen.get(p.key) ?? 0)) continue;
