@@ -6,6 +6,8 @@ Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deplo
 
 **The cable feel test** (`feel.html`: `bun run dev`, then `/feel.html`): one room, the game's own sound board, amp rack, wedge and mic stand models (jacks where the models put them), the game's hands, and four rolls of cable at their real weight (mic 0.06, speaker 0.21, feeder 1.1 kg/m). Plug a roll's end in, bowl the roll and it pays out behind it: a 16.5 kg feeder dies in a few metres, a mic cable runs the room. Dragging laid cable slows you by what it weighs. The sim is `src/cables/roll.ts`; `window.feel` plays it without a mouse (`bun run probe load-in /feel.html --js "feel.state()"`).
 
+**Your ink** (`src/you/`): each rung of the tour you pass puts a flash tattoo on a forearm, and the Ink scrap on the menu takes one picture of your own (kept in this browser only). Hold I to look at your arms.
+
 ## Run it
 
 ```
