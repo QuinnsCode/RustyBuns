@@ -592,8 +592,8 @@ const TABS = [
   ["account", "Me", ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"]],
 ] as const;
 const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
-/** Qollab Studio's lobby (FM DAW's jam.html), the next step on from your character. */
-const STUDIO_DOOR = ourApp("fm-daw")?.returns?.find((r) => r.endsWith("/jam.html"));
+/** Qollab Studio's lobby (FM DAW's /jam; Cloudflare serves jam.html there), the next step on from your character. */
+const STUDIO_DOOR = ourApp("fm-daw")?.returns?.find((r) => r.endsWith("/jam"));
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
 const short = (t: number) => new Date(t).toISOString().slice(5, 10);
