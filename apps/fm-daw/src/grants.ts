@@ -4,7 +4,8 @@
 // floor's: Freezone lets everyone play, edit and mix, Hold only listen. Someone without a grant asks (a raised
 // hand) and the leader answers Yes or No. The World checks every message against this; the page only shows it.
 // Pure, so the World, the page and the tests share it.
-import { arr, bool, check, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { TRACKS } from "./engine/params.ts";
 import type { ClientMsg, Floor, Op } from "./project.ts";
 
 export const CANS = ["play", "edit", "mix", "lead"] as const;
@@ -13,6 +14,7 @@ const CAN = oneOf(CANS);
 /** People a sesh keeps a grant for; past it, a new grant is refused (the leader can take one back). */
 export const MAX_GRANTED = 64;
 
+const TRACK_LIST = arr(int(0, TRACKS - 1), TRACKS);
 const ID = str(64, { re: /^[0-9a-f]{8,64}$/ });
 const ids = <T>(of: Guard<T>, max: number): Guard<Record<string, T>> => (v) =>
   Object.fromEntries(Object.entries(rec(of, max)(v)).filter(([k]) => check(ID, k) !== null));
@@ -20,8 +22,12 @@ const ids = <T>(of: Guard<T>, max: number): Guard<Record<string, T>> => (v) =>
  * `who`: each person with a grant of their own, and what it is (an empty list is listen only). `maker`: the
  * maker's person id, once they said hello. `handed`: the maker handed the lead on, so leading is the granted ones'.
  * `muted`: the people the leader muted for everyone: the World passes on none of their notes.
+ * `tracks`: the people who may play only some tracks (by number), not the whole seat; set beside a grant without play.
  */
-export const Grants = obj({ who: ids(arr(CAN, CANS.length), MAX_GRANTED), maker: opt(ID), handed: opt(bool()), muted: opt(arr(ID, MAX_GRANTED)) });
+export const Grants = obj({
+  who: ids(arr(CAN, CANS.length), MAX_GRANTED), maker: opt(ID), handed: opt(bool()), muted: opt(arr(ID, MAX_GRANTED)),
+  tracks: opt(ids(TRACK_LIST, MAX_GRANTED)),
+});
 export type Grants = Of<typeof Grants>;
 export const noGrants = (): Grants => ({ who: {} });
 /** Stored or backed-up grants read back, or none. */
@@ -35,25 +41,37 @@ export function leaders(g: Grants): string[] {
 
 /**
  * Whether this person may do this. `maker`: the socket brought the maker's key (before their hello names them).
- * A leader may do everything; otherwise their own grant, or with none, the floor's.
+ * A leader may do everything; otherwise their own grant, or with none, the floor's. `track`: play on this track,
+ * which a grant of some tracks (`tracks`) gives too.
  */
-export function may(g: Grants, floor: Floor, who: string | undefined, maker: boolean, can: Can): boolean {
+export function may(g: Grants, floor: Floor, who: string | undefined, maker: boolean, can: Can, track?: number): boolean {
   const lead = who ? leaders(g).includes(who) : maker && (!g.handed || !leaders(g).length);
   if (lead) return true;
   const own = who ? g.who[who] : undefined;
-  if (own) return own.includes(can);
+  if (own) return own.includes(can) || (can === "play" && track !== undefined && !!g.tracks?.[who!]?.includes(track));
   return floor === "free" && can !== "lead";
 }
 
-/** The leader sets what this person may do (`can` in full: [] is listen only, null is back to the floor's). */
-export function grant(g: Grants, who: string, can: Can[] | null): Grants {
+/** The tracks this person may play when it is some and not the whole seat, or null (all of them, or none). */
+export const playTracks = (g: Grants, who: string): number[] | null =>
+  g.who[who] && !g.who[who].includes("play") ? (g.tracks?.[who] ?? null) : null;
+
+/**
+ * The leader sets what this person may do (`can` in full: [] is listen only, null is back to the floor's), and
+ * with `tracks`, which tracks they may play when `can` has no play (left out: the tracks they had stay theirs).
+ */
+export function grant(g: Grants, who: string, can: Can[] | null, tracks?: number[]): Grants {
   const who2 = { ...g.who };
   if (can === null) delete who2[who];
   else {
     if (!(who in who2) && Object.keys(who2).length >= MAX_GRANTED) return g;
     who2[who] = CANS.filter((c) => can.includes(c));
   }
-  const next = { ...g, who: who2 };
+  const keep = can !== null && !who2[who].includes("play") ? [...new Set(tracks ?? g.tracks?.[who] ?? [])].sort((a, b) => a - b) : [];
+  const { tracks: had, ...rest } = g;
+  const tracks2 = { ...had };
+  if (keep.length) tracks2[who] = keep; else delete tracks2[who];
+  const next: Grants = Object.keys(tracks2).length ? { ...rest, who: who2, tracks: tracks2 } : { ...rest, who: who2 };
   // nobody may take the last lead away: the maker gets it back
   if (g.handed && !leaders(next).length) delete next.handed;
   return next;
@@ -85,6 +103,12 @@ export function opNeeds(op: Op): Can {
   return "edit";
 }
 
+/** The track a live note or bend is on: a grant of some tracks lets these through on its tracks (takes stay edit). */
+export function trackOf(m: ClientMsg): number | undefined {
+  if (m.t === "live" && (m.e.t === "on" || m.e.t === "off" || m.e.t === "bend")) return m.e.track;
+  return undefined;
+}
+
 /** What a message from the page needs, or null when anyone may send it (a held room still lets a guest let go). */
 export function needs(m: ClientMsg): Can | null {
   if (m.t === "op") return opNeeds(m.op);
@@ -96,7 +120,7 @@ export function needs(m: ClientMsg): Can | null {
 
 /** Page to World: the leader grants (null: back to the floor's), hands on the lead or mutes someone; anyone asks; the leader answers. */
 export type GrantClient =
-  | { t: "grant"; who: string; can: Can[] | null } | { t: "handOn"; who: string } | { t: "mute"; who: string; on: boolean }
+  | { t: "grant"; who: string; can: Can[] | null; tracks?: number[] } | { t: "handOn"; who: string } | { t: "mute"; who: string; on: boolean }
   | { t: "ask"; can: Can } | { t: "answer"; who: string; yes: boolean };
 /**
  * World to page: the grants, who has a hand up for what, who's in (person ids), and which person each live-line peer
@@ -106,7 +130,7 @@ export const GrantsMsg = obj({ t: oneOf(["grants"]), grants: Grants, asks: ids(C
 export type GrantServer = Of<typeof GrantsMsg>;
 
 const CLIENT: Guard<GrantClient>[] = [
-  obj({ t: oneOf(["grant"]), who: ID, can: (v: unknown) => (v === null ? null : arr(CAN, CANS.length)(v)) }),
+  obj({ t: oneOf(["grant"]), who: ID, can: (v: unknown) => (v === null ? null : arr(CAN, CANS.length)(v)), tracks: opt(TRACK_LIST) }),
   obj({ t: oneOf(["handOn"]), who: ID }),
   obj({ t: oneOf(["mute"]), who: ID, on: bool() }),
   obj({ t: oneOf(["ask"]), can: CAN }),
