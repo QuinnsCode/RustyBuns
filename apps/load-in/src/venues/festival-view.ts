@@ -63,7 +63,7 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
   }
 
   // The stages: a group each that turns with its system.
-  const deck = mat(0x2a2623), black = mat(0x1a1a1c), truss = mat(0xb8bcc2, { metalness: 0.7, roughness: 0.35 }), canvas = mat(0xeee9df, { side: THREE.DoubleSide });
+  const deck = mat(0x2a2623), black = mat(0x1a1a1c), truss = mat(0xb8bcc2, { metalness: 0.7, roughness: 0.35 }), canvas = mat(0xeee9df, { side: THREE.DoubleSide, emissive: 0x77706a });
   const stages = {} as Record<StageKey, THREE.Group>;
   for (const k of STAGE_KEYS) {
     const s = new THREE.Group();
@@ -72,11 +72,12 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
       // the tent: a canopy over the floor, a closed back wall and sides, a peaked roof
       block(30, 6, 0.1, 0, 0, -5.5, canvas, s);
       for (const x of [-15, 15]) block(0.1, 6, 40, x, 0, 14.5, canvas, s);
-      const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 21.5, 4.5, 4, 1, true), canvas);
-      peak.position.set(0, 8.25, 14.5);
-      peak.rotation.y = Math.PI / 4;
-      peak.scale.set(1, 1, 1.9);
-      s.add(peak);
+      // a pitched roof: two canvas slopes from the eaves at 6 m to the ridge at 10 m
+      for (const x of [-1, 1]) {
+        const slope = block(Math.hypot(15, 4) + 0.3, 0.08, 40.4, 0, 0, 0, canvas, s);
+        slope.position.set(x * 7.5, 8, 14.5);
+        slope.rotation.z = -x * Math.atan2(4, 15);
+      }
     } else {
       // the open stage: four truss legs and a roof over the deck, a black backdrop
       for (const x of [-7, 7]) for (const z of [-5.5, 3.5]) block(0.4, 9, 0.4, x, 0, z, truss, s);

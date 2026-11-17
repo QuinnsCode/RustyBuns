@@ -246,7 +246,7 @@ function draw() {
   loadOut?.update(world, cables);
   hands.update(holding(), world.t, stepSpeed());
   ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
-  const next = phase === "play" ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
+  const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
   $("next").textContent = next ? next.text : "";
