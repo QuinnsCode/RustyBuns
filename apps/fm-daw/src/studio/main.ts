@@ -213,8 +213,9 @@ function thing(s: Spot): THREE.Group {
     many(new THREE.CylinderGeometry(0.012, 0.013, 0.022, 14), knob, knobs, panel);
     const screen = box(0.16, 0.004, 0.05, surface("screen", "#7ab8d8"), t.w / 2 - 0.22, 0.012, 0, panel);
     screen.userData.glow = 1;
-    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
-    const white = std("#e2ddd0", { roughness: 0.45 }), black = std("#0a0a0b", { roughness: 0.38, envMapIntensity: 0.4 });
+    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them; the black
+    // ones satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown
+    const white = std("#e2ddd0", { roughness: 0.45 }), black = new THREE.MeshPhysicalMaterial({ color: "#040405", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 });
     const n = 29, lay = layout(n), kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
     const whites = lay.whites.map((_, i): [number, number, number] => [x0 + i * kw, top + 0.011, z]);
     const blacks = lay.after.map((i): [number, number, number] => [x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);

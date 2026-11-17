@@ -23,14 +23,41 @@ const KIT: Record<string, SurfaceName> = { metal: "aluminium", plastic: "plastic
 
 /** The room's surfaces: the folder under textures/, metres one copy covers, and how rough and bumpy it is. `shade`
  * scales the colour asked for (in linear light): look.ts painted boards darker than their colour (seams, grain), and the rooms were lit for that. */
-const ROOM: Record<string, { dir: string; tile: number; rough: number; color: boolean; normal?: number; shade?: number }> = {
-  floorboards: { dir: "floorboards", tile: 1.5, rough: 0.55, color: true, normal: 0.8, shade: 0.32 },
+const ROOM: Record<string, { dir: string; tile: number; rough: number; color: boolean; normal?: number; shade?: number; tone?: number; wear?: number }> = {
+  floorboards: { dir: "floorboards", tile: 1.5, rough: 0.55, color: true, normal: 0.8, shade: 0.32, tone: 0.14, wear: 0.8 },
   foam: { dir: "foam", tile: 1.2, rough: 1, color: false, normal: 0.9 },
-  ceilingTile: { dir: "ceilingTile", tile: 3.6, rough: 1, color: true, normal: 1.2 },
-  drywall: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 0.3 },
-  plaster: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 1 },
-  concrete: { dir: "concrete", tile: 2.5, rough: 1, color: true, normal: 0.8 },
+  ceilingTile: { dir: "ceilingTile", tile: 3.6, rough: 1, color: true, normal: 1.2, tone: 0.05 },
+  drywall: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 0.3, tone: 0.07 },
+  plaster: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 1, tone: 0.08 },
+  concrete: { dir: "concrete", tile: 2.5, rough: 1, color: true, normal: 0.8, tone: 0.12, wear: 0.5 },
 };
+
+/**
+ * A photo repeated every metre and a half reads as wallpaper. Over the map, two slow value noises in the map's own
+ * coordinates (one copy is 1 across): a tone that drifts `tone` either way over a few metres, so no two copies match,
+ * and worn patches (`wear`, 0 to 1) where feet and chairs have dulled the finish, a touch paler and rougher.
+ */
+function weather(m: THREE.MeshStandardMaterial, tone: number, wear: number) {
+  m.onBeforeCompile = (s) => {
+    s.fragmentShader = s.fragmentShader
+      .replace("#include <common>", `#include <common>
+float qHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float qNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(qHash(i), qHash(i + vec2(1, 0)), f.x), mix(qHash(i + vec2(0, 1)), qHash(i + vec2(1, 1)), f.x), f.y); }`)
+      .replace("#include <map_fragment>", `#include <map_fragment>
+#ifdef USE_MAP
+  float qTone = qNoise(vMapUv * 0.43) * 0.65 + qNoise(vMapUv * 1.7 + 3.1) * 0.35;
+  float qWorn = smoothstep(0.58, 0.86, qNoise(vMapUv * 0.8 + 7.3) * 0.75 + qNoise(vMapUv * 3.1) * 0.25) * ${wear.toFixed(2)};
+  diffuseColor.rgb *= 1.0 + (qTone - 0.5) * ${(tone * 2).toFixed(2)};
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.14, 1.1, 1.04) + 0.004, qWorn);
+#endif`)
+      .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
+#ifdef USE_MAP
+  roughnessFactor = clamp(roughnessFactor + qWorn * 0.3 - (qTone - 0.5) * 0.12, 0.0, 1.0);
+#endif`);
+  };
+  m.customProgramCacheKey = () => `weather-${tone}-${wear}`;
+}
 
 /** The average colour of a loaded map, in linear light (what the tint divides by). */
 function average(t: THREE.Texture): THREE.Color | null {
@@ -82,6 +109,7 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
     const want = new THREE.Color(color ?? MATERIALS[name as keyof typeof MATERIALS].color).multiplyScalar(r.shade ?? 1);
     const m = new THREE.MeshStandardMaterial({ color: want, roughness: r.rough, metalness: 0 });
     m.name = `room-${name}-${want.getHexString()}`;
+    if (r.tone || r.wear) weather(m, r.tone ?? 0, r.wear ?? 0);
     void Promise.all([
       r.color ? map(r.dir, "color", r.tile, true).then((t) => void (m.map = t)) : undefined,
       map(r.dir, "normal", r.tile, false).then((t) => { m.normalMap = t; m.normalScale.setScalar(r.normal ?? 1); }),
