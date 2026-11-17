@@ -21,7 +21,8 @@ const NORMAL: Record<Face, Vec3> = { front: [0, 0, 1], back: [0, 0, -1], left: [
 const acrylic = () => new THREE.MeshPhysicalMaterial({ color: 0xdfeaf2, transparent: true, opacity: 0.18, roughness: 0.05, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
 const edges = (geo: THREE.BufferGeometry, color = 0xcfe3f0) => new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 }));
 const mat = (color: number, metal = 0.2, rough = 0.6) => new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
-const PEDAL_COLOR: Record<string, number> = { drive: 0x3a8f5c, fuzz: 0xc4612f, dist: 0xd8b13a };
+const PEDAL_COLOR: Record<string, number> = { drive: 0x3a8f5c, fuzz: 0xc4612f, dist: 0xd8b13a, comp: 0x3b6fb3 };
+const MACHINE_COLOR: Record<string, number> = { tape: 0x8c6a45, spring: 0x45505c, bbd: 0x7d4d9e };
 
 function box(w: number, h: number, d: number, m: THREE.Material, y = h / 2) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -81,6 +82,28 @@ export function gearModel(g: GearDef): GearModel {
   } else if (g.kind === "pedal") {
     group.add(box(w, h, d, mat(PEDAL_COLOR[g.circuit ?? ""] ?? 0x777777, 0.55, 0.35)));
     group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, d / 2 - 0.05], mat(0xc9ccd1, 0.9, 0.2)));
+  } else if (g.kind === "machine") {
+    group.add(box(w, h, d, mat(MACHINE_COLOR[g.loop ?? "tape"], 0.4, 0.45)));
+    if (g.loop === "tape") {
+      // Two reels on the lid.
+      for (const x of [-w / 4, w / 4]) group.add(onFace(0.05, 0.01, "top", [x, h + 0.005, -0.02], mat(0x2a2522, 0.3, 0.6)));
+    } else if (g.loop === "spring") {
+      // The tank's two springs along the lid.
+      for (const z of [-0.025, 0.025]) group.add(onFace(0.006, w * 0.8, "right", [0, h + 0.004, z], mat(0xc9ccd1, 0.9, 0.3)));
+    }
+  } else if (g.kind === "desk") {
+    // FM DAW's desk: a console top on two legs, a fader per track, the patch bay along the back of the top.
+    group.add(box(w, 0.04, d, mat(0x1d1f23, 0.4, 0.5), h - 0.02));
+    for (const x of [-w / 2 + 0.05, w / 2 - 0.05]) { const leg = box(0.05, h - 0.04, d * 0.9, mat(0x30343a, 0.7, 0.4)); leg.position.x = x; group.add(leg); }
+    const bay = box(w * 0.96, 0.012, 0.12, mat(0x2b2e33, 0.6, 0.4), h + 0.006);
+    bay.position.z = -0.2;
+    group.add(bay);
+    for (let i = 0; i < 4; i++) {
+      const x = -0.41 + i * 0.3, slot = box(0.006, 0.004, 0.16, mat(0x0c0d0f, 0, 0.9), h + 0.002), cap = box(0.03, 0.02, 0.012, mat(0xff6b4a, 0.2, 0.4), h + 0.01);
+      slot.position.set(x, h + 0.002, 0.1);
+      cap.position.set(x, h + 0.01, 0.1);
+      group.add(slot, cap);
+    }
   } else {
     // The guitar on its stand: a body, a neck, a headstock, and the stand's legs.
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.045, 32), mat(0x7b1f24, 0.1, 0.35));

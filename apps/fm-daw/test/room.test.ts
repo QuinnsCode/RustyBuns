@@ -1,7 +1,9 @@
 // Q Studio's room as a player walks it: to the rack, the amp down onto the cab, the guitar through a pedal into the
-// amp and the amp into the cab by looking and clicking, a knob turned, and a cable pulled out again.
+// amp and the amp into the cab by looking and clicking, a knob turned, and a cable pulled out again; then gear
+// cabled into the desk's track inserts (#4902).
 import { expect, test } from "bun:test";
-import { aimed, item, listen, lookAt, newRoom, setKnob, snapshot, use, walkTo, type Room } from "../src/room/room.ts";
+import { applySettings } from "../src/amp/live.ts";
+import { aimed, drop, item, lead, listen, lookAt, newRoom, plug, setKnob, snapshot, unplug, use, walkTo, type Room } from "../src/room/room.ts";
 
 const click = (r: Room, id: string, part?: string) => { lookAt(r, id, part); return use(r); };
 
@@ -54,4 +56,55 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
   expect(click(r, "lead", "in")).toEqual({ ok: true });
   expect(snapshot(r).holding).toEqual({ lead: ["fuzz", "out"] });
   expect(listen(r.studio.patch)).toMatchObject({ playing: false, running: [] });
+});
+
+test("cable gear into the desk's track inserts: Q Tape on track 1, Q Squeeze into an amp's line out with Q Spring in its loop on track 2", () => {
+  const r = newRoom();
+  const cable = (a: string, aj: string, b: string, bj: string) => { expect(lead(r, [a, aj])).toEqual({ ok: true }); expect(plug(r, [b, bj])).toEqual({ ok: true }); };
+  const play = (h: ReturnType<typeof listen>) => {
+    const live = applySettings(h.settings!, null, 48000), n = 48000, x = new Float32Array(n), y = new Float32Array(n);
+    for (let i = 0; i < 2400; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / 48000);
+    live.rig.process(x, y, n);
+    const out = Array.from(y, (v) => v / live.scale);
+    return { peak: Math.max(...out.map(Math.abs)), tail: Math.max(...out.slice(12000).map(Math.abs)), misses: live.rig.misses };
+  };
+
+  // Track 1: send into the tape echo, the tape back into the return. Played straight into the desk: no amp, no cab.
+  cable("desk", "send-1", "tape", "in");
+  expect(listen(r.studio.patch, 2)).toMatchObject({ playing: false, problems: ["nothing plugged into FM DAW desk's return-1"] });
+  cable("tape", "out", "desk", "return-1");
+  const tape = listen(r.studio.patch, 2);
+  expect(tape).toMatchObject({ playing: true, chain: ["desk", "tape", "desk"], running: ["tape"], problems: [] });
+  expect(tape.settings).toMatchObject({ direct: true, pedal: null, loop: [{ kind: "tape", time: 4, repeats: 4, mix: 4 }] });
+  // A short note, then its echoes after it has stopped: finite, under the limiter, and the tape didn't stall.
+  const heard = play(tape);
+  expect(heard.peak).toBeLessThan(5);
+  expect(heard.tail).toBeGreaterThan(1e-3);
+  expect(heard.misses).toBe(0);
+
+  // Track 2: the compressor into the lead amp, its line out (the cab and mic, as a load box) into the return.
+  cable("desk", "send-2", "comp", "in");
+  cable("comp", "out", "lead", "in");
+  cable("lead", "speaker", "desk", "return-2");
+  expect(listen(r.studio.patch).inserts[1]).toMatchObject({ track: 2, whole: false, problems: ["FM DAW desk's return-2 goes to Q Lead 50's speaker"] });
+  unplug(r, ["desk", "return-2"]); drop(r);
+  cable("lead", "line", "desk", "return-2");
+  // The spring in the amp's loop: send out to the tank, the tank back into the return.
+  cable("lead", "send", "spring", "in");
+  cable("spring", "out", "lead", "return");
+  expect(listen(r.studio.patch).inserts[1]).toMatchObject({ track: 2, whole: true, chain: ["desk", "comp", "lead", "spring", "desk"] });
+
+  // Track 1 plays while it is whole; pull its return and track 2 plays.
+  unplug(r, ["desk", "return-1"]); drop(r);
+  const amp = listen(r.studio.patch, 2);
+  expect(amp).toMatchObject({ playing: true, chain: ["desk", "comp", "lead", "spring", "desk"], running: ["comp", "lead", "spring"] });
+  expect(amp.settings).toMatchObject({ amp: "lead", pedal: "comp", loop: [{ kind: "spring" }] });
+  expect(amp.settings?.direct).toBeUndefined();
+  expect(play(amp).misses).toBe(0);
+
+  // Pull the cable out of the tank's input: the return still has the tank in it, so the loop is open and it goes quiet.
+  unplug(r, ["spring", "in"]); drop(r);
+  const open = listen(r.studio.patch);
+  expect(open.playing).toBe(false);
+  expect(open.inserts[1].problems).toEqual([expect.stringContaining("Q Lead 50's loop is open")]);
 });

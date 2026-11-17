@@ -23,6 +23,8 @@ export interface AmpSettings {
   oversample: 2 | 4;
   /** The machines switched on in the effects loop, in order (none if left out). */
   loop?: LoopSpec[];
+  /** No amp: the pedal and the loop straight into a desk insert's return, at line level (no power stage, no cab). */
+  direct?: boolean;
 }
 
 export type ToAmp = { t: "set"; settings: AmpSettings };

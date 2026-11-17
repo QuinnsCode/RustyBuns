@@ -15,7 +15,7 @@ import type { FromAmp, ToAmp } from "../amp/messages.ts";
 import { DEFAULT_ROOM } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
 import { sanitizePatch } from "../studio.ts";
-import { type Aim, type Answer, EYE, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, furnish, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, rackModel, turnKnob } from "./models.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls";
@@ -25,7 +25,7 @@ function loadPatch() {
   try {
     const raw = localStorage.getItem(KEY);
     const p = raw ? sanitizePatch(JSON.parse(raw)) : null;
-    if (p?.placed.length) return p;
+    if (p?.placed.length) return furnish(p);
   } catch { /* private window or bad JSON: the room as it starts */ }
   return startPatch();
 }
@@ -262,7 +262,7 @@ function frame(now: number) {
 
 /** The running amp's tubes glow with what each stage swings; the cab's cones push with the output. */
 function glow(h: Heard) {
-  const ampId = h.running[h.running.length - 1], offset = h.settings?.pedal ? 1 : 0;
+  const ampId = h.running.find((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return p && gearOf(p)?.kind === "amp"; }), offset = h.settings?.pedal ? 1 : 0;
   const stages = speakersUp ? meter.levels.length - offset - 1 : 0;
   for (const [id, m] of models) {
     m.tubes.forEach((t, i) => {
