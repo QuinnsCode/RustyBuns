@@ -6,6 +6,7 @@ import { connectSocket } from "@rustybuns/util/socket";
 import { seshFromPath } from "../sesh.ts";
 import { decodeServer, type ClientMsg, type Floor, type Full, type Live, type Op, type Project, type ServerMsg } from "../project.ts";
 import type { TakeBytes } from "../take.ts";
+import type { Rung } from "../rewind.ts";
 import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 import { decodeGrantServer, type GrantClient, type GrantServer } from "../grants.ts";
 
@@ -30,6 +31,8 @@ export interface Net {
   lock(code: string): void;
   /** A leader grants, hands on or answers; anyone asks. Dropped while offline, like chat. */
   grant(m: GrantClient): void;
+  /** Ask for the groove as it was `ago` minutes back, for this page alone; it comes back through onRewound. */
+  rewind(ago: Rung): void;
   close(): void;
 }
 
@@ -71,6 +74,8 @@ export function connect(opts: {
   onGrants?(m: GrantServer): void;
   /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
   onTakeBytes(m: TakeBytes): void;
+  /** The groove this page asked for (null: the sesh doesn't go back that far), as of `at` (ms). */
+  onRewound?(ago: Rung, at: number, p: Project | null): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
 }): Net {
@@ -96,6 +101,7 @@ export function connect(opts: {
       else if (m.t === "full") full = m.why;
       else if (m.t === "takeBytes") opts.onTakeBytes(m);
       else if (m.t === "grants") opts.onGrants?.(m);
+      else if (m.t === "rewound") opts.onRewound?.(m.ago, m.at, m.project);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
@@ -122,6 +128,7 @@ export function connect(opts: {
     lock: (code) => { link.send({ t: "lock", code }); },
     grant: (m) => { if (link.open) link.send(m); },
     take: (m) => { link.send(m); },
+    rewind: (ago) => { if (link.open) link.send({ t: "rewind", ago }); },
     close: () => link.close(),
   };
 }

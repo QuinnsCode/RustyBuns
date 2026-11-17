@@ -7,6 +7,8 @@ import { ChatDock, useChat } from "./Chat.tsx";
 import { LockButton } from "./Lock.tsx";
 import { People } from "./People.tsx";
 import { may, opNeeds, type Can, type GrantServer } from "../grants.ts";
+import { WindBack, type Rewound } from "./WindBack.tsx";
+import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
@@ -125,6 +127,9 @@ export function App() {
   const redo = useRef<Project[]>([]);
   const lastGroup = useRef({ key: "", at: 0 });
   const net = useRef<Net | null>(null);
+  // wind back: while a past groove plays here, the sesh's own groove waits aside, kept in step with everyone's edits
+  const aside = useRef<Project | null>(null);
+  const [rewound, setRewound] = useState<Rewound | null>(null);
   // the keyboard and MIDI handlers are registered once; they read these
   // the sesh's floor and the leader's grants (src/grants.ts): what this page may send; the rest stays in it
   const chat = useChat();
@@ -139,6 +144,11 @@ export function App() {
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
   function commit(op: Op, opts: { remote?: boolean; group?: string } = {}) {
+    if (aside.current) {
+      // a look back is for listening: your edits wait until you're back, the others' land on the groove aside
+      if (opts.remote) aside.current = apply(aside.current, op);
+      return;
+    }
     if (!opts.remote && !live.current.allowed[opNeeds(op)]) return;
     const prev = proj.current;
     const next = apply(prev, op);
@@ -160,7 +170,7 @@ export function App() {
   function history(dir: "undo" | "redo") {
     const from = dir === "undo" ? undo.current : redo.current;
     const to = dir === "undo" ? redo.current : undo.current;
-    if (!live.current.allowed.edit) return;
+    if (!live.current.allowed.edit || aside.current) return;
     const p = from.pop();
     if (!p) return;
     to.push(proj.current);
@@ -171,6 +181,35 @@ export function App() {
     syncTakes(p);
     net.current?.send(op);
     lastGroup.current = { key: "", at: 0 };
+  }
+
+  /** Play this groove in place of the one on screen, without sending it. */
+  function show(p: Project) {
+    proj.current = p;
+    setProject(p);
+    send(loadMsg(p));
+    syncTakes(p);
+  }
+  function onRewound(ago: Rung, at: number, p: Project | null) {
+    if (!p) { endLook(); setRewound({ ago, at, project: null }); return; }
+    if (!aside.current) aside.current = proj.current;
+    show(p);
+    setRewound({ ago, at, project: p });
+  }
+  /** Back to the sesh's groove as it is now; hands back the one that was playing here. */
+  function endLook(): Project | null {
+    const now = aside.current;
+    aside.current = null;
+    setRewound(null);
+    if (!now) return null;
+    const was = proj.current;
+    show(now);
+    return was;
+  }
+  /** The leader's call: the groove they're hearing goes to everyone, as one edit (so undo takes it back). */
+  function bringBack() {
+    const p = endLook();
+    if (p) commit({ t: "replace", project: p });
   }
 
   // ---- audio ----
@@ -304,6 +343,7 @@ export function App() {
         const pcm = inbox.current.add(m);
         if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
       },
+      onRewound,
       hello: chat.hello,
     });
     net.current = n;
@@ -314,6 +354,7 @@ export function App() {
   // ---- yours alone: my setup, and the solo project ----
   const [mySetup, setMySetup] = useState(() => loadMine("setup") !== null);
   function goSolo() {
+    endLook();
     for (const from of [...peerState.current.keys()]) onGone(from);
     dropAllCursors();
     setSolo(true);
@@ -766,6 +807,7 @@ export function App() {
           {netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
         </>}
         {locked && !solo && <span className="warn-text" role="status">You're listening: heard only here. Raise a hand to play</span>}
+        {!solo && netStatus.state === "online" && <WindBack rewound={rewound} leads={allowed.lead} onAsk={(ago) => net.current?.rewind(ago)} onBack={() => endLook()} onBring={bringBack} />}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}

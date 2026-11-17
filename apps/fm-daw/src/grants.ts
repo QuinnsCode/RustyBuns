@@ -79,6 +79,7 @@ export function needs(m: ClientMsg): Can | null {
   if (m.t === "op") return opNeeds(m.op);
   if (m.t === "init" || m.t === "takeBytes") return "edit";
   if (m.t === "floor" || m.t === "lock") return "lead";
+  if (m.t === "rewind") return null;                // a look back is heard by its asker alone
   return "play";
 }
 
