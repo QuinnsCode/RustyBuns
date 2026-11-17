@@ -8,6 +8,9 @@ import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
+import { keysReach } from "../src/studio/room.ts";
+import { figure, handsOn, type Figure } from "../src/studio/figure.ts";
+import * as THREE from "three";
 import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, toggleCam, walkTo } from "../src/studio/jam.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
@@ -509,6 +512,31 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   leave(a);
   read(b, ben);
   expect(ben.others.size).toBe(0);
+});
+
+test("jam room: whoever sits at the keys has their palms on the keys, short arms or long, and the drummer holds sticks", () => {
+  const keys = LIVE_ROOM.spots.find((s) => s.id === "keys")!, reach = keysReach(keys)!;
+  const palms = (fig: Figure) => {
+    const out: THREE.Vector3[] = [];
+    fig.group.updateMatrixWorld(true);
+    fig.group.traverse((o) => { if (o.name === "hand") out.push(fig.group.worldToLocal(o.getWorldPosition(new THREE.Vector3()))); });
+    return out;
+  };
+  for (let seed = 1; seed <= 12; seed++) {
+    const fig = figure(randomAvatar(mulberry32(seed)), null);
+    fig.pose({ speed: 0, seated: true, play: handsOn("keys", false), note: false, t: 1, reach });
+    for (const p of palms(fig)) {
+      expect(Math.abs(-p.z - reach.ahead)).toBeLessThan(0.04);
+      expect(Math.abs(p.y - reach.up)).toBeLessThan(0.04);
+    }
+    // at the kit: a stick in each hand, and its hands come up only to strike
+    fig.pose({ speed: 0, seated: true, play: handsOn("drums", false), note: false, t: 1, sticks: true });
+    const sticks: THREE.Object3D[] = [];
+    fig.group.traverse((o) => { if (o.parent?.name === "hand" && o instanceof THREE.Mesh && o.visible && o.geometry instanceof THREE.CylinderGeometry) sticks.push(o); });
+    expect(sticks.length).toBe(2);
+    expect(handsOn("drums", true)).toBe("sticks");
+    fig.dispose();
+  }
 });
 
 test("grants: the leader lets one play, another plays one track only, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {

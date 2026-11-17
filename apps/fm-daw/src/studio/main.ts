@@ -24,8 +24,8 @@ import { loadMsg } from "../ui/load.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, walkTo } from "./jam.ts";
-import { figure, type Figure } from "./figure.ts";
-import { thingBox, wallPieces, type Spot } from "./room.ts";
+import { figure, handsOn, type Figure } from "./figure.ts";
+import { keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -213,7 +213,7 @@ function thing(s: Spot): THREE.Group {
       whites.push([x0 + i * kw, top + 0.011, z]);
       if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) blacks.push([x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
     }
-    many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites);
+    many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
     many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
     const legH = top - 0.1;
     for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
@@ -290,7 +290,7 @@ interface Drawn { fig: Figure; key: string; x: number; z: number; yaw: number; s
 const drawn = new Map<number | "me", Drawn>();
 /** Whoever is playing, for everyone else to look at (null: nobody is). */
 let watched: THREE.Vector3 | null = null;
-function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, yaw: number, seated: boolean, playing: boolean, dt: number, t: number, snap: boolean) {
+function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, yaw: number, seat: Spot | null, playing: boolean, dt: number, t: number, snap: boolean) {
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
   if (d && d.key !== key) { scene.remove(d.fig.group); d.fig.dispose(); d = undefined; }
@@ -303,7 +303,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
   d.fig.group.position.set(d.x, 0, d.z);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.speed, seated, playing, t, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.speed, seated: !!seat, play: handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) : null, sticks: seat?.kind === "drums", look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
@@ -659,20 +659,23 @@ function frame(now: number) {
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
-  // you: seen over your shoulder with no tag of your own, and not at all once a wall behind pulls the camera into your head
-  const c = cameraPose(jam);
+  // you: seen over your shoulder with no tag of your own, and not at all once a wall behind pulls the camera into your
+  // head; in first person, your body and hands below you with no head, so you see where you'd press or strike
+  const c = cameraPose(jam), first = jam.me.cam === "first";
   const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
   watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
-  if (c.boom > 0.7) {
-    drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
-    drawn.get("me")?.fig.fade(c.head);
-    markPerson("me", marksOf(rights.me ?? undefined));
+  if (c.boom > 0.7 || first) {
+    drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, spotOf(jam, jam.me.seat), holding.size > 0, dt, t, true);
+    drawn.get("me")?.fig.fade(first ? 0 : c.head);
+    // your own badge would hang just over the camera in first person
+    if (!first) markPerson("me", marksOf(rights.me ?? undefined));
+    else if (badges.has("me")) { const b = badges.get("me"); if (b?.sprite) dropBadge(b.sprite); badges.delete("me"); }
   }
   else dropPerson("me");
   for (const [peer, o] of jam.others) {
     if (!o.avatar && !o.name) continue;
     const seat = spotOf(jam, o.seat);
-    drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, !!seat, o.held.size > 0, dt, t, false);
+    drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, seat, o.held.size > 0, dt, t, false);
     markPerson(peer, marksOf(peerIds[peer]));
   }
   camera.position.set(...c.at);
@@ -699,6 +702,13 @@ const harness = {
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
   sit: (id?: string) => { const a = id ? sit(jam, id) : (sitOrStand(), { ok: !!jam.me.seat }); live(body(jam)); return a; },
   stand: () => { releaseAll(); stand(jam); live(body(jam)); },
+  /** Where your hands are, in metres from where you sit or stand: ahead, up off the floor, and to your right. */
+  hands: () => {
+    const g = drawn.get("me")?.fig.group, out: [number, number, number][] = [];
+    g?.updateMatrixWorld(true);
+    g?.traverse((o) => { if (o.name === "hand") { const p = g.worldToLocal(o.getWorldPosition(new THREE.Vector3())); out.push([-p.z, p.y, p.x].map((v) => Math.round(v * 100) / 100) as [number, number, number]); } });
+    return out;
+  },
   cam: () => { toggleCam(jam); return jam.me.cam; },
   /** The picture quality, kept for next time: the page loads again with it. */
   quality: (q: Quality) => setQuality(q),

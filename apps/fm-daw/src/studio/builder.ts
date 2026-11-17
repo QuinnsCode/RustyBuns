@@ -89,7 +89,7 @@ export const Edit: Guard<Edit> = (v) => {
 
 /** A new seat's instrument, as step 1's room draws it, and the track it plays. */
 const THINGS: Record<SpotKind, Pick<Spot, "label" | "thing" | "track">> = {
-  keys: { label: "the keys", thing: { w: 1.4, d: 0.45, h: 0.9, ahead: 0.55, color: "#16191c" }, track: "keys" },
+  keys: { label: "the keys", thing: { w: 1.4, d: 0.45, h: 0.82, ahead: 0.48, color: "#16191c" }, track: "keys" },
   drums: { label: "the kit", thing: { w: 1.6, d: 1.1, h: 0.8, ahead: 0.8, color: "#b23a2e" } },
   bass: { label: "the bass rig", thing: { w: 0.7, d: 0.5, h: 0.9, ahead: 0.75, color: "#2e3439" }, track: "bass" },
   desk: { label: "the desk", thing: { w: 2.4, d: 0.8, h: 0.85, ahead: 0.65, color: "#3a4a6b" } },
