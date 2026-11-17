@@ -63,6 +63,7 @@
     "picture": "auto-rig",
     "usedBy": [
       "auto-rig",
+      "load-in",
       "mythic-masters"
     ]
   },
