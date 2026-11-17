@@ -12,7 +12,9 @@ import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
 import { boardToNetlist } from "../src/circuit/tscircuit.ts";
+import qDist from "../circuits/q-dist.circuit.json";
 import qDrive from "../circuits/q-drive.circuit.json";
+import qFuzz from "../circuits/q-fuzz.circuit.json";
 
 setDefaultTimeout(60_000);
 const SR = 48000;
@@ -21,20 +23,30 @@ const sine = (hz: number, seconds: number, amp = 1) => Float32Array.from({ lengt
 const inRange = (what: string, v: number, lo: number, hi: number) => expect([what, v >= lo && v <= hi ? "in range" : v]).toEqual([what, "in range"]);
 const peak = (b: Float32Array, from = 0) => { let p = 0; for (let i = from; i < b.length; i++) p = Math.max(p, Math.abs(b[i])); return p; };
 
-test("the orderable Q Drive board (circuits/q-drive.tsx) plays like its voicing at every Drive", () => {
+test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at every Drive", () => {
   // The 9 V rail and the 4.5 V bias are ground to the signal; jacks, footswitch, LED and supply diode are the box.
-  const box = { acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", "R8", "D3"] };
-  expect(() => boardToNetlist(qDrive)).toThrow("a chip the simulator doesn't know");
+  const box = (supply: string, ledR: string) => ({ acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", ledR, supply] });
   const play = (net: Netlist) => {
     const c = new Circuit(net, SR), rest = c.settle(0);
     return Float32Array.from({ length: SR / 2 }, (_, i) => c.step(0.2 * Math.sin((2 * Math.PI * 220 * i) / SR)) - rest);
   };
-  for (const drive of [0, 0.5, 1]) {
-    const voicing = play(overdrive(drive)), built = play(boardToNetlist(qDrive, { ...box, knobs: { RV1: drive, RV2: 1 } }));
-    let diff = 0;
-    for (let i = SR / 4; i < voicing.length; i++) diff = Math.max(diff, Math.abs(voicing[i] - built[i]));
-    // What is left is the Level pot (100k) and its 1 µF cap loading the output, about 1.5%.
-    inRange(`Drive ${drive}: off the voicing by`, diff / peak(voicing, SR / 4), 0, 0.03);
+  // Each pedal: its board, the box's own parts, and the voicing with the Drive pot (RV1) turned to t.
+  for (const [name, board, read, voicing] of [
+    // 51k + a 500k pot.
+    ["Q Drive", qDrive, box("D3", "R8"), (t: number) => overdrive(t)],
+    // 10k + a 200k pot: the sim's one Drive resistor.
+    ["Q Dist", qDist, box("D3", "R9"), (t: number) => hardClip(10e3 + t * 200e3)],
+    // 20k + a 2M audio pot, whose turn comes out near the square `fuzz()` takes.
+    ["Q Fuzz", qFuzz, box("D5", "R9"), (t: number) => fuzz(Math.sqrt(t))],
+  ] as const) {
+    expect(() => boardToNetlist(board)).toThrow("a chip the simulator doesn't know");
+    for (const t of [0, 0.5, 1]) {
+      const sim = play(voicing(t)), built = play(boardToNetlist(board, { ...read, knobs: { RV1: t, RV2: 1 } }));
+      let diff = 0;
+      for (let i = SR / 4; i < sim.length; i++) diff = Math.max(diff, Math.abs(sim[i] - built[i]));
+      // What is left is the Level pot and its 1 µF cap loading the tone node.
+      inRange(`${name}, Drive pot at ${t}: off the voicing by`, diff / peak(sim, SR / 4), 0, 0.03);
+    }
   }
 });
 

@@ -158,6 +158,16 @@ PCBWay lists 10 bare boards at $5 and doesn't publish a through-hole rate per jo
 3. Kit, built, or only "order your own".
 4. Tube amps stay off kits (300 V). A low-voltage 12AX7 preamp (12 to 24 V) is a later maybe.
 
+### Every pedal on the floor (#5057)
+
+**Q Drive, Q Fuzz and Q Dist each have fab files now.** The box they share (supply, bias, Level, LED, jack and footswitch pads) is `circuits/q-box.tsx`; each pedal file (`q-drive.tsx`, `q-fuzz.tsx`, `q-dist.tsx`) brings only its own circuit and Drive pot. `bun scripts/pcb.ts` renders all of them, `bun scripts/pcb.ts fuzz` one, into `circuits/q-<pedal>/` with the same file names as `q-drive/`. All three place, route and pass DRC with 0 errors on a 58 × 68 mm board.
+
+- **The sim's names stay:** the box's parts take the first free numbers after the pedal's own, so D1, D3 or C4 on the board is the socket the app swaps. Q Drive's files came out the same as before, apart from timestamps.
+- **Diodes to ground, on 9 V:** Q Dist and Q Fuzz clip to ground in the sim. On a 9 V board the op-amp's output sits at the 4.5 V bias, so the board clips to the bias instead; to the signal it is the same node.
+- **Drive pots:** Q Dist is 10k plus a 200k pot (the app's knob tops out at 200k total), Q Fuzz 20k plus a 2M audio pot, whose turn comes out near the square the app uses. A 2M 16 mm pot is not a stock part at every shop. Both use a 500k Level, so it loads their 10k and 4.7k tone nodes by under 2%.
+- **Played like the voicing:** `test/circuit.test.ts` reads each board's netlist back and compares it with its voicing at three Drive turns, one table over the three pedals: each within 3%.
+- **Q Comp** waits for its circuit to become a board (#4952).
+
 Closing the loop (record a built board, compare it with the sim, a Monte Carlo band for part tolerances) waits for boards in hand. The tolerance band is part of #4939.
 
 ## 9. Synth and studio, not only guitar
