@@ -1,50 +1,25 @@
 // A take through the real audio thread: the input recorded on an armed track while Rec
 // is on, the page's 16-bit copy in chunks and back, then played on the track at its beat.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { TakeInbox, encodeTake, toChunks } from "../src/take.ts";
-import type { FromWorklet, ToWorklet } from "../src/engine/messages.ts";
+import { SR, posted, processor, run, useWorklet } from "./worklet-kit.ts";
 import { TsEngine } from "../src/engine/engine.ts";
 import { renderProject } from "../src/engine/offline.ts";
 import { sanitize } from "../src/project.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
-const SR = 48000, BLOCK = 128;
-interface Proc { port: { onmessage: (e: { data: ToWorklet }) => void }; process(i: Float32Array[][], o: Float32Array[][]): boolean }
-let Processor: new () => Proc;
-const posted: FromWorklet[] = [];
-const globals = ["sampleRate", "AudioWorkletProcessor", "registerProcessor"] as const;
-beforeAll(async () => {
-  Object.assign(globalThis, {
-    sampleRate: SR,
-    AudioWorkletProcessor: class { port = { postMessage: (m: FromWorklet) => posted.push(m), onmessage: null } },
-    registerProcessor: (_: string, c: new () => Proc) => { Processor = c; },
-  });
-  await import("../src/engine/worklet.ts");
-});
-afterAll(() => { for (const g of globals) Reflect.deleteProperty(globalThis, g); });
+useWorklet();
 
 /** A 440 Hz tone from 0.5 s to 1 s, silence around it. */
 const burst = (t: number) => (t >= 0.5 && t < 1 ? 0.5 * Math.sin(2 * Math.PI * 440 * t) : 0);
 
-async function run(p: Proc, seconds: number, input?: (t: number) => number, from = 0): Promise<Float32Array> {
-  const out = new Float32Array(Math.round(seconds * SR));
-  for (let at = 0; at < out.length; at += BLOCK) {
-    const x = new Float32Array(BLOCK).map((_, i) => input?.((from + at + i) / SR) ?? 0);
-    const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
-    p.process([[x]], [[L, R]]);
-    out.set(L.subarray(0, Math.min(BLOCK, out.length - at)), at);
-  }
-  await Promise.resolve();
-  return out;
-}
 const rms = (x: Float32Array, a: number, b: number) => {
   const s = x.subarray(Math.round(a * SR), Math.round(b * SR));
   return Math.sqrt(s.reduce((n, v) => n + v * v, 0) / s.length);
 };
 
 test("record a pass of the loop onto a track, share it in chunks, and hear it there at its beat", async () => {
-  const p = new Processor();
-  const say = (m: ToWorklet) => p.port.onmessage({ data: m });
+  const { p, say } = processor();
   say({ t: "tempo", bpm: 120, swing: 0, loopBeats: 6 });               // a 3 s loop: two chunks of sound
   say({ t: "master", gain: 1 });
   say({ t: "arm", track: 2, inLatency: 0 });
@@ -85,9 +60,7 @@ test("record a pass of the loop onto a track, share it in chunks, and hear it th
 });
 
 test("the take starts where the player heard the groove: the input's lateness is taken off", async () => {
-  const p = new Processor();
-  const say = (m: ToWorklet) => p.port.onmessage({ data: m });
-  posted.length = 0;
+  const { p, say } = processor();
   say({ t: "tempo", bpm: 120, swing: 0, loopBeats: 4 });
   say({ t: "arm", track: 0, inLatency: 0.25 });                        // half a beat late
   say({ t: "rec", on: true });

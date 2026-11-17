@@ -2,9 +2,10 @@
 import type { Lane, Note } from "../project.ts";
 import type { RecordedMove } from "./sequencer.ts";
 import type { EqDoc, EqListen } from "./eq.ts";
+import type { TrackAmp } from "../amp/track-amp.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[] }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
@@ -16,6 +17,10 @@ export type ToWorklet =
   | { t: "eq"; bands: EqDoc; lanes: Lane[] }
   /** A track's Shape, its EQ insert before the sum (not automated). */
   | { t: "trackEq"; track: number; bands: EqDoc }
+  /** A track's Amp insert (src/amp/insert.ts), or null for none. */
+  | { t: "amp"; track: number; amp: TrackAmp | null }
+  /** Hear the input through the armed track's amp. Every `arm` turns it off, so the input starts muted. Not saved. */
+  | { t: "monitor"; on: boolean }
   /** A held dot: hear only this range until null. Not saved, not bounced. */
   | { t: "eqListen"; band: EqListen | null }
   /** Shape in linear phase (true) or minimum phase. Linear holds the whole mix back by its latency. */
@@ -41,7 +46,7 @@ export type ToWorklet =
   | { t: "arm"; track: number; inLatency: number };
 
 export type FromWorklet =
-  | { t: "tick"; pos: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number }
+  | { t: "tick"; pos: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number }
   | { t: "rec"; track: number; note: Note }
   | ({ t: "move" } & RecordedMove)
   | { t: "engine"; kind: "ts" | "rust"; error?: string }
