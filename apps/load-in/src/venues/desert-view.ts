@@ -8,7 +8,7 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, type Score, type Show } from "./desert.ts";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, type Score, type Show } from "./desert.ts";
 import { playing } from "./park.ts";
 
 export type DesertView = {
@@ -139,6 +139,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     setHeat(on) { view.heatOn = on; plane.visible = on; },
     key(code) {
       const w = getWorld();
+      if (code === "KeyG") return wrapNear(getWorld(), getCables()), view.update(), true;
       if (code === "KeyH") return view.setHeat(!view.heatOn), true;
       if (code === "KeyB") return (band = band === "high" ? "low" : "high"), view.setHeat(true), true;
       if (code === "BracketLeft" || code === "BracketRight") return master(w, rig(w).master + (code === "BracketLeft" ? -1 : 1)), true;
@@ -166,10 +167,11 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span>Floor ${db(s.floor)} (target ${TARGET})</span>`
         + `<span class="${s.bass < 1 ? "warn" : ""}">Bass ${Math.round(s.bass * 100)}% of the floor at ${BASS} dB</span>`
         + `<span class="${s.camp !== null && s.camp > CAMP_LIMIT ? "warn" : ""}">Camp ${db(s.camp)} (limit ${CAMP_LIMIT})</span>`
+        + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : "<span>Dust: every joint is off the sand or taped</span>")
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
-        + `<small>F push the cart, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
+        + `<small>F push the cart, G tape the joints near you, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
     },
     doors() {
       view.update();
