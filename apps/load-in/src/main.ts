@@ -49,6 +49,7 @@ import { CABLE_RADIUS, REST } from "./hands/grip.ts";
 import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
+import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
@@ -546,6 +547,8 @@ const harness = {
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
+  /** In a DJ booth level: lay and plug every cable and switch it all on, as a player would; returns what failed. */
+  wireBooth: (): string[] => wireBooth(harness),
   /** Walk to (x, z) at your carrying pace, cables dragging; the seconds it took. */
   walkTo: (x: number, z: number) => cable.walkWith(world, cables, x, z),
   /** Park and desert: take the handle of gear on wheels (the generator, the sand cart) and push it, with what rides on it (let go with putDown). */
@@ -697,5 +700,8 @@ const harness = {
   get decks() { return dj?.decks ?? null; },
 };
 window.loadIn = harness;
+// `?level=dj-booth&wired=1`: the booth opens wired and switched on (venues/dj-booth-wire.ts), the first time you press Play.
+let wiredOnce = new URLSearchParams(location.search).has("wired") && world.level.name.startsWith("dj-booth");
+$("play").addEventListener("click", () => { if (wiredOnce) { wiredOnce = false; wireBooth(harness); } });
 
 void boot();
