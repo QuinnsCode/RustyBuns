@@ -477,3 +477,46 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   read(b, ben);
   expect(ben.others.size).toBe(0);
 });
+
+test("wind back: play a while, hear it 5 minutes back alone, the leader brings everyone back, undo, and a reset keeps the ladder", async () => {
+  const { bucket, worldEnv } = await edge();
+  const room = "mellow-teal-otter", MAKER = "a".repeat(32);
+  const t0 = Date.UTC(2026, 10, 16, 20, 0, 0);
+  setSystemTime(new Date(t0));
+  const { world, join, leave } = await setup(worldEnv, room);
+  const maker = (await join({}, MAKER)).ws, guest = (await join({}, "b".repeat(32))).ws;
+  const send = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
+  send(maker, { t: "init", project: { ...project, bpm: 100 } });
+  // a twelve-minute jam: the guest moves the tempo once a minute
+  for (let m = 1; m <= 12; m++) { setSystemTime(new Date(t0 + m * 60_000 + 10_000)); send(guest, { t: "op", op: { t: "global", bpm: 100 + m } }); }
+  await settle();
+
+  setSystemTime(new Date(t0 + 12.5 * 60_000));
+  maker.sent = []; guest.sent = [];
+  send(guest, { t: "rewind", ago: 5 });
+  await settle();
+  // 5 minutes back is 7:30: the groove as minute 7 began, after the tempo move of minute 6; sent to no one else
+  expect(guest.sent).toEqual([{ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: expect.objectContaining({ bpm: 106 }) }]);
+  expect(maker.sent).toEqual([]);
+  const back = guest.sent[0].project;
+
+  // the leader brings everyone back there (an edit), then undoes it (an edit back)
+  send(maker, { t: "op", op: { t: "replace", project: back } });
+  expect(guest.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 106 } } });
+  send(maker, { t: "op", op: { t: "replace", project: { ...back, bpm: 112 } } });
+  expect(guest.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 112 } } });
+
+  send(guest, { t: "rewind", ago: 1440 });
+  await settle();
+  expect(guest.sent.at(-1)).toMatchObject({ t: "rewound", ago: 1440, project: null });    // the sesh isn't a day old
+
+  // everyone leaves, the Durable Object is reset: the ladder comes back from the bucket with the groove
+  leave(maker); leave(guest);
+  await settle();
+  expect(JSON.parse(bucket.get(`sesh/${room}.json`)!).ladder.snaps.length).toBeGreaterThan(5);
+  const fresh = await setup(worldEnv, room);
+  const again = (await fresh.join()).ws;
+  fresh.world.webSocketMessage(again, JSON.stringify({ t: "rewind", ago: 5 }));
+  await settle();
+  expect(again.sent.at(-1)).toMatchObject({ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: { bpm: 106 } });
+});

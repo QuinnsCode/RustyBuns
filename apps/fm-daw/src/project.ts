@@ -6,6 +6,7 @@ import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./eng
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { RUNG, type Rung } from "./rewind.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -249,27 +250,33 @@ export type Full = "room" | "rooms" | "closed" | "code" | "tries";
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
 
-/** Page to world: seed an empty room with this project, one edit, one live event, or (the maker only) set the floor or the code ("" opens the sesh). */
-export type ClientMsg = TakeBytes | { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor } | { t: "lock"; code: string };
+/**
+ * Page to world: seed an empty room with this project, one edit, one live event, (the maker only) set the floor or the code
+ * ("" opens the sesh), or ask for the groove as it was `ago` minutes back, for this page alone (src/rewind.ts).
+ */
+export type ClientMsg = TakeBytes | { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor } | { t: "lock"; code: string } | { t: "rewind"; ago: Rung };
 /**
  * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
  * someone's live event (`from` is that socket's number), that someone left (let go of their
  * notes), the floor and whether you're its maker, or no room for you (the socket closes after it).
  * `lock` says whether the sesh is private: on joining, and with the new code to everyone in when the maker changes it.
+ * `rewound` answers this page's `rewind`: the groove as of `at` (ms), or null when the sesh doesn't go back that far.
  */
 export type ServerMsg =
   | TakeBytes
   | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
   | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full }
-  | { t: "floor"; state: Floor; host: boolean } | { t: "lock"; on: boolean; code?: string };
+  | { t: "floor"; state: Floor; host: boolean } | { t: "lock"; on: boolean; code?: string }
+  | { t: "rewound"; ago: Rung; at: number; project: Project | null };
 const PEER = int(1, Infinity);
 const CLIENT: Guard<ClientMsg>[] = [TakeBytesGuard, obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }), obj({ t: tag("floor"), state: FLOOR }),
-  obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) })];
+  obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) }), obj({ t: tag("rewind"), ago: RUNG })];
 const SERVER: Guard<ServerMsg>[] = [
   TakeBytesGuard,
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
   obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries"]) }),
   obj({ t: tag("floor"), state: FLOOR, host: bool() }), obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
+  obj({ t: tag("rewound"), ago: RUNG, at: int(0, Infinity), project: nul(PROJ) }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);
