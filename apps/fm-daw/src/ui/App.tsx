@@ -270,7 +270,7 @@ export function App() {
     else if (e.t === "repeat") { peer(from).repeat = e.beats > 0; setRepeatState(e.beats); send({ t: "repeat", beats: e.beats }); }
     else if (e.t === "play") send({ t: "play", countIn: 0 });
     else if (e.t === "stop") stopHere();
-    else moveCursor(from, e.x, e.y);
+    else if (e.t === "cursor") moveCursor(from, e.x, e.y);
   }
   function onGone(from: number) {
     for (const k of [...liveNotes.current.keys()]) if (k.startsWith(`net:${from}:`)) noteOff(k);

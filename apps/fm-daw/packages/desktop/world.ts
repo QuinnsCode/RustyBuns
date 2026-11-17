@@ -5,6 +5,7 @@
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
 import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
+import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, type Studio, type StudioOp, type StudioServer } from "../../src/studio.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { check, maybe, obj, oneOf, raw, str } from "@rustybuns/util/guard";
@@ -40,8 +41,8 @@ interface Bucket {
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
-/** The bucket copy: the groove, its maker's key hash, the floor and the room code's hash. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH) });
+/** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash and the studio's patch. An older copy is the project alone. */
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw });
 // A private sesh lets one address get its code wrong this often a minute, then says so instead of checking.
 export const MAX_WRONG = 5;
 const WRONG_MS = 60_000;
@@ -69,7 +70,10 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer>;
+  /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
+  private studio: Studio = emptyStudio();
+  private studioDirty = false;
   private chat: Chat = empty();
   private chatDirty = false;
   private talk = new WeakMap<RoomSocket, TokenBucket>();
@@ -100,6 +104,7 @@ export default class World {
     ctx.blockConcurrencyWhile(async () => {
       this.project = sanitize(await ctx.storage.get("project"));
       this.chat = sanitizeChat(await ctx.storage.get("chat"));
+      this.studio = { patch: sanitizePatch(await ctx.storage.get("studio")), held: {} };
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
@@ -134,6 +139,7 @@ export default class World {
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
+    if (this.studioUsed()) this.sockets.send(server, { t: "studio-all", studio: this.studio });
     this.broadcastPeers();
     return response;
   }
@@ -145,6 +151,8 @@ export default class World {
       const v: unknown = got && JSON.parse(await got.text());
       const b = check(Backup, v);
       const p = sanitize(b?.project) ?? sanitize(v);
+      // a studio with no groove yet is a sesh too
+      if (b?.studio && !this.studioUsed()) { this.studio = { patch: sanitizePatch(b.studio), held: {} }; this.saveStudio(); }
       if (!p || this.project) return;
       this.project = p;
       this.save();
@@ -201,6 +209,8 @@ export default class World {
     if (!frame) return;
     const msg = decodeClient(frame.value);
     if (!msg) {
+      const st = decodeStudioClient(frame.value);
+      if (st) { this.onStudio(ws, st.op); return; }
       const c = decodeChatClient(frame.value);
       if (c) void this.onChat(ws, c);
       return;
@@ -236,6 +246,24 @@ export default class World {
     const op = msg.op.t === "replace" ? { t: "replace" as const, project: next } : msg.op;
     this.broadcast({ t: "op", op }, ws);
   }
+
+  /**
+   * The studio: the world is the one that says who got the amp, so each op is applied here first and passed on
+   * to everyone (the player who did it too) only when it changed something. Refused, or a guest while the maker
+   * holds the floor, the player gets the whole studio back to put them in step.
+   */
+  private onStudio(ws: RoomSocket, op: StudioOp) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer) return;                         // turned away: not in the room
+    const next = this.floor !== "free" && !seat.host ? this.studio : applyStudio(this.studio, seat.peer, op);
+    if (next === this.studio) { this.sockets.send(ws, { t: "studio-all", studio: this.studio }); return; }
+    const saved = next.patch !== this.studio.patch;
+    this.studio = next;
+    if (saved) this.saveStudio();
+    this.broadcast({ t: "studio-op", from: seat.peer, op });
+  }
+
+  private studioUsed() { return this.studio.patch.placed.length > 0 || Object.keys(this.studio.held).length > 0; }
 
   /** The chat: `hello` says who a socket is; lines, renames and deletions only count after it. */
   private async onChat(ws: RoomSocket, m: ChatClient) {
@@ -291,6 +319,8 @@ export default class World {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: never counted in
     this.broadcast({ t: "gone", from: seat.peer }, ws);
+    // what they carried stays where it was; a lead they held falls out of their hand (the others drop it on "gone")
+    this.studio = letGo(this.studio, seat.peer);
     this.broadcastPeers();
     if (this.sockets.open().some((w) => w !== ws)) return;
     // the last one out: save now, start the idle clock, and give the room's slot back
@@ -308,26 +338,31 @@ export default class World {
       this.chatDirty = false;
       await s.put("chat", this.chat);
     }
-    if (this.bucket && this.room && this.project && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
+    if (this.studioDirty) {
+      this.studioDirty = false;
+      await s.put("studio", this.studio.patch);
+    }
+    if (this.bucket && this.room && (this.project || this.studioUsed()) && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
       this.backedUpAt = Date.now();
-      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined })); } catch { this.backupDirty = true; }
+      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined })); } catch { this.backupDirty = true; }
     }
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
-      for (const k of ["project", "chat", "idleMs", "idleAt", "room", "host", "floor", "lock"]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock"]) await s.delete(k);
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;
       this.chat = empty();
+      this.studio = emptyStudio();
       this.idleAt = 0;
       this.host = "";
       this.floor = "free";
       this.lock = "";
       return;
     }
-    if (!this.project) return;                       // nothing stored, nothing to clean up
+    if (!this.project && !this.studioUsed()) return; // nothing stored, nothing to clean up
     if (lastOut || !this.idleAt) {
       this.idleAt = Date.now() + this.idleMs;
       await s.put("idleMs", this.idleMs);
@@ -343,13 +378,20 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
+  private saveStudio() {
+    this.backupDirty = true;
+    if (this.studioDirty) return;
+    this.studioDirty = true;
+    void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
+  }
+
   private saveChat() {
     if (this.chatDirty) return;
     this.chatDirty = true;
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: ServerMsg | ChatServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
+  private broadcast(m: ServerMsg | ChatServer | StudioServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
 
   private broadcastPeers() {
     this.broadcast({ t: "peers", n: this.sockets.open().length });
