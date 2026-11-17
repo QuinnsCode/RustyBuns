@@ -18,6 +18,10 @@ export interface Spot {
   thing: { w: number; d: number; h: number; ahead: number; color: string };
   /** The FM DAW track it plays, by name (first match, any case); `drums` plays every drum track, one key each. */
   track?: string;
+  /** A made instrument's seat (src/studio/instrument.ts) names its track by number instead. */
+  ix?: number;
+  /** A made instrument grows its model from this seed and voice (`synth` in @rustybuns/models) instead of a box. */
+  made?: { seed: number; voice: "fm" | "analog" };
 }
 
 /** A wall from (x0, z0) to (x1, z1), floor to ceiling. `glass` is a window you see through but can't walk through; `gaps` are doorways, metres along it. */

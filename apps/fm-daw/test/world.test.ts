@@ -11,6 +11,10 @@ import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { body, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, walkTo } from "../src/studio/jam.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
+import { remotePlayer, studioTools } from "../src/studio/agent.ts";
+import { mcpAnswer } from "../src/studio/mcp.ts";
+import { roomWith } from "../src/studio/instrument.ts";
+import { apply, type Project } from "../src/project.ts";
 
 class Sock {
   readyState = 1; sent: any[] = []; closed: number | null = null; att: unknown;
@@ -586,4 +590,76 @@ test("wind back: play a while, hear it 5 minutes back alone, the leader brings e
   fresh.world.webSocketMessage(again, JSON.stringify({ t: "rewind", ago: 5 }));
   await settle();
   expect(again.sent.at(-1)).toMatchObject({ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: { bpm: 106 } });
+});
+
+test("jam room agent: no grant, it raises its hand; the leader says yes, and it makes an instrument over MCP, sits at it and plays for her", async () => {
+  const { world, join } = await setup({}, "giddy-jade-otter");
+  const tick = () => new Promise((r) => setTimeout(r, 5));        // the chat's hello hashes a key
+  const amyWs = (await join({}, "a".repeat(32))).ws;              // first key in: Amy leads the sesh
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "init", project: demoProject() }));
+  const botWs = (await join()).ws;
+  const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(3)), wait: async () => {},
+    send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
+  const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
+  pump();
+  const tools = studioTools(bot.player);
+  const call = async (name: string, args: object = {}) => {
+    const r = await mcpAnswer(tools, { id: 1, method: "tools/call", params: { name, arguments: args } });
+    pump();
+    return JSON.parse((r as { result: { content: { text: string }[] } }).result.content[0].text);
+  };
+  // Amy's page: the groove, the room with what's made in it, and the people in it, from her socket
+  let groove: Project = demoProject();
+  const amy = newJam(LIVE_ROOM), notes: { track: number; midi: number }[] = [];
+  const read = () => {
+    for (const m of amyWs.sent.splice(0)) {
+      const d = decodeServer(m);
+      if (d?.t === "op") { groove = apply(groove, d.op); amy.def = roomWith(LIVE_ROOM, groove); }
+      if (d?.t === "live") { hear(amy, d.from, d.e); if (d.e.t === "on") notes.push({ track: d.e.track, midi: d.e.midi }); }
+    }
+  };
+  const glass = { name: "Glass pad", voice: "analog", patch: { sound: "Reese", cutoff: 0.4 } };
+
+  const answer = async (can: string) => {
+    const hand = amyWs.sent.findLast((m) => m.t === "grants" && Object.values(m.asks).includes(can));
+    const who = Object.keys(hand.asks).find((k) => hand.asks[k] === can)!;
+    world.webSocketMessage(amyWs, JSON.stringify({ t: "answer", who, yes: true }));
+    await tick();
+    pump();
+  };
+
+  // Amy holds the floor: the bot may only listen, so it raises its hand to change the groove, and she says yes
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "hello", key: "a".repeat(48), name: "Amy" }));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "floor", state: "held" }));
+  await tick();
+  pump();
+  expect(await call("studio_make_instrument", glass)).toMatchObject({ ok: false, why: expect.stringContaining("raises your hand") });
+  expect(await call("studio_ask_to_play", { can: "edit" })).toMatchObject({ asked: "edit" });
+  await tick();
+  await answer("edit");
+  expect((await call("studio_state")).you.may).toEqual({ play: false, edit: true, mix: false, lead: false });
+
+  // the bot makes a synth, and Amy's room grows a seat at its track with the patch on it
+  read();
+  const made = await call("studio_make_instrument", glass);
+  expect(made).toMatchObject({ ok: true, spot: "made-glass-pad", name: "Glass pad", voice: "analog" });
+  read();
+  const seat = amy.def.spots.find((s) => s.id === "made-glass-pad")!;
+  expect(groove.tracks[made.track]).toMatchObject({ name: "Glass pad", notes: [] });
+  expect(seat.made?.voice).toBe("analog");
+  // it sits there, but playing is a grant of its own: it asks again, and she lets it
+  expect(await call("studio_sit", { spot: "made-glass-pad" })).toMatchObject({ ok: true, at: "Glass pad" });
+  expect(await call("studio_play", { notes: [{ n: 48 }] })).toMatchObject({ ok: false });
+  await call("studio_ask_to_play");
+  await tick();
+  await answer("play");
+  read();
+  // two notes: Amy sees it seated there and gets them on that track
+  expect(await call("studio_play", { notes: [{ n: 48, len: 1 }, { n: 55, at: 1, len: 1 }] })).toMatchObject({ ok: true, played: 2, track: "Glass pad" });
+  read();
+  expect(notes).toEqual([{ track: made.track, midi: 48 }, { track: made.track, midi: 55 }]);
+  expect(snapshot(amy, groove).others).toEqual([expect.objectContaining({ name: "Bot", seat: "made-glass-pad", dressed: true, playing: [] })]);
+  // and the seat is taken for a person now, the same as any other
+  amy.me.x = seat.at[0]; amy.me.z = seat.at[1] + 0.5;
+  expect(sit(amy, "made-glass-pad")).toEqual({ ok: false, why: "Bot is at Glass pad" });
 });

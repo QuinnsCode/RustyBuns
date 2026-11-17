@@ -400,6 +400,7 @@
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/gear": "^0.1.12",
+        "@rustybuns/models": "^0.1.12",
         "@rustybuns/native": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",

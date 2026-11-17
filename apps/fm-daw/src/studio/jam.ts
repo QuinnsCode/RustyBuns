@@ -35,7 +35,7 @@ export function sitter(j: Jam, id: string): "me" | number | null {
 }
 
 type Box = ReturnType<typeof thingBox>;
-function solids(def: StudioDef): Box[] {
+export function solids(def: StudioDef): Box[] {
   return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox)];
 }
 
@@ -169,6 +169,7 @@ export function gone(j: Jam, from: number) { j.others.delete(from); }
 
 /** The FM DAW track a spot plays in this project, or -1. */
 export function trackFor(s: Spot, p: Project): number {
+  if (s.ix !== undefined) return s.ix < p.tracks.length ? s.ix : -1;
   if (!s.track) return -1;
   const want = s.track.toLowerCase();
   const named = p.tracks.findIndex((t) => t.name.toLowerCase().includes(want));
