@@ -19,8 +19,9 @@ const ids = <T>(of: Guard<T>, max: number): Guard<Record<string, T>> => (v) =>
 /**
  * `who`: each person with a grant of their own, and what it is (an empty list is listen only). `maker`: the
  * maker's person id, once they said hello. `handed`: the maker handed the lead on, so leading is the granted ones'.
+ * `muted`: the people the leader muted for everyone: the World passes on none of their notes.
  */
-export const Grants = obj({ who: ids(arr(CAN, CANS.length), MAX_GRANTED), maker: opt(ID), handed: opt(bool()) });
+export const Grants = obj({ who: ids(arr(CAN, CANS.length), MAX_GRANTED), maker: opt(ID), handed: opt(bool()), muted: opt(arr(ID, MAX_GRANTED)) });
 export type Grants = Of<typeof Grants>;
 export const noGrants = (): Grants => ({ who: {} });
 /** Stored or backed-up grants read back, or none. */
@@ -67,6 +68,16 @@ export function handOn(g: Grants, from: string, to: string): Grants {
   return next;
 }
 
+/** The leader mutes this person for everyone, or lets them be heard again. */
+export function mute(g: Grants, who: string, on: boolean): Grants {
+  const had = g.muted ?? [];
+  if (had.includes(who) === on || (on && had.length >= MAX_GRANTED)) return g;
+  const muted = on ? [...had, who] : had.filter((x) => x !== who);
+  const { muted: _, ...rest } = g;
+  return muted.length ? { ...rest, muted } : rest;
+}
+export const isMuted = (g: Grants, who: string | undefined) => !!who && !!g.muted?.includes(who);
+
 /** What an edit needs: the desk (mutes, solos, EQ, space and squash) is mix; the rest of the groove is edit. */
 export function opNeeds(op: Op): Can {
   if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase") return "mix";
@@ -83,17 +94,21 @@ export function needs(m: ClientMsg): Can | null {
   return "play";
 }
 
-/** Page to World: the leader grants (null: back to the floor's) or hands on the lead; anyone asks; the leader answers. */
+/** Page to World: the leader grants (null: back to the floor's), hands on the lead or mutes someone; anyone asks; the leader answers. */
 export type GrantClient =
-  | { t: "grant"; who: string; can: Can[] | null } | { t: "handOn"; who: string }
+  | { t: "grant"; who: string; can: Can[] | null } | { t: "handOn"; who: string } | { t: "mute"; who: string; on: boolean }
   | { t: "ask"; can: Can } | { t: "answer"; who: string; yes: boolean };
-/** World to page: the grants, who has a hand up for what, and who's in (person ids). Sent when anyone says hello or leaves, and on every change. */
-export const GrantsMsg = obj({ t: oneOf(["grants"]), grants: Grants, asks: ids(CAN, 256), here: arr(ID, 256) });
+/**
+ * World to page: the grants, who has a hand up for what, who's in (person ids), and which person each live-line peer
+ * number is (`peers`, so a page can name the person behind a note). Sent when anyone says hello or leaves, and on every change.
+ */
+export const GrantsMsg = obj({ t: oneOf(["grants"]), grants: Grants, asks: ids(CAN, 256), here: arr(ID, 256), peers: rec(ID, 256) });
 export type GrantServer = Of<typeof GrantsMsg>;
 
 const CLIENT: Guard<GrantClient>[] = [
   obj({ t: oneOf(["grant"]), who: ID, can: (v: unknown) => (v === null ? null : arr(CAN, CANS.length)(v)) }),
   obj({ t: oneOf(["handOn"]), who: ID }),
+  obj({ t: oneOf(["mute"]), who: ID, on: bool() }),
   obj({ t: oneOf(["ask"]), can: CAN }),
   obj({ t: oneOf(["answer"]), who: ID, yes: bool() }),
 ];

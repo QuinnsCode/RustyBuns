@@ -19,3 +19,6 @@
 #rooms small { color: var(--dim); white-space: nowrap; }
 #rooms .none { color: var(--dim); font-size: 13px; }
 @media (max-width: 480px) { #menu { padding: 16px; } #menu h1 { font-size: 28px; } }
+#people { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+#people li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#people span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

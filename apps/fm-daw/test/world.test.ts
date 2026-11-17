@@ -14,6 +14,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { remotePlayer, studioTools } from "../src/studio/agent.ts";
 import { mcpAnswer } from "../src/studio/mcp.ts";
 import { roomWith } from "../src/studio/instrument.ts";
+import { facing, mutePeer, muteRoom, noMutes, sounds } from "../src/studio/mute.ts";
 import { apply, type Project } from "../src/project.ts";
 
 class Sock {
@@ -504,7 +505,7 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
   }
   const [leadId, amyId, boId] = ids;
   const lastGrants = (ws: Sock) => ws.sent.filter((m) => m.t === "grants").at(-1);
-  expect(lastGrants(bo)).toEqual({ t: "grants", grants: { who: {}, maker: leadId }, asks: {}, here: [leadId, amyId, boId] });
+  expect(lastGrants(bo)).toEqual({ t: "grants", grants: { who: {}, maker: leadId }, asks: {}, here: [leadId, amyId, boId], peers: { 1: leadId, 2: amyId, 3: boId } });
   said(lead, { t: "init", project });
   said(lead, { t: "floor", state: "held" });                       // Hold: only the leader, until they grant
   await settle();
@@ -554,6 +555,77 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
   back.sent = [];
   fresh.world.webSocketMessage(back, JSON.stringify({ t: "op", op: { t: "global", bpm: 90 } }));
   expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 120 }) }]);
+});
+
+test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo for everyone and he's told", async () => {
+  const { bucket, worldEnv } = await edge();
+  const room = "quiet-jade-wren";
+  const { world, join } = await setup(worldEnv, room);
+  const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  // Amy made the room, so she leads; Bo and Cy came in from her link
+  const people = [];
+  for (const [k, name] of [["a", "Amy"], ["b", "Bo"], ["c", "Cy"]] as const) {
+    const ws = (await join({}, k.repeat(32))).ws;
+    said(ws, { t: "hello", key: k.repeat(48), name });
+    await tick();
+    people.push({ ws, id: ws.sent.find((m) => m.t === "chat").you as string, jam: newJam(LIVE_ROOM), mutes: noMutes(), heard: [] as string[] });
+  }
+  const [amy, bo, cy] = people;
+  said(amy.ws, { t: "init", project: demoProject() });
+  await settle();
+  // each page reads its socket as the page does: the jam hears everything, the speakers only what the mutes let through
+  const read = (p: typeof amy) => {
+    for (const m of p.ws.sent.splice(0)) {
+      const d = decodeServer(m);
+      if (d?.t !== "live") continue;
+      hear(p.jam, d.from, d.e);
+      if (d.e.t === "on" && sounds(p.mutes, d.from, d.e)) p.heard.push(`${d.from}:${d.e.midi}`);
+    }
+  };
+  const live = (p: typeof amy, e: object) => said(p.ws, { t: "live", e });
+  const peerOf = (p: typeof amy) => Number(Object.entries(amy.ws.sent.findLast((m) => m.t === "grants").peers).find(([, id]) => id === p.id)![0]);
+  const boPeer = peerOf(bo);
+  for (const p of people) { p.ws.sent = []; live(p, { t: "wear", avatar: randomAvatar(mulberry32(1)), name: "x" }); }
+  for (const p of people) read(p);
+
+  // Bo stands where Amy is looking and holds a note; she looks at him and mutes him, and the note he holds lets go for her
+  live(bo, { t: "body", at: [0, 0, -3], yaw: 0 });
+  live(bo, { t: "on", track: 1, midi: 60, vel: 0.8 });
+  for (const p of people) read(p);
+  amy.jam.me.x = 0; amy.jam.me.z = 0; amy.jam.me.yaw = 0;
+  expect(facing(amy.jam)).toBe(boPeer);
+  expect(mutePeer(amy.mutes, amy.jam, boPeer)).toEqual([{ track: 1, midi: 60 }]);
+  // his next note doesn't sound for Amy, and still does for Cy
+  live(bo, { t: "on", track: 1, midi: 62, vel: 0.8 });
+  for (const p of people) read(p);
+  expect(amy.heard).toEqual([`${boPeer}:60`]);
+  expect(cy.heard).toEqual([`${boPeer}:60`, `${boPeer}:62`]);
+  // Cy mutes the whole room: nobody sounds for him, his own playing aside (that never goes through the line)
+  expect(muteRoom(cy.mutes, cy.jam)).toEqual([{ track: 1, midi: 60 }, { track: 1, midi: 62 }]);
+  live(amy, { t: "on", track: 2, midi: 48, vel: 0.8 });
+  for (const p of people) read(p);
+  expect(cy.heard).toHaveLength(2);
+  expect(bo.heard).toEqual([`${peerOf(amy)}:48`]);
+  muteRoom(cy.mutes, cy.jam, false);
+
+  // only the leader mutes for everyone: Cy can't, Amy can, and Bo's grants say he's muted
+  said(cy.ws, { t: "mute", who: bo.id, on: true });
+  await settle();
+  expect(bo.ws.sent.findLast((m) => m.t === "grants")?.grants.muted).toBeUndefined();
+  said(amy.ws, { t: "mute", who: bo.id, on: true });
+  await settle();
+  expect(bo.ws.sent.findLast((m) => m.t === "grants").grants.muted).toEqual([bo.id]);
+  // the World passes on none of his notes now, but he still moves; letting go still goes through so nothing hangs
+  for (const p of people) p.ws.sent = [];
+  live(bo, { t: "on", track: 1, midi: 64, vel: 0.8 });
+  live(bo, { t: "off", track: 1, midi: 62 });
+  live(bo, { t: "body", at: [1, 0, -3], yaw: 0 });
+  expect(cy.ws.sent.map((m) => m.e.t)).toEqual(["off", "body"]);
+  // it is kept with the grants, so a reset doesn't let him back in unheard
+  for (const p of people) world.webSocketClose(p.ws);
+  await settle();
+  expect(JSON.parse(bucket.get(`sesh/${room}.json`)!).grants.muted).toEqual([bo.id]);
 });
 
 test("wind back: play a while, hear it 5 minutes back alone, the leader brings everyone back, undo, and a reset keeps the ladder", async () => {
