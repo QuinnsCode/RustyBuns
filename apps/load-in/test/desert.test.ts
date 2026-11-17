@@ -1,17 +1,17 @@
 // The desert night party as a crew does it: over the sand from the truck (every step slower), the generator up on the
-// sand cart because its own wheels dig in, the bins carried down and stood in a line, the tops stacked on them, the
-// amp racks, the distro and the mixer beside the wall, the long feed from the generator, and the wall patched. Straight
-// ahead the wall covers the floor but keeps the camp awake; toe the right-hand tops in and it passes, but only once a
-// jerry can sits by the generator: on the 15 litres it came with the wall goes quiet at 3 am, long before the sun comes up. Then how the
-// bins stand decides the bass. The same calls `window.loadIn` makes.
+// sand cart because its own wheels dig in, four horn dance stacks (too heavy for anyone to lift) pushed down on their
+// sand dollies and stood in a line, the amp racks, the distro and the mixer beside the wall, the long feed from the
+// generator, and the wall patched. The fader is set for the floor full at the peak of the night, so the empty desert
+// at dusk reads hot; the horns beam, so the camp sleeps. It passes once the joints on the sand are taped and a jerry
+// can sits by the generator: on the 15 litres it came with the wall goes quiet at 3 am. Then how the bins stand decides
+// the bass, and how high the mid-highs stand decides the back of a full floor. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
-import { aim, master } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, desertState, score, wrap } from "../src/venues/desert.ts";
+import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
+import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, desertState, heat, score, wrap } from "../src/venues/desert.ts";
 
 setDefaultTimeout(60_000);
-const DEG = Math.PI / 180;
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
 /** Walk to (x, z) however long it takes: 30 m of sand with a 45 kg bin is more than walkTo's two minutes. */
 function go(w: World, c: Cables, x: number, z: number) {
@@ -30,7 +30,8 @@ function move(w: World, c: Cables, key: string, x: number, z: number, how: "lift
   return at(w, key);
 }
 
-/** The crew patches the rest of the wall: power off the distro, a mixer send per amp channel, bins and tops daisy-chained in pairs. */
+/** The crew patches the rest of the wall: power off the distro, a mixer send per amp channel, the bins daisy-chained in
+ * pairs (4 ohms a channel), the mid-basses on one channel and the mid-highs on another, four to a channel (2 ohms). */
 function patchWall(c: Cables) {
   const r = (kind: "power" | "xlr" | "speaker", a: [string, string], b: [string, string]) =>
     c.runs.push({ key: `${a.join(":")}-${b.join(":")}`, kind, lengthM: 5, a: { plug: a }, b: { plug: b }, rope: null });
@@ -38,13 +39,19 @@ function patchWall(c: Cables) {
   r("power", ["distro", "power-out-2"], ["rack-tops", "power-in"]);
   r("power", ["distro", "power-out-3"], ["mixer", "power-in"]);
   for (const [n, rack, ch] of [[1, "rack-bins", 1], [2, "rack-bins", 2], [3, "rack-tops", 1], [4, "rack-tops", 2]] as const) r("xlr", ["mixer", `xlr-out-${n}`], [rack, `xlr-in-${ch}`]);
-  for (const [rack, kind] of [["rack-bins", "bin"], ["rack-tops", "top"]] as const) for (const ch of [1, 2]) {
-    r("speaker", [rack, `speaker-out-${ch}`], [`${kind}-${ch * 2 - 1}`, "speaker-in"]);
-    r("speaker", [`${kind}-${ch * 2 - 1}`, "speaker-out"], [`${kind}-${ch * 2}`, "speaker-in"]);
+  for (const ch of [1, 2]) {
+    r("speaker", ["rack-bins", `speaker-out-${ch}`], [`bin-${ch * 2 - 1}`, "speaker-in"]);
+    r("speaker", [`bin-${ch * 2 - 1}`, "speaker-out"], [`bin-${ch * 2}`, "speaker-in"]);
+  }
+  for (const [ch, kind] of [[1, "midbass"], [2, "top"]] as const) {
+    r("speaker", ["rack-tops", `speaker-out-${ch}`], [`${kind}-1`, "speaker-in"]);
+    for (const n of [1, 2, 3]) r("speaker", [`${kind}-${n}`, "speaker-out"], [`${kind}-${n + 1}`, "speaker-in"]);
   }
 }
 
-const LINE = [-0.825, -0.275, 0.275, 0.825];
+/** The four stacks shoulder to shoulder: a 21" bin is 1.1 m wide. */
+const LINE = [-1.65, -0.55, 0.55, 1.65];
+const PARTS = ["dolly", "bin", "midbass", "top"];
 
 test("cart the generator over the sand, stack the wall, keep the camp asleep, and fuel it to sunrise", () => {
   const w = newWorld(DESERT), c = newCables(w);
@@ -63,14 +70,21 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(at(w, "generator")).toMatchObject({ y: 0.45 });
   expect(Math.hypot(at(w, "generator").x - at(w, "cart").x, at(w, "generator").z - at(w, "cart").z)).toBeLessThan(0.01);
 
-  // The wall: four bins in a line, a top on each, the racks, the distro and the case with the mixer beside it.
-  LINE.forEach((x, n) => move(w, c, `bin-${n + 1}`, x, 1));
-  LINE.forEach((x, n) => move(w, c, `top-${n + 1}`, x, 1));
-  expect(w.items.filter((i) => i.key.startsWith("bin")).map((i) => i.y)).toEqual([0, 0, 0, 0]);
-  expect(w.items.filter((i) => i.key.startsWith("top")).map((i) => i.y)).toEqual([0.7, 0.7, 0.7, 0.7]);
-  move(w, c, "rack-bins", -2.6, 1);
-  move(w, c, "rack-tops", -3.4, 1);
-  move(w, c, "distro", 1.8, 1);
+  // The wall: a 21" horn bin is 115 kg and nobody lifts it; each stack rides its sand dolly, 259 kg at a crawl.
+  walkWith(w, c, at(w, "dolly-1").x, at(w, "dolly-1").z + 1);
+  expect(pickUp(w, "bin-1")).toEqual({ ok: false, why: '21" horn-loaded bass bin is 115 kg, too heavy to lift alone' });
+  const t1 = w.t;
+  move(w, c, "dolly-1", LINE[0]!, 1, "push");
+  expect(Math.hypot(LINE[0]! - -2, 30.3) / (w.t - t1)).toBeLessThan(0.25);
+  [1, 2, 3].forEach((n) => move(w, c, `dolly-${n + 1}`, LINE[n]!, 1, "push"));
+  // Each stack rode whole: the bin a hand's width off the sand on its dolly, the mid-high's mouth over the heads.
+  for (const [n, x] of LINE.entries()) for (const [k, y] of [["dolly", 0], ["bin", 0.15], ["midbass", 0.95], ["top", 1.7]] as const) {
+    expect(at(w, `${k}-${n + 1}`).x).toBeCloseTo(x, 1);
+    expect(at(w, `${k}-${n + 1}`).y).toBeCloseTo(y, 5);
+  }
+  move(w, c, "rack-bins", -2.8, 1);
+  move(w, c, "rack-tops", -3.6, 1);
+  move(w, c, "distro", 2.6, 1);
   move(w, c, "mixer", 3.4, 2.4);
   move(w, c, "case", 2.6, 1.2);
 
@@ -88,23 +102,21 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   settle(w, c, 3);
   patchWall(c);
 
-  // Straight ahead at -8 dB: the floor and its bass are right, but the camp hears it.
-  master(w, -8);
-  const straight = desertState(w, c);
-  expect(straight).toMatchObject({ generator: { watts: 3030, trips: false }, bass: 1, tripped: false, pass: false });
-  expect(straight.covered).toBeGreaterThan(0.95);
-  expect(straight.camp!).toBeGreaterThan(CAMP_LIMIT);
-
-  // Toe the right-hand tops in, away from the tents: the camp drops to its limit and the floor keeps its sound. On the
-  // generator's own tank the wall runs out of fuel before dawn.
-  walkWith(w, c, 0.5, 2.2);
-  expect(aim(w, "top-3", { turn: -15 * DEG })).toEqual({ ok: true });
-  expect(aim(w, "top-4", { turn: -30 * DEG })).toEqual({ ok: true });
-  const dry = desertState(w, c);
-  expect(dry.camp!).toBeLessThan(straight.camp! - 2);
-  expect(dry.covered).toBeGreaterThan(0.9);
+  // At -10 dB the floor is right with the night's peak crowd on it, and the bass is everywhere. The same fader on an
+  // empty desert at dusk reads hot: bodies soak up the highs, so a wall set by ear at soundcheck is set too quiet.
+  // The horns beam (50 degrees wide), so straight ahead the camp is under its limit. On the generator's own tank the
+  // wall runs out of fuel before dawn.
+  master(w, -10);
+  const dry = desertState(w, c), empty = score(w, c, heat(w, c, "high", null));
+  expect(dry).toMatchObject({ generator: { watts: 3030, trips: false }, bass: 1, tripped: false });
+  expect(dry.covered).toBeGreaterThan(0.8);
+  expect(empty.floor!).toBeGreaterThan(dry.floor! + 2);
+  expect(empty.covered).toBeLessThan(dry.covered - 0.1);
+  expect(dry.camp!).toBeLessThan(CAMP_LIMIT);
   expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 3030 }, until: "03:00", sunrise: false, pass: false });
   // The sound is right, but joints lie on the sand: by sunrise the dust is in them and they crackle, a few points each.
+  // The bins' own joints ride up on the dollies, clear of it.
+  expect(dry.dusty.some((j) => /^(bin|midbass|top)-/.test(j))).toBe(false);
   expect(dry.dusty.length).toBeGreaterThan(0);
   expect(dry.sound).toBeLessThan(85);
   expect(wrap(c, "mixer", "no-such-jack")).toEqual({ ok: false, why: "nothing is plugged into mixer no-such-jack" });
@@ -129,24 +141,43 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(desertState(w, c).generatorDb!).toBeLessThan(near - 10);
 });
 
-test.each([
-  // Four bins shoulder to shoulder sum on every cell of the floor.
-  ["in a line", LINE.map((x) => [x, 1]), 1, 1],
-  // Two stacks, bins and tops, 13 m apart: a power alley down the middle, and nulls either side of it.
-  ["split left and right", [[-7, 1], [-6.45, 1], [6.45, 1], [7, 1]], 0.5, 0.75],
-  // Every other stack 2.7 m back, half a wavelength at 63 Hz: they cancel across the floor.
-  ["staggered half a wavelength", [[-0.825, 1], [-0.275, 3.7], [0.275, 1], [0.825, 3.7]], 0, 0.3],
-] as const)("the bins %s: the share of the floor that gets its bass", (_name, bins, least, most) => {
-  const w = newWorld(DESERT), c = newCables(w), put = (k: string, x: number, y: number, z: number) => Object.assign(at(w, k), { x, y, z });
-  bins.forEach(([x, z], n) => { put(`bin-${n + 1}`, x, 0, z); put(`top-${n + 1}`, x, 0.7, z); });
-  put("cart", -8, 0, 4); put("generator", -8, 0.45, 4);
-  for (const [k, x] of [["rack-bins", -2.6], ["rack-tops", -3.4], ["distro", 1.8], ["mixer", 3.4]] as const) put(k, x, 0, 1);
+/** The wall stood and patched without the walk: stack `n` (every part on its dolly) at each of `stacks`. */
+function built(stacks: readonly (readonly [number, number])[]) {
+  const w = newWorld(DESERT), c = newCables(w), put = (k: string, x: number, z: number) => Object.assign(at(w, k), { x, z });
+  stacks.forEach(([x, z], n) => PARTS.forEach((p) => put(`${p}-${n + 1}`, x, z)));
+  put("cart", -8, 4); put("generator", -8, 4);
+  for (const [k, x] of [["rack-bins", -2.8], ["rack-tops", -3.6], ["distro", 2.6], ["mixer", 3.4]] as const) put(k, x, 1);
   c.runs.push({ key: "feed", kind: "power", lengthM: 25, a: { plug: ["generator", "power-out-1"] }, b: { plug: ["distro", "power-in"] }, rope: null });
   patchWall(c);
-  master(w, -8);
+  master(w, -10);
+  return { w, c };
+}
+
+test.each([
+  // Four bins shoulder to shoulder sum on every cell of the floor.
+  ["in a line", LINE.map((x) => [x, 1] as const), 1, 1],
+  // Two stacks a side, 13 m apart: a power alley down the middle, and nulls either side of it.
+  ["split left and right", [[-7.6, 1], [-6.5, 1], [6.5, 1], [7.6, 1]], 0.5, 0.8],
+  // Every other stack 2.7 m back, half a wavelength at 63 Hz: they cancel across the floor.
+  ["staggered half a wavelength", LINE.map((x, n) => [x, n % 2 ? 3.7 : 1] as const), 0, 0.3],
+] as const)("the bins %s: the share of the floor that gets its bass", (_name, stacks, least, most) => {
+  const { w, c } = built(stacks);
   const { bass } = score(w, c);
   expect(bass).toBeGreaterThanOrEqual(least);
   expect(bass).toBeLessThanOrEqual(most);
+});
+
+test("the mid-highs up on the stack carry over the heads to the back of a full floor; down on the sand they don't", () => {
+  const { w, c } = built(LINE.map((x) => [x, 1] as const)), back = DANCE_FLOOR.regions[2]!.zone;
+  const tops = [1, 2, 3, 4].map((n) => at(w, `top-${n}`)), heard = () => mean(cellsIn(heat(w, c), back));
+  const onStack = heard();
+  for (const t of tops) Object.assign(t, { y: 0, z: 2.2 });
+  const onSand = heard();
+  for (const t of tops) Object.assign(t, { y: 2.2, z: 1 });
+  const lifted = heard();
+  // Each half metre up clears more of the crowd's heads: the back of the floor brightens by a dB or more each time.
+  expect(onStack).toBeGreaterThan(onSand + 1);
+  expect(lifted).toBeGreaterThan(onStack + 1);
 });
 
 test("the dance floor's crowd spot covers the floor the wall is scored on, and holds 500", () => {

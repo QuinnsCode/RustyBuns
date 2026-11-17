@@ -37,8 +37,8 @@ export const RIGS: Readonly<Record<string, Rig>> = {
   "bigger-bar": { people: 250, tops: 2, subs: 2, wedges: 2, amps: 6, kw: 3, power: "two circuits", runs: 14, crew: 2 },
   // A park stage: four tops and two subs (powered, a channel each) on a 7 kVA generator, which runs about 6 kW.
   park: { people: 600, tops: 4, subs: 2, wedges: 2, amps: 8, kw: 6, power: "a 7 kVA generator", runs: 22, crew: 3 },
-  // A desert night: a horn-loaded wall, four tops on four subs a side in the full rig (the level stacks one side's
-  // worth), racks of amps on a generator that has to be fuelled through the night.
+  // A desert night: a horn-loaded wall, four dance stacks (21" bin, mid-bass, mid-high) a side in the full rig (the
+  // level pushes one side's worth over the sand on dollies), racks of amps on a generator fuelled through the night.
   desert: { people: 1500, tops: 8, subs: 8, wedges: 4, amps: 16, kw: 12, power: "a generator and its fuel", runs: 40, crew: 4 },
   // A local festival: two stages (venues/festival.ts). The dance tent's two horn stacks (mid-high on mid-bass) on three
   // 21" bins a side, the open stage's sculpted pairs on three arc subs a side, a 12-channel rack and four wedges a stage;

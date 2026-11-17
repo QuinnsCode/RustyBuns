@@ -1,18 +1,34 @@
 // The desert night party: out past the end of the road under a full moon, where the sound-system crew stacks a wall of
 // speakers and the dancing goes until sunrise. The truck stops at the end of the track and everything walks 30 m over
-// sand (every step slower); the generator's small wheels dig in, so it rides the sand cart on its balloon tyres. Stack
-// the wall from four 18" bins and four 15" tops off two amp racks, line the bins up so they sum on the dance floor
-// (spread or staggered, they cancel in places), and keep the spill off the camp. The night is twelve hours: the
+// sand (every step slower); the generator's small wheels dig in, so it rides the sand cart on its balloon tyres. The
+// wall is four horn-loaded dance stacks (a 115 kg 21" bin, a mid-bass horn, a mid-high horn: 235 kg, past any lift),
+// each strapped on a sand dolly at the tail lift and pushed into place; line the bins up so they sum on the dance floor
+// (spread or staggered, they cancel in places), keep the mid-highs up over the heads (the floor is scored with the
+// night's peak crowd on it, and bodies soak up the highs), and keep the spill off the camp. The night is twelve hours: the
 // fuel in the generator and the jerry cans set down by it (or poured in) have to last until the sun comes up, and the score is how much of
 // the night the wall played. Plain data, no DOM; the page (desert-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
-import { type Area, type Grid, coverage, gear as catalog, runHours } from "@rustybuns/gear";
+import { type Area, type CrowdField, type Grid, coverage, coverageThrough, gear as catalog, runHours } from "@rustybuns/gear";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, jacks } from "../cables/cables.ts";
 import { type Zone, cellsIn, mean, sources } from "./dive-bar.ts";
 import { load, playing, tripped } from "./park.ts";
-import { crowdOf, type CrowdSpot } from "../crowd/crowd.ts";
+import { comingTonight, crowdOf, type CrowdSpot, expected } from "../crowd/crowd.ts";
+
+/** Where the four stacks come off the tail lift, each strapped on its dolly: x along the truck's end. */
+const STACK_X = [-2.0, -3.4, -4.8, -6.2];
+/** Dance stack `n` on its sand dolly at (x, z): the 21" horn bin on the board, the mid-bass horn on the bin, the
+ * mid-high horn on top, its mouth at about 2 m, over the heads of a full floor. */
+function stackAt(n: number, x: number, z: number) {
+  const g = (id: string) => catalog(id).size.h, bin = g("sand-dolly"), mid = bin + g("horn-sub-21"), high = mid + g("stack-mid-bass");
+  return [
+    { key: `dolly-${n}`, gear: "sand-dolly", x, y: 0, z, rot: 0 },
+    { key: `bin-${n}`, gear: "horn-sub-21", x, y: bin, z, rot: 0 },
+    { key: `midbass-${n}`, gear: "stack-mid-bass", x, y: mid, z, rot: 0 },
+    { key: `top-${n}`, gear: "stack-mid-high", x, y: high, z, rot: 0 },
+  ];
+}
 
 export const DESERT: Level = {
   name: "desert",
@@ -27,10 +43,9 @@ export const DESERT: Level = {
   items: [
     { key: "cart", gear: "sand-cart", x: 0, y: 0, z: 31.6, rot: 0 },
     { key: "generator", gear: "generator-7kva", x: 0, y: 0.45, z: 31.6, rot: 0, litres: 15 },
-    ...[-4.6, -3.9, -3.2, -2.5].map((x, n) => ({ key: `bin-${n + 1}`, gear: "sub-18", x, y: 0, z: 31.4, rot: 0 })),
-    ...[2.4, 3.0, 3.6, 4.2].map((x, n) => ({ key: `top-${n + 1}`, gear: "top-15-passive", x, y: 0, z: 31.4, rot: 0 })),
-    { key: "rack-bins", gear: "amp-rack-4u", x: -6.2, y: 0, z: 31.4, rot: 0 },
-    { key: "rack-tops", gear: "amp-rack-4u", x: -7.0, y: 0, z: 31.4, rot: 0 },
+    ...STACK_X.flatMap((x, n) => stackAt(n + 1, x, 31.3)),
+    { key: "rack-bins", gear: "amp-rack-4u", x: -8.0, y: 0, z: 31.4, rot: 0 },
+    { key: "rack-tops", gear: "amp-rack-4u", x: -8.8, y: 0, z: 31.4, rot: 0 },
     { key: "distro", gear: "distro-box", x: 5.2, y: 0, z: 31.4, rot: 0 },
     { key: "case", gear: "road-case-m", x: 6.0, y: 0, z: 31.4, rot: 0 },
     { key: "mixer", gear: "mixer-small", x: 6.0, y: 0.5, z: 31.4, rot: 0 },
@@ -44,7 +59,7 @@ export const DESERT: Level = {
     { key: "power-5b", kind: "power", lengthM: 5 },
     { key: "power-5c", kind: "power", lengthM: 5 },
     ...[1, 2, 3, 4].map((n) => ({ key: `xlr-${n}`, kind: "xlr" as const, lengthM: 10 })),
-    ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ key: `speaker-${n}`, kind: "speaker" as const, lengthM: 5 })),
+    ...Array.from({ length: 12 }, (_, n) => ({ key: `speaker-${n + 1}`, kind: "speaker" as const, lengthM: 5 })),
   ],
 };
 
@@ -75,8 +90,8 @@ export const DANCE_FLOOR: CrowdSpot = {
 export const TARGET = 102;
 /** Within this many dB of the target counts: a dance floor 14 m deep in front of one wall can't be even to 4. */
 export const SPREAD = 6;
-/** The bass the floor should feel at 63 Hz, dB: at least this everywhere on it. */
-export const BASS = 108;
+/** The bass the floor should feel at 63 Hz, dB: at least this everywhere on it. A horn wall's night, 13 dB over the mids. */
+export const BASS = 115;
 /** The camp's limit, mids and highs at the loudest tent, dB; 3 dB over it is no camp points at all. */
 export const CAMP_LIMIT = 85;
 export const PASS = 85;
@@ -88,10 +103,15 @@ export const FUEL_REACH = 2.5;
 /** The desert, the camp and the track, at ear height, in 1 m cells. */
 export const GROUND: Area = { x0: -16, x1: 32, z0: -6, z1: 34, y: 1.6, nx: 48, nz: 40 };
 
-/** The heat map over the sand: only the fed speakers, mids and highs or (`low`) the bins' 63 Hz. */
-export function heat(w: World, c: Cables, band: "high" | "low" = "high"): Grid {
-  const on = playing(w, c);
-  return coverage(sources(w, (i) => on.has(i.key)), GROUND, band);
+/** The floor at the peak of the night, just before sunrise: everyone who is coming, packed toward the wall (the crowd
+ * that is in, once it is). The wall is judged by how it sounds to them, not to an empty desert at dusk. */
+export const peakCrowd = (w: World): CrowdField => crowdOf(w)?.field ?? expected(DANCE_FLOOR, comingTonight(w, DANCE_FLOOR));
+
+/** The heat map over the sand: only the fed speakers. Mids and highs as heard through the night's peak crowd at 2 kHz
+ * (`crowd` null for the empty desert), or (`low`) the bins' 63 Hz, which bodies don't stop. */
+export function heat(w: World, c: Cables, band: "high" | "low" = "high", crowd: CrowdField | null = peakCrowd(w)): Grid {
+  const on = playing(w, c), s = sources(w, (i) => on.has(i.key));
+  return band === "low" ? coverage(s, GROUND, "low") : coverageThrough(s, crowd, GROUND, 2000);
 }
 
 /** The fuel for the night: what is in the generator's tank (poured in, or as it came off the truck) and in every jerry can
@@ -161,7 +181,7 @@ export const clockAt = (hours: number) => {
 };
 
 export type Score = {
-  /** Share of the floor within SPREAD dB of TARGET, 0 to 1. */
+  /** Share of the floor within SPREAD dB of TARGET with the night's peak crowd on it, 0 to 1. */
   covered: number;
   /** Share of the floor with BASS dB or more at 63 Hz: lined-up bins sum, spread or staggered ones cancel in places. */
   bass: number;
