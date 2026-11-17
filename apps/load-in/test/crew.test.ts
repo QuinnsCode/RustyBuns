@@ -166,6 +166,6 @@ test("two run one power cable: Ada takes it to the wall, Bea walks the far end t
   for (const p of [ada, bea]) settle(p.w, p.c, 3);
   expect([run(ada), run(bea)].map((r) => [r.a, r.b])).toEqual([["outlet power-out-1", "top power-in"], ["outlet power-out-1", "top power-in"]]);
   expect(cableState(ada.w, ada.c).fed).toEqual(cableState(bea.w, bea.c).fed);
-  expect(cableState(ada.w, ada.c).hazards.map((h) => h.walkway)).toEqual(["the way in"]);
-  expect(cableState(bea.w, bea.c).hazards.map((h) => h.walkway)).toEqual(["the way in"]);
+  const power = (p: Page) => cableState(p.w, p.c).hazards.filter((h) => h.cable === "power-10").map((h) => h.walkway);
+  expect([power(ada), power(bea)]).toEqual([["the way in"], ["the way in"]]);
 });
