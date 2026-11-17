@@ -40,6 +40,7 @@ export class World {
     if (!m || !who) return;
     if (m.t === "pose") this.crew.pose(who.id, m);
     else if (m.t === "drop") this.crew.drop(who.id, m);
+    else if (m.t === "switch") this.crew.throw(who.id, m);
     else {
       const got = m.t === "end" ? this.crew.end(who.id, m) : this.crew.grab(who.id, m);
       if (!got.ok) this.seats.send(ws, { t: "refused", key: m.key, why: got.why });

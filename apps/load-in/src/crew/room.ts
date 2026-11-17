@@ -28,13 +28,17 @@ export type WireEnd = Of<typeof WireEnd>;
 /** One end of a cable moved on your page: taken, plugged, dropped, or (with the twists it was coiled with) back in the case. */
 export const EndMsg = obj({ t: oneOf(["end"]), key, end: oneOf(["a", "b"]), to: WireEnd, twists: opt(int(0, 1000)) });
 export type EndMsg = Of<typeof EndMsg>;
-export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg;
+/** A switch thrown on your page: an amp, a powered speaker, a desk. The room keeps it, so the whole crew hears the same system. */
+export const SwitchMsg = obj({ t: oneOf(["switch"]), key, on: bool() });
+export type SwitchMsg = Of<typeof SwitchMsg>;
+export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg | SwitchMsg;
 /** Whether an end says all it needs to: the jack it is in, or where it lies. */
 export const whole = (e: WireEnd) => (e.at === "plug" ? !!e.plug : e.at === "loose" ? e.x !== undefined && e.y !== undefined && e.z !== undefined : true);
 
 /** A message off the wire, or null if it isn't one. */
 export function readSent(raw: unknown): Sent | null {
-  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end"]) }), raw)?.t;
+  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end", "switch"]) }), raw)?.t;
+  if (t === "switch") return check(SwitchMsg, raw);
   if (t === "end") { const m = check(EndMsg, raw); return m && whole(m.to) ? m : null; }
   return t === "pose" ? check(PoseMsg, raw) : t === "grab" ? check(GrabMsg, raw) : t === "drop" ? check(DropMsg, raw) : null;
 }
@@ -54,7 +58,11 @@ export type Placed = Of<typeof Placed>;
 export const Wire = obj({ key, n: int(1, 1e9), a: WireEnd, b: WireEnd, twists: int(0, 1000) });
 export type Wire = Of<typeof Wire>;
 
-const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100) });
+/** A switch someone threw, with a count that goes up each time. */
+export const Thrown = obj({ key, n: int(1, 1e9), on: bool() });
+export type Thrown = Of<typeof Thrown>;
+
+const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100), switches: arr(Thrown, 500) });
 const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
 export type ServerMsg = Of<typeof ViewMsg> | Of<typeof RefusedMsg>;
 /** The room's message read on the page. */
@@ -67,6 +75,7 @@ export class Crew {
   private mates = new Map<string, Mate>();
   /** Who holds each piece: one id, or two on a team carry. */
   private hands = new Map<string, string[]>();
+  private switches = new Map<string, Thrown>();
   private placed = new Map<string, Placed>();
   private wires = new Map<string, Wire>();
 
@@ -146,6 +155,12 @@ export class Crew {
     return { ok: true };
   }
 
+  /** Throw a switch: the last hand on it wins. */
+  throw(id: string, m: SwitchMsg) {
+    if (!this.mates.has(id)) return;
+    this.switches.set(m.key, { key: m.key, n: (this.switches.get(m.key)?.n ?? 0) + 1, on: m.on });
+  }
+
   private letGo(id: string, k: string) {
     const rest = (this.hands.get(k) ?? []).filter((h) => h !== id);
     if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
@@ -153,6 +168,6 @@ export class Crew {
 
   /** The room as `id` sees it: everyone else, every piece set down so far, and every cable touched. */
   view(id: string): Extract<ServerMsg, { t: "view" }> {
-    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()] };
+    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()], switches: [...this.switches.values()] };
   }
 }
