@@ -5,8 +5,8 @@
 import { gear as catalog, jackNames, type Gear } from "./catalog.ts";
 import { ampWatts, circuitLoad, generatorLoad, parallel, type Circuit } from "./power.ts";
 
-/** One box on the floor: its own id (two tops are two items) and the catalog gear it is. */
-export type Placed = { id: string; gear: string };
+/** One box on the floor: its own id (two tops are two items) and the catalog gear it is. `lift`: a DI's ground lift is pressed. */
+export type Placed = { id: string; gear: string; lift?: boolean };
 
 /** What a cable is: mains, speaker, mic (XLR), or a quarter-inch instrument/line lead. */
 export type CableKind = "power" | "speaker" | "xlr" | "instrument";
@@ -20,7 +20,7 @@ export type Cable = { kind: CableKind; lengthM: number; from: End; to: End };
 /** A wall outlet on a named circuit; outlets that share a circuit share its breaker. `off` when its breaker has tripped. */
 export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number; off?: boolean };
 
-export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power";
+export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum";
 
 /** `circuit` is set on a breaker problem: the outlet circuit's name, or the generator's id. */
 export type Problem = { kind: ProblemKind; items: string[]; jack?: string; circuit?: string; message: string };
@@ -44,6 +44,11 @@ const isOut = (kind: string) => kind.endsWith("-out");
 
 /** Gear that makes a signal of its own when it has power. */
 const SOURCES = new Set(["mixer-small", "guitar", "amp-head"]);
+
+/** Gear that passes a signal through: each output jack and the input it carries. */
+const THROUGH: Record<string, Record<string, string>> = {
+  "di-box": { "xlr-out": "inst-in", "line-out": "inst-in" },
+};
 
 type Link = { cable: Cable; out: End; in: End };
 
@@ -144,6 +149,15 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
 
   for (const [id, g] of items) if (g.draw && !powered(id)) say("no-power", [id], `${id} has no power`, "power-in");
 
+  // Ground loops: a DI whose thru and XLR both land on gear earthed through the mains hums, unless it is lifted.
+  const earthed = (end: End) => items.get(end[0])?.draw !== undefined && rootOf(end[0]) !== null;
+  for (const p of placed) {
+    if (p.gear !== "di-box" || p.lift) continue;
+    const amp = drives.get(`${p.id}\0line-out`)?.find(earthed);
+    const desk = drives.get(`${p.id}\0xlr-out`)?.find(earthed);
+    if (amp && desk) say("hum", [p.id, amp[0], desk[0]], `${amp[0]} and ${desk[0]} make a ground loop through ${p.id}: it hums. Lift its ground`, "xlr-out");
+  }
+
   // Each breaker and generator against what hangs off it.
   const loads = new Map<string, string[]>();
   for (const [id, g] of items) {
@@ -174,7 +188,9 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     let on = false;
     if (g && powered(id)) {
       const kind = jackKind(jack);
+      const via = THROUGH[g.id]?.[jack];
       if (SOURCES.has(g.id)) on = true;
+      else if (via) on = inSignal(id, via, seen);
       else if (g.amp) on = inSignal(id, jack.replace("speaker-out", "xlr-in"), seen);
       else if (kind === "xlr-out") on = inSignal(id, "xlr-in", seen);
       else if (kind === "speaker-out") on = inSignal(id, "speaker-in", seen);
