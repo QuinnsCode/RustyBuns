@@ -157,7 +157,7 @@ function sound(h: Heard) {
   heardKey = key;
   try { riffNode.disconnect(); } catch { /* wasn't connected */ }
   if (h.settings) riffNode.connect(node);
-  const m: ToAmp = { t: "set", settings: h.settings ?? { amp: "lead", pedal: null, drive: 0, swaps: {}, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0 }, mic: DEFAULT_ROOM.mic, bypass: true, oversample: 2 } };
+  const m: ToAmp = { t: "set", settings: h.settings ?? { amp: "lead", pedal: null, drive: 0, swaps: {}, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0, rate: 5, depth: 0 }, mic: DEFAULT_ROOM.mic, bypass: true, oversample: 2 } };
   node.port.postMessage(m);
 }
 

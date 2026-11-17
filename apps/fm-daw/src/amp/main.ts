@@ -27,13 +27,16 @@ import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
 const KEY = "q-amp";
 const KNOB_NAMES: { key: keyof Knobs; label: string }[] = [
   { key: "gain", label: "Gain" }, { key: "bass", label: "Bass" }, { key: "mid", label: "Middle" }, { key: "treble", label: "Treble" }, { key: "master", label: "Master" }, { key: "noise", label: "Noise" },
+  { key: "rate", label: "Rate" }, { key: "depth", label: "Depth" },
 ];
+/** The bias tremolo's knobs, shown only on an amp that has one. */
+const TREM_KNOBS: (keyof Knobs)[] = ["rate", "depth"];
 const MODE_ICON: Record<ScreenMode, string> = { spectrum: "chart-column", analog: "activity", scope: "audio-waveform", focus: "scan-search" };
 const MODE_IDS = MODES.map((m) => m.id);
 
 const EndGuard = (v: unknown): End => { const [item, jack] = arr(str(20), 2, { min: 2 })(v); return [item, jack]; };
 const CableGuard = obj({ from: EndGuard, to: EndGuard, kind: opt(oneOf(["instrument", "speaker", "xlr", "power"])) });
-const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 10, 5), treble: num(0, 10, 5), master: num(0, 10, 5), noise: num(0, 10, 3) });
+const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 10, 5), treble: num(0, 10, 5), master: num(0, 10, 5), noise: num(0, 10, 3), rate: num(0, 10, 5), depth: num(0, 10, 0) });
 const on = oneOf([0, 1], 0);
 const LoopGuard = obj({
   spring: obj({ on, dwell: num(0, 10, 5), mix: num(0, 10, 4) }),
@@ -409,7 +412,10 @@ function setAmp(id: string) {
   ui.modelName.textContent = amp.name;
   ui.modelBlurb.textContent = amp.blurb;
   for (const b of ui.models.children) if (b instanceof HTMLElement) b.setAttribute("aria-pressed", String(b.dataset.amp === amp.id));
-  for (const { key } of KNOB_NAMES) ui.knobs[key].set(k[key]);
+  for (const { key } of KNOB_NAMES) {
+    ui.knobs[key].set(k[key]);
+    ui.knobs[key].el.hidden = TREM_KNOBS.includes(key) && !amp.trem;
+  }
   const tube = (cls: string, label: string) => h("div", `tube ${cls}`, h("div", "glass", h("div", "plate"), h("div", "filament")), h("span", "tube-label", label));
   if (!S.pedal) showBoard();
   ui.tubes.replaceChildren(

@@ -8,7 +8,7 @@
 import { Circuit, type Netlist } from "./mna.ts";
 import { Convolver, cabIR, type Mic } from "./cab.ts";
 import { butter8, chain, type Biquad } from "./filters.ts";
-import { DEFAULT_POWER, PushPull, type Fault, type PowerSpec } from "./power.ts";
+import { DEFAULT_POWER, PushPull, type Fault, type PowerSpec, type Trem } from "./power.ts";
 import { machine, type LoopSpec, type Machine } from "./machines.ts";
 
 /**
@@ -93,7 +93,7 @@ export const LOOP_VOLTS = 100;
  * A rig that streams: `process` a block at a time, and turn its knobs between
  * blocks. `setGain` is a volume pot (free), `setPot` turns a pot inside a circuit (free too), `setLink` swaps one circuit for
  * another with new part values (one matrix inversion and a rest solve), `setPower`
- * drives the power stage, `setLoad` plugs a speaker in or pulls it out, `setMic`
+ * drives the power stage, `setTrem` turns its bias tremolo, `setLoad` plugs a speaker in or pulls it out, `setMic`
  * moves the mic on the cab.
  */
 export class Rig {
@@ -145,6 +145,8 @@ export class Rig {
   /** Pot `pot` (in netlist order) of link `i`, 0 to 1: it glides there over about 10 ms. */
   setPot(i: number, pot: number, at: number): void { this.circuits[i]?.setPot(pot, at); }
   setPower(p: number): void { this.power = p; }
+  /** The bias tremolo on the power tubes (rate in Hz, depth 0 to 1), or none. The LFO keeps its phase. */
+  setTrem(t?: Trem): void { this.amp.setTrem(t); }
   /** Ohms on the speaker jack, 0 for nothing plugged in. Play through an open jack and the amp blows (`fault`). */
   setLoad(ohms: number): void { this.amp.setLoad(ohms); }
   /** The mic moves on the cab (and a rig built without a cab gets one). */
@@ -240,6 +242,8 @@ export class Rig {
   get fault(): Fault | null { return this.amp.fault; }
   /** The power supply now, volts: it sags under a loud chord. */
   get supply(): number { return this.amp.supply; }
+  /** The power tubes' grid bias now, volts: it swings colder with the bias tremolo. */
+  get bias(): number { return this.amp.bias; }
   get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0) + this.loop.reduce((s, m) => s + m.misses, 0); }
   get iterationsPerStep(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0) / Math.max(1, this.steps); }
 }
