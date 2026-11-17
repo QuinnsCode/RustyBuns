@@ -109,10 +109,10 @@ scene.add(camera);
 scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
 eyeFill(camera);
 const hands = handsView(scene, camera);
-// Hold I to look at your arms.
+// Hold Y to look at your arms (I is taken: the arena levels check a point with it).
 let showArms = false;
-window.addEventListener("keydown", (e) => { if (e.code === "KeyI") showArms = true; });
-window.addEventListener("keyup", (e) => { if (e.code === "KeyI") showArms = false; });
+window.addEventListener("keydown", (e) => { if (e.code === "KeyY") showArms = true; });
+window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = false; });
 const shoes = shoesView(scene);
 const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.

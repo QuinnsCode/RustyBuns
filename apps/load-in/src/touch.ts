@@ -25,7 +25,7 @@ const LABEL: Record<string, [glyph: string, what: string]> = {
   KeyH: ["▦", "Heat map"],
   KeyB: ["B", "Bass map / reset the breakers"],
   Enter: ["→|", "Open the doors"],
-  KeyG: ["G", "Hang it on the point"],
+  KeyG: ["G", "Hang it on the point / tape the joints"],
   KeyK: ["K", "Send the crew / pin the point"],
   KeyI: ["I", "Check / sub polarity"],
   KeyO: ["O", "Run the motor"],
@@ -46,7 +46,7 @@ export const HANDS = ["KeyF", "Space", "KeyQ", "KeyE", "KeyC", "KeyP", "KeyL", "
 const VENUE: Record<string, string[]> = {
   "dive-bar": ["KeyR", "KeyV", "KeyZ", "KeyX", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   park: ["KeyR", "KeyV", "KeyZ", "KeyX", "KeyH", "BracketLeft", "BracketRight", "Enter"],
-  desert: ["KeyR", "KeyV", "KeyH", "KeyB", "BracketLeft", "BracketRight", "Enter"],
+  desert: ["KeyR", "KeyV", "KeyG", "KeyH", "KeyB", "BracketLeft", "BracketRight", "Enter"],
   "bigger-bar": ["KeyB", "Enter"],
   amphitheatre: ["KeyU", "KeyJ", "KeyK", "KeyI", "KeyO", "Comma", "Period", "KeyN", "KeyB", "KeyG", "KeyV", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   "small-arena": ["KeyG", "KeyK", "KeyI", "KeyO", "KeyU", "KeyJ", "KeyH", "BracketLeft", "BracketRight", "Enter"],
