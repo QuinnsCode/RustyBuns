@@ -228,10 +228,10 @@ dialog::backdrop{background:var(--scrim)}
   <p class="lede">Every cryptid's reference pictures, the way a player meets them. The Pine Barrens is open from the start, and beating a region's arena opens the regions it borders. Each layer is one more win out. Open a folder to see its pictures full size. Once the source art is right, each model is remade from it.</p>
   <ol class="steps"><li class="now"><b>1</b>Source art</li><li><b>2</b>You confirm the direction</li><li><b>3</b>One prototype at a time</li><li><b>4</b>Hill-climb it</li></ol>
   <div class="key"><p class="art good"><span class="dot"></span>your picture</p><p class="art ok"><span class="dot"></span>3 or more pictures</p><p class="art thin"><span class="dot"></span>too few</p><p class="art none"><span class="dot"></span>not fetched yet</p></div>
-  <p class="lede">Pictures are in for ${fetched} of the ${all.length} cryptids on the map: the Bog Witch's starters and layers one and two. Layer three onward comes next. Each folder opens on our model as the game has it now, then the pictures. Drop the bad ones, write what you want done, and queue it: Claude works the queue in order and marks each one done.</p>
+  <p class="lede">Pictures are in for ${fetched} of the ${all.length} cryptids on the map: the Book's five and layers one and two. Layer three onward comes next. Each folder opens on our model as the game has it now, then the pictures. Drop the bad ones, write what you want done, and queue it: Claude works the queue in order and marks each one done.</p>
 </div>
 <section class="train" aria-live="polite"><h2>The queue<small id="qcount"></small></h2><div class="cars" id="cars"></div><p class="trainmsg" id="trainmsg">Loading the queue…</p></section>
-<section class="region starters"><header><h3>The Bog Witch's starters</h3><span class="routes"><span>you take three of the five</span></span></header><div class="folders">${starters}</div></section>
+<section class="region starters"><header><h3>The Book's five</h3><span class="routes"><span>you take three of the five</span></span></header><div class="folders">${starters}</div></section>
 ${sections.join("\n")}
 </div>
 <dialog id="viewer" aria-label="Reference pictures">
