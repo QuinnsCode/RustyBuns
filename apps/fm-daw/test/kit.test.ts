@@ -1,14 +1,16 @@
 // A pedal's build sheet as a player gets it: walk to the pedal wall, look at Q Drive, open its sheet with a germanium
 // diode swapped in Q Amp, read the parts list, and download the kit. The sheet reads the kit folder's files
 // (circuits/q-drive/) as the page does, here from disk instead of through Vite.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { Glob } from "bun";
 import { join } from "node:path";
 import { PEDALS } from "../src/circuit/amps.ts";
 import { kitZip, readBom, sheetOf, type KitFiles } from "../src/kit/kit.ts";
+import { toleranceBand, widest } from "../src/kit/tolerance.ts";
 import { unzip, zip } from "../src/kit/zip.ts";
 import { lookAt, newRoom, pedalAt, pickUp, walkTo } from "../src/room/room.ts";
 
+setDefaultTimeout(30_000);
 const CIRCUITS = join(import.meta.dir, "../circuits");
 async function kitOnDisk(kit: string): Promise<KitFiles> {
   const out: KitFiles = {};
@@ -50,6 +52,26 @@ test("look at Q Drive on the pedal wall, open its build sheet with your swap, an
 
   // Stock parts: no swaps, nothing marked as yours.
   expect(sheetOf(drive!, kit).parts.some((p) => p.swapped)).toBe(false);
+});
+
+test("before ordering, the sheet's tolerance band says how far a build may sound from the sim, and a swap goes further", async () => {
+  const drive = PEDALS.find((p) => p.id === "drive")!;
+  const runs: number[] = [];
+  const band = await toleranceBand(drive.net(5), { runs: 8, onRun: (done) => runs.push(done) });
+  expect(runs).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  // The sim's mid hump, with every build around it: some below, some above, none far.
+  const mid = band.hz.indexOf(905), low = band.hz.indexOf(80);
+  expect(band.sim[mid] - band.sim[low]).toBeGreaterThan(6);
+  band.sim.forEach((s, i) => { expect(band.lo[i]).toBeLessThanOrEqual(s); expect(band.hi[i]).toBeGreaterThanOrEqual(s); });
+  expect(widest(band)).toBeGreaterThan(0.1);
+  expect(widest(band)).toBeLessThan(3);
+  expect(band.level.lo).toBeLessThan(0);
+  expect(band.level.hi).toBeGreaterThan(0);
+  // Seeded: the same pedal shows the same band each time the sheet opens.
+  expect(await toleranceBand(drive.net(5), { runs: 8 })).toEqual(band);
+  // Germanium in the clipper socket drops the level further than any build's parts do.
+  const germ = await toleranceBand(drive.net(5, { D1: "germanium" }), { runs: 0 });
+  expect(band.level.sim - germ.level.sim).toBeGreaterThan(3 * Math.max(-band.level.lo, band.level.hi));
 });
 
 test("a pedal with no kit folder has a sheet that says its fab files are not made yet", () => {

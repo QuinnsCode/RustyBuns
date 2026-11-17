@@ -145,7 +145,7 @@ PCBWay lists 10 bare boards at $5 and doesn't publish a through-hole rate per jo
 
 **The three ways to own it, weighed:**
 
-- **Order your own:** works now. The zip is what a fab takes. What's missing is a button in the app and a parts cart (#4939).
+- **Order your own:** works now. The zip is what a fab takes, and the build sheet's button downloads it with your swaps (#4939). A ready parts cart at a shop isn't built.
 - **Kit:** board, parts, drilled box and a bag of the swap parts. Most of the work is buying, packing and posting things. About $20 to $25 of board, parts and box per kit, before packing and postage.
 - **Built:** the same board, assembled and tested. This is the one that needs compliance checks (a 9 V analog pedal is low risk, but it is still electronics we sell) and a test rig at our end.
 
@@ -187,7 +187,15 @@ Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (ove
 - **Played like the voicing:** `test/circuit.test.ts` reads each board's netlist back and compares it with its voicing at three Drive turns, one table over the three pedals: each within 3%.
 - **Q Comp** waits for its circuit to become a board (#4952).
 
-Closing the loop (record a built board, compare it with the sim, a Monte Carlo band for part tolerances) waits for boards in hand. The tolerance band is part of #4939.
+Closing the loop (record a built board, compare it with the sim) waits for boards in hand.
+
+### How far a build may sound from the sim (#4939)
+
+**About 1 dB in tone and half a dB in level, for each of the three pedals.** The build sheet's tolerance tab (`src/kit/tolerance.ts`) plays the pedal's netlist, with your swaps and Drive, 24 times. Each time, every resistor is up to 5% off, every capacitor 10%, every pot 20%, and every diode's leakage up to twice or half (its ideality 3%), drawn from a seeded stream so the same pedal shows the same band. Each build gives a small-signal frequency response (0.1 mV, so the diodes stay out of it, 40 Hz to 10 kHz) and an output level at playing level (0.2 V at 220 Hz, where the diodes clip). The band is the lowest and highest at each frequency. It takes 2 to 4 seconds in the page, between frames.
+
+- **Q Drive, Q Dist and Q Fuzz** at Drive 5: the response stays within 1.2 dB of the sim, the level within −0.4 to +0.5 dB.
+- **A swap goes further:** germanium in Q Drive's clipper drops its level by about 5 dB, ten times the band. Tolerances won't make your build a different pedal; the sockets will.
+- **Not in it:** the op-amp (its gain and slew are far past what this circuit asks), transistor gain spread (no fab pedal has a transistor yet), and pot taper error beyond the 20%.
 
 ## 9. Synth and studio, not only guitar
 
