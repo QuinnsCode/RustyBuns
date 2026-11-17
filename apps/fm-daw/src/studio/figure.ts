@@ -1,6 +1,5 @@
 // An eqosys avatar (@rustybuns/util/avatar) in the room: @rustybuns/models' character, the same chunky figure the eqosys
-// picker shows, with a name tag over it. It stands, walks, sits on the room's seats (0.48 m: its feet swing clear of the
-// floor, as a toy's do), plays, beams while it holds a note, and can look at someone and nod to the beat. Feet at y 0.
+// picker shows, with a name tag over it. It stands, walks, sits on the room's seats (0.48 m), plays, beams while it holds a note, and can look at someone and nod to the beat. Feet at y 0.
 import * as THREE from "three";
 import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
@@ -33,7 +32,7 @@ export function handsOn(kind: SpotKind | undefined, note: boolean): Play | null 
 }
 
 /** How far (metres) a figure shifts on its seat, up or down and in or back, to reach. */
-export const SHIFT = 0.1;
+export const SHIFT = 0.15;
 
 /** A drumstick's length (metres), and how far (radians) it tips off the fist's axis: resting toward the snare and the floor tom. */
 const STICK = 0.4, STICK_TILT = 0.5;

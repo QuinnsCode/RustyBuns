@@ -1,5 +1,5 @@
 // The character wears every part the picker offers (the face maker's too, with its sliders at both ends), stands on the
-// floor as a chunky toy with a big head, and its poses do what they say: sitting brings the hips down to a seat with the
+// floor as a grown-up (a head about a seventh of its height, not a toy's), and its poses do what they say: sitting brings the hips down to a seat with the
 // feet still on the floor, playing brings the hands up in front, walking moves the legs. It is alive: it turns its head
 // to look at someone, and beams while a note sounds. Its hands have four fingers that tap the keys in turn, its glasses
 // reach back to its ears, and a hat tucks a tall style under it.
@@ -19,7 +19,7 @@ function posed(a: Avatar, p: Pose) {
   return { c, hands: named(c.group, "hand").map(at), feet: named(c.group, "foot").map(at), hips: c.group.children[0]!.position.y };
 }
 
-test("every option of every part, and every slider at both ends, builds a toy on the floor with a big head", () => {
+test("every option of every part, and every slider at both ends, builds a grown-up on the floor", () => {
   const ada = defaultAvatar("Ada");
   const cases: Partial<Avatar>[] = [
     ...(Object.keys(PARTS) as (keyof typeof PARTS)[]).flatMap((k) => PARTS[k].map((v) => ({ [k]: v }))),
@@ -31,10 +31,11 @@ test("every option of every part, and every slider at both ends, builds a toy on
     c.pose({ t: 0 });
     const b = box(c.group), head = box(c.head);
     expect([change, b.min.y > -0.03 && b.min.y < 0.03]).toEqual([change, true]);
-    expect(b.max.y).toBeGreaterThan(1.05);
-    expect(b.max.y).toBeLessThan(2.4);
-    // a caricature: the head (with its hair and hat) is at least a third of the figure's height
-    expect(head.max.y - head.min.y).toBeGreaterThan(c.height / 3);
+    expect(c.height).toBeGreaterThan(1.45);
+    expect(c.height).toBeLessThan(2.1);
+    // an adult's head: the skull is about a seventh of the height, so even with tall hair or a tall hat it is under a third
+    expect(head.max.y - head.min.y).toBeGreaterThan(c.height / 9);
+    expect(head.max.y - head.min.y).toBeLessThan(c.height / 3);
     c.dispose();
   }
 });
@@ -47,7 +48,7 @@ test("sitting, playing and walking move the body the way they say", () => {
   // seated: hips at seat height, feet still on the floor
   expect(sit.hips).toBeLessThan(stand.hips * 0.75);
   for (const f of sit.feet) expect(f.y).toBeLessThan(0.08);
-  // playing keys: both hands up in front (-z) of the round belly, above the lap
+  // playing keys: both hands up in front (-z) of the body, above the lap
   const keys = posed(a, { t: 1, seated: true, play: "keys" });
   for (const h of keys.hands) { expect(h.z).toBeLessThan(-0.25); expect(h.y).toBeGreaterThan(sit.hips); }
   // sticks: the hands strike in turn, so they are at different heights mid-beat
@@ -108,7 +109,7 @@ test("four fingers a hand, tapping the keys one after another; glasses reach bac
   c.group.updateMatrixWorld(true);
   const eye = at(named(c.group, "eye")[0]!), temples = named(c.group, "temple");
   expect(temples).toHaveLength(2);
-  for (const tm of temples) { const b = box(tm); expect(b.max.z).toBeGreaterThan(eye.z + 0.15); expect(Math.max(Math.abs(b.min.x), Math.abs(b.max.x))).toBeGreaterThan(0.2); }
+  for (const tm of temples) { const b = box(tm); expect(b.max.z).toBeGreaterThan(eye.z + 0.07); expect(Math.max(Math.abs(b.min.x), Math.abs(b.max.x))).toBeGreaterThan(0.075); }
   c.dispose();
   // a beanie over spikes, a crest or a bun stands no taller than over short hair: nothing pokes through it
   const top = (hair: string, hat: string) => { const f = character({ ...a, hair, hat }); f.pose({ t: 0 }); const y = box(f.head).max.y; f.dispose(); return y; };
