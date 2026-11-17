@@ -6,3 +6,4 @@ export * from "./power.ts";
 export * from "./patch.ts";
 export * from "./feedback.ts";
 export * from "./rigging.ts";
+export * from "./outdoor.ts";

@@ -6,6 +6,7 @@ Sound and power math for live-sound gear, with no dependencies. It runs the numb
 - `splAt(source, point)`: sensitivity + 10 log10(W) - 20 log10(d), minus a smooth off-axis loss that is 6 dB down at the coverage edge.
 - `sumPower`, `sumCoherent`, `levelAt`: mids and highs add as power. Subs add with phase from path length, so two subs make lobes and a power alley.
 - `arrayPoses(top, yaw, tilt, splays, n, boxH)`, `splayCalc(top, yaw, n, boxH, far, near)`: where each box of a flown line array hangs once its splays are set, and the splay calculator: the top box aimed at the back seat, the ones below at nearer seats spaced by distance in proportion, whole degrees up to `MAX_SPLAY_DEG`.
+- Out of doors (`outdoor.ts`): `airAbsorption(freq, tempC, humidity, kPa)` (ISO 9613-1), `speedOfSound(tempC)`, `pressureAt(altitude)`, `reflection(source, face, point)` (a rock face by the image source), `echoOf(arrivals)` (late by 50 ms and within 10 dB), `bendAngle` (wind and temperature gradients), `weatherAtDistance` (night and wind at a far house) and `barrierLoss` (Maekawa).
 - `coverage(sources, area, band)`: a `Float32Array` of dB over a floor, for a heat map.
 - `ampWatts`, `parallel`, `series`: watts per channel into a load, and what happens below the amp's minimum load.
 - `circuitLoad`, `generatorLoad`: mains draw against a 15 A or 20 A breaker, or a generator's kVA.
