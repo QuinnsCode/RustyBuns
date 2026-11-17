@@ -24,7 +24,7 @@ test("from the first gig to the arena: each pass books the next rung, and the fo
     booked.push(night.booked);
     following.push(t.following);
   }
-  expect(booked).toEqual(["dive-bar", "bigger-bar", "park", "desert", "small-arena", "arena", "arena"]);
+  expect(booked).toEqual(["dive-bar", "bigger-bar", "park", "desert", "festival", "small-arena", "arena", "arena"]);
   for (let i = 1; i < LADDER.length; i++) {
     expect(following[i]!).toBeGreaterThan(following[i - 1]!);
     expect(pay[i]!).toBeGreaterThan(pay[i - 1]!);

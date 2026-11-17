@@ -3,9 +3,10 @@
 // on their stands, aim them (turn, tilt, raise the stand), and the score is how the room sounds: the crowd area near the
 // target level, the bar quiet enough for the staff to hear orders, and the sub's bass even over the crowd. Plain data, no DOM; the page draws the heat map.
 import { clamp } from "@rustybuns/util";
-import { type Area, type Band, type Grid, type Source, coverage, gear as catalog, source } from "@rustybuns/gear";
+import { type Area, type Band, type CrowdField, type Grid, type Source, coverage, coverageThrough, gear as catalog, source } from "@rustybuns/gear";
 import { REACH, type Item, type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
+import { type CrowdSpot, comingTonight, crowdOf, expected, regions, roomWith } from "../crowd/crowd.ts";
 
 export type Zone = { x0: number; x1: number; z0: number; z1: number };
 
@@ -172,15 +173,57 @@ export function score(w: World, g: Grid = heat(w), low: Grid = heat(w, "low")): 
   return { covered: Math.round(covered * 100) / 100, crowd: r1(c), bar: r1(b), gap: gap === null ? null : Math.round(gap * 10) / 10, bass: Math.round(bass * 100) / 100, score: s, pass: s >= PASS };
 }
 
-/** The show when the doors open: the room's sound scaled by the crowd's mood (late doors sour it), and the pay. */
+/** The show when the doors open: the room's sound with the crowd in it scaled by the crowd's mood (late doors sour it), and the pay. */
 export function show(w: World) {
-  const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  const s = scores(w).full, d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the dive bar: the rig and the score. */
+/**
+ * Where the dive bar's crowd stands: the floor from the stage lip to the door, clear of the strip at the counter (they
+ * order there and step back). About 90 fill it, packed at the stage. The room is bare brick, a wooden floor and a low
+ * ceiling, a mean absorption of about 0.12, so empty it rings for over a second.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -1.3, x1: 2.45, z0: 2.3, z1: 11.8, nx: 8, nz: 19 },
+  stageZ: 2.2,
+  capacity: 90,
+  room: { w: 5, d: 12, h: 2.7, alpha: 0.12 },
+  regions: [
+    { name: "front", zone: { ...ZONES.crowd, z1: 4.8 } },
+    { name: "middle", zone: { ...ZONES.crowd, z0: 4.8, z1: 6.7 } },
+    { name: "back", zone: { ...ZONES.crowd, z0: 6.7 } },
+  ],
+};
+
+/** The crowd the room is set for: the one that came in, else the one expected at doors. */
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD, comingTonight(w, CROWD));
+
+/** Mids and highs over the floor with the room full: each top heard through the bodies in its way, at 2 kHz (where the voice and the snare live). */
+export const heatFull = (w: World, field: CrowdField = crowdField(w)): Grid => coverageThrough(sources(w), field, FLOOR, 2000);
+
+/** The room at soundcheck (empty) and with the crowd in: the bass is the same in both, bodies don't stop it. */
+export function scores(w: World, low: Grid = heat(w, "low")) {
+  const empty = heat(w), full = heatFull(w);
+  return { soundcheck: score(w, empty, low), full: score(w, full, low), empty, fullGrid: full };
+}
+
+/** The crowd for the harness: how many, each region's people, density, dB at soundcheck and full, and mood; the room's reverb empty and full. */
+export function crowdState(w: World, s = scores(w)) {
+  const c = crowdOf(w), r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+  const level = (g: Grid) => (z: Zone) => r1(mean(cellsIn(g, z)));
+  const people = c ? c.people : 0;
+  return {
+    in: !!c, count: people, expected: comingTonight(w, CROWD),
+    empty: roomWith(CROWD, 0), full: roomWith(CROWD, c?.people ?? comingTonight(w, CROWD)),
+    regions: c ? regions(c, (z) => ({ soundcheck: level(s.empty)(z), full: level(s.fullGrid)(z) }), TARGET, WINDOW) : [],
+  };
+}
+
+/** What the harness adds for the dive bar: the rig, the score at soundcheck and the score with the room full. */
 export function barState(w: World) {
   const r = rig(w), deg = (v: number) => Math.round((v * 180) / Math.PI);
-  return { master: r.master, tilt: Object.fromEntries(Object.entries(r.tilt).map(([k, v]) => [k, deg(v)])), stands: { ...r.stand }, ...score(w) };
+  const { soundcheck, full } = scores(w);
+  return { master: r.master, tilt: Object.fromEntries(Object.entries(r.tilt).map(([k, v]) => [k, deg(v)])), stands: { ...r.stand }, ...soundcheck, full };
 }

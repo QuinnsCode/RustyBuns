@@ -1,7 +1,8 @@
 // What you hear where you stand, as numbers: each playing speaker's level at your head from packages/gear
 // (distance and off-axis), how dull it sounds from where you are, and the sub band summed with phase so the
 // alley between two subs is loud. No DOM: the page (play.ts) turns this into gains, and state() reports it.
-import { GEAR as SPECS, levelAt, offAxisLoss, aimTo, source, splAt, type Source, type Vec3 } from "@rustybuns/gear";
+import { GEAR as SPECS, crowdLoss, levelAt, offAxisLoss, aimTo, source, splAt, sumPower, type Source, type Vec3 } from "@rustybuns/gear";
+import { crowdOf, roomWith } from "../crowd/crowd.ts";
 import { EYE, EYE_CROUCH, holdPose, type Item, type World } from "../sim.ts";
 
 /** The level you hear at 0 dB gain: louder than this is pushed into the limiter. */
@@ -47,6 +48,8 @@ export type Heard = {
   db: number | null;
   /** Off-axis loss at your head, dB: behind a box it goes dull as well as quiet. */
   offAxis: number;
+  /** Lost to the people between it and you at 2 kHz, dB (0 with the room empty). */
+  crowd: number;
   /** Where its top end rolls off from here, Hz. */
   brightHz: number;
   /** Left (-1) to right (1) as you face. */
@@ -60,6 +63,8 @@ export type Hearing = {
   high: number | null;
   /** The sub band at your head, summed with phase (null when nothing plays it). */
   low: number | null;
+  /** With a crowd in: how many, the room's reverb time (mids and bass, s) and the crowd's own noise (dB SPL). */
+  room?: ReturnType<typeof roomWith>;
 };
 
 /** Where a speaker's drivers are: two thirds up its box (as the dive bar scores it), wherever it sits or is carried. */
@@ -79,7 +84,7 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 /** What every speaker in the level sounds like at `at` (your head unless given). */
 export function hear(w: World, on: Switches, fed: Fed = switchedOnIsFed, at: Vec3 = ears(w), rig: Rig = {}): Hearing {
   const speakers: Heard[] = [];
-  const playing: Source[] = [];
+  const playing: Source[] = [], through = new Map<Source, number>(), crowd = crowdOf(w);
   // Right of where you face: yaw 0 looks down -z, so right is +x.
   const rx = Math.cos(w.you.yaw);
   const rz = -Math.sin(w.you.yaw);
@@ -92,17 +97,20 @@ export function hear(w: World, on: Switches, fed: Fed = switchedOnIsFed, at: Vec
     const { h, v, d } = aimTo(src, at);
     const loss = offAxisLoss(spec, h, v);
     const pan = d > 0.01 ? Math.max(-1, Math.min(1, ((pos.x - at.x) * rx + (pos.z - at.z) * rz) / d)) : 0;
-    const bright = Math.min(spec.highCut, Math.max(600, 16000 * 10 ** (-loss / 14)));
-    if (isFed) playing.push(src);
-    speakers.push({ key: item.key, gear: item.gear, fed: isFed, highs: spec.highCut > 500, db: isFed ? r1(splAt(src, at) - (rig.lossDb?.[item.key] ?? 0)) : null, offAxis: r1(loss), brightHz: Math.round(bright), pan: r1(pan) });
+    // Bodies in the way take the highs before the mids: the 8 kHz loss dulls it, the 2 kHz loss quietens it.
+    const body = crowd ? crowdLoss(crowd.field, pos, at, 2000) : 0, dull = crowd ? crowdLoss(crowd.field, pos, at, 8000) : 0;
+    const bright = Math.min(spec.highCut, Math.max(600, 16000 * 10 ** (-(loss + dull) / 14)));
+    if (isFed) { playing.push(src); through.set(src, body); }
+    speakers.push({ key: item.key, gear: item.gear, fed: isFed, highs: spec.highCut > 500, db: isFed ? r1(splAt(src, at) - body - (rig.lossDb?.[item.key] ?? 0)) : null, offAxis: r1(loss), crowd: r1(body), brightHz: Math.round(bright), pan: r1(pan) });
   }
   const highs = playing.filter((s) => s.speaker.highCut > 500);
   const lows = playing.filter((s) => s.speaker.lowCut <= LOW_HZ && LOW_HZ <= s.speaker.highCut);
   return {
     listener: { x: r1(at.x), y: r1(at.y), z: r1(at.z) },
     speakers,
-    high: highs.length ? r1(levelAt(highs, at, "high")) : null,
+    high: highs.length ? r1(crowd ? sumPower(highs.map((s) => splAt(s, at) - (through.get(s) ?? 0))) : levelAt(highs, at, "high")) : null,
     low: lows.length ? r1(levelAt(lows, at, "low", LOW_HZ)) : null,
+    ...(crowd ? { room: roomWith(crowd.spot, crowd.people) } : {}),
   };
 }
 
