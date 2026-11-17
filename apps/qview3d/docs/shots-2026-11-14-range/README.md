@@ -30,3 +30,13 @@ with `display="hanger"`. The judge's faults left: the hanging sleeves fold into 
 neck; a picture on a tank or a curved sleeve rounds off; the shoulder tops' outline is jagged on the sweater and hoodie.
 
 Taste is the owner's. A cut is a few numbers in `CUTS` (`src/widget/tops.ts`); the folds are `bodyFold` there.
+
+## Since then
+
+- The judge's faults above went to #4591: a picture stays square on a tank, and the shoulder seam meets edge to edge
+  (#4643); a sleeved cut's shoulder rolls level into the sleeve, with no notch (#4653, #4642).
+- The hood went on in #4657: it lies back as a hood (#4658), drapes as slack fleece
+  ([shots](../shots-2026-11-15-drape/README.md)), and its neck edge and cords lie down
+  ([shots](../shots-2026-11-16-cords/README.md)).
+- The hanger stays a spike, opt-in with `display="hanger"`. The owner's look at the five tops and the hanger is
+  MANUAL RUN #4590.
