@@ -42,10 +42,12 @@ const stack = (prefix: string, n: number, x: number, z: number, from = 0): Item[
 
 export const SMALL_ARENA: Level = {
   name: "small-arena",
-  bounds: { x0: -8.75, x1: 8.75, z0: 9.25, z1: 39.5 },
+  bounds: { x0: -8.75, x1: 8.75, z0: 9.25, z1: 49.75 },
   room: { x0: -18, x1: 18, z0: -2, z1: 37, height: 15, door: 8 },
   outlets: [],
   start: { x: 0, z: 38.8, yaw: 0 },
+  // The truck backed up to the dock door.
+  truck: { x0: -1.2, x1: 1.2, z0: 40, z1: 50, h: 2.6 },
   // Off the truck at the dock: four stacks of main boxes, two of out-fill boxes, the fills, and the desk on its case.
   items: [
     ...stack("main", 4, -4.5, 35.5), ...stack("main", 4, -3.5, 35.5, 4),

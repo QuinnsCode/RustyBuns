@@ -17,10 +17,11 @@ export const DESERT: Level = {
   name: "desert",
   outdoor: true,
   ground: "sand",
-  bounds: { x0: -16, x1: 16, z0: 0.3, z1: 34 },
+  bounds: { x0: -16, x1: 16, z0: 0.3, z1: 40.75 },
   room: { x0: -16, x1: 16, z0: 0, z1: 34, height: 0, door: 0 },
   outlets: [],
   start: { x: 0, z: 33.5, yaw: 0 },
+  truck: { x0: -1.3, x1: 1.3, z0: 34.6, z1: 41, h: 2.4 },
   // Off the truck's tail at the end of the track: the generator already up on the cart, then the wall in pieces.
   items: [
     { key: "cart", gear: "sand-cart", x: 0, y: 0, z: 31.6, rot: 0 },
@@ -46,12 +47,11 @@ export const DESERT: Level = {
   ],
 };
 
-/** Where things are: the dance floor in front of the wall, the crew's camp off to the right, the truck at the end of the track. */
+/** Where things are: the dance floor in front of the wall and the crew's camp off to the right. */
 export const ZONES = {
   floor: { x0: -7, x1: 7, z0: 6, z1: 20 },
   /** The tents out front and to the right, where people sleep before their shift: in the right-hand tops' spill. */
   camp: { x0: 20, x1: 30, z0: 8, z1: 18 },
-  truck: { x0: -1.3, x1: 1.3, z0: 34.6, z1: 41 },
 } satisfies Record<string, Zone>;
 
 /** Mids and highs on the floor, dB SPL: loud, a sound system's night, not a club's. */

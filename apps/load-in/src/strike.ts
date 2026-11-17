@@ -109,6 +109,8 @@ export function strikeState(w: World, c: Cables) {
   return {
     since,
     curfew: curfew(w.level.name, since) satisfies Curfew,
+    /** Boxes still on a hang, flown or on its frame: lowered and taken off before they can be packed. */
+    aloft: mine.filter((i) => i.hung).map((i) => i.key),
     out: mine.filter((i) => i.key === w.held?.key || !inTruck(t, i)).map((i) => i.key),
     sliding: mine.filter((i) => i.key !== w.held?.key && inTruck(t, i) && !ok.has(i.key)).map((i) => i.key),
     crushing: crushing(w, t),
@@ -125,6 +127,7 @@ export function shut(w: World, c: Cables): { ok: true; tally: Tally } | { ok: fa
   if (!st || !t || !s) return { ok: false, why: "the show isn't over: start the load-out first" };
   if (st.tally) return { ok: true, tally: st.tally };
   if (st.cables.length) return { ok: false, why: `${st.cables.length === 1 ? "a cable is" : `${st.cables.length} cables are`} still out (${st.cables.join(", ")})` };
+  if (st.aloft.length) return { ok: false, why: `still up on a hang: lower it and take the boxes off first (${st.aloft.join(", ")})` };
   if (st.out.length) return { ok: false, why: `not in the truck yet: ${st.out.join(", ")}` };
   if (w.you.z > t.z0 && w.you.x > t.x0 && w.you.x < t.x1) return { ok: false, why: "step out of the truck first" };
   s.tally = { took: st.since, late: st.curfew.late, fine: st.curfew.fine, sliding: st.sliding, crushing: st.crushing, twists: st.twists, untangle: st.untangle };

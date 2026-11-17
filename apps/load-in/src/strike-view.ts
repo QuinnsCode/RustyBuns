@@ -49,6 +49,7 @@ export function mountStrike(parent: HTMLElement) {
       }
       card.innerHTML = `<b>Load out</b>`
         + (s.cables.length ? `<span>Cables out: ${list(s.cables)}</span>` : `<span class="pass">Every cable in its case</span>`)
+        + (s.aloft.length ? `<span class="warn">Lower the hangs first: ${s.aloft.length} boxes up</span>` : "")
         + (s.out.length ? `<span>To pack: ${list(s.out)}</span>` : `<span class="pass">Everything's in the truck</span>`)
         + (s.sliding.length ? `<span class="warn">Will slide: ${list(s.sliding)}</span>` : "")
         + (s.crushing.length ? `<span class="warn">Too heavy on top: ${list(s.crushing.map((x) => x.top))}</span>` : "")

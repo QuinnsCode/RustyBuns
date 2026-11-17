@@ -12,10 +12,12 @@ import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts
 
 export const SHOW: Level = {
   name: "show",
-  bounds: { x0: -3.75, x1: 3.75, z0: 0.25, z1: 13.75 },
+  bounds: { x0: -3.75, x1: 3.75, z0: 0.25, z1: 20.55 },
   room: { x0: -4, x1: 4, z0: 0, z1: 14, height: 3.2, door: 2.4 },
   outlets: [],
   start: { x: 0, z: 13.2, yaw: 0 },
+  // The truck outside the door: after the set, the whole night comes down into it.
+  truck: { x0: -1.2, x1: 1.2, z0: 15.8, z1: 20.8, h: 2.4 },
   items: [
     { key: "top-l", gear: "top-15-passive", x: -3.2, y: 0, z: 3.4, rot: 0.25 },
     { key: "top-r", gear: "top-15-passive", x: 3.2, y: 0, z: 3.4, rot: -0.25 },
