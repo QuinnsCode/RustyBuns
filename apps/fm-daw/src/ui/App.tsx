@@ -7,7 +7,7 @@ import { ChatDock, useChat } from "./Chat.tsx";
 import { LockButton } from "./Lock.tsx";
 import { QWERTY, startMidi } from "./input.ts";
 import { onCc } from "./learn.ts";
-import { loadMine, saveMine } from "./mine.ts";
+import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
@@ -321,13 +321,18 @@ export function App() {
     setSolo(true);
     undo.current = []; redo.current = [];
     const p = loadMine("solo");
-    if (p) commit({ t: "replace", project: p }, { remote: true });
+    if (!p) return;
+    commit({ t: "replace", project: p }, { remote: true });
+    void loadSoloTakes(p).then((got) => {
+      for (const [id, pcm] of got) takeSound.current.set(id, pcm);
+      syncTakes(proj.current);
+    });
   }
   // back in, the sesh's groove comes with the snapshot
   function backToSesh() { undo.current = []; redo.current = []; setSolo(false); }
   useEffect(() => {
     if (!solo) return;
-    const timer = setTimeout(() => saveMine("solo", project), 400);
+    const timer = setTimeout(() => { saveMine("solo", project); void saveSoloTakes(project, (id) => takeSound.current.get(id)); }, 400);
     return () => clearTimeout(timer);
   }, [solo, project]);
 
@@ -529,7 +534,7 @@ export function App() {
         const bytes = await fetchWasm();
         if (bytes) e = new WasmEngine(await instantiateFm(bytes), sr);
       }
-      const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6));
+      const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6), (id) => takeSound.current.get(id));
       e.free?.();
       const wav = encodeWav(pcm, sr);
       try {
