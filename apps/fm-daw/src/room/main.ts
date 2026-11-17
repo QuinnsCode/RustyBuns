@@ -20,7 +20,7 @@ import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
 import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
-import { BuildSheet, savedSwaps } from "../kit/sheet.ts";
+import { BuildSheet, savedDrive, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { sanitizePatch, type Patch } from "../studio.ts";
@@ -319,7 +319,7 @@ const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
 $("stage").after(sheet.el);
 function openSheet(p: PedalDef) {
   phase = "sheet"; menu(); document.exitPointerLock?.();
-  return sheet.open(p, savedSwaps(p.id));
+  return sheet.open(p, savedSwaps(p.id), savedDrive(p.id));
 }
 function openSheetHere() {
   const p = pedalAt(room);
@@ -406,8 +406,10 @@ const harness = {
   state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
-  /** The open sheet's tab: "schematic", "pcb", "parts" or "files". */
-  sheetTab: (tab: "schematic" | "pcb" | "parts" | "files") => sheet.show(tab),
+  /** The open sheet's tab: "schematic", "pcb", "parts", "files" or "band" (the tolerance band). */
+  sheetTab: (tab: "schematic" | "pcb" | "parts" | "files" | "band") => sheet.show(tab),
+  /** The open sheet's tolerance band, run (a few seconds) and returned: dB per frequency for the sim and the builds. */
+  sheetBand: () => sheet.bandOf(),
   /** The open sheet's Download button: the zip's file name and size. */
   sheetDownload: () => sheet.download(),
   /** Close the sheet, back into the room. */

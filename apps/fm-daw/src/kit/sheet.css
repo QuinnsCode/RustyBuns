@@ -41,3 +41,11 @@
   .sheet-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
   .sheet-bom td:nth-child(4), .sheet-bom th:nth-child(4) { display: none; }
 }
+/* The tolerance band (tolerance.ts): the sim as a line, the builds as a shaded band around it. */
+.sheet-band { overflow: auto; padding: 8px 12px 12px; }
+.band-chart { display: block; width: 100%; height: auto; max-height: 50vh; font: 10px var(--mono); }
+.band-chart text { fill: var(--dim); }
+.band-chart .grid { stroke: rgba(255, 255, 255, 0.07); }
+.band-chart .band { fill: rgba(255, 176, 0, 0.28); stroke: rgba(255, 176, 0, 0.5); stroke-width: 1; }
+.band-chart .sim { fill: none; stroke: var(--ink); stroke-width: 2; }
+.sheet-band-text { margin: 8px 4px 0; }

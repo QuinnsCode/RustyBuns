@@ -524,7 +524,7 @@ function showBoard() {
 /** The playing pedal's build sheet, with your swaps on it. */
 function openSheet() {
   const def = PEDALS.find((p) => p.id === S.pedal);
-  return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}) : null;
+  return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}, S.drive[def.id] ?? 5) : null;
 }
 
 /** Puts `choice` in the playing pedal's socket (null or the stock part: back to stock; socket null: every socket). */
@@ -640,6 +640,8 @@ Object.assign(window, {
     sheet: async () => (await openSheet(), ui.sheet.state()),
     /** The open sheet's Download button: the zip's file name and size. */
     sheetDownload: () => ui.sheet.download(),
+    /** The open sheet's tolerance band, run (a few seconds) and returned: dB per frequency for the sim and the builds. */
+    sheetBand: () => ui.sheet.bandOf(),
     /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */
     swap: swapPart,
     /** Switch a loop machine ("spring", "tape", "bbd") on or off. */
