@@ -9,7 +9,7 @@ import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, typ
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
-import { decodeGrantClient, grant, handOn, may, needs, noGrants, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 import { BackupLadder, LadderGuard, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
@@ -264,8 +264,10 @@ export default class World {
     // a look back is for this page alone, so anyone in may ask, whatever their grants
     if (msg.t === "rewind") { if (seat?.peer) void this.rewind(ws, msg.ago); return; }
     if (msg.t === "live") {
-      // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go)
-      if (seat?.peer && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
+      // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go);
+      // someone the leader muted moves and dresses as ever, but none of their notes go on
+      const muted = msg.e.t === "on" && isMuted(this.grants, seat?.me);
+      if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
     if (msg.t === "takeBytes") { if (allowed) this.onTakeBytes(ws, msg); return; }
@@ -487,6 +489,7 @@ export default class World {
     let next = this.grants;
     if (m.t === "grant") next = grant(next, m.who, m.can);
     else if (m.t === "handOn") next = handOn(next, me, m.who);
+    else if (m.t === "mute") next = mute(next, m.who, m.on);
     else if (asked && m.yes) {
       const had = next.who[m.who] ?? (this.floor === "free" ? (["play", "edit", "mix"] as const) : []);
       next = grant(next, m.who, [...had, asked]);
@@ -506,8 +509,10 @@ export default class World {
 
   /** `gone`: a socket on its way out, not counted in. */
   private grantsMsg(gone?: RoomSocket) {
-    const here = [...new Set(this.sockets.open().flatMap((w) => { const me = w !== gone && this.sockets.who(w)?.me; return me ? [me] : []; }))];
-    return { t: "grants" as const, grants: this.grants, asks: this.asks, here } satisfies GrantServer;
+    const seats = this.sockets.open().flatMap((w) => { const s = w !== gone && this.sockets.who(w); return s && s.me && s.peer ? [{ peer: s.peer, me: s.me }] : []; });
+    const here = [...new Set(seats.map((s) => s.me))];
+    const peers = Object.fromEntries(seats.map((s) => [s.peer, s.me]));
+    return { t: "grants" as const, grants: this.grants, asks: this.asks, here, peers } satisfies GrantServer;
   }
 
   webSocketClose(ws: RoomSocket) { this.left(ws); }

@@ -32,6 +32,8 @@ import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
 import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
+import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
+import { isMuted, leaders } from "../grants.ts";
 import { prop } from "./props.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, type Quality } from "./look.ts";
 
@@ -214,13 +216,51 @@ const live = (e: Live) => net?.live(e);
 function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); }
 function onLive(from: number, e: Live) {
   hear(jam, from, e);
+  if (e.t === "wear") people();
+  if (!sounds(mutes, from, e)) return;
   if (e.t === "on") out?.send({ t: "on", track: e.track, midi: e.midi, vel: e.vel });
   else if (e.t === "off") out?.send({ t: "off", track: e.track, midi: e.midi });
 }
+// ---- mutes: yours (the room, or one person) and the leader's for everyone ----
+const mutes = noMutes();
+/** Which person each peer on the live line is, from the World's grants. */
+let peerIds: Record<string, string> = {};
+const iLead = () => !!rights.grants && !!rights.me && leaders(rights.grants).includes(rights.me);
+const leaderMuted = (peer: number) => !!rights.grants && isMuted(rights.grants, peerIds[peer]);
+const letGo = (notes: { track: number; midi: number }[]) => { for (const n of notes) out?.send({ t: "off", ...n }); };
+function mutePerson(peer: number, on?: boolean) { letGo(mutePeer(mutes, jam, peer, on)); people(); }
+function muteAll(on?: boolean) { letGo(muteRoom(mutes, jam, on)); people(); }
+/** The leader mutes this person for everyone (the World checks it's the leader). */
+function muteForAll(peer: number, on: boolean) { const who = peerIds[peer]; if (who) net?.grant({ t: "mute", who, on }); }
+/** The people list on the room's page: each one with your mute, and the leader's mute for everyone. */
+function people() {
+  const list = $("people"), lead = iLead();
+  $("mute-room").textContent = mutes.room ? "Unmute the room" : "Mute the room";
+  list.replaceChildren();
+  for (const [peer, o] of jam.others) {
+    const li = document.createElement("li"), n = document.createElement("span");
+    n.textContent = (o.name || "Someone") + (leaderMuted(peer) ? " (muted for everyone)" : "");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "ghost"; b.textContent = mutes.peers.has(peer) ? "Unmute" : "Mute";
+    b.addEventListener("click", () => mutePerson(peer));
+    li.append(n, b);
+    if (lead) {
+      const all = document.createElement("button"), was = leaderMuted(peer);
+      all.type = "button"; all.className = "ghost"; all.textContent = was ? "Unmute for everyone" : "Mute for everyone";
+      all.addEventListener("click", () => muteForAll(peer, !was));
+      li.append(all);
+    }
+    list.append(li);
+  }
+  $("people-none").hidden = jam.others.size > 0;
+}
+$("mute-room").addEventListener("click", () => muteAll());
 function onGone(from: number) {
+  mutes.peers.delete(from);
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); }
   gone(jam, from);
   dropPerson(from);
+  people();
 }
 // ---- made instruments: a seat at its track, and a synth grown from its seed (src/studio/instrument.ts) ----
 const madeGroup = new THREE.Group();
@@ -263,7 +303,7 @@ const player: Player = {
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 
 if (here) net = connect({
-  onGrants(m) { rights.grants = m.grants; rights.asked = (rights.me && m.asks[rights.me]) || null; },
+  onGrants(m) { rights.grants = m.grants; peerIds = m.peers; people(); rights.asked = (rights.me && m.asks[rights.me]) || null; },
   onRewound: back.answer,
   onSnapshot(p) {
     if (!p) { net?.init(project); return; }
@@ -308,6 +348,8 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyM") return void startAudio();
   if (phase !== "play") return;
   if (code === "KeyV") return toggleCam(jam);
+  if (code === "KeyN") return muteAll();
+  if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Space") return sitOrStand();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
@@ -394,7 +436,7 @@ void eq.finishSignIn().then((back) => {
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
 
-function menu() { $("menu").hidden = phase === "play"; door(); }
+function menu() { $("menu").hidden = phase === "play"; door(); people(); }
 function play() { if (!here) return; phase = "play"; menu(); lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {
@@ -404,7 +446,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -461,7 +503,7 @@ function frame(now: number) {
   $("cross").hidden = jam.me.cam !== "first";
   $("hint").textContent = now < flash.until ? flash.text : hint();
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}`;
+  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
@@ -471,7 +513,8 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], ...snapshot(jam, project) }),
+  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], ...snapshot(jam, project),
+    muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() } }),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
@@ -482,5 +525,9 @@ const harness = {
   quality: (q: Quality) => setQuality(q),
   /** Press (down true) or let go of a key: KeyA plays the seat's lowest note. */
   key: (code: string, down = true) => (down ? keyDown(code) : noteOff(`kb:${code}`)),
+  /** Mute a peer for you (on left out: the other way round), the whole room, or (the leader) a peer for everyone. */
+  mute: (peer: number, on?: boolean) => { mutePerson(peer, on); return harness.state().muted; },
+  muteRoom: (on?: boolean) => { muteAll(on); return harness.state().muted; },
+  muteForAll: (peer: number, on = true) => muteForAll(peer, on),
 };
 window.qjam = harness;
