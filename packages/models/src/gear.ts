@@ -44,14 +44,23 @@ export const GEAR_SIZES = {
   "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
   "di-box": [0.1, 0.05, 0.13],
+  // the festival (#5029 step 9): the dance stack, the sculpted array, a stage rack and the site generator
+  "stack-mid-high": [0.75, 0.5, 0.7],
+  "stack-mid-bass": [0.75, 0.75, 0.85],
+  "horn-sub-21": [1.1, 0.8, 1.0],
+  "sculpted-3way": [0.42, 0.85, 0.52],
+  "arc-sub-18": [1.2, 0.5, 0.75],
+  "amp-rack-12u": [0.6, 1.05, 0.75],
+  "generator-100kva": [1.3, 2.0, 3.6],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
- * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs). */
+ * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
+ * sculpted array's moulded composite), badge (the dance stack's maker plate). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -60,6 +69,7 @@ export function gearLook(): GearLook {
     paint: std(0x1d1e20, 0.85), grille: std(0x2c2e31, 0.55, 0.6), metal: std(0x8a8d92, 0.4, 0.8), rubber: std(0x121212, 0.95),
     panel: std(0x3a3c40, 0.6, 0.3), lid: std(0xf2c230, 0.6), tolex: std(0x161514, 0.9), body: std(0x8f1f1f, 0.3, 0.1),
     chrome: std(0xd8dade, 0.15, 1), knob: std(0x0c0c0c, 0.5), light: new THREE.MeshBasicMaterial({ color: 0x45e06a }),
+    shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45),
   };
 }
 
@@ -623,6 +633,119 @@ function lineArray(): Build {
   return b;
 }
 
+// ---- the festival's systems (#5029 step 9) ----------------------------------------------------------------------
+
+/** A horn's mouth flaring back from the front face: `w` by `h`, `deep` into the box, squarer as `p` grows. */
+function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tuple, p = 6) {
+  const m = new THREE.Matrix4().makeTranslation(...at);
+  b.pieces.push(lathe("panel", [[-deep, w * 0.1, h * 0.1], [-deep * 0.6, w * 0.24, h * 0.26], [-deep * 0.25, w * 0.4, h * 0.41], [0, w / 2, h / 2]], { p, seg: 24, m }));
+  b.pieces.push(disc("knob", Math.min(w, h) * 0.1, 0.01, "z", [at[0], at[1], at[2] - deep], 12));
+}
+
+/**
+ * A horn-loaded box of the dance stack: a black cabinet whose front is a well (its walls run the full depth) filled by
+ * its horn mouths, the maker's purple plate on the top rail, bar handles on the sides and the speaker jacks on the back.
+ */
+function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number][], deep: number): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, t = 0.04, front = d / 2;
+  b.pieces.push(box("paint", [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
+  for (const s of [-1, 1]) b.pieces.push(box("paint", [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
+  for (const y of [t / 2, h - t / 2]) b.pieces.push(box("paint", [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
+  b.pieces.push(box("knob", [w - 2 * t, h - 2 * t, 0.01], [0, h / 2, front - deep]));
+  for (const [x, y, mw, mh] of mouths) mouth(b, mw, mh, deep * 0.92, [x, y, front - 0.004]);
+  b.pieces.push(box("badge", [0.15, 0.026, 0.004], [w / 2 - t - 0.1, h - t / 2, front + 0.001]));
+  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * 0.6, -d * 0.1], s > 0 ? "x" : "-x", 0.18, 0.012));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
+  plate(b, w * 0.3, h * 0.2, [0, h * 0.45, -d / 2 - 0.004]);
+  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
+  mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
+  return b;
+}
+const midHigh = () => hornCab("stack-mid-high", [[-0.09, 0.25, 0.47, 0.41], [0.245, 0.25, 0.17, 0.2]], 0.32);
+const midBass = () => hornCab("stack-mid-bass", [[0, 0.375, 0.66, 0.66]], 0.42);
+const hornSub = () => hornCab("horn-sub-21", [[0, 0.46, 1.01, 0.5]], 0.55);
+
+/**
+ * The sculpted three-way: one moulded teal shell, round in plan and swelling at the waist like a pebble on end, with
+ * three round horn mouths stacked down its face (low-mid, mid, high, largest at the bottom), a pole cup under it and
+ * the speaker jacks on a plate at the back.
+ */
+function sculpted(): Build {
+  const b: Build = { pieces: [], marks: [] };
+  b.pieces.push(loft("shell", [R(0.012, 0.09, 0.12, { cz: -0.02 }), R(0.1, 0.17, 0.21), R(0.28, 0.206, 0.25, { cz: 0.01 }), R(0.5, 0.2, 0.24),
+    R(0.68, 0.165, 0.2, { cz: -0.01 }), R(0.8, 0.11, 0.15, { cz: -0.02 }), R(0.848, 0.04, 0.06, { cz: -0.03 })], { seg: 22, smooth: true }));
+  for (const [y, r, z] of [[0.27, 0.15, 0.255], [0.52, 0.112, 0.238], [0.71, 0.07, 0.19]] as const) {
+    const m = new THREE.Matrix4().makeTranslation(0, y, z);
+    b.pieces.push(lathe("panel", [[-0.01, r * 0.18, r * 0.18], [0.006, r * 0.55, r * 0.55], [0.018, r, r]], { seg: 24, m }));
+    b.pieces.push(lathe("metal", [[0.018, r, r], [0.022, r + 0.008, r + 0.008], [0.016, r + 0.014, r + 0.014]], { seg: 24, m }));
+    b.pieces.push(disc("knob", r * 0.16, 0.012, "z", [0, y, z - 0.004], 10));
+  }
+  b.pieces.push(disc("metal", 0.026, 0.008, "y", [0, 0.004, 0], 16), disc("knob", 0.018, 0.003, "y", [0, 0.0015, 0], 16));
+  plate(b, 0.13, 0.08, [0, 0.42, -0.243]);
+  jacks(b, ["speaker-in", "speaker-out"], "back", [-0.03, 0.42, -0.253], [0.06, 0, 0]);
+  mark(b, "grab", [0, 0.86, 0]);
+  mark(b, "pole-cup", [0, 0.004, 0], [0, -1, 0]);
+  return b;
+}
+
+/** A low-profile arc sub: a squat cabinet tapering to the back, a full grille, a teal cap like the tops it carries, and
+ * a pole socket on top for them. */
+function arcSub(): Build {
+  const [w, h, d] = GEAR_SIZES["arc-sub-18"], b: Build = { pieces: [], marks: [] }, y0 = 0.014, g = 0.014, fh = h - y0 - 0.03;
+  b.pieces.push(rounded("paint", { wf: w - 0.01, wb: w * 0.86, h: fh, d: d - g, r: 0.03, e: 0.012, y0, z0: -g / 2 }));
+  b.pieces.push(...grilleSlab(w - 0.04, fh - 0.02, g + 0.002, y0 + fh / 2, d / 2 - g - 0.001, 0.02));
+  b.pieces.push(...cone(0.19, 0.009, new THREE.Matrix4().makeTranslation(0, y0 + fh / 2, d / 2 - g + 0.011)));
+  b.pieces.push(rounded("shell", { wf: w - 0.03, wb: w * 0.84, h: 0.03, d: d - 0.04, r: 0.03, e: 0.01, y0: y0 + fh, z0: -0.01 }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.06, y0 + 0.002, 0.06], [x * (w / 2 - 0.08), (y0 + 0.002) / 2, z * (d / 2 - 0.08)], 0.006));
+  b.pieces.push(disc("metal", 0.026, 0.005, "y", [0, h - 0.002, 0], 16));
+  plate(b, w * 0.3, h * 0.25, [0, h * 0.45, -d / 2 - 0.004]);
+  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
+  mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
+  mark(b, "pole", [0, h - 0.005, 0], [0, 1, 0]);
+  return b;
+}
+
+/** A stage's 12U rack: a tall case on casters, three amps in the rails, the inputs and two rows of speaker outs behind. */
+function ampRack12(): Build {
+  const [w, h, d] = GEAR_SIZES["amp-rack-12u"], b: Build = { pieces: [], marks: [] }, wheel = 0.045, floor = wheel * 2 + 0.005, ch = h - floor;
+  b.pieces.push(box("paint", [w, ch, d - 0.02], [0, floor + ch / 2, -0.01], { bevel: 0.014 }));
+  for (let i = 0; i < 3; i++) {
+    const y = floor + ch * (0.18 + i * 0.32);
+    b.pieces.push(box("panel", [w - 0.04, ch * 0.24, 0.012], [0, y, d / 2 - 0.016]));
+    for (const x of [-1, 1]) b.pieces.push(...handle("chrome", [x * (w / 2 - 0.045), y, d / 2 - 0.01], "z", ch * 0.14, 0.008));
+    for (let k = 0; k < 4; k++) b.pieces.push(disc("light", 0.004, 0.006, "z", [-w * 0.3 + k * 0.03, y + 0.02, d / 2 - 0.008], 4));
+  }
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", wheel, 0.03, "x", [x * (w / 2 - 0.07), wheel, z * (d / 2 - 0.07)], 8));
+  for (const x of [-1, 1]) b.pieces.push(...handle("metal", [x * w / 2, floor + ch * 0.7, 0], x > 0 ? "x" : "-x", 0.18, 0.012));
+  b.pieces.push(box("panel", [w * 0.84, ch * 0.6, 0.008], [0, floor + ch * 0.5, -d / 2 - 0.012]));
+  const back = -d / 2 - 0.016;
+  jacks(b, numbered("xlr-in", 4), "back", [-0.21, floor + ch * 0.74, back], [0.06, 0, 0]);
+  jacks(b, numbered("speaker-out", 8).slice(0, 4), "back", [-0.21, floor + ch * 0.56, back], [0.06, 0, 0], 0.014);
+  jacks(b, numbered("speaker-out", 8).slice(4), "back", [-0.21, floor + ch * 0.44, back], [0.06, 0, 0], 0.014);
+  jacks(b, ["power-in"], "back", [0.16, floor + ch * 0.3, back], [0, 0, 0], 0.02);
+  mark(b, "grab", [w / 2 + 0.012, floor + ch * 0.7, 0], [1, 0, 0]);
+  return b;
+}
+
+/** The site's 100 kVA set: a silenced canopy on a two-axle trailer, louvres at both ends, an exhaust stack on the roof,
+ * the drawbar and jockey wheel at the front, and the three-phase outlets on the back panel. */
+function siteGenerator(): Build {
+  const [w, h, d] = GEAR_SIZES["generator-100kva"], b: Build = { pieces: [], marks: [] }, deck = 0.5, canopy = h - deck - 0.12, cd = d - 0.6;
+  const cz = -d / 2 + cd / 2;
+  b.pieces.push(box("metal", [w * 0.7, 0.12, cd - 0.1], [0, deck - 0.06, cz]));
+  for (const z of [cz - 0.5, cz + 0.5]) for (const s of [-1, 1]) b.pieces.push(disc("rubber", 0.33, 0.2, "x", [s * (w / 2 - 0.08), 0.33, z], 12));
+  b.pieces.push(box("lid", [w, canopy, cd], [0, deck + canopy / 2, cz], { bevel: 0.03 }));
+  for (const z of [cz - cd / 2 - 0.002, cz + cd / 2 + 0.002]) for (let k = 0; k < 7; k++) b.pieces.push(box("knob", [w * 0.7, 0.03, 0.006], [0, deck + canopy * 0.25 + k * 0.1, z]));
+  for (const s of [-1, 1]) for (const z of [cz - cd / 4, cz + cd / 4]) b.pieces.push(box("panel", [0.006, canopy * 0.8, cd * 0.4], [s * (w / 2 + 0.002), deck + canopy / 2, z]));
+  b.pieces.push(disc("metal", 0.06, 0.12, "y", [0, deck + canopy + 0.06, cz - cd * 0.3], 10));
+  b.pieces.push(rod("metal", [0, deck - 0.05, cz + cd / 2], [0, 0.45, d / 2 - 0.05], 0.04));
+  b.pieces.push(disc("rubber", 0.08, 0.06, "x", [0, 0.08, d / 2 - 0.12], 10), rod("metal", [0, 0.08, d / 2 - 0.12], [0, 0.45, d / 2 - 0.12], 0.025));
+  b.pieces.push(box("panel", [w * 0.5, 0.3, 0.01], [0, deck + 0.5, cz - cd / 2 - 0.008]));
+  jacks(b, numbered("power-out", 3), "back", [-0.15, deck + 0.5, cz - cd / 2 - 0.014], [0.15, 0, 0], 0.03);
+  mark(b, "grab", [0, 0.45, d / 2 - 0.05], [0, 0, 1]);
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
@@ -646,6 +769,13 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
+  "stack-mid-high": midHigh,
+  "stack-mid-bass": midBass,
+  "horn-sub-21": hornSub,
+  "sculpted-3way": sculpted,
+  "arc-sub-18": arcSub,
+  "amp-rack-12u": ampRack12,
+  "generator-100kva": siteGenerator,
 };
 
 type Built = { slots: [GearSlot, THREE.BufferGeometry][]; marks: Mark[] };
