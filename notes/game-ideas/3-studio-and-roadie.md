@@ -146,18 +146,27 @@ frequency, that frequency rings. A notch in Shape at that frequency, or turning 
 
 ### Steps
 
-Tonight's build ([#4849](https://github.com/QuinnsCode/RustyBuns/issues/4849), rungs 1 to 3):
+The overnight build of 2026-11-16 ([#4849](https://github.com/QuinnsCode/RustyBuns/issues/4849)) shipped rungs 1 to 4,
+all merged:
 
-- Wave 1: the app, first-person walk and carry, the garage ([#4850](https://github.com/QuinnsCode/RustyBuns/issues/4850));
-  `packages/gear`, the sound and power math ([#4851](https://github.com/QuinnsCode/RustyBuns/issues/4851)); the gear
-  models ([#4852](https://github.com/QuinnsCode/RustyBuns/issues/4852)).
-- Wave 2: cables and ramps ([#4853](https://github.com/QuinnsCode/RustyBuns/issues/4853)); the dive bar and the heat
-  map ([#4854](https://github.com/QuinnsCode/RustyBuns/issues/4854)); hearing the speakers as you walk
-  ([#4855](https://github.com/QuinnsCode/RustyBuns/issues/4855)).
-- Wave 3: the bigger bar, amp rack and breakers ([#4856](https://github.com/QuinnsCode/RustyBuns/issues/4856)); the
-  cozy-to-sim dial and the clock ([#4857](https://github.com/QuinnsCode/RustyBuns/issues/4857)).
+- Wave 1: the app, first-person walk and carry, the garage ([#4867](https://github.com/QuinnsCode/RustyBuns/pull/4867));
+  `packages/gear`, the sound and power math ([#4866](https://github.com/QuinnsCode/RustyBuns/pull/4866)), and its
+  `compile()`, which says which speakers are fed and what's wrong ([#4874](https://github.com/QuinnsCode/RustyBuns/pull/4874));
+  the gear models ([#4869](https://github.com/QuinnsCode/RustyBuns/pull/4869)).
+- Wave 2: cables and ramps, with the real models in the app ([#4879](https://github.com/QuinnsCode/RustyBuns/pull/4879));
+  the dive bar with aiming and the heat map ([#4876](https://github.com/QuinnsCode/RustyBuns/pull/4876)); hearing the
+  speakers as you walk ([#4877](https://github.com/QuinnsCode/RustyBuns/pull/4877)).
+- Wave 3: the bigger bar, amp rack and breakers ([#4882](https://github.com/QuinnsCode/RustyBuns/pull/4882)); the
+  cozy-to-sim dial and the doors clock ([#4883](https://github.com/QuinnsCode/RustyBuns/pull/4883)); and rung 4 early,
+  the park with a generator, distro and the houses' noise limit ([#4886](https://github.com/QuinnsCode/RustyBuns/pull/4886)).
 
-After that: the venues above, the crew, then the roadie job: the band's inputs and line check
+Play it with `cd apps/load-in && bun run dev`, `?level=garage | dive-bar | bigger-bar | park`. The owner's play-test is
+[#4889](https://github.com/QuinnsCode/RustyBuns/issues/4889); the look and feel climb started at
+[#4888](https://github.com/QuinnsCode/RustyBuns/issues/4888).
+
+After that: the desert night party ([#4860](https://github.com/QuinnsCode/RustyBuns/issues/4860)), the arenas
+([#4861](https://github.com/QuinnsCode/RustyBuns/issues/4861), [#4862](https://github.com/QuinnsCode/RustyBuns/issues/4862)),
+the crew ([#4863](https://github.com/QuinnsCode/RustyBuns/issues/4863)), then the roadie job: the band's inputs and line check
 ([#4843](https://github.com/QuinnsCode/RustyBuns/issues/4843)), the show
 ([#4844](https://github.com/QuinnsCode/RustyBuns/issues/4844)), strike ([#4845](https://github.com/QuinnsCode/RustyBuns/issues/4845)),
 the tour ([#4846](https://github.com/QuinnsCode/RustyBuns/issues/4846)). The circuit solver joins `packages/gear` in

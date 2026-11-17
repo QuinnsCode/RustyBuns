@@ -161,6 +161,26 @@ const list: Gear[] = [
     draw: { idle: 40, loud: 500 },
   },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
+  // Speakers that hang: a line array box (flown in a column from a rigging point, its splay to the next box set at the
+  // rear pins), and a small box for the front rows the arrays shoot over.
+  {
+    id: "line-array-10",
+    what: "line array box, two 10\" and a horn",
+    size: box(0.74, 0.3, 0.5),
+    kg: 36,
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 101, maxSpl: 138, ratedWatts: 1200, ohms: null, coverage: { h: 110, v: 10 }, lowCut: 55, highCut: 20000, rearLoss: 22 },
+    draw: { idle: 40, loud: 400 },
+  },
+  {
+    id: "fill-8-powered",
+    what: "8\" powered front fill",
+    size: box(0.28, 0.42, 0.25),
+    kg: 9,
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 95, maxSpl: 122, ratedWatts: 300, ohms: null, coverage: { h: 100, v: 70 }, lowCut: 70, highCut: 20000, rearLoss: 18 },
+    draw: { idle: 15, loud: 90 },
+  },
   { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },

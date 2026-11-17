@@ -21,6 +21,8 @@ const SNAP = Math.PI / 12;
 /** A piece of gear on the floor: its own key and its id in @rustybuns/gear, where its size, weight and jacks come from. */
 export interface Item {
   key: string; gear: string; x: number; y: number; z: number; rot: number;
+  /** Hung from a rigging point (the arena): never picked up off the floor, stacked on, or walked into once it is overhead. */
+  hung?: boolean;
   /** Fuel in it now, litres: a generator's tank or a jerry can. */
   litres?: number;
 }
@@ -40,7 +42,11 @@ export interface Level {
   outdoor?: boolean;
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
   caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
+  /** The box truck the gear came in, parked outside with its back open: its bed, floor to roof. The back (the open end)
+   * is at z0, the bulkhead behind the cab at z1. */
+  truck?: Truck;
 }
+export interface Truck { x0: number; x1: number; z0: number; z1: number; h: number }
 
 /** A friend in your crew as the room last told you: where they stand and what is in their hands. */
 export interface Mate { id: string; name: string; x: number; z: number; yaw: number; crouch: boolean; holding: string | null }
@@ -60,11 +66,12 @@ export interface World {
  * speaker across the way in, and a road case of cables and a cable ramp by the left wall. */
 export const GARAGE: Level = {
   name: "garage",
-  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 9.75 },
+  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 13.75 },
   room: { x0: -3, x1: 3, z0: 0, z1: 7, height: 2.6, door: 4.8 },
   outlets: [{ key: "outlet", x: -2.2, y: 0.3, z: 0.01 }],
   walkways: [{ name: "the way in", x0: -0.4, x1: 0.4, z0: 0.4, z1: 9.75 }],
   start: { x: -0.6, z: 9.5, yaw: 0 },
+  truck: { x0: -1.1, x1: 1.1, z0: 10, z1: 14, h: 2.2 },
   items: [
     { key: "amp-head", gear: "amp-head", x: -1.4, y: 0, z: 0.45, rot: 0 },
     { key: "cab-4x12", gear: "cab-4x12", x: 0.9, y: 0, z: 7.9, rot: 0 },
@@ -104,12 +111,12 @@ export const wheeled = (gearId: string) => !!gear(gearId).generator;
 export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
 
 /** A box's footprint as its four corners on the floor. */
-function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
+export function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
   const c = Math.cos(rot), s = Math.sin(rot), hw = w / 2, hd = d / 2;
   return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => [x + a * c + b * s, z - a * s + b * c]);
 }
 /** Whether two footprints overlap (separating axes, two boxes on the floor). */
-function overlap(a: [number, number][], b: [number, number][]): boolean {
+export function overlap(a: [number, number][], b: [number, number][]): boolean {
   for (const poly of [a, b]) for (let i = 0; i < 2; i++) {
     const [x0, z0] = poly[i], [x1, z1] = poly[i + 1], nx = z1 - z0, nz = x0 - x1;
     const pa = a.map(([x, z]) => x * nx + z * nz), pb = b.map(([x, z]) => x * nx + z * nz);
@@ -117,7 +124,7 @@ function overlap(a: [number, number][], b: [number, number][]): boolean {
   }
   return true;
 }
-const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
+export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
 
 /** Where the held item sits now: in front of you, low if it's heavy, turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
@@ -162,7 +169,7 @@ export function seeCrew(w: World, crew: Mate[]): boolean {
 function collide(w: World) {
   const { bounds: b } = w.level, you = w.you;
   for (const i of w.items) {
-    if (i.key === w.held?.key || dims(i)[1] < LOW || w.crew.some((m) => m.holding === i.key)) continue;
+    if (i.key === w.held?.key || dims(i)[1] < LOW || (i.hung && i.y > EYE) || w.crew.some((m) => m.holding === i.key)) continue;
     const [sw, , sd] = dims(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
     const dx = you.x - i.x, dz = you.z - i.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
@@ -177,6 +184,12 @@ function collide(w: World) {
   }
   you.x = clamp(you.x, b.x0, b.x1);
   you.z = clamp(you.z, b.z0, b.z1);
+  // The truck's side walls: in by the open back, never through the sides.
+  const t = w.level.truck;
+  if (t && you.z > t.z0 && you.x > t.x0 - RADIUS && you.x < t.x1 + RADIUS) {
+    const mid = (t.x0 + t.x1) / 2, half = (t.x1 - t.x0) / 2, off = you.x - mid;
+    if (Math.abs(off) > half - RADIUS) you.x = mid + Math.sign(off) * (Math.abs(off) < half ? half - RADIUS : half + RADIUS);
+  }
 }
 
 /** One tick: walk and turn by the input, at the pace of what you carry. */
@@ -208,7 +221,7 @@ export function aimed(w: World): Item | null {
   const f = facing(w.you.yaw);
   let best: Item | null = null, bestD = Infinity;
   for (const i of w.items) {
-    if (i.key === w.held?.key) continue;
+    if (i.key === w.held?.key || i.hung) continue;
     const dx = i.x - w.you.x, dz = i.z - w.you.z, d = Math.hypot(dx, dz);
     if (d > REACH || (d > 0.3 && (dx * f.x + dz * f.z) / d < 0.7)) continue;
     if (d < bestD) best = i, bestD = d;
@@ -232,7 +245,7 @@ export function pickUp(w: World, key: string): Answer {
   const team = canTeam && (!!mate || (feltKg(g.kg) > MAX_LIFT && w.crew.length > 0));
   if (!team && feltKg(g.kg) > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
   const fp = footprint(i), top = i.y + dims(i)[1];
-  if (w.items.some((o) => o !== i && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
+  if (w.items.some((o) => o !== i && !o.hung && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
   w.held = team ? { key, rel: i.rot - w.you.yaw, team: { span: 0 } } : { key, rel: i.rot - w.you.yaw };
   if (team) seeCrew(w, w.crew);
   return { ok: true };
@@ -252,7 +265,7 @@ export function putDown(w: World): Answer {
   const x = clamp(p.x, r.x0 + half, r.x1 - half), z = clamp(p.z, r.z0 + half, w.level.bounds.z1 + RADIUS - half);
   const fp = corners(x, z, rot, sw, sd);
   let y = 0;
-  for (const o of w.items) if (o !== i && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
+  for (const o of w.items) if (o !== i && !o.hung && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
   Object.assign(i, { x, y, z, rot });
   w.held = null;
   collide(w);
