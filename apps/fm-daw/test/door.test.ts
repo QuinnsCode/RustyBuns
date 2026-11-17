@@ -36,7 +36,7 @@ const fake = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   if (u.pathname === "/me/avatar") {
     const who = tokens.get(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!who) return new Response("sign in", { status: 401 });
-    return Response.json({ avatar: people[who]!.look, chosen: true });
+    return Response.json({ avatar: people[who]!.look, saved: true });
   }
   return new Response("", { status: 404 });
 } });

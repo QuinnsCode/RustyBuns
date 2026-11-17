@@ -3,13 +3,14 @@
 // what they don't have. The World checks every grant (src/grants.ts); this only shows them and asks.
 import { useLayoutEffect, useRef, useState } from "react";
 import { nameOf, type ChatView } from "../chat.ts";
-import { CANS, leaders, may, type Can, type GrantClient, type GrantServer } from "../grants.ts";
+import { TRACKS } from "../engine/params.ts";
+import { CANS, leaders, may, playTracks, type Can, type GrantClient, type GrantServer } from "../grants.ts";
 import type { Floor } from "../project.ts";
 import { Icon } from "./Chat.tsx";
 
 const WORD: Record<Can, string> = { play: "Play", edit: "Edit", mix: "Mix", lead: "Lead" };
 const TIP: Record<Can, string> = {
-  play: "Play into the room: notes, takes and the studio's gear", edit: "Edit the groove: notes, sounds, tempo and loops",
+  play: "Play into the room: notes, takes and the studio's gear (off, pick the tracks they may play)", edit: "Edit the groove: notes, sounds, tempo and loops",
   mix: "Work the desk: mutes, solos, EQ, space and squash", lead: "Lead: grant the others, hold the floor, set the code",
 };
 
@@ -60,6 +61,22 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
                       : <span key={c} className={has ? "ms on" : "ms"} title={TIP[c]}>{WORD[c]}</span>;
                   })}
                 </span>
+                {!isLead && !can(id, "play") && (lead && !mine && id !== grants.maker || playTracks(grants, id)) && (() => {
+                  // no whole-seat play: the leader picks the tracks they may play, one toggle a track
+                  const some = playTracks(grants, id) ?? [];
+                  const now = CANS.filter((x) => x !== "lead" && can(id, x));
+                  const pick = (t: number) => props.onGrant({ t: "grant", who: id, can: now, tracks: some.includes(t) ? some.filter((x) => x !== t) : [...some, t] });
+                  return (
+                    <span className="person-tracks" role="group" aria-label="Tracks they may play">
+                      {Array.from({ length: TRACKS }, (_, t) => {
+                        const on = some.includes(t), tip = `${on ? "Plays" : "Let them play"} track ${t + 1}`;
+                        return lead && !mine
+                          ? <button key={t} className={on ? "ms on" : "ms"} aria-pressed={on} title={tip} onClick={() => pick(t)}>{t + 1}</button>
+                          : on ? <span key={t} className="ms on" title={`Plays track ${t + 1}`}>{t + 1}</span> : null;
+                      })}
+                    </span>
+                  );
+                })()}
                 {lead && asked && !mine && <span className="person-ask">
                   <span>Asks to {asked}</span>
                   <button className="ghost" onClick={() => props.onGrant({ t: "answer", who: id, yes: true })}>Yes</button>

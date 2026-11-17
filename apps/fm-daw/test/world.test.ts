@@ -492,7 +492,7 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(ben.others.size).toBe(0);
 });
 
-test("grants: the leader lets one play, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {
+test("grants: the leader lets one play, another plays one track only, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {
   const { bucket, worldEnv } = await edge();
   const room = "humble-jade-heron";
   const first = await setup(worldEnv, room);
@@ -524,6 +524,19 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
   said(bo, { t: "live", e: note });
   expect(bo.sent).toContainEqual({ t: "live", from: expect.any(Number), e: note });   // Amy is heard
   expect(amy.sent.some((m) => m.t === "live")).toBe(false);                          // Bo is not
+
+  // the leader lets Bo play track 3 only: his note there is heard, one on Amy's track 1 isn't; then back to the floor's
+  said(lead, { t: "grant", who: boId, can: [], tracks: [2] });
+  await settle();
+  expect(lastGrants(bo).grants.tracks).toEqual({ [boId]: [2] });
+  amy.sent = [];
+  said(bo, { t: "live", e: note });
+  said(bo, { t: "live", e: { ...note, track: 2 } });
+  expect(amy.sent.filter((m) => m.t === "live").map((m) => m.e.track)).toEqual([2]);
+  said(lead, { t: "grant", who: boId, can: null });
+  await settle();
+  expect(lastGrants(bo).grants.tracks).toBeUndefined();
+  amy.sent = []; bo.sent = [];
 
   // Bo raises a hand to edit; the leader sees it and says No
   said(bo, { t: "ask", can: "edit" });
@@ -670,47 +683,67 @@ test("hands in the jam room: on a held floor Bo is listen only, raises his hand,
   expect(amy.ws.sent).toContainEqual({ t: "live", from: expect.any(Number), e: { t: "on", track: 0, midi: 60, vel: 0.8 } });
 });
 
-test("wind back: play a while, hear it 5 minutes back alone, the leader brings everyone back, undo, and a reset keeps the ladder", async () => {
+test("wind back: play a while, hear it 5 minutes back alone, whoever holds Lead brings everyone back, undo, and the ladder keeps its takes through an empty room and a reset", async () => {
   const { bucket, worldEnv } = await edge();
   const room = "mellow-teal-otter", MAKER = "a".repeat(32);
   const t0 = Date.UTC(2026, 10, 16, 20, 0, 0);
   setSystemTime(new Date(t0));
-  const { world, join, leave } = await setup(worldEnv, room);
+  const { world, join, leave, store } = await setup(worldEnv, room);
   const maker = (await join({}, MAKER)).ws, guest = (await join({}, "b".repeat(32))).ws;
   const send = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
+  for (const [ws, k] of [[maker, "a"], [guest, "b"]] as const) send(ws, { t: "hello", key: k.repeat(48), name: "" });
+  await new Promise((r) => setTimeout(r, 5));                     // hello hashes the key
+  const guestId = guest.sent.find((m) => m.t === "chat").you;
   send(maker, { t: "init", project: { ...project, bpm: 100 } });
-  // a twelve-minute jam: the guest moves the tempo once a minute
-  for (let m = 1; m <= 12; m++) { setSystemTime(new Date(t0 + m * 60_000 + 10_000)); send(guest, { t: "op", op: { t: "global", bpm: 100 + m } }); }
+  const s16 = new Int16Array(TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
+  const chunks = toChunks("take0001", s16);
+  // a twelve-minute jam: the guest moves the tempo once a minute, records a take in minute 2 and takes it off in minute 9
+  for (let m = 1; m <= 12; m++) {
+    setSystemTime(new Date(t0 + m * 60_000 + 10_000));
+    send(guest, { t: "op", op: { t: "global", bpm: 100 + m } });
+    if (m === 2) { for (const c of chunks) send(guest, c); send(guest, { t: "op", op: { t: "take", track: 3, take: { id: "take0001", beat: 0, frames: s16.length } } }); }
+    if (m === 9) send(guest, { t: "op", op: { t: "take", track: 3, take: null } });
+  }
+  await settle();
+
+  // the maker holds the floor and hands the guest Lead
+  send(maker, { t: "floor", state: "held" });
+  send(maker, { t: "grant", who: guestId, can: ["lead"] });
   await settle();
 
   setSystemTime(new Date(t0 + 12.5 * 60_000));
   maker.sent = []; guest.sent = [];
   send(guest, { t: "rewind", ago: 5 });
   await settle();
-  // 5 minutes back is 7:30: the groove as minute 7 began, after the tempo move of minute 6; sent to no one else
-  expect(guest.sent).toEqual([{ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: expect.objectContaining({ bpm: 106 }) }]);
+  // 5 minutes back is 7:30: the groove as minute 7 began, after the tempo move of minute 6, with the take and its sound; sent to no one else
+  expect(guest.sent.filter((m) => m.t !== "takeBytes")).toEqual([{ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: expect.objectContaining({ bpm: 106 }) }]);
+  expect(guest.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
   expect(maker.sent).toEqual([]);
   const back = guest.sent[0].project;
+  expect(back.tracks[3].take.id).toBe("take0001");
 
-  // the leader brings everyone back there (an edit), then undoes it (an edit back)
-  send(maker, { t: "op", op: { t: "replace", project: back } });
-  expect(guest.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 106 } } });
-  send(maker, { t: "op", op: { t: "replace", project: { ...back, bpm: 112 } } });
-  expect(guest.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 112 } } });
+  // the guest leads now: they bring everyone back there (an edit), then undo it (an edit back)
+  send(guest, { t: "op", op: { t: "replace", project: back } });
+  expect(maker.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 106 } } });
+  send(guest, { t: "op", op: { t: "replace", project: { ...apply(back, { t: "take", track: 3, take: null }), bpm: 112 } } });
+  expect(maker.sent.at(-1)).toMatchObject({ t: "op", op: { t: "replace", project: { bpm: 112 } } });
 
   send(guest, { t: "rewind", ago: 1440 });
   await settle();
   expect(guest.sent.at(-1)).toMatchObject({ t: "rewound", ago: 1440, project: null });    // the sesh isn't a day old
 
-  // everyone leaves, the Durable Object is reset: the ladder comes back from the bucket with the groove
+  // everyone leaves: the take is on no track, but the ladder still has it, so its sound stays
   leave(maker); leave(guest);
   await settle();
+  expect(store.has("take:take0001:0")).toBe(true);
   expect(JSON.parse(bucket.get(`sesh/${room}.json`)!).ladder.snaps.length).toBeGreaterThan(5);
+  // the Durable Object is reset: the ladder and its take come back from the bucket with the groove
   const fresh = await setup(worldEnv, room);
   const again = (await fresh.join()).ws;
   fresh.world.webSocketMessage(again, JSON.stringify({ t: "rewind", ago: 5 }));
   await settle();
-  expect(again.sent.at(-1)).toMatchObject({ t: "rewound", ago: 5, at: t0 + 7 * 60_000, project: { bpm: 106 } });
+  expect(again.sent.findLast((m) => m.t === "rewound")).toMatchObject({ ago: 5, at: t0 + 7 * 60_000, project: { bpm: 106 } });
+  expect(again.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
 });
 
 test("jam room agent: no grant, it raises its hand; the leader says yes, and it makes an instrument over MCP, sits at it and plays for her", async () => {
