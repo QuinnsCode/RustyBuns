@@ -44,6 +44,7 @@ export const GEAR_SIZES = {
   "stand-tripod": [0.9, 1.2, 0.9],
   "mic-stand": [0.6, 1.6, 0.6],
   "sand-cart": [0.8, 0.45, 1.2],
+  "sand-dolly": [1.1, 0.15, 1.0],
   "jerry-can-20l": [0.35, 0.47, 0.17],
   "line-array-box": [1.0, 0.32, 0.55],
   "line-array-10": [0.74, 0.3, 0.5],
@@ -524,6 +525,18 @@ function sandCart(): Build {
   return b;
 }
 
+/** A dance stack's dolly: a plywood deck on four fat balloon tyres tucked under it, a strap ring at each corner. */
+function sandDolly(): Build {
+  const [w, h, d] = GEAR_SIZES["sand-dolly"], b: Build = { pieces: [], marks: [] }, deck = 0.03, tyre = (h - deck) / 2;
+  b.pieces.push(box("paint", [w, deck, d], [0, h - deck / 2, 0], { bevel: 0.005 }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    b.pieces.push(disc("rubber", tyre, 0.1, "x", [x * (w / 2 - 0.12), tyre, z * (d / 2 - 0.14)], 12));
+    b.pieces.push(rod("metal", [x * (w / 2 - 0.01), h - deck, z * (d / 2 - 0.01)], [x * (w / 2 - 0.01), h, z * (d / 2 - 0.01)], 0.012));
+  }
+  mark(b, "grab", [0, h, -d / 2], [0, 0, -1]);
+  return b;
+}
+
 /** A 20 litre jerry can: a tall flat can with a three-bar handle on top and a spout at one corner. */
 function fuelCan(): Build {
   const [w, h, d] = GEAR_SIZES["jerry-can-20l"], b: Build = { pieces: [], marks: [] }, body = h - 0.05;
@@ -974,6 +987,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "stand-tripod": stand,
   "mic-stand": micStand,
   "sand-cart": sandCart,
+  "sand-dolly": sandDolly,
   "jerry-can-20l": fuelCan,
   "bar-cooler": barCooler,
   "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
