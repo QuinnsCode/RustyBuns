@@ -69,11 +69,11 @@ export const GEAR_SIZES = {
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
- * sculpted array's moulded composite), badge (the dance stack's maker plate). */
+ * sculpted array's moulded composite), badge (the dance stack's maker plate), ink (the white print on a control face). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -82,7 +82,7 @@ export function gearLook(): GearLook {
     paint: std(0x1d1e20, 0.85), grille: std(0x2c2e31, 0.55, 0.6), metal: std(0x8a8d92, 0.4, 0.8), rubber: std(0x121212, 0.95),
     panel: std(0x3a3c40, 0.6, 0.3), lid: std(0xf2c230, 0.6), tolex: std(0x161514, 0.9), body: std(0x8f1f1f, 0.3, 0.1),
     chrome: std(0xd8dade, 0.15, 1), knob: std(0x0c0c0c, 0.5), light: new THREE.MeshBasicMaterial({ color: 0x45e06a }),
-    shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45),
+    shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45), ink: std(0xe4e2dc, 0.7),
   };
 }
 
@@ -239,13 +239,13 @@ type Face = "front" | "back" | "top" | "left" | "right";
 const NORMAL: Record<Face, THREE.Vector3Tuple> = { front: [0, 0, 1], back: [0, 0, -1], top: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
 
 /** Sockets in a row on a face, each a ring round an insert, with a mark. `at` is the face point of the first, `step` to the next. */
-function jacks(b: Build, names: string[], face: Face, at: THREE.Vector3Tuple, step: THREE.Vector3Tuple, r = 0.012) {
+function jacks(b: Build, names: string[], face: Face, at: THREE.Vector3Tuple, step: THREE.Vector3Tuple, r = 0.012, seg = 14) {
   const out = NORMAL[face], axis = face === "top" ? "y" : face === "front" || face === "back" ? "z" : "x";
   names.forEach((name, i) => {
     const p: THREE.Vector3Tuple = [at[0] + step[0] * i, at[1] + step[1] * i, at[2] + step[2] * i];
     const c: THREE.Vector3Tuple = [p[0] + out[0] * 0.004, p[1] + out[1] * 0.004, p[2] + out[2] * 0.004];
     // a socket: a metal ring round a black insert
-    b.pieces.push(disc("metal", r, 0.008, axis, c, 14), disc("knob", r * 0.74, 0.009, axis, c, 14));
+    b.pieces.push(disc("metal", r, 0.008, axis, c, seg), disc("knob", r * 0.74, 0.009, axis, c, seg));
     b.marks.push({ name: `jack:${name}`, at: [p[0] + out[0] * 0.008, p[1] + out[1] * 0.008, p[2] + out[2] * 0.008], out });
   });
 }
@@ -682,6 +682,80 @@ function lineArray(): Build {
 /** Pieces built flat (y up) moved onto a sloped face: `m` places them. */
 const onto = (m: THREE.Matrix4, pieces: Piece[]) => pieces.map((p) => (p.geo.applyMatrix4(m), p));
 
+/** A plain stroke letter for printing on a face: its width (the letter is 1 tall) and its strokes, [x1, y1, x2, y2] in
+ * 0..1 of that width and height. Blocky, as small print on gear reads at arm's length. */
+const STROKES: Record<string, [number, number[][]]> = (() => {
+  const C = [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0, 1, 0]], O = [...C, [1, 0, 1, 1]], P = [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0.5], [0, 0.5, 1, 0.5]];
+  const S = [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], minus = [[0.1, 0.5, 0.9, 0.5]];
+  const g: Record<string, number[][]> = {
+    A: [[0, 0, 0.5, 1], [0.5, 1, 1, 0], [0.24, 0.45, 0.76, 0.45]], B: [[0, 0, 0, 1], [0, 1, 0.85, 1], [0, 0.5, 1, 0.5], [0, 0, 1, 0], [0.85, 1, 0.85, 0.5], [1, 0.5, 1, 0]],
+    C, D: [[0, 0, 0, 1], [0, 1, 0.6, 1], [0.6, 1, 1, 0.65], [1, 0.65, 1, 0.35], [1, 0.35, 0.6, 0], [0.6, 0, 0, 0]], E: [...C, [0, 0.5, 0.75, 0.5]],
+    F: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.75, 0.5]], G: [...C, [1, 0, 1, 0.45], [1, 0.45, 0.55, 0.45]], H: [[0, 0, 0, 1], [1, 0, 1, 1], [0, 0.5, 1, 0.5]],
+    I: [[0, 0, 0, 1]], K: [[0, 0, 0, 1], [0, 0.45, 1, 1], [0.35, 0.65, 1, 0]], L: [[0, 0, 0, 1], [0, 0, 1, 0]], M: [[0, 0, 0, 1], [1, 0, 1, 1], [0, 1, 0.5, 0.45], [0.5, 0.45, 1, 1]],
+    N: [[0, 0, 0, 1], [1, 0, 1, 1], [0, 1, 1, 0]], O, P, R: [...P, [0.4, 0.5, 1, 0]], S, T: [[0, 1, 1, 1], [0.5, 1, 0.5, 0]], U: [[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 1, 1]],
+    V: [[0, 1, 0.5, 0], [0.5, 0, 1, 1]], W: [[0, 1, 0.2, 0], [0.2, 0, 0.5, 0.6], [0.5, 0.6, 0.8, 0], [0.8, 0, 1, 1]], X: [[0, 0, 1, 1], [0, 1, 1, 0]],
+    "0": O, "1": [[0.6, 0, 0.6, 1], [0.6, 1, 0, 0.7]], "2": [[0, 1, 1, 1], [1, 1, 1, 0.5], [1, 0.5, 0, 0.5], [0, 0.5, 0, 0], [0, 0, 1, 0]],
+    "3": [[0, 1, 1, 1], [1, 1, 1, 0], [0, 0, 1, 0], [0.3, 0.5, 1, 0.5]], "4": [[0, 1, 0, 0.45], [0, 0.45, 1, 0.45], [0.8, 1, 0.8, 0]], "5": S,
+    "6": [[1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 1, 0.5], [1, 0.5, 0, 0.5]], "-": minus, "+": [...minus, [0.5, 0.2, 0.5, 0.8]],
+  };
+  return Object.fromEntries(Object.entries(g).map(([k, s]): [string, [number, number[][]]] => [k, [k === "I" ? 0 : k === "1" ? 0.3 : k === "-" || k === "+" ? 0.5 : 0.62, s]]));
+})();
+
+/** Text printed flat on a face that looks up (+y): `size` tall, centred on (x, z) at height y, reading left to right
+ * along +x with its top away from you (-z), as a control face reads from where its user stands. Each stroke is one
+ * flat strip in the `ink` slot, two triangles. */
+function print(text: string, x: number, y: number, z: number, size: number): Piece[] {
+  const t = size * 0.15, gap = size * 0.34, letters = [...text].map((c): [number, number[][]] => {
+    if (c === " ") return [0.62, []];
+    const g = STROKES[c];
+    if (!g) throw new Error(`print: no stroke letter for "${c}" in "${text}"`);
+    return g;
+  });
+  const wide = letters.reduce((s, [w]) => s + w * size, 0) + gap * Math.max(0, letters.length - 1), pos: number[] = [];
+  let left = x - wide / 2;
+  for (const [w, strokes] of letters) {
+    for (const [x1, y1, x2, y2] of strokes) {
+      const a = new THREE.Vector2(left + x1! * w * size, z - (y1! - 0.5) * size), b = new THREE.Vector2(left + x2! * w * size, z - (y2! - 0.5) * size);
+      const along = b.clone().sub(a).normalize().multiplyScalar(t / 2), side = new THREE.Vector2(-along.y, along.x);
+      a.sub(along); b.add(along);
+      const [p, q, r, s] = [a.clone().add(side), b.clone().add(side), b.clone().sub(side), a.clone().sub(side)];
+      // wound so the strip faces up
+      const up = (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) < 0;
+      for (const v of up ? [p, q, r, p, r, s] : [p, r, q, p, s, r]) pos.push(v.x, y, v.y);
+    }
+    left += w * size + gap;
+  }
+  if (!pos.length) return [];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  return [{ geo, slot: "ink" }];
+}
+
+/** Round domed dots round a vertical drum of radius `r` (a platter's strobe rim): `count` evenly round each row at
+ * the heights `rows`, all rows lined up, each a low dome `size` across, a hexagon fan with its normals bent round so it
+ * catches light as a round bump does. */
+function dots(slot: GearSlot, r: number, rows: number[], count: number, size: number): Piece {
+  const pos: number[] = [], nor: number[] = [], k = size / 2, rise = size * 0.3;
+  for (const y of rows) for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2, out = new THREE.Vector3(Math.sin(a), 0, Math.cos(a)), across = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
+    const centre = out.clone().multiplyScalar(r + rise).setY(y);
+    const rim = Array.from({ length: 6 }, (_, j) => {
+      const t = (j / 6) * Math.PI * 2, u = Math.cos(t), v = Math.sin(t);
+      return { p: out.clone().multiplyScalar(r).addScaledVector(across, u * k).setY(y + v * k), n: out.clone().multiplyScalar(0.55).addScaledVector(across, u).add(new THREE.Vector3(0, v, 0)).normalize() };
+    });
+    for (let j = 0; j < 6; j++) {
+      const p = rim[j]!, q = rim[(j + 1) % 6]!;
+      // centre, then the rim the way round that faces out
+      for (const [v, n] of [[centre, out], [p.p, p.n], [q.p, q.n]] as const) pos.push(...v.toArray()), nor.push(...n.toArray());
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return { geo, slot };
+}
+
 /** A direct-drive turntable: a heavy brushed plinth on damped feet, the platter (strobe dots round its rim, a slip mat
  * and a record on it) to the left, an S-shaped tonearm on its gimbal at the right rear with the counterweight behind
  * and the headshell in front, the pitch fader at the right front, start/stop and 33/45 at the left front. */
@@ -708,13 +782,10 @@ function turntable(): Build {
   b.pieces.push(box("knob", [0.024, 0.012, 0.016], [px, top + 0.006, d / 2 - 0.09], { bevel: 0.003 }));
   b.pieces.push(disc("chrome", 0.006, 0.02, "y", [px - 0.02, top + 0.01, d / 2 - 0.02], 8), disc("light", 0.004, 0.004, "y", [px - 0.02, top + 0.021, d / 2 - 0.02], 6));
 
-  // the platter part: its rim with four rows of strobe dots, the slip mat, a record and its label, the spindle
+  // the platter part: its rim with four even rows of round strobe dots, the slip mat, a record and its label, the spindle
   const pl: Piece[] = [];
   pl.push(disc("metal", platR, 0.02, "y", [0, 0.012, 0], 48));
-  for (let row = 0; row < 3; row++) for (let i = 0; i < 36; i++) {
-    const a = (i / 36) * Math.PI * 2 + (row % 2) * 0.044;
-    pl.push(box("chrome", [0.0032, 0.0028, 0.002], [Math.sin(a) * (platR + 0.0006), 0.0055 + row * 0.0045, Math.cos(a) * (platR + 0.0006)], { rot: [0, a, 0] }));
-  }
+  pl.push(dots("chrome", platR, [0.0052, 0.009, 0.0128, 0.0166], 72, 0.0026));
   pl.push(disc("rubber", 0.152, 0.003, "y", [0, 0.0235, 0], 40));
   pl.push(disc("knob", 0.1524, 0.0018, "y", [0, 0.026, 0], 48));
   pl.push(disc("lid", 0.05, 0.0004, "y", [0, 0.0271, 0], 28), box("paint", [0.03, 0.0005, 0.008], [0.018, 0.0274, 0]));
@@ -805,39 +876,64 @@ function deckMedia(): Build {
   return b;
 }
 
-/** A four-channel DJ mixer: a steel box with a flat face, per channel a trim, three EQ knobs and a colour filter, a
- * lit level meter and a long channel fader, the crossfader across the front, the master and headphone knobs down the
- * left and the effects down the right; the inputs (phono and line per channel), the outs and the ground post behind. */
+/** A four-channel DJ mixer: a steel body between two moulded side cheeks, a bevelled aluminium top plate screwed down
+ * over it with the control field printed in white (channel numbers, the knobs' names, a scale by each meter and
+ * fader); per channel a trim, three EQ knobs and a colour filter, a lit level meter and a long channel fader, the
+ * crossfader across the front, the master and headphone knobs down the left and the effects down the right; the inputs
+ * (phono and line per channel), the outs and the ground post behind. */
 function mixerDj(): Build {
-  const [w, h, d] = GEAR_SIZES["mixer-dj"], b: Build = { pieces: [], marks: [], parts: [] }, foot = 0.008, top = h - 0.008;
-  b.pieces.push(box("panel", [w, top - foot, d], [0, foot + (top - foot) / 2, 0], { bevel: 0.006 }));
-  b.pieces.push(box("paint", [w - 0.01, 0.0025, d - 0.01], [0, top + 0.0005, 0], { bevel: 0.001 }));
+  const [w, h, d] = GEAR_SIZES["mixer-dj"], b: Build = { pieces: [], marks: [], parts: [] }, foot = 0.008, top = h - 0.008, cheek = 0.007;
+  // the body, the top plate over it (its bevel shows bright round the field), the dark printed field on the plate
+  b.pieces.push(box("panel", [w - 2 * cheek, top - foot - 0.004, d], [0, foot + (top - foot - 0.004) / 2, 0], { bevel: 0.003 }));
+  b.pieces.push(box("metal", [w - 2 * cheek, 0.005, d - 0.004], [0, top - 0.0015, 0], { bevel: 0.0022 }));
+  b.pieces.push(box("paint", [w - 2 * cheek - 0.012, 0.0012, d - 0.018], [0, top + 0.0012, 0], { bevel: 0.0004 }));
+  const face = top + 0.0018, CH = [-0.0825, -0.0275, 0.0275, 0.0825], fz = 0.11, travel = 0.06, mz = 0.03, mLen = 0.06, ink = face + 0.0003;
+  // the side cheeks: moulded ends a little proud of the plate, the front corner rounded off, two screws in each
+  for (const s of [-1, 1]) {
+    b.pieces.push(prism("paint", [[d / 2, foot + 0.001], [d / 2, top - 0.014], [d / 2 - 0.016, top + 0.0035], [-d / 2 + 0.008, top + 0.0035], [-d / 2, top - 0.006], [-d / 2, foot + 0.001]], cheek, s * (w / 2 - cheek / 2), 0.0015));
+    for (const z of [-d / 4, d / 4]) b.pieces.push(...screw([s * (w / 2 + 0.0008), (foot + top) / 2, z], "x", 0.0028));
+  }
+  // the plate's screws, in the bright border round the field
+  for (const x of [-1, 1]) for (const z of [-0.18, 0, 0.18]) b.pieces.push(...screw([x * (w / 2 - cheek - 0.003), top + 0.0012, z], "y", 0.0017));
+  for (const x of [-0.06, 0.06]) b.pieces.push(...screw([x, top + 0.0012, -d / 2 + 0.0045], "y", 0.0017));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.012, foot, "y", [x * (w / 2 - 0.03), foot / 2, z * (d / 2 - 0.035)], 6));
-  const face = top + 0.00175, CH = [-0.0825, -0.0275, 0.0275, 0.0825], fz = 0.11, travel = 0.06, mz = 0.03, mLen = 0.06;
-  const knob = (x: number, z: number, r: number, slot: GearSlot = "knob") => b.pieces.push(
-    loft(slot, [R(0, r * 1.15), R(0.003, r * 1.15), R(0.004, r), R(0.014, r * 0.92)], { seg: 8, m: new THREE.Matrix4().makeTranslation(x, face, z) }),
-    box("chrome", [0.0012, 0.0008, r * 0.8], [x, face + 0.0142, z - r * 0.45]));
+  const say = (text: string, x: number, z: number, size = 0.0026) => b.pieces.push(...print(text, x, ink, z, size));
+  /** A knob, its white pointer line printed on its cap, and its name printed where the DJ sees it past the knob: to
+   * its left in a channel's column, in front of it elsewhere. */
+  const knob = (x: number, z: number, r: number, name: string, slot: GearSlot = "knob", side: "left" | "front" = "front") => {
+    b.pieces.push(loft(slot, [R(0, r * 1.15), R(0.003, r * 1.15), R(0.014, r * 0.92)], { seg: 8, m: new THREE.Matrix4().makeTranslation(x, face, z) }));
+    b.pieces.push(...print("I", x, face + 0.0141, z - r * 0.45, r * 0.8));
+    if (side === "left") say(name, x - 0.0195, z, 0.0024); else say(name, x, z + r * 1.15 + 0.003);
+  };
   CH.forEach((x, i) => {
-    knob(x, -0.165, 0.0085);
-    for (const z of [-0.13, -0.098, -0.066]) knob(x, z, 0.0095);
-    knob(x, -0.028, 0.011, "metal");
-    // the meter: a dark strip, the lit bar a part over it, filling from the front end back
+    knob(x, -0.165, 0.0085, "TRIM", "knob", "left");
+    for (const [z, name] of [[-0.13, "HI"], [-0.098, "MID"], [-0.066, "LOW"]] as const) knob(x, z, 0.0095, name, "knob", "left");
+    knob(x, -0.028, 0.011, "FILTER", "metal");
+    // the meter: a dark strip, the lit bar a part over it, filling from the front end back; its scale beside it
     b.pieces.push(box("knob", [0.008, 0.0008, mLen + 0.004], [x + 0.016, face + 0.0004, mz - mLen / 2]));
+    for (const [k, dB] of ["-24", "", "-6", "0", "+6"].entries()) {
+      const zz = mz - (k / 4) * mLen;
+      b.pieces.push(...print("-", x + 0.0225, ink, zz, 0.005));
+      if (dB) say(dB, x + 0.0295, zz, 0.0021);
+    }
+    // the cue key, the channel's number big under it
     b.pieces.push(box("chrome", [0.03, 0.0006, 0.006], [x, face + 0.0003, mz + 0.012]));
-    b.parts!.push({ name: `meter-${i + 1}`, at: [x + 0.016, face + 0.0012, mz], rot: -Math.PI / 2, pieces: [box("light", [0.0055, mLen, 0.0008], [0, mLen / 2, 0])] });
+    say(String(i + 1), x, mz + 0.027, 0.0075);
     // the channel fader's slot and scale, and its cap as a part at mid travel
     b.pieces.push(box("knob", [0.004, 0.0012, travel + 0.012], [x, face + 0.0006, fz]));
-    for (let k = 0; k < 5; k++) b.pieces.push(box("chrome", [0.006, 0.0006, 0.001], [x - 0.011, face + 0.0003, fz - travel / 2 + k * (travel / 4)]));
-    b.parts!.push({ name: `fader-${i + 1}`, at: [x, face, fz], pieces: [box("knob", [0.014, 0.014, 0.02], [0, 0.007, 0], { bevel: 0.003 }), box("chrome", [0.012, 0.0008, 0.002], [0, 0.0142, 0])] });
+    for (let k = 0; k < 11; k++) b.pieces.push(...print("-", x - 0.011, ink, fz - travel / 2 + k * (travel / 10), k % 5 ? 0.005 : 0.009));
+    b.parts!.push({ name: `fader-${i + 1}`, at: [x, face, fz], pieces: [box("knob", [0.014, 0.014, 0.02], [0, 0.007, 0], { bevel: 0.003 }), ...print("-", 0, 0.0141, 0, 0.022)] });
   });
-  // the crossfader across the front
+  // the crossfader across the front, its ends named
   const cz = d / 2 - 0.035, ct = 0.045;
   b.pieces.push(box("knob", [ct + 0.014, 0.0012, 0.004], [0, face + 0.0006, cz]));
-  b.parts!.push({ name: "cross", at: [0, face, cz], pieces: [box("knob", [0.02, 0.014, 0.014], [0, 0.007, 0], { bevel: 0.003 }), box("chrome", [0.002, 0.0008, 0.012], [0, 0.0142, 0])] });
+  for (const s of [-1, 1]) say(s < 0 ? "A" : "B", s * (ct / 2 + 0.014), cz, 0.004);
+  b.parts!.push({ name: "cross", at: [0, face, cz], pieces: [box("knob", [0.02, 0.014, 0.014], [0, 0.007, 0], { bevel: 0.003 }), ...print("I", 0, 0.0141, 0, 0.012)] });
   // master and headphones down the left, effects down the right, with their lit keys
-  for (let k = 0; k < 4; k++) knob(-w / 2 + 0.025, -0.16 + k * 0.05, 0.009);
-  for (let k = 0; k < 3; k++) knob(w / 2 - 0.025, -0.16 + k * 0.05, 0.009);
+  ["MASTER", "BOOTH", "MIX", "LEVEL"].forEach((name, k) => knob(-w / 2 + 0.025, -0.16 + k * 0.05, 0.009, name));
+  ["FX", "TIME", "DEPTH"].forEach((name, k) => knob(w / 2 - 0.025, -0.16 + k * 0.05, 0.009, name));
   for (let k = 0; k < 3; k++) b.pieces.push(box("light", [0.014, 0.0012, 0.008], [w / 2 - 0.025, face + 0.0006, 0.0 + k * 0.03]));
+  say("ON", w / 2 - 0.025, -0.012, 0.0024);
   b.pieces.push(box("chrome", [0.06, 0.001, 0.008], [0, face + 0.0005, -d / 2 + 0.012]));
   // the front: the headphone sockets, the crossfader curve and reverse knobs, a strip of our own badge
   const fr = d / 2 + 0.001;
@@ -846,12 +942,12 @@ function mixerDj(): Build {
   for (const x of [w / 2 - 0.07, w / 2 - 0.04]) b.pieces.push(disc("knob", 0.007, 0.01, "z", [x, 0.05, fr + 0.004], 10), box("chrome", [0.001, 0.005, 0.001], [x, 0.054, fr + 0.0095]));
   b.pieces.push(box("chrome", [0.07, 0.007, 0.002], [0, 0.05, fr], { bevel: 0.001 }), box("knob", [w - 0.03, 0.003, 0.002], [0, 0.085, fr]));
   const back = -d / 2;
-  jacks(b, numbered("phono-in", 4), "back", [-0.15, 0.078, back - 0.002], [0.026, 0, 0], 0.0065);
-  jacks(b, numbered("rca-in", 4), "back", [-0.15, 0.045, back - 0.002], [0.026, 0, 0], 0.0065);
+  jacks(b, numbered("phono-in", 4), "back", [-0.15, 0.078, back - 0.002], [0.026, 0, 0], 0.0065, 10);
+  jacks(b, numbered("rca-in", 4), "back", [-0.15, 0.045, back - 0.002], [0.026, 0, 0], 0.0065, 10);
   jacks(b, numbered("xlr-out", 4), "back", [0.03, 0.06, back - 0.002], [0.03, 0, 0], 0.011);
   // the ground post: one knurled nut, both lugs go under it
   b.pieces.push(disc("chrome", 0.006, 0.014, "z", [-0.03, 0.078, back - 0.006], 10));
-  jacks(b, ["ground-in-1", "ground-in-2"], "back", [-0.03, 0.078, back - 0.012], [0, 0, 0], 0.004);
+  jacks(b, ["ground-in-1", "ground-in-2"], "back", [-0.03, 0.078, back - 0.012], [0, 0, 0], 0.004, 8);
   jacks(b, ["power-in"], "back", [-0.03, 0.035, back - 0.002], [0, 0, 0], 0.012);
   b.data = { faderTravel: travel, crossTravel: ct };
   mark(b, "grab", [0, h, 0]);
