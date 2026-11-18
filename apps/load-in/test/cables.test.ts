@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { setDial } from "../src/assists.ts";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
-import { cableState, fedBy, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
+import { cableState, endInHand, fedBy, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 
 test("run power from the outlet to the speaker across the walkway, see the hazard, lay a ramp over it", () => {
   // Sim: no slack past the cable's length (another file may leave the dial on Cozy).
@@ -54,4 +54,17 @@ test("run power from the outlet to the speaker across the walkway, see the hazar
   const fromCase = Math.hypot(w.you.x + 2.3, w.you.z - 3.2);
   expect(fromCase).toBeLessThan(6);
   expect(fromCase).toBeGreaterThan(5);
+});
+
+test("a power cable only goes one way round: the wall plug into the wall, the IEC socket into the speaker", () => {
+  setDial("sim");
+  const w = newWorld(), c = newCables(w);
+  walkWith(w, c, -1.6, 3.2);
+  expect(takeCable(w, c, "power")).toEqual({ ok: true });
+  expect(endInHand(c)).toBe("edison");
+  // Straight to the speaker with the end off the roll: it's the wall plug, and the speaker's inlet wants the socket.
+  walkWith(w, c, 2.0, 1.9);
+  expect(plug(w, c, "top", "power-in")).toEqual({ ok: false, why: "that's the wall plug end: it goes in an output, the IEC socket end goes here" });
+  walkWith(w, c, -2.2, 0.6);
+  expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
 });
