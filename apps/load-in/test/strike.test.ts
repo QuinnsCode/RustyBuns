@@ -20,18 +20,18 @@ test("unplug and coil over-under, pack the truck front to back, shut it past cur
   setDial("sim");
   const w = newWorld(DIVE_BAR), c = newCables(w), t = DIVE_BAR.truck!, at = (k: string) => w.items.find((i) => i.key === k)!;
 
-  // The show's power run: case to the left top.
+  // The show's power run: its wall plug in the bar's outlet.
   walkWith(w, c, -1.6, 10.8);
   expect(takeCable(w, c, "power")).toEqual({ ok: true });
-  walkWith(w, c, -1.0, 9.7);
-  expect(plug(w, c, "top-l", "power-in")).toEqual({ ok: true });
+  walkWith(w, c, -2.0, 4.8);
+  expect(plug(w, c, "bar-outlet", "power-out-1")).toEqual({ ok: true });
 
   // The show is over.
   expect(strike(w)).toEqual({ ok: true });
   expect(shut(w, c)).toEqual({ ok: false, why: "a cable is still out (power-10)" });
 
   // Unplug, back to the case, and coil it: over, under... but twice the hand goes the same way.
-  expect(unplug(w, c, "top-l", "power-in")).toEqual({ ok: true });
+  expect(unplug(w, c, "bar-outlet", "power-out-1")).toEqual({ ok: true });
   walkWith(w, c, -1.6, 10.8);
   expect(coil(w, c, "power-10")).toEqual({ ok: true });
   const run = c.runs.find((r) => r.key === "power-10")!, n = loopsFor(run);

@@ -13,6 +13,7 @@ import { Vector3 } from "three";
 import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, pathLength, type Rope, type Solid, type Vec } from "./rope.ts";
+import { endOf, endWhy, sideOf, type Connector } from "./ends.ts";
 
 /** Where a cable's end is: in a jack, in your hand, in a friend's (crew/sync.ts), lying loose, or still coiled in the case. */
 export type EndAt = { plug: End } | { hand: true } | { mate: string } | { loose: true } | { case: true };
@@ -82,6 +83,12 @@ export function inHand(c: Cables): { run: Run; end: "a" | "b" } | null {
   }
   return null;
 }
+/** Which end of the cable in your hand goes in next: a roll still wound up gives its outer (`a`) end first. */
+const goingIn = (h: { run: Run; end: "a" | "b" }) => (h.end === "b" && h.run.roll?.tailIn && h.run.roll.state === "held" ? "a" : h.end);
+/** The connector on the end of the cable you would plug in now (the roll's outer end while it is still wound on). */
+export const endInHand = (c: Cables): Connector | null => { const h = inHand(c); return h ? endOf(h.run.kind, goingIn(h)) : null; };
+/** Whether a jack takes the cable in your hand: its kind, and the right end of it (an XLR male goes in an input). */
+const takes = (h: { run: Run; end: "a" | "b" }, jack: string) => cableFor(jackKind(jack)) === h.run.kind && !endWhy(h.run.kind, goingIn(h), sideOf(jack));
 /** Whether your hands hold anything: a piece of gear or a cable end. */
 export const handsFull = (w: World, c: Cables) => !!w.held || !!inHand(c);
 
@@ -277,6 +284,8 @@ export function plug(w: World, c: Cables, owner: string, jack: string): Answer {
   if (!near(w, at)) return { ok: false, why: `${owner} ${jack} is out of reach` };
   const fits = cableFor(jackKind(jack));
   if (fits !== h.run.kind) return { ok: false, why: `a ${h.run.kind} cable doesn't fit ${jack} (it takes ${fits})` };
+  const wrongEnd = endWhy(h.run.kind, goingIn(h), sideOf(jack));
+  if (wrongEnd) return { ok: false, why: wrongEnd };
   const taken = c.runs.some((r) => [r.a, r.b].some((e) => isPlug(e) && e.plug[0] === owner && e.plug[1] === jack));
   if (taken) return { ok: false, why: `${owner} ${jack} already has a cable in it` };
   // A roll in your arms with its end still wound on: the end comes off and goes in, and you keep the roll.
@@ -420,7 +429,7 @@ export function glowing(w: World, c: Cables): Vec[] {
   const h = inHand(c);
   if (!h || !assist("jackGlow")) return [];
   const used = new Set(c.runs.flatMap((r) => [r.a, r.b].filter(isPlug).map((e) => e.plug.join(" "))));
-  return jacks(w).filter((j) => cableFor(jackKind(j.jack)) === h.run.kind && !used.has(`${j.owner} ${j.jack}`)).map((j) => j.at);
+  return jacks(w).filter((j) => takes(h, j.jack) && !used.has(`${j.owner} ${j.jack}`)).map((j) => j.at);
 }
 
 /** A breaker nothing in a small venue can trip, for the stops where breakers don't. */

@@ -7,6 +7,8 @@ import * as THREE from "three";
 import { HandSolver, gripFor, type HandPose, type What } from "./grip.ts";
 import { type Box, type Frame, type Side, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
 import { FINGERS, FOREARM, HAND, PALM, type V3 } from "./skeleton.ts";
+import { connectorMesh } from "../cables/ends-view.ts";
+import type { Connector } from "../cables/ends.ts";
 
 /** What your hands are doing: each hand's grip, the weight in them, and if it's a carry, the box; a cable end's lead. */
 export type Hold = {
@@ -15,8 +17,8 @@ export type Hold = {
   kg: number;
   /** a cabinet carried in both hands (world space) */
   carry?: Box;
-  /** where the cable leaving your fist goes (world space), and its colour */
-  lead?: { at: V3; color: number };
+  /** where the cable leaving your fist goes (world space), its colour, and the connector on the end you hold */
+  lead?: { at: V3; color: number; end?: Connector };
   /** looking at your arms: both forearms raised into view (empty hands only) */
   show?: boolean;
 };
@@ -91,7 +93,16 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
     };
   });
   const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 }));
-  const plug = new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.0105, 0.075, 12), new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 }));
+  // The plug in your fist: the connector on the end you hold (an XLR male, a wall plug), swapped when the end changes.
+  const plug = new THREE.Group();
+  let plugIs: Connector | "" = "";
+  const plugAs = (end: Connector) => {
+    if (end === plugIs) return;
+    plug.clear();
+    plug.add(connectorMesh(end).translateY(-0.012));
+    plugIs = end;
+  };
+  plugAs("xlr-m");
   scene.add(lead);
   camera.add(plug);
   lead.visible = plug.visible = false;
@@ -176,6 +187,7 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         mPlace.compose(right.at, right.turn, one);
         const axis = (x: number) => new THREE.Vector3(x, g.y, g.z).applyMatrix4(mPlace);
         const thumbEnd = axis(-0.06), from = axis(0.045);
+        plugAs(hold.lead.end ?? "xlr-m");
         plug.position.copy(thumbEnd);
         plug.quaternion.setFromUnitVectors(up, vA.copy(thumbEnd).sub(from).normalize());
         from.applyMatrix4(camera.matrixWorld);

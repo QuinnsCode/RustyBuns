@@ -1,11 +1,14 @@
 // The cables on screen: a tube along each laid-out rope's points, coloured by kind and as thick as the real cable,
 // rebuilt each frame it moved, and its roll as a coil: hanging off your fingers, rolling on its edge, lying flat, or
-// tucked under the jack it is plugged into. Points still on the coil are drawn as the coil, not the tube.
+// tucked under the jack it is plugged into. Points still on the coil are drawn as the coil, not the tube. Each end
+// off the coil wears its own connector (ends-view.ts); the one in your hand is the hands' to draw.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Cables } from "./cables.ts";
 import { CABLE, ROLL_R, leftM } from "./roll.ts";
 import type { Vec } from "./rope.ts";
+import { endOf } from "./ends.ts";
+import { aimEnd, connectorMesh } from "./ends-view.ts";
 
 export const COLOR: Record<string, number> = { power: 0x26262a, speaker: 0x2a3f8f, xlr: 0x3a3a3a, instrument: 0x8f2a2a };
 
@@ -50,6 +53,12 @@ export function cableView(scene: THREE.Scene) {
   const tubes = new Map<string, THREE.Mesh<THREE.TubeGeometry, THREE.MeshStandardMaterial>>();
   const coils = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>();
   const sums = new Map<string, number>();
+  const ends = new Map<string, THREE.Group>();
+  const endOn = (key: string, kind: Parameters<typeof endOf>[0], end: "a" | "b") => {
+    let m = ends.get(`${key}:${end}`);
+    if (!m) { m = connectorMesh(endOf(kind, end)); ends.set(`${key}:${end}`, m); scene.add(m); }
+    return m;
+  };
   const coilOf = (key: string, color: number) => {
     let m = coils.get(key);
     if (!m) {
@@ -67,7 +76,14 @@ export function cableView(scene: THREE.Scene) {
       for (const run of c.runs) {
         let m = tubes.get(run.key);
         const roll = run.roll, coil = roll ? coilOf(run.key, COLOR[run.kind] ?? 0x222222) : coils.get(run.key);
-        if (!run.rope) { if (m) m.visible = false; if (coil) coil.visible = false; continue; }
+        if (!run.rope) { if (m) m.visible = false; if (coil) coil.visible = false; for (const e of ["a", "b"]) { const p = ends.get(`${run.key}:${e}`); if (p) p.visible = false; } continue; }
+        // The ends: the outer one once it is off the coil, the inner one once every metre is.
+        const rp = run.rope.pts, n = rp.length;
+        for (const [end, i, j, off] of [["a", 0, 1, !!roll?.tailIn], ["b", n - 1, n - 2, !!roll && roll.state !== "out" && roll.state !== "tied"]] as const) {
+          const p = endOn(run.key, run.kind, end);
+          p.visible = !off && !("hand" in run[end]) && n > 1;
+          if (p.visible) aimEnd(p, rp[i]!, rp[j]!);
+        }
         // The coil: where the roll is, as fat as the cable left on it.
         const left = roll ? leftM(roll) : 0, inHands = roll?.state === "held" && !!held;
         let bottom: Vec | null = null;
@@ -113,7 +129,8 @@ export function cableView(scene: THREE.Scene) {
     },
     clear() {
       for (const m of [...tubes.values(), ...coils.values()]) { scene.remove(m); m.geometry.dispose(); }
-      tubes.clear(); coils.clear(); sums.clear();
+      for (const m of ends.values()) scene.remove(m);
+      tubes.clear(); coils.clear(); sums.clear(); ends.clear();
     },
   };
 }

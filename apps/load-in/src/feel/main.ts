@@ -13,6 +13,8 @@ import { shoesView } from "../you/shoes.ts";
 import { FLASH } from "../you/ink.ts";
 import { CABLE, ROLL_R, bowl, leftM, newRoll, rollKg, stepRoll, throwSpeed, type CableKind, type Roll } from "../cables/roll.ts";
 import type { Solid, Vec } from "../cables/rope.ts";
+import { CONNECTOR_NAME, endOf, endWhy } from "../cables/ends.ts";
+import { aimEnd, connectorMesh } from "../cables/ends-view.ts";
 
 const DT = 1 / 60, EYE = 1.65, REACH = 1.5, WALK = 3.2;
 const $ = (id: string) => document.getElementById(id)!;
@@ -55,6 +57,10 @@ const RISER = { x: 0, z: -6, w: 8, d: 4, h: 0.4 };
 box(16, 0.1, 17, 0x8d8a84, 0, -0.1, -0.5, false);                     // concrete floor
 box(RISER.w, RISER.h, RISER.d, 0x4a3a2c, RISER.x, 0, RISER.z);        // the stage riser
 box(16, 4, 0.2, 0x2a2f3a, 0, 0, -9.1, false); box(0.2, 4, 17, 0x252a34, 8.1, 0, -0.5, false); box(0.2, 4, 17, 0x252a34, -8.1, 0, -0.5, false);
+box(16, 4, 0.2, 0x2a2f3a, 0, 0, 8.1, false);
+// The walls are solid to cables: a bowled roll stops at one, and cable pressed into one comes back out on the room's
+// side (each is a thick block behind the wall, so its nearest face is always the inside one).
+solids.push({ x: 0, z: -10, y: 0, rot: 0, w: 20, h: 4, d: 2 }, { x: 0, z: 9, y: 0, rot: 0, w: 20, h: 4, d: 2 }, { x: 9, z: 0, y: 0, rot: 0, w: 2, h: 4, d: 20 }, { x: -9, z: 0, y: 0, rot: 0, w: 2, h: 4, d: 20 });
 box(1.6, 0.78, 0.8, 0x3b3f47, 0, 0, 3.2);                             // the desk's table
 /** A model of real gear set down at (x, y, z) turned `rot`; solid unless it is thin (a stand). */
 function model(id: GearId, x: number, y: number, z: number, rot: number, solid = true) {
@@ -84,14 +90,15 @@ box(1.3, 0.5, 0.6, 0x23262c, -3.4, 0, 6.4);                           // the cab
 label("SOUND BOARD", 0, 1.35, 3.2); label("AMP RACK", 5.2, 0.9, -3.0); label("WEDGE", -1.2, 1.15, -5.0);
 label("MIC", 0.8, 2.2, -5.2); label("POWER", 7.6, 1.2, 2); label("CABLES", -3.4, 0.9, 6.4);
 
-type Jack = { id: string; kind: CableKind; at: Vec; mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial> };
+/** A jack: the cable kind it takes, and whether it is an output or an input (which end of a power or mic cable fits). */
+type Jack = { id: string; kind: CableKind; side: "in" | "out"; at: Vec; mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial> };
 const JACK_COLOR: Record<CableKind, number> = { power: 0xff8a3c, cord: 0xff8a3c, xlr: 0x6fd3ff, instrument: 0x6fd3ff, speaker: 0x8fe38a };
 function jack(id: string, kind: CableKind, at: Vec): Jack {
   const { x, y, z } = at;
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshStandardMaterial({ color: JACK_COLOR[kind], emissive: JACK_COLOR[kind], emissiveIntensity: 0.5 }));
   mesh.position.set(x, y, z);
   scene.add(mesh);
-  return { id, kind, at: { x, y, z }, mesh };
+  return { id, kind, side: id.endsWith(".out") ? "out" : "in", at: { x, y, z }, mesh };
 }
 const jacks = [
   jack("power.out", "power", { x: 7.7, y: 0.55, z: 2 }), jack("rack.power", "power", jackOf(rack, "power-in")),
@@ -100,6 +107,11 @@ const jacks = [
   jack("rack.out", "speaker", jackOf(rack, "speaker-out-1")), jack("wedge.in", "speaker", jackOf(wedge, "xlr-in")),
   jack("mic.out", "xlr", { x: 0.8, y: RISER.h + 1.45, z: -5.08 }), jack("desk.in", "xlr", jackOf(board, "xlr-in-1")),
 ];
+/** A jack's name on screen: "the wall's power out", not its id. */
+const JACK_NAME: Record<string, string> = {
+  "power.out": "the wall power", "rack.power": "the amp rack's power in", "desk.out": "the board's output", "rack.in": "the amp's input",
+  "rack.out": "the amp's speaker out", "wedge.in": "the wedge", "mic.out": "the mic", "desk.in": "the board's mic input",
+};
 /** What has to be joined, in the order a sound crew does it: power first, then signal toward the speaker. */
 const LINKS: { a: string; b: string; text: string }[] = [
   { a: "power.out", b: "rack.power", text: "Power: wall to amp rack" },
@@ -110,7 +122,7 @@ const LINKS: { a: string; b: string; text: string }[] = [
 
 // ---- the cables -----------------------------------------------------------------------------------------------
 type End = "coil" | "hand" | "loose" | Jack;
-type Run = { key: string; roll: Roll; a: End; b: End; tube: THREE.Mesh; coil: THREE.Mesh; plugA: THREE.Mesh; plugB: THREE.Mesh; sum: number; mat: THREE.MeshStandardMaterial };
+type Run = { key: string; roll: Roll; a: End; b: End; tube: THREE.Mesh; coil: THREE.Mesh; plugA: THREE.Object3D; plugB: THREE.Object3D; sum: number; mat: THREE.MeshStandardMaterial };
 const CABLE_COLOR: Record<CableKind, number> = { power: 0x26262a, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24 };
 const rnd = mulberry32(11);
 function run(key: string, kind: CableKind, lengthM: number, x: number, z: number): Run {
@@ -118,8 +130,8 @@ function run(key: string, kind: CableKind, lengthM: number, x: number, z: number
   const tube = new THREE.Mesh(new THREE.BufferGeometry(), mat);
   const coil = new THREE.Mesh(new THREE.TorusGeometry(ROLL_R - 0.03, 0.035, 10, 28), mat);
   coil.rotation.order = "YXZ";
-  const plug = () => new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.07, 8), new THREE.MeshStandardMaterial({ color: 0xc9ccd2, metalness: 0.7, roughness: 0.35 }));
-  const plugA = plug(), plugB = plug();
+  // Each end its own connector: a wall plug and an IEC socket, an XLR female and male, a speakON at both ends.
+  const plugA = connectorMesh(endOf(kind, "a")), plugB = connectorMesh(endOf(kind, "b"));
   scene.add(tube, coil, plugA, plugB);
   return { key, roll: newRoll(kind, lengthM, { x, z }), a: "coil", b: "coil", tube, coil, plugA, plugB, sum: NaN, mat };
 }
@@ -131,25 +143,44 @@ function layOut() {
 
 // ---- you ------------------------------------------------------------------------------------------------------
 const you = { x: -3.2, z: 3.6, yaw: 0.2, pitch: -0.35 };
-let hold: { run: Run; part: "roll" | "a" | "b" } | null = null;
+/**
+ * What a hand holds: a roll (hooked on the right hand's fingers) or one end of a cable. Two hands, so two at once: a
+ * roll and an end, or two ends. `side` 0 is the right hand, 1 the left; a roll always hangs on the right.
+ */
+type Grip = { run: Run; part: "roll" | "a" | "b"; side: 0 | 1 };
+let held: Grip[] = [];
 let charge = 0, charging = false, live = false, phantom = false, done = false;
 const keys = new Set<string>(), stick = { x: 0, z: 0 };
 
 const floorY = (x: number, z: number) => (Math.abs(x - RISER.x) < RISER.w / 2 && Math.abs(z - RISER.z) < RISER.d / 2 ? RISER.h : 0);
 const fwd = () => ({ x: -Math.sin(you.yaw), z: -Math.cos(you.yaw) });
-function hand(): Vec {
-  const f = fwd();
-  return { x: you.x + f.x * 0.45 - f.z * 0.2, y: floorY(you.x, you.z) + EYE - 0.6, z: you.z + f.z * 0.45 + f.x * 0.2 };
+/** Where a hand is: the right (0) a little right of in front of you, the left (1) a little left. */
+function hand(side: 0 | 1 = 0): Vec {
+  const f = fwd(), s = side === 0 ? 0.2 : -0.2;
+  return { x: you.x + f.x * 0.45 - f.z * s, y: floorY(you.x, you.z) + EYE - 0.6, z: you.z + f.z * 0.45 + f.x * s };
 }
 const dist = (p: Vec, q: Vec) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
 const flat = (p: { x: number; z: number }, q: { x: number; z: number }) => Math.hypot(p.x - q.x, p.z - q.z);
 const taken = (j: Jack) => runs.some((r) => r.a === j || r.b === j);
-function jackNear(kind: CableKind): Jack | null {
-  const h = hand();
-  return jacks.filter((j) => j.kind === kind && !taken(j) && dist(h, j.at) < REACH).sort((p, q) => dist(h, p.at) - dist(h, q.at))[0] ?? null;
+const rollGrip = () => held.find((g) => g.part === "roll") ?? null;
+const freeSide = (): 0 | 1 | null => (!held.some((g) => g.side === 0) ? 0 : !held.some((g) => g.side === 1) ? 1 : null);
+/** The end that goes in next: a roll still wound up gives its outer (`a`) end first, then its inner (`b`) one. */
+const goingIn = (g: Grip): "a" | "b" => (g.part === "roll" ? (g.run.roll.tailIn ? "a" : "b") : g.part);
+const connector = (g: Grip) => endOf(g.run.roll.kind, goingIn(g));
+/** The nearest free jack in reach of that hand that takes the end it would plug in: the right kind and the right end. */
+function jackFor(g: Grip): Jack | null {
+  const h = hand(g.side), kind = g.run.roll.kind;
+  return jacks.filter((j) => j.kind === kind && !taken(j) && !endWhy(kind, goingIn(g), j.side) && dist(h, j.at) < REACH).sort((p, q) => dist(h, p.at) - dist(h, q.at))[0] ?? null;
 }
-const carryKg = () => (hold?.part === "roll" ? rollKg(hold.run.roll) : 0);
-const pullKg = () => hold?.run.roll.pullKg ?? 0;
+/** A free jack of the right kind in reach that wants the cable's other end: why it won't go in. */
+function wrongEnd(g: Grip): string | null {
+  const h = hand(g.side), kind = g.run.roll.kind;
+  const j = jacks.find((q) => q.kind === kind && !taken(q) && dist(h, q.at) < REACH && endWhy(kind, goingIn(g), q.side));
+  return j ? `${endWhy(kind, goingIn(g), j.side)!.replace(/^t/, "T")} (${JACK_NAME[j.id]})` : null;
+}
+const fits = (j: Jack) => held.some((g) => jackFor(g) === j);
+const carryKg = () => { const g = rollGrip(); return g ? rollKg(g.run.roll) : 0; };
+const pullKg = () => [...new Set(held.map((g) => g.run))].reduce((s, r) => s + r.roll.pullKg, 0);
 
 // ---- sound: a thump as heavy as what landed, a click for a plug ------------------------------------------------
 let audio: AudioContext | null = null;
@@ -167,47 +198,94 @@ const click = () => tone(1900, 900, 0.2, 0.04, "square");
 let said = "";
 const say = (t: string) => { said = t; };
 const endPt = (r: Run, part: "a" | "b") => (part === "a" ? r.roll.rope.pts[0]! : r.roll.rope.pts.at(-1)!);
+const drop = (g: Grip) => {
+  held = held.filter((q) => q !== g);
+  // One thing left in your hands is in the right one, where you see its plug.
+  if (held.length === 1 && held[0]!.part !== "roll") held[0]!.side = 0;
+};
 
-function use() {
-  const h = hand();
-  if (hold) {
-    const r = hold.run, roll = r.roll, j = jackNear(roll.kind);
-    if (hold.part === "roll") {
-      if (j && roll.tailIn) { roll.tailIn = false; r.a = j; Object.assign(roll.rope.pts[0]!, j.at); click(); say(`End plugged into ${j.id}. Now bowl the roll: hold the mouse or Space, let go`); }
-      else if (j) { r.b = j; roll.state = "tied"; { const d = Math.hypot(you.x - j.at.x, you.z - j.at.z) || 1; roll.x = j.at.x + ((you.x - j.at.x) / d) * 0.3; roll.z = j.at.z + ((you.z - j.at.z) / d) * 0.3; } roll.y = floorY(roll.x, roll.z) + CABLE[roll.kind].radius; hold = null; click(); thump(rollKg(roll) / 2); say(`Plugged into ${j.id}. The spare stays coiled under it`); }
-      else { roll.state = "down"; roll.x = h.x; roll.z = h.z; roll.y = floorY(h.x, h.z) + CABLE[roll.kind].radius; hold = null; thump(rollKg(roll)); }
-    } else {
-      r[hold.part] = j ?? "loose";
-      if (j) { click(); say(`Plugged into ${j.id}`); }
-      hold = null;
-    }
-    return;
+/** Plug the end a hand would plug in into `j`. A roll still wound up keeps hold of the roll; its last end ties it off. */
+function plugIn(g: Grip, j: Jack) {
+  const r = g.run, roll = r.roll, what = CONNECTOR_NAME[connector(g)];
+  click();
+  if (g.part === "roll" && roll.tailIn) {
+    roll.tailIn = false; r.a = j; Object.assign(roll.rope.pts[0]!, j.at);
+    return say(`${what} into ${JACK_NAME[j.id]}. Now bowl the roll: hold the mouse or Space, let go`);
   }
-  const aim = { x: you.x + fwd().x, z: you.z + fwd().z }, picks: { d: number; go: () => void }[] = [];
+  if (g.part === "roll") {
+    r.b = j; roll.state = "tied";
+    const d = Math.hypot(you.x - j.at.x, you.z - j.at.z) || 1;
+    roll.x = j.at.x + ((you.x - j.at.x) / d) * 0.3; roll.z = j.at.z + ((you.z - j.at.z) / d) * 0.3; roll.y = floorY(roll.x, roll.z) + CABLE[roll.kind].radius;
+    thump(rollKg(roll) / 2);
+    drop(g);
+    return say(`${what} into ${JACK_NAME[j.id]}. The spare stays coiled under it`);
+  }
+  r[g.part] = j;
+  drop(g);
+  say(`${what} into ${JACK_NAME[j.id]}`);
+}
+
+/** Let go of what a hand holds: a roll is set down where it is, an end drops. */
+function letGo(g: Grip) {
+  const r = g.run, roll = r.roll, h = hand(g.side);
+  if (g.part === "roll") { roll.state = "down"; roll.x = h.x; roll.z = h.z; roll.y = floorY(h.x, h.z) + CABLE[roll.kind].radius; thump(rollKg(roll)); }
+  else r[g.part] = "loose";
+  drop(g);
+}
+
+/** What a free hand could pick up, best first: what you look at most squarely, among what is in reach. */
+function picks(side: 0 | 1): { score: number; go: () => void }[] {
+  const eye = { x: you.x, y: floorY(you.x, you.z) + EYE, z: you.z }, f = fwd(), cp = Math.cos(you.pitch);
+  const look = { x: f.x * cp, y: Math.sin(you.pitch), z: f.z * cp };
+  // How far off where you look a point is (0 dead ahead), so of two cables side by side you get the one you look at.
+  const off = (p: Vec) => { const d = dist(eye, p) || 1; return 1 - ((p.x - eye.x) * look.x + (p.y - eye.y) * look.y + (p.z - eye.z) * look.z) / d; };
+  const h = hand(side), out: { score: number; go: () => void }[] = [];
+  const grab = (r: Run, part: "roll" | "a" | "b") => { held.push({ run: r, part, side: part === "roll" ? 0 : side }); };
   for (const r of runs) {
     const roll = r.roll;
-    if (roll.state === "down" && flat(you, roll) < 1.9) picks.push({ d: flat(aim, roll), go: () => { roll.state = "held"; hold = { run: r, part: "roll" }; } });
+    if (roll.state === "down" && flat(you, roll) < 1.9 && !rollGrip()) out.push({ score: off({ x: roll.x, y: roll.y, z: roll.z }), go: () => {
+      // The roll goes on the right hand's fingers: an end already there moves to the left.
+      const there = held.find((g) => g.side === 0);
+      if (there) there.side = 1;
+      roll.state = "held"; grab(r, "roll");
+    } });
     for (const part of ["a", "b"] as const) {
       const e = r[part], p = endPt(r, part);
-      if (e === "loose" && flat(you, p) < 1.9) picks.push({ d: flat(aim, p), go: () => { r[part] = "hand"; hold = { run: r, part }; } });
-      if (typeof e === "object" && dist(h, e.at) < REACH) picks.push({ d: flat(aim, e.at) + 0.5, go: () => {
-        r[part] = "hand"; hold = { run: r, part };
+      if (e === "loose" && flat(you, p) < 1.9) out.push({ score: off(p), go: () => { r[part] = "hand"; grab(r, part); } });
+      // Pulling a plug out takes empty hands (so F with a cable in hand never unplugs a neighbour's).
+      if (typeof e === "object" && !held.length && dist(h, e.at) < REACH) out.push({ score: off(e.at) + 0.05, go: () => {
+        r[part] = "hand"; grab(r, part);
         if (part === "b" && roll.state === "tied") { roll.state = "out"; roll.paid = roll.rope.pts.length - 1; }
         click();
       } });
     }
   }
-  picks.sort((p, q) => p.d - q.d)[0]?.go();
+  return out.sort((p, q) => p.score - q.score);
 }
 
+/** F: plug in what a hand holds if a jack takes it; else pick up what you look at with a free hand; else let go. */
+function use() {
+  for (const g of [...held].reverse()) { const j = jackFor(g); if (j) return plugIn(g, j); }
+  const side = freeSide(), pick = side === null ? undefined : picks(side)[0];
+  if (pick) return pick.go();
+  // The jack is right there but this is the cable's other end: say so, and keep hold of it.
+  const why = held.map(wrongEnd).find(Boolean);
+  if (why) return say(why);
+  const last = held.at(-1);
+  if (last) letGo(last);
+}
+/** G: let go of what you picked up last, whatever is near. */
+function letGoLast() { const last = held.at(-1); if (last) letGo(last); }
+
 function release(power: number) {
-  if (hold?.part !== "roll") return;
-  const r = hold.run, kg = rollKg(r.roll), loose = r.roll.tailIn;
+  const g = rollGrip();
+  if (!g) return;
+  const r = g.run, kg = rollKg(r.roll), loose = r.roll.tailIn;
   r.roll.y = floorY(you.x, you.z) + ROLL_R;
   Object.assign(r.roll, { x: hand().x, z: hand().z });
   bowl(r.roll, you.yaw + Math.PI, Math.max(0.15, power));
   // An end that was not plugged in stays in your hand: hold the end, send the coil.
-  if (loose) { r.a = "hand"; hold = { run: r, part: "a" }; } else hold = null;
+  if (loose) { r.a = "hand"; g.part = "a"; } else drop(g);
   say(`${kg.toFixed(1)} kg left your hand at ${throwSpeed(kg, Math.max(0.15, power)).toFixed(1)} m/s`);
 }
 
@@ -216,7 +294,7 @@ function tick() {
   let mx = stick.x + (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0), mz = stick.z + (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
   const len = Math.hypot(mx, mz);
   if (len > 1) { mx /= len; mz /= len; }
-  if (charging && hold?.part === "roll") charge = Math.min(1, charge + DT / (0.45 + carryKg() / 22)); else charge = 0;
+  if (charging && rollGrip()) charge = Math.min(1, charge + DT / (0.45 + carryKg() / 22)); else charge = 0;
   const speed = WALK / (1 + carryKg() / 18) / (1 + pullKg() / 6) * (charging ? 0.4 : 1), f = fwd();
   let nx = you.x + (f.x * mz - f.z * mx) * speed * DT, nz = you.z + (f.z * mz + f.x * mx) * speed * DT;
   // Tall gear stops you, one axis at a time, so you slide along it.
@@ -224,21 +302,25 @@ function tick() {
   if (blocked(nx, you.z)) nx = you.x;
   if (blocked(nx, nz)) nz = you.z;
   you.x = Math.max(-7.6, Math.min(7.6, nx)); you.z = Math.max(-8.6, Math.min(7.6, nz));
-  const h = hand();
   for (const r of runs) {
-    const roll = r.roll, pin = (e: End) => (e === "hand" ? h : typeof e === "object" ? e.at : undefined);
-    if (roll.state === "held") Object.assign(roll, h);
+    const roll = r.roll, mineAll = held.filter((g) => g.run === r);
+    const gripOf = (part: "a" | "b") => mineAll.find((g) => g.part === part);
+    const pin = (e: End, part: "a" | "b") => (e === "hand" ? hand(gripOf(part)?.side ?? 0) : typeof e === "object" ? e.at : undefined);
+    if (roll.state === "held") Object.assign(roll, hand(0));
     if (roll.state === "rolling") roll.y = floorY(roll.x, roll.z) + ROLL_R;
-    const mine = hold?.run === r ? (hold.part === "a" ? "a" : "b") : undefined;
-    for (const e of stepRoll(roll, DT, { a: pin(r.a), b: pin(r.b) }, solids, rnd, mine)) {
+    // The end the hand feels: the coil counts as `b`.
+    const mine = mineAll.length ? (mineAll.some((g) => g.part !== "a") ? "b" : "a") : undefined;
+    for (const e of stepRoll(roll, DT, { a: pin(r.a, "a"), b: pin(r.b, "b") }, solids, rnd, mine)) {
       if (e === "out") {
-        if (hold?.run === r && hold.part === "roll") { hold = { run: r, part: "b" }; r.b = "hand"; say("That is all of it: the end is in your hand"); }
+        const g = mineAll.find((q) => q.part === "roll");
+        if (g) { g.part = "b"; r.b = "hand"; say("That is all of it: the end is in your hand"); }
         else if (r.b === "coil") r.b = "loose";
       } else thump(rollKg(roll));
     }
     // A cable only reaches as far as it is long: at its end it stops you.
-    if (hold?.run === r && hold.part !== "roll") {
-      const p = hold.part === "a" ? roll.rope.pts[1]! : roll.rope.pts.at(-2)!, d = dist(h, p), slack = (roll.rope.lengthM / (roll.rope.pts.length - 1)) * 1.6;
+    for (const g of mineAll) {
+      if (g.part === "roll") continue;
+      const h = hand(g.side), p = g.part === "a" ? roll.rope.pts[1]! : roll.rope.pts.at(-2)!, d = dist(h, p), slack = (roll.rope.lengthM / (roll.rope.pts.length - 1)) * 1.6;
       if (d > slack) { you.x -= ((h.x - p.x) / d) * (d - slack); you.z -= ((h.z - p.z) / d) * (d - slack); }
     }
   }
@@ -263,11 +345,16 @@ const ink = mountInk($("ink-host"), hands, () => Object.keys(FLASH).map((level) 
 /** What the hands hold: a roll hooked on the right hand's fingers (the left on its end once that is out), a plug
  * ready at a lit jack, a fist round a cable you walk, or nothing. The wrist drops with what the cable weighs on it. */
 function holding(): Hold {
-  const r = hold?.run, roll = r?.roll, kg = carryKg() + pullKg();
-  if (!roll) return { right: REST, left: REST, kg: 0 };
-  if (hold?.part === "roll") return { right: { kind: "roll" }, left: roll.tailIn ? REST : { kind: "cable", radius: CABLE[roll.kind].radius }, kg };
-  const h = hand();
-  return { right: jackNear(roll.kind) ? { kind: "plug" } : { kind: "cable", radius: CABLE[roll.kind].radius }, left: REST, kg, lead: { at: [h.x, h.y, h.z], color: CABLE_COLOR[roll.kind] } };
+  const right = held.find((g) => g.side === 0), left = held.find((g) => g.side === 1), kg = carryKg() + pullKg();
+  if (!right && !left) return { right: REST, left: REST, kg: 0 };
+  const fist = (g: Grip | undefined) => (g ? { kind: "cable" as const, radius: CABLE[g.run.roll.kind].radius } : REST);
+  if (right?.part === "roll") {
+    const roll = right.run.roll;
+    return { right: { kind: "roll" }, left: left ? fist(left) : roll.tailIn ? REST : fist(right), kg };
+  }
+  if (!right) return { right: REST, left: fist(left), kg };
+  const h = hand(0), kind = right.run.roll.kind;
+  return { right: jackFor(right) ? { kind: "plug" } : fist(right), left: fist(left), kg, lead: { at: [h.x, h.y, h.z], color: CABLE_COLOR[kind], end: connector(right) } };
 }
 let seen = { x: you.x, z: you.z, t: 0, v: 0 };
 function draw() {
@@ -278,14 +365,14 @@ function draw() {
   if (dt > 0) seen = { x: you.x, z: you.z, t: now, v: dt > 0.5 ? 0 : seen.v * 0.8 + (Math.hypot(you.x - seen.x, you.z - seen.z) / dt) * 0.2 };
   hands.update({ ...holding(), show: showArms }, now, seen.v);
   shoes.update(you.x, floorY(you.x, you.z), you.z, you.yaw, seen.v, Math.max(0, Math.min(0.05, dt)));
-  const grip = hold?.part === "roll" ? hands.gripAt() : null;
-  const held = hold?.run.roll.kind;
-  for (const j of jacks) { const fits = held === j.kind && !taken(j); j.mesh.material.emissiveIntensity = fits ? 2.2 : taken(j) ? 0.1 : 0.5; j.mesh.scale.setScalar(fits ? 1.5 : 1); }
+  const rg = rollGrip(), grip = rg ? hands.gripAt() : null;
+  // A jack lights up only for an end that goes in it: the right kind of cable, the right end of it.
+  for (const j of jacks) { const lit = fits(j); j.mesh.material.emissiveIntensity = lit ? 2.2 : taken(j) ? 0.1 : 0.5; j.mesh.scale.setScalar(lit ? 1.5 : 1); }
   for (const r of runs) {
     const roll = r.roll, pts = roll.rope.pts, c = CABLE[roll.kind];
     const keep: THREE.Vector3[] = [];
     let sum = 0;
-    const inHand = grip && hold?.run === r, mouth = pts.at(-1)!, bottom = inHand ? { x: grip.x, y: grip.y - 2 * (ROLL_R - 0.03), z: grip.z } : null;
+    const inHand = grip && rg?.run === r, mouth = pts.at(-1)!, bottom = inHand ? { x: grip.x, y: grip.y - 2 * (ROLL_R - 0.03), z: grip.z } : null;
     for (const p0 of pts) {
       const p = bottom && roll.state !== "out" && Math.hypot(p0.x - mouth.x, p0.y - mouth.y, p0.z - mouth.z) < 1e-3 ? bottom : p0, last = keep.at(-1);
       if (!last || Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) > 0.03) { keep.push(new THREE.Vector3(p.x, p.y, p.z)); sum += p.x * 3 + p.y * 5 + p.z * 7; }
@@ -311,28 +398,41 @@ function draw() {
       strapOn(r.coil, tube);
       r.coil.userData.tube = tube;
     }
-    r.plugA.position.copy(pts[0]!); r.plugB.position.copy(pts.at(-1)!);
-    r.plugA.visible = !roll.tailIn; r.plugB.visible = roll.state === "out" || roll.state === "tied";
+    // The end in your right fist is the hands' to draw; every other end shows its connector on the cable.
+    const inRight = (part: "a" | "b") => held.some((g) => g.run === r && g.part === part && g.side === 0);
+    r.plugA.visible = !roll.tailIn && !inRight("a"); r.plugB.visible = (roll.state === "out" || roll.state === "tied") && !inRight("b");
+    if (r.plugA.visible) aimEnd(r.plugA, pts[0]!, pts[1]!);
+    if (r.plugB.visible) aimEnd(r.plugB, pts.at(-1)!, pts.at(-2)!);
     r.mat.emissiveIntensity = done ? 0.25 + 0.2 * Math.sin(performance.now() / 180) : 0;
   }
   renderer.render(scene, camera);
   hud();
 }
 
+/** What F (or G) would do now. */
+function hintNow(): string {
+  for (const g of [...held].reverse()) {
+    const j = jackFor(g);
+    if (j) return `F plug the ${CONNECTOR_NAME[connector(g)]} into ${JACK_NAME[j.id]}`;
+  }
+  const side = freeSide();
+  if (side !== null && picks(side).length) return held.length ? "F pick it up with your other hand. G lets go" : "F pick it up";
+  const why = held.map(wrongEnd).find(Boolean);
+  if (why) return why;
+  const rg = rollGrip();
+  if (rg) return rg.run.roll.tailIn ? "Carry it to where the run starts: the jack lights up for the end that goes there" : "Hold to wind up, let go to bowl. F puts it down";
+  if (held.length) return "Walk the end to a lit jack. F lets go";
+  return flat(you, { x: 0, z: 3.2 }) < 2 ? "P switches 48 V phantom" : "";
+}
 let listWas = "";
 function hud() {
   const list = links().map((l) => `<li class="${l.ok ? "ok" : ""}">${l.text}</li>`).join("") + `<li class="${phantom ? "ok" : ""}">48 V phantom on at the board (P)</li>`;
   if (list !== listWas) $("list").innerHTML = listWas = list;
-  const r = hold?.run, roll = r?.roll;
-  let hint = "";
-  if (roll && hold?.part === "roll") {
-    const j = jackNear(roll.kind);
-    hint = j ? `F plug ${roll.tailIn ? "the end" : "it"} into ${j.id}` : roll.tailIn ? "Carry it to a lit jack: F plugs the end in" : "Hold to wind up, let go to bowl. F puts it down";
-  } else if (roll) hint = jackNear(roll.kind) ? `F plug into ${jackNear(roll.kind)!.id}` : "Walk the end to a lit jack. F lets go";
-  else hint = runs.some((q) => q.roll.state === "down" && flat(you, q.roll) < 1.9) ? "F pick up the roll" : flat(you, { x: 0, z: 3.2 }) < 2 ? "P switches 48 V phantom" : "";
-  $("hint").textContent = hint;
+  $("hint").textContent = hintNow();
   $("said").textContent = said;
-  $("weight").textContent = roll ? `${CABLE[roll.kind].what}${hold?.part === "roll" ? ` roll ${rollKg(roll).toFixed(1)} kg, ${leftM(roll).toFixed(0)} m left` : " end"}${pullKg() > 0.3 ? `  ·  pull ${pullKg().toFixed(1)} kg` : ""}` : "Hands free";
+  // What each hand holds, and which connector is on the end that goes in next.
+  const what = (g: Grip) => `${CABLE[g.run.roll.kind].what}${g.part === "roll" ? ` roll ${rollKg(g.run.roll).toFixed(1)} kg, ${leftM(g.run.roll).toFixed(0)} m left` : ""}, ${CONNECTOR_NAME[connector(g)]} end`;
+  $("weight").textContent = held.length ? held.map(what).join("  +  ") + (pullKg() > 0.3 ? `  ·  pull ${pullKg().toFixed(1)} kg` : "") : "Hands free";
   ($("power") as HTMLElement).style.setProperty("--p", String(charge));
   $("power").hidden = charge === 0;
   $("done").hidden = !done;
@@ -359,13 +459,14 @@ function start() {
   if (!audio) try { audio = new AudioContext(); } catch { audio = null; }
   live = true; $("menu").hidden = true;
 }
-function reset() { layOut(); hold = null; phantom = false; done = false; Object.assign(you, { x: -3.2, z: 3.6, yaw: 0.2, pitch: -0.35 }); say(""); }
+function reset() { layOut(); held = []; phantom = false; done = false; Object.assign(you, { x: -3.2, z: 3.6, yaw: 0.2, pitch: -0.35 }); say(""); }
 const togglePhantom = () => { if (flat(you, { x: 0, z: 3.2 }) < 2) { phantom = !phantom; click(); say(`48 V phantom ${phantom ? "on: the condenser mic has power" : "off"}`); } };
 
 window.addEventListener("keydown", (e) => {
   if (e.repeat || !live) return;
   keys.add(e.code);
   if (e.code === "KeyF") use();
+  if (e.code === "KeyG") letGoLast();
   if (e.code === "KeyP") togglePhantom();
   if (e.code === "KeyR") reset();
   if (e.code === "Space") { charging = true; e.preventDefault(); }
@@ -380,7 +481,7 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
   canvas.requestPointerLock?.()?.catch?.(() => {});
-  if (hold?.part === "roll") charging = true;
+  if (rollGrip()) charging = true;
 });
 window.addEventListener("pointermove", (e) => {
   if (e.pointerType === "touch") {
@@ -400,18 +501,20 @@ $("t-reset").addEventListener("click", reset);
 // Arms: held, like the Y key.
 $("t-arms").addEventListener("pointerdown", (e) => { e.stopPropagation(); showArms = true; });
 for (const up of ["pointerup", "pointercancel", "pointerleave"]) $("t-arms").addEventListener(up, () => { showArms = false; });
-$("t-bowl").addEventListener("pointerdown", (e) => { e.stopPropagation(); if (live && hold?.part === "roll") charging = true; });
+$("t-bowl").addEventListener("pointerdown", (e) => { e.stopPropagation(); if (live && rollGrip()) charging = true; });
+$("t-drop").addEventListener("click", () => { if (live) letGoLast(); });
 $("t-bowl").addEventListener("pointerup", (e) => { e.stopPropagation(); if (charging) { charging = false; release(charge); } });
 
 // ---- the harness: play it without a mouse ------------------------------------------------------------------------
 const run_ = (s: number) => { for (let i = 0; i < s * 60; i++) tick(); };
 const feel = {
   state: () => ({
-    live, done, phantom, you: { ...you }, holding: hold ? { cable: hold.run.key, part: hold.part, kg: carryKg(), pullKg: pullKg() } : null, said,
+    live, done, phantom, you: { ...you }, holding: held[0] ? { cable: held[0].run.key, part: held[0].part, kg: carryKg(), pullKg: pullKg() } : null,
+    hands: held.map((g) => ({ cable: g.run.key, part: g.part, hand: g.side === 0 ? "right" : "left", end: connector(g) })), said,
     links: links(),
     cables: runs.map((r) => ({ key: r.key, kind: r.roll.kind, state: r.roll.state, leftM: leftM(r.roll), kg: rollKg(r.roll), x: r.roll.x, z: r.roll.z, a: typeof r.a === "object" ? r.a.id : r.a, b: typeof r.b === "object" ? r.b.id : r.b })),
   }),
-  start, reset, use,
+  start, reset, use, letGo: letGoLast,
   /** Raise your forearms into view (or lower them): what holding I does. */
   arms: (show: boolean) => { showArms = show; }, run: run_,
   look: (yaw: number, pitch = -0.3) => { you.yaw = yaw; you.pitch = pitch; },
