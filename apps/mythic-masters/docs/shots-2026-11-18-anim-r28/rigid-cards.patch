@@ -1,0 +1,94 @@
+diff --git a/apps/mythic-masters/src/beasts.ts b/apps/mythic-masters/src/beasts.ts
+index 630f7229..e3f47cb4 100644
+--- a/apps/mythic-masters/src/beasts.ts
++++ b/apps/mythic-masters/src/beasts.ts
+@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
+ import { loadGlb, type Model } from "@rustybuns/rig/model";
+ import { pupils } from "./eyes.ts";
+ import { Secondary } from "./secondary.ts";
+-import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf } from "./loose.ts";
++import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf, rigidCards } from "./loose.ts";
+ import { smoothNormals } from "./smooth.ts";
+ import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
+ import type { Archetype, Body, Move } from "./roster.ts";
+@@ -452,8 +452,10 @@ export class Puppet {
+       const g = part.geometry.clone();
+       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
+       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
+-      g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
+-      g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
++      const si = Uint16Array.from(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4)), sw = Float32Array.from(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4));
++      if (reach) rigidCards(g.getAttribute("position").array, g.index?.array ?? null, reach, si, sw);
++      g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(si, 4));
++      g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(sw, 4));
+       const mats = Array.isArray(part.material) ? part.material : [part.material];
+       const own = mats.map((m) => m.clone());
+       const isEye = own.length === 1 && own[0]!.name === "eye";
+diff --git a/apps/mythic-masters/src/loose.ts b/apps/mythic-masters/src/loose.ts
+index 7db4fd58..69947afb 100644
+--- a/apps/mythic-masters/src/loose.ts
++++ b/apps/mythic-masters/src/loose.ts
+@@ -35,6 +35,31 @@ export function reachOf(pos: ArrayLike<number>, body: ArrayLike<number>, h: numb
+   return out;
+ }
+ 
++/** Each card moves as one piece. The rigger weights every vertex to the bones it is nearest, so a card that hangs where hip
++ * meets thigh got its root on the hip and its tip on the thigh, and a bend stretched it into a long silver triangle
++ * (#5183 round 28). Here each card (its triangles, welded by position) takes the weights of its root (the vertex
++ * with the least reach), in place in `si`/`sw`: the root stays on the skin and the rest turns with it. */
++export function rigidCards(pos: ArrayLike<number>, index: ArrayLike<number> | null, reach: ArrayLike<number>, si: Uint16Array | number[], sw: Float32Array | number[]): void {
++  const n = pos.length / 3, up = new Int32Array(n);
++  for (let i = 0; i < n; i++) up[i] = i;
++  const find = (a: number) => { while (up[a] !== a) { up[a] = up[up[a]!]!; a = up[a]!; } return a; };
++  const join = (a: number, b: number) => { a = find(a); b = find(b); if (a !== b) up[b] = a; };
++  const tri = index ?? Array.from({ length: n }, (_, i) => i);
++  for (let t = 0; t + 2 < tri.length; t += 3) { join(tri[t]!, tri[t + 1]!); join(tri[t]!, tri[t + 2]!); }
++  const at = new Map<string, number>();
++  for (let i = 0; i < n; i++) {
++    const key = `${Math.round(pos[i * 3]! * 1e4)},${Math.round(pos[i * 3 + 1]! * 1e4)},${Math.round(pos[i * 3 + 2]! * 1e4)}`;
++    const j = at.get(key);
++    if (j === undefined) at.set(key, i); else join(i, j);
++  }
++  const root = new Map<number, number>();
++  for (let i = 0; i < n; i++) { const c = find(i), r = root.get(c); if (r === undefined || reach[i]! < reach[r]!) root.set(c, i); }
++  for (let i = 0; i < n; i++) {
++    const r = root.get(find(i))!;
++    if (r !== i) for (let k = 0; k < 4; k++) { si[i * 4 + k] = si[r * 4 + k]!; sw[i * 4 + k] = sw[r * 4 + k]!; }
++  }
++}
++
+ /** Per archetype: spring stiffness (1/s squared), damping ratio (under 1 overshoots) and how far the springs reach. */
+ const FEEL: Record<Archetype, { k: number; zeta: number; reach: number }> = {
+   tank: { k: 45, zeta: 0.4, reach: 2.2 },
+diff --git a/apps/mythic-masters/test/loose.test.ts b/apps/mythic-masters/test/loose.test.ts
+index 6c2dbba2..ab46b0de 100644
+--- a/apps/mythic-masters/test/loose.test.ts
++++ b/apps/mythic-masters/test/loose.test.ts
+@@ -1,6 +1,6 @@
+ import { expect, test } from "bun:test";
+ import * as THREE from "three";
+-import { LooseLag, looseParts, reachOf } from "../src/loose.ts";
++import { LooseLag, looseParts, reachOf, rigidCards } from "../src/loose.ts";
+ 
+ test("the cards and quills are loose, the body and the hard bits are not", () => {
+   // a furred beast: its own fur is the body; the mane cards swing, a spike at half reach, an eye and a claw stay put
+@@ -15,6 +15,19 @@ test("a card's root sits still and its tip reaches out", () => {
+   expect(reach[1]).toBeCloseTo(0.25);
+ });
+ 
++test("a card that hangs from hip to thigh turns as one piece, on its root's bones", () => {
++  // two cards: the first is two triangles with its root (reach 0) on the hip (bone 1) and its tip weighted to the thigh (bone 2)
++  const pos = [0, 1, 0, 0.1, 1, 0, 0, 0.5, 0, 0.1, 0.5, 0, 2, 1, 0, 2.1, 1, 0, 2, 0.5, 0];
++  const index = [0, 1, 2, 1, 3, 2, 4, 5, 6];
++  const reach = [0, 0, 0.5, 0.5, 0, 0, 0.5];
++  const si = new Uint16Array([1, 0, 0, 0, 1, 2, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0]);
++  const sw = new Float32Array([1, 0, 0, 0, 0.7, 0.3, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
++  rigidCards(pos, index, reach, si, sw);
++  expect([...si.slice(0, 16)]).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
++  expect([...sw.slice(0, 16)]).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
++  expect([...si.slice(16)]).toEqual([3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0]); // the other card keeps its own bone
++});
++
+ test("a lunge leaves the cards behind and a stop throws them on, then they settle", () => {
+   const lag = new LooseLag(1, "bruiser"), inv = new THREE.Matrix4(), dt = 1 / 60;
+   let x = 0, t = 0;
