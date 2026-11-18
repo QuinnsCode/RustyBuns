@@ -12,8 +12,8 @@ import { ampWatts, circuitLoad, generatorLoad, parallel, type Circuit } from "./
 export type Placed = { id: string; gear: string; lift?: boolean; phantom?: boolean };
 
 /** What a cable is: mains, speaker, mic (XLR), a quarter-inch instrument/line lead, a DJ deck's RCA pair, a turntable's
- * ground wire, or a deck's digital (coax) lead. */
-export type CableKind = "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital";
+ * ground wire, a deck's digital (coax) lead, or a snake's multipin (12 pairs in one jacketed cable). */
+export type CableKind = "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital" | "multi";
 
 /** An end of a cable: [item or outlet id, jack name]. */
 export type End = readonly [string, string];
@@ -24,7 +24,7 @@ export type Cable = { kind: CableKind; lengthM: number; from: End; to: End };
 /** A wall outlet on a named circuit; outlets that share a circuit share its breaker. `off` when its breaker has tripped. */
 export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number; off?: boolean };
 
-export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "no-phantom" | "thump" | "level";
+export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power" | "hum" | "no-phantom" | "thump" | "level" | "dead" | "crackle" | "crossed";
 
 /** `circuit` is set on a breaker problem: the outlet circuit's name, or the generator's id. */
 export type Problem = { kind: ProblemKind; items: string[]; jack?: string; circuit?: string; message: string };
@@ -44,6 +44,7 @@ export function cableFor(kind: string): CableKind {
   if (kind.startsWith("rca") || kind.startsWith("phono")) return "rca";
   if (kind.startsWith("ground")) return "ground";
   if (kind.startsWith("digital")) return "digital";
+  if (kind.startsWith("multi")) return "multi";
   return "instrument";
 }
 

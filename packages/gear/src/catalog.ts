@@ -17,7 +17,9 @@ export type JackKind =
   | "phono-in"
   | "digital-out"
   | "ground-in"
-  | "ground-out";
+  | "ground-out"
+  | "multi-in"
+  | "multi-out";
 
 /** How a speaker sounds: the numbers on its spec sheet. */
 export type SpeakerSpec = {
@@ -204,6 +206,18 @@ const list: Gear[] = [
   // The first gig: a small-diaphragm condenser on a stand (it runs off the desk's 48 V phantom, about 5 mA, through the
   // same XLR that carries its signal), and a passive wedge that needs an amp channel, unlike the powered wedge-12.
   { id: "mic-condenser", what: "condenser vocal mic", size: box(0.05, 0.19, 0.05), kg: 0.4, jacks: { "xlr-out": 1 }, mic: { phantom: true } },
+  // Band night: the dynamic mics a bar's stage is miked with (a cardioid moving-coil mic for snare, guitar cab and
+  // vocals, about 300 g, and a large kick mic, about 500 g); neither needs phantom.
+  { id: "mic-dynamic", what: "dynamic instrument and vocal mic", size: box(0.05, 0.16, 0.05), kg: 0.3, jacks: { "xlr-out": 1 }, mic: { phantom: false } },
+  { id: "mic-kick", what: "dynamic kick drum mic", size: box(0.07, 0.15, 0.07), kg: 0.5, jacks: { "xlr-out": 1 }, mic: { phantom: false } },
+  // A 12-way stage box on the end of a 12-pair analog snake: the mics plug in on stage, the snake's multipin carries
+  // all twelve to the desk end, where a fan of XLR tails (`snake-fan-12`) goes into the desk's channels in order.
+  { id: "stage-box-12", what: "12-input stage box", size: box(0.3, 0.12, 0.2), kg: 6, jacks: { "xlr-in": 12, "multi-out": 1 } },
+  { id: "snake-fan-12", what: "snake fan of 12 XLR tails", size: box(0.2, 0.08, 0.15), kg: 2.5, jacks: { "multi-in": 1, "xlr-out": 12 } },
+  // The band's own backline: a drum kit, a bass amp and a guitar combo. Theirs to bring and plug in, not yours.
+  { id: "drum-kit", what: "drum kit", size: box(1.6, 1.2, 1.4), kg: 35, jacks: {} },
+  { id: "bass-amp", what: "bass amp", size: box(0.6, 0.7, 0.4), kg: 30, jacks: {} },
+  { id: "guitar-combo", what: "guitar combo amp", size: box(0.6, 0.5, 0.27), kg: 22, jacks: {} },
   {
     id: "wedge-12-passive",
     what: '12" passive floor monitor',

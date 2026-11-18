@@ -66,6 +66,12 @@ export function connectorMesh(kind: Connector): THREE.Group {
     case "coax":
       g.add(cyl(0.005, 0.03, kind === "rca" ? POWER : RUBBER, -0.006), cyl(0.0042, 0.008, METAL, 0.013), cyl(0.001, 0.008, BRASS, 0.018, 6));
       break;
+    case "multipin-f":
+    case "multipin-m":
+      // A snake's multipin: a fat metal barrel with a locking ring, a ring of pins (male) or a dark face of holes (female).
+      g.add(cyl(0.022, 0.07, RUBBER, -0.02), cyl(0.024, 0.03, METAL, 0.03), cyl(0.026, 0.008, METAL, 0.022));
+      g.add(cyl(0.017, 0.002, kind === "multipin-m" ? BRASS : HOLE, 0.046));
+      break;
     case "spade":
       g.add(cyl(0.003, 0.012, RUBBER, -0.006), cube(0.007, 0.014, 0.001, BRASS, 0, 0.006));
       break;

@@ -92,7 +92,7 @@ label("MIC", 0.8, 2.2, -5.2); label("POWER", 7.6, 1.2, 2); label("CABLES", -3.4,
 
 /** A jack: the cable kind it takes, and whether it is an output or an input (which end of a power or mic cable fits). */
 type Jack = { id: string; kind: CableKind; side: "in" | "out"; at: Vec; mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial> };
-const JACK_COLOR: Record<CableKind, number> = { power: 0xff8a3c, cord: 0xff8a3c, xlr: 0x6fd3ff, instrument: 0x6fd3ff, speaker: 0x8fe38a };
+const JACK_COLOR: Record<CableKind, number> = { power: 0xff8a3c, cord: 0xff8a3c, xlr: 0x6fd3ff, instrument: 0x6fd3ff, speaker: 0x8fe38a, multi: 0x6fd3ff };
 function jack(id: string, kind: CableKind, at: Vec): Jack {
   const { x, y, z } = at;
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshStandardMaterial({ color: JACK_COLOR[kind], emissive: JACK_COLOR[kind], emissiveIntensity: 0.5 }));
@@ -123,7 +123,7 @@ const LINKS: { a: string; b: string; text: string }[] = [
 // ---- the cables -----------------------------------------------------------------------------------------------
 type End = "coil" | "hand" | "loose" | Jack;
 type Run = { key: string; roll: Roll; a: End; b: End; tube: THREE.Mesh; coil: THREE.Mesh; plugA: THREE.Object3D; plugB: THREE.Object3D; sum: number; mat: THREE.MeshStandardMaterial };
-const CABLE_COLOR: Record<CableKind, number> = { power: 0x26262a, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24 };
+const CABLE_COLOR: Record<CableKind, number> = { power: 0x26262a, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24, multi: 0x2a2d33 };
 const rnd = mulberry32(11);
 function run(key: string, kind: CableKind, lengthM: number, x: number, z: number): Run {
   const mat = new THREE.MeshStandardMaterial({ color: CABLE_COLOR[kind], roughness: 0.55, emissive: 0x2bd96b, emissiveIntensity: 0 });

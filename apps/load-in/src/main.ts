@@ -18,6 +18,9 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { FIRST_GIG, gigState, runsOf } from "./venues/first-gig.ts";
 import { type FirstGigView, firstGigView } from "./venues/first-gig-view.ts";
+import { BAND_NIGHT, night } from "./venues/band-night.ts";
+import type { Fault } from "@rustybuns/gear";
+import { type BandNightView, bandNightView } from "./venues/band-night-view.ts";
 import { PARK, parkState, pour } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { ARENA, type Leg, arenaState, fly, lower, rack, reserved, send, setHang, setLeg, setSub, unrack, wait as idle } from "./venues/arena.ts";
@@ -63,7 +66,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, "dj-booth": DJ_BOOTH, "dj-booth-media": DJ_BOOTH_MEDIA, amphitheatre: amphi.AMPHITHEATRE, festival: fest.FESTIVAL };
+const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, "band-night": BAND_NIGHT, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, "dj-booth": DJ_BOOTH, "dj-booth-media": DJ_BOOTH_MEDIA, amphitheatre: amphi.AMPHITHEATRE, festival: fest.FESTIVAL };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -162,6 +165,7 @@ scene.add(highlight);
 let bar: BarView | ParkView | DesertView | null = null;
 let big: BiggerBarView | null = null;
 let gig: FirstGigView | null = null;
+let band: BandNightView | null = null;
 let ar: ArenaView | null = null;
 /** The festival's view: two stages, the compound, the licence. */
 let festival: FestivalView | null = null;
@@ -201,6 +205,10 @@ function buildItems() {
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
   gig?.dispose();
   gig = world.level === FIRST_GIG ? firstGigView(scene, $("hud"), () => world, () => cables, () => switchedOn) : null;
+  band?.dispose();
+  // Band night seeds its faults by the nights played: a new stage each time you come back, the same one on a reload.
+  if (world.level === BAND_NIGHT) night(world, tour.nights.length + 1);
+  band = world.level === BAND_NIGHT ? bandNightView(scene, $("hud"), () => world, () => cables, () => switchedOn) : null;
   ar?.dispose();
   ar = world.level === ARENA ? arenaView(scene, $("hud"), () => world) : null;
   arena?.dispose();
@@ -284,7 +292,7 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? ar?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -329,7 +337,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a roll of cable";
-  const sw = at && hasSwitch(at.gear, !!big || !!foh || !!gig) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
+  const sw = at && hasSwitch(at.gear, !!big || !!foh || !!gig || !!band) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}`;
   if (!world.level.truck) return "";
@@ -361,6 +369,7 @@ function press(code: string) {
   if (!world.held && !cable.inHand(cables) && festival?.key(code)) { if (festival.said) flash = { text: festival.said, until: performance.now() + 1800 }; return; }
   if (big?.key(code)) return;
   if (gig?.key(code)) return;
+  if (band?.key(code)) return;
   if (foh?.key(code)) return;
   if (!world.held && !cable.inHand(cables) && dj?.key(code)) return;
   if (code === "KeyF") grab();
@@ -420,7 +429,7 @@ function place(): Answer {
 /** P: switch what you look at on or off, if it has a switch. */
 function flip() {
   const at = aimed(world);
-  if (!at || !hasSwitch(at.gear, !!big || !!foh || !!gig)) return;
+  if (!at || !hasSwitch(at.gear, !!big || !!foh || !!gig || !!band)) return;
   if (!switchedOn.delete(at.key)) switchedOn.add(at.key);
 }
 
@@ -436,7 +445,7 @@ function play() {
 
 /** Enter: doors on the venue's own score; at the booked gig the night is settled (pay less rent, the next booking) and home base shows how it went. */
 function openDoors() {
-  const s = bar?.doors() ?? big?.doors() ?? gig?.doors() ?? arena?.doors() ?? ar?.doors() ?? null;
+  const s = bar?.doors() ?? big?.doors() ?? gig?.doors() ?? band?.doors() ?? arena?.doors() ?? ar?.doors() ?? null;
   if (!s || settled || asked || world.level !== bookedRung(tour).level) return s;
   settled = true;
   tour = record(tour, world.level, s).tour;
@@ -487,6 +496,7 @@ function frame(now: number) {
   online?.tick(world, now);
   big?.tick();
   gig?.tick();
+  band?.tick();
   ar?.tick();
   dj?.tick(dt);
   draw();
@@ -542,7 +552,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(festival ? { festival: { ...fest.festivalState(world), heat: festival.heatOn } } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(band ? { bandNight: band.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(festival ? { festival: { ...fest.festivalState(world), heat: festival.heatOn } } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -660,7 +670,13 @@ const harness = {
     doors: () => amp?.doors() ?? null,
   },
   /** First gig, at any distance: switch the desk's 48 V phantom. */
-  phantom: (on: boolean) => (gig ? (gig.phantom(on), true) : false),
+  phantom: (on: boolean) => (gig ? (gig.phantom(on), true) : band ? (band.phantom(on), true) : false),
+  /** Band night, at any distance: the player on `channel` (1 to 6, or the next not checked) plays alone; what came up. */
+  lineCheck: (channel?: number) => band?.check(channel) ?? null,
+  /** Band night, at any distance: press (or release) the bass DI's ground lift. */
+  groundLift: (on = true) => (band ? (band.lift(on), true) : false),
+  /** Band night: set tonight's seeded faults (a list of { kind: "dead" | "crackle", cable } | { kind: "crossed", a, b } | { kind: "hum", di }). */
+  faults: (list: Fault[]) => (band ? ((night(world).faults = list), true) : false),
   /** Festival: turn a stage ("tent" | "open") to face `deg` (0 north, 90 east), standing on it. */
   festFace: (stage: fest.StageKey, deg: number) => fest.face(world, stage, deg),
   /** Festival: build a stage's subs "omni" or "cardioid", standing by it. */
@@ -677,7 +693,7 @@ const harness = {
   festRun: (seconds: number) => fest.run(world, seconds),
   /** Festival: the heat map on or off, mids and highs ("high") or 63 Hz ("low"). */
   festHeat: (on: boolean, band: "high" | "low" = "high") => festival?.setHeat(on, band),
-  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, dj-booth, dj-booth-media, amphitheatre, festival). */
+  /** Load a level by name (first-gig, band-night, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, dj-booth, dj-booth-media, amphitheatre, festival). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
@@ -686,7 +702,7 @@ const harness = {
   /** Switch a piece of gear on or off (P while looking at it); false if it has no switch. */
   power: (key: string, state = !switchedOn.has(key)) => {
     const item = world.items.find((i) => i.key === key);
-    if (!item || !hasSwitch(item.gear, !!big || !!foh || !!gig)) return false;
+    if (!item || !hasSwitch(item.gear, !!big || !!foh || !!gig || !!band)) return false;
     if (state) switchedOn.add(key); else switchedOn.delete(key);
     return true;
   },

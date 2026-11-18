@@ -9,6 +9,8 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   garage: { window: 180, fee: 0, curfew: null, fine: 0 },
   // The first gig: four boxes off a hatchback and five cables, so a short window; a small room pays a little.
   "first-gig": { window: 300, fee: 120, curfew: 360, fine: 15 },
+  // Band night: six inputs and a snake, then a line check with the band, so a little longer; the bar pays a band night a little more.
+  "band-night": { window: 420, fee: 135, curfew: 420, fine: 20 },
   "dive-bar": { window: 300, fee: 150, curfew: 360, fine: 25 },
   "bigger-bar": { window: 480, fee: 300, curfew: 540, fine: 50 },
   // The park: a long push from the truck and long runs, so a longer window.
