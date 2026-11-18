@@ -242,3 +242,11 @@ button { cursor: pointer; }
   .level { width: 80px; }
 }
 
+
+/* ---- the 3D stage (stage3d.ts): the amp in three.js, the knobs on the panel under it ---- */
+.stage3d { position: relative; height: clamp(280px, 56vh, 640px); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.08); background: #050608; }
+.stage3d-canvas { display: block; width: 100%; height: 100%; }
+/* The screens keep drawing off the page: their canvases are the LED walls' pictures. */
+.stage.three .screens { position: fixed; left: -10000px; top: 0; width: 960px; pointer-events: none; }
+.stage.three .tubes, .stage.three .cab .speaker { display: none; }
+.stage.three .cab { margin-top: 10px; }
