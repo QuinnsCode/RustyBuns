@@ -428,7 +428,7 @@ function sphinx() {
       fur: [0.8, 0.63, 0.38, 0.85, 0], tuft: [0.58, 0.4, 0.2, 0.9, 0], belly: [0.92, 0.82, 0.62, 0.85, 0], stripe: [0.5, 0.36, 0.2, 0.9, 0],
       face: [0.86, 0.68, 0.48, 0.55, 0, 0], lip: [0.6, 0.33, 0.25, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
       cloth: [0.1, 0.22, 0.58, 0.55, 0], gold: [0.95, 0.74, 0.28, 0.35, 0.7], feather: [0.9, 0.78, 0.52, 0.75, 0], primary: [0.7, 0.54, 0.32, 0.75, 0],
-      eye: [0.95, 0.93, 0.86, 0.3, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], mouth: [0.3, 0.08, 0.06, 0.6, 0],
+      eye: [0.95, 0.93, 0.86, 0.3, 0], iris: [0.72, 0.46, 0.14, 0.25, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], glint: [1, 1, 0.97, 0.1, 0, 2], mouth: [0.3, 0.08, 0.06, 0.6, 0],
       nose: [0.42, 0.3, 0.22, 0.5, 0], dark: [0.1, 0.07, 0.05, 0.6, 0], fang: [0.95, 0.92, 0.84, 0.3, 0], claw: [0.3, 0.24, 0.18, 0.4, 0],
     },
     hide: { pattern: "fur", size: 0.03, colours: [[0.62, 0.46, 0.26], [0.9, 0.76, 0.52]], map: 1024 },
@@ -486,34 +486,50 @@ function sphinx() {
   b.blobs.push({ at: "neck", off: [h(-0.01), h(0.12), 0], r: [h(0.1), h(0.2), h(0.095)], rot: [0, 0, -12] });
   const on = (p: V, d: V, sink = 0): V => { const q = skin(ells, p, d), n = norm(d); return [f4(q[0] - n[0] * sink), f4(q[1] - n[1] * sink), f4(q[2] - n[2] * sink)]; };
   b.blobs.push(
-    // the brow ridge, over the eyes
-    { at: "head", off: on([h(0.06), h(0.045), 0], [1, 0.1, 0], h(0.014)), r: [h(0.032), h(0.024), h(0.085)] },
+    // the brow: a soft arch over each eye, sunk deep and tall so it slopes into the forehead and the socket instead
+    // of standing out as one shelf, the outer end a little lower (a calm, kind brow, not a scowl)
+    ...[1, -1].map((side): Blob => ({ at: "head", off: on([h(0.06), h(0.046), side * h(0.04)], [1, 0.15, side * 0.4], h(0.019)), r: [h(0.03), h(0.03), h(0.05)], rot: [side * 8, side * -18, 0] })),
     // cheekbones, high and out under the eyes, and the jaw's corners below the ears, so the face is a man's square
     // jaw tapering to the chin and not one egg
     ...pair("head", on([h(0.05), h(-0.02), h(0.06)], [0.7, 0, 0.7], h(0.016)), [h(0.038), h(0.03), h(0.034)]),
     ...pair("head", on([h(0.0), h(-0.1), h(0.07)], [0.2, -0.3, 1], h(0.03)), [h(0.05), h(0.035), h(0.035)]),
+    // the corners of the mouth lifted: a small soft rise in the cheek just above and outside each end
+    ...[1, -1].map((side): Blob => ({ at: "head", off: on([h(0.06), h(-0.088), side * h(0.04)], [1, 0, side * 0.5], h(0.014)), r: [h(0.016), h(0.014), h(0.014)] })),
   );
   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
   const nose = on([h(0.06), h(0.02), 0], [1, 0.15, 0], h(0.012)), nd = norm([0.6, -1, 0]);
   const nip: V = [f4(nose[0] + nd[0] * h(0.072)), f4(nose[1] + nd[1] * h(0.072)), 0];
+  // each eye's layers on one line out of the face, so they stay concentric: a kohl almond a little bigger than the
+  // white sunk behind it (a rim, not shards floating on it), the white, an amber iris filling most of it and a small
+  // pupil standing a little proud, and a glowing catchlight high on the iris toward the temple (mirrored, so each eye
+  // has its own)
+  const E: V = [h(0.06), h(0.013), h(0.046)], ed: V = [1, 0, 0.45];
+  const eyes: Part[] = [
+    { kind: "eye", at: "head", off: on(E, ed, h(0.011)), r: [h(0.015), h(0.026), h(0.05)], rot: [0, -18, 0], mirror: true, material: "kohl" },
+    { kind: "eye", at: "head", off: on(E, ed, h(0.009)), r: [h(0.017), h(0.021), h(0.044)], rot: [0, -18, 0], mirror: true, material: "eye" },
+    { kind: "eye", at: "head", off: on([E[0], E[1], h(0.044)], [1, 0, 0.4], h(-0.002)), r: [h(0.006), h(0.015), h(0.015)], rot: [0, -16, 0], mirror: true, material: "iris" },
+    { kind: "eye", at: "head", off: on([E[0], E[1], h(0.044)], [1, 0, 0.4], h(-0.005)), r: [h(0.004), h(0.0075), h(0.0075)], rot: [0, -16, 0], mirror: true, material: "pupil" },
+    { kind: "eye", at: "head", off: on([E[0], h(0.02), h(0.051)], [1, 0.1, 0.4], h(-0.009)), r: h(0.003), mirror: true, material: "glint" },
+  ];
   b.parts.push(
     // a straight nose: a wedge from the bridge between the eyes down and forward to a broad tip, its own part in the
     // face's skin (a blob this small melts in the blend, and a round one read as a snout)
-    { kind: "horn", at: "head", off: nose, dir: [0.6, -1, 0], len: h(0.08), base: h(0.012), tip_base: h(0.026), flat: 0.7, curve: 0, segments: 12, material: "face" },
+    { kind: "horn", at: "head", off: nose, dir: [0.6, -1, 0], len: h(0.08), base: h(0.016), tip_base: h(0.025), flat: 0.5, curve: 0, segments: 12, material: "face" },
     // the tip a soft ball over the wedge's flat end, so the nose rounds off instead of ending in a box
     { kind: "eye", at: "head", off: nip, r: [h(0.017), h(0.015), h(0.022)], material: "face" },
-    // almond eyes set into the face under the brow: a kohl almond a little bigger than the white sunk behind it, so
-    // the line is a rim round the eye and not shards floating on it; a heavy upper lid in the face's own skin over
-    // the top of the white, so the eye sits in a socket; and one kohl wing running back toward the temple
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.008)), r: [h(0.014), h(0.015), h(0.032)], rot: [0, -18, 0], mirror: true, material: "eye" },
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.011)), r: [h(0.013), h(0.02), h(0.04)], rot: [0, -18, 0], mirror: true, material: "kohl" },
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.014), h(0.038)], [1, 0, 0.42], h(-0.001)), r: h(0.01), mirror: true, material: "pupil" },
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.03), h(0.04)], [1, 0.2, 0.45], h(0.008)), r: [h(0.014), h(0.008), h(0.036)], rot: [0, -18, -12], mirror: true, material: "face" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(0.018), h(0.072)], [0.6, 0, 1], h(0.006)), dir: [-0.6, 0.15, 1], len: h(0.04), base: h(0.01), curve: 10, bend: [0, 1, 0], mirror: true, material: "kohl" },
-    // full lips, closed: two soft rolls with volume, the upper wide with a dip, the lower fuller
-    ...[1, -1].map((side): Part => ({ kind: "eye", at: "head", off: on([h(0.06), h(-0.09), side * h(0.012)], [1, 0, side * 0.15], h(0.007)), r: [h(0.011), h(0.008), h(0.024)], rot: [0, 0, side * -8], material: "lip" })),
-    { kind: "eye", at: "head", off: on([h(0.06), h(-0.104), 0], [1, -0.15, 0], h(0.007)), r: [h(0.013), h(0.01), h(0.03)], material: "lip" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.097), 0.0001], [1, 0, 0], h(0.008)), dir: [0, 0, 1], len: h(0.04), base: h(0.005), curve: 25, bend: [-1, 0, 0], mirror: true, material: "mouth" },
+    // big almond eyes set a little wide, so the stare reads as calm and curious, not dead
+    ...eyes,
+    // a heavy upper lid in the face's skin over the top of the white, and a soft lower lid under it, so the eye
+    // sits between lids in a socket rather than on the face as a bead; and one kohl wing running back toward the temple
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.033), E[2]], [1, 0.25, 0.45], h(0.009)), r: [h(0.017), h(0.009), h(0.044)], rot: [0, -18, -14], mirror: true, material: "face" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(-0.007), E[2]], [1, -0.2, 0.45], h(0.009)), r: [h(0.012), h(0.005), h(0.04)], rot: [0, -18, 8], mirror: true, material: "face" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.016), h(0.08)], [0.6, 0, 1], h(0.006)), dir: [-0.6, 0.15, 1], len: h(0.036), base: h(0.009), curve: 10, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    // full lips, closed, with a soft hint of a smile: two rolls for the upper lip (a dip in the middle), each tilted
+    // so its outer end lifts, one fuller lower roll (split in two it read as four scattered pieces), and a mouth line
+    // whose corners curl up and back
+    ...[1, -1].map((side): Part => ({ kind: "eye", at: "head", off: on([h(0.06), h(-0.089), side * h(0.012)], [1, 0, side * 0.15], h(0.007)), r: [h(0.011), h(0.008), h(0.024)], rot: [side * -16, 0, side * -8], material: "lip" })),
+    { kind: "eye", at: "head", off: on([h(0.06), h(-0.104), 0], [1, -0.15, 0], h(0.007)), r: [h(0.013), h(0.01), h(0.028)], material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.097), 0.0001], [1, 0, 0], h(0.005)), dir: [0, 0, 1], len: h(0.042), base: h(0.005), curve: 34, bend: norm([-1, 0.55, 0]), mirror: true, material: "mouth" },
     // the plaited beard: a long block hung from the chin, banded gold
     { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
   );
@@ -582,7 +598,7 @@ function sphinx() {
   }
   // the face takes more of the triangle budget than its size would give it, so the cheeks, jaw and brow stay round
   // and the nose and lips keep their volume (the lion body behind it, under the fur hide, pays)
-  b.dense = { face: 0.7, lip: 1, kohl: 1, eye: 1, pupil: 1, mouth: 1, cloth: 0.75, gold: 0.75, feather: 0.75, primary: 0.75 };
+  b.dense = { face: 0.7, lip: 1, kohl: 1, eye: 1, iris: 1, pupil: 1, glint: 1, mouth: 1, cloth: 0.75, gold: 0.75, feather: 0.75, primary: 0.75 };
   // and keeps 1800 triangles of its own, enough to shade round (at 775 it shadowed itself in facets across the cheeks)
   b.round = { face: 1800 };
   return { ...b, wings: 2 };
