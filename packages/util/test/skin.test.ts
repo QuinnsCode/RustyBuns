@@ -129,16 +129,18 @@ test.skipIf(!chromePath())("the chip folds into its badge and back, a dot lights
       const moving = (el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === "running" && a.effect.getTiming().iterations !== Infinity).length;
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const open = parts();
+      // done moving: every finite animation ends (a slow runner takes longer than the 0.4 s they run), capped at 2 s
+      const settle = (el) => Promise.race([Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {}))), wait(2000)]).then(() => wait(60)); // and their end handlers ran
       chip.querySelector(".eq-fold").click();
       const folded = { parts: parts(), expanded: chip.querySelector(".eq-fold").getAttribute("aria-expanded"), frame: chip.classList.contains("in"), kept: localStorage.getItem("eq.chip.folded"), moving: moving(chip) };
-      await wait(450);
+      await settle(chip);
       const settled = moving(chip) + chip.querySelectorAll(":scope > :not([data-part])").length;
       chip.querySelector(".eq-fold").click();
       const back = { parts: parts(), frame: chip.classList.contains("in"), kept: localStorage.getItem("eq.chip.folded") };
       members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: false }]);
       members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: true }]);
       const lit = [...document.querySelectorAll(".rb-lobby-m.lit")].map((m) => m.firstChild.textContent);
-      await wait(450);
+      await settle(document.body);
       const still = moving(document.querySelector(".rb-lobby")) + moving(chip);
       // Folded, then signed out: Sign in still shows beside the badge, which is only a mark there.
       localStorage.setItem("eq.chip.folded", "1");

@@ -94,7 +94,7 @@
 .title .recto > h1 { font-size: clamp(46px, 6.4vw, 72px); margin: 2px 0 4px; }
 .title .imprint-head { font-family: var(--f-title); font-size: 17px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink-faded); margin: 0 0 6px; }
 /* the one plain line under the name (#4671): what the game is, on the page and not behind the (?) */
-.title .plain { font-family: var(--f-book); font-size: 19px; line-height: 1.35; color: var(--ink); max-width: 30ch; margin: 4px auto 14px; text-wrap: balance; }
+.title .plain { font-family: var(--f-book); font-size: 19px; line-height: 1.35; color: var(--ink-b); max-width: 30ch; margin: 4px auto 14px; text-wrap: balance; }
 .title .subtitle { font-family: var(--f-book); font-style: italic; font-size: 18px; color: var(--ink-faded); max-width: 30ch; margin: 0; }
 .title .recto > .flourish { margin: 12px auto 4px; }
 .title .menu { gap: 12px; width: min(380px, 100%); }
@@ -1446,3 +1446,24 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .starters .card.starter .spar-says { display: block; min-height: 2.7em; font-size: 14px; line-height: 1.3; color: var(--ink-b); font-style: italic; }
 .starters .radar text[data-stat] { cursor: help; pointer-events: all; }
 .starters .radar text[data-stat]:hover { fill: var(--blood); }
+
+/* --- the title's menu written on the page (#5120 round 115), the way round 113 wrote Fight / Bestiary / Back: no
+ * slabs of wash. The main call is the red word with the pen's swash under it; the rest follow in the book's ink, each
+ * begun with "or"; the pointer (or a pad's focus) soaks a faint wash in round the word. The (?) is a ring drawn by hand,
+ * not a stamped circle */
+.title .menu { display: grid; justify-items: center; gap: 4px; margin-top: 10px; width: min(480px, 100%); }
+.title .page .menu button#continue { font-size: 27px; text-wrap: balance; }
+.title .page .menu button { display: inline-flex; align-items: baseline; min-height: 44px; box-sizing: border-box; justify-content: center; gap: 0.3em; width: auto; padding: 2px 12px 6px; border: 0; background: none; transform: none;
+  font-family: var(--f-hand); font-size: 25px; color: var(--ink-b); text-shadow: 0.45px 0.55px 0 currentColor; }
+.title .page .menu button svg { width: 0.72em; height: 0.72em; align-self: center; stroke: currentColor; }
+.title .page .menu button::before { content: "or"; position: static; inset: auto; z-index: auto; display: inline-block; margin-right: 2px; -webkit-mask-box-image: none; box-shadow: none !important; background: none !important;
+  font-family: var(--f-book); font-style: italic; font-size: 17px; color: var(--ink-faded); text-shadow: none; }
+.title .page .menu button:is(:hover:not(:disabled), :focus-visible) { color: #120a04; background: radial-gradient(closest-side, rgba(110, 70, 30, 0.16), rgba(110, 70, 30, 0.07) 70%, transparent); transform: none; }
+.title .page .menu button.go { color: var(--blood); font-size: 31px; padding: 0 14px 10px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2' d='M3 8Q30 3 60 6T97 4'/%3E%3Cpath stroke-width='1' d='M12 10Q45 7 80 9'/%3E%3C/svg%3E") center bottom / 100% 11px no-repeat; }
+.title .page .menu button.go::before { content: none; }
+.title .page .menu button.go:is(:hover:not(:disabled), :focus-visible) { color: #5a120b;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2' d='M3 8Q30 3 60 6T97 4'/%3E%3Cpath stroke-width='1' d='M12 10Q45 7 80 9'/%3E%3C/svg%3E") center bottom / 100% 11px no-repeat, radial-gradient(closest-side, rgba(123, 29, 20, 0.13), transparent); }
+.title .page .menu button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.paper button.info, .select button.info { border: 0; border-radius: 0; color: var(--ink-b);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Cpath stroke-width='1.6' d='M16.5 2.6C23.5 3 27.6 8.6 27.3 15.4C27 22.2 22 27.4 15 27.3C8 27.2 2.8 22 2.8 14.8C2.8 8 8 2.9 14.6 2.7Q18 2.6 20.2 3.9'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
