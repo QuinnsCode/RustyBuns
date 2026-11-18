@@ -383,19 +383,20 @@ export const SOCKET_PROTOCOL = "eqosys";
 /** A member of a party as eqosys's party shows them; `voice` when their page says it is in the party's voice room. */
 export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false), voice: opt(bool()) });
 export type PartyMember = Of<typeof PartyMember>;
-/** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
+/** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused.
+ *  `game` is the host's move in the game, relayed to everyone and never kept (`game()` below). */
 export const PartyMsg: Guard<
   { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
-  | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
+  | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "game"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
   | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string } | { t: "ticket"; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules", "ticket"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "game", "reported", "rules", "ticket"]) }), v)?.t;
   if (t === "ticket") return { t, ...obj({ url: str(300), ticket: str(4096) })(v) };
   if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)), invite: opt(str(64)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }), ...(r.invite && { invite: r.invite }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
-  if (t === "say") return { t, ...obj({ from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) })(v) };
+  if (t === "say" || t === "game") return { t: t === "say" ? "say" : "game", ...obj({ from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) })(v) };
   if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
   throw new Error("not a party message");
 };
@@ -424,7 +425,7 @@ export function party({ url, token }: PartyConfig) {
   const hide = (id: string, on = true) => { const h = hidden(); if (on) h.add(id); else h.delete(id); try { localStorage.setItem(HIDDEN, JSON.stringify([...h])); } catch { /* private window: for this page only */ } };
   const onStart = ears<{ room: string; seat: number; ticket?: string }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
-  const onTicket = ears<{ url: string; ticket: string }>();
+  const onTicket = ears<{ url: string; ticket: string }>(), onGame = ears<Extract<PartyMsg, { t: "game" }>>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
   async function make(open = false): Promise<string | null> {
@@ -448,7 +449,7 @@ export function party({ url, token }: PartyConfig) {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else if (m.t === "ticket") onTicket.hear(m); else onRefused.hear(lastWhy = m.why); },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "game") onGame.hear(m); else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else if (m.t === "ticket") onTicket.hear(m); else onRefused.hear(lastWhy = m.why); },
       onClose: (e) => {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
         // The door's refusals (party.ts): its own words came just before the close; stop trying.
@@ -467,6 +468,10 @@ export function party({ url, token }: PartyConfig) {
     ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
     start: () => void link?.send({ t: "start" }),
     say: (text: string) => void link?.send({ t: "say", text }),
+    /** Host only: a move in the game (up to 200 characters) for everyone's page, the host's own included. Not chat: never
+     *  kept, so nobody who joins later hears it, and an eqosys from before moves drops it (`onGame` never hears one). */
+    game: (text: string) => void link?.send({ t: "game", text }),
+    onGame: onGame.add,
     /** Quiet a member for the whole party (or `false` to let them speak again): the host's, or whoever the `mute` rule says. */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),

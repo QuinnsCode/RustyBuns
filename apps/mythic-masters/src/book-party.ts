@@ -1,5 +1,6 @@
 // The Book in a Qollab party (#3548): everyone plays their own journey, but when the Book stops you, the host answers
-// for the party. The host's page says its reply on the party's channel ("book:<talk>.<reply>"); a guest's page answers
+// for the party. The host's page sends its reply as a party move ("book:<talk>.<reply>", eqosys's `game`, never kept as
+// chat); until its own move comes back (an eqosys from before moves drops them) it says it in chat as well. A guest's page answers
 // the same talk with it through the same reply path its own click would take, which lifts the hold. If the host's Book
 // asked something else (the journeys have drifted), or the host has not answered in half a minute, the guest's hold
 // lifts and they answer for themselves, so a party never stalls anyone. A faction's sheet (#4316) is answered the same
@@ -46,13 +47,15 @@ export interface BookPage extends Asked {
 
 /** How long a guest waits on a host who has not answered before answering for themselves. */
 export const PATIENCE = 30_000;
-/** How far the party server's clock may run from this page's: a host answer older than the open talk by more is a
- * replay of the kept chat (the server sends it to whoever joins), not the host moving on. */
+/** How far the party server's clock may run from this page's: a host answer in chat older than the open talk by more is a
+ * replay of the kept chat (the server sends it to whoever joins), not the host moving on. A move is never replayed. */
 const SKEW = 5_000;
 
 /** Wire a page's Book (and its faction sheet) to party `p` (already made; this joins `code`). */
 export function bookParty(p: Party, code: string, page: BookPage, patience = PATIENCE) {
   let seat: Seat | null = null, members: PartyMember[] = [];
+  /** This party relays moves: one came back. From then on the host stops saying answers in chat and a guest ignores them there. */
+  let moves = false;
   const guest = () => !!seat && !seat.host;
   /** What the host asks of one page's channel: its hold, and what it heard the host say. */
   const channel = (kind: Kind, asked: Asked) => {
@@ -65,10 +68,11 @@ export function bookParty(p: Party, code: string, page: BookPage, patience = PAT
     };
     return {
       deliver,
-      heard: (talk: string, reply: string, at: number) => {
+      /** The host answered `talk`: as a move (`at` null, heard as it happened) or in chat at the server's `at`. */
+      heard: (talk: string, reply: string, at: number | null) => {
         hosts.set(talk, reply);
         const open = asked.open();
-        if (open && open !== talk && guest() && at >= openedAt - SKEW) { freed = open; page.changed(); }
+        if (open && open !== talk && guest() && (at === null || at >= openedAt - SKEW)) { freed = open; page.changed(); }
         deliver();
       },
       /** True when the host has moved on to another talk while this page's stays open. */
@@ -82,17 +86,23 @@ export function bookParty(p: Party, code: string, page: BookPage, patience = PAT
         deliver();
       },
       /** This page answered: the host's goes out to the party. */
-      answered: (talk: string, reply: string) => { if (seat?.host) p.say(wireOf(talk, reply, kind)); },
+      answered: (talk: string, reply: string) => {
+        if (!seat?.host) return;
+        p.game(wireOf(talk, reply, kind));
+        if (!moves) p.say(wireOf(talk, reply, kind)); // the move goes first, so a guest hears it before this and drops this
+      },
       stop: () => clearTimeout(wait),
     };
   };
   const book = channel("book", page), faction = channel("faction", page.faction ?? { open: () => null, answer: () => {} });
   p.onMembers((m) => { members = m; seat = seatOf(m, page.name(), page.id?.()); page.changed(); book.deliver(); faction.deliver(); });
-  p.onSay((m) => {
+  const hostSaid = (m: { from: { id: string }; text: string }, at: number | null) => {
     const w = readWire(m.text);
     if (!w || !members.some((x) => x.id === m.from.id && x.host)) return;
-    (w.kind === "faction" ? faction : book).heard(w.talk, w.reply, m.at);
-  });
+    (w.kind === "faction" ? faction : book).heard(w.talk, w.reply, at);
+  };
+  p.onGame((m) => { moves = true; hostSaid(m, null); });
+  p.onSay((m) => { if (!moves) hostSaid(m, m.at); });
   p.onGone(() => { members = []; seat = null; page.changed(); });
   p.join(code);
   return {
