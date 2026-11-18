@@ -172,6 +172,31 @@ Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (ove
 - **Not in Rust yet:** Q Phase, Q Vibe, Q Wah, Q Envelope and Q Octave (a rail-less op-amp), Q Trem and Q Squeeze (`VarR`). In TypeScript they cost 170 ns (Q Trem) to 2,430 ns (Q Octave) per sample.
 - **To fit an M7** (#5109): a sparse Jacobian, a cap on iterations per sample, an f32 build, then `no_std` and a cycle count on a board.
 
+### Fitting a Cortex-M7: the first two steps (#5109)
+
+**The solver is up to 30% faster (Q Fuzz; Q Drive 17%), and its hardest sample can now be held to 12 iterations with no change you could hear.** The f32 build, `no_std` and a board's cycle count are next (#5150).
+
+- **Sparse Jacobian:** most of the ports' Jacobian is zero (a diode only touches its own port). `Circuit::new` now marks where `currents` writes and the Newton loop multiplies only those entries. Each entry adds its terms in the same order as before, so the output is the same to the bit; the golden test against `mna.ts` still passes as it did.
+
+| Pedal, 48 kHz | Rust ns / sample, before | After | Host cycles / sample, after |
+|---|---|---|---|
+| Q Drive | 840 | 695 | about 2,200 |
+| Q Dist | 880 | 750 | about 2,400 |
+| Q Germ | 840 | 830 | about 2,650 |
+| Q Fuzz | 1,780 | 1,250 | about 4,000 |
+
+  Q Fuzz gains the most because it has the most ports (6); Q Germ hardly moves, as its cost is mostly elsewhere (runs vary by about 5%). At 96 and 192 kHz the gains are the same.
+- **A cap on iterations:** `Circuit::max_iterations` (50 by default, which no pedal reaches) stops Newton early on a hard sample. That sample keeps the last Newton step's prediction of its currents (the linearised circuit, which can't run away), and the next sample starts from where it stopped. Taking the diodes' currents at the unfinished voltage instead blew up within a few samples (thousands of volts). `bun scripts/pedal-bench.ts --cap 12` gives a second table, the capped run against the uncapped one on the same riff:
+
+| Cap, 48 kHz | Samples capped | Error, below the signal (RMS) | Largest error |
+|---|---|---|---|
+| 6 | 8 to 17% | 15 to 33 dB | up to 9 V (Q Germ) |
+| 8 | 5 to 7% | 35 to 40 dB | up to 0.35 V |
+| 12 | 0.4 to 1.3% | 57 to 88 dB | up to 31 mV |
+
+  So 12 is the cap to use: the most a sample can cost drops from 18 to 20 iterations to 12, a third off the worst case that real time is set by, and the error is below what a real pedal's 5% resistors already change. 6 is too coarse. The mean barely moves (4.6 iterations), so the average cost doesn't drop; a capped sample saves its cost, not the others'.
+- **The M7 sum, again:** Q Drive's mean of about 2,200 host cycles is about 7,000 to 13,000 on an M7 in f64, and its worst sample at 12 iterations about 2.6 times the mean. Still over the 10,000 budget on a hard sample, so the f32 build (about twice as fast on the M7's FPU) is the step that decides it.
+
 **Owner decisions, listed, not answered:**
 
 1. Sell built pedals at all? It needs FCC (US) and CE (EU) checks, and a returns and repair story. Kits need less.

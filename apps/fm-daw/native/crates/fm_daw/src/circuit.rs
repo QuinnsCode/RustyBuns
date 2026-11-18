@@ -186,6 +186,9 @@ pub struct Circuit {
     m: usize,
     pub misses: u64,
     pub iterations: u64,
+    /// Newton iterations allowed per sample (50 by default). Under that, a hard sample stops early and the
+    /// next one starts from where it left off: the cost of a sample has a ceiling, for a chip with a fixed budget.
+    pub max_iterations: u64,
     pub noise: f64,
     seed: u32,
     base_dc: Vec<f64>,
@@ -214,6 +217,8 @@ pub struct Circuit {
     v_new: Vec<f64>,
     ip: Vec<f64>,
     j: Vec<f64>,
+    /// The ports' Jacobian `j` as (row, column) pairs it can be nonzero at, row first: `currents` writes only these.
+    nz: Vec<(usize, usize)>,
     f: Vec<f64>,
     jf: Vec<f64>,
     p: Vec<f64>,
@@ -249,13 +254,13 @@ impl Circuit {
         let mut row = node_count;
         let t = 1.0 / sample_rate;
         let mut c = Circuit {
-            size: n, m, misses: 0, iterations: 0, noise: 0.0, seed: 0x9e3779b9,
+            size: n, m, misses: 0, iterations: 0, max_iterations: 50, noise: 0.0, seed: 0x9e3779b9,
             base_dc: Vec::new(), x: vec![0.0; m], out: desc[2] as usize, in_row: 0,
             supplies: Vec::new(), caps: Vec::new(), hiss: Vec::new(),
             pa: Vec::new(), pb: Vec::new(), poff: Vec::new(), ports: Ports::default(), junctions: Vec::new(),
             inds: Vec::new(), pots: Vec::new(), pot_glide: 1.0 - (-t / POT_GLIDE).exp(), ldrs: Vec::new(), i_now: Vec::new(),
             k: 0, ainv: Vec::new(), w: Vec::new(), h: Vec::new(), z: vec![0.0; m],
-            v: Vec::new(), v_new: Vec::new(), ip: Vec::new(), j: Vec::new(), f: Vec::new(), jf: Vec::new(), p: Vec::new(),
+            v: Vec::new(), v_new: Vec::new(), ip: Vec::new(), j: Vec::new(), nz: Vec::new(), f: Vec::new(), jf: Vec::new(), p: Vec::new(),
         };
         if c.out >= node_count || desc[1] as usize >= node_count { return None; }
         fn source(tr: &mut [f64], dc: &mut [f64], m: usize, row: &mut usize, a: usize, b: usize) -> usize {
@@ -381,6 +386,11 @@ impl Circuit {
         c.ainv = ainv; c.w = w; c.h = h; c.base_dc = dc;
         c.v = vec![0.0; kk]; c.v_new = vec![0.0; kk]; c.ip = vec![0.0; kk]; c.p = vec![0.0; kk];
         c.j = vec![0.0; kk * kk]; c.f = vec![0.0; kk]; c.jf = vec![0.0; kk * kk]; c.i_now = vec![0.0; kk];
+        // Where the Jacobian can be nonzero is set by the parts, not the voltages: mark what `currents` writes.
+        let mut probe = vec![f64::NAN; kk * kk];
+        Self::currents(&c.ports, &c.poff, kk, &c.v, &mut c.ip, &mut probe);
+        c.nz = (0..kk * kk).filter(|&e| !probe[e].is_nan()).map(|e| (e / kk, e % kk)).collect();
+        c.ip.fill(0.0);
         Some(c)
     }
 
@@ -602,21 +612,23 @@ impl Circuit {
         if kk > 0 {
             for k in 0..kk { self.p[k] = self.z[self.pa[k]] - self.z[self.pb[k]]; }
             let mut it = 0u64;
-            let mut converged = false;
-            while it < 50 && !converged {
-                self.j.fill(0.0);
+            let (mut converged, mut singular) = (false, false);
+            while it < self.max_iterations.max(1) && !converged {
                 Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
+                // F = v - p + H i(v), and its Jacobian I + H J, from J's nonzeros only (most of J is zero).
+                // Each entry adds its terms in the same order the dense product did, so the sums come out the same.
+                self.jf.fill(0.0);
                 for j in 0..kk {
                     let mut f = self.v[j] - self.p[j];
-                    for k in 0..kk {
-                        f += self.h[j * kk + k] * self.ip[k];
-                        let mut s = if j == k { 1.0 } else { 0.0 };
-                        for l in 0..kk { s += self.h[j * kk + l] * self.j[l * kk + k]; }
-                        self.jf[j * kk + k] = s;
-                    }
+                    for k in 0..kk { f += self.h[j * kk + k] * self.ip[k]; }
                     self.f[j] = -f;
+                    self.jf[j * kk + j] = 1.0;
                 }
-                if !solve(&mut self.jf, &mut self.f, kk, kk) { break; }
+                for &(l, k) in &self.nz {
+                    let jl = self.j[l * kk + k];
+                    for j in 0..kk { self.jf[j * kk + k] += self.h[j * kk + l] * jl; }
+                }
+                if !solve(&mut self.jf, &mut self.f, kk, kk) { singular = true; break; }
                 converged = true;
                 for k in 0..kk {
                     self.v_new[k] = self.v[k] + self.f[k];
@@ -627,16 +639,19 @@ impl Circuit {
                 it += 1;
             }
             self.iterations += it;
-            if !converged {
-                self.misses += 1;
-                self.j.fill(0.0);
+            // A sample stopped by a cap under 50 keeps its last Newton step's linear prediction (the currents
+            // of the linearised circuit, which can't run away), and the next sample carries on from its `v`.
+            // Only a real miss takes the currents at `v` as they are, as mna.ts does.
+            let capped = !converged && !singular && it < 50;
+            if !converged { self.misses += 1; }
+            if !converged && !capped {
                 Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
                 self.f.fill(0.0);
             }
+            self.i_now.copy_from_slice(&self.ip);
+            for &(k, l) in &self.nz { self.i_now[k] += self.j[k * kk + l] * self.f[l]; }
             for k in 0..kk {
-                let mut ik = self.ip[k];
-                for l in 0..kk { ik += self.j[k * kk + l] * self.f[l]; }
-                self.i_now[k] = ik;
+                let ik = self.i_now[k];
                 let o = k * m;
                 for r in 0..n { self.x[r] -= self.w[o + r] * ik; }
             }
@@ -909,6 +924,32 @@ mod tests {
         d[5] = 9.0; // a node that doesn't exist
         assert!(Circuit::new(&d, 48000.0).is_none());
         assert!(Circuit::new(&d[..7], 48000.0).is_none());
+    }
+
+    #[test]
+    fn a_capped_clipper_stays_under_its_cap_and_near_the_full_solve() {
+        // in -1k- out, two diodes and 10 nF from out to ground, driven hard: 2 V at 220 Hz.
+        let mut d = vec![2.0, 0.0, 1.0, 4.0];
+        d.extend(part(0.0, [0.0, 1.0, 0.0, 0.0], 1e3, 0.0, 0.0));
+        d.extend(part(3.0, [1.0, -1.0, 0.0, 0.0], 2.52e-9, 1.752, 0.0));
+        d.extend(part(3.0, [-1.0, 1.0, 0.0, 0.0], 2.52e-9, 1.752, 0.0));
+        d.extend(part(1.0, [1.0, -1.0, 0.0, 0.0], 1e-8, 0.0, 0.0));
+        let sr = 48000.0;
+        let (mut full, mut capped) = (Circuit::new(&d, sr).unwrap(), Circuit::new(&d, sr).unwrap());
+        full.settle(0.0).unwrap(); capped.settle(0.0).unwrap();
+        capped.max_iterations = 3;
+        let (mut worst, mut most) = (0.0f64, 0u64);
+        for i in 0..4800 {
+            let vin = 2.0 * (2.0 * PI * 220.0 * i as f64 / sr).sin();
+            let before = capped.iterations;
+            let (a, b) = (full.step(vin), capped.step(vin));
+            most = most.max(capped.iterations - before);
+            worst = worst.max((a - b).abs());
+        }
+        assert_eq!(full.misses, 0);
+        assert!(capped.misses > 0, "the cap never bit");
+        assert!(most <= 3);
+        assert!(worst < 0.05, "capped output {worst} V off");
     }
 
     #[test]
