@@ -4,7 +4,8 @@
 // bounce lifting the tops of the walls, a soft fill washing the walls between the pools, the ceiling falling off into its corners, floor lamps in the free corners throwing their hourglass on the walls, soft shadows, contact shadows
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
-// the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, and on high a little bloom, a vignette and grain.
+// the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, paint rolled on by hand, a framed
+// control-room window, the cables, tape, wall plates and road cases a room in use collects, and on high a little bloom, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
@@ -18,8 +19,9 @@ import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import type { Side, StudioDef } from "./room.ts";
+import { thingBox, wallPieces, type Side, type StudioDef } from "./room.ts";
 import { MATERIALS } from "./sound.ts";
 
 export type Quality = "low" | "high";
@@ -32,6 +34,7 @@ export function pickQuality(search: string, stored: string | null, coarse: boole
 }
 export function loadQuality(): Quality {
   let stored: string | null = null;
+let sheen: THREE.CanvasTexture | null = null;
   try { stored = localStorage.getItem(KEY); } catch { /* no storage */ }
   return pickQuality(location.search, stored, matchMedia("(pointer: coarse)").matches);
 }
@@ -205,7 +208,7 @@ export function surface(name: string, color?: string): THREE.MeshStandardMateria
   let m: THREE.MeshStandardMaterial;
   // glass is nearly clear: blended in linear light a few percent of a pale tint fogs the dark room behind it; its
   // reflections are what say it's there
-  if (name === "glass") m = new THREE.MeshStandardMaterial({ color: c.clone().multiplyScalar(0.35), transparent: true, opacity: 0.025, roughness: 0.04, metalness: 0, envMapIntensity: 0.8, depthWrite: false });
+  if (name === "glass") m = new THREE.MeshStandardMaterial({ color: c.clone().multiplyScalar(0.35), transparent: true, opacity: 0.04, roughness: 0.04, metalness: 0, envMapIntensity: 1.6, depthWrite: false });
   else if (name === "metal") m = new THREE.MeshStandardMaterial({ color: c, metalness: 0.85, roughness: 0.38 });
   else if (name === "chrome") m = new THREE.MeshStandardMaterial({ color: c, metalness: 1, roughness: 0.12 });
   else if (name === "plastic") m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.45 });
@@ -469,6 +472,216 @@ function corners(def: StudioDef, group: THREE.Group) {
   group.add(ceiling);
 }
 
+let roller: THREE.CanvasTexture | null = null;
+let sheen: THREE.CanvasTexture | null = null;
+/**
+ * Paint that was rolled on by hand: no wall comes out one flat grey. Each outside wall gets a faint pattern of the
+ * roller's overlapping strokes and patched spots darkening it a little, and a slight cast of its own, the walls by the
+ * lamps a touch warmer and the ones opposite a touch cooler, as light that has bounced off different things reaches them.
+ */
+function walls(def: StudioDef, group: THREE.Group) {
+  roller ??= canvasTex(256, (g) => {
+    const rnd = mulberry32(5153);
+    // vertical strokes about a roller wide (a tile is 2 m, so 30 px is 23 cm), each its own coat, edges soft
+    for (let x = -30; x < 256; x += 18 + rnd() * 16) {
+      const a = 0.05 + rnd() * 0.12, wide = 24 + rnd() * 14, gr = g.createLinearGradient(x, 0, x + wide, 0);
+      gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(0.3, `rgba(0,0,0,${a})`); gr.addColorStop(0.7, `rgba(0,0,0,${a})`); gr.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = gr;
+      for (const dx of [-256, 0, 256]) g.fillRect(x + dx, 0, wide, 256);
+    }
+    blotch(g, 256, rnd, 10, 0.16); // filled holes and touch-ups, a shade off the wall
+  }, false);
+  const { h } = def.size, mat = shade(roller, 0.4);
+  roller.repeat.set(0.5, 0.5);
+  const lamps = practicals(def);
+  for (const side of ["front", "back", "left", "right"] as const) {
+    const s = sideOf(def, side), geo = new THREE.PlaneGeometry(s.len, h), uv = geo.getAttribute("uv");
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * s.len, uv.getY(i) * h);
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(s.cx, h / 2, s.cz); m.rotation.y = s.turn; m.translateZ(0.061); m.name = "roller";
+    group.add(m);
+    // warm by a lamp, cool across from one: multiplied over the wall, so it shifts the paint's colour, not its light
+    const lit = lamps.some(([x, z]) => Math.hypot(x - s.cx, z - s.cz) < Math.max(def.size.w, def.size.d) / 2 + 0.2);
+    const cast = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: lit ? 0xfff0dc : 0xe9eff7, blending: THREE.MultiplyBlending, premultipliedAlpha: true, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));
+    cast.position.copy(m.position); cast.rotation.copy(m.rotation); cast.translateZ(-0.0005); cast.name = "cast";
+    group.add(cast);
+  }
+}
+
+/** Many small meshes as one per material, so a road case of forty parts is a few draw calls. Keeps the root's own place. */
+function flatten(root: THREE.Object3D): THREE.Group {
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert(), by = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.Material)) return;
+    const g = o.geometry.clone();
+    g.applyMatrix4(inv.clone().multiply(o.matrixWorld));
+    by.set(o.material, [...(by.get(o.material) ?? []), g]);
+  });
+  const out = new THREE.Group(); out.name = root.name;
+  out.position.copy(root.position); out.quaternion.copy(root.quaternion); out.scale.copy(root.scale);
+  for (const [m, gs] of by) { const merged = mergeGeometries(gs); if (merged) out.add(new THREE.Mesh(merged, m)); }
+  return out;
+}
+
+/**
+ * The control room's window as a window: every glass wall gets a dark frame, posts at its ends and every three and a
+ * half metres, a head along its top and the wall closed over it to the ceiling, and a rubber bead where the pane meets
+ * the sill, so looking through it from the desk reads as glass in a wall, not an empty gap.
+ */
+function windows(def: StudioDef, group: THREE.Group) {
+  const { h } = def.size, frame = surface("metal", "#55585d"), bead = surface("rubber", "#101113"), head = surface("drywall", def.colors.walls);
+  const top = h - 0.2, low = 0.92;
+  sheen ??= canvasTex(128, (g) => {
+    const rnd = mulberry32(8);
+    for (const [x, wide, a] of [[18, 26, 0.5], [52, 10, 0.3], [88, 34, 0.35]] as const) {
+      const k = rnd() * 6, gr = g.createLinearGradient(x + k, 0, x + k + wide, 0);
+      gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, `rgba(255,255,255,${a})`); gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.save(); g.translate(64, 64); g.transform(1, 0, -0.6, 1, 0, 0); g.translate(-64, -64); g.fillStyle = gr; g.fillRect(x + k - 80, -20, wide, 170); g.fillRect(x + k + 48, -20, wide, 170); g.restore();
+    }
+  }, false);
+  const sheenMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdfe9f0).multiplyScalar(0.3), map: sheen, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const edgeGlass = new THREE.MeshStandardMaterial({ color: "#5f8f7c", roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
+  for (const wl of def.walls) {
+    if (!wl.glass) continue;
+    for (const p of wallPieces(wl, 0.12)) {
+      const g = new THREE.Group(); g.position.set(p.cx, 0, p.cz); g.rotation.y = p.turn; g.name = "window";
+      const box = (bw: number, bh: number, bd: number, y: number, x: number, m: THREE.Material) => {
+        const b = new THREE.Mesh(metreUV(new THREE.BoxGeometry(bw, bh, bd)), m); b.position.set(x, y, 0); g.add(b); return b;
+      };
+      const len = p.hw * 2, n = Math.max(1, Math.ceil(len / 3.4));
+      for (let i = 0; i <= n; i++) box(0.05, top - low, p.hd * 2 + 0.04, (top + low) / 2, -p.hw + (i / n) * len + (i === 0 ? 0.025 : i === n ? -0.025 : 0), frame);
+      // the pane's own edge, green where it sits in the frame: the one place thick glass shows its colour
+      for (const y of [low + 0.012, top - 0.07]) { const e = box(len, 0.012, 0.012, y, 0, edgeGlass); e.position.z = 0; }
+      box(len, 0.06, p.hd * 2 + 0.04, top - 0.03, 0, frame); // the head
+      box(len, h - top, p.hd * 2, (h + top) / 2, 0, head); // the wall over it, to the ceiling
+      box(len, 0.025, p.hd * 2 + 0.03, low - 0.008, 0, bead); // where the pane sits on the sill
+      // the light the pane catches: a couple of soft streaks across it, added over what's seen through, both faces
+      const pane = new THREE.PlaneGeometry(len, top - low - 0.06), uv = pane.getAttribute("uv");
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len / 2.4, uv.getY(i));
+      const st = new THREE.Mesh(pane, sheenMat); st.position.set(0, (top + low) / 2 - 0.03, 0); g.add(st);
+      group.add(flatten(g));
+    }
+  }
+}
+
+/**
+ * Where a room's road cases stand: against an outside wall, at least 1.4 m from every seat and its instrument, clear of the
+ * door, the floor lamps and any inner wall, so nobody walks or plays into them. `pick` (0 to 1) chooses among the free
+ * stretches, the same every visit. A hall too big to notice them, or a room with no free wall, gets none.
+ */
+export function caseSpot(def: StudioDef, pick: number): { at: [number, number]; turn: number } | null {
+  const { w, d } = def.size;
+  if (w > 16 || d > 16) return null;
+  const lamps = practicals(def), door = def.door.at;
+  const near = (p: [number, number]) => Math.min(Infinity, ...def.spots.map((s) => { const b = thingBox(s); return Math.min(Math.hypot(p[0] - s.at[0], p[1] - s.at[1]), Math.hypot(p[0] - b.cx, p[1] - b.cz) - Math.max(b.hw, b.hd)); }));
+  const free: { at: [number, number]; turn: number }[] = [];
+  for (const side of ["front", "back", "left", "right"] as const) {
+    const sd = sideOf(def, side), ux = Math.cos(sd.turn), uz = -Math.sin(sd.turn), nx = Math.sin(sd.turn), nz = Math.cos(sd.turn);
+    for (let a = -sd.len / 2 + 0.9; a <= sd.len / 2 - 0.9; a += 0.5) {
+      const p: [number, number] = [sd.cx + ux * a + nx * 0.38, sd.cz + uz * a + nz * 0.38];
+      if (near(p) < 1.4 || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.2 || lamps.some((l) => Math.hypot(p[0] - l[0], p[1] - l[1]) < 0.9)) continue;
+      if (def.walls.some((wl) => toSegment(p, wl.from, wl.to) < 0.7)) continue;
+      free.push({ at: p, turn: sd.turn });
+    }
+  }
+  return free.length ? free[Math.floor(pick * free.length)]! : null;
+}
+
+/**
+ * What a room in use collects on its floor and walls. Every instrument that plugs in runs a cable or two across the
+ * boards to the nearest wall, taped down where people walk, into a plate of sockets just over the skirting; road cases
+ * stand against a wall nobody plays at, the top one with a mug and a pair of headphones left on it. Placed from the
+ * room's data, the same every visit.
+ */
+function lived(def: StudioDef, group: THREE.Group) {
+  const { w, d } = def.size, rnd = mulberry32([...def.id].reduce((a, ch) => (a * 33 + ch.charCodeAt(0)) | 0, 11));
+  const rubber = surface("rubber", "#0e0f11"), tape = new THREE.MeshStandardMaterial({ color: "#4a4b4d", roughness: 0.62, metalness: 0 });
+  const plate = surface("steel", "#c9cacb"), socket = surface("rubber", "#151618");
+  const inRoom = (x: number, z: number) => Math.abs(x) < w / 2 - 0.1 && Math.abs(z) < d / 2 - 0.1;
+  // the nearest outside wall to a point: where on it, and which way the room is from there
+  const wallAt = (x: number, z: number) => {
+    const opts = [{ x, z: -d / 2, nx: 0, nz: 1, dist: z + d / 2 }, { x, z: d / 2, nx: 0, nz: -1, dist: d / 2 - z }, { x: -w / 2, z, nx: 1, nz: 0, dist: x + w / 2 }, { x: w / 2, z, nx: -1, nz: 0, dist: w / 2 - x }];
+    return opts.sort((a, b) => a.dist - b.dist)[0]!;
+  };
+  const crosses = (a: [number, number], b: [number, number]) => def.walls.some((wl) => {
+    const [x1, z1] = wl.from, [x2, z2] = wl.to, side = (px: number, pz: number) => Math.sign((x2 - x1) * (pz - z1) - (z2 - z1) * (px - x1));
+    const other = (px: number, pz: number) => Math.sign((b[0] - a[0]) * (pz - a[1]) - (b[1] - a[1]) * (px - a[0]));
+    return side(a[0], a[1]) !== side(b[0], b[1]) && other(x1, z1) !== other(x2, z2);
+  });
+  const taped = new THREE.Group(); taped.name = "tape";
+  for (const s of def.spots) {
+    if (s.kind !== "keys" && s.kind !== "bass") continue;
+    const b = thingBox(s), wall = wallAt(b.cx, b.cz);
+    if (crosses([b.cx, b.cz], [wall.x, wall.z])) continue; // an inner wall in the way: it goes under the floor there
+    for (const k of [0, 1]) {
+      // from under the instrument to the wall, wandering a little as a cable kicked about does, flat on the boards
+      const off = (k - 0.5) * 0.09, ex = wall.x + wall.nx * 0.12 + wall.nz * off, ez = wall.z + wall.nz * 0.12 + wall.nx * off;
+      const sx = b.cx + (rnd() - 0.5) * 0.3, sz = b.cz + (rnd() - 0.5) * 0.2, steps = Math.max(3, Math.round(Math.hypot(ex - sx, ez - sz) / 0.45));
+      const pts: THREE.Vector3[] = [new THREE.Vector3(sx, 0.55, sz), new THREE.Vector3(sx + 0.03, 0.05, sz + 0.02)];
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps, sway = Math.sin(t * Math.PI) * (rnd() - 0.5) * 0.35;
+        const x = sx + (ex - sx) * t + wall.nz * sway, z = sz + (ez - sz) * t + wall.nx * sway;
+        if (inRoom(x, z) || i === steps) pts.push(new THREE.Vector3(x, 0.005, z));
+      }
+      pts.push(new THREE.Vector3(ex - wall.nx * 0.03, 0.14, ez - wall.nz * 0.03), new THREE.Vector3(ex - wall.nx * 0.045, 0.27, ez - wall.nz * 0.045));
+      const curve = new THREE.CatmullRomCurve3(pts);
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 12, 0.0045, 6), rubber));
+      // tape across it every metre or so where it lies flat, the last strip short of the wall
+      if (k === 1) for (let t = 0.3; t < 0.85; t += 0.22 + rnd() * 0.12) {
+        const p = curve.getPointAt(t), dir = curve.getTangentAt(t);
+        if (p.y > 0.02) continue;
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.0012, 0.048), tape);
+        strip.position.set(p.x, 0.0055, p.z); strip.rotation.y = Math.atan2(dir.x, dir.z) + (rnd() - 0.5) * 0.25;
+        taped.add(strip);
+      }
+    }
+    // the plate the cables go into, over the skirting
+    const pg = new THREE.Group(); pg.position.set(wall.x, 0.3, wall.z); pg.rotation.y = Math.atan2(wall.nx, wall.nz);
+    const pl = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.12, 0.012), plate); pl.position.z = 0.066; pg.add(pl);
+    for (const x of [-0.07, 0, 0.07]) { const so = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.006, 14).rotateX(Math.PI / 2), socket); so.position.set(x, 0, 0.074); pg.add(so); }
+    group.add(flatten(pg));
+  }
+  group.add(flatten(taped));
+  // road cases against a wall nobody plays at (caseSpot())
+  const pick = caseSpot(def, rnd());
+  if (!pick) return;
+  const tolex = surface("tolex", "#141416"), edge = surface("metal", "#b9bcc0"), latch = surface("chrome", "#c8cacd");
+  const stack = new THREE.Group(); stack.position.set(pick.at[0], 0, pick.at[1]); stack.rotation.y = pick.turn + (rnd() - 0.5) * 0.08; stack.name = "road-cases";
+  const caseAt = (cw: number, ch: number, cd: number, y: number, turn: number) => {
+    const c = new THREE.Group(); c.position.y = y; c.rotation.y = turn; stack.add(c);
+    const body = new THREE.Mesh(metreUV(new THREE.BoxGeometry(cw, ch, cd)), tolex); body.position.y = ch / 2; c.add(body);
+    // aluminium extrusions along every edge, the lid's seam a third of the way down, ball corners, two latches, a handle
+    const e = 0.018;
+    for (const sy of [0, ch, ch * 0.68]) for (const sz of [-cd / 2, cd / 2]) { const bar = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.004, e, e), edge); bar.position.set(0, sy, sz); c.add(bar); }
+    for (const sy of [0, ch]) for (const sx of [-cw / 2, cw / 2]) { const bar = new THREE.Mesh(new THREE.BoxGeometry(e, e, cd + 0.004), edge); bar.position.set(sx, sy, 0); c.add(bar); }
+    for (const sx of [-cw / 2, cw / 2]) for (const sz of [-cd / 2, cd / 2]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(e, ch, e), edge); bar.position.set(sx, ch / 2, sz); c.add(bar);
+      for (const sy of [0.012, ch - 0.012]) { const ball = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), latch); ball.position.set(sx, sy, sz); c.add(ball); }
+    }
+    for (const sx of [-cw * 0.3, cw * 0.3]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.012), latch); l.position.set(sx, ch * 0.68, cd / 2 + 0.008); c.add(l); }
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.008, 6, 14, Math.PI), rubber); handle.position.set(cw / 2 + 0.012, ch * 0.45, 0); handle.rotation.set(0, Math.PI / 2, 0); c.add(handle);
+  };
+  caseAt(0.9, 0.52, 0.5, 0, 0);
+  caseAt(0.62, 0.3, 0.42, 0.53, (rnd() - 0.5) * 0.3);
+  // left on top: a mug and a pair of closed-back headphones
+  const mug = new THREE.Group(); mug.position.set(-0.12, 0.83, 0.05);
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.04, 0.095, 20), new THREE.MeshStandardMaterial({ color: "#e8e1d6", roughness: 0.3 })); cup.position.y = 0.048;
+  const coffee = new THREE.Mesh(new THREE.CircleGeometry(0.038, 18), new THREE.MeshStandardMaterial({ color: "#2a170c", roughness: 0.15 })); coffee.rotation.x = -Math.PI / 2; coffee.position.y = 0.086;
+  const ear = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.008, 6, 14), cup.material); ear.position.set(0.05, 0.05, 0);
+  mug.add(cup, coffee, ear); stack.add(mug);
+  const cans2 = new THREE.Group(); cans2.position.set(0.14, 0.83, -0.02); cans2.rotation.set(-Math.PI / 2 + 0.12, 0, 0.6);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.009, 6, 20, Math.PI), plate.clone()); band.material.color.set("#2b2c2f");
+  cans2.add(band);
+  for (const sx of [-0.085, 0.085]) {
+    const cup2 = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.035, 18), rubber); cup2.rotation.z = Math.PI / 2; cup2.position.set(sx, 0, 0);
+    cans2.add(cup2);
+  }
+  cans2.position.y = 0.83 + 0.05;
+  stack.add(cans2);
+  group.add(flatten(stack));
+}
+
 /**
  * Where the ceiling's downlights go in a room `w` by `d` metres: a grid of cans, at most three each way. In a room
  * of a normal size the outer ones sit about a metre off the walls, as an installer sets them, so each throws a scallop
@@ -531,6 +744,9 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   scene.add(group);
   hang(def, group);
   corners(def, group);
+  walls(def, group);
+  windows(def, group);
+  lived(def, group);
   scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
 
   // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows
