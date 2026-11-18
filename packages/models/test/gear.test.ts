@@ -65,3 +65,16 @@ test("a speaker's perforated grille is one flat sheet; its edge bends back as a 
     expect(first.z, id).toBeGreaterThan(0.5);
   }
 });
+
+test("the DJ mixer's print lies on its top face and knob caps, looking up, inside the plate", () => {
+  const g = gear("mixer-dj"), ink = g.getObjectByName("mixer-dj-ink") as THREE.Mesh, [w, h, d] = GEAR_SIZES["mixer-dj"];
+  const p = ink.geometry.getAttribute("position"), n = ink.geometry.getAttribute("normal");
+  expect(p.count / 3).toBeGreaterThan(100);
+  for (let i = 0; i < p.count; i++) {
+    expect(n.getY(i)).toBeCloseTo(1, 5);
+    expect(Math.abs(p.getX(i))).toBeLessThan(w / 2 - 0.007);
+    expect(Math.abs(p.getZ(i))).toBeLessThan(d / 2 - 0.009);
+    expect(p.getY(i)).toBeGreaterThan(h - 0.008);
+    expect(p.getY(i)).toBeLessThan(h + 0.009); // the field, or the knobs' caps (their pointer lines)
+  }
+});
