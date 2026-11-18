@@ -40,6 +40,17 @@ export function bandDb(db: Float32Array, binHz: number, f0: number, f1: number):
   return m;
 }
 
+/** The low mids and the highs from an analyser's dB bins, 0 (−80 dB and under) to 1 (−20 dB). */
+export function lightLevels(db: Float32Array, sampleRate: number): { lowMid: number; high: number } {
+  if (db.length < 2) return { lowMid: 0, high: 0 };
+  const binHz = sampleRate / 2 / db.length, top = sampleRate / 2;
+  const level = (lo: number, hi: number) => {
+    const d = bandDb(db, binHz, lo, Math.min(hi, top - binHz));
+    return Number.isFinite(d) ? Math.min(1, Math.max(0, (d + 80) / 60)) : 0;
+  };
+  return { lowMid: level(BANDS[0].lo, BANDS[0].hi), high: level(BANDS[2].lo, BANDS[2].hi) };
+}
+
 const yOfDb = (d: number, h: number) => h * (1 - (Math.max(DB_LO, Math.min(DB_HI, d)) - DB_LO) / (DB_HI - DB_LO));
 
 export class Screen {

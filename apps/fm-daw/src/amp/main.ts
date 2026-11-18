@@ -2,7 +2,9 @@
 // through the audio thread (worklet.ts), out to the speakers and to the stage
 // screens (screens.ts). The amp head and cabinet are clear, so you see the tubes
 // glow with what each stage is doing. The board view (board.ts) shows the circuit
-// you are playing, and swaps its socketed parts live. 2D for now; a three.js stage comes later.
+// you are playing, and swaps its socketed parts live. The stage button puts the amp on a
+// three.js stage (stage3d.ts, loaded only when it's on), the knobs on the panel under it;
+// without WebGL the page stays 2D.
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -24,8 +26,9 @@ import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
-import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
+import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, ChainSlot, FromAmp } from "./messages.ts";
+import type { MountedStage, StageAmp } from "./stage3d.ts";
 import { AMP_SLOT, freshOrder, grip, isMachine, loadChip, moveTo, tidyOrder, type MachineId } from "./pedalboard.ts";
 
 const KEY = "q-amp";
@@ -64,6 +67,8 @@ const Saved = obj({
   quality: oneOf(["hq", "eco"], "hq"),
   /** The board view open (1) or not. */
   board: oneOf([0, 1], 0),
+  /** The amp on the three.js stage (1) or the flat page (0). */
+  stage: oneOf([0, 1], 1),
   /** Each pedal's parts the player swapped: pedal id → socket → choice (circuits.ts `Swaps`). */
   swaps: or(rec(rec(str(12), 40), 10), {}),
   /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
@@ -84,7 +89,7 @@ type State = Omit<ReturnType<typeof Saved>, "cables" | "order" | "lit"> & { cabl
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
+    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, stage: 1, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
     loop: freshLoop(),
     cables: [...STAGE.cables],
     order: freshOrder(), lit: [],
@@ -210,6 +215,7 @@ function footswitch(id: string, isOn = !S.lit.includes(id)) {
 function moveSlot(id: string, to: number) {
   S.order = moveTo(S.order, id, to);
   layBoard();
+  stage3d?.setAmp(stageAmp());
   send();
 }
 
@@ -326,17 +332,19 @@ function build() {
   // Where the chain is cut onto another thread, and the latency each hop adds (hidden on one thread).
   const hop = h("span", "chip hop", icon("split", 14), h("span", "", ""));
   hop.hidden = true;
+  const stageBtn = iconButton("box", "Stage: the amp in 3D, the screens as LED walls behind it, or the flat page", () => { S.stage = S.stage ? 0 : 1; void showStage(); save(); });
   const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
   const layout = iconButton(S.layout === "split" ? "columns-2" : "rectangle-horizontal", "Screens: one wide or two half", () => {
     S.layout = S.layout === "split" ? "wide" : "split";
     layout.replaceChildren(icon(S.layout === "split" ? "columns-2" : "rectangle-horizontal"));
     screensEl.className = `screens ${S.layout}`;
+    stageWalls();
     save();
   });
   const bar = h("header", "bar",
     h("div", "brand", h("span", "q", "Q"), h("span", "", "AMP")),
     h("div", "group", ...sourceButtons, devices), bypass,
-    h("label", "group", icon("volume-2", 16), level), load, hop, latency, h("span", "spacer"), boardBtn, layout);
+    h("label", "group", icon("volume-2", 16), level), load, hop, latency, h("span", "spacer"), stageBtn, boardBtn, layout);
 
   // Screens.
   const screens: Screen[] = [];
@@ -477,9 +485,12 @@ function build() {
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, patchUi.el, board.el, sheet.el, startCard);
+  // The three.js stage (stage3d.ts) goes in here when it's on.
+  const stageEl = h("div", "stage3d");
+  stageEl.hidden = true;
+  root.append(bar, note, screensEl, stageEl, rig, floor, patchUi.el, board.el, sheet.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, floor, loadEls, ampName, sourceButtons, devices, load, hop, latency, note, startCard };
+  return { root, bar, stageBtn, stageEl, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, floor, loadEls, ampName, sourceButtons, devices, load, hop, latency, note, startCard };
 }
 
 const ui = build();
@@ -504,6 +515,38 @@ function showPedals() {
   ui.bench.light(S.lit.includes("bench"));
   layBoard();
   showBoard();
+}
+
+// ---- the three.js stage ----
+let stage3d: MountedStage | null = null;
+/** null until it has been tried; false when the browser has no WebGL. */
+let webgl: boolean | null = null;
+let stageLoading: Promise<void> | null = null;
+function stageAmp(): StageAmp {
+  const amp = ampOf(S.amp);
+  return { preTubes: amp.stages.length, powerTubes: amp.powerTubes, pedals: S.order.filter((id) => id !== AMP_SLOT) };
+}
+/** The LED walls show the screens' canvases: one wide, or both. */
+function stageWalls() {
+  stage3d?.setWalls(ui.screens.slice(0, S.layout === "wide" ? 1 : 2).map((x) => x.canvas));
+}
+/** Puts the amp on the 3D stage or back on the flat page, as S.stage says (the 3D code loads the first time). */
+async function showStage() {
+  if (S.stage && !stage3d && webgl !== false) {
+    stageLoading ??= import("./stage3d.ts").then(({ mountStage }) => {
+      ui.stageEl.hidden = false; // the host needs its size before the renderer takes it
+      stage3d = mountStage(ui.stageEl, stageAmp());
+      webgl = !!stage3d;
+      if (stage3d) stageWalls();
+      else ui.note.textContent = "No WebGL in this browser: the amp stays on the flat page.";
+    }).catch((e) => { webgl = false; ui.note.textContent = `The 3D stage didn't load: ${e}`; }).finally(() => { stageLoading = null; });
+    await stageLoading;
+  }
+  const on = S.stage === 1 && !!stage3d;
+  ui.root.classList.toggle("three", on);
+  ui.stageEl.hidden = !on;
+  ui.stageBtn.setAttribute("aria-pressed", String(on));
+  ui.stageBtn.disabled = webgl === false;
 }
 
 /** The board view: the pedal that's on, with its sockets, a loop machine's circuit (the last one on), or the amp's first tube stage. */
@@ -552,6 +595,7 @@ function setAmp(id: string) {
   }
   const tube = (cls: string, label: string) => h("div", `tube ${cls}`, h("div", "glass", h("div", "plate"), h("div", "filament")), h("span", "tube-label", label));
   if (!S.pedal) showBoard();
+  stage3d?.setAmp(stageAmp());
   ui.tubes.replaceChildren(
     ...amp.stages.map((_, i) => tube("pre", `V${i + 1}`)),
     h("span", "tube-gap"),
@@ -560,12 +604,15 @@ function setAmp(id: string) {
   send();
 }
 setAmp(S.amp);
+void showStage();
 showPedals();
 ui.patch.show(patch(), compiled.problems);
 ui.sourceButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.src === S.source)));
 ui.devices.hidden = S.source !== "guitar";
 
 // ---- every frame: screens, tube glow, cones ----
+/** A stage's swing as a glow, 0 to 1 (log scale, 150 V is full). */
+const glowOf = (swing: number) => Math.min(1, Math.log10(1 + swing) / Math.log10(151));
 let db = new Float32Array(8192).fill(-Infinity), wave = new Float32Array(16384);
 let push = 0;
 function frame() {
@@ -581,7 +628,7 @@ function frame() {
   let pre = 0;
   for (const t of tubes) {
     const swing = t.classList.contains("pre") ? meter.levels[offset + pre++] ?? 0 : meter.out * 150;
-    const glow = Math.min(1, Math.log10(1 + swing) / Math.log10(151));
+    const glow = glowOf(swing);
     t.style.setProperty("--glow", (0.25 + 0.75 * glow).toFixed(3));
   }
   // The board glows with its link: the pedal's swing (4 V is full), or V1's (150 V).
@@ -591,6 +638,11 @@ function frame() {
   }
   push += (meter.out - push) * 0.35;
   for (const c of ui.cones) c.style.setProperty("--push", push.toFixed(3));
+  if (stage3d && S.stage) {
+    const pre = ampOf(S.amp).stages.map((_, i) => glowOf(meter.levels[offset + i] ?? 0));
+    stage3d.update({ pre, power: glowOf(meter.out * 150), push, ...(analyser ? lightLevels(db, fr.sampleRate) : { lowMid: 0, high: 0 }) });
+    stage3d.render();
+  }
   const loadText = ui.load.lastElementChild;
   if (loadText) loadText.textContent = `${ctx ? `${Math.round(meter.load * 100)}%` : "--"} · ${S.quality === "eco" ? "2×" : "4×"}`;
   ui.load.classList.toggle("warn", meter.load > 0.7);
@@ -614,6 +666,7 @@ Object.assign(window, {
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
       load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, threads: threads?.state() ?? null, bench: ui.bench.state(), loop: loopSpecs(), order: [...S.order], lit: [...S.lit],
       slots: S.order.map((id) => { const i = chainIds.indexOf(id); return { id, on: i >= 0, load: i < 0 ? null : meter.slots?.[i] ?? null }; }), midi: { cc: S.cc, inputs: midiInputs },
+      stage: { on: S.stage === 1 && !!stage3d, webgl, ...stage3d?.state() },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
@@ -634,6 +687,8 @@ Object.assign(window, {
     footswitch: (id: string, isOn: boolean) => { if (PEDALS.some((p) => p.id === id) || id === "bench") footswitch(id, isOn); },
     /** A tile ("drive", "amp", "tape"...) to place `to` on the board, as its grip does: after the amp is in the loop. */
     move: (id: string, to: number) => moveSlot(id, to),
+    /** The amp on the 3D stage (true) or the flat page; resolves once the stage has loaded. */
+    stage: async (on: boolean) => { S.stage = on ? 1 : 0; await showStage(); save(); return { on: S.stage === 1 && !!stage3d, webgl }; },
     /** Open or close the board view. */
     board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
     /** The playing pedal's build sheet open: what it shows once its kit has loaded (null: no pedal with a board on). */
