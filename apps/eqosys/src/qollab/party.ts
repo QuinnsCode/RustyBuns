@@ -16,7 +16,7 @@ import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns
 import { sign, START_S, startAud } from "@rustybuns/util/token";
 import { b64url } from "@rustybuns/util/bytes";
 import { defaultRules, LIVES, may, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
-import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
+import { ChatGate, GAME_BURST, GAME_MAX, GAME_RATE, SAY_MAX, type Said } from "./chat.ts";
 import { HOME } from "../apps.ts";
 import { appOf } from "../listings.ts";
 import { json, type Env } from "../env.ts";
@@ -53,7 +53,7 @@ export const PartyPeek = obj({ party: nul(obj({ code: str(12), app: str(64), siz
 export type PartyPeek = Of<typeof PartyPeek>;
 /** What a member sends: ready up or stand down, and (the host only) start. `friend` is Add friend on another member. */
 const PartyIn = obj({
-  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink", "talk", "voice", "friend"]), ready: opt(bool()),
+  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink", "talk", "voice", "friend", "game"]), ready: opt(bool()),
   text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()), rules: opt(PartyRules),
 });
 const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)), invite: opt(str(64)) });
@@ -68,6 +68,9 @@ export type PartyOut =
   | { t: "rules"; rules: PartyRules; blocked?: Member[]; invite?: string }
   /** A chat message, from the live party or the last of its history. */
   | ({ t: "say" } & Said)
+  /** The host's move in the game (a reply to a prompt everyone sees, say), to everyone: never kept, never chat, so the
+   *  chat rule, mutes and a reload's replay leave it alone. */
+  | ({ t: "game" } & Said)
   /** To the host: someone reported a member. */
   | { t: "reported"; by: string; id: string; name: string }
   /** To the asker alone: a one-use ticket into the party's voice room on Qlave at `url`. */
@@ -99,6 +102,7 @@ export class Party {
   private sockets: Sockets<Sock, PartyOut>;
 
   private chat = new ChatGate();
+  private moves = new ChatGate(GAME_RATE, GAME_BURST);
 
   constructor(private ctx: PartyCtx, private env: Env) {
     this.sockets = new Sockets<Sock, PartyOut>(ctx, { maxBytes: 2000, rate: 5, burst: 10 });
@@ -170,6 +174,7 @@ export class Party {
     const msg = frame && check(PartyIn, frame.value);
     if (!msg || !me) return;
     if (msg.t === "say") return this.say(ws, me, msg.text ?? "");
+    if (msg.t === "game") return this.game(ws, me, msg.text ?? "");
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
     if (msg.t === "talk") return this.talk(ws, me);
@@ -346,6 +351,15 @@ export class Party {
   }
 
   /** A message to the party: trimmed, rate-limited per socket, dropped when the sender is muted, kept for the last 200. */
+  /** The host's game move, to everyone in the party (the host too, so their page knows this party relays moves). Not
+   *  kept: someone who joins later never hears an old move as a new one. */
+  private async game(ws: RoomSocket, me: Member, text: string) {
+    if (me.id !== await this.ctx.storage.get<string>("host")) return this.sockets.send(ws, { t: "refused", why: "only the host moves for the party" });
+    const t = this.moves.line(ws, text, Date.now(), GAME_MAX);
+    if (!t) return;
+    const apart = await this.apart();
+    this.sockets.broadcast({ t: "game", from: me, text: t, at: Date.now() }, undefined, (to) => !apart(to.id, me.id));
+  }
   private async say(ws: RoomSocket, me: Member, text: string) {
     const t = this.chat.line(ws, text);
     if (!t) return;

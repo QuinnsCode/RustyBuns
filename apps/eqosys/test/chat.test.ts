@@ -2,6 +2,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { party } from "@rustybuns/util/eqosys";
+import { defaultRules } from "@rustybuns/util/party-rules";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
 import { Hub } from "../src/qollab/hub.ts";
@@ -110,4 +111,33 @@ test("a muted member reaches nobody, the sixth message in a burst is dropped, a 
   await until(() => guest.refused.includes("you can't report yourself"));
   expect(filed).toHaveLength(1);
   host.c.leave(); guest.c.leave();
+});
+
+test("the host's game moves reach everyone with chat off and are never kept; a guest's is refused", async () => {
+  const ada = await signUp("Ada4"), bo = await signUp("Bo4"), cy = await signUp("Cy4");
+  const code = await mint(ada, "10.0.0.4", true);
+  const moves = (c: ReturnType<typeof seat>["c"]) => { const got: string[] = []; c.onGame((m) => got.push(`${m.from.name}: ${m.text}`)); return got; };
+  const host = seat(ada, code), hostMoves = moves(host.c);
+  const guest = seat(bo, code), guestMoves = moves(guest.c);
+  let inParty = 0;
+  host.c.onMembers((m) => (inParty = m.length));
+  await until(() => inParty === 2);
+  host.c.rules({ ...defaultRules(true), chat: "off" });
+  await Bun.sleep(100);
+
+  host.c.game("book:open.no");
+  await until(() => guestMoves.length === 1 && hostMoves.length === 1);
+  expect(guestMoves).toEqual(["Ada4: book:open.no"]);
+  expect(host.heard).toEqual([]); // not chat
+
+  guest.c.game("book:open.all");
+  await until(() => guest.refused.includes("only the host moves for the party"));
+  expect(hostMoves).toHaveLength(1);
+
+  // someone joining later hears no old move as a new one
+  const late = seat(cy, code), lateMoves = moves(late.c);
+  host.c.game("book:bind-first.more");
+  await until(() => lateMoves.length === 1);
+  expect(lateMoves).toEqual(["Ada4: book:bind-first.more"]);
+  host.c.leave(); guest.c.leave(); late.c.leave();
 });

@@ -104,10 +104,11 @@ describe("the Book talks back", () => {
 
 // --- two pages in one party ----------------------------------------------------------------------------------
 // Stands in for eqosys's party (apps/eqosys/src/qollab/party.ts): the first to join hosts, everyone hears who is in, and a
-// `say` goes to everyone, kept and replayed to whoever joins later.
+// `say` goes to everyone, kept and replayed to whoever joins later. With `relay` on (eqosys since #3678) a `game` move goes to
+// everyone and is never kept; off, it is dropped, as an eqosys from before moves drops it.
 type Sock = Bun.ServerWebSocket<{ name: string }>;
 const socks = new Set<Sock>(), kept: { at: number }[] = [];
-let hostName = "";
+let hostName = "", relay = true, relayed = 0;
 const members = (): PartyMember[] => [...socks].map((s) => ({ id: `u_${s.data.name}`, name: s.data.name, ready: false, host: s.data.name === hostName }));
 const tell = (m: unknown) => { for (const s of socks) s.send(JSON.stringify(m)); };
 const fake = Bun.serve<{ name: string }>({
@@ -121,9 +122,12 @@ const fake = Bun.serve<{ name: string }>({
     open: (s) => { socks.add(s); hostName ||= s.data.name; tell({ t: "members", members: members() }); for (const m of kept) s.send(JSON.stringify(m)); },
     message: (s, raw) => {
       const m: unknown = JSON.parse(String(raw));
-      if (typeof m !== "object" || !m || !("text" in m) || typeof m.text !== "string") return;
-      const said = { t: "say", from: { id: `u_${s.data.name}`, name: s.data.name }, text: m.text, at: Date.now() };
-      kept.push(said); tell(said);
+      if (typeof m !== "object" || !m || !("text" in m) || typeof m.text !== "string" || !("t" in m)) return;
+      const game = m.t === "game";
+      if (game && !relay) return;
+      const said = { t: game ? "game" : "say", from: { id: `u_${s.data.name}`, name: s.data.name }, text: m.text, at: Date.now() };
+      if (!game) kept.push(said);
+      relayed++; tell(said);
     },
     close: (s) => { socks.delete(s); tell({ t: "members", members: members() }); },
   },
@@ -163,7 +167,8 @@ test("two friends with one name: the seat goes by eqosys id, so only the host an
   expect([seatOf(two, "Ada", "u_1"), seatOf(two, "Ada", "u_2")]).toEqual([{ host: true, hostName: "Ada" }, { host: false, hostName: "Ada" }]);
 });
 
-test("in a party the guest's page holds until the host answers, takes the host's reply, and is never stuck", async () => {
+test.each([["as party moves", true], ["in chat, on an eqosys from before moves", false]])("in a party the guest's page holds until the host answers %s, takes the host's reply, and is never stuck", async (_, on) => {
+  relay = on; kept.length = 0;
   const ada = page("Ada");
   await until(() => socks.size === 1);
   const bo = page("Bo");
@@ -178,8 +183,9 @@ test("in a party the guest's page holds until the host answers, takes the host's
   expect(bo.j.talk).toMatchObject({ said: { open: "no" }, nick: "the reluctant one" }); // the same reply, in the guest's own save
 
   // the host answers a talk before the guest's page reaches it: it is answered the moment it opens
+  const before = relayed;
   ada.show("bind", { n: 1, item: 4 }); ada.click("more");
-  await until(() => kept.length === 2);
+  await until(() => relayed > before);
   bo.show("bind", { n: 1, item: 4 });
   await until(() => bo.said());
   expect(bo.said()).toBe(ada.said());
@@ -200,6 +206,9 @@ test("in a party the guest's page holds until the host answers, takes the host's
   expect(cy.hold().canAnswer).toBe(false);
   await until(() => cy.hold().canAnswer);
   cy.readers.leave();
+
+  // with moves, only the first answer (sent before the host's own move came back) went into the party's chat
+  expect(kept.length).toBe(on ? 1 : 3);
 
   // the host leaves: nobody to wait on
   ada.readers.leave();
