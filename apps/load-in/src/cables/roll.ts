@@ -12,13 +12,15 @@ export const CABLE = {
   cord: { what: "power cord", kgPerM: 0.17, radius: 0.0055, grip: 0.4, stick: 0.06 },
   speaker: { what: "speaker cable", kgPerM: 0.21, radius: 0.006, grip: 0.3, stick: 0.12 },
   power: { what: "power feeder", kgPerM: 1.1, radius: 0.014, grip: 0.1, stick: 0.45 },
+  /** A 12-pair analog snake: twelve shielded pairs in one jacket, about 0.9 kg a metre. */
+  multi: { what: "12-pair snake", kgPerM: 0.9, radius: 0.011, grip: 0.12, stick: 0.4 },
 } as const;
 export type CableKind = keyof typeof CABLE;
 
 /** Power runs this long or longer are a feeder (a generator to a distro); shorter ones are a cord. */
 export const FEEDER_M = 20;
 /** Which roll a game cable (@rustybuns/gear's kind) is: a long power run is a feeder, a short one a cord. */
-export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital", lengthM: number): CableKind =>
+export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument" | "rca" | "ground" | "digital" | "multi", lengthM: number): CableKind =>
   kind === "power" ? (lengthM >= FEEDER_M ? "power" : "cord")
   // A DJ deck's thin leads (RCA pair, ground wire, digital coax) coil like an instrument cable.
   : kind === "rca" || kind === "ground" || kind === "digital" ? "instrument" : kind;

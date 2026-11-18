@@ -8,6 +8,7 @@ import { ARENA } from "../src/venues/arena.ts";
 import { SMALL_ARENA } from "../src/venues/small-arena.ts";
 import { SHOW } from "../src/venues/show.ts";
 import { DESERT } from "../src/venues/desert.ts";
+import { BAND_NIGHT } from "../src/venues/band-night.ts";
 import { stick, venuePad } from "../src/touch.ts";
 
 test.each([
@@ -35,7 +36,7 @@ test("a thumb pushed up walks you forward as W does", () => {
 
 test("every venue has a touch pad with a label on each button; the garage has none", () => {
   expect(venuePad(GARAGE.name)).toEqual([]);
-  for (const level of [DIVE_BAR, BIGGER_BAR, PARK, ARENA, SMALL_ARENA, SHOW, DESERT]) {
+  for (const level of [BAND_NIGHT, DIVE_BAR, BIGGER_BAR, PARK, ARENA, SMALL_ARENA, SHOW, DESERT]) {
     const pad = venuePad(level.name);
     expect(pad.length).toBeGreaterThan(0);
     expect(pad.find((b) => b.code === "Enter")).toBeDefined();

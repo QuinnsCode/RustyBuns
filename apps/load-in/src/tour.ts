@@ -14,6 +14,7 @@ import { DIVE_BAR } from "./venues/dive-bar.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { PARK } from "./venues/park.ts";
 import { FIRST_GIG } from "./venues/first-gig.ts";
+import { BAND_NIGHT } from "./venues/band-night.ts";
 import { DESERT } from "./venues/desert.ts";
 import { FESTIVAL } from "./venues/festival.ts";
 import { SMALL_ARENA } from "./venues/small-arena.ts";
@@ -30,6 +31,9 @@ export type Rig = { people: number; tops: number; subs: number; wedges: number; 
 export const RIGS: Readonly<Record<string, Rig>> = {
   // A singer and a wedge: one channel of a rack at a few watts, on the room's own wall circuit. Five cables.
   "first-gig": { people: 60, tops: 0, subs: 0, wedges: 1, amps: 1, kw: 0.4, power: "a wall circuit", runs: 5, crew: 1 },
+  // Band night: a three-piece in a bar on the house pair of tops, six inputs down a 12-pair snake. Nine runs: six mic
+  // cables, the snake, the desk and the pair the house already has in.
+  "band-night": { people: 80, tops: 2, subs: 0, wedges: 1, amps: 2, kw: 0.8, power: "two wall circuits", runs: 9, crew: 1 },
   // A bar: two powered tops on sticks and a sub, about 1 W per person of program and a 20 A circuit's 2.4 kW to pull on.
   "dive-bar": { people: 120, tops: 2, subs: 1, wedges: 1, amps: 3, kw: 1.5, power: "one 20 A circuit", runs: 9, crew: 1 },
   // A club: passive tops and subs off a four-channel rack, one sub per top (a club runs one sub per one or two tops),
@@ -60,6 +64,7 @@ export const RIGS: Readonly<Record<string, Rig>> = {
 /** The rungs you can play now, in order: a pass at one books the next. */
 export const LADDER: readonly { level: Level; name: string }[] = [
   { level: FIRST_GIG, name: "The first gig" },
+  { level: BAND_NIGHT, name: "Band night" },
   { level: DIVE_BAR, name: "The dive bar" },
   { level: BIGGER_BAR, name: "The bigger bar" },
   { level: PARK, name: "The community event" },
@@ -90,7 +95,7 @@ export function crowd(t: Tour, level: Level): { heads: number; share: number } {
 export const PRICES: Record<string, number> = {
   "top-12-powered": 400, "top-15-passive": 300, "sub-18": 500, "wedge-12": 250,
   "amp-head": 300, "cab-4x12": 300, guitar: 300,
-  "amp-rack-4u": 600, "mixer-small": 200, "mic-condenser": 150, "wedge-12-passive": 250, "generator-7kva": 900, "distro-box": 80,
+  "amp-rack-4u": 600, "mixer-small": 200, "mic-condenser": 150, "mic-dynamic": 100, "mic-kick": 180, "stage-box-12": 250, "snake-fan-12": 120, "wedge-12-passive": 250, "generator-7kva": 900, "distro-box": 80,
   "cable-ramp-2ch": 60, "road-case-m": 100, "stand-tripod": 50, "mic-stand": 30,
 };
 export const RENT = 0.05;

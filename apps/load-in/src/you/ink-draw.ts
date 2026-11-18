@@ -17,6 +17,12 @@ const banner = (g: Pen, y: number) => { line(g, [-0.9, y, -0.6, y + 0.12, 0.6, y
 /** Each rung's tattoo, drawn in a box from -1 to 1 with y down. */
 const DRAW: Record<string, (g: Pen) => void> = {
   "first-gig"(g) { for (const r of [0.62, 0.46, 0.3]) { ring(g, 0, -0.2, r); g.stroke(); } line(g, [0.5, 0.18, 0.78, 0.5]); g.stroke(); banner(g, 0.5); },
+  // A stage box with its row of inputs, and the snake curling away from it.
+  "band-night"(g) {
+    g.beginPath(); g.rect(-0.6, -0.7, 1.2, 0.6); fill(g, RED);
+    for (let i = 0; i < 4; i++) { ring(g, -0.42 + i * 0.28, -0.4, 0.08); g.stroke(); }
+    g.beginPath(); g.moveTo(0, -0.1); g.bezierCurveTo(0.9, 0.2, -0.9, 0.5, 0.3, 0.9); g.lineWidth *= 2; g.stroke(); g.lineWidth /= 2;
+  },
   "dive-bar"(g) {
     for (const s of [-1, 1]) { g.beginPath(); g.ellipse(0.62 * s, 0.2, 0.36, 0.16, -0.7 * s, 0, Math.PI * 2); fill(g, GREEN); }
     ring(g, 0, 0, 0.5); fill(g, RED);

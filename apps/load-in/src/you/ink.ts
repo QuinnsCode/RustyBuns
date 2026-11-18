@@ -10,6 +10,7 @@ export type Spot = { arm: Arm; at: number; round: number };
 /** One tattoo per rung, by level name, in the order of the ladder. The arms fill from the wrist up as the tour goes. */
 export const FLASH: Readonly<Record<string, Spot & { what: string }>> = {
   "first-gig": { what: "a cable roll and a banner", arm: "right", at: 0.2, round: 0 },
+  "band-night": { what: "a stage box and its snake", arm: "left", at: 0.3, round: -0.2 },
   "dive-bar": { what: "a mic plug between two leaves", arm: "left", at: 0.2, round: 0 },
   "bigger-bar": { what: "a breaker's lightning bolt", arm: "right", at: 0.45, round: -0.16 },
   park: { what: "a tree over a speaker", arm: "left", at: 0.45, round: 0.16 },
