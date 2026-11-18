@@ -28,6 +28,7 @@ export const PORTS = {
   // repo tools and previews
   manual: 4790,
   bridge: 4796,
+  pushes: 4797,
   eqosysPreview: 4792,
   qview3d: 5190,
   parkHideSeek: 5391,

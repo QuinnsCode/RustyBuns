@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RustyBuns Pushes</title>
+<!--DATA-->
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1d2330; --dim: #6b7280; --line: #e3e6eb; --bar: #c9ced6; --bar-hot: #f08a24;
+    --green: #22a55b; --yellow: #e5a50a; --red: #d93f3f; --grey: #a3a9b3; --accent: #f08a24;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #101318; --panel: #171b22; --ink: #e8ebf0; --dim: #8b93a1; --line: #262c36; --bar: #343b47; }
+  }
+  :root[data-theme="dark"] { --bg: #101318; --panel: #171b22; --ink: #e8ebf0; --dim: #8b93a1; --line: #262c36; --bar: #343b47; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 var(--font); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { font-size: 22px; margin: 0; flex: 1; }
+  .stamp { color: var(--dim); font-size: 13px; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; }
+  button:hover { border-color: var(--accent); }
+  button.icon { padding: 6px; border-color: transparent; background: transparent; color: var(--dim); }
+  button.icon:hover { color: var(--red); }
+  svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .busy svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--dim); font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 110px 56px 56px 84px 32px; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row.head { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding-block: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--grey); }
+  .dot.green { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+  .dot.yellow { background: var(--yellow); box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 22%, transparent); }
+  .dot.red { background: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent); }
+  .name { min-width: 0; }
+  .name a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .name a:hover { color: var(--accent); }
+  .name small { display: block; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .num.zero { color: var(--dim); }
+  .ago.stale { color: var(--red); }
+  .ago.fresh { color: var(--green); }
+  .days { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+  .days i { flex: 1; background: var(--bar); border-radius: 2px; min-height: 2px; }
+  .days i.on { background: var(--bar-hot); }
+
+  .add { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .add input { flex: 1; min-width: 200px; font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  .err { color: var(--red); font-size: 13px; margin-top: 6px; min-height: 1em; }
+  .empty { padding: 24px; text-align: center; color: var(--dim); }
+
+  @media (max-width: 640px) {
+    .row { grid-template-columns: 14px minmax(0, 1fr) 44px 44px 32px; gap: 8px; }
+    .row .ago, .row .days, .row.head .h-ago, .row.head .h-days { display: none; }
+    .tile b { font-size: 20px; }
+  }
+  .snapshot .add, .snapshot .icon, .snapshot #refresh { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Pushes</h1>
+    <span class="stamp" id="stamp"></span>
+    <button id="refresh" title="Scan again"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</button>
+  </header>
+  <div class="totals">
+    <div class="tile"><b id="t-today">0</b><span>commits today</span></div>
+    <div class="tile"><b id="t-week">0</b><span>commits this week</span></div>
+    <div class="tile"><b id="t-last">-</b><span>since the last push</span></div>
+  </div>
+  <div class="list" id="list"></div>
+  <form class="add" id="add">
+    <input id="pick" list="catalog" placeholder="Add a repo: owner/name" autocomplete="off" aria-label="Repo to add">
+    <datalist id="catalog"></datalist>
+    <button type="submit"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+  </form>
+  <div class="err" id="err"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const snap = window.PUSHES;
+if (snap) document.body.classList.add("snapshot");
+
+function ago(iso) {
+  if (!iso) return "never";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  const m = s / 60, h = m / 60, d = h / 24;
+  if (m < 60) return `${Math.floor(m)}m ago`;
+  if (h < 24) return `${Math.floor(h)}h ago`;
+  if (d < 60) return `${Math.floor(d)}d ago`;
+  return `${Math.floor(d / 30)}mo ago`;
+}
+const ageClass = (iso) => {
+  if (!iso) return "stale";
+  const d = (Date.now() - new Date(iso).getTime()) / 864e5;
+  return d < 1 ? "fresh" : d > 14 ? "stale" : "";
+};
+const X = '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+function render(d) {
+  const rows = d.scan ? d.scan.rows : [];
+  const byRepo = new Map(rows.map((r) => [r.repo.toLowerCase(), r]));
+  // Picks the scan hasn't reached yet still show, grey, so a fresh add appears at once.
+  const shown = d.repos.map((name) => byRepo.get(name.toLowerCase()) || { repo: name, url: `https://github.com/${name}`, light: "grey", why: "scanning", pushed: null, today: 0, week: 0, days: [0,0,0,0,0,0,0], last: null, branch: "" });
+  shown.sort((a, b) => (b.pushed || "").localeCompare(a.pushed || ""));
+  const head = `<div class="row head"><span></span><span>Repo</span><span class="h-ago">Last push</span><span class="num">Today</span><span class="num">Week</span><span class="h-days">7 days</span><span></span></div>`;
+  $("list").innerHTML = shown.length ? head + shown.map((r) => {
+    const max = Math.max(1, ...r.days);
+    const bars = r.days.map((n, i) => `<i class="${n ? "on" : ""}" style="height:${n ? Math.max(15, Math.round(n / max * 100)) : 8}%" title="${n} commit${n === 1 ? "" : "s"}, ${6 - i === 0 ? "today" : `${6 - i}d ago`}"></i>`).join("");
+    const sub = r.last ? `${esc(r.last.subject)}` : esc(r.why);
+    return `<div class="row">
+      <span class="dot ${r.light}" title="${esc(r.why)}" role="img" aria-label="${r.light}: ${esc(r.why)}"></span>
+      <span class="name"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.repo)}</a><small title="${sub}">${sub}</small></span>
+      <span class="ago ${ageClass(r.pushed)}" title="${r.pushed ? esc(new Date(r.pushed).toLocaleString()) : ""}">${ago(r.pushed)}</span>
+      <span class="num ${r.today ? "" : "zero"}">${r.today}</span>
+      <span class="num ${r.week ? "" : "zero"}">${r.week}</span>
+      <span class="days">${bars}</span>
+      <button class="icon" data-remove="${esc(r.repo)}" title="Stop watching ${esc(r.repo)}" aria-label="Remove ${esc(r.repo)}">${X}</button>
+    </div>`;
+  }).join("") : `<div class="empty">No repos yet. Add one below.</div>`;
+  $("t-today").textContent = rows.reduce((n, r) => n + r.today, 0);
+  $("t-week").textContent = rows.reduce((n, r) => n + r.week, 0);
+  const newest = rows.map((r) => r.pushed).filter(Boolean).sort().pop();
+  $("t-last").textContent = newest ? ago(newest).replace(" ago", "") : "-";
+  $("stamp").textContent = d.scanning ? "scanning..." : d.scan ? `scanned ${ago(d.scan.at)}` : "";
+  $("refresh").classList.toggle("busy", !!d.scanning);
+}
+
+let timer = 0;
+async function load() {
+  clearTimeout(timer);
+  const d = await (await fetch("/api/data")).json();
+  render(d);
+  timer = setTimeout(load, d.scanning ? 1000 : 5 * 60 * 1000);
+}
+async function change(body) {
+  const r = await fetch("/api/repos", { method: "POST", body: JSON.stringify(body) });
+  const d = await r.json();
+  $("err").textContent = r.ok ? "" : "That isn't an owner/name.";
+  if (r.ok) { render(d); clearTimeout(timer); timer = setTimeout(load, 800); }
+  return r.ok;
+}
+
+if (snap) render(snap);
+else {
+  load();
+  $("refresh").onclick = async () => { render(await (await fetch("/api/refresh", { method: "POST" })).json()); clearTimeout(timer); timer = setTimeout(load, 800); };
+  $("list").onclick = (e) => { const b = e.target.closest("[data-remove]"); if (b) change({ remove: b.dataset.remove }); };
+  $("add").onsubmit = async (e) => {
+    e.preventDefault();
+    const v = $("pick").value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
+    if (v && await change({ add: v })) $("pick").value = "";
+  };
+  fetch("/api/catalog").then((r) => r.json()).then((c) => {
+    $("catalog").innerHTML = c.repos.map((n) => `<option value="${esc(n)}">`).join("");
+  });
+}
+</script>
+</body>
+</html>
