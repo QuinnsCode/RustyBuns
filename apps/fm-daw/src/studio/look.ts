@@ -1,7 +1,7 @@
 // How a Qollab Studio room looks (#5008): the light, what every surface is made of, and the camera's lens and film.
 // A room is data (room.ts); this turns its sizes and materials into something that should read as a photo of a real
 // small studio: tone mapped light, ceiling downlights set off the walls so they wash them (no two alike), the floor's warm
-// bounce lifting the tops of the walls, floor lamps in the free corners throwing their hourglass on the walls, soft shadows, contact shadows
+// bounce lifting the tops of the walls, a soft fill washing the walls between the pools, the ceiling falling off into its corners, floor lamps in the free corners throwing their hourglass on the walls, soft shadows, contact shadows
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, and on high a little bloom, a vignette and grain.
@@ -415,7 +415,7 @@ function shade(map: THREE.Texture, opacity: number) {
   return new THREE.MeshBasicMaterial({ color: 0x000000, map, transparent: true, opacity, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
 }
 
-let fade: THREE.CanvasTexture | null = null, shadeGlow: THREE.CanvasTexture | null = null;
+let fillWash: THREE.CanvasTexture | null = null, fade: THREE.CanvasTexture | null = null, shadeGlow: THREE.CanvasTexture | null = null, ceilingFade: THREE.CanvasTexture | null = null;
 /**
  * The shade light doesn't reach into a room's corners: along the foot and the top of every outside wall, and up
  * each corner where two walls meet, a band that fades out over half a metre or so.
@@ -441,6 +441,32 @@ function corners(def: StudioDef, group: THREE.Group) {
     band(h, 0.9, -s.len / 2 + 0.51, h / 2, -Math.PI / 2, deep); // deeper and wider than the foot: two walls shade each other
     band(h, 0.9, s.len / 2 - 0.51, h / 2, Math.PI / 2, deep);
   }
+  // the fill between the pools: light that has bounced round the room reaches every wall from all over it, soft
+  // and shadowless, brightest at head height and fading to the floor and the ceiling. Baked as a faint wash of the
+  // wall's own colour added over it (what that light would show of it), not four more lights: those cost a third of a frame.
+  fillWash ??= canvasTex(64, (g) => {
+    for (let y = 0; y < 64; y++) { const t = (y / 63 - 0.55) / 0.42, a = Math.exp(-t * t * 1.6); g.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
+  }, false);
+  fillWash.wrapS = fillWash.wrapT = THREE.ClampToEdgeWrapping;
+  const wash = new THREE.MeshBasicMaterial({ color: new THREE.Color(def.colors.walls).lerp(new THREE.Color(0xffe2c0), 0.25).multiplyScalar(0.22), map: fillWash, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+  for (const side of ["front", "back", "left", "right"] as const) {
+    const s = sideOf(def, side), m = new THREE.Mesh(new THREE.PlaneGeometry(s.len, h), wash);
+    m.position.set(s.cx, h / 2, s.cz); m.rotation.y = s.turn; m.translateZ(0.06); m.name = "fill";
+    group.add(m);
+  }
+  // the ceiling falls off toward its edges and darkest into its corners: the cans light down, and only the bounce
+  // reaches up there, weakest where it has the furthest to come
+  ceilingFade ??= canvasTex(64, (g) => {
+    const ease = (t: number) => { const k = Math.min(1, t / 0.6); return k * k * (3 - 2 * k); };
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const u = Math.min(x, 63 - x) / 31.5, v = Math.min(y, 63 - y) / 31.5;
+      g.fillStyle = `rgba(0,0,0,${(1 - ease(u) * ease(v)) ** 1.6})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false);
+  ceilingFade.wrapS = ceilingFade.wrapT = THREE.ClampToEdgeWrapping;
+  const { w, d } = def.size, ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(ceilingFade, 0.8));
+  ceiling.rotation.x = Math.PI / 2; ceiling.position.y = h - 0.004; ceiling.name = "corner";
+  group.add(ceiling);
 }
 
 /**
@@ -517,7 +543,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
   const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
   for (const [x, z] of spots) {
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.28 + rnd() * 0.05), 0.5 + rnd() * 0.25, 2); // a real can throws a scallop with an edge, each its own
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.29 + rnd() * 0.05), 0.78 + rnd() * 0.15, 2); // a real can throws a scallop whose edge melts into the wall, each its own
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x, 0, z);
     group.add(l, l.target);
@@ -561,7 +587,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     lamp.add(foot, stem, drum, glow);
     lampLights.push(glow);
     for (const [dy, cd, cone] of [[0.16, 30, 0.9], [-0.16, 22, 0.8]] as const) {
-      const sp = new THREE.SpotLight(0xffc488, cd, 6, cone, 0.35, 2);
+      const sp = new THREE.SpotLight(0xffc488, cd, 6, cone, 0.8, 2); // the cloth's rim blurs the cone's edge
       sp.position.set(0, 1.55 + dy * 0.2, 0); sp.target.position.set(0, dy > 0 ? 3 : 0, 0);
       lamp.add(sp, sp.target);
       lampLights.push(sp);
