@@ -1,11 +1,12 @@
-// A track's Amp insert on FM DAW's audio thread: the track's take, and the guitar coming in live when the
-// track is armed and Monitor is on, through one of Q Amp's heads (src/amp/live.ts builds and turns it),
+// A track's Amp insert on FM DAW's audio thread: the track's synth voices (the engine's tap, after the track's
+// Shape), its take, and the guitar coming in live when the track is armed and Monitor is on, through one of Q Amp's heads (src/amp/live.ts builds and turns it),
 // out to both sides at line level through the amp's own limiter. The bounce plays it the same way.
 import { AMPS, DEFAULT_ROOM } from "../circuit/amps.ts";
 import { applySettings, limit, type Live } from "./live.ts";
 import type { AmpSettings } from "./messages.ts";
 import type { TrackAmp } from "./track-amp.ts";
 import type { TakeDeck } from "../take.ts";
+import { TRACKS } from "../engine/params.ts";
 
 /**
  * Circuit samples per output sample on a track. Q Amp's own page plays at 4; beside the synth engine, 2
@@ -22,6 +23,9 @@ export function insertSettings(a: TrackAmp): AmpSettings {
     knobs: { ...head.knobs, gain, bass, mid, treble, master, rate, depth, noise: 0 },
   };
 }
+
+/** Quieter than this the whole block, a track's synth gives its amp nothing to play. */
+const HUSH = 1e-6;
 
 /** The live input heading into a track's amp this block: mono samples, and which track. */
 export interface LiveIn { track: number; input: Float32Array }
@@ -45,20 +49,25 @@ export class AmpInserts {
 
   /**
    * Every audible track's take into interleaved stereo `out`, through its amp when it has one, plus the live
-   * input through its track's amp. An amp only runs while it has something to play: a take while the
-   * transport runs, or the input. `gain` is the master's, as on a take without an amp.
+   * input and the track's synth (`synth`, the engine's taps: `[f * TRACKS + t]`, before master) through its
+   * track's amp. An amp only runs while it has something to play: a take while the transport runs, the
+   * input, or its synth sounding. `gain` is the master's, as on a take without an amp.
    */
-  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn) {
+  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn, synth?: Float32Array) {
+    const n = TRACKS;
     if (playing && deck.any) deck.mix(out, frames, pos, bpm, loopBeats, (t) => audible(t) && !this.live[t], gain);
     if (this.dry.length < frames) { this.dry = new Float32Array(frames); this.wet = new Float32Array(frames); }
     for (let t = 0; t < this.live.length; t++) {
       const l = this.live[t];
       if (!l || !audible(t)) continue;
       const hear = input?.track === t, take = playing && deck.has(t);
-      if (!hear && !take) continue;
+      let voice = false;
+      if (synth) for (let f = 0; f < frames && !voice; f++) voice = Math.abs(synth[f * n + t]) > HUSH;
+      if (!hear && !take && !voice) continue;
       const dry = this.dry, wet = this.wet;
       if (hear) dry.set(input.input.subarray(0, frames)); else dry.fill(0, 0, frames);
       if (take) deck.one(t, dry, frames, pos, bpm, loopBeats, 1);
+      if (voice && synth) for (let f = 0; f < frames; f++) dry[f] += synth[f * n + t];
       l.rig.process(dry, wet, frames);
       for (let f = 0; f < frames; f++) {
         const y = limit(wet[f] / l.scale) * gain;

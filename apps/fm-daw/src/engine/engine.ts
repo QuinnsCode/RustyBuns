@@ -104,10 +104,17 @@ export interface FmEngine {
   /** One band of a track's Shape insert (as EqStage.setBand: slot, kind number, Hz, dB, Q, slope, on). */
   setTrackBand(track: number, band: number, kind: number, freq: number, gain: number, q: number, slope: number, on: boolean): void;
   /**
+   * Tap a track for its Amp insert: while on, and render() is given `taps`, the track leaves the sum and the
+   * send, and its chunk (after pan and Shape, before master) goes to `taps` in mono instead.
+   */
+  setTap(track: number, on: boolean): void;
+  /**
    * Interleaved stereo into `out` (length >= frames * 2). With `send`, also
    * the Space send bus: each track times its SEND, after pan, its insert and master.
+   * With `taps` (length >= frames * TRACKS), each tapped track's mono chunk at
+   * `taps[f * TRACKS + t]` (0 for a track not tapped), left out of `out` and `send`.
    */
-  render(out: Float32Array, frames: number, send?: Float32Array): void;
+  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array): void;
   /** [peakL, peakR, lowest limiter gain, NaN resets] since the last call. */
   meter(out: Float32Array): void;
   free?(): void;
@@ -202,6 +209,9 @@ export class TsEngine implements FmEngine {
   // each track's Shape, its chunk while the insert filters it, and the chunk's dry sum and send
   private readonly inserts: TsEq[];
   private readonly insLive = new Uint8Array(TRACKS);
+  // tracks whose chunk goes to render()'s `taps` (an Amp insert) instead of the sum, and which do this chunk
+  private readonly tapped = new Uint8Array(TRACKS);
+  private readonly tapNow = new Uint8Array(TRACKS);
   private readonly tb = new Float64Array(TRACKS * CHUNK * 2);
   private readonly mix = new Float64Array(CHUNK * 2);
   private readonly snd = new Float64Array(CHUNK * 2);
@@ -341,14 +351,16 @@ export class TsEngine implements FmEngine {
     return (x / 4294967296) * 2 - 1;
   }
 
-  render(out: Float32Array, frames: number, send?: Float32Array) {
-    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
+  setTap(track: number, on: boolean) { if (track >= 0 && track < TRACKS) this.tapped[track | 0] = on ? 1 : 0; }
+
+  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array) {
+    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity);
     const sr = this.sr;
     const beatInc = this.tempo / 60 / sr;
     const { tb, mix, snd } = this;
     for (let at = 0; at < n; at += CHUNK) {
       const k = Math.min(CHUNK, n - at);
-      for (let t = 0; t < TRACKS; t++) this.insLive[t] = this.inserts[t].live() ? 1 : 0;
+      for (let t = 0; t < TRACKS; t++) { this.insLive[t] = this.inserts[t].live() ? 1 : 0; this.tapNow[t] = taps && this.tapped[t] ? 1 : 0; }
       for (let j = 0; j < k; j++) {
         let l = 0, r = 0, sl = 0, sr2 = 0;
         for (let t = 0; t < TRACKS; t++) {
@@ -633,7 +645,7 @@ export class TsEngine implements FmEngine {
             }
           } else { ml = mono * this.panL[t]; mr = mono * this.panR[t]; }
           // a track with a Shape waits in its own chunk; the rest go straight into the sum
-          if (this.insLive[t]) { const o = (t * CHUNK + j) * 2; tb[o] = ml; tb[o + 1] = mr; continue; }
+          if (this.insLive[t] || this.tapNow[t]) { const o = (t * CHUNK + j) * 2; tb[o] = ml; tb[o + 1] = mr; continue; }
           l += ml;
           r += mr;
           const sa = this.params[p + P.SEND];
@@ -652,12 +664,25 @@ export class TsEngine implements FmEngine {
         mix[j * 2] = l; mix[j * 2 + 1] = r; snd[j * 2] = sl; snd[j * 2 + 1] = sr2;
       }
       // each Shape on its track's chunk, then into the sum and the send, track by track
+      // a tapped one (after its Shape) out to its amp in mono, centred as the amp hears a take
       for (let t = 0; t < TRACKS; t++) {
-        if (!this.insLive[t]) continue;
+        if (!this.insLive[t] && !this.tapNow[t]) continue;
         const buf = tb.subarray(t * CHUNK * 2, (t * CHUNK + k) * 2);
-        this.inserts[t].insert(buf, k);
+        if (this.insLive[t]) this.inserts[t].insert(buf, k);
+        if (this.tapNow[t]) continue;
         const sa = this.params[t * NPARAMS + P.SEND];
         for (let j = 0; j < k * 2; j++) { mix[j] += buf[j]; snd[j] += buf[j] * sa; }
+      }
+      if (taps) {
+        for (let t = 0; t < TRACKS; t++) {
+          const o = t * CHUNK * 2;
+          for (let j = 0; j < k; j++) {
+            let y = this.tapNow[t] ? (tb[o + j * 2] + tb[o + j * 2 + 1]) * Math.SQRT1_2 : 0;
+            // the NaN guard, for a track the master never sees
+            if (!Number.isFinite(y)) { this.nans++; this.panic(); y = 0; }
+            taps[(at + j) * TRACKS + t] = y;
+          }
+        }
       }
       for (let j = 0; j < k; j++) {
         const f = at + j;

@@ -3,6 +3,7 @@
 import { FFIType, ptr } from "bun:ffi";
 import { loadNative } from "@rustybuns/native";
 import type { FmEngine } from "./engine.ts";
+import { TRACKS } from "./params.ts";
 
 export const fmSymbols = {
   fm_new: { args: [FFIType.f64], returns: FFIType.ptr },
@@ -18,7 +19,8 @@ export const fmSymbols = {
   fm_all_off: { args: [FFIType.ptr], returns: FFIType.void },
   fm_panic: { args: [FFIType.ptr], returns: FFIType.void },
   fm_click: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.void },
-  fm_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.void },
+  fm_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.void },
+  fm_set_tap: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.void },
   fm_meter: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.void },
   fm_track_eq_set: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.f64, FFIType.f64, FFIType.f64, FFIType.f64, FFIType.u32], returns: FFIType.void },
 } as const;
@@ -48,7 +50,9 @@ export async function createNativeEngine(sampleRate: number): Promise<FmEngine |
     panic: () => l.fm_panic(h),
     click: (a) => l.fm_click(h, a ? 1 : 0),
     setTrackBand: (t, i, k, f, g, q, sl, on) => l.fm_track_eq_set(h, t >>> 0, i >>> 0, k >>> 0, f, g, q, sl, on ? 1 : 0),
-    render: (out, frames, send) => l.fm_render(h, ptr(out), send ? ptr(send) : null, Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity)),
+    setTap: (t, on) => l.fm_set_tap(h, t >>> 0, on ? 1 : 0),
+    render: (out, frames, send, taps) => l.fm_render(h, ptr(out), send ? ptr(send) : null, taps ? ptr(taps) : null,
+      Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity)),
     meter: (out) => l.fm_meter(h, ptr(out)),
     free: () => { if (alive) { alive = false; l.fm_free(h); } },
   };
