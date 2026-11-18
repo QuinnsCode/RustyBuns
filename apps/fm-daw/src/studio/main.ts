@@ -214,14 +214,15 @@ function thing(s: Spot): THREE.Group {
     const screen = box(0.16, 0.004, 0.05, surface("screen", "#7ab8d8"), t.w / 2 - 0.22, 0.012, 0, panel);
     screen.userData.glow = 1;
     // white keys with a gap between each, the black ones raised and set back, as a seated player sees them; the black
-    // ones satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown
-    const white = std("#e2ddd0", { roughness: 0.45 }), black = new THREE.MeshPhysicalMaterial({ color: "#040405", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 });
+    // ones satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown; their near-black is each key's
+    // own colour (Keys), so a pressed one can light up
+    const white = std("#e2ddd0", { roughness: 0.45 }), black = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 });
     const n = 29, lay = layout(n), kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
     const whites = lay.whites.map((_, i): [number, number, number] => [x0 + i * kw, top + 0.011, z]);
     const blacks = lay.after.map((i): [number, number, number] => [x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
     const wk = many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
     const bk = many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
-    played.set(s.id, { keys: new Keys(wk, whites, bk, blacks, lay, t.d * 0.5, t.d * 0.3) });
+    played.set(s.id, { keys: new Keys(wk, whites, bk, blacks, lay, t.d * 0.5, t.d * 0.3, undefined, new THREE.Color("#040405")) });
     const legH = top - 0.1;
     for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
     for (const x of [-0.42, 0.42]) for (const y of [0.02, legH]) tube(0.018, v(x, y, -0.22), v(x, y, 0.22), blackSteel);
