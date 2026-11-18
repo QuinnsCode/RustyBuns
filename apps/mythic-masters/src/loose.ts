@@ -119,3 +119,49 @@ export const LOOSE_VERT = `
     transformed += off;
   }
 `;
+
+// A card read as a pale glass shard (#5199 round 29). Three things lit it: the fur grain's strand tips lightened toward
+// white (hide.ts), a field look's edge glow (effects.ts) and the sky's reflection and rim at every grazing angle, so a
+// near-black mane card flashed silver. A card is now matte and plain: no grain, specular, rim or edge glow; its root
+// takes the coat's colour where it grows (the coat's brown is in the body's vertex colours, so a mane read as a
+// separate dark plate) and it darkens toward the tip.
+
+/** Which parts are shaded as cards: loose by name, not a quill or spike, and not the coat itself (the part with the
+ * baked hide map; with no map, the biggest part). A Rougarou's biggest part is its spiky `tuft`, not its coat. */
+export function cardParts(parts: readonly { name: string; count: number; mapped: boolean }[]): boolean[] {
+  const mapped = parts.some((p) => p.mapped);
+  let body = 0;
+  parts.forEach((p, i) => { if (p.count > parts[body]!.count) body = i; });
+  return parts.map((p, i) => LOOSE.test(p.name) && !STIFF.test(p.name) && !p.mapped && (mapped || i !== body));
+}
+
+/** Per vertex of a card, how far along it is: 0 at the root, 1 at the tip (its reach over the part's 95th percentile). */
+export function tipOf(reach: Float32Array): Float32Array {
+  const s = Float32Array.from(reach).sort(), top = s[Math.floor((s.length - 1) * 0.95)]! || 1;
+  return reach.map((r) => Math.min(1, r / top));
+}
+
+/** Per vertex of a card, the coat's colour where it grows (rgb, linear): the nearest coat vertex's colour times `tint`,
+ * the coat thinned to `max` vertices. */
+export function rootOf(pos: ArrayLike<number>, coat: ArrayLike<number>, colour: ArrayLike<number>, tint: readonly number[], max = 3000): Float32Array {
+  const n = pos.length / 3, m = coat.length / 3, step = Math.max(1, Math.ceil(m / max)), out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!;
+    let best = Infinity, at = 0;
+    for (let j = 0; j < m; j += step) {
+      const dx = coat[j * 3]! - x, dy = coat[j * 3 + 1]! - y, dz = coat[j * 3 + 2]! - z, d = dx * dx + dy * dy + dz * dz;
+      if (d < best) { best = d; at = j; }
+    }
+    for (let k = 0; k < 3; k++) out[i * 3 + k] = colour[at * 3 + k]! * tint[k]!;
+  }
+  return out;
+}
+
+export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\n";
+export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot;";
+export const CARD_FRAG_PARS = "varying float vCardTip;\nvarying vec3 vCardRoot;\n";
+/** After the colour is read: the coat's colour at the root, the card's own toward the tip, darker at the very end. */
+export const CARD_COLOR = `
+  diffuseColor.rgb = mix( vCardRoot, diffuseColor.rgb, smoothstep( 0.1, 0.8, vCardTip ) ) * mix( 1.0, 0.7, vCardTip * vCardTip );`;
+/** After the lights and the field look: a card is matte, no sun glint, sky reflection, rim or field-look edge glow. */
+export const CARD_LIGHT = "reflectedLight.directSpecular *= 0.0; reflectedLight.indirectSpecular *= 0.0; totalEmissiveRadiance *= 0.0;";

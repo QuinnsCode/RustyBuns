@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
 import { pupils } from "./eyes.ts";
 import { Secondary } from "./secondary.ts";
-import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf } from "./loose.ts";
+import { CARD_COLOR, CARD_FRAG_PARS, CARD_LIGHT, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LOOSE_VERT, LooseLag, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
 import { smoothNormals } from "./smooth.ts";
 import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
@@ -177,6 +177,30 @@ function reachFor(beast: Beast, part: number, gains: readonly number[]): Float32
 
 /** A baked hide map's mean colour (linear), which beast.py writes into the body material's extras. */
 const HideMean = arr(num(0, 1), 3, { min: 3 });
+/** Each card part's shading per vertex, worked out once per beast: how far along the card (loose.ts `tipOf`, its reach
+ * from the coat) and the coat's colour at its root (`rootOf`: the coat's vertex colour times its material and baked
+ * hide's mean). The coat is the mapped part (the biggest with no map); a card's reach is from every part that isn't one. */
+const CARDS = new WeakMap<Beast, Map<number, { tip: Float32Array; root: Float32Array }>>();
+function cardFor(beast: Beast, part: number, cards: readonly boolean[]): { tip: Float32Array; root: Float32Array } {
+  let byPart = CARDS.get(beast);
+  if (!byPart) CARDS.set(beast, (byPart = new Map()));
+  let c = byPart.get(part);
+  if (!c) {
+    const parts = beast.model.parts, mat = (i: number) => { const m = parts[i]!.material; return (Array.isArray(m) ? m[0] : m) as THREE.MeshStandardMaterial; };
+    let coat = parts.findIndex((_, i) => !!mat(i).map);
+    if (coat < 0) parts.forEach((p, i) => { if (coat < 0 || p.count > parts[coat]!.count) coat = i; });
+    const own = parts[part]!.geometry.getAttribute("position").array, rest: number[] = [];
+    parts.forEach((p, i) => { if (!cards[i]) { const q = p.geometry.getAttribute("position").array; for (let k = 0; k < q.length; k++) rest.push(q[k]!); } });
+    const cg = parts[coat]!.geometry, pos = cg.getAttribute("position"), col = cg.getAttribute("color"), m = mat(coat);
+    const mean = (m.map ? check(HideMean, m.userData.hide_mean) : null) ?? [1, 1, 1];
+    const colour = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) { colour[i * 3] = col ? col.getX(i) : 1; colour[i * 3 + 1] = col ? col.getY(i) : 1; colour[i * 3 + 2] = col ? col.getZ(i) : 1; }
+    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]) };
+    byPart.set(part, c);
+  }
+  return c;
+}
+
 /** A beast's skin merged into one geometry (Puppet's `merged`), built once and shared. */
 const MERGED = new WeakMap<Beast, THREE.BufferGeometry>();
 /** Frees a beast's geometry and every texture its materials hold (puppets clone the geometry and materials, not the textures). */
@@ -241,13 +265,15 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
 const SHADE_KEY = "beast-shade-v2";
-function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide", loose: LooseLag["uniforms"] | null = null) {
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide", loose: LooseLag["uniforms"] | null = null, card = false) {
   // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
-  const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
+  // a card is too thin and flat for the grain: its bump tore along the edges and its tips lightened toward white (#5199)
+  const kind = m.map || card ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
   else if (m.roughnessMap) m.roughness = 1; // a baked hide's roughness map says where it shines (wet skin, a scale's crown)
   else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
+  if (card) { m.roughness = 1; m.metalness = 0; }
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
     if (fx) { sh.uniforms.uFxTime = FX_TIME; sh.uniforms.uFxAmt = amt; }
@@ -256,6 +282,9 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     if (loose) {
       Object.assign(sh.uniforms, loose);
       sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + LOOSE_VERT);
+    }
+    if (card) {
+      sh.vertexShader = CARD_VERT_PARS + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + CARD_VERT);
     }
     // half-Lambert squared: a surface turned from the light keeps a soft share of it
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
@@ -280,11 +309,13 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
           reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - beastLum ) * beastRim * ( 1.0 - 0.5 * metalnessFactor );
         }
-        ${fx?.frag ?? ""}`);
+        ${fx?.frag ?? ""}
+        ${card ? CARD_LIGHT : ""}`);
     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
+    if (card) sh.fragmentShader = CARD_FRAG_PARS + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n" + CARD_COLOR);
     if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
   };
-  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "");
+  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "") + (card ? ":card" : "");
 }
 
 const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -446,12 +477,15 @@ export class Puppet {
     const skeleton = new THREE.Skeleton(this.bones);
     const surface = surfaceOf(model.parts.flatMap((p) => (Array.isArray(p.material) ? p.material : [p.material]).map((m) => m.name)));
     const gains = opts.merged ? [] : looseParts(model.parts.map((p) => ({ name: (Array.isArray(p.material) ? p.material[0] : p.material)?.name ?? "", count: p.count })));
+    const cards = opts.merged ? [] : cardParts(model.parts.map((p) => { const m = Array.isArray(p.material) ? p.material[0] : p.material; return { name: m?.name ?? "", count: p.count, mapped: m instanceof THREE.MeshStandardMaterial && !!m.map }; }));
     if (gains.some((x) => x > 0)) this.loose = new LooseLag(rig.parents.length, archetype);
     if (opts.merged) inner.add(this.mergedSkin(model, rig, skeleton, look, amt, surface));
     else for (const [pi, part] of model.parts.entries()) {
       const g = part.geometry.clone();
       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
+      const card = !!cards[pi];
+      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); }
       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
@@ -461,7 +495,7 @@ export class Puppet {
         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
         if (isEye) { this.lids.push({ m, open: m.color.clone(), shut: m.color.clone().multiplyScalar(0.12) }); m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
-        else stylize(m, this.top, m.name, look, amt, surface, reach && this.loose ? this.loose.uniforms : null);
+        else stylize(m, this.top, m.name, look, amt, surface, reach && this.loose ? this.loose.uniforms : null, card);
         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
