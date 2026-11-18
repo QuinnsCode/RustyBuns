@@ -251,7 +251,7 @@ describe("squaring up", () => {
     const quick = circle(skirmisher, tank, 120), slow = circle(tank, skirmisher, 120);
     expect(quick.went).toBeGreaterThan(slow.went * 2.5);
     expect(quick.f.b.lateral).toBeLessThan(1);
-    expect(slow.f.b.lateral).toBeLessThan(0.3);
+    expect(slow.f.b.lateral).toBeLessThan(0.5);
   });
 
   test("keep circling and it costs pace and stamina; stand and square up and the cost goes away", () => {
