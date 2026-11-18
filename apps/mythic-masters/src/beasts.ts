@@ -427,7 +427,7 @@ export class Puppet {
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   /** How hurt the body looks, 0..1: set by a blow, held through the stun and eased off after it, so a struck body is
-   * held down in its legs and shoved back for the whole stun, plus a short tail after it (#5192 round 7: the old pose eased off as the stun counted down, so a frame
+   * held down in its legs and twisted off the blow for the whole stun, plus a short tail after it (#5192 round 7: the old pose eased off as the stun counted down, so a frame
    * 0.4 s after the blow showed it stood back up, neutral). Acting again (a swing, a dash, a guard) shakes it off. */
   private hurt = 0;
   private hurtK = 0;     // how hard the blow that set `hurt` was, 0..1
@@ -751,10 +751,9 @@ export class Puppet {
       }
     }
     const kk = 55, bkdt = Math.min(dt, 1 / 30);
-    const kbHold = this.hurt * (0.04 + 0.08 * this.hurtK) * h * s;
-    this.kbV += (-kk * (this.kb - kbHold) - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
+    this.kbV += (-kk * this.kb - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
     this.kb = Math.max(0, this.kb + this.kbV * bkdt);
-    this.stagger = Math.max(this.stagger * Math.exp(-2.5 * dt), this.hurt * this.hurtK); // eases off over about 0.4 s, long enough to see the shove
+    this.stagger *= Math.exp(-2.5 * dt); // eases off over about 0.4 s, long enough to see the shove
     this.prevStun = f.stun;
     this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
     this.jolt += this.joltV * dt;
