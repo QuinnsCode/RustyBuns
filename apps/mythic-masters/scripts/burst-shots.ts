@@ -11,7 +11,7 @@
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
 //   --lock     the fights from the lock camera players fight in (over your shoulder), not the side camera; no close-ups
-//   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2 and 0.35 s
+//   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2, 0.35, 0.55 and 0.9 s
 //              after it, the same blow every run (a bot fight's hits land at random, on random bodies, at random angles)
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -120,7 +120,7 @@ try {
         await shoot(tab, `hit-${id}-rest`);
         const at = performance.now();
         await tab.eval(`(() => { const s = mythicMasters.shelf().stands.find((x) => x.id === ${JSON.stringify(id)}); s.f.state = "stun"; s.f.stun = 22; })()`);
-        for (const [i, t] of [50, 120, 200, 350].entries()) { await Bun.sleep(Math.max(0, at + t - performance.now())); await shoot(tab, `hit-${id}-${i}`); }
+        for (const [i, t] of [50, 120, 200, 350, 550, 900].entries()) { await Bun.sleep(Math.max(0, at + t - performance.now())); await shoot(tab, `hit-${id}-${i}`); }
       }
       else await shoot(tab, `close-${id}`);
     } finally { await tab.close(); }

@@ -237,3 +237,26 @@ test.each([["yeti", 60], ["sasquatch", 30]] as const)("a blow throws the %s's he
   expect(at(0.35)).toBeGreaterThan(0.2);
   expect(Math.max(...moved)).toBeLessThan(1);   // thrown, not flung off the body (an unstable spring at 30 fps did)
 }, 30_000);
+
+// #3915 round 9: a blow's curl eased straight back to rest. Now the spring swings past it: the chest arches up and the
+// head rises over where it stood before it settles (main's head came back level, at most 0.01 of the height up).
+test.each(["yeti", "rougarou"])("the %s's body rebounds past rest after a blow, then settles", async (id) => {
+  const c = ROSTER.find((x) => x.id === id)!;
+  const b = await beast(c.id);
+  const p = new Puppet(b, body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const striker = { x: 3, y: 0, z: 0 }, h = b.sheet.height;
+  let tick = 0;
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, tick++, striker);
+  const headY = () => p.headWorld()[0]!.y - p.group.position.y;
+  const rest = headY(), rise: number[] = [];
+  f.state = "stun"; f.stun = 22;
+  for (let i = 1; i <= 90; i++) {
+    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free";
+    p.update(f, 1 / 60, tick++, striker);
+    rise.push((headY() - rest) / h);
+  }
+  expect(Math.max(...rise.slice(30, 54))).toBeGreaterThan(0.04);    // up over rest between 0.5 and 0.9 s
+  expect(Math.abs(rise.at(-1)!)).toBeLessThan(0.05);                 // and back near it by 1.5 s
+}, 30_000);
