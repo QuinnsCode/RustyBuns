@@ -68,7 +68,7 @@ test("a speaker's perforated grille is one flat sheet; its edge bends back as a 
 
 // How far into a model a ray from outside gets past `face` (a coordinate along `dir`) before it hits something
 // other than the grille's sheet.
-function reach(id: GearId, from: THREE.Vector3Tuple, dir: THREE.Vector3Tuple, face: number) {
+function reach(id: GearId, from: readonly [number, number, number], dir: readonly [number, number, number], face: number) {
   const g = gear(id);
   g.updateMatrixWorld(true);
   const d = new THREE.Vector3(...dir), hits = new THREE.Raycaster(new THREE.Vector3(...from), d).intersectObject(g, true).filter((h) => !h.object.name.endsWith("-grille"));
