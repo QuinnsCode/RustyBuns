@@ -1,12 +1,14 @@
-// The two hands drawn: bare forearms, a palm, and fingers of rounded segments with knuckles, posed by the grip solver
-// (grip.ts) and placed by place.ts. `handsView(scene, camera)` takes a camera and a `Hold` and nothing from the game
-// world, so any page can show them. A new grip is solved once (cached) and blended in over a fifth of a second, joint by
-// joint; a frame only composes matrices. The forearm's material has an empty `tattoo` slot (its map) and the forearm's
-// UVs run as one clean rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
+// The two hands drawn: bare forearms and one smooth skin per hand (skin.ts: palm, knuckles, the thumb's web, tapered
+// fingers and nails) over the skeleton's joints, posed by the grip solver (grip.ts) and placed by place.ts.
+// `handsView(scene, camera)` takes a camera and a `Hold` and nothing from the game world, so any page can show them. A
+// new grip is solved once (cached) and blended in over a fifth of a second, joint by joint; a frame only composes
+// matrices. The forearm's material has an empty `tattoo` slot (its map) and the forearm's UVs run as one clean
+// rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
 import * as THREE from "three";
 import { HandSolver, gripFor, type HandPose, type What } from "./grip.ts";
 import { type Box, type Frame, type Side, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
-import { FINGERS, FOREARM, HAND, PALM, type V3 } from "./skeleton.ts";
+import { FINGERS, FOREARM, HAND, type V3 } from "./skeleton.ts";
+import { buildSkin, type SkinMesh } from "./skin.ts";
 import { connectorMesh } from "../cables/ends-view.ts";
 import type { Connector } from "../cables/ends.ts";
 
@@ -26,39 +28,50 @@ export type Hold = {
 const SKIN = 0xb57a58;
 const BLEND = 0.2;
 
-/** One hand's meshes: an object per joint (its matrix set each frame), with the segment to its child and a knuckle. */
-function handMesh(side: Side, skin: THREE.Material) {
-  const root = new THREE.Group();
-  const bones = HAND.bones.map(() => { const o = new THREE.Object3D(); o.matrixAutoUpdate = false; root.add(o); return o; });
+/** The skin, meshed once for both hands (the left is it mirrored). */
+let skinGeo: { right: THREE.BufferGeometry; left: THREE.BufferGeometry; nails: SkinMesh["nails"] } | null = null;
+function skinGeometry() {
+  if (skinGeo) return skinGeo;
+  const s = buildSkin(), g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(s.positions, 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(s.normals, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(s.colors, 3));
+  g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(s.joints, 4));
+  g.setAttribute("skinWeight", new THREE.BufferAttribute(s.weights, 4));
+  g.setIndex(new THREE.BufferAttribute(s.index, 1));
+  return (skinGeo = { right: g, left: mirrored(g), nails: s.nails });
+}
+
+/** A geometry mirrored in x, its triangles turned back round so they still face out. */
+function mirrored(g: THREE.BufferGeometry) {
+  const m = g.clone().applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)), ix = m.getIndex()!;
+  for (let i = 0; i < ix.count; i += 3) { const a = ix.getX(i + 1); ix.setX(i + 1, ix.getX(i + 2)); ix.setX(i + 2, a); }
+  return m;
+}
+
+/** One hand: a joint per bone (its matrix set each frame), the skin over them, and a nail riding each last joint. */
+function handMesh(side: Side, skin: THREE.Material, nail: THREE.Material) {
+  const root = new THREE.Group(), geo = skinGeometry();
   const m = (v: V3): V3 => [v[0] * side, v[1], v[2]];
-  const capsule = (from: V3, to: V3, r: number) => {
-    const d = new THREE.Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]), len = d.length();
-    const c = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.001, len), 4, 10), skin);
-    c.position.set((from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2);
-    c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
-    return c;
-  };
-  HAND.bones.forEach((b, j) => {
-    if (b.parent < 0) return;
-    const kids = HAND.bones.filter((k) => k.parent === j);
-    for (const k of kids) bones[j].add(capsule([0, 0, 0], m([k.at[0] - b.at[0], k.at[1] - b.at[1], k.at[2] - b.at[2]]), b.radius));
-    if (kids.length) {
-      const knuckle = new THREE.Mesh(new THREE.SphereGeometry(b.radius * 1.08, 10, 8), skin);
-      bones[j].add(knuckle);
-    }
-  });
-  // The palm: a soft slab, the metacarpals under it as ridges to each knuckle, and the thumb's pad.
-  const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), skin);
-  palm.scale.set(PALM.half, (PALM.back - PALM.front) / 2, PALM.length / 2);
-  palm.position.set(side * 0.004, (PALM.back + PALM.front) / 2, -PALM.length / 2 + 0.002);
-  bones[0].add(palm);
-  for (const f of FINGERS) {
-    if (f === "thumb") continue;
-    const k = HAND.bones[HAND.chains[f][0]].at;
-    bones[0].add(capsule(m([k[0] * 0.7, 0.002, -0.012]), m(k), 0.0105));
+  const bones = HAND.bones.map(() => { const o = new THREE.Bone(); o.matrixAutoUpdate = false; root.add(o); return o; });
+  // Bound at rest: each joint where the skeleton puts it, turned the way the skin was meshed.
+  const inverses = HAND.bones.map((b) => { const a = m(b.at); return new THREE.Matrix4().makeTranslation(-a[0], -a[1], -a[2]); });
+  const mesh = new THREE.SkinnedMesh(side > 0 ? geo.right : geo.left, skin);
+  mesh.bind(new THREE.Skeleton(bones, inverses), new THREE.Matrix4());
+  mesh.frustumCulled = false;
+  root.add(mesh);
+  const nailGeo = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  for (const n of geo.nails) {
+    const b = HAND.bones[n.bone].at, across = new THREE.Vector3(...n.along).cross(new THREE.Vector3(...n.out));
+    const o = new THREE.Mesh(nailGeo, nail);
+    // a shallow dome on the back of the finger: wide across it, long along it, barely raised
+    const basis = new THREE.Matrix4().makeBasis(across.multiplyScalar(n.w / 2), new THREE.Vector3(...n.out).multiplyScalar(0.0034), new THREE.Vector3(...n.along).multiplyScalar(n.l / 2));
+    basis.setPosition(n.at[0] - b[0], n.at[1] - b[1], n.at[2] - b[2]);
+    if (side < 0) basis.premultiply(new THREE.Matrix4().makeScale(-1, 1, 1));
+    o.matrix.copy(basis);
+    o.matrixAutoUpdate = false;
+    bones[n.bone].add(o);
   }
-  const tb = HAND.bones[HAND.chains.thumb[0]].at;
-  bones[0].add(capsule(m([-0.006, -0.006, -0.012]), m(tb), 0.016));
   return { root, bones };
 }
 
@@ -72,16 +85,18 @@ function localQuats(p: HandPose): THREE.Quaternion[] {
 /** Your two hands and forearms, children of the camera. `update(hold, t, speed)` each frame; `state()` for the harness. */
 export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   const solver = new HandSolver();
-  const skin = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.62, metalness: 0 });
+  const skin = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.58, metalness: 0 });
+  const nail = new THREE.MeshStandardMaterial({ color: 0xc99a86, roughness: 0.35, metalness: 0 });
   /** The forearm's skin: its `map` is the tattoo slot, empty until a tattoo is put there. */
-  const arm = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.66, metalness: 0 });
+  const arm = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.58, metalness: 0 });
   arm.userData.slot = "tattoo";
   /** The left forearm has its own sheet, so each arm carries its own ink. */
   const armLeft = arm.clone();
   // A tapered tube, wrist (v 0) to elbow (v 1), U once round: an unwrapped rectangle. Drawn wider across than deep, as a forearm is.
-  const forearmGeo = new THREE.CylinderGeometry(FOREARM.elbow, FOREARM.wrist, 1, 20, 1, true).translate(0, 0.5, 0);
+  // Its wrist end a little slimmer than the hand's wrist, which covers it (skin.ts).
+  const forearmGeo = new THREE.CylinderGeometry(FOREARM.elbow, FOREARM.wrist * 0.9, 1, 32, 1, true).translate(0, 0.5, 0);
   const sides = ([1, -1] as const).map((side) => {
-    const h = handMesh(side, skin), forearm = new THREE.Mesh(forearmGeo, side === 1 ? arm : armLeft);
+    const h = handMesh(side, skin, nail), forearm = new THREE.Mesh(forearmGeo, side === 1 ? arm : armLeft);
     forearm.matrixAutoUpdate = false;
     camera.add(h.root, forearm);
     return {
