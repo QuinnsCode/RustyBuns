@@ -2,7 +2,7 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, gear, gearJacks } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearJacks } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
@@ -64,6 +64,26 @@ test("a speaker's perforated grille is one flat sheet; its edge bends back as a 
     for (let i = 0; i < n.count; i++) expect(new THREE.Vector3().fromBufferAttribute(n, i).dot(first), id).toBeGreaterThan(0.999);
     expect(first.z, id).toBeGreaterThan(0.5);
   }
+});
+
+// How far into a model a ray from outside gets past `face` (a coordinate along `dir`) before it hits something
+// other than the grille's sheet.
+function reach(id: GearId, from: readonly [number, number, number], dir: readonly [number, number, number], face: number) {
+  const g = gear(id);
+  g.updateMatrixWorld(true);
+  const d = new THREE.Vector3(...dir), hits = new THREE.Raycaster(new THREE.Vector3(...from), d).intersectObject(g, true).filter((h) => !h.object.name.endsWith("-grille"));
+  return hits[0].point.dot(d) - face;
+}
+
+test.each([
+  // [what, id, from, along, the face's own coordinate along it, how deep a real one goes at least]
+  ["the PA top's woofer, 7 cm back behind its grille", "top-12-powered", [0, 0.3, 1], [0, 0, -1], -0.18, 0.03],
+  ["the PA top's handle, a pocket sunk in its top", "top-12-powered", [0, 1, 0.01], [0, -1, 0], -0.575, 0.025],
+  ["the PA top's side handle", "top-12-powered", [1, 0.36, -0.01], [-1, 0, 0], -0.16, 0.025],
+  ["the sub's port, a slot right across the bottom of its front", "sub-18", [0, 0.084, 1], [0, 0, -1], -0.361, 0.1],
+  ["the sub's side handle", "sub-18", [1, 0.42, 0], [-1, 0, 0], -0.27, 0.03],
+] as const)("%s is a hollow you see into", (_, id, from, dir, face, deep) => {
+  expect(reach(id, from, dir, face)).toBeGreaterThan(deep);
 });
 
 test("the DJ mixer's print lies on its top face and knob caps, looking up, inside the plate", () => {

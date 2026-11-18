@@ -187,11 +187,12 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
 /** A loudspeaker as it shows through a grille: the cone's dish, its rolled rubber surround, the dust cap and the
  * basket's rim, `r` the cone's radius, its rim at z = 0 and its throat `deep` behind. `m` places it. */
 function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
+  const roll = Math.min(deep, 0.01);
   return [
     lathe("rubber", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
-    lathe("rubber", [[0, r, r], [deep * 0.25, r * 1.04, r * 1.04], [deep * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
+    lathe("rubber", [[0, r, r], [roll * 0.25, r * 1.04, r * 1.04], [roll * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
     lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: 16 }),
-    lathe("knob", [[0, r * 1.12, r * 1.12], [deep * 0.1, r * 1.13, r * 1.13], [deep * 0.1, r * 1.2, r * 1.2], [-deep * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
+    lathe("knob", [[0, r * 1.12, r * 1.12], [roll * 0.1, r * 1.13, r * 1.13], [roll * 0.1, r * 1.2, r * 1.2], [-roll * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
   ];
 }
 
@@ -199,20 +200,124 @@ function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
 function horn(w: number, h: number, deep: number, m: THREE.Matrix4): Piece[] {
   return [
     lathe("knob", [[-deep, 0.014, 0.014], [-deep * 0.6, w * 0.16, h * 0.2], [-deep * 0.2, w * 0.38, h * 0.42], [0, w / 2, h / 2]], { p: 4, seg: 24, m }),
-    lathe("knob", [[0, w / 2, h / 2], [deep * 0.15, w / 2 + 0.008, h / 2 + 0.008], [0, w / 2 + 0.014, h / 2 + 0.014]], { p: 4, seg: 24, m }),
+    lathe("knob", [[0, w / 2, h / 2], [Math.min(deep, 0.01) * 0.15, w / 2 + 0.008, h / 2 + 0.008], [0, w / 2 + 0.014, h / 2 + 0.014]], { p: 4, seg: 24, m }),
   ];
 }
 
-/** A handle set into a face: a dark pocket with a grip bar across it, `w` by `h` on the face, `out` its normal (its
- * `w` runs across x on a face looking up or back, along z on a side). */
-function pocket(at: THREE.Vector3Tuple, out: THREE.Vector3Tuple, w: number, h: number): Piece[] {
-  const n = new THREE.Vector3(...out).normalize(), turn = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n));
-  const place = () => new THREE.Matrix4().makeTranslation(...at).multiply(turn).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-  // The pocket's lip, a rounded ring that stands 3 mm proud, its dark floor, and the bar across it.
-  const lip = rounded("paint", { wf: w + 0.02, h: 0.004, d: h + 0.02, r: 0.012, e: 0.0018, y0: -0.002, m: place(), detail: 1 });
-  const floor = rounded("knob", { wf: w, h: 0.002, d: h, r: 0.008, e: 0.0008, y0: 0.0015, m: place(), detail: 1 });
-  const bar = rounded("paint", { wf: w * 0.92, h: 0.012, d: h * 0.32, r: 0.005, e: 0.004, y0: -0.004, m: place(), detail: 1 });
-  return [lip, floor, bar];
+/** A well sunk into a face: centred on the face at `at`, `w` by `h` at the face (`w` along the face's u: across x on a
+ * face looking front, back, up or down, along z on a side), its corners rounded `r`. Its rim rolls in `lip` at 45
+ * degrees, then its walls run `deep` into the box, drawing in `draft` on each side as a moulding's walls do; `walls`
+ * and `floor` are their slots (the cabinet's own unless given). */
+type Well = { at: THREE.Vector3Tuple; w: number; h: number; r: number; deep: number; lip?: number; draft?: number; walls?: GearSlot; floor?: GearSlot | null };
+
+/** A face's own frame: u and v across it, n out of it (u = x on a front, back, top or bottom face). */
+function faceFrame(out: THREE.Vector3Tuple) {
+  const n = new THREE.Vector3(...out).normalize();
+  const u = Math.abs(n.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3().crossVectors(UP, n).normalize();
+  return { n, u, v: new THREE.Vector3().crossVectors(n, u) };
+}
+
+/** A rounded rectangle's outline, counter-clockwise in (u, v), the same count of points whatever its size. */
+function roundRect(cu: number, cv: number, w: number, h: number, r: number, per = 5): THREE.Vector2[] {
+  const rr = Math.max(Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4), 1e-4), pts: THREE.Vector2[] = [];
+  for (const [k, sx, sy] of [[0, 1, 1], [1, -1, 1], [2, -1, -1], [3, 1, -1]] as const)
+    for (let j = 0; j <= per; j++) {
+      const a = ((k + j / per) * Math.PI) / 2;
+      pts.push(new THREE.Vector2(cu + sx * (w / 2 - rr) + Math.cos(a) * rr, cv + sy * (h / 2 - rr) + Math.sin(a) * rr));
+    }
+  return pts;
+}
+
+/** The convex hull of points in a plane, counter-clockwise, points closer than 0.1 mm or in a straight run dropped. */
+function hull2(points: THREE.Vector2[]): THREE.Vector2[] {
+  const ps = [...points].sort((a, b) => a.x - b.x || a.y - b.y), turn = (o: THREE.Vector2, a: THREE.Vector2, b: THREE.Vector2) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: THREE.Vector2[]) => list.reduce<THREE.Vector2[]>((h, p) => {
+    while (h.length >= 2 && turn(h[h.length - 2], h[h.length - 1], p) <= 1e-9) h.pop();
+    if (!h.length || h[h.length - 1].distanceTo(p) > 1e-4) h.push(p);
+    return h;
+  }, []);
+  const lower = half(ps), upper = half([...ps].reverse());
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/** Wells sunk into a piece's flat face looking along `out` (a convex cabinet's front, back, side, top or bottom): the
+ * face is cut round each well's mouth, and the well's walls and floor go in behind it, so a pocket handle, an amp's
+ * recess or the dark cavity behind a grille is a real hollow you see into, not a part stuck on the face. */
+function sink(piece: Piece, out: THREE.Vector3Tuple, wells: Well[]): Piece[] {
+  const p = piece.geo.getAttribute("position");
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), f = new THREE.Vector3(), want = new THREE.Vector3(...out).normalize();
+  // the face is the one looking most nearly along `out` (a tapered box's sides lean by its taper)
+  const best = new THREE.Vector3();
+  for (let i = 0; i + 2 < p.count; i += 3) {
+    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+    f.subVectors(b, a).cross(c.clone().sub(a)).normalize();
+    if (f.dot(want) > best.dot(want)) best.copy(f);
+  }
+  const { n, u, v } = faceFrame(best.toArray());
+  let top = -Infinity;
+  for (let i = 0; i < p.count; i++) top = Math.max(top, a.fromBufferAttribute(p, i).dot(n));
+  const keep: number[] = [], rim: THREE.Vector2[] = [];
+  for (let i = 0; i + 2 < p.count; i += 3) {
+    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+    f.subVectors(b, a).cross(c.clone().sub(a)).normalize();
+    if (f.dot(n) > 0.9999 && Math.abs(a.dot(n) - top) < 1e-5) { for (const q of [a, b, c]) rim.push(new THREE.Vector2(q.dot(u), q.dot(v))); continue; }
+    for (let k = 0; k < 3; k++) keep.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k));
+  }
+  if (!rim.length) throw new Error("sink: no flat face looks that way");
+  const outline = hull2(rim);
+  const at3 = (q: THREE.Vector2, depth: number) => u.clone().multiplyScalar(q.x).addScaledVector(v, q.y).addScaledVector(n, top - depth);
+  const facing = (pos: number[], tris: THREE.Vector3[][], want?: THREE.Vector3) => {
+    for (const [x, y, z] of tris) {
+      const fn = new THREE.Vector3().subVectors(y, x).cross(z.clone().sub(x));
+      const flip = want ? fn.dot(want) < 0 : false;
+      pos.push(...(flip ? [x, z, y] : [x, y, z]).flatMap((q) => q.toArray()));
+    }
+  };
+  const mouths = wells.map((w) => roundRect(w.at[0] * u.x + w.at[1] * u.y + w.at[2] * u.z, w.at[0] * v.x + w.at[1] * v.y + w.at[2] * v.z, w.w, w.h, w.r));
+  // a mouth has to lie on the flat (past it, the cut would tear the rounds)
+  const inside = (q: THREE.Vector2) => outline.every((o, i) => { const e = outline[(i + 1) % outline.length]; return (e.x - o.x) * (q.y - o.y) - (e.y - o.y) * (q.x - o.x) >= -1e-7; });
+  if (!mouths.every((m) => m.every(inside))) throw new Error("sink: a well's mouth runs off the flat of its face");
+  // (triangulateShape turns its arrays round in place, so it gets copies, and its indices run over those)
+  const face: number[] = [], shape = [outline, ...mouths].map((ring) => [...ring]);
+  const tris = THREE.ShapeUtils.triangulateShape(shape[0], shape.slice(1)), all = shape.flat();
+  facing(face, tris.map((t) => t.map((k) => at3(all[k], 0))), n);
+  // the shell's normals made again, so the rounds still blend into the cut face
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute([...keep, ...face], 3));
+  const pieces: Piece[] = [{ geo: toCreasedNormals(geo, 0.6), slot: piece.slot }];
+  wells.forEach((w, i) => {
+    const [cu, cv] = [mouths[i].reduce((s, q) => s + q.x, 0) / mouths[i].length, mouths[i].reduce((s, q) => s + q.y, 0) / mouths[i].length];
+    const lip = Math.min(w.lip ?? 0.004, w.w / 4, w.h / 4), dr = Math.min(w.draft ?? 0, w.w / 4 - lip, w.h / 4 - lip);
+    const ring = (k: number) => roundRect(cu, cv, w.w - 2 * k, w.h - 2 * k, Math.max(w.r - k, 0.002));
+    const rings: [THREE.Vector2[], number][] = [[mouths[i], 0], [ring(lip), lip], [ring(lip + dr), w.deep]];
+    const walls: number[] = [], centre = (d: number) => at3(new THREE.Vector2(cu, cv), d);
+    for (let r = 0; r + 1 < rings.length; r++) {
+      const [ra, da] = rings[r], [rb, db] = rings[r + 1];
+      for (let j = 0; j < ra.length; j++) {
+        const k = (j + 1) % ra.length, [p0, p1, q0, q1] = [at3(ra[j], da), at3(ra[k], da), at3(rb[j], db), at3(rb[k], db)];
+        // a wall looks in, at the well's own axis
+        const want = centre((da + db) / 2).sub(p0.clone().add(q1).multiplyScalar(0.5)).projectOnPlane(n).addScaledVector(n, 0.2);
+        facing(walls, [[p0, p1, q1], [p0, q1, q0]], want);
+      }
+    }
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute("position", new THREE.Float32BufferAttribute(walls, 3));
+    pieces.push({ geo: toCreasedNormals(wg, 0.9), slot: w.walls ?? piece.slot });
+    if (w.floor === null) return;
+    const last = [...rings[rings.length - 1][0]], floor: number[] = [];
+    facing(floor, THREE.ShapeUtils.triangulateShape(last, []).map((t) => t.map((k) => at3(last[k], w.deep))), n);
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute("position", new THREE.Float32BufferAttribute(floor, 3));
+    fg.setAttribute("normal", new THREE.Float32BufferAttribute(floor.map((_, i) => n.getComponent(i % 3)), 3));
+    pieces.push({ geo: fg, slot: w.floor ?? w.walls ?? piece.slot });
+  });
+  return pieces;
+}
+
+/** Cuts wells into one cabinet face after face (`[out, wells]` each), and puts the cut cabinet and its hollows into the build. */
+function sunk(b: Build, piece: Piece, cuts: [THREE.Vector3Tuple, Well[]][]) {
+  const [cab, ...hollows] = cuts.reduce<Piece[]>(([p, ...rest], [out, wells]) => { const [face, ...more] = sink(p, out, wells); return [face, ...rest, ...more]; }, [piece]);
+  b.pieces.push(cab, ...hollows);
 }
 
 /** A pan-head screw on a face looking along `out`. */
@@ -302,34 +407,48 @@ function knob(b: Build, at: THREE.Vector3Tuple, out: 1 | -1, r = 0.011) {
  * the front with the woofer and the horn behind it, a handle set into the top and each side, rubber feet and a pole
  * cup underneath, threaded fly points, and a back panel (a powered box's amp plate has a heat sink and knobs). */
 function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boolean): Build {
-  const b: Build = { pieces: [], marks: [] }, body = h - 0.025, y0 = 0.012, g = 0.012, front = d / 2 - g;
-  const wb = w * 0.72, r = Math.min(0.016, w * 0.05), fh = body - y0;
-  b.pieces.push(rounded("paint", { wf: w, wb, h: fh, d: d - g, r, e: 0.014, y0, z0: -g / 2 }));
-  const gw = w - 0.006, gh = fh - 0.006, yc = y0 + fh / 2;
-  b.pieces.push(...grilleSlab(gw, gh, g + 0.002, yc, front - 0.001, r));
-  // behind the grille: the woofer low, the horn above it
-  const rw = Math.min(gw, gh * 0.62) * 0.43, at = (y: number, x = 0) => new THREE.Matrix4().makeTranslation(x, y, front + 0.009);
-  b.pieces.push(...cone(rw, 0.008, at(yc - gh * 0.16)));
-  b.pieces.push(...horn(gw * 0.62, gh * 0.2, 0.008, at(y0 + gh * 0.8)));
-  // handles set into the top and the sides (the sides lean in as the box tapers)
-  b.pieces.push(...pocket([0, body, -d * 0.04], [0, 1, 0], w * 0.42, d * 0.2));
-  const lean = Math.atan2((w - wb) / 2, d);
-  for (const s of [-1, 1]) b.pieces.push(...pocket([s * ((w + wb) / 4 + 0.001), y0 + fh * 0.62, -g / 2], [s * Math.cos(lean), 0, Math.sin(lean)], d * 0.32, 0.05));
-  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.05, w / 2], [-d / 2 + 0.05, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.04), (y0 + 0.002) / 2, z], 0.006));
+  const b: Build = { pieces: [], marks: [] }, body = h - 0.025, y0 = 0.012, g = 0.01;
+  // a moulded shell: every edge rounded over 3 to 4.5 cm, as an injection-moulded box is
+  const wb = w * 0.76, r = Math.min(0.045, w * 0.11), e = Math.min(0.035, h * 0.1), fh = body - y0;
+  const shell = rounded("paint", { wf: w, wb, h: fh, d, r, e, y0 });
+  // The grille fills the flat of the front, inside the rounded shell, seated in a dark cavity: the baffle 7 cm back,
+  // the woofer's cone and the horn's flare reaching forward to just behind the sheet.
+  const mw = w - 2 * r - 0.008, mh = fh - 2 * e - 0.008, gw = mw + 0.004, gh = mh + 0.004, yc = y0 + fh / 2, cave = Math.min(0.08, d * 0.2);
+  const lean = Math.atan2((w - wb) / 2, d - 2 * r), side = (s: number): THREE.Vector3Tuple => [s * Math.cos(lean), 0, -Math.sin(lean)];
+  // handles: a pocket in each side the fingers curl into, a pocket with a bridge across it on top, and the back's
+  // amp plate (or a passive box's jack cup) sunk in a moulded recess, inside the flat of the back
+  const rec = 0.02, lo = y0 + e + 0.008, hi = body - e - 0.008;
+  const rw0 = Math.min(w * 0.62, wb - 2 * r - 0.016 - 0.03) + 0.03, rh0 = Math.min(powered ? h * 0.4 : h * 0.18, hi - lo - 0.03) + 0.03;
+  const pw = rw0 - 0.03, ph = rh0 - 0.03, py = clamp(powered ? h * 0.32 : h * 0.3, lo + rh0 / 2, hi - rh0 / 2);
+  const grip = (s: number): [THREE.Vector3Tuple, Well[]] => [side(s), [{ at: [s * w * 0.43, y0 + fh * 0.62, -0.01], w: Math.min(d * 0.34, d - 2 * r - 0.04), h: 0.055, r: 0.022, deep: 0.04, lip: 0.006, draft: 0.004 }]];
+  sunk(b, shell, [
+    [[0, 0, 1], [{ at: [0, yc, d / 2], w: mw, h: mh, r: 0.012, deep: cave, lip: 0.003, walls: "knob" }]],
+    grip(-1), grip(1),
+    [[0, 1, 0], [{ at: [0, body, -d * 0.04], w: w * 0.42, h: d * 0.2, r: 0.02, deep: 0.035, lip: 0.006, draft: 0.003 }]],
+    [[0, 0, -1], [{ at: [0, py, -d / 2], w: rw0, h: rh0, r: 0.014, deep: rec, lip: 0.005, draft: 0.002 }]],
+  ]);
+  b.pieces.push(rounded("paint", { wf: w * 0.4, h: 0.016, d: d * 0.07, r: 0.006, e: 0.006, y0: body - 0.018, z0: -d * 0.04 }));
+  b.pieces.push(...grilleSlab(gw, gh, g, yc, d / 2 - g - 0.003, 0.012));
+  const at = (y: number, x = 0) => new THREE.Matrix4().makeTranslation(x, y, d / 2 - g - 0.006);
+  const rw = Math.min(gw, gh * 0.62) * 0.43, deep = cave - g - 0.012;
+  b.pieces.push(...cone(rw, deep, at(yc - gh * 0.16)));
+  b.pieces.push(...horn(gw * 0.62, gh * 0.2, deep, at(yc + gh * 0.3)));
+  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.065), (y0 + 0.002) / 2, z], 0.006));
   // the pole cup: a steel ring round a dark socket
   b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
-  for (const z of [-d * 0.3, d * 0.22]) for (const x of [-1, 1]) b.pieces.push(disc("knob", 0.007, 0.003, "y", [x * w * 0.3, body + 0.001, z], 8));
-  const ph = powered ? h * 0.4 : h * 0.18, py = powered ? h * 0.32 : h * 0.3, pw = w * 0.62;
-  plate(b, pw, ph, [0, py, -d / 2 - 0.004]);
+  for (const z of [-d * 0.3, d * 0.22]) for (const x of [-1, 1]) b.pieces.push(disc("knob", 0.007, 0.003, "y", [x * w * 0.24, body + 0.001, z], 8));
+  // the plate lies on the recess's floor; `bz` is its face
+  const bz = -d / 2 + rec - 0.008;
+  plate(b, pw, ph, [0, py, bz + 0.004]);
   if (powered) {
     // the amp's heat sink across the top of the plate, its knobs and the power LED below
     const fins = 9;
-    for (let i = 0; i < fins; i++) b.pieces.push(box("metal", [0.003, ph * 0.34, 0.008], [-pw * 0.36 + (i * pw * 0.72) / (fins - 1), py + ph * 0.24, -d / 2 - 0.012]));
-    for (const x of [-0.6, -0.1]) knob(b, [x * pw * 0.5, py - ph * 0.02, -d / 2 - 0.008], -1, 0.009);
-    b.pieces.push(disc("light", 0.0035, 0.004, "z", [pw * 0.32, py - ph * 0.02, -d / 2 - 0.01], 8));
+    for (let i = 0; i < fins; i++) b.pieces.push(box("metal", [0.003, ph * 0.34, 0.008], [-pw * 0.36 + (i * pw * 0.72) / (fins - 1), py + ph * 0.24, bz - 0.004]));
+    for (const x of [-0.6, -0.1]) knob(b, [x * pw * 0.5, py - ph * 0.02, bz], -1, 0.009);
+    b.pieces.push(disc("light", 0.0035, 0.004, "z", [pw * 0.32, py - ph * 0.02, bz - 0.002], 8));
   }
-  const gap = (w * 0.5) / Math.max(1, backJacks.length - 1);
-  jacks(b, backJacks, "back", [-w * 0.25, py - (powered ? ph * 0.3 : 0), -d / 2 - 0.008], [gap, 0, 0]);
+  const gap = (pw * 0.72) / Math.max(1, backJacks.length - 1);
+  jacks(b, backJacks, "back", [-pw * 0.36, py - (powered ? ph * 0.3 : 0), bz], [gap, 0, 0]);
   mark(b, "grab", [0, body + 0.025, 0]);
   mark(b, "pole-cup", [0, 0.012, 0], [0, -1, 0]);
   return b;
@@ -339,18 +458,20 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
  * it, a cap on every corner, a dish handle in each side, a pole socket on top and the speaker jacks on the back. */
 function sub(): Build {
   const [w, h, d] = GEAR_SIZES["sub-18"], b: Build = { pieces: [], marks: [] }, y0 = 0.014, g = 0.014, front = d / 2 - g, fh = h - y0 - 0.004;
-  b.pieces.push(rounded("paint", { wf: w - 0.01, h: fh, d: d - g, r: 0.01, y0, z0: -g / 2 }));
-  const yc = y0 + fh / 2;
+  const yc = y0 + fh / 2, cy = yc + 0.06;
+  // Behind the grille the baffle is cut: the woofer in a dark well 7 cm deep, and the port, a slot right across the
+  // bottom whose rounded-over mouth runs 25 cm back into the box.
+  // and a pocket handle sunk in each side
+  const grip = (x: number): [THREE.Vector3Tuple, Well[]] => [[x, 0, 0], [{ at: [x * w / 2, h * 0.6, 0], w: 0.16, h: 0.07, r: 0.03, deep: 0.05, lip: 0.008, draft: 0.004 }]];
+  sunk(b, rounded("paint", { wf: w - 0.01, h: fh, d: d - g, r: 0.01, y0, z0: -g / 2 }), [[[0, 0, 1], [
+    { at: [0, cy, front], w: 0.5, h: 0.5, r: 0.05, deep: 0.075, lip: 0.004, walls: "knob" },
+    { at: [0, y0 + 0.07, front], w: w - 0.12, h: 0.05, r: 0.012, deep: 0.25, lip: 0.01, walls: "knob" },
+  ]], grip(-1), grip(1)]);
   b.pieces.push(...grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
-  const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, front + 0.011);
-  b.pieces.push(...cone(0.2, 0.009, at(yc + 0.06)));
-  // the port: a dark slot right across the bottom with rounded lips
-  b.pieces.push(box("knob", [w - 0.12, 0.05, 0.002], [0, y0 + 0.07, front + 0.002]));
-  for (const y of [y0 + 0.04, y0 + 0.1]) b.pieces.push(rod("rubber", [-(w - 0.12) / 2, y, front + 0.004], [(w - 0.12) / 2, y, front + 0.004], 0.005, 8));
+  b.pieces.push(...cone(0.2, 0.06, new THREE.Matrix4().makeTranslation(0, cy, front - 0.004)));
   // a cap on each corner: the bottom four are its feet
   const c = 0.056;
   for (const x of [-1, 1]) for (const y of [c / 2, h - c / 2]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z * (d / 2 - c / 2 + 0.001)], 0.014));
-  for (const x of [-1, 1]) b.pieces.push(...pocket([x * (w / 2 - 0.005), h * 0.6, 0], [x, 0, 0], 0.16, 0.07));
   b.pieces.push(disc("metal", 0.026, 0.005, "y", [0, h - 0.002, 0], 16), disc("knob", 0.019, 0.002, "y", [0, h + 0.0005, 0], 16));
   plate(b, w * 0.4, h * 0.16, [0, h * 0.25, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.08, h * 0.25, -d / 2 - 0.008], [w * 0.16, 0, 0]);
@@ -364,19 +485,22 @@ function sub(): Build {
 function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
   const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] };
   const lo = 0.08, backTop = -d / 2 + 0.07;
-  b.pieces.push(prism("paint", [[-d / 2, 0.012], [d / 2, 0.012], [d / 2, lo], [backTop, h], [-d / 2, h]], w - 0.004, 0, 0.008));
   // the slope's own frame: x across, y up the slope from the front edge, z out of it
   const dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy);
   const up = new THREE.Vector3(0, dy, dz).divideScalar(len), out = new THREE.Vector3(0, -dz, dy).divideScalar(len);
-  const slope = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), up, out).setPosition(0, (lo + h) / 2, (d / 2 + backTop) / 2);
+  const mid: THREE.Vector3Tuple = [0, (lo + h) / 2, (d / 2 + backTop) / 2], slope = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), up, out).setPosition(...mid);
+  // the drivers sit in a dark well under the grille, and the handle is a pocket in the back
+  sunk(b, prism("paint", [[-d / 2, 0.012], [d / 2, 0.012], [d / 2, lo], [backTop, h], [-d / 2, h]], w - 0.004, 0, 0.008), [
+    [out.toArray(), [{ at: mid, w: w - 0.06, h: len - 0.04, r: 0.012, deep: 0.045, lip: 0.003, walls: "knob" }]],
+    [[0, 0, -1], [{ at: [0, h * 0.62, -d / 2], w: 0.14, h: 0.05, r: 0.022, deep: 0.04, lip: 0.006, draft: 0.004 }]],
+  ]);
   b.pieces.push(...grilleSlab(w - 0.05, len - 0.03, 0.011, 0, 0, 0.012, slope));
-  const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, 0.008));
-  b.pieces.push(...cone(0.14, 0.007, on(-0.11, 0)), ...horn(0.16, 0.12, 0.007, on(0.17, 0.02)));
+  const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, -0.003));
+  b.pieces.push(...cone(0.14, 0.035, on(-0.11, 0)), ...horn(0.16, 0.12, 0.035, on(0.17, 0.02)));
   const c = 0.05;
   for (const x of [-1, 1]) {
     for (const [y, z] of [[c / 2, -d / 2 + c / 2], [h - c / 2, -d / 2 + c / 2], [c / 2, d / 2 - c / 2]]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z + Math.sign(z) * 0.001], 0.012));
   }
-  b.pieces.push(...pocket([0, h * 0.62, -d / 2], [0, 0, -1], 0.14, 0.05));
   plate(b, w * 0.3, h * 0.2, [w * 0.28, h * 0.25, -d / 2 - 0.004]);
   // powered: mains and a signal in and thru; passive: two speaker jacks, in and the link on
   jacks(b, id === "wedge-12" ? ["power-in", "xlr-in", "xlr-out"] : ["speaker-in", "speaker-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
