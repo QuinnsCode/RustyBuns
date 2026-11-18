@@ -35,7 +35,10 @@ test("jam room: the note that sounds presses its own key and lights it, and lets
   const head = new THREE.Object3D();
   head.position.y = 0.081;
   kit.add("snare", head, mats.snare);
-  kit.add("kick", new THREE.Object3D(), mats.kick);
+  // the kick's head faces away from the stool, so its shell and the pedal's felt light too and the beater swings
+  const shell = new THREE.MeshStandardMaterial(), beater = new THREE.Object3D();
+  kit.add("kick", new THREE.Object3D(), [mats.kick, shell]);
+  kit.swing("kick", beater, 0.45, -0.42);
   kit.hear(new Map([["1:50", "snare"]]));
   kit.tick(0.016, 0);
   // the head itself turns the played colour (a glow alone vanishes on a white head under a lamp) and doesn't sink
@@ -44,8 +47,13 @@ test("jam room: the note that sounds presses its own key and lights it, and lets
   expect(head.position.y).toBe(0.081);
   expect(mats.kick.emissiveIntensity).toBe(0);
   expect(mats.kick.color.getHex()).toBe(0xffffff);
+  kit.hear(new Map([["0:36", "kick"]]));
+  kit.tick(0.016, 0.016);
+  expect([mats.kick, shell].every((m) => m.color.b > m.color.r)).toBe(true);
+  expect(beater.rotation.x).toBeCloseTo(-0.42);
   // held, it doesn't strike again; a second and a half later it has died away
   for (let i = 0; i < 90; i++) { kit.hear(new Map([["1:50", "snare"]])); kit.tick(0.016, i * 0.016); }
   expect(kit.rings().snare).toBe(0);
   expect(mats.snare.color.getHex()).toBe(0xffffff);
+  expect([shell.color.getHex(), beater.rotation.x]).toEqual([0xffffff, 0.45]);
 });

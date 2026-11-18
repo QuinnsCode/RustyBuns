@@ -92,18 +92,22 @@ export class Keys {
 }
 
 /** One drum or cymbal of the kit: what moves on a hit, the material that flashes, and how hard it rings now. */
-interface Piece { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial; base: THREE.Color; rz: number; k: number; cymbal: boolean }
+interface Piece { obj: THREE.Object3D; mats: { mat: THREE.MeshStandardMaterial; base: THREE.Color }[]; rz: number; k: number; cymbal: boolean; swing?: { obj: THREE.Object3D; rest: number; hit: number } }
 
 /** The kit's drums and cymbals, each flashing cyan and giving when it's hit: the colour itself turns, not only a glow on
  *  top, so a white head under a bright lamp still shows it. */
 export class Kit {
   private readonly parts = new Map<Part, Piece>();
   private held = new Set<string>();
-  /** `obj` moves (a head flexes, a cymbal rocks); `mat`, its own copy, glows. */
-  add(part: Part, obj: THREE.Object3D, mat: THREE.MeshStandardMaterial, cymbal = false) {
-    mat.emissive.copy(LIT);
-    mat.emissiveIntensity = 0;
-    this.parts.set(part, { obj, mat, base: mat.color.clone(), rz: obj.rotation.z, k: 0, cymbal });
+  /** `obj` moves (a head flexes, a cymbal rocks); `mat` (or each of them), its own copy, glows. */
+  add(part: Part, obj: THREE.Object3D, mat: THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[], cymbal = false) {
+    const mats = (Array.isArray(mat) ? mat : [mat]).map((m) => { m.emissive.copy(LIT); m.emissiveIntensity = 0; return { mat: m, base: m.color.clone() }; });
+    this.parts.set(part, { obj, mats, rz: obj.rotation.z, k: 0, cymbal });
+  }
+  /** A beater that swings on `part`'s hit: `obj` turns about x from `rest` to `hit` (radians) and back as it rings. */
+  swing(part: Part, obj: THREE.Object3D, rest: number, hit: number) {
+    const p = this.parts.get(part);
+    if (p) { p.swing = { obj, rest, hit }; obj.rotation.x = rest; }
   }
   /** How hard each part rings now, 0 to 1. */
   rings(): Record<string, number> { return Object.fromEntries([...this.parts].map(([p, x]) => [p, Math.round(x.k * 100) / 100])); }
@@ -118,8 +122,9 @@ export class Kit {
     for (const p of this.parts.values()) {
       if (p.k <= 0) continue;
       p.k = p.k < 0.01 ? 0 : p.k * Math.exp(-dt / RING);
-      p.mat.color.lerpColors(p.base, LIT, Math.min(1, p.k * 1.5));
-      p.mat.emissiveIntensity = p.k * 0.35;
+      for (const m of p.mats) { m.mat.color.lerpColors(m.base, LIT, Math.min(1, p.k * 1.5)); m.mat.emissiveIntensity = p.k * 0.35; }
+      // the beater is at the head while the hit is fresh and falls back as it dies away
+      if (p.swing) p.swing.obj.rotation.x = p.swing.rest + (p.swing.hit - p.swing.rest) * Math.min(1, p.k * 1.6);
       if (p.cymbal) p.obj.rotation.z = p.rz + Math.sin(t * 38) * p.k * 0.09;
       // a head flexes in from its hoop rather than dropping: it sits a millimetre over its shell, so any drop would
       // sink it into the shell and show the shell's top instead of the flash

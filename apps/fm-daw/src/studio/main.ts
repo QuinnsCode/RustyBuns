@@ -156,12 +156,24 @@ function thing(s: Spot): THREE.Group {
     const head = std("#e2ddd0", { roughness: 0.75 }), hoop = surface("chrome", "#d8dadc");
     // laid out from the stool (+z here): the kick out past the drummer's feet, the snare over their left knee, the
     // floor tom by their right, two toms over the kick and the cymbals up either side, every head tipped toward them
-    put(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 28), shell), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
     // each drum and cymbal with its own copy of its head or brass, to flash when it's hit
     const kit = new Kit(), own = (part: Part, o: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>, cymbal = false) => { o.material = o.material.clone(); kit.add(part, o, o.material, cymbal); return o; };
     played.set(s.id, { kit });
-    own("kick", put(new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.255, 0.41, 28, 1, true), head), 0, 0.27, -0.2)).rotation.x = Math.PI / 2;
-    for (const z of [-0.4, 0]) put(new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.012, 6, 28), hoop), 0, 0.27, z - 0.2);
+    // the kick's batter head faces the stool, so from the seat you see its shell's top and the pedal's beater by your
+    // right foot: on a hit the shell flashes and the beater swings into the head, its felt lit
+    const kick = put(new THREE.Group(), 0, 0.27, -0.2), kickShell = shell.clone(), felt = std("#ece6da", { roughness: 0.9 });
+    kick.add(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 28).rotateX(Math.PI / 2), kickShell));
+    const batter = new THREE.Mesh(new THREE.CircleGeometry(0.255, 28), head.clone());
+    batter.position.z = 0.201;
+    kick.add(batter);
+    kit.add("kick", kick, [kickShell, batter.material, felt]);
+    const pedal = put(new THREE.Group(), 0.06, 0.07, 0.13);
+    box(0.08, 0.012, 0.24, blackSteel, 0.06, 0.02, 0.2).rotation.x = -0.12;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.24, 8), metal), ball = new THREE.Mesh(new THREE.SphereGeometry(0.03, 14, 10), felt);
+    shaft.position.y = 0.12; ball.position.y = 0.25;
+    pedal.add(shaft, ball);
+    kit.swing("kick", pedal, 0.45, -0.42);
+    for (const z of [-0.4, 0]) put(new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.012, 6, 28), hoop), 0, 0.27, z); // its two ends
     for (const [x, y, z, r, tip, part] of [[-0.3, 0.62, 0.3, 0.17, 0.12, "snare"], [0.5, 0.5, 0.25, 0.2, 0, "tom"], [-0.17, 0.82, -0.05, 0.12, 0.35, null], [0.17, 0.82, -0.05, 0.12, 0.35, null]] as const) {
       const drum = put(new THREE.Group(), x, y, z);
       drum.rotation.x = tip;
