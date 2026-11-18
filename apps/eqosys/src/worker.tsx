@@ -8,7 +8,7 @@ import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { appOf, appsOf, mayUse } from "./listings.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers, waysOf } from "./auth.ts";
-import { askOf, atHome, handle, invitedBy } from "./handle.ts";
+import { askOf, atHome, handle, invitedBy, knownCookie, knownHere, opensOn } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./qollab/hub.ts";
@@ -121,11 +121,13 @@ const app = defineApp([
       const q = new URL(request.url).searchParams;
       const ask = await askOf((k) => q.get(k), conf);
       const me = await meOf(request, conf);
-      if (me && !ask) return see("/");
+      // Back from "Continue with…" on eqosys itself: this browser has an account here now (handle.ts KNOWN_COOKIE).
+      if (me && !ask) { const home = see("/"); if (!knownHere(request)) home.headers.append("set-cookie", knownCookie(request)); return home; }
       const apple = onApple(request.headers.get("user-agent"));
-      // Someone who opened a friend link (handle.ts /add) is told whose, and a new person is shown the new-account form first.
+      // Someone who opened a friend link (handle.ts /add) is told whose; they and anyone new here see the new-account form first.
       const friend = ask ? null : (await invitedBy(request, conf))?.name;
-      return <Login friend={friend ?? undefined} ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
+      const error = ask === "bad" ? "app" : q.get("e") ?? undefined;
+      return <Login friend={friend ?? undefined} opens={opensOn({ known: knownHere(request), friend: !!friend, error })} ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={error} t0={phaseAt(q.get("at"))} />;
     }),
     route("/delete", async ({ request, response }) => {
       const conf = e(request);
@@ -137,7 +139,8 @@ const app = defineApp([
     route("/privacy", () => <Privacy />),
     route("/deleted", ({ request }) => <Deleted app={new URL(request.url).searchParams.get("app") ?? undefined} />),
     route("/*", ({ response }) => { response.status = 404; return <ErrorPage status={404} />; }),
-  ]),
+  // No RSC payload: nothing on these pages hydrates (the scripts are plain modules), and it was half of every page's HTML.
+  ], { rscPayload: false }),
 ]);
 
 // Hub, Party and Space live in Qollab's Worker (apps/qollab, #3816); this one binds them there. The Vault stays: privacy is eqosys's.

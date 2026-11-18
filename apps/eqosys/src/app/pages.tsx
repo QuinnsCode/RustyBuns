@@ -824,7 +824,7 @@ export const Privacy = () => (
     <h2>What we don't do</h2>
     <ul>
       <li>No ads, no tracking across other companies' apps or sites, and nothing sold or shared for marketing.</li>
-      <li>No email from us. The sign-in page loads its fonts from Google Fonts; nothing else leaves eqosys.</li>
+      <li>No email from us, and nothing on these pages loads from anyone else: even the fonts are eqosys's own.</li>
       <li>Visits to eqosys and the Q sites are counted by a code made from the address and browser that changes every day, so nobody is
         followed from one day to the next and no address is kept. The counts go after 30 days.</li>
     </ul>

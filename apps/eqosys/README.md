@@ -118,7 +118,7 @@ the refresh token (a month, one use: each refresh hands out the next); `POST /oa
 The sign-in page sits over a sky that turns from day to night and back every six minutes (`src/app/Sky.tsx`, all CSS: one clock property drives the sun and moon on their arc, the dawn and dusk glow, the clouds, the stars and the
 panel's paper and ink). The phase comes from the server clock, so a reload carries on where it was; `/login?at=0.75`
 starts at a given fraction of the cycle (0 sunrise, 0.5 sunset), and `prefers-reduced-motion` holds it still. The panel's
-greeting follows the same hour, a System / Day / Night slider (and a double-click on the sun or moon) pins the sky to day or night and remembers it (`src/app/Theme.tsx`, the page's one script, allowed by hash in the CSP), and its type is Lexend from Google Fonts (the only two hosts the page's CSP lets in).
+greeting follows the same hour, a System / Day / Night slider (and a double-click on the sun or moon) pins the sky to day or night and remembers it (`src/app/Theme.tsx`, the page's one script, allowed by hash in the CSP), and its type is Lexend, served from eqosys itself (`public/fonts`, OFL): the page loads nothing from any other host.
 The home page (`/`, `?at=` works there too) shares that sky, type and glass (`src/app/Glass.tsx`): a greeting, then every Q
 app as a card (its picture, a kicker, its name and one line, when you were last in and its achievements), games first and
 the ones you play on top, then suites. The words on each card are `src/cards.json`, which the owner edits in the card-copy
@@ -132,11 +132,16 @@ Developing your app locally: with `LOOPBACK_RETURNS=1` (on in `bun run dev`), a 
 
 A code is good once, for a minute, for that app, and only with the verifier: the same shape as OAuth with PKCE.
 
-**Instant when already signed in.** `/login` with an app's ask, for someone signed in here who has used that app before
-(or who just pressed "Continue with…" for it), sends them straight back with a code: no page, no Continue, one redirect.
-So a game whose ten-minute token ran out calls `signIn()` again and the player barely sees eqosys. A first visit to an app
+**Instant when already signed in.** `/login` with an app's ask, for someone signed in here, sends them straight back with a
+code when the app is one of our own games (`kind: "game"` in `APPS`, even the first time), one they have used before, or one
+they just pressed "Continue with…" for: no page, no Continue, one redirect. So pressing Sign in in any of our games while
+signed in to eqosys is one click: `signInHere()`'s window opens and closes again. A first visit to a suite or a studio's game
 from a link still shows the page with Continue. To show it anyway (a "switch account" button), add `prompt=select_account`
 (OpenID's `prompt=login` works too).
+
+**New here: the new-account form first.** A browser that has never signed in here (no `eqosys.known` cookie, set at every
+sign-in and kept after signing out) opens the page on "Make your account"; one that has opens on Sign in. A full-page
+`signIn()` comes back to the page it left with its query and hash (a party code, a deep link), not just its path.
 
 ```sh
 bun install --frozen-lockfile   # at the repo root, once

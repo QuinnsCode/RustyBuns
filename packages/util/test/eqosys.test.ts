@@ -31,20 +31,21 @@ beforeEach(() => {
   g.location = loc(); g.history = { replaceState: (_: unknown, __: string, to: string) => { address = new URL(to, address).href; g.location = loc(); } };
 });
 
-test("sign in, come back with a code, and the name and token are kept", async () => {
+test("sign in from a party link, come back to that same link with the name and token kept", async () => {
   const eq = client();
   expect(eq.canSignIn()).toBe(true);
+  address = "https://game.example/play?room=A#lobby"; g.location = loc();
   await eq.signIn("play");
   const out = new URL(went), state = out.searchParams.get("state")!;
   expect(out.searchParams.get("app")).toBe("game");
   expect(out.searchParams.get("return")).toBe("https://game.example/play");
 
-  address = `https://game.example/play?code=eq_1&state=${state}&room=A`; g.location = loc();
+  address = `https://game.example/play?code=eq_1&state=${state}`; g.location = loc();
   const back = await eq.finishSignIn();
   expect(back).toMatchObject({ then: "play", login: { name: "Ada", email: "ada@example.com" } });
   expect(exchanged).toMatchObject({ app: "game", code: "eq_1", keep: true });
   expect(eq.login()?.refresh).toBe("r1");
-  expect(address).toBe("https://game.example/play?room=A");
+  expect(address).toBe("https://game.example/play?room=A#lobby");
   expect(eq.login()?.name).toBe("Ada");
   expect(eq.fresh(eq.login()!)).toBe(true);
   expect(await eq.finishSignIn()).toBeNull();
