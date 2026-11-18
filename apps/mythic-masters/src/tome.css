@@ -1453,7 +1453,7 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
  * not a stamped circle */
 .title .menu { display: grid; justify-items: center; gap: 4px; margin-top: 10px; width: min(480px, 100%); }
 .title .page .menu button#continue { font-size: 27px; text-wrap: balance; }
-.title .page .menu button { display: inline-flex; align-items: baseline; justify-content: center; gap: 0.3em; width: auto; padding: 2px 12px 6px; border: 0; background: none; transform: none;
+.title .page .menu button { display: inline-flex; align-items: baseline; min-height: 44px; box-sizing: border-box; justify-content: center; gap: 0.3em; width: auto; padding: 2px 12px 6px; border: 0; background: none; transform: none;
   font-family: var(--f-hand); font-size: 25px; color: var(--ink-b); text-shadow: 0.45px 0.55px 0 currentColor; }
 .title .page .menu button svg { width: 0.72em; height: 0.72em; align-self: center; stroke: currentColor; }
 .title .page .menu button::before { content: "or"; position: static; inset: auto; z-index: auto; display: inline-block; margin-right: 2px; -webkit-mask-box-image: none; box-shadow: none !important; background: none !important;
