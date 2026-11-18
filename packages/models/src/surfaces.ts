@@ -31,7 +31,7 @@ type Spec = {
 export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
-  grille: { tile: 0.05, tint: 0x45484d, roughness: 0.55, metalness: 0.25, alpha: true, normalScale: 0.3, backing: 0.4 },
+  grille: { tile: 0.05, tint: 0x45484d, roughness: 0.55, metalness: 0.25, alpha: true, normalScale: 0.3, backing: 0.3 },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
