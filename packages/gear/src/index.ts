@@ -10,3 +10,4 @@ export * from "./outdoor.ts";
 export * from "./crowd.ts";
 export * from "./site.ts";
 export * from "./linecheck.ts";
+export * from "./dress.ts";
