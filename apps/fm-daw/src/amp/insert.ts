@@ -1,28 +1,11 @@
 // A track's Amp insert on FM DAW's audio thread: the track's synth voices (the engine's tap, after the track's
 // Shape), its take, and the guitar coming in live when the track is armed and Monitor is on, through one of Q Amp's heads (src/amp/live.ts builds and turns it),
 // out to both sides at line level through the amp's own limiter. The bounce plays it the same way.
-import { AMPS, DEFAULT_ROOM } from "../circuit/amps.ts";
 import { applySettings, limit, type Live } from "./live.ts";
-import type { AmpSettings } from "./messages.ts";
+import { guitarSettings } from "../guitar.ts";
 import type { TrackAmp } from "./track-amp.ts";
 import type { TakeDeck } from "../take.ts";
 import { TRACKS } from "../engine/params.ts";
-
-/**
- * Circuit samples per output sample on a track. Q Amp's own page plays at 4; beside the synth engine, 2
- * (its Eco) costs half and keeps the tube stages clean enough (the rigs run 2.3 to 3.1x real time at 4).
- */
-export const INSERT_OVERSAMPLE = 2;
-
-/** Q Amp's settings for a track's amp: no pedal, the mic where the page starts it, no hiss while the track is quiet. */
-export function insertSettings(a: TrackAmp): AmpSettings {
-  const head = AMPS.find((x) => x.id === a.amp) ?? AMPS[0];
-  const { gain, bass, mid, treble, master, rate, depth } = a;
-  return {
-    amp: head.id, pedal: null, drive: 0, swaps: {}, mic: DEFAULT_ROOM.mic, bypass: false, oversample: INSERT_OVERSAMPLE,
-    knobs: { ...head.knobs, gain, bass, mid, treble, master, rate, depth, noise: 0 },
-  };
-}
 
 /** Quieter than this the whole block, a track's synth gives its amp nothing to play. */
 const HUSH = 1e-6;
@@ -39,7 +22,7 @@ export class AmpInserts {
   /** A track's amp, or null to take it out. Knobs turn the rig in place; a new head builds a new one. */
   set(track: number, amp: TrackAmp | null) {
     if (track < 0 || track >= this.live.length) return;
-    this.live[track] = amp ? applySettings(insertSettings(amp), this.live[track], this.sampleRate) : null;
+    this.live[track] = amp ? applySettings(guitarSettings(amp), this.live[track], this.sampleRate) : null;
   }
 
   has(track: number) { return !!this.live[track]; }

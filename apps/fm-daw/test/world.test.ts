@@ -864,3 +864,40 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   amy.me.x = seat.at[0]; amy.me.z = seat.at[1] + 0.5;
   expect(sit(amy, "made-glass-pad")).toEqual({ ok: false, why: "Bot is at Glass pad" });
 });
+
+test("a guitar call: its setup goes to the one person it names, and a listen-only guest may ask for one but not send their own", async () => {
+  const { world, join } = await setup({}, "fuzzy-black-panda");
+  const maker = (await join({}, "a".repeat(32))).ws, guest = (await join({}, "b".repeat(32))).ws, third = (await join({}, "c".repeat(32))).ws;
+  world.webSocketMessage(maker, JSON.stringify({ t: "init", project }));
+  const all = [maker, guest, third], clear = () => { for (const s of all) s.sent = []; };
+  const say = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
+  const peerOf = (ws: Sock) => { clear(); say(ws, { t: "live", e: { t: "cursor", x: 0, y: 0 } }); return all.find((o) => o !== ws)!.sent[0].from as number; };
+  const M = peerOf(maker), G = peerOf(guest);
+  const offer = { k: "sdp", type: "offer", sdp: "v=0\r\na=rtpmap:111 opus/48000/2\r\n" };
+
+  clear();
+  say(maker, { t: "rtc", to: G, line: "out", s: offer });
+  say(guest, { t: "rtc", to: M, line: "in", s: { k: "ice", candidate: "candidate:1 1 udp 1 10.0.0.2 5000 typ host", mid: "0", index: 0 } });
+  expect(guest.sent).toEqual([{ t: "rtc", from: M, line: "out", s: offer }]);
+  expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "ice", candidate: "candidate:1 1 udp 1 10.0.0.2 5000 typ host", mid: "0", index: 0 } }]);
+  expect(third.sent).toEqual([]);                                    // nobody else sees the call's setup
+
+  clear();
+  for (const m of [{ t: "rtc", to: M, line: "out", s: offer }, { t: "rtc", to: G, line: "out", s: { k: "hello" } }, { t: "rtc", to: G, line: "sideways", s: offer },
+    { t: "rtc", line: "out", s: offer }, { t: "rtc", to: G, line: "out", s: { ...offer, sdp: "x".repeat(20_000) } }]) say(maker, m);
+  expect(all.map((s) => s.sent)).toEqual([[], [], []]);              // to yourself, or the wrong shape: nowhere
+
+  // plugging in is said on the live line, to everyone
+  say(maker, { t: "live", e: { t: "guitar", track: 2 } });
+  expect(guest.sent).toEqual([{ t: "live", from: M, e: { t: "guitar", track: 2 } }]);
+
+  // held: the guest still asks to hear the maker's guitar, but their own goes nowhere; pulling it out still gets through
+  say(maker, { t: "floor", state: "held" });
+  await settle();
+  clear();
+  say(guest, { t: "rtc", to: M, line: "in", s: { k: "want" } });
+  say(guest, { t: "rtc", to: M, line: "out", s: offer });
+  say(guest, { t: "live", e: { t: "guitar", track: 0 } });
+  say(guest, { t: "live", e: { t: "guitar", track: null } });
+  expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "want" } }, { t: "live", from: G, e: { t: "guitar", track: null } }]);
+});

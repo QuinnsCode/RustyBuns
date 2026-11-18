@@ -10,6 +10,7 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 import { BackupLadder, LadderGuard, MAX_SNAPS, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
@@ -85,7 +86,7 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
@@ -255,6 +256,8 @@ export default class World {
     if (!frame) return;
     const msg = decodeClient(frame.value);
     if (!msg) {
+      const rtc = decodeRtcClient(frame.value);
+      if (rtc) { this.onRtc(ws, rtc); return; }
       const st = decodeStudioClient(frame.value);
       if (st) { this.onStudio(ws, st.op); return; }
       const g = decodeGrantClient(frame.value);
@@ -424,6 +427,17 @@ export default class World {
    * to everyone (the player who did it too) only when it changed something. Refused, or a guest while the maker
    * holds the floor, the player gets the whole studio back to put them in step.
    */
+  /**
+   * A guitar call's setup (src/guitar.ts), passed to the one person it is for and kept nowhere. Only someone who may
+   * play sends their own guitar out; anyone in may listen, and ask a player to call them.
+   */
+  private onRtc(ws: RoomSocket, m: RtcClient) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer || m.to === seat.peer) return;
+    if (m.line === "out" && !this.may(seat, "play")) return;
+    this.sockets.broadcast({ t: "rtc", from: seat.peer, line: m.line, s: m.s } satisfies RtcServer, ws, (a) => a.peer === m.to);
+  }
+
   private onStudio(ws: RoomSocket, op: StudioOp) {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: not in the room
