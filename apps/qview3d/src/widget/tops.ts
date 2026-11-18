@@ -614,11 +614,11 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
   const rim = Array.from({ length: 96 }, (_, i) => rimAt((i / 96) * TAU));
   const hoodMat = m.plain();
   // The band is soft, not an even pipe: wider and flatter where it bunches, rippling a little along its length,
-  // and round the front, where nothing joins it from below, sitting up on the cloth it lies on (a flat band there sank
+  // and round the front sitting up on the cloth it lies on (a flat band there sank
   // into the shoulders' cloth where the old round roll stood clear of it).
   const sitUp = (ph: number) => 0.022 * (1 - backness(ph));
   const bunch = (i: number) => loopNoise((i / rim.length) * TAU, 2.3), ripple = (i: number) => 0.003 * Math.sin((i / rim.length) * TAU * 11) + sitUp((i / rim.length) * TAU);
-  add(bandGeo(rim, bunch, ripple), hoodMat);
+  add(bandGeo(rim, bunch, ripple), hoodMat).name = "hood band";
   add(stitchGeo(...bandLine(rim, 0.72, bunch, ripple), 0.008), m.stitch);
 
   // The back of the body at (x, y), for laying the hood on it.
@@ -632,29 +632,36 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
   };
   const S = 64, Q = 48, Lh = 0.6, Wh = 0.33, SPAN = 1.85;
   const phOf = (s: number) => Math.PI + s * SPAN;
+  // Where the shell and lining are sewn on: the band's underside, lifted with it round the front. Sewn to its middle,
+  // they left the band standing up to 2 cm clear of the cloth at the opening's top corners, a wire loop with daylight
+  // under it (#5126).
+  const under = (ph: number) => rimAt(ph).add(V(0, sitUp(ph) - 0.008, 0));
 
-  // The lining: from the neckline back to the lip, sagging into a bowl where the head would go.
-  const lining = m.inside.clone();
-  lining.side = THREE.DoubleSide;
+  // The lining: from the neckline to the band, all the way round to just short of the front crossing, sagging into a
+  // bowl where the head would go. Round the front it is the hood's side lying on the shoulder, so the band is joined
+  // to cloth all along and never stands alone; its outer face there is the hood's own colour, its inner face the inside.
+  const LSPAN = Math.PI - 0.22;
   const bowl: V3[][] = [];
   for (let j = 0; j <= 10; j++) {
     const t = j / 10, row: V3[] = [];
     for (let i = 0; i <= S; i++) {
-      const ph = phOf((i / S) * 2 - 1), back = Math.cos(ph) < 0, x = Math.sin(ph) * nw * 0.995;
+      const ph = Math.PI + ((i / S) * 2 - 1) * LSPAN, back = Math.cos(ph) < 0, x = Math.sin(ph) * nw * 0.995;
       const seam = V(x, topOf(c, back, x), (back ? -1 : 1) * Math.max(0.012, neckZ(c, back, x)));
-      const lip = rimAt(ph);
-      row.push(seam.lerp(lip, t).add(V(0, -0.1 * backness(ph) * Math.sin(Math.PI * t) ** 0.8, 0)));
+      row.push(seam.lerp(under(ph), t).add(V(0, -0.1 * backness(ph) * Math.sin(Math.PI * t) ** 0.8, 0)));
     }
     bowl.push(row);
   }
-  add(gridGeo(bowl), lining);
+  const outer = m.plain();
+  outer.side = THREE.FrontSide;
+  add(gridGeo(bowl), m.inside).name = "hood cloth";
+  add(gridGeo(bowl), outer);
 
   // The shell: over the crown from the lip, standing off the back, down to a rounded point lying on it.
   const rows: V3[][] = [];
   for (let j = 0; j <= Q; j++) {
     const q = j / Q, row: V3[] = [];
     for (let i = 0; i <= S; i++) {
-      const s = (i / S) * 2 - 1, b = Math.sqrt(1 - s * s), lip = rimAt(phOf(s)).add(V(0, -0.012, 0));
+      const s = (i / S) * 2 - 1, b = Math.sqrt(1 - s * s), lip = under(phOf(s));
       const bx = -s * Wh, by = yNb - Lh * (0.45 + 0.55 * lerp(1 - Math.sqrt(s * s + 0.02), b, 0.4)), my = lerp(lip.y, by, 0.5);
       const foot = backAt(bx, by).add(V(0, 0, -0.01));
       // Slack fleece: the crown barely rises before it falls back, and the sides slump out onto the shoulders.
@@ -672,17 +679,23 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
       const sag = 0.012 * Math.sin(q * 13 + s * s * 4) * smooth(0.3, 0.5, q) * (1 - smooth(0.8, 0.95, q)) * b;
       // The centre seam's stitching pulls the cloth beside it into small slanting puckers.
       const pucker = 0.008 * Math.sin(q * 62 + Math.abs(s) * 28 + 2 * noise(q * 5, 4.1)) * Math.exp(-(((Math.abs(s) - 0.05) / 0.045) ** 2)) * smooth(0.06, 0.18, q) * (1 - smooth(0.82, 0.95, q));
-      const depth = (0.045 * crease * gather + 0.035 * long + sag + pucker + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
+      // Where its sides rest on the shoulders, fleece lies in a few soft, uneven folds running down and in toward the
+      // point: their line wanders, their depth and spacing vary, and a couple of broad shallow ones cross the middle.
+      const on = smooth(0.25, 0.45, q) * (1 - smooth(0.82, 0.96, q));
+      const restLine = Math.abs(s) * 9 - q * 3.5 + 1.6 * noise(s * 2.2 + 11, q * 2.5);
+      const rest = (Math.abs(Math.sin(restLine)) - 0.55) * (0.6 + 0.6 * noise(s * 1.7 + 5, q * 1.9 + 2)) * smooth(0.3, 0.65, Math.abs(s));
+      const broad = (Math.abs(Math.sin(q * 7.5 + s * 1.8 + 1.2 * noise(s * 1.4 + 3, q * 2))) - 0.6) * (1 - smooth(0.3, 0.6, Math.abs(s)));
+      const depth = (0.045 * crease * gather + 0.035 * long + sag + pucker + (0.042 * rest + 0.02 * broad) * on + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
       p.addScaledVector(V(0, 1 - smooth(0.12, 0.45, q), -1).normalize(), depth);
       // The middle drifts a little side to side as it hangs, so the centre seam isn't ruler-straight.
-      p.x += 0.008 * noise(q * 4 + 3, 1.7) * b * smooth(0.1, 0.45, q);
+      p.x += (0.008 * noise(q * 4 + 3, 1.7) + 0.011 * Math.sin(q * 5.5 + 0.8 + noise(q * 2 + 8, 0.4))) * b * smooth(0.1, 0.45, q);
       const body = backAt(p.x, p.y).z - 0.012;
       if (p.z > body) p.z = lerp(p.z, body, smooth(0.04, 0.2, q));
       row.push(p);
     }
     rows.push(row);
   }
-  add(gridGeo(rows), hoodMat);
+  add(gridGeo(rows), hoodMat).name = "hood cloth";
   const seam = rows.map((r) => r[S / 2]!).slice(1, -2);
   add(stitchGeo(seam, seam.map((p, k) => V(1, 0, 0).cross((seam[k + 1] ?? p).clone().sub(seam[Math.max(0, k - 1)]!)).normalize())), m.stitch);
 

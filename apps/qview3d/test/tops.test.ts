@@ -84,3 +84,24 @@ test("the hoodie's hood stands off the back", () => {
   });
   expect(off).toBeGreaterThan(0.15);
 });
+
+// The hood's opening band is sewn to cloth all the way round from its top corners to the back. At the corners it once
+// stood clear of the shell and lining, up to several centimetres, and read as a stiff wire loop (#5126).
+test("the hoodie's band has cloth sewn under it round to the corners", () => {
+  const g = buildTop("hoodie"), cloth: THREE.Vector3[] = [], band: THREE.Vector3[] = [];
+  g.group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !o.name.startsWith("hood ")) return;
+    const P = o.geometry.getAttribute("position");
+    for (let i = 0; i < P.count; i++) (o.name === "hood band" ? band : cloth).push(new THREE.Vector3(P.getX(i), P.getY(i), P.getZ(i)));
+  });
+  // The nearest cloth to the band, round the loop in bins from the top corners (|a| 0.7) back to the crown's lip.
+  const gap = new Map<number, number>();
+  for (const p of band) {
+    const a = Math.abs(Math.atan2(p.x, p.z));
+    if (a < 0.7) continue;
+    const bin = Math.floor(a / 0.1), d = Math.min(...cloth.map((q) => q.distanceTo(p)));
+    gap.set(bin, Math.min(gap.get(bin) ?? Infinity, d));
+  }
+  expect(gap.size).toBeGreaterThan(20);
+  for (const [bin, d] of gap) expect(d, `|a| ${(bin / 10).toFixed(1)}`).toBeLessThan(0.006);
+});
