@@ -111,9 +111,12 @@ export function lagMs(t: Trip): number | null {
 export type Feel = "tight" | "loose" | "late";
 export const TIGHT_MS = 30, LOOSE_MS = 60;
 export const feel = (ms: number): Feel => (ms <= TIGHT_MS ? "tight" : ms <= LOOSE_MS ? "loose" : "late");
+/** A guitar's lag: milliseconds, null while its call connects, "failed" when no path between the two networks was found. */
+export type Lag = number | null | "failed";
 /** The lag in words, for the room's status line. */
-export function lagWords(name: string, ms: number | null): string {
+export function lagWords(name: string, ms: Lag): string {
   if (ms === null) return `${name}'s guitar: connecting`;
+  if (ms === "failed") return `${name}'s guitar couldn't get through to you (both networks are strict; TURN is #5187)`;
   const f = feel(ms);
   return `${name}'s guitar ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
 }

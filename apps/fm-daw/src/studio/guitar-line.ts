@@ -3,7 +3,7 @@
 // thread, then your mutes, then placed where its player stands. Signals go through the sesh's World (`send`).
 import ampWorkletUrl from "../amp/worklet.ts?worker&url";
 import type { AmpSettings, ToAmp } from "../amp/messages.ts";
-import { lagMs, otherEnd, tuneOpus, type Line, type RtcServer, type Signal } from "../guitar.ts";
+import { lagMs, otherEnd, tuneOpus, type Lag, type Line, type RtcServer, type Signal } from "../guitar.ts";
 
 /** A public STUN server to find each end's address. No TURN yet: two players behind strict NATs don't connect. */
 const ICE: RTCIceServer[] = [{ urls: "stun:stun.cloudflare.com:3478" }];
@@ -21,6 +21,8 @@ export class GuitarLine {
   private calls = new Map<string, Call>();
   private chains = new Map<Who, Chain>();
   private mine: MediaStream | null = null;
+  /** Whose guitar's call couldn't get through (no path between the two networks): asked again when they plug in again. */
+  private failed = new Set<number>();
   private ready: Promise<void>;
   /** `to` is where every guitar ends up: the speakers, or a meter in a test. */
   constructor(private ctx: AudioContext, private send: (to: number, line: Line, s: Signal) => void, private to: AudioNode = ctx.destination) {
@@ -45,7 +47,7 @@ export class GuitarLine {
     this.mine = null;
   }
   /** Ask `peer` (who said their guitar is in) to call you. */
-  ask(peer: number) { if (!this.hearing(peer)) this.send(peer, "in", { k: "want" }); }
+  ask(peer: number) { if (!this.hearing(peer)) { this.failed.delete(peer); this.send(peer, "in", { k: "want" }); } }
   /** Their guitar came out: its call and its sound go. */
   stopHearing(peer: number) { const c = this.calls.get(key(peer, "in")); if (c) this.hang(c); this.drop(peer); }
   /** They left: every call with them goes. */
@@ -100,11 +102,12 @@ export class GuitarLine {
   }
 
   /**
-   * How far behind each incoming guitar is, in milliseconds (null while its call connects). The jitter buffer is
+   * How far behind each incoming guitar is, in milliseconds (null while its call connects, "failed" when it couldn't). The jitter buffer is
    * the samples it held since the last ask, so a slow start to the call stops counting once it's past.
    */
-  async lags(): Promise<Map<number, number | null>> {
-    const out = new Map<number, number | null>();
+  async lags(): Promise<Map<number, Lag>> {
+    const out = new Map<number, Lag>();
+    for (const p of this.failed) out.set(p, "failed");
     for (const c of this.calls.values()) {
       if (c.line !== "in") continue;
       let rtt: number | undefined, jitterBuffer: number | undefined;
@@ -162,7 +165,11 @@ export class GuitarLine {
     const pc = new RTCPeerConnection({ iceServers: ICE });
     const c: Call = { pc, peer, line, early: [], held: { delay: 0, count: 0 } };
     pc.onicecandidate = (e) => this.send(peer, line, { k: "ice", candidate: e.candidate?.candidate ?? "", mid: e.candidate?.sdpMid ?? "", index: e.candidate?.sdpMLineIndex ?? 0 });
-    pc.onconnectionstatechange = () => { if (pc.connectionState === "failed" && this.calls.get(key(peer, line)) === c) { this.hang(c); if (line === "in") this.drop(peer); } };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState !== "failed" || this.calls.get(key(peer, line)) !== c) return;
+      this.hang(c);
+      if (line === "in") { this.drop(peer); this.failed.add(peer); }
+    };
     this.calls.set(key(peer, line), c);
     return c;
   }

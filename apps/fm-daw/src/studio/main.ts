@@ -41,7 +41,7 @@ import { dress, loadQuality, metreUV, saveQuality, surface, useKit, type Quality
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { GuitarLine } from "./guitar-line.ts";
-import { guitarSettings, guitarTrack, lagWords } from "../guitar.ts";
+import { guitarSettings, guitarTrack, lagWords, type Lag } from "../guitar.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -387,8 +387,8 @@ let guitars: GuitarLine | null = null;
 let myGuitar: number | null = null;
 /** Whose guitar is in, by peer, and the track it's plugged into. */
 const plugged = new Map<number, number>();
-/** How far behind each guitar coming in is, ms (null: connecting), asked once a second. */
-let lags = new Map<number, number | null>();
+/** How far behind each guitar coming in is, ms (null: connecting, "failed": no way through), asked once a second. */
+let lags = new Map<number, Lag>();
 /** I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. */
 async function guitar() {
   if (myGuitar !== null) {
