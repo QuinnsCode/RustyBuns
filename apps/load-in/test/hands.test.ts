@@ -36,10 +36,12 @@ describe("hands", () => {
     expect([...edges.values()].every((n) => n === 2)).toBe(true);
   });
 
-  test.each(holds)("the skin bends with the bones round %s: each finger's skin on it, not through it", (_, what) => {
+  /** The skin bent by the pose of a grip on `what`: how close each finger's skin comes to what it holds (negative: inside). */
+  const skinGaps = (what: What) => {
     const grip = gripFor(what), m = solver.pose(grip).mats, P = skin.positions;
-    const near = Object.fromEntries(FINGERS.map((f) => [f, Infinity]));
-    const fingerOf = new Map(FINGERS.flatMap((f) => HAND.chains[f].map((j) => [j, f] as const)));
+    const near = Object.fromEntries(FINGERS.map((f) => [f, Infinity])) as Record<(typeof FINGERS)[number], number>;
+    // The thumb's base is the ball of the thumb, part of the palm: its skin is the palm's, flat on what it holds.
+    const fingerOf = new Map(FINGERS.flatMap((f) => HAND.chains[f].slice(f === "thumb" ? 1 : 0).map((j) => [j, f] as const)));
     for (let i = 0; i < P.length / 3; i++) {
       // the vertex where its joints carry it: each joint's turn about where it sat at rest, by weight
       let y = 0, z = 0;
@@ -50,12 +52,18 @@ describe("hands", () => {
         z += w * (m[o + 2] * vx + m[o + 6] * vy + m[o + 10] * vz + m[o + 14]);
       }
       const f = fingerOf.get(skin.joints[i * 4]);
-      if (f && f !== "thumb") near[f] = Math.min(near[f], surfaceDistance(grip.surface!, y, z));
+      if (f) near[f] = Math.min(near[f], surfaceDistance(grip.surface!, y, z));
     }
+    return near;
+  };
+  test.each(holds)("the skin bends with the bones round %s: each finger's skin on it, not through it", (_, what) => {
+    const near = skinGaps(what);
     for (const f of FINGERS.slice(1)) {
       expect(near[f]).toBeGreaterThan(-0.001);
       expect(near[f]).toBeLessThan(0.0025);
     }
+    // The thumb closes over it too, and doesn't go through it on the way.
+    expect(near.thumb).toBeGreaterThan(-0.001);
   });
 
   test("carrying a cabinet: both palms flat on its sides, fingers along them", () => {
@@ -74,5 +82,6 @@ describe("hands", () => {
     const flat = solver.pose(gripFor({ kind: "flat" }));
     for (const f of FINGERS) expect(Math.abs(flat.tips[f]!)).toBeLessThan(0.003);
     expect(flat.limitsHeld).toBe(true);
+    expect(skinGaps({ kind: "flat" }).thumb).toBeGreaterThan(-0.001);
   });
 });
