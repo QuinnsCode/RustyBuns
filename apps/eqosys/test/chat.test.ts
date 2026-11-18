@@ -136,6 +136,8 @@ test("the host's game moves reach everyone with chat off and are never kept; a g
 
   // someone joining later hears no old move as a new one
   const late = seat(cy, code), lateMoves = moves(late.c);
+  await until(() => inParty === 3);
+  expect(lateMoves).toEqual([]);
   host.c.game("book:bind-first.more");
   await until(() => lateMoves.length === 1);
   expect(lateMoves).toEqual(["Ada4: book:bind-first.more"]);
