@@ -120,8 +120,8 @@ export async function mountCharacter(box: HTMLElement) {
     if (fig) {
       fig.head.getWorldPosition(headAt);
       const h = fig.height + 0.25, k = Math.min(1, dt * 4);
-      eye.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y + 0.02, -1.95) : new THREE.Vector3(0, h * 0.62, -h * 2.4 - 0.4), k);
-      aim.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y - 0.08, 0) : new THREE.Vector3(0, h * 0.46, 0), k);
+      eye.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y + 0.01, -0.95) : new THREE.Vector3(0, h * 0.62, -h * 2.4 - 0.4), k);
+      aim.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y - 0.03, 0) : new THREE.Vector3(0, h * 0.46, 0), k);
     }
     camera.position.copy(eye); camera.lookAt(aim);
     renderer.render(scene, camera);
