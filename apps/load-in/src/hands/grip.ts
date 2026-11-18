@@ -110,11 +110,11 @@ function thumbGoals(s: Surface | null): V3[] {
   if (!s) return [];
   const pad = HAND.bones[HAND.tips.thumb].radius, out: V3[] = [];
   if (s.kind === "plane") {
-    for (const z of [-0.055, -0.075]) for (const x of [-0.05]) out.push([x, s.y + pad, z]);
+    for (const z of [-0.055, -0.065, -0.075]) for (const x of [-0.055, -0.045]) out.push([x, s.y + pad + 0.001, z]);
     return out;
   }
   const R = s.r + pad;
-  for (const x of [-0.032, -0.02]) for (let deg = 40; deg <= 200; deg += 32) {
+  for (const x of [-0.032, -0.02]) for (let deg = 24; deg <= 266; deg += 22) {
     const p = (deg * Math.PI) / 180;
     out.push([x, s.y + R * Math.cos(p), s.z - R * Math.sin(p)]);
   }
@@ -157,17 +157,20 @@ export class HandSolver {
     const rig = this.rig, s = grip.surface, thumb = HAND.tips.thumb;
     const tries = thumbGoals(s);
     const curls = new Map<Finger, V3>(FINGERS.filter((f) => f !== "thumb").map((f) => [f, planarCurl(f, s)]));
-    let bestGoal: V3 | null = null, bestCost = Infinity;
-    for (const goal of tries) {
+    // Each try is solved all the way and scored as it ends, so the pose kept is the one that was scored.
+    let best: HandPose | null = null, bestCost = Infinity;
+    for (const goal of tries.length ? tries : [null]) {
       this.seed(curls);
-      rig.moveGoal(thumb, ...goal);
-      rig.solve(10, 0.02);
-      const cost = this.thumbCost(goal, s!);
-      if (cost < bestCost) (bestCost = cost), (bestGoal = goal);
+      if (goal) rig.moveGoal(thumb, ...goal);
+      rig.solve(40, 0.02);
+      const cost = goal ? this.thumbCost(goal, s!) : 0;
+      if (cost < bestCost) (bestCost = cost), (best = this.read(grip));
     }
-    this.seed(curls);
-    if (bestGoal) rig.moveGoal(thumb, ...bestGoal);
-    rig.solve(40, 0.02);
+    return best!;
+  }
+
+  private read(grip: Grip): HandPose {
+    const rig = this.rig, s = grip.surface;
     const mats = new Float32Array(HAND.bones.length * 16);
     HAND.bones.forEach((_, j) => mats.set(rig.matrixWorld(j), j * 16));
     const tips = {} as Record<Finger, number | null>;
@@ -178,13 +181,18 @@ export class HandSolver {
     return { grip: grip.name, mats, tips, limitsHeld: rig.withinLimits() };
   }
 
-  /** How far the thumb missed its goal, plus how deep any of it went into the thing. */
+  /** How far the thumb missed its goal, plus how deep any of it went into the thing: sampled along each segment, not
+   * just at the joints, since a segment can pass through a cable with both its ends outside. */
   private thumbCost(goal: V3, s: Surface): number {
-    const t = this.rig.worldPosition(HAND.tips.thumb);
+    const t = this.rig.worldPosition(HAND.tips.thumb), chain = HAND.chains.thumb;
     let cost = Math.hypot(t[0] - goal[0], t[1] - goal[1], t[2] - goal[2]);
-    for (const j of HAND.chains.thumb.slice(1)) {
-      const p = this.rig.worldPosition(j), d = surfaceDistance(s, p[1], p[2]) - HAND.bones[j].radius;
-      if (d < 0) cost += -d * 4;
+    for (let k = 1; k < chain.length; k++) {
+      const a = this.rig.worldPosition(chain[k - 1]), b = this.rig.worldPosition(chain[k]);
+      const ra = HAND.bones[chain[k - 1]].radius, rb = HAND.bones[chain[k]].radius;
+      for (let u = 0.125; u <= 1.001; u += 0.125) {
+        const d = surfaceDistance(s, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u) - (ra + (rb - ra) * u);
+        if (d < 0) cost += -d * 12;
+      }
     }
     return cost;
   }
