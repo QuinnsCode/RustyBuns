@@ -1,0 +1,119 @@
+// A friend's guitar, live in the jam room (#4923, step 1 of #4900). Notes and knob turns already sound live because
+// every machine plays them itself; a guitar has to travel as sound. So the player who plugs in (G) sends their dry
+// input, peer to peer over WebRTC, and every listener plays it through the amp on that player's track in the sesh's
+// groove, on their own machine: the patch is shared, so everyone hears the same circuit (and turning a knob costs no
+// re-send). The World only passes the call's setup on, one person to one person, and keeps none of it.
+//
+// Each guitar is its own call: the player's `out` line to each listener, the listener's `in` line from them. Two
+// players with guitars make two calls between them, one each way, so neither offer ever crosses the other.
+// No DOM and no Bun here: the World and the page both import it (studio/guitar-line.ts is the browser half).
+import { check, int, obj, oneOf, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { TRACKS } from "./engine/params.ts";
+import type { Project } from "./project.ts";
+import { TrackAmp } from "./amp/track-amp.ts";
+import type { AmpSettings } from "./amp/messages.ts";
+import { DEFAULT_MIC } from "@rustybuns/gear/circuit";
+
+/** Which call a signal is about, from its sender's side: their own guitar going out, or someone's coming in. */
+export const LINES = ["out", "in"] as const;
+export type Line = (typeof LINES)[number];
+/** The same call from the other end. */
+export const otherEnd = (l: Line): Line => (l === "out" ? "in" : "out");
+
+const tag = <T extends string>(t: T) => oneOf([t]);
+/** An SDP for one audio track runs 2 to 6 kB; this leaves room for a long candidate list. */
+const SDP = str(16_000, { min: 1 });
+/**
+ * A call's setup: a listener asks a player with a guitar to call them (`want`), the offer and its answer, and the
+ * network paths each end finds (`ice`; an empty candidate is the end of the list).
+ */
+const Want = obj({ k: tag("want") });
+const Sdp = obj({ k: tag("sdp"), type: oneOf(["offer", "answer"]), sdp: SDP });
+const Ice = obj({ k: tag("ice"), candidate: str(2_000, { min: 0 }), mid: str(32, { min: 0, dflt: "" }), index: int(0, 64, 0) });
+export type Signal = Of<typeof Want> | Of<typeof Sdp> | Of<typeof Ice>;
+export const Signal: Guard<Signal> = (v) => check(Want, v) ?? check(Sdp, v) ?? check(Ice, v) ?? Sdp(v);
+
+const PEER = int(1, Infinity);
+/** Page to World: a signal for one other person in the sesh, by their live-line number. */
+export const RtcClient = obj({ t: tag("rtc"), to: PEER, line: oneOf(LINES), s: Signal });
+export type RtcClient = Of<typeof RtcClient>;
+/** World to page: a signal from that person. */
+export const RtcServer = obj({ t: tag("rtc"), from: PEER, line: oneOf(LINES), s: Signal });
+export type RtcServer = Of<typeof RtcServer>;
+export const decodeRtcClient = (v: unknown): RtcClient | null => check(RtcClient, v);
+export const decodeRtcServer = (v: unknown): RtcServer | null => check(RtcServer, v);
+
+/** A live-line track: -1 is straight in, no track (no amp, heard dry). */
+export const GUITAR_TRACK = int(-1, TRACKS - 1);
+
+/**
+ * The track your guitar goes into: the one your seat plays (sitting at the bass, the bass track) when it has an amp,
+ * else the first track with an amp in the groove, else none (-1: straight in, heard dry).
+ */
+export function guitarTrack(p: Project, seatTrack: number): number {
+  if (seatTrack >= 0 && p.tracks[seatTrack]?.amp) return seatTrack;
+  return p.tracks.findIndex((t) => !!t.amp);
+}
+
+/**
+ * Q Amp's settings for a track's amp: no pedal, the mic where the page starts it, no hiss while the track is quiet.
+ * A track's Amp insert plays its take through it (src/amp/insert.ts) and the jam room a guitar plugged into that
+ * track; with no amp, the dry input straight through. It lives here because the jam page doesn't load the circuits.
+ */
+export function guitarSettings(a: TrackAmp | undefined): AmpSettings {
+  const { amp, gain, bass, mid, treble, master, rate, depth } = a ?? TrackAmp({});
+  return {
+    amp, pedal: null, drive: 0, swaps: {}, mic: DEFAULT_MIC, bypass: !a, oversample: INSERT_OVERSAMPLE,
+    knobs: { gain, bass, mid, treble, master, rate, depth, noise: 0 },
+  };
+}
+/**
+ * Circuit samples per output sample on a track. Q Amp's own page plays at 4; beside the synth engine, 2
+ * (its Eco) costs half and keeps the tube stages clean enough (the rigs run 2.3 to 3.1x real time at 4).
+ */
+export const INSERT_OVERSAMPLE = 2;
+
+/**
+ * Opus for a guitar, not a voice: one channel at 128 kb/s, no silence suppression (a held note's tail isn't
+ * silence) and forward error correction on, in the offer's or answer's `fmtp` line for Opus.
+ */
+export function tuneOpus(sdp: string): string {
+  const pt = /a=rtpmap:(\d+) opus\/48000/i.exec(sdp)?.[1];
+  if (!pt) return sdp;
+  const want: Record<string, string> = { stereo: "0", "sprop-stereo": "0", maxaveragebitrate: "128000", useinbandfec: "1", usedtx: "0", cbr: "0" };
+  const line = new RegExp(`^a=fmtp:${pt} (.*)$`, "m");
+  const had = line.exec(sdp);
+  const params = new Map((had?.[1] ?? "").split(";").map((x) => x.trim()).filter(Boolean).map((x) => { const [k, ...v] = x.split("="); return [k, v.join("=")] as [string, string]; }));
+  for (const [k, v] of Object.entries(want)) params.set(k, v);
+  const fmtp = `a=fmtp:${pt} ${[...params].map(([k, v]) => `${k}=${v}`).join(";")}`;
+  if (had) return sdp.replace(line, fmtp);
+  return sdp.replace(new RegExp(`^(a=rtpmap:${pt} opus/48000[^\\r\\n]*)(\\r?\\n)`, "im"), `$1$2${fmtp}$2`);
+}
+
+/** What a call's stats say about the trip, in milliseconds. Either can be missing early in a call. */
+export interface Trip { rtt?: number; jitterBuffer?: number }
+/** Opus's frame (20 ms), the sender's capture and the receiver's decode, a guess for the rest of the trip. */
+export const CODEC_MS = 25;
+/**
+ * How far behind your own guitar you hear theirs: half the round trip, the jitter buffer and the codec. Your
+ * speakers' delay is left out, since your own guitar comes through them too.
+ */
+export function lagMs(t: Trip): number | null {
+  if (t.rtt === undefined) return null;
+  return Math.round(t.rtt / 2 + (t.jitterBuffer ?? 0) + CODEC_MS);
+}
+
+/**
+ * How playing together feels at that lag. Up to 30 ms is about standing across a big stage from each other: tight.
+ * Up to 60 ms players notice and lean on the beat: loose. Past it, playing in time breaks down; the fix there is
+ * hearing each other exactly a loop late (#4900), not yet built.
+ */
+export type Feel = "tight" | "loose" | "late";
+export const TIGHT_MS = 30, LOOSE_MS = 60;
+export const feel = (ms: number): Feel => (ms <= TIGHT_MS ? "tight" : ms <= LOOSE_MS ? "loose" : "late");
+/** The lag in words, for the room's status line. */
+export function lagWords(name: string, ms: number | null): string {
+  if (ms === null) return `${name}'s guitar: connecting`;
+  const f = feel(ms);
+  return `${name}'s guitar ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
+}

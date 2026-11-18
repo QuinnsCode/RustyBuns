@@ -9,6 +9,7 @@ import type { TakeBytes } from "../take.ts";
 import type { Rung } from "../rewind.ts";
 import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 import { decodeGrantServer, type GrantClient, type GrantServer } from "../grants.ts";
+import { decodeRtcServer, type Line, type RtcClient, type RtcServer, type Signal } from "../guitar.ts";
 
 /** `locked`: the sesh is private (it has a code). */
 export type NetStatus = { state: "connecting" | "online" | "offline" | "full"; peers: number; full?: Full; floor?: FloorState; locked?: boolean };
@@ -33,6 +34,8 @@ export interface Net {
   grant(m: GrantClient): void;
   /** Ask for the groove as it was `ago` minutes back, for this page alone; it comes back through onRewound. */
   rewind(ago: Rung): void;
+  /** A guitar call's setup for one other person (src/guitar.ts); dropped while offline. */
+  rtc(to: number, line: Line, s: Signal): void;
   close(): void;
 }
 
@@ -76,6 +79,8 @@ export function connect(opts: {
   onTakeBytes(m: TakeBytes): void;
   /** The groove this page asked for (null: the sesh doesn't go back that far), as of `at` (ms). */
   onRewound?(ago: Rung, at: number, p: Project | null): void;
+  /** A guitar call's setup from someone (the jam room's guitar line). */
+  onRtc?(m: RtcServer): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
   /** An eqosys token, asked on every try (it lasts minutes): the Worker seats you under your eqosys id. Null plays as a guest. */
@@ -91,14 +96,14 @@ export function connect(opts: {
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg | ChatServer | GrantServer, ClientMsg | ChatClient | GrantClient>(() => {
+  const link = connectSocket<ServerMsg | ChatServer | GrantServer | RtcServer, ClientMsg | ChatClient | GrantClient | RtcClient>(() => {
     const t = opts.token?.();
     if (!t) return url;
     const signed = new URL(url);
     signed.searchParams.set("token", t);
     return signed;
   }, {
-    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v), queue: 200,
+    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeRtcServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "op") opts.onOp(m.op);
@@ -110,6 +115,7 @@ export function connect(opts: {
       else if (m.t === "takeBytes") opts.onTakeBytes(m);
       else if (m.t === "grants") opts.onGrants?.(m);
       else if (m.t === "rewound") opts.onRewound?.(m.ago, m.at, m.project);
+      else if (m.t === "rtc") opts.onRtc?.(m);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
@@ -137,6 +143,7 @@ export function connect(opts: {
     grant: (m) => { if (link.open) link.send(m); },
     take: (m) => { link.send(m); },
     rewind: (ago) => { if (link.open) link.send({ t: "rewind", ago }); },
+    rtc: (to, line, s) => { if (link.open) link.send({ t: "rtc", to, line, s }); },
     close: () => link.close(),
   };
 }

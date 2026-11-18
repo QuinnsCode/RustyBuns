@@ -40,6 +40,8 @@ import { prop } from "./props.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, type Quality } from "./look.ts";
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
+import { GuitarLine } from "./guitar-line.ts";
+import { guitarSettings, guitarTrack, lagWords } from "../guitar.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -356,6 +358,8 @@ async function startAudio() {
     out = await AudioOut.start(() => {});
     out.send(loadMsg(project));
     out.send({ t: "master", gain: dbToGain(START_DB) });
+    guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
+    for (const peer of plugged.keys()) guitars.ask(peer);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
 /** Notes you hold now, by what holds them (a key, a MIDI note), so letting go turns off the right one. */
@@ -377,13 +381,61 @@ function noteOff(by: string) {
 }
 function releaseAll() { for (const by of [...holding.keys()]) noteOff(by); }
 
+// ---- guitars: yours out to everyone, theirs in, each through its track's amp here (src/guitar.ts) ----
+let guitars: GuitarLine | null = null;
+/** The track your guitar is plugged into (-1: straight in), or null while it's out. */
+let myGuitar: number | null = null;
+/** Whose guitar is in, by peer, and the track it's plugged into. */
+const plugged = new Map<number, number>();
+/** How far behind each guitar coming in is, ms (null: connecting), asked once a second. */
+let lags = new Map<number, number | null>();
+/** I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. */
+async function guitar() {
+  if (myGuitar !== null) {
+    guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null });
+    return void say({ ok: false, why: "Your guitar is out" });
+  }
+  if (!may(player).play) return void say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
+  await startAudio();
+  if (!guitars) return;
+  let stream: MediaStream;
+  try {
+    // the dry signal, as the jack gives it: a voice call's echo cancelling and levelling would chew a guitar up
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  } catch (e) { return void say({ ok: false, why: `No guitar: ${(e as Error).message}` }); }
+  const seat = spotOf(jam, jam.me.seat);
+  const track = guitarTrack(project, seat && seat.kind !== "drums" ? trackFor(seat, project) : -1);
+  await guitars.plugIn(stream);
+  myGuitar = track;
+  live({ t: "guitar", track });
+  say({ ok: false, why: track >= 0 ? `Your guitar is in, through ${project.tracks[track].name}'s amp. I pulls it out` : "Your guitar is in, straight (no track has an amp). I pulls it out" });
+}
+/** Each guitar through its track's amp, at your mutes, where its player stands; you, where you are. */
+function hearGuitars() {
+  if (!guitars) return;
+  guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
+  if (myGuitar !== null) guitars.set("me", guitarSettings(project.tracks[myGuitar]?.amp));
+  for (const [peer, track] of plugged) {
+    const o = jam.others.get(peer);
+    guitars.set(peer, guitarSettings(project.tracks[track]?.amp));
+    guitars.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
+    if (o) guitars.place(peer, o.at[0], o.at[1]);
+  }
+}
+setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) => { lags = l; }); }, 1000);
+
 // ---- the sesh ----
 let net: Net | null = null;
 const live = (e: Live) => net?.live(e);
-function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); }
+function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar }); }
 function onLive(from: number, e: Live) {
   hear(jam, from, e);
   if (e.t === "wear") people();
+  if (e.t === "guitar") {
+    if (e.track === null) { plugged.delete(from); lags.delete(from); guitars?.stopHearing(from); }
+    else { plugged.set(from, e.track); guitars?.ask(from); }
+    return;
+  }
   if (!sounds(mutes, from, e)) return;
   if (e.t === "on") out?.send({ t: "on", track: e.track, midi: e.midi, vel: e.vel });
   else if (e.t === "off") out?.send({ t: "off", track: e.track, midi: e.midi });
@@ -443,8 +495,10 @@ function people() {
 }
 $("mute-room").addEventListener("click", () => muteAll());
 $("raise").addEventListener("click", () => raise());
+$("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in your guitar" : "Unplug your guitar"; }));
 function onGone(from: number) {
   mutes.peers.delete(from);
+  plugged.delete(from); lags.delete(from); guitars?.gone(from);
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); }
   gone(jam, from);
   dropPerson(from);
@@ -493,6 +547,7 @@ addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
   onRewound: back.answer,
+  onRtc: (m) => void guitars?.signal(m),
   onSnapshot(p) {
     if (!p) { net?.init(project); return; }
     groove(p);
@@ -540,6 +595,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Space") return sitOrStand();
   if (code === "KeyH") return raise();
+  if (code === "KeyI") return void guitar();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
@@ -724,13 +780,14 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  hearGuitars();
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first";
   $("hint").textContent = now < flash.until ? flash.text : hint();
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}`;
+  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null)}`).join("")}${myGuitar !== null ? ". Your guitar is in (I)" : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
@@ -775,5 +832,9 @@ const harness = {
   /** The leader sets what this peer may do (null: back to the floor's), and the floor itself. */
   grant: (peer: number, can: GrantServer["grants"]["who"][string] | null) => { const who = peerIds[peer]; if (who) net?.grant({ t: "grant", who, can }); },
   floor: (state: "free" | "held") => net?.floor(state),
+  /** Plug your guitar in (the audio input) or pull it out, as I does; then where every guitar stands. */
+  guitar: async () => { await guitar(); return harness.guitars(); },
+  /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
+  guitars: () => ({ mine: myGuitar, in: Object.fromEntries(plugged), calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
 };
 window.qjam = harness;

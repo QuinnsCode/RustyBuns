@@ -233,7 +233,9 @@ export type Live =
    */
   | { t: "body"; at: number[]; yaw: number; seat?: string }
   /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
-  | { t: "wear"; avatar: Avatar; name: string };
+  | { t: "wear"; avatar: Avatar; name: string }
+  /** Their guitar is plugged into this track (-1: straight in, no amp), or unplugged (null): its sound comes by WebRTC (src/guitar.ts). */
+  | { t: "guitar"; track: number | null };
 const MIDI = int(0, 127);
 const LIVE: Guard<Live>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
@@ -244,12 +246,13 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
+  obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || (e.t === "guitar" && e.track === null) || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
