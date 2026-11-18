@@ -1,5 +1,6 @@
-// What playing looks like on the room's instruments: the key that sounds goes down and darkens, as a pressed key falls
-// into its own shadow, and the drum or cymbal that's hit flashes and gives (a head dips, a cymbal rocks). main.ts builds
+// What playing looks like on the room's instruments: the key that sounds goes down and lights up, and the drum or cymbal
+// that's hit flashes and gives (a head flexes, a cymbal rocks), both in one cool cyan that no part of the room shares (the
+// shells are coral, the heads and white keys off-white, the cymbals brass), so what you hit stands out from the seat. main.ts builds
 // the stage synth's keys from `layout` and hands each spot's sounding notes here every frame.
 import * as THREE from "three";
 
@@ -42,11 +43,14 @@ export function partOf(name: string): Part {
 }
 
 /** How long (seconds) a hit's flash takes to fall to a third. */
-export const RING = 0.18;
-/** A pressed key's tip down this far (radians) about its back edge, and darkened to this share of its colour. */
-const DIP = 0.12, SHADE = 0.3;
+export const RING = 0.25;
+/** The colour of what's played: a pressed key, a struck drum or cymbal. */
+export const LIT = new THREE.Color("#0a9fe0");
+/** A pressed key's tip down this far (radians) about its back edge. */
+const DIP = 0.12;
 
-/** The stage synth's keys, pressed as notes sound. */
+/** The stage synth's keys, pressed as notes sound. Each mesh's material is white and its keys' colours (`whiteRest`,
+ *  `blackRest`) are their instance colours, so a pressed black key can light as brightly as a white one. */
 export class Keys {
   private last = "";
   private readonly m = new THREE.Matrix4();
@@ -56,8 +60,10 @@ export class Keys {
     private readonly white: THREE.InstancedMesh, private readonly whiteAt: [number, number, number][],
     private readonly black: THREE.InstancedMesh, private readonly blackAt: [number, number, number][],
     readonly lay: ReturnType<typeof layout>, private readonly whiteLen: number, private readonly blackLen: number,
+    private readonly whiteRest = new THREE.Color(1, 1, 1), private readonly blackRest = new THREE.Color(1, 1, 1),
   ) {
-    for (const [mesh, at] of [[white, whiteAt], [black, blackAt]] as const) at.forEach((_, i) => mesh.setColorAt(i, new THREE.Color(1, 1, 1)));
+    this.set(white, whiteAt, new Set(), whiteLen, whiteRest);
+    this.set(black, blackAt, new Set(), blackLen, blackRest);
   }
   /** Which keys are down now: white indices and black ones. */
   down: { whites: number[]; blacks: number[] } = { whites: [], blacks: [] };
@@ -69,17 +75,16 @@ export class Keys {
     if (key === this.last) return;
     this.last = key;
     this.down = { whites: [...whites], blacks: [...blacks] };
-    this.set(this.white, this.whiteAt, whites, this.whiteLen);
-    this.set(this.black, this.blackAt, blacks, this.blackLen);
+    this.set(this.white, this.whiteAt, whites, this.whiteLen, this.whiteRest);
+    this.set(this.black, this.blackAt, blacks, this.blackLen, this.blackRest);
   }
-  private set(mesh: THREE.InstancedMesh, at: [number, number, number][], down: Set<number>, len: number) {
-    const c = new THREE.Color();
+  private set(mesh: THREE.InstancedMesh, at: [number, number, number][], down: Set<number>, len: number, rest: THREE.Color) {
     at.forEach(([x, y, z], i) => {
       const d = down.has(i);
       // turned about its back edge (-z, away from the player), so its near end goes down
       this.m.makeTranslation(x, y, z - len / 2).multiply(this.r.makeRotationX(d ? DIP : 0)).multiply(this.back.makeTranslation(0, 0, len / 2));
       mesh.setMatrixAt(i, this.m);
-      mesh.setColorAt(i, c.setScalar(d ? SHADE : 1));
+      mesh.setColorAt(i, d ? LIT : rest);
     });
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -87,17 +92,18 @@ export class Keys {
 }
 
 /** One drum or cymbal of the kit: what moves on a hit, the material that flashes, and how hard it rings now. */
-interface Piece { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial; y: number; rz: number; k: number; cymbal: boolean }
+interface Piece { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial; base: THREE.Color; rz: number; k: number; cymbal: boolean }
 
-/** The kit's drums and cymbals, each flashing warm and giving when it's hit. */
+/** The kit's drums and cymbals, each flashing cyan and giving when it's hit: the colour itself turns, not only a glow on
+ *  top, so a white head under a bright lamp still shows it. */
 export class Kit {
   private readonly parts = new Map<Part, Piece>();
   private held = new Set<string>();
-  /** `obj` moves (a head dips, a cymbal rocks); `mat`, its own copy, glows. */
+  /** `obj` moves (a head flexes, a cymbal rocks); `mat`, its own copy, glows. */
   add(part: Part, obj: THREE.Object3D, mat: THREE.MeshStandardMaterial, cymbal = false) {
-    mat.emissive.set("#ffcf8a");
+    mat.emissive.copy(LIT);
     mat.emissiveIntensity = 0;
-    this.parts.set(part, { obj, mat, y: obj.position.y, rz: obj.rotation.z, k: 0, cymbal });
+    this.parts.set(part, { obj, mat, base: mat.color.clone(), rz: obj.rotation.z, k: 0, cymbal });
   }
   /** How hard each part rings now, 0 to 1. */
   rings(): Record<string, number> { return Object.fromEntries([...this.parts].map(([p, x]) => [p, Math.round(x.k * 100) / 100])); }
@@ -112,9 +118,12 @@ export class Kit {
     for (const p of this.parts.values()) {
       if (p.k <= 0) continue;
       p.k = p.k < 0.01 ? 0 : p.k * Math.exp(-dt / RING);
-      p.mat.emissiveIntensity = p.k * 0.9;
+      p.mat.color.lerpColors(p.base, LIT, Math.min(1, p.k * 1.5));
+      p.mat.emissiveIntensity = p.k * 0.35;
       if (p.cymbal) p.obj.rotation.z = p.rz + Math.sin(t * 38) * p.k * 0.09;
-      else p.obj.position.y = p.y - p.k * 0.008;
+      // a head flexes in from its hoop rather than dropping: it sits a millimetre over its shell, so any drop would
+      // sink it into the shell and show the shell's top instead of the flash
+      else p.obj.scale.setScalar(1 - p.k * 0.06);
     }
   }
 }
