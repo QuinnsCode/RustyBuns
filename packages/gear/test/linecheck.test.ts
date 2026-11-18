@@ -1,6 +1,6 @@
 // A band's inputs through a stage box and snake, line-checked with each fault a real night throws up.
 import { expect, test } from "bun:test";
-import { type Fault, type KeyedCable, type Line, type Placed, lineCheck, lineProblems } from "../src/index.ts";
+import { type Fault, type KeyedCable, type Line, type Placed, type Sound, lineCheck, lineProblems } from "../src/index.ts";
 
 const placed: Placed[] = [
   { id: "desk", gear: "mixer-small", phantom: true },
@@ -21,7 +21,7 @@ const patch = [xlr("a", "kick", 1), xlr("b", "di", 2), xlr("c", "vox", 3), snake
 const desk = { id: "desk", powered: true };
 const sounds = (h: ReturnType<typeof lineCheck>) => h.map((x) => [x.on, x.sound]);
 
-test.each<{ name: string; faults: Fault[]; patch?: KeyedCable[]; placed?: Placed[]; powered?: boolean; heard: [number | null, string][] }>([
+test.each<{ name: string; faults: Fault[]; patch?: KeyedCable[]; placed?: Placed[]; powered?: boolean; heard: [number | null, Sound][] }>([
   { name: "a clean night: every input comes up clean on its own channel", faults: [], heard: [[1, "clean"], [2, "clean"], [3, "clean"]] },
   { name: "a dead cable: nothing comes up for the kick", faults: [{ kind: "dead", cable: "a" }], heard: [[null, "silent"], [2, "clean"], [3, "clean"]] },
   { name: "the dead cable swapped for a spare: the kick is back", faults: [{ kind: "dead", cable: "a" }], patch: [xlr("g", "kick", 1), xlr("b", "di", 2), xlr("c", "vox", 3), snake], heard: [[1, "clean"], [2, "clean"], [3, "clean"]] },
