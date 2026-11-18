@@ -427,7 +427,7 @@ export class Puppet {
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   /** How hurt the body looks, 0..1: set by a blow, held through the stun and eased off after it, so a struck body is
-   * still down in its legs and shoved back a few frames on (#5192 round 7: most stuns end in 0.2-0.3 s, so a frame
+   * held down in its legs and shoved back for the whole stun, plus a short tail after it (#5192 round 7: the old pose eased off as the stun counted down, so a frame
    * 0.4 s after the blow showed it stood back up, neutral). Acting again (a swing, a dash, a guard) shakes it off. */
   private hurt = 0;
   private hurtK = 0;     // how hard the blow that set `hurt` was, 0..1
@@ -679,11 +679,11 @@ export class Puppet {
     dip += wind * wt * 0.06; pitch -= mk * wt * 0.1 * A.amp;
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
     if (f.stun > this.prevStun + 1) { const k = Math.min(1, (f.stun - this.prevStun) / 22); this.hurtK = Math.max(k, this.hurtK * this.hurt); this.hurt = 1; }
-    this.hurt *= Math.exp(-(f.state === "stun" ? 0.5 : f.state === "free" ? 2.6 : 12) * dt);
+    this.hurt *= Math.exp(-(f.state === "stun" ? 0.5 : f.state === "free" ? 9 : 14) * dt);
     const down = Math.max(stunK, this.hurt * (0.45 + 0.55 * this.hurtK));
     // a blow sits the body down into its legs for the whole stun, deepest on a heavy one (#4046 round 5: struck bodies
     // stood upright through the burst, so a hit read only as a tint)
-    if (down) { pitch += 0.28 * down; dip += (0.06 + 0.1 * this.hurtK) * down; }
+    if (down) { pitch += 0.24 * down; dip += (0.04 + 0.08 * this.stagger) * down; }
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (held(f) > 0) { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
@@ -751,7 +751,7 @@ export class Puppet {
       }
     }
     const kk = 55, bkdt = Math.min(dt, 1 / 30);
-    const kbHold = this.hurt * (0.12 + 0.28 * this.hurtK) * h * s;
+    const kbHold = this.hurt * (0.04 + 0.08 * this.hurtK) * h * s;
     this.kbV += (-kk * (this.kb - kbHold) - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
     this.kb = Math.max(0, this.kb + this.kbV * bkdt);
     this.stagger = Math.max(this.stagger * Math.exp(-2.5 * dt), this.hurt * this.hurtK); // eases off over about 0.4 s, long enough to see the shove
