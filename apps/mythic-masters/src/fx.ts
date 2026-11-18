@@ -255,7 +255,10 @@ export class MoveFx {
         case "cone": {
           // out from the mouth, spread across the fan, quick enough to reach the tip as it fades
           const yaw = Math.atan2(uz, ux) + w * (a.d.angle * Math.PI) / 180, sp = (a.d.length / 0.45) * (0.7 + 0.3 * r);
-          this.spawn(grain, color, a.at, { x: Math.cos(yaw) * sp, y: (this.rnd() - 0.4) * 2, z: Math.sin(yaw) * sp }, size, 0.45, { grow: 1.6 + 2 * p, alpha, spin: 4 });
+          // a solid grain (a leaf, a chunk) stays small: grown like a glow it became metre-wide sheets that walled off
+          // both bodies on a breath that landed (#5192 round 7)
+          const solid = grain !== "glow" && grain !== "dot";
+          this.spawn(grain, color, a.at, { x: Math.cos(yaw) * sp, y: (this.rnd() - 0.4) * 2, z: Math.sin(yaw) * sp }, size, 0.45, { grow: solid ? 0.3 : 1.6 + 2 * p, alpha: solid ? alpha * 0.7 : alpha, spin: 4 });
           break;
         }
         case "column": {

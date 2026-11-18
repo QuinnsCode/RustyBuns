@@ -2216,8 +2216,8 @@ function frame(now: number) {
         if (trip && e.by === 1 && cur.f[0].hp < cur.f[0].b.hp * 0.3) director.gag("hurt");
         shake = Math.max(shake, shakeOf(e.damage, e.slot));
         crowdOf(arena)?.cheer(Math.min(1, 0.3 + e.damage / 25));
-        if (e.damage >= 16) { // a heavy blow shoves the view along the way it went
-          const o = cur.f[e.by], t = cur.f[e.on], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
+        if (e.damage >= 10 || e.slot === "heavy" || e.slot === "ultimate") { // a solid blow shoves the view along the way it went
+          const o = cur.f[e.by], t = cur.f[e.on], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.7, 0.15 + e.damage / 70);
           shove = { x: (dx / l) * push, z: (dz / l) * push };
         }
         // every clean blow holds the fight a beat, a heavy one longer; the sim waits, nothing it decides changes
