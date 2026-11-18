@@ -129,8 +129,9 @@ export function body(c: Creature): Body {
     accel: clamp((30 * agile ** 1.5) / heft, 12, 60),
     turnRate: clamp(4 * agile ** 2 * (2 / heft) ** 2, 1.6, 14),
     spinUp: clamp(14 * agile * (2 / heft) ** 2, 5, 60),
-    // Shifty small things keep most of their pace sideways, a lumbering one barely any: a wide gradient, not one cut.
-    lateral: clamp(0.33 * agile * (1.8 / heft), 0.12, 0.7),
+    // Shifty small things keep most of their pace sideways, a lumbering one less: a gradient, not one cut. A heavy still
+    // circles at a walk you can see (#4149 round 6: at 0.12 a tank side-stepped 0.4 m/s and looked stood still).
+    lateral: clamp(0.38 + 0.2 * agile * (1.8 / heft), 0.4, 0.7),
     jump: clamp(10 - heft * 1.6, 6, 10),
     air: flight ? "flight" : "hop",
     stamina: clamp(2.5 + stats.vigor / 40 + (flight ? 1 : 0), 3, 8),
