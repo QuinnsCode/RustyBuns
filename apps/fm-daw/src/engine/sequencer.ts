@@ -191,12 +191,13 @@ export class Sequencer {
   }
 
   /** Render `frames` of interleaved stereo into out, firing events on the way. */
-  process(out: Float32Array, frames: number, send?: Float32Array) {
+  /** The engine's render in QUANTUM steps, events between; `taps` as FmEngine.render's (frames * TRACKS). */
+  process(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array) {
     this.engine.setTempo(this.bpm);
     for (let at = 0; at < frames; at += QUANTUM) {
       const n = Math.min(QUANTUM, frames - at);
       this.tick(n);
-      this.engine.render(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2));
+      this.engine.render(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps?.subarray(at * TRACKS, (at + n) * TRACKS));
     }
   }
 
@@ -311,8 +312,12 @@ export function renderPattern(
   setup: (seq: Sequencer) => void,
   /** Filled with the Space send bus when given (same length as the result). */
   send?: Float32Array,
-  /** Runs on each block once it's rendered, before the next: Shape, so its automation lands in time. */
-  post?: (block: Float32Array, frames: number) => void,
+  /**
+   * Runs on each block once it's rendered, before the next: Shape, so its automation lands in time. With
+   * `tapping`, the block's taps (FmEngine.render's) come too, for the tracks' Amp inserts.
+   */
+  post?: (block: Float32Array, frames: number, taps?: Float32Array) => void,
+  tapping = false,
 ): Float32Array {
   const seq = new Sequencer(engine, sampleRate);
   setup(seq);
@@ -320,10 +325,11 @@ export function renderPattern(
   const frames = Math.round(seconds * sampleRate);
   const out = new Float32Array(frames * 2);
   const BLOCK = 128;
+  const taps = tapping ? new Float32Array(BLOCK * TRACKS) : undefined;
   for (let at = 0; at < frames; at += BLOCK) {
     const n = Math.min(BLOCK, frames - at);
-    seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2));
-    post?.(out.subarray(at * 2, (at + n) * 2), n);
+    seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps);
+    post?.(out.subarray(at * 2, (at + n) * 2), n, taps);
   }
   return out;
 }

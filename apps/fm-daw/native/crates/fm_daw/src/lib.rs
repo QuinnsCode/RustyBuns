@@ -222,6 +222,9 @@ pub struct Engine {
     /// Each track's Shape, its chunk while the insert filters it, and the chunk's dry sum and send.
     inserts: Vec<eq::Eq>,
     ins_live: [bool; TRACKS],
+    /// Tracks whose chunk goes to render()'s `taps` (an Amp insert) instead of the sum, and which do this chunk.
+    tapped: [bool; TRACKS],
+    tap_now: [bool; TRACKS],
     tb: Vec<f64>, mix: Vec<f64>, snd: Vec<f64>,
 }
 
@@ -242,6 +245,8 @@ impl Engine {
             peak_l: 0.0, peak_r: 0.0, min_gain: 1.0, nans: 0.0,
             inserts: (0..TRACKS).map(|_| eq::Eq::new(sr)).collect(),
             ins_live: [false; TRACKS],
+            tapped: [false; TRACKS],
+            tap_now: [false; TRACKS],
             tb: vec![0.0; TRACKS * CHUNK * 2], mix: vec![0.0; CHUNK * 2], snd: vec![0.0; CHUNK * 2],
         };
         for t in 0..TRACKS { for i in 0..NPARAMS { e.set_param(t, i, 0.0); } }
@@ -382,15 +387,21 @@ impl Engine {
 
     /// Interleaved stereo into `out`; with `send`, also the Space send bus
     /// (each track times its SEND, after pan, its insert and master).
-    pub fn render(&mut self, out: &mut [f32], mut send: Option<&mut [f32]>, frames: usize) {
+    /// Tap a track for its Amp insert: while on, and render() is given `taps`, its chunk (after pan and
+    /// Shape, before master) goes there in mono instead of into the sum and the send.
+    pub fn set_tap(&mut self, t: usize, on: bool) { if t < TRACKS { self.tapped[t] = on; } }
+
+    pub fn render(&mut self, out: &mut [f32], mut send: Option<&mut [f32]>, mut taps: Option<&mut [f32]>, frames: usize) {
         let mut n = frames.min(out.len() / 2);
         if let Some(s) = send.as_deref() { n = n.min(s.len() / 2); }
+        if let Some(s) = taps.as_deref() { n = n.min(s.len() / TRACKS); }
+        let tapping = taps.is_some();
         let sr = self.sr;
         let beat_inc = self.tempo / 60.0 / sr;
         let mut at = 0;
         while at < n {
             let k = CHUNK.min(n - at);
-            for t in 0..TRACKS { self.ins_live[t] = self.inserts[t].live(); }
+            for t in 0..TRACKS { self.ins_live[t] = self.inserts[t].live(); self.tap_now[t] = tapping && self.tapped[t]; }
             for j in 0..k {
                 let (mut l, mut r) = (0.0f64, 0.0f64);
                 let (mut sl, mut sr2) = (0.0f64, 0.0f64);
@@ -689,7 +700,7 @@ impl Engine {
                         }
                     } else { ml = mono * tr.pan_l; mr = mono * tr.pan_r; }
                     // a track with a Shape waits in its own chunk; the rest go straight into the sum
-                    if self.ins_live[t] { let o = (t * CHUNK + j) * 2; self.tb[o] = ml; self.tb[o + 1] = mr; continue; }
+                    if self.ins_live[t] || self.tap_now[t] { let o = (t * CHUNK + j) * 2; self.tb[o] = ml; self.tb[o + 1] = mr; continue; }
                     l += ml;
                     r += mr;
                     let sa = tr.params[P_SEND];
@@ -708,12 +719,25 @@ impl Engine {
                 self.mix[j * 2] = l; self.mix[j * 2 + 1] = r; self.snd[j * 2] = sl; self.snd[j * 2 + 1] = sr2;
             }
             // each Shape on its track's chunk, then into the sum and the send, track by track
+            // a tapped one (after its Shape) out to its amp in mono, centred as the amp hears a take
             for t in 0..TRACKS {
-                if !self.ins_live[t] { continue; }
+                if !self.ins_live[t] && !self.tap_now[t] { continue; }
                 let buf = &mut self.tb[t * CHUNK * 2..(t * CHUNK + k) * 2];
-                self.inserts[t].insert(buf, k);
+                if self.ins_live[t] { self.inserts[t].insert(buf, k); }
+                if self.tap_now[t] { continue; }
                 let sa = self.tracks[t].params[P_SEND];
                 for j in 0..k * 2 { self.mix[j] += buf[j]; self.snd[j] += buf[j] * sa; }
+            }
+            if let Some(tp) = taps.as_deref_mut() {
+                for t in 0..TRACKS {
+                    let o = t * CHUNK * 2;
+                    for j in 0..k {
+                        let mut y = if self.tap_now[t] { (self.tb[o + j * 2] + self.tb[o + j * 2 + 1]) * std::f64::consts::FRAC_1_SQRT_2 } else { 0.0 };
+                        // the NaN guard, for a track the master never sees
+                        if !y.is_finite() { self.nans += 1.0; self.panic(); y = 0.0; }
+                        tp[(at + j) * TRACKS + t] = y as f32;
+                    }
+                }
             }
             for j in 0..k {
                 let f = at + j;
@@ -801,14 +825,19 @@ pub extern "C" fn fm_panic(e: *mut Engine) { with!(e, e.panic()) }
 pub extern "C" fn fm_click(e: *mut Engine, accent: u32) { with!(e, e.click(accent != 0)) }
 
 /// # Safety
-/// `out`, and `send` unless null, must point to at least `frames * 2` f32s.
+/// `out`, and `send` unless null, must point to at least `frames * 2` f32s; `taps` unless null to
+/// `frames * TRACKS`.
 #[no_mangle]
-pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32, frames: u32) {
+pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32, taps: *mut f32, frames: u32) {
     if out.is_null() { return; }
     let buf = std::slice::from_raw_parts_mut(out, frames as usize * 2);
     let snd = if send.is_null() { None } else { Some(std::slice::from_raw_parts_mut(send, frames as usize * 2)) };
-    with!(e, e.render(buf, snd, frames as usize))
+    let tp = if taps.is_null() { None } else { Some(std::slice::from_raw_parts_mut(taps, frames as usize * TRACKS)) };
+    with!(e, e.render(buf, snd, tp, frames as usize))
 }
+
+#[no_mangle]
+pub extern "C" fn fm_set_tap(e: *mut Engine, track: u32, on: u32) { with!(e, e.set_tap(track as usize, on != 0)) }
 
 /// # Safety
 /// `out` must point to at least 4 f32s.
@@ -983,7 +1012,7 @@ mod tests {
         let mut e = Engine::new(48000.0);
         let mut out = vec![0f32; 1024];
         e.note_on(0, 1, 60.0, 1.0);
-        e.render(&mut out, None, 512);
+        e.render(&mut out, None, None, 512);
         assert!(out.iter().all(|x| *x == 0.0));
         for t in 0..TRACKS {
             e.set_param(t, P_GAIN, 1e9);
@@ -992,6 +1021,6 @@ mod tests {
             for k in 0..VOICES as u32 { e.note_on(t, k, 30.0 + k as f64, 1.0); }
         }
         e.set_master(1.0);
-        for _ in 0..200 { e.render(&mut out, None, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
+        for _ in 0..200 { e.render(&mut out, None, None, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
     }
 }

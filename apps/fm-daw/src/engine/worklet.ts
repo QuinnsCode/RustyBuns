@@ -11,6 +11,7 @@ import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
 import { TakeCapture, TakeDeck } from "../take.ts";
 import { AmpInserts } from "../amp/insert.ts";
+import type { TrackAmp } from "../amp/track-amp.ts";
 import type { ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
 
@@ -47,6 +48,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private outLatency = 0;
   private buf = new Float32Array(256);
   private send = new Float32Array(256);
+  /** Each amped track's synth, tapped out of the engine for its amp (FmEngine.render's `taps`). */
+  private taps = new Float32Array(256 * TRACKS);
   private meter = new Float32Array(4);
   private sinceReport = 0;
   /** The tracks' takes, played after the engine; and the input, recorded onto `armed` while recording. */
@@ -85,7 +88,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.setEq(m.eq, m.eqAuto);
         m.trackEq.forEach((d, t) => this.setTrackEq(t, d));
         this.setLinear(m.eqLinear);
-        m.amps.forEach((a, t) => this.amps.set(t, a));
+        m.amps.forEach((a, t) => this.setAmp(t, a));
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -106,7 +109,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "stop": this.endTake(); s.stop(); this.engine.allOff(); break;
       case "rec": s.recording = m.on; this.endTake(); this.passes = 0; if (!m.on) s.untouch(); break;
       case "take": this.deck.set(m.track, m.pcm, m.beat); break;
-      case "amp": this.amps.set(m.track, m.amp); break;
+      case "amp": this.setAmp(m.track, m.amp); break;
       case "monitor": this.monitor = m.on; break;
       case "arm": this.endTake(); this.passes = 0; this.monitor = false; this.armed = m.track; this.inLatency = m.inLatency; break;
       case "metro": s.metronome = m.on; break;
@@ -191,6 +194,12 @@ class FmProcessor extends AudioWorkletProcessor {
   }
 
   /** What the player hears is late by the output and the EQ: a key played along lands where they heard it. */
+  /** A track's amp, and its synth tapped out of the engine's sum to play through it. */
+  private setAmp(t: number, amp: TrackAmp | null) {
+    this.amps.set(t, amp);
+    this.engine.setTap(t, this.amps.has(t));
+  }
+
   private setLatency() { this.seq.latency = this.outLatency + (this.eq.latency ?? 0) / sampleRate; }
 
   private async swap(m: Extract<ToWorklet, { t: "engine" }>) {
@@ -202,7 +211,7 @@ class FmProcessor extends AudioWorkletProcessor {
       eq.set(this.eqPlayed);
       eq.listen(this.listening);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
-      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); }
+      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); next.setTap(t, this.amps.has(t)); }
       next.setMaster(this.master);
       // a new engine starts with every insert where it is now, not fading in
       this.trackEq.forEach((d, t) => sendTrackEq(next, t, d, []));
@@ -228,12 +237,14 @@ class FmProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const L = out[0], R = out[1] ?? out[0];
     const frames = L.length;
-    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); }
+    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); }
     try {
       const pos = this.seq.pos, playing = this.seq.playing;
-      this.seq.process(this.buf, frames, this.send);
+      // with no amp on any track, no taps: every track stays in the engine's sum
+      const taps = this.amps.any ? this.taps : undefined;
+      this.seq.process(this.buf, frames, this.send, taps);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
-      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear);
+      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
