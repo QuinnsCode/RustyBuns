@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
 import { arr, bool, int, num, obj, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { audible, type Project } from "../project.ts";
+import { P } from "./params.ts";
 
 export const clapSymbols = {
   fm_clap_error: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
@@ -131,4 +133,37 @@ export function scanPlugins(folders: string[] = pluginFolders(), depth = 4): str
   };
   for (const f of folders) walk(f, depth);
   return [...found];
+}
+
+/** How fast a plugin track's level follows its fader, per sample: the native desk's GAIN_SMOOTH, so the two sound alike. */
+const GAIN_SMOOTH = 0.002;
+
+/** The level a track's fader asks for: its GAIN, or 0 while it's muted or another track is soloed. */
+export function trackLevel(p: Project, track: number): number {
+  const g = audible(p)[track] ? p.tracks[track]?.params[P.GAIN] ?? 0 : 0;
+  return Number.isFinite(g) ? Math.max(0, Math.min(1, g)) : 0;
+}
+
+/**
+ * A plugin track's fader (#5274): the plugin's sound joins the mix scaled by the track's level, eased so a move
+ * doesn't click. The desk and the remote both send `param` GAIN and `track` mute, so neither needs a plugin case:
+ * `level(trackLevel(project, t))` after each op, `mix` once a block.
+ */
+export function pluginFader(play: (out: Float32Array, frames: number) => boolean) {
+  let now = 0, target = 0, buf = new Float32Array(0);
+  return {
+    level(v: number) { target = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0; },
+    /** Adds `frames` of the plugin, at its level, into `out` (interleaved stereo). False once the plugin has failed. */
+    mix(out: Float32Array, frames: number): boolean {
+      const n = Math.min(frames, out.length >> 1);
+      if (buf.length < 2 * n) buf = new Float32Array(2 * n); else buf.fill(0, 0, 2 * n);
+      const ok = play(buf, n);
+      for (let f = 0; f < n; f++) {
+        now += (target - now) * GAIN_SMOOTH;
+        out[2 * f] = out[2 * f]! + buf[2 * f]! * now;
+        out[2 * f + 1] = out[2 * f + 1]! + buf[2 * f + 1]! * now;
+      }
+      return ok;
+    },
+  };
 }
