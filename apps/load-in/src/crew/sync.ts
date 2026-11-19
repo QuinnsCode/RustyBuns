@@ -1,6 +1,6 @@
 // Between your world (sim.ts) and the crew's room (room.ts): what to tell the room, and what its views do to your
 // world. No socket here, so a test passes messages between two worlds and a room by hand.
-import { heldItem, holdPose, seeCrew, type World } from "../sim.ts";
+import { crewLoad, heldItem, holdPose, seeCrew, type World } from "../sim.ts";
 import { endAt, setEnd, type Cables, type EndAt } from "../cables/cables.ts";
 import { whole, type Sent, type ServerMsg, type Wire, type WireEnd } from "./room.ts";
 import { tickDecks, type Decks } from "../audio/decks.ts";
@@ -121,6 +121,8 @@ export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<str
     if (c?.runs.some((r) => r.key === m.key)) hearWire(w, c, s, s.wires.get(m.key) ?? { key: m.key, ...CASED }, true);
     return;
   }
+  // The first word from the room: the crew's load is on the truck too.
+  if (!s.you) crewLoad(w);
   s.you = m.you;
   if (booth) {
     const mine = m.dj === m.you;

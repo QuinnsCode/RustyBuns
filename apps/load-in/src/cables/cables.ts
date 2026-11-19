@@ -10,7 +10,7 @@ import { CABLE, ROLL_R, bowl as bowlRoll, leftM, newRoll, rollKg, rollKind, step
 import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { Vector3 } from "three";
-import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
+import { EYE, EYE_CROUCH, LOW, REACH, corners, dims, facing, footprint, overlap, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, pathLength, type Rope, type Solid, type Vec } from "./rope.ts";
 import { endOf, endWhy, sideOf, type Connector } from "./ends.ts";
@@ -256,6 +256,13 @@ export function settle(w: World, c: Cables, seconds = 2) {
   for (let t = 0; t < seconds; t += 1 / 60) { stepCables(w, c, 1 / 60); w.t += 1 / 60; }
 }
 
+/** A friend at the case with free hands: two work a tangled cable free in half the time. */
+export function helper(w: World, c: Cables, top = caseTop(w, c)): Mate | null {
+  if (!top) return null;
+  const busy = new Set(c.runs.flatMap((r) => [r.a, r.b]).filter(isMate).map((e) => e.mate));
+  return w.crew.find((m) => !m.holding && !busy.has(m.id) && Math.hypot(m.x - top.x, m.z - top.z) <= REACH) ?? null;
+}
+
 /** The next coiled cable in the case (or the one of `kind`), once you are by the case with a hand free (`roll`: the right
  * one, or the left free to take over what is in it). */
 function fromCase(w: World, c: Cables, kind?: CableKind, roll = false): { run: Run; top: Vec } | { ok: false; why: string } {
@@ -265,7 +272,7 @@ function fromCase(w: World, c: Cables, kind?: CableKind, roll = false): { run: R
   if (!near(w, top)) return { ok: false, why: "the cable case is out of reach" };
   const run = c.runs.find((r) => !r.rope && (!kind || r.kind === kind));
   if (!run) return { ok: false, why: kind ? `no ${kind} cable left in the case` : "the case is empty" };
-  w.t += (run.twists ?? 0) * UNTANGLE_S;
+  w.t += ((run.twists ?? 0) * UNTANGLE_S) / (helper(w, c, top) ? 2 : 1);
   run.twists = 0;
   return { run, top };
 }
@@ -468,6 +475,19 @@ export function hazards(w: World, c: Cables): { cable: string; walkway: string; 
   return out;
 }
 
+/** The mess: a cable with an end left lying on the floor, and gear left standing in a walkway (a ramp belongs there).
+ * The crew room keeps where every piece and cable end is, so each friend's page lists the same mess. */
+export function mess(w: World, c: Cables): { key: string; what: string; where: string }[] {
+  const out: { key: string; what: string; where: string }[] = [];
+  for (const run of c.runs) if (run.rope && (("loose" in run.a) || ("loose" in run.b))) out.push({ key: run.key, what: `${run.kind} cable ${run.key}`, where: "left loose" });
+  for (const i of w.items) {
+    if (i.hung || i.key === w.held?.key || dims(i)[1] < LOW || w.crew.some((m) => m.holding === i.key)) continue;
+    const way = (w.level.walkways ?? []).find((p) => overlap(footprint(i), corners((p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2, 0, p.x1 - p.x0, p.z1 - p.z0)));
+    if (way) out.push({ key: i.key, what: gear(i.gear).what, where: `in ${way.name}` });
+  }
+  return out;
+}
+
 /** What compile reads: the gear with jacks, and every cable with both ends in jacks. */
 export function plugged(w: World, c: Cables): { placed: Placed[]; runs: Cable[] } {
   const runs: Cable[] = [];
@@ -577,6 +597,7 @@ export function cableState(w: World, c: Cables) {
     /** What each hand holds: a cable's key and end, or null. */
     hold: Object.fromEntries((["right", "left"] as const).map((s) => { const h = held(c).find((x) => x.side === s); return [s, h ? `${h.run.key} ${h.end}` : null]; })),
     hazards: hazards(w, c),
+    mess: mess(w, c),
     ...patch(w, c),
   };
 }

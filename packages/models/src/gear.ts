@@ -41,6 +41,7 @@ export const GEAR_SIZES = {
   "distro-box": [0.4, 0.3, 0.25],
   "cable-ramp-2ch": [0.9, 0.08, 0.5],
   "road-case-m": [0.6, 0.5, 0.5],
+  "trunk-case": [0.95, 0.6, 0.55],
   "stand-tripod": [0.9, 1.2, 0.9],
   "mic-stand": [0.6, 1.6, 0.6],
   "sand-cart": [0.8, 0.45, 1.2],
@@ -687,15 +688,17 @@ function fuelCan(): Build {
   return b;
 }
 
-function roadCase(): Build {
-  const [w, h, d] = GEAR_SIZES["road-case-m"], b: Build = { pieces: [], marks: [] }, wheel = 0.035, floor = wheel * 2 + 0.005;
+/** A road case: on four casters, or (`wheels` false) a trunk that sits on its own skids and takes two to lift. */
+function roadCase(id: "road-case-m" | "trunk-case" = "road-case-m", wheels = true): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, wheel = 0.035, floor = wheels ? wheel * 2 + 0.005 : 0.02;
   const ch = h - floor, cy = floor + ch / 2;
   b.pieces.push(box("paint", [w - 0.01, ch, d - 0.01], [0, cy, 0], { bevel: 0.006 }));
   b.pieces.push(box("metal", [w, 0.016, d], [0, floor + ch * 0.68, 0]));
   for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(box("chrome", [0.045, 0.045, 0.045], [x * (w / 2 - 0.02), cy + y * (ch / 2 - 0.02), z * (d / 2 - 0.02)], { bevel: 0.01 }));
   for (const x of [-0.18, 0.18]) for (const z of [-1, 1]) b.pieces.push(box("chrome", [0.05, 0.04, 0.012], [x, floor + ch * 0.68, z * (d / 2)]));
   for (const x of [-1, 1]) b.pieces.push(...handle("rubber", [x * (w / 2 - 0.005), floor + ch * 0.4, 0], x > 0 ? "x" : "-x", 0.14, 0.01));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+  if (!wheels) for (const z of [-1, 1]) b.pieces.push(box("rubber", [w - 0.06, floor, 0.04], [0, floor / 2, z * (d / 2 - 0.06)]));
+  else for (const x of [-1, 1]) for (const z of [-1, 1]) {
     b.pieces.push(disc("rubber", wheel, 0.025, "x", [x * (w / 2 - 0.07), wheel, z * (d / 2 - 0.07)], 8));
     b.pieces.push(box("metal", [0.04, 0.012, 0.05], [x * (w / 2 - 0.07), floor - 0.004, z * (d / 2 - 0.07)]));
   }
@@ -1296,7 +1299,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "generator-7kva": generator,
   "distro-box": distro,
   "cable-ramp-2ch": cableRamp,
-  "road-case-m": roadCase,
+  "road-case-m": () => roadCase(),
+  "trunk-case": () => roadCase("trunk-case", false),
   "stand-tripod": stand,
   "mic-stand": micStand,
   "sand-cart": sandCart,

@@ -261,6 +261,8 @@ function draw() {
   camera.position.set(you.x, (you.crouch ? EYE_CROUCH : EYE) + (world.level.floorAt?.(you.x, you.z) ?? 0), you.z);
   camera.rotation.set(you.pitch, you.yaw, 0);
   for (const i of world.items) {
+    // A piece that came in after the level was built (a crew's load, crewLoad in sim.ts) gets its model now.
+    if (!meshes.has(i.key)) { const n = modelOf(i.gear, undefined, i.key); meshes.set(i.key, n); scene.add(n); }
     const tall = i.gear === "stand-tripod" ? standHeight(world, i.key) : 0;
     // A stand raised or lowered is a new model: its pole grows.
     if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = modelOf(i.gear, tall); meshes.set(i.key, n); scene.add(n); }
@@ -294,6 +296,10 @@ function draw() {
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
   if (phase === "play") touch.relabel(ar?.pad() ?? {});
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
+  // In a crew room, the mess everyone sees: cables left loose and gear left in the walkways.
+  const left = phase === "play" && online?.status === "in" ? cable.mess(world, cables) : [];
+  $("mess").hidden = !left.length;
+  $("mess").textContent = left.length ? `Mess: ${left.map((m) => `${m.what} ${m.where}`).join(", ")}` : "";
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`

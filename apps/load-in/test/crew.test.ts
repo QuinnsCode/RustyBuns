@@ -2,13 +2,16 @@
 // cooler is too heavy for one, so Ada takes an end and waits, Bea takes the other, they can only walk it the same way,
 // and when Bea sets it down it lands in both their worlds. A wedge one of them has is the other's only to watch. In the
 // garage they share a power run: one takes it out of the case to the wall, the other walks the far end to the speaker.
+// With a crew, band night's 65 kg trunk waits on the dock for two; gear left in the way in and cables left loose are
+// the mess on every page, and a friend at the case halves the time a tangled cable takes to work free.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import type { RoomSocket } from "@rustybuns/util/room";
 import { seatDoor } from "@rustybuns/util/seats";
 import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
+import { BAND_NIGHT } from "../src/venues/band-night.ts";
 import { newWorld, pickUp, putDown, snapshot, walkTo, type Level, type World } from "../src/sim.ts";
-import { cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, walkWith, type Cables } from "../src/cables/cables.ts";
+import { UNTANGLE_S, cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, walkWith, type Cables } from "../src/cables/cables.ts";
 import { setDial } from "../src/assists.ts";
 import { World as Room } from "../src/edge/world.ts";
 import { readServer } from "../src/crew/room.ts";
@@ -196,4 +199,71 @@ test("one switches the speaker on and the whole crew hears it, each from where t
   bea.on.delete("top");
   pump(bea, ada);
   expect(level(ada).fed).toBe(false);
+});
+
+test("with a crew the band's 65 kg trunk waits on the dock: two carry it in, and left in the way in it is the mess on both pages", async () => {
+  setDial("sim");
+  // Alone the band night has no trunk: it is the crew's load.
+  expect(newWorld(BAND_NIGHT).items.some((i) => i.key === "trunk")).toBe(false);
+  const { join, pump } = crewRoom(BAND_NIGHT);
+  const ada = await join("Ada", "guest-ada-0004"), bea = await join("Bea", "guest-bea-0004");
+  pump(ada, bea);
+  const trunk = (p: Page) => p.w.items.find((i) => i.key === "trunk");
+  const left = (p: Page) => cableState(p.w, p.c).mess.map((m) => `${m.what} ${m.where}`);
+  expect([trunk(ada)?.gear, trunk(bea)?.gear]).toEqual(["trunk-case", "trunk-case"]);
+
+  // One at each end of it on the dock, beside the truck.
+  walkTo(ada.w, -2.4, 12.7);
+  for (const [x, z] of [[-1.8, 12.4], [-1.8, 14.9], [-2.4, 14.9]]) walkTo(bea.w, x!, z!);
+  const lift = () => {
+    expect(pickUp(ada.w, "trunk")).toEqual({ ok: true });
+    pump(ada, bea);
+    expect(pickUp(bea.w, "trunk")).toEqual({ ok: true });
+    pump(bea, ada); pump(ada, bea);
+    expect([snapshot(ada.w).together, snapshot(bea.w).together]).toEqual(["Bea", "Ada"]);
+  };
+  lift();
+  // In through the door, and down in the way in: the mess, on both pages.
+  for (let k = 0; k < 12; k++) {
+    for (const p of [ada, bea]) walkTo(p.w, p.w.you.x * 0.75, p.w.you.z - 0.3, 0.5);
+    pump(ada, bea);
+  }
+  expect(putDown(ada.w)).toEqual({ ok: true });
+  pump(ada, bea); pump(bea, ada);
+  expect([left(ada), left(bea)]).toEqual([["hardware trunk in the way in"], ["hardware trunk in the way in"]]);
+  expect(trunk(bea)).toEqual(trunk(ada)!);
+
+  // Up again and over to the left wall: the way in is clear for both.
+  lift();
+  for (let k = 0; k < 6; k++) {
+    for (const p of [ada, bea]) walkTo(p.w, p.w.you.x - 0.45, p.w.you.z - 0.15, 0.8);
+    pump(ada, bea);
+  }
+  expect(putDown(bea.w)).toEqual({ ok: true });
+  pump(bea, ada); pump(ada, bea);
+  expect(trunk(ada)!.x).toBeLessThan(-3);
+  expect([left(ada), left(bea)]).toEqual([[], []]);
+});
+
+test("a friend at the case works a tangled cable free with you in half the time, and a cable left loose is the mess for both", async () => {
+  setDial("sim");
+  const { join, pump } = crewRoom(newWorld().level);
+  const ada = await join("Ada", "guest-ada-0005"), bea = await join("Bea", "guest-bea-0005");
+  // Last night every cable went into the case coiled wrong: four twists each.
+  for (const p of [ada, bea]) for (const r of p.c.runs) r.twists = 4;
+  walkTo(ada.w, -1.6, 3.2); walkTo(bea.w, -1.2, 3.6);
+  pump(ada, bea);
+  const took = (p: Page, kind: "power" | "instrument") => { const t0 = p.w.t; expect(takeCable(p.w, p.c, kind)).toEqual({ ok: true }); return p.w.t - t0; };
+  expect(took(ada, "power")).toBeCloseTo(2 * UNTANGLE_S, 5);
+
+  // Ada walks it out and lets go: it lies loose, on both pages.
+  pump(ada, bea);
+  walkWith(ada.w, ada.c, -0.2, 5);
+  expect(dropEnd(ada.c)).toEqual({ ok: true });
+  pump(ada, bea); pump(ada, bea);
+  const loose = { key: "power-10", what: "power cable power-10", where: "left loose" };
+  expect([cableState(ada.w, ada.c).mess, cableState(bea.w, bea.c).mess]).toEqual([[loose], [loose]]);
+
+  // Ada is off by the way in now, so Bea works the next one free alone: the whole four twists.
+  expect(took(bea, "instrument")).toBeCloseTo(4 * UNTANGLE_S, 5);
 });
