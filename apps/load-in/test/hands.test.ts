@@ -4,7 +4,9 @@
 // same pose its fingers close on what the hand holds.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, thumbOverlap, type What } from "@rustybuns/rig/hand";
+import * as THREE from "three";
 import { PALM_FACE, carryFrames, inFrame } from "../src/hands/place.ts";
+import { handsView } from "../src/hands/view.ts";
 import { FINGERS, HAND } from "@rustybuns/rig/hand";
 import { buildSkin } from "@rustybuns/rig/hand";
 
@@ -85,4 +87,26 @@ describe("hands", () => {
     expect(flat.limitsHeld).toBe(true);
     expect(skinGaps({ kind: "flat" }).thumb).toBeGreaterThan(-0.001);
   });
+});
+
+// Holding Y on a phone held upright: both forearms raised, each hand on its own side of the view, the fingers not
+// crossed in the middle (#5157).
+test("raised arms on a tall phone: the hands stay apart", () => {
+  const camera = new THREE.PerspectiveCamera(70, 390 / 844, 0.05, 150), scene = new THREE.Scene();
+  scene.add(camera);
+  const view = handsView(scene, camera), rest: What = { kind: "rest" };
+  for (const t of [0, 0.5, 1]) view.update({ right: rest, left: rest, kg: 0, show: true }, t);
+  scene.updateMatrixWorld(true);
+  // each hand (right first) as where its fingernails sit across the view (0 the middle, +-0.32 the edges)
+  const hands = camera.children.filter((o) => o instanceof THREE.Group && o.children.some((c) => c instanceof THREE.SkinnedMesh));
+  const [right, left] = hands.map((hand) => {
+    const xs: number[] = [];
+    hand.traverse((o) => {
+      if (o instanceof THREE.Mesh && !(o instanceof THREE.SkinnedMesh)) { const v = o.getWorldPosition(new THREE.Vector3()); xs.push(v.x / -v.z); }
+    });
+    return xs;
+  });
+  expect(right!.length).toBe(5);
+  expect(Math.min(...right!)).toBeGreaterThan(0.02);
+  expect(Math.max(...left!)).toBeLessThan(-0.02);
 });
