@@ -115,6 +115,18 @@ export function issueDays(issues: Issues, dates: string[]) {
   }));
 }
 
+/** Issues opened and closed in each of the 24 whole hours before `now`, oldest first: is scope outrunning the work this last day? */
+export function issueHours(issues: Issues, now: string) {
+  const end = Math.floor(new Date(now).getTime() / 3600e3) * 3600e3, start = end - 24 * 3600e3;
+  const hours = Array.from({ length: 24 }, (_, i) => ({ hour: new Date(start + i * 3600e3).toISOString(), opened: 0, closed: 0 }));
+  const slot = (iso: string) => { const t = new Date(iso).getTime(); return t >= start && t < end ? hours[Math.floor((t - start) / 3600e3)] : undefined; };
+  for (const i of issues) {
+    const o = slot(i.createdAt); if (o) o.opened++;
+    const c = i.closedAt ? slot(i.closedAt) : undefined; if (c) c.closed++;
+  }
+  return hours;
+}
+
 /** codeSplitter's count of conflicts Mervin saved (GET /api/stats/saved): per hour and kind. */
 export const RemoteSaved = obj({ saved: arr(obj({ hour: num(0, 1e14), kind: str(40), n: num(0, 1e9) }), 5000, { drop: true }) });
 export const SAVED_KINDS = ["do-save", "branch-merge", "preflight", "hold"] as const;
@@ -137,11 +149,11 @@ export const conflictCost = (history: Row[]) => {
 };
 
 /** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar), every week,
- *  issues opened against closed over the last 30 days, and the conflicts Mervin saved, priced as fought by hand. */
+ *  issues opened against closed over the last 30 days and hour by hour over the last 24, and the conflicts Mervin saved, priced as fought by hand. */
 export function reportPage(template: string, generated: string, history: Row[], budget: Budget, issues: Issues = [], saved: ReturnType<typeof savedDays> = []): string {
   const start = history.length ? weekStart(history.at(-1)!.date) : "";
   const days = history.filter((r, i) => r.date >= start || i >= history.length - 8);
-  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)), saved, conflictCost: conflictCost(history.slice(-30)) });
+  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)), hours: issueHours(issues, generated), saved, conflictCost: conflictCost(history.slice(-30)) });
 }
 
 const read = <T>(name: string, g: (v: unknown) => T, none: T): T => { const f = path.join(out, name); return existsSync(f) ? g(JSON.parse(readFileSync(f, "utf8"))) : none; };
