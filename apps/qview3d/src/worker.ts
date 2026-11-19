@@ -230,7 +230,7 @@ async function saveDesign(req: Request, env: Env, org: string, url: URL, origin:
   const off = product && product.model === d.model ? zones.find((z) => !printZones(product).includes(z)) : undefined;
   if (off) return fail(`${product!.name} doesn't print on its ${off}`, 400, origin);
   const own = `orgs/${org}/`;
-  const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original])].filter((k): k is string => !!k);
+  const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original, l.print])].filter((k): k is string => !!k);
   for (const key of files) {
     if (!key.startsWith(own)) return fail(`${key}: not this org's file`, 400, origin);
     if (!(await env.BUCKET.head(key))) return fail(`${key}: upload it first`, 400, origin);

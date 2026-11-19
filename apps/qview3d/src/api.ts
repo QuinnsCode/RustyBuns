@@ -50,6 +50,9 @@ export const Org = obj({
 });
 export type Org = Of<typeof Org>;
 
+/** The widget cuts a print copy of an original over this many pixels (widget/image.ts): what a Worker can decode, and over the 9.4 MP a 4:3 photo needs across a 30 x 40 cm tee front at 300 dpi. */
+export const PRINT_COPY_PX = 12_000_000;
+
 /** A print zone's real size on the product, in centimetres: what a print file is laid out over. */
 export const PrintCm = obj({ w: num(1, 100), h: num(1, 100) });
 export type PrintCm = Of<typeof PrintCm>;
@@ -198,6 +201,8 @@ export type TextLine = Of<typeof TextLine>;
 export const Layer = obj({
   texture: str(300),
   original: opt(str(300)),
+  /** The original cut down to PRINT_COPY_PX, when it was over: what the server prints from (an original too, by name). */
+  print: opt(str(300)),
   /** A line of text rather than a photo: what it says, so it can be edited again. Its files are the text drawn. */
   text: opt(TextLine),
   zone: opt(oneOf(ZONES)),

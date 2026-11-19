@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { Design, PrintPlan } from "../src/api.ts";
+import { Design, PRINT_COPY_PX, PrintPlan } from "../src/api.ts";
+import { pictureSize } from "../src/print-render.ts";
 import { designKey } from "../src/layout.ts";
 import { putOrg, putProduct } from "../src/settings.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
@@ -212,6 +213,36 @@ test("a shopper puts photos and a line of text on one shirt front, restacks them
   expect(plan.sheets.map((s) => [s.zone, s.unmade])).toEqual([["front", undefined]]);
   expect(plan.sheets[0]!.pictures.map((p) => [p.original.split("/").pop(), Math.round(p.at.u * 100), p.at.scale])).toEqual(
     stored.layers.map((l) => [l.original!.split("/").pop(), Math.round(l.u * 100), l.scale]));
+  expect(tab.noise).toEqual([]);
+  await tab.close();
+});
+
+// A 24 MP phone photo, too big for a Worker to decode: the widget sends a 12 MP print copy with it, the server makes
+// the print file from that, and the original stays in the bucket as the shopper's phone took it.
+test("a 24 MP photo on a shirt front gets its print file made on the server", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
+  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  await tab.eval(`(async () => {
+    const c = new OffscreenCanvas(6000, 4000), g = c.getContext("2d");
+    const grad = g.createLinearGradient(0, 0, 6000, 4000);
+    grad.addColorStop(0, "#0ea5e9"); grad.addColorStop(1, "#f97316");
+    g.fillStyle = grad; g.fillRect(0, 0, 6000, 4000);
+    await ${HAT}.addImage(await c.convertToBlob({ type: "image/jpeg", quality: 0.9 }));
+  })()`);
+  await until("a picture on the shirt", () => layer(tab));
+  const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
+  const l = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", saved.id)))?.text()) ?? "null"))!.layers[0]!;
+  const size = async (key: string) => pictureSize(new Uint8Array(await await new Response((await app.bindings.BUCKET.get(key))!.body).arrayBuffer()));
+  expect(await size(l.original!)).toEqual({ width: 6000, height: 4000 });
+  const copy = (await size(l.print!))!;
+  expect(copy.width * copy.height).toBeLessThanOrEqual(PRINT_COPY_PX);
+  expect(copy.width / copy.height).toBeCloseTo(1.5, 2);
+
+  const plan = PrintPlan(await (await fetch(`${app.url}/api/orgs/demo/designs/${saved.id}/print`, { headers: { authorization: `Bearer ${DEMO_ADMIN}` } })).json());
+  expect(plan.sheets.map((s) => [s.zone, s.unmade, !!s.png])).toEqual([["front", undefined, true]]);
+  expect(plan.sheets[0]!.pictures[0]!.original.split("/").pop()).toBe(l.original!.split("/").pop());
   expect(tab.noise).toEqual([]);
   await tab.close();
 });
