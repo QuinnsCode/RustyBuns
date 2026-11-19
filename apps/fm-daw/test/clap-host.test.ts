@@ -6,7 +6,10 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { candidates } from "@rustybuns/native";
-import { openBundle, pluginFolders, scanPlugins } from "../src/engine/plugins.ts";
+import { openBundle, pluginFader, pluginFolders, scanPlugins, trackLevel } from "../src/engine/plugins.ts";
+import { demoProject } from "../src/presets.ts";
+import { apply, type Op } from "../src/project.ts";
+import { levelOp, muteOp } from "../src/remote/remote.ts";
 
 const SR = 48000;
 const built = candidates("fm_daw", {}).find(existsSync);
@@ -50,6 +53,25 @@ test("a plugin found in the CLAP folder plays notes and its sliders move it", as
   expect(peak(play)).toBe(0);
   p.free();
   expect(p.render(new Float32Array(2), 1)).toBe(false);
+});
+
+test("a plugin track's fader and mute, from the desk or the remote, set the plugin's level in the mix", () => {
+  // a plugin that plays a steady full-scale tone, so only the fader decides what the mix hears
+  const fader = pluginFader((o, n) => { o.fill(1, 0, 2 * n); return true; });
+  let p = demoProject();
+  const t = 0;
+  const level = (ops: Op[]) => {
+    for (const op of ops) p = apply(p, op);
+    fader.level(trackLevel(p, t));
+    const out = new Float32Array(2 * SR);                         // a second: long enough for the fader to settle
+    fader.mix(out, SR);
+    return out[out.length - 1]!;
+  };
+  expect(level([levelOp(t, 0)])).toBe(0);
+  expect(level([levelOp(t, 1)])).toBeCloseTo(1, 3);
+  expect(level([levelOp(t, 0.5)])).toBeCloseTo(0.5, 3);
+  expect(level([muteOp(t, true)])).toBeCloseTo(0, 3);
+  expect(level([muteOp(t, false), { t: "track", track: 1, solo: true }])).toBeCloseTo(0, 3);
 });
 
 test("a file that isn't a plugin says why", async () => {
