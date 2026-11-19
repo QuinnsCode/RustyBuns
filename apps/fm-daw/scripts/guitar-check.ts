@@ -1,7 +1,9 @@
 // A friend's guitar across a real WebRTC call, in headless Chrome: `bun scripts/guitar-check.ts [--url http://localhost:5173]`.
 // Two of the jam room's guitar lines (src/studio/guitar-line.ts) in one page, their signals handed straight across as the
 // World would, one playing a 110 Hz tone as its guitar. The other must hear it within 15 s, louder and fuller (its 3rd
-// harmonic up) once that track's amp is on, report a lag, and go silent when muted. Prints what it measured; exit 1 when
+// harmonic up) once that track's amp is on, report a lag, and go silent when muted. Then B asks for A's amp output
+// (wet, as a machine over budget does): B's amp stands aside and the drive still comes through, from A's amp now, so
+// it goes when A's amp is bypassed. Prints what it measured; exit 1 when
 // any of that fails. Without --url it serves the app itself on bare vite (the app's own config wants the desktop build).
 import { help } from "../../../scripts/help.ts";
 import { freePort, launchChrome, load, openTab } from "../../../scripts/chrome.ts";
@@ -26,7 +28,8 @@ const JOURNEY = `(async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const ctxA = new AudioContext(), ctxB = new AudioContext();
   await ctxA.resume(); await ctxB.resume();
-  const meter = new AnalyserNode(ctxB, { fftSize: 8192 });
+  // no smoothing: each spectrum read is what is playing now, not partly the one before (two reads a measurement)
+  const meter = new AnalyserNode(ctxB, { fftSize: 8192, smoothingTimeConstant: 0 });
   meter.connect(ctxB.destination);
   let a, b;
   a = new GuitarLine(ctxA, (to, line, s) => setTimeout(() => void b.signal({ t: "rtc", from: 1, line, s }), 5));
@@ -52,8 +55,14 @@ const JOURNEY = `(async () => {
   const amped = { rms: level(), h3: db(330) - db(110) };
   await b.lags(); await wait(1500);
   const lag = (await b.lags()).get(1) ?? null;
+  const brit = guitarSettings({ amp: "brit", gain: 9, bass: 5, mid: 5, treble: 6, master: 6, rate: 5, depth: 0 });
+  a.set("me", brit);
+  b.wetFrom(1); await wait(1500);
+  const wet = { rms: level(), h3: db(330) - db(110) };
+  a.set("me", guitarSettings(undefined)); await wait(1500);
+  const wetClean = { rms: level(), h3: db(330) - db(110) };
   b.level(1, 0); await wait(400);
-  return { calls: [...a.state(), ...b.state()], heardMs, why, dry, amped, lag, muted: level() };
+  return { calls: [...a.state(), ...b.state()], heardMs, why, dry, amped, wet, wetClean, lag, muted: level() };
 })()`;
 
 const server = given ? { url: given.replace(/\/$/, ""), stop: () => {} } : await serve();
@@ -73,6 +82,8 @@ try {
     ["heard within 15 s", r.heardMs < 15000 && r.dry.rms > 0.005],
     ["the amp drives it: its 3rd harmonic up 10 dB or more", r.amped.h3 - r.dry.h3 >= 10],
     ["a lag", typeof r.lag === "number"],
+    ["wet: the drive comes from A's amp", r.wet.h3 - r.dry.h3 >= 10 && r.calls.some((c: { wet: boolean }) => c.wet)],
+    ["wet: A's amp bypassed, it's clean again", r.wet.h3 - r.wetClean.h3 >= 10],
     ["silent when muted", r.muted < 0.001],
     ["no page errors", tab.noise.length === 0],
   ];

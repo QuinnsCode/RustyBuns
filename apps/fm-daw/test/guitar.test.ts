@@ -3,7 +3,7 @@
 // The Worker handing a call its servers (a TURN relay pass, or STUN alone) is GET /ice.
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
-import { capture, feel, guitarSettings, guitarTrack, IceReply, inputAt, inputTrack, lagMs, lagWords, STUN, tuneOpus, type Feel } from "../src/guitar.ts";
+import { capture, decodeRtcClient, feel, guitarSettings, guitarTrack, IceReply, inputAt, inputTrack, lagMs, lagWords, sendWet, STUN, tuneOpus, type Feel } from "../src/guitar.ts";
 import worker, { ICE_TTL_S } from "../src/worker.ts";
 import { TrackAmp } from "../src/amp/track-amp.ts";
 import { demoProject } from "../src/presets.ts";
@@ -36,6 +36,21 @@ test("the lag: half the round trip, the jitter buffer and the codec, and how pla
     expect(lagMs(trip)).toBe(ms);
     if (ms !== null) expect(feel(ms)).toBe(f!);
   }
+  // past the budget the room says how to play together anyway; a loop late, the call's lag doesn't count
+  expect(lagWords("Ben", 125)).toBe("Ben's guitar 125 ms behind, too far to play tight: C hears the band a loop late, in time");
+  expect(lagWords("Ben", 125, "guitar", false)).toBe("Ben's guitar a loop late, in time");
+});
+
+test("a machine over its budget hears the heaviest friend's guitar as their amp's output, never its own", () => {
+  const rows: [string, [number | "me", number][], number[], number | null][] = [
+    ["under budget: every amp runs here", [["me", 0.1], [2, 0.15], [3, 0.2]], [], null],
+    ["over: the heaviest dry friend", [["me", 0.3], [2, 0.15], [3, 0.2]], [], 3],
+    ["still over with 3 wet: the next one", [["me", 0.3], [2, 0.15], [3, 0.1]], [3], 2],
+    ["only your own left to run here: nobody", [["me", 0.6], [2, 0.01]], [2], null],
+  ];
+  for (const [why, loads, wet, pick] of rows) expect([why, sendWet(new Map(loads), new Set(wet))]).toEqual([why, pick]);
+  // the ask goes through the World like the rest of a call's setup
+  expect(decodeRtcClient({ t: "rtc", to: 1, line: "in", s: { k: "wet" } })?.s).toEqual({ k: "wet" });
 });
 
 test("a call's servers from GET /ice: Cloudflare's TURN pass when the key is set (no port 53), else STUN alone", async () => {

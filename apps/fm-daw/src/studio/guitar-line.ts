@@ -1,10 +1,13 @@
 // The jam room's guitars, the browser half of src/guitar.ts: your input out to each listener who asks, each player's
 // in from them, and every guitar (yours too, so you hear what they hear) through its track's amp on Q Amp's audio
 // thread, then your mutes, then placed where its player stands. Signals go through the sesh's World (`send`).
+// Over budget (src/guitar.ts sendWet), a guitar coming in is asked for wet: its player swaps their amp's output onto
+// that call (replaceTrack, no new offer) and its amp here is bypassed.
 import ampWorkletUrl from "../amp/worklet.ts?worker&url";
 import type { AmpSettings, ToAmp } from "../amp/messages.ts";
 import { getJson } from "@rustybuns/util/http";
-import { IceReply, lagMs, otherEnd, STUN, tuneOpus, type IceServer, type Lag, type Line, type RtcServer, type Signal } from "../guitar.ts";
+import { check, num, obj, oneOf } from "@rustybuns/util/guard";
+import { IceReply, lagMs, otherEnd, OVER_S, sendWet, STUN, tuneOpus, type IceServer, type Lag, type Line, type RtcServer, type Signal } from "../guitar.ts";
 
 /**
  * The servers a call may use, from the Worker's GET /ice: STUN to find each end's address, and a TURN relay for two
@@ -15,7 +18,9 @@ export const askIce = async (): Promise<IceReply> => (await getJson("/ice", IceR
 const BITRATE = 128_000;
 
 /** One guitar's sound here: its dry input, the amp, your mute, and where it stands (yours isn't placed). */
-interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; gain: GainNode; pan: PannerNode | null; settings: string; level: number; tag: HTMLAudioElement | null }
+interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; gain: GainNode; pan: PannerNode | null; settings: string; asked: AmpSettings | null; level: number; tag: HTMLAudioElement | null; tap: MediaStreamAudioDestinationNode | null }
+/** The part of an amp's meter (src/amp/messages.ts FromAmp) the budget reads: its share of the audio thread. */
+const Meter = obj({ t: oneOf(["meter"]), load: num(0, Infinity) });
 /** One call: your guitar out to `peer`, or theirs in. Candidates that come before the far end's description wait. */
 interface Call { pc: RTCPeerConnection; peer: number; line: Line; early: RTCIceCandidateInit[]; held: { delay: number; count: number } }
 
@@ -31,6 +36,10 @@ export class GuitarLine {
   /** The servers for new calls, and when to ask for them again (a TURN pass runs out; a call already up keeps going). */
   private ice: Promise<IceServer[]> | null = null;
   private iceUntil = 0;
+  /** Each amp's share of the audio thread here, its incoming guitars heard as their player's amp output, and since when it's been over. */
+  private loads = new Map<Who, number>();
+  private wet = new Set<number>();
+  private overSince: number | null = null;
   /** `to` is where every guitar ends up: the speakers, or a meter in a test. `servers` says which servers a call may use. */
   constructor(private ctx: AudioContext, private send: (to: number, line: Line, s: Signal) => void, private to: AudioNode = ctx.destination, private servers: () => Promise<IceReply> = askIce) {
     this.ready = ctx.audioWorklet.addModule(ampWorkletUrl);
@@ -69,7 +78,15 @@ export class GuitarLine {
   /** Ask `peer` (who said their guitar is in) to call you. */
   ask(peer: number) { if (!this.hearing(peer)) { this.failed.delete(peer); this.send(peer, "in", { k: "want" }); } }
   /** Their guitar came out: its call and its sound go. */
-  stopHearing(peer: number) { const c = this.calls.get(key(peer, "in")); if (c) this.hang(c); this.drop(peer); }
+  stopHearing(peer: number) { const c = this.calls.get(key(peer, "in")); if (c) this.hang(c); this.drop(peer); this.wet.delete(peer); }
+  /** Hear `peer`'s guitar as their amp's output: they run the circuit, and its amp here stands aside. */
+  wetFrom(peer: number) {
+    if (this.wet.has(peer) || !this.hearing(peer)) return;
+    this.wet.add(peer);
+    this.send(peer, "in", { k: "wet" });
+    const c = this.chains.get(peer);
+    if (c?.asked) { c.settings = ""; this.set(peer, c.asked); }
+  }
   /** They left: every call with them goes. */
   gone(peer: number) { const c = this.calls.get(key(peer, "out")); if (c) this.hang(c); this.stopHearing(peer); }
 
@@ -79,6 +96,7 @@ export class GuitarLine {
     const ice = await this.iceServers();
     const { from, s } = m, here = otherEnd(m.line);
     if (s.k === "want") { if (here === "out" && this.mine) await this.callOut(from, ice); return; }
+    if (s.k === "wet") { if (here === "out") await this.goWet(from); return; }
     if (s.k === "sdp" && s.type === "offer" && here === "in") return this.answer(from, s.sdp, ice);
     const c = this.calls.get(key(from, here));
     if (!c) return;
@@ -96,10 +114,14 @@ export class GuitarLine {
 
   /** What `who`'s guitar plays through (a new amp or knob is sent on; the same settings are not). */
   set(who: Who, settings: AmpSettings) {
-    const c = this.chains.get(who), k = JSON.stringify(settings);
-    if (!c || c.settings === k) return;
+    const c = this.chains.get(who);
+    if (!c) return;
+    c.asked = settings;
+    // a guitar coming in wet went through its player's amp already
+    const run = typeof who === "number" && this.wet.has(who) ? { ...settings, bypass: true } : settings, k = JSON.stringify(run);
+    if (c.settings === k) return;
     c.settings = k;
-    c.amp.port.postMessage({ t: "set", settings } satisfies ToAmp);
+    c.amp.port.postMessage({ t: "set", settings: run } satisfies ToAmp);
   }
   /** How loud `who` is for you: 0 muted, 1 as played. */
   level(who: Who, g: number) {
@@ -148,7 +170,31 @@ export class GuitarLine {
     return out;
   }
   /** The calls as data, for the harness: each one's peer, side and connection state. */
-  state() { return [...this.calls.values()].map((c) => ({ peer: c.peer, line: c.line, state: c.pc.connectionState })); }
+  state() { return [...this.calls.values()].map((c) => ({ peer: c.peer, line: c.line, state: c.pc.connectionState, wet: c.line === "in" && this.wet.has(c.peer) })); }
+
+  /** An amp's meter: over budget for OVER_S, the heaviest guitar coming in still dry goes wet. */
+  private metered(who: Who, v: unknown) {
+    const m = check(Meter, v);
+    if (!m || !this.chains.has(who)) return;
+    this.loads.set(who, m.load);
+    const now = this.ctx.currentTime, pick = sendWet(this.loads, this.wet);
+    if (pick === null) { this.overSince = null; return; }
+    this.overSince ??= now;
+    if (now - this.overSince < OVER_S) return;
+    this.overSince = null;
+    this.wetFrom(pick);
+  }
+  /** A listener asked for your amp's output: it goes out on their call in place of your dry input. */
+  private async goWet(peer: number) {
+    const c = this.calls.get(key(peer, "out")), me = this.chains.get("me");
+    if (!c || !me) return;
+    if (!me.tap) {
+      me.tap = new MediaStreamAudioDestinationNode(this.ctx, { channelCount: 1, channelCountMode: "explicit" });
+      me.amp.connect(me.tap);
+    }
+    const track = me.tap.stream.getAudioTracks()[0];
+    for (const tx of c.pc.getSenders()) if (tx.track?.kind === "audio") await tx.replaceTrack(track).catch(() => {});
+  }
 
   private async callOut(peer: number, ice: IceServer[]) {
     const was = this.calls.get(key(peer, "out"));
@@ -170,6 +216,8 @@ export class GuitarLine {
     const was = this.calls.get(key(peer, "in"));
     if (was) this.hang(was);
     const c = this.call(peer, "in", ice);
+    // a new call from them starts dry
+    this.wet.delete(peer);
     c.pc.ontrack = (e) => {
       // as little waiting as the network lets it: the jitter buffer is most of the lag on a good line
       for (const f of ["jitterBufferTarget", "playoutDelayHint"]) if (f in e.receiver) Reflect.set(e.receiver, f, 0);
@@ -211,6 +259,7 @@ export class GuitarLine {
     amp.onprocessorerror = (e) => console.error(`Q Amp stopped on ${who === "me" ? "your" : `player ${who}'s`} guitar`, e);
     const gain = new GainNode(ctx, { gain: 1 });
     const pan = who === "me" ? null : new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1.5, rolloffFactor: 0.7 });
+    amp.port.onmessage = (e: MessageEvent<unknown>) => this.metered(who, e.data);
     amp.connect(gain);
     (pan ? gain.connect(pan) : gain).connect(this.to);
     // a remote stream plays into Web Audio only once a media element holds it too (Chrome); the element stays silent
@@ -218,13 +267,16 @@ export class GuitarLine {
     if (who !== "me") { tag = new Audio(); tag.muted = true; tag.srcObject = stream; void tag.play().catch(() => {}); }
     const src = ctx.createMediaStreamSource(stream);
     src.connect(amp);
-    this.chains.set(who, { src, amp, gain, pan, settings: "", level: 1, tag });
+    this.chains.set(who, { src, amp, gain, pan, settings: "", asked: null, level: 1, tag, tap: null });
   }
 
   private drop(who: Who) {
     const c = this.chains.get(who);
     if (!c) return;
     this.chains.delete(who);
+    this.loads.delete(who);
+    c.amp.port.onmessage = null;
+    for (const t of c.tap?.stream.getTracks() ?? []) t.stop();
     c.src?.disconnect(); c.amp.disconnect(); c.gain.disconnect(); c.pan?.disconnect();
     if (c.tag) c.tag.srcObject = null;
   }
