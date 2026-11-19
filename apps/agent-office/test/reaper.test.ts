@@ -1,5 +1,5 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { endIn, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
@@ -68,6 +68,25 @@ test("a seated worker's session left stopped is woken on the second round, and a
   expect(await endIn(seat)).toBe(1);
   expect(alive(session)).toBe(false);
   expect(Date.now() - t0).toBeLessThan(1500);
+});
+
+test("the reaper wakes and ends stopped claude sessions an old office left, with their children, wherever they sit", async () => {
+  // a claude whose office is gone: parent pid 1, stopped, and lsof gives it no working directory
+  const bin = path.join(repo, "bin");
+  mkdirSync(bin, { recursive: true });
+  const named = (name: string) => { const p = path.join(bin, name); symlinkSync(Bun.which("sleep")!, p); return p; };
+  const spawnStopped = (file: string) => {
+    const pid = Bun.spawn([file, "120"], { stdio: ["ignore", "ignore", "ignore"] }).pid;
+    started.push(pid);
+    process.kill(pid, "SIGSTOP");
+    return pid;
+  };
+  const [claude, caffeinate, other] = [spawnStopped(named("claude")), spawnStopped(named("caffeinate")), spawnStopped(Bun.which("sleep")!)];
+  const ppid: Record<number, number> = { [claude]: 1, [caffeinate]: claude, [other]: 1 };
+  const procs = () => processes().map((p) => (p.pid in ppid ? { ...p, ppid: ppid[p.pid]!, cwd: "" } : p));
+  const n = await reapOnce(() => [], () => {}, { procs, swap: () => null });
+  expect(n).toBe(2);
+  expect([alive(claude), alive(caffeinate), alive(other)]).toEqual([false, false, true]);
 });
 
 test("swap is read from a Mac's sysctl or Linux's meminfo, and only over 80% holds a hire", () => {
