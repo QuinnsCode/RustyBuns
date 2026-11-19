@@ -114,24 +114,24 @@ function marks(id: string, size: number[], stencil?: string): Mark[] {
   const [w, h, d] = size;
   switch (id) {
     case "top-12-powered": case "top-15-passive":
-      return [{ text: "RUSTY", style: "badge", width: w * 0.32, at: [w * 0.22, h * 0.14, d / 2 + 0.006] }];
+      return [{ text: "RUSTY", style: "badge", width: w * 0.5, at: [w * 0.2, h * 0.13, d / 2 + 0.006] }];
     case "sub-18":
-      return [{ text: "RUSTY", style: "badge", width: 0.13, at: [0, h * 0.12, d / 2 + 0.006] }];
+      return [{ text: "RUSTY", style: "badge", width: 0.24, at: [0, h * 0.12, d / 2 + 0.006] }];
     case "line-array-box":
-      return [{ text: "RUSTY", style: "badge", width: 0.13, at: [0, h * 0.15, d / 2 + 0.006] }];
+      return [{ text: "RUSTY", style: "badge", width: 0.24, at: [0, h * 0.15, d / 2 + 0.006] }];
     case "wedge-12": {
       // On the slope, low down where the singer's feet would cover it.
       const lo = 0.08, backTop = -d / 2 + 0.07, dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy), t = 0.2, out = 0.012;
-      return [{ text: "RUSTY", style: "badge", width: 0.13, at: [w * 0.3, lo + dy * t + (-dz / len) * out, d / 2 + dz * t + (dy / len) * out], tilt: Math.atan2(-dz, dy) - Math.PI / 2 }];
+      return [{ text: "RUSTY", style: "badge", width: 0.2, at: [w * 0.25, lo + dy * t + (-dz / len) * out, d / 2 + dz * t + (dy / len) * out], tilt: Math.atan2(-dz, dy) - Math.PI / 2 }];
     }
     case "cab-4x12":
-      return [{ text: "Rusty", style: "script", width: 0.2, at: [-w * 0.28, h * 0.84, d / 2 + 0.002] }];
+      return [{ text: "Rusty", style: "script", width: 0.3, at: [-w * 0.24, h * 0.84, d / 2 + 0.002] }];
     case "amp-head":
-      return [{ text: "Rusty", style: "script", width: 0.16, at: [0, h * 0.62, (d - 0.03) / 2 + 0.002] }];
+      return [{ text: "Rusty", style: "script", width: 0.24, at: [0, h * 0.62, (d - 0.03) / 2 + 0.002] }];
     case "amp-rack-4u":
-      return [{ text: "RUSTY", style: "badge", width: 0.1, at: [w * 0.33, 0.3, d / 2 - 0.009] }];
+      return [{ text: "RUSTY", style: "badge", width: 0.15, at: [w * 0.3, 0.3, d / 2 - 0.009] }];
     case "mixer-small":
-      return [{ text: "RUSTY", style: "badge", width: 0.07, at: [0, 0.024, d / 2 + 0.002] }];
+      return [{ text: "RUSTY", style: "badge", width: 0.1, at: [0, 0.024, d / 2 + 0.002] }];
     case "road-case-m": {
       const word = stencil ?? "BACKLINE", y = 0.075 + (h - 0.075) * 0.35;
       return [

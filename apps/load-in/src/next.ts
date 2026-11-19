@@ -5,6 +5,7 @@ import { gear } from "@rustybuns/gear";
 import { heldItem, type World } from "./sim.ts";
 import { inHand, type Cables } from "./cables/cables.ts";
 import { hasSwitch, type Switches } from "./audio/hear.ts";
+import { strikeState, striking } from "./strike.ts";
 
 export type Next = { text: string; key?: string };
 
@@ -23,4 +24,13 @@ export function nextStep(w: World, c: Cables, on: Switches): Next | null {
   const off = w.items.find((i) => hasSwitch(i.gear) && !on.has(i.key) && !(cabled.has(i.key) && gear(i.gear).speaker?.ohms));
   if (off) return { text: `Switch on the ${gear(off.gear).what}: look at it, press P`, key: off.key };
   return null;
+}
+
+/** The centre prompt when your hands are free and you look at nothing. While there's setting up left it says nothing (the
+ * Next line has it); L strike only once the show is over (the doors opened, or, where there are no doors, nothing left to
+ * set up), then T to shut the truck, then nothing. */
+export function idlePrompt(w: World, c: Cables, on: Switches, show: { doors: boolean; open: boolean }): string {
+  if (!w.level.truck) return "";
+  if (striking(w)) return strikeState(w, c)?.tally ? "" : "T shut the truck";
+  return (show.doors ? show.open : !nextStep(w, c, on)) ? "L strike and load out" : "";
 }
