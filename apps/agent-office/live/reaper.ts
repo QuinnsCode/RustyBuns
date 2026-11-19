@@ -7,11 +7,15 @@
 //     working directory is in a worktree that is gone, or that no worker sits at.
 //  3. `swapUsage`: the swap gauge. Over `SWAP_HOLD` the office says so on the floor and holds new hires (`swapHold`);
 //     mem_stats reports it with the reaper's count.
+//  4. `stuck`: a process of the office's (under it, or in one of its worktrees) that is stopped (ps state T) on two rounds
+//     in a row gets SIGCONT. On 2026-11-18 about 90 sessions sat stopped for up to 6 days: the storage guard had paused
+//     them with SIGSTOP, and a stopped process neither runs nor dies of the SIGHUP or SIGTERM sent when its worker
+//     goes, while it keeps its memory in swap. `end` sends SIGCONT after SIGTERM for the same reason.
 import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { WORKTREES } from "./sweep.ts";
 
-export interface Proc { pid: number; ppid: number; cwd: string; args: string }
+export interface Proc { pid: number; ppid: number; cwd: string; args: string; /** ps state: T is stopped. */ stat?: string }
 
 const run = (cmd: string[]) => {
   try { return Bun.spawnSync(cmd, { stdout: "pipe", stderr: "ignore" }).stdout.toString(); } catch { return ""; }
@@ -31,11 +35,11 @@ export function processes(): Proc[] {
     }
   }
   const out: Proc[] = [];
-  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,args="]).split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)\s(.*)$/.exec(l);
+  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,stat=,args="]).split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s(.*)$/.exec(l);
     if (!m) continue;
     const pid = Number(m[1]);
-    out.push({ pid, ppid: Number(m[2]), cwd: cwds.get(pid) ?? "", args: m[3]!.trim() });
+    out.push({ pid, ppid: Number(m[2]), stat: m[3]!, cwd: cwds.get(pid) ?? "", args: m[4]!.trim() });
   }
   return out;
 }
@@ -59,9 +63,9 @@ function ours(procs: Proc[], self = process.pid): Set<number> {
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-/** TERM each pid, KILL whichever still run after `graceMs`. Resolves with how many were signalled. */
+/** TERM each pid (then CONT, so a stopped one gets it), KILL whichever still run after `graceMs`. Resolves with how many were signalled. */
 export async function end(pids: number[], graceMs = 2000): Promise<number> {
-  const sent = pids.filter((p) => { try { process.kill(p, "SIGTERM"); return true; } catch { return false; } });
+  const sent = pids.filter((p) => { try { process.kill(p, "SIGTERM"); process.kill(p, "SIGCONT"); return true; } catch { return false; } });
   const t0 = Date.now();
   while (sent.some(alive) && Date.now() - t0 < graceMs) await Bun.sleep(100);
   for (const p of sent.filter(alive)) try { process.kill(p, "SIGKILL"); } catch {}
@@ -104,6 +108,29 @@ export function orphans(floors: Iterable<ReapFloor>, procs = processes(), self =
   return out;
 }
 
+/** The office's own processes (under it, or in one of `floors`' worktrees), less the office and its parents. */
+function office(floors: Iterable<ReapFloor>, procs: Proc[], self: number): Proc[] {
+  const keep = ours(procs, self);
+  const kids = new Map<number, number[]>();
+  for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p.pid]);
+  const under = new Set<number>();
+  for (const todo = [self]; todo.length;) for (const k of kids.get(todo.pop()!) ?? []) if (!under.has(k)) { under.add(k); todo.push(k); }
+  const roots = [...floors].flatMap((f) => spellings(path.join(f.dir, WORKTREES)));
+  return procs.filter((p) => !keep.has(p.pid) && (under.has(p.pid) || roots.some((r) => p.cwd.startsWith(r + path.sep))));
+}
+
+/**
+ * The office's processes stopped now and on the round before (`seen`, which it updates): the ones to SIGCONT. One round
+ * alone is not enough, so a process a person paused with ctrl-Z a moment ago, or caught mid-signal, is left alone.
+ */
+export function stuck(floors: Iterable<ReapFloor>, seen: Set<number>, procs = processes(), self = process.pid): Proc[] {
+  const now = office(floors, procs, self).filter((p) => p.stat?.startsWith("T"));
+  const out = now.filter((p) => seen.has(p.pid));
+  seen.clear();
+  for (const p of now) if (!out.includes(p)) seen.add(p.pid);
+  return out;
+}
+
 export interface Swap { usedMb: number; totalMb: number; pct: number }
 
 /** `sysctl vm.swapusage` on a Mac ("total = 24576.00M  used = 23200.00M  free = ..."), /proc/meminfo on Linux; null with no swap. */
@@ -130,15 +157,19 @@ export function swapHold(swap = swapUsage()): string | undefined {
   return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%. Send someone home or stop what they left running (#4905)`;
 }
 
-export interface ReaperStats { reaped: number; lastReaped: string[]; swap: Swap | null; hold: number | null; at: number }
+export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number }
 
-const stats: ReaperStats = { reaped: 0, lastReaped: [], swap: null, hold: SWAP_HOLD, at: 0 };
+const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0 };
+const stopped = new Set<number>();
 
 /** What the reaper has done since the office started, for /__rb/mem. */
 export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped] });
 
-/** One round: end the orphans, read the swap, and say on the floor once when swap crosses SWAP_HOLD. */
+/** One round: wake what stays stopped, end the orphans, read the swap, and say on the floor once when swap crosses SWAP_HOLD. */
 export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read = { procs: processes, swap: swapUsage }) {
+  const woke = stuck(floors(), stopped, read.procs()).filter((p) => { try { process.kill(p.pid, "SIGCONT"); return true; } catch { return false; } });
+  stats.woken += woke.length;
+  if (woke.length) toast(`Woke ${woke.length} stopped process${woke.length === 1 ? "" : "es"} of the office (state T since the last round): ${woke.slice(0, 3).map((p) => p.args.slice(0, 40)).join("; ")}`);
   const found = orphans(floors(), read.procs());
   const n = await end(found.map((p) => p.pid));
   stats.reaped += n;
