@@ -44,8 +44,10 @@ export function crowdView(scene: THREE.Scene): CrowdView {
     let carry = 0;
     for (let iz = 0; iz < f.nz; iz++) for (let ix = 0; ix < f.nx; ix++) {
       carry += densityAt(f, f.x0 + (ix + 0.5) * dx, f.z0 + (iz + 0.5) * dz) * dx * dz;
+      // Each cell stands its people from its own seed, so when the crowd moves, whoever stayed in a cell stays put.
+      const here = mulberry32(5029 + iz * f.nx + ix);
       for (; carry >= 1 && people.length < MAX; carry--) {
-        people.push({ x: f.x0 + (ix + rnd()) * dx, z: f.z0 + (iz + rnd()) * dz, rot: Math.PI + (rnd() - 0.5) * 0.8, phase: rnd() * 0.3, dance: false });
+        people.push({ x: f.x0 + (ix + here()) * dx, z: f.z0 + (iz + here()) * dz, rot: Math.PI + (here() - 0.5) * 0.8, phase: here() * 0.3, dance: false });
       }
     }
     people.sort((a, b) => Math.abs(a.z - c.spot.stageZ) - Math.abs(b.z - c.spot.stageZ));

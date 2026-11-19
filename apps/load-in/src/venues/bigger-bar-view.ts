@@ -3,7 +3,9 @@
 // `tick` each frame (which judges the cables through bigger-bar.ts), and `fed` / `rig` for what you hear.
 import * as THREE from "three";
 import { esc } from "@rustybuns/util";
-import { BIGGER_BAR, PANEL, PASS, type Judged, atPanel, fedByJudge, judgeCables, newPanel, resetBreaker, show } from "./bigger-bar.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
+import { BIGGER_BAR, CROWD, PANEL, PASS, type Judged, atPanel, fedByJudge, judgeCables, newPanel, resetBreaker, show } from "./bigger-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
 import type { Fed, Rig } from "../audio/hear.ts";
@@ -53,6 +55,7 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
   card.className = "bar-card";
   hud.append(card);
   let last = "", opened: ReturnType<typeof show> | null = null;
+  const people = crowdView(scene);
 
   const view: BiggerBarView = {
     key(code) {
@@ -67,12 +70,14 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
     state: () => ({ circuits: j.circuits, fed: Object.fromEntries(j.fed), problems: j.problems.map((p) => p.message), lossDb: j.lossDb }),
     tick() {
       j = judgeCables(getWorld(), getCables(), panel);
+      people.update(getWorld(), crowdOf(getWorld()));
       circuits.forEach((c, i) => lamps[i]!.material.color.setHex(panel.tripped.has(c) ? 0xd1453a : 0x3ad16b));
       const fed = [...j.fed].filter(([, on]) => on).length;
       const lines = [
         `<b>${opened ? "Doors open" : "Bigger bar"}</b>`,
         ...j.circuits.map((c) => `Circuit ${c.circuit} (${c.amps} A) ${c.tripped ? '<span class="trip">tripped</span>' : c.over ? '<span class="trip">overloaded</span>' : "on"}`),
         `Speakers fed ${fed} / ${j.fed.size}`,
+        crowdOf(getWorld()) ? `${crowdOf(getWorld())!.people} in the room` : "",
         j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "",
         opened ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass, paid $${opened.pay} of $${opened.fee}</span>` : "<small>B reset the breakers at the panel, Enter doors</small>",
       ];
@@ -81,6 +86,8 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       return j;
     },
     doors() {
+      // Doors: the room fills from the stage edge back (the tour says how many).
+      if (!crowdOf(getWorld())) letIn(getWorld(), CROWD);
       j = judgeCables(getWorld(), getCables(), panel);
       return (opened = show(getWorld(), j));
     },
@@ -89,6 +96,7 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       return panel.tripped.size ? `B reset the breakers (circuit ${[...panel.tripped].join(", ")} tripped)` : "Breaker panel: every circuit on";
     },
     dispose() {
+      people.dispose();
       scene.remove(group);
       card.remove();
     },

@@ -9,6 +9,7 @@ import { CIRCUIT_15A, CIRCUIT_20A, type Cable, type Compiled, type Outlet, type 
 import { REACH, type Answer, type Level, type World } from "../sim.ts";
 import type { Fed } from "../audio/hear.ts";
 import { type Cables, plugged } from "../cables/cables.ts";
+import type { CrowdSpot } from "../crowd/crowd.ts";
 
 export const BIGGER_BAR: Level = {
   name: "bigger-bar",
@@ -34,6 +35,23 @@ export const BIGGER_BAR: Level = {
     { key: "mixer", gear: "mixer-small", x: 1.6, y: 0.5, z: 12.0, rot: 0 },
     { key: "distro", gear: "distro-box", x: 0.4, y: 0, z: 12.0, rot: 0 },
     { key: "case-1", gear: "road-case-m", x: 1.6, y: 0, z: 12.0, rot: 0 },
+  ],
+};
+
+/**
+ * The bigger bar's crowd: up to 200 on the floor from the stage edge to the door, clear of the counter on the left.
+ * An 8 by 14 m room, 3.2 m up, plastered walls and a wooden floor (mean absorption about 0.15): empty it rings for over
+ * a second, full it tightens to under half that.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -3.1, x1: 3.7, z0: 3.2, z1: 13.8, nx: 14, nz: 21 },
+  stageZ: 3.0,
+  capacity: 200,
+  room: { w: 8, d: 14, h: 3.2, alpha: 0.15 },
+  regions: [
+    { name: "front", zone: { x0: -3.1, x1: 3.7, z0: 3.2, z1: 6.7 } },
+    { name: "middle", zone: { x0: -3.1, x1: 3.7, z0: 6.7, z1: 10.2 } },
+    { name: "back", zone: { x0: -3.1, x1: 3.7, z0: 10.2, z1: 13.8 } },
   ],
 };
 
