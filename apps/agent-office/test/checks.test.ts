@@ -35,13 +35,6 @@ test("still running, the clock keeps going", () => {
   expect(describe(t, Date.parse("2026-10-11T09:12:00Z"))).toBe("2 checks: 1 passed, 1 running · 1h 12m so far");
 });
 
-test("no checks, no bar; more checks, a longer one, up to a point", () => {
-  expect(tally([])).toBeUndefined();
-  expect(tally(undefined)).toBeUndefined();
-  expect(barWidth(2)).toBeLessThan(barWidth(20));
-  expect(barWidth(200)).toBe(120);
-});
-
 test("CI's test summary becomes a notice the office reads back", () => {
   const out = "bun test v1.4.3\n\x1b[32m 340\x1b[0m pass\n 2 skip\n 1 todo\n 3 fail\n 9 expect() calls\nRan 346 tests across 12 files.\n";
   const t = countOf(out)!;

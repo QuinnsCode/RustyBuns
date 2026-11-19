@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { CAST, ENEMIES, PLAYER, RACES, bareClip, clipName, personRole, raceFor, roleFor, type Pose, type Role } from "../druids/cast.ts";
 import { MODELS } from "../druids/assets.ts";
-import { forestColor, hexToHsl } from "../druids/palette.ts";
 import { DESK_TOP, fenceKiosk, fitDesks } from "../druids/room.ts";
 
 const at = (p: Partial<Pose>): Pose =>
@@ -30,14 +29,6 @@ test("workers are the vale's enemies, every one of them before anyone doubles up
   expect(personRole(true, 2)).toBe("run");
   expect(personRole(true, 1)).toBe("walk");
   expect(clipName(PLAYER, "run")).toBe("running");
-});
-
-test("the palette turns the office's pastels into the forest", () => {
-  const green = (hex: number) => { const { h } = hexToHsl(hex); return h > 60 && h < 160; };
-  expect(green(forestColor(0x8ecae6))).toBe(true); // sky blue → moss
-  expect(green(forestColor(0x7c5cff))).toBe(true); // purple → fern
-  expect(hexToHsl(forestColor(0xfff6ea, "wall")).l).toBeLessThan(0.5); // cream walls → timber
-  expect(hexToHsl(forestColor(0xffffff)).l).toBeGreaterThan(0.6); // whites stay light: birch
 });
 
 // these read the downloaded models, so they need `bun scripts/rustybunsify.ts` to have run

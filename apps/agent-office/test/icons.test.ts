@@ -9,24 +9,17 @@ test("every emoji has an icon, keyed without U+FE0F", () => {
   }
 });
 
-test("text splits around the emoji that have icons", () => {
+test("text splits around the emoji that have icons, and leaves the others as they are", () => {
   expect(split("✅ DONE")).toEqual([{ emoji: "✅", raw: "✅" }, " DONE"]);
   expect(split("⚠️ Under pressure")).toEqual([{ emoji: "⚠", raw: "⚠️" }, " Under pressure"]);
   expect(split("PR #3 🔀 open")).toEqual(["PR #3 ", { emoji: "🔀", raw: "🔀" }, " open"]);
   expect(split("plain")).toEqual(["plain"]);
-});
-
-test("hasEmoji leaves nothing behind for split", () => {
-  // V8's matchAll starts at a shared global regex's lastIndex, which once hung the page
+  // a ZWJ sequence beats the person it starts with
+  expect(split("🧑‍💻 Worker")).toEqual([{ emoji: "🧑‍💻", raw: "🧑‍💻" }, " Worker"]);
+  // hasEmoji leaves nothing behind for split: V8's matchAll starts at a shared global regex's lastIndex
   expect(hasEmoji("✅ DONE")).toBe(true);
   expect(split("✅ DONE")[0]).toEqual({ emoji: "✅", raw: "✅" });
-});
-
-test("a ZWJ sequence beats the person it starts with", () => {
-  expect(split("🧑‍💻 Worker")).toEqual([{ emoji: "🧑‍💻", raw: "🧑‍💻" }, " Worker"]);
-});
-
-test("emoji without an icon stay as they are", () => {
+  // emoji without an icon stay as they are
   expect(hasEmoji("🧩 puzzle")).toBe(false);
   expect(hasEmoji("🧩 🍺")).toBe(true);
 });

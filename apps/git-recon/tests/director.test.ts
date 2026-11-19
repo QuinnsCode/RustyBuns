@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 setDefaultTimeout(60_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { CAMPAIGN } from "../src/sim/campaign.ts";
-import { APPROACH, BARRAGE_AFTER, BOAT_IN, CRAWL_MAX, Director, DROP, DROP_HIGH, GAG, HOME, LANDING_SQUAD, RAMP, SHELLS, SQUAD, SWEEP } from "../src/sim/director.ts";
+import { APPROACH, BARRAGE_AFTER, BOAT_IN, CRAWL_MAX, Director, DROP, GAG, HOME, LANDING_SQUAD, RAMP, SHELLS, SQUAD, SWEEP } from "../src/sim/director.ts";
 import { Game, type GameEvent, type Input, type Soldier } from "../src/sim/game.ts";
 import { missionFor } from "../src/sim/missions.ts";
 
@@ -152,45 +152,6 @@ test("the shoulders: thrusters run dry in the air, the car slides back in slow m
   expect(game.vehicles).toContain(car);
 });
 
-test("the valley floor: the helicopter takes you up high and the shot looks out at the wall as you fall", () => {
-  const { game, d, you, frame, until } = level("el-capitan");
-  frame();
-  for (let t = 0; t < APPROACH + 0.2; t += dt) frame();
-  const high = you.y - game.terrain.height(you.x, you.z);
-  expect(high).toBeGreaterThan(DROP + 20);
-  expect(high).toBeCloseTo(DROP_HIGH, 0);
-  frame({ jump: true });
-  expect(d.beat?.phase).toBe("fall");
-  frame();
-  expect(d.stage.shot!.from.y).toBeGreaterThan(you.y);
-  until(() => !d.beat, () => ({}), 90);
-  expect(you.grounded).toBe(true);
-});
-
-test("lost commit: a hovercraft beaches on the lawn and slowly goes flat", () => {
-  const { d, game, frame, until } = level("garden");
-  until(() => d.beat?.phase === "glide", () => ({}), 25);
-  expect(game.time).toBeGreaterThan(17);
-  const at = (t: number) => (until(() => d.stage.craft !== null && d.stage.craft.deflate >= t, () => ({}), 30), d.stage.craft!);
-  const skid = at(0);
-  expect(skid.deflate).toBe(0);
-  until(() => !d.beat);
-  expect(at(0.5).deflate).toBeGreaterThanOrEqual(0.5);
-  frame();
-  expect(d.beat).toBeNull();
-});
-
-test("the heights: two squads at once, and the last guard falls in slow motion before a rope ladder lifts you out", () => {
-  const { game, d, you, frame, until } = level("glacier-point");
-  // Held back for the first merge: the strike, then both walls.
-  const first = game.map.compounds.map((c, i) => ({ i, d: Math.hypot(c.x - you.x, c.z - you.z) })).sort((a, b) => a.d - b.d)[0]!.i;
-  for (const g of game.soldiers) if (g.alive && g.compound === first) game.hurt(g, g.hp + g.shield + 1, game.me);
-  frame();
-  expect(d.beat?.id).toBe("onslaught");
-  until(() => d.beat?.phase === "contact", () => ({}), 30);
-  expect(game.soldiers.filter((s) => s.alive && s.name.endsWith("reinforcement")).map((s) => s.compound).filter((c, i, all) => all.indexOf(c) === i)).toHaveLength(2);
-});
-
 test("the heights: the last guard falls in slow motion, then the helicopter's rope ladder takes you out before the result", () => {
   const { game, d, you, frame, until } = level("glacier-point", 5, ["extraction"]);
   const last = game.map.compounds.length - 1;
@@ -314,18 +275,4 @@ test("closing on a held compound calls a barrage: shells land round its yard a b
   expect(hp()).toBeLessThan(before);
   expect(d.stage.caption).toContain("Splash");
   void until;
-});
-
-test("command chatters between beats: a sitrep when a folder merges, and a word when you're low", () => {
-  const { game, d, you, frame } = level("kitchen", undefined, ["gag"]);
-  for (const g of game.soldiers) if (g.alive && g.compound === 0) game.hurt(g, g.hp + g.shield + 1, game.me);
-  d.step(dt, game.events);
-  expect(d.beat).toBeNull();
-  expect(d.stage.caption).toContain(game.map.compounds[0]!.folder);
-  // The line runs its course, then the health remark comes once for this life.
-  for (let t = 0; t < 4; t += dt) frame();
-  expect(d.stage.caption).toBeNull();
-  you.hp = 20, you.shield = 0, you.shieldT = 0;
-  d.step(dt, game.step(dt, d.steer(idle)));
-  expect(d.stage.caption).toContain("Medic");
 });

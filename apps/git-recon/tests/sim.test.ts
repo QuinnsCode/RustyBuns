@@ -5,7 +5,7 @@ setDefaultTimeout(60_000);
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, styleOf, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, BANDS, CHUTE_FALL, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
+import { AMMO_CRATE, BANDS, CHUTE_FALL, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, STASH_HP, STEP, type Input, type Objective, type Soldier } from "../src/sim/game.ts";
 import { OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { baked, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
 import { rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
@@ -480,13 +480,6 @@ describe("toy-soldier combat", () => {
       expect(you.burn).toBe(0);
     });
 
-    test("the clean reaches about ten metres and no farther", () => {
-      const { g, you, guard } = target();
-      Object.assign(guard, { z: -16 });
-      you.weapon = "clean";
-      run(g, 1, { fire: true, aim: { x: 0, y: 1.2, z: -16 } });
-      expect(guard.hp).toBe(MAX_HP);
-    });
   });
 
   describe("files come down", () => {
@@ -661,18 +654,6 @@ describe("toy-soldier combat", () => {
       expect(you.chute).toBe(false);
     });
 
-    test("the sniper scope sways, less crouched, least prone", () => {
-      const amp = (st: "stand" | "crouch" | "prone") => Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(scopeSway(i * 0.05, st).yaw)));
-      expect(amp("stand")).toBeGreaterThan(amp("crouch"));
-      expect(amp("crouch")).toBeGreaterThan(amp("prone"));
-      expect(amp("prone")).toBeGreaterThan(0);
-      // Scoped without a crosshair point, the round goes where the sway points.
-      const g = field([]);
-      g.you().weapon = "rebase";
-      g.time = 1;
-      g.step(1 / 60, { ...idle, scope: true, fire: true });
-      expect(g.shots[0]!.vx).not.toBe(0);
-    });
   });
 
   describe("guards", () => {

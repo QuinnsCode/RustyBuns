@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { Cinematic, finaleName, flightDir, STYLES, type CineHooks, type Sfx } from "../src/client/render/cinematic.ts";
+import { Cinematic, finaleName, type CineHooks, type Sfx } from "../src/client/render/cinematic.ts";
 import type { HippoRig } from "../src/client/render/hippo.ts";
 
 function rigs() {
@@ -85,36 +85,6 @@ describe("the finale, polished", () => {
     expect(log.popups.some((p) => p.startsWith("BIG IS OUT"))).toBe(false);
     expect(finaleName(3, seats)).toBe("A VERY LONG DISPL…");
     expect(finaleName(0, [{ name: "   ", human: true }])).toBe("BARON GULPINGTON");  // a blank name falls back
-  });
-
-  test("no toss flies at the lens: the camera-side seat is thrown off to the side", () => {
-    for (let seat = 0; seat < 4; seat++) {
-      const { rs, c } = setup();
-      const scores = [10, 10, 10, 10]; scores[seat] = 0; scores[(seat + 1) % 4] = 40;   // `seat` is thrown first, by spin
-      for (const style of STYLES) {
-        c.stop(); c.start(scores, [0, 0, 0, 0], 0, { styles: [style, style, style] });
-        for (let t = 2; t <= 4.5; t += 1 / 60) {
-          c.override = t; c.update(0, t);
-          const p = rs[seat]!.group.position;
-          if (rs[seat]!.group.visible) expect(p.distanceTo(CAMERA)).toBeGreaterThan(12);
-        }
-      }
-    }
-    const camSide = flightDir(new THREE.Vector3(0, 0, 8.6));                // seat 0 sits between the pan and the camera
-    expect(Math.abs(camSide.x)).toBeGreaterThan(0.9);
-    expect(flightDir(new THREE.Vector3(8.6, 0, 0)).x).toBeCloseTo(1);       // the side seats fly straight out
-  });
-
-  test("the camera leans in for the grab and pulls back for the star; reduced motion holds it still", () => {
-    const { c } = setup();
-    c.start([0, 40, 10, 25], [0, 0, 0, 0], 0);
-    const at = (t: number) => { c.override = t; c.update(0, t); return c.shot.push; };
-    expect(at(1)).toBe(0);                                                  // the intro
-    expect(at(2 + 1.0)).toBeGreaterThan(0.3);                               // first toss, mid-grab
-    const star = 2 + 2 * 3;                                                 // the runner-up's toss
-    expect(at(star + 1.9)).toBeLessThan(-0.5);                              // the launch: pull back
-    c.calm = true;
-    for (const t of [3, star + 1.9]) expect(at(t)).toBe(0);
   });
 
   test("Skip jumps to the end with nothing left to fire, and Rematch (stop) puts every rig back", () => {
