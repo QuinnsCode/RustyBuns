@@ -2,6 +2,8 @@
 // Never live, so plain D1 and HTTP: GET /q/posts and GET /q/reactions read with no sign-in (30 seconds at the edge), and
 // POST /q/posts, DELETE /q/posts/<id>, PUT and DELETE /q/reactions need the app's token. The token's app is the post's; an app
 // takes part once APPS gives it a `board` (its kinds of post and its icons). What a `ref` points at is the app's, never read here.
+// Keeping it clean: anyone signed in reports a post (POST /q/posts/<id>/report, through the game-report path in reports.ts), and
+// an owner or admin of the app's studio hides one (PUT /q/posts/<id>/hidden, DELETE to bring it back) or deletes it.
 import { Counts, Post, PostList, PostMade, POST_MAX, Pressed, REF, REFS_MAX } from "@rustybuns/util/board";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
 import { TokenBucket } from "@rustybuns/util/limits";
@@ -9,6 +11,7 @@ import { publicId } from "@rustybuns/util/seats";
 import { ourApp, type QApp } from "../apps.ts";
 import { bearerOf, cors, tokenOf } from "../door.ts";
 import { json, type Env } from "../env.ts";
+import { file, reporterId } from "../reports.ts";
 
 /** Posts one person may put up in one app in an hour. */
 export const POSTS_AN_HOUR = 10;
@@ -49,8 +52,12 @@ async function countsOf(conf: Env, app: string, refs: string[], me: string | nul
 /** The app a signed-out read names (`?app=`), when it has a board. */
 const boardApp = (id: string | null): QApp | null => { const a = ourApp(id); return a?.board ? a : null; };
 
+/** Whether this person is an owner or admin of the studio that holds the app: the ones who hide and delete its posts. */
+const runsApp = async (conf: Env, app: string, who: string) => !!(await conf.DB.prepare(
+  "SELECT 1 FROM studio_apps a JOIN studio_members m ON m.studio_id = a.studio_id WHERE a.app = ? AND m.user_id = ? AND m.role IN ('owner', 'admin')").bind(app, who).first());
+
 /** The paths this file answers. */
-export const isBoard = (pathname: string) => /^\/q\/(?:posts(?:\/[^/]+)?|reactions)$/.test(pathname);
+export const isBoard = (pathname: string) => /^\/q\/(?:posts(?:\/[^/]+(?:\/(?:report|hidden))?)?|reactions)$/.test(pathname);
 
 export async function board(req: Request, conf: Env): Promise<Response> {
   const url = new URL(req.url), { pathname } = url, now = Date.now();
@@ -68,8 +75,8 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     if (!app || !app.board!.kinds.includes(kind)) return json({ error: "name an app with posts (?app=) and one of its kinds (?kind=)" }, 400, head);
     const top = url.searchParams.get("sort") === "top", since = Number(url.searchParams.get("since")) || 0, before = Number(url.searchParams.get("before")) || Infinity;
     const { results } = await conf.DB.prepare(top
-      ? `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.at >= ? ORDER BY reacts DESC, p.at DESC LIMIT ${PAGE}`
-      : `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.at < ? ORDER BY p.at DESC LIMIT ${PAGE}`)
+      ? `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 AND p.at >= ? ORDER BY reacts DESC, p.at DESC LIMIT ${PAGE}`
+      : `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 AND p.at < ? ORDER BY p.at DESC LIMIT ${PAGE}`)
       .bind(app.id, kind, top ? since : Math.min(before, Number.MAX_SAFE_INTEGER)).all<Row>();
     const posts = await Promise.all(results.map(toPost));
     return json({ posts } satisfies PostList, 200, { ...head, ...(t ? {} : { "cache-control": "public, max-age=30" }) });
@@ -95,10 +102,33 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     const me = signedIn();
     if (!me) return refused();
     const id = one[1]!;
-    const gone = await conf.DB.prepare("DELETE FROM posts WHERE id = ? AND app = ? AND user_id = ? RETURNING id").bind(id, me.app.id, me.who.id).first<string>("id");
+    const gone = await conf.DB.prepare("DELETE FROM posts WHERE id = ?1 AND app = ?2 AND (user_id = ?3 OR ?4) RETURNING id")
+      .bind(id, me.app.id, me.who.id, await runsApp(conf, me.app.id, me.who.id) ? 1 : 0).first<string>("id");
     if (!gone) return json({ error: "no post of yours has that id" }, 404, head);
     await conf.DB.prepare("DELETE FROM reactions WHERE app = ? AND ref = ?").bind(me.app.id, `post:${id}`).run();
     return json({ ok: true }, 200, head);
+  }
+
+  // A report: a row through the game-report path, under the reporter's limits there. The issue may be public, so it carries the
+  // post's id and its author's opaque id, never the words.
+  const reported = /^\/q\/posts\/([^/]+)\/report$/.exec(pathname);
+  if (reported && req.method === "POST") {
+    const me = signedIn();
+    if (!me) return refused();
+    const post = await conf.DB.prepare("SELECT id, user_id, kind FROM posts WHERE id = ? AND app = ? AND hidden = 0").bind(reported[1]!, me.app.id).first<{ id: string; user_id: string; kind: string }>();
+    if (!post) return json({ error: "no post has that id" }, 404, head);
+    if (post.user_id === me.who.id) return json({ error: "that post is yours: take it down instead" }, 400, head);
+    const filed = await file(conf, me.app, me.who.id, "", { kind: "bug", title: "Post report", body: `A post was reported.\n\nPost: ${post.id} (${post.kind})\nBy: ${await reporterId(post.user_id)}` }, now);
+    return filed.ok ? json({ ok: true }, 200, head) : json({ error: filed.error }, filed.status, head);
+  }
+
+  const hide = /^\/q\/posts\/([^/]+)\/hidden$/.exec(pathname);
+  if (hide && (req.method === "PUT" || req.method === "DELETE")) {
+    const me = signedIn();
+    if (!me) return refused();
+    if (!await runsApp(conf, me.app.id, me.who.id)) return json({ error: "only the app's studio hides a post" }, 403, head);
+    const done = await conf.DB.prepare("UPDATE posts SET hidden = ? WHERE id = ? AND app = ? RETURNING id").bind(req.method === "PUT" ? 1 : 0, hide[1]!, me.app.id).first<string>("id");
+    return done ? json({ ok: true }, 200, head) : json({ error: "no post has that id" }, 404, head);
   }
 
   if (pathname === "/q/reactions" && req.method === "GET") {
@@ -121,5 +151,5 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     const c = await countsOf(conf, me.app.id, [asked.ref], me.who.id);
     return json({ ref: asked.ref, counts: c.counts[asked.ref]!, mine: c.mine[asked.ref]! } satisfies Pressed, 200, head);
   }
-  return json({ error: "GET or POST /q/posts, DELETE /q/posts/<id>, GET, PUT or DELETE /q/reactions" }, 405, head);
+  return json({ error: "GET or POST /q/posts, DELETE /q/posts/<id>, POST /q/posts/<id>/report, PUT or DELETE /q/posts/<id>/hidden, GET, PUT or DELETE /q/reactions" }, 405, head);
 }

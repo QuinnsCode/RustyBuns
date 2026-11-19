@@ -72,9 +72,19 @@ export function board({ url, token, app }: BoardConfig) {
       const r = await ask(`/q/posts?${q}`, PostList, "GET", undefined, false);
       return r.ok ? { ok: true, value: r.value.posts } : r;
     },
-    /** Take your own post down. */
+    /** Take your own post down (the app's studio may take down anyone's). */
     remove: async (id: string): Promise<Said<true>> => {
       const r = await ask(`/q/posts/${encodeURIComponent(id)}`, Gone, "DELETE");
+      return r.ok ? { ok: true, value: true } : r;
+    },
+    /** Report a post that shouldn't be there: it goes to the app's studio through the game-report path. Not your own. */
+    report: async (id: string): Promise<Said<true>> => {
+      const r = await ask(`/q/posts/${encodeURIComponent(id)}/report`, Gone, "POST");
+      return r.ok ? { ok: true, value: true } : r;
+    },
+    /** The app's studio (an owner or admin) hides a post from every feed, or brings it back (`on: false`). */
+    hide: async (id: string, on = true): Promise<Said<true>> => {
+      const r = await ask(`/q/posts/${encodeURIComponent(id)}/hidden`, Gone, on ? "PUT" : "DELETE");
       return r.ok ? { ok: true, value: true } : r;
     },
     /** Press an icon on a thing (`on`), or take it back (`on: false`). */
