@@ -107,7 +107,7 @@ export interface Prop {
   seed?: number;
 }
 /** Dressing you walk round: anything standing on the floor except what's flat or thin. */
-export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony", "cables", "clutter", "riser", "grid"].includes(p.kind);
+export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony", "cables", "clutter", "riser", "grid", "cyc"].includes(p.kind);
 /** A prop's footprint, as a box on the floor turned by its yaw. */
 export const propBox = (p: Prop) => ({ cx: p.at[0], cz: p.at[1], hw: p.w / 2, hd: p.d / 2, turn: p.yaw });
 /** How high the floor is here: a riser's deck under (x, z) lifts whoever stands or sits on it, and what they play. */

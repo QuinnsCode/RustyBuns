@@ -20,10 +20,10 @@ export const SOUND_STAGE: StudioDef = {
   walls: [],
   spots: [
     // the band on its riser, facing out at the bleachers
-    seat("drums", "drums", [3, -5.4], OUT),
+    seat("drums", "drums", [3, -5.7], OUT),
     seat("keys", "keys", [5.1, -4.4], OUT - 0.3, "the keys", "keys"),
     seat("bass", "bass", [0.9, -4.4], OUT + 0.3),
-    seat("vocal", "booth", [3, -3.75], OUT, "the mic"),
+    seat("vocal", "booth", [3, -3.5], OUT, "the mic"),
     // the guest couch on the home base, turned to the host's desk
     { ...seat("couch", "couch", [-3.2, -4.4], OUT - 0.5, "the guest couch"), thing: { w: 2, d: 0.8, h: 0.45, ahead: -0.15, color: "#4a2030" } },
     // the floor mix desk behind the cameras, looking at the band
