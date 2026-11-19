@@ -9,12 +9,13 @@ import { Delay, LinearEq } from "./linear.ts";
 import { BEND, REPEAT, Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
-import { TRACKS, NPARAMS } from "./params.ts";
+import { TRACKS, NPARAMS, P } from "./params.ts";
+import { PluginRoute } from "./plugin-route.ts";
 import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
-import type { ToWorklet } from "./messages.ts";
+import type { FromWorklet, ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
 
 declare const sampleRate: number;
@@ -29,7 +30,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private master = 0;
   private engine: FmEngine = new TsEngine(sampleRate);
   private kind: "ts" | "rust" = "ts";
-  private seq = new Sequencer(this.engine, sampleRate);
+  /** Plugin tracks: their notes go to the host, their sound comes back in blocks (src/engine/plugin-route.ts). */
+  private plugins = new PluginRoute();
+  private seq = new Sequencer(this.plugins.wrap(this.engine), sampleRate);
   private space = new Space(sampleRate);
   private squash = new Squash(sampleRate);
   /** The EQ as saved, and as it plays right now (with its automation on). */
@@ -112,11 +115,15 @@ class FmProcessor extends AudioWorkletProcessor {
         m.trackEq.forEach((d, t) => this.setTrackEq(t, d));
         this.setLinear(m.eqLinear);
         m.amps.forEach((a, t) => this.setAmp(t, a));
+        m.plugins.forEach((on, t) => this.plugins.set(t, on));
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
         this.engine.setParam(m.track, m.i, m.v);
         break;
+      case "plugin": this.plugins.set(m.track, m.on); break;
+      case "pluginParam": this.plugins.param(m.track, m.id, m.v); break;
+      case "pluginBlock": this.plugins.push(m.track, m.pcm, m.ok); break;
       case "notes": s.setNotes(m.track, m.notes); break;
       case "auto": s.setAuto(m.track, m.lanes); break;
       case "audible": this.setAudible(m.mask); break;
@@ -129,7 +136,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "eqPhase": this.setLinear(m.linear); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
-      case "stop": this.endTake(); s.stop(); this.engine.allOff(); break;
+      case "stop": this.endTake(); s.stop(); this.engine.allOff(); this.plugins.allOff(); break;
       case "rec": s.recording = m.on; this.endTake(); this.passes = 0; if (!m.on) s.untouch(); break;
       case "take": this.deck.set(m.track, m.pcm, m.beat); break;
       case "amp": this.setAmp(m.track, m.amp); break;
@@ -139,7 +146,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": this.outLatency = m.seconds; this.setLatency(); break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); this.eq.reset(); this.sendDelay?.reset(); break;
+      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.plugins.allOff(); this.space.reset(); this.squash.reset(); this.eq.reset(); this.sendDelay?.reset(); break;
       case "bend": s.liveBend(m.track, m.semis); break;
       case "repeat": s.setRepeat(m.beats); break;
       case "move": s.move(m.track, m.i, m.v, m.was); break;
@@ -172,6 +179,12 @@ class FmProcessor extends AudioWorkletProcessor {
     const t = Reflect.get(globalThis, "currentTime");
     const now = typeof t === "number" ? t : this.frames / sampleRate;
     return gridBeatAt(this.gridBeat, this.gridCtx, now, this.seq.bpm);
+  }
+
+  /** Each plugin track at its fader and the room's master, then asks the host for what comes next. */
+  private mixPlugins(frames: number) {
+    this.plugins.mix(this.buf, frames, (t) => this.muted[t] ? 0 : this.params[t * NPARAMS + P.GAIN] * this.master);
+    for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
   }
 
   /** Everyone else's sound for this block, from beat `beat0`: through its track's amp when it has one, else straight in. */
@@ -301,7 +314,7 @@ class FmProcessor extends AudioWorkletProcessor {
       next.panic();
       const old = this.engine;
       this.engine = next;
-      this.seq.engine = next;
+      this.seq.engine = this.plugins.wrap(next);
       this.seq.resendAuto();
       this.kind = m.kind;
       this.wasm = x;
@@ -337,6 +350,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.blockBeat = abs0; this.blockBpf = bpf;
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
+      if (this.plugins.any) this.mixPlugins(frames);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
@@ -357,7 +371,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.engine.meter(this.meter);
       this.port.postMessage({
         t: "tick", pos: this.seq.pos, abs: this.seq.abs, synced: this.seq.synced, late: [...this.remotes.values()].reduce((n, r) => n + r.line.late, 0), playing: this.seq.playing, countIn: this.seq.countIn,
-        peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3], ampMisses: this.amps.misses,
+        peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3], ampMisses: this.amps.misses, pluginMisses: this.plugins.misses,
       });
     }
     return true;

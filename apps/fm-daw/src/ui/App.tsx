@@ -12,6 +12,9 @@ import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
 import { startMidiOut, type MidiOut } from "./midi-out.ts";
 import { onCc } from "./learn.ts";
+import { PluginPump, pluginChoices, usePlugins } from "./plugins.ts";
+import { PluginPanel, TrackSound } from "./PluginPanel.tsx";
+import { withValue } from "../plugin-track.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
 import { pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
@@ -84,6 +87,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
     case "eqPhase": return { t: "eqPhase", linear: !!next.eqLinear };
     case "amp": return { t: "amp", track: op.track, amp: next.tracks[op.track].amp ?? null };
+    case "plugin": return { t: "plugin", track: op.track, on: !!next.tracks[op.track].plugin };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -134,6 +138,9 @@ export function App() {
   /** The input heard through the armed track's amp; off whenever the input comes on. */
   const [monitor, setMonitor] = useState(false);
   const ampMisses = useTick((t) => t.ampMisses);
+  /** Plugin tracks: their plugins on the desktop host, their sound into the worklet (src/ui/plugins.ts). */
+  const pump = useRef<PluginPump | null>(null);
+  const plugins = usePlugins(audio ? pump.current : null);
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
 
@@ -242,6 +249,7 @@ export function App() {
     }
     else if (m.t === "move") takeMove(m);
     else if (m.t === "engine") { setEngine(m.kind); setEngineNote(m.error ?? null); }
+    else if (m.t === "pluginAsk") pump.current?.ask(m);
     else if (m.t === "taken") landTake(m.track, m.beat, m.pcm, m.rate);
     else if (m.t === "rec") {
       const { gridIdx, strength, inputQ } = live.current;
@@ -335,6 +343,12 @@ export function App() {
       audioRef.current = a;
       a.send(loadMsg(proj.current));
       a.send({ t: "metro", on: metro });
+      pump.current = new PluginPump((m, tr) => a.send(m, tr), a.ctx.sampleRate, undefined, (track, changes) => {
+        let plug = proj.current.tracks[track]?.plugin;
+        if (!plug) return;
+        for (const c of changes) plug = withValue(plug, c.id, c.value);
+        commit({ t: "plugin", track, plugin: plug }, { group: `plugEd:${track}` });
+      });
       takesSent.current = [];
       syncTakes(proj.current);
       setAudio(a);
@@ -342,6 +356,8 @@ export function App() {
   }
 
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
+  // each plugin track's plugin, started, stopped and its sliders sent on as the groove changes
+  useEffect(() => { pump.current?.sync(project); }, [audio, project]);
   // what you hear: your own master, under the room's (the remote's master fader, src/remote/)
   useEffect(() => { audio?.send({ t: "master", gain: dbToGain(masterDb) * roomGain(project) }); }, [audio, masterDb, project.master]);
 
@@ -623,7 +639,9 @@ export function App() {
       cc(n, x) {
         const { selected } = live.current;
         const hit = onCc(n, x);
-        if (hit) commit({ t: "param", track: selected, i: hit.i, v: hit.v }, { group: `p:${selected}:${hit.i}` });
+        const plug = proj.current.tracks[selected]?.plugin;
+        if (hit && "plug" in hit) { if (plug) commit({ t: "plugin", track: selected, plugin: withValue(plug, hit.plug, hit.v) }, { group: `plug:${selected}:${hit.plug}` }); }
+        else if (hit) commit({ t: "param", track: selected, i: hit.i, v: hit.v }, { group: `p:${selected}:${hit.i}` });
       },
       devices: setMidiDevices,
     }).then((s) => { stopMidi = s; });
@@ -676,6 +694,7 @@ export function App() {
   const windowed = (tr: TrackDoc): TrackDoc => ({ ...tr, notes: tr.notes.filter(inWin).map((n) => ({ ...n, s: n.s - win.from })) });
   const unwindow = (tr: TrackDoc, ns: Note[]) => [...tr.notes.filter((n) => !inWin(n)), ...ns.map((n) => ({ ...n, s: n.s + win.from }))];
   const color = TRACK_COLORS[selected];
+  const trackSound = <TrackSound track={t} choices={pluginChoices} onPlugin={(plugin) => commit({ t: "plugin", track: selected, plugin })} />;
 
   return (
     <div className="app">
@@ -763,7 +782,7 @@ export function App() {
           {project.tracks.map((tr, i) => (
             <div key={i} className={i === selected ? "track sel" : "track"} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind">{tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind">{tr.plugin ? "plugin" : tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
@@ -865,12 +884,17 @@ export function App() {
             onPad={(i, v) => { move(selected, i, v, t.params[i]); commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` }); }}
             onLanes={(lanes) => commit({ t: "auto", track: selected, lanes })} />
 
-          <PatchEditor track={t} color={color}
+          {t.plugin ? (
+            <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={trackSound}
+              onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
+              onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
+              onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")} />
+          ) : <PatchEditor track={t} color={color} head={trackSound}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}
             onReset={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: KIT[i].params.slice() } : x)) } })}
-            onAudition={() => audition(selected)} />
+            onAudition={() => audition(selected)} />}
         </main>
       </div>
 
