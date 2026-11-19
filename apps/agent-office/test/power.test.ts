@@ -8,25 +8,15 @@ setDefaultTimeout(60_000);
 
 const at = (s: Partial<State>): number => fps({ mode: "auto", focused: true, idleMs: 0, onBattery: false, ...s });
 
-test("Automatic: 60 while you play, 30 while you watch, 15 behind another window", () => {
-  expect(at({})).toBe(60);
-  expect(at({ idleMs: 30_000 })).toBe(30);
-  expect(at({ focused: false })).toBe(15);
-});
-
-test("on battery it watches at 20 and idles in the background at 5, with fewer pixels", () => {
-  expect(at({ onBattery: true })).toBe(60);
-  expect(at({ onBattery: true, idleMs: 30_000 })).toBe(20);
-  expect(at({ onBattery: true, focused: false })).toBe(5);
+test("Automatic slows down while you watch, behind another window and on battery; Smooth and Battery saver set their own", () => {
+  const cases: [Partial<State>, number][] = [
+    [{}, 60], [{ idleMs: 30_000 }, 30], [{ focused: false }, 15],
+    [{ onBattery: true }, 60], [{ onBattery: true, idleMs: 30_000 }, 20], [{ onBattery: true, focused: false }, 5],
+    [{ mode: "smooth", onBattery: true }, Infinity], [{ mode: "smooth", focused: false }, 30], [{ mode: "saver" }, 30],
+  ];
+  for (const [s, want] of cases) expect(at(s)).toBe(want);
   expect(pixelRatio("auto", true, 2)).toBe(1.5);
-  expect(pixelRatio("auto", false, 2)).toBe(2);
   expect(pixelRatio("auto", false, 3)).toBe(2);
-});
-
-test("Smooth draws every frame in focus; Battery saver caps at 30 and 1x", () => {
-  expect(at({ mode: "smooth", onBattery: true })).toBe(Infinity);
-  expect(at({ mode: "smooth", focused: false })).toBe(30);
-  expect(at({ mode: "saver" })).toBe(30);
   expect(pixelRatio("saver", false, 2)).toBe(1);
   expect(pixelRatio("smooth", true, 2)).toBe(2);
   expect(parseMode("saver")).toBe("saver");

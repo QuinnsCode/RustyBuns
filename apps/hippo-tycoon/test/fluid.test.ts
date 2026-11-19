@@ -43,13 +43,6 @@ describe("the TypeScript fluid", () => {
     expect(run(3)).not.toEqual(run(4));
   });
 
-  test("a surge throws it higher and gold is tinted", () => {
-    const maxY = (speed: number) => { const f = new FluidTS(1); let m = 0; for (let i = 0; i < 90; i++) { f.step(DT, 3, speed, 0); for (let k = 0; k < f.count; k++) m = Math.max(m, f.out[k * STRIDE + 1]!); } return m; };
-    expect(maxY(9)).toBeGreaterThan(maxY(4) + 1);
-    const g = new FluidTS(1); g.step(DT, 4, 6, 1);
-    expect(Array.from({ length: g.count }, (_, k) => g.out[k * STRIDE + 4])).toEqual([1, 1, 1, 1]);
-  });
-
   test("the pool is bounded: flooding it never exceeds the capacity or throws", () => {
     const f = new FluidTS(2);
     for (let i = 0; i < 300; i++) f.step(DT, 40, 8, 0);

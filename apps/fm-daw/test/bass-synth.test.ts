@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { randomAvatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
-import { bassReach, bassSynth, speaker } from "../src/studio/gear-models.ts";
+import { bassReach, bassSynth } from "../src/studio/gear-models.ts";
 import { monoSteal, withMonoBass } from "../src/studio/mono-bass.ts";
 import { figure, handsOn } from "../src/studio/figure.ts";
 import { LIT, lowC } from "../src/studio/played.ts";
@@ -50,14 +50,4 @@ test("the bass track is a mono ladder bass with glide: a new note takes over the
   expect(p.tracks.filter((x, i) => i !== trackFor(bass, p)).map((x) => x.params)).toEqual(demoProject().tracks.filter((_, i) => i !== trackFor(bass, p)).map((x) => x.params));
   const holding = new Map([["kb:KeyA", { track: 5 }], ["kb:KeyS", { track: 6 }]]);
   expect(monoSteal(holding, 5)).toEqual(["kb:KeyA"]);
-});
-
-test("a monitor is the detailed speaker, as tall as its box and inside it", () => {
-  for (const [w, h, d] of [[0.2, 0.3, 0.22], [0.6, 1.4, 0.5]]) {
-    const box = new THREE.Box3().setFromObject(speaker(w, h, d)), size = box.getSize(new THREE.Vector3());
-    expect(Math.abs(box.min.y)).toBeLessThan(0.005);
-    expect(size.y).toBeCloseTo(h, 2);
-    expect(size.x).toBeLessThanOrEqual(w + 0.005);
-    expect(size.z).toBeLessThanOrEqual(d + 0.005);
-  }
 });

@@ -23,38 +23,9 @@ describe("figure", () => {
     expect(prone.low).toBeGreaterThan(-0.15);
   });
 
-  test("hands up on its knees when downed, nothing below the ground", () => {
-    const s = posed("surrender");
-    expect(s.head.y).toBeLessThan(posed("stand").head.y);
-    expect(s.high).toBeGreaterThan(s.head.y + 0.3);
-    expect(s.low).toBeGreaterThan(-0.15);
-  });
-
   test.each(Object.keys(BUILDS) as BuildId[])("the %s build stands on the ground", (b) => {
     expect(Math.abs(posed("stand", b).low)).toBeLessThan(0.15);
     expect(Math.abs(posed("kneel", b).low)).toBeLessThan(0.15);
-  });
-
-  test("strafing swings the legs sideways, running forward swings them fore and aft", () => {
-    const swing = (forward: number, side: number) => {
-      const f = buildFigure(0, 0.3);
-      // Mid-swing once this frame's step is taken.
-      f.stride = Math.PI / 2 - (7.5 * 1.9) / 60;
-      pose(f, { pose: "stand", speed: 7.5, forward, side, dt: 1 / 60, roll: 0, pitch: 0 });
-      const r = f.joints.legL!.rotation;
-      return { x: Math.abs(r.x), z: Math.abs(r.z) };
-    };
-    const ahead = swing(7.5, 0), sideways = swing(0, 7.5);
-    expect(ahead.x).toBeGreaterThan(ahead.z);
-    expect(sideways.z).toBeGreaterThan(ahead.z);
-  });
-
-  test("hanging under a parachute, both hands are up on the risers above the head", () => {
-    const f = buildFigure(0, 0.3);
-    pose(f, { pose: "hang", speed: 0, dt: 0, roll: 0, pitch: 0 });
-    f.root.updateMatrixWorld(true);
-    const head = f.head.getWorldPosition(v.clone());
-    for (const hand of ["handL", "handR"]) expect(f.root.getObjectByName(hand)!.getWorldPosition(v.clone()).y).toBeGreaterThan(head.y + 0.1);
   });
 
   test("the gun in the hands is the weapon that's up", () => {

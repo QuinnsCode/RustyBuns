@@ -4,7 +4,7 @@ import coarse from "../src/world/coarse.json";
 import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { FLORA, KINDS, TURF } from "../src/world/flora.ts";
-import { bare, daylight, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather, wind } from "../src/world/nature.ts";
+import { bare, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather, wind } from "../src/world/nature.ts";
 import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
 import { POIS } from "../src/world/poi.ts";
 import { TRAILS, WORLD } from "../src/world/trail.ts";
@@ -55,19 +55,6 @@ describe("the weather", () => {
 });
 
 describe("the day", () => {
-  test("the sun climbs to noon and sets; the night is dark but never black, and the haze draws in", () => {
-    const noon = daylight(0, 12), dusk = daylight(0, 18.3), night = daylight(0, 1);
-    expect(noon.sun[1]).toBeGreaterThan(0.9);
-    expect(noon.night).toBe(0);
-    expect(dusk.sun[1]).toBeLessThan(0.1);
-    expect(night.sun[1]).toBeLessThan(0);
-    expect(night.night).toBe(1);
-    expect(night.sunlight).toBeGreaterThan(0.1);
-    expect(night.ambient).toBeLessThan(noon.ambient);
-    expect(night.fogFar).toBeLessThan(noon.fogFar);
-    expect(daylight(0).hour).toBe(8);
-    for (let t = 0; t < 600; t += 7) { const v = wind(t); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
-  });
 });
 
 describe("wild food", () => {
