@@ -7,6 +7,7 @@ import Lobby from "../src/lobby.ts";
 import { P, TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer } from "../src/project.ts";
+import { encodeWav } from "../src/engine/wav.ts";
 import { demoProject } from "../src/presets.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { keysReach } from "../src/studio/room.ts";
@@ -39,13 +40,16 @@ async function edge(env: { MAX_ROOMS?: string; MAX_SESHES?: string } = {}) {
   const ctx = { storage: fakeStorage(), gate: Promise.resolve() as Promise<unknown>, blockConcurrencyWhile: (f: () => Promise<unknown>) => (ctx.gate = f()) };
   const lobby = new Lobby(ctx, env);
   await ctx.gate;
-  const bucket = new Map<string, string>();
+  const bucket = new Map<string, string>(), blobs = new Map<string, { v: ArrayBuffer; meta?: Record<string, string> }>();
   const worldEnv: WorldEnv = {
     LOBBY: { idFromName: () => "lobby", get: () => ({ fetch: (url, init) => lobby.fetch(new Request(url, init)) }) },
     BACKUP: {
-      get: async (k) => (bucket.has(k) ? { text: async () => bucket.get(k)! } : null),
-      put: async (k, v) => { bucket.set(k, v); },
-      delete: async (k) => { bucket.delete(k); },
+      get: async (k) => {
+        const b = blobs.get(k), t = bucket.get(k);
+        return b ? { text: async () => "", arrayBuffer: async () => b.v, customMetadata: b.meta } : t !== undefined ? { text: async () => t, arrayBuffer: async () => new TextEncoder().encode(t).buffer } : null;
+      },
+      put: async (k, v, o) => { if (typeof v === "string") bucket.set(k, v); else blobs.set(k, { v, meta: o?.customMetadata }); },
+      delete: async (k) => { bucket.delete(k); blobs.delete(k); },
     },
   };
   return { lobby, bucket, worldEnv };
@@ -185,6 +189,37 @@ test("online: the maker's code lets in only who brings it, survives a reset, and
   fresh.world.webSocketMessage(back, JSON.stringify({ t: "lock", code: "" }));           // public again
   await Bun.sleep(5);
   expect((await fresh.join()).ws.closed).toBeNull();
+});
+
+test("a sesh keeps its last bounce for a DJ's deck: a private one's takes the code, and it goes with the sesh", async () => {
+  const { worldEnv } = await edge();
+  const room = await setup(worldEnv, "jolly-plum-otter");
+  const MAKER = "d".repeat(32);
+  const maker = (await room.join({ "X-Room-Idle-Ms": "1000" }, MAKER)).ws;
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "init", project }));
+  const wav = encodeWav(new Float32Array(9600), 48000);
+  const bounce = (method: string, q = "", headers: Record<string, string> = {}, body?: Uint8Array) =>
+    room.world.fetch(new Request(`https://world/bounce${q}`, { method, headers: { "X-Room": "jolly-plum-otter", ...headers }, body: body as Uint8Array<ArrayBuffer> | undefined }));
+  expect((await bounce("GET")).status).toBe(404);                                                    // nothing bounced yet
+  expect((await bounce("PUT", "?bpm=124", {}, new TextEncoder().encode("not a wav at all"))).status).toBe(415);
+  expect((await bounce("PUT", "?bpm=900", {}, wav)).status).toBe(400);
+  expect((await bounce("PUT", "?bpm=124", {}, wav)).status).toBe(204);
+  const got = await bounce("GET");
+  expect(got.headers.get("X-Bpm")).toBe("124");
+  expect([...new Uint8Array(await got.arrayBuffer())]).toEqual([...wav]);
+  // Made private: a deck needs the code to play it, the maker doesn't.
+  room.world.webSocketMessage(maker, JSON.stringify({ t: "lock", code: "plum-42" }));
+  await Bun.sleep(5);
+  expect((await bounce("GET")).status).toBe(403);
+  expect((await bounce("GET", "", { "X-Sesh-Code": "plum-42" })).status).toBe(200);
+  expect((await bounce("PUT", `?bpm=126&key=${MAKER}`, {}, wav)).status).toBe(204);
+  expect((await bounce("GET", "", { "X-Sesh-Code": "plum-42" })).headers.get("X-Bpm")).toBe("126");
+  // Nobody comes back: the bounce is deleted with the groove.
+  room.leave(maker);
+  await settle();
+  setSystemTime(new Date(Date.now() + 2000));
+  await room.world.alarm();
+  expect((await bounce("GET", "", { "X-Sesh-Code": "plum-42" })).status).toBe(404);
 });
 
 test("a socket over its message budget is closed; a big message costs more", async () => {

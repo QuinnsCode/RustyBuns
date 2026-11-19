@@ -35,7 +35,8 @@ export type SwitchMsg = Of<typeof SwitchMsg>;
 export const DjMsg = obj({ t: oneOf(["dj"]), take: bool() });
 export type DjMsg = Of<typeof DjMsg>;
 const deckSet = () => ({
-  deck: arr(obj({ playing: bool(), pitch: num(-8, 8), beat: num(0, 1e6) }), 2, { min: 2 }),
+  /** Each deck: playing, its pitch, where in the track, the track's own tempo, and the FM DAW sesh it is ("" for the deck's own). */
+  deck: arr(obj({ playing: bool(), pitch: num(-8, 8), beat: num(0, 1e6), bpm: num(40, 240), sesh: str(64, { min: 0, re: /^[a-z0-9-]*$/ }) }), 2, { min: 2 }),
   fader: arr(num(0, 1), 4, { min: 4 }), cross: num(-1, 1),
   /** The dance floor's mood on the DJ's page (audio/set-mood.ts), so a page that joins late starts where the room is. */
   mood: num(0, 100, 50),

@@ -15,7 +15,7 @@ export type Booth = {
   mood: number; heardMood: number | null;
 };
 /** What the DJ's hands set (not where the track has got to): a change here is worth telling the room. */
-const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch]), d.fader, d.cross]);
+const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch, k.sesh, k.bpm]), d.fader, d.cross]);
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -80,7 +80,7 @@ export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>
     if (booth.dj?.me && set !== s.sentDecks) {
       s.sentDecks = set;
       const d = booth.decks;
-      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat) })), fader: [...d.fader], cross: d.cross, mood: Math.round(booth.mood) });
+      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat), bpm: k.bpm, sesh: k.sesh })), fader: [...d.fader], cross: d.cross, mood: Math.round(booth.mood) });
     }
   }
   // The switches you threw (`on` is what is switched on, on your page).

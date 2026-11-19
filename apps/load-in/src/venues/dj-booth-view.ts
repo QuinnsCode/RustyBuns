@@ -16,7 +16,11 @@ const sum = (m: Mix) => Object.values(m.gain).reduce((s, g) => s + g, 0);
 import { rig } from "./dive-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
-import { type DeckSound, type Decks, type Mix, PITCH_RANGE, TRACKS, TRACK_BEATS, bpmOf, deckSound, mix, newDecks, play, setCross, setFader, setPitch, tickDecks } from "../audio/decks.ts";
+import { type DeckSound, type Decks, type Mix, PITCH_RANGE, TRACK_BEATS, bpmOf, deckSound, load, mix, newDecks, play, setCross, setFader, setPitch, tickDecks, trackName } from "../audio/decks.ts";
+import { FM_DAW, fetchBounce, seshOf } from "../audio/sesh-track.ts";
+
+/** FM DAW, where a deck's seshes come from: `?fm=<origin>` for a local one. */
+const fmDaw = () => { try { return new URL(new URLSearchParams(location.search).get("fm") ?? FM_DAW).origin; } catch { return FM_DAW; } };
 
 /** 33 1/3 turns a minute, in radians a second. */
 const RPM33 = ((100 / 3) * 2 * Math.PI) / 60;
@@ -86,7 +90,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     c.fillStyle = "#ffffff";
     c.fillRect(127, 18, 2, 92);
     c.font = "bold 16px system-ui, sans-serif";
-    c.fillText(`${n}  ${TRACKS[i]!.name}`, 8, 16);
+    c.fillText(`${n}  ${trackName(decks, n)}`, 8, 16);
     c.textAlign = "right";
     c.fillText(`${bpmOf(decks, n).toFixed(1)} BPM  ${k.pitch >= 0 ? "+" : ""}${k.pitch.toFixed(1)}%`, 248, 122);
     c.textAlign = "left";
@@ -133,6 +137,22 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
 
   const card = document.createElement("div");
   card.className = "bar-card";
+  const said = document.createElement("div");
+  said.className = "lines";
+  // At the decks: an FM DAW sesh's name or link onto deck 1 or 2 (its last bounce plays, at the sesh's tempo).
+  const seshForm = document.createElement("form");
+  seshForm.className = "sesh-load";
+  seshForm.innerHTML = '<input name="sesh" placeholder="FM DAW sesh" aria-label="FM DAW sesh name or link" autocomplete="off"><button value="1" title="Load on deck 1">1</button><button value="2" title="Load on deck 2">2</button><span></span>';
+  const seshInput = seshForm.querySelector("input")!, seshNote = seshForm.querySelector("span")!;
+  // Typing a name is not playing the decks: the keys stay in the box.
+  seshInput.addEventListener("keydown", (e) => e.stopPropagation());
+  seshForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const n = Number((e.submitter as HTMLButtonElement | null)?.value ?? 1);
+    seshNote.textContent = "Loading…";
+    void view.decks.load(n, seshInput.value).then((a) => { seshNote.textContent = a.ok ? `Deck ${n}: ${trackName(decks, n)}` : a.why; });
+  });
+  card.append(said, seshForm);
   hud.append(card);
   let last = "";
   const atBooth = () => { const y = getWorld().you; return Math.abs(y.x - b.head.x) < 1 && Math.abs(y.z - b.head.z) < 0.7; };
@@ -158,7 +178,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     /** What the hearing takes off each booth monitor for the booth knob, dB: full up is the master's level, half is 6 dB under. */
     rig: () => { const db = -20 * Math.log10(Math.max(0.05, boothLevel)); return { lossDb: { "mon-l": db, "mon-r": db } }; },
     /** Hand this to the sound system: the decks' sound, made once the page's audio has started. */
-    audio: (ctx: AudioContext) => (sound?.stop(), (sound = deckSound(ctx)).node),
+    audio: (ctx: AudioContext) => (sound?.stop(), (sound = deckSound(ctx, fmDaw())).node),
     /** At the decks: 1 and 2 start and stop a deck, Z and X move the crossfader. */
     key(code: string): boolean {
       if (!atBooth()) return false;
@@ -204,14 +224,15 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
         j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader, 3 / 4 cue, , / . booth</small>",
       ];
       const html = lines.map((l) => `<div>${l}</div>`).join("");
-      if (html !== last) card.innerHTML = last = html;
+      if (html !== last) said.innerHTML = last = html;
+      seshForm.hidden = !atBooth();
       return j;
     },
     hint: () => (atBooth() ? "1 / 2 start or stop a deck, Z / X crossfader" : null),
     /** What the harness reads as `state().decks`. */
     state: () => ({
       kind: b.kind,
-      decks: decks.deck.map((k, i) => ({ deck: i + 1, track: TRACKS[i]!.name, playing: k.playing, pitch: k.pitch, bpm: Math.round(bpmOf(decks, i + 1) * 10) / 10, beat: Math.round(k.beat * 10) / 10, channel: j.routing[KEYS[i]!] ?? null })),
+      decks: decks.deck.map((k, i) => ({ deck: i + 1, track: trackName(decks, i + 1), sesh: k.sesh || null, playing: k.playing, pitch: k.pitch, bpm: Math.round(bpmOf(decks, i + 1) * 10) / 10, beat: Math.round(k.beat * 10) / 10, channel: j.routing[KEYS[i]!] ?? null })),
       /** In a crew room: who is on the decks (null when the seat is free), and whether that is you. */
       shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
       /** The deck in your headphones, or 0. */
@@ -240,6 +261,22 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       fader: (ch: number, v: number) => { if (mine().ok) setFader(decks, ch, v); },
       cross: (v: number) => { if (mine().ok) setCross(decks, v); },
       pitch: (n: number, pct: number) => { if (mine().ok) setPitch(decks, n, pct); },
+      /**
+       * Put an FM DAW sesh on a deck (its name or link; "" for the deck's own track): the deck takes the bounce's tempo
+       * and stops, cued to the top. In a crew room the whole crew's decks load it with yours.
+       */
+      load: async (n: number, typed: string): Promise<Answer> => {
+        if (n !== 1 && n !== 2) return { ok: false, why: "deck 1 or 2" };
+        const seat = mine();
+        if (!seat.ok) return seat;
+        if (!typed.trim()) return load(decks, n, null), { ok: true };
+        const sesh = seshOf(typed);
+        if (!sesh) return { ok: false, why: "an FM DAW sesh's name or link, like fuzzy-black-panda" };
+        const b = await fetchBounce(sesh, fmDaw());
+        if (typeof b === "string") return { ok: false, why: b };
+        load(decks, n, { sesh, bpm: b.bpm });
+        return { ok: true };
+      },
       /** In a crew room: ask for the DJ seat, or give it up. */
       take: () => { shared.want = true; },
       leave: () => { shared.want = false; },

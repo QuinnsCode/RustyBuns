@@ -114,7 +114,7 @@ To try the Cloudflare version on your machine, seshes and all: `bun run build`, 
 - **Quantize** a track to 1/4 through 1/32 or triplets, at any strength. 50% keeps half the feel. **Quantize input** does it as you record.
 - **MIDI keyboards** work as soon as they're plugged in (Web MIDI, no driver). On drum tracks middle C plays the drum's own note. MIDI "all notes off" triggers the panic.
 - **Your own plugins (VST, AU, CLAP):** **To my DAW** under the keys sends every note played on the desk, yours and everyone's on the live line, to a MIDI port: track 1 on channel 1, track 12 on channel 12. On macOS turn on the IAC Driver in Audio MIDI Setup (Windows: a loopMIDI port), then in your DAW give an instrument track that port and channel as its input. The page never loads a plugin; your DAW already hosts them. Panic lets go of all sixteen channels. Only played notes go out for now, not the sequencer's.
-- **Bounce** renders four loops to a WAV in `~/Music/FM DAW` (set `FM_DAW_DIR` to change it), and **Show** opens it in Finder.
+- **Bounce** renders four loops to a WAV in `~/Music/FM DAW` (set `FM_DAW_DIR` to change it), and **Show** opens it in Finder. Online, the sesh also keeps its last bounce in the bucket (`GET /sesh/<name>/bounce`, the tempo in `X-Bpm`; a private sesh's needs `?code=`), so a DJ booth's deck in Sound Guy Simulator can play it by the sesh's name. It is deleted with the sesh.
 
 ## Where the new voices come from
 
