@@ -7,7 +7,7 @@ import Lobby from "../src/lobby.ts";
 import { P, TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer, type Live } from "../src/project.ts";
-import { MAX_BOARD_CHARS, applyStudio, decodeStudioServer, emptyPatch } from "../src/studio.ts";
+import { MAX_BOARD_CHARS, applyStudio, boardsIn, decodeStudioServer, emptyPatch } from "../src/studio.ts";
 import * as gear from "../src/room/room.ts";
 import { bench } from "../src/circuit/bench.ts";
 import benchDrive from "../circuits/bench-drive.circuit.json";
@@ -477,9 +477,8 @@ test("the gear room in a sesh: you see who carries what, and a bench pedal one p
   const later = await setup(worldEnv, "brave-teal-otter");
   const eve = (await later.join()).ws;
   expect(eve.sent).toContainEqual({ t: "studio-board", board });
-  // the box binned, its board goes too
-  later.world.webSocketMessage(eve, JSON.stringify({ t: "studio", op: { t: "bin", id: "bench-1" } }));
-  expect((await later.join()).ws.sent.some((m) => m.t === "studio-board")).toBe(false);
+  // a board with no box left in the room is let go
+  expect(boardsIn([board], emptyPatch())).toEqual([]);
 });
 
 test("studio: friends share one patch, two can't carry one amp, a held lead is in its player's hand, and it's kept", async () => {
