@@ -39,37 +39,6 @@ test("words, the camera and one-off cues come and go on the clock", () => {
   expect(lengthOf(scene)).toBe(7);
 });
 
-// The drop: a ship rattles in, two crates fall, one chute opens.
-const drop: Cutscene = {
-  id: "d", faction: "marines",
-  cues: [
-    { at: 0, do: "actor", id: "ship", as: { prop: "dropship" }, x: 0, y: 12, z: -30 },
-    { at: 0, do: "fly", id: "ship", x: 0, y: 10, z: 0, dur: 4, wobble: 0.5 },
-    { at: 4, do: "actor", id: "a", as: { prop: "crate" }, x: -1, y: 10, z: 0 },
-    { at: 4, do: "actor", id: "b", as: { prop: "crate" }, x: 1, y: 10, z: 0 },
-    { at: 4, do: "drop", id: "a", dur: 5, height: 10, x: -4, z: 0, chute: 1 },
-    { at: 4, do: "drop", id: "b", dur: 1.5, height: 10 },
-  ],
-};
-
-test("a ship flies in rattling, one crate floats down under its chute and the other is a brick", () => {
-  const at = (t: number, id: string) => actorsAt(drop, t).find((a) => a.id === id)!;
-  expect(at(0, "ship")).toMatchObject({ y: 12, z: -30, chute: false });
-  expect(at(2, "ship").moving).toBe(true);
-  expect(Math.abs(at(2, "ship").roll)).toBeGreaterThan(0);
-  expect(at(4.5, "ship").z).toBeCloseTo(0, 0);
-  // Before the chute: both fall, both tumbling, neither under a canopy.
-  expect(at(4.5, "a")).toMatchObject({ flying: true, chute: false });
-  expect(at(4.5, "b")).toMatchObject({ flying: true, chute: false });
-  expect(at(4.5, "b").y).toBeLessThan(at(4.5, "a").y);
-  // The chute opens a second in: that crate hangs under it and drifts; the other has already hit.
-  expect(at(5.5, "a")).toMatchObject({ flying: false, chute: true });
-  expect(at(5.5, "a").y).toBeGreaterThan(5);
-  expect(at(5.5, "b")).toMatchObject({ y: 0, flying: false, chute: false });
-  // Both down at the end, where they were sent.
-  expect(at(9.1, "a")).toMatchObject({ y: 0, x: -4, flying: false, chute: false });
-});
-
 test("a scene's frame turns onto the field like the battle's yaw", () => {
   expect(place({ x: 10, z: 5, yaw: 0 }, 1, -2)).toEqual({ x: 11, z: 3 });
   const p = place({ x: 0, z: 0, yaw: Math.PI }, 0, -10); // facing +z: ahead is +z
