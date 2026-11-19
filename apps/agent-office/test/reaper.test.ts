@@ -48,6 +48,28 @@ test("the reaper ends orphans of gone and deskless worktrees, keeps a seated wor
   expect(said.join("\n")).toContain("no new hires");
 });
 
+test("a seated worker's session left stopped is woken on the second round, and a stopped one is ended without waiting for KILL", async () => {
+  const seat = tree("sprocket-6");
+  const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "sprocket-6") } }] } };
+  const stat = (pid: number) => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]).stdout.toString().trim();
+  const session = leave(seat);
+  process.kill(session, "SIGSTOP");
+  const swap = () => null;
+  await reapOnce(() => [floor], () => {}, { procs: processes, swap });
+  expect(stat(session)).toStartWith("T"); // one round could be a person's ctrl-Z
+  const said: string[] = [];
+  await reapOnce(() => [floor], (m) => said.push(m), { procs: processes, swap });
+  expect(stat(session)).not.toStartWith("T");
+  expect(said.join("\n")).toContain("Woke 1 stopped process");
+  expect(reaperStats().woken).toBe(1);
+
+  process.kill(session, "SIGSTOP");
+  const t0 = Date.now();
+  expect(await endIn(seat)).toBe(1);
+  expect(alive(session)).toBe(false);
+  expect(Date.now() - t0).toBeLessThan(1500);
+});
+
 test("swap is read from a Mac's sysctl or Linux's meminfo, and only over 80% holds a hire", () => {
   const rows: [string, number | null][] = [
     ["total = 24576.00M  used = 23200.00M  free = 1376.00M  (encrypted)", 94],
