@@ -20,9 +20,10 @@ import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurS
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mulberry32 } from "@rustybuns/util";
 import { propBlocks, thingBox, wallPieces, type Side, type StudioDef } from "./room.ts";
-import { MATERIALS } from "./sound.ts";
+import { MATERIALS, type Material } from "./sound.ts";
 
 export type Quality = "low" | "high";
 const KEY = "qollab-studio:quality";
@@ -156,6 +157,8 @@ const grille: Paint = (g, n, rnd, base) => {
 const LOOKS: Record<string, { paint: Paint; metres: number; rough: number; metal?: number; bump?: number; n?: number }> = {
   floorboards: { paint: planks(12), metres: 1.8, rough: 0.42, bump: 0.6 },
   wood: { paint: planks(10, true), metres: 1.6, rough: 0.55, bump: 0.5 },
+  woodPanel: { paint: planks(10, true), metres: 1.6, rough: 0.55, bump: 0.5 },
+  panel: { paint: rough(20, 50000), metres: 0.6, rough: 1, bump: 0.8 },
   carpet: { paint: rough(30, 60000), metres: 1, rough: 1, bump: 1.2 },
   curtain: { paint: folds, metres: 1.4, rough: 0.95, bump: 3 },
   foam: { paint: wedges, metres: 1.2, rough: 1, bump: 4 },
@@ -193,13 +196,14 @@ let kit: Kit | null = null;
  * set once before the room is built, and `surface()` asks it first. Left unset (tests, a tool page), they're flat. */
 export function useKit(k: Kit) { kit = k; }
 /**
- * A material by what it is made of: a room material (sound.ts's names: floorboards, wood, carpet, foam, curtain, brick,
- * concrete, stone, tile, plaster, drywall, ceilingTile, glass) or `metal`, `chrome`, `plastic`, `rubber`, `fabric`,
+ * A material by what it is made of: a room material (sound.ts's names: floorboards, wood, carpet, foam, panel, slats,
+ * curtain, brick, concrete, stone, tile, plaster, drywall, ceilingTile, glass), `woodPanel` (wood as a wall's veneer), or `metal`, `chrome`, `plastic`, `rubber`, `fabric`,
  * `grille`, `screen`. The colour tints it (a room material's own colour when left out). Shared: don't change it.
  * Geometry built with it should carry UVs in metres (`metreUV`) so the grain comes out the right size.
  */
 export function surface(name: string, color?: string): THREE.MeshStandardMaterial {
-  const known = name in MATERIALS ? MATERIALS[name as keyof typeof MATERIALS].color : "#808080";
+  const as = name === "woodPanel" ? "wood" : name;
+  const known = as in MATERIALS ? MATERIALS[as as Material].color : "#808080";
   const id = `${name}:${color ?? known}`, hit = mats.get(id);
   if (hit) return hit;
   const fromKit = kit?.(name, color);
@@ -224,6 +228,11 @@ export function surface(name: string, color?: string): THREE.MeshStandardMateria
   return m;
 }
 
+/** What an outside or inside wall of `m` is drawn in: wood on a wall is veneer sheets, its grain running up. */
+export const wallSurface = (m: Material) => m === "wood" ? "woodPanel" : m;
+/** Walls with no paint on them: no skirting along their foot, and no roller marks. */
+const BARE = new Set<Material>(["brick", "stone", "concrete", "tile", "glass"]);
+
 /** Give a geometry UVs in metres from its own positions, each face projected along the axis it faces. */
 export function metreUV<G extends THREE.BufferGeometry>(geo: G, at: [number, number, number] = [0, 0, 0]): G {
   const p = geo.getAttribute("position"), nrm = geo.getAttribute("normal"), uv = new Float32Array(p.count * 2);
@@ -238,6 +247,29 @@ export function metreUV<G extends THREE.BufferGeometry>(geo: G, at: [number, num
 }
 
 // ---- the room's dressing from its data: absorbers, curtains, skirting, the lights in the ceiling ----
+
+let skirtPaint: THREE.MeshStandardMaterial | null = null, joint: THREE.MeshStandardMaterial | null = null, felt: THREE.MeshStandardMaterial | null = null;
+const jointMat = () => (joint ??= new THREE.MeshStandardMaterial({ color: "#0e0a07", roughness: 1, name: "veneer-joint" }));
+const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); return o; };
+
+/**
+ * A slatted wood diffuser `wide` by `tall`, its left edge `from` metres along the wall: walnut slats 4.5 cm wide on
+ * a black felt backing, 1.8 cm apart, their depths stepping through a quadratic residue sequence (n² mod 7) the way a
+ * real diffuser's are cut, so the light catches a skyline of ends, not a flat fence.
+ */
+export function slats(wide: number, tall: number, from: number): THREE.Group {
+  const g = new THREE.Group(), y = 0.3 + tall / 2, wood = surface("woodPanel", "#7a5434");
+  felt ??= new THREE.MeshStandardMaterial({ color: "#121214", roughness: 1, name: "felt" });
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(wide, tall, 0.012), felt), from + wide / 2, y, 0.066));
+  const pitch = 0.063, n = Math.max(1, Math.floor((wide - 0.045) / pitch) + 1), x0 = from + (wide - (n - 1) * pitch) / 2;
+  for (let i = 0; i < n; i++) {
+    const deep = 0.025 + ((i * i) % 7) * 0.012, x = x0 + i * pitch;
+    g.add(at(new THREE.Mesh(metreUV(new THREE.BoxGeometry(0.045, tall, deep), [x, y, 0]), wood), x, y, 0.072 + deep / 2));
+  }
+  // a frame along the top and the bottom
+  for (const fy of [0.3, 0.3 + tall]) g.add(at(new THREE.Mesh(metreUV(new THREE.BoxGeometry(wide + 0.04, 0.04, 0.11)), wood), from + wide / 2, fy, 0.115));
+  return flatten(g);
+}
 
 /** Where an outside wall is: its middle, which way along it runs, and the way into the room. */
 function sideOf(def: StudioDef, side: Side) {
@@ -320,8 +352,23 @@ function hang(def: StudioDef, group: THREE.Group) {
     const s = sideOf(def, side), wall = new THREE.Group();
     wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
     group.add(wall);
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(s.len, 0.09, 0.015), surface("plastic", "#1d1e21"));
-    skirt.position.set(0, 0.045, 0.068); wall.add(skirt);
+    const made = def.materials?.walls[side] ?? "drywall";
+    if (!BARE.has(made)) {
+      // a skirting board: 12 cm of painted MDF with a rounded top, in the trim's wood along veneer, satin paint along the rest
+      const board = made === "wood" ? surface("woodPanel", def.colors.trim) : (skirtPaint ??= new THREE.MeshStandardMaterial({ color: "#2a2b2f", roughness: 0.42, name: "skirting" }));
+      const skirt = new THREE.Mesh(metreUV(new THREE.BoxGeometry(s.len, 0.12, 0.016)), board);
+      skirt.position.set(0, 0.06, 0.068);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, s.len, 8), board);
+      cap.rotation.z = Math.PI / 2; cap.position.set(0, 0.12, 0.068);
+      wall.add(skirt, cap);
+    }
+    // veneer comes in sheets 1.22 m wide and 2.44 m tall: a dark joint where two meet
+    if (made === "wood") {
+      const joints = new THREE.Group();
+      for (let x = -s.len / 2 + 1.22; x < s.len / 2 - 0.1; x += 1.22) joints.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.005, h, 0.002), jointMat()), x, h / 2, 0.0605));
+      if (h > 2.6) joints.add(at(new THREE.Mesh(new THREE.BoxGeometry(s.len, 0.005, 0.002), jointMat()), 0, 2.44, 0.0605));
+      wall.add(flatten(joints));
+    }
     const panels = (def.panels ?? []).filter((p) => p.wall === side);
     let along = -s.len / 2 + 0.6; // panels fill the wall from its left end in, a gap between each kind
     for (const p of panels) {
@@ -335,6 +382,19 @@ function hang(def: StudioDef, group: THREE.Group) {
         const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, wide + 0.2, 8), surface("metal", "#2a2b2e"));
         rail.rotation.z = Math.PI / 2; rail.position.set(c.position.x, h - 0.08, 0.16); wall.add(rail);
         along += wide + 0.5;
+      } else if (p.material === "panel") {
+        // fabric-wrapped absorbers: 60 by 120 cm, 10 cm deep with soft rounded edges, standing tall at ear height,
+        // two rows on a tall wall when one won't fit them
+        const n = Math.max(1, Math.round(p.m2 / 0.72)), room = s.len / 2 - along - 0.3;
+        const rows = n * 0.7 > room && h > 3 ? 2 : 1, cols = Math.ceil(n / rows), cell = Math.min(0.7, room / cols);
+        const geo = metreUV(new RoundedBoxGeometry(0.6, 1.2, 0.1, 3, 0.025)), mat = surface("panel");
+        const row = new THREE.Group();
+        for (let i = 0; i < n; i++) row.add(at(new THREE.Mesh(geo, mat), along + 0.3 + (i % cols) * cell, rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3, 0.11));
+        wall.add(flatten(row));
+        along += cols * cell + 0.5;
+      } else if (p.material === "slats") {
+        wall.add(slats(Math.min(s.len / 2 - along - 0.3, p.m2 / Math.min(h - 0.6, 2.4)), Math.min(h - 0.6, 2.4), along));
+        along += Math.min(s.len / 2 - along - 0.3, p.m2 / Math.min(h - 0.6, 2.4)) + 0.5;
       } else {
         // absorbers: 60 cm squares, five centimetres proud of the wall, centred at ear height, in rows of two or three
         const n = Math.max(1, Math.round(p.m2 / 0.36)), rows = Math.min(3, Math.max(1, Math.round(Math.sqrt(n / 2)))), cols = Math.ceil(n / rows);
@@ -497,9 +557,10 @@ function walls(def: StudioDef, group: THREE.Group) {
   for (const side of ["front", "back", "left", "right"] as const) {
     const s = sideOf(def, side), geo = new THREE.PlaneGeometry(s.len, h), uv = geo.getAttribute("uv");
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * s.len, uv.getY(i) * h);
+    const made = def.materials?.walls[side] ?? "drywall";
     const m = new THREE.Mesh(geo, mat);
     m.position.set(s.cx, h / 2, s.cz); m.rotation.y = s.turn; m.translateZ(0.061); m.name = "roller";
-    group.add(m);
+    if (!BARE.has(made) && made !== "wood") group.add(m);
     // warm by a lamp, cool across from one: multiplied over the wall, so it shifts the paint's colour, not its light
     const lit = lamps.some(([x, z]) => Math.hypot(x - s.cx, z - s.cz) < Math.max(def.size.w, def.size.d) / 2 + 0.2);
     const cast = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: lit ? 0xfff0dc : 0xe9eff7, blending: THREE.MultiplyBlending, premultipliedAlpha: true, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }));

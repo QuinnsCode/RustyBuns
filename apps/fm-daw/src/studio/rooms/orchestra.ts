@@ -7,7 +7,7 @@ import { all, colors, seat } from "./kit.ts";
 const Q = Math.PI / 2, BAND = Math.PI;
 
 /** A row of panels down a side wall, one at each z. */
-const panels = (x: number, yaw: number, zs: number[]) => zs.map((z) => ({ kind: "panel" as const, at: [x, z] as [number, number], yaw, w: 1.4, d: 0.08, h: 3.4, y: 1.2, color: "#8a7a64" }));
+const panels = (x: number, yaw: number, zs: number[]) => zs.map((z) => ({ kind: "panel" as const, at: [x, z] as [number, number], yaw, w: 1.4, d: 0.08, h: 3.4, y: 1.2, color: "#5e5244" }));
 /** A tall stand reaching its mic out over a section: `at` the foot, the boom `reach` metres toward -z. */
 const mic = (at: [number, number], reach = 1.2, h = 3.2) => ({ kind: "micStand" as const, at, yaw: 0, w: 0.3, d: reach, h, color: "#c8c8cc" });
 

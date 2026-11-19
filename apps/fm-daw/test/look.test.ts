@@ -2,7 +2,7 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cans, caseSpot, metreUV, pickQuality, practicals, surface, useKit, wedges3d, type Quality } from "../src/studio/look.ts";
+import { cans, caseSpot, metreUV, pickQuality, practicals, slats, surface, useKit, wedges3d, type Quality } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { ROOM_LIST, SCORING_HALL } from "../src/studio/rooms/index.ts";
 import { thingBox } from "../src/studio/room.ts";
@@ -74,6 +74,18 @@ test("wedge foam is cut as geometry: every face looks out of the wall, and the v
     else if (Math.abs(p.getZ(i) - 0.025) < 1e-6 && n.getZ(i) > 0.1) valley.push(c.getX(i));
   }
   expect(Math.max(...valley)).toBeLessThan(Math.min(...peak));
+});
+
+test("a slatted diffuser stands on its wall: slats a hand apart, their ends a skyline of depths, none sunk into the wall", () => {
+  useKit((name) => name === "woodPanel" ? new THREE.MeshStandardMaterial({ name: "walnut" }) : null); // the photo veneer, as on a page
+  const g = slats(1.5, 2.4, -1), box = new THREE.Box3().setFromObject(g);
+  expect(box.min.z).toBeCloseTo(0.06); // the felt backing flat on the wall's face
+  expect(box.min.x).toBeCloseTo(-1.02); expect(box.max.x).toBeCloseTo(0.52); // its frame 2 cm past each side
+  const wood = g.children.find((o) => o instanceof THREE.Mesh && o.material instanceof THREE.Material && o.material.name !== "felt");
+  if (!(wood instanceof THREE.Mesh)) throw new Error("no slats");
+  const p = wood.geometry.getAttribute("position"), ends = new Set<string>();
+  for (let i = 0; i < p.count; i++) if (p.getY(i) < 2.6 && p.getY(i) > 0.4) ends.add(p.getZ(i).toFixed(3));
+  expect(ends.size).toBeGreaterThan(4); // the front faces sit at several depths, not one flat fence
 });
 
 test("road cases stand against a free wall in every room, never in a seat's way, at the door or by a lamp", () => {

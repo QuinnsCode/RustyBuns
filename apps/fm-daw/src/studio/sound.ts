@@ -29,6 +29,10 @@ export const MATERIALS = {
   glass: { name: "Glass", color: "#8fd0ff", a: [0.18, 0.06, 0.04, 0.03, 0.02, 0.02] },
   ceilingTile: { name: "Acoustic ceiling tile", color: "#24262b", a: [0.7, 0.66, 0.72, 0.92, 0.88, 0.75] },
   foam: { name: "Thick absorber", color: "#2b2d33", a: [0.45, 0.9, 0.98, 0.98, 0.98, 0.98] },
+  // 10 cm of mineral wool behind cloth on a frame, an air gap behind it: the panel most studios line their walls with
+  panel: { name: "Fabric-wrapped absorber", color: "#303237", a: [0.35, 0.85, 1, 1, 0.98, 0.95] },
+  // wooden slats with gaps over an absorber: soaks up the mids, scatters the highs off the slats
+  slats: { name: "Wood slat diffuser", color: "#6a4a30", a: [0.3, 0.55, 0.6, 0.5, 0.4, 0.35] },
 } as const satisfies Record<string, { name: string; color: string; a: readonly number[] }>;
 export type Material = keyof typeof MATERIALS;
 export const MATERIAL_IDS = Object.keys(MATERIALS) as Material[];
