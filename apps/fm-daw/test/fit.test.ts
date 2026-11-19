@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mulberry32 } from "@rustybuns/util";
 import { AMPS } from "../src/circuit/amps.ts";
 import { cut, padded } from "../src/circuit/capture.ts";
-import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, scramble, selfTakes, valuesOf } from "../src/circuit/fit.ts";
+import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, scramble, selfTakes, takesDistance, targetsOf, valuesOf, walkCaps, withValues } from "../src/circuit/fit.ts";
 
 setDefaultTimeout(120_000);
 
@@ -49,9 +49,23 @@ test("a take off the interface, late and at any level, lines up and fits like a 
 test("the tone stack's four parts and V1's coupling cap come back from three takes at different tone settings", () => {
   const amp = AMPS.find((a) => a.id === "brit")!;
   const p = probe(24000, true), takes = selfTakes(amp, p);
-  const start = scramble(amp, 1, 2, TONE_PARTS);
+  const only = TONE_PARTS.filter((n) => n !== "V2 cc");
+  const start = scramble(amp, 1, 2, only);
   const truth = Object.fromEntries(valuesOf(amp).map((v) => [v.name, v.value]));
-  expect(TONE_PARTS.filter((n) => valuesOf(start).find((v) => v.name === n)?.value !== truth[n]).length).toBeGreaterThanOrEqual(3);
-  const r = fit(start, p, takes, { only: TONE_PARTS, generations: 16, population: 10, toneGenerations: 0 });
-  for (const v of r.values.filter((v) => TONE_PARTS.includes(v.name))) expect([v.name, v.value]).toEqual([v.name, truth[v.name]]);
+  expect(only.filter((n) => valuesOf(start).find((v) => v.name === n)?.value !== truth[n]).length).toBeGreaterThanOrEqual(3);
+  const r = fit(start, p, takes, { only, generations: 16, population: 10, toneGenerations: 0 });
+  for (const v of r.values.filter((v) => only.includes(v.name))) expect([v.name, v.value]).toEqual([v.name, truth[v.name]]);
+});
+
+test("a fit stuck on a small V1 coupling cap and a large V2 one walks back to both", () => {
+  const amp = AMPS.find((a) => a.id === "brit")!;
+  const p = probe(24000, true), want = targetsOf(selfTakes(amp, p, []), p);
+  const truth = valuesOf(amp).map((v) => v.value);
+  const [i, j] = ["V1 cc", "V2 cc"].map((n) => valuesOf(amp).findIndex((v) => v.name === n));
+  const stuck = truth.slice();
+  stuck[i] = 0.013e-6;
+  stuck[j] = 0.068e-6;
+  const score = (vals: number[]) => takesDistance(withValues(amp, vals), p, want);
+  const r = walkCaps(stuck, score(stuck), i, j, score);
+  expect([r.vals[i], r.vals[j]]).toEqual([truth[i], truth[j]]);
 });
