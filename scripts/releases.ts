@@ -7,14 +7,26 @@
 //   bun run releases                  print the rows
 //   bun run releases --html out.html  write the page (publish it as the releases artifact)
 //   bun run releases --json           print the data
-import { writeFileSync } from "node:fs";
+//   bun run releases --publish        write ~/.rustybuns/releases/releases.html and have a headless Claude republish it
+//                                     to the releases artifact (same URL; artifacts have no API, only Claude's tools)
+//   bun run releases --install        a launchd job on the office Mac: --publish at :17 past every hour 7am to 10pm,
+//                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off)
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import { help } from "./help.ts";
+import { headless, install, uninstall } from "./launchd.ts";
 import { esc } from "../packages/util/src/index.ts";
 import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
 import { appDot, appOfPath, busiest, pacific, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
+const ARTIFACT = "https://claude.ai/artifact/EFQKb3WEiu7c5X9GURb8ch"; // QNTBR Releases (#5237)
+const LABEL = "com.rustybuns.releases";
+const dir = path.join(homedir(), ".rustybuns", "releases");
+const file = path.join(dir, "releases.html");
+const repo = path.resolve(import.meta.dir, "..");
 
 export type Row = Counts & { name: string; dot: Dot; why: string; link: string | null; code: string; pushed: string | null };
 export type Releases = { at: string; repos: Row[]; apps: Row[] };
@@ -138,13 +150,32 @@ a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-ra
 </main>`;
 }
 
+// ---- the schedule ------------------------------------------------------------------------------
+
+const prompt = () => `Refresh one of my Artifacts from a file on disk. Do only this, then reply in one line.
+Releases page ${ARTIFACT}: Artifact read it, then Artifact publish with url ${ARTIFACT} and file_path ${file}.
+Change nothing else. Reply: "releases published" or what failed.`;
+
+const publish = () => headless(prompt(), "Artifact ToolSearch", repo, dir);
+
+const job = { label: LABEL, script: import.meta.path, args: ["--publish"], cwd: repo, log: path.join(dir, "releases.log"),
+  when: Array.from({ length: 16 }, (_, i) => ({ Hour: 7 + i, Minute: 17 })) };
+
 if (import.meta.main) {
   help(import.meta.path);
   const args = process.argv.slice(2);
+  if (args.includes("--install")) { console.log(install(job) ? `installed: ${LABEL} publishes the releases page at :17, 7am to 10pm, log ${job.log}` : "launchctl bootstrap failed"); process.exit(); }
+  if (args.includes("--uninstall")) { uninstall(LABEL); console.log("uninstalled"); process.exit(); }
   const d = await releases();
-  const out = args[args.indexOf("--html") + 1];
+  const publishing = args.includes("--publish");
+  const out = publishing ? file : args.includes("--html") ? args[args.indexOf("--html") + 1] : undefined;
   if (args.includes("--json")) console.log(JSON.stringify(d, null, 2));
-  else if (args.includes("--html") && out) { writeFileSync(out, page(d)); console.log(`Wrote ${out}`); }
+  else if (out) {
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, page(d));
+    console.log(`${d.at} wrote ${out}`);
+    if (publishing) publish();
+  }
   else for (const [title, rows] of [["Apps in RustyBuns", d.apps], ["Repos", d.repos]] as const) {
     console.log(`\n${title}`);
     for (const r of rows) console.log(`${{ live: "●", error: "✕", testing: "◐", code: "·" }[r.dot]} ${r.name.padEnd(28)} ${String(r.today).padStart(3)} ${String(r.week).padStart(4)}  ${(r.pushed ? pacific(r.pushed) : "never").padEnd(24)} ${r.link ?? "-"}`);

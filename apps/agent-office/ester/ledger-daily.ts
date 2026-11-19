@@ -8,11 +8,12 @@
 //      bun apps/agent-office/ester/ledger-daily.ts --budget 2026-11-05 76 [--fable 40] [--approx]
 //          (the plan's weekly usage, as /usage showed it, for the plan week that resets that morning, and the Fable limit's
 //          beside it; nothing on disk records them. The running week takes a reading too: it shows that, not an estimate)
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, bool, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
+import { headless, install, uninstall } from "../../../scripts/launchd.ts";
 import { readSaved as readLocalSaved } from "../../../scripts/conflicts-saved.ts";
 
 const DAY_STARTS = 10;
@@ -22,7 +23,6 @@ const REPORT = "https://claude.ai/artifact/W383GZuNbN4X6W36QF2arT"; // this plan
 const LABEL = "com.rustybuns.ledger";
 const out = path.join(homedir(), ".rustybuns", "ledger");
 const repo = path.resolve(import.meta.dir, "../../..");
-const plist = path.join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
 
 const n = num(0, 1e13);
 const z = num(0, 1e13, 0); // a field older history has no value for
@@ -190,39 +190,15 @@ const prompt = () => `Refresh three of my Artifacts from files on disk. Do only 
 3. Plan-week report ${REPORT}: Artifact read it, then Artifact publish with url ${REPORT} and file_path ${path.join(out, "report.html")}.
 Change nothing else on any page. Reply: "ledger published" plus the check status, or what failed.`;
 
-function publish() {
-  const tools = "Artifact ArtifactData ToolSearch";
-  const r = Bun.spawnSync(["claude", "-p", prompt(), "--allowedTools", tools, "--model", "claude-sonnet-5-5"], { cwd: repo, stdout: "inherit", stderr: "inherit" });
-  if (r.exitCode !== 0) throw new Error(`claude -p exited ${r.exitCode}`);
-}
+const publish = () => headless(prompt(), "Artifact ArtifactData ToolSearch", repo, out);
 
-function install() {
-  mkdirSync(path.dirname(plist), { recursive: true });
-  mkdirSync(out, { recursive: true });
-  const log = path.join(out, "daily.log");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
- <key>Label</key><string>${LABEL}</string>
- <key>ProgramArguments</key><array><string>${process.execPath}</string><string>${path.join(import.meta.dir, "ledger-daily.ts")}</string></array>
- <key>WorkingDirectory</key><string>${repo}</string>
- <key>EnvironmentVariables</key><dict><key>PATH</key><string>${process.env.PATH ?? "/usr/bin:/bin"}</string></dict>
- <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${DAY_STARTS}</integer><key>Minute</key><integer>7</integer></dict>
- <key>StandardOutPath</key><string>${log}</string><key>StandardErrorPath</key><string>${log}</string>
-</dict></plist>
-`;
-  writeFileSync(plist, xml);
-  const uid = process.getuid?.() ?? 501;
-  Bun.spawnSync(["launchctl", "bootout", `gui/${uid}/${LABEL}`]);
-  const r = Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid}`, plist], { stderr: "inherit" });
-  console.log(r.exitCode === 0 ? `installed: ${LABEL} runs ${repo} at ${DAY_STARTS}:07 daily, log ${log}` : "launchctl bootstrap failed");
-}
+const job = { label: LABEL, script: import.meta.path, cwd: repo, when: [{ Hour: DAY_STARTS, Minute: 7 }], log: path.join(out, "daily.log") };
 
 if (import.meta.main) {
   help(import.meta.path);
   const a = process.argv.slice(2);
-  if (a.includes("--install")) install();
-  else if (a.includes("--uninstall")) { Bun.spawnSync(["launchctl", "bootout", `gui/${process.getuid?.() ?? 501}/${LABEL}`]); rmSync(plist, { force: true }); console.log("uninstalled"); }
+  if (a.includes("--install")) console.log(install(job) ? `installed: ${LABEL} runs ${repo} at ${DAY_STARTS}:07 daily, log ${job.log}` : "launchctl bootstrap failed");
+  else if (a.includes("--uninstall")) { uninstall(LABEL); console.log("uninstalled"); }
   else if (a.includes("--budget")) {
     const i = a.indexOf("--budget");
     const fi = a.indexOf("--fable");
