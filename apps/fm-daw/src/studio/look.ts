@@ -5,7 +5,7 @@
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, paint rolled on by hand, a framed
-// control-room window, the cables, tape, wall plates and road cases a room in use collects, and on high a little bloom, a vignette and grain.
+// control-room window whose glass reflects the room, the cables, tape, wall plates and road cases a room in use collects, and on high a little bloom, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
@@ -601,10 +601,15 @@ function flatten(root: THREE.Object3D): THREE.Group {
   return out;
 }
 
+/** The windows' glass (windows()): hidden while the room bakes its own reflections, so the panes don't reflect themselves. */
+let glassFace: THREE.MeshPhysicalMaterial | null = null;
+
 /**
- * The control room's window as a window: every glass wall gets a dark frame, posts at its ends and every three and a
- * half metres, a head along its top and the wall closed over it to the ceiling, and a rubber bead where the pane meets
- * the sill, so looking through it from the desk reads as glass in a wall, not an empty gap.
+ * The control room's window as a window: every glass wall gets a satin frame with rounded edges that catch the light,
+ * posts only at its ends and the door (long panes butt at a clear silicone seam every 2.7 m, as a studio glazes them,
+ * so nothing stands in the desk's view), a head along its top and the wall closed over it to the ceiling, a rubber bead
+ * where the pane meets the sill, and the glass itself: a black dielectric face drawn over what's seen through it, so
+ * it reflects the lit room and the cans the way glass does, faint head on and strong at a slant (Fresnel).
  */
 function windows(def: StudioDef, group: THREE.Group) {
   const { h } = def.size, frame = surface("metal", "#55585d"), bead = surface("rubber", "#101113"), head = surface("drywall", def.colors.walls);
@@ -617,26 +622,38 @@ function windows(def: StudioDef, group: THREE.Group) {
       g.save(); g.translate(64, 64); g.transform(1, 0, -0.6, 1, 0, 0); g.translate(-64, -64); g.fillStyle = gr; g.fillRect(x + k - 80, -20, wide, 170); g.fillRect(x + k + 48, -20, wide, 170); g.restore();
     }
   }, false);
-  const sheenMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdfe9f0).multiplyScalar(0.3), map: sheen, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const sheenMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdfe9f0).multiplyScalar(0.12), map: sheen, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const edgeGlass = new THREE.MeshStandardMaterial({ color: "#5f8f7c", roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55 });
+  // black, so it adds only what it reflects; the room's own environment (baked in dress()) and the cans' highlights
+  glassFace ??= new THREE.MeshPhysicalMaterial({ color: "#000", roughness: 0.04, metalness: 0, specularIntensity: 0.3, envMapIntensity: 8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const seam = new THREE.MeshStandardMaterial({ color: "#a9b3ae", roughness: 0.3, metalness: 0, transparent: true, opacity: 0.18 });
   for (const wl of def.walls) {
     if (!wl.glass) continue;
     for (const p of wallPieces(wl, 0.12)) {
       const g = new THREE.Group(); g.position.set(p.cx, 0, p.cz); g.rotation.y = p.turn; g.name = "window";
-      const box = (bw: number, bh: number, bd: number, y: number, x: number, m: THREE.Material) => {
-        const b = new THREE.Mesh(metreUV(new THREE.BoxGeometry(bw, bh, bd)), m); b.position.set(x, y, 0); g.add(b); return b;
+      // every frame part is an extrusion with its edges eased, so each catches a thin line of light along its corner
+      const box = (bw: number, bh: number, bd: number, y: number, x: number, m: THREE.Material, r = 0.008) => {
+        const geo = r > 0 ? new RoundedBoxGeometry(bw, bh, bd, 2, Math.min(r, bw / 2.2, bh / 2.2, bd / 2.2)) : new THREE.BoxGeometry(bw, bh, bd);
+        const b = new THREE.Mesh(metreUV(geo), m); b.position.set(x, y, 0); g.add(b); return b;
       };
-      const len = p.hw * 2, n = Math.max(1, Math.ceil(len / 3.4));
-      for (let i = 0; i <= n; i++) box(0.05, top - low, p.hd * 2 + 0.04, (top + low) / 2, -p.hw + (i / n) * len + (i === 0 ? 0.025 : i === n ? -0.025 : 0), frame);
+      const len = p.hw * 2, panes = Math.max(1, Math.ceil(len / 2.7));
+      for (const x of [-p.hw + 0.03, p.hw - 0.03]) box(0.06, top - low, p.hd * 2 + 0.04, (top + low) / 2, x, frame, 0.012);
+      // where two panes butt: a clear silicone joint
+      for (let i = 1; i < panes; i++) {
+        const x = -p.hw + (i / panes) * len;
+        box(0.006, top - low - 0.06, 0.02, (top + low) / 2 - 0.03, x, seam, 0);
+      }
       // the pane's own edge, green where it sits in the frame: the one place thick glass shows its colour
-      for (const y of [low + 0.012, top - 0.07]) { const e = box(len, 0.012, 0.012, y, 0, edgeGlass); e.position.z = 0; }
-      box(len, 0.06, p.hd * 2 + 0.04, top - 0.03, 0, frame); // the head
-      box(len, h - top, p.hd * 2, (h + top) / 2, 0, head); // the wall over it, to the ceiling
-      box(len, 0.025, p.hd * 2 + 0.03, low - 0.008, 0, bead); // where the pane sits on the sill
-      // the light the pane catches: a couple of soft streaks across it, added over what's seen through, both faces
-      const pane = new THREE.PlaneGeometry(len, top - low - 0.06), uv = pane.getAttribute("uv");
+      for (const y of [low + 0.012, top - 0.07]) { const e = box(len - 0.12, 0.012, 0.012, y, 0, edgeGlass, 0); e.position.z = 0; }
+      box(len, 0.07, p.hd * 2 + 0.04, top - 0.035, 0, frame, 0.012); // the head
+      box(len, h - top, p.hd * 2, (h + top) / 2, 0, head, 0); // the wall over it, to the ceiling
+      box(len - 0.12, 0.025, p.hd * 2 + 0.03, low - 0.008, 0, bead, 0.008); // where the pane sits on the sill
+      const pane = new THREE.PlaneGeometry(len - 0.12, top - low - 0.07), uv = pane.getAttribute("uv");
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len / 2.4, uv.getY(i));
-      const st = new THREE.Mesh(pane, sheenMat); st.position.set(0, (top + low) / 2 - 0.03, 0); g.add(st);
+      const y = (top + low) / 2 - 0.035;
+      const face = new THREE.Mesh(pane, glassFace); face.position.set(0, y, 0); g.add(face);
+      // and the smudges and streaks it catches, faint now the reflection carries it
+      const st = new THREE.Mesh(pane, sheenMat); st.position.set(0, y, 0); g.add(st);
       group.add(flatten(g));
     }
   }
@@ -894,9 +911,11 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const bake = ground(renderer, scene, group, def, high);
   const pm2 = new THREE.PMREMGenerator(renderer);
   bulb.emissiveIntensity = 1.2; // the cans as the room sees them: bright, not a sun smeared across every reflection
+  if (glassFace) glassFace.visible = false;
   const roomEnv = pm2.fromScene(scene, 0.02, 0.05, Math.hypot(w, d, h), { size: high ? 256 : 128, position: new THREE.Vector3(0, Math.min(1.5, h / 2), 0) });
   pm2.dispose();
   bulb.emissiveIntensity = 6;
+  if (glassFace) { glassFace.visible = true; glassFace.envMap = roomEnv.texture; } // its own map: a scene environment would override its strength
   scene.environment = roomEnv.texture;
   scene.environmentIntensity = 0.5; // the downlights light the room already: this is their bounce
 
