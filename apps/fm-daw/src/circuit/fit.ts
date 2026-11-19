@@ -200,8 +200,8 @@ export function selfTakes(amp: AmpDef, p: Probe, settings = TONE_SETTINGS): Take
   return takeKnobs(amp, settings).map((knobs) => ({ knobs, recording: render(amp, p, knobs) }));
 }
 
-/** The tone stack's values, and V1's coupling cap that trades off against them: what the second stage of `fit` moves alone. */
-export const TONE_PARTS = ["tone slope", "tone cTreble", "tone cBass", "tone cMid", "V1 cc"];
+/** The tone stack's values, and the first two coupling caps: two high-passes in a row trade off against each other and the tone stack, so a fit can sit on a small V1 cc and a large V2 cc. What the second stage of `fit` moves alone. */
+export const TONE_PARTS = ["tone slope", "tone cTreble", "tone cBass", "tone cMid", "V1 cc", "V2 cc"];
 
 /** Each take's knobs and features, worked out once for a whole fit. */
 export function targetsOf(takes: Take[], p: Probe): Target[] {
@@ -255,7 +255,8 @@ export interface FitResult {
  * log, scaled to [0, 1] inside ×/÷ `span` of where it started; then a second,
  * smaller one over the tone stack alone (`toneGenerations`); then the parts
  * snap to E24, and each part is tried one step up and down while that lowers
- * the distance.
+ * the distance. Each pass also walks V1's coupling cap along its valley with
+ * V2's (`walkCaps`), which no step of one part alone gets out of.
  */
 export function fit(start: AmpDef, p: Probe, takes: Take[], opts: FitOptions = {}): FitResult {
   const span = opts.span ?? 3, seed = opts.seed ?? 1;
@@ -286,8 +287,13 @@ export function fit(start: AmpDef, p: Probe, takes: Take[], opts: FitOptions = {
   }
   for (const i of free) if (base[i].part) vals[i] = eValue(vals[i]);
   let snapped = score(vals);
+  const [c1, c2] = ["V1 cc", "V2 cc"].map((n) => base.findIndex((v) => v.name === n));
   for (let pass = 0, moved = true; moved && pass < 4; pass++) {
     moved = false;
+    if (free.includes(c1) && free.includes(c2)) {
+      const w = walkCaps(vals, snapped, c1, c2, score);
+      if (w.d < snapped) { ({ vals, d: snapped } = w); moved = true; }
+    }
     for (const i of free) {
       if (!base[i].part) continue;
       for (const s of [-1, 1]) {
@@ -303,6 +309,36 @@ export function fit(start: AmpDef, p: Probe, takes: Take[], opts: FitOptions = {
     values: base.map((v, i) => ({ ...v, value: vals[i] })),
     fitted, snapped, evaluations,
   };
+}
+
+/**
+ * Two high-passes in a row (V1's and V2's coupling caps) sound alike wherever
+ * their corners add up the same, so a fit can sit on a small `i` and a large
+ * `j`, and stepping either alone only makes it worse. This walks `i` up to
+ * `steps` E24 values each way, sliding `j` downhill at each one, and keeps
+ * the best pair it passes.
+ */
+export function walkCaps(vals: number[], d: number, i: number, j: number, score: (vals: number[]) => number, steps = 8): { vals: number[]; d: number } {
+  let best = { vals, d };
+  for (const dir of [-1, 1]) {
+    const cur = vals.slice();
+    for (let k = 0; k < steps; k++) {
+      cur[i] = eValue(cur[i], dir);
+      let here = score(cur);
+      for (const s of [-1, 1]) {
+        for (;;) {
+          const next = cur.slice();
+          next[j] = eValue(cur[j], s);
+          const dn = score(next);
+          if (dn >= here) break;
+          cur[j] = next[j];
+          here = dn;
+        }
+      }
+      if (here < best.d) best = { vals: cur.slice(), d: here };
+    }
+  }
+  return best;
 }
 
 /** Each part value moved by a random factor up to ×/÷ `spread`, then rounded to E24: a plausible wrong guess. */

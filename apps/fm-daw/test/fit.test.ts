@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mulberry32 } from "@rustybuns/util";
 import { AMPS } from "../src/circuit/amps.ts";
 import { cut, padded } from "../src/circuit/capture.ts";
-import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, scramble, selfTakes, valuesOf } from "../src/circuit/fit.ts";
+import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, scramble, selfTakes, valuesOf, withValues } from "../src/circuit/fit.ts";
 
 setDefaultTimeout(120_000);
 
@@ -46,7 +46,7 @@ test("a take off the interface, late and at any level, lines up and fits like a 
   for (const v of r.values.filter((v) => only.includes(v.name))) expect(v.value).toBe(truth[v.name]);
 });
 
-test("the tone stack's four parts and V1's coupling cap come back from three takes at different tone settings", () => {
+test("the tone stack's four parts and the first two coupling caps come back from three takes at different tone settings", () => {
   const amp = AMPS.find((a) => a.id === "brit")!;
   const p = probe(24000, true), takes = selfTakes(amp, p);
   const start = scramble(amp, 1, 2, TONE_PARTS);
@@ -54,4 +54,14 @@ test("the tone stack's four parts and V1's coupling cap come back from three tak
   expect(TONE_PARTS.filter((n) => valuesOf(start).find((v) => v.name === n)?.value !== truth[n]).length).toBeGreaterThanOrEqual(3);
   const r = fit(start, p, takes, { only: TONE_PARTS, generations: 16, population: 10, toneGenerations: 0 });
   for (const v of r.values.filter((v) => TONE_PARTS.includes(v.name))) expect([v.name, v.value]).toEqual([v.name, truth[v.name]]);
+});
+
+test("a fit stuck on a small V1 coupling cap and a large V2 one walks back to both", () => {
+  const amp = AMPS.find((a) => a.id === "brit")!;
+  const p = probe(24000, true), takes = selfTakes(amp, p);
+  const only = ["V1 cc", "V2 cc"];
+  const stuck = withValues(amp, valuesOf(amp).map((v) => (v.name === "V1 cc" ? 0.013e-6 : v.name === "V2 cc" ? 0.068e-6 : v.value)));
+  const r = fit(stuck, p, takes, { only, generations: 0, toneGenerations: 0 });
+  const truth = Object.fromEntries(valuesOf(amp).map((v) => [v.name, v.value]));
+  for (const v of r.values.filter((v) => only.includes(v.name))) expect([v.name, v.value]).toEqual([v.name, truth[v.name]]);
 });
