@@ -4,7 +4,7 @@
 // an online campaign like any other, with the seat's token kept in this browser. The seat is the eqosys account's: the
 // same account opening the party link on another device gets its own seat there. Spaces is the signed-in player's
 // Qollab groups (text and voice), behind a button in the panel's header. Qollab's side: apps/eqosys/src/party.ts, space.ts.
-import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2 } from "lucide";
+import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2, Reply, Search } from "lucide";
 import { lobbyPanel } from "@rustybuns/util/lobby";
 import { spacesPanel, type SpaceIcon } from "@rustybuns/util/spaces";
 import type { Faction } from "./battle/contract.ts";
@@ -36,7 +36,7 @@ export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: s
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {
   "arrow-left": ArrowLeft, "arrow-up": ArrowUp, plus: Plus, "log-in": LogIn, send: Send, copy: Copy, hash: Hash,
-  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield,
+  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield, reply: Reply, search: Search,
 };
 
 /** The Spaces button: shown when signed in, it opens and closes the panel. */

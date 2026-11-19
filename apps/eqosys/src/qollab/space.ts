@@ -10,6 +10,9 @@
 //   /drop                                   the space was deleted: every socket closes and everything here goes
 //   /roster { channel, in, at }             Qlave says who is in a voice channel (handle.ts checked its signature)
 // Messages are kept in pages of PAGE under `p:<channel>:<page>`, the last KEEP_PAGES pages a channel, numbered from 1.
+// A reply in a thread is a message of its channel like any other, naming the one it answers (`reply`); the message it answers
+// counts its replies (`replies`), and `t:<channel>:<id>` keeps the replies' numbers (the last THREAD_MAX), so a thread is read
+// without walking the channel. Search walks the channel's kept pages, newest first, a few times a minute a socket.
 // Voice channels (QLAVE.md) carry no messages here: a member asks for a one-use Qlave ticket over the socket, Qlave
 // carries the audio, and Qlave says who is in each room (QLAVE.md §4); until it has, the page's own word stands. What the owner does
 // (mute, kick, deleting a channel or the space) goes to Qlave as an order, through an outbox the alarm retries.
@@ -27,6 +30,10 @@ import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
+/** The replies a thread keeps the numbers of, and how many come back with it (the parent is one more). */
+export const THREAD_MAX = 1000, THREAD_SHOWN = 99;
+/** The longest search, and how often a socket may search: SEARCH_RATE a second with a burst of SEARCH_BURST. */
+export const SEARCH_MAX = 100, SEARCH_RATE = 0.2, SEARCH_BURST = 3;
 /** A space's invite is copied, never read out, and lets anyone in for good, so it is twice a party code's length: 21^12 codes,
  *  too many to guess even before the door's tries a minute (routes.ts). The longest a room code may be (`codeOf`). */
 export const INVITE_LETTERS = 12;
@@ -51,9 +58,10 @@ type Roster = { in: Of<typeof Present>; at: number };
 const RosterIn = obj({ channel: str(16, { min: 1 }), in: Present, at: int(0, 1e15) });
 
 const SpaceIn = obj({
-  t: oneOf(["say", "history", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role"]),
+  t: oneOf(["say", "history", "thread", "search", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role"]),
   channel: opt(CHANNEL), text: opt(str(STUDIO_SAY_MAX)), before: opt(int(1, 1e12)), id: opt(str(200, { min: 1 })), on: opt(bool()), voice: opt(bool()),
   private: opt(bool()), role: opt(oneOf(["admin", "member", "guest"])),
+  reply: opt(int(1, 1e12)), of: opt(int(1, 1e12)), q: opt(str(SEARCH_MAX)),
 });
 /** What a space says to a member: the page's guard is SpaceMsg in @rustybuns/util/eqosys. */
 export type SpaceOut = SpaceMsg;
@@ -150,6 +158,7 @@ const pageKey = (channel: string, page: number) => `p:${channel}:${String(page).
 export class Space {
   private sockets: Sockets<Member, SpaceOut>;
   private chat = new ChatGate();
+  private searches = new ChatGate(SEARCH_RATE, SEARCH_BURST);
 
   constructor(private ctx: SpaceCtx, private env: Env) {
     this.sockets = new Sockets<Member, SpaceOut>(ctx, { maxBytes: 4 * STUDIO_SAY_MAX + 500, rate: 5, burst: 10 });
@@ -196,6 +205,12 @@ export class Space {
     if (msg.t === "leave") return await this.studio() ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
     if (msg.t === "history") return channels.includes(ch) && sees(me, ch, locked) ? this.sockets.send(ws, await this.history(ch, msg.before)) : undefined;
+    if (msg.t === "thread") return channels.includes(ch) && sees(me, ch, locked) && msg.of ? this.sockets.send(ws, await this.thread(ch, msg.of)) : undefined;
+    if (msg.t === "search") {
+      if (!channels.includes(ch) || !sees(me, ch, locked) || !msg.q?.trim()) return;
+      const q = this.searches.line(ws, msg.q, Date.now(), SEARCH_MAX);
+      return q ? this.sockets.send(ws, await this.search(ch, q)) : this.sockets.send(ws, { t: "refused", why: "Searching too fast. Try again in a few seconds." });
+    }
     if (msg.t === "talk") return me.role === "guest" ? this.sockets.send(ws, { t: "refused", why: "a guest has no voice channels" }) : this.talk(ws, me, msg.channel ?? "");
     if (msg.t === "voice") {
       // The page joined (or left, with no channel) a voice room on Qlave: everyone sees it beside the online list.
@@ -208,7 +223,10 @@ export class Space {
       if (!channels.includes(ch) || !sees(me, ch, locked)) return this.sockets.send(ws, { t: "refused", why: `no channel #${ch}` });
       const text = this.chat.line(ws, msg.text ?? "", Date.now(), await this.studio() ? STUDIO_SAY_MAX : SAY_MAX);
       if (!text || (await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return;
-      return this.say(ch, { from: { id: me.id, name: me.name }, text, at: Date.now() });
+      // A reply to a reply joins the thread it is in: threads are one deep.
+      const to = msg.reply ? await this.message(ch, msg.reply) : undefined;
+      if (msg.reply && !to) return this.sockets.send(ws, { t: "refused", why: "that message is gone" });
+      return this.say(ch, { from: { id: me.id, name: me.name }, text, at: Date.now() }, to && (to.reply ?? to.id));
     }
     // The rest is for those who run it: its owner and admins.
     if (!me.owner) return this.sockets.send(ws, { t: "refused", why: "only the space's owner or an admin can do that" });
@@ -337,7 +355,7 @@ export class Space {
       await this.ctx.storage.put("channels", channels.filter((c) => c !== channel));
       const { [channel]: _, ...locked } = await this.locked();
       await this.ctx.storage.put("private", locked);
-      for (const k of (await this.ctx.storage.list({ prefix: `p:${channel}:` })).keys()) await this.ctx.storage.delete(k);
+      for (const pre of [`p:${channel}:`, `t:${channel}:`]) for (const k of (await this.ctx.storage.list({ prefix: pre })).keys()) await this.ctx.storage.delete(k);
       await this.ctx.storage.delete(`n:${channel}`);
     }
     await this.announce();
@@ -358,14 +376,50 @@ export class Space {
     if (next) await this.ctx.storage.setAlarm(next);
   }
 
-  private async say(channel: string, said: Said) {
+  /** A kept message of a channel by its number, or undefined when it never was or its page has gone. */
+  private async message(channel: string, id: number): Promise<Msg | undefined> {
+    return (await this.ctx.storage.get<Msg[]>(pageKey(channel, Math.ceil(id / PAGE))))?.find((m) => m.id === id);
+  }
+
+  /** A new message, the next number in its channel; a reply counts on the message it answers and joins its thread. */
+  private async say(channel: string, said: Said, reply?: number) {
     const n = (await this.ctx.storage.get<number>(`n:${channel}`) ?? 0) + 1, page = Math.ceil(n / PAGE);
-    const m: Msg = { ...said, id: n };
+    const m: Msg = { ...said, id: n, ...(reply ? { reply } : {}) };
     await this.ctx.storage.put(pageKey(channel, page), [...(await this.ctx.storage.get<Msg[]>(pageKey(channel, page)) ?? []), m]);
     await this.ctx.storage.put(`n:${channel}`, n);
-    if (n % PAGE === 1 && page > KEEP_PAGES) await this.ctx.storage.delete(pageKey(channel, page - KEEP_PAGES));
+    if (n % PAGE === 1 && page > KEEP_PAGES) {
+      // The oldest page goes, and the threads of the messages on it.
+      const old = pageKey(channel, page - KEEP_PAGES);
+      for (const x of await this.ctx.storage.get<Msg[]>(old) ?? []) if (x.replies) await this.ctx.storage.delete(`t:${channel}:${x.id}`);
+      await this.ctx.storage.delete(old);
+    }
+    if (reply) {
+      const key = pageKey(channel, Math.ceil(reply / PAGE)), held = await this.ctx.storage.get<Msg[]>(key) ?? [];
+      await this.ctx.storage.put(key, held.map((x) => x.id === reply ? { ...x, replies: (x.replies ?? 0) + 1 } : x));
+      await this.ctx.storage.put(`t:${channel}:${reply}`, [...(await this.ctx.storage.get<number[]>(`t:${channel}:${reply}`) ?? []), n].slice(-THREAD_MAX));
+    }
     const locked = await this.locked(), out: SpaceOut = { t: "said", channel, ...m };
     for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, locked)) this.sockets.send(sock, out); }
+  }
+
+  /** A message and its newest THREAD_SHOWN replies, oldest first: each page they sit on is read once. */
+  private async thread(channel: string, id: number): Promise<SpaceOut> {
+    const ids = [id, ...(await this.ctx.storage.get<number[]>(`t:${channel}:${id}`) ?? []).slice(-THREAD_SHOWN)], want = new Set(ids);
+    const pages = new Map<number, Msg[]>();
+    for (const p of new Set(ids.map((x) => Math.ceil(x / PAGE)))) pages.set(p, await this.ctx.storage.get<Msg[]>(pageKey(channel, p)) ?? []);
+    const messages = [...pages.values()].flat().filter((m) => want.has(m.id)).sort((a, b) => a.id - b.id);
+    return { t: "thread", channel, id, messages: messages[0]?.id === id ? messages : [] };
+  }
+
+  /** The newest PAGE kept messages of a channel that hold `q`, case aside, oldest first. */
+  private async search(channel: string, q: string): Promise<SpaceOut> {
+    const want = q.toLowerCase(), hits: Msg[] = [];
+    const pages = [...(await this.ctx.storage.list<Msg[]>({ prefix: `p:${channel}:` })).values()].reverse();
+    for (const page of pages) {
+      for (const m of [...page].reverse()) if (m.text.toLowerCase().includes(want) || m.from.name.toLowerCase().includes(want)) hits.push(m);
+      if (hits.length >= PAGE) break;
+    }
+    return { t: "found", channel, q, messages: hits.slice(0, PAGE).reverse() };
   }
 
   private async history(channel: string, before?: number): Promise<SpaceOut> {

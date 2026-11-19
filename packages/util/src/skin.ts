@@ -79,6 +79,8 @@ const BASE = `
 .rb-spaces-chat{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .rb-spaces-log{overflow-y:auto;max-height:40dvh;min-height:80px;overflow-wrap:anywhere}.rb-spaces-log li{padding:2px 0}
 .rb-spaces-log b{font-family:var(--ui-font-head);color:var(--ui-accent);margin-right:.25em}
+.rb-spaces-re{display:block;font-size:12px;color:var(--ui-dim)}.rb-spaces-log .rb-spaces-reply,.rb-spaces-log .rb-spaces-replies{margin-left:.4em;padding:0 4px;min-height:0;font-size:12px;opacity:.7}
+.rb-spaces-log .rb-spaces-reply:hover,.rb-spaces-log .rb-spaces-reply:focus-visible{opacity:1}
 .rb-spaces-online{min-width:110px;max-width:45%;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
 .rb-spaces-online li{justify-content:space-between;flex-wrap:wrap}
 .rb-spaces-older{align-self:center}.rb-spaces-note,.rb-spaces-empty{margin:0;font-size:13px;color:var(--ui-dim)}.rb-spaces-note{color:var(--ui-accent)}

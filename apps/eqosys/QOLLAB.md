@@ -136,6 +136,11 @@ friends who play different games still share one.
   mute and kick, deleting a channel or the space, and deleting an account all reach Qlave as orders.
 - **Messages:** the same rules as party chat (`src/chat.ts`, shared): 280 characters, 2 a second with a burst of 5.
   Kept in pages of 50 in the object's storage, the last 10,000 a channel; `history` reads a page back, oldest first.
+- **Threads (#4794):** `say(channel, text, reply)` answers a message in a thread. A reply is a message of the channel like any
+  other, naming the one it answers (`reply`); a reply to a reply joins the same thread, so threads are one deep. The message it
+  answers counts its replies (`replies`), and `thread(channel, id)` reads it back with its newest 99 replies.
+- **Search (#4794):** `search(channel, q)` finds the newest 50 kept messages in a channel that hold `q` (in the text or the
+  name, case aside), from the channels the asker sees. A socket searches 3 times at once, then once every 5 seconds.
 - **Roles (#4380):** owner, admin, member, guest (`SpaceRole` in `@rustybuns/util/eqosys`). An owner and an admin run the space:
   channels, private channels, the invite, mute and kick; only an owner acts on another admin. A member sees every channel that isn't
   private. A guest sees #general and the private channels they are let into, and no voice channels. In a person's own space the owner
@@ -146,7 +151,7 @@ friends who play different games still share one.
   takes it or them off the list.
 - **Moderation:** the owner and admins mute (text and voice) and kick; anyone reports, which reaches them and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
-- **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
+- **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a reply button on each that opens its thread, a channel search, a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
 - **On eqosys:** the home lists your spaces beside your friends (how many are on in each, from the space's `/on`), and the party you sit in now (its room code, seats and who is ready, from the party's `/peek`; `src/qollab/side.ts`). Each space opens on `/spaces`, the same `spacesPanel`, on a token for eqosys's own pages (`GET /api/home-token`, ten minutes, asked again while open). Only the spaces' doors take that token, and only from eqosys's own origin.
 - **Voice on `/spaces`:** that page alone adds Qlave's origin to its `connect-src` (`src/csp.ts`), so its voice channels join as a game's do.
 - **Not yet:** Qlave telling eqosys who is in each voice room (QLAVE.md §4).
