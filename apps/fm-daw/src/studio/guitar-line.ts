@@ -207,6 +207,8 @@ export class GuitarLine {
     this.drop(who);
     const ctx = this.ctx;
     const amp = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
+    // an amp whose audio thread threw plays silence and says nothing else: say it, so a silent guitar has a reason
+    amp.onprocessorerror = (e) => console.error(`Q Amp stopped on ${who === "me" ? "your" : `player ${who}'s`} guitar`, e);
     const gain = new GainNode(ctx, { gain: 1 });
     const pan = who === "me" ? null : new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1.5, rolloffFactor: 0.7 });
     amp.connect(gain);

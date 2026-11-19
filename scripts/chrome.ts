@@ -49,12 +49,13 @@ const quietStart = ["--no-first-run", "--no-default-browser-check", "--password-
  * has sat silent past 30 s while the next went straight up (#3350, #3435). Each stall's error says what Chrome's processes were blocked on. */
 export interface Chrome { cdp: Cdp; dir: string; stop: () => void }
 
-export async function launchChrome(): Promise<Chrome> {
+/** A headless Chrome; `flags` are added to its command line (a check that needs no sound card asks for `--disable-audio-output`). */
+export async function launchChrome(flags: string[] = []): Promise<Chrome> {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
   const stalls: string[] = [];
   for (const wait of [20_000, 30_000]) {
-    const started = await startChrome(bin, wait);
+    const started = await startChrome(bin, wait, flags);
     if ("cdp" in started) {
       if (stalls.length) console.warn(`Chrome stalled once, then started:\n${stalls.join("\n")}`);
       return started;
@@ -65,9 +66,9 @@ export async function launchChrome(): Promise<Chrome> {
   throw new Error(`Chrome did not start:\n${stalls.join("\n")}`);
 }
 
-async function startChrome(bin: string, wait: number): Promise<Chrome | { exited: boolean; stall: string }> {
+async function startChrome(bin: string, wait: number, flags: string[]): Promise<Chrome | { exited: boolean; stall: string }> {
   const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
-  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, ...quietStart, ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
+  const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, ...quietStart, ...glFlags(), ...flags, "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
   const watch = dieWith(dir, proc.pid);
   const said: string[] = [];
   const drained = (async () => { for await (const line of lines(proc.stderr)) said.push(line), said.length > 8 && said.shift(); })();
