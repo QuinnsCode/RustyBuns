@@ -712,7 +712,7 @@ const harness = {
   /** In the bigger bar, at the panel: reset a tripped breaker (or all of them). */
   resetBreaker: (circuit?: string) => big?.reset(circuit) ?? { ok: false, why: "no breaker panel here" },
   reset: () => { switchedOn.clear(); load(world.level); },
-  /** The show: the desk and the stage, without the keys (desk.nudge(channel, { fader, send, trim }), desk.notch(channel, hz), desk.start(), desk.fix(kind), desk.run(seconds)). */
+  /** The show: the desk and the stage, without the keys (desk.nudge(channel, { fader, send, trim }), desk.notch(channel, hz), desk.start(), desk.fix(kind), desk.amp(knob, by) at the guitar amp before doors, desk.run(seconds)). */
   get desk() { return foh?.desk ?? null; },
   /** The DJ booth's decks: play(deck, on?), fader(channel, 0..1), cross(-1..1), pitch(deck, per cent); state().decks reads them. */
   get decks() { return dj?.decks ?? null; },

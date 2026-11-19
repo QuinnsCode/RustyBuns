@@ -1,7 +1,8 @@
 // The show on the page: the band on stage (a marker over whoever needs you), the desk's card with the song, the crowd
 // meter, what the band is asking for, what rings, and the selected channel strip. At the desk: 1 to 5 pick a channel,
 // [ ] its fader, ; ' its wedge send, , . its trim, J / K move the notch finder a band, N puts a notch there or takes it
-// out, Enter opens the doors. On stage: F hands up the spare guitar or swaps the bass cable, Q / E turn the wedge.
+// out, Enter opens the doors. On stage: F hands up the spare guitar or swaps the bass cable, Q / E turn the wedge. At
+// the guitar amp, before doors (soundcheck): 1 to 5 pick a knob, [ ] turn it; the show's guitar is baked through it.
 // main.ts calls `showView` once per world, then `key`, `tick` each frame, and `hint` for the line under the crosshair.
 import * as THREE from "three";
 import { BANDS } from "@rustybuns/gear";
@@ -11,9 +12,10 @@ import { doors } from "../clock.ts";
 import { REACH, type Answer, type World } from "../sim.ts";
 import { aim } from "./dive-bar.ts";
 import { showSound } from "../audio/stems.ts";
+import { AMP_KNOBS, type AmpKnob } from "../audio/amp.ts";
 import {
-  BAND, CHANNELS, CUE_TEXT, type Channel, type Desk, type Move, type Show, atDesk, fixOnStage, mix, newDesk, newShow, notch, nudge,
-  ring, showState, songAt, startShow, stepShow,
+  SET_LIST, BAND, CHANNELS, CUE_TEXT, type Channel, type Desk, type Move, type Show, atAmp, atDesk, fixOnStage, mix, newDesk, newShow, notch, nudge,
+  ring, setAmp, showState, songAt, startShow, stepShow,
 } from "./show.ts";
 
 export type ShowView = {
@@ -22,13 +24,16 @@ export type ShowView = {
   /** Each frame: doors on the clock, the set's tick, the card and the sound. */
   tick(dt: number): void;
   hint(): string | null;
-  state(): ReturnType<typeof showState>;
+  /** The show as the harness reads it, and how many songs have their guitar baked through the amp. */
+  state(): ReturnType<typeof showState> & { baked: number };
   /** The harness's hands on the desk and the stage (what the keys do, without walking the keys). */
   desk: {
     nudge(ch: Channel, m: Move): void;
     notch(ch: Channel, hz: number): Answer;
     start(): Answer;
     fix(kind: "broken-string" | "dying-cable"): Answer;
+    /** Soundcheck at the guitar amp: turn a knob by `by` (you stand at the amp, before doors). */
+    amp(knob: AmpKnob, by: number): Answer;
     /** Run the set on for `seconds` while you stand where you are. */
     run(seconds: number): void;
   };
@@ -40,7 +45,10 @@ const dbText = (db: number) => (Number.isFinite(db) ? `${db > 0 ? "+" : ""}${Mat
 
 export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => World): ShowView {
   const desk: Desk = newDesk(), show: Show = newShow(), sound = showSound();
-  let sel: Channel = "vocal", finder = BANDS.indexOf(2500);
+  let sel: Channel = "vocal", finder = BANDS.indexOf(2500), knob: AmpKnob = "gain";
+  // Bake the guitar through the amp as the band walks on with it, and again each time you set it.
+  sound.bake(show.amp);
+  const turn = (k: AmpKnob, by: number) => { const a = setAmp(getWorld(), show, k, by); if (a.ok) sound.bake(show.amp); return a; };
   const group = new THREE.Group();
   const mat = (color: number) => new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
   const stage = new THREE.Mesh(new THREE.BoxGeometry(8, 0.02, 3), mat(0x2a2522));
@@ -81,6 +89,13 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     return false;
   }
 
+  function ampKey(code: string): boolean {
+    const n = Number(code.replace("Digit", ""));
+    if (code.startsWith("Digit") && n >= 1 && n <= AMP_KNOBS.length) return (knob = AMP_KNOBS[n - 1]!), true;
+    if (code === "BracketLeft" || code === "BracketRight") return turn(knob, code === "BracketLeft" ? -0.5 : 0.5), true;
+    return false;
+  }
+
   function render(ringing: number[]) {
     const s = showState(getWorld(), desk, show), m = s.mix[sel], strip = desk[sel];
     document.body.classList.toggle("show-on", show.on || show.done);
@@ -94,6 +109,12 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
       `<b>${sel}</b> ${m.db} dB (wants ${m.target})${m.dead ? " <span class=trip>dead</span>" : m.ok ? "" : " <span class=trip>off</span>"}`,
       `<small>trim ${dbText(strip.trim)}, wedge ${dbText(strip.send)}, notches ${strip.eq.map((b) => hzText(b.hz)).join(" ") || "none"}; finder ${hzText(BANDS[finder]!)}</small>`,
     ];
+    // At the amp before doors, its panel in place of the channel strip.
+    if (s.atAmp && !show.on && !show.done) {
+      lines.splice(-2, 2,
+        `<b>Guitar amp</b> ${AMP_KNOBS.map((k) => (k === knob ? `<b>${k} ${show.amp[k]}</b>` : `${k} ${show.amp[k]}`)).join(", ")}`,
+        `<small>${sound.ready < SET_LIST.length ? `baking the guitar through it, ${sound.ready} of ${SET_LIST.length} songs` : "the guitar is baked through it"}</small>`);
+    }
     const html = lines.map((l) => `<div>${l}</div>`).join("");
     if (html !== last) card.innerHTML = last = html;
   }
@@ -110,6 +131,7 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     key(code) {
       const w = getWorld();
       if (atDesk(w) && deskKey(code)) return sound.start(), true;
+      if (atAmp(w) && !show.on && !show.done && ampKey(code)) return true;
       const fix = stageFix();
       if (code === "KeyF" && fix && !w.held) return fixOnStage(w, show, fix), true;
       if ((code === "KeyQ" || code === "KeyE") && nearWedge()) return aim(w, "wedge-vox", { turn: ((code === "KeyQ" ? -1 : 1) * Math.PI) / 12 }), true;
@@ -119,20 +141,22 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     hint() {
       const fix = stageFix();
       if (fix) return fix === "broken-string" ? "F hand up the spare guitar" : "F swap the bass cable";
+      if (atAmp(getWorld()) && !show.on && !show.done) return "1-5 amp knob, [ ] turn it";
       if (atDesk(getWorld())) return "1-5 channel, [ ] fader, ; ' wedge send, , . trim, J / K / N notch, Enter doors";
       if (nearWedge()) return "Q / E turn the wedge";
       return null;
     },
-    state: () => showState(getWorld(), desk, show),
+    state: () => ({ ...showState(getWorld(), desk, show), baked: sound.ready }),
     desk: {
       nudge: (ch, m) => nudge(desk, ch, m),
       notch: (ch, hz) => notch(desk, ch, hz),
       start: () => startShow(show),
       fix: (kind) => fixOnStage(getWorld(), show, kind),
+      amp: (k, by) => turn(k, by),
       run(seconds) { for (let t = 0; t < seconds && show.on; t += 0.1) stepShow(getWorld(), desk, show, 0.1); },
     },
     dispose() {
-      sound.stop();
+      sound.close();
       document.body.classList.remove("at-show", "show-on");
       scene.remove(group);
       card.remove();

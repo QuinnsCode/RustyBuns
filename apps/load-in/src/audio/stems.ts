@@ -2,7 +2,11 @@
 // tempo and root. Each stem goes through its channel strip as the desk sets it (a gain from its level in the house and a
 // peaking filter per notch), and while the vocal loop rings a howl at the ringing band rises over the lot. A broken
 // string takes the guitar out; a dying cable makes the bass crackle in and out. A -1 dBFS limiter holds the mix.
+// The guitar is a clean DI here; `showSound().bake` has a worker run it through the amp as set at soundcheck (amp.ts),
+// and the baked loop takes the DI's place as each song comes back.
 import { CHANNELS, type Channel, type Desk, type Mixed, NOTCHES, SET_LIST, type Song } from "../venues/show.ts";
+import { check } from "@rustybuns/util/guard";
+import { type AmpKnobs, BAKE_RATE, BakeReply } from "./amp.ts";
 
 /** The house level at the desk that plays at full scale, dB SPL. */
 const REF_DB = 108;
@@ -37,10 +41,12 @@ export function stems(rate: number, song: Song): Record<Channel, Float32Array<Ar
       add((e * beat) / 2, beat / 2, (x) => 0.5 * Math.tanh(2.5 * Math.sin(tau * f * x)) * Math.min(1, x * 300) * Math.exp(-x * 2));
     }
   });
+  // The guitar as it leaves the pickups (a DI): root and fifth, plucked, clean. The amp gives it its grit (amp.ts).
+  const pluck = (f: number, x: number) => Math.sin(tau * f * x) + 0.5 * Math.sin(tau * 2 * f * x) * Math.exp(-x * 6) + 0.25 * Math.sin(tau * 3 * f * x) * Math.exp(-x * 10);
   const guitar = part((add) => {
     for (let e = 0; e < 16; e++) {
       const f = 2 * r * (steps[e % 8] ?? 1);
-      add((e * beat) / 2, beat / 2.2, (x) => 0.35 * Math.tanh(5 * (Math.sin(tau * f * x) + 0.7 * Math.sin(tau * 1.5 * f * x))) * Math.exp(-x * 4));
+      add((e * beat) / 2, beat / 2.2, (x) => 0.18 * (pluck(f, x) + 0.8 * pluck(1.5 * f, x)) * Math.min(1, x * 400) * Math.exp(-x * 3));
     }
   });
   // The vocal: a pentatonic line in half notes, a few harmonics shaped like an open vowel, with vibrato.
@@ -67,9 +73,37 @@ export function showSound() {
   let ctx: AudioContext | null = null;
   let bus: GainNode | null = null;
   let howl: { osc: OscillatorNode; gain: GainNode } | null = null;
-  let playing = -1;
+  let playing = -1, startedAt = 0;
   let sources: AudioBufferSourceNode[] = [];
   const strips = new Map<Channel, Strip>();
+  // The amp's worker, its last ask, and each song's guitar as it came back baked through the knobs of that ask.
+  let worker: Worker | null = null, asked = 0, bakedFor = "";
+  const baked: (Float32Array<ArrayBuffer> | null)[] = SET_LIST.map(() => null);
+  let guitar: AudioBufferSourceNode | null = null;
+
+  /** A looping source for these samples into a channel, `offset` seconds in. */
+  function loop(c: AudioContext, data: Float32Array<ArrayBuffer>, ch: Channel, offset = 0) {
+    const buf = c.createBuffer(1, data.length, BAKE_RATE);
+    buf.copyToChannel(data, 0);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(strips.get(ch)!.gain);
+    src.start(0, offset % buf.duration);
+    sources.push(src);
+    return src;
+  }
+
+  function landed(r: BakeReply) {
+    if (r.id !== asked) return;
+    baked[r.song] = r.data;
+    // The song on now swaps its DI for the baked guitar where the loop has got to.
+    if (ctx && r.song === playing && guitar) {
+      guitar.stop();
+      sources = sources.filter((x) => x !== guitar);
+      guitar = loop(ctx, r.data, "guitar", ctx.currentTime - startedAt);
+    }
+  }
 
   function build(c: AudioContext) {
     const limiter = c.createDynamicsCompressor();
@@ -106,20 +140,29 @@ export function showSound() {
     playing = index;
     const song = SET_LIST[index];
     if (!song) return;
-    const parts = stems(c.sampleRate, song);
+    const parts = stems(BAKE_RATE, song);
+    startedAt = c.currentTime;
     for (const ch of CHANNELS) {
-      const buf = c.createBuffer(1, parts[ch].length, c.sampleRate);
-      buf.copyToChannel(parts[ch], 0);
-      const src = c.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      src.connect(strips.get(ch)!.gain);
-      src.start();
-      sources.push(src);
+      const src = loop(c, ch === "guitar" ? (baked[index] ?? parts.guitar) : parts[ch], ch);
+      if (ch === "guitar") guitar = src;
     }
   }
 
   return {
+    /** Bake the guitar through the amp at these knobs, in the worker; the same knobs twice is one bake. */
+    bake(knobs: AmpKnobs) {
+      const key = JSON.stringify(knobs);
+      if (key === bakedFor) return;
+      bakedFor = key;
+      baked.fill(null);
+      if (!worker) {
+        worker = new Worker(new URL("./amp-worker.ts", import.meta.url), { type: "module" });
+        worker.onmessage = (e: MessageEvent) => { const r = check(BakeReply, e.data); if (r) landed(r); };
+      }
+      worker.postMessage({ id: ++asked, knobs });
+    },
+    /** How many of the set's songs have their guitar baked through the amp as it is set now. */
+    get ready() { return baked.filter(Boolean).length; },
     /** Start the sound (on a click or a key). */
     start() {
       if (!ctx) build((ctx = new AudioContext()));
@@ -129,8 +172,16 @@ export function showSound() {
     stop() {
       for (const s of sources) s.stop();
       sources = [];
+      guitar = null;
       playing = -1;
       if (ctx && howl) howl.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+    },
+    /** Done with the show: the sound stops and the amp's worker goes. */
+    close() {
+      this.stop();
+      worker?.terminate();
+      worker = null;
+      bakedFor = "";
     },
     /** Follow the desk: the song, each channel's level and notches, a dead or crackling part, and the howl. */
     update(p: Played | null) {

@@ -4,11 +4,13 @@
 // it and falls while anything is wrong. Feedback is computed (packages/gear `feedback`): the vocal mic hears the wedge
 // at the distance and angle they stand at, through the channel's trim, send and EQ, and above 0 dB a band rings.
 // Through the set the band asks for things: "more me" (a hand at the wedge), a broken string (hand the spare guitar
-// up), a dying cable on the bass (swap it at the bass rig). Plain data and one `stepShow`, no DOM.
+// up), a dying cable on the bass (swap it at the bass rig). Before doors is soundcheck: at the guitar amp you set its
+// knobs, and the show's guitar is that stem baked through the amp (audio/amp.ts). Plain data and one `stepShow`, no DOM.
 import { clamp } from "@rustybuns/util";
 import { type EqBand, type Feedback, UNITY_LOOP_DB, aimTo, feedback, offAxisLoss, source } from "@rustybuns/gear";
 import { assist } from "../assists.ts";
 import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts";
+import { type AmpKnob, type AmpKnobs, newAmp, turnKnob } from "../audio/amp.ts";
 
 export const SHOW: Level = {
   name: "show",
@@ -123,9 +125,11 @@ export type Show = {
   /** Seconds the PA rang, over the whole set. */
   rang: number;
   next: number;
+  /** The guitar amp's knobs as you set them at soundcheck: the show's guitar is baked through them (audio/amp.ts). */
+  amp: AmpKnobs;
 };
 
-export const newShow = (): Show => ({ t: 0, on: false, done: false, crowd: 60, open: [], fixed: [], missed: [], rang: 0, next: 0 });
+export const newShow = (): Show => ({ t: 0, on: false, done: false, crowd: 60, open: [], fixed: [], missed: [], rang: 0, next: 0, amp: newAmp() });
 
 /** Doors: the set starts. */
 export function startShow(s: Show): Answer {
@@ -235,6 +239,17 @@ export function fixOnStage(w: World, s: Show, kind: "broken-string" | "dying-cab
   return { ok: true };
 }
 
+/** Whether you stand at the guitar amp, close enough to turn its knobs. */
+export const atAmp = (w: World) => near(w, item(w, "amp-gtr"));
+
+/** Soundcheck: turn one of the guitar amp's knobs by `by` (0 to 10). Once the band is on, the amp is theirs. */
+export function setAmp(w: World, s: Show, knob: AmpKnob, by: number): Answer {
+  if (s.on || s.done) return { ok: false, why: "the band is playing: set the amp at soundcheck" };
+  if (!atAmp(w)) return { ok: false, why: "the guitar amp is out of reach" };
+  turnKnob(s.amp, knob, by);
+  return { ok: true };
+}
+
 /** Whether you stand at the desk, close enough to work it. */
 export const atDesk = (w: World) => near(w, item(w, "desk"));
 
@@ -246,6 +261,6 @@ export function showState(w: World, d: Desk, s: Show) {
     on: s.on, done: s.done, t: r1(s.t), song: song.name, index, at: r1(at), solo: s.on && soloOn(s.t), crowd: Math.round(s.crowd),
     open: s.open.map((c) => c.kind), fixed: s.fixed, missed: s.missed, rang: r1(s.rang),
     ringing: r.ringing, margin: r1(r.margin), worstHz: r.worst.hz, me: r1(meDb(w, d)), wants: s.open.find((c) => c.wants)?.wants ?? null,
-    mix: mix(d, s), desk: d, atDesk: atDesk(w),
+    mix: mix(d, s), desk: d, atDesk: atDesk(w), amp: { ...s.amp }, atAmp: atAmp(w),
   };
 }
