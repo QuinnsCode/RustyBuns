@@ -46,13 +46,15 @@
       {
         "id": "bad",
         "say": "It looked at me.",
-        "book": "They do that. It stops when I close."
+        "book": "They do that. It stops when I close.",
+        "next": "bind-looked"
       },
       {
         "id": "more",
         "say": "Where's the next one?",
         "book": "Now we are talking. Well. I am. You are fetching.",
-        "nick": "the eager one"
+        "nick": "the eager one",
+        "next": "bind-eager"
       }
     ]
   },
@@ -69,12 +71,14 @@
       {
         "id": "plan",
         "say": "That was the plan.",
-        "book": "Then the plan is also on the ground."
+        "book": "Then the plan is also on the ground.",
+        "next": "downed-plan"
       },
       {
         "id": "help",
         "say": "Can you do anything?",
-        "book": "I can write it down. That is not nothing. Ask anyone I have written down."
+        "book": "I can write it down. That is not nothing. Ask anyone I have written down.",
+        "next": "downed-asked"
       }
     ]
   },
@@ -303,7 +307,8 @@
       {
         "id": "else",
         "say": "And if I don't?",
-        "book": "It comes back with friends, and I have to make room. I hate making room."
+        "book": "It comes back with friends, and I have to make room. I hate making room.",
+        "next": "mythic-unbound"
       }
     ]
   },
@@ -357,7 +362,8 @@
       {
         "id": "answers",
         "say": "Answers.",
-        "book": "One answer, then. The thumbprint on my pages is not mine. Books do not have thumbs. Ask again later."
+        "book": "One answer, then. The thumbprint on my pages is not mine. Books do not have thumbs. Ask again later.",
+        "next": "mythic-thumb"
       },
       {
         "id": "rest",
@@ -1180,6 +1186,114 @@
         "say": "I'm closing this book.",
         "book": "You can try. I have never closed for good.",
         "note": "Tried to close the book."
+      }
+    ]
+  },
+  {
+    "id": "bind-looked",
+    "beat": "bind",
+    "asked": true,
+    "ask": "Item {item}. This one looked at you as well. You looked back for longer than last time.",
+    "replies": [
+      {
+        "id": "used",
+        "say": "I'm getting used to it.",
+        "book": "That is the part I would worry about. I do not worry. I am only mentioning it."
+      },
+      {
+        "id": "away",
+        "say": "I looked away first.",
+        "book": "Smart. Whoever looks away first gets to leave."
+      }
+    ]
+  },
+  {
+    "id": "bind-eager",
+    "beat": "bind",
+    "asked": true,
+    "ask": "Item {item}. You asked for the next one before the last one was dry. Here it is. Happy?",
+    "replies": [
+      {
+        "id": "yes",
+        "say": "Yes.",
+        "book": "Then I picked the right hands. Do not tell them I said so."
+      },
+      {
+        "id": "fast",
+        "say": "It's going fast.",
+        "book": "The start is always quick. The end is slow. I have read ahead."
+      }
+    ]
+  },
+  {
+    "id": "downed-asked",
+    "beat": "downed",
+    "asked": true,
+    "ask": "{down} is down, and you are about to ask whether I can do anything. I looked into it.",
+    "replies": [
+      {
+        "id": "and",
+        "say": "And?",
+        "book": "I can turn to a clean page. It helps me. Watching may help you."
+      },
+      {
+        "id": "skip",
+        "say": "I wasn't going to ask.",
+        "book": "You were. It is all over your face, and your face is written in me."
+      }
+    ]
+  },
+  {
+    "id": "downed-plan",
+    "beat": "downed",
+    "asked": true,
+    "ask": "{down} has gone over. Was this one the plan as well? I like to keep the plans together.",
+    "replies": [
+      {
+        "id": "yes",
+        "say": "Still the plan.",
+        "book": "Then it goes in the plans folder. The folder is on the ground with everything else."
+      },
+      {
+        "id": "no",
+        "say": "No. That was a mistake.",
+        "book": "A mistake I can work with. Mistakes get fixed. Plans get defended."
+      }
+    ]
+  },
+  {
+    "id": "mythic-unbound",
+    "beat": "mythic",
+    "asked": true,
+    "ask": "{mythic} is beaten in {region}. The one you would not bind has written to me. It was not a friendly letter.",
+    "replies": [
+      {
+        "id": "read",
+        "say": "What did it say?",
+        "book": "Your name, spelled wrong, eleven times. I fixed the spelling. I am not proud of that."
+      },
+      {
+        "id": "bind",
+        "say": "Fine. I'll bind them.",
+        "book": "Fine will do. Fine fills a page as well as glad does."
+      }
+    ]
+  },
+  {
+    "id": "mythic-thumb",
+    "beat": "mythic",
+    "asked": true,
+    "ask": "{mythic} is down. You wanted answers, and I said later. It is later. Ask about the thumbprint.",
+    "replies": [
+      {
+        "id": "whose",
+        "say": "Whose thumb is it?",
+        "book": "The last one who carried me. Pressed hard, near the end. People grip when they are scared."
+      },
+      {
+        "id": "mine",
+        "say": "Will it be mine next?",
+        "book": "Only if you press that hard. So far you hold me like a menu."
       }
     ]
   }

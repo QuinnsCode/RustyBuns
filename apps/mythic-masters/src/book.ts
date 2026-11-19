@@ -3,7 +3,7 @@
 // lines are data (content/book.json, edited with `bun run cms` and checked by `Lines` below), so a writer adds beats without touching this file. What
 // you answered is kept in the save (`Journey.talk`), with the region you said it in, and quoted back later through a
 // talk's `recall`. No DOM here: main.ts draws a moment and waits for the reply; book-party.ts carries a host's reply.
-import { arr, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, Bad, bool, int, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import type { Journey } from "./journey.ts";
 import { ARCHETYPES } from "./roster.ts";
 import raw from "../content/book.json";
@@ -32,11 +32,24 @@ const Reply = obj({
  * `{said}` quoting it, `{where}` and `{ago}` saying where and how far back you said it. */
 const Talk = obj({
   id: str(40), beat: oneOf(BEATS), from: opt(int(1, 64)), region: opt(str(64)),
+  /** A branch: it plays only once a reply's `next` has asked for it, never in the beat's usual order. */ asked: opt(bool()),
   lead: opt(arr(str(160), 10)), ask: str(240), replies: arr(Reply, 3, { min: 2 }),
   recall: opt(arr(obj({ of: str(80), line: str(240) }), 8)),
 });
 export type Talk = Of<typeof Talk>;
-export const Lines = arr(Talk, 500, { min: 1 });
+const Talks = arr(Talk, 500, { min: 1 });
+/** The whole lines file. A reply's `next` has to name another talk at its own beat, and a branch has to have a reply that asks for it. */
+export const Lines: Guard<Talk[]> = (v) => {
+  const talks = Talks(v), wanted = new Set<string>();
+  talks.forEach((t, i) => t.replies.forEach((r, k) => {
+    if (!r.next) return;
+    const to = talks.find((x) => x.id === r.next);
+    if (!to || to === t || to.beat !== t.beat) throw new Bad(`another talk at the ${t.beat} beat`, [i, "replies", k, "next"]);
+    wanted.add(to.id);
+  }));
+  talks.forEach((t, i) => { if (t.asked && !wanted.has(t.id)) throw new Bad("a branch some reply's next asks for", [i, "asked"]); });
+  return talks;
+};
 /** A broken lines file fails loudly here, at load, rather than as a silent Book. */
 export const LINES: readonly Talk[] = Lines(raw);
 
@@ -101,9 +114,8 @@ function fill(text: string, j: Reader, ctx: Ctx, said = "", at?: number) {
 
 /** The next thing the Book has to say at `beat`, or null when it has said all it has for it (or nothing for this region). */
 export function momentFor(beat: Beat, j: Reader, ctx: Ctx = {}, lines: readonly Talk[] = LINES): Moment | null {
-  const heard = j.talk?.heard ?? [];
-  const open = lines.filter((t) => t.beat === beat && !heard.includes(t.id) && (t.from ?? 1) <= (ctx.n ?? 1) && (!t.region || t.region === ctx.regionId));
-  const asked = j.talk?.next ?? [];
+  const heard = j.talk?.heard ?? [], asked = j.talk?.next ?? [];
+  const open = lines.filter((t) => t.beat === beat && !heard.includes(t.id) && (t.from ?? 1) <= (ctx.n ?? 1) && (!t.region || t.region === ctx.regionId) && (!t.asked || asked.includes(t.id)));
   const talk = open.find((t) => t.region) ?? open.find((t) => asked.includes(t.id)) ?? open[0];
   if (!talk) return null;
   const said = j.talk?.said ?? {};

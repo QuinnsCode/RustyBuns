@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
+import { check } from "@rustybuns/util/guard";
 import { answer, holdOf, LINES, Lines, lossBeats, momentFor, notesOf, spendInk, tally, type Beat, type Ctx, type Moment } from "../src/book.ts";
 import { bookParty, seatOf } from "../src/book-party.ts";
 import { demandOf } from "../src/demand.ts";
@@ -95,8 +96,39 @@ describe("the Book talks back", () => {
     beat(j, "campfire", "nothing", { n: 1 });
     expect(beat(j, "campfire", "home", { n: 1 }).m.talk.id).toBe("fire-4");
     expect(momentFor("campfire", j, { n: 1 })!.talk.id).toBe("fire-3");
-    // every `next` names a talk at the same beat
-    for (const t of LINES) for (const r of t.replies) if (r.next) expect(LINES.find((x) => x.id === r.next)?.beat).toBe(t.beat);
+  });
+
+  test("a bind, a member down and a mythic each have a branch: it plays only when your reply asked for it", () => {
+    for (const [b, asks, plain, branch, usual] of [
+      ["bind", "bad", "good", "bind-looked", "bind-2"],
+      ["bind", "more", "good", "bind-eager", "bind-2"],
+      ["downed", "help", "sorry", "downed-asked", "downed-again"],
+      ["downed", "plan", "sorry", "downed-plan", "downed-again"],
+      ["mythic", "else", "enough", "mythic-unbound", "mythic-2"],
+    ] as const) {
+      const said = (reply: string) => {
+        const j = newJourney(["hodag", "squonk", "jackalope"])!;
+        beat(j, b, reply, { n: 1 });
+        const heard: string[] = [];
+        for (let m; (m = momentFor(b, loadJourney(JSON.stringify(j))!, { n: 2 })) && heard.length < 20;) { heard.push(m.talk.id); answer(j, m, m.talk.replies[0]!.id); }
+        return heard;
+      };
+      expect([b, asks, said(asks)[0]]).toEqual([b, asks, branch]);
+      expect(said(asks)[1]).toBe(usual); // then the usual order picks up
+      expect(said(plain)).not.toContain(branch); // nobody asked: the Book never says it
+      expect(said(plain)[0]).toBe(usual);
+    }
+  });
+
+  test("the lines file: a next has to name another talk at its own beat, and a branch needs a reply that asks for it", () => {
+    const talk = (id: string, beat: Beat, next?: string, asked?: boolean) => ({ id, beat, asked, ask: "?", replies: [{ id: "a", say: "a", book: "a", next }, { id: "b", say: "b", book: "b" }] });
+    expect(Lines([talk("one", "bind", "two"), talk("two", "bind", undefined, true)]).length).toBe(2);
+    for (const [why, file] of [
+      ["no such talk", [talk("one", "bind", "three"), talk("two", "bind")]],
+      ["a talk at another beat", [talk("one", "bind", "two"), talk("two", "campfire")]],
+      ["itself", [talk("one", "bind", "one"), talk("two", "bind")]],
+      ["a branch nobody asks for", [talk("one", "bind"), talk("two", "bind", undefined, true)]],
+    ] as const) expect([why, check(Lines, file)]).toEqual([why, null]);
   });
 
   test("a lost fight: streak before a member down, the whole line-up before the streak", () => {
