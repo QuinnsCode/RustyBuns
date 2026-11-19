@@ -802,7 +802,7 @@ fn move_body(m: &mut Match, side: usize, i: &Input) {
     f.vel.z += (wz - f.vel.z) * k * stun_k;
     if f.state == State::Stun || !f.on_ground {
         let drag = exp(-(if f.on_ground {
-            6.0
+            4.5
         } else if f.state == State::Stun {
             2.2
         } else {
@@ -1213,7 +1213,7 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
             (if mv.slot == Slot::Launcher {
                 0.9
             } else if mv.slot == Slot::Heavy || mv.slot == Slot::Ultimate {
-                0.45
+                0.18
             } else {
                 0.25
             }) + (if mv.field == GALE { 0.15 } else { 0.0 }),

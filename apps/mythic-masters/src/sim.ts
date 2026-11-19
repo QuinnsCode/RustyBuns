@@ -385,7 +385,7 @@ function moveBody(m: Match, side: number, i: Input) {
   f.vel.x += (wish.x - f.vel.x) * k * (f.state === "stun" ? 0.15 : 1);
   f.vel.z += (wish.z - f.vel.z) * k * (f.state === "stun" ? 0.15 : 1);
   // Knockback bleeds off, faster on the ground, so a launch is a distance rather than a trip to the horizon.
-  if (f.state === "stun" || !f.onGround) { const drag = exp(-(f.onGround ? 6 : f.state === "stun" ? 2.2 : 1.2) * DT); f.vel.x *= drag; f.vel.z *= drag; }
+  if (f.state === "stun" || !f.onGround) { const drag = exp(-(f.onGround ? 4.5 : f.state === "stun" ? 2.2 : 1.2) * DT); f.vel.x *= drag; f.vel.z *= drag; }
 
   // Facing: toward the opponent while you're on the ground (not tumbling or dashing), attack, guard or
   // fly (flyers strafe); in the air off a jump you face where you go. Big bodies swing wide.
@@ -559,7 +559,8 @@ function hit(m: Match, by: number, on: number, move: Move, power: number, from: 
 
   // Super armour: a heavy body winding up a big move takes a light hit without flinching (dread gets through).
   if (!rear && move.field !== "shadow" && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
-  const up = spike ? -SPIKE.down : Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
+  // A heavy blow drives the body back along the ground (a short hop, then a skid), not up into a floating arc (#5198).
+  const up = spike ? -SPIKE.down : Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.18 : 0.25) + (move.field === "gale" ? 0.15 : 0));
   const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1) * piled(m, d);
   const ang = flat(from, d.pos) > 0.05 ? angleTo(from, d.pos) : a.yaw, h = Math.sqrt(1 - up * up);
   d.vel.x = cos(ang) * kb * h; d.vel.z = sin(ang) * kb * h; d.vel.y = kb * up;

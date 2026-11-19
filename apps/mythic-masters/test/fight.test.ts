@@ -214,6 +214,22 @@ describe("weighty attacks", () => {
     expect(frames(m.f[0].moves.heavy, true).recovery).toBeGreaterThan(frames(m.f[0].moves.heavy).recovery * 1.4);
   });
 
+  test("a heavy blow on a worn body drives it back along the ground, a short hop and a skid, not a floating arc", () => {
+    const m = newMatch(bruiser, tank), [me, it] = m.f;
+    Object.assign(me, { pos: { x: 0, y: 0, z: 0 }, yaw: 0 });
+    Object.assign(it, { pos: { x: 2.6, y: 0, z: 0 }, yaw: Math.PI, launch: 60 }); // a few hits in, so the blow carries
+    let peak = 0, air = 0, from = 0;
+    for (let t = 0; t < 120 && !(from && it.state !== "stun"); t++) {
+      step(m, [hold({ heavy: t < 2 }), IDLE]);
+      if (!from && it.state === "stun") from = it.pos.x;
+      if (from) { peak = Math.max(peak, it.pos.y); air += it.onGround ? 0 : 1; }
+    }
+    expect(from).toBeGreaterThan(0);
+    expect(peak).toBeLessThan(0.2); // was 0.4 m, 0.37 s in the air
+    expect(air).toBeLessThan(0.25 * 60);
+    expect(it.pos.x - from).toBeGreaterThan(1.2);
+  });
+
   // The target slips 70 degrees round the swinger at tick `at` (a sidestep, without the walk): early in the wind-up the
   // swing turns to follow and lands, past its lock it goes where it was pointed and whiffs.
   test.each([["early, the swing follows", 2, true], ["past the lock, it whiffs", 20, false]] as const)("a sidestep %s", (_name, at, lands) => {
