@@ -6,7 +6,11 @@
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown, type World, walkTo } from "../src/sim.ts";
 import { CROWD, DIVE_BAR, PASS, aim, crowdState, master, raise, scores, settle } from "../src/venues/dive-bar.ts";
-import { expectTonight, letIn } from "../src/crowd/crowd.ts";
+import { type CrowdSpot, drawn, expectTonight, house, letIn, regions } from "../src/crowd/crowd.ts";
+import { AMPHITHEATRE, CROWD as BENCHES, amphitheatreState, floorAt } from "../src/venues/amphitheatre.ts";
+import { BAND_NIGHT, CROWD as BAND_FLOOR } from "../src/venues/band-night.ts";
+import { AUDIENCE, SHOW } from "../src/venues/show.ts";
+import type { Level } from "../src/sim.ts";
 import { hear, switchedOnIsFed } from "../src/audio/hear.ts";
 
 const DEG = Math.PI / 180;
@@ -82,4 +86,41 @@ test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and wi
   const fixed = crowdState(w);
   expect(scores(w).full.pass).toBe(true);
   expect(fixed.regions.map((r) => r.doing)).toEqual(["dancing", "dancing", "dancing"]);
+});
+
+test("a part-sold amphitheatre fills its benches from row 1 back, and the bowl's score doesn't hear them", () => {
+  const w = newWorld(AMPHITHEATRE), before = amphitheatreState(w).score;
+  expectTonight(w, 3000);
+  const c = letIn(w, BENCHES), rows = regions(c, () => ({ soundcheck: null, full: null }), 98, 6);
+  expect(c.people).toBe(3000);
+  expect(rows.map((r) => r.name)).toEqual(["front rows", "middle rows", "top rows"]);
+  expect(rows[0]!.people).toBeGreaterThan(2000);
+  expect(rows[2]!.people).toBe(0);
+  // Out of doors: no reverb to tighten, but 3,000 people are loud between songs.
+  const state = amphitheatreState(w);
+  expect(state.people).toMatchObject({ in: true, count: 3000, full: { rt60: null } });
+  expect(state.people.full.noise).toBeGreaterThan(state.people.empty.noise + 20);
+  expect(state.score).toBe(before);
+  // They stand up the hill: the top bench is 30 m over the first.
+  expect(floorAt(0, BENCHES.floor.z0 + 1) - floorAt(0, BENCHES.floor.z1 - 1)).toBeGreaterThan(29);
+  // 9,500 heads are drawn as 1,500 figures, six or so heads to each; a bar's 90 one for one.
+  expect(drawn(9500, 1500)).toMatchObject({ figures: 1500 });
+  expect(drawn(90, 400)).toEqual({ figures: 90, heads: 1 });
+});
+
+test("band night and the show let a crowd in at doors: you walk slower through it and the room rings shorter", () => {
+  const rooms: [Level, CrowdSpot, number][] = [[BAND_NIGHT, BAND_FLOOR, 110], [SHOW, AUDIENCE, 120]];
+  for (const [level, spot, people] of rooms) {
+    const w = newWorld(level), mid = { x: (spot.floor.x0 + spot.floor.x1) / 2, z: spot.floor.z0 + 0.5 };
+    expect(house(w, spot)).toMatchObject({ in: false, count: 0, expected: people });
+    letIn(w, spot);
+    const h = house(w, spot);
+    expect(h).toMatchObject({ in: true, count: people });
+    expect(h.full.rt60!).toBeLessThan(h.empty.rt60! * 0.7);
+    expect(w.underfoot!(mid.x, mid.z)).toBeLessThan(0.6);
+  }
+  // The show keeps an aisle down the right wall, from the desk to the stage.
+  const w = newWorld(SHOW);
+  letIn(w, AUDIENCE);
+  expect(w.underfoot!(3.2, 6)).toBe(1);
 });

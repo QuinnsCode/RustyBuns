@@ -11,6 +11,7 @@ import { type EqBand, type Feedback, UNITY_LOOP_DB, aimTo, feedback, offAxisLoss
 import { assist } from "../assists.ts";
 import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts";
 import { type AmpKnob, type AmpKnobs, newAmp, turnKnob } from "../audio/amp.ts";
+import { type CrowdSpot, house } from "../crowd/crowd.ts";
 
 export const SHOW: Level = {
   name: "show",
@@ -33,6 +34,22 @@ export const SHOW: Level = {
     { key: "rack", gear: "amp-rack-4u", x: 3.3, y: 0, z: 0.6, rot: 0 },
     { key: "desk-case", gear: "road-case-m", x: 0, y: 0, z: 10, rot: 0 },
     { key: "desk", gear: "mixer-small", x: 0, y: 0.5, z: 10, rot: Math.PI },
+  ],
+};
+
+/**
+ * The show's audience: 120 between the speakers and the desk, in the bigger bar's room (8 by 14 m, 3.2 m up, mean
+ * absorption about 0.15), clear of an aisle down the right wall: your way from the desk to the stage when a cue needs
+ * your hands. The crowd meter is how they take the mix; this is where they stand and how the room rings.
+ */
+export const AUDIENCE: CrowdSpot = {
+  floor: { x0: -3.7, x1: 2.6, z0: 4.2, z1: 9.2, nx: 13, nz: 10 },
+  stageZ: 4,
+  capacity: 120,
+  room: { w: 8, d: 14, h: 3.2, alpha: 0.15 },
+  regions: [
+    { name: "front", zone: { x0: -3.7, x1: 2.6, z0: 4.2, z1: 6.7 } },
+    { name: "back", zone: { x0: -3.7, x1: 2.6, z0: 6.7, z1: 9.2 } },
   ],
 };
 
@@ -261,6 +278,6 @@ export function showState(w: World, d: Desk, s: Show) {
     on: s.on, done: s.done, t: r1(s.t), song: song.name, index, at: r1(at), solo: s.on && soloOn(s.t), crowd: Math.round(s.crowd),
     open: s.open.map((c) => c.kind), fixed: s.fixed, missed: s.missed, rang: r1(s.rang),
     ringing: r.ringing, margin: r1(r.margin), worstHz: r.worst.hz, me: r1(meDb(w, d)), wants: s.open.find((c) => c.wants)?.wants ?? null,
-    mix: mix(d, s), desk: d, atDesk: atDesk(w), amp: { ...s.amp }, atAmp: atAmp(w),
+    mix: mix(d, s), desk: d, atDesk: atDesk(w), amp: { ...s.amp }, atAmp: atAmp(w), people: house(w, AUDIENCE),
   };
 }

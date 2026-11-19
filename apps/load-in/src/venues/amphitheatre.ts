@@ -8,13 +8,14 @@
 // and stay under the limits at the desk and at the houses. Plain data, no DOM; the page (amphitheatre-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import {
-  type Arrival, type Face, type Source, type Vec3, ECHO_DB, MAX_SPLAY_DEG, aimTo, airAbsorption, arrayPoses, barrierLoss, bendAngle,
+  type Arrival, type CrowdField, type Face, type Source, type Vec3, ECHO_DB, MAX_SPLAY_DEG, aimTo, airAbsorption, arrayPoses, barrierLoss, bendAngle,
   echoOf, gear as catalog, levelAt, levelAt1m, offAxisLoss, pressureAt, reflection, source, speedOfSound, splayCalc, sumPower,
   weatherAtDistance,
 } from "@rustybuns/gear";
 import { type Answer, type Item, type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { rig } from "./dive-bar.ts";
+import { type CrowdSpot, house } from "../crowd/crowd.ts";
 
 // ---- the place ---------------------------------------------------------------------------------------------------
 
@@ -559,6 +560,38 @@ export function score(w: World, seats: Seat[] = hear(w)) {
   };
 }
 
+/**
+ * The amphitheatre's crowd: 9,500 on the benches, a seat every 0.47 m, the front rows filling first. Out of doors, so
+ * nothing rings but the rock. The score doesn't hear them: on a 17 degree rake every row looks over the one in front and
+ * the hangs fire from above, so the bodies between a box and any bench take under 1 dB at 2 kHz (0.1 dB at row 1, about
+ * 0.8 dB at row 70 from a hang at 11 m), against a window of 6. They are counted, drawn, and loud between songs.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -44, x1: 44, z0: rowZ(ROWS) - RUN / 2, z1: rowZ(1) + RUN / 2, nx: 44, nz: ROWS },
+  stageZ: 0,
+  capacity: 9500,
+  room: null,
+  fill: benches,
+  regions: [
+    { name: "front rows", zone: { x0: -44, x1: 44, z0: rowZ(23) - RUN / 2, z1: rowZ(1) + RUN / 2 } },
+    { name: "middle rows", zone: { x0: -44, x1: 44, z0: rowZ(46) - RUN / 2, z1: rowZ(23) - RUN / 2 } },
+    { name: "top rows", zone: { x0: -44, x1: 44, z0: rowZ(ROWS) - RUN / 2, z1: rowZ(46) - RUN / 2 } },
+  ],
+};
+
+/** `people` on the benches, row 1 back: each row holds its width in seats, and the last row they reach is part full. */
+function benches(people: number): CrowdField {
+  const { x0, x1, nx, nz } = CROWD.floor, dx = (x1 - x0) / nx, density = new Float32Array(nx * nz), seated = 1 / (0.47 * RUN);
+  let left = Math.max(0, people);
+  for (let r = 1; r <= ROWS && left > 0; r++) {
+    const iz = ROWS - r, cells = Array.from({ length: nx }, (_, ix) => ix).filter((ix) => Math.abs(x0 + (ix + 0.5) * dx) <= halfWidth(r));
+    const here = Math.min(left, cells.length * dx * RUN * seated);
+    for (const ix of cells) density[iz * nx + ix] = here / (cells.length * dx * RUN);
+    left -= here;
+  }
+  return { ...CROWD.floor, density };
+}
+
 /** Show time: the bowl as the crowd takes it, scaled by mood (late doors cost it), and a hard curfew: every minute
  * late at doors is a minute cut off the end of the set, and a cut set costs the score too. */
 export function show(w: World) {
@@ -568,7 +601,7 @@ export function show(w: World) {
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the amphitheatre: the hangs, the towers, the subs, the air and the score. */
+/** What the harness adds for the amphitheatre: the hangs, the towers, the subs, the air, who is on the benches and the score. */
 export function amphitheatreState(w: World) {
   const r = amp(w), air = airOf(w);
   return {
@@ -583,6 +616,7 @@ export function amphitheatreState(w: World) {
       per100m: { k1: r1(airAbsorption(1000, air.tempC, air.humidity, KPA) * 100), k8: r1(airAbsorption(8000, air.tempC, air.humidity, KPA) * 100) },
     },
     you: { row: rowAt(w.you.z), y: r1(floorAt(w.you.x, w.you.z)) },
+    people: house(w, CROWD),
     ...score(w),
   };
 }

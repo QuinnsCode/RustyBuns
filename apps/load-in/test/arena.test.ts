@@ -5,7 +5,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newWorld, pickUp, type World } from "../src/sim.ts";
 import { type Cables, newCables, walkWith } from "../src/cables/cables.ts";
-import { ARENA, POINTS, SWITCH, type Leg, arena, arenaState, fly, legs, pad, score, send, setHang, setLeg, setSub, wait } from "../src/venues/arena.ts";
+import { ARENA, CROWD, POINTS, SWITCH, type Leg, arena, arenaState, fly, legs, pad, score, scores, send, setHang, setLeg, setSub, show, wait } from "../src/venues/arena.ts";
+import { letIn } from "../src/crowd/crowd.ts";
 import { setDial } from "../src/assists.ts";
 import { doors } from "../src/clock.ts";
 
@@ -66,6 +67,18 @@ test("the crew carries the boxes in, the hangs fly and line up, the stage stays 
   expect(s).toMatchObject({ warn: 0, tripped: 0, pass: true });
   // On time on Crew: the crew carried it all well inside the doors.
   expect(doors("arena", w.t).late).toBe(0);
+
+  // Doors: 3,000 take the floor. The hangs fire over their heads, so the full floor still passes (the show scores it),
+  // every part of it dances, and the hall rings for over a second less.
+  letIn(w, CROWD);
+  const full = scores(w).full, people = arenaState(w).people;
+  expect(full.crowd!).toBeLessThan(s.crowd!);
+  expect(full).toMatchObject({ pass: true });
+  expect(show(w).sound).toBe(full.score);
+  expect(people).toMatchObject({ in: true, count: 3000 });
+  expect(people.regions.map((r) => r.doing)).toEqual(["dancing", "dancing", "dancing"]);
+  expect(people.regions[0]!.density).toBeGreaterThan(people.regions[2]!.density);
+  expect(people.empty.rt60! - people.full.rt60!).toBeGreaterThan(1);
 
   // A tower left at 0 ms lands well before the mains, out of time.
   expect(setHang(w, "tower-l", { delay: 0 })).toEqual({ ok: true });

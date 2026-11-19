@@ -6,7 +6,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newWorld, push, pickUp, putDown, type World } from "../src/sim.ts";
 import { type Cables, newCables, walkWith } from "../src/cables/cables.ts";
-import { FENCE_LIMIT, FESTIVAL, COMPOUND, NEAR_DB, STAGE_KEYS, type StageKey, face, feeder, festivalState, master, mixSpot, onStage, phase, rig, run, snake, subs } from "../src/venues/festival.ts";
+import { letIn } from "../src/crowd/crowd.ts";
+import { FENCE_LIMIT, FESTIVAL, COMPOUND, NEAR_DB, STAGE_KEYS, type StageKey, crowdSpot, face, feeder, festivalState, master, mixSpot, onStage, phase, rig, run, snake, subs } from "../src/venues/festival.ts";
 
 setDefaultTimeout(60_000);
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
@@ -87,6 +88,18 @@ test("facing each other with omni subs, the stages bleed into each other and the
   }
   expect(apart.fence!).toBeLessThan(facing.fence! - 10);
   expect(apart.houses!).toBeLessThan(facing.houses!);
+
+  // Show time: 2,000 come in, half in front of each stage wherever it faces now. The stacks stand at head height, so
+  // each audience hears less of them through the bodies; that score is shown, and the show still pays on soundcheck's.
+  letIn(w, crowdSpot(w));
+  const withCrowd = festivalState(w);
+  expect(withCrowd.people.count).toBeGreaterThan(1900);
+  for (const [k, st] of withCrowd.people.stages.entries()) {
+    expect(st.people).toBeGreaterThan(900);
+    expect(st.full!).toBeLessThan(st.soundcheck! - 1);
+    expect(withCrowd.full.stages[STAGE_KEYS[k]!]!.covered).toBeLessThan(apart.stages[STAGE_KEYS[k]!]!.covered);
+  }
+  expect(withCrowd.full.score).toBeLessThan(withCrowd.score);
 
   // An hour of the show: the songs rise and fall, and the 15-minute LAeq at each desk stays inside the licence.
   run(w, 3600);

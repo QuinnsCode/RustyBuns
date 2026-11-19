@@ -10,8 +10,10 @@ import { heatColour } from "./dive-bar-view.ts";
 import type { Zone } from "./dive-bar.ts";
 import {
   FEEDS, FLOOR, LEGS, PASS, POINTS, SPLAYS, SWITCH, TARGET, ZONES, type PadLabel, type Score, type Show,
-  arena, atSwitch, nextLeg, pad, crewTick, fly, handsNow, heat, legs, lower, powered, reserved, score, send, setHang, setLeg, setSub, show,
+  CROWD, arena, atSwitch, crowdState, nextLeg, pad, crewTick, fly, handsNow, legs, lower, powered, reserved, scores, send, setHang, setLeg, setSub, show,
 } from "./arena.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { MAX_BIG, crowdView } from "../crowd/crowd-view.ts";
 
 export type ArenaView = {
   /** A key while playing with hands free; true when the arena used it. */
@@ -108,16 +110,21 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
   card.className = "bar-card";
   hud.appendChild(card);
 
-  let selected: string | null = "main-l", tagged: string | null = null, seen = "", last: Score | null = null, opened: Show | null = null;
+  let selected: string | null = "main-l", tagged: string | null = null, seen = "", last: Score | null = null, full: Score | null = null, opened: Show | null = null;
   let note = { text: "", until: 0 };
   const say = (r: Answer, ok: string) => { note = { text: r.ok ? ok : r.why, until: performance.now() + 2200 }; return true; };
-  const signature = (w: World) => JSON.stringify([w.items.map((i) => [i.x, i.y, i.z, i.rot]), arena(w).hangs, arena(w).subs, arena(w).legs]);
+  const signature = (w: World) => JSON.stringify([w.items.map((i) => [i.x, i.y, i.z, i.rot]), arena(w).hangs, arena(w).subs, arena(w).legs, !!crowdOf(w)]);
+  // 3,000 on the floor, a figure for every two.
+  const house = crowdView(scene, { max: MAX_BIG });
 
+  // The map shows the empty floor until the doors open, then the floor as the crowd hears it.
   function paint(w: World) {
-    const grid = heat(w);
+    const s = scores(w), grid = crowdOf(w) ? s.fullGrid : s.empty;
     for (let k = 0; k < grid.db.length; k++) data.set(heatColour(grid.db[k], TARGET), k * 4);
     tex.needsUpdate = true;
-    last = score(w, grid);
+    last = s.soundcheck;
+    full = s.full;
+    house.moods(crowdState(w, s).regions);
   }
 
   const view: ArenaView = {
@@ -199,6 +206,7 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
       const ls = legs(w);
       ls.forEach((l, k) => (lamps[k].material as THREE.MeshBasicMaterial).color.setHex(l.tripped ? 0xe04a3a : l.warn ? 0xf2a33a : 0x3ad16b));
       handsNow(w).forEach((h, k) => people[k].position.set(h.x, 0, h.z));
+      house.update(w, crowdOf(w));
       const s = last!, sel = selected, hang = sel && sel !== "subs" ? a.hangs[sel] : null;
       const busy = handsNow(w).filter((h) => h.doing !== "free").length;
       card.innerHTML = `<b>${opened ? "Show time" : "The arena"}</b>`
@@ -206,6 +214,7 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
         + ls.map((l) => `<span class="${l.tripped ? "trip" : l.warn ? "warn" : ""}">${l.leg} ${(l.watts / 1000).toFixed(1)} of ${(l.limit / 1000).toFixed(1)} kW${l.tripped ? ", tripped" : ""}</span>`).join("")
         + `<span>Crew ${busy} of ${a.crew.length} busy${a.jobs.some((j) => !j.sched) ? `, ${a.jobs.filter((j) => !j.sched).length} waiting` : ""}</span>`
         + `<span>Floor ${s.crowd === null ? "silent" : `${s.crowd.toFixed(0)} dB`} (target ${TARGET}), ${Math.round(s.covered * 100)}% in</span>`
+        + `<span>Floor full: ${full!.crowd === null ? "silent" : `${full!.crowd.toFixed(0)} dB`}, ${Math.round(full!.covered * 100)}% in, score ${full!.score}${crowdOf(w) ? `, ${crowdOf(w)!.people} in` : ""}</span>`
         + `<span>Towers ${s.lagMs === null ? "not playing" : `${s.lagMs} ms after the mains, ${Math.round(s.lined * 100)}% in time`}</span>`
         + `<span>Stage ${s.stageGap === null ? "no subs" : `${s.stageGap} dB under the floor in the lows`}</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid $${opened.pay} of $${opened.fee}</span>`
@@ -213,10 +222,13 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
         + `<small>1-6 a rigging point, 7 the subs; K send the crew; U fly; R / V angle; , . delay; L leg at the switch; I sub polarity; H heat map; Enter show time</small>`;
     },
     doors() {
+      const w = getWorld();
+      if (!crowdOf(w)) letIn(w, CROWD);
       view.update();
-      return (opened = show(getWorld()));
+      return (opened = show(w));
     },
     dispose() {
+      house.dispose();
       scene.remove(g);
       scene.fog = was;
       card.remove();
