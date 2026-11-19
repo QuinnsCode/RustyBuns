@@ -103,9 +103,11 @@ export class LooseLag {
 
 /** The vertex shader's share: declarations, and the offset added to `transformed` after skinning. `aLoose` is the
  * vertex's reach (reachOf), `uTop` the model's height. A card moves by its bones' springs (by skin weight), never
- * further than 0.6 of its own reach, and flutters a touch on a phase from where it sits. */
+ * further than 0.6 of its own reach, and flutters a touch on a phase from where it sits. A fur card (`card`) swings
+ * along the coat but barely out of it: its normal is the coat's where it grows (CARD_NORMAL), and the share of the
+ * offset along it is held to a fifth of its reach, so a hit drags the cards back over the hide, not off it as a skirt. */
 export const LOOSE_PARS = "attribute float aLoose;\nuniform sampler2D uLoose;\nuniform float uLooseTime;\nuniform float uLooseReach;\n";
-export const LOOSE_VERT = `
+export const looseVert = (card: boolean) => `
   if ( aLoose > 0.0 ) {
     vec3 lag = texelFetch( uLoose, ivec2( int( skinIndex.x ), 0 ), 0 ).xyz * skinWeight.x
       + texelFetch( uLoose, ivec2( int( skinIndex.y ), 0 ), 0 ).xyz * skinWeight.y
@@ -114,7 +116,8 @@ export const LOOSE_VERT = `
     vec3 off = lag * uLooseReach * aLoose * uTop;
     float most = 0.6 * aLoose * uTop, len = length( off );
     if ( len > most ) off *= most / len;
-    float ph = dot( position, vec3( 7.1, 5.3, 6.7 ) ) / max( uTop, 1e-4 ) * 3.0;
+${card ? `    { vec3 n = normalize( objectNormal ); float o = dot( off, n ), cap = 0.2 * aLoose * uTop; if ( o > cap ) off -= n * ( o - cap ); }
+` : ""}    float ph = dot( position, vec3( 7.1, 5.3, 6.7 ) ) / max( uTop, 1e-4 ) * 3.0;
     off += aLoose * uTop * 0.05 * vec3( sin( uLooseTime * 2.3 + ph ), 0.4 * sin( uLooseTime * 1.7 + ph * 1.3 ), cos( uLooseTime * 2.9 + ph * 0.7 ) );
     transformed += off;
   }
@@ -157,11 +160,37 @@ export function rootOf(pos: ArrayLike<number>, coat: ArrayLike<number>, colour: 
   return out;
 }
 
-export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\n";
-export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot;";
-export const CARD_FRAG_PARS = "varying float vCardTip;\nvarying vec3 vCardRoot;\n";
-/** After the colour is read: the coat's colour at the root, the card's own toward the tip, darker at the very end. */
+export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nattribute vec3 aRootN;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\nvarying vec3 vCardP;\n";
+export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot; vCardP = position / max( uTop, 1e-4 );";
+/** Before skinning: a card is lit with the coat's normal where it grows (`rootOf` over the coat's normals), not its own.
+ * A flat card's two faces lit one dark and one pale, and lit the same from root to tip it read as a paper plate. */
+export const CARD_NORMAL = "objectNormal = normalize( aRootN );";
+/** After the normal is read: both faces of a card take that one normal (a double-sided material flips it on the back). */
+export const CARD_FACE = "#ifndef FLAT_SHADED\n  normal = normalize( vNormal ); nonPerturbedNormal = normal;\n#endif";
+/** A card's strands: value noise over its rest position with the along-the-card part taken out, so it is constant root to
+ * tip. The along direction is the gradient of `vCardTip` (both are linear over a triangle, so it holds per triangle). */
+export const CARD_FRAG_PARS = `varying float vCardTip;
+varying vec3 vCardRoot;
+varying vec3 vCardP;
+float cardHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
+float cardNoise( vec3 x ) {
+  vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( mix( cardHash( i ), cardHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( cardHash( i + vec3( 0, 1, 0 ) ), cardHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+    mix( mix( cardHash( i + vec3( 0, 0, 1 ) ), cardHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( cardHash( i + vec3( 0, 1, 1 ) ), cardHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
+}
+float cardStrand() {
+  vec3 g = dFdx( vCardP ) * dFdx( vCardTip ) + dFdy( vCardP ) * dFdy( vCardTip );
+  float gl = length( g );
+  vec3 q = gl > 1e-9 ? vCardP - g / gl * dot( vCardP, g / gl ) : vCardP;
+  return 0.65 * cardNoise( q * 160.0 ) + 0.35 * cardNoise( q * 410.0 );
+}
+`;
+/** After the colour is read: the card breaks into strands toward its tip (each strand cut at its own length, so the
+ * edge is a ragged brush, not a triangle) and each strand is a shade lighter or darker; the coat's colour at the root,
+ * the card's own toward the tip, darker at the very end. Cut, not blended: it stays opaque for sorting. */
 export const CARD_COLOR = `
-  diffuseColor.rgb = mix( vCardRoot, diffuseColor.rgb, smoothstep( 0.1, 0.8, vCardTip ) ) * mix( 1.0, 0.7, vCardTip * vCardTip );`;
+  float cardS = cardStrand();
+  if ( vCardTip > 0.12 + 0.85 * cardS * cardS + 0.1 * cardS ) discard;
+  diffuseColor.rgb = mix( vCardRoot, diffuseColor.rgb, smoothstep( 0.1, 0.8, vCardTip ) ) * mix( 1.0, 0.85, vCardTip * vCardTip ) * mix( 0.75, 1.2, cardS );`;
 /** After the lights and the field look: a card is matte, no sun glint, sky reflection, rim or field-look edge glow. */
 export const CARD_LIGHT = "reflectedLight.directSpecular *= 0.0; reflectedLight.indirectSpecular *= 0.0; totalEmissiveRadiance *= 0.0;";
