@@ -6,7 +6,7 @@
 // call and shows stderr to the agent.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
 import { type Of, obj, opt, or, raw, rec, str } from "../../packages/util/src/guard.ts";
 
@@ -272,6 +272,44 @@ export function wideRead(cmd: string, cwd: string, root: string, linesOf: (abs: 
   return null;
 }
 
+// The scan valve (#5194): `du`, `find`, `bfs` or `fd` over the whole office (the main checkout, its
+// `.agent-office/worktrees`, `~/agent-office`, home or `/`) walks 60+ worktrees' node_modules for minutes, hangs the
+// agent on its own call and thrashes the disk for every other one. One worktree, or a `find -maxdepth 2`, goes through.
+// `top` is the main checkout (the shared .git's folder).
+const SCANNERS = new Set(["du", "find", "bfs", "fd", "gfind", "gdu", "dust", "ncdu"]);
+export function wideScan(cmd: string, cwd: string, top: string): string | null {
+  let dir = cwd;
+  const home = homedir();
+  const whole = (abs: string) => {
+    const under = (d: string) => !!d && (d === abs || d.startsWith(abs === "/" ? "/" : abs + "/"));
+    return under(top) || under(home) || abs === `${top}/.agent-office` || abs === `${top}/.agent-office/worktrees`;
+  };
+  for (const seg of segments(cmd)) {
+    const t = strip(seg).rest;
+    if (t[0] === "cd" && t[1]) { dir = resolve(dir, t[1].replace(/^~(?=\/|$)/, home)); continue; }
+    const c = basename(t[0] ?? "");
+    if (!SCANNERS.has(c)) continue;
+    let roots: string[];
+    if (c === "find" || c === "bfs" || c === "gfind") {
+      const k = t.findIndex((x) => x === "-maxdepth");
+      if (k > 0 && Number(t[k + 1]) <= 2) continue;
+      // leading flags (-H, -L, -x ...), then the paths up to the first expression
+      let i = 1;
+      while (/^-[A-Za-z]$/.test(t[i] ?? "")) i++;
+      roots = [];
+      for (; i < t.length && !/^[-(!]/.test(t[i]!); i++) roots.push(t[i]!);
+    } else if (c === "fd") {
+      roots = t.slice(1).filter((x) => !x.startsWith("-")).slice(1);
+    } else {
+      roots = t.slice(1).filter((x, k) => !x.startsWith("-") && !/^-[dt]$|^--max-depth$/.test(t[k] ?? "") && !/^\d+$/.test(x));
+    }
+    if (!roots.length) roots = ["."];
+    const wide = roots.find((r) => whole(resolve(dir, r.replace(/^~(?=\/|$)/, home))));
+    if (wide) return `the scan valve: \`${c} ${wide}\` walks every worktree's node_modules (60+ of them) for minutes and stalls the whole office. Scan your own worktree, one app (\`du -sh apps/<app>\`), or a sample (\`find ${wide} -maxdepth 2\`); the office's swap and leftovers are in the office's mem_stats tool`;
+  }
+  return null;
+}
+
 const gitBranch: BranchOf = (cwd) => {
   const r = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { stderr: "ignore" });
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
@@ -306,6 +344,11 @@ if (import.meta.main) {
     const top = /\b(cat|sed)\b/.test(cmd) ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
     const wide = top ? wideRead(cmd, cwd, top) : null;
     if (wide) { console.error(`Blocked by .claude/hooks/guard.ts: ${wide}.`); process.exit(2); }
+    // the main checkout is the shared .git's folder, whichever worktree this runs in
+    const common = /\b(du|find|bfs|fd|gfind|gdu|dust|ncdu)\b/.test(cmd)
+      ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], { stderr: "ignore" }).stdout.toString().trim() : null;
+    const scan = common === null ? null : wideScan(cmd, cwd, common ? dirname(common) : "");
+    if (scan) { console.error(`Blocked by .claude/hooks/guard.ts: ${scan}.`); process.exit(2); }
   }
   const why = check(input);
   if (why) {

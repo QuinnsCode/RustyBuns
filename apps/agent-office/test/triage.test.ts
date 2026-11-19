@@ -97,3 +97,8 @@ test("on the page: each tool is a command, and a signed-out call says to sign in
   off();
   await expect(runCommand("mem_stats")).rejects.toThrow('no command "mem_stats"');
 });
+
+test("a profile the office never finishes answers with an error, not a hang (#5194)", async () => {
+  const never: TriageCall = () => new Promise(() => {});
+  await expect(runTriageTool("take_cpu_profile", { seconds: 1 }, never, 50)).rejects.toThrow("may be stalled");
+});

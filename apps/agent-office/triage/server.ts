@@ -112,7 +112,9 @@ export function officeTriage(
       if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
       if (profiling()) return { status: 409, body: { error: "A profile is already being taken; try again when it's done" } };
       const ms = Math.min(Math.max(Math.round((Number(url.searchParams.get("s")) || 10) * 1000), 1000), PROF_MAX_MS);
-      const { file, json } = await cpuProfile({ dir: profDir, ms, name: "office" });
+      let taken: { file: string; json: string };
+      try { taken = await cpuProfile({ dir: profDir, ms, name: "office" }); } catch (e) { return { status: 503, body: { error: `The profile failed: ${(e as Error).message}` } }; }
+      const { file, json } = taken;
       const profile = JSON.parse(json), id = path.basename(file);
       hist.profile(id, summarizeProfile(profile));
       return { status: 200, body: { id, file, seconds: ms / 1000, summary: summarizeProfile(profile, top(url)) } };

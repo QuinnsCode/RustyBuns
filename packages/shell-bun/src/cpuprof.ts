@@ -29,6 +29,8 @@ export interface CpuProfileOptions {
 }
 
 export const PROF_MAX_MS = 60_000;
+/** How long one inspector call may take before the profile gives up with an error. */
+export const STEP_MS = 10_000;
 let busy = false;
 
 /** True while a profile is being taken: one at a time per process. */
@@ -39,7 +41,11 @@ export async function cpuProfile(o: CpuProfileOptions): Promise<{ file: string; 
   if (busy) throw new Error("a profile is already running");
   busy = true;
   const s = new Session();
-  const post = (m: string, p: object = {}) => new Promise<any>((res, rej) => s.post(m, p, (e: any, r: any) => e ? rej(e) : res(r)));
+  // #5194: an inspector call that never calls back would hang the caller (and an agent's tool call) for good
+  const post = (m: string, p: object = {}) => new Promise<any>((res, rej) => {
+    const late = setTimeout(() => rej(new Error(`the profiler didn't answer ${m} in ${STEP_MS / 1000}s`)), STEP_MS);
+    s.post(m, p, (e: any, r: any) => { clearTimeout(late); e ? rej(e) : res(r); });
+  });
   try {
     s.connect();
     await post("Profiler.enable");

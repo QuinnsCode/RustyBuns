@@ -106,8 +106,11 @@ function formatProfile(a: { id: string; file: string; seconds?: number; summary:
   return `${a.id}${a.seconds ? ` (sampled ${a.seconds}s; times are of the JS thread's busy time)` : ""}\n${formatProfileSummary(a.summary)}\n\nflame graph: open ${a.file} in Chrome DevTools > Performance, or on https://www.speedscope.app`;
 }
 
-/** Runs one tool through `call`; resolves to its text, or throws with why it failed. */
-export async function runTriageTool(name: string, args: unknown, call: TriageCall): Promise<string> {
+/** How long past its sampling time a profile may take before the tool answers with an error (#5194). */
+export const PROFILE_GRACE_MS = 30_000;
+
+/** Runs one tool through `call`; resolves to its text, or throws with why it failed. A profile gives up `graceMs` past its time. */
+export async function runTriageTool(name: string, args: unknown, call: TriageCall, graceMs = PROFILE_GRACE_MS): Promise<string> {
   const a = check(TriageArgs, args ?? {}) ?? TriageArgs({});
   const ask = async (method: "GET" | "POST", path: string) => {
     const r = await call(method, path);
@@ -119,7 +122,14 @@ export async function runTriageTool(name: string, args: unknown, call: TriageCal
     return [formatMem("office", m.office), ...m.ptyHosts.map((h) => h.mem ? formatMem(`pty host (floor ${h.floor}, pid ${h.mem.pid})`, h.mem) : `pty host (floor ${h.floor}): no sample yet, or not running`), ...(m.reaper ? [formatReaper(m.reaper)] : [])].join("\n");
   }
   if (name === "take_cpu_profile") {
-    return formatProfile(await ask("POST", `/__rb/prof?s=${a.seconds ?? 10}${a.top ? `&top=${a.top}` : ""}`));
+    const seconds = a.seconds ?? 10;
+    let late: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, rej) => {
+      late = setTimeout(() => rej(new Error(`The office didn't finish a ${seconds}s profile in ${seconds + Math.round(graceMs / 1000)}s: it may be stalled. mem_stats shows its memory and swap`)), seconds * 1000 + graceMs);
+    });
+    try {
+      return formatProfile(await Promise.race([ask("POST", `/__rb/prof?s=${seconds}${a.top ? `&top=${a.top}` : ""}`), deadline]));
+    } finally { clearTimeout(late); }
   }
   if (name === "list_profiles") {
     const { profiles, running } = await ask("GET", "/__rb/prof");
