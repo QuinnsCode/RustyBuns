@@ -874,7 +874,7 @@ test("a guitar call: its setup goes to the one person it names, and a listen-onl
   expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "want" } }, { t: "live", from: G, e: { t: "guitar", track: null } }]);
 });
 
-test("jam room lane: sit at the keys, open its lane, turn a knob, and the op lands on the leader's page; read only until she says yes", async () => {
+test("jam room lane: sit at the keys, open its lane, turn a patch knob, and the op lands on the leader's page; read only until she says yes", async () => {
   const { world, join } = await setup({}, "lane-keys-room");
   const tick = () => new Promise((r) => setTimeout(r, 5));
   const amyWs = (await join({}, "a".repeat(32))).ws;              // first key in: Amy leads the sesh
@@ -901,7 +901,7 @@ test("jam room lane: sit at the keys, open its lane, turn a knob, and the op lan
 
   // Amy holds the floor: the knob is refused here, and nothing goes to her
   ops();
-  expect(lane.edit({ t: "param", track: keys, i: P.GAIN, v: 0.3 })).toBe(false);
+  expect(lane.edit({ t: "param", track: keys, i: P.DRIVE, v: 0.3 })).toBe(false);
   expect(lane.state().refused).toContain("raises your hand");
   await tick();
   expect(ops()).toEqual([]);
@@ -913,10 +913,10 @@ test("jam room lane: sit at the keys, open its lane, turn a knob, and the op lan
   world.webSocketMessage(amyWs, JSON.stringify({ t: "answer", who: Object.keys(hand.asks)[0], yes: true }));
   await tick(); pump(); ops();
   expect(lane.state().readOnly.edit).toBe(false);
-  expect(lane.edit({ t: "param", track: keys, i: P.GAIN, v: 0.3 })).toBe(true);
+  expect(lane.edit({ t: "param", track: keys, i: P.DRIVE, v: 0.3 })).toBe(true);
   await tick();
-  expect(ops()).toEqual([{ t: "param", track: keys, i: P.GAIN, v: 0.3 }]);
-  expect(pl.project()!.tracks[keys]!.params[P.GAIN]).toBeCloseTo(0.3);
+  expect(ops()).toEqual([{ t: "param", track: keys, i: P.DRIVE, v: 0.3 }]);
+  expect(pl.project()!.tracks[keys]!.params[P.DRIVE]).toBeCloseTo(0.3);
 
   // standing up closes it
   stand(pl.jam);
