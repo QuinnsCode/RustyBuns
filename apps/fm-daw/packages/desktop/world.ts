@@ -11,6 +11,7 @@ import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
+import { decodeClockClient, type ClockClient, type ClockServer } from "../../src/clock.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 import { BackupLadder, LadderGuard, MAX_SNAPS, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
@@ -86,7 +87,7 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer | ClockServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
@@ -256,6 +257,8 @@ export default class World {
     if (!frame) return;
     const msg = decodeClient(frame.value);
     if (!msg) {
+      const ck = decodeClockClient(frame.value);
+      if (ck) { this.onClock(ws, ck); return; }
       const rtc = decodeRtcClient(frame.value);
       if (rtc) { this.onRtc(ws, rtc); return; }
       const st = decodeStudioClient(frame.value);
@@ -276,7 +279,7 @@ export default class World {
     if (msg.t === "live") {
       // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go);
       // someone the leader muted moves and dresses as ever, but none of their notes go on
-      const muted = msg.e.t === "on" && isMuted(this.grants, seat?.me);
+      const muted = (msg.e.t === "on" || msg.e.t === "sound") && isMuted(this.grants, seat?.me);
       if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
@@ -436,6 +439,22 @@ export default class World {
     if (!seat?.peer || m.to === seat.peer) return;
     if (m.line === "out" && !this.may(seat, "play")) return;
     this.sockets.broadcast({ t: "rtc", from: seat.peer, line: m.line, s: m.s } satisfies RtcServer, ws, (a) => a.peer === m.to);
+  }
+
+  /**
+   * The shared clock (src/clock.ts): a ping goes to the leader (the maker's first socket in), whose answer goes back
+   * to the one who asked. With no leader in, the World answers with its own clock, so the band keeps one time.
+   */
+  private onClock(ws: RoomSocket, m: ClockClient) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer) return;
+    if (m.t === "tock") {
+      if (seat.host) this.sockets.broadcast({ t: "tock", n: m.n, sent: m.sent, at: m.at, by: "leader" } satisfies ClockServer, ws, (a) => a.peer === m.to);
+      return;
+    }
+    const leader = this.sockets.open().find((w) => w !== ws && this.sockets.who(w)?.host && this.sockets.who(w)?.peer);
+    if (leader && !seat.host) this.sockets.send(leader, { t: "tick", from: seat.peer, n: m.n, sent: m.sent } satisfies ClockServer);
+    else this.sockets.send(ws, { t: "tock", n: m.n, sent: m.sent, at: Date.now(), by: "world" } satisfies ClockServer);
   }
 
   private onStudio(ws: RoomSocket, op: StudioOp) {

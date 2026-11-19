@@ -12,6 +12,13 @@ import type { Lane, Note } from "../project.ts";
 
 export const QUANTUM = 16;
 const MAX_HELD = 256;
+/** Live notes waiting for their beat (someone else's, heard a loop late or at the desk); past it the oldest go. */
+const MAX_DUE = 512;
+/**
+ * Following the shared clock: further off than this many beats, the transport jumps to it (joining, a tempo change);
+ * closer, it runs up to MAX_PULL fast or slow until it's there, so nobody hears it move.
+ */
+export const SNAP_BEATS = 0.25, MAX_PULL = 0.002, PULL = 0.5;
 export const LIVE_ID = 2_000_000;
 
 export interface RecordedNote { track: number; note: Note }
@@ -42,6 +49,21 @@ export class Sequencer {
   countIn = 0;
   /** Unswung position in the loop, beats. */
   pos = 0;
+  /**
+   * Beats counted from the shared clock's 0 (src/clock.ts) once `sync` has been called, else from Play: where the
+   * stamps on live notes and sound are. `pos` is this within the loop. Runs whether the transport plays or not.
+   */
+  abs = 0;
+  /** Following the shared clock: Play joins it where it is rather than starting the loop over. */
+  synced = false;
+  /** How fast the beats run against this sound card: 1, or a hair off while catching up with the shared clock. */
+  rate = 1;
+  // live notes due on a beat (abs), in the order they came: beat, track, midi, velocity (-1: a note off)
+  private dueAt = new Float64Array(MAX_DUE);
+  private dueTrack = new Int32Array(MAX_DUE);
+  private dueMidi = new Int32Array(MAX_DUE);
+  private dueVel = new Float64Array(MAX_DUE);
+  private dueCount = 0;
   /**
    * Beat repeat: while > 0, the notes come from the slice of `repeat` beats it
    * was pressed in (on its grid), over and over. The transport runs on
@@ -104,7 +126,46 @@ export class Sequencer {
   /** Recording stopped: every lane plays again. */
   untouch() { this.touched.clear(); }
   setSwing(s: number) { this.swing = s; for (let t = 0; t < TRACKS; t++) this.rewarp(t); }
-  setLoopBeats(b: number) { this.loopBeats = b; if (this.pos >= b) this.pos %= b; }
+  setLoopBeats(b: number) { this.loopBeats = b; this.pos = this.synced ? this.wrap(this.abs) : this.pos >= b ? this.pos % b : this.pos; }
+
+  /**
+   * The shared clock says this block's first frame is heard on `beat` (abs); NaN lets go of it. Stopped or far
+   * off, the count jumps there; playing and close, it is pulled in gently.
+   */
+  sync(beat: number) {
+    if (!Number.isFinite(beat)) { this.synced = false; this.rate = 1; return; }
+    const err = beat - this.abs;
+    if (!this.synced || !this.playing || Math.abs(err) > SNAP_BEATS) {
+      this.abs = beat; this.rate = 1;
+      this.pos = this.wrap(beat);
+    } else this.rate = 1 + Math.max(-MAX_PULL, Math.min(MAX_PULL, err * PULL));
+    this.synced = true;
+  }
+
+  /** A live note (vel < 0: a note off) to sound on beat `at` (abs); one already past sounds now. */
+  liveAt(at: number, track: number, midi: number, vel: number) {
+    if (track < 0 || track >= TRACKS || midi < 0 || midi > 127 || !Number.isFinite(at)) return;
+    if (this.dueCount === MAX_DUE) this.fireDue(Infinity, 1);
+    const i = this.dueCount++;
+    this.dueAt[i] = at; this.dueTrack[i] = track; this.dueMidi[i] = midi; this.dueVel[i] = vel;
+  }
+  /** How many live notes wait for their beat. */
+  get due() { return this.dueCount; }
+
+  /** Live notes due before beat `b` (at most `max` of them, oldest first) sound now, as someone else's. */
+  private fireDue(b: number, max = MAX_DUE) {
+    let fired = 0;
+    for (let i = 0; i < this.dueCount; ) {
+      if (fired < max && this.dueAt[i] < b) {
+        if (this.dueVel[i] < 0) this.liveOff(this.dueTrack[i], this.dueMidi[i]);
+        else this.liveOn(this.dueTrack[i], this.dueMidi[i], this.dueVel[i], false);
+        fired++;
+        this.dueCount--;
+        this.dueAt.copyWithin(i, i + 1, this.dueCount + 1); this.dueTrack.copyWithin(i, i + 1, this.dueCount + 1);
+        this.dueMidi.copyWithin(i, i + 1, this.dueCount + 1); this.dueVel.copyWithin(i, i + 1, this.dueCount + 1);
+      } else i++;
+    }
+  }
   setAudible(mask: boolean[]) {
     for (let t = 0; t < TRACKS; t++) {
       this.audible[t] = mask[t] ? 1 : 0;
@@ -127,7 +188,8 @@ export class Sequencer {
   }
 
   play(countInBeats = 0) {
-    this.pos = 0;
+    // on the shared clock the loop is where the band is; alone it starts over
+    if (!this.synced) { this.pos = 0; this.abs = 0; }
     this.countIn = countInBeats;
     this.playing = countInBeats <= 0;
     if (countInBeats > 0) this.engine.click(true);
@@ -202,8 +264,11 @@ export class Sequencer {
   }
 
   private tick(n: number) {
-    const bpf = this.bpm / 60 / this.sr;
+    const bpf = (this.bpm / 60 / this.sr) * this.rate;
     const span = n * bpf;
+    const a0 = this.abs;
+    if (this.dueCount) this.fireDue(a0 + span);
+    this.abs = a0 + span;
     // sequenced note-offs
     for (let i = 0; i < this.heldCount; ) {
       this.heldLeft[i] -= n;
@@ -216,7 +281,7 @@ export class Sequencer {
     if (this.countIn > 0) {
       const before = this.countIn;
       this.countIn -= span;
-      if (this.countIn <= 0) { this.countIn = 0; this.playing = true; this.pos = 0; }
+      if (this.countIn <= 0) { this.countIn = 0; this.playing = true; if (!this.synced) { this.pos = 0; this.abs = 0; } }
       else if (Math.ceil(this.countIn) < Math.ceil(before)) this.engine.click(false);
       if (!this.playing) return;
     }
@@ -261,6 +326,7 @@ export class Sequencer {
       this.fireRange(b0, b1, bpf);
     }
     if (b1 >= L) { this.pos = b1 - L; this.touched.clear(); } else this.pos = b1;
+    if (this.synced) this.pos = this.wrap(this.abs);
   }
 
   private fireRange(b0: number, b1: number, bpf: number) {

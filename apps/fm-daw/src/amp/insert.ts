@@ -12,6 +12,8 @@ const HUSH = 1e-6;
 
 /** The live input heading into a track's amp this block: mono samples, and which track. */
 export interface LiveIn { track: number; input: Float32Array }
+/** Someone else's guitar coming in on its beat (src/engine/remote.ts), bound for a track's amp. */
+export interface RemoteIn { has(track: number): boolean; add(track: number, dry: Float32Array, frames: number): void }
 
 export class AmpInserts {
   private live: (Live | null)[];
@@ -33,23 +35,24 @@ export class AmpInserts {
   /**
    * Every audible track's take into interleaved stereo `out`, through its amp when it has one, plus the live
    * input and the track's synth (`synth`, the engine's taps: `[f * TRACKS + t]`, before master) through its
-   * track's amp. An amp only runs while it has something to play: a take while the transport runs, the
-   * input, or its synth sounding. `gain` is the master's, as on a take without an amp.
+   * track's amp, and `remote`: the other players' guitars plugged into a track. An amp only runs while it has
+   * something to play: a take while the transport runs, the input, a remote guitar, or its synth sounding. `gain` is the master's, as on a take without an amp.
    */
-  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn, synth?: Float32Array) {
+  mix(deck: TakeDeck, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number, playing: boolean, input?: LiveIn, synth?: Float32Array, remote?: RemoteIn) {
     const n = TRACKS;
     if (playing && deck.any) deck.mix(out, frames, pos, bpm, loopBeats, (t) => audible(t) && !this.live[t], gain);
     if (this.dry.length < frames) { this.dry = new Float32Array(frames); this.wet = new Float32Array(frames); }
     for (let t = 0; t < this.live.length; t++) {
       const l = this.live[t];
       if (!l || !audible(t)) continue;
-      const hear = input?.track === t, take = playing && deck.has(t);
+      const hear = input?.track === t, take = playing && deck.has(t), far = !!remote?.has(t);
       let voice = false;
       if (synth) for (let f = 0; f < frames && !voice; f++) voice = Math.abs(synth[f * n + t]) > HUSH;
-      if (!hear && !take && !voice) continue;
+      if (!hear && !take && !voice && !far) continue;
       const dry = this.dry, wet = this.wet;
       if (hear) dry.set(input.input.subarray(0, frames)); else dry.fill(0, 0, frames);
       if (take) deck.one(t, dry, frames, pos, bpm, loopBeats, 1);
+      if (far && remote) remote.add(t, dry, frames);
       if (voice && synth) for (let f = 0; f < frames; f++) dry[f] += synth[f * n + t];
       l.rig.process(dry, wet, frames);
       for (let f = 0; f < frames; f++) {

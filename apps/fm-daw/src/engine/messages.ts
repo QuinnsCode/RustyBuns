@@ -43,12 +43,24 @@ export type ToWorklet =
   /** A track's take to play (16-bit sound decoded, at TAKE_RATE), or null for none. */
   | { t: "take"; track: number; pcm: Float32Array | null; beat: number }
   /** Record the input onto this track while recording (-1: no track). `inLatency`: seconds the input arrives late. */
-  | { t: "arm"; track: number; inLatency: number };
+  | { t: "arm"; track: number; inLatency: number }
+  /** The shared clock (src/clock.ts): sound at context time `ctx` is heard on `beat`; null runs free again. */
+  | { t: "grid"; ctx: number; beat: number | null }
+  /** Someone else's note to sound on beat `at` (vel < 0: let it go then). */
+  | { t: "due"; at: number; track: number; midi: number; vel: number }
+  /** A slice of someone's guitar (mono at TAKE_RATE) to play from beat `at`, into `track` (-1: straight in). */
+  | { t: "sound"; peer: number; track: number; at: number; pcm: Float32Array }
+  /** Their sound stopped (unplugged, left): drop what's buffered. */
+  | { t: "quiet"; peer: number }
+  /** Send the input out in slices, each with the beat it was played on (`inLatency`: seconds the input comes in late). */
+  | { t: "send"; on: boolean; inLatency: number };
 
 export type FromWorklet =
-  | { t: "tick"; pos: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number }
+  | { t: "tick"; pos: number; abs: number; synced: boolean; late: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number }
   | { t: "rec"; track: number; note: Note }
   | ({ t: "move" } & RecordedMove)
   | { t: "engine"; kind: "ts" | "rust"; error?: string }
   /** A pass of the input recorded on the armed track: mono at `rate`, starting where the player heard `beat`. */
-  | { t: "taken"; track: number; beat: number; pcm: Float32Array; rate: number };
+  | { t: "taken"; track: number; beat: number; pcm: Float32Array; rate: number }
+  /** A slice of the input to send: mono at `rate`, played on `beat` (abs, on the shared clock). */
+  | { t: "sound"; beat: number; pcm: Float32Array; rate: number };

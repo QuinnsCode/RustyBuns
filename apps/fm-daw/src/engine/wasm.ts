@@ -2,6 +2,7 @@
 // as TsEngine. Runs inside the AudioWorklet (live) and on the main thread (bench).
 import type { FmEngine } from "./engine.ts";
 import { TRACKS } from "./params.ts";
+import type { RemoteLine } from "./remote.ts";
 import { sendEq, sendListen, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 
 export interface Exports {
@@ -46,6 +47,12 @@ export interface Exports {
   fm_amp_levels(r: number, out: number): void;
   fm_amp_misses(r: number): number;
   fm_amp_iterations(r: number): number;
+  fm_remote_new(nominal: number): number;
+  fm_remote_free(r: number): void;
+  fm_remote_set_nominal(r: number, nominal: number): void;
+  fm_remote_push(r: number, beat: number, buf: number, len: number): void;
+  fm_remote_mix(r: number, out: number, frames: number, beat0: number, bpf: number, gain: number): void;
+  fm_remote_late(r: number): number;
   fm_alloc_f64(len: number): number;
   fm_dealloc_f64(p: number, len: number): void;
   fm_alloc(len: number): number;
@@ -129,4 +136,36 @@ export class WasmEq implements EqStage {
     }
   }
   free() { this.x.fm_dealloc(this.buf, CHUNK * 2); this.x.fm_eq_free(this.h); }
+}
+
+/** The longest slice pushed at once (SOUND_MAX_FRAMES, and a take-sized margin). */
+const PUSH = 8192;
+/** Someone else's sound on its beat, in Rust (src/engine/remote.ts is the TS twin). */
+export class WasmRemote implements RemoteLine {
+  private readonly h: number;
+  private readonly buf: number;
+  constructor(private readonly x: Exports, nominal: number) {
+    this.h = x.fm_remote_new(nominal);
+    if (!this.h) throw new Error("rust remote line rejected the tempo");
+    this.buf = x.fm_alloc(PUSH);
+  }
+  setNominal(spb: number) { this.x.fm_remote_set_nominal(this.h, spb); }
+  /** A slice longer than PUSH (none is: SOUND_MAX_FRAMES) is cut short. */
+  push(beat: number, samples: Float32Array) {
+    const k = Math.min(PUSH, samples.length);
+    new Float32Array(this.x.memory.buffer, this.buf, k).set(samples.subarray(0, k));
+    this.x.fm_remote_push(this.h, beat, this.buf, k);
+  }
+  /** In one call up to PUSH frames, so each frame's beat is worked out as the TS twin does it. */
+  mix(out: Float32Array, frames: number, beat0: number, bpf: number, gain: number) {
+    const n = Math.min(frames, out.length);
+    for (let at = 0; at < n; at += PUSH) {
+      const k = Math.min(PUSH, n - at);
+      new Float32Array(this.x.memory.buffer, this.buf, k).set(out.subarray(at, at + k));
+      this.x.fm_remote_mix(this.h, this.buf, k, beat0 + at * bpf, bpf, gain);
+      out.set(new Float32Array(this.x.memory.buffer, this.buf, k), at);
+    }
+  }
+  get late() { return this.x.fm_remote_late(this.h); }
+  free() { this.x.fm_dealloc(this.buf, PUSH); this.x.fm_remote_free(this.h); }
 }

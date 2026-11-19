@@ -15,6 +15,7 @@ import { P } from "../engine/params.ts";
 import { DRUM_KEYS, body, gone, hear, keyNote, newJam, sit, snapshot, spotOf, stand, trackFor, type Jam } from "./jam.ts";
 import { MakeArgs, makeInstrument, roomWith } from "./instrument.ts";
 import type { StudioDef } from "./room.ts";
+import type { ClockState } from "../clock.ts";
 
 /** Who may do what, as the sesh last said: the floor, the leader's grants and who this player is (its person id). */
 export interface Rights { floor: FloorState | null; grants: Grants | null; me: string | null; asked: Can | null }
@@ -35,6 +36,8 @@ export interface Player {
   /** The groove as it was `ago` minutes back, for this player alone (null: the sesh doesn't go back that far). */
   rewind(ago: Rung): Promise<{ at: number; project: Project | null } | null>;
   wait(ms: number): Promise<void>;
+  /** The shared clock as this player keeps it (src/clock.ts): whose, the offset and round trip, how it hears the band. */
+  clock?(): (ClockState & { behindMs: number }) | null;
 }
 
 /** A player's look backs: `rewind` asks the sesh and waits up to 5 s for `answer`, the sesh's `rewound`. */
@@ -84,6 +87,7 @@ export function state(pl: Player) {
     others: s.others,
     tracks: p ? tracksOf(p) : [],
     made: p?.instruments ?? [],
+    clock: pl.clock?.() ?? null,
   };
 }
 
@@ -93,7 +97,7 @@ export function studioTools(pl: Player): Command[] {
   const nope = (can: Can) => no(`The leader hasn't let you ${can === "edit" ? "change the groove" : can}: studio_ask_to_play raises your hand${can === "play" ? "" : ` (can: "${can}")`}`);
   return [
     { name: "studio_state", title: "Look around the jam room", annotations: { readOnlyHint: true },
-      description: "Who is in the room and where, which seat each sits at, every spot and the track it plays, what you may do (play, edit, mix, lead: the leader's grants, or the floor's), the tempo, the groove's tracks and the instruments made here.",
+      description: "Who is in the room and where, which seat each sits at, every spot and the track it plays, what you may do (play, edit, mix, lead: the leader's grants, or the floor's), the tempo, the groove's tracks, the instruments made here, and the shared clock (whose it is, your offset to it and round trip in ms, and how you hear the band: a loop late, at the desk or as it comes).",
       execute: () => state(pl) },
     { name: "studio_sit", title: "Sit at a spot", ask: "spot id (studio_state lists them)",
       description: "Walk up to a spot (keys, drums, bass, a made instrument, the desk, the couch) and sit: what you play then goes to that spot's track.",
