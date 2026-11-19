@@ -95,6 +95,8 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   await seen("nothing found", (s) => s.found?.length === 0);
   await press("Back to #general");
   await seen("back on #general", (s) => s.found === null && s.thread === null);
+  // A space takes 5 frames a second from a socket with a burst of 10, and a person is slower than this script: let it refill.
+  await Bun.sleep(2_000);
 
   // Voice: the owner adds a channel, joins it with a fresh ticket, and the friend sees them in it.
   await type("Voice room", "lounge");
