@@ -118,11 +118,12 @@ function hillRoll() {
   return { hillRoll: s.speed / v0 };
 }
 
-function pipe(rider: (s: S, h: number) => object, secs: number, speed?: number) {
-  const hp = pcs.halfpipe({ x: 0, z: 0 }, { w: 20, d: 40, h: 3 });
+// the game's own creek pipe is wide and shallow; `radius` (board lengths) builds a round one of a real ramp's proportions instead, wall as tall as its transition
+function pipe(rider: (s: S, h: number) => object, secs: number, from = 0.5, radius?: number) {
+  const K = pcs.K, R = (radius ?? 0) * L, hp = pcs.halfpipe({ x: 0, z: 0 }, radius ? { w: (2 * R + 14) / K, d: 40, h: R / K } : { w: 20, d: 40, h: 3 });
   const level = lv.makeLevel({ name: "judge-pipe", pieces: hp.pieces, rails: [], spawns: [], bounds: BOUNDS });
   const h = Math.max(...hp.rails.map((r: { y: number }) => r.y));
-  const s = Object.assign(start(0, 0, Math.PI / 2, level), { speed: speed ?? Math.sqrt(2 * G * 0.5 * h) });
+  const s = Object.assign(start(0, 0, Math.PI / 2, level), { speed: Math.sqrt(2 * G * from * h) });
   const peaks: number[] = [];
   let side = 0, peak = 0;
   for (let i = 0; i < secs / DT; i++) {
@@ -138,14 +139,14 @@ function pipe(rider: (s: S, h: number) => object, secs: number, speed?: number) 
 function halfpipe() {
   const idle = pipe(() => ({}), 12).peaks.slice(0, 4);
   const decay = idle.length > 1 ? (idle[idle.length - 1]! / idle[0]!) ** (1 / (idle.length - 1)) : NaN;
-  // a rider pumping the walls only: legs held on the transitions (where the game's push turns into a pump), never on the flat bottom, and let go near the coping
-  const pumped = pipe((s, h) => ({ throttle: Math.abs(s.x) > 4 && s.y < 0.85 * h ? 1 : 0 }), 15);
+  // a rider pumping the walls only, in a mini ramp of real proportions (a 2.4 m transition under a 0.8 m board): legs held on the transitions (where the game's push turns into a pump), never on the flat bottom, and let go near the coping
+  const pumped = pipe((s, h) => ({ throttle: Math.abs(s.x) > 4 && s.y < 0.85 * h ? 1 : 0 }), 30, 0.5, 3);
   // gain on the first wall: the ride starts at the bottom with just enough speed for half the wall
   const gain = pumped.peaks.length ? Math.min(pumped.peaks[0]!, pumped.h) / (0.5 * pumped.h) : NaN; // capped at the coping: past it the rider let go
-  // sustained vert: the repo's own vert journey (in at 18 m/s, push held), best air over the coping
-  const vert = pipe(() => ({ throttle: 1 }), 15, 18);
-  const best = Math.max(...vert.peaks);
-  return { pipeDecay: decay, pumpGain: gain, vertAir: Math.max(0, best - vert.h) / vert.h, _peaksIdle: idle, _peaksPumped: pumped.peaks.slice(0, 8), _peaksVert: vert.peaks.slice(0, 8) };
+  // sustained vert, in a ramp as tall as the clips' (3.4 m under a 0.8 m board): dropped in from half a wall over the coping with the push held, the air it settles at (the tenth wall)
+  const vert = pipe(() => ({ throttle: 1 }), 60, 1.5, 4.25);
+  const settled = vert.peaks[9] ?? NaN;
+  return { pipeDecay: decay, pumpGain: gain, vertAir: Math.max(0, settled - vert.h) / vert.h, _peaksIdle: idle, _peaksPumped: pumped.peaks.slice(0, 8), _peaksVert: vert.peaks.slice(0, 10) };
 }
 
 const game: Record<string, number | number[]> = { ...ollie(), ...flip(), ...coast(), ...push(), ...pushGrade(), ...hillRoll(), ...carve(), ...grind(), ...halfpipe() };
@@ -161,5 +162,5 @@ else {
   console.log("metric".padEnd(16) + "target".padStart(8) + "  +/-".padEnd(8) + "game".padStart(8) + "score".padStart(7) + "  w   kind");
   for (const r of rows) console.log(r.metric.padEnd(16) + String(r.target).padStart(8) + `  ${r.tol}`.padEnd(8) + String(r.game ?? "n/a").padStart(8) + String(r.score).padStart(7) + `  ${String(r.weight).padEnd(3)} ${r.kind}`);
   console.log(`\nweighted total: ${total.toFixed(1)} / 100`);
-  console.log(`pipe peaks idle ${(game._peaksIdle as number[]).map((p) => p.toFixed(2)).join(" ")} | wall-pumped ${(game._peaksPumped as number[]).map((p) => p.toFixed(2)).join(" ")} | vert ${(game._peaksVert as number[]).map((p) => p.toFixed(2)).join(" ")} (coping 6)`);
+  console.log(`pipe peaks idle ${(game._peaksIdle as number[]).map((p) => p.toFixed(2)).join(" ")} | wall-pumped ${(game._peaksPumped as number[]).map((p) => p.toFixed(2)).join(" ")} | vert ${(game._peaksVert as number[]).map((p) => p.toFixed(2)).join(" ")} (walls: creek pipe 6, mini ramp ${(3 * L).toFixed(1)}, vert ramp ${(4.25 * L).toFixed(1)})`);
 }
