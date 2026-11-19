@@ -3,13 +3,13 @@
 // a plugin stopped). Each track's calls go one after another, so its notes reach the plugin in the order played.
 import { useSyncExternalStore } from "react";
 import { check } from "@rustybuns/util/guard";
-import { findPlugins, renderPlugin, startPlugin, stopPlugin } from "../actions/plugins.ts";
-import { BlockReply, PluginChoices, StartReply, type PluginChoice, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
+import { findPlugins, openPluginEditor, renderPlugin, startPlugin, stopPlugin } from "../actions/plugins.ts";
+import { BlockReply, EditorReply, PluginChoices, StartReply, type ParamChange, type PluginChoice, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
 import type { Project } from "../project.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 
 /** What the desk shows for a plugin track: its sliders once it's running, or why it isn't. */
-export interface PluginShown { name: string; params: PluginParam[]; error: string | null; starting: boolean }
+export interface PluginShown { name: string; params: PluginParam[]; error: string | null; starting: boolean; editor: boolean }
 
 /** A block off the wire as samples (little-endian f32, what every desktop is). */
 export function fromBase64(s: string): Float32Array {
@@ -33,7 +33,15 @@ export class PluginPump {
   private snapshot: ReadonlyMap<number, PluginShown> = new Map();
 
   constructor(private send: (m: ToWorklet, transfer?: Transferable[]) => void, private sampleRate: number,
-    private host = { renderPlugin, startPlugin, stopPlugin }) {}
+    private host = { renderPlugin, startPlugin, stopPlugin, openPluginEditor },
+    /** Knobs turned in a plugin's own editor (#5267): the desk moves its sliders to match. */
+    private onChanges: (track: number, changes: ParamChange[]) => void = () => {}) {}
+
+  /** Opens track `t`'s plugin's own window; a string says why it couldn't. */
+  async openEditor(t: number, title: string): Promise<string | null> {
+    const r = await this.host.openPluginEditor(t, title).then((v) => check(EditorReply, v), (e) => ({ error: why(e) }));
+    return r ? r.error ?? null : "the host sent back something else";
+  }
 
   /** Each track's plugin as the project says: started, stopped, or its moved sliders sent on. */
   sync(p: Project) {
@@ -58,8 +66,13 @@ export class PluginPump {
     if (!run) return back(new Float32Array(0), false);
     run.chain = run.chain.then(async () => {
       if (this.running.get(m.track) !== run) return;
-      const r = await this.host.renderPlugin({ track: m.track, frames: m.frames, events: m.events }).then((v) => check(BlockReply, v), (e) => ({ pcm: "", ok: false, error: why(e) }));
-      if (r?.ok) return back(fromBase64(r.pcm), true);
+      const r = await this.host.renderPlugin({ track: m.track, frames: m.frames, events: m.events }).then((v) => check(BlockReply, v), (e): BlockReply => ({ pcm: "", ok: false, error: why(e) }));
+      if (r?.ok) {
+        back(fromBase64(r.pcm), true);
+        // the plugin already has these values: noted as sent, so the desk's echo of them isn't sent back
+        if (r.changes?.length) { for (const c of r.changes) run.values.set(c.id, c.value); this.onChanges(m.track, r.changes); }
+        return;
+      }
       back(new Float32Array(0), false);
       this.fail(m.track, r?.error ?? "the host sent back something else");
     });
@@ -69,12 +82,12 @@ export class PluginPump {
     const was = this.running.get(t);
     const run = { key: keyOf(plug), values: new Map(plug.values.map((x) => [x.id, x.v])), chain: Promise.resolve() as Promise<unknown> };
     this.running.set(t, run);
-    this.show(t, { name: plug.name, params: [], error: null, starting: true });
+    this.show(t, { name: plug.name, params: [], error: null, starting: true, editor: false });
     run.chain = (was?.chain ?? Promise.resolve()).then(async () => {
-      const r = await this.host.startPlugin(t, plug, this.sampleRate).then((v) => check(StartReply, v), (e) => ({ params: [], error: why(e) }));
+      const r = await this.host.startPlugin(t, plug, this.sampleRate).then((v) => check(StartReply, v), (e): StartReply => ({ params: [], editor: false, error: why(e) }));
       if (this.running.get(t) !== run) return;
       if (!r || r.error) return this.fail(t, r?.error ?? "the host sent back something else");
-      this.show(t, { name: plug.name, params: r.params, error: null, starting: false });
+      this.show(t, { name: plug.name, params: r.params, error: null, starting: false, editor: r.editor });
       this.send({ t: "plugin", track: t, on: true });   // a plugin chosen again after one failed gets another go
     });
   }
@@ -89,7 +102,7 @@ export class PluginPump {
 
   private fail(t: number, error: string) {
     const s = this.shown.get(t);
-    this.show(t, { name: s?.name ?? "Plugin", params: s?.params ?? [], error, starting: false });
+    this.show(t, { name: s?.name ?? "Plugin", params: s?.params ?? [], error, starting: false, editor: false });
   }
 
   private show(t: number, s: PluginShown) { this.shown.set(t, s); this.changed(); }

@@ -4,7 +4,7 @@
 // (src/engine/plugin-route.ts). Only a `.clap` the scan found can be opened: loading one runs its code.
 import { existsSync } from "node:fs";
 import { candidates } from "@rustybuns/native";
-import { check, int, num } from "@rustybuns/util/guard";
+import { check, int, num, str } from "@rustybuns/util/guard";
 import { openBundle, scanPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
 import { PluginAskArgs, TrackPlugin, type BlockReply, type PluginChoice, type StartReply } from "../plugin-track.ts";
 
@@ -37,17 +37,17 @@ export async function findPlugins(): Promise<PluginChoice[]> {
 /** Starts `plugin` on track `track` at the context's rate, with its moved sliders where they were. */
 export async function startPlugin(track: unknown, plugin: unknown, sampleRate: unknown): Promise<StartReply> {
   const t = check(int(0, 63), track), p = check(TrackPlugin, plugin), sr = check(num(8000, 384000), sampleRate);
-  if (t === null || !p || sr === null) return { params: [], error: "not a plugin track" };
+  if (t === null || !p || sr === null) return { params: [], editor: false, error: "not a plugin track" };
   stop(t);
   if (!found.has(p.path)) await findPlugins();
-  if (!found.has(p.path)) return { params: [], error: `${p.name} isn't in the CLAP folders any more` };
+  if (!found.has(p.path)) return { params: [], editor: false, error: `${p.name} isn't in the CLAP folders any more` };
   const b = await bundle(p.path);
-  if (typeof b === "string") return { params: [], error: b };
+  if (typeof b === "string") return { params: [], editor: false, error: b };
   const made = b.make(p.index, sr);
-  if (typeof made === "string") return { params: [], error: made };
+  if (typeof made === "string") return { params: [], editor: false, error: made };
   for (const { id, v } of p.values) made.setParam(id, v);
   playing.set(t, { plugin: made, failed: null });
-  return { params: made.params() };
+  return { params: made.params(), editor: made.editor !== null };
 }
 
 /** The next `frames` of track `track`'s plugin, after the notes and slider moves in `events`. */
@@ -67,7 +67,8 @@ export async function renderPlugin(args: unknown): Promise<BlockReply> {
     p.failed = `${plugin.info.name} stopped working`;
     return { pcm: "", ok: false, error: p.failed };
   }
-  return { pcm: Buffer.from(out.buffer).toString("base64"), ok: true };
+  const changes = plugin.changes();
+  return { pcm: Buffer.from(out.buffer).toString("base64"), ok: true, ...(changes.length ? { changes } : {}) };
 }
 
 /** Frees track `track`'s plugin, if it has one. */
@@ -75,7 +76,17 @@ export async function stopPlugin(track: unknown): Promise<void> {
   const t = check(int(0, 63), track);
   if (t !== null) stop(t);
 }
+/** Opens track `track`'s plugin's own editor as a window beside the app (or brings it forward). */
+export async function openPluginEditor(track: unknown, title: unknown): Promise<{ error?: string }> {
+  const t = check(int(0, 63), track), name = check(str(200), title);
+  const p = t === null ? undefined : playing.get(t);
+  if (!p || name === null) return { error: "no plugin on this track" };
+  const r = p.plugin.openEditor(name);
+  return r === true ? {} : { error: r };
+}
+
 function stop(t: number) {
+  playing.get(t)?.plugin.closeEditor();
   playing.get(t)?.plugin.free();
   playing.delete(t);
 }

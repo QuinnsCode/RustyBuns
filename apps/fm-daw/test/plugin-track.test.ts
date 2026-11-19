@@ -19,10 +19,10 @@ useWorklet();
 const b64 = (a: Float32Array) => Buffer.from(a.buffer).toString("base64");
 
 /** The page, the worklet and a host, run together: ops change the groove, `play` runs the audio and carries the asks. */
-function desk(host: ConstructorParameters<typeof PluginPump>[2], plugin: TrackPlugin) {
+function desk(host: ConstructorParameters<typeof PluginPump>[2], plugin: TrackPlugin, onChanges?: ConstructorParameters<typeof PluginPump>[3]) {
   const { p, say } = processor();
   let proj: Project = apply(demoProject(), { t: "plugin", track: 0, plugin });
-  const pump = new PluginPump((m: ToWorklet) => say(m), SR, host);
+  const pump = new PluginPump((m: ToWorklet) => say(m), SR, host, onChanges);
   say(loadMsg(proj));
   say({ t: "master", gain: 1 });
   pump.sync(proj);
@@ -49,18 +49,21 @@ const last = (a: Float32Array) => a[a.length - 1]!;
 test("a plugin track plays its notes through the plugin at its fader; one that fails goes quiet and the mix plays on", async () => {
   const heard: PluginEvent[] = [];
   const down = new Set<number>();
-  let failing = false;
+  let failing = false, turned: { id: number; value: number }[] = [];
+  const edited: { track: number; id: number; value: number }[] = [];
   const host = {
-    startPlugin: async () => ({ params: [{ id: 7, name: "Level", module: "", min: 0, max: 1, default: 0.8, value: 0.8, stepped: false }] }),
+    startPlugin: async () => ({ params: [{ id: 7, name: "Level", module: "", min: 0, max: 1, default: 0.8, value: 0.8, stepped: false }], editor: true }),
+    openPluginEditor: async () => ({}),
     renderPlugin: async (args: unknown): Promise<BlockReply> => {
       const a = PluginAskArgs(args);
       for (const e of a.events) { heard.push(e); if (e.t === "on") down.add(e.key); if (e.t === "off") down.delete(e.key); }
       if (failing) return { pcm: "", ok: false, error: "Steady stopped working" };
-      return { pcm: b64(new Float32Array(2 * a.frames).fill(down.size ? 0.5 : 0)), ok: true };
+      const changes = turned; turned = [];
+      return { pcm: b64(new Float32Array(2 * a.frames).fill(down.size ? 0.5 : 0)), ok: true, ...(changes.length ? { changes } : {}) };
     },
     stopPlugin: async () => {},
   };
-  const d = desk(host, { path: "/plugins/Steady.clap", index: 0, name: "Steady", values: [] });
+  const d = desk(host, { path: "/plugins/Steady.clap", index: 0, name: "Steady", values: [] }, (track, cs) => { for (const c of cs) edited.push({ track, ...c }); });
   d.op({ t: "param", track: 0, i: P.GAIN, v: 0.5 }, { t: "param", track: 0, i: P.GAIN, v: 0.5 });
 
   expect(last(await d.play(0.2))).toBe(0);                          // nothing played, nothing heard (no FM voice either)
@@ -82,6 +85,12 @@ test("a plugin track plays its notes through the plugin at its fader; one that f
   expect(Math.abs(last(await d.play(0.3)))).toBeLessThan(1e-3);
   expect(heard.slice(-2)).toEqual([{ t: "set", id: 7, v: 0.3 }, { t: "off", key: 69 }]);
   expect(d.pump.state.get(0)?.params[0]?.value).toBe(0.3);
+
+  // a knob turned in the plugin's own window comes back for the desk's slider
+  expect(d.pump.state.get(0)?.editor).toBe(true);
+  turned = [{ id: 7, value: 0.9 }];
+  await d.play(0.1);
+  expect(edited).toEqual([{ track: 0, id: 7, value: 0.9 }]);
 
   // the plugin fails: the track says so and goes quiet, and another track still plays
   failing = true;

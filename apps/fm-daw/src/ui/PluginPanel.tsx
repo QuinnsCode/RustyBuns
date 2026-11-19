@@ -35,14 +35,19 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
 }
 
 /** A plugin track's sliders, and how it's doing. */
-export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void }) {
+export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void; onEditor(): Promise<string | null> }) {
   const s = props.shown, plug = props.track.plugin;
+  const [editorNote, setEditorNote] = useState<string | null>(null);
   return (
     <section className="patch" style={{ "--track": props.color } as React.CSSProperties} aria-label={`${props.track.name} plugin`}>
       <header className="patch-head">
         <h2>{props.track.name} <span className="dim">· {plug?.name ?? "plugin"}</span></h2>
         {props.head}
+        {s?.editor && !s.error && <div className="patch-actions">
+          <button className="ghost" title="Open the plugin's own window" onClick={() => { void props.onEditor().then(setEditorNote); }}>Editor</button>
+        </div>}
       </header>
+      {editorNote && <p className="note-bar" role="status">{editorNote}</p>}
       {s?.error ? <p className="note-bar" role="alert">{s.error}. The rest of the mix plays on.</p>
         : s?.starting || !s ? <p className="dim">Starting {plug?.name}…</p>
         : s.params.length === 0 ? <p className="dim">{plug?.name} has no sliders.</p> : null}

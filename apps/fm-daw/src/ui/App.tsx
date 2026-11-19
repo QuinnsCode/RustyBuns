@@ -342,7 +342,12 @@ export function App() {
       audioRef.current = a;
       a.send(loadMsg(proj.current));
       a.send({ t: "metro", on: metro });
-      pump.current = new PluginPump((m, tr) => a.send(m, tr), a.ctx.sampleRate);
+      pump.current = new PluginPump((m, tr) => a.send(m, tr), a.ctx.sampleRate, undefined, (track, changes) => {
+        let plug = proj.current.tracks[track]?.plugin;
+        if (!plug) return;
+        for (const c of changes) plug = withValue(plug, c.id, c.value);
+        commit({ t: "plugin", track, plugin: plug }, { group: `plugEd:${track}` });
+      });
       takesSent.current = [];
       syncTakes(proj.current);
       setAudio(a);
@@ -878,7 +883,8 @@ export function App() {
           {t.plugin ? (
             <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={trackSound}
               onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
-              onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })} />
+              onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
+              onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")} />
           ) : <PatchEditor track={t} color={color} head={trackSound}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}

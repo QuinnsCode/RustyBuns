@@ -12,6 +12,9 @@ export const PluginParam = obj({
   min: num(-1e300, 1e300), max: num(-1e300, 1e300), default: num(-1e300, 1e300), value: num(-1e300, 1e300), stepped: bool(),
 });
 export type PluginParam = Of<typeof PluginParam>;
+/** A knob the plugin turned itself (in its own editor): the slider for `id` moves to `value`. */
+export const ParamChange = obj({ id: int(0, 2 ** 32 - 1), value: num(-1e300, 1e300) });
+export type ParamChange = Of<typeof ParamChange>;
 
 /** Plugin sliders kept per track: the ones moved off their default. */
 export const MAX_PLUGIN_VALUES = 256;
@@ -62,9 +65,11 @@ export const PluginAskArgs = obj({ track: int(0, 63), frames: int(1, MAX_PLUGIN_
 export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }) });
 export type PluginChoice = Of<typeof PluginChoice>;
 export const PluginChoices = arr(PluginChoice, 1024);
-/** A plugin started on a track: its sliders, or why it wouldn't start. */
-export const StartReply = obj({ params: arr(PluginParam, 4096), error: opt(str(2000, { min: 0 })) });
+/** A plugin started on a track: its sliders and whether it has its own editor, or why it wouldn't start. */
+export const StartReply = obj({ params: arr(PluginParam, 4096), editor: bool(false), error: opt(str(2000, { min: 0 })) });
+/** The plugin's editor opened, or why not. */
+export const EditorReply = obj({ error: opt(str(2000, { min: 0 })) });
 export type StartReply = Of<typeof StartReply>;
-/** A block of a plugin's sound, base64 of little-endian f32 interleaved stereo; `ok` false once it has failed. */
-export const BlockReply = obj({ pcm: str(4 * MAX_PLUGIN_FRAMES * 3, { min: 0 }), ok: bool(), error: opt(str(2000, { min: 0 })) });
+/** A block of a plugin's sound, base64 of little-endian f32 interleaved stereo; `ok` false once it has failed. `changes`: knobs turned in its editor. */
+export const BlockReply = obj({ pcm: str(4 * MAX_PLUGIN_FRAMES * 3, { min: 0 }), ok: bool(), error: opt(str(2000, { min: 0 })), changes: opt(arr(ParamChange, 4096)) });
 export type BlockReply = Of<typeof BlockReply>;

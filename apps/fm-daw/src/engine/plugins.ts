@@ -9,8 +9,8 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
-import { arr, int, num, obj, type Guard, type Of } from "@rustybuns/util/guard";
-import { PluginInfo, PluginParam } from "../plugin-track.ts";
+import { arr, type Guard } from "@rustybuns/util/guard";
+import { ParamChange, PluginInfo, PluginParam } from "../plugin-track.ts";
 import { audible, type Project } from "../project.ts";
 import { P } from "./params.ts";
 
@@ -40,10 +40,8 @@ export async function clapLib(): Promise<Lib | null> {
   return lib;
 }
 
-export { PluginInfo, PluginParam } from "../plugin-track.ts";
+export { ParamChange, PluginInfo, PluginParam } from "../plugin-track.ts";
 /** A knob the plugin turned itself (in its own editor): the slider for `id` moves to `value`. */
-export const ParamChange = obj({ id: int(0, 2 ** 32 - 1), value: num(-1e300, 1e300) });
-export type ParamChange = Of<typeof ParamChange>;
 /** How a plugin's own editor opens: in a window of its own, inside one of ours, or not at all here. */
 export type EditorKind = "floating" | "window" | null;
 /** How often an open editor's window gets its events, and what the plugin asked for is done. */
