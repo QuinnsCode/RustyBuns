@@ -6,7 +6,7 @@
 import { arr, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 import type { Command } from "@rustybuns/util/commands";
 import type { Avatar } from "@rustybuns/util/avatar";
-import { apply, decodeServer, type ClientMsg, type Live, type Op, type Project } from "../project.ts";
+import { apply, decodeServer, loopBeats, type ClientMsg, type Live, type Op, type Project } from "../project.ts";
 import { decodeChatServer, type ChatClient } from "../chat.ts";
 import { decodeGrantServer, may as granted, noGrants, type Can, type GrantClient, type Grants } from "../grants.ts";
 import { RUNG, RUNGS, rungName, type Rung } from "../rewind.ts";
@@ -15,7 +15,8 @@ import { P } from "../engine/params.ts";
 import { DRUM_KEYS, body, gone, hear, keyNote, newJam, sit, snapshot, spotOf, stand, trackFor, type Jam } from "./jam.ts";
 import { MakeArgs, makeInstrument, roomWith } from "./instrument.ts";
 import type { StudioDef } from "./room.ts";
-import type { ClockState } from "../clock.ts";
+import { decodeClockServer, type ClockClient, type ClockState } from "../clock.ts";
+import { Band } from "./band.ts";
 
 /** Who may do what, as the sesh last said: the floor, the leader's grants and who this player is (its person id). */
 export interface Rights { floor: FloorState | null; grants: Grants | null; me: string | null; asked: Can | null }
@@ -38,6 +39,8 @@ export interface Player {
   wait(ms: number): Promise<void>;
   /** The shared clock as this player keeps it (src/clock.ts): whose, the offset and round trip, how it hears the band. */
   clock?(): (ClockState & { behindMs: number }) | null;
+  /** The beat on the shared clock now, or null before it is known: a note played now is stamped with it. */
+  beat?(): number | null;
 }
 
 /** A player's look backs: `rewind` asks the sesh and waits up to 5 s for `answer`, the sesh's `rewound`. */
@@ -134,9 +137,11 @@ export function studioTools(pl: Player): Command[] {
           return k ? [{ ...k, ...x }] : [];
         });
         if (!hits.length) return no(`Nothing to play at ${s.label}`);
+        // each note stamped with the beat it is meant for, so a listener a loop late hears it there, however late it goes out
+        const b0 = pl.beat?.() ?? null, on = (at: number) => (b0 === null ? {} : { b: b0 + at });
         const beat = 60_000 / p.bpm, events = hits.flatMap((h) => [
-          { ms: h.at * beat, e: { t: "on", track: h.track, midi: h.midi, vel: h.vel } satisfies Live },
-          { ms: (h.at + h.len) * beat, e: { t: "off", track: h.track, midi: h.midi } satisfies Live },
+          { ms: h.at * beat, e: { t: "on", track: h.track, midi: h.midi, vel: h.vel, ...on(h.at) } satisfies Live },
+          { ms: (h.at + h.len) * beat, e: { t: "off", track: h.track, midi: h.midi, ...on(h.at + h.len) } satisfies Live },
         ]).sort((x, y) => x.ms - y.ms || (x.e.t === "off" ? -1 : 1));
         let now = 0;
         for (const ev of events) { if (ev.ms > now) { await pl.wait(ev.ms - now); now = ev.ms; } pl.live(ev.e); }
@@ -188,11 +193,12 @@ export function studioTools(pl: Player): Command[] {
 /**
  * A player that is only a socket into the sesh (the CLI's MCP, a test): it keeps its jam, the groove and its rights
  * from what the World sends, and says who it is (its avatar and name) on joining and when someone new comes in.
- * `hear` takes each message off the socket, as text or already parsed.
+ * `hear` takes each message off the socket, as text or already parsed. It keeps the shared clock like a page (a Band on
+ * `now`, Date.now by default): `ping` asks the leader the time (or does nothing, leading) and says when to ask next.
  */
 export function remotePlayer(o: {
   base: StudioDef; name: string; avatar: Avatar;
-  send: (m: ClientMsg | ChatClient | GrantClient) => void; wait?: (ms: number) => Promise<void>;
+  send: (m: ClientMsg | ChatClient | GrantClient | ClockClient) => void; wait?: (ms: number) => Promise<void>; now?: () => number;
 }) {
   let project: Project | null = null, peers = 0;
   const rights: Rights = { floor: null, grants: null, me: null, asked: null };
@@ -200,6 +206,8 @@ export function remotePlayer(o: {
   const jam = newJam(o.base);
   const key = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const wait = o.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const band = new Band(() => ({ bpm: project?.bpm ?? 120, loopBeats: project ? loopBeats(project) : 0 }), o.now ?? Date.now);
+  const lead = () => band.leading(!!rights.floor?.host);
   const player: Player = {
     jam, base: o.base, name: o.name,
     project: () => project, rights: () => rights,
@@ -208,7 +216,10 @@ export function remotePlayer(o: {
     ask: (can) => o.send({ t: "ask", can }),
     rewind: back.rewind,
     wait,
+    clock: () => { lead(); band.step(false); return { ...band.clock.state(), behindMs: band.behind() }; },
+    beat: () => { lead(); band.step(false); return band.synced ? band.beat() : null; },
   };
+  const ping = () => { lead(); const m = band.ping(); if (m) o.send(m); return band.clock.every; };
   const wear = () => { o.send({ t: "live", e: { t: "wear", avatar: o.avatar, name: o.name } }); o.send({ t: "live", e: body(jam) }); };
   o.send({ t: "hello", key, name: o.name });
   wear();
@@ -217,6 +228,8 @@ export function remotePlayer(o: {
     if (typeof raw === "string") { try { v = JSON.parse(raw); } catch { return; } }
     const c = decodeChatServer(v);
     if (c) { if (c.t === "chat") rights.me = c.you; return; }
+    const ck = decodeClockServer(v);
+    if (ck) { lead(); const r = band.onClock(ck); if (r) o.send(r); return; }
     const g = decodeGrantServer(v);
     if (g) { rights.grants = g.grants; rights.asked = (rights.me && g.asks[rights.me]) || null; return; }
     const m = decodeServer(v);
@@ -231,5 +244,5 @@ export function remotePlayer(o: {
     else return;
     syncRoom(player);
   }
-  return { player, hear: heard };
+  return { player, hear: heard, ping };
 }
