@@ -22,6 +22,8 @@ const column = Object.assign(document.createElement("main"), { style: "position:
 document.body.append(column);
 column.append(client.accountChip(document.createElement("div")));
 client.reportButton();
+// ?wheel: a stand-in for a game's corner button (Mythic's field wheel under its cog), which toasts keep clear of.
+if (location.search.includes("wheel")) document.body.insertAdjacentHTML("beforeend", `<i id="wheel" data-eq-clear style="position:fixed;top:64px;right:12px;width:44px;height:44px"></i>`);
 if (!location.search.includes("closed")) document.querySelector<HTMLButtonElement>(".rb-report > .eq-btn")!.click();
 celebrate({ id: "played", name: "First muster", blurb: "Played a battle", secret: false, at: 1 }, 0);
 
