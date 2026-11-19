@@ -105,7 +105,8 @@ export default {
       return env.PROFILE.get(env.PROFILE.idFromName(id)).fetch(new Request("https://profile/", { method: req.method, body }));
     }
     if (url.pathname === "/ice" && req.method === "GET") {
-      if (ip && !iceGate.allow(ip, String(Date.now()), Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
+      // each ask its own key, so a burst in one millisecond counts every one
+      if (ip && !iceGate.allow(ip, crypto.randomUUID(), Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
       return privateJson(await iceServers(env));
     }
     if (url.pathname === "/rooms" && req.method === "GET") return lobby().fetch("https://lobby/status");
