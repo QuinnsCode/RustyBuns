@@ -201,6 +201,11 @@ const GLSL_FRAG_MAIN = `
     float gShore = 0.0;
     if (gRel > 0.01 || gPudLvl > 0.0) {
       vec3 gR1 = gNoiseD(vGp.xz * 0.55 + vec2(13.1, 2.7)), gR2 = gNoiseD(turn * vGp.xz * 2.3 + vec2(4.4, 8.1));
+#ifdef G_HEAVE
+      // round your feet the mounds are in the vertices (view.ts heave): their height comes from the vertex, and the
+      // geometry's own normal leans the surface, so the shading matches the silhouette
+      gR1.x = mix(gR1.x, vGv.x, vGv.y); gR1.yz *= 1.0 - vGv.y;
+#endif
       gH = gR1.x * 0.62 + gR2.x * 0.38;
       gRelief = -(gR1.yz * 0.8 + (gR2.yz * turn) * 0.7) * gRel;   // the second back from its turned frame to world x and z
       if (gPudLvl > 0.0) {
@@ -296,9 +301,17 @@ const GLSL_FRAG_MAIN = `
 
 /** Dresses a ground material: its fragments take the layers' detail and their normal, the vertices carrying the weights.
  * `key` names the program this makes (three caches programs by the hook's text, which is the same for every hole radius). */
-export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures, hole?: { centre: { value: THREE.Vector2 }; r: number }) {
+export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures, hole?: { centre: { value: THREE.Vector2 }; r: number }, keep?: { centre: { value: THREE.Vector2 }; r: number }) {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uGAlb = { value: tex.albedo }; sh.uniforms.uGNrm = { value: tex.normal };
+    if (keep) {
+      // the patch round your feet: its vertices carry the mounds (HEAVE_ATTR), and it draws only inside its circle
+      sh.uniforms.uKeep = keep.centre;
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\nattribute vec2 ${HEAVE_ATTR};\nvarying vec2 vGv;`)
+        .replace("#include <begin_vertex>", `#include <begin_vertex>\nvGv = ${HEAVE_ATTR};`);
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#define G_HEAVE\n#include <common>\nvarying vec2 vGv;\nuniform vec2 uKeep;")
+        .replace("void main() {", `void main() {\n  if (distance(vGp.xz, uKeep) > ${keep.r.toFixed(1)}) discard;`);
+    }
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${GLSL_VERT_DECL}`)
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGw0 = gw0; vGw1 = gw1; vGk = gk; vGp = position; vGn = normal;");
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${GLSL_FRAG_DECL}`)
@@ -326,6 +339,24 @@ export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures,
     }
   };
   mat.side = THREE.DoubleSide; // the skirts under a tile's edge hide the cracks between detail levels
-  mat.customProgramCacheKey = () => `ground${hole ? `-hole${hole.r.toFixed(1)}` : ""}`;
+  mat.customProgramCacheKey = () => `ground${hole ? `-hole${hole.r.toFixed(1)}` : ""}${keep ? `-keep${keep.r.toFixed(1)}` : ""}`;
 }
+
+/** The heave attribute's name on the ground round your feet: a vec2 of the mound noise (0 to 1) and how much of it the
+ * vertices carry (1 inside, 0 at the circle's edge). */
+export const HEAVE_ATTR = "gv";
+const hash2 = (x: number, z: number) => {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+/** Smooth value noise, 0 to 1, one cell a unit: the mounds' shape (a couple of metres across at 0.55 a metre). */
+export function moundNoise(x: number, z: number): number {
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz, u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix, iz), b = hash2(ix + 1, iz), c = hash2(ix, iz + 1), d = hash2(ix + 1, iz + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+/** How much the floor heaves, by what it is made of (the eight layer weights, 0 to 1): a litter floor over roots and old
+ * logs most, sand and snow lying smooth. The same mix the shader's shading relief uses. */
+export const heaveOf = (w: ArrayLike<number>) => (w[0]! + w[1]!) + (w[2]! + w[3]!) * 0.8 + w[4]! * 0.75 + w[5]! * 0.3 + w[6]! * 0.6 + w[7]! * 0.25;
 const NORMAL_STRENGTH = "1.7";
