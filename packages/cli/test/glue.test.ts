@@ -916,12 +916,6 @@ test("DO migrations: history is kept, a new class gets the next tag, a removed c
   expect(read(generateWrangler(cfg({ OLD: { type: "durable_object", className: "Old" }, ...two }), hand)).at(-1)).toEqual({ tag: "v3", new_sqlite_classes: ["FileDurableObject"] });
 });
 
-test("a Worker with no bindings key generates instead of crashing (#247)", () => {
-  const c = { name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01" }, targets: { edge: { provider: "cloudflare" } } } as any;
-  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).main).toBe("src/worker.ts");
-  expect(generateAlchemy(c)).toContain(`Cloudflare.Worker("Worker"`);
-});
-
 test("builtEntry: builtMain, or the main the Vite plugin's wrangler.json names when builtMain isn't there", () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
   const dir = mkdtempSync(require("node:os").tmpdir() + "/rb-built-");

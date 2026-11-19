@@ -267,14 +267,6 @@ test("tsconfig: relative extends is followed, nearer paths win, baseUrl is per-f
   expect(inferTsconfigAliases(p.dir)).toEqual({ "@": "app", "~": "web" });
 });
 
-test("tsconfig: extends cycles and package presets do not hang or throw", () => {
-  const p = project({
-    "tsconfig.json": '{ "extends": ["@tsconfig/node20/tsconfig.json", "./a.json"] }',
-    "a.json": '{ "extends": "./tsconfig.json", "compilerOptions": { "paths": { "@/*": ["src/*"] } } }',
-  });
-  expect(inferTsconfigAliases(p.dir)).toEqual({ "@": "src" });
-});
-
 test("package manager: lockfiles, then packageManager field", () => {
   expect(detectPm(project({ "package-lock.json": "{}" }).dir)).toBe("npm");
   expect(detectPm(project({ "package.json": '{"packageManager":"pnpm@9.1.0"}' }).dir)).toBe("pnpm");

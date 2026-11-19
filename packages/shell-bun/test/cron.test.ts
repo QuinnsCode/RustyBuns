@@ -14,13 +14,11 @@ test("parseCron: fields, ranges, steps, lists and names", () => {
   expect(cronMatches(parseCron("30 2 1,15 JAN,JUL *"), at("2026-07-15T02:30:00"))).toBe(true);
   expect(cronMatches(parseCron("0 0 * * 7"), at("2026-10-11T00:00:00"))).toBe(true);  // 7 is Sunday too
   expect(cronMatches(parseCron("5/20 * * * *"), at("2026-10-09T00:45:00"))).toBe(true);
-});
-
-test("parseCron: both day fields restricted fires on either", () => {
-  const c = parseCron("0 0 13 * FRI");
-  expect(cronMatches(c, at("2026-10-13T00:00:00"))).toBe(true);    // the 13th, a Tuesday
-  expect(cronMatches(c, at("2026-10-09T00:00:00"))).toBe(true);    // a Friday
-  expect(cronMatches(c, at("2026-10-10T00:00:00"))).toBe(false);
+  // both day fields restricted fires on either
+  const both = parseCron("0 0 13 * FRI");
+  expect(cronMatches(both, at("2026-10-13T00:00:00"))).toBe(true);    // the 13th, a Tuesday
+  expect(cronMatches(both, at("2026-10-09T00:00:00"))).toBe(true);    // a Friday
+  expect(cronMatches(both, at("2026-10-10T00:00:00"))).toBe(false);
 });
 
 test("parseCron: refuses what cron would", () => {
