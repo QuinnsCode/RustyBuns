@@ -1,0 +1,189 @@
+diff --git a/apps/mythic-masters/src/beasts.ts b/apps/mythic-masters/src/beasts.ts
+index 9fb1d2c19..913d93e07 100644
+--- a/apps/mythic-masters/src/beasts.ts
++++ b/apps/mythic-masters/src/beasts.ts
+@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
+ import { loadGlb, type Model } from "@rustybuns/rig/model";
+ import { pupils } from "./eyes.ts";
+ import { Secondary } from "./secondary.ts";
+-import { CARD_COLOR, CARD_FACE, CARD_FRAG_PARS, CARD_LIGHT, CARD_NORMAL, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LooseLag, looseVert, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
++import { CARD_COLOR, CARD_FACE, CARD_FRAG_PARS, CARD_LIGHT, CARD_NORMAL, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LooseLag, looseVert, cardParts, looseParts, reachOf, rootOf, strandOf, tipOf } from "./loose.ts";
+ import { smoothNormals } from "./smooth.ts";
+ import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
+ import type { Archetype, Body, Move } from "./roster.ts";
+@@ -180,7 +180,7 @@ const HideMean = arr(num(0, 1), 3, { min: 3 });
+ /** Each card part's shading per vertex, worked out once per beast: how far along the card (loose.ts `tipOf`, its reach
+  * from the coat) and the coat's colour at its root (`rootOf`: the coat's vertex colour times its material and baked
+  * hide's mean). The coat is the mapped part (the biggest with no map); a card's reach is from every part that isn't one. */
+-type Card = { tip: Float32Array; root: Float32Array; normal: Float32Array };
++type Card = { tip: Float32Array; root: Float32Array; normal: Float32Array; strand: Float32Array };
+ const CARDS = new WeakMap<Beast, Map<number, Card>>();
+ function cardFor(beast: Beast, part: number, cards: readonly boolean[]): Card {
+   let byPart = CARDS.get(beast);
+@@ -197,7 +197,8 @@ function cardFor(beast: Beast, part: number, cards: readonly boolean[]): Card {
+     const colour = new Float32Array(pos.count * 3);
+     for (let i = 0; i < pos.count; i++) { colour[i * 3] = col ? col.getX(i) : 1; colour[i * 3 + 1] = col ? col.getY(i) : 1; colour[i * 3 + 2] = col ? col.getZ(i) : 1; }
+     const nrm = cg.getAttribute("normal");
+-    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]),
++    const tip = tipOf(reachOf(own, rest, beast.sheet.height, 1)), idx = parts[part]!.geometry.index;
++    c = { tip, strand: strandOf(own, idx ? idx.array : null, tip, beast.sheet.height), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]),
+       normal: nrm ? rootOf(own, pos.array, nrm.array, [1, 1, 1]) : Float32Array.from(parts[part]!.geometry.getAttribute("normal").array) };
+     byPart.set(part, c);
+   }
+@@ -488,7 +489,7 @@ export class Puppet {
+       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
+       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
+       const card = !!cards[pi];
+-      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); g.setAttribute("aRootN", new THREE.BufferAttribute(c.normal, 3)); }
++      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); g.setAttribute("aRootN", new THREE.BufferAttribute(c.normal, 3)); g.setAttribute("aStrand", new THREE.BufferAttribute(c.strand, 3)); }
+       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       const mats = Array.isArray(part.material) ? part.material : [part.material];
+diff --git a/apps/mythic-masters/src/loose.ts b/apps/mythic-masters/src/loose.ts
+index b4f993f5d..4c54de74f 100644
+--- a/apps/mythic-masters/src/loose.ts
++++ b/apps/mythic-masters/src/loose.ts
+@@ -160,37 +160,94 @@ export function rootOf(pos: ArrayLike<number>, coat: ArrayLike<number>, colour:
+   return out;
+ }
+ 
+-export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nattribute vec3 aRootN;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\nvarying vec3 vCardP;\n";
+-export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot; vCardP = position / max( uTop, 1e-4 );";
++/** Per vertex of a card, where it sits across the card's strands: its rest position (over the model's height `top`) with
++ * the along-the-card part taken out, so it holds still from root to tip. Along is the tip value's gradient, summed over
++ * the triangles at each welded corner (by position) and taken from each card's own middle (the triangles that touch,
++ * welded): a gradient per triangle on the GPU jumped at every edge and drew the triangles as light and dark shards. */
++export function strandOf(pos: ArrayLike<number>, index: ArrayLike<number> | null, tip: ArrayLike<number>, top: number): Float32Array {
++  const n = pos.length / 3, tris = index ? index.length / 3 : n / 3, at = (t: number, k: number) => (index ? index[t * 3 + k]! : t * 3 + k);
++  const key = new Int32Array(n), seen = new Map<string, number>();
++  for (let i = 0; i < n; i++) {
++    const k = `${Math.round(pos[i * 3]! * 1e4)},${Math.round(pos[i * 3 + 1]! * 1e4)},${Math.round(pos[i * 3 + 2]! * 1e4)}`;
++    let w = seen.get(k);
++    if (w === undefined) seen.set(k, (w = seen.size));
++    key[i] = w;
++  }
++  const m = seen.size, along = new Float64Array(m * 3), up = new Int32Array(m).map((_, i) => i);
++  const find = (i: number): number => { while (up[i] !== i) i = up[i] = up[up[i]!]!; return i; };
++  const p = (i: number, k: number) => pos[i * 3 + k]!;
++  for (let t = 0; t < tris; t++) {
++    const a = at(t, 0), b = at(t, 1), c = at(t, 2);
++    const e1 = [p(b, 0) - p(a, 0), p(b, 1) - p(a, 1), p(b, 2) - p(a, 2)], e2 = [p(c, 0) - p(a, 0), p(c, 1) - p(a, 1), p(c, 2) - p(a, 2)];
++    const nx = e1[1]! * e2[2]! - e1[2]! * e2[1]!, ny = e1[2]! * e2[0]! - e1[0]! * e2[2]!, nz = e1[0]! * e2[1]! - e1[1]! * e2[0]!;
++    const nn = nx * nx + ny * ny + nz * nz;
++    const ra = find(key[a]!); up[find(key[b]!)] = ra; up[find(key[c]!)] = ra;
++    if (nn < 1e-20) continue;
++    const d1 = tip[b]! - tip[a]!, d2 = tip[c]! - tip[a]!;
++    // grad = (d1 (e2 x n) + d2 (n x e1)) / |n|^2, scaled by the area (|n|) so big triangles count for more
++    const g = [
++      d1 * (e2[1]! * nz - e2[2]! * ny) + d2 * (ny * e1[2]! - nz * e1[1]!),
++      d1 * (e2[2]! * nx - e2[0]! * nz) + d2 * (nz * e1[0]! - nx * e1[2]!),
++      d1 * (e2[0]! * ny - e2[1]! * nx) + d2 * (nx * e1[1]! - ny * e1[0]!),
++    ];
++    const gl = Math.hypot(g[0]!, g[1]!, g[2]!);
++    if (gl < 1e-20) continue;
++    for (const v of [a, b, c]) for (let k = 0; k < 3; k++) along[key[v]! * 3 + k] += (g[k]! / gl) * Math.sqrt(nn);
++  }
++  const mid = new Map<number, number[]>();
++  for (let w = 0; w < m; w++) {
++    const r = find(w);
++    if (!mid.has(r)) mid.set(r, [0, 0, 0, 0]);
++  }
++  for (let i = 0; i < n; i++) { const c = mid.get(find(key[i]!))!; c[0]! += p(i, 0); c[1]! += p(i, 1); c[2]! += p(i, 2); c[3]! += 1; }
++  const out = new Float32Array(n * 3), h = Math.max(top, 1e-4);
++  for (let i = 0; i < n; i++) {
++    const c = mid.get(find(key[i]!))!, w = key[i]!;
++    let ax = along[w * 3]!, ay = along[w * 3 + 1]!, az = along[w * 3 + 2]!;
++    const al = Math.hypot(ax, ay, az);
++    const x = p(i, 0) / h, y = p(i, 1) / h, z = p(i, 2) / h;
++    if (al < 1e-12) { out.set([x, y, z], i * 3); continue; }
++    ax /= al; ay /= al; az /= al;
++    const o = (p(i, 0) - c[0]! / c[3]!) / h * ax + (p(i, 1) - c[1]! / c[3]!) / h * ay + (p(i, 2) - c[2]! / c[3]!) / h * az;
++    out.set([x - ax * o, y - ay * o, z - az * o], i * 3);
++  }
++  return out;
++}
++
++export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nattribute vec3 aRootN;\nattribute vec3 aStrand;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\nvarying vec3 vCardP;\n";
++export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot; vCardP = aStrand;";
+ /** Before skinning: a card is lit with the coat's normal where it grows (`rootOf` over the coat's normals), not its own.
+  * A flat card's two faces lit one dark and one pale, and lit the same from root to tip it read as a paper plate. */
+ export const CARD_NORMAL = "objectNormal = normalize( aRootN );";
+ /** After the normal is read: both faces of a card take that one normal (a double-sided material flips it on the back). */
+ export const CARD_FACE = "#ifndef FLAT_SHADED\n  normal = normalize( vNormal ); nonPerturbedNormal = normal;\n#endif";
+-/** A card's strands: value noise over its rest position with the along-the-card part taken out, so it is constant root to
+- * tip. The along direction is the gradient of `vCardTip` (both are linear over a triangle, so it holds per triangle). */
++/** A card's strands: cells over `vCardP` (`strandOf`: across the card only, so each cell runs root to tip as one
++ * strand). x is how far the point sits from its strand's middle (0 to about 1), y the strand's own random value. Cells
++ * about a seventieth of the body wide: a value noise at 160 and 410 made strands a pixel or two wide, stipple at fight distance. */
+ export const CARD_FRAG_PARS = `varying float vCardTip;
+ varying vec3 vCardRoot;
+ varying vec3 vCardP;
+ float cardHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
+-float cardNoise( vec3 x ) {
+-  vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
+-  return mix( mix( mix( cardHash( i ), cardHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( cardHash( i + vec3( 0, 1, 0 ) ), cardHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+-    mix( mix( cardHash( i + vec3( 0, 0, 1 ) ), cardHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( cardHash( i + vec3( 0, 1, 1 ) ), cardHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
+-}
+-float cardStrand() {
+-  vec3 g = dFdx( vCardP ) * dFdx( vCardTip ) + dFdy( vCardP ) * dFdy( vCardTip );
+-  float gl = length( g );
+-  vec3 q = gl > 1e-9 ? vCardP - g / gl * dot( vCardP, g / gl ) : vCardP;
+-  return 0.65 * cardNoise( q * 160.0 ) + 0.35 * cardNoise( q * 410.0 );
++vec2 cardStrand() {
++  vec3 q = vCardP * 70.0, i = floor( q ), f = fract( q );
++  float best = 9.0, id = 0.0;
++  for ( int z = -1; z <= 1; z++ ) for ( int y = -1; y <= 1; y++ ) for ( int x = -1; x <= 1; x++ ) {
++    vec3 c = i + vec3( x, y, z ), d = vec3( x, y, z ) + vec3( cardHash( c ), cardHash( c + 31.7 ), cardHash( c + 71.3 ) ) - f;
++    float l = dot( d, d );
++    if ( l < best ) { best = l; id = cardHash( c + 13.1 ); }
++  }
++  return vec2( sqrt( best ), id );
+ }
+ `;
+-/** After the colour is read: the card breaks into strands toward its tip (each strand cut at its own length, so the
+- * edge is a ragged brush, not a triangle) and each strand is a shade lighter or darker; the coat's colour at the root,
+- * the card's own toward the tip, darker at the very end. Cut, not blended: it stays opaque for sorting. */
++/** After the colour is read: the card breaks into strands toward its tip. Each strand is cut at its own length and
++ * narrows to a point (the cut comes in from its sides as it nears its end), so the edge is a brush of tapered locks, not
++ * a triangle or a speckle; each strand is a shade lighter or darker and darker at its sides, so neighbours part. The
++ * coat's colour at the root, the card's own toward the tip, darker at the very end. Cut, not blended: it stays opaque
++ * for sorting. */
+ export const CARD_COLOR = `
+-  float cardS = cardStrand();
+-  if ( vCardTip > 0.12 + 0.85 * cardS * cardS + 0.1 * cardS ) discard;
+-  diffuseColor.rgb = mix( vCardRoot, diffuseColor.rgb, smoothstep( 0.1, 0.8, vCardTip ) ) * mix( 1.0, 0.85, vCardTip * vCardTip ) * mix( 0.75, 1.2, cardS );`;
++  vec2 cardS = cardStrand();
++  float cardLen = 0.55 + 0.45 * cardS.y;
++  if ( vCardTip > 0.12 + 0.88 * cardLen * ( 1.0 - smoothstep( 0.15, 0.8, cardS.x ) ) ) discard;
++  diffuseColor.rgb = mix( vCardRoot, diffuseColor.rgb, smoothstep( 0.1, 0.8, vCardTip ) ) * mix( 1.0, 0.85, vCardTip * vCardTip ) * mix( 0.8, 1.15, cardS.y ) * mix( 1.0, 0.8, smoothstep( 0.2, 0.75, cardS.x ) * smoothstep( 0.05, 0.3, vCardTip ) );`;
+ /** After the lights and the field look: a card is matte, no sun glint, sky reflection, rim or field-look edge glow. */
+ export const CARD_LIGHT = "reflectedLight.directSpecular *= 0.0; reflectedLight.indirectSpecular *= 0.0; totalEmissiveRadiance *= 0.0;";
+diff --git a/apps/mythic-masters/test/loose.test.ts b/apps/mythic-masters/test/loose.test.ts
+index 6ae3ef50b..49d2a1b28 100644
+--- a/apps/mythic-masters/test/loose.test.ts
++++ b/apps/mythic-masters/test/loose.test.ts
+@@ -1,6 +1,6 @@
+ import { expect, test } from "bun:test";
+ import * as THREE from "three";
+-import { LooseLag, cardParts, looseParts, reachOf, rootOf } from "../src/loose.ts";
++import { LooseLag, cardParts, looseParts, reachOf, rootOf, strandOf } from "../src/loose.ts";
+ 
+ test("the cards and quills are loose, the body and the hard bits are not", () => {
+   // a furred beast: its own fur is the body; the mane cards swing, a spike at half reach, an eye and a claw stay put
+@@ -43,3 +43,16 @@ test("a lunge leaves the cards behind and a stop throws them on, then they settl
+   for (let i = 0; i < 240; i++) step();
+   expect(Math.abs(step())).toBeLessThan(1e-3);          // and settled
+ });
++
++test("a card's strand place holds still from root to tip and changes across it, even where its triangles meet", () => {
++  // a bent strip of two quads along y (root at y 0, tip at y 2), 1 wide in x; the second quad tilts in z
++  const pos = [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 2, 0.5, 1, 2, 0.5];
++  const index = [0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4];
++  const tip = [0, 0, 0.5, 0.5, 1, 1];
++  const s = strandOf(pos, index, tip, 2), at = (i: number) => [s[i * 3]!, s[i * 3 + 1]!, s[i * 3 + 2]!];
++  const gap = (a: number, b: number) => Math.hypot(...at(a).map((v, k) => v - at(b)[k]!));
++  // root, middle and tip of one side sit close together; the two sides sit a half (1 over the height 2) apart
++  expect(gap(0, 2)).toBeLessThan(0.1);
++  expect(gap(0, 4)).toBeLessThan(0.15);
++  expect(gap(0, 1)).toBeCloseTo(0.5, 1);
++});
