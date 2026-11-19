@@ -4,7 +4,8 @@
 //  1. `endIn(dir)`: sending a worker home ends every process whose working directory is inside its worktree (its claude,
 //     the dev servers and watchers it started), TERM then KILL, before the worktree goes. Never the office or its parents.
 //  2. `reapOrphans`: every 5 minutes the office ends processes whose parent is pid 1 (nobody waits on them) and whose
-//     working directory is in a worktree that is gone, or that no worker sits at.
+//     working directory is in a worktree that is gone, or that no worker sits at, and stopped (state T) orphaned claude
+//     sessions with their office-workers mcp and caffeinate children, which lsof gives no working directory (#5209).
 //  3. `swapUsage`: the swap gauge. Over `SWAP_HOLD` the office says so on the floor and holds new hires (`swapHold`);
 //     mem_stats reports it with the reaper's count.
 //  4. `stuck`: a process of the office's (under it, or in one of its worktrees) that is stopped (ps state T) on two rounds
@@ -82,6 +83,21 @@ export function pidsIn(dir: string, procs = processes(), self = process.pid): nu
 /** Send-home's hook: end everything running in a worker's worktree. Never throws; resolves with the count. */
 export async function endIn(dir: string): Promise<number> {
   try { return await end(pidsIn(dir)); } catch { return 0; }
+}
+
+/** A worker session and what it starts: a stopped one whose office is gone waits for a SIGCONT nobody will send. */
+const SESSION = /(^|[\s/])(claude|caffeinate)(\s|$)|office-workers\.js mcp/;
+
+/** Stopped claude sessions whose parent is pid 1, and the stopped claude, mcp and caffeinate processes under them. */
+export function stoppedLeftovers(procs: Proc[], self = process.pid): Proc[] {
+  const keep = ours(procs, self);
+  const out = new Set(procs.filter((p) => p.ppid === 1 && !!p.stat?.startsWith("T") && SESSION.test(p.args) && !keep.has(p.pid)));
+  for (let grew = true; grew;) {
+    grew = false;
+    const pids = new Set([...out].map((p) => p.pid));
+    for (const p of procs) if (!out.has(p) && pids.has(p.ppid) && !!p.stat?.startsWith("T") && SESSION.test(p.args) && !keep.has(p.pid)) { out.add(p); grew = true; }
+  }
+  return [...out];
 }
 
 export interface ReapFloor { dir: string; workers?: { list(): { worktree?: { path?: string } }[] } }
@@ -170,12 +186,13 @@ export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (messag
   const woke = stuck(floors(), stopped, read.procs()).filter((p) => { try { process.kill(p.pid, "SIGCONT"); return true; } catch { return false; } });
   stats.woken += woke.length;
   if (woke.length) toast(`Woke ${woke.length} stopped process${woke.length === 1 ? "" : "es"} of the office (state T since the last round): ${woke.slice(0, 3).map((p) => p.args.slice(0, 40)).join("; ")}`);
-  const found = orphans(floors(), read.procs());
+  const procs = read.procs();
+  const found = [...new Set([...orphans(floors(), procs), ...stoppedLeftovers(procs)])];
   const n = await end(found.map((p) => p.pid));
   stats.reaped += n;
   if (n) {
     stats.lastReaped = found.slice(0, 10).map((p) => `${p.pid} ${p.args.slice(0, 80)} (in ${p.cwd})`);
-    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"} of worktrees nobody sits at (#4905)`);
+    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: stopped sessions of old office runs, or of worktrees nobody sits at (#4905, #5209)`);
   }
   const was = stats.swap?.pct ?? 0;
   stats.swap = read.swap();
