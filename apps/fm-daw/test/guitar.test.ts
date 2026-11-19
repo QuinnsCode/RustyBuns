@@ -3,7 +3,7 @@
 // The Worker handing a call its servers (a TURN relay pass, or STUN alone) is GET /ice.
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
-import { feel, guitarSettings, guitarTrack, IceReply, lagMs, STUN, tuneOpus, type Feel } from "../src/guitar.ts";
+import { capture, feel, guitarSettings, guitarTrack, IceReply, inputAt, inputTrack, lagMs, lagWords, STUN, tuneOpus, type Feel } from "../src/guitar.ts";
 import worker, { ICE_TTL_S } from "../src/worker.ts";
 import { TrackAmp } from "../src/amp/track-amp.ts";
 import { demoProject } from "../src/presets.ts";
@@ -94,4 +94,16 @@ test("a guitar goes into the seat's track when it has an amp, else the first tra
   p = apply(p, { t: "amp", track: 2, amp });
   expect(guitarTrack(p, 2)).toBe(2);
   expect(guitarSettings(p.tracks[2].amp)).toMatchObject({ amp: "lead", bypass: false, oversample: 2, pedal: null, knobs: { gain: 8, noise: 0 } });
+});
+
+test("in the vocal booth your input is the mic: straight in past every amp, its echo cancelled, said as a mic", () => {
+  const p = apply(demoProject(), { t: "amp", track: 2, amp: TrackAmp({ amp: "lead" }) });
+  for (const [seat, input, track, echo] of [["bass", "guitar", 2, false], [undefined, "guitar", 2, false], ["booth", "mic", -1, true]] as const) {
+    const got = inputAt(seat);
+    expect(got).toBe(input);
+    expect(inputTrack(got, p, 2)).toBe(track);
+    expect(capture(got)).toEqual({ echoCancellation: echo, noiseSuppression: false, autoGainControl: false, channelCount: 1 });
+  }
+  expect(lagWords("Amy", 20, "mic")).toBe("Amy's mic 20 ms behind, tight");
+  expect(lagWords("Amy", null)).toBe("Amy's guitar: connecting");
 });
