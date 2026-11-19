@@ -1,5 +1,5 @@
 // The spaces panel a game mounts (@rustybuns/util/spaces), through a real page: a signed-in player makes a space, a friend
-// joins by its invite from another Q app, they talk both ways in #general, the owner opens a voice channel and talks in
+// joins by its invite from another Q app, they talk both ways in #general, reply in a thread and search the channel, the owner opens a voice channel and talks in
 // it (Qlave's client stood in for by the page) while the friend sees them there, and the owner lets the friend into a private channel and kicks them from their row.
 // eqosys runs in-process with its Space DO and also serves the page; headless Chrome drives it over CDP (scripts/chrome.ts).
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -64,10 +64,10 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   const friend = space({ url: () => base, token: () => bo });
   const invite = (await space({ url: () => base, token: () => ada }).mine())![0]!.invite!;
   const joined = (await friend.join(invite))!;
-  const heard: string[] = [];
+  const heard: string[] = [], ids = new Map<string, number>();
   let gone = "", friendSees: string[] = [];
   friend.open(joined.id, {
-    said: (_, m) => heard.push(`${m.from.name}: ${m.text}`), gone: (w) => (gone = w),
+    said: (_, m) => { heard.push(`${m.from.name}: ${m.text}`); ids.set(m.text, m.id); }, gone: (w) => (gone = w),
     online: (m) => (friendSees = m.map((x) => (x.voice ? `${x.name} in voice` : x.name))),
   });
   await seen("Bo online", (s) => s.online.join() === "Ada,Bo");
@@ -76,6 +76,25 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   await seen("Bo's line", (s) => s.messages.includes("Bo: on my way"));
   await type("Message #general", "meet at the bowl");
   await until("Ada's line at Bo's end", () => heard.includes("Ada: meet at the bowl"));
+
+  // A thread: Ada replies under Bo's line, Bo answers in it from his app, and #general counts the replies.
+  await press("Reply to Bo");
+  await seen("the thread under Bo's line", (s) => s.thread?.join() === "Bo: on my way");
+  await type("Reply in thread", "bring the wax");
+  await seen("Ada's reply in the thread", (s) => s.thread?.join("|") === "Bo: on my way|Ada: bring the wax");
+  await until("the reply at Bo's end", () => ids.has("bring the wax"));
+  friend.say("general", "got it", ids.get("bring the wax")); // a reply to a reply joins the same thread
+  await seen("Bo's reply in the thread", (s) => s.thread?.at(-1) === "Bo: got it");
+  await press("Back to #general");
+  await until("two replies under Bo's line", () => tab.eval<boolean>(`!!document.querySelector('#spaces button[title="2 replies"]')`));
+
+  // Search: what was said, whoever said it, and a word nobody did.
+  await type("Search #general", "BOWL");
+  await seen("the bowl line found", (s) => s.found?.join() === "Ada: meet at the bowl");
+  await type("Search #general", "skatepark");
+  await seen("nothing found", (s) => s.found?.length === 0);
+  await press("Back to #general");
+  await seen("back on #general", (s) => s.found === null && s.thread === null);
 
   // Voice: the owner adds a channel, joins it with a fresh ticket, and the friend sees them in it.
   await type("Voice room", "lounge");

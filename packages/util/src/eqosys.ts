@@ -547,8 +547,14 @@ export function hub({ url, token, app }: PartyConfig & { app?: string }) {
   };
 }
 
-/** A message in a space's channel: its number there, and who said what when. Up to 280 characters, 2000 in a studio's space (the `space` frame's `max`). */
-export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(2000), at: int(0, 1e15) });
+/**
+ * A message in a space's channel: its number there, and who said what when. Up to 280 characters, 2000 in a studio's space (the `space`
+ * frame's `max`). A reply in a thread names the number of the message it answers (`reply`); a message with a thread says how many
+ * replies it has (`replies`).
+ */
+export const SpaceMessage = obj({
+  id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(2000), at: int(0, 1e15), reply: opt(int(1, 1e12)), replies: opt(int(1, 1e6)),
+});
 export type SpaceMessage = Of<typeof SpaceMessage>;
 /** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
 export const SpaceVoice = obj({ id: str(24), name: str(24) });
@@ -585,17 +591,21 @@ export const SpaceMsg: Guard<
   | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
+  | { t: "thread"; channel: string; id: number; messages: SpaceMessage[] }
+  | { t: "found"; channel: string; q: string; messages: SpaceMessage[] }
   | { t: "refused"; why: string }
   | { t: "reported"; by: string; id: string; name: string }
   | { t: "ticket"; channel: string; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported", "ticket"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "thread", "found", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
   if (t === "space") return { t, ...SpaceInfo(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
   if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
   if (t === "history") return { t, ...obj({ channel: ch, messages: arr(SpaceMessage, 100), more: bool() })(v) };
+  if (t === "thread") return { t, ...obj({ channel: ch, id: int(1, 1e12), messages: arr(SpaceMessage, 100) })(v) };
+  if (t === "found") return { t, ...obj({ channel: ch, q: str(100), messages: arr(SpaceMessage, 100) })(v) };
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
   if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
   throw new Error("not a space message");
@@ -614,6 +624,10 @@ export interface SpaceHandlers {
   online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
+  /** The message `id` in `channel` first, then its newest replies, oldest first (`thread` asked for it). */
+  thread?: (channel: string, id: number, messages: SpaceMessage[]) => void;
+  /** The newest messages in `channel` that hold `q`, oldest first (`search` asked for it). */
+  found?: (channel: string, q: string, messages: SpaceMessage[]) => void;
   refused?: (why: string) => void;
   reported?: (r: { by: string; id: string; name: string }) => void;
   /** The ticket `talk` asked for: hand `url` and `ticket` to `join` in @rustybuns/util/voice. */
@@ -624,11 +638,11 @@ export interface SpaceHandlers {
 
 /**
  * The page's side of Qollab's spaces (apps/eqosys, QOLLAB.md): groups that last, across every Q app, with text channels.
- * `mine()` lists them, `make(name)` and `join(invite)` add one, `open(id, on)` connects; then `say`, `history`, and for the
+ * `mine()` lists them, `make(name)` and `join(invite)` add one, `open(id, on)` connects; then `say` (a reply too), `history`, `thread`, `search`, and for the
  * owner and admins `channel`, `privateChannel`, `allow`, `mute` and `kick`, and the owner `role`. `leave()` takes you out of the space; `close()` only hangs up.
  */
 export function space({ url, token }: PartyConfig) {
-  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole };
+  type Out = { t: string; channel?: string; text?: string; reply?: number; of?: number; q?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole };
   let link: Link<Out> | null = null;
   const authed = (method: string, body?: unknown): RequestInit | null => {
     const t = token();
@@ -670,6 +684,8 @@ export function space({ url, token }: PartyConfig) {
           else if (m.t === "online") on.online?.(m.members);
           else if (m.t === "said") { const { t: _, channel, ...msg } = m; on.said?.(channel, msg); }
           else if (m.t === "history") on.history?.(m.channel, m.messages, m.more);
+          else if (m.t === "thread") on.thread?.(m.channel, m.id, m.messages);
+          else if (m.t === "found") on.found?.(m.channel, m.q, m.messages);
           else if (m.t === "reported") on.reported?.(m);
           else if (m.t === "ticket") on.ticket?.(m.channel, m.url, m.ticket);
           else on.refused?.(m.why);
@@ -681,7 +697,12 @@ export function space({ url, token }: PartyConfig) {
         },
       });
     },
-    say: (channel: string, text: string) => send({ t: "say", channel, text }),
+    /** Say `text` in `channel`; with `reply`, as a reply in the thread under message number `reply`. */
+    say: (channel: string, text: string, reply?: number) => send({ t: "say", channel, text, ...(reply ? { reply } : {}) }),
+    /** A message and its replies; they come back to `thread`. */
+    thread: (channel: string, id: number) => send({ t: "thread", channel, of: id }),
+    /** Search a channel's kept history for `q` (case aside); the newest matches come back to `found`. */
+    search: (channel: string, q: string) => send({ t: "search", channel, q }),
     /** The newest page of a channel, or the page before message number `before`. */
     history: (channel: string, before?: number) => send({ t: "history", channel, ...(before ? { before } : {}) }),
     /** Owner only: add a channel (lower-case letters, digits and dashes), a voice one with `voice`. */
