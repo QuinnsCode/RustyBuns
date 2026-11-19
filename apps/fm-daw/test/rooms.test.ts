@@ -128,7 +128,7 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
       // at an instrument, a key plays its track
       if (s.kind === "keys" || s.kind === "bass" || s.kind === "drums") expect(keyNote(j, groove, "KeyA")).not.toBeNull();
       // up on the sound stage's band riser, your eyes ride half a metre higher than at the floor mix desk
-      if (id === "sound-stage") expect({ seat: s.id, eye: Math.round((cameraPose(j).at[1] - 1.35) * 10) / 10 }).toEqual({ seat: s.id, eye: ({ desk: 0, couch: 0.3 } as Record<string, number>)[s.id] ?? 0.5 });
+      if (id === "sound-stage") expect({ seat: s.id, eye: Math.round((cameraPose(j).at[1] - 1.35) * 10) / 10 + 0 }).toEqual({ seat: s.id, eye: ({ desk: 0, couch: 0.3 } as Record<string, number>)[s.id] ?? 0.5 });
       stand(j);
     }
     // the dressing builds, and its lamps and screens glow for the look to light
