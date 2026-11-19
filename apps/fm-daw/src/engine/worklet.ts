@@ -38,6 +38,8 @@ class FmProcessor extends AudioWorkletProcessor {
   /** The EQ as saved, and as it plays right now (with its automation on). */
   private eqDoc: EqDoc = flatEq();
   private eqPlayed: EqDoc = this.eqDoc;
+  /** What the page was last told plays (null: the EQ as saved), so it hears only changes. */
+  private eqShown: EqDoc | null = null;
   private eq: EqStage = new TsEq(sampleRate);
   /** Each track's Shape, the insert inside the engine, as saved. */
   private trackEq: EqDoc[] = Array.from({ length: TRACKS }, flatEq);
@@ -373,6 +375,8 @@ class FmProcessor extends AudioWorkletProcessor {
         t: "tick", pos: this.seq.pos, abs: this.seq.abs, synced: this.seq.synced, late: [...this.remotes.values()].reduce((n, r) => n + r.line.late, 0), playing: this.seq.playing, countIn: this.seq.countIn,
         peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3], ampMisses: this.amps.misses, pluginMisses: this.plugins.misses,
       });
+      const shown = this.eqPlayed === this.eqDoc ? null : this.eqPlayed;
+      if (shown !== this.eqShown) { this.eqShown = shown; this.port.postMessage({ t: "eqPlayed", doc: shown }); }
     }
     return true;
   }

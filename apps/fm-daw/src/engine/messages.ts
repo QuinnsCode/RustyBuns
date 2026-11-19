@@ -68,6 +68,8 @@ export type ToWorklet =
 export type FromWorklet =
   | { t: "tick"; pos: number; abs: number; synced: boolean; late: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number; pluginMisses: number }
   | { t: "rec"; track: number; note: Note }
+  /** The master EQ as its automation plays it right now, sent when it changes (null: as saved). */
+  | { t: "eqPlayed"; doc: EqDoc | null }
   /** More of a plugin track's sound, please, and the notes and slider moves since the last ask. */
   | { t: "pluginAsk"; track: number; frames: number; events: PluginEvent[] }
   | ({ t: "move" } & RecordedMove)
