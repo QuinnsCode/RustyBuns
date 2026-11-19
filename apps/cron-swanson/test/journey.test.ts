@@ -17,7 +17,7 @@ test("a day in the life: make jobs per app, the ticker fires them on the minute,
   let now = at("2026-11-14T08:59:30Z");
   const call = api(store, { now: () => now });
   const ask = async (method: string, path: string, body?: unknown) => {
-    const res = await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
+    const res = await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? null : JSON.stringify(body) }));
     return { status: res.status, body: parseJson(await res.text()) };
   };
 

@@ -851,6 +851,19 @@ It checks `origin/main` out into a scratch worktree, copies your changed test fi
 
 </details>
 
+### Tests that cover more than their examples
+
+Four kinds of test that each catch a whole class of mistake: rules tried on random input, the API held to its spec, agent runs replayed from a recording, and stricter compiler flags.
+
+<details><summary>More</summary>
+
+- **Property tests** (`apps/codesplitter/test/properties.test.ts`, with `fast-check`): a rule such as "text split into lines and joined again is the text" runs on a few hundred random inputs. A failure prints the smallest input that breaks the rule.
+- **Contract tests** (`test/contract.test.ts`): a journey calls operations by id, and each body sent and each reply is checked against `src/openapi.ts`. Each operation with a required field must also refuse an empty body.
+- **Cassettes** (`test/cassette.ts`): one real agent run is written down (the files it was given, the files it left, its answer). `cassette("name")` replays it, so an agent test needs no CLI, no login and no tokens. `CASSETTE=record` records it again.
+- **Stricter types**: an app opts in to `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` in its own `tsconfig.json`, and `bun run knip` fails on an export that nothing imports in the apps `knip.json` lists. cron-swanson is the first.
+
+</details>
+
 ### One call, not a loop: tools for the chores agents do
 
 The jobs that agents did by hand in many small steps (wait for CI, read an issue, look at a game, read a big file) are each one command with a short answer.

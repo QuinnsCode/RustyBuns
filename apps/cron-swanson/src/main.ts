@@ -26,7 +26,7 @@ const changed = live ? () => live.poke() : undefined;
 const server = Bun.serve({
   port: Number(process.env.PORT ?? PORTS.cronSwanson),
   routes: { "/": page },
-  fetch: api(store, { token, send, changed, live: relayUrl && new URL("/live", relayUrl.replace(/^http/, "ws")).href }),
+  fetch: api(store, { send, ...(token && { token }), ...(changed && { changed }), ...(relayUrl && { live: new URL("/live", relayUrl.replace(/^http/, "ws")).href }) }),
   development: process.env.NODE_ENV !== "production",
 });
 startTicker(store, send, console.error, changed);
