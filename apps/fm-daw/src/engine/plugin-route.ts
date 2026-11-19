@@ -95,7 +95,7 @@ export class PluginRoute {
       click: (a) => engine.click(a),
       setTrackBand: (...a) => engine.setTrackBand(...a),
       setTap: (t, on) => engine.setTap(t, on),
-      render: (out, frames, send, taps) => engine.render(out, frames, send, taps),
+      render: (out, frames, send, taps, send2) => engine.render(out, frames, send, taps, send2),
       meter: (out) => engine.meter(out),
       free: () => engine.free?.(),
     };

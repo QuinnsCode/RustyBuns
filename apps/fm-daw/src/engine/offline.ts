@@ -7,14 +7,19 @@ import { TsEq, withEqLane, type EqStage } from "./eq.ts";
 import { LinearEq } from "./linear.ts";
 import { audible, loopBeats, type Project } from "../project.ts";
 import { TakeDeck } from "../take.ts";
+import { P } from "./params.ts";
 import { AmpInserts } from "../amp/insert.ts";
+import type { AmpSettings } from "../amp/messages.ts";
+import { faderGain, RigReturn, UNITY } from "../mixer.ts";
 
 /**
  * The project as it plays, offline. `takes` gives a take's sound by id (the page keeps it): each track's take
  * is mixed in after the engine and before the master EQ (through its Amp insert when it has one, with the track's
  * synth tapped out of the engine after its Shape), as the audio thread does, so the bounce sounds like playback.
+ * `aux2`: the gear cabled into the desk's aux 2 return (the sesh's gear room patch); the tracks' sends to it come
+ * back on the return's fader. The players' channels are live sound, so a bounce has none of them.
  */
-export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined): Float32Array {
+export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined, aux2?: AmpSettings | null): Float32Array {
   const frames = Math.round(seconds * sampleRate);
   const eq: EqStage = p.eqLinear ? new LinearEq(sampleRate) : new TsEq(sampleRate);
   // linear phase holds the mix back: render that much more and drop it off the front, so beat one is at 0
@@ -29,6 +34,10 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   p.tracks.forEach((t, ti) => { if (t.amp) amps.set(ti, t.amp); });
   const tapping = amps.any;
   const hears = audible(p), beats = loopBeats(p);
+  const ret = p.desk?.aux2 ?? { fader: UNITY, mute: false };
+  const rig = aux2 && !ret.mute && p.tracks.some((t) => t.params[P.SEND2] > 0) ? new RigReturn(sampleRate, aux2) : null;
+  const send2 = rig ? new Float32Array((frames + late) * 2) : undefined;
+  const bus = new Float32Array(128), wet = new Float32Array(256), back = faderGain(ret.fader);
   let at = 0;
   const all = renderPattern(engine, sampleRate, (frames + late) / sampleRate, (seq) => {
     p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, amps.has(ti)); });
@@ -40,9 +49,14 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     seq.onEq = (i, v) => { const d = withEqLane(played, i, v); if (d !== played) { played = d; eq.set(d); } };
   }, send, (block, n, taps) => {
     if (deck.any || tapping) amps.mix(deck, block, n, (at / sampleRate) * (p.bpm / 60), p.bpm, beats, (t) => hears[t], masterGain, true, undefined, taps);
+    if (rig && send2) {
+      for (let f = 0; f < n; f++) bus[f] = (send2[(at + f) * 2] + send2[(at + f) * 2 + 1]) * 0.5;
+      rig.process(bus, wet, n);
+      for (let f = 0; f < n * 2; f++) block[f] += wet[f] * back;
+    }
     at += n;
     eq.process(block, n);
-  }, tapping);
+  }, tapping, send2);
   // the send skips the EQ, so it is already on time: the trimmed mix lines up with its start
   const out = all.slice(late * 2, (late + frames) * 2), sent = send.subarray(0, frames * 2);
   const squash = new Squash(sampleRate);

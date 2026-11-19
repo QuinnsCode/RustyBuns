@@ -28,7 +28,7 @@ use std::f64::consts::PI;
 
 pub const TRACKS: usize = 12;
 pub const OPS: usize = 4;
-pub const NPARAMS: usize = 60;
+pub const NPARAMS: usize = 61;
 pub const BEND_RANGE: f64 = 12.0;
 pub const VOICES: usize = 8;
 pub const CEILING: f64 = 0.891;
@@ -61,6 +61,7 @@ const P_LFO_PITCH: usize = 44;
 const P_GLIDE: usize = 45;
 const P_DRIVE: usize = 46;
 const P_SEND: usize = 47;
+const P_SEND2: usize = 60;
 const P_VEL_TONE: usize = 48;
 const P_HICUT: usize = 49;
 const P_LOCUT: usize = 50;
@@ -95,6 +96,7 @@ const TAIL_RANGES: [(f64, f64); 36] = [
     (0.0, 5.0), // chorus mode, 4 flanger, 5 phaser
     (0.0, 1.0), // supersaw mix: 0 off
     (0.0, 1.0), // wavefolder
+    (0.0, 1.0), // send to aux 2
 ];
 
 /// Beats per LFO cycle for LFO_SYNC 1..8 (params.ts LFO_DIVS).
@@ -230,7 +232,7 @@ pub struct Engine {
     /// Tracks whose chunk goes to render()'s `taps` (an Amp insert) instead of the sum, and which do this chunk.
     tapped: [bool; TRACKS],
     tap_now: [bool; TRACKS],
-    tb: Vec<f64>, mix: Vec<f64>, snd: Vec<f64>,
+    tb: Vec<f64>, mix: Vec<f64>, snd: Vec<f64>, snd2: Vec<f64>,
 }
 
 impl Engine {
@@ -252,7 +254,7 @@ impl Engine {
             ins_live: [false; TRACKS],
             tapped: [false; TRACKS],
             tap_now: [false; TRACKS],
-            tb: vec![0.0; TRACKS * CHUNK * 2], mix: vec![0.0; CHUNK * 2], snd: vec![0.0; CHUNK * 2],
+            tb: vec![0.0; TRACKS * CHUNK * 2], mix: vec![0.0; CHUNK * 2], snd: vec![0.0; CHUNK * 2], snd2: vec![0.0; CHUNK * 2],
         };
         for t in 0..TRACKS { for i in 0..NPARAMS { e.set_param(t, i, 0.0); } }
         e
@@ -390,15 +392,17 @@ impl Engine {
         (x as f64 / 4294967296.0) * 2.0 - 1.0
     }
 
-    /// Interleaved stereo into `out`; with `send`, also the Space send bus
-    /// (each track times its SEND, after pan, its insert and master).
     /// Tap a track for its Amp insert: while on, and render() is given `taps`, its chunk (after pan and
     /// Shape, before master) goes there in mono instead of into the sum and the send.
     pub fn set_tap(&mut self, t: usize, on: bool) { if t < TRACKS { self.tapped[t] = on; } }
 
-    pub fn render(&mut self, out: &mut [f32], mut send: Option<&mut [f32]>, mut taps: Option<&mut [f32]>, frames: usize) {
+    /// Interleaved stereo into `out`; with `send`, also the Space send bus
+    /// (each track times its SEND, after pan, its insert and master), and with `send2` the desk's
+    /// aux 2 bus the same way (each track times its SEND2).
+    pub fn render(&mut self, out: &mut [f32], mut send: Option<&mut [f32]>, mut taps: Option<&mut [f32]>, mut send2: Option<&mut [f32]>, frames: usize) {
         let mut n = frames.min(out.len() / 2);
         if let Some(s) = send.as_deref() { n = n.min(s.len() / 2); }
+        if let Some(s) = send2.as_deref() { n = n.min(s.len() / 2); }
         if let Some(s) = taps.as_deref() { n = n.min(s.len() / TRACKS); }
         let tapping = taps.is_some();
         let sr = self.sr;
@@ -410,6 +414,7 @@ impl Engine {
             for j in 0..k {
                 let (mut l, mut r) = (0.0f64, 0.0f64);
                 let (mut sl, mut sr2) = (0.0f64, 0.0f64);
+                let (mut al, mut ar) = (0.0f64, 0.0f64);
                 for t in 0..TRACKS {
                     let gain_target = if self.tracks[t].muted { 0.0 } else { self.tracks[t].params[P_GAIN] };
                     self.tracks[t].gain_now += (gain_target - self.tracks[t].gain_now) * GAIN_SMOOTH;
@@ -711,6 +716,9 @@ impl Engine {
                     let sa = tr.params[P_SEND];
                     sl += ml * sa;
                     sr2 += mr * sa;
+                    let sb = tr.params[P_SEND2];
+                    al += ml * sb;
+                    ar += mr * sb;
                 }
                 self.ch_w = if self.ch_w + 1 == CH_LEN { 0 } else { self.ch_w + 1 };
                 self.beat += beat_inc;
@@ -721,7 +729,7 @@ impl Engine {
                     self.click_env *= self.click_coef;
                     l += c; r += c;
                 }
-                self.mix[j * 2] = l; self.mix[j * 2 + 1] = r; self.snd[j * 2] = sl; self.snd[j * 2 + 1] = sr2;
+                self.mix[j * 2] = l; self.mix[j * 2 + 1] = r; self.snd[j * 2] = sl; self.snd[j * 2 + 1] = sr2; self.snd2[j * 2] = al; self.snd2[j * 2 + 1] = ar;
             }
             // each Shape on its track's chunk, then into the sum and the send, track by track
             // a tapped one (after its Shape) out to its amp in mono, centred as the amp hears a take
@@ -730,8 +738,8 @@ impl Engine {
                 let buf = &mut self.tb[t * CHUNK * 2..(t * CHUNK + k) * 2];
                 if self.ins_live[t] { self.inserts[t].insert(buf, k); }
                 if self.tap_now[t] { continue; }
-                let sa = self.tracks[t].params[P_SEND];
-                for j in 0..k * 2 { self.mix[j] += buf[j]; self.snd[j] += buf[j] * sa; }
+                let (sa, sb) = (self.tracks[t].params[P_SEND], self.tracks[t].params[P_SEND2]);
+                for j in 0..k * 2 { self.mix[j] += buf[j]; self.snd[j] += buf[j] * sa; self.snd2[j] += buf[j] * sb; }
             }
             if let Some(tp) = taps.as_deref_mut() {
                 for t in 0..TRACKS {
@@ -772,6 +780,13 @@ impl Engine {
                 if let Some(s) = send.as_deref_mut() {
                     let a = sl * self.master;
                     let b = sr2 * self.master;
+                    let ok = a.is_finite() && b.is_finite();
+                    s[f * 2] = if ok { a.max(-1.0).min(1.0) as f32 } else { 0.0 };
+                    s[f * 2 + 1] = if ok { b.max(-1.0).min(1.0) as f32 } else { 0.0 };
+                }
+                if let Some(s) = send2.as_deref_mut() {
+                    let a = self.snd2[j * 2] * self.master;
+                    let b = self.snd2[j * 2 + 1] * self.master;
                     let ok = a.is_finite() && b.is_finite();
                     s[f * 2] = if ok { a.max(-1.0).min(1.0) as f32 } else { 0.0 };
                     s[f * 2 + 1] = if ok { b.max(-1.0).min(1.0) as f32 } else { 0.0 };
@@ -830,15 +845,16 @@ pub extern "C" fn fm_panic(e: *mut Engine) { with!(e, e.panic()) }
 pub extern "C" fn fm_click(e: *mut Engine, accent: u32) { with!(e, e.click(accent != 0)) }
 
 /// # Safety
-/// `out`, and `send` unless null, must point to at least `frames * 2` f32s; `taps` unless null to
+/// `out`, and `send` and `send2` unless null, must point to at least `frames * 2` f32s; `taps` unless null to
 /// `frames * TRACKS`.
 #[no_mangle]
-pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32, taps: *mut f32, frames: u32) {
+pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32, taps: *mut f32, send2: *mut f32, frames: u32) {
     if out.is_null() { return; }
     let buf = std::slice::from_raw_parts_mut(out, frames as usize * 2);
     let snd = if send.is_null() { None } else { Some(std::slice::from_raw_parts_mut(send, frames as usize * 2)) };
     let tp = if taps.is_null() { None } else { Some(std::slice::from_raw_parts_mut(taps, frames as usize * TRACKS)) };
-    with!(e, e.render(buf, snd, tp, frames as usize))
+    let snd2 = if send2.is_null() { None } else { Some(std::slice::from_raw_parts_mut(send2, frames as usize * 2)) };
+    with!(e, e.render(buf, snd, tp, snd2, frames as usize))
 }
 
 #[no_mangle]
@@ -1170,7 +1186,7 @@ mod tests {
         let mut e = Engine::new(48000.0);
         let mut out = vec![0f32; 1024];
         e.note_on(0, 1, 60.0, 1.0);
-        e.render(&mut out, None, None, 512);
+        e.render(&mut out, None, None, None, 512);
         assert!(out.iter().all(|x| *x == 0.0));
         for t in 0..TRACKS {
             e.set_param(t, P_GAIN, 1e9);
@@ -1179,6 +1195,6 @@ mod tests {
             for k in 0..VOICES as u32 { e.note_on(t, k, 30.0 + k as f64, 1.0); }
         }
         e.set_master(1.0);
-        for _ in 0..200 { e.render(&mut out, None, None, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
+        for _ in 0..200 { e.render(&mut out, None, None, None, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
     }
 }

@@ -348,7 +348,7 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   leave(maker);
   await settle();
   const back = (await join({}, MAKER)).ws;
-  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "lock", on: false }, { t: "peers", n: 1 }]);
+  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "lock", on: false }, { t: "studio-all", studio: { patch: { placed: [], cables: [], knobs: {} }, held: {} }, you: expect.any(Number) }, { t: "peers", n: 1 }]);
   world.webSocketMessage(back, JSON.stringify({ t: "floor", state: "free" }));
   await settle();
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();
@@ -439,7 +439,7 @@ test("studio: friends share one patch, two can't carry one amp, a held lead is i
   // the Durable Object is reset: the studio comes back from the bucket, nobody holding anything
   expect(JSON.parse(bucket.get("sesh/grand-amber-lynx.json")!).studio).toEqual(patch);
   const fresh = await setup(worldEnv, "grand-amber-lynx");
-  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} } });
+  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} }, you: expect.any(Number) });
 });
 
 test("jam room: one walks up to the keys, sits and plays; the other sees them seated, gets the note, and can't take the seat", async () => {

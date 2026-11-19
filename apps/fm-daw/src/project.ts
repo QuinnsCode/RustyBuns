@@ -4,6 +4,7 @@
 import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { TrackAmp } from "./amp/track-amp.ts";
+import { DeskEdit, emptySeshDesk, plainSeshDesk, SeshDesk, withDeskEdit, type Channel } from "./desk.ts";
 import { TrackPlugin } from "./plugin-track.ts";
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
@@ -47,9 +48,10 @@ export interface TrackDoc {
  * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
  * eqLinear: Shape in linear phase (src/engine/linear.ts), only there when on.
  * instruments: the ones made in the jam room (src/studio/made.ts), each a seat at its track; only there when there are some.
+ * desk: the players' channels and the aux 2 return on the sesh's desk (src/desk.ts); only there once one was moved.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -69,6 +71,8 @@ export type Op =
   | { t: "plugin"; track: number; plugin: TrackPlugin | null }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
+  /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, or the aux 2 return's fader and mute. */
+  | { t: "desk"; player?: Channel; aux2?: SeshDesk["aux2"] }
   | { t: "replace"; project: Project };
 
 /** The room's level at its lowest, dB: silence. */
@@ -165,7 +169,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -175,8 +179,11 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()) };
 }
+
+/** desk only when something on it was moved, so a groove nobody mixed players in reads as it did. */
+const deskOf = (d: SeshDesk): { desk?: SeshDesk } => (plainSeshDesk(d) ? {} : { desk: d });
 
 /** The room's level only below 0 dB, so a groove nobody turned down reads as before it had the field. */
 const masterOf = (db: number): { master?: number } => (db < 0 ? { master: db } : {});
@@ -223,6 +230,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
+  obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -400,6 +408,10 @@ export function apply(p: Project, op: Op): Project {
       const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}), ...(t.amp ? { amp: t.amp } : {}) }));
       // the oldest goes when the room is full
       return { ...next, ...madeOf([...was, inst].slice(-MAX_MADE)) };
+    }
+    case "desk": {
+      const { desk, ...rest } = p;
+      return { ...rest, ...deskOf(withDeskEdit(desk ?? emptySeshDesk(), op)) };
     }
     case "replace":
       return sanitize(op.project) ?? p;

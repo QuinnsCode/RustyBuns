@@ -5,7 +5,7 @@
 // from this shared patch; nothing here is audio.
 //
 // Pure, no DOM: the World applies each op and passes it on, and the page applies the same ops to its own copy.
-import { arr, Bad, check, num, obj, oneOf, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, Bad, check, num, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 export const MAX_GEAR = 64;
 export const MAX_CABLES = 128;
@@ -73,13 +73,16 @@ const OP = (v: unknown) => { const op = decodeStudioOp(v); if (!op) throw new Ba
 
 /** Page to world: one thing done in the studio. */
 export type StudioClient = { t: "studio"; op: StudioOp };
-/** World to page: the whole studio (on joining, or to put a player back in step when the world said no), then each op a player did. */
-export type StudioServer = { t: "studio-all"; studio: Studio } | { t: "studio-op"; from: number; op: StudioOp };
+/**
+ * World to page: the whole studio (on joining, or to put a player back in step when the world said no), then each op a
+ * player did. `you`: your own number on the live line, on joining, so the page knows which hand in `held` is its own.
+ */
+export type StudioServer = { t: "studio-all"; studio: Studio; you?: number } | { t: "studio-op"; from: number; op: StudioOp };
 const PEER = num(1, Infinity);
 const HELD = rec(Hand, 64);
 const CLIENT = obj({ t: tag("studio"), op: OP });
 const SERVER: Guard<StudioServer>[] = [
-  obj({ t: tag("studio-all"), studio: obj({ patch: Patch, held: HELD }) }),
+  obj({ t: tag("studio-all"), studio: obj({ patch: Patch, held: HELD }), you: opt(PEER) }),
   obj({ t: tag("studio-op"), from: PEER, op: OP }),
 ];
 export const decodeStudioClient = (v: unknown): StudioClient | null => check(CLIENT, v);
@@ -170,3 +173,12 @@ export function letGo(s: Studio, peer: number): Studio {
 
 /** What a player is holding, for the room to draw in their hand. */
 export const inHand = (s: Studio, peer: number): Hand | undefined => s.held[String(peer)];
+
+/** The steps that build `patch` in an empty studio: each box brought and set down, each cable led and plugged, each knob turned. */
+export function patchOps(patch: Patch): StudioOp[] {
+  return [
+    ...patch.placed.flatMap((p): StudioOp[] => [{ t: "bring", id: p.id, gear: p.gear, at: p.at, turn: p.turn }, { t: "put", at: p.at, turn: p.turn }]),
+    ...patch.cables.flatMap((c): StudioOp[] => [{ t: "lead", from: c.from }, { t: "plug", to: c.to }]),
+    ...Object.entries(patch.knobs).flatMap(([id, ks]) => Object.entries(ks).map(([knob, v]): StudioOp => ({ t: "knob", id, knob, v }))),
+  ];
+}

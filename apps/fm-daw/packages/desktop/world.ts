@@ -177,7 +177,8 @@ export default class World {
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
     void this.sendTakes(takeIds(this.project), [server]);
-    if (this.studioUsed()) this.sockets.send(server, { t: "studio-all", studio: this.studio });
+    const you = this.sockets.who(server)?.peer;
+    this.sockets.send(server, { t: "studio-all", studio: this.studio, ...(you ? { you } : {}) } satisfies StudioServer);
     this.broadcastPeers();
     return response;
   }
