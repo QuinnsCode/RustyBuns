@@ -12,11 +12,11 @@ import { help } from "./help.ts";
 import { esc } from "../packages/util/src/index.ts";
 import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
-import { appDot, appOfPath, busiest, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { appDot, appOfPath, busiest, pacific, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
 
-export type Row = Counts & { name: string; dot: Dot; why: string; link: string | null; code: string };
+export type Row = Counts & { name: string; dot: Dot; why: string; link: string | null; code: string; pushed: string | null };
 export type Releases = { at: string; repos: Row[]; apps: Row[] };
 
 async function gh<T>(args: string[], g: (v: unknown) => T, fallback: T): Promise<T> {
@@ -49,7 +49,7 @@ export async function releases(now = new Date()): Promise<Releases> {
     const why = dot === "error" ? (a.live && !a.live.ok ? `prod link answered ${a.live.status || "nothing"}` : a.release?.ok === false ? `release ${a.release.tag} failed` : "hourly tests failed")
       : dot === "live" ? (a.good && !a.play ? `released ${a.good.tag}` : "prod link answers") : dot === "code" ? say.code : a.play ? "prod link not checked" : "no prod deploy yet";
     const link = a.id === "rustybuns" ? "https://www.npmjs.com/package/rustybuns" : a.play;
-    return { name: a.name, dot, why, link, code: `https://github.com/${OWNER}/${HOME}/tree/main/${a.id === "rustybuns" ? "packages" : `apps/${a.id}`}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }) };
+    return { name: a.name, dot, why, link, pushed: a.commit?.at ?? null, code: `https://github.com/${OWNER}/${HOME}/tree/main/${a.id === "rustybuns" ? "packages" : `apps/${a.id}`}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }) };
   });
 
   const perRepo = tally(found.map((f) => ({ mergedAt: f.closedAt, repo: f.repository.name })), (p) => [p.repo], now);
@@ -59,7 +59,7 @@ export async function releases(now = new Date()): Promise<Releases> {
     const counts = perRepo.get(r.name) ?? { today: 0, week: 0 };
     if (r.name === HOME && framework) {
       const broken = apps.filter((a) => a.dot === "error").length;
-      return { ...framework, ...counts, name: HOME, code: r.url, dot: broken ? "error" : framework.dot, why: broken ? `${broken} app${broken > 1 ? "s" : ""} in error` : `framework ${framework.why}` };
+      return { ...framework, ...counts, name: HOME, code: r.url, pushed: r.pushedAt, dot: broken ? "error" : framework.dot, why: broken ? `${broken} app${broken > 1 ? "s" : ""} in error` : `framework ${framework.why}` };
     }
     const daysQuiet = (now.getTime() - Date.parse(r.pushedAt)) / 86_400_000;
     const link = linkOf(r.homepageUrl);
@@ -71,7 +71,7 @@ export async function releases(now = new Date()): Promise<Releases> {
     const dot = repoDot({ archived: r.isArchived, link, live, lastRun, daysQuiet });
     const why = r.isArchived ? "archived" : dot === "error" ? (live && !live.ok ? `prod link answered ${live.status || "nothing"}` : "last run on main failed")
       : dot === "live" ? "prod link answers" : dot === "testing" ? `pushed ${Math.floor(daysQuiet)}d ago, no prod link` : "no prod link, quiet";
-    return { name: r.name, dot, why, link, code: r.url, ...counts };
+    return { name: r.name, dot, why, link, pushed: r.pushedAt, code: r.url, ...counts };
   }));
   return { at: now.toISOString(), repos: busiest(rows), apps: busiest(apps) };
 }
@@ -82,8 +82,9 @@ function table(rows: Row[], id: string) {
   const tr = (r: Row) => `<tr class="d-${r.dot}">
     <td class="who"><span class="dot" title="${esc(say[r.dot])}: ${esc(r.why)}"></span><a href="${esc(r.code)}">${esc(r.name)}</a><small>${esc(r.why)}</small></td>
     <td class="n${r.today ? "" : " zero"}">${r.today}</td><td class="n${r.week ? "" : " zero"}">${r.week}</td>
+    <td class="when">${r.pushed ? esc(pacific(r.pushed)) : `<span class="none">never</span>`}</td>
     <td class="prod">${r.link ? `<a href="${esc(r.link)}">${esc(r.link.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a>` : `<span class="none">none</span>`}</td></tr>`;
-  return `<div class="scroll"><table id="${id}"><thead><tr><th>Status</th><th class="n">PRs today</th><th class="n">PRs this week</th><th>Prod link</th></tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
+  return `<div class="scroll"><table id="${id}"><thead><tr><th>Status</th><th class="n">PRs today</th><th class="n">PRs this week</th><th>Last push</th><th>Prod link</th></tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
 }
 
 export function page(d: Releases) {
@@ -125,6 +126,7 @@ tr:last-child td { border-bottom: 0; }
 .d-error .dot { background: var(--error); box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 22%, transparent); }
 .d-testing .dot { background: var(--testing); }
 .d-code .who a { color: var(--muted); font-weight: 500; }
+.when { white-space: nowrap; font: 13px var(--mono); color: var(--muted); }
 .prod a { color: var(--link); font: 13px var(--mono); word-break: break-all; }
 .none { color: var(--code); font: 13px var(--mono); }
 a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 2px; }
@@ -145,6 +147,6 @@ if (import.meta.main) {
   else if (args.includes("--html") && out) { writeFileSync(out, page(d)); console.log(`Wrote ${out}`); }
   else for (const [title, rows] of [["Apps in RustyBuns", d.apps], ["Repos", d.repos]] as const) {
     console.log(`\n${title}`);
-    for (const r of rows) console.log(`${{ live: "●", error: "✕", testing: "◐", code: "·" }[r.dot]} ${r.name.padEnd(28)} ${String(r.today).padStart(3)} ${String(r.week).padStart(4)}  ${r.link ?? "-"}`);
+    for (const r of rows) console.log(`${{ live: "●", error: "✕", testing: "◐", code: "·" }[r.dot]} ${r.name.padEnd(28)} ${String(r.today).padStart(3)} ${String(r.week).padStart(4)}  ${(r.pushed ? pacific(r.pushed) : "never").padEnd(24)} ${r.link ?? "-"}`);
   }
 }
