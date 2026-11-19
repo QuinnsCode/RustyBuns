@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { check, heavy, wideRead } from "./guard";
+import { homedir } from "node:os";
+import { check, heavy, wideRead, wideScan } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);
@@ -112,4 +113,23 @@ test.each([
   if (hint === null) expect(why).toBeNull();
   else expect(why).toContain(hint);
   expect(heavy(cmd, "/repo", "/repo", false)).toBeNull();
+});
+
+// #5194: a du/find over the whole office walks every worktree's node_modules and stalls everyone
+test.each([
+  ["du -h -d 1 ~/agent-office/QuinnsCode", "/repo/.agent-office/worktrees/w1", true],
+  ["cd /repo && du -sh .", "/x", true],
+  ["bfs /repo -size +500M", "/repo/.agent-office/worktrees/w1", true],
+  ["find ../.. -name node_modules -prune", "/repo/.agent-office/worktrees/w1", true],
+  ["find -L ~ -size +500M", "/repo", true],
+  ["du -sh .", "/repo/.agent-office/worktrees/w1", false],
+  ["du -sh apps/golf", "/repo", false],
+  ["find /repo -maxdepth 2 -name package.json", "/x", false],
+  ["find . -name '*.ts' | head", "/repo/.agent-office/worktrees/w1", false],
+  ["git status", "/repo", false],
+])("scan valve: %s (in %s)", (cmd, cwd, blocked) => {
+  const top = homedir() + "/agent-office/QuinnsCode";
+  const why = wideScan(cmd.replaceAll("/repo", top), cwd.replace("/repo", top), top);
+  if (blocked) expect(why).toContain("scan valve");
+  else expect(why).toBeNull();
 });
