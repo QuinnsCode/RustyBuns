@@ -25,6 +25,7 @@ import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
 import { encodeTake } from "../take.ts";
 import { b64url } from "@rustybuns/util/bytes";
+import { OpusIn, OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
@@ -334,8 +335,15 @@ async function startAudio() {
     out = await AudioOut.start((m) => {
       if (m.t === "tick") { transport = { abs: m.abs, synced: m.synced, late: m.late, playing: m.playing }; return; }
       // a slice of your guitar, stamped with the beat you played it on, to everyone hearing a loop late or at the desk
-      if (m.t === "sound" && myGuitar !== null) live(Band.slice(myGuitar, m.beat, encodeTake(m.pcm, m.rate), b64url));
+      if (m.t !== "sound" || myGuitar === null) return;
+      const pcm = encodeTake(m.pcm, m.rate);
+      if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
+      else live(Band.slice(myGuitar, m.beat, pcm, b64url));
     });
+    // Opus over the World when this browser has WebCodecs (a quarter of PCM's bytes), else PCM
+    const opus = await webOpus();
+    opusEncoder = opus?.encoder ?? null;
+    if (opus) opusIn = new OpusIn(opus.decoder, (peer, track, b, pcm) => { for (const m of band.sound(peer, track, b, pcm)) out?.send(m); });
     out.send(loadMsg(project));
     out.send({ t: "master", gain: dbToGain(START_DB) });
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
@@ -367,6 +375,8 @@ function releaseAll() { for (const by of [...holding.keys()]) noteOff(by); }
 let guitars: GuitarLine | null = null;
 /** The track your guitar is plugged into (-1: straight in), or null while it's out. */
 let myGuitar: number | null = null;
+/** Your guitar's Opus encoder while it's plugged in, and everyone else's decoders (src/studio/opus.ts); null with no WebCodecs. */
+let opusEncoder: MakeEncoder | null = null, opusOut: OpusOut | null = null, opusIn: OpusIn | null = null;
 /** Whose guitar is in, by peer, and the track it's plugged into. */
 const plugged = new Map<number, number>();
 /** How far behind each guitar coming in is, ms (null: connecting, "failed": no way through), asked once a second. */
@@ -376,6 +386,7 @@ async function guitar() {
   if (myGuitar !== null) {
     guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null });
     out?.send({ t: "send", on: false, inLatency: 0 }); mySource?.disconnect(); mySource = null;
+    opusOut?.close(); opusOut = null;
     return void say({ ok: false, why: "Your guitar is out" });
   }
   if (!may(player).play) return void say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
@@ -390,6 +401,7 @@ async function guitar() {
   const track = guitarTrack(project, seat && seat.kind !== "drums" ? trackFor(seat, project) : -1);
   await guitars.plugIn(stream);
   myGuitar = track;
+  if (opusEncoder) opusOut = new OpusOut(opusEncoder, live, () => project.bpm, () => myGuitar);
   // and into the audio thread, which cuts it into stamped slices for whoever hears the band a loop late or at the desk
   if (out) {
     mySource = out.ctx.createMediaStreamSource(stream);
@@ -424,12 +436,13 @@ function onLive(from: number, e: Live) {
   hear(jam, from, e);
   if (e.t === "wear") people();
   if (e.t === "guitar") {
-    if (e.track === null) { plugged.delete(from); lags.delete(from); guitars?.stopHearing(from); }
+    if (e.track === null) { plugged.delete(from); lags.delete(from); guitars?.stopHearing(from); opusIn?.drop(from); }
     else { plugged.set(from, e.track); guitars?.ask(from); }
     return;
   }
   if (e.t === "play" || e.t === "stop") return void playGroove(e.t === "play", false);
   if (!sounds(mutes, from, e)) return;
+  if (e.t === "sound" && e.c === "opus") return void (band.hearsSlices && opusIn?.hear(from, e));
   for (const m of band.heard(from, e)) out?.send(m);
 }
 
@@ -527,7 +540,7 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); lags.delete(from); guitars?.gone(from);
-  band.quiet(from); out?.send({ t: "quiet", peer: from });
+  band.quiet(from); opusIn?.drop(from); out?.send({ t: "quiet", peer: from });
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
   gone(jam, from);

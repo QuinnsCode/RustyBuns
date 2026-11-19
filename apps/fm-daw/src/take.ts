@@ -37,7 +37,7 @@ export const TakeBytesGuard: Guard<TakeBytes> = (v) => {
 export const newTakeId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 16);
 
 /** `pcm` at `rate`, resampled (straight lines between samples) to TAKE_RATE and cut to 16 bits. */
-export function encodeTake(pcm: Float32Array, rate: number): Int16Array {
+export function encodeTake(pcm: Float32Array, rate: number): Int16Array<ArrayBuffer> {
   const frames = Math.min(MAX_TAKE_FRAMES, Math.floor((pcm.length * TAKE_RATE) / rate));
   const out = new Int16Array(frames), step = rate / TAKE_RATE;
   for (let i = 0; i < frames; i++) {
