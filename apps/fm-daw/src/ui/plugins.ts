@@ -4,7 +4,8 @@
 import { useSyncExternalStore } from "react";
 import { check } from "@rustybuns/util/guard";
 import { findPlugins, openPluginEditor, renderPlugin, startPlugin, stopPlugin } from "../actions/plugins.ts";
-import { BlockReply, EditorReply, PluginChoices, StartReply, type ParamChange, type PluginChoice, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
+import { BOUNCE_SLOT, BlockReply, EditorReply, MAX_PLUGIN_FRAMES, PluginChoices, StartReply, type ParamChange, type PluginChoice, type PluginEvent, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
+import { pluginScore } from "../engine/offline.ts";
 import type { Project } from "../project.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { P } from "../engine/params.ts";
@@ -30,6 +31,40 @@ export async function pluginChoices(): Promise<PluginChoice[]> {
 
 const keyOf = (p: TrackPlugin) => `${p.web ? "web:" : ""}${p.path}#${p.index}`;
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^action [^:]+: \d+ /, "");
+
+/**
+ * The plugin tracks' sound for a bounce (#5301): the page has no plugin to play, so the host renders each heard
+ * plugin track from its notes, `frames` long at `sampleRate`, with a copy of the plugin of its own (the one playing
+ * is left alone). `sound` is each track's, interleaved stereo, for `renderProject`; `missed` names the ones the
+ * host couldn't play and why (no desktop host, a plugin that isn't on this computer): the bounce goes on without them.
+ */
+export async function bouncePlugins(p: Project, sampleRate: number, frames: number, host = { renderPlugin, startPlugin, stopPlugin }): Promise<{ sound: Map<number, Float32Array>; missed: string[] }> {
+  const sound = new Map<number, Float32Array>(), missed: string[] = [];
+  for (const [t, events] of pluginScore(p, sampleRate, frames)) {
+    const plug = p.tracks[t]?.plugin;
+    if (!plug) continue;
+    const slot = BOUNCE_SLOT + t;
+    try {
+      const started = check(StartReply, await host.startPlugin(slot, plug, sampleRate));
+      if (!started || started.error) throw new Error(started?.error ?? "the host sent back something else");
+      const pcm = new Float32Array(2 * frames);
+      let next = 0;
+      for (let pos = 0; pos < frames; pos += MAX_PLUGIN_FRAMES) {
+        const n = Math.min(MAX_PLUGIN_FRAMES, frames - pos), now: PluginEvent[] = [];
+        for (; next < events.length && (events[next]!.at ?? 0) < pos + n; next++) now.push({ ...events[next]!, at: Math.max(0, (events[next]!.at ?? 0) - pos) });
+        const r = check(BlockReply, await host.renderPlugin({ track: slot, frames: n, events: now }));
+        if (!r?.ok) throw new Error(r?.error ?? "the host sent back something else");
+        pcm.set(fromBase64(r.pcm).subarray(0, 2 * n), 2 * pos);
+      }
+      sound.set(t, pcm);
+    } catch (e) {
+      missed.push(`${plug.name} (${why(e)})`);
+    } finally {
+      await host.stopPlugin(slot).catch(() => {});
+    }
+  }
+  return { sound, missed };
+}
 
 export class PluginPump {
   private running = new Map<number, { key: string; web: boolean; values: Map<number, number>; chain: Promise<unknown> }>();
