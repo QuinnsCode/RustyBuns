@@ -419,6 +419,19 @@ function knob(b: Build, at: THREE.Vector3Tuple, out: 1 | -1, r = 0.011) {
   b.pieces.push(box("chrome", [0.0016, r * 0.7, 0.001], [at[0], at[1] + r * 0.4, at[2] + out * (0.0035 + r * 0.9)]));
 }
 
+/** Print on a back panel (a face looking along -z), reading left to right for someone standing behind it: `print`'s
+ * up-facing strokes turned to face -z, centred at `at`. */
+function backPrint(b: Build, text: string, at: THREE.Vector3Tuple, size = 0.008) {
+  const m = new THREE.Matrix4().makeTranslation(...at).multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationY(Math.PI));
+  b.pieces.push(...onto(m, print(text, 0, 0, 0, size)));
+}
+
+/** The small plain plate a speaker's grille carries in a corner (no maker's mark), standing just proud of the sheet;
+ * `m` places it, its face looking along +z. */
+function grillePlate(b: Build, m: THREE.Matrix4) {
+  b.pieces.push(...onto(m, [box("metal", [0.05, 0.014, 0.003], [0, 0, 0.0015], { bevel: 0.001 })]));
+}
+
 /** A speaker box, built as a moulded PA top is: a cabinet that tapers to the back, a perforated steel grille across
  * the front with the woofer and the horn behind it, a handle set into the top and each side, rubber feet and a pole
  * cup underneath, threaded fly points, and a back panel (a powered box's amp plate has a heat sink and knobs). */
@@ -449,6 +462,7 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   const rw = Math.min(gw, gh * 0.62) * 0.43, deep = cave - g - 0.012;
   b.pieces.push(...cone(rw, deep, at(yc - gh * 0.16)));
   b.pieces.push(...horn(gw * 0.62, gh * 0.2, deep, at(yc + gh * 0.3)));
+  grillePlate(b, new THREE.Matrix4().makeTranslation(gw / 2 - 0.045, yc - gh / 2 + 0.03, d / 2 - 0.003));
   for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.065), (y0 + 0.002) / 2, z], 0.006));
   // the pole cup: a steel ring round a dark socket
   b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
@@ -465,6 +479,8 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   }
   const gap = (pw * 0.72) / Math.max(1, backJacks.length - 1);
   jacks(b, backJacks, "back", [-pw * 0.36, py - (powered ? ph * 0.3 : 0), bz], [gap, 0, 0]);
+  // the warning, printed along the foot of the plate
+  backPrint(b, "RISK OF SHOCK DO NOT OPEN", [0, py - ph / 2 + 0.011, bz - 0.0005], Math.min(0.007, pw / 50));
   mark(b, "grab", [0, body + 0.025, 0]);
   mark(b, "pole-cup", [0, 0.012, 0], [0, -1, 0]);
   return b;
@@ -485,12 +501,16 @@ function sub(): Build {
   ]], grip(-1), grip(1)]);
   b.pieces.push(...grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
   b.pieces.push(...cone(0.2, 0.06, new THREE.Matrix4().makeTranslation(0, cy, front - 0.004)));
+  grillePlate(b, new THREE.Matrix4().makeTranslation(w / 2 - 0.07, h - 0.06, d / 2 + 0.001));
   // a cap on each corner: the bottom four are its feet
   const c = 0.056;
   for (const x of [-1, 1]) for (const y of [c / 2, h - c / 2]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z * (d / 2 - c / 2 + 0.001)], 0.014));
   b.pieces.push(disc("metal", 0.026, 0.005, "y", [0, h - 0.002, 0], 16), disc("knob", 0.019, 0.002, "y", [0, h + 0.0005, 0], 16));
   plate(b, w * 0.4, h * 0.16, [0, h * 0.25, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.08, h * 0.25, -d / 2 - 0.008], [w * 0.16, 0, 0]);
+  backPrint(b, "8 OHM 1000W", [0, h * 0.25 - h * 0.08 + 0.012, -d / 2 - 0.0085]);
+  backPrint(b, "IN", [-w * 0.08, h * 0.25 + 0.026, -d / 2 - 0.0085], 0.007);
+  backPrint(b, "LINK", [w * 0.08, h * 0.25 + 0.026, -d / 2 - 0.0085], 0.007);
   mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
   mark(b, "pole", [0, h - 0.005, 0], [0, 1, 0]);
   return b;
@@ -513,6 +533,7 @@ function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
   b.pieces.push(...grilleSlab(w - 0.05, len - 0.03, 0.011, 0, 0, 0.012, slope));
   const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, -0.003));
   b.pieces.push(...cone(0.14, 0.035, on(-0.11, 0)), ...horn(0.16, 0.12, 0.035, on(0.17, 0.02)));
+  grillePlate(b, slope.clone().multiply(new THREE.Matrix4().makeTranslation((w - 0.05) / 2 - 0.045, -(len - 0.03) / 2 + 0.025, 0.011)));
   const c = 0.05;
   for (const x of [-1, 1]) {
     for (const [y, z] of [[c / 2, -d / 2 + c / 2], [h - c / 2, -d / 2 + c / 2], [c / 2, d / 2 - c / 2]]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z + Math.sign(z) * 0.001], 0.012));
@@ -520,6 +541,7 @@ function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
   plate(b, w * 0.3, h * 0.2, [w * 0.28, h * 0.25, -d / 2 - 0.004]);
   // powered: mains and a signal in and thru; passive: two speaker jacks, in and the link on
   jacks(b, id === "wedge-12" ? ["power-in", "xlr-in", "xlr-out"] : ["speaker-in", "speaker-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
+  backPrint(b, id === "wedge-12" ? "DO NOT OPEN" : "8 OHM", [w * 0.28, h * 0.25 - h * 0.1 + 0.01, -d / 2 - 0.0085], 0.0065);
   mark(b, "grab", [0, h * 0.62, -d / 2 - 0.02], [0, 0, -1]);
   return b;
 }
@@ -836,7 +858,7 @@ const STROKES: Record<string, [number, number[][]]> = (() => {
     V: [[0, 1, 0.5, 0], [0.5, 0, 1, 1]], W: [[0, 1, 0.2, 0], [0.2, 0, 0.5, 0.6], [0.5, 0.6, 0.8, 0], [0.8, 0, 1, 1]], X: [[0, 0, 1, 1], [0, 1, 1, 0]],
     "0": O, "1": [[0.6, 0, 0.6, 1], [0.6, 1, 0, 0.7]], "2": [[0, 1, 1, 1], [1, 1, 1, 0.5], [1, 0.5, 0, 0.5], [0, 0.5, 0, 0], [0, 0, 1, 0]],
     "3": [[0, 1, 1, 1], [1, 1, 1, 0], [0, 0, 1, 0], [0.3, 0.5, 1, 0.5]], "4": [[0, 1, 0, 0.45], [0, 0.45, 1, 0.45], [0.8, 1, 0.8, 0]], "5": S,
-    "6": [[1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 1, 0.5], [1, 0.5, 0, 0.5]], "-": minus, "+": [...minus, [0.5, 0.2, 0.5, 0.8]],
+    "6": [[1, 1, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 1, 0.5], [1, 0.5, 0, 0.5]], "8": [...O, [0, 0.5, 1, 0.5]], "-": minus, "+": [...minus, [0.5, 0.2, 0.5, 0.8]],
   };
   return Object.fromEntries(Object.entries(g).map(([k, s]): [string, [number, number[][]]] => [k, [k === "I" ? 0 : k === "1" ? 0.3 : k === "-" || k === "+" ? 0.5 : 0.62, s]]));
 })();
