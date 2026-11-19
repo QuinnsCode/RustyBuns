@@ -69,6 +69,22 @@ export const GEAR_SIZES = {
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
 
+/** What a hang flies from, part of the venue rather than gear the crew carries in (so not in the catalog): the line
+ * array's flying frame and the chain motor over it, w x h x d in metres as built (`rigging`). */
+export const RIG_SIZES = {
+  "flying-frame": [0.8, 0.284, 0.8],
+  "chain-motor": [0.262, 0.748, 0.298],
+} as const satisfies Record<string, THREE.Vector3Tuple>;
+export type RigId = keyof typeof RIG_SIZES;
+export const RIG_IDS = Object.keys(RIG_SIZES) as RigId[];
+/** The frame's link pins along z: over `line-array-10`'s front pins and its rear link. */
+const FRAME_PINS = { front: 0.205, rear: -0.235 };
+/** The frame's pick-up holes along its spine (z), and the one its shackle is in. */
+const FRAME_HOLES = [-0.39, -0.31, -0.23, -0.15, -0.07, 0.01, 0.09, 0.17, 0.25];
+const FRAME_PICKUP = -0.07;
+/** How far below the hook part's origin (the chain's end) its bite is. */
+const MOTOR_BITE = 0.143;
+
 const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
@@ -92,7 +108,7 @@ type Mark = { name: string; at: THREE.Vector3Tuple; out: THREE.Vector3Tuple };
 type Part = { name: string; at: THREE.Vector3Tuple; rot?: number; pieces: Piece[]; ownUv?: boolean };
 /** What a model with moving parts says about them, on its group's userData: the tonearm's turns about its bearing
  * (radians: at the rest, the outer groove, the inner groove) and the mixer's fader and crossfader throws, metres. */
-export type GearData = { arm?: { rest: number; outer: number; inner: number }; faderTravel?: number; crossTravel?: number };
+export type GearData = { arm?: { rest: number; outer: number; inner: number }; faderTravel?: number; crossTravel?: number; bite?: number };
 type Build = { pieces: Piece[]; marks: Mark[]; parts?: Part[]; data?: GearData };
 
 // ---- pieces ---------------------------------------------------------------------------------------------------
@@ -1191,6 +1207,83 @@ function siteGenerator(): Build {
   return b;
 }
 
+// ---- rigging: what a hang flies from ---------------------------------------------------------------------------
+
+/** A torus arc `r` round and `tube` thick, from angle 0 to `arc` round its own z axis (in its xy plane), placed by
+ * `m`: a shackle's bow, a hook, a ring. */
+function bow(slot: GearSlot, r: number, tube: number, arc: number, m: THREE.Matrix4, seg = 12): Piece {
+  const t = new THREE.TorusGeometry(r, tube, 6, seg, arc).applyMatrix4(m);
+  for (const k of Object.keys(t.attributes)) if (k !== "position") t.deleteAttribute(k);
+  const geo = t.toNonIndexed();
+  geo.computeVertexNormals();
+  return { geo, slot };
+}
+
+const at = (x: number, y: number, z: number) => new THREE.Matrix4().makeTranslation(x, y, z);
+
+/**
+ * A line array's flying frame (the bumper on the motor's hook): two powder-coated side rails and three cross members
+ * the width of the box, link plates down to the top box's front and rear pins, and a spine along the middle drilled
+ * with a row of pick-up holes, a shackle in the one the hang balances on. y = 0 is the top of the box it carries: the
+ * link plates reach 3 cm down to the box's pins, so it pins straight to `line-array-10`.
+ */
+function flyingFrame(): Build {
+  const [w, , d] = RIG_SIZES["flying-frame"], b: Build = { pieces: [], marks: [] }, z1 = 0.35, z0 = z1 - d, zc = (z0 + z1) / 2;
+  const rx = w / 2 - 0.025, plateX = w / 2 - 0.024, pinY = -0.014;
+  for (const s of [-1, 1]) {
+    b.pieces.push(box("paint", [0.05, 0.08, d], [s * rx, 0.07, zc], { bevel: 0.004 }));
+    // the link plates, at the box's front pins (lineArray's plateZ) and its rear link (linkZ)
+    for (const pz of [FRAME_PINS.front, FRAME_PINS.rear]) {
+      b.pieces.push(box("paint", [0.012, 0.11, 0.07], [s * plateX, 0.025, pz], { bevel: 0.003 }));
+      b.pieces.push(disc("chrome", 0.009, 0.03, "x", [s * (plateX + 0.006), pinY, pz], 6), disc("chrome", 0.012, 0.004, "x", [s * (plateX + 0.02), pinY, pz], 8));
+    }
+  }
+  for (const z of [z1 - 0.03, -0.05, z0 + 0.03]) b.pieces.push(box("paint", [w - 0.1, 0.05, 0.05], [0, 0.07, z], { bevel: 0.004 }));
+  // the spine and its pick-up holes, every 8 cm
+  b.pieces.push(box("paint", [0.03, 0.08, d - 0.06], [0, 0.15, zc], { bevel: 0.003 }));
+  for (const z of FRAME_HOLES) b.pieces.push(disc("rubber", 0.009, 0.032, "x", [0, 0.15, z], 8));
+  // the shackle: a pin through the hole, two legs and the bow on top
+  const zp = FRAME_PICKUP, legX = 0.035, bowY = 0.21;
+  b.pieces.push(disc("chrome", 0.008, 0.09, "x", [0, 0.15, zp], 6), disc("chrome", 0.013, 0.012, "x", [legX + 0.016, 0.15, zp], 6));
+  for (const s of [-1, 1]) b.pieces.push(rod("metal", [s * legX, 0.15, zp], [s * legX, bowY, zp], 0.009, 6));
+  b.pieces.push(bow("metal", legX, 0.009, Math.PI, at(0, bowY, zp), 8));
+  mark(b, "pickup", [0, bowY + legX - 0.009, zp]);
+  mark(b, "hinge-bottom", [0, pinY, FRAME_PINS.front], [1, 0, 0]);
+  return b;
+}
+
+/**
+ * A one-tonne chain hoist, hung body-up: its top hook in a sling round the steel, a finned housing, the power and
+ * control sockets on a plate at the front, the chain out of a guide underneath beside the bag that takes the slack,
+ * and the load hook (`part:hook`) on the end of the chain. The app runs the chain: it lowers the hook by its y (its
+ * bite is `userData.bite` below the part's origin) and draws the chain from `chain` down to it.
+ */
+function chainMotor(): Build {
+  const b: Build = { pieces: [], marks: [], data: { bite: MOTOR_BITE } }, rx = 0.12, rz = 0.135, y0 = 0.3, y1 = 0.6, cx = -0.04;
+  b.pieces.push(loft("paint", [R(y0, rx, rz), R(y1, rx, rz)], { seg: 16, p: 2.6 }));
+  for (let y = 0.35; y < 0.56; y += 0.045) b.pieces.push(loft("metal", [R(y, rx + 0.007, rz + 0.007), R(y + 0.012, rx + 0.007, rz + 0.007)], { seg: 16, p: 2.6 }));
+  b.pieces.push(loft("metal", [R(y1, rx - 0.004, rz - 0.004), R(y1 + 0.025, rx - 0.02, rz - 0.02), R(y1 + 0.04, 0.06, 0.07)], { seg: 16, p: 2.4 }));
+  b.pieces.push(loft("metal", [R(y0 - 0.03, 0.07, 0.08), R(y0, rx - 0.004, rz - 0.004)], { seg: 16, p: 2.4 }));
+  // the top hook: a swivel and a ring, the sling sits in it
+  b.pieces.push(disc("metal", 0.03, 0.025, "y", [0, 0.655, 0], 10), rod("metal", [0, 0.665, 0], [0, 0.69, 0], 0.012, 6));
+  b.pieces.push(bow("chrome", 0.03, 0.01, Math.PI * 1.75, at(0, 0.71, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationZ(1.9)), 14));
+  mark(b, "hang", [0, 0.74, 0]);
+  // the chain guide and the chain bag beside it on two straps
+  b.pieces.push(disc("metal", 0.024, 0.04, "y", [cx, y0 - 0.04, 0], 10));
+  b.pieces.push(loft("tolex", [R(0.0, 0.045, 0.055, { cx: 0.07 }), R(0.04, 0.065, 0.075, { cx: 0.07 }), R(0.2, 0.07, 0.08, { cx: 0.07 }), R(0.24, 0.055, 0.065, { cx: 0.07 })], { seg: 10 }));
+  for (const z of [-0.05, 0.05]) b.pieces.push(rod("rubber", [0.07, 0.235, z], [0.07, y0 - 0.02, z], 0.006, 4));
+  mark(b, "chain", [cx, y0 - 0.06, 0], [0, -1, 0]);
+  // the plate at the front: power in and the controller's line
+  b.pieces.push(box("panel", [0.12, 0.1, 0.02], [0, 0.45, rz + 0.005], { bevel: 0.004 }));
+  jacks(b, ["power-in", "control-in"], "front", [-0.03, 0.45, rz + 0.015], [0.06, 0, 0], 0.014);
+  // the load hook: a link to the chain, a swivel block, the hook with its latch, painted to be seen
+  const hook: Piece[] = [rod("metal", [0, 0, 0], [0, -0.04, 0], 0.01, 6), box("metal", [0.04, 0.05, 0.035], [0, -0.065, 0], { bevel: 0.004 })];
+  hook.push(bow("lid", 0.032, 0.011, Math.PI * 1.6, at(0, -0.122, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationZ(1.75)), 14));
+  hook.push(rod("chrome", [0, -0.09, 0.012], [0, -0.115, 0.04], 0.004, 4));
+  b.parts = [{ name: "hook", at: [cx, y0 - 0.06, 0], pieces: hook }];
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
@@ -1237,11 +1330,10 @@ const merged = (pieces: Piece[], ownUv = false): Slots => SLOTS.filter((s) => pi
   .map((s): [GearSlot, THREE.BufferGeometry] => [s, mergeVertices(mergeGeometries(pieces.filter((p) => p.slot === s).map((p) => (ownUv ? p.geo : metreUv(p.geo))))!)]);
 const cache = new Map<string, Built>();
 
-function built(id: GearId, height: number): Built {
-  const key = id === "stand-tripod" ? `${id}@${height}` : id;
+function built(key: string, make: () => Build): Built {
   let hit = cache.get(key);
   if (!hit) {
-    const { pieces, marks, parts = [], data = {} } = BUILDERS[id](height);
+    const { pieces, marks, parts = [], data = {} } = make();
     hit = { slots: merged(pieces), marks, parts: parts.map((p) => ({ name: p.name, at: p.at, rot: p.rot ?? 0, slots: merged(p.pieces, p.ownUv) })), data };
     cache.set(key, hit);
   }
@@ -1258,10 +1350,23 @@ const Z = new THREE.Vector3(0, 0, 1);
 
 /** One piece of gear: a group named for its id, a mesh per material slot, and its jacks, grab and mounts. */
 export function gear(id: GearId, { look = gearLook(), height = 1.2 }: GearOptions = {}): THREE.Group {
-  const h = clamp(height, 1.2, 2.0), { slots, marks, parts, data } = built(id, h);
+  const h = clamp(height, 1.2, 2.0);
+  return assemble(id, built(id === "stand-tripod" ? `${id}@${h}` : id, () => BUILDERS[id](h)), look,
+    { gear: id, size: id === "stand-tripod" ? [0.9, h, 0.9] : [...GEAR_SIZES[id]] });
+}
+
+/** A piece of the rig a hang flies from (`RIG_SIZES`), built as `gear` builds gear: its marks are `pickup` (the
+ * frame's shackle bow, where the motor's hook bites, +z up), `hinge-bottom` (the frame's front pins, over the top box's
+ * `hinge-top`), `hang` (the motor's top hook, +z up), `chain` (where the chain leaves the motor, +z down) and the
+ * motor's `jack:power-in` and `jack:control-in`; the motor's load hook is `part:hook`. */
+export function rigging(id: RigId, { look = gearLook() }: { look?: GearLook } = {}): THREE.Group {
+  return assemble(id, built(id, id === "flying-frame" ? flyingFrame : chainMotor), look, { rig: id, size: [...RIG_SIZES[id]] });
+}
+
+function assemble(id: string, { slots, marks, parts, data }: Built, look: GearLook, about: object): THREE.Group {
   const g = new THREE.Group();
   g.name = id;
-  g.userData = { gear: id, size: id === "stand-tripod" ? [0.9, h, 0.9] : [...GEAR_SIZES[id]], ...structuredClone(data) };
+  g.userData = { ...about, ...structuredClone(data) };
   const meshes = (into: THREE.Object3D, from: Slots, stem: string) => {
     for (const [slot, geo] of from) {
       const mesh = new THREE.Mesh(geo, look[slot]);

@@ -2,7 +2,7 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearJacks } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, type GearId, gear, gearJacks, rigging } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
@@ -97,4 +97,34 @@ test("the DJ mixer's print lies on its top face and knob caps, looking up, insid
     expect(p.getY(i)).toBeGreaterThan(h - 0.008);
     expect(p.getY(i)).toBeLessThan(h + 0.009); // the field, or the knobs' caps (their pointer lines)
   }
+});
+
+test.each(RIG_IDS)("the rig's %s builds at its size and stays cheap to draw", (id) => {
+  const g = rigging(id);
+  g.updateMatrixWorld(true);
+  const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).toArray();
+  size.forEach((s, i) => expect(Math.abs(s - RIG_SIZES[id][i])).toBeLessThan(0.01));
+  expect(triangles(g)).toBeLessThan(5000);
+});
+
+test("a frame pins onto the top box, and the motor's hook bites its shackle with the jacks facing out", () => {
+  const box = gear("line-array-10"), frame = rigging("flying-frame"), motor = rigging("chain-motor");
+  frame.position.y = GEAR_SIZES["line-array-10"][1];
+  // hang the motor over the pick-up, its chain plumb, and run the hook down to it
+  frame.updateMatrixWorld(true);
+  const pickup = frame.getObjectByName("pickup")!.getWorldPosition(new THREE.Vector3()), chain = motor.getObjectByName("chain")!.position;
+  motor.position.set(pickup.x - chain.x, 4, pickup.z - chain.z);
+  const hook = motor.getObjectByName("part:hook")!;
+  hook.position.y = pickup.y - motor.position.y + motor.userData.bite;
+  for (const o of [box, frame, motor]) o.updateMatrixWorld(true);
+
+  const at = (o: THREE.Object3D, name: string) => o.getObjectByName(name)!.getWorldPosition(new THREE.Vector3());
+  expect(at(frame, "hinge-bottom").distanceTo(at(box, "hinge-top"))).toBeLessThan(0.002);
+  const bite = hook.getWorldPosition(new THREE.Vector3()).setY(hook.getWorldPosition(new THREE.Vector3()).y - motor.userData.bite);
+  expect(bite.distanceTo(pickup)).toBeLessThan(0.002);
+  // the hook hangs under the motor's chain guide, and the motor's own hook is at its top
+  expect(at(motor, "hang").y).toBeCloseTo(motor.position.y + 0.74, 3);
+  const jacks = gearJacks(motor), centre = new THREE.Box3().setFromObject(motor).getCenter(new THREE.Vector3());
+  expect([...jacks.keys()].sort()).toEqual(["control-in", "power-in"]);
+  for (const j of jacks.values()) expect(j.getWorldPosition(new THREE.Vector3()).sub(centre).dot(new THREE.Vector3(0, 0, 1).applyQuaternion(j.quaternion))).toBeGreaterThan(0);
 });
