@@ -3,7 +3,7 @@
 use crate::data::{Archetype, Slot};
 use crate::dmath::{atan2, cos, hypot, max, min, or1, sin};
 use crate::sim::{
-    covers, foe_of, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_REACH,
+    covers, foe_of, frames, head, held, sweep, swing_phase, through, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_REACH,
     DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS, TAKEOFF,
 };
 
@@ -170,6 +170,24 @@ impl Bot {
                     }
                 }
             }
+        }
+        // Follow-through (bot.ts): our blow landed, so walk on round the target through its recovery.
+        if through(me) && me.c.archetype != Archetype::Skirmisher {
+            let dx = o.pos.x - me.pos.x;
+            let dz = o.pos.z - me.pos.z;
+            let d = or1(hypot(dx, dz));
+            let rad = if d > me.b.radius + o.b.radius + 1.0 + RING { 0.7 } else { -0.4 };
+            let mut s = self.dir;
+            if hypot(me.pos.x - (dz / d) * s * 3.0, me.pos.z + (dx / d) * s * 3.0) > ARENA_RADIUS - 1.5 {
+                s = -s;
+            }
+            let vx = (-dz / d) * s + (dx / d) * rad;
+            let vz = (dx / d) * s + (dz / d) * rad;
+            let n = hypot(vx, vz);
+            let mut i = IDLE;
+            i.mx = vx / n;
+            i.mz = vz / n;
+            return i;
         }
         if me.state == State::Attack || me.state == State::Stun {
             return IDLE;
