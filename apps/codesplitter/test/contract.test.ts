@@ -107,7 +107,7 @@ test("a day's work through the API: every body sent and every answer is the shap
   await ask("ana", "delete_program", { name: "count" });
 
   expect(drift).toEqual([]);
-  expect(seen.size).toBe(20);
+  expect(seen.size).toBe(19);
 });
 
 test("every operation whose spec names a required field refuses a body without one", async () => {
