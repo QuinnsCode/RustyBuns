@@ -2,7 +2,9 @@
 // every machine plays them itself; a guitar has to travel as sound. So the player who plugs in (G) sends their dry
 // input, peer to peer over WebRTC, and every listener plays it through the amp on that player's track in the sesh's
 // groove, on their own machine: the patch is shared, so everyone hears the same circuit (and turning a knob costs no
-// re-send). The World only passes the call's setup on, one person to one person, and keeps none of it.
+// re-send). A listener whose machine can't run every guitar's amp asks the heaviest one's player for their amp's
+// output instead (`wet`, see sendWet): the same circuit, run once, at the cost of a little less of the room on the far
+// end. The World only passes the call's setup on, one person to one person, and keeps none of it.
 //
 // Each guitar is its own call: the player's `out` line to each listener, the listener's `in` line from them. Two
 // players with guitars make two calls between them, one each way, so neither offer ever crosses the other.
@@ -30,8 +32,10 @@ const SDP = str(16_000, { min: 1 });
 const Want = obj({ k: tag("want") });
 const Sdp = obj({ k: tag("sdp"), type: oneOf(["offer", "answer"]), sdp: SDP });
 const Ice = obj({ k: tag("ice"), candidate: str(2_000, { min: 0 }), mid: str(32, { min: 0, dflt: "" }), index: int(0, 64, 0) });
-export type Signal = Of<typeof Want> | Of<typeof Sdp> | Of<typeof Ice>;
-export const Signal: Guard<Signal> = (v) => check(Want, v) ?? check(Sdp, v) ?? check(Ice, v) ?? Sdp(v);
+/** A listener over its budget asks the player to send their amp's output on this call, not their dry input (sendWet). */
+const Wet = obj({ k: tag("wet") });
+export type Signal = Of<typeof Want> | Of<typeof Sdp> | Of<typeof Ice> | Of<typeof Wet>;
+export const Signal: Guard<Signal> = (v) => check(Want, v) ?? check(Sdp, v) ?? check(Ice, v) ?? check(Wet, v) ?? Sdp(v);
 
 const PEER = int(1, Infinity);
 /** Page to World: a signal for one other person in the sesh, by their live-line number. */
@@ -141,18 +145,41 @@ export function lagMs(t: Trip): number | null {
 
 /**
  * How playing together feels at that lag. Up to 30 ms is about standing across a big stage from each other: tight.
- * Up to 60 ms players notice and lean on the beat: loose. Past it, playing in time breaks down; the fix there is
- * hearing each other exactly a loop late (#4900), not yet built.
+ * Up to 60 ms players notice and lean on the beat: loose. Past it, playing in time breaks down, so the room says to
+ * hear the band a loop late (C, src/clock.ts): every guitar's stamped slices then land exactly on their beat, whatever the trip.
  */
 export type Feel = "tight" | "loose" | "late";
 export const TIGHT_MS = 30, LOOSE_MS = 60;
 export const feel = (ms: number): Feel => (ms <= TIGHT_MS ? "tight" : ms <= LOOSE_MS ? "loose" : "late");
 /** A guitar's lag: milliseconds, null while its call connects, "failed" when no path between the two networks was found. */
 export type Lag = number | null | "failed";
-/** The lag in words, for the room's status line. */
-export function lagWords(name: string, ms: Lag, input: Input = "guitar"): string {
+/** The lag in words, for the room's status line. Listening a loop late or at the desk (`now` false) the call's lag doesn't matter. */
+export function lagWords(name: string, ms: Lag, input: Input = "guitar", now = true): string {
+  if (!now) return `${name}'s ${input} a loop late, in time`;
   if (ms === null) return `${name}'s ${input}: connecting`;
   if (ms === "failed") return `${name}'s ${input} couldn't get through to you (no path between your two networks, not even the relay)`;
   const f = feel(ms);
-  return `${name}'s ${input} ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
+  return `${name}'s ${input} ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight: C hears the band a loop late, in time"}`;
+}
+
+/**
+ * The share of this machine's audio thread the guitars' amps may take (each amp's own meter, summed), leaving the rest
+ * for the groove's engine and the room. Q Amp's own split starts at 0.9 of a thread (src/amp/threads.ts); the jam room
+ * runs a whole band beside the guitars, so it gives them about half.
+ */
+export const GUITAR_BUDGET = 0.5;
+/** How long the amps stay over budget before one guitar goes wet, seconds: one busy moment isn't a slow machine. */
+export const OVER_S = 1 / 3;
+/**
+ * Which incoming guitar to hear as its player's amp output instead of running its circuit here: while the amps here
+ * (yours under "me", each friend's by peer) are over budget, the heaviest one still dry; else none. A wet guitar's own
+ * amp is bypassed here, so the next pick is the next heaviest. Your own guitar always runs here: you play through it.
+ */
+export function sendWet(loads: ReadonlyMap<number | "me", number>, wet: ReadonlySet<number>): number | null {
+  let sum = 0, pick: number | null = null, most = -1;
+  for (const [who, load] of loads) {
+    sum += load;
+    if (who !== "me" && !wet.has(who) && load > most) { most = load; pick = who; }
+  }
+  return sum > GUITAR_BUDGET ? pick : null;
 }
