@@ -1107,7 +1107,7 @@ async function poll() {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && online()) void poll(); });
 
 // The hero battle's briefing: what the map has given each side for this fight.
-function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult) => void) {
+function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult) => void, practice = false) {
   const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
   const horde = spec.factions[foe] === "wooka", place = PLACES[spec.sector];
   const vehicles = (s: Side) => {
@@ -1137,7 +1137,7 @@ function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult)
     const { playBattle, endLiveBattle } = await import("./battle/view.ts");
     // A jump may start the fight already under way, skip the intros, and end itself for the win or loss screen.
     if (jump?.end) setTimeout(() => endLiveBattle(jump.end === "win" ? spec.hero : other(spec.hero)), jump.endAfter * 1000);
-    const result = await playBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"), jump && { warm: jump.near, cuts: false });
+    const result = await playBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"), { ...(jump && { warm: jump.near, cuts: false }), rewind: practice });
     document.body.classList.remove("in-battle");
     done(result);
   };
@@ -1301,7 +1301,7 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
       cast(f, m) { votes[f] = m; screen.update(votes, tally(spec.id, votes)); },
       done(picked) { if (picked) skirmish(asWooka, picked, jump && { ...jump, mode: picked, near: 0, seed: Math.floor(Math.random() * 2 ** 31) }); },
     });
-  });
+  }, true);
 }
 // The panel's fixed buttons and headings get their icons once.
 $("restart").innerHTML = icon("rotate-ccw", 18);

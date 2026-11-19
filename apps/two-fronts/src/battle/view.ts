@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
-import { groundRecorder } from "./replay.ts";
+import { groundRecorder, groundRewind } from "./replay.ts";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
@@ -85,8 +85,9 @@ export function endLiveBattle(winner: Side): boolean {
   return true;
 }
 
-// `warm`: seconds the AI fights before the hero drops in (a jump's "near the fight"); `cuts: false` skips the intros.
-export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement, opts: { warm?: number; cuts?: boolean } = {}): Promise<BattleResult> {
+// `warm`: seconds the AI fights before the hero drops in (a jump's "near the fight"); `cuts: false` skips the intros;
+// `rewind`: the rewind key works (practice only: a campaign battle is played once, as it went).
+export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement, opts: { warm?: number; cuts?: boolean; rewind?: boolean } = {}): Promise<BattleResult> {
   const b = startBattle(spec);
   for (let i = 0; i < (opts.warm ?? 0) * 30 && !b.over; i++) step(b, null);
   battleOnShow = b;
@@ -323,13 +324,14 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
 
   // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
-  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, order: OrderKind | null = null;
+  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, order: OrderKind | null = null, rewind = false;
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
     if (down) sfx.wake();
     if (down && k === settings.keys.mute && !e.repeat) sfx.toggle();
     if (down && k === settings.keys.strike) strike = true;
     if (down && k === settings.keys.use) use = true;
+    if (down && !e.repeat && opts.rewind && k === settings.keys.rewind) rewind = true;
     if (down && !e.repeat && ORDER_KEYS[k]) order = ORDER_KEYS[k]!;
     down ? keys.add(k) : keys.delete(k);
   };
@@ -353,6 +355,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = settings.fireToggle ? (d ? !firing : firing) : d; } },
       { id: "strike", icon: "zap", label: "Orbital strike", on: (d) => { if (d) strike = true; } },
       { id: "use", icon: "car-front", label: "Vehicle or special", on: (d) => { if (d) use = true; } },
+      ...(opts.rewind ? [{ id: "rewind", icon: "undo-2", label: "Rewind 3 s", on: (d: boolean) => { if (d) rewind = true; } }] : []),
       ...(["forward", "hold", "back", "focus"] as const).map((k) => ({ id: k, icon: ORDER_INFO[k].icon, label: `Squad: ${ORDER_INFO[k].name}`, row: true, on: (d: boolean) => { if (d) order = k; } })),
     ],
   }) : null;
@@ -496,12 +499,12 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       </div>
       <ul class="b-feed">${feedLines()}</ul>
       ${orderBar()}
-      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · ${keyName(settings.keys.forward)}${keyName(settings.keys.left)}${keyName(settings.keys.back)}${keyName(settings.keys.right)} move · mouse look · click fire · ${keyName(settings.keys.strike)} orbital strike · ${keyName(settings.keys.use)} vehicle · 1-4 squad orders · ${keyName(settings.keys.mute)} sound · Esc to let go, then the gear for Controls<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · ${keyName(settings.keys.forward)}${keyName(settings.keys.left)}${keyName(settings.keys.back)}${keyName(settings.keys.right)} move · mouse look · click fire · ${keyName(settings.keys.strike)} orbital strike · ${keyName(settings.keys.use)} vehicle · 1-4 squad orders · ${keyName(settings.keys.mute)} sound · ${opts.rewind ? `${keyName(settings.keys.rewind)} rewind 3 s · ` : ""} Esc to let go, then the gear for Controls<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
-    const rec = groundRecorder();
+    const rec = groundRecorder(), rw = opts.rewind ? groundRewind(b, rec) : null;
     const stage = { scene, camera, render: () => composer.render(), ground, sfx, host: section };
     // Cutscenes hold the battle: the sim doesn't step and the HUD steps aside till they're over.
     const cut = (cs: Parameters<typeof playCutscene>[0] | Parameters<typeof playCutscene>[0][], origin: Parameters<typeof playCutscene>[2]) => {
@@ -526,6 +529,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const dt = Math.min(0.25, (now - last) / 1000);
       acc += dt;
       last = now;
+      // A rewind loads the battle of 3 s ago into `b`; its fx were seen then, so they don't fire again.
+      if (rewind && rw && !handOver && rw.back(3 / DT)) { for (const f of b.fx) spawned.add(f); acc = 0; }
+      rewind = false;
       while (handOver && !b.over) step(b, null);
       while (acc >= DT && !b.over) {
         const input = rec.take({
@@ -537,7 +543,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         });
         strike = use = false;
         order = null;
-        step(b, input);
+        if (rw) rw.step(input); else step(b, input);
         acc -= DT;
       }
 

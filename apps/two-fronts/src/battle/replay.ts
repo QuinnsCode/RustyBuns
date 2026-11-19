@@ -9,7 +9,8 @@
 // repeat count. The log stops when the hero hands the battle to the AI, and the replay runs the
 // rest with no input, as the page did.
 import type { BattleResult, BattleSpec, SpaceBattleResult, SpaceBattleSpec } from "./contract.ts";
-import { DT, ORDERS, TIME_LIMIT, startBattle, step, type Input } from "./sim.ts";
+import { rewinder } from "@rustybuns/util/lab/save-state";
+import { DT, ORDERS, TIME_LIMIT, startBattle, step, type Battle, type Input } from "./sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceInput } from "./space.ts";
 
 const ANGLE = 1024;
@@ -90,24 +91,57 @@ function* reader<T>(log: string, read: (next: () => number, varint: () => number
 
 // The ground battle. Flags: forward + 1 (2 bits), right + 1 (2 bits), fire, use, a strike, a turn.
 // A step with an order to the squad starts with ORDER, the order's index and its spot.
+// It keeps the rounded steps and writes the log when asked, so a rewind can cut the steps it took back.
 export function groundRecorder() {
-  const w = writer();
-  let yaw = 0;
+  const taken: Input[] = [];
   return {
     take(i: Input): Input {
       const k = Math.round(i.yaw * ANGLE), forward = sign(i.forward), right = sign(i.right);
-      const strike = i.strike && { x: Math.round(i.strike.x * SPOT), z: Math.round(i.strike.z * SPOT) };
-      const order = i.order && { kind: i.order.kind, x: Math.round(i.order.x * SPOT), z: Math.round(i.order.z * SPOT) };
-      const rec = order ? [ORDER, ORDERS.indexOf(order.kind)] : [];
-      if (order) { varint(rec, zigzag(order.x)); varint(rec, zigzag(order.z)); }
-      rec.push((forward + 1) | ((right + 1) << 2) | (i.fire ? 16 : 0) | (i.use ? 32 : 0) | (strike ? 64 : 0) | (k !== yaw ? 128 : 0));
-      if (k !== yaw) varint(rec, zigzag(k - yaw));
-      if (strike) { varint(rec, zigzag(strike.x)); varint(rec, zigzag(strike.z)); }
-      w.push(rec);
-      yaw = k;
-      return { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike: { x: strike.x / SPOT, z: strike.z / SPOT } }), ...(order && { order: { kind: order.kind, x: order.x / SPOT, z: order.z / SPOT } }) };
+      const strike = i.strike && { x: Math.round(i.strike.x * SPOT) / SPOT, z: Math.round(i.strike.z * SPOT) / SPOT };
+      const order = i.order && { kind: i.order.kind, x: Math.round(i.order.x * SPOT) / SPOT, z: Math.round(i.order.z * SPOT) / SPOT };
+      const r: Input = { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike }), ...(order && { order }) };
+      taken.push(r);
+      return r;
     },
-    log: () => w.done(),
+    /** Steps taken so far. */
+    get steps() { return taken.length; },
+    /** Drop every step from `n` on: a rewind took the battle back to step `n`, and those never happened. */
+    cut(n: number) { taken.length = Math.min(taken.length, Math.max(0, n)); },
+    log() {
+      const w = writer();
+      let yaw = 0;
+      for (const i of taken) {
+        const k = Math.round(i.yaw * ANGLE);
+        const rec = i.order ? [ORDER, ORDERS.indexOf(i.order.kind)] : [];
+        if (i.order) { varint(rec, zigzag(Math.round(i.order.x * SPOT))); varint(rec, zigzag(Math.round(i.order.z * SPOT))); }
+        rec.push((i.forward + 1) | ((i.right + 1) << 2) | (i.fire ? 16 : 0) | (i.use ? 32 : 0) | (i.strike ? 64 : 0) | (k !== yaw ? 128 : 0));
+        if (k !== yaw) varint(rec, zigzag(k - yaw));
+        if (i.strike) { varint(rec, zigzag(Math.round(i.strike.x * SPOT))); varint(rec, zigzag(Math.round(i.strike.z * SPOT))); }
+        w.push(rec);
+        yaw = k;
+      }
+      return w.done();
+    },
+  };
+}
+
+/**
+ * A practice battle's rewind key (#5098): the hero's steps go through `step`, which keeps a save a second for the last
+ * `keep` seconds. `back(n)` takes `b` itself (the view holds it in closures) to the state it had `n` steps ago and cuts
+ * those steps from the log, so the log still plays the battle that was played. False when there is nothing to go back to.
+ */
+export function groundRewind(b: Battle, rec: ReturnType<typeof groundRecorder>, keep = 20) {
+  const rw = rewinder({ step }, Math.round(1 / DT), keep);
+  return {
+    step(input: Input) { rw.step(b, input); },
+    back(n: number): boolean {
+      if (b.over || rw.frame === rw.oldest) return false;
+      const s = rw.back(n, b);
+      for (const k of Object.keys(b)) if (!(k in s)) Reflect.deleteProperty(b, k);
+      Object.assign(b, s);
+      rec.cut(rw.frame);
+      return true;
+    },
   };
 }
 
