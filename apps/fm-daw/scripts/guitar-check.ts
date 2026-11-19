@@ -40,6 +40,11 @@ const JOURNEY = `(async () => {
   const t0 = performance.now();
   while (level() < 0.005 && performance.now() - t0 < 15000) await wait(100);
   const heardMs = Math.round(performance.now() - t0);
+  // why it's silent, when it is: a listener whose clock stands still never rendered; no bytes is the call
+  const clock = ctxB.currentTime; await wait(200);
+  const inbound = [];
+  for (const c of b.calls.values()) (await c.pc.getStats()).forEach((r) => { if (r.type === "inbound-rtp") inbound.push(r.bytesReceived); });
+  const why = { ctx: ctxB.state, ticks: ctxB.currentTime > clock, bytesIn: inbound };
   await wait(500);
   const dry = { rms: level(), h3: db(330) - db(110) };
   b.set(1, guitarSettings({ amp: "brit", gain: 9, bass: 5, mid: 5, treble: 6, master: 6, rate: 5, depth: 0 }));
@@ -48,11 +53,13 @@ const JOURNEY = `(async () => {
   await b.lags(); await wait(1500);
   const lag = (await b.lags()).get(1) ?? null;
   b.level(1, 0); await wait(400);
-  return { calls: [...a.state(), ...b.state()], heardMs, dry, amped, lag, muted: level() };
+  return { calls: [...a.state(), ...b.state()], heardMs, why, dry, amped, lag, muted: level() };
 })()`;
 
 const server = given ? { url: given.replace(/\/$/, ""), stop: () => {} } : await serve();
-const chrome = await launchChrome();
+// Chrome's stand-in speakers: they render in real time with no sound card, so the listener never waits on whatever this
+// Mac plays to (an asleep Bluetooth or AirPlay output stalls the AudioContext and the meter reads 0, #5278)
+const chrome = await launchChrome(["--disable-audio-output"]);
 let ok = false;
 try {
   const tab = await openTab(chrome.cdp, { w: 640, h: 480 });
