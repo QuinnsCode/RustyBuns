@@ -1,9 +1,10 @@
 // The small arena on the page: the floor, the stage, the seating bowl rising on three sides, the roof steel with a
-// motor and chain at each rigging point, the front-of-house mark, the coverage map in 3D (a tile at every seat, at the
+// chain motor (@rustybuns/models' rigging) slung at each rigging point, its chain down to the flying frame, the front-of-house mark, the coverage map in 3D (a tile at every seat, at the
 // seat's own height, repainted only when something moved) and the card: each point's load against its limit, the
 // calculator for the point you stand under, each part of the room and the score. main.ts calls `arenaView` once per
 // world and then `key`, `hint` and `update`, the same as the other venues' views.
 import * as THREE from "three";
+import { gearLook, rigging } from "@rustybuns/models/gear";
 import type { Answer, World } from "../sim.ts";
 import type { Fed } from "../audio/hear.ts";
 import { master, rig, type Zone } from "./dive-bar.ts";
@@ -47,18 +48,28 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
     new THREE.LineBasicMaterial({ color: 0xf2c230 }));
   mark.position.set((foh.x0 + foh.x1) / 2, 0.015, (foh.z0 + foh.z1) / 2);
   g.add(mark);
-  // The roof steel across the stage end, a motor at each point, and its chain down to the frame.
+  // The roof steel across the stage end, a motor slung under it at each point, and its chain down to the frame's shackle.
   slab({ x0: -10, x1: 10, z0: 29.3, z1: 31.2 }, STEEL_Y, 0.4, mat(0x7b8088));
   // A frame shows yellow while its hang waits for its check.
-  const frameMat = mat(0xd24a3a), unchecked = mat(0xf2c230);
-  const chains = new Map<string, { chain: THREE.Mesh; frame: THREE.Mesh; motor: THREE.Mesh }>();
+  const look = gearLook(), frameMat = mat(0xd24a3a), unchecked = mat(0xf2c230), SLING = 0.25;
+  const steel = mat(0x9aa0a8), sling = mat(0x2b2f8a);
+  const chains = new Map<string, { chain: THREE.Mesh; frame: THREE.Group; paint: THREE.Mesh; motor: THREE.Group; hook: THREE.Object3D }>();
+  const v = new THREE.Vector3();
   for (const p of POINTS) {
-    const motor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.45, 0.3), mat(0x1c1f24));
-    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1).translate(0, -0.5, 0), mat(0x9aa0a8));
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.6), frameMat);
-    frame.rotation.y = p.yaw;
-    g.add(motor, chain, frame);
-    chains.set(p.key, { chain, frame, motor });
+    const frame = rigging("flying-frame", { look: { ...look, paint: frameMat } }), motor = rigging("chain-motor", { look });
+    frame.position.set(p.x, 0, p.z);
+    frame.rotation.y = motor.rotation.y = p.yaw;
+    frame.updateMatrixWorld(true);
+    // the motor hangs where its chain drops plumb onto the shackle, the sling from the steel to its top hook
+    const pick = frame.getObjectByName("pickup")!.getWorldPosition(new THREE.Vector3());
+    const out = motor.getObjectByName("chain")!.position.clone().applyAxisAngle(v.set(0, 1, 0), p.yaw);
+    motor.position.set(pick.x - out.x, STEEL_Y - SLING - motor.getObjectByName("hang")!.position.y, pick.z - out.z);
+    const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, SLING).translate(0, SLING / 2, 0), sling);
+    strap.position.set(motor.position.x, STEEL_Y - SLING, motor.position.z);
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 5).translate(0, -0.5, 0), steel);
+    chain.position.set(pick.x, motor.position.y + motor.getObjectByName("chain")!.position.y, pick.z);
+    g.add(motor, strap, chain, frame);
+    chains.set(p.key, { chain, frame, paint: frame.getObjectByName("flying-frame-paint") as THREE.Mesh, motor, hook: motor.getObjectByName("part:hook")! });
   }
 
   // The coverage map: one tile per seat, at the seat, coloured against the target.
@@ -93,11 +104,12 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
     for (const p of POINTS) {
       const h = hangsOf(w)[p.key], c = chains.get(p.key)!, top = h.boxes.length > 0;
       const y = frameY(h);
-      c.motor.position.set(p.x, STEEL_Y - 0.25, p.z);
-      c.frame.position.set(p.x, y + 0.05, p.z);
-      c.chain.position.set(p.x, STEEL_Y - 0.45, p.z);
-      c.chain.scale.y = Math.max(0.01, STEEL_Y - 0.45 - y);
-      c.frame.material = top && !h.checked && h.trim === null ? unchecked : frameMat;
+      // the frame sits on the top box; the hook runs down the chain to its shackle
+      c.frame.position.y = y;
+      const bite = y + (c.frame.getObjectByName("pickup")!.position.y), hook = bite + c.motor.userData.bite;
+      c.hook.position.y = hook - c.motor.position.y;
+      c.chain.scale.y = Math.max(0.01, c.chain.position.y - hook);
+      c.paint.material = top && !h.checked && h.trim === null ? unchecked : frameMat;
     }
   }
 
