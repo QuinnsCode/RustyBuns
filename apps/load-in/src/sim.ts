@@ -142,18 +142,23 @@ export function overlap(a: [number, number][], b: [number, number][]): boolean {
 }
 export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
 
-/** Where the held item sits now: in front of you, low if it's heavy, turned as you turned it. */
+/** How high you carry a box alone, as its top below your eyes, m: a light one hugged at the chest, a heavy one low at the
+ *  hips (as the dial feels it). Your hands on its sides sit just under the top, so they stay in view. */
+export const carryDrop = (kg: number) => 0.1 + 0.4 * clamp((feltKg(kg) - 10) / (MAX_LIFT - 10), 0, 1);
+
+/** Where the held item sits now: in front of you, at your chest (lower if it's heavy), turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
   const i = heldItem(w);
   if (!i || !w.held) return null;
-  const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.3 + d / 2;
+  // Out far enough that its sides, and your hands on them, fit across a phone held upright.
+  const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.45 + d / 2;
   if (w.held.team) {
     // Carried together: between the two of you, low, turned with the line from you to them.
     const m = partner(w);
     if (!m) return { x: i.x, y: i.y, z: i.z, rot: i.rot };
     return { x: (w.you.x + m.x) / 2, y: Math.max(0.1, 0.9 - h), z: (w.you.z + m.z) / 2, rot: lineYaw(w, m) + w.held.rel };
   }
-  const top = w.you.crouch ? 0.75 : 1.1;
+  const top = (w.you.crouch ? EYE_CROUCH : EYE) - carryDrop(gearOf(i).kg);
   // Too heavy to lift (a generator you push on its wheels): it stays on the ground.
   return { x: w.you.x + f.x * out, y: wheeled(i.gear) ? 0 : Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
 }
