@@ -18,6 +18,8 @@ import LANDING from "../content/landing.json";
  * Devil overhead is a real wall. */
 export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
 export const PICKS = 3;
+/** The level the Book hands its own over at. */
+export const START_LEVEL = 5;
 /** What the Book says over each one the first time (content/landing.json, `bun run cms`); after that, `bookSays`. */
 const BOOK_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
@@ -232,7 +234,7 @@ export function bookSays(id: (typeof STARTERS)[number], last: Journey | null): s
 export function newJourney(picks: readonly string[], at = Date.now()): Journey | null {
   const ids = [...new Set(picks)];
   if (ids.length !== PICKS || !ids.every((id) => STARTERS.some((s) => s === id))) return null;
-  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0, caught: { at, where: BOOK_PAGE, level: 5 } })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
+  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: START_LEVEL, xp: 0, caught: { at, where: BOOK_PAGE, level: START_LEVEL } })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
 }
 /** A stored journey, or null when it's missing or not one (a broken save starts a new game, it doesn't crash this one). */
 export function loadJourney(text: string | null): Journey | null {

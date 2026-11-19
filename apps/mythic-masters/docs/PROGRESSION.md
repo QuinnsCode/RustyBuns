@@ -4,6 +4,9 @@ How a player gets from waking in the pines to the far south, as the game plays t
 is read from the code; the source is named on each one. The illustrated version of this page, with boss cards for
 every region, is the field-guide artifact linked from the PR that added this file.
 
+The rules a player lives under, each written once with its numbers read from the code, are in [RULES.md](RULES.md)
+(`src/rules.ts`; `bun run rules` writes it).
+
 ## The rules
 
 - **Start.** Tape 1 (the saucer), then the Book opens, says the job and offers the five it caught long ago (hodag,
@@ -13,7 +16,7 @@ every region, is the field-guide artifact linked from the PR that added this fil
   section's stone: beat or bind it and the next ring opens. Section 12 is the region's mythic, in its lair.
   (`sections`, `clearSection` in `src/journey.ts`; `src/world/trail.ts`; lairs in `src/pockets.ts`)
 - **Beating the mythic** marks the region beaten. That opens the road to **every neighbouring region** and adds a
-  line-up slot (3 to start, 6 at most). (`reach`, `slots`)
+  line-up slot (3 to start, 5 at most: `PARTY_FIRST`, `PARTY_MAX`). (`reach`, `slots`)
 - **Gates.** Some roads also need a beast in the line-up: a **flier** (archetype `flyer`) for region 2 and the Andes
   (13), a **swimmer** (first field `tide`) for the rest of the south. (`GATES`, `travelOf`)
 - **The south** (9-16) has no trail and no arena. Once one high-level region is open, every high-level region joined
