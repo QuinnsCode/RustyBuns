@@ -78,6 +78,19 @@ export function guitarTrack(p: Project, seatTrack: number): number {
   return p.tracks.findIndex((t) => !!t.amp);
 }
 
+/** What goes into your audio input: a guitar, or (standing in the vocal booth) a mic. Both travel the same way. */
+export type Input = "guitar" | "mic";
+/** In the booth you sing into its mic; anywhere else it's your guitar. */
+export const inputAt = (seatKind: string | undefined): Input => (seatKind === "booth" ? "mic" : "guitar");
+/** Where your input goes: a guitar as guitarTrack says, a voice straight in (-1), never through a guitar amp. */
+export const inputTrack = (input: Input, p: Project, seatTrack: number): number => (input === "mic" ? -1 : guitarTrack(p, seatTrack));
+/**
+ * What to ask the browser for. Both dry and unlevelled (a voice call's noise gate and gain riding chew up a held note
+ * or a quiet verse), one channel. A guitar on a jack can't hear the room; a mic hears your speakers, so it cancels
+ * their echo, or everyone would hear the band come back a moment late through your mic.
+ */
+export const capture = (input: Input): { echoCancellation: boolean; noiseSuppression: false; autoGainControl: false; channelCount: 1 } => ({ echoCancellation: input === "mic", noiseSuppression: false, autoGainControl: false, channelCount: 1 });
+
 /**
  * Q Amp's settings for a track's amp: no pedal, the mic where the page starts it, no hiss while the track is quiet.
  * A track's Amp insert plays its take through it (src/amp/insert.ts) and the jam room a guitar plugged into that
@@ -137,9 +150,9 @@ export const feel = (ms: number): Feel => (ms <= TIGHT_MS ? "tight" : ms <= LOOS
 /** A guitar's lag: milliseconds, null while its call connects, "failed" when no path between the two networks was found. */
 export type Lag = number | null | "failed";
 /** The lag in words, for the room's status line. */
-export function lagWords(name: string, ms: Lag): string {
-  if (ms === null) return `${name}'s guitar: connecting`;
-  if (ms === "failed") return `${name}'s guitar couldn't get through to you (no path between your two networks, not even the relay)`;
+export function lagWords(name: string, ms: Lag, input: Input = "guitar"): string {
+  if (ms === null) return `${name}'s ${input}: connecting`;
+  if (ms === "failed") return `${name}'s ${input} couldn't get through to you (no path between your two networks, not even the relay)`;
   const f = feel(ms);
-  return `${name}'s guitar ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
+  return `${name}'s ${input} ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
 }

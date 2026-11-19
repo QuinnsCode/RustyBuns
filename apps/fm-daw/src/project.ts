@@ -244,8 +244,11 @@ export type Live =
   | { t: "body"; at: number[]; yaw: number; seat?: string }
   /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
   | { t: "wear"; avatar: Avatar; name: string }
-  /** Their guitar is plugged into this track (-1: straight in, no amp), or unplugged (null): its sound comes by WebRTC (src/guitar.ts). */
-  | { t: "guitar"; track: number | null }
+  /**
+   * Their guitar is plugged into this track (-1: straight in, no amp), or unplugged (null): its sound comes by WebRTC
+   * (src/guitar.ts). `mic`: it's their voice, from the vocal booth's mic, straight in.
+   */
+  | { t: "guitar"; track: number | null; mic?: boolean }
   /**
    * A slice of their guitar's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
    * latency taken off), into `track` (-1: straight in): base64url of Opus packets (`c: "opus"`, src/studio/opus.ts),
@@ -265,7 +268,7 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
-  obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)) }),
+  obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
   obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
