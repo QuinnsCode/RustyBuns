@@ -5,8 +5,9 @@
 // Run: bun apps/agent-office/ester/ledger-daily.ts             (now: ledger, then publish)
 //      bun apps/agent-office/ester/ledger-daily.ts --no-publish (files only)
 //      bun apps/agent-office/ester/ledger-daily.ts --install    (a launchd job at 10:07 every day; --uninstall takes it off)
-//      bun apps/agent-office/ester/ledger-daily.ts --budget 2026-11-05 76 [--approx]
-//          (the plan's weekly usage, as /usage showed it, for the plan week that reset that morning; nothing on disk records it)
+//      bun apps/agent-office/ester/ledger-daily.ts --budget 2026-11-05 76 [--fable 40] [--approx]
+//          (the plan's weekly usage, as /usage showed it, for the plan week that resets that morning, and the Fable limit's
+//          beside it; nothing on disk records them. The running week takes a reading too: it shows that, not an estimate)
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -36,14 +37,14 @@ export const Row = obj({
 export type Row = Of<typeof Row>;
 const Ledger = obj({ generated: str(40), dayStarts: num(0, 23), saves: n, settles: n, rows: arr(Row, 400), size: arr(obj({ date: str(10), code: num(-1e9, 1e9) }), 5000) });
 const History = arr(Row, 20000, { drop: true });
-/** The plan's weekly usage the owner read off /usage: the week that reset on the morning of `ends`. */
-export const Budget = arr(obj({ ends: str(10, { re: DATE }), pct: num(0, 200), approx: opt(bool()) }), 2000, { drop: true });
+/** The plan's weekly usage the owner read off /usage: the week that resets on the morning of `ends`, and the Fable limit's. */
+export const Budget = arr(obj({ ends: str(10, { re: DATE }), pct: num(0, 200), fable: opt(num(0, 200)), approx: opt(bool()) }), 2000, { drop: true });
 export type Budget = Of<typeof Budget>;
 
 /** The budget list with one week's entry set (a second entry for the same morning replaces the first), oldest first. */
-export function setBudget(list: Budget, ends: string, pct: number, approx = false): Budget {
-  const e = Budget([{ ends, pct, ...(approx ? { approx } : {}) }]);
-  if (!e.length) throw new Error("--budget takes a date (YYYY-MM-DD) and a percent, 0 to 200");
+export function setBudget(list: Budget, ends: string, pct: number, approx = false, fable?: number): Budget {
+  const e = Budget([{ ends, pct, ...(fable === undefined ? {} : { fable }), ...(approx ? { approx } : {}) }]);
+  if (!e.length) throw new Error("--budget takes a date (YYYY-MM-DD) and a percent, 0 to 200 (--fable too)");
   return [...list.filter((b) => b.ends !== ends), ...e].sort((a, b) => a.ends.localeCompare(b.ends));
 }
 
@@ -74,8 +75,8 @@ const shift = (date: string, days: number) => { const t = new Date(`${date}T12:0
 /** The plan week resets Thursday morning: the Thursday on or before `date` (a 10am-to-10am day). */
 export const weekStart = (date: string) => shift(date, -((new Date(`${date}T12:00:00Z`).getUTCDay() + 3) % 7));
 
-/** Every plan week in the history, added up, oldest first. `pct` is what /usage said (budget.json); the week still
- *  running has none yet, so it is estimated from the last read week's units per 1%. */
+/** Every plan week in the history, added up, oldest first. `pct` is what /usage said (budget.json), `fablePct` the Fable
+ *  limit's; the week still running is estimated from the last read week's units per 1% until it gets a reading. */
 export function planWeeks(history: Row[], budget: Budget) {
   const by = new Map<string, Row[]>();
   for (const r of history) { const s = weekStart(r.date); by.set(s, [...(by.get(s) ?? []), r]); }
@@ -83,11 +84,11 @@ export function planWeeks(history: Row[], budget: Budget) {
   let perPct = 0;
   return [...by].sort(([a], [b]) => a.localeCompare(b)).map(([start, rows], i, all) => {
     const ends = shift(start, 7), read = budget.find((b) => b.ends === ends), units = sum(rows, "units");
-    const running = i === all.length - 1 && !read;
+    const running = i === all.length - 1;
     const pct = read ? read.pct : running && perPct ? Math.round(units / perPct) : null;
     if (read?.pct) perPct = units / read.pct;
     return { start, ends, days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), cut: sum(rows, "codeRemoved"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
-      pct, approx: read?.approx ?? false, estimated: running && pct !== null, running };
+      pct, fablePct: read?.fable ?? null, approx: read?.approx ?? false, estimated: running && !read && pct !== null, running };
   });
 }
 
@@ -224,10 +225,11 @@ if (import.meta.main) {
   else if (a.includes("--uninstall")) { Bun.spawnSync(["launchctl", "bootout", `gui/${process.getuid?.() ?? 501}/${LABEL}`]); rmSync(plist, { force: true }); console.log("uninstalled"); }
   else if (a.includes("--budget")) {
     const i = a.indexOf("--budget");
-    const list = setBudget(readBudget(), a[i + 1] ?? "", Number(a[i + 2]), a.includes("--approx"));
+    const fi = a.indexOf("--fable");
+    const list = setBudget(readBudget(), a[i + 1] ?? "", Number(a[i + 2]), a.includes("--approx"), fi < 0 ? undefined : Number(a[fi + 1]));
     writeFileSync(path.join(out, "budget.json"), JSON.stringify(list));
     page(Ledger(JSON.parse(readFileSync(path.join(out, "ledger.json"), "utf8"))), readHistory());
-    console.log(`budget: ${list.map((b) => `${b.ends} ${b.pct}%${b.approx ? "~" : ""}`).join(", ")}`);
+    console.log(`budget: ${list.map((b) => `${b.ends} ${b.pct}%${b.approx ? "~" : ""}${b.fable === undefined ? "" : ` (Fable ${b.fable}%)`}`).join(", ")}`);
     if (!a.includes("--no-publish")) publish();
   } else { await build(); if (!a.includes("--no-publish")) publish(); }
 }
