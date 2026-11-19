@@ -14,6 +14,7 @@ import { EYE, EYE_CROUCH, LOW, REACH, corners, dims, facing, footprint, overlap,
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, pathLength, type Rope, type Solid, type Vec } from "./rope.ts";
 import { endOf, endWhy, sideOf, type Connector } from "./ends.ts";
+import type { WireRoll } from "../crew/room.ts";
 
 /** Which of your hands: a roll always hangs on the right. */
 export type Side = "right" | "left";
@@ -27,7 +28,13 @@ export interface Run {
   coiling?: { ways: Way[]; at: number };
   /** Twists it went into the case with: each one is a knot to work out the next time it comes out. */
   twists?: number;
+  /** Its last bowl as thrown (for the crew room, crew/sync.ts), and the seeded wobble that bowl rolls with, so a friend's
+   * page that is told the same bowl plays the same roll. */
+  bowled?: Bowled; rnd?: () => number;
 }
+/** A bowl as thrown: where the coil left the hand, which way and how fast, the cable already off it, and its seed. */
+export interface Bowled { x: number; z: number; dir: number; v: number; paid: number; seed: number }
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
 /** One loop of a coil: over-under alternates them, so the cable lies flat when it is thrown out again. */
 export type Way = "over" | "under";
@@ -225,7 +232,7 @@ export function stepCables(w: World, c: Cables, dt: number) {
       else Object.assign(roll, b);
     }
     const mine = isHand(run.a) ? "a" : isHand(run.b) ? "b" : undefined;
-    stepRoll(roll, dt, { a: roll.tailIn ? undefined : a, b }, s, c.rnd, mine);
+    stepRoll(roll, dt, { a: roll.tailIn ? undefined : a, b }, s, run.rnd ?? c.rnd, mine);
     if (mine) kg += roll.pullKg + (mine === "b" && roll.state === "held" ? rollKg(roll) : 0);
   }
   w.cableKg = kg;
@@ -242,6 +249,11 @@ export function bowl(w: World, c: Cables, power: number): Answer {
   const tail = roll.tailIn;
   bowlRoll(roll, w.you.yaw + Math.PI, Math.max(0.15, Math.min(1, power)));
   roll.y = ROLL_R;
+  // Rounded as the crew room sends it, so this page and a friend's roll the same coil from the same start.
+  const seed = Math.floor(c.rnd() * 2 ** 32);
+  Object.assign(roll, { x: r3(roll.x), z: r3(roll.z), dir: r3(roll.dir), v: r3(roll.v) });
+  run.bowled = { x: roll.x, z: roll.z, dir: roll.dir, v: roll.v, paid: roll.paid, seed };
+  run.rnd = mulberry32(seed);
   run.b = { loose: true };
   if (tail) take(c, run, "a", side);
   else emptied(c, side);
@@ -416,7 +428,38 @@ export function setEnd(w: World, c: Cables, key: string, end: "a" | "b", to: End
 
 function stow(run: Run, twists: number) {
   Object.assign(run, { rope: null, roll: undefined, a: { case: true }, b: { case: true }, twists });
-  delete run.coiling;
+  delete run.coiling; delete run.bowled; delete run.rnd;
+}
+
+/** A loose coil on a run's `b` end as the crew room is told it: the bowl as thrown while it rolls, else where it lies
+ * and how much cable is off it. Null when `b` isn't a loose coil. */
+export function rollWire(run: Run): WireRoll | null {
+  const r = run.roll;
+  if (!r || r.state === "out" || !("loose" in run.b)) return null;
+  if (r.state === "rolling" && run.bowled) return { state: "rolling", ...run.bowled };
+  return { state: "down", x: r3(r.x), z: r3(r.z), paid: r.paid };
+}
+
+/** The crew room's word on a loose coil (crew/sync.ts): a friend's bowl rolls here from where it left their hand, with
+ * their seed, so it pays out and wanders the same way; a coil lying still is put where it lies, with the cable off it
+ * laid in a line to it (or wound back on). A bowl already rolling here is left to roll. */
+export function setRoll(c: Cables, key: string, to: WireRoll) {
+  const run = c.runs.find((r) => r.key === key), roll = run?.roll;
+  if (!run || !roll || !("loose" in run.b)) return;
+  if (to.state === "rolling" && run.bowled?.seed === to.seed) return;
+  const { pts, prev } = roll.rope, n = pts.length, foot = CABLE[roll.kind].radius;
+  const from = roll.state === "out" ? n - 1 : roll.paid, paid = Math.min(to.paid, n - 1), p0 = pts[from]!;
+  for (let i = from + 1; i <= paid; i++) {
+    const t = (i - from) / (paid - from + 1), at = { x: p0.x + (to.x - p0.x) * t, y: foot, z: p0.z + (to.z - p0.z) * t };
+    Object.assign(pts[i]!, at); Object.assign(prev[i]!, at);
+  }
+  // Wound back on, the rest of the cable goes to the coil on its next tick (stepRoll).
+  Object.assign(roll, { paid, tailIn: false, x: to.x, z: to.z, lean: 0 });
+  if (to.state === "down") { Object.assign(roll, { state: "down", y: foot, v: 0 }); return; }
+  const b = { x: to.x, z: to.z, dir: to.dir ?? 0, v: to.v ?? 0, paid, seed: to.seed ?? 0 };
+  Object.assign(roll, { state: "rolling", y: ROLL_R, dir: b.dir, v: b.v });
+  run.bowled = b;
+  run.rnd = mulberry32(b.seed);
 }
 
 /** The cable being coiled now, if any. */

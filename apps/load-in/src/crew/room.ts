@@ -18,11 +18,20 @@ export type GrabMsg = Of<typeof GrabMsg>;
 export type DropMsg = Of<typeof DropMsg>;
 function placeShape() { return { x: at, y: at, z: at, rot: turn }; }
 
+/** A coil lying loose on a cable's `b` end: bowled (where it left the hand, which way, how fast, and the seed that
+ * wobbles it, so each page plays the same roll) or lying where it stopped. `paid` is the cable off it, in rope steps. */
+export const WireRoll = obj({
+  state: oneOf(["rolling", "down"]), x: at, z: at, paid: int(0, 1e5),
+  dir: opt(turn), v: opt(num(0, 50)), seed: opt(int(0, 2 ** 32 - 1)),
+});
+export type WireRoll = Of<typeof WireRoll>;
 /** Where one end of a cable is, as the room keeps it: coiled in the case, in a jack, in someone's hand (`hand` names
- * them), or lying loose where it was let go. A page sends `hand` as "" for its own. */
+ * them), or lying loose where it was let go (with its coil, if it is the `b` end and not all paid out). A page sends
+ * `hand` as "" for its own. */
 export const WireEnd = obj({
   at: oneOf(["case", "plug", "hand", "loose"]),
   plug: opt(arr(key, 2, { min: 2 })), hand: opt(str(200, { min: 0 })), x: opt(at), y: opt(at), z: opt(at),
+  roll: opt(WireRoll),
 });
 export type WireEnd = Of<typeof WireEnd>;
 /** One end of a cable moved on your page: taken, plugged, dropped, or (with the twists it was coiled with) back in the case. */

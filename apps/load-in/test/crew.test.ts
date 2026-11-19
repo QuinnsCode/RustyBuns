@@ -11,7 +11,7 @@ import { seatDoor } from "@rustybuns/util/seats";
 import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
 import { BAND_NIGHT } from "../src/venues/band-night.ts";
 import { newWorld, pickUp, putDown, snapshot, walkTo, type Level, type World } from "../src/sim.ts";
-import { UNTANGLE_S, cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, walkWith, type Cables } from "../src/cables/cables.ts";
+import { UNTANGLE_S, bowl, cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, takeRoll, walkWith, type Cables } from "../src/cables/cables.ts";
 import { setDial } from "../src/assists.ts";
 import { World as Room } from "../src/edge/world.ts";
 import { readServer } from "../src/crew/room.ts";
@@ -172,6 +172,41 @@ test("two run one power cable: Ada takes it to the wall, Bea walks the far end t
   expect(cableState(ada.w, ada.c).fed).toEqual(cableState(bea.w, bea.c).fed);
   const power = (p: Page) => cableState(p.w, p.c).hazards.filter((h) => h.cable === "power-10").map((h) => h.walkway);
   expect([power(ada), power(bea)]).toEqual([["the way in"], ["the way in"]]);
+});
+
+test("Ada bowls a power roll from the wall: Bea's page sees it roll out paying cable, and it lies in the same place on both", async () => {
+  setDial("sim");
+  const { join, pump } = crewRoom(newWorld().level);
+  const ada = await join("Ada", "guest-ada-0006"), bea = await join("Bea", "guest-bea-0006");
+  const roll = (p: Page) => cableState(p.w, p.c).cables.find((r) => r.key === "power-10")!.roll!;
+  // Both tick and hear the wire together, a twentieth of a second at a time.
+  const tick = (seconds: number) => { for (let t = 0; t < seconds; t += 0.05) { settle(ada.w, ada.c, 0.05); settle(bea.w, bea.c, 0.05); pump(ada, bea); } };
+
+  // Ada lifts the roll out of the case, carries it to the wall and plugs its end in: on Bea's page it is in Ada's arms.
+  walkTo(ada.w, -1.6, 3.2);
+  expect(takeRoll(ada.w, ada.c, "power")).toEqual({ ok: true });
+  walkWith(ada.w, ada.c, -2.2, 0.6);
+  expect(plug(ada.w, ada.c, "outlet", "power-out-1")).toEqual({ ok: true });
+  tick(0.5);
+  expect(roll(bea).state).toBe("held");
+
+  // She bowls it toward the speaker. On Bea's page it rolls too, away from where it left Ada's hands, paying out cord.
+  ada.w.you.yaw = Math.atan2(-(1.4 - ada.w.you.x), -(2.2 - ada.w.you.z));
+  expect(bowl(ada.w, ada.c, 0.5)).toEqual({ ok: true });
+  const from = { x: roll(ada).x, z: roll(ada).z };
+  tick(0.3);
+  expect(roll(bea).state).toBe("rolling");
+  tick(0.5);
+  expect(Math.hypot(roll(bea).x - from.x, roll(bea).z - from.z)).toBeGreaterThan(0.5);
+  expect(roll(bea).leftM).toBeLessThan(10);
+
+  // Once it stops it lies in the same place on both pages, with the same cord left on it.
+  tick(6);
+  const [a, b] = [roll(ada), roll(bea)];
+  expect([a.state, b.state]).toEqual(["down", "down"]);
+  expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.05);
+  expect(b.leftM).toBeCloseTo(a.leftM, 1);
+  expect(Math.hypot(a.x - from.x, a.z - from.z)).toBeGreaterThan(1.5);
 });
 
 test("one switches the speaker on and the whole crew hears it, each from where they stand", async () => {
