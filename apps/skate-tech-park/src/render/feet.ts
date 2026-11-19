@@ -5,10 +5,10 @@ import * as THREE from "three";
 import type { Foot, Spot } from "../sim.ts";
 import type { Skin } from "./skins.ts";
 
-/** Each spot on the deck, about the skin's pivot (the middle of the board, a little under the grip). */
+/** Each spot on the deck, about the skin's pivot (the middle of the board, a little under the grip). A planted foot sits beside the nose: on the flat below the deck, or level with it on the coping or ledge the board stands on. */
 const SPOTS: Record<Skin, Record<Spot, [number, number, number]>> = {
-  fingerboard: { tail: [0, 0.15, -1.9], nose: [0, 0.15, 1.9], "nose-left": [0.55, 0.15, 1.5], "nose-right": [-0.55, 0.15, 1.5], ground: [1.2, -0.3, 1.2] },
-  roadster: { tail: [0, 0.3, -1.9], nose: [0, 0.3, 1.9], "nose-left": [0.8, 0.3, 1.5], "nose-right": [-0.8, 0.3, 1.5], ground: [1.6, -0.3, 1.2] },
+  fingerboard: { tail: [0, 0.15, -1.9], nose: [0, 0.15, 1.9], "nose-left": [0.55, 0.15, 1.5], "nose-right": [-0.55, 0.15, 1.5], ground: [1.2, -0.3, 1.2], coping: [1.2, 0, 1.2], ledge: [1.2, 0, 1.2] },
+  roadster: { tail: [0, 0.3, -1.9], nose: [0, 0.3, 1.9], "nose-left": [0.8, 0.3, 1.5], "nose-right": [-0.8, 0.3, 1.5], ground: [1.6, -0.3, 1.2], coping: [1.6, 0, 1.2], ledge: [1.6, 0, 1.2] },
 };
 export const spotOn = (skin: Skin, at: Spot) => new THREE.Vector3(...SPOTS[skin][at]);
 

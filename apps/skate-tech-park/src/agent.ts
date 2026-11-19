@@ -105,7 +105,7 @@ const MOVE = {
   steer: { type: "number", description: "-1..1, left is +. In the air it spins the board" },
   ollie: { type: "boolean", description: "Pop an ollie at the start" },
   nollie: { type: "boolean", description: "Pop off the nose instead" },
-  noComply: { type: "boolean", description: "A no-comply instead, from the ground: the front foot plants and the tail pops a lower air. With manual held in the air (a grab) it lands as a boneless" },
+  noComply: { type: "boolean", description: "A no-comply instead, from the ground: the front foot plants and the tail pops a lower air. With manual held in the air (a grab) it lands as a boneless. From a stall or a ledge the foot plants there: a footplant (a fastplant with a grab)" },
   trick: { type: "string", enum: Object.keys(TRICKS), description: "A flick trick at the start (in the air)" },
   jets: { type: "boolean", description: "Rear jets: speed, and a strong pump through a transition" },
   fan: { type: "boolean", description: "Suction fan: holds the board to banks and walls" },

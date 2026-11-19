@@ -81,6 +81,22 @@ test("a stall is held with the stick like a grind, dropped back in by pulling ba
   expect(alone.last?.name).toBe("Bail: fell off the coping");
 });
 
+test("a no-comply from a stall plants the foot on the coping: a footplant back down the wall, a fastplant with a grab held", () => {
+  const plant = (air: Partial<Input>) => {
+    const s = start(lip.a.x, 0, Math.PI / 2, pipe); Object.assign(s, { air: true, airTime: 0.5, y: lip.y + 0.1, vy: -1 }); step(s, IDLE, pipe);
+    for (let i = 0; i < 0.3 / DT; i++) step(s, { ...IDLE, steer: hold(s) }, pipe);
+    step(s, { ...IDLE, noComply: true }, pipe);
+    const feet = s.feet.map((f) => `${f.foot} ${f.at}`);
+    return { feet, seen: [s.last!.name, ...awards(s, 3, (s) => (s.air ? air : {}))], s }; // the stall is scored as the foot pushes off
+  };
+  const foot = plant({});
+  expect(foot.feet).toEqual(["front coping", "back tail"]); // the foot on the lip, the tail pops off it
+  expect(foot.seen[0]).toBe("Rock to fakie");
+  expect(foot.seen[1]).toMatch(/^footplant fakie/); // shoved back in, landing rolling down the wall
+  expect(foot.s.bail).toBe(0);
+  expect(plant({ manual: 1 }).seen[1]).toMatch(/^fastplant fakie/); // the hand carries the board while the foot is down
+});
+
 test("thrown along a sheer face fast enough the board rides the wall, scores it and rolls on; slower, or head on, it stops against it", () => {
   const wall = makeLevel({ name: "w", pieces: [piece("box", "wall", 0, 12, 0, 20, 4, 5, 5)], rails: [], spawns: [], bounds: { minX: -80, maxX: 80, minZ: -80, maxZ: 80 } });
   const fly = (yaw: number, speed: number) => {
