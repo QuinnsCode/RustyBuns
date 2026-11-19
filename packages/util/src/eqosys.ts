@@ -15,6 +15,7 @@ import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { EASE, morph, pop } from "./morph.ts";
 import { peek } from "./token.ts";
 import { PartyRules } from "./party-rules.ts";
+import { board } from "./board.ts";
 
 export type { Skin } from "./skin.ts";
 
@@ -287,6 +288,8 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
   const hubClient = () => hub({ url: eqosysUrl, token, app });
+  /** Qollab posts and reactions for this app (./board.ts): read signed out, post and react signed in. */
+  const boardClient = () => board({ url: eqosysUrl, token, app });
 
   /**
    * The account chip, in `slot`: the eqosys badge, then the eqosys name and a way out, or a way in where eqosys can send the
@@ -333,7 +336,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return slot;
   }
 
-  return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, board: boardClient, achieve, achievements, sendHeld, celebrate };
 }
 
 /** Whether the account chip is folded into its badge: one choice for every game on this site. */

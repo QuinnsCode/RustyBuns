@@ -23,6 +23,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./avatar": "./src/avatar.ts",
+    "./board": "./src/board.ts",
     "./bytes": "./src/bytes.ts",
     "./codemode": "./src/codemode.ts",
     "./commands": "./src/commands.ts",
