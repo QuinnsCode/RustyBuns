@@ -215,6 +215,9 @@ function show(o: string, product: string) {
 const design = $<HTMLInputElement>("design"), printGo = $<HTMLButtonElement>("printGo");
 const printStatus = $<HTMLDivElement>("printStatus"), sheets = $<HTMLDivElement>("sheets");
 
+// A link from an order (a Shopify order's note, shopify.ts) names the design: /admin.html#design=<id>.
+design.value = new URLSearchParams(location.hash.slice(1)).get("design") ?? design.value;
+
 function sayPrint(text: string, bad = false) {
   printStatus.textContent = text;
   printStatus.classList.toggle("bad", bad);

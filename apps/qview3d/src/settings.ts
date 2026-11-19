@@ -39,24 +39,30 @@ export interface SettingsEnv {
 }
 
 const TTL_S = 60;
-type OrgRow = { origins: string; admins: string; samples: number; studio: string | null; read_only: number; expires: number | null };
+type OrgRow = { origins: string; admins: string; samples: number; studio: string | null; read_only: number; expires: number | null; shopify: string | null };
 
 const json = (text: string): unknown => { try { return JSON.parse(text); } catch { return null; } };
 const parsed = <T>(g: Guard<T>, text: string): T | null => check(g, json(text));
 
 /** An org's settings, or null when there is none or it was a sandbox that ran out (then it is unknown everywhere). */
 export async function getOrg(env: SettingsEnv, id: string): Promise<Org | null> {
-  const r = await env.DB.prepare("SELECT origins, admins, samples, studio, read_only, expires FROM orgs WHERE id = ?").bind(id).first<OrgRow>();
+  const r = await env.DB.prepare("SELECT origins, admins, samples, studio, read_only, expires, shopify FROM orgs WHERE id = ?").bind(id).first<OrgRow>();
   if (!r || (r.expires !== null && r.expires < Date.now())) return null;
-  return check(Org, { origins: json(r.origins), admins: json(r.admins), samples: r.samples, studio: r.studio, readOnly: !!r.read_only || undefined, expires: r.expires ?? undefined });
+  return check(Org, { origins: json(r.origins), admins: json(r.admins), samples: r.samples, studio: r.studio, readOnly: !!r.read_only || undefined, expires: r.expires ?? undefined, shopify: r.shopify ?? undefined });
 }
 
 export async function putOrg(env: SettingsEnv, id: string, o: Org): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO orgs (id, origins, admins, samples, studio, read_only, expires, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO orgs (id, origins, admins, samples, studio, read_only, expires, shopify, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET origins = excluded.origins, admins = excluded.admins, samples = excluded.samples,
-       studio = excluded.studio, read_only = excluded.read_only, expires = excluded.expires, updated = excluded.updated`,
-  ).bind(id, JSON.stringify(o.origins), JSON.stringify(o.admins ?? []), o.samples ?? 0, o.studio ?? null, o.readOnly ? 1 : 0, o.expires ?? null, Date.now()).run();
+       studio = excluded.studio, read_only = excluded.read_only, expires = excluded.expires, shopify = excluded.shopify, updated = excluded.updated`,
+  ).bind(id, JSON.stringify(o.origins), JSON.stringify(o.admins ?? []), o.samples ?? 0, o.studio ?? null, o.readOnly ? 1 : 0, o.expires ?? null, o.shopify ?? null, Date.now()).run();
+}
+
+/** The org a Shopify store is connected to (shopify.ts). */
+export async function orgOfShopify(env: SettingsEnv, shop: string): Promise<string | null> {
+  const r = await env.DB.prepare("SELECT id FROM orgs WHERE shopify = ? ORDER BY updated DESC LIMIT 1").bind(shop).first<{ id: string }>();
+  return r?.id ?? null;
 }
 
 /** The org a studio runs, the one set most lately when an owner moved it between orgs. */
