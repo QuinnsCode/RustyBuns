@@ -74,8 +74,8 @@ test("the centre prompt names a key only when you look at what it works on", () 
     walkTo(w, i.x, i.z + 0.9);
     w.you.yaw = 0;
   };
-  // In from the street, looking at nothing: no keys.
-  walkTo(w, 2, 11.5);
+  // Out on the floor, past the gear at the door, looking at nothing: no keys.
+  walkTo(w, 0.5, 8);
   w.you.yaw = 0;
   expect(aimHint(w)).toBe("");
   expect(roomHint(w, map, false)).toBe("");
