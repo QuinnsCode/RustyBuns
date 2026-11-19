@@ -76,7 +76,7 @@ const P_SUPER: usize = 58;
 const P_FOLD: usize = 59;
 
 const OP_RANGES: [(f64, f64); 6] = [(0.25, 16.0), (0.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.0, 1.0), (0.005, 8.0)];
-const TAIL_RANGES: [(f64, f64); 36] = [
+const TAIL_RANGES: [(f64, f64); 37] = [
     (0.0, 3.0), (0.0, 1.0), (0.0, 48.0), (0.005, 2.0), (0.0, 1.0),
     (0.005, 2.0), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0),
     // analog: mode, detune, sub, cutoff, res, fenv amt/attack/decay, lfo rate/cut/pitch, glide, drive
