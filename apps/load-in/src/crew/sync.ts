@@ -1,7 +1,7 @@
 // Between your world (sim.ts) and the crew's room (room.ts): what to tell the room, and what its views do to your
 // world. No socket here, so a test passes messages between two worlds and a room by hand.
 import { crewLoad, heldItem, holdPose, seeCrew, type World } from "../sim.ts";
-import { endAt, setEnd, type Cables, type EndAt } from "../cables/cables.ts";
+import { endAt, rollWire, setEnd, setRoll, type Cables, type EndAt, type Run } from "../cables/cables.ts";
 import { whole, type Sent, type ServerMsg, type Wire, type WireEnd } from "./room.ts";
 import { tickDecks, type Decks } from "../audio/decks.ts";
 
@@ -29,13 +29,18 @@ export interface Synced {
   on: Map<string, boolean>; thrown: Map<string, number>;
   /** The seat you last asked for, the decks' controls you last sent, and the newest decks count taken. */
   djWant: boolean; sentDecks: string; spun: number;
+  /** The cables whose coil you bowled and haven't yet told the room it stopped: only the bowler says where it lies. */
+  bowls: Set<string>;
 }
-export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map(), djWant: false, sentDecks: "", spun: 0 });
+export const synced = (): Synced => ({ held: null, seen: new Map(), you: "", ends: new Map(), pending: new Map(), wires: new Map(), on: new Map(), thrown: new Map(), djWant: false, sentDecks: "", spun: 0, bowls: new Set() });
 
 const ENDS = ["a", "b"] as const;
 /** One end as a short word to compare: yours is "hand:", a friend's "hand:<their id>". */
 const word = (e: EndAt) => ("plug" in e ? `plug:${e.plug.join(" ")}` : "hand" in e ? "hand:" : "mate" in e ? `hand:${e.mate}` : "case" in e ? "case" : "loose");
 const wireWord = (e: WireEnd, you: string) => (e.at === "plug" ? `plug:${e.plug!.join(" ")}` : e.at === "hand" ? `hand:${e.hand === you ? "" : e.hand}` : e.at);
+/** A loose coil's state after the end's word ("loose:rolling", "loose:down"), so a bowl and its stop are each news. */
+const coilWord = (run: Run, end: "a" | "b") => { const r = end === "b" ? rollWire(run) : null; return r ? `:${r.state}` : ""; };
+const wireCoil = (e: WireEnd) => (e.roll ? `:${e.roll.state}` : "");
 const toLocal = (e: WireEnd, you: string): EndAt =>
   e.at === "plug" ? { plug: [e.plug![0]!, e.plug![1]!] } : e.at === "hand" ? (e.hand === you ? { hand: "right" } : { mate: e.hand ?? "" }) : e.at === "case" ? { case: true } : { loose: true };
 const CASED: Omit<Wire, "key"> = { n: 0, a: { at: "case" }, b: { at: "case" }, twists: 0 };
@@ -44,10 +49,15 @@ const CASED: Omit<Wire, "key"> = { n: 0, a: { at: "case" }, b: { at: "case" }, t
 function cableOutbox(w: World, c: Cables, s: Synced): Sent[] {
   const out: Sent[] = [];
   for (const run of c.runs) for (const end of ENDS) {
-    const e = run[end], k = word(e), id = `${run.key} ${end}`;
-    if ("mate" in e || k === (s.ends.get(id) ?? "case")) continue;
+    const e = run[end], k = word(e) + coilWord(run, end), id = `${run.key} ${end}`, was = s.ends.get(id) ?? "case";
+    if ("mate" in e || k === was) continue;
+    // A friend's bowl rolling to a stop here is theirs to tell: their word on where it lies puts it right (so it isn't
+    // marked as heard until it comes).
+    if (word(e) === was.replace(/:(rolling|down)$/, "") && !s.bowls.has(run.key)) continue;
+    if (k.endsWith(":rolling")) s.bowls.add(run.key); else if (end === "b") s.bowls.delete(run.key);
+    const roll = end === "b" ? rollWire(run) : null;
     const p = "loose" in e ? endAt(w, c, run, end) : null;
-    const to: WireEnd = "plug" in e ? { at: "plug", plug: [...e.plug] } : "hand" in e ? { at: "hand", hand: "" } : "case" in e ? { at: "case" } : { at: "loose", x: r3(p?.x ?? 0), y: r3(p?.y ?? 0), z: r3(p?.z ?? 0) };
+    const to: WireEnd = "plug" in e ? { at: "plug", plug: [...e.plug] } : "hand" in e ? { at: "hand", hand: "" } : "case" in e ? { at: "case" } : { at: "loose", x: r3(p?.x ?? 0), y: r3(p?.y ?? 0), z: r3(p?.z ?? 0), ...(roll ? { roll } : {}) };
     out.push({ t: "end", key: run.key, end, to, ...("case" in e ? { twists: run.twists ?? 0 } : {}) });
     s.ends.set(id, k);
     s.pending.set(id, k);
@@ -59,14 +69,17 @@ function cableOutbox(w: World, c: Cables, s: Synced): Sent[] {
  * `force` (the room refused it). */
 function hearWire(w: World, c: Cables, s: Synced, wire: Omit<Wire, "n">, force: boolean) {
   for (const end of ENDS) {
-    const id = `${wire.key} ${end}`, k = wireWord(wire[end], s.you), mine = s.pending.get(id);
+    const id = `${wire.key} ${end}`, base = wireWord(wire[end], s.you), k = base + wireCoil(wire[end]), mine = s.pending.get(id);
     if (mine !== undefined && !force) { if (mine !== k) continue; s.pending.delete(id); }
     if (force) s.pending.delete(id);
+    const news = s.ends.get(id) !== k;
     s.ends.set(id, k);
     const run = c.runs.find((r) => r.key === wire.key);
-    if (!run || word(run[end]) === k) continue;
+    if (!run) continue;
     const e = wire[end];
-    setEnd(w, c, wire.key, end, toLocal(e, s.you), e.at === "loose" ? { x: e.x!, y: e.y!, z: e.z! } : undefined, wire.twists);
+    if (word(run[end]) !== base) setEnd(w, c, wire.key, end, toLocal(e, s.you), e.at === "loose" ? { x: e.x!, y: e.y!, z: e.z! } : undefined, wire.twists);
+    // Only news moves the coil: a word it rode in on again (with the other end's move) would wind back cable paid since.
+    if (e.roll && news) setRoll(c, wire.key, e.roll);
   }
 }
 
