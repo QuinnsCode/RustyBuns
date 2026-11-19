@@ -156,9 +156,13 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.65; // legs: speed gained per radian the ground curves up ahead, as a share of speed, while pushing through a transition
-const LEG_PUMP_CAP = 8.5; // m/s: past this the legs can't press any harder against the curve, so a pump adds the same energy at any faster speed
-// (v dv stops growing): a slow rider pumps a mini ramp up pass by pass, and a held push at vert speed stays a couple of metres of air, not a rocket
+// Legs pump with one stroke: standing up through a curve does work against the floor pressing back (v²/R), so the speed gained is
+// v/R for each metre the legs straighten. The stroke is a leg's reach, so a pump gives a share of the board's energy set by the
+// curve's radius (2 x stroke / R) at any speed: a real mini ramp gives about a quarter per wall, a wide shallow bowl much less.
+const STROKE = 0.56 * 2 * BOARD.halfLen; // metres the legs straighten from a crouch (0.45 m on a 0.8 m board)
+const STROKE_RATE = STROKE / (1.4 * Math.sqrt((2 * BOARD.halfLen) / G)); // m/s: a stroke takes 0.4 s on a real board
+const LEG_PRESS = 2.5 * G; // m/s²: the most the legs can hold on top of the rider's own weight; the harder the floor presses, the slower they straighten (a muscle's force against its speed), down to not at all
+const LIGHT = 0.1 * G; // m/s²: with the floor pressing back less than this (flat ground, the top of a wall) the legs fold back into the crouch
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -264,6 +268,7 @@ export type State = {
   revertDir: -1 | 1; // which way it pivots
   manual: -1 | 0 | 1; // which manual is being held, if any
   manualTime: number; // seconds in it
+  stroke: number; // metres the legs have straightened in this pump (0 is crouched, ready for the next)
   chain: number; // tricks landed in a row; the score multiplier
   chainT: number; // seconds left to extend it
   combo: string[]; // the tricks in the running chain, in order
@@ -296,7 +301,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza, planted = f
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabRail: 0, grabTime: 0, grabs: [], grindNose: 0, stall: false, wall: -1, wallN: [0, 1], stance: "regular", switched: false, revert: 0, revertDir: 1,
-    manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
+    manual: 0, manualTime: 0, stroke: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, comply: false, plant: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
@@ -451,7 +456,7 @@ function leaveWall(s: State) {
 function takeOff(s: State) {
   if (s.manual) endManual(s);
   s.air = true;
-  s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = []; s.wall = -1; s.revert = 0;
+  s.airTime = 0; s.spun = 0; s.tricks = []; s.grabs = []; s.wall = -1; s.revert = 0; s.stroke = 0; // the legs fold back in the air
 }
 
 function land(s: State, level: Level, steer: number, brake: boolean) {
@@ -663,10 +668,14 @@ function advance(s: State, inp: Input, level: Level): State {
     const pitched = Math.atan(along) - s.pitch;
     s.roll = Math.atan(across); // (pitch is the wheels' own track, kept from the last step: it follows a curve where the gradient overshoots)
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
-    // held through a transition, a push is a pump: the jets in proportion to speed (far harder than legs), legs the same, up to the most their strength can press (LEG_PUMP_CAP)
+    // held through a transition, a push is a pump: the jets in proportion to speed for as long as they fire, the legs one stroke (STROKE) and then they are straight
     const curved = Math.max(0, pitched * dir);
     if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * curved;
-    else if (inp.throttle > 0) { const v = Math.max(Math.abs(s.speed), 0.1); s.speed += dir * LEG_PUMP * Math.min(v, LEG_PUMP_CAP ** 2 / v) * curved; }
+    else {
+      const v = Math.abs(s.speed), press = Math.min(LEG_PRESS, (v * v * Math.max(0, curve)) / (1 + along * along) ** 1.5); // m/s²: how hard the curve presses the floor back at the board (v²/R)
+      if (press < LIGHT) s.stroke = Math.max(0, s.stroke - STROKE_RATE * DT);
+      else if (inp.throttle > 0) { const reach = Math.min(STROKE - s.stroke, STROKE_RATE * (1 - press / LEG_PRESS) * DT); s.stroke += reach; s.speed += (dir * press * reach) / v; }
+    }
     const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
