@@ -105,7 +105,7 @@ export function opNeeds(op: Op): Can {
 
 /** The track a live note or bend is on: a grant of some tracks lets these through on its tracks (takes stay edit). */
 export function trackOf(m: ClientMsg): number | undefined {
-  if (m.t === "live" && (m.e.t === "on" || m.e.t === "off" || m.e.t === "bend")) return m.e.track;
+  if (m.t === "live" && (m.e.t === "on" || m.e.t === "off" || m.e.t === "bend" || (m.e.t === "sound" && m.e.track >= 0))) return m.e.track;
   return undefined;
 }
 

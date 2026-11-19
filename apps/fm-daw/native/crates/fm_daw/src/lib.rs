@@ -14,10 +14,12 @@
 //!
 //! `eq` is Shape: the master EQ, with its own `fm_eq_*` surface, and each
 //! track's insert inside the engine (`fm_track_eq_set`).
+//! `remote` plays someone else's sound on the beat it was stamped with (`fm_remote_*`).
 //! `circuit` is the circuit amp (packages/gear/src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
 
 pub mod circuit;
 pub mod eq;
+pub mod remote;
 
 use std::f64::consts::PI;
 
@@ -881,6 +883,38 @@ pub unsafe extern "C" fn fm_eq_process(q: *mut eq::Eq, buf: *mut f32, frames: u3
     let b = std::slice::from_raw_parts_mut(buf, frames as usize * 2);
     with!(q, q.process(b, frames as usize))
 }
+
+// ---- Someone else's sound on its beat (src/remote.rs) ----
+
+#[no_mangle]
+pub extern "C" fn fm_remote_new(nominal: f64) -> *mut remote::Remote {
+    if !(nominal > 0.0 && nominal.is_finite()) { return std::ptr::null_mut(); }
+    Box::into_raw(Box::new(remote::Remote::new(nominal)))
+}
+/// # Safety
+/// `r` must come from `fm_remote_new` and not be used after this call.
+#[no_mangle]
+pub unsafe extern "C" fn fm_remote_free(r: *mut remote::Remote) { if !r.is_null() { drop(Box::from_raw(r)); } }
+#[no_mangle]
+pub extern "C" fn fm_remote_set_nominal(r: *mut remote::Remote, nominal: f64) { with!(r, r.set_nominal(nominal)) }
+/// # Safety
+/// `buf` must hold `len` samples.
+#[no_mangle]
+pub unsafe extern "C" fn fm_remote_push(r: *mut remote::Remote, beat: f64, buf: *const f32, len: u32) {
+    if buf.is_null() { return; }
+    let b = std::slice::from_raw_parts(buf, len as usize);
+    with!(r, r.push(beat, b))
+}
+/// # Safety
+/// `out` must hold `frames` samples.
+#[no_mangle]
+pub unsafe extern "C" fn fm_remote_mix(r: *mut remote::Remote, out: *mut f32, frames: u32, beat0: f64, bpf: f64, gain: f64) {
+    if out.is_null() { return; }
+    let o = std::slice::from_raw_parts_mut(out, frames as usize);
+    with!(r, r.mix(o, beat0, bpf, gain))
+}
+#[no_mangle]
+pub extern "C" fn fm_remote_late(r: *mut remote::Remote) -> u32 { unsafe { r.as_ref() }.map_or(0, |r| r.late()) }
 
 // ---- The circuit amp (src/circuit.rs) ----
 

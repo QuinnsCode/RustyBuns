@@ -9,6 +9,7 @@ import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { RUNG, type Rung } from "./rewind.ts";
+import { SOUND_MAX_FRAMES } from "./clock.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -219,8 +220,9 @@ const OP = (v: unknown) => decodeOp(v) ?? bad("an edit");
  * saved, undone or recorded into anyone else's take.
  */
 export type Live =
-  | { t: "on"; track: number; midi: number; vel: number }
-  | { t: "off"; track: number; midi: number }
+  /** `b`: the beat it was played on, on the sesh's shared clock (src/clock.ts), so a listener can place it. */
+  | { t: "on"; track: number; midi: number; vel: number; b?: number }
+  | { t: "off"; track: number; midi: number; b?: number }
   | { t: "bend"; track: number; semis: number }
   | { t: "repeat"; beats: number }
   | { t: "play" }
@@ -235,11 +237,19 @@ export type Live =
   /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
   | { t: "wear"; avatar: Avatar; name: string }
   /** Their guitar is plugged into this track (-1: straight in, no amp), or unplugged (null): its sound comes by WebRTC (src/guitar.ts). */
-  | { t: "guitar"; track: number | null };
+  | { t: "guitar"; track: number | null }
+  /**
+   * A slice of their guitar's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
+   * latency taken off), into `track` (-1: straight in), base64url of 16-bit samples at TAKE_RATE.
+   */
+  | { t: "sound"; track: number; b: number; data: string };
 const MIDI = int(0, 127);
+/** A beat on the shared clock: the leader's time 0 is beat 0, so it is big, never negative. */
+const STAMP = num(0, 1e13);
+const SOUND_CHARS = Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
 const LIVE: Guard<Live>[] = [
-  obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
-  obj({ t: tag("off"), track: TRACK, midi: MIDI }),
+  obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8), b: opt(STAMP) }),
+  obj({ t: tag("off"), track: TRACK, midi: MIDI, b: opt(STAMP) }),
   obj({ t: tag("bend"), track: TRACK, semis: num(-BEND_RANGE, BEND_RANGE, 0) }),
   obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
@@ -247,6 +257,7 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)) }),
+  obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 

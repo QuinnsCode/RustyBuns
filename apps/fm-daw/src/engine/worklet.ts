@@ -2,14 +2,16 @@
 // sequencer that drives it. The page talks to it only through messages; the
 // worklet keeps a mirror of every param so it can swap engines mid-groove.
 import { TsEngine, sendTrackEq, type FmEngine } from "./engine.ts";
-import { WasmEngine, WasmEq, instantiateFm } from "./wasm.ts";
+import { WasmEngine, WasmEq, WasmRemote, instantiateFm, type Exports } from "./wasm.ts";
+import { TsRemote, type RemoteLine } from "./remote.ts";
 import { TsEq, flatEq, withEqLane, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 import { Delay, LinearEq } from "./linear.ts";
 import { Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
-import { TakeCapture, TakeDeck } from "../take.ts";
+import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
+import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
 import type { ToWorklet } from "./messages.ts";
@@ -64,6 +66,28 @@ class FmProcessor extends AudioWorkletProcessor {
   /** Whole passes recorded since Rec went on: once there is one, a pass cut short by Stop doesn't replace it. */
   private passes = 0;
   private mono = new Float32Array(256);
+  /** The shared clock: sound at context time `gridCtx` is heard on `gridBeat` (NaN: none, the transport runs free). */
+  private gridCtx = 0;
+  private gridBeat = NaN;
+  /** Frames rendered, for the context's time where the platform gives none (tests). */
+  private frames = 0;
+  /** Each other player's sound coming in, on its beats, and the track it goes into. */
+  private remotes = new Map<number, { line: RemoteLine; track: number }>();
+  private wasm: Exports | null = null;
+  private far = new Float32Array(256);
+  private blockBeat = 0;
+  private blockBpf = 0;
+  /** The remote sound bound for amped tracks, as the Amp inserts ask for it. */
+  private remoteIn = {
+    has: (t: number) => { for (const r of this.remotes.values()) if (r.track === t) return true; return false; },
+    add: (t: number, dry: Float32Array, n: number) => { this.remoteInto(t, dry, n, this.blockBeat, this.blockBpf); },
+  };
+  /** Your input going out in slices, each stamped with its beat. */
+  private sending = false;
+  private sendLatency = 0;
+  private slice = new Float32Array(0);
+  private sliceLen = 0;
+  private sliceBeat = 0;
 
   constructor() {
     super();
@@ -121,6 +145,64 @@ class FmProcessor extends AudioWorkletProcessor {
       case "repeat": s.setRepeat(m.beats); break;
       case "move": s.move(m.track, m.i, m.v, m.was); break;
       case "engine": await this.swap(m); break;
+      case "grid": this.gridCtx = m.ctx; this.gridBeat = m.beat ?? NaN; if (m.beat === null) s.sync(NaN); break;
+      case "due": s.liveAt(m.at, m.track, m.midi, m.vel); break;
+      case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
+      case "quiet": this.remotes.get(m.peer)?.line.free?.(); this.remotes.delete(m.peer); break;
+      case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.sliceLen = 0; break;
+    }
+  }
+
+  /** Samples a beat at TAKE_RATE, at the sesh's tempo: what a remote line plays at before it fits the far end. */
+  private nominal() { return (TAKE_RATE * 60) / this.seq.bpm; }
+
+  private hearSound(peer: number, track: number, at: number, pcm: Float32Array) {
+    let r = this.remotes.get(peer);
+    if (!r) { r = { line: this.newRemote(), track }; this.remotes.set(peer, r); }
+    r.track = track;
+    r.line.setNominal(this.nominal());
+    r.line.push(at, pcm);
+  }
+  private newRemote(): RemoteLine { return this.wasm ? new WasmRemote(this.wasm, this.nominal()) : new TsRemote(this.nominal()); }
+
+  /** Where the shared clock says this block is heard, abs beats; NaN with no clock. */
+  private gridNow(): number {
+    if (!Number.isFinite(this.gridBeat)) return NaN;
+    const t = Reflect.get(globalThis, "currentTime");
+    const now = typeof t === "number" ? t : this.frames / sampleRate;
+    return gridBeatAt(this.gridBeat, this.gridCtx, now, this.seq.bpm);
+  }
+
+  /** Everyone else's sound for this block, from beat `beat0`: through its track's amp when it has one, else straight in. */
+  private mixRemote(frames: number, beat0: number, bpf: number) {
+    if (!this.remotes.size) return;
+    if (this.far.length < frames) this.far = new Float32Array(frames);
+    for (const r of this.remotes.values()) {
+      if ((r.track >= 0 && (this.muted[r.track] || this.amps.has(r.track)))) continue;
+      this.far.fill(0, 0, frames);
+      r.line.mix(this.far, frames, beat0, bpf, this.master);
+      for (let f = 0; f < frames; f++) { this.buf[f * 2] += this.far[f]; this.buf[f * 2 + 1] += this.far[f]; }
+    }
+  }
+  /** The remote sound bound for track `t`'s amp, added into its dry input. */
+  private remoteInto(t: number, dry: Float32Array, frames: number, beat0: number, bpf: number) {
+    for (const r of this.remotes.values()) if (r.track === t) r.line.mix(dry, frames, beat0, bpf, 1);
+  }
+
+  /** Your input into slices of SOUND_FRAMES (at TAKE_RATE), each stamped with the beat you heard as you played it. */
+  private sendSlices(input: Float32Array[] | undefined, frames: number, beat0: number, bpf: number) {
+    const want = Math.round((SOUND_FRAMES * sampleRate) / TAKE_RATE);
+    if (this.slice.length !== want) { this.slice = new Float32Array(want); this.sliceLen = 0; }
+    const mono = this.downmix(input, frames), back = (this.seq.latency + this.sendLatency) * (this.seq.bpm / 60);
+    for (let f = 0; f < frames; f++) {
+      if (this.sliceLen === 0) this.sliceBeat = beat0 + f * bpf - back;
+      this.slice[this.sliceLen++] = mono[f];
+      if (this.sliceLen === want) {
+        const pcm = this.slice;
+        this.port.postMessage({ t: "sound", beat: this.sliceBeat, pcm, rate: sampleRate }, [pcm.buffer]);
+        this.slice = new Float32Array(want);
+        this.sliceLen = 0;
+      }
     }
   }
 
@@ -221,6 +303,10 @@ class FmProcessor extends AudioWorkletProcessor {
       this.seq.engine = next;
       this.seq.resendAuto();
       this.kind = m.kind;
+      this.wasm = x;
+      // every remote line starts again in the new engine (a moment of their sound is lost)
+      for (const r of this.remotes.values()) r.line.free?.();
+      this.remotes.clear();
       old.panic();
       old.free?.();
       const oldEq = this.minEq;
@@ -239,12 +325,18 @@ class FmProcessor extends AudioWorkletProcessor {
     const frames = L.length;
     if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); }
     try {
-      const pos = this.seq.pos, playing = this.seq.playing;
+      const grid = this.gridNow();
+      if (Number.isFinite(grid)) this.seq.sync(grid);
+      const pos = this.seq.pos, playing = this.seq.playing, abs0 = this.seq.abs;
+      const bpf = (this.seq.bpm / 60 / sampleRate) * this.seq.rate;
       // with no amp on any track, no taps: every track stays in the engine's sum
       const taps = this.amps.any ? this.taps : undefined;
       this.seq.process(this.buf, frames, this.send, taps);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
-      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps);
+      this.blockBeat = abs0; this.blockBpf = bpf;
+      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
+      this.mixRemote(frames, abs0, bpf);
+      if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
@@ -257,12 +349,13 @@ class FmProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ t: "engine", kind: "ts", error: `engine crashed: ${String((e as Error)?.message ?? e)}` });
     }
     for (let f = 0; f < frames; f++) { L[f] = this.buf[f * 2]; R[f] = this.buf[f * 2 + 1]; }
+    this.frames += frames;
     this.sinceReport += frames / sampleRate;
     if (this.sinceReport >= REPORT_EVERY) {
       this.sinceReport = 0;
       this.engine.meter(this.meter);
       this.port.postMessage({
-        t: "tick", pos: this.seq.pos, playing: this.seq.playing, countIn: this.seq.countIn,
+        t: "tick", pos: this.seq.pos, abs: this.seq.abs, synced: this.seq.synced, late: [...this.remotes.values()].reduce((n, r) => n + r.line.late, 0), playing: this.seq.playing, countIn: this.seq.countIn,
         peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3], ampMisses: this.amps.misses,
       });
     }

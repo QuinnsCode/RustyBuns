@@ -16,11 +16,15 @@ import { cleanAvatar, defaultAvatar, drawAvatar, randomAvatar, type Avatar } fro
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
 import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
-import { apply, type Live, type Op, type Project } from "../project.ts";
+import { apply, loopBeats, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
 import { loadMsg } from "../ui/load.ts";
+import { Band } from "./band.ts";
+import { LISTENS, type Listen } from "../clock.ts";
+import { encodeTake } from "../take.ts";
+import { b64url } from "@rustybuns/util/bytes";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
@@ -327,7 +331,11 @@ let out: AudioOut | null = null;
 async function startAudio() {
   if (out) return;
   try {
-    out = await AudioOut.start(() => {});
+    out = await AudioOut.start((m) => {
+      if (m.t === "tick") { transport = { abs: m.abs, synced: m.synced, late: m.late, playing: m.playing }; return; }
+      // a slice of your guitar, stamped with the beat you played it on, to everyone hearing a loop late or at the desk
+      if (m.t === "sound" && myGuitar !== null) live(Band.slice(myGuitar, m.beat, encodeTake(m.pcm, m.rate), b64url));
+    });
     out.send(loadMsg(project));
     out.send({ t: "master", gain: dbToGain(START_DB) });
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
@@ -344,14 +352,14 @@ function noteOn(by: string, n: { track: number; midi: number }, vel: number) {
   if (spotOf(jam, jam.me.seat)?.kind === "bass") for (const b of monoSteal(holding, n.track)) noteOff(b);
   holding.set(by, n);
   out?.send({ t: "on", ...n, vel });
-  live({ t: "on", ...n, vel });
+  live({ t: "on", ...n, vel, ...band.stamp() });
 }
 function noteOff(by: string) {
   const n = holding.get(by);
   if (!n) return;
   holding.delete(by);
   out?.send({ t: "off", ...n });
-  live({ t: "off", ...n });
+  live({ t: "off", ...n, ...band.stamp() });
 }
 function releaseAll() { for (const by of [...holding.keys()]) noteOff(by); }
 
@@ -367,6 +375,7 @@ let lags = new Map<number, Lag>();
 async function guitar() {
   if (myGuitar !== null) {
     guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null });
+    out?.send({ t: "send", on: false, inLatency: 0 }); mySource?.disconnect(); mySource = null;
     return void say({ ok: false, why: "Your guitar is out" });
   }
   if (!may(player).play) return void say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
@@ -381,9 +390,17 @@ async function guitar() {
   const track = guitarTrack(project, seat && seat.kind !== "drums" ? trackFor(seat, project) : -1);
   await guitars.plugIn(stream);
   myGuitar = track;
+  // and into the audio thread, which cuts it into stamped slices for whoever hears the band a loop late or at the desk
+  if (out) {
+    mySource = out.ctx.createMediaStreamSource(stream);
+    mySource.connect(out.node);
+    const got: MediaTrackSettings & { latency?: number } = stream.getAudioTracks()[0]?.getSettings() ?? {};
+    out.send({ t: "send", on: true, inLatency: (got.latency ?? 0) + out.ctx.baseLatency });
+  }
   live({ t: "guitar", track });
   say({ ok: false, why: track >= 0 ? `Your guitar is in, through ${project.tracks[track].name}'s amp. I pulls it out` : "Your guitar is in, straight (no track has an amp). I pulls it out" });
 }
+let mySource: MediaStreamAudioSourceNode | null = null;
 /** Each guitar through its track's amp, at your mutes, where its player stands; you, where you are. */
 function hearGuitars() {
   if (!guitars) return;
@@ -392,7 +409,8 @@ function hearGuitars() {
   for (const [peer, track] of plugged) {
     const o = jam.others.get(peer);
     guitars.set(peer, guitarSettings(project.tracks[track]?.amp));
-    guitars.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
+    // a loop late or at the desk their guitar comes in stamped slices (the audio thread plays it); the call is for "now"
+    guitars.level(peer, band.listen !== "now" || mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
     if (o) guitars.place(peer, o.at[0], o.at[1]);
   }
 }
@@ -410,11 +428,46 @@ function onLive(from: number, e: Live) {
     else { plugged.set(from, e.track); guitars?.ask(from); }
     return;
   }
+  if (e.t === "play" || e.t === "stop") return void playGroove(e.t === "play", false);
   if (!sounds(mutes, from, e)) return;
-  if (e.t === "on") out?.send({ t: "on", track: e.track, midi: e.midi, vel: e.vel });
-  else if (e.t === "off") out?.send({ t: "off", track: e.track, midi: e.midi });
-  else if (e.t === "bend") out?.send({ t: "bend", track: e.track, semis: e.semis });
+  for (const m of band.heard(from, e)) out?.send(m);
 }
+
+// ---- the shared clock (src/clock.ts): the leader's time, the groove and click on it, and how you hear the others ----
+const wall = () => performance.timeOrigin + performance.now();
+const band = new Band(() => ({ bpm: project.bpm, loopBeats: loopBeats(project) }), wall);
+/** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
+let transport = { abs: 0, synced: false, late: 0, playing: false };
+/** Enter, or anyone's Play on the live line: the groove and its click, on the shared beat, for everyone. */
+function playGroove(on: boolean, tell = true) {
+  if (on && !transport.playing) { out?.send({ t: "metro", on: true }); out?.send({ t: "play", countIn: 0 }); }
+  else if (!on) out?.send({ t: "stop" });
+  transport.playing = on;
+  if (tell) live({ t: on ? "play" : "stop" });
+}
+/** C: hear the others a loop late, as it comes, or (the leader) at the desk. */
+function setListen(l?: Listen) {
+  const ok = LISTENS.filter((x) => x !== "desk" || iLead());
+  band.listen = l && ok.includes(l) ? l : ok[(ok.indexOf(band.listen) + 1) % ok.length];
+  hearGuitars();
+  flash = { text: band.listen === "loop" ? "Hearing the band a loop late, in time" : band.listen === "desk" ? "At the desk: the whole band 150 ms late, lined up" : "Hearing everyone as it comes", until: performance.now() + 1800 };
+  return band.listen;
+}
+function pingLeader() {
+  band.leading(!!status.floor?.host);
+  const m = status.state === "online" ? band.ping() : null;
+  if (m) net?.clock(m);
+  setTimeout(pingLeader, band.clock.every);
+}
+setTimeout(pingLeader, 200);
+// the audio thread's grid, from what the speakers play right now, and the slices of sound coming due
+setInterval(() => {
+  band.step(transport.playing);
+  if (!out) return;
+  const ts = out.ctx.getOutputTimestamp();
+  if (ts.contextTime !== undefined && ts.performanceTime !== undefined) out.send(band.grid(ts.contextTime, performance.timeOrigin + ts.performanceTime));
+  for (const m of band.due()) out.send(m, m.t === "sound" ? [m.pcm.buffer] : []);
+}, 50);
 // ---- mutes: yours (the room, or one person) and the leader's for everyone ----
 const mutes = noMutes();
 /** Which person each peer on the live line is, from the World's grants. */
@@ -474,7 +527,9 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); lags.delete(from); guitars?.gone(from);
-  for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); }
+  band.quiet(from); out?.send({ t: "quiet", peer: from });
+  // what they held lets go now, and again when it would have, for a listener a loop behind
+  for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
   gone(jam, from);
   dropPerson(from);
   people();
@@ -517,6 +572,7 @@ const player: Player = {
   ask: (can) => net?.grant({ t: "ask", can }),
   rewind: back.rewind,
   wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+  clock: () => ({ ...band.clock.state(), behindMs: band.behind() }),
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's
@@ -531,6 +587,7 @@ if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
   onRewound: back.answer,
   onRtc: (m) => void guitars?.signal(m),
+  onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
     if (!p) { net?.init(project); return; }
     groove(p);
@@ -581,6 +638,8 @@ function keyDown(code: string, shift = false) {
   if (code === "Space") return sitOrStand();
   if (code === "KeyH") return raise();
   if (code === "KeyI") return void guitar();
+  if (code === "Enter") return playGroove(!transport.playing);
+  if (code === "KeyC") return void setListen();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
@@ -807,7 +866,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], ...snapshot(jam, project),
+  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) } }),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
@@ -848,5 +907,11 @@ const harness = {
   guitar: async () => { await guitar(); return harness.guitars(); },
   /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
   guitars: () => ({ mine: myGuitar, in: Object.fromEntries(plugged), calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
+  /** The shared clock: whose it is, your offset to it and round trip (ms), how you hear the band, and the beat here. */
+  clock: () => ({ ...band.clock.state(), beat: Math.round(band.beat() * 1000) / 1000, behindMs: band.behind(), waiting: band.waiting, transport }),
+  /** How you hear the others: "loop" (a loop late), "now", or (the leader) "desk"; then the clock. */
+  listen: (l: Listen) => { setListen(l); return harness.clock(); },
+  /** The groove and its click on the shared beat, for everyone (Enter). */
+  groove: (on: boolean) => { playGroove(on); return harness.clock(); },
 };
 window.qjam = harness;
