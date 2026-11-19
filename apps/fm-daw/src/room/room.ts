@@ -8,9 +8,11 @@ import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
-import type { BenchPedal } from "../circuit/bench.ts";
+import type { Avatar } from "@rustybuns/util/avatar";
+import { bench, type BenchPedal } from "../circuit/bench.ts";
 import { AUXES } from "../mixer.ts";
-import { applyStudio, emptyStudio, MAX_KNOBS, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
+import type { Live } from "../project.ts";
+import { applyStudio, emptyStudio, letGo, MAX_BOARD_CHARS, MAX_KNOBS, type Board, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
 export type Vec3 = [number, number, number];
 /** The face of a box a jack or knob sits on, in the box's own frame: front is +z. */
@@ -141,6 +143,30 @@ export function benchGear(pedal: BenchPedal): GearDef {
 
 export const gearOf = (p: Placed): GearDef | undefined => STUDIO_GEAR[p.gear] ?? BENCH.get(p.gear)?.def;
 
+/**
+ * A board read here as gear (`benchGear`), and as the sesh carries it to everyone else (src/studio.ts `Board`): its gear id, the name it was
+ * read under and its JSON as text. Null when it is too long for the sesh to keep: then only this page plays it.
+ */
+export function boardFor(pedal: BenchPedal, json: unknown, name: string): Board | null {
+  const gear = benchGear(pedal).id, text = JSON.stringify(json);
+  return text.length <= MAX_BOARD_CHARS ? { gear, name: name.slice(0, 80), json: text } : null;
+}
+/**
+ * A board someone else dropped in the sesh's gear room: read here the way a drop is, so its boxes are that pedal on
+ * this page too (drawn, with its knobs, and playing its circuit). False for one that won't play here, or that reads
+ * as some other gear than it says.
+ */
+export function boardIn(b: Board): boolean {
+  if (BENCH.has(b.gear)) return true;
+  let json: unknown;
+  try { json = JSON.parse(b.json); } catch { return false; }
+  const read = bench(json, { name: b.name });
+  if (!read.ok) return false;
+  const id = benchGear(read.pedal).id;
+  if (id !== b.gear) BENCH.delete(id);
+  return id === b.gear;
+}
+
 /** The board's netlist at its knobs as the patch has them turned: what the cabled bench pedal `id` plays. */
 function benchNet(patch: Patch, p: Placed) {
   const b = BENCH.get(p.gear);
@@ -203,10 +229,16 @@ export interface Room {
   studio: Studio; you: You; me: number; /** How far you turned what you hold from where you face. */ heldTurn: number;
   /** In a sesh: each thing you did that the studio took, to pass on to the World (the others apply the same step). */
   sent?: (step: StudioOp) => void;
+  /** Everyone else standing in the sesh's gear room, by their number on the live line. */
+  bodies: Map<number, Body>;
+  /** How everyone in the sesh looks and is called, the jam room's people too (the desk names their strips). */
+  looks: Map<number, { avatar: Avatar; name: string }>;
 }
+/** Where someone else stands and which way they face. */
+export interface Body { x: number; z: number; yaw: number }
 
 export function newRoom(patch: Patch = startPatch()): Room {
-  return { studio: { ...emptyStudio(), patch }, you: { x: 0, z: 1.8, yaw: 0, pitch: -0.15 }, me: 1, heldTurn: 0 };
+  return { studio: { ...emptyStudio(), patch }, you: { x: 0, z: 1.8, yaw: 0, pitch: -0.15 }, me: 1, heldTurn: 0, bodies: new Map(), looks: new Map() };
 }
 
 export type Answer = { ok: true } | { ok: false; why: string };
@@ -254,15 +286,22 @@ export function jackAt(r: Room, end: End): Vec3 | null {
 
 /** Where a box is drawn now: where it stands, or in your hands if you carry it. */
 export function placedNow(r: Room, p: Placed): Placed {
-  return heldId(r) === p.id ? { ...p, ...holdPose(r, p) } : p;
+  if (heldId(r) === p.id) return { ...p, ...holdPose(r, p) };
+  // in someone else's hands: where their body says they stand (a carrier whose body hasn't come yet leaves it where it stood)
+  const by = Object.keys(r.studio.held).find((k) => { const h = r.studio.held[k]; return "item" in h && h.item === p.id; });
+  const them = by === undefined ? undefined : r.bodies.get(Number(by));
+  return them ? { ...p, ...holdPose(r, p, { ...them, pitch: 0 }, 0) } : p;
 }
 
-/** Where the held box sits: in front of you at the height you look, turned as you turned it. */
-export function holdPose(r: Room, p: Placed): { at: number[]; turn: number } {
+/**
+ * Where the held box sits: in front of you at the height you look, turned as you turned it. `who`, someone else
+ * carrying it: in front of them at chest height, facing as they face (their look and their turn of it don't travel).
+ */
+export function holdPose(r: Room, p: Placed, who: You = r.you, turned = r.heldTurn): { at: number[]; turn: number } {
   const g = gearOf(p), [, h, d] = g?.size ?? [0.3, 0.3, 0.3];
-  const out = 0.45 + d / 2, f = lookDir({ ...r.you, pitch: 0 });
-  const y = Math.min(1.7, Math.max(0, EYE + Math.tan(r.you.pitch) * out - h / 2 - 0.25));
-  return { at: [r.you.x + f[0] * out, y, r.you.z + f[2] * out], turn: r.you.yaw + r.heldTurn };
+  const out = 0.45 + d / 2, f = lookDir({ ...who, pitch: 0 });
+  const y = Math.min(1.7, Math.max(0, EYE + Math.tan(who.pitch) * out - h / 2 - 0.25));
+  return { at: [who.x + f[0] * out, y, who.z + f[2] * out], turn: who.yaw + turned };
 }
 
 /** Ray against a box standing at `p`: the distance along the ray, or null. */
@@ -509,7 +548,36 @@ export function sag(a: Vec3, b: Vec3, n = 20): Vec3[] {
 }
 
 /** Where your hand is, for the free end of a cable you carry. */
-export const handAt = (r: Room): Vec3 => { const f = lookDir(r.you); return [r.you.x + f[0] * 0.5, EYE - 0.4 + f[1] * 0.5, r.you.z + f[2] * 0.5]; };
+export const handAt = (r: Room, who: You = r.you): Vec3 => { const f = lookDir(who); return [who.x + f[0] * 0.5, EYE - 0.4 + f[1] * 0.5, who.z + f[2] * 0.5]; };
+
+// ---- the others in the sesh's gear room ----
+// The patch is the World's, so boxes and cables move for everyone. Who moves them comes on the live line: each
+// page says where its body is (`body`, marked `room: "gear"`: the jam room is on the same line and draws only its
+// own people) and how it looks (`wear`). A box or a cable end in someone's hand is drawn at their body.
+
+/** Your body on the live line, for the others in the gear room. */
+export function bodyOf(r: Room): Live {
+  const c = (v: number) => Math.round(v * 100) / 100;
+  return { t: "body", at: [c(r.you.x), 0, c(r.you.z)], yaw: c(Math.atan2(Math.sin(r.you.yaw), Math.cos(r.you.yaw))), room: "gear" };
+}
+/** Someone's live event: their body (in this room, or in the jam room: then they aren't drawn here) or their look. */
+export function hear(r: Room, from: number, e: Live) {
+  if (e.t === "body") { if (e.room === "gear") r.bodies.set(from, { x: e.at[0], z: e.at[2], yaw: e.yaw }); else r.bodies.delete(from); }
+  else if (e.t === "wear") r.looks.set(from, { avatar: e.avatar, name: e.name });
+}
+/** They left the sesh: their body goes, a box they carried stays where it stood, and a cable end falls out of their hand. */
+export function left(r: Room, from: number) {
+  r.bodies.delete(from);
+  r.looks.delete(from);
+  r.studio = letGo(r.studio, from);
+}
+/** Every cable end in someone else's hand: the jack its cable comes out of, and where that hand is. */
+export function theirLeads(r: Room): { peer: number; from: End; hand: Vec3 }[] {
+  return Object.entries(r.studio.held).flatMap(([k, h]) => {
+    const them = r.bodies.get(Number(k));
+    return "lead" in h && Number(k) !== r.me && them ? [{ peer: Number(k), from: h.lead, hand: handAt(r, { ...them, pitch: 0 }) }] : [];
+  });
+}
 
 // ---- what you hear ----
 
@@ -731,6 +799,7 @@ export function snapshot(r: Room) {
   return {
     you: { x: cm(r.you.x), z: cm(r.you.z), yaw: deg(r.you.yaw), pitch: deg(r.you.pitch) },
     holding: hand(r) ?? null,
+    people: [...r.bodies].map(([peer, b]) => ({ peer, name: r.looks.get(peer)?.name ?? "", x: cm(b.x), z: cm(b.z), yaw: deg(b.yaw), holding: r.studio.held[String(peer)] ?? null })),
     aimed: aimed(r),
     items: r.studio.patch.placed.map((p) => { const q = placedNow(r, p); return { id: p.id, gear: p.gear, at: q.at.map(cm), turn: deg(q.turn), held: heldId(r) === p.id }; }),
     cables: r.studio.patch.cables,

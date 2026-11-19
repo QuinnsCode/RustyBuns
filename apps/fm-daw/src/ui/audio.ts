@@ -6,6 +6,9 @@ import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 export const START_DB = -12;
 export const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20));
 
+/** The engine's input for the aux sends of guitars heard on calls (src/studio/guitar-line.ts): the Space bus, then aux 2's. */
+export const CALL_SENDS = 2;
+
 export class AudioOut {
   readonly ctx: AudioContext;
   readonly node: AudioWorkletNode;
@@ -24,7 +27,8 @@ export class AudioOut {
   static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
-    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 2, outputChannelCount: [2] });
+    // inputs: yours (a guitar or mic), the page's own plugins, and the aux sends of guitars heard on calls (CALL_SENDS)
+    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 3, outputChannelCount: [2] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
     node.connect(ctx.destination);
     await ctx.resume();

@@ -253,9 +253,10 @@ export type Live =
   | { t: "cursor"; x: number; y: number }
   /**
    * Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts).
-   * In the jam room (src/studio/) also the spot they sit at, if any: that seat shows them playing it.
+   * In the jam room (src/studio/) also the spot they sit at, if any: that seat shows them playing it. `room`: they are
+   * in the sesh's gear room (src/room/), not the jam room: each room draws only the people in it.
    */
-  | { t: "body"; at: number[]; yaw: number; seat?: string }
+  | { t: "body"; at: number[]; yaw: number; seat?: string; room?: "gear" }
   /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
   | { t: "wear"; avatar: Avatar; name: string }
   /**
@@ -285,7 +286,7 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0), b: opt(STAMP) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
-  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
+  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })), room: opt(oneOf(["gear"])) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
   obj({ t: tag("plugin"), track: TRACK, name: nul(str(500)) }),

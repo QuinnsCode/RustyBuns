@@ -49,7 +49,7 @@ import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { flatEq } from "../engine/eq.ts";
 import { DeskFeed, loadMsg, type HeardPlayer } from "./load.ts";
 import { applyStudio, emptyStudio, type Patch } from "../studio.ts";
-import { auxGear } from "../room/room.ts";
+import { auxGear, boardIn } from "../room/room.ts";
 import { LANE_BEND, LANE_STUTTER, P } from "../engine/params.ts";
 import { Band } from "../studio/band.ts";
 import { FarSound, PluginOut } from "../studio/plugin-line.ts";
@@ -449,6 +449,8 @@ export function App() {
       onChat: chat.onChat,
       onGrants: setGrants,
       onStudio(m) {
+        // a bench pedal's board: read here, so the aux 2 return plays its circuit (a new patch object: aux 2 is worked out again)
+        if (m.t === "studio-board") { if (boardIn(m.board)) setPatch({ ...studio.current.patch }); return; }
         studio.current = m.t === "studio-all" ? m.studio : applyStudio(studio.current, m.from, m.op);
         setPatch(studio.current.patch);
       },

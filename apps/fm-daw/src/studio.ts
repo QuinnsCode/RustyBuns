@@ -71,22 +71,52 @@ const OPS: Guard<StudioOp>[] = [
 export const decodeStudioOp = (v: unknown): StudioOp | null => OPS.reduce<StudioOp | null>((got, g) => got ?? check(g, v), null);
 const OP = (v: unknown) => { const op = decodeStudioOp(v); if (!op) throw new Bad("a studio op"); return op; };
 
-/** Page to world: one thing done in the studio. */
-export type StudioClient = { t: "studio"; op: StudioOp };
+// ---- bench boards: a pedal someone drew, for everyone in the room ----
+// A bench pedal (src/circuit/bench.ts) is a tscircuit board read in one browser. Its box goes in the patch like any
+// other, by gear id, but only the board says what circuit that id is. So the board travels too: whoever drops it
+// sends it once, the World keeps it beside the patch and hands it to everyone who comes in, and each page reads it
+// into the same pedal. It is carried as JSON text: the World never reads it, only counts it.
+
+/** How many bench boards a sesh keeps, and how long one may be as JSON text. */
+export const MAX_BOARDS = 8;
+export const MAX_BOARD_CHARS = 100_000;
+/** One bench pedal's board: the gear id its boxes have in the patch, the name it was dropped under, and its circuit JSON as text. */
+export const Board = obj({ gear: ID, name: str(80, { dflt: "" }), json: str(MAX_BOARD_CHARS, { min: 2 }) });
+export type Board = Of<typeof Board>;
+export const sanitizeBoards = (v: unknown): Board[] => check(arr(Board, MAX_BOARDS, { drop: true }), v) ?? [];
+/** The boards some box in `patch` still is (the same list when that is all of them). */
+export function boardsIn(boards: Board[], patch: Patch): Board[] {
+  const next = boards.filter((b) => patch.placed.some((p) => p.gear === b.gear));
+  return next.length === boards.length ? boards : next;
+}
+/**
+ * The boards with one more: the same list when its gear id has a board already (the first one in is the one every
+ * page plays) or the sesh is full of boards still in the room. A full list first lets go of those with no box left.
+ */
+export function withBoard(boards: Board[], b: Board, patch: Patch): Board[] {
+  if (boards.some((x) => x.gear === b.gear)) return boards;
+  const kept = boards.length >= MAX_BOARDS ? boardsIn(boards, patch) : boards;
+  return kept.length >= MAX_BOARDS ? boards : [...kept, b];
+}
+
+/** Page to world: one thing done in the studio, or a bench pedal's board (sent before the step that brings its box in). */
+export type StudioClient = { t: "studio"; op: StudioOp } | { t: "studio-board"; board: Board };
 /**
  * World to page: the whole studio (on joining, or to put a player back in step when the world said no), then each op a
  * player did. `you`: your own number on the live line, so the page knows which hand in `held` is its own. A room nobody
  * has used yet isn't sent on joining: a page that wants it asks with a step that changes nothing (`drop`).
+ * `studio-board`: a bench pedal's board, on joining (before the studio) and when someone drops a new one.
  */
-export type StudioServer = { t: "studio-all"; studio: Studio; you?: number } | { t: "studio-op"; from: number; op: StudioOp };
+export type StudioServer = { t: "studio-all"; studio: Studio; you?: number } | { t: "studio-op"; from: number; op: StudioOp } | { t: "studio-board"; board: Board };
 const PEER = num(1, Infinity);
 const HELD = rec(Hand, 64);
-const CLIENT = obj({ t: tag("studio"), op: OP });
+const CLIENT: Guard<StudioClient>[] = [obj({ t: tag("studio"), op: OP }), obj({ t: tag("studio-board"), board: Board })];
 const SERVER: Guard<StudioServer>[] = [
   obj({ t: tag("studio-all"), studio: obj({ patch: Patch, held: HELD }), you: opt(PEER) }),
   obj({ t: tag("studio-op"), from: PEER, op: OP }),
+  obj({ t: tag("studio-board"), board: Board }),
 ];
-export const decodeStudioClient = (v: unknown): StudioClient | null => check(CLIENT, v);
+export const decodeStudioClient = (v: unknown): StudioClient | null => CLIENT.reduce<StudioClient | null>((got, g) => got ?? check(g, v), null);
 export const decodeStudioServer = (v: unknown): StudioServer | null => SERVER.reduce<StudioServer | null>((got, g) => got ?? check(g, v), null);
 /** A saved patch, fitted: anything that isn't one reads as an empty room. */
 export const sanitizePatch = (v: unknown): Patch => check(Patch, v) ?? emptyPatch();

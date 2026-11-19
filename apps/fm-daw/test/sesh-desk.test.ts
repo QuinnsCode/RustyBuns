@@ -2,11 +2,12 @@
 // aux-send-2 and aux-return-2, and the room goes into the sesh's World step by step. A guitarist plugs in and plays one
 // note on the live line. On FM DAW's page (a loop late, its own audio thread) the note is on that player's channel:
 // whoever mixes sends it to aux 2, and the spring's tail comes back only on the aux 2 return's fader. A track's send
-// to aux 2 comes back the same way in the bounce.
+// to aux 2 comes back the same way in the bounce. In the jam room, heard as it comes, the same guitar is on a call
+// outside the audio thread: its chain plays at the channel's level and its sends go into the audio thread's buses.
 import { expect, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
-import { SR, processor, run, useWorklet } from "./worklet-kit.ts";
-import { deskOps, playerId, seshDesk, trackId, withChannel, withReturn, withSend, type Desk } from "../src/mixer.ts";
+import { BLOCK, SR, processor, run, useWorklet } from "./worklet-kit.ts";
+import { callStrips, deskOps, playerId, seshDesk, trackId, withChannel, withReturn, withSend, type Desk } from "../src/mixer.ts";
 import { auxGear, lead, newRoom, plug } from "../src/room/room.ts";
 import { applyStudio, decodeStudioClient, emptyStudio, patchOps } from "../src/studio.ts";
 import { apply, decodeOp, decodeServer, sanitize, type Live, type Project } from "../src/project.ts";
@@ -31,7 +32,7 @@ function gearRoom() {
   for (const a of [lead(r, ["desk", "aux-send-2"]), plug(r, ["spring", "in"]), lead(r, ["spring", "out"]), plug(r, ["desk", "aux-return-2"])]) expect(a).toEqual({ ok: true });
   const world = patchOps(r.studio.patch).reduce((s, step) => {
     const m = decodeStudioClient(JSON.parse(JSON.stringify({ t: "studio", op: step })));
-    if (!m) throw new Error(`the World turned ${step.t} away`);
+    if (m?.t !== "studio") throw new Error(`the World turned ${step.t} away`);
     return applyStudio(s, PEER, m.op);
   }, emptyStudio());
   expect(world.patch).toEqual(r.studio.patch);
@@ -105,6 +106,52 @@ test("a player's channel sent to the aux 2 return comes back on its fader", asyn
 
   // back to a new channel, the sesh keeps nothing for them
   expect(mix(sent, (d) => withSend(d, id, 2, 0)).desk).toBeUndefined();
+});
+
+test("a guitar heard as it comes, on a call, plays at its channel's level and sends to the returns", async () => {
+  const patch = gearRoom(), p0 = quiet(), id = playerId(WHO);
+  /**
+   * The jam room hearing Mo as it comes: the level his call's chain plays at, and what comes out of the audio thread
+   * when the chain's sends (a tenth of a second of 220 Hz after that level, as the page's gain nodes pass it) go in.
+   */
+  const call = async (project: Project) => {
+    const [strip] = callStrips(project, PLAYERS, [{ who: WHO, track: -1 }]);
+    const { p, say } = processor();
+    say(loadMsg({ ...project, bpm: BPM, bars: LOOP / 4 }));
+    say({ t: "master", gain: 1 });
+    new DeskFeed(say).sync(project, [], auxGear(patch).settings);
+    const out = new Float32Array(Math.round(1.4 * SR));
+    for (let at = 0; at < out.length; at += BLOCK) {
+      const note = new Float32Array(BLOCK).map((_, i) => (at + i < SR * 0.1 ? 0.5 * Math.sin((2 * Math.PI * 220 * (at + i)) / SR) * strip.level : 0));
+      const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
+      p.process([[], [], [note.map((x) => x * (strip.sends[0] ?? 0)), note.map((x) => x * (strip.sends[1] ?? 0))]], [[L, R]]);
+      out.set(L.subarray(0, Math.min(BLOCK, out.length - at)), at);
+    }
+    await Promise.resolve();
+    return { level: strip.level, heard: out.reduce((m, x) => Math.max(m, Math.abs(x)), 0) };
+  };
+
+  const dry = await call(p0);
+  expect(dry.level).toBeCloseTo(1, 5);       // a new channel: the call as it comes
+  expect(dry.heard).toBeLessThan(1e-4);      // nothing sent: the audio thread adds nothing to the call
+
+  const sent = mix(p0, (d) => withSend(d, id, 2, 1));
+  const wet = await call(sent);
+  expect(wet.heard).toBeGreaterThan(0.001);  // the spring on aux 2 rings with the guitar
+  expect((await call(mix(sent, (d) => withReturn(d, 2, { mute: true })))).heard).toBeLessThan(1e-4);
+
+  // the fader takes the call down and its send with it; a mute, or a solo on a track, stops both
+  const down = await call(mix(sent, (d) => withChannel(d, id, { fader: 0.5 })));
+  expect(down.level).toBeLessThan(0.4);
+  expect(down.heard).toBeLessThan(wet.heard * 0.6);
+  const muted = await call(mix(sent, (d) => withChannel(d, id, { mute: true })));
+  expect(muted.level).toBe(0);
+  expect(muted.heard).toBeLessThan(1e-4);
+  expect((await call(mix(sent, (d) => withChannel(d, trackId(0), { solo: true })))).level).toBe(0);
+
+  // the other send is Space, on the sesh's Space amount
+  const space = await call({ ...mix(p0, (d) => withSend(d, id, 1, 1)), space: 0.5 });
+  expect(space.heard).toBeGreaterThan(0.001);
 });
 
 test("a track's send to aux 2 comes back through the cabled gear in the bounce", () => {

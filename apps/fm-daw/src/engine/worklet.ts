@@ -88,9 +88,17 @@ class FmProcessor extends AudioWorkletProcessor {
   private deskOut = new Float32Array(256);
   private rig: RigReturn | null = null;
   private send2 = new Float32Array(256);
+  /**
+   * What the players heard as they come send to the auxes. Their guitars play on calls outside this thread (the jam
+   * room, src/studio/guitar-line.ts), each at its channel's level; the sends come in on the third input, the Space
+   * bus then aux 2's. Null with nothing connected.
+   */
+  private tap: Float32Array[] | null = null;
   private readonly buses = (bus: readonly Float32Array[]) => {
-    const n = this.blockFrames, space = bus[0], aux2 = bus[1];
-    if (this.deskFed) for (let f = 0; f < n; f++) { this.send[f * 2] += space[f]; this.send[f * 2 + 1] += space[f]; }
+    const n = this.blockFrames, space = bus[0], aux2 = bus[1], tapSpace = this.tap?.[0], tapAux2 = this.tap?.[1];
+    if (tapSpace) for (let f = 0; f < n; f++) space[f] += tapSpace[f] * this.master;
+    if (tapAux2) for (let f = 0; f < n; f++) aux2[f] += tapAux2[f] * this.master;
+    if (this.deskFed || tapSpace) for (let f = 0; f < n; f++) { this.send[f * 2] += space[f]; this.send[f * 2 + 1] += space[f]; }
     if (this.rig) for (let f = 0; f < n; f++) aux2[f] += (this.send2[f * 2] + this.send2[f * 2 + 1]) * 0.5;
   };
   private blockFrames = 0;
@@ -266,7 +274,7 @@ class FmProcessor extends AudioWorkletProcessor {
   }
   /** The desk beyond the tracks into the mix: the players' channels, their sends into Space, and the aux 2 return over the tracks' sends and theirs. */
   private mixDesk(frames: number) {
-    if (!this.deskFed && !this.rig) return;
+    if (!this.deskFed && !this.rig && !this.tap) return;
     if (this.deskOut.length < frames * 2) this.deskOut = new Float32Array(frames * 2);
     this.blockFrames = frames;
     this.desk.process(this.deskIn, this.deskOut, frames, this.buses);
@@ -414,6 +422,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.blockBeat = abs0; this.blockBpf = bpf;
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
+      this.tap = inputs[2]?.length ? inputs[2] : null;
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       this.mixWeb(inputs[1], frames);

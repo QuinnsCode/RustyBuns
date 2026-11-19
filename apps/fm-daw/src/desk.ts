@@ -71,6 +71,15 @@ export const faderDb = (f: number) => (f <= 0 ? -Infinity : (Math.min(f, 1) - UN
 /** Which channels play: any solo means only the soloed ones, otherwise every one not muted. */
 export const audible = (d: Desk): boolean[] => { const any = d.channels.some((c) => c.solo); return d.channels.map((c) => (any ? c.solo : !c.mute)); };
 
+/**
+ * A channel for a sound the desk's audio thread doesn't carry (a guitar heard as it comes, on its own call): the
+ * level its chain plays at (input gain and fader; nothing when it is muted, or `on` is false: someone else's solo),
+ * and each aux send's share of that. Its Shape and pan stay with the desk: the call is placed where its player stands.
+ */
+export function callStrip(c: Channel, on = true): { level: number; sends: number[] } {
+  return { level: on && !c.mute ? 10 ** (c.gain / 20) * faderGain(c.fader) : 0, sends: c.sends.slice(0, AUXES) };
+}
+
 // ---- what the sesh keeps of its desk ----
 // A track's channel is the track itself (src/mixer.ts). The rest of the desk has no place in the groove, so the
 // project keeps it here: each player's channel as it was last set, and the aux 2 return's fader and mute. What is
