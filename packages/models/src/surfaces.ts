@@ -30,17 +30,19 @@ type Spec = {
 };
 
 /** Use, drawn in the shader with no extra textures: `chip` is the colour where the finish has rubbed through on an
- * edge (found from how fast the surface curves on screen, so every rounded edge of any mesh gets it), `metal` how
- * metallic that is (bare steel under paint), `stipple` a fine second layer of the normal map at a sixth of its tile
- * (the pebbled coat a moulded box or a powder-coated panel has), `scuff` the strength of the dull and polished patches
- * and the fine sideways scratches gear gets from sliding into trucks, `matte` the least roughness the coat ever has. */
+ * edge (found from how fast the surface curves on screen, so every rounded edge of any mesh gets it, in patches, as a
+ * box wears where it is carried and set down), `metal` how metallic that is (bare steel under paint), `stipple` the
+ * height of the pebbled coat a moulded box or a powder-coated panel has (a bump and a speckle from noise, 2 mm grains
+ * over 6 mm ones, the same on every face, faded out as the grains shrink under a pixel), `scuff` the strength of the
+ * dull and polished patches and the fine sideways scratches gear gets from sliding into trucks, `matte` the least
+ * roughness the coat ever has. */
 export type Wear = { chip: number; metal?: number; stipple?: number; scuff?: number; matte?: number };
 
 /** Each surface's folder under textures/ and how it is laid on. */
 export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
-  grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.7, metalness: 0.3, alpha: true, normalScale: 0.6, backing: 0.72, wear: { chip: 0x6c7076, scuff: 0.7, matte: 0.5 } },
+  grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.6, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -55,7 +57,7 @@ export const SURFACES = {
   /** Birch ply, its face grain. */
   ply: { tile: 0.6, tint: 0xffffff, roughness: 0.9, metalness: 0, color: true },
   /** Textured black plastic or polyurea: a moulded PA box, a cable's jacket. */
-  plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 1.2, wear: { chip: 0x6a6866, stipple: 1.1, scuff: 1, matte: 0.72 } },
+  plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 1.2, wear: { chip: 0x6a6866, stipple: 1.6, scuff: 1, matte: 0.6 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
@@ -123,6 +125,8 @@ float wNoise(vec3 x) {
              mix(mix(wHash(i + vec3(0, 0, 1)), wHash(i + vec3(1, 0, 1)), f.x), mix(wHash(i + vec3(0, 1, 1)), wHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
 float wFbm(vec3 p) { return 0.5 * wNoise(p) + 0.3 * wNoise(p * 2.03 + 7.1) + 0.2 * wNoise(p * 4.1 + 3.3); }
+// a pebbled coat's height, -0.5 to 0.5: 2 mm grains (fine) over 6 mm ones (coarse)
+float wGrainAt(vec3 p, float fine, float coarse) { return (wNoise(p * 520.0) - 0.5) * fine + (wNoise(p * 170.0 + 5.0) - 0.5) * 0.6 * coarse; }
 `;
 
 /** `src` with `at` swapped for `by`; throws if `at` is gone (a three.js update renamed a chunk), so a surface never
@@ -154,21 +158,33 @@ export function wornShader(shader: Shader, backing: number, wear?: Wear): Shader
   float wCurv = length(fwidth(normalize(vNormal))) / max(wPx, 1e-6);
   float wLow = mix(1.35, 0.85, smoothstep(0.02, 0.35, vWearPos.y));
   float wEdge = smoothstep(14.0, 60.0, wCurv) * wLow;
-  float wChip = clamp(wEdge * (0.18 + smoothstep(0.6, 0.72, wFbm(vWearPos * 140.0))), 0.0, 1.0);
+  float wWorn = smoothstep(0.38, 0.62, wFbm(vWearPos * 7.0 + 2.0));
+  float wChip = clamp(wEdge * (0.04 + wWorn * (0.14 + smoothstep(0.5, 0.66, wFbm(vWearPos * 140.0)))), 0.0, 1.0);
   float wNear = 1.0 - smoothstep(0.0015, 0.005, wPx);
   float wPatch = (wFbm(vWearPos * 6.0) - 0.5) * ${glsl(scuff)};
   float wSmear = smoothstep(0.62, 0.8, wFbm(vWearPos * vec3(9.0, 22.0, 9.0) + 4.0)) * ${glsl(scuff)};
   // scratches: fine sideways lines, cut into short runs, a few per patch
-  float wScratch = smoothstep(0.86, 0.93, wNoise(vWearPos * vec3(7.0, 320.0, 7.0) + wNoise(vWearPos * 40.0) * 2.0))
+  float wScratch = smoothstep(0.9, 0.95, wNoise(vWearPos * vec3(7.0, 320.0, 7.0) + wNoise(vWearPos * 40.0) * 2.0))
   * smoothstep(0.58, 0.72, wNoise(vWearPos * vec3(30.0, 60.0, 30.0) + 11.0)) * wNear * ${glsl(scuff)};
-  diffuseColor.rgb *= 1.0 + wPatch * 0.25;
-  diffuseColor.rgb = mix(diffuseColor.rgb, ${rgb(chip)}, clamp(wChip + wScratch * 0.2 + wSmear * 0.06, 0.0, 1.0));`);
+  // the coat's grain: fine grains and coarser ones under them, each gone once it is smaller than a pixel or two
+  float wFine = 1.0 - smoothstep(0.0007, 0.0016, wPx), wCoarse = 1.0 - smoothstep(0.002, 0.0045, wPx);
+  float wGrain = wGrainAt(vWearPos, wFine, wCoarse);
+  diffuseColor.rgb *= 1.0 + wPatch * 0.1 + wGrain * ${glsl(stipple * 0.3)};
+  diffuseColor.rgb = mix(diffuseColor.rgb, ${rgb(chip)}, clamp(wChip + wScratch * 0.07, 0.0, 1.0));`);
     f = put(f, "#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
-  roughnessFactor = clamp(max(roughnessFactor, ${glsl(matte)}) * (1.0 + wPatch * 0.35) - wChip * 0.25 - wScratch * 0.15, 0.08, 1.0);`);
+  roughnessFactor = clamp(max(roughnessFactor, ${glsl(matte)}) * (1.0 + wPatch * 0.2) - wChip * 0.25 - wScratch * 0.15 - wSmear * 0.06, 0.08, 1.0);`);
     if (metal !== undefined) f = put(f, "#include <metalnessmap_fragment>", `#include <metalnessmap_fragment>
   metalnessFactor = mix(metalnessFactor, ${glsl(metal)}, wChip);`);
-    if (stipple) f = put(f, "#include <normal_fragment_maps>", put(THREE.ShaderChunk.normal_fragment_maps, "mapN.xy *= normalScale;", `mapN.xy *= normalScale;
-  mapN.xy += (texture2D(normalMap, vNormalMapUv * 6.0 + 0.37).xy * 2.0 - 1.0) * ${glsl(stipple)} * normalScale;`));
+    // the grain as a bump: the height's step to the next pixel across and down tilts the normal (as three's own bump
+    // map does, but sampled at each pixel, so it has none of dFdx's 2 by 2 blocks)
+    if (stipple) f = put(f, "#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+  {
+    float wDx = wGrainAt(vWearPos + dFdx(vWearPos), wFine, wCoarse) - wGrain, wDy = wGrainAt(vWearPos + dFdy(vWearPos), wFine, wCoarse) - wGrain;
+    vec3 wSx = dFdx(vViewPosition), wSy = dFdy(vViewPosition);
+    vec3 wR1 = cross(wSy, normal), wR2 = cross(normal, wSx);
+    float wDet = dot(wSx, wR1);
+    normal = normalize(abs(wDet) * normal - sign(wDet) * ${glsl(stipple * 0.00035)} * (wDx * wR1 + wDy * wR2));
+  }`);
   }
   return { vertexShader: v, fragmentShader: f };
 }

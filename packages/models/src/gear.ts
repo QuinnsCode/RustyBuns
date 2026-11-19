@@ -337,9 +337,15 @@ function sunk(b: Build, piece: Piece, cuts: [THREE.Vector3Tuple, Well[]][]) {
   b.pieces.push(cab, ...hollows);
 }
 
-/** A pan-head screw on a face looking along `out`. */
-function screw(at: THREE.Vector3Tuple, out: "z" | "-z" | "x" | "-x" | "y", r = 0.0045): Piece[] {
-  return [disc("chrome", r, 0.002, out.endsWith("x") ? "x" : out === "y" ? "y" : "z", at, 8)];
+/** A pan-head screw on a face looking along `out` (`slot` "knob" for the black ones that hold a grille on). */
+function screw(at: THREE.Vector3Tuple, out: "z" | "-z" | "x" | "-x" | "y", r = 0.0045, slot: GearSlot = "chrome", seg = 8): Piece[] {
+  return [disc(slot, r, 0.002, out.endsWith("x") ? "x" : out === "y" ? "y" : "z", at, seg)];
+}
+
+/** The black screws that hold a grille on: down each long side of a sheet `w` by `h` whose face is the plane
+ * z = 0 of `m`, `rows` of them a side. */
+function grilleScrews(b: Build, w: number, h: number, m: THREE.Matrix4, rows = 3) {
+  for (const x of [-1, 1]) for (let i = 0; i < rows; i++) b.pieces.push(...onto(m, screw([x * (w / 2 - 0.011), (i / (rows - 1) - 0.5) * (h - 0.03), 0.001], "z", 0.004, "knob", 6)));
 }
 
 /** UVs in metres across each triangle's own plane, so a photo texture tiles at its real size on every face. */
@@ -427,6 +433,12 @@ function backPrint(b: Build, text: string, at: THREE.Vector3Tuple, size = 0.008)
   b.pieces.push(...onto(m, print(text, 0, 0, 0, size)));
 }
 
+/** Print on a side face (looking along x, `side` +1 or -1), reading left to right for someone facing it. */
+function sidePrint(b: Build, text: string, at: THREE.Vector3Tuple, side: number, size = 0.012) {
+  const m = new THREE.Matrix4().makeTranslation(...at).multiply(new THREE.Matrix4().makeRotationY(side > 0 ? -Math.PI / 2 : Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationY(Math.PI));
+  b.pieces.push(...onto(m, print(text, 0, 0, 0, size)));
+}
+
 /** The small plain plate a speaker's grille carries in a corner (no maker's mark), standing just proud of the sheet;
  * `m` places it, its face looking along +z. */
 function grillePlate(b: Build, m: THREE.Matrix4) {
@@ -464,10 +476,12 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   b.pieces.push(...cone(rw, deep, at(yc - gh * 0.16)));
   b.pieces.push(...horn(gw * 0.62, gh * 0.2, deep, at(yc + gh * 0.3)));
   grillePlate(b, new THREE.Matrix4().makeTranslation(gw / 2 - 0.045, yc - gh / 2 + 0.03, d / 2 - 0.003));
+  grilleScrews(b, gw, gh, new THREE.Matrix4().makeTranslation(0, yc, d / 2 - 0.003));
   for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.065), (y0 + 0.002) / 2, z], 0.006));
   // the pole cup: a steel ring round a dark socket
   b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
-  for (const z of [-d * 0.3, d * 0.22]) for (const x of [-1, 1]) b.pieces.push(disc("knob", 0.007, 0.003, "y", [x * w * 0.24, body + 0.001, z], 8));
+  // the fly points: a threaded insert in a steel washer
+  for (const z of [-d * 0.3, d * 0.22]) for (const x of [-1, 1]) b.pieces.push(disc("metal", 0.012, 0.002, "y", [x * w * 0.24, body + 0.0005, z], 8), disc("knob", 0.006, 0.003, "y", [x * w * 0.24, body + 0.0005, z], 6));
   // the plate lies on the recess's floor; `bz` is its face
   const bz = -d / 2 + rec - 0.008;
   plate(b, pw, ph, [0, py, bz + 0.004]);
@@ -503,10 +517,21 @@ function sub(): Build {
   b.pieces.push(...grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
   b.pieces.push(...cone(0.2, 0.06, new THREE.Matrix4().makeTranslation(0, cy, front - 0.004)));
   grillePlate(b, new THREE.Matrix4().makeTranslation(w / 2 - 0.07, h - 0.06, d / 2 + 0.001));
+  grilleScrews(b, w - 0.016, fh - 0.01, new THREE.Matrix4().makeTranslation(0, yc, d / 2 + 0.001), 4);
+  // Rigging: a steel plate on each side, towards the front, with three pin holes, bolted through the box, its safe
+  // load printed under it; and four bolts round the pole socket's flange.
+  for (const x of [-1, 1]) {
+    const px = x * (w / 2 - 0.004), pz = d * 0.3, py = h * 0.6, ph = 0.26;
+    b.pieces.push(box("panel", [0.005, ph, 0.06], [px, py, pz], { bevel: 0.0015 }));
+    for (const k of [-1, 0, 1]) b.pieces.push(disc("knob", 0.009, 0.006, "x", [px, py + k * 0.055, pz], 10));
+    for (const y of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(...screw([px + x * 0.003, py + y * (ph / 2 - 0.014), pz + z * 0.018], x > 0 ? "x" : "-x", 0.005));
+    sidePrint(b, "SWL 250 KG", [px + x * 0.0015, py - ph / 2 - 0.02, pz], x);
+  }
+  for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) b.pieces.push(...screw([x * 0.03, h + 0.001, z * 0.03], "y", 0.0035));
   // a cap on each corner: the bottom four are its feet
   const c = 0.056;
   for (const x of [-1, 1]) for (const y of [c / 2, h - c / 2]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z * (d / 2 - c / 2 + 0.001)], 0.014));
-  b.pieces.push(disc("metal", 0.026, 0.005, "y", [0, h - 0.002, 0], 16), disc("knob", 0.019, 0.002, "y", [0, h + 0.0005, 0], 16));
+  b.pieces.push(box("panel", [0.085, 0.003, 0.085], [0, h - 0.0005, 0], { bevel: 0.001 }), disc("metal", 0.026, 0.005, "y", [0, h - 0.0005, 0], 16), disc("knob", 0.019, 0.002, "y", [0, h + 0.002, 0], 16));
   plate(b, w * 0.4, h * 0.16, [0, h * 0.25, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.08, h * 0.25, -d / 2 - 0.008], [w * 0.16, 0, 0]);
   backPrint(b, "8 OHM 1000W", [0, h * 0.25 - h * 0.08 + 0.012, -d / 2 - 0.0085]);
@@ -535,6 +560,7 @@ function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
   const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, -0.003));
   b.pieces.push(...cone(0.14, 0.035, on(-0.11, 0)), ...horn(0.16, 0.12, 0.035, on(0.17, 0.02)));
   grillePlate(b, slope.clone().multiply(new THREE.Matrix4().makeTranslation((w - 0.05) / 2 - 0.045, -(len - 0.03) / 2 + 0.025, 0.011)));
+  grilleScrews(b, w - 0.05, len - 0.03, slope.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 0.011)));
   const c = 0.05;
   for (const x of [-1, 1]) {
     for (const [y, z] of [[c / 2, -d / 2 + c / 2], [h - c / 2, -d / 2 + c / 2], [c / 2, d / 2 - c / 2]]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z + Math.sign(z) * 0.001], 0.012));
