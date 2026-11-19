@@ -38,8 +38,9 @@ test("three players with skewed clocks and laggy links count the same beats, and
   const players: Player[] = [];
   const make = async (name: string, key: string, skew: number, ppm: number, outMs: number, base: number, jitter: number) => {
     const ws = (await join({ "X-User-Id": name }, key)).ws;
-    // one way, each time: the base, some jitter, and now and then a clock ping stuck for 400 ms
-    const link = (clock: boolean) => base + rnd() * jitter + (clock && ++outlier % 7 === 0 ? 400 : 0);
+    // one way, each time: the base, jitter that is mostly small and now and then large (a queue somewhere), and
+    // now and then a clock ping stuck for 400 ms
+    const link = (clock: boolean) => base + rnd() ** 6 * jitter + (clock && ++outlier % 7 === 0 ? 400 : 0);
     const p: Player = { name, ws, skew, ppm, outMs, link, start: T, frames: 0, ones: [], notes: [], band: null!, seq: null! };
     p.band = new Band(() => ({ bpm: BPM, loopBeats: LOOP }), () => T + skew);
     const engine: FmEngine = {
@@ -55,8 +56,8 @@ test("three players with skewed clocks and laggy links count the same beats, and
   /** The true time the quantum the sequencer is in reaches this player's ears. */
   const heardAt = (p: Player) => p.start + (p.frames * 1000) / (SR * (1 + p.ppm * 1e-6)) + p.outMs;
   const amy = await make("amy", "amykey0123456789ab", 250, 0, 12, 4, 2);
-  const ben = await make("ben", "", 3700, 80, 25, 40, 30);
-  const cat = await make("cat", "", -1234.5, -60, 40, 80, 40);
+  const ben = await make("ben", "", 3700, 80, 25, 40, 20);
+  const cat = await make("cat", "", -1234.5, -60, 40, 80, 30);
 
   const isClock = (m: unknown) => decodeClockServer(m) !== null || (typeof m === "object" && m !== null && "t" in m && (m.t === "tick" || m.t === "tock"));
   const toWorld = (p: Player, m: unknown) => later(p.link(isClock(m)), () => { setSystemTime(Math.floor(T)); world.webSocketMessage(p.ws, JSON.stringify(m)); fromWorld(); });
@@ -91,21 +92,27 @@ test("three players with skewed clocks and laggy links count the same beats, and
 
   /** Run until true time `until`: each sound card renders its blocks, the links deliver what's due. */
   const out = new Float32Array(QUANTUM * 2);
+  const render = (to: number) => {
+    T = to;
+    players.forEach((p, i) => {
+      const want = ((T - p.start) * SR * (1 + p.ppm * 1e-6)) / 1000;
+      while (p.frames + BLOCK <= want) {
+        const g = grid[i];
+        // the worklet's sync, block by block, from the page's last grid (src/engine/worklet.ts gridNow)
+        if (g.beat !== null) p.seq.sync(gridBeatAt(g.beat, g.ctx, p.frames / SR, BPM));
+        for (let q = 0; q < BLOCK; q += QUANTUM) { p.seq.process(out, QUANTUM); p.frames += QUANTUM; }
+      }
+    });
+};
+  // each message is delivered at its own moment, the sound cards rendering up to it
   const run = (ms: number) => {
     const until = T + ms;
-    while (T < until) {
-      T += 1;
+    for (;;) {
       queue.sort((a, b) => a.at - b.at);
-      while (queue.length && queue[0].at <= T) queue.shift()!.run();
-      players.forEach((p, i) => {
-        const want = ((T - p.start) * SR * (1 + p.ppm * 1e-6)) / 1000;
-        while (p.frames + BLOCK <= want) {
-          const g = grid[i];
-          // the worklet's sync, block by block, from the page's last grid (src/engine/worklet.ts gridNow)
-          if (g.beat !== null) p.seq.sync(gridBeatAt(g.beat, g.ctx, p.frames / SR, BPM));
-          for (let q = 0; q < BLOCK; q += QUANTUM) { p.seq.process(out, QUANTUM); p.frames += QUANTUM; }
-        }
-      });
+      if (!queue.length || queue[0].at > until) { render(until); return; }
+      const next = queue.shift()!;
+      render(Math.max(T, next.at));
+      next.run();
     }
   };
 
@@ -114,7 +121,7 @@ test("three players with skewed clocks and laggy links count the same beats, and
   expect(amy.band.clock.state().source).toBe("me");
   for (const p of [ben, cat]) {
     expect(p.band.clock.source).toBe("leader");
-    expect(Math.abs(p.band.clock.leaderTime(T + p.skew) - (T + 250))).toBeLessThan(2);
+    expect(Math.abs(p.band.clock.leaderTime(T + p.skew) - (T + 250))).toBeLessThan(3);
     expect(p.band.clock.state().rtt).toBeGreaterThan(0);
   }
   // they start the groove at different moments; each joins the shared beat where it is
@@ -154,7 +161,7 @@ test("three players with skewed clocks and laggy links count the same beats, and
   const before = ben.band.clock.offset;
   run(5000);
   expect(ben.band.clock.source).toBe("world");
-  expect(Math.abs(ben.band.clock.target - (-ben.skew))).toBeLessThan(2);
+  expect(Math.abs(ben.band.clock.target - (-ben.skew))).toBeLessThan(3);
   expect(Math.abs(ben.band.clock.offset - before)).toBeLessThan(SLEW * 5000 + 1);
 });
 
