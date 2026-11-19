@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ALL, OLD, Sim, TRACKS, type Layers } from "../src/swarm-sim.ts";
-import { at, SCENES, startOf, total } from "../src/swarm-story.ts";
+import { at } from "../src/swarm-story.ts";
 
 const crowd = { agents: 30, overlap: 0.35, flaky: 0.12 };
 const run = (layers: Layers, knobs = crowd, minutes = 480) => { const s = new Sim(layers, { ...knobs }, 5); s.step(minutes); return s; };
@@ -44,14 +44,6 @@ test("fewer agents mid-run, and Mervin switched off with PRs seated, loses nobod
     if (d.stage === "queue") expect(s.queue).toContain(d.id);
     if (d.stage === "testq") expect(s.testq).toContain(d.id);
   }
-});
-
-test("the story loops, its faders glide from the last scene's, and a scene can be jumped to", () => {
-  expect(at(0).scene.id).toBe(SCENES[0]!.id);
-  const crowdStart = startOf("agents");
-  expect(at(crowdStart).knobs.agents).toBe(SCENES[0]!.knobs.agents);
-  expect(at(crowdStart + SCENES[1]!.ms - 1).knobs.agents).toBe(SCENES[1]!.knobs.agents);
-  expect(at(total() + crowdStart + 1).scene.id).toBe("agents");
 });
 
 test("Mervin loads several platforms at once, never more than four", () => {

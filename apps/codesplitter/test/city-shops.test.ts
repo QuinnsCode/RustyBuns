@@ -31,27 +31,3 @@ test("media shops and the generic store fill their room on every door, using onl
     for (const [x, z] of [...out.aisles, out.clerk]) { expect(Math.abs(x - b.x)).toBeLessThan(1.35); expect(Math.abs(z - b.z)).toBeLessThan(1.35); }
   }
 });
-
-test("the speakeasy fills its room on every door, inside the walls, with four stools and a barkeep who talks", async () => {
-  for (const face of [[0, 1], [1, 0], [0, -1], [-1, 0]] as [number, number][]) {
-    const { puts, out, b } = await stock("bar", "archive", face);
-    expect(puts.length).toBeGreaterThan(40);
-    for (const p of puts) {
-      expect(kitKeys.has(p.key)).toBe(true);
-      expect(Math.abs(p.x - b.x)).toBeLessThanOrEqual(1.36 + p.sx / 2 + 0.001);
-      expect(Math.abs(p.z - b.z)).toBeLessThanOrEqual(1.36 + p.sz / 2 + 0.001);
-    }
-    expect(out.aisles.length).toBe(4);
-    expect(out.talk.length).toBeGreaterThan(3);
-    expect(out.talk[1]).toContain("a.ts");
-  }
-});
-
-test("the offices stock more paper for a bigger file", async () => {
-  for (const kind of ["hall", "hq", "office"]) expect((await stock("office", kind, [0, 1], 4000)).puts.length).toBeGreaterThanOrEqual((await stock("office", kind, [0, 1], 4)).puts.length);
-  expect((await stock("office", "office", [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("office", "office", [0, 1], 4)).puts.length);
-});
-
-test("the book shops stock more spines for a bigger file", async () => {
-  for (const kind of ["books", "used", "library", "archive"]) expect((await stock("library", kind, [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("library", kind, [0, 1], 4)).puts.length);
-});

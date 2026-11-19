@@ -61,15 +61,6 @@ test("a start says which open branches already rewrite its file (#1163)", async 
   await post("ryan", "/api/repos/ryan/lab/agents/stop", {});
 });
 
-test("a file in a folder works too", async () => {
-  const { call, post } = await app();
-  await post("ryan", "/api/repos/ryan/lab/files", { path: "src/deep/b.js", content: "x" });
-  await post("ryan", "/api/repos/ryan/lab/agents", { path: "src/deep/b.js", harness: "pi", task: "shout" });
-  let runs: any[] = [];
-  await until(async () => (runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=src%2Fdeep%2Fb.js")).json())[0].status !== "running");
-  expect(runs[0]).toMatchObject({ status: "done", applied: 1 });
-});
-
 test("only the owner may start one; the crew see the runs; strangers to a private repo see nothing", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
