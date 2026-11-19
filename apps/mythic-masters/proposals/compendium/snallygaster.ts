@@ -11,23 +11,23 @@ import { type Blob, type N, type Part, type V, bone, chain, f4, norm, pair, writ
 // swinging out sideways into a curl over the back. The lowest point of the tail stays well off the ground (the rigger
 // would count it as a foot), and the belly, the rig's root, stays low enough to read as a four-legged body.
 const nodes: Record<string, N> = {
-  tail6: [-1.02, 1.42, 0.06, 0.01],
-  tail5: [-1.2, 1.46, 0.18, 0.012],
-  tail4: [-1.38, 1.22, 0.16, 0.018],
-  tail3: [-1.32, 0.9, 0.02, 0.026],
-  tail2: [-1.02, 0.68, -0.12, 0.04],
-  tail1: [-0.66, 0.74, -0.08, 0.06],
-  hip: [-0.32, 0.84, 0, 0.12],
-  belly: [-0.02, 0.74, 0, 0.13],
+  tail6: [-1.22, 1.42, 0.06, 0.01],
+  tail5: [-1.4, 1.46, 0.18, 0.012],
+  tail4: [-1.58, 1.22, 0.16, 0.018],
+  tail3: [-1.52, 0.9, 0.02, 0.026],
+  tail2: [-1.22, 0.68, -0.12, 0.04],
+  tail1: [-0.86, 0.74, -0.08, 0.06],
+  hip: [-0.52, 0.84, 0, 0.12],
+  belly: [-0.12, 0.72, 0, 0.13],
   chest: [0.26, 0.58, 0, 0.13],
-  neck1: [0.52, 0.62, 0, 0.07],
-  neck2: [0.7, 0.86, 0, 0.06],
-  neck3: [0.58, 1.12, 0, 0.055],
-  head: [0.68, 1.3, 0, 0.07],
-  l_hipj: [-0.28, 0.62, 0.14, 0.08],
-  l_knee: [-0.12, 0.34, 0.17, 0.06],
-  l_hock: [-0.22, 0.15, 0.16, 0.035],
-  l_foot: [-0.15, 0.05, 0.16, 0.03],
+  neck1: [0.58, 0.63, 0, 0.07],
+  neck2: [0.86, 0.94, 0, 0.06],
+  neck3: [0.72, 1.3, 0, 0.055],
+  head: [0.84, 1.52, 0, 0.07],
+  l_hipj: [-0.48, 0.62, 0.14, 0.08],
+  l_knee: [-0.32, 0.34, 0.17, 0.06],
+  l_hock: [-0.42, 0.15, 0.16, 0.035],
+  l_foot: [-0.35, 0.05, 0.16, 0.03],
   l_wroot: [0.16, 0.84, 0.12, 0.06],
   l_welbow: [-0.02, 1.3, 0.55, 0.045],
   l_wwrist: [0.08, 1.6, 0.95, 0.035],
@@ -155,7 +155,7 @@ parts.push({
   }
 }
 // orange clenched talons: three toes curled under, a hind claw
-parts.push({ kind: "foot", at: "l_foot", form: "talon", len: 0.2, width: 0.12, toes: 3, spread: 30, claw: 0.055, sole: 0.03, mirror: true, material: "leg", claw_mat: "claw" });
+parts.push({ kind: "foot", at: "l_foot", form: "talon", len: 0.26, width: 0.15, toes: 3, spread: 30, claw: 0.08, sole: 0.03, mirror: true, material: "leg", claw_mat: "claw" });
 
 const sheet = {
   feet: 2, wings: 2, budget: 9000, root: "belly", material: "hide", blend: 0.022,
@@ -167,7 +167,7 @@ const sheet = {
     wing: [0.12, 0.33, 0.21, 0.6, 0],
     primary: [0.62, 0.44, 0.2, 0.6, 0],
     covert: [0.16, 0.4, 0.25, 0.6, 0],
-    beak: [0.82, 0.8, 0.72, 0.3, 0.35],
+    beak: [0.3, 0.31, 0.34, 0.3, 0.6],
     fang: [0.96, 0.94, 0.86, 0.3, 0],
     tentacle: [0.72, 0.1, 0.16, 0.4, 0],
     frill: [0.82, 0.13, 0.15, 0.5, 0],
