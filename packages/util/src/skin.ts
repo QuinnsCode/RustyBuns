@@ -28,7 +28,8 @@ const BASE = `
 .rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
 @media (max-width:600px){.rb-report>.eq-btn{padding:0}.rb-report>.eq-btn>span{display:none}
 .rb-report .eq-form{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:min(60dvh,420px);overflow-y:auto;border-width:var(--ui-border) 0 0;border-radius:var(--ui-radius) var(--ui-radius) 0 0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
-.rb-report .eq-form textarea{min-height:72px}.rb-report:has(.eq-form:not([hidden]))>.eq-btn{display:none}}
+.rb-report .eq-form textarea{min-height:72px}.rb-report:has(.eq-form:not([hidden]))>.eq-btn{display:none}
+.rb-report:has(.eq-form:not([hidden]))::before{content:"";position:fixed;inset:0;background:var(--ui-scrim);pointer-events:none}}
 .eq-form{display:grid;gap:8px;width:min(320px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
@@ -124,7 +125,20 @@ export const DARK: Theme = {
   "--ui-shadow": "0 10px 28px -12px #000000d9",
 };
 
-export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.css ?? ""}\n${BADGE}`;
+/**
+ * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: fat tiles
+ * standing on a thick bottom edge of the one strong outline, paper buttons that press down into theirs, an accent
+ * line under each heading, and the chip's name behind an accent dot. Every colour is a token, so it follows light and dark.
+ */
+export const HOUSE = `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in{box-shadow:0 4px 0 var(--ui-line),var(--ui-shadow)}
+.eq-btn{box-shadow:0 3px 0 var(--ui-line);margin-bottom:3px}.eq-btn:active{transform:translateY(3px);box-shadow:0 0 0 var(--ui-line)}.eq-btn:disabled{transform:none}
+.eq-chip .eq-btn,.rb-spaces-log .eq-btn{box-shadow:0 2px 0 var(--ui-line);margin-bottom:2px}
+.eq-title,.rb-spaces h2{text-decoration:underline 3px var(--ui-accent);text-underline-offset:4px}
+.eq-chip.in .eq-who::before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--ui-accent)}
+.eq input,.eq select,.eq textarea{box-shadow:inset 0 2px 0 var(--ui-accent-soft)}
+.rb-lobby-code{background:var(--ui-accent-soft)}`;
+
+export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.theme || skin.css ? skin.css ?? "" : HOUSE}\n${BADGE}`;
 
 let worn: Skin = {};
 /**

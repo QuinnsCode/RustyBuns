@@ -533,7 +533,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
     // Named columns, not *: a column added for the server's own use (auth_id, the sign-in it links to) stays the server's.
-    return json({ ...(await env.DB.prepare(`SELECT ${ME_COLUMNS} FROM users WHERE name = ?`).bind(user).first()), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
+    // hidden and top8 are kept as JSON text: answered as the lists they are, as get_user does (openapi.ts User).
+    const me = await env.DB.prepare(`SELECT ${ME_COLUMNS} FROM users WHERE name = ?`).bind(user).first<{ hidden: string | null; top8: string | null }>();
+    return json({ ...me, hidden: parseJson<string[]>(me?.hidden || "[]", []), top8: parseJson<string[]>(me?.top8 || "[]", []), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)

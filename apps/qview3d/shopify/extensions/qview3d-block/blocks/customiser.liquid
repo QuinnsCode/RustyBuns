@@ -1,0 +1,42 @@
+{% comment %}
+  Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0.
+
+  The QView3D app block. On a product the shop picked (orgs page, Shopify), it shows <qview-3d> and joins it to the
+  product's Add to cart form as the line item property "Design": the widget saves the design when the shopper adds
+  to cart and the id rides on the order line. On any other product it shows nothing.
+{% endcomment %}
+<div class="qview3d-block" data-host="{{ block.settings.host | escape }}" data-shop="{{ shop.permanent_domain | escape }}"
+  data-handle="{{ product.handle | escape }}" style="--qv-height: {{ block.settings.height }}px" {{ block.shopify_attributes }}></div>
+<script type="module">
+  for (const box of document.querySelectorAll(".qview3d-block:not([data-on])")) {
+    box.dataset.on = "1";
+    const { host, shop, handle } = box.dataset;
+    const res = await fetch(`${host}/api/shopify/block?shop=${encodeURIComponent(shop)}&handle=${encodeURIComponent(handle)}`).catch(() => null);
+    if (!res || !res.ok) continue;
+    const { org, product } = await res.json();
+    await import(`${host}/v1/qview3d.js`);
+    const el = document.createElement("qview-3d");
+    el.setAttribute("org", org);
+    el.setAttribute("product", product);
+    el.setAttribute("name", "properties[Design]");
+    // The block sits outside the theme's product form, so the element names the form it belongs to.
+    const form = [...document.querySelectorAll('form[action*="/cart/add"]')].find((f) => f.querySelector('[type="submit"], [name="add"]'));
+    if (form) {
+      form.id ||= `qview3d-form-${Math.random().toString(36).slice(2)}`;
+      el.setAttribute("form", form.id);
+    }
+    el.style.height = "var(--qv-height)";
+    box.append(el);
+  }
+</script>
+{% schema %}
+{
+  "name": "QView3D customiser",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "range", "id": "height", "label": "Height", "min": 320, "max": 800, "step": 20, "unit": "px", "default": 520 },
+    { "type": "text", "id": "host", "label": "QView3D address", "info": "Leave as it is.", "default": "https://qview3d.notryanquinn.workers.dev" }
+  ]
+}
+{% endschema %}

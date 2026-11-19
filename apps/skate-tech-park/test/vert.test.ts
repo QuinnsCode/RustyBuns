@@ -39,9 +39,34 @@ test("in a halfpipe, holding push pumps a couple of vert airs that land back on 
       wasAir = s.air;
       expect(s.bail).toBeLessThanOrEqual(0);
     }
-    if (ride === "push") { // legs alone give back little: a couple of vert airs, then it runs out of speed and rolls out over the coping
+    if (ride === "push") { // legs give back a share each wall: vert airs it lands back on the face
       expect(airs).toBeGreaterThanOrEqual(2);
       expect(peak).toBeGreaterThan(1.5);
     } else expect(far).toBeLessThan(coping + 0.5); // an ollie up the wall never takes it out onto the deck
   }
+});
+
+test("legs pump with one stroke per curve: a mini ramp of real proportions goes from half height to the coping in about three walls, and a held push in a vert ramp settles at a steady air", () => {
+  const board = 4.4; // metres, the board's length: the ramps are sized by it, as a real ramp is by a real board
+  const peaks = (radius: number, from: number, walls: number, legs: (s: ReturnType<typeof start>, h: number) => boolean) => {
+    const R = radius * board, level = flat(halfpipe({ x: 0, z: 0 }, { w: R + 7, d: 40, h: R / 2 }).pieces); // round: the wall as tall as its transition
+    const s = Object.assign(start(0, 0, Math.PI / 2, level), { speed: Math.sqrt(2 * 20 * from * R) }), out: number[] = [];
+    let side = 0, peak = 0;
+    for (let i = 0; i < 90 / DT && out.length < walls; i++) {
+      step(s, { ...IDLE, throttle: legs(s, R) ? 1 : 0 }, level);
+      expect(s.bail).toBeLessThanOrEqual(0);
+      const w = Math.abs(s.x) > 5 ? Math.sign(s.x) : 0;
+      if (w && w !== side) { if (side) out.push(peak / R); side = w; peak = 0; }
+      if (w) peak = Math.max(peak, s.y);
+    }
+    return out;
+  };
+  const mini = peaks(3, 0.5, 4, (s, h) => Math.abs(s.x) > 4 && s.y < 0.85 * h); // a 2.4 m transition under a 0.8 m board, pumped on the walls only
+  expect(mini[0]!).toBeGreaterThan(0.55);
+  expect(mini[0]!).toBeLessThan(0.75); // one stroke is a share of its energy, not a rocket
+  expect(mini[3]!).toBeGreaterThanOrEqual(1);
+  const vert = peaks(4.25, 1.5, 10, () => true); // a 3.4 m vert ramp, dropped in from well over the coping
+  expect(vert[9]!).toBeGreaterThan(1.1); // the pump holds an air where the legs can still press against the curve
+  expect(vert[9]!).toBeLessThan(1.5);
+  expect(Math.abs(vert[9]! - vert[8]!)).toBeLessThan(0.01);
 });

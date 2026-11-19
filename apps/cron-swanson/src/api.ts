@@ -10,8 +10,8 @@ const Elsewhere = obj({ kind: oneOf(["elsewhere"]), by: str(60, { re: /\S/ }) })
  * What a job does when it fires: shows up as a reminder in the feed, calls a URL (and still shows up), or nothing
  * here because something else runs it (a Cloudflare cron trigger): it sits in its lane with its next run, no runs.
  */
-export type Action = Of<typeof Remind> | Of<typeof Webhook> | Of<typeof Elsewhere>;
-export const Action: Guard<Action> = (v) => {
+type Action = Of<typeof Remind> | Of<typeof Webhook> | Of<typeof Elsewhere>;
+const Action: Guard<Action> = (v) => {
   const { kind } = obj({ kind: oneOf(["remind", "webhook", "elsewhere"]) })(v);
   return kind === "webhook" ? Webhook(v) : kind === "elsewhere" ? Elsewhere(v) : Remind(v);
 };
@@ -52,7 +52,7 @@ const KEY = str(80, { re: /^\S(?:.*\S)?$/ });
 export const Job = obj({ ...INPUT, id: str(40), key: str(80, { min: 0, dflt: "" }), createdAt: TIME, updatedAt: TIME, anchor: TIME, nextAt: nul(TIME) });
 export type Job = Of<typeof Job>;
 
-export const STATUSES = ["ok", "failed", "reminded"] as const;
+const STATUSES = ["ok", "failed", "reminded"] as const;
 
 /** One firing: when it was due, when it went, and what came back. Drift is firedAt - scheduledAt. */
 export const Run = obj({

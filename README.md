@@ -343,7 +343,7 @@ A signed-in player presses Report in a game. The report arrives here as an issue
 
 `POST /api/report` on [eqosys](apps/eqosys/README.md) takes the game's token, and thus it knows which game and which account sent the report. It files a GitHub issue with the labels `external`, `game:<id>` and `bug` or `enhancement`. The reporter is an opaque id, never an email. `@mentions` in the text are made safe. The limits are 5 reports an hour and 20 a day for each account, and 5 a minute for each IP.
 
-A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`). The button has the game's eqosys skin. `eqosys({ ..., skin: { theme, css } })` takes `--ui-*` tokens (packages/ui) and extra rules one time. The account chip (`accountChip(slot)`), the achievement toast, the report form, the party lobby and the spaces panel all use this skin.
+A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`). The button has the game's eqosys skin. `eqosys({ ..., skin: { theme, css } })` takes `--ui-*` tokens (packages/ui) and extra rules one time. The account chip (`accountChip(slot)`), the achievement toast, the report form, the party lobby and the spaces panel all use this skin. A page that gives no skin gets the house look, which goes in the same way. A toast moves to stay off the account chip and off any element the page marks `data-eq-clear` (a corner button on a phone).
 
 The surfaces move a little, and only with transform and opacity, so nothing waits on the motion. The chip starts with the eqosys badge. When you are signed in, press the badge and the name and Sign out fold into it, then fold back out. When you are signed out, the badge is only a mark and Sign in always shows. Sign in turns into Sign out. A party member's dot pops when they get ready, and Copy link shows a check. With reduced motion turned on, nothing moves.
 
@@ -848,6 +848,19 @@ A new test that still passes on the old code proves nothing. `bun scripts/test-b
 <details><summary>More</summary>
 
 It checks `origin/main` out into a scratch worktree, copies your changed test files over it and runs them there. A test that passes on the old code is printed, and the exit code is 1. `--lines` also lists the changed lines that no test ran. That is a report, not a gate, with no percentage to hit.
+
+</details>
+
+### Tests that cover more than their examples
+
+Four kinds of test that each catch a whole class of mistake: rules tried on random input, the API held to its spec, agent runs replayed from a recording, and stricter compiler flags.
+
+<details><summary>More</summary>
+
+- **Property tests** (`apps/codesplitter/test/properties.test.ts`, with `fast-check`): a rule such as "text split into lines and joined again is the text" runs on a few hundred random inputs. A failure prints the smallest input that breaks the rule.
+- **Contract tests** (`test/contract.test.ts`): a journey calls operations by id, and each body sent and each reply is checked against `src/openapi.ts`. Each operation with a required field must also refuse an empty body.
+- **Cassettes** (`test/cassette.ts`): one real agent run is written down (the files it was given, the files it left, its answer). `cassette("name")` replays it, so an agent test needs no CLI, no login and no tokens. `CASSETTE=record` records it again.
+- **Stricter types**: an app opts in to `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` in its own `tsconfig.json`, and `bun run knip` fails on an export that nothing imports in the apps `knip.json` lists. cron-swanson is the first.
 
 </details>
 

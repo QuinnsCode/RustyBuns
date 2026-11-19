@@ -1,6 +1,7 @@
 // The gear turntable (#5021, #5042): every gear id close up on a stage deck in a real room's light (a CC0 HDRI from
-// Poly Haven, fetched once into ~/.cache/rustybuns/hdri/, never committed), from three angles (front three-quarter,
-// side, and the back with its jacks), at a fixed picture size. The shots land
+// Poly Haven, fetched once into ~/.cache/rustybuns/hdri/, never committed), from four angles (front three-quarter,
+// side, the back with its jacks, and `close`: a macro shot of the top front corner, half a millimetre a pixel, for
+// the coat's grain, the grille's holes and the hardware), at a fixed picture size. The shots land
 // beside the reference photos in docs/gear-refs/, so a judge sees model and photo side by side.
 //
 //   bun packages/models/scripts/turntable.ts --label round-2                every id, the material kit, into docs/gear-refs/shots/round-2/

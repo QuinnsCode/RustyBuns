@@ -33,6 +33,9 @@ export const STUDIO = /^[A-Za-z0-9-]{1,64}$/;
 /** A site that may embed an org: its origin (https://shop.example), or "*" for any page. */
 const ORIGIN = /^(\*|https?:\/\/[^/\s]+)$/;
 
+/** A Shopify store's own domain, the one that never changes: fern-hats.myshopify.com. */
+export const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]{0,59}\.myshopify\.com$/;
+
 /**
  * An org's settings (D1 `orgs`, settings.ts): which pages may embed the widget and sign uploads ("*" allows any: the
  * demo org), the SHA-256 of each admin key (scripts use them for samples and product photos), how many samples the org
@@ -47,6 +50,8 @@ export const Org = obj({
   readOnly: opt(bool()),
   /** A sandbox (sandboxes.ts) ends then, in ms since 1970: after it the org reads as unknown. Unset: it never does. */
   expires: opt(num(0, 1e15)),
+  /** The Shopify store connected to it (shopify.ts): installed from Shopify, its token kept apart and never served. */
+  shopify: opt(str(80, { re: SHOP_DOMAIN })),
 });
 export type Org = Of<typeof Org>;
 
@@ -140,6 +145,7 @@ export const Shop = obj({
   samples: int(0, 10_000),
   keys: int(0, 20),
   expires: opt(num(0, 1e15)),
+  shopify: opt(str(80)),
   products: arr(obj({ id: str(63, { re: ID }), product: Product }), 200),
 });
 export type Shop = Of<typeof Shop>;
@@ -362,6 +368,25 @@ export type OrderLine = Of<typeof OrderLine>;
 /** POST /api/orgs/<org>/orders answers the order as recorded; `fresh` is false when the store sent it before (nothing fires twice). */
 export const OrderReply = obj({ id: str(64), lines: arr(OrderLine, 100), created: num(0, 1e15), fresh: bool() });
 export type OrderReply = Of<typeof OrderReply>;
+
+/** POST /api/orgs/<org>/shopify (an admin): connect the store that just installed the app. `claim` came back from Shopify's sign-in, in the page's link. */
+export const ShopifyLink = obj({ claim: str(600) });
+export type ShopifyLink = Of<typeof ShopifyLink>;
+
+/** PUT /api/orgs/<org>/shopify/products (an admin): which Shopify products (by handle) show the customiser, and as which QView3D product. */
+export const ShopifyPicks = obj({ picks: arr(obj({ handle: str(255, { min: 1 }), product: str(63, { re: ID }) }), 250) });
+export type ShopifyPicks = Of<typeof ShopifyPicks>;
+
+/** GET /api/orgs/<org>/shopify (an admin), and what the two routes above answer: the store, and its products with the QView3D product each shows. */
+export const ShopifyState = obj({
+  shop: str(80),
+  products: arr(obj({ handle: str(255), title: str(255), product: opt(str(63)) }), 250),
+});
+export type ShopifyState = Of<typeof ShopifyState>;
+
+/** GET /api/shopify/block?shop=&handle= (the theme's app block, any page): the org and product to show on that Shopify product's page. */
+export const ShopifyBlock = obj({ org: str(63, { re: ID }), product: str(63, { re: ID }) });
+export type ShopifyBlock = Of<typeof ShopifyBlock>;
 
 /**
  * The body every webhook gets, signed in `QView3D-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.

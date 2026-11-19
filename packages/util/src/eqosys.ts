@@ -362,6 +362,25 @@ export function guestId(key: string, o: { tab?: boolean } = {}): string {
 }
 
 /** The achievement toast, at the top of the page in its eqosys skin: `achieve` shows it for each first unlock. Gone after `ms`. */
+/**
+ * Move the toasts so the new one covers neither the account chip nor anything the page marks `data-eq-clear` (a corner
+ * button on a phone, where a toast is as wide as the screen): up above the first thing in its way if there is room,
+ * else down past each one.
+ */
+function stepClear(host: HTMLElement, t: HTMLElement): void {
+  host.style.translate = "";
+  const at = host.getBoundingClientRect(), left = at.left + t.offsetLeft, right = left + t.offsetWidth, gap = 8;
+  const inWay = [...document.querySelectorAll<HTMLElement>(".eq-chip, [data-eq-clear]")].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.left < right && r.right > left);
+  let top = at.top;
+  for (let pass = 0; pass < 4; pass++) {
+    const hit = inWay.find((r) => r.top < top + at.height && r.bottom > top);
+    if (!hit) break;
+    const above = hit.top - gap - at.height;
+    top = pass === 0 && above >= gap && !inWay.some((r) => r.top < above + at.height && r.bottom > above) ? above : hit.bottom + gap;
+  }
+  if (top !== at.top) host.style.translate = `0 ${Math.round(top - at.top)}px`;
+}
+
 export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
   if (typeof document === "undefined") return null;
   wearSkin();
@@ -373,6 +392,7 @@ export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
   words.append(...([["small", "Achievement unlocked"], ["b", a.name], ["span", a.blurb]] as const).map(([tag, text]) => Object.assign(document.createElement(tag), { textContent: text })));
   t.append(words, eqBadge());
   host.append(t);
+  stepClear(host, t);
   if (ms > 0) setTimeout(() => t.remove(), ms);
   return t;
 }

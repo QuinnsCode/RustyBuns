@@ -1,6 +1,7 @@
-// A track played by a hosted CLAP plugin (#5265), as the project keeps it: which `.clap`, which plugin in it, and the
-// sliders the player moved. The page, the world and the host read it, so it imports no Bun and no DOM. The plugin
-// itself runs on the desktop host (src/engine/plugins.ts); its sound reaches the worklet as blocks (src/ui/plugins.ts).
+// A track played by a hosted plugin, as the project keeps it: which plugin, and the sliders the player moved. The page,
+// the world and the host read it, so it imports no Bun and no DOM. A CLAP plugin (#5265) runs on the desktop host
+// (src/engine/plugins.ts) and its sound reaches the worklet as blocks (src/ui/plugins.ts); a Web Audio Module (#4899,
+// `web`) runs in the page itself (src/ui/wam.ts).
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 /** One plugin a `.clap` holds, as the track menu lists it. */
@@ -23,8 +24,10 @@ export const PluginValue = obj({ id: int(0, 2 ** 32 - 1), v: num(-1e300, 1e300) 
 export type PluginValue = Of<typeof PluginValue>;
 
 export const TrackPlugin = obj({
-  /** The `.clap` on the host's disk (a file, or a macOS bundle folder). */
+  /** The `.clap` on the host's disk (a file, or a macOS bundle folder); for a web plugin, its module's address. */
   path: str(4096),
+  /** A Web Audio Module, played in the page; left out for a CLAP plugin on the desktop host. */
+  web: opt(bool()),
   /** Which plugin inside it (a `.clap` can hold several). */
   index: int(0, 255),
   name: str(200),
@@ -62,7 +65,7 @@ export const PluginAskArgs = obj({ track: int(0, 63), frames: int(1, MAX_PLUGIN_
 
 // What the host's actions answer (src/actions/plugins.ts), read on the page through these.
 /** One plugin the track menu offers: the `.clap` it's in, its place there, and its name. */
-export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }) });
+export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }), web: opt(bool()) });
 export type PluginChoice = Of<typeof PluginChoice>;
 export const PluginChoices = arr(PluginChoice, 1024);
 /** A plugin started on a track: its sliders and whether it has its own editor, or why it wouldn't start. */

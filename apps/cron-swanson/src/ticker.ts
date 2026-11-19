@@ -6,11 +6,11 @@ import type { Job, Run } from "./api.ts";
 import type { Store } from "./store.ts";
 import { push } from "./live.ts";
 
-export const MINUTE = 60_000;
+const MINUTE = 60_000;
 const SETTLE_MS = 250;
 const WEBHOOK_TIMEOUT_MS = 15_000;
 
-export type Outcome = Pick<Run, "status" | "code" | "ms" | "error">;
+type Outcome = Pick<Run, "status" | "code" | "ms" | "error">;
 export type Deliver = (job: Job, scheduledAt: number, firedAt: number) => Promise<Outcome>;
 
 /** Calls the job's URL (or does nothing for a reminder) and says how it went. */
@@ -22,7 +22,7 @@ export const deliver: Deliver = async (job, scheduledAt, firedAt) => {
     const res = await fetch(url, {
       method,
       headers: method === "POST" ? { "content-type": "application/json", "user-agent": "cron-swanson" } : { "user-agent": "cron-swanson" },
-      body: method === "POST" ? JSON.stringify({ job: job.id, app: job.app, name: job.name, tags: job.tags, scheduledAt, firedAt }) : undefined,
+      body: method === "POST" ? JSON.stringify({ job: job.id, app: job.app, name: job.name, tags: job.tags, scheduledAt, firedAt }) : null,
       signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
       redirect: "follow",
     });

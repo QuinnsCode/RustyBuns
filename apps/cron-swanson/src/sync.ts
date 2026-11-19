@@ -21,13 +21,13 @@ const fromCron = (expr: string): Declared =>
   Declared({ key: `cloudflare:${expr}`, name: "Cloudflare cron trigger", why: "A cron trigger in the app's wrangler config", tags: ["cloudflare"], cadence: { kind: "cron", expr }, tz: "UTC", action: { kind: "elsewhere", by: "Cloudflare" } });
 
 /** The cron lines in a wrangler config's top-level `triggers` (none when it has no triggers). */
-export function wranglerCrons(name: string, text: string): string[] {
+function wranglerCrons(name: string, text: string): string[] {
   const conf: unknown = name.endsWith(".toml") ? Bun.TOML.parse(text) : Bun.JSONC.parse(text);
   return Wrangler(conf).triggers?.crons ?? [];
 }
 
 /** Everything an app folder declares: its own list (with plain defaults filled in) and its Cloudflare crons. */
-export function declared(dir: string): { app: string } & AppJobs {
+function declared(dir: string): { app: string } & AppJobs {
   let app = basename(dir.replace(/\/+$/, ""));
   const jobs: Declared[] = [];
   if (existsSync(join(dir, FILE))) {

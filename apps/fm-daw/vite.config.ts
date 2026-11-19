@@ -11,6 +11,9 @@ const isolation = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-E
 export default defineConfig({
   plugins: [rustybuns()],
   esbuild: { jsx: "automatic" },
+  // The WAM SDK sends its audio-thread classes over as text (src/ui/wam.ts). Pre-bundled, their static fields become
+  // helper calls that text doesn't carry, and a web plugin never starts: it's served as it is.
+  optimizeDeps: { exclude: ["@webaudiomodules/sdk"] },
   server: { headers: isolation },
   preview: { headers: isolation },
   // Six pages: the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).

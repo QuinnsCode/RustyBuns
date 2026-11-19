@@ -12,13 +12,13 @@ let chrome: Awaited<ReturnType<typeof launchChrome>> | undefined;
 beforeAll(async () => { if (chromePath()) chrome = await launchChrome(); });
 afterAll(() => { chrome?.stop(); server.stop(true); });
 
-type Look = { bg: string; image: string; border: string; radius: string; font: string };
+type Look = { bg: string; image: string; border: string; radius: string; font: string; edge: string; deckled: boolean };
 const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
   const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean; chip: boolean; stamp: boolean; lobby: boolean } }>(`(() => {
-    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
+    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); const under = getComputedStyle(document.querySelector(sel), "::before"); return { bg: s.backgroundColor, image: s.backgroundImage + under.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily, edge: s.boxShadow, deckled: under.maskImage !== "none" }; };
     return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
       // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
       fits: { select: document.querySelector(".rb-report select").offsetWidth === document.querySelector(".rb-report input").offsetWidth,
@@ -40,6 +40,9 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
   for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, bg: l.bg, border: l.border, radius: l.radius, font: l.font }).toEqual({ name, bg: "rgb(28, 33, 40)", border: "rgb(156, 122, 42)", radius: "1px", font: "Courier" });
   expect(skinned.who).toBe("uppercase");
   const house = await looks("?house");
+  // The house look is a skin too: its tiles stand on a thick edge of the outline's colour, and a game's skin gets none of it.
+  for (const [name, l] of Object.entries(house.surfaces)) expect({ name, edge: l.edge.startsWith("rgb(20, 20, 20) 0px 4px 0px 0px") }).toEqual({ name, edge: true });
+  for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, edge: l.edge.includes("0px 4px 0px 0px") }).toEqual({ name, edge: false });
   for (const [name, l] of Object.entries(house.surfaces)) expect({ name, bg: l.bg, radius: l.radius }).toEqual({ name, bg: "rgb(255, 255, 255)", radius: name === "chip" ? TOKENS["--ui-radius-sm"] : TOKENS["--ui-radius"] });
   // The house look follows a dark system; a game's own skin doesn't.
   for (const [name, l] of Object.entries((await looks("?house", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(23, 23, 26)" });
@@ -61,6 +64,8 @@ test.skipIf(!chromePath())("each game's own paper and face land on the chip, rep
     for (const [name, l] of Object.entries(got.surfaces)) {
       const paper = name === "chip" && chip ? chip : plain;
       expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });
+      // Mythic's panels are loose leaves of the tome: the paper is cut to a deckled edge. Its chip stays a plain tag.
+      expect({ game, name, deckled: l.deckled }).toEqual({ game, name, deckled: game === "mythic-masters" && name !== "chip" });
     }
   }
 });
@@ -92,13 +97,13 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   const corner = async (w: number, h: number) => {
     const tab = await openTab(chrome!.cdp, { w, h }, w < 600);
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/`, 300);
-    const got = await tab.eval<{ button: number[]; form: number[]; flag: boolean; closed: boolean }>(`(() => {
+    const got = await tab.eval<{ button: number[]; form: number[]; flag: boolean; closed: boolean; scrim: boolean }>(`(() => {
       const rect = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
       const flag = document.querySelector(".rb-report > .eq-btn"), form = document.querySelector(".rb-report .eq-form");
       form.hidden = true;
       const button = rect(flag);
       flag.click();
-      const open = { form: rect(form), flag: flag.getBoundingClientRect().width > 0 };
+      const open = { form: rect(form), flag: flag.getBoundingClientRect().width > 0, scrim: getComputedStyle(form.parentElement, "::before").content !== "none" };
       form.querySelector(".eq-head .eq-btn").click();
       return { button, ...open, closed: form.hidden };
     })()`);
@@ -113,8 +118,23 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   expect(t).toBeGreaterThan(844 / 2);
   expect(phone.flag).toBe(false);
   expect(phone.closed).toBe(true);
+  // The sheet covers what is under it on purpose: the page behind dims on a phone, and a desktop's corner card dims nothing.
+  expect(phone.scrim).toBe(true);
   const desk = await corner(1024, 700);
+  expect(desk.scrim).toBe(false);
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
+});
+
+// At phone width a toast is as wide as the screen, and Mythic's drops in under its cog, where the account chip can be.
+test.skipIf(!chromePath())("on a phone a toast covers neither the account chip nor a corner button the game marks", async () => {
+  const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
+  await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/?game=mythic-masters&closed&wheel`, 300);
+  const got = await tab.eval<Record<string, boolean>>(`(() => {
+    const t = document.querySelector(".eq-toasts").getBoundingClientRect(), covers = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return r.top < t.bottom && r.bottom > t.top; };
+    return { chip: covers(".eq-chip"), wheel: covers("#wheel"), onScreen: t.top >= 0 && t.bottom <= innerHeight };
+  })()`);
+  await tab.close();
+  expect(got).toEqual({ chip: false, wheel: false, onScreen: true });
 });
 
 // The chip folds into its badge and back, the parts gliding over a state that already changed; a lobby member's dot pops

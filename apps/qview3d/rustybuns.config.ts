@@ -42,6 +42,9 @@ export default defineConfig({
     // Shops buy packs of samples through Stripe Checkout (src/billing.ts). Without the key, buying answers 501.
     STRIPE_SECRET_KEY: { type: "secret", op: "op://qview3d/stripe-secret-key/password", optional: true },
     STRIPE_WEBHOOK_SECRET: { type: "secret", op: "op://qview3d/stripe-webhook-secret/password", optional: true },
+    // The Shopify app's client id and secret, from the Partner dashboard (src/shopify.ts). Without them its routes answer 503.
+    SHOPIFY_API_KEY: { type: "secret", op: "op://qview3d/shopify-client-id/password", optional: true },
+    SHOPIFY_API_SECRET: { type: "secret", op: "op://qview3d/shopify-client-secret/password", optional: true },
   },
   // Secrets resolve at deploy through varlock, behind the owner's Touch ID; op: references need the wheel.
   experimental: { wheel: "human" },

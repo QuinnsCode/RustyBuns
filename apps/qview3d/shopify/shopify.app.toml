@@ -1,0 +1,27 @@
+# QView3D's Shopify app, for `shopify app deploy` (run from this folder, by the owner: it needs the Partner
+# account, #4697). The server side is ../src/shopify.ts. `client_id` is the app's public id from the Partner
+# dashboard (the same value as the Worker's SHOPIFY_API_KEY); fill it in once the app exists there.
+name = "QView3D"
+client_id = ""
+application_url = "https://qview3d.notryanquinn.workers.dev/shopify"
+# Its pages are QView3D's own (eqosys signs people in there), opened from the Shopify admin in their own tab.
+embedded = false
+
+[access_scopes]
+# Products to pick from; orders to read the design off a line and write the print files' links back. Keep in step with SCOPES in ../src/shopify.ts.
+scopes = "read_products,read_orders,write_orders"
+
+[auth]
+redirect_urls = ["https://qview3d.notryanquinn.workers.dev/shopify/callback"]
+
+[webhooks]
+api_version = "2026-10"
+
+[[webhooks.subscriptions]]
+topics = ["orders/create", "app/uninstalled"]
+uri = "https://qview3d.notryanquinn.workers.dev/shopify/webhooks"
+
+# The three privacy webhooks every public app answers.
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://qview3d.notryanquinn.workers.dev/shopify/webhooks"

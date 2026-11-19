@@ -33,15 +33,15 @@ export const later = async (ctx: Later, p: Promise<unknown>) => { if (ctx) ctx.w
 
 const rid = (bytes: number) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
-// The signing secret, sealed in D1 with AES-GCM under a key made from UPLOAD_SECRET: a leaked table signs nothing.
+// The signing secret (and a Shopify store's token, shopify.ts), sealed in D1 with AES-GCM under a key made from UPLOAD_SECRET: a leaked table signs nothing.
 const sealKey = async (env: Env) =>
   crypto.subtle.importKey("raw", await digest(`qview3d hooks|${env.UPLOAD_SECRET}`) as Uint8Array<ArrayBuffer>, "AES-GCM", false, ["encrypt", "decrypt"]);
-async function seal(env: Env, secret: string) {
+export async function seal(env: Env, secret: string) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await sealKey(env), new TextEncoder().encode(secret)));
   return `${b64url(iv)}.${b64url(ct)}`;
 }
-async function unseal(env: Env, sealed: string): Promise<string | null> {
+export async function unseal(env: Env, sealed: string): Promise<string | null> {
   const [iv, ct] = sealed.split(".");
   try { return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64url(iv!) }, await sealKey(env), unb64url(ct!))); } catch { return null; }
 }
@@ -145,26 +145,34 @@ export async function hooksRoute(req: Request, env: Env, ctx: Later, org: string
   return fail("not found", 404);
 }
 
-/** An order: each line's design must be the org's; its print files are made; order.ready goes to the shop's webhooks once they exist. */
-async function orderRoute(req: Request, env: Env, ctx: Later, org: string, origin: string, h: Record<string, string>): Promise<Response> {
-  const fail = (why: string, status: number) => privateJson({ error: why }, status, h);
-  const body = await readJson(req, OrderRequest);
-  if (!body) return fail("expected {id, lines: [{design, qty?}]}", 400);
+/**
+ * An order from any store (the route below, or Shopify's orders/create in shopify.ts): each line's design must be the
+ * org's; its print files are made; order.ready goes to the shop's webhooks. Sent twice, it answers the first and fires nothing.
+ */
+export async function takeOrder(env: Env, ctx: Later, org: string, origin: string, body: OrderRequest): Promise<{ reply: OrderReply } | { error: string; status: number }> {
   const was = await env.DB.prepare("SELECT body FROM orders WHERE org = ? AND id = ?").bind(org, body.id).first<{ body: string }>();
   if (was) {
     const reply = check(OrderReply, parseJson(was.body));
-    if (reply) return privateJson({ ...reply, fresh: false } satisfies OrderReply, 200, h);
+    if (reply) return { reply: { ...reply, fresh: false } };
   }
   const lines: OrderLine[] = [];
   for (const l of body.lines) {
-    if (!(await env.BUCKET.head(designKey(org, l.design)))) return fail(`design ${l.design}: not one of this org's saved designs`, 400);
+    if (!(await env.BUCKET.head(designKey(org, l.design)))) return { error: `design ${l.design}: not one of this org's saved designs`, status: 400 };
     // The print plan, as an admin would get it from GET .../designs/<id>/print: each sheet's PNG made, and linked from `png`.
     const plan = check(PrintPlan, await (await printPlanRoute(env, org, l.design, origin, {})).json());
-    if (!plan) return fail(`design ${l.design}: its print files couldn't be laid out`, 500);
+    if (!plan) return { error: `design ${l.design}: its print files couldn't be laid out`, status: 500 };
     lines.push({ design: l.design, qty: l.qty, print: `${origin}/api/orgs/${org}/designs/${l.design}/print`, sheets: plan.sheets, skipped: plan.skipped });
   }
   const reply: OrderReply = { id: body.id, lines, created: Date.now(), fresh: true };
   await env.DB.prepare("INSERT OR IGNORE INTO orders (org, id, body, created) VALUES (?, ?, ?, ?)").bind(org, body.id, JSON.stringify(reply), reply.created).run();
   await later(ctx, fire(env, org, "order.ready", { order: body.id, lines }));
-  return privateJson(reply, 201, h);
+  return { reply };
+}
+
+async function orderRoute(req: Request, env: Env, ctx: Later, org: string, origin: string, h: Record<string, string>): Promise<Response> {
+  const body = await readJson(req, OrderRequest);
+  if (!body) return privateJson({ error: "expected {id, lines: [{design, qty?}]}" }, 400, h);
+  const took = await takeOrder(env, ctx, org, origin, body);
+  if ("error" in took) return privateJson({ error: took.error }, took.status, h);
+  return privateJson(took.reply satisfies OrderReply, took.reply.fresh ? 201 : 200, h);
 }

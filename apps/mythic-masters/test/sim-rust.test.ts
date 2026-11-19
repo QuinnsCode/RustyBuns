@@ -1,5 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { mulberry32 } from "@rustybuns/util";
 import * as d from "../src/dmath.ts";
 import { BIN, nativeTrace, rustRates, samplePairs, sampleTeams, tsTrace, WASM, wasmTrace } from "../scripts/sim-rust.ts";
 import { allPairs, rates, teamFights, teamRates } from "../scripts/tune.ts";
@@ -15,7 +16,8 @@ const ulps = (a: number, b: number) => { bits[0] = a; const x = word[0]!; bits[0
 
 describe("deterministic math (src/dmath.ts)", () => {
   test("lands within a few last bits of Math, and exactly on the signed zeros and quadrants atan2 turns on", () => {
-    const rnd = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+    const next = mulberry32(5193); // seeded: the same inputs every run, so a miss is a real one
+    const rnd = (lo: number, hi: number) => lo + next() * (hi - lo);
     const table: [string, () => [number, number], (x: number, y: number) => number, (x: number, y: number) => number, number][] = [
       ["sin", () => [rnd(-40, 40), 0], d.sin, Math.sin, 1],
       ["cos", () => [rnd(-40, 40), 0], d.cos, Math.cos, 1],

@@ -161,19 +161,19 @@
     "pumpGain": {
       "target": 1.25,
       "tol": 0.15,
-      "unit": "first-wall peak / start height (half the wall), pumping on the transitions only, capped at the coping",
+      "unit": "first-wall peak / start height (half the wall), pumping on the transitions only, capped at the coping, in a round mini ramp with a transition radius of 3 board lengths",
       "weight": 6,
       "kind": "estimate",
-      "source": "half-pipe amplitude law of Kogelbauer et al. (exponent 5 in r_max/r_min) with a 0.1-0.15 r centre-of-mass stroke; skilled riders go half height to coping in about 3 walls. Wide band.",
+      "source": "half-pipe amplitude law of Kogelbauer et al. (exponent 5 in r_max/r_min) with a 0.1-0.15 r centre-of-mass stroke; skilled riders go half height to coping in about 3 walls. Wide band. Since round 8 the ride is in a ramp of real proportions (a 2.4 m / 8 ft transition under a 0.8 m board, 3 L) and not the game's wide shallow creek pipe, where the same legs gain far less: a stroke's share of the board's energy is 2 x stroke / radius.",
       "license": "arXiv CC BY 4.0"
     },
     "vertAir": {
       "target": 0.35,
       "tol": 0.15,
-      "unit": "best air above coping / wall height, held push, 15 s",
+      "unit": "air above coping / wall height that a held push settles at (tenth wall), dropped in from 1.5 walls, in a round vert ramp 4.25 board lengths tall",
       "weight": 6,
       "kind": "measured (height only, slow motion clips)",
-      "source": "vert360flat and vert720: at the peak the board is roughly 1-1.5 m above a ~3.4 m vert coping (about 0.35 of the wall), judged against the rider's height (1.75 m); camera pans, so +/-0.15.",
+      "source": "vert360flat and vert720: at the peak the board is roughly 1-1.5 m above a ~3.4 m vert coping (about 0.35 of the wall), judged against the rider's height (1.75 m); camera pans, so +/-0.15. Since round 8 the ride is in a ramp as tall as the clips' (3.4 m under a 0.8 m board, 4.25 L) and the score is the air the ride settles at, not the best one after a fast entry: real legs hold an air where they can still straighten against the curve (about 2.5 g on top of body weight; Hill 1938 for a muscle's force against its speed).",
       "license": "CC BY-SA 3.0"
     }
   }

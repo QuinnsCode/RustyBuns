@@ -85,7 +85,7 @@ export class QView3D extends HTMLElement {
   set color(c: string) { this.setAttribute("color", c); }
   /** The current settings: model, colour, the picture's place and files, camera. What snapshot() and save() send. */
   get design(): Design | null { return this.viewer?.design() ?? null; }
-  /** The form field's name: the design id goes in the form under it, and its link under `<name>-url`. */
+  /** The form field's name: the design id goes in the form under it, and its link under `<name>-url` (`properties[Design]`, a Shopify line item property: `properties[Design link]`). */
   get name() { return this.getAttribute("name") ?? ""; }
   set name(n: string) { this.setAttribute("name", n); }
   /** The saved design's id, while it still matches what the shopper sees ("" before a save, or after a change). */
@@ -114,7 +114,7 @@ export class QView3D extends HTMLElement {
   private remember(id: string, url: string) {
     this.saved = { id, url, key: keyOf(this.viewer?.design()) };
     const data = new FormData();
-    if (this.name) { data.set(this.name, id); data.set(`${this.name}-url`, url); }
+    if (this.name) { data.set(this.name, id); data.set(linkName(this.name), url); }
     this.internals.setFormValue(data);
   }
   private forget() { this.saved = null; this.internals.setFormValue(null); }
@@ -447,6 +447,8 @@ export class QView3D extends HTMLElement {
 }
 
 /** A design's settings without the camera: turning the view doesn't change what gets printed. */
+/** The form field the design's link goes under: `design-url`, or inside the brackets when the name has them (`properties[Design link]`). */
+export const linkName = (name: string) => (name.endsWith("]") ? `${name.slice(0, -1)} link]` : `${name}-url`);
 const keyOf = (d: Design | null | undefined) => (d ? JSON.stringify({ ...d, camera: undefined }) : "");
 /** Black or white, whichever reads on this colour: a new line of text starts in it. */
 const contrast = (hex: string) => {

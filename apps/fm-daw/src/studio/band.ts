@@ -1,8 +1,7 @@
 // The jam room's half of the shared clock (src/clock.ts), with no DOM so the tests drive the page's own logic:
 // pinging the leader (or, leading, answering), the beat to stamp a note with, where the audio thread's grid is,
 // and what to do with someone else's note or slice of sound under this listener's mode.
-import { Clock, DESK_MS, playAt, type ClockClient, type ClockServer, type Listen } from "../clock.ts";
-import { decodeTake } from "../take.ts";
+import { Clock, DESK_MS, beatAt, playAt, type ClockClient, type ClockServer, type Listen } from "../clock.ts";
 import type { Live } from "../project.ts";
 import type { ToWorklet } from "../engine/messages.ts";
 
@@ -53,14 +52,10 @@ export class Band {
   /**
    * Someone else's live event, as messages for the audio thread: a stamped note, bend or stutter on the beat this
    * listener hears it on (so a bend lands on the note it bends); anything else (and everything when listening as it
-   * comes) now. A slice of sound is held until near its beat.
+   * comes) now. Slices of sound go through FarSound (src/studio/plugin-line.ts) to sound().
    */
   heard(from: number, e: Live): ToWorklet[] {
     const at = this.onBeat(e);
-    if (e.t === "sound") {
-      if (e.c === "opus") return [];                 // the page decodes it first (src/studio/opus.ts), then sound()
-      return this.sound(from, e.track, e.b, decodeTake([e.data]));
-    }
     if (e.t === "on") return [at === null ? { t: "on", track: e.track, midi: e.midi, vel: e.vel } : { t: "due", at, track: e.track, midi: e.midi, vel: e.vel }];
     if (e.t === "off") return [at === null ? { t: "off", track: e.track, midi: e.midi } : { t: "due", at, track: e.track, midi: e.midi, vel: -1 }];
     if (e.t === "bend") return [at === null ? { t: "bend", track: e.track, semis: e.semis } : { t: "dueBend", at, track: e.track, semis: e.semis }];
@@ -69,15 +64,18 @@ export class Band {
     return [];
   }
 
-  /** A slice of someone's sound (mono at TAKE_RATE) played from beat `b`: held until near the beat this listener hears it on. */
-  sound(from: number, track: number, b: number, pcm: Float32Array): ToWorklet[] {
-    const at = this.synced ? playAt(b, this.listen, this.tempo().loopBeats) : null;
-    if (at === null) return [];                      // as it comes, a guitar is the WebRTC call (src/guitar.ts)
+  /**
+   * A slice of someone's sound (mono at TAKE_RATE) played from beat `b`: held until near the beat this listener hears it on.
+   * As it comes, a guitar is the WebRTC call (src/guitar.ts); a plugin track has only its slices, so it plays the desk's delay behind.
+   */
+  sound(from: number, track: number, b: number, pcm: Float32Array, plugin = false): ToWorklet[] {
+    const at = !this.synced ? null : plugin && this.listen === "now" ? b + beatAt(DESK_MS, this.tempo().bpm) : playAt(b, this.listen, this.tempo().loopBeats);
+    if (at === null) return [];
     this.held.push({ t: "sound", peer: from, track, at, pcm });
     return this.due();
   }
-  /** Whether a slice of sound would be heard here now, before the page spends a decode on it. */
-  get hearsSlices() { return this.synced && this.listen !== "now"; }
+  /** Whether a slice of a guitar's sound (`plugin`: of a plugin track's) would be heard here now, before the page spends a decode on it. */
+  hearsSlices(plugin = false) { return this.synced && (plugin || this.listen !== "now"); }
 
   /** The held slices whose beat is under HOLD_S away, to send to the audio thread now. */
   due(): ToWorklet[] {
@@ -86,8 +84,8 @@ export class Band {
     this.held = this.held.filter((s) => s.at >= soon);
     return go;
   }
-  /** They left or unplugged: their held sound goes. */
-  quiet(peer: number) { this.held = this.held.filter((s) => s.peer !== peer); }
+  /** They left (no track), or unplugged or stopped a plugin on `track`: their held sound there goes. */
+  quiet(peer: number, track?: number) { this.held = this.held.filter((s) => s.peer !== peer || (track !== undefined && s.track !== track)); }
   get waiting() { return this.held.length; }
 
   /** The audio thread's slice of your input, as the live line carries it. */

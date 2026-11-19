@@ -77,6 +77,7 @@ submits the form again with two fields added, as hidden inputs would be:
 
 - \`<name>\`: the saved design's id. Keep it with the order line; it is all whoever prints the order needs.
 - \`<name>-url\`: the design's link (\`${origin}/r/...\`), which the shop's print-files page takes as well.
+  With a bracketed name the link goes inside the brackets: \`properties[Design]\` and \`properties[Design link]\`.
 
 \`\`\`html
 <form action="/cart/add" method="post">

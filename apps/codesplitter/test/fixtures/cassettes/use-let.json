@@ -1,0 +1,14 @@
+{
+  "turns": [
+    {
+      "given": {
+        "a.js": "var x = 1\nfunction f() {\n  return x\n}\n"
+      },
+      "left": {
+        "a.js": "let x = 1\nfunction f() {\n  return x\n}\n"
+      },
+      "code": 0,
+      "out": "{\"type\":\"result\",\"result\":\"Changed `var x` to `let x` in a.js.\",\"session_id\":\"0a1b2c3d-0000-4000-8000-cassette0001\",\"usage\":{\"input_tokens\":412,\"output_tokens\":61,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0}}"
+    }
+  ]
+}

@@ -97,10 +97,10 @@ const fmt = (tz: string) => {
   return f;
 };
 
-export interface Wall { y: number; m: number; d: number; h: number; mi: number; s: number }
+interface Wall { y: number; m: number; d: number; h: number; mi: number; s: number }
 
 /** What a clock in `tz` reads at `t`. */
-export function wall(t: number, tz: string): Wall {
+function wall(t: number, tz: string): Wall {
   const p: Record<string, number> = {};
   for (const { type, value } of fmt(tz).formatToParts(t)) p[type] = Number(value);
   return { y: p.year!, m: p.month!, d: p.day!, h: p.hour! % 24, mi: p.minute!, s: p.second! };
@@ -115,7 +115,7 @@ const offset = (t: number, tz: string) => {
  * The moment a clock in `tz` reads this wall time. A time the clocks skip (spring forward) lands just after
  * the jump; a time they pass twice (fall back) is the first of the two.
  */
-export function fromWall(y: number, m: number, d: number, h: number, mi: number, tz: string): number {
+function fromWall(y: number, m: number, d: number, h: number, mi: number, tz: string): number {
   const guess = Date.UTC(y, m - 1, d, h, mi);
   const o1 = offset(guess, tz), a = guess - o1, o2 = offset(a, tz);
   if (o1 === o2) return a;
