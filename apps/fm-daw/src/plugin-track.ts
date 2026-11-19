@@ -30,6 +30,8 @@ export const TrackPlugin = obj({
   web: opt(bool()),
   /** Which plugin inside it (a `.clap` can hold several). */
   index: int(0, 255),
+  /** The plugin's own id (CLAP's reverse-domain one): how a friend's computer finds its copy, wherever it's installed. */
+  id: opt(str(500)),
   name: str(200),
   values: arr(PluginValue, MAX_PLUGIN_VALUES, { drop: true }),
 });
@@ -72,8 +74,23 @@ export const PluginAskArgs = obj({ track: int(0, 63), frames: int(1, MAX_PLUGIN_
 
 // What the host's actions answer (src/actions/plugins.ts), read on the page through these.
 /** One plugin the track menu offers: the `.clap` it's in, its place there, and its name. */
-export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }), web: opt(bool()) });
+export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }), web: opt(bool()),
+  /** The plugin's own id, the same on every computer that has it. */
+  id: opt(str(500)) });
 export type PluginChoice = Of<typeof PluginChoice>;
+
+/**
+ * This computer's copy of a track's plugin, or null when it hasn't got one (it then hears the player's who has,
+ * src/studio/plugin-line.ts). A groove names the `.clap` where its maker keeps it; a friend's sits in their own
+ * folder, so the plugin's id decides, and the path only where the groove has no id or several copies share one.
+ */
+export function ownCopy(p: Pick<TrackPlugin, "path" | "index" | "id" | "web">, choices: readonly PluginChoice[]): PluginChoice | null {
+  const there = choices.find((c) => c.path === p.path && c.index === p.index && !c.web === !p.web);
+  if (!p.id) return there ?? null;
+  // an older build's menu gives no ids: the path is all there is to go by
+  if (there && (there.id ?? p.id) === p.id) return there;
+  return choices.find((c) => c.id === p.id && !c.web) ?? null;
+}
 export const PluginChoices = arr(PluginChoice, 1024);
 /** A plugin started on a track: its sliders and whether it has its own editor, or why it wouldn't start. */
 export const StartReply = obj({ params: arr(PluginParam, 4096), editor: bool(false), error: opt(str(2000, { min: 0 })) });
