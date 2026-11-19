@@ -192,6 +192,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .kl { font: 600 .72rem var(--mono); }
 .kn { font: 500 .6rem var(--mono); opacity: .7; }
 .keys-help { margin: 0; max-width: 260px; font-size: .82rem; }
+.midi-out { display: block; margin-top: 4px; }
 
 /* status */
 .status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 20px; background: var(--bg); border-top: 1px solid var(--edge); font-size: .85rem; }
