@@ -3,6 +3,7 @@
 // shells are coral, the heads and white keys off-white, the cymbals brass), so what you hit stands out from the seat. main.ts builds
 // the stage synth's keys from `layout` and hands each spot's sounding notes here every frame.
 import * as THREE from "three";
+import type { DrumPart } from "@rustybuns/models/drums";
 
 /** The semitones above a keyboard's lowest C of each white key along it, and of each black key (in the order drawn), for
  *  `n` white keys; `after` is the white key each black one sits just to the right of. */
@@ -30,15 +31,21 @@ export function keyAt(midi: number, low: number, lay: ReturnType<typeof layout>)
   return w >= 0 ? { black: false, i: w } : { black: true, i: Math.max(0, lay.blacks.indexOf(off)) };
 }
 
-/** The drums and cymbals the room's kit draws. */
-export type Part = "kick" | "snare" | "tom" | "hat" | "crash";
-/** Which part of the kit a drum track plays, by its name: a clap or anything unnamed falls on the snare. */
+/** The drums and cymbals the room's kit draws (@rustybuns/models/drums): kick, snare, three toms (hi and mid on the
+ *  kick, the floor tom), the hats, two crashes, a ride, a splash and a china. */
+export type Part = DrumPart;
+/** Which part of the kit a drum track plays, by its name: a plain "tom" is the floor tom, a clap or anything unnamed
+ *  falls on the snare, any other cymbal on the first crash. */
 export function partOf(name: string): Part {
   const n = name.toLowerCase();
   if (/kick|bass ?drum|bd\b/.test(n)) return "kick";
   if (/hat|hh\b/.test(n)) return "hat";
-  if (/crash|ride|cymbal|splash|china/.test(n)) return "crash";
-  if (/tom/.test(n)) return "tom";
+  if (/ride/.test(n)) return "ride";
+  if (/splash/.test(n)) return "splash";
+  if (/china/.test(n)) return "china";
+  if (/crash ?(2|b)\b|crash 18/.test(n)) return "crash2";
+  if (/crash|cymbal/.test(n)) return "crash";
+  if (/tom/.test(n)) return /hi|high|rack|\b1\b/.test(n) ? "hi" : /mid|\b2\b/.test(n) ? "mid" : "tom";
   return "snare";
 }
 

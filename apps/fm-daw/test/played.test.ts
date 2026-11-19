@@ -31,6 +31,8 @@ test("jam room: the note that sounds presses its own key and lights it, and lets
 
   // the demo kit's tracks each land on a drum the room draws
   expect(KIT.filter((t) => t.kind === "drum").map((t) => partOf(t.name))).toEqual(["kick", "snare", "hat", "snare", "tom"]);
+  // and a track named for any other drum or cymbal lands on its own one
+  expect(["Hi Tom", "Mid Tom", "Floor Tom", "Ride", "Splash", "China", "Crash", "Crash 2", "Rim"].map(partOf)).toEqual(["hi", "mid", "tom", "ride", "splash", "china", "crash", "crash2", "snare"]);
   const kit = new Kit(), mats = { snare: new THREE.MeshStandardMaterial(), kick: new THREE.MeshStandardMaterial() };
   const head = new THREE.Object3D();
   head.position.y = 0.081;
