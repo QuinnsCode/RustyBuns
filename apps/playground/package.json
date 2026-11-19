@@ -8,7 +8,6 @@
     "test": "bun test test",
     "deploy": "bunx wrangler deploy",
     "sky": "bun scripts/sky.ts",
-    "shots": "bun scripts/shots.ts",
     "sizes": "bun scripts/sizes.ts",
     "fresh": "bun scripts/fresh.ts",
     "shelf": "bun scripts/shelf.ts",
