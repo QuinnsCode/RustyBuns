@@ -1,5 +1,6 @@
-// A track's sound picked off the track menu: its own FM voice, or a CLAP plugin on this computer (#5265). On a plugin
-// track the plugin's parameters are the sliders, MIDI learn works on them, and a plugin that stops says so here.
+// A track's sound picked off the track menu: its own FM voice, a CLAP plugin on this computer (#5265), or a Web Audio
+// Module played in the page (#4899): one FM DAW carries, or one from a link. On a plugin track the plugin's parameters
+// are the sliders, MIDI learn works on them, and a plugin that stops says so here.
 import { useEffect, useState } from "react";
 import type { TrackDoc } from "../project.ts";
 import type { PluginChoice, PluginParam, TrackPlugin } from "../plugin-track.ts";
@@ -7,6 +8,7 @@ import type { PluginShown } from "./plugins.ts";
 import { armPlugin, useLearn } from "./learn.ts";
 import { Slider } from "./Slider.tsx";
 import { P } from "../engine/params.ts";
+import { siteOf } from "./wam.ts";
 
 const STEPS = 1000;
 
@@ -15,27 +17,45 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
   const [list, setList] = useState<PluginChoice[] | null>(null);
   useEffect(() => { let on = true; void props.choices().then((l) => { if (on) setList(l); }); return () => { on = false; }; }, [props.choices]);
   const cur = props.track.plugin;
-  const key = (c: { path: string; index: number }) => `${c.index}:${c.path}`;
-  const all = cur && !list?.some((c) => key(c) === key(cur)) ? [{ path: cur.path, index: cur.index, name: cur.name, vendor: "" }, ...(list ?? [])] : list ?? [];
+  const [link, setLink] = useState<string | null>(null);
+  const key = (c: { path: string; index: number; web?: boolean }) => `${c.web ? "w" : ""}${c.index}:${c.path}`;
+  const all = cur && !list?.some((c) => key(c) === key(cur)) ? [{ path: cur.path, index: cur.index, name: cur.name, vendor: "", web: cur.web }, ...(list ?? [])] : list ?? [];
+  const at = link === null ? null : siteOf(link.trim(), location.href);
+  if (link !== null) return (
+    <form className="field inline" onSubmit={(e) => {
+      e.preventDefault();
+      if (!at) return;
+      // named after its folder until it loads: ".../obxd/index.js" reads "obxd"
+      const name = new URL(at.url).pathname.split("/").filter((x) => x && !/^index\.m?js$/.test(x)).pop() ?? "Web plugin";
+      props.onPlugin({ path: at.url, index: 0, name: decodeURIComponent(name).slice(0, 200), web: true, values: [] });
+      setLink(null);
+    }}>
+      <span className="silk">Link</span>
+      <input type="url" autoFocus value={link} placeholder="https://…/index.js" aria-label="A Web Audio Module's address" onChange={(e) => setLink(e.currentTarget.value)} />
+      <button className="ghost" disabled={!at}>Load</button>
+      <button className="ghost" type="button" onClick={() => setLink(null)}>Cancel</button>
+    </form>
+  );
   return (
     <label className="field inline"><span className="silk">Plays</span>
       <select value={cur ? key(cur) : ""} aria-label="What plays this track"
         onChange={(e) => {
+          if (e.currentTarget.value === "link") return setLink("");
           const c = all.find((x) => key(x) === e.currentTarget.value);
-          props.onPlugin(c ? { path: c.path, index: c.index, name: c.name, values: [] } : null);
+          props.onPlugin(c ? { path: c.path, index: c.index, name: c.name, ...(c.web ? { web: true } : {}), values: [] } : null);
         }}>
         <option value="">FM synth</option>
         {all.length > 0 && <optgroup label="Plugins">
           {all.map((c) => <option key={key(c)} value={key(c)}>{c.name}{c.vendor ? ` · ${c.vendor}` : ""}</option>)}
         </optgroup>}
-        {list?.length === 0 && !cur && <option disabled>No CLAP plugins found</option>}
+        <option value="link">A web plugin from a link…</option>
       </select>
     </label>
   );
 }
 
 /** A plugin track's sliders, and how it's doing. */
-export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void; onEditor(): Promise<string | null> }) {
+export function PluginPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; head: React.ReactNode; onValue(id: number, v: number): void; onParam(i: number, v: number): void; onEditor(): Promise<string | null>; onTrust(): void }) {
   const s = props.shown, plug = props.track.plugin;
   const [editorNote, setEditorNote] = useState<string | null>(null);
   return (
@@ -48,7 +68,9 @@ export function PluginPanel(props: { track: TrackDoc; color: string; shown: Plug
         </div>}
       </header>
       {editorNote && <p className="note-bar" role="status">{editorNote}</p>}
-      {s?.error ? <p className="note-bar" role="alert">{s.error}. The rest of the mix plays on.</p>
+      {s?.site ? <p className="note-bar" role="alert">{s.error}. A plugin is code: it can do anything this page can, as you. Say yes only for a site you know.{" "}
+          <button className="ghost" onClick={props.onTrust}>Let {new URL(s.site).host} run plugins here</button></p>
+        : s?.error ? <p className="note-bar" role="alert">{s.error}. The rest of the mix plays on.</p>
         : s?.starting || !s ? <p className="dim">Starting {plug?.name}…</p>
         : s.params.length === 0 ? <p className="dim">{plug?.name} has no sliders.</p> : null}
       <div className="voice">

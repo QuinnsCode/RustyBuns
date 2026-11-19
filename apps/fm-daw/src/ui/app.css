@@ -329,3 +329,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .desk-row { display: flex; gap: 6px; }
 .desk-toggle { flex: 1; background: var(--cell); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 0; font: 600 14px var(--silk); cursor: pointer; }
 .desk-toggle.on { background: var(--hot); color: var(--bg); border-color: var(--hot); }
+
+/* a web plugin's own panel (src/ui/wam.ts): a small window over the desk */
+.plugin-window { position: fixed; inset: 10vh auto auto 50%; translate: -50% 0; z-index: 40; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; margin: 0; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); color: inherit; box-shadow: 0 12px 40px #0008; }
+.plugin-window > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--edge); }

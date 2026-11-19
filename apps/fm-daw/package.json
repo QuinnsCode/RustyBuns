@@ -26,6 +26,7 @@
     "@rustybuns/rig": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
+    "@webaudiomodules/sdk": "0.0.12",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "^0.180.0"
@@ -41,6 +42,7 @@
     "@types/react": "19",
     "@types/react-dom": "19",
     "@types/three": "^0.180.0",
+    "@webaudiomodules/api": "2.0.0-alpha.6",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
     "vite": "^6.4.4"

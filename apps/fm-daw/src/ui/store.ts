@@ -9,6 +9,8 @@ export type Tick = Extract<FromWorklet, { t: "tick" }>;
 let tick: Tick = { t: "tick", pos: 0, abs: 0, synced: false, late: 0, playing: false, countIn: 0, peakL: 0, peakR: 0, minGain: 1, nans: 0, ampMisses: 0, pluginMisses: 0 };
 const subs = new Set<() => void>();
 
+/** The audio thread's last report, for the desk's probe handle. */
+export const lastTick = (): Tick => tick;
 export function pushTick(t: Tick) { tick = t; for (const s of subs) s(); }
 export function useTick<T>(pick: (t: Tick) => T): T {
   return useSyncExternalStore((cb) => { subs.add(cb); return () => subs.delete(cb); }, () => pick(tick));
