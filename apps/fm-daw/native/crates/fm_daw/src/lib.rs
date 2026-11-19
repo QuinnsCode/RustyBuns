@@ -16,10 +16,13 @@
 //! track's insert inside the engine (`fm_track_eq_set`).
 //! `remote` plays someone else's sound on the beat it was stamped with (`fm_remote_*`).
 //! `circuit` is the circuit amp (packages/gear/src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
+//! `clap` hosts a player's own CLAP plugin on the desktop (`fm_clap_*`); the wasm build leaves it out.
 
 pub mod circuit;
 pub mod eq;
 pub mod remote;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod clap;
 
 use std::f64::consts::PI;
 
@@ -1005,6 +1008,95 @@ pub unsafe extern "C" fn fm_amp_levels(r: *mut circuit::Rig, out: *mut f32) {
 pub extern "C" fn fm_amp_misses(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.misses() as f64) }
 #[no_mangle]
 pub extern "C" fn fm_amp_iterations(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.iterations_per_step()) }
+
+// ---- a player's own CLAP plugins (desktop only) ----
+//
+// Text (a list, a parameter sheet, why something failed) is JSON or plain UTF-8 written into the caller's buffer:
+// each call returns the length it needs, so a buffer that was too small is grown and the call made again.
+
+#[cfg(not(target_arch = "wasm32"))]
+mod clap_ffi {
+    use super::clap::{describe_json, params_json, Bundle, Plugin};
+    use std::cell::RefCell;
+    use std::sync::Arc;
+
+    thread_local! { static ERROR: RefCell<String> = const { RefCell::new(String::new()) }; }
+    fn fail<T>(why: String) -> *mut T { ERROR.with(|e| *e.borrow_mut() = why); std::ptr::null_mut() }
+
+    unsafe fn give(s: &str, out: *mut u8, cap: u32) -> u32 {
+        if !out.is_null() && s.len() <= cap as usize { std::ptr::copy_nonoverlapping(s.as_ptr(), out, s.len()); }
+        s.len() as u32
+    }
+
+    /// Why the last `fm_clap_open` or `fm_clap_new` on this thread returned null.
+    /// # Safety
+    /// `out` must point to `cap` bytes, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_error(out: *mut u8, cap: u32) -> u32 { ERROR.with(|e| give(&e.borrow(), out, cap)) }
+
+    /// Opens a `.clap` file (or macOS bundle folder); null on failure (`fm_clap_error` says why).
+    /// # Safety
+    /// `path` must point to `len` bytes of UTF-8.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_open(path: *const u8, len: u32) -> *mut Arc<Bundle> {
+        if path.is_null() { return fail("no path".into()); }
+        let Ok(p) = std::str::from_utf8(std::slice::from_raw_parts(path, len as usize)) else { return fail("a path that isn't UTF-8".into()) };
+        match Bundle::open(p) { Ok(b) => Box::into_raw(Box::new(b)), Err(why) => fail(why) }
+    }
+
+    /// # Safety
+    /// `b` from `fm_clap_open`, not used after; plugins made from it keep the library loaded until they're freed.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_close(b: *mut Arc<Bundle>) { if !b.is_null() { drop(Box::from_raw(b)); } }
+
+    /// The bundle's plugins as JSON (`clap::describe_json`).
+    /// # Safety
+    /// `b` from `fm_clap_open`; `out` must point to `cap` bytes, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_list(b: *mut Arc<Bundle>, out: *mut u8, cap: u32) -> u32 {
+        b.as_ref().map_or(0, |b| give(&describe_json(b), out, cap))
+    }
+
+    /// Starts plugin `index` of the bundle at `sample_rate`; null on failure (`fm_clap_error` says why).
+    /// # Safety
+    /// `b` from `fm_clap_open`.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_new(b: *mut Arc<Bundle>, index: u32, sample_rate: f64) -> *mut Plugin {
+        let Some(b) = b.as_ref() else { return fail("no bundle".into()) };
+        if !(8000.0..=384000.0).contains(&sample_rate) { return fail(format!("{sample_rate} Hz isn't a sample rate")); }
+        match Plugin::new(b, index, sample_rate) { Ok(p) => Box::into_raw(Box::new(p)), Err(why) => fail(why) }
+    }
+
+    /// # Safety
+    /// `p` from `fm_clap_new`, not used after.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_free(p: *mut Plugin) { if !p.is_null() { drop(Box::from_raw(p)); } }
+
+    /// The plugin's parameters as JSON (`clap::params_json`).
+    /// # Safety
+    /// `p` from `fm_clap_new`; `out` must point to `cap` bytes, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_params(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
+        p.as_ref().map_or(0, |p| give(&params_json(p), out, cap))
+    }
+
+    #[no_mangle]
+    pub extern "C" fn fm_clap_set_param(p: *mut Plugin, id: u32, value: f64) { if let Some(p) = unsafe { p.as_mut() } { p.set_param(id, value) } }
+    #[no_mangle]
+    pub extern "C" fn fm_clap_note_on(p: *mut Plugin, key: u32, velocity: f64, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_on(key, velocity, channel) } }
+    #[no_mangle]
+    pub extern "C" fn fm_clap_note_off(p: *mut Plugin, key: u32, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_off(key, channel) } }
+
+    /// Adds `frames` of the plugin's sound into `out` (interleaved stereo, like `fm_render`). 0 once it has failed.
+    /// # Safety
+    /// `p` from `fm_clap_new`; `out` must point to `frames * 2` f32s.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_render(p: *mut Plugin, out: *mut f32, frames: u32) -> u32 {
+        let Some(p) = p.as_mut() else { return 0 };
+        if out.is_null() { return 0; }
+        p.render(std::slice::from_raw_parts_mut(out, frames as usize * 2), frames as usize) as u32
+    }
+}
 
 /// f64 buffers in wasm linear memory (a netlist on its way in). Unused on the host.
 #[no_mangle]
