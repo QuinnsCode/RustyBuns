@@ -32,11 +32,11 @@ export async function clapLib(): Promise<Lib | null> {
 }
 
 /** One plugin a `.clap` holds, as the track menu lists it. */
-export const PluginInfo = obj({ id: str(500), name: str(500), vendor: str(500), version: str(200), features: arr(str(200), 32) });
+export const PluginInfo = obj({ id: str(500), name: str(500), vendor: str(500, { min: 0 }), version: str(200, { min: 0 }), features: arr(str(200, { min: 0 }), 32) });
 export type PluginInfo = Of<typeof PluginInfo>;
 /** One of a running plugin's parameters: a slider, so MIDI learn works on it. */
 export const PluginParam = obj({
-  id: int(0, 2 ** 32 - 1), name: str(500), module: str(2000),
+  id: int(0, 2 ** 32 - 1), name: str(500), module: str(2000, { min: 0 }),
   min: num(-1e300, 1e300), max: num(-1e300, 1e300), default: num(-1e300, 1e300), value: num(-1e300, 1e300), stepped: bool(),
 });
 export type PluginParam = Of<typeof PluginParam>;
