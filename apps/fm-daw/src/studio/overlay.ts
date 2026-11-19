@@ -67,7 +67,7 @@ export class Wheels {
 }
 
 /** The bend on the live line, as the World checks it. */
-export const bendEvent = (track: number, semis: number): Live => ({ t: "bend", track, semis });
+export const bendEvent = (track: number, semis: number, stamp: { b?: number } = {}): Live => ({ t: "bend", track, semis, ...stamp });
 
 const CSS = `
 .qo{position:fixed;inset:auto 0 86px 0;display:flex;justify-content:center;align-items:flex-end;gap:18px;pointer-events:none;z-index:5;font:600 13px 'Barlow Condensed',sans-serif;color:#f4f1ea}

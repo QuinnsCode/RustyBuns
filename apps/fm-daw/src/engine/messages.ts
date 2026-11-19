@@ -48,6 +48,9 @@ export type ToWorklet =
   | { t: "grid"; ctx: number; beat: number | null }
   /** Someone else's note to sound on beat `at` (vel < 0: let it go then). */
   | { t: "due"; at: number; track: number; midi: number; vel: number }
+  /** Someone else's bend (semitones) or stutter (beats, 0 off) to take hold on beat `at`, in order with their notes. */
+  | { t: "dueBend"; at: number; track: number; semis: number }
+  | { t: "dueRepeat"; at: number; beats: number }
   /** A slice of someone's guitar (mono at TAKE_RATE) to play from beat `at`, into `track` (-1: straight in). */
   | { t: "sound"; peer: number; track: number; at: number; pcm: Float32Array }
   /** Their sound stopped (unplugged, left): drop what's buffered. */

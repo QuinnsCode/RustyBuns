@@ -6,7 +6,7 @@ import { WasmEngine, WasmEq, WasmRemote, instantiateFm, type Exports } from "./w
 import { TsRemote, type RemoteLine } from "./remote.ts";
 import { TsEq, flatEq, withEqLane, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 import { Delay, LinearEq } from "./linear.ts";
-import { Sequencer } from "./sequencer.ts";
+import { BEND, REPEAT, Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
@@ -27,7 +27,6 @@ class FmProcessor extends AudioWorkletProcessor {
   private params = new Float64Array(TRACKS * NPARAMS);
   private muted = new Array<boolean>(TRACKS).fill(false);
   private master = 0;
-  private bend = new Float64Array(TRACKS);
   private engine: FmEngine = new TsEngine(sampleRate);
   private kind: "ts" | "rust" = "ts";
   private seq = new Sequencer(this.engine, sampleRate);
@@ -141,12 +140,14 @@ class FmProcessor extends AudioWorkletProcessor {
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
       case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); this.eq.reset(); this.sendDelay?.reset(); break;
-      case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
+      case "bend": s.liveBend(m.track, m.semis); break;
       case "repeat": s.setRepeat(m.beats); break;
       case "move": s.move(m.track, m.i, m.v, m.was); break;
       case "engine": await this.swap(m); break;
       case "grid": this.gridCtx = m.ctx; this.gridBeat = m.beat ?? NaN; if (m.beat === null) s.sync(NaN); break;
       case "due": s.liveAt(m.at, m.track, m.midi, m.vel); break;
+      case "dueBend": s.liveAt(m.at, m.track, BEND, m.semis); break;
+      case "dueRepeat": s.liveAt(m.at, 0, REPEAT, m.beats); break;
       case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
       case "quiet": this.remotes.get(m.peer)?.line.free?.(); this.remotes.delete(m.peer); break;
       case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.sliceLen = 0; break;
@@ -293,7 +294,7 @@ class FmProcessor extends AudioWorkletProcessor {
       eq.set(this.eqPlayed);
       eq.listen(this.listening);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
-      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); next.setTap(t, this.amps.has(t)); }
+      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.seq.bends[t]); next.setTap(t, this.amps.has(t)); }
       next.setMaster(this.master);
       // a new engine starts with every insert where it is now, not fading in
       this.trackEq.forEach((d, t) => sendTrackEq(next, t, d, []));

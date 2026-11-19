@@ -8,7 +8,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { setup, useWorld, type Sock } from "./world-kit.ts";
 import { Clock, DESK_MS, JUMP_MS, SLEW, decodeClockServer, estimate, gridBeatAt, sampleOf } from "../src/clock.ts";
 import { Band } from "../src/studio/band.ts";
-import { LIVE_ID, QUANTUM, Sequencer } from "../src/engine/sequencer.ts";
+import { BEND, LIVE_ID, QUANTUM, Sequencer } from "../src/engine/sequencer.ts";
 import { decodeServer, type Live } from "../src/project.ts";
 import { TsRemote } from "../src/engine/remote.ts";
 import { WasmRemote, instantiateFm } from "../src/engine/wasm.ts";
@@ -26,6 +26,8 @@ interface Player {
   skew: number; ppm: number; outMs: number; start: number; link: (clock: boolean) => number; frames: number;
   /** When (true time, ms) each beat 1 and each note from someone else reached this player's ears. */
   ones: number[]; notes: number[];
+  /** When each bend took hold, and how far. */
+  bends: { at: number; semis: number }[];
 }
 
 test("three players with skewed clocks and laggy links count the same beats, and hear each other a loop late or at the desk", async () => {
@@ -41,11 +43,12 @@ test("three players with skewed clocks and laggy links count the same beats, and
     // one way, each time: the base, jitter that is mostly small and now and then large (a queue somewhere), and
     // now and then a clock ping stuck for 400 ms
     const link = (clock: boolean) => base + rnd() ** 6 * jitter + (clock && ++outlier % 7 === 0 ? 400 : 0);
-    const p: Player = { name, ws, skew, ppm, outMs, link, start: T, frames: 0, ones: [], notes: [], band: null!, seq: null! };
+    const p: Player = { name, ws, skew, ppm, outMs, link, start: T, frames: 0, ones: [], notes: [], bends: [], band: null!, seq: null! };
     p.band = new Band(() => ({ bpm: BPM, loopBeats: LOOP }), () => T + skew);
     const engine: FmEngine = {
-      setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, setBend() {}, noteOff() {}, allOff() {}, panic() {}, setTrackBand() {}, setTap() {}, render() {}, meter() {},
+      setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, noteOff() {}, allOff() {}, panic() {}, setTrackBand() {}, setTap() {}, render() {}, meter() {},
       click: (accent) => { if (accent) p.ones.push(heardAt(p)); },
+      setBend: (_t, semis) => p.bends.push({ at: heardAt(p), semis }),
       noteOn: (_t, id) => { if (id >= LIVE_ID) p.notes.push(heardAt(p)); },
     };
     p.seq = new Sequencer(engine, SR);
@@ -74,6 +77,8 @@ test("three players with skewed clocks and laggy links count the same beats, and
   const apply = (p: Player, m: ToWorklet) => {
     if (m.t === "due") p.seq.liveAt(m.at, m.track, m.midi, m.vel);
     else if (m.t === "on") p.seq.liveOn(m.track, m.midi, m.vel, false);
+    else if (m.t === "dueBend") p.seq.liveAt(m.at, m.track, BEND, m.semis);
+    else if (m.t === "bend") p.seq.liveBend(m.track, m.semis);
   };
   const play = (p: Player, e: Live) => toWorld(p, { t: "live", e });
   fromWorld();
@@ -132,15 +137,23 @@ test("three players with skewed clocks and laggy links count the same beats, and
   expect(ones.length).toBeGreaterThanOrEqual(3);
   for (const p of [ben, cat]) for (const t of ones) expect(Math.min(...p.ones.map((u) => Math.abs(u - t)))).toBeLessThan(3);
 
-  // Ben plays a note: Amy (a loop late) hears it one loop (4 s) after he played it, to the ms; Cat, as it comes, at once
+  // Ben plays a note and bends it 200 ms later: Amy (a loop late) hears both one loop (4 s) after he played them, to the
+  // ms, the bend after its note; Cat, as it comes, at once
   cat.band.listen = "now";
   const playedAt = T;
   play(ben, { t: "on", track: 0, midi: 60, vel: 0.8, ...ben.band.stamp() });
+  run(200);
+  const bentAt = T;
+  play(ben, { t: "bend", track: 0, semis: 2, ...ben.band.stamp() });
   run(LOOP * BEAT_MS + 500);
   expect(amy.notes.length).toBe(1);
   expect(Math.abs(amy.notes[0] - (playedAt + LOOP * BEAT_MS))).toBeLessThan(3);
+  expect(amy.bends).toHaveLength(1);
+  expect(amy.bends[0].semis).toBe(2);
+  expect(Math.abs(amy.bends[0].at - (bentAt + LOOP * BEAT_MS))).toBeLessThan(3);
   expect(cat.notes[0] - playedAt).toBeLessThan(400);
   expect(cat.notes[0] - playedAt).toBeGreaterThan(100);
+  expect(cat.bends[0].at - bentAt).toBeLessThan(400);
 
   // the leader goes to the desk: her beat runs 150 ms behind the band, and Cat's note reaches her lined up on it
   amy.band.listen = "desk";

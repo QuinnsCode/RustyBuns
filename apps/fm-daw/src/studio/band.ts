@@ -46,8 +46,9 @@ export class Band {
   behind(): number { const { bpm, loopBeats } = this.tempo(); return this.listen === "loop" ? (loopBeats * 60000) / bpm : this.listen === "desk" ? DESK_MS : 0; }
 
   /**
-   * Someone else's live event, as messages for the audio thread: a stamped note on the beat this listener hears it
-   * on; anything else (and everything when listening as it comes) now. A slice of sound is held until near its beat.
+   * Someone else's live event, as messages for the audio thread: a stamped note, bend or stutter on the beat this
+   * listener hears it on (so a bend lands on the note it bends); anything else (and everything when listening as it
+   * comes) now. A slice of sound is held until near its beat.
    */
   heard(from: number, e: Live): ToWorklet[] {
     const { loopBeats } = this.tempo();
@@ -59,7 +60,9 @@ export class Band {
     }
     if (e.t === "on") return [at === null ? { t: "on", track: e.track, midi: e.midi, vel: e.vel } : { t: "due", at, track: e.track, midi: e.midi, vel: e.vel }];
     if (e.t === "off") return [at === null ? { t: "off", track: e.track, midi: e.midi } : { t: "due", at, track: e.track, midi: e.midi, vel: -1 }];
-    if (e.t === "bend") return [{ t: "bend", track: e.track, semis: e.semis }];
+    if (e.t === "bend") return [at === null ? { t: "bend", track: e.track, semis: e.semis } : { t: "dueBend", at, track: e.track, semis: e.semis }];
+    // a stutter only on the shared beat: as it comes it would chop the groove wherever this page is
+    if (e.t === "repeat") return at === null ? [] : [{ t: "dueRepeat", at, beats: e.beats }];
     return [];
   }
 

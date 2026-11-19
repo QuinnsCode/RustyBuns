@@ -223,8 +223,8 @@ export type Live =
   /** `b`: the beat it was played on, on the sesh's shared clock (src/clock.ts), so a listener can place it. */
   | { t: "on"; track: number; midi: number; vel: number; b?: number }
   | { t: "off"; track: number; midi: number; b?: number }
-  | { t: "bend"; track: number; semis: number }
-  | { t: "repeat"; beats: number }
+  | { t: "bend"; track: number; semis: number; b?: number }
+  | { t: "repeat"; beats: number; b?: number }
   | { t: "play" }
   | { t: "stop" }
   /** Where their pointer is, as a share of the window (0..1 across and down), so others can see it. */
@@ -250,8 +250,8 @@ const SOUND_CHARS = Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
 const LIVE: Guard<Live>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8), b: opt(STAMP) }),
   obj({ t: tag("off"), track: TRACK, midi: MIDI, b: opt(STAMP) }),
-  obj({ t: tag("bend"), track: TRACK, semis: num(-BEND_RANGE, BEND_RANGE, 0) }),
-  obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
+  obj({ t: tag("bend"), track: TRACK, semis: num(-BEND_RANGE, BEND_RANGE, 0), b: opt(STAMP) }),
+  obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0), b: opt(STAMP) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
