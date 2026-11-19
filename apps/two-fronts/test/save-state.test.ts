@@ -1,6 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { firstDiff, load, rewinder, roundTrip, save } from "@rustybuns/util/lab/save-state";
 import { NO_PODS, orbitPods, type BattleSpec } from "../src/battle/contract.ts";
+import { groundRecorder, groundRewind, replayGround } from "../src/battle/replay.ts";
 import { startBattle, step, type Input } from "../src/battle/sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceInput } from "../src/battle/space.ts";
 
@@ -74,4 +75,24 @@ test("a save keeps what JSON would lose, and won't load into another sim", () =>
   expect(firstDiff(s, { ...back, units: [{ hp: 2 }] })).toBe("units.0.hp: 3 != 2");
   expect(() => load(save({ t: 0, far: 1, near: 1, bad: 1, units: {} }), s)).toThrow("not a save of this sim");
   expect(() => load(save(startSpaceBattle({ id: "x", turn: 1, system: "Kessa", factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1, fleets: { attacker: 1, defender: 1 }, seed: 1 })), startBattle(spec()))).toThrow();
+});
+
+// The rewind key (#5098): the view steps through `groundRewind`, which loads the old battle into the same object and cuts
+// the rewound steps from the log, so the log the page posts plays the battle the player ended up playing.
+test("a practice battle rewound mid-fight keeps its object and replays from its log to the same end", () => {
+  const b = startBattle(spec()), rec = groundRecorder(), rw = groundRewind(b, rec);
+  const units = b.units;
+  expect(rw.back(90)).toBe(false); // nothing played yet
+  let i = 0;
+  const play = (n: number) => { for (const end = i + n; i < end && !b.over; i++) rw.step(rec.take(ground(i))); };
+  play(1500);
+  // Back 3 s, then on with other inputs (the frame counter moved on), twice.
+  expect(rw.back(90)).toBe(true);
+  expect(rec.steps).toBe(1410);
+  expect(b.units).not.toBe(units); // the arrays are the loaded ones, the battle object is the same
+  play(700);
+  expect(rw.back(90)).toBe(true);
+  while (!b.over) { rw.step(rec.take(ground(i))); i++; }
+  expect(rw.back(90)).toBe(false); // over is over
+  expect(replayGround(b.spec, rec.log())).toEqual(b.over);
 });
