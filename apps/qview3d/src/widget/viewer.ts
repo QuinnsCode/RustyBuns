@@ -20,7 +20,7 @@ export type View = "front" | "angle" | "side" | "back";
 export type Display = "form" | "hanger";
 const VIEWS: Record<View, number> = { front: 0, angle: Math.PI / 4, side: Math.PI / 2, back: Math.PI };
 
-export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string; text?: TextLine };
+export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string; print?: string; text?: TextLine };
 /** The most pictures and lines of text on one product (a design's `layers`). */
 export const MAX_LAYERS = 8;
 const zoneOfLayer = (l: Layer): ZoneName => l.at.zone ?? "front";
@@ -314,7 +314,7 @@ export class Viewer {
     if (!l?.text) return;
     const picture = await this.prepare(await drawText(line));
     l.picture.bitmap.close();
-    Object.assign(l, { picture, text: line, texture: undefined, original: undefined });
+    Object.assign(l, { picture, text: line, texture: undefined, original: undefined, print: undefined });
     this.repaint();
     this.onChange();
   }
@@ -490,7 +490,7 @@ export class Viewer {
     const s = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
     return {
       v: 1, model: this.model, color: this.color,
-      layers: this.layers.map((l) => ({ texture: l.texture ?? "", original: l.original, ...(l.text ? { text: l.text } : {}), ...l.at })),
+      layers: this.layers.map((l) => ({ texture: l.texture ?? "", original: l.original, ...(l.print ? { print: l.print } : {}), ...(l.text ? { text: l.text } : {}), ...l.at })),
       camera: { azimuth: s.theta, polar: s.phi, distance: s.radius },
     };
   }
@@ -502,7 +502,7 @@ export class Viewer {
     const s = new THREE.Spherical(d.camera.distance, d.camera.polar, d.camera.azimuth);
     this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
     const seen = new Map<ZoneName, number>();
-    for (const { texture: _t, original: _o, text: _x, ...at } of d.layers) {
+    for (const { texture: _t, original: _o, print: _p, text: _x, ...at } of d.layers) {
       const zone = at.zone ?? "front", n = seen.get(zone) ?? 0;
       seen.set(zone, n + 1);
       const l = this.layers.filter((x) => zoneOfLayer(x) === zone)[n];

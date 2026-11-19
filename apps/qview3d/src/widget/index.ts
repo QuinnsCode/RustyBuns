@@ -220,7 +220,7 @@ export class QView3D extends HTMLElement {
     return out;
   }
 
-  /** Upload the pictures (texture and original of each), a snapshot, and the settings to the org. Fires qview:saved. */
+  /** Upload the pictures (texture, original and any print copy of each), a snapshot, and the settings to the org. Fires qview:saved. */
   async save(): Promise<Saved & { design: Design }> {
     const v = await this.boot();
     const org = this.org;
@@ -230,6 +230,8 @@ export class QView3D extends HTMLElement {
       for (const l of v.layers) {
         l.texture = await upload(base, "texture", l.picture.texture.blob, l.picture.texture.sha256);
         l.original = await upload(base, "original", l.picture.original.blob, l.picture.original.sha256);
+        const p = l.picture.print;
+        l.print = p ? await upload(base, "original", p.blob, p.sha256) : undefined;
       }
       const shot = await v.snapshot(2);
       const snapshot = await upload(base, "snapshot", shot, await sha256Of(shot));

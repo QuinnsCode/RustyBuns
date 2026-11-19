@@ -9,7 +9,8 @@
 // through CompressionStream into the PNG a strip at a time, so a 30 x 40 cm sheet never sits in memory unpacked.
 //
 // A Worker has 128 MB, and a decoded picture takes 4 bytes a pixel twice over (in the decoder, then copied out), so
-// originals over PRINT_MAX_PX are left for the admin page to draw (the sheet says why).
+// originals over PRINT_MAX_PX aren't decoded here. The widget uploads a print copy of those, cut down to
+// PRINT_COPY_PX, and the sheet is made from that; one saved without a copy is left for the admin page to draw.
 import { init as initJpeg } from "@jsquash/jpeg/decode";
 import decodeJpeg from "@jsquash/jpeg/decode";
 import { init as initPng, decode as decodePng } from "@jsquash/png/decode";

@@ -9,8 +9,9 @@
 //
 // The plan makes each zone's PNG once (print-render.ts) and keeps it at orgs/<org>/prints/<design>/<zone>.png; a design
 // is named by its own content, so its files never go stale. An order (hooks.ts) asks for the plan, so order.ready
-// carries finished files. One the server can't make (an original too big for a Worker) says why, and the admin page
-// draws it from the original instead (print-sheet.ts).
+// carries finished files. A picture with a print copy (an original over 12 MP, cut down by the widget) prints from
+// the copy; the sheet still links the original. One the server can't make (an original too big for a Worker, saved
+// before the widget made copies) says why, and the admin page draws it from the original instead (print-sheet.ts).
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { Design, PRINT_CM, ZONES, Product, type Model, type PrintPlan, type PrintSheet, type ZoneName } from "./api.ts";
 import { designKey } from "./layout.ts";
@@ -38,6 +39,8 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
   if (!d) return nope("unknown design", 404, headers);
   const product = d.product ? await getProduct(env, org, d.product) : null;
   const sheets: PrintSheet[] = [], skipped: PrintPlan["skipped"] = [];
+  /** What each sheet's pictures are printed from: the print copy, else the original. */
+  const sources = new Map<PrintSheet, string[]>();
   // One sheet a zone, its pictures in drawing order. A zone with a picture that can't print is left out whole: half a
   // design on a shirt is worse than none, and the admin hears why.
   for (const zone of ZONES) {
@@ -47,10 +50,15 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
     const files = layers.map((l) => l.original?.split("/").pop() ?? "");
     if (files.some((f) => !ORIGINAL.test(f))) skipped.push({ zone, why: `no original was saved with ${layers.length > 1 ? "one of its pictures" : "this picture"}` });
     else if (!cm) skipped.push({ zone, why: `the product names no size for its ${zone}: add zones to its product file` });
-    else sheets.push({ zone, cm, px: sheetPx(cm, PRINT_DPI), pictures: layers.map((l, i) => ({ original: `${origin}/api/orgs/${org}/originals/${files[i]}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation } })) });
+    else {
+      const s: PrintSheet = { zone, cm, px: sheetPx(cm, PRINT_DPI), pictures: layers.map((l, i) => ({ original: `${origin}/api/orgs/${org}/originals/${files[i]}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation } })) };
+      const copies = layers.map((l) => l.print?.split("/").pop());
+      sheets.push(s);
+      sources.set(s, files.map((f, i) => (copies[i] && ORIGINAL.test(copies[i]) ? copies[i] : f)));
+    }
   }
   for (const s of sheets) {
-    const why = await makePrint(env, org, id, s);
+    const why = await makePrint(env, org, id, s, sources.get(s)!);
     if (why) s.unmade = why;
     else s.png = `${origin}/api/orgs/${org}/designs/${id}/print/${s.zone}.png`;
   }
@@ -58,14 +66,14 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
 }
 
 /** The sheet's PNG in R2, made now unless it is there already; null when it is, else why not. */
-async function makePrint(env: Env, org: string, id: string, s: PrintSheet): Promise<string | null> {
+async function makePrint(env: Env, org: string, id: string, s: PrintSheet, from: string[]): Promise<string | null> {
   const key = printKey(org, id, s.zone);
   if (await env.BUCKET.head(key)) return null;
   // One original decoded at a time and boxed down to its printed size before the next, so a zone of several fits.
   const boxed: Boxed[] = [];
   let px = 0;
-  for (const p of s.pictures) {
-    const o = await env.BUCKET.get(`orgs/${org}/originals/${p.original.split("/").pop()}`);
+  for (const [i, p] of s.pictures.entries()) {
+    const o = await env.BUCKET.get(`orgs/${org}/originals/${from[i]}`);
     if (!o) return "its original is gone from the bucket";
     const picture = await decodePicture(new Uint8Array(await new Response(o.body).arrayBuffer()));
     if (typeof picture === "string") return picture;
