@@ -32,6 +32,8 @@ import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
+import { bassReach, bassSynth } from "./gear-models.ts";
+import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { isMuted, leaders, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
@@ -77,7 +79,7 @@ let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
-let project: Project = demoProject();
+let project: Project = withMonoBass(demoProject());
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
 
@@ -246,20 +248,10 @@ function thing(s: Spot): THREE.Group {
     put(new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.09, 6, 16), surface("metal", "#8e9298")), 0, t.h + 0.07, 0);
     put(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 20), blackSteel), 0, t.h + 0.04, 0).rotation.x = Math.PI / 2;
   } else if (s.kind === "bass") {
-    // a 2x12 cab in black tolex with a grille cloth front and metal corners, an amp head on top: brushed
-    // faceplate, a row of black knobs, a red jewel light
-    const cabH = t.h * 0.7, headH = t.h - cabH, front = -t.d / 2;
-    box(t.w, cabH, t.d, surface("tolex", "#1a1a1a"), 0, cabH / 2, 0);
-    box(t.w - 0.07, cabH - 0.07, 0.006, surface("cloth", "#5a5444"), 0, cabH / 2, front - 0.002);
-    for (const x of [-1, 1]) for (const y of [0.025, cabH - 0.025]) box(0.05, 0.05, 0.05, metal, x * (t.w / 2 - 0.02), y, front + 0.022);
-    box(t.w * 0.96, headH - 0.01, t.d * 0.8, surface("tolex", "#1a1a1a"), 0, cabH + headH / 2, 0);
-    const face = box(t.w * 0.96 - 0.04, headH * 0.55, 0.004, surface("metal", "#c9c6bd"), 0, cabH + headH / 2, -t.d * 0.4 - 0.002);
-    const caps: [number, number, number][] = [];
-    for (let i = 0; i < 8; i++) caps.push([-t.w * 0.38 + i * t.w * 0.09, 0, -0.012]);
-    many(new THREE.CylinderGeometry(0.014, 0.015, 0.02, 14).rotateX(Math.PI / 2), knob, caps, face);
-    const jewel = box(0.018, 0.018, 0.01, surface("screen", "#ff3a2a"), t.w * 0.4, 0, -0.006, face);
-    jewel.userData.glow = 1;
-    box(0.2, 0.025, 0.035, surface("rubber", "#151515"), 0, t.h + 0.012, 0);
+    // an analog mono synth on an X stand, played like the keys (gear-models.ts)
+    const { synth, keys } = bassSynth(s);
+    inFront.add(synth.group);
+    played.set(s.id, { keys });
   } else if (s.kind === "desk") {
     // a mixing console: a steel body, a sloped work surface of channel strips (knobs with coloured caps, a fader
     // in a slot each), a lit meter bridge behind and a padded armrest in front, where the engineer sits (+z)
@@ -325,7 +317,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
   d.fig.group.position.set(d.x, 0, d.z);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.speed, seated: !!seat, play: handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) : null, sticks: seat?.kind === "drums", look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.speed, seated: !!seat, play: handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
@@ -368,6 +360,8 @@ function noteOn(by: string, n: { track: number; midi: number }, vel: number) {
   if (holding.has(by)) return;
   // the World passes on no note without a play grant, so a listen-only seat says so rather than going quiet
   if (!may(player).play) return void say({ ok: false, why: rights.asked === "play" ? "Listen only: your hand is up, the leader answers Yes or No" : "Listen only: the leader hasn't let you play. H raises your hand" });
+  // the bass synth is mono: a new note takes over from the one you hold
+  if (spotOf(jam, jam.me.seat)?.kind === "bass") for (const b of monoSteal(holding, n.track)) noteOff(b);
   holding.set(by, n);
   out?.send({ t: "on", ...n, vel });
   live({ t: "on", ...n, vel });
