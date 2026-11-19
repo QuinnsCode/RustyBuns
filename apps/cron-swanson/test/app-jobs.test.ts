@@ -19,7 +19,7 @@ test("an app's own list: sync adds, changes and drops its jobs, keeps hand-made 
   const server = Bun.serve({ port: 0, fetch: api(store, { token: "t0k", now: () => now }) });
   afterAll(() => server.stop(true));
   const ask = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(`${server.url}${path.slice(1)}`, { method, headers: { authorization: "Bearer t0k" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(`${server.url}${path.slice(1)}`, { method, headers: { authorization: "Bearer t0k" }, body: body === undefined ? null : JSON.stringify(body) });
     return { status: res.status, body: parseJson(await res.text()) };
   };
   const jobs = async () => JobsReply((await ask("GET", "/api/jobs")).body).jobs.map((r) => r.job).sort((a, b) => a.name.localeCompare(b.name));

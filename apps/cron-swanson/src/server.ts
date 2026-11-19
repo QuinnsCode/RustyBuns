@@ -40,7 +40,7 @@ const same = (a: Declared, b: Declared) => JSON.stringify(Declared(a)) === JSON.
  * Makes the app's listed jobs match `list`: a new key is added, a changed one updated (a new cadence restarts its
  * "every" count; a pause made on the page stays), a key that's gone is deleted with its runs. Hand-made jobs stay.
  */
-export function sync(store: Store, app: string, list: Declared[], t: number): SyncReply {
+function sync(store: Store, app: string, list: Declared[], t: number): SyncReply {
   const reply: SyncReply = { added: [], changed: [], removed: [], same: 0 };
   const had = new Map(store.jobs().filter((j) => j.app === app && j.key).map((j) => [j.key, j]));
   for (const d of list) {

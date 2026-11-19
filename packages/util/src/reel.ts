@@ -140,7 +140,7 @@ export const still = (cam: Cam): Shot => () => cam;
 
 function blendCam(a: Cam, b: Cam, k: number): Cam {
   const fa = a.fov ?? b.fov, fb = b.fov ?? a.fov;
-  return { from: mix3(a.from, b.from, k), at: mix3(a.at, b.at, k), fov: fa === undefined || fb === undefined ? undefined : lerp(fa, fb, k), roll: lerp(a.roll ?? 0, b.roll ?? 0, k) };
+  return { from: mix3(a.from, b.from, k), at: mix3(a.at, b.at, k), ...(fa !== undefined && fb !== undefined && { fov: lerp(fa, fb, k) }), roll: lerp(a.roll ?? 0, b.roll ?? 0, k) };
 }
 const lengthOf = (i: Into | undefined) => !i || i === "cut" ? 0 : "blend" in i ? i.blend : "whip" in i ? i.whip : "dip" in i ? i.dip : i.flash;
 

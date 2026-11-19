@@ -53,7 +53,7 @@ test("the laptop and the phone hear every change the server makes, and a reminde
   let now = Date.parse("2026-11-14T08:59:30Z");
   const call = api(store, { now: () => now, send, live: "wss://relay.test/live", changed: live.poke });
   const ask = async (method: string, path: string, body?: unknown) =>
-    parseJson(await (await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }))).text());
+    parseJson(await (await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? null : JSON.stringify(body) }))).text());
 
   // The page learns where the relay is from the list it already fetches; reading it changes nothing.
   expect(JobsReply(await ask("GET", "/api/jobs")).live).toBe("wss://relay.test/live");

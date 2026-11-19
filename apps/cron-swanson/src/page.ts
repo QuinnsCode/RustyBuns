@@ -157,7 +157,7 @@ function tickClocks() {
 // ---- actions ----
 
 async function send(method: string, path: string, body?: unknown): Promise<string | null> {
-  const res = await fetch(path, { method, headers: { ...auth(), "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }).catch(() => null);
+  const res = await fetch(path, { method, headers: { ...auth(), "content-type": "application/json" }, body: body === undefined ? null : JSON.stringify(body) }).catch(() => null);
   if (!res) return "Can't reach the server.";
   if (res.status === 401) { $("gate").hidden = false; return "Token needed."; }
   if (!res.ok) return (await readJson(res, Refusal))?.error ?? `HTTP ${res.status}`;
