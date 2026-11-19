@@ -43,7 +43,7 @@ export const runsShop = (c: Claims | null, org: Org) => isOwner(c) || runs(c, or
 
 /** An org as its shop sees it (GET /api/orgs/<org> in sandboxes.ts, and each org in /api/mine). */
 export const shopOf = async (env: Env, id: string, o: Org): Promise<Shop> =>
-  ({ id, origins: o.origins, samples: o.samples ?? 0, keys: o.admins?.length ?? 0, ...(o.expires ? { expires: o.expires } : {}), products: await listProducts(env, id) });
+  ({ id, origins: o.origins, samples: o.samples ?? 0, keys: o.admins?.length ?? 0, ...(o.expires ? { expires: o.expires } : {}), ...(o.shopify ? { shopify: o.shopify } : {}), products: await listProducts(env, id) });
 
 /** The routes above, or null when the request is none of them. */
 export async function orgsRoute(req: Request, env: Env, h: Record<string, string>): Promise<Response | null> {

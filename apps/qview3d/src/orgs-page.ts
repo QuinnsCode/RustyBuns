@@ -5,7 +5,7 @@
 // a studio from its id, which the friend copies from this same page, or hands someone a sandbox link (sandboxes.ts).
 import { eqosys } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
-import { APP, Delivery, EQOSYS, HookReply, Hooks, KeyReply, Mine, SandboxReply, slug, type HookRequest, type SandboxRequest, type ShopStart, type Sites } from "./api.ts";
+import { APP, Delivery, EQOSYS, HookReply, Hooks, KeyReply, Mine, SandboxReply, ShopifyState, slug, type HookRequest, type SandboxRequest, type ShopStart, type ShopifyLink, type ShopifyPicks, type Sites } from "./api.ts";
 import { act as acting, copyBox as copying, el, embedTag, field, productForm as editor } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
 
@@ -45,6 +45,59 @@ const keeping = ((): { org: string; key: string } | null => {
     return v && typeof v === "object" && "org" in v && "key" in v && typeof v.org === "string" && typeof v.key === "string" ? { org: v.org, key: v.key } : null;
   } catch { return org && key ? { org, key } : null; }
 })();
+
+/**
+ * A Shopify store to connect, from the app's install (#shopify=<claim>, shopify.ts). Held in sessionStorage too, for
+ * the same trip to eqosys and back; dropped once connected.
+ */
+const STORE = "qview3d-shopify";
+let claim = ((): string | null => {
+  const c = new URLSearchParams(location.hash.slice(1)).get("shopify");
+  try {
+    if (c) { sessionStorage.setItem(STORE, c); history.replaceState(null, "", location.pathname); return c; }
+    return sessionStorage.getItem(STORE);
+  } catch { return c; }
+})();
+
+/** The shop's Shopify store: connect the one just installed, then pick which of its products show the customiser. */
+function shopifyBlock(o: NonNullable<Mine["shops"][number]["org"]>, reload: () => Promise<void>) {
+  const box = el("div", { class: "hooks" });
+  if (claim) {
+    const go = el("button", { class: "go", type: "button", textContent: o.shopify ? "Connect the new store here instead" : "Connect my Shopify store to this shop" });
+    go.onclick = act(async () => {
+      const got = ShopifyState(await (await send(`/api/orgs/${o.id}/shopify`, "POST", { claim: claim! } satisfies ShopifyLink)).json());
+      claim = null;
+      try { sessionStorage.removeItem(STORE); } catch { /* nothing kept */ }
+      say(`${got.shop} is connected. Pick its products below, then add the QView3D block to your product page in the theme editor.`);
+      await reload();
+    });
+    box.append(el("p", { class: "sub", textContent: "You installed QView3D on a Shopify store. One click joins it to this shop." }), go);
+  }
+  if (!o.shopify) {
+    if (!claim) box.append(el("p", { class: "sub", textContent: "No store yet. Install QView3D from Shopify and you land back here to connect it." }));
+    return box;
+  }
+  const list = el("div");
+  box.append(el("p", { class: "sub", textContent: `Connected: ${o.shopify}. Orders with a design get their print files' links in the order's note.` }), list);
+  void act(async () => {
+    const t = token();
+    const got = t ? await getJson(`/api/orgs/${o.id}/shopify`, ShopifyState, { headers: { authorization: `Bearer ${t}` } }) : null;
+    if (!got) throw new Error("Couldn't read the store's products. Open QView3D from your Shopify admin again.");
+    const rows = got.products.map((p) => {
+      const pick = el("select", {}, el("option", { value: "", textContent: "No customiser" }), ...o.products.map((q) => el("option", { value: q.id, textContent: q.product.name, selected: q.id === p.product })));
+      return { handle: p.handle, pick, row: field(p.title, pick) };
+    });
+    const save = el("button", { class: "go", type: "submit", textContent: "Save the picks" });
+    const form = el("form", {}, ...rows.map((r) => r.row), save);
+    form.onsubmit = act(async () => {
+      const picks = rows.filter((r) => r.pick.value).map((r) => ({ handle: r.handle, product: r.pick.value }));
+      await send(`/api/orgs/${o.id}/shopify/products`, "PUT", { picks } satisfies ShopifyPicks);
+      say(`Saved: ${picks.length} of the store's products show the customiser.`);
+    });
+    list.replaceChildren(rows.length ? form : el("p", { class: "sub", textContent: "The store has no products yet." }));
+  })();
+  return box;
+}
 
 /** A studio with no shop: its owner or admin starts one here, or keeps the sandbox they came from. */
 function startCard(shop: Mine["shops"][number], body: HTMLElement, reload: () => Promise<void>) {
@@ -163,6 +216,7 @@ function shopCard(shop: Mine["shops"][number], reload: () => Promise<void>) {
     await reload();
   });
   body.append(el("div", { class: "keys" }, key, el("a", { href: "/admin.html", textContent: "Make a sample" })), shown);
+  body.append(el("h2", { textContent: "Shopify" }), shopifyBlock(o, reload));
   body.append(el("h2", { textContent: "Webhooks" }), hooksBlock(o.id));
   return card;
 }

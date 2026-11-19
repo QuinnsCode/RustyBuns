@@ -20,6 +20,7 @@
 //   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
 //   POST /api/sandboxes, GET /api/orgs/<org>  a test shop the owner hands out with one link, and what its page reads (sandboxes.ts)
 //   GET/POST /api/orgs/<org>/hooks, DELETE .../hooks/<id>, POST .../hooks/<id>/test, POST .../orders   webhooks both ways (hooks.ts)
+//   GET /shopify/install, /shopify/callback, POST /shopify/webhooks, /api/orgs/<org>/shopify, GET /api/shopify/block   the Shopify app (shopify.ts)
 //
 // Org and product settings live in D1 (settings.ts); a fresh deploy's migrations seed the demo org (demo.ts), which keeps no files.
 import { hex } from "@rustybuns/util/bytes";
@@ -35,6 +36,7 @@ import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.
 import { orgsRoute, runsShop, signedIn } from "./orgs.ts";
 import { sandboxRoute } from "./sandboxes.ts";
 import { fire, hooksRoute, later, retryDue, type Later } from "./hooks.ts";
+import { shopifyRoute } from "./shopify.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
@@ -74,6 +76,10 @@ export interface Env extends SettingsEnv {
   BILLING_TEST?: string;
   /** The eqosys whose tokens sign people in (orgs.ts); https://eqosys.qntbr.com unless set. */
   EQOSYS_URL?: string;
+  /** The Shopify app's client id and secret (shopify.ts). Without them its routes answer 503. SHOPIFY_API_BASE points elsewhere (tests). */
+  SHOPIFY_API_KEY?: string;
+  SHOPIFY_API_SECRET?: string;
+  SHOPIFY_API_BASE?: string;
 }
 
 const UPLOAD_TTL_S = 600;
@@ -120,7 +126,7 @@ export async function handle(req: Request, env: Env, ctx?: Later): Promise<Respo
   }
   if (url.pathname === "/api/stripe-webhook" && req.method === "POST") return stripeWebhook(req, env);
 
-  const shops = (await orgsRoute(req, env, cors(origin))) ?? (await sandboxRoute(req, env, cors(origin)));
+  const shops = (await shopifyRoute(req, env, ctx, cors(origin))) ?? (await orgsRoute(req, env, cors(origin))) ?? (await sandboxRoute(req, env, cors(origin)));
   if (shops) return shops;
 
   const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout|hooks|orders)(?:\/([^/]+))?(\/print|\/test)?(?:\/([a-z-]+)\.png)?$/);

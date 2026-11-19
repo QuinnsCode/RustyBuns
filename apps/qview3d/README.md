@@ -120,7 +120,7 @@ page from another origin under that policy.
 ### In the Add to cart form
 
 `<qview-3d name="design">` inside a `<form>` is a form field (a form-associated custom element). On submit it saves
-the design (pictures, snapshot, settings), then submits the form again with `design` (the id) and `design-url` (its
+the design (pictures, snapshot, settings), then submits the form again with `design` (the id; under `properties[Design]`, a Shopify line item property, the link is `properties[Design link]`) and `design-url` (its
 `/r/` link), as hidden inputs would. The page's own submit handlers only see that second submit. A change after a
 save clears the id (`el.value` is `""` again), so the next submit saves anew; a failed save stops the submit. The demo
 shop (`public/index.html`) is built this way: pick the hat, the shirt or the hoodie, a size and a quantity, and Add to
@@ -169,10 +169,41 @@ walks a shop's coding agent through it.
   shows the last 20 deliveries and has **Send test**.
 - **In.** `POST /api/orgs/<org>/orders` (script key) with `{id, lines: [{design, qty}]}` records the order once, lays
   out and makes each line's print files (the plan above), then fires `order.ready` with their links. Sent again, it answers the
-  same order and fires nothing. A Shopify or WooCommerce connector calls this later.
+  same order and fires nothing. The Shopify app below calls the same code; a WooCommerce connector would too.
 
 Retries need no Queue or Durable Object: a once-a-minute cron trigger reads due deliveries from D1. Cron triggers
 are free on every Workers plan, and a minute's sweep is one indexed D1 read (1,440 a day of the free 5 million).
+
+### A Shopify app
+
+A Shopify store installs QView3D like any app: one click, Shopify's own sign-in, nothing to paste
+([src/shopify.ts](src/shopify.ts); the app's settings and theme block are in [shopify/](shopify/shopify.app.toml)).
+
+1. **Install.** Shopify opens `/shopify?shop=<store>.myshopify.com`, which sends the merchant to approve
+   three scopes (`read_products`, `read_orders`, `write_orders`). Shopify sends them back to `/shopify/callback`;
+   its HMAC, the signed state and a cookie from the same browser are checked, and the code becomes the store's token,
+   sealed in D1 the way a webhook's secret is. No route serves it.
+2. **Connect.** They land on `/orgs.html` with a claim for the store (good for an hour), sign in with eqosys as
+   always, and press **Connect my Shopify store to this shop**. The connection is `shopify` on the org; the store's
+   `myshopify.com` address and its shoppers' domain join the org's sites.
+3. **Pick products.** Under **Shopify** on the same page, each of the store's products (its first 250) gets a
+   QView3D product, or none.
+4. **The block.** In the theme editor the merchant adds the **QView3D customiser** app block to the product page
+   ([customiser.liquid](shopify/extensions/qview3d-block/blocks/customiser.liquid)). It asks
+   `GET /api/shopify/block?shop=&handle=` what to show, and shows nothing on a product that wasn't picked. The
+   widget joins the theme's Add to cart form as `properties[Design]`, so the design's id is a line item property.
+5. **Orders.** Shopify's `orders/create` webhook (`X-Shopify-Hmac-Sha256` checked, 401 otherwise) turns the lines
+   that carry a design into an order here, the same way `POST .../orders` does, so `order.ready` fires too. The
+   print links then go onto the Shopify order: a line in its note per design (`/admin.html#design=<id>`, which asks
+   for a sign-in) and a `qview3d.print_files` JSON metafield. Shopify waits five seconds for a webhook, so the print
+   files are made after the answer.
+6. **Leaving.** `app/uninstalled` and `shop/redact` drop the token and picks and clear the org's field.
+   `customers/redact` removes that customer's orders here. `customers/data_request` has nothing to send: QView3D
+   keeps order and design ids, never a customer's name, email or address.
+
+It needs `SHOPIFY_API_KEY` and `SHOPIFY_API_SECRET` (the app's client id and secret); without them these routes
+answer 503. [test/shopify.test.ts](test/shopify.test.ts) walks all six steps against a fake Shopify. It has not met
+a real store yet: that waits on the Partner account and a dev store (#4697).
 
 ## The bucket
 
