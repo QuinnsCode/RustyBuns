@@ -51,14 +51,18 @@ test("the first solo room is the tutorial, and the next visit has none", async (
   await tab.until("the coach on picking", `splatSpray.state().tutorial.title === "Pick the target"`);
   await tab.key("keyUp", "Shift", "ShiftLeft");
 
-  // At the target: the first spot on screen whose pick lands on it (it may be half behind something from here).
+  // At the target: the first spot on screen whose pick lands on it (it may be half behind something from here), picked
+  // in the same task. The orbit is damped, so the room still drifts for a few frames after the drag; on a slow runner a
+  // spot found in one eval could be a decoy by the next.
   const spot = await tab.page<[number, number] | null>(`(() => {
     const id = __spy.target.id;
-    for (let y = 20; y < innerHeight; y += 20) for (let x = 20; x < innerWidth; x += 20) if (__spy.pickAt(x, y)?.id === id) return [x, y];
+    for (let y = 20; y < innerHeight; y += 20) for (let x = 20; x < innerWidth; x += 20) if (__spy.pickAt(x, y)?.id === id) {
+      __spy.tryPick(x, y);
+      return [x, y];
+    }
     return null;
   })()`);
   expect(spot).not.toBeNull();
-  await tab.page(`__spy.tryPick(${spot![0]}, ${spot![1]})`);
   await tab.until("the find", `splatSpray.state().found === 1`);
   await tab.key("keyDown", " ", "Space");
   await tab.until("the tutorial done", `splatSpray.state().tutorial.learned && !splatSpray.state().tutorial.running`);
