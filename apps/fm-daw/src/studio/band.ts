@@ -53,15 +53,24 @@ export class Band {
     const { loopBeats } = this.tempo();
     const at = "b" in e && e.b !== undefined && this.synced ? playAt(e.b, this.listen, loopBeats) : null;
     if (e.t === "sound") {
-      if (at === null) return [];                    // as it comes, a guitar is the WebRTC call (src/guitar.ts)
-      this.held.push({ t: "sound", peer: from, track: e.track, at, pcm: decodeTake([e.data]) });
-      return this.due();
+      if (e.c === "opus") return [];                 // the page decodes it first (src/studio/opus.ts), then sound()
+      return this.sound(from, e.track, e.b, decodeTake([e.data]));
     }
     if (e.t === "on") return [at === null ? { t: "on", track: e.track, midi: e.midi, vel: e.vel } : { t: "due", at, track: e.track, midi: e.midi, vel: e.vel }];
     if (e.t === "off") return [at === null ? { t: "off", track: e.track, midi: e.midi } : { t: "due", at, track: e.track, midi: e.midi, vel: -1 }];
     if (e.t === "bend") return [{ t: "bend", track: e.track, semis: e.semis }];
     return [];
   }
+
+  /** A slice of someone's sound (mono at TAKE_RATE) played from beat `b`: held until near the beat this listener hears it on. */
+  sound(from: number, track: number, b: number, pcm: Float32Array): ToWorklet[] {
+    const at = this.synced ? playAt(b, this.listen, this.tempo().loopBeats) : null;
+    if (at === null) return [];                      // as it comes, a guitar is the WebRTC call (src/guitar.ts)
+    this.held.push({ t: "sound", peer: from, track, at, pcm });
+    return this.due();
+  }
+  /** Whether a slice of sound would be heard here now, before the page spends a decode on it. */
+  get hearsSlices() { return this.synced && this.listen !== "now"; }
 
   /** The held slices whose beat is under HOLD_S away, to send to the audio thread now. */
   due(): ToWorklet[] {

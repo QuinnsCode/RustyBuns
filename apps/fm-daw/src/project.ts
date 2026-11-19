@@ -240,9 +240,10 @@ export type Live =
   | { t: "guitar"; track: number | null }
   /**
    * A slice of their guitar's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
-   * latency taken off), into `track` (-1: straight in), base64url of 16-bit samples at TAKE_RATE.
+   * latency taken off), into `track` (-1: straight in): base64url of Opus packets (`c: "opus"`, src/studio/opus.ts),
+   * or of 16-bit samples at TAKE_RATE from a browser with no WebCodecs.
    */
-  | { t: "sound"; track: number; b: number; data: string };
+  | { t: "sound"; track: number; b: number; c?: "opus"; data: string };
 const MIDI = int(0, 127);
 /** A beat on the shared clock: the leader's time 0 is beat 0, so it is big, never negative. */
 const STAMP = num(0, 1e13);
@@ -257,7 +258,7 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)) }),
-  obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
+  obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
