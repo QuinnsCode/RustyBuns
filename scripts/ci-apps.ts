@@ -81,7 +81,7 @@ export const APPS: Record<string, App> = {
   "terraviz-demo":     { test: "bun test test", drop: false },
   "tanstack-start-example": { test: "bun test test", boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
-  "mythic-masters":    { test: "bun test test", drop: false },
+  "mythic-masters":    { test: "bun test test", shards: 3, drop: false },
 };
 
 const RUNNERS = [
