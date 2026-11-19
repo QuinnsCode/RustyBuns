@@ -50,7 +50,7 @@ function player() {
   for (let at = 0; at < heard.length; at += BLOCK) {
     const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
     p.process([[new Float32Array(BLOCK)]], [[L, R]]);
-    heard.set(L, at);
+    heard.set(L.subarray(0, Math.min(BLOCK, heard.length - at)), at);
     for (const m of posted.splice(0)) {
       if (m.t === "pluginAsk") {
         const pcm = new Float32Array(m.frames * 2);
