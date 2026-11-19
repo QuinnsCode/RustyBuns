@@ -10,10 +10,12 @@ import type { Answer, World } from "../sim.ts";
 import { master, rig } from "./dive-bar.ts";
 import { heatColour } from "./dive-bar-view.ts";
 import {
-  BACK_ROCK, DESK, HORNS, MAX_BRIGHT, PASS, POINTS, ROOF_Y, ROWS, RUN, TARGET, TOWERS, TOWER_H, WALLS, WEIGHTS, WINDOW, airOf, amp,
-  atSubs, atTower, calc, check, delay, fly, frameY, halfWidth, hang, hear, land, loadKg, near, pin, rowFloor, rowZ, score, shade,
+  BACK_ROCK, CROWD, DESK, HORNS, MAX_BRIGHT, PASS, POINTS, ROOF_Y, ROWS, RUN, TARGET, TOWERS, TOWER_H, WALLS, WEIGHTS, WINDOW, airOf, amp,
+  atSubs, atTower, calc, check, delay, floorAt, fly, frameY, halfWidth, hang, hear, land, loadKg, near, pin, rowFloor, rowZ, score, shade,
   show, subs, towers, aim, wantDelay, type Score, type Seat, type Show,
 } from "./amphitheatre.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { MAX_BIG, crowdView } from "../crowd/crowd-view.ts";
 import { type Face } from "@rustybuns/gear";
 
 export type AmphitheatreView = {
@@ -204,6 +206,8 @@ export function amphitheatreView(scene: THREE.Scene, hud: HTMLElement, getWorld:
 
   let seen = "", last: Score | null = null, opened: Show | null = null;
   const signature = (w: World) => JSON.stringify([amp(w), rig(w).master, airOf(w)]);
+  // 9,500 on the benches, a figure for every six or so, each standing on its own row.
+  const people = crowdView(scene, { max: MAX_BIG, ground: floorAt });
   function paint(w: World) {
     const now: Seat[] = hear(w);
     now.forEach((s, k) => { const [r, gg, b] = heatColour(s.mid, TARGET, WINDOW); tiles.setColorAt(k, colour.setRGB(r / 255, gg / 255, b / 255)); });
@@ -261,6 +265,7 @@ export function amphitheatreView(scene: THREE.Scene, hud: HTMLElement, getWorld:
     update() {
       const w = getWorld(), sig = signature(w);
       if (sig !== seen) { seen = sig; paint(w); }
+      people.update(w, crowdOf(w));
       const s = last!, r = amp(w), air = airOf(w), db = (v: number) => (Number.isFinite(v) ? `${v} dB` : "silent");
       const rows = POINTS.map((q) => {
         const h = r.hangs[q.key], kg = loadKg(h), over = kg > q.limitKg;
@@ -269,6 +274,7 @@ export function amphitheatreView(scene: THREE.Scene, hud: HTMLElement, getWorld:
       }).join("");
       const parts = (Object.keys(WEIGHTS) as (keyof typeof WEIGHTS)[]).map((k) => `${k} ${Math.round(s.parts[k] * 100)}%`).join(", ");
       card.innerHTML = `<b>${opened ? "Doors open" : "Red-rock amphitheatre"}</b>` + rows
+        + (crowdOf(w) ? `<span>${crowdOf(w)!.people} on the benches</span>` : "")
         + `<span>Towers ${r.towers ? `up, ${r.delayMs} ms (the mains need about ${wantDelay(w)})` : "down"}, subs ${r.subs}</span>`
         + `<span>${air.label}: ${air.tempC} C, ${air.humidity}% damp, breeze ${Math.abs(air.wind)} m/s ${air.wind < 0 ? "down" : "up"} the bowl</span>`
         + `<span>Row 5 ${db(s.rows.front)}, desk ${db(s.rows.desk)}, row ${ROWS} ${db(s.rows.top)}; houses ${db(s.house.db)}</span>`
@@ -280,10 +286,12 @@ export function amphitheatreView(scene: THREE.Scene, hud: HTMLElement, getWorld:
         + `<small>At a point: U / J boxes, K pins, I check, O fly, &lt; &gt; toe, N horn, B bright. Row 36: G towers. Lip: V subs. H map, [ ] fader at the desk, Enter doors</small>`;
     },
     doors() {
+      const w = getWorld();
+      if (!crowdOf(w)) letIn(w, CROWD);
       view.update();
-      return (opened = show(getWorld()));
+      return (opened = show(w));
     },
-    dispose() { scene.remove(g); scene.fog = was.fog; scene.background = was.background; card.remove(); },
+    dispose() { people.dispose(); scene.remove(g); scene.fog = was.fog; scene.background = was.background; card.remove(); },
   };
   return view;
 }

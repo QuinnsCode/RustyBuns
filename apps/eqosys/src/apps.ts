@@ -19,7 +19,7 @@ export interface QApp {
   /** Set when the app keeps data per account: eqosys POSTs here with a bearer token (`aud: "erase"`, `sub` the person, 60 seconds
    * of life) when someone deletes their account, and the app answers 200 once it has erased what it holds. Idempotent. */
   erase?: string;
-  /** The card shows a screenshot at /cards/<id>.jpg when there is one. */
+  /** The card shows a screenshot at /cards/<id>.jpg when there is one (`bun run card-shots <id>` at the repo root shoots it). */
   shot?: boolean;
   /** The home's row this app sits in (GENRES). */
   genre: Genre;
@@ -72,8 +72,8 @@ export const APPS: QApp[] = [
   { id: "auto-rig", name: "Auto Rig", kind: "suite", origins: ["https://auto-rig.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools" },
   { id: "meshy-studio", name: "Meshy Batch Studio", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
   // A studio is a shop there: its owners and admins set up the shop's sites and products on /orgs.html.
-  { id: "qview3d", name: "QView3D", kind: "suite", origins: ["https://qview3d.notryanquinn.workers.dev"], returns: ["https://qview3d.notryanquinn.workers.dev/orgs.html"], starts: ["member"], genre: "Work & Tools", maturity: "experimental", studios: true },
-  { id: "sharesplat", name: "ShareSplat", kind: "suite", origins: ["https://sharesplat.notryanquinn.workers.dev"], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
+  { id: "qview3d", name: "QView3D", kind: "suite", origins: ["https://qview3d.notryanquinn.workers.dev"], returns: ["https://qview3d.notryanquinn.workers.dev/orgs.html"], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental", studios: true },
+  { id: "sharesplat", name: "ShareSplat", kind: "suite", origins: ["https://sharesplat.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
   { id: "splat-desktop", name: "Splat Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
   // Parked until tscircuit updates its own dependencies (its README).
   { id: "tscircuit-desktop", name: "tscircuit Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },

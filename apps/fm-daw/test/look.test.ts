@@ -1,7 +1,7 @@
 // How a room looks (src/studio/look.ts): the picture quality a visit gets, and where things stand in it.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { caseSpot, pickQuality, practicals, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { caseSpot, clearWall, pickQuality, practicals, standSpot, surface, useKit, type Quality } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { ROOM_LIST, SCORING_HALL } from "../src/studio/rooms/index.ts";
 import { thingBox } from "../src/studio/room.ts";
@@ -57,4 +57,33 @@ test("road cases stand against a free wall in every room, never in a seat's way,
   }
   expect(placed).toBeGreaterThan(0);
   expect(caseSpot(SCORING_HALL, 0.5)).toBeNull(); // a hall too big to notice them
+});
+
+test("posters go on the clear stretches of a wall: not behind its panels, a lamp or where an inner wall meets it", () => {
+  // the live room's left wall: absorbers down the band's end, the booth's glass and the control-room window meeting it
+  const panels: [number, number][] = [[-3.9, 1]];
+  const runs = clearWall(LIVE_ROOM, "left", panels);
+  expect(runs.length).toBeGreaterThan(0);
+  for (const [from, to] of runs) {
+    expect(to - from).toBeGreaterThanOrEqual(1.1);
+    expect(from).toBeGreaterThan(1.2); // past the panels
+    for (const wl of LIVE_ROOM.walls) for (const end of [wl.from, wl.to]) if (end[0] === -5) { expect(Math.abs(-end[1] - from)).toBeGreaterThan(0.3); expect(-end[1] < from || -end[1] > to).toBe(true); }
+  }
+  expect(clearWall(LIVE_ROOM, "left", [[-4.5, 4.5]])).toEqual([]); // a wall hung end to end has no room
+});
+
+test("the keys player's music stand stands a step off the instrument's end, clear of the walls and every other seat", () => {
+  let stood = 0;
+  for (const def of ROOM_LIST) for (const s of def.spots) {
+    if (s.kind !== "keys") continue;
+    const at = standSpot(def, s);
+    if (!at) continue;
+    stood++;
+    const b = thingBox(s);
+    expect(Math.hypot(at[0] - b.cx, at[1] - b.cz)).toBeCloseTo(b.hw + 0.42, 5);
+    expect(Math.abs(at[0])).toBeLessThan(def.size.w / 2 - 0.4);
+    expect(Math.abs(at[1])).toBeLessThan(def.size.d / 2 - 0.4);
+    for (const o of def.spots) if (o !== s) expect(Math.hypot(at[0] - o.at[0], at[1] - o.at[1])).toBeGreaterThan(0.8);
+  }
+  expect(stood).toBeGreaterThan(0);
 });

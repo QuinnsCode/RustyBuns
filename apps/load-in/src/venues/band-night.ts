@@ -13,6 +13,7 @@ import { doors, showScore } from "../clock.ts";
 import type { Level, World } from "../sim.ts";
 import type { Switches } from "../audio/hear.ts";
 import type { Cables } from "../cables/cables.ts";
+import { type CrowdSpot, house } from "../crowd/crowd.ts";
 
 export const BAND_NIGHT: Level = {
   name: "band-night",
@@ -56,6 +57,22 @@ export const BAND_NIGHT: Level = {
 export const ZONES = {
   stage: { x0: -4, x1: 4, z0: 0, z1: 3 },
   desk: { x0: 1.8, x1: 4, z0: 8.2, z1: 10.6 },
+};
+
+/**
+ * Band night's crowd: 110 on the floor between the stage and the desk. An 8 by 11 m room, 3.2 m up, plaster and a
+ * wooden floor (mean absorption about 0.15): it rings for a second empty and half that full. The line check is scored
+ * before they come in, so the score doesn't change with them.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -3.8, x1: 3.8, z0: 3.3, z1: 8, nx: 15, nz: 9 },
+  stageZ: ZONES.stage.z1,
+  capacity: 110,
+  room: { w: 8, d: 11, h: 3.2, alpha: 0.15 },
+  regions: [
+    { name: "front", zone: { x0: -3.8, x1: 3.8, z0: 3.3, z1: 5.6 } },
+    { name: "back", zone: { x0: -3.8, x1: 3.8, z0: 5.6, z1: 8 } },
+  ],
 };
 
 /** The input list, in channel order: what it is, the mic or DI that picks it up, and its mark on the stage plot. */
@@ -170,6 +187,6 @@ export function bandNightState(w: World, runs: readonly KeyedCable[], on: Switch
   return {
     phantom: n.phantom, lift: n.lift, seeded: n.faults, deskOn: j.deskOn,
     inputs: j.heard.map((h) => ({ channel: h.channel, what: h.what, on: h.on, sound: h.sound, ok: h.ok, checked: n.checked.has(h.channel), why: h.why })),
-    last: n.last, problems: j.problems, jobs: jobs(w, runs, j), ...score(j),
+    last: n.last, problems: j.problems, jobs: jobs(w, runs, j), people: house(w, CROWD), ...score(j),
   };
 }

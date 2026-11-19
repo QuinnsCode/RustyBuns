@@ -14,9 +14,11 @@ import { aim } from "./dive-bar.ts";
 import { showSound } from "../audio/stems.ts";
 import { AMP_KNOBS, type AmpKnob } from "../audio/amp.ts";
 import {
-  SET_LIST, BAND, CHANNELS, CUE_TEXT, type Channel, type Desk, type Move, type Show, atAmp, atDesk, fixOnStage, mix, newDesk, newShow, notch, nudge,
+  AUDIENCE, SET_LIST, BAND, CHANNELS, CUE_TEXT, type Channel, type Desk, type Move, type Show, atAmp, atDesk, fixOnStage, mix, newDesk, newShow, notch, nudge,
   ring, setAmp, showState, songAt, startShow, stepShow,
 } from "./show.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
 
 export type ShowView = {
   /** A key while playing; true when the show used it. */
@@ -76,7 +78,14 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
   const nearBand = (who: keyof typeof BAND) => { const w = getWorld(), p = BAND[who]; return Math.hypot(w.you.x - p.x, w.you.z - p.z) <= REACH; };
   const stageFix = () => (show.open.some((c) => c.kind === "broken-string") && nearBand("guitarist") ? "broken-string" : show.open.some((c) => c.kind === "dying-cable") && nearBand("bassist") ? "dying-cable" : null);
   const nearWedge = () => { const w = getWorld(), i = w.items.find((x) => x.key === "wedge-vox"); return !!i && !w.held && Math.hypot(w.you.x - i.x, w.you.z - i.z) <= REACH + 0.4; };
-  const doorsOpen = () => { if (startShow(show).ok) sound.start(); };
+  const audience = crowdView(scene);
+  /** The set starts and the audience comes in. */
+  const begin = () => {
+    const a = startShow(show), w = getWorld();
+    if (a.ok && !crowdOf(w)) letIn(w, AUDIENCE);
+    return a;
+  };
+  const doorsOpen = () => { if (begin().ok) sound.start(); };
 
   function deskKey(code: string): boolean {
     const n = Number(code.replace("Digit", ""));
@@ -123,6 +132,7 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     const w = getWorld(), left = doors("show", w.t).left;
     if (left !== null && left <= 0) doorsOpen();
     const { ringing } = stepShow(w, desk, show, dt);
+    audience.update(w, crowdOf(w));
     render(show.on ? ringing : ring(w, desk).ringing);
     sound.update(show.on ? { song: songAt(show.t).index, mix: mix(desk, show), desk, ringing } : null);
   }
@@ -150,13 +160,14 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     desk: {
       nudge: (ch, m) => nudge(desk, ch, m),
       notch: (ch, hz) => notch(desk, ch, hz),
-      start: () => startShow(show),
+      start: begin,
       fix: (kind) => fixOnStage(getWorld(), show, kind),
       amp: (k, by) => turn(k, by),
       run(seconds) { for (let t = 0; t < seconds && show.on; t += 0.1) stepShow(getWorld(), desk, show, 0.1); },
     },
     dispose() {
       sound.close();
+      audience.dispose();
       document.body.classList.remove("at-show", "show-on");
       scene.remove(group);
       card.remove();
