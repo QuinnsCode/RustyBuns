@@ -21,7 +21,7 @@ import type { Ask } from "./replies.ts";
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
 export { writeCheck } from "../askfirst/ask.ts";
 // #3119: the hire and queue handlers ask what a task collides with before it starts
-export { clashMessage, flagOf, heldTasks, hireClash, holdTask, titleOf } from "./overlap.ts";
+export { anyway, clashMessage, flagOf, heldTasks, hireClash, holdTask, seatClash, titleOf } from "./overlap.ts";
 export { swapHold } from "./reaper.ts";
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */

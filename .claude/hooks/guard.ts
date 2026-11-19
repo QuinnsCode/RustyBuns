@@ -310,6 +310,33 @@ export function wideScan(cmd: string, cwd: string, top: string): string | null {
   return null;
 }
 
+// #4956: `gh pr create` waits for `bun scripts/preflight.ts` to have run on the commit it opens. Preflight writes the
+// HEAD it read into the worktree's own git folder (`git rev-parse --git-path rustybuns-preflight`); `stamped` reads
+// that back for a folder: the HEAD there, and the HEAD preflight saw (null when it never ran).
+type Stamped = (dir: string) => { head: string; ran: string | null };
+export function prCreate(cmd: string, cwd: string, stamped: Stamped): string | null {
+  let dir = cwd;
+  for (const seg of segments(cmd)) {
+    const t = strip(seg).rest;
+    if (t[0] === "cd" && t[1]) { dir = resolve(dir, t[1].replace(/^~(?=\/|$)/, homedir())); continue; }
+    if (basename(t[0] ?? "") !== "gh" || t[1] !== "pr" || t[2] !== "create") continue;
+    // `gh pr create -R other/repo` or a draft isn't this branch merging next
+    if (t.some((x) => x === "-R" || x.startsWith("--repo") || x === "-d" || x === "--draft")) continue;
+    const { head, ran } = stamped(dir);
+    if (!head || ran === head) continue;
+    return `run \`bun scripts/preflight.ts\` on this commit first (${ran ? "it last ran on an older one" : "it hasn't run here"}): it names the open PRs changing your files and how yours merges after them; put its "merge after #N" in the PR body`;
+  }
+  return null;
+}
+
+const preflightStamp: Stamped = (dir) => {
+  const git = (...a: string[]) => { const r = Bun.spawnSync(["git", "-C", dir, ...a], { stderr: "ignore" }); return r.exitCode === 0 ? r.stdout.toString().trim() : ""; };
+  const head = git("rev-parse", "HEAD"), file = git("rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight");
+  let ran: string | null = null;
+  try { ran = file ? readFileSync(file, "utf8").trim().split(/\s+/)[0] ?? null : null; } catch {}
+  return { head, ran };
+};
+
 const gitBranch: BranchOf = (cwd) => {
   const r = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { stderr: "ignore" });
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
@@ -349,6 +376,8 @@ if (import.meta.main) {
       ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], { stderr: "ignore" }).stdout.toString().trim() : null;
     const scan = common === null ? null : wideScan(cmd, cwd, common ? dirname(common) : "");
     if (scan) { console.error(`Blocked by .claude/hooks/guard.ts: ${scan}.`); process.exit(2); }
+    const pr = /\bgh\b[^|;&]*\bpr\s+create\b/.test(cmd) ? prCreate(cmd, cwd, preflightStamp) : null;
+    if (pr) { console.error(`Blocked by .claude/hooks/guard.ts: ${pr}.`); process.exit(2); }
   }
   const why = check(input);
   if (why) {

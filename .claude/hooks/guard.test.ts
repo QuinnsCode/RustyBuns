@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { homedir } from "node:os";
-import { check, heavy, wideRead, wideScan } from "./guard";
+import { check, heavy, prCreate, wideRead, wideScan } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);
@@ -132,4 +132,14 @@ test.each([
   const why = wideScan(cmd.replaceAll("/repo", top), cwd.replace("/repo", top), top);
   if (blocked) expect(why).toContain("scan valve");
   else expect(why).toBeNull();
+});
+
+// #4956: a PR opens only on a commit preflight has read, so its "merge after" lines are about the code going up
+test("opening a PR waits for preflight on HEAD; a draft, another repo and other gh calls don't", () => {
+  const at = (ran: string | null) => (dir: string) => ({ head: dir.endsWith("/other") ? "bbb" : "aaa", ran });
+  expect(prCreate("gh pr create --title x", "/w", at(null))).toContain("it hasn't run here");
+  expect(prCreate("git push && gh pr create --title x", "/w", at("old"))).toContain("an older one");
+  expect(prCreate("cd other && gh pr create --title x", "/w", at("aaa"))).toContain("an older one");
+  for (const [c, ran] of [["gh pr create --title x", "aaa"], ["gh pr create --draft", null], ["gh pr create -R o/r", null], ["gh pr view 3", null]] as const)
+    expect([c, prCreate(c, "/w", at(ran))]).toEqual([c, null]);
 });
