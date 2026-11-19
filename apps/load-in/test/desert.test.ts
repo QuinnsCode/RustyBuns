@@ -6,7 +6,7 @@
 // can sits by the generator: on the 15 litres it came with the wall goes quiet at 3 am. Then how the bins stand decides
 // the bass, and how high the mid-highs stand decides the back of a full floor. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
+import { holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
 import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, desertState, heat, score, wrap } from "../src/venues/desert.ts";
@@ -21,9 +21,9 @@ function go(w: World, c: Cables, x: number, z: number) {
 /** Walk up to `key` from the side you're on, take it (lift it, or push it if it rolls), and set it down at (x, z) facing the floor. */
 function move(w: World, c: Cables, key: string, x: number, z: number, how: "lift" | "push" = "lift") {
   const i = at(w, key), side = w.you.z > i.z ? 1 : -1;
-  go(w, c, i.x, i.z + side * (0.3 + dims(i)[2] / 2 + 0.1));
+  go(w, c, i.x, i.z + side * (holdOut(i) + 0.1));
   expect(how === "push" ? push(w, key) : pickUp(w, key)).toEqual({ ok: true });
-  go(w, c, x, z + 0.3 + dims(i)[2] / 2);
+  go(w, c, x, z + holdOut(i));
   w.you.yaw = 0;
   w.held!.rel = 0;
   expect(putDown(w)).toEqual({ ok: true });

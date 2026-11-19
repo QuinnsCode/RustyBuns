@@ -2,7 +2,7 @@
 // and fail the point's check, take it off, set the pins from the calculator, step clear and fly, then the front fills on
 // the stage lip and the desk out at front of house. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { dims, newWorld, pickUp, putDown, walkTo, type World } from "../src/sim.ts";
+import { holdOut, newWorld, pickUp, putDown, walkTo, type World } from "../src/sim.ts";
 import { master } from "../src/venues/dive-bar.ts";
 import { CLEAR, SMALL_ARENA, arenaState, calc, check, fly, hang, hangsOf, point, pin, score, unhang } from "../src/venues/small-arena.ts";
 
@@ -32,7 +32,7 @@ function hangAll(w: World, at: string, keys: string[]) {
 function place(w: World, key: string, x: number, z: number, rot = 0, via?: [number, number]) {
   take(w, key);
   if (via) walkTo(w, ...via);
-  walkTo(w, x, z + 0.3 + dims(item(w, key))[2] / 2);
+  walkTo(w, x, z + holdOut(item(w, key)));
   w.you.yaw = 0;
   w.held!.rel = rot;
   expect(putDown(w)).toEqual({ ok: true });

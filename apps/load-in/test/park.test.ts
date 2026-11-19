@@ -5,7 +5,7 @@
 // day, and pass. Then the band's amp racks trip the generator. The same calls
 // `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
+import { holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
 import { DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, score, windFor, windText } from "../src/venues/park.ts";
@@ -20,8 +20,8 @@ function move(w: World, c: Cables, key: string, x: number, z: number, rot = 0, h
   walkWith(w, c, i.x, i.z + 0.9);
   w.you.yaw = 0;
   expect(how === "push" ? push(w, key) : pickUp(w, key)).toEqual({ ok: true });
-  // Stand so it lands on (x, z): it is held 0.3 m plus half its depth in front of you, facing -z.
-  const out = 0.3 + dims(i)[2] / 2;
+  // Stand so it lands on (x, z): it is held in front of you, facing -z.
+  const out = holdOut(i);
   walkWith(w, c, x, z + out);
   w.you.yaw = 0;
   w.held!.rel = rot;

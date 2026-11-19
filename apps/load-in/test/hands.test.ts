@@ -7,6 +7,7 @@ import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, thumbOverlap, type 
 import * as THREE from "three";
 import { PALM_FACE, carryFrames, inFrame } from "../src/hands/place.ts";
 import { handsView } from "../src/hands/view.ts";
+import { EYE, GARAGE, carryDrop, dims, heldItem, holdPose, newWorld, pickUp, walkTo } from "../src/sim.ts";
 import { FINGERS, HAND } from "@rustybuns/rig/hand";
 import { buildSkin } from "@rustybuns/rig/hand";
 
@@ -87,6 +88,28 @@ describe("hands", () => {
     expect(flat.limitsHeld).toBe(true);
     expect(skinGaps({ kind: "flat" }).thumb).toBeGreaterThan(-0.001);
   });
+});
+
+// Carrying a speaker: hugged at the chest, both hands on its sides are in view, on a phone held upright looking a little
+// down at it and on a laptop looking level (#5053). On Sim, the sub at 45 kg comes down to the hips.
+test.each([["a phone", 390 / 844, -10], ["a laptop", 1280 / 800, 0], ["a laptop", 1280 / 800, -10]])("a carried speaker on %s: both hands in view", (_, aspect, pitch) => {
+  const w = newWorld(GARAGE);
+  walkTo(w, 2, 3.7);
+  w.you.yaw = 0;
+  expect(pickUp(w, "top")).toEqual({ ok: true });
+  const box = holdPose(w)!, [bw, bh, bd] = dims(heldItem(w)!);
+  const { right, left } = carryFrames({ ...box, w: bw, h: bh, d: bd }, 18);
+  const camera = new THREE.PerspectiveCamera(70, aspect, 0.05, 150);
+  camera.rotation.order = "YXZ";
+  camera.position.set(w.you.x, EYE, w.you.z);
+  camera.rotation.set((pitch * Math.PI) / 180, w.you.yaw, 0);
+  camera.updateMatrixWorld(true);
+  for (const [f, side] of [[right, 1], [left, -1]] as const) {
+    const p = new THREE.Vector3(...inFrame(f, PALM_FACE, side)).project(camera);
+    expect(Math.abs(p.x)).toBeLessThan(1);
+    expect(Math.abs(p.y)).toBeLessThan(1);
+  }
+  expect(carryDrop(45)).toBeGreaterThan(carryDrop(18) + 0.2);
 });
 
 // Holding Y on a phone held upright: both forearms raised, each hand on its own side of the view, the fingers not
