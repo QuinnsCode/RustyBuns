@@ -16,7 +16,7 @@ import { PluginPump, pluginChoices, usePlugins } from "./plugins.ts";
 import { PluginPanel, TrackSound } from "./PluginPanel.tsx";
 import { withValue } from "../plugin-track.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
-import { pushTick, useTick } from "./store.ts";
+import { pushEqPlayed, pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
 import { PianoRoll } from "./PianoRoll.tsx";
@@ -248,6 +248,7 @@ export function App() {
       pushTick(m);
     }
     else if (m.t === "move") takeMove(m);
+    else if (m.t === "eqPlayed") pushEqPlayed(m.doc);
     else if (m.t === "engine") { setEngine(m.kind); setEngineNote(m.error ?? null); }
     else if (m.t === "pluginAsk") pump.current?.ask(m);
     else if (m.t === "taken") landTake(m.track, m.beat, m.pcm, m.rate);
@@ -846,7 +847,7 @@ export function App() {
                 onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
                 onListen={(band) => audio?.send({ t: "eqListen", band })}
                 lanes={project.eqAuto ?? []} onLanes={(lanes) => commit({ t: "eqAuto", lanes })}
-                onMove={(i, v, was) => move(MASTER, i, v, was)}
+                onMove={(i, v, was) => move(MASTER, i, v, was)} followsPlay
                 linear={!!project.eqLinear} onLinear={(linear) => commit({ t: "eqPhase", linear })} />
             ) : (
               <Shape key={`track:${shapeOn}`} head={head} doc={project.tracks[shapeOn].eq ?? flatEq()} sampleRate={sr} analyser={an}

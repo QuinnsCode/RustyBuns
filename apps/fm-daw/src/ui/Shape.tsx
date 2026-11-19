@@ -8,6 +8,7 @@
 // under the curve sets the selected band exactly. What's drawn is the filters'
 // real digital response (src/engine/eq.ts `response`), phase included. Linear
 // plays the same curve as an FIR (src/engine/linear.ts): no phase turn, a fixed delay.
+// While automation plays, the master's dots and curve move with it (the worklet's `eqPlayed`).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clamp } from "@rustybuns/util";
 import { linearLatency } from "../engine/linear.ts";
@@ -16,6 +17,7 @@ import {
   type EqBand, type EqDoc, type EqKind, type EqListen,
 } from "../engine/eq.ts";
 import { TRACK_COLORS } from "./colors.ts";
+import { useEqPlayed } from "./store.ts";
 import type { Lane } from "../project.ts";
 
 /** dB at the top and bottom of the curve. */
@@ -60,6 +62,19 @@ const resoDrag = (b: EqBand) => isCut(b.kind) && hasReso(b.slope);
 /** Where a band's dot sits: at its gain on bells and shelves, at its resonance on cuts, on the 0 dB line otherwise. */
 const dotDb = (b: EqBand) => (hasGain(b.kind) ? b.g : resoDrag(b) ? clamp(resoDb(b.q), -RANGE, RANGE) : 0);
 
+/**
+ * The EQ as it plays: each band as saved, at the frequency, gain and Q its automation has it at now.
+ * A played EQ from before an edit (a band added, taken out, switched or bypassed since) is ignored.
+ */
+export function playedOver(doc: EqDoc, played: EqDoc | null): EqDoc {
+  if (!played || played.length !== doc.length) return doc;
+  return doc.map((b, i) => {
+    const p = played[i];
+    if (!b || !p || p.kind !== b.kind || p.on !== b.on || p.slope !== b.slope) return b;
+    return p.f === b.f && p.g === b.g && p.q === b.q ? b : { ...b, f: p.f, g: p.g, q: p.q };
+  });
+}
+
 export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void; onListen?(band: EqListen | null): void;
   /** Shape's automation, and the list with a lane taken out. */
   lanes?: Lane[]; onLanes?(lanes: Lane[]): void;
@@ -67,9 +82,14 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   onMove?(lane: number, v: number, was: number): void;
   /** Linear phase, and the switch. */
   linear?: boolean; onLinear?(on: boolean): void;
+  /** The master's Shape: its dots and curve follow the automation as it plays. */
+  followsPlay?: boolean;
   /** What the bar names, in place of "Shape · master EQ": the master-or-track picker. */
   head?: React.ReactNode }) {
   const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes, linear = false, onLinear } = props;
+  const played = useEqPlayed();
+  /** What's drawn: the EQ as it plays. Edits still start from the saved one. */
+  const shown = useMemo(() => (props.followsPlay ? playedOver(doc, played) : doc), [doc, played, props.followsPlay]);
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 300 });
@@ -80,8 +100,8 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   const [listening, setListening] = useState<number | null>(null);
   const hold = useRef(0);
   const stopListening = () => { clearTimeout(hold.current); hold.current = 0; setListening(null); };
-  const live = useRef({ doc, sel, onChange, listening, onMove: props.onMove });
-  live.current = { doc, sel, onChange, listening, onMove: props.onMove };
+  const live = useRef({ doc, shown, sel, onChange, listening, onMove: props.onMove });
+  live.current = { doc, shown, sel, onChange, listening, onMove: props.onMove };
   /** Patch a band by hand: every setting that moved also goes out as a move. */
   const perform = (slot: number, p: Partial<Pick<EqBand, "f" | "g" | "q">>, group: string) => {
     const b = live.current.doc[slot];
@@ -122,15 +142,15 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   const curves = useMemo(() => {
     const freqs = new Float64Array(size.w);
     for (let x = 0; x < size.w; x++) freqs[x] = fOfX(x + 0.5, size.w);
-    const total = response(doc, sr, freqs);
-    const bands = doc.map((b) => {
+    const total = response(shown, sr, freqs);
+    const bands = shown.map((b) => {
       if (!b?.on) return null;
       const db = new Float64Array(size.w), deg = new Float64Array(size.w);
       bandResponse(b, sr, freqs, db, deg);
       return db;
     });
     return { freqs, total, bands };
-  }, [doc, sr, size.w]);
+  }, [shown, sr, size.w]);
 
   // draw: every frame while there's a spectrum to show, else when anything changes
   useEffect(() => {
@@ -218,7 +238,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
       for (let x = 0; x < w; x++) { const y = yOfDb(clamp(total.db[x], -RANGE * 2, RANGE * 2), h); if (x) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
       ctx.strokeStyle = ink; ctx.lineWidth = 2.25; ctx.stroke();
       // dots
-      live.current.doc.forEach((b, i) => {
+      live.current.shown.forEach((b, i) => {
         if (!b) return;
         const x = xOfF(b.f, w), y = yOfDb(dotDb(b), h), col = TRACK_COLORS[i % TRACK_COLORS.length];
         if (i === live.current.listening) { ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]); }
@@ -241,7 +261,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   };
   const hit = (x: number, y: number) => {
     let best = -1, bestD = HIT;
-    live.current.doc.forEach((b, i) => {
+    live.current.shown.forEach((b, i) => {
       if (!b) return;
       const d = Math.hypot(xOfF(b.f, size.w) - x, yOfDb(dotDb(b), size.h) - y);
       if (d <= bestD) { best = i; bestD = d; }
@@ -270,11 +290,12 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     const { x, y } = at(e);
     const i = hit(x, y);
     if (i < 0) return;
-    const b = doc[i]!;
+    const b = doc[i]!, seen = shown[i] ?? b;
     setSel(i);
     if (e.altKey) { patch(i, { on: !b.on }); return; }
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { slot: i, dx: xOfF(b.f, size.w) - x, dy: yOfDb(dotDb(b), size.h) - y, x, y };
+    // grabbed where it's drawn, so the dot doesn't jump back to its saved place under the pointer
+    drag.current = { slot: i, dx: xOfF(seen.f, size.w) - x, dy: yOfDb(dotDb(seen), size.h) - y, x, y };
     clearTimeout(hold.current);
     hold.current = window.setTimeout(() => { hold.current = 0; if (drag.current?.slot === i) setListening(i); }, HOLD_MS);
   };
