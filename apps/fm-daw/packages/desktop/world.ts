@@ -38,13 +38,17 @@ const REFUSED: Record<Full, string> = {
 
 interface Stub { fetch(url: string, init?: RequestInit): Promise<Response> }
 interface Bucket {
-  get(k: string): Promise<{ text(): Promise<string> } | null>;
-  put(k: string, v: string): Promise<unknown>;
+  get(k: string): Promise<{ text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer>; customMetadata?: Record<string, string> } | null>;
+  put(k: string, v: string | ArrayBuffer, o?: { customMetadata?: Record<string, string> }): Promise<unknown>;
   delete(k: string): Promise<unknown>;
 }
 // The bucket copy is a few minutes behind at worst during a jam, and current once the room empties.
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
+/** The sesh's last bounce, a WAV with its tempo beside it, for a DJ's decks to play (Sound Guy Simulator's live set). */
+const bounceKey = (room: string) => `sesh/${room}/bounce.wav`;
+/** A bounce this big at most: two minutes of 48 kHz 16-bit stereo, a long song bounced once. */
+export const MAX_BOUNCE_BYTES = 24 * 2 ** 20;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch, who may do what and the wind-back ladder. An older copy is the project alone. */
 const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, grants: raw, ladder: raw });
@@ -148,6 +152,7 @@ export default class World {
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/bounce") return this.onBounce(request);
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
     const userId = request.headers.get("X-User-Id");
     if (!userId) return new Response("Unauthenticated", { status: 401 });
@@ -175,6 +180,36 @@ export default class World {
     if (this.studioUsed()) this.sockets.send(server, { t: "studio-all", studio: this.studio });
     this.broadcastPeers();
     return response;
+  }
+
+  /**
+   * The sesh's bounce: PUT files the WAV someone in it just bounced (?bpm= its tempo), GET hands it out with its tempo in
+   * X-Bpm. A private sesh's takes the code (X-Sesh-Code) either way, unless the maker's key comes with it.
+   */
+  private async onBounce(request: Request): Promise<Response> {
+    const room = request.headers.get("X-Room") ?? "", url = new URL(request.url);
+    if (!this.bucket || !room) return new Response("no bounces here", { status: 404 });
+    if (!this.project) await this.restore(this.bucket, room);
+    const key = url.searchParams.get("key") ?? "";
+    const host = KEY.test(key) && !!this.host && (await hashKey(key)) === this.host;
+    if (!host && (await this.locked(room, request))) return new Response("this sesh needs its code", { status: 403 });
+    if (request.method === "GET") {
+      const got = await this.bucket.get(bounceKey(room));
+      const bpm = Number(got?.customMetadata?.bpm);
+      if (!got || !(bpm >= 40 && bpm <= 240)) return new Response("no bounce yet", { status: 404 });
+      return new Response(await got.arrayBuffer(), { headers: { "Content-Type": "audio/wav", "X-Bpm": String(bpm) } });
+    }
+    if (request.method !== "PUT") return new Response("GET or PUT", { status: 405 });
+    if (!this.project) return new Response("no groove to bounce", { status: 404 });
+    const bpm = Number(url.searchParams.get("bpm"));
+    if (!(bpm >= 40 && bpm <= 240)) return new Response("bpm 40 to 240", { status: 400 });
+    if (Number(request.headers.get("Content-Length")) > MAX_BOUNCE_BYTES) return new Response("bounce too big", { status: 413 });
+    const wav = await request.arrayBuffer();
+    if (wav.byteLength > MAX_BOUNCE_BYTES) return new Response("bounce too big", { status: 413 });
+    const head = new TextDecoder().decode(new Uint8Array(wav, 0, Math.min(12, wav.byteLength)));
+    if (!head.startsWith("RIFF") || head.slice(8) !== "WAVE") return new Response("a WAV, please", { status: 415 });
+    await this.bucket.put(bounceKey(room), wav, { customMetadata: { bpm: String(bpm) } });
+    return new Response(null, { status: 204 });
   }
 
   /** Storage came back empty but the bucket has the groove: the Durable Object was reset, not the sesh. */
@@ -627,7 +662,7 @@ export default class World {
       this.ladderTakes.clear();
       for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
-      if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
+      if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
       this.chat = empty();
       this.studio = emptyStudio();

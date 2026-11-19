@@ -10,13 +10,15 @@ import { CABLE, ROLL_R, bowl as bowlRoll, leftM, newRoll, rollKg, rollKind, step
 import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { Vector3 } from "three";
-import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
+import { EYE, EYE_CROUCH, LOW, REACH, corners, dims, facing, footprint, overlap, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, pathLength, type Rope, type Solid, type Vec } from "./rope.ts";
 import { endOf, endWhy, sideOf, type Connector } from "./ends.ts";
 
-/** Where a cable's end is: in a jack, in your hand, in a friend's (crew/sync.ts), lying loose, or still coiled in the case. */
-export type EndAt = { plug: End } | { hand: true } | { mate: string } | { loose: true } | { case: true };
+/** Which of your hands: a roll always hangs on the right. */
+export type Side = "right" | "left";
+/** Where a cable's end is: in a jack, in one of your hands, in a friend's (crew/sync.ts), lying loose, or still coiled in the case. */
+export type EndAt = { plug: End } | { hand: Side } | { mate: string } | { loose: true } | { case: true };
 export interface Run {
   key: string; kind: CableKind; lengthM: number; a: EndAt; b: EndAt;
   /** Out of the case: the roll, and its rope (the same one, for the readers that only want the points). */
@@ -37,8 +39,9 @@ export const UNTANGLE_S = 15;
 export const loopsFor = (r: { lengthM: number }) => Math.ceil(r.lengthM / LOOP_M);
 /** Twists in a coil: every loop that went the same way as the one before it. */
 export const twistsIn = (ways: readonly Way[]) => ways.filter((x, i) => i > 0 && x === ways[i - 1]).length;
-/** `rnd` wobbles a bowled coil off its line (seeded, so a test bowls the same way twice). */
-export interface Cables { runs: Run[]; caseKey: string | null; rnd: () => number }
+/** `rnd` wobbles a bowled coil off its line (seeded, so a test bowls the same way twice). `last` is the hand that
+ * picked something up last: what F plugs first and G lets go of. */
+export interface Cables { runs: Run[]; caseKey: string | null; rnd: () => number; last?: Side }
 
 /** What the road case holds when you open it. */
 export const CASE_LOAD: readonly { key: string; kind: CableKind; lengthM: number }[] = [
@@ -71,26 +74,53 @@ export function carried(c: Cables): Run | null {
 }
 
 const isPlug = (e: EndAt): e is { plug: End } => "plug" in e;
-const isHand = (e: EndAt) => "hand" in e;
+const isHand = (e: EndAt): e is { hand: Side } => "hand" in e;
 const inCase = (e: EndAt) => "case" in e;
 const isMate = (e: EndAt): e is { mate: string } => "mate" in e;
 const mateOf = (w: World, e: { mate: string }) => w.crew.find((m) => m.id === e.mate);
-/** The run whose end is in your hand, and which end. */
-export function inHand(c: Cables): { run: Run; end: "a" | "b" } | null {
-  for (const run of c.runs) {
-    if (isHand(run.a)) return { run, end: "a" };
-    if (isHand(run.b)) return { run, end: "b" };
-  }
-  return null;
+/** A cable end in one of your hands. */
+export type Held = { run: Run; end: "a" | "b"; side: Side };
+/** Every cable end in your hands (two at most: one a hand). */
+export function held(c: Cables): Held[] {
+  const out: Held[] = [];
+  for (const run of c.runs) for (const end of ["a", "b"] as const) { const e = run[end]; if (isHand(e)) out.push({ run, end, side: e.hand }); }
+  return out;
 }
+/** The end you picked up last (or the only one), and which run it is on: what F plugs first and G lets go of. */
+export function inHand(c: Cables): Held | null {
+  const h = held(c);
+  return h.find((x) => x.side === c.last) ?? h[0] ?? null;
+}
+/** The other hand's end, if both hands hold one. */
+const otherHand = (c: Cables, h: Held) => held(c).find((x) => x.side !== h.side) ?? null;
+/** A hand with nothing in it (the right first), or null with gear in your arms or both hands full. */
+export function freeHand(w: World, c: Cables): Side | null {
+  if (w.held) return null;
+  const busy = new Set(held(c).map((h) => h.side));
+  return !busy.has("right") ? "right" : !busy.has("left") ? "left" : null;
+}
+/** Clear the right hand for a roll: an end in it moves over to a free left hand. False when both are full. */
+function rightFree(w: World, c: Cables): boolean {
+  if (w.held) return false;
+  const r = held(c).find((h) => h.side === "right");
+  if (!r) return true;
+  if (held(c).some((h) => h.side === "left")) return false;
+  r.run[r.end] = { hand: "left" };
+  if (c.last === "right") c.last = "left";
+  return true;
+}
+/** Put a cable end in `side`, the hand that picked up last. */
+function take(c: Cables, run: Run, end: "a" | "b", side: Side) { run[end] = { hand: side }; c.last = side; }
 /** Which end of the cable in your hand goes in next: a roll still wound up gives its outer (`a`) end first. */
-const goingIn = (h: { run: Run; end: "a" | "b" }) => (h.end === "b" && h.run.roll?.tailIn && h.run.roll.state === "held" ? "a" : h.end);
+const goingIn = (h: Pick<Held, "run" | "end">) => (h.end === "b" && h.run.roll?.tailIn && h.run.roll.state === "held" ? "a" : h.end);
 /** The connector on the end of the cable you would plug in now (the roll's outer end while it is still wound on). */
-export const endInHand = (c: Cables): Connector | null => { const h = inHand(c); return h ? endOf(h.run.kind, goingIn(h)) : null; };
+export const endInHand = (c: Cables): Connector | null => { const h = inHand(c); return h ? connectorOf(h) : null; };
+/** The connector on the end one hand holds. */
+export const connectorOf = (h: Pick<Held, "run" | "end">): Connector => endOf(h.run.kind, goingIn(h));
 /** Whether a jack takes the cable in your hand: its kind, and the right end of it (an XLR male goes in an input). */
-const takes = (h: { run: Run; end: "a" | "b" }, jack: string) => cableFor(jackKind(jack)) === h.run.kind && !endWhy(h.run.kind, goingIn(h), sideOf(jack));
-/** Whether your hands hold anything: a piece of gear or a cable end. */
-export const handsFull = (w: World, c: Cables) => !!w.held || !!inHand(c);
+const takes = (h: Pick<Held, "run" | "end">, jack: string) => cableFor(jackKind(jack)) === h.run.kind && !endWhy(h.run.kind, goingIn(h), sideOf(jack));
+/** Whether your hands are full: a piece of gear in your arms, or a cable end in each hand. */
+export const handsFull = (w: World, c: Cables) => !freeHand(w, c);
 
 /** Whether @rustybuns/models has a model for this gear id. */
 export const hasModel = (id: string): id is GearId => Object.hasOwn(GEAR_SIZES, id);
@@ -129,11 +159,12 @@ export function jacks(w: World): { owner: string; jack: string; at: Vec }[] {
 }
 const jackAt = (w: World, owner: string, jack: string) => jacks(w).find((j) => j.owner === owner && j.jack === jack)?.at ?? null;
 
-/** Where your hand holds a cable end. */
-export const handAt = (w: World): Vec => handOf(w.you);
-const handOf = (p: Pick<Mate, "x" | "z" | "yaw" | "crouch">): Vec => {
-  const f = facing(p.yaw);
-  return { x: p.x + f.x * 0.35, y: p.crouch ? 0.55 : 0.95, z: p.z + f.z * 0.35 };
+/** Where your hand holds a cable end: the right in front of you, the left a hand's width to its left. */
+export const handAt = (w: World, side: Side = "right"): Vec => handOf(w.you, side);
+const handOf = (p: Pick<Mate, "x" | "z" | "yaw" | "crouch">, side: Side = "right"): Vec => {
+  const f = facing(p.yaw), l = side === "left" ? 0.22 : 0;
+  // Your left, facing f: f turned a quarter anticlockwise seen from above.
+  return { x: p.x + f.x * 0.35 + f.z * l, y: p.crouch ? 0.55 : 0.95, z: p.z + f.z * 0.35 - f.x * l };
 };
 function caseTop(w: World, c: Cables): Vec | null {
   const i = w.items.find((x) => x.key === c.caseKey);
@@ -150,7 +181,7 @@ function caseFoot(w: World, c: Cables): Vec | null {
   return { x: p.x + Math.cos(p.rot) * out, y: THICK, z: p.z - Math.sin(p.rot) * out };
 }
 function pinOf(w: World, c: Cables, e: EndAt): Vec | undefined {
-  if (isHand(e)) return handAt(w);
+  if (isHand(e)) return handAt(w, e.hand);
   if (isMate(e)) { const m = mateOf(w, e); return m && handOf(m); }
   if (inCase(e)) return caseTop(w, c) ?? undefined;
   if (isPlug(e)) return jackAt(w, e.plug[0], e.plug[1]) ?? undefined;
@@ -172,12 +203,11 @@ const solids = (w: World): Solid[] => [
 
 /** One tick: a held end can't go farther than the cable reaches (it stops you), then every laid-out cable settles. */
 export function stepCables(w: World, c: Cables, dt: number) {
-  const h = inHand(c);
-  if (h) {
+  for (const h of held(c)) {
     const other = pinOf(w, c, h.run[h.end === "a" ? "b" : "a"]);
     if (other) {
       // Measure from your hand: past the cable's length, you are pulled back to it.
-      const hand = handAt(w), reach = h.run.lengthM * 0.98 + assist("cableSlack"), dx = hand.x - other.x, dz = hand.z - other.z;
+      const hand = handAt(w, h.side), reach = h.run.lengthM * 0.98 + assist("cableSlack"), dx = hand.x - other.x, dz = hand.z - other.z;
       const flat = Math.sqrt(Math.max(0, reach * reach - (hand.y - other.y) ** 2)), d = Math.hypot(dx, dz);
       if (d > flat) { w.you.x -= (dx / d) * (d - flat); w.you.z -= (dz / d) * (d - flat); }
     }
@@ -206,14 +236,15 @@ export function stepCables(w: World, c: Cables, dt: number) {
 export function bowl(w: World, c: Cables, power: number): Answer {
   const run = carried(c);
   if (!run?.roll) return { ok: false, why: "no roll in your hands" };
-  const roll = run.roll, h = handAt(w);
+  const roll = run.roll, side = isHand(run.b) ? run.b.hand : "right", h = handAt(w, side);
   Object.assign(roll, { x: h.x, z: h.z });
   roll.state = "held";
   const tail = roll.tailIn;
   bowlRoll(roll, w.you.yaw + Math.PI, Math.max(0.15, Math.min(1, power)));
   roll.y = ROLL_R;
   run.b = { loose: true };
-  if (tail) run.a = { hand: true };
+  if (tail) take(c, run, "a", side);
+  else emptied(c, side);
   return { ok: true };
 }
 
@@ -225,15 +256,23 @@ export function settle(w: World, c: Cables, seconds = 2) {
   for (let t = 0; t < seconds; t += 1 / 60) { stepCables(w, c, 1 / 60); w.t += 1 / 60; }
 }
 
-/** The next coiled cable in the case (or the one of `kind`), once you are by the case with your hands free. */
-function fromCase(w: World, c: Cables, kind?: CableKind): { run: Run; top: Vec } | { ok: false; why: string } {
+/** A friend at the case with free hands: two work a tangled cable free in half the time. */
+export function helper(w: World, c: Cables, top = caseTop(w, c)): Mate | null {
+  if (!top) return null;
+  const busy = new Set(c.runs.flatMap((r) => [r.a, r.b]).filter(isMate).map((e) => e.mate));
+  return w.crew.find((m) => !m.holding && !busy.has(m.id) && Math.hypot(m.x - top.x, m.z - top.z) <= REACH) ?? null;
+}
+
+/** The next coiled cable in the case (or the one of `kind`), once you are by the case with a hand free (`roll`: the right
+ * one, or the left free to take over what is in it). */
+function fromCase(w: World, c: Cables, kind?: CableKind, roll = false): { run: Run; top: Vec } | { ok: false; why: string } {
   const top = caseTop(w, c);
   if (!top) return { ok: false, why: "no cable case here" };
-  if (handsFull(w, c)) return { ok: false, why: "your hands are full" };
+  if (handsFull(w, c) || (roll && carried(c))) return { ok: false, why: "your hands are full" };
   if (!near(w, top)) return { ok: false, why: "the cable case is out of reach" };
   const run = c.runs.find((r) => !r.rope && (!kind || r.kind === kind));
   if (!run) return { ok: false, why: kind ? `no ${kind} cable left in the case` : "the case is empty" };
-  w.t += (run.twists ?? 0) * UNTANGLE_S;
+  w.t += ((run.twists ?? 0) * UNTANGLE_S) / (helper(w, c, top) ? 2 : 1);
   run.twists = 0;
   return { run, top };
 }
@@ -244,7 +283,7 @@ export function takeCable(w: World, c: Cables, kind?: CableKind): Answer {
   const got = fromCase(w, c, kind);
   if (!("run" in got)) return got;
   unroll(got.run, caseFoot(w, c) ?? got.top, false);
-  got.run.a = { hand: true };
+  take(c, got.run, "a", freeHand(w, c)!);
   got.run.b = { case: true };
   return { ok: true };
 }
@@ -252,11 +291,12 @@ export function takeCable(w: World, c: Cables, kind?: CableKind): Answer {
 /** Lift the next roll out of the case (or the one of `kind`) into your arms, its end still wound on: carry it to where
  * the run starts, `plug` the end, then `bowl` it. */
 export function takeRoll(w: World, c: Cables, kind?: CableKind): Answer {
-  const got = fromCase(w, c, kind);
+  const got = fromCase(w, c, kind, true);
   if (!("run" in got)) return got;
+  rightFree(w, c);
   unroll(got.run, handAt(w), true).state = "held";
   got.run.a = { loose: true };
-  got.run.b = { hand: true };
+  take(c, got.run, "b", "right");
   return { ok: true };
 }
 
@@ -267,18 +307,24 @@ export function grabEnd(w: World, c: Cables, key: string, end: "a" | "b"): Answe
   if (!run?.rope) return { ok: false, why: `no ${key} laid out` };
   const e = run[end];
   if (isMate(e)) return { ok: false, why: `${mateOf(w, e)?.name ?? "a friend"} has that end` };
-  if (handsFull(w, c)) return { ok: false, why: "your hands are full" };
+  if (isHand(e)) return { ok: false, why: `that end of ${key} is already in your hand` };
+  // The coil's end lifts the roll, and a roll hangs on the right hand.
+  const lifts = end === "b" && coiled(run);
+  if (handsFull(w, c) || (lifts && carried(c))) return { ok: false, why: "your hands are full" };
   const at = endAt(w, c, run, end);
   if (!at || !near(w, at)) return { ok: false, why: `that end of ${key} is out of reach` };
-  run[end] = { hand: true };
+  if (lifts) rightFree(w, c);
+  take(c, run, end, lifts ? "right" : freeHand(w, c)!);
   if (end === "a" && run.roll?.tailIn) run.roll.tailIn = false;
   return { ok: true };
 }
 
-/** Plug the end in your hand into `owner`'s `jack`: in reach, free, and the kind this cable fits. */
+/** Plug an end in your hands into `owner`'s `jack`: in reach, free, and the kind this cable fits. With an end in each
+ * hand, the one that fits goes in (the last picked up, if both do). */
 export function plug(w: World, c: Cables, owner: string, jack: string): Answer {
-  const h = inHand(c);
-  if (!h) return { ok: false, why: "no cable in your hand" };
+  const last = inHand(c);
+  if (!last) return { ok: false, why: "no cable in your hand" };
+  const two = otherHand(c, last), h = !takes(last, jack) && two && takes(two, jack) ? two : last;
   const at = jackAt(w, owner, jack);
   if (!at) return { ok: false, why: `no ${jack} on ${owner}` };
   if (!near(w, at)) return { ok: false, why: `${owner} ${jack} is out of reach` };
@@ -297,6 +343,7 @@ export function plug(w: World, c: Cables, owner: string, jack: string): Answer {
     return { ok: true };
   }
   h.run[h.end] = { plug: [owner, jack] };
+  emptied(c, h.side);
   return { ok: true };
 }
 
@@ -309,11 +356,20 @@ export function unplug(w: World, c: Cables, owner: string, jack: string): Answer
   return { ok: false, why: `nothing plugged into ${owner} ${jack}` };
 }
 
-/** Let go of the end in your hand: it drops where it is, or (the autoCoil assist) with neither end plugged in, it coils itself back into the case. */
-export function dropEnd(c: Cables): Answer {
-  const h = inHand(c);
-  if (!h) return { ok: false, why: "no cable in your hand" };
+/** A hand let go: the other one (if it holds something) is now the last to have picked up. */
+function emptied(c: Cables, side: Side) {
+  if (c.last !== side) return;
+  const rest = held(c).find((x) => x.side !== side);
+  if (rest) c.last = rest.side; else delete c.last;
+}
+
+/** Let go of the end you picked up last (or the one in `side`): it drops where it is, or (the autoCoil assist) with
+ * neither end plugged in, it coils itself back into the case. */
+export function dropEnd(c: Cables, side?: Side): Answer {
+  const h = side ? held(c).find((x) => x.side === side) : inHand(c);
+  if (!h) return { ok: false, why: side ? `nothing in your ${side} hand` : "no cable in your hand" };
   h.run[h.end] = { loose: true };
+  emptied(c, h.side);
   delete h.run.coiling;
   // A roll you carry is set down at your feet.
   const roll = h.run.roll;
@@ -343,6 +399,8 @@ export function setEnd(w: World, c: Cables, key: string, end: "a" | "b", to: End
   const run = c.runs.find((r) => r.key === key);
   if (!run) return;
   const was = run[end];
+  // An end the room puts in your hand stays in the hand it is in, or goes to a free one (a roll's coil to the right).
+  if (isHand(to)) to = isHand(was) ? was : { hand: end === "b" && coiled(run) ? "right" : held(c).some((h) => h.side === "right") ? "left" : "right" };
   run[end] = to;
   if (!isHand(run.a) && !isHand(run.b)) delete run.coiling;
   if (inCase(run.a) && inCase(run.b)) return stow(run, twists ?? run.twists ?? 0);
@@ -417,6 +475,19 @@ export function hazards(w: World, c: Cables): { cable: string; walkway: string; 
   return out;
 }
 
+/** The mess: a cable with an end left lying on the floor, and gear left standing in a walkway (a ramp belongs there).
+ * The crew room keeps where every piece and cable end is, so each friend's page lists the same mess. */
+export function mess(w: World, c: Cables): { key: string; what: string; where: string }[] {
+  const out: { key: string; what: string; where: string }[] = [];
+  for (const run of c.runs) if (run.rope && (("loose" in run.a) || ("loose" in run.b))) out.push({ key: run.key, what: `${run.kind} cable ${run.key}`, where: "left loose" });
+  for (const i of w.items) {
+    if (i.hung || i.key === w.held?.key || dims(i)[1] < LOW || w.crew.some((m) => m.holding === i.key)) continue;
+    const way = (w.level.walkways ?? []).find((p) => overlap(footprint(i), corners((p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2, 0, p.x1 - p.x0, p.z1 - p.z0)));
+    if (way) out.push({ key: i.key, what: gear(i.gear).what, where: `in ${way.name}` });
+  }
+  return out;
+}
+
 /** What compile reads: the gear with jacks, and every cable with both ends in jacks. */
 export function plugged(w: World, c: Cables): { placed: Placed[]; runs: Cable[] } {
   const runs: Cable[] = [];
@@ -468,27 +539,44 @@ export function aimedJack(w: World): { owner: string; jack: string } | null {
   return best;
 }
 
-/** The F key for cables: plug, unplug, pick up an end, coil, take one from the case. Null when it's a job for the gear. */
+/** The loose end in reach (1 m) you look most nearly at, that a free hand could pick up. */
+function aimedEnd(w: World, c: Cables): { run: Run; end: "a" | "b" } | null {
+  const eye = { x: w.you.x, y: w.you.crouch ? EYE_CROUCH : EYE, z: w.you.z }, f = facing(w.you.yaw), cp = Math.cos(w.you.pitch);
+  const look = { x: f.x * cp, y: Math.sin(w.you.pitch), z: f.z * cp };
+  let best: { run: Run; end: "a" | "b" } | null = null, bestDot = -Infinity;
+  for (const run of c.runs) for (const end of ["a", "b"] as const) {
+    // A roll lying with its end wound on is picked up whole (its `b`), not by the end; a roll needs the right hand.
+    const at = run.rope && "loose" in run[end] && !(end === "a" && run.roll?.tailIn) ? endAt(w, c, run, end) : null;
+    if (!at || !near(w, at, 1.0) || (end === "b" && coiled(run) && carried(c))) continue;
+    const dx = at.x - eye.x, dy = at.y - eye.y, dz = at.z - eye.z, d = Math.hypot(dx, dy, dz) || 1;
+    const dot = (dx * look.x + dy * look.y + dz * look.z) / d;
+    if (dot > bestDot) best = { run, end }, bestDot = dot;
+  }
+  return best;
+}
+
+/** The F key for cables: plug an end you hold, else pick something up with a free hand (unplug the jack you look at,
+ * the loose end you look at, a roll from the case), else coil it at the case or let go. Null when it's a job for the gear. */
 export function use(w: World, c: Cables, aimedItem: Item | null): Answer | null {
   const h = inHand(c), j = aimedJack(w);
-  if (h) {
-    if (j) return plug(w, c, j.owner, j.jack);
-    if (aimedItem?.key === c.caseKey && !isPlug(h.run.a) && !isPlug(h.run.b)) return coil(w, c, h.run.key);
-    return dropEnd(c);
+  if (!h && w.held) return null;
+  const filled = j && c.runs.some((r) => [r.a, r.b].some((e) => isPlug(e) && e.plug[0] === j.owner && e.plug[1] === j.jack));
+  if (h && j && !filled && held(c).some((x) => takes(x, j.jack))) return plug(w, c, j.owner, j.jack);
+  const free = freeHand(w, c);
+  if (free) {
+    if (j && filled) return unplug(w, c, j.owner, j.jack);
+    const e = aimedEnd(w, c);
+    if (e) return grabEnd(w, c, e.run.key, e.end);
   }
-  if (w.held) return null;
-  if (j && c.runs.some((r) => [r.a, r.b].some((e) => isPlug(e) && e.plug[0] === j.owner && e.plug[1] === j.jack))) return unplug(w, c, j.owner, j.jack);
-  for (const run of c.runs) for (const end of ["a", "b"] as const) {
-    // A roll lying with its end wound on is picked up whole (its `b`), not by the end.
-    const at = run.rope && "loose" in run[end] && !(end === "a" && run.roll?.tailIn) ? endAt(w, c, run, end) : null;
-    if (at && near(w, at, 1.0)) return grabEnd(w, c, run.key, end);
-  }
-  if (aimedItem?.key === c.caseKey) {
+  if (h && aimedItem?.key === c.caseKey && !isPlug(h.run.a) && !isPlug(h.run.b)) return coil(w, c, h.run.key);
+  if (free && aimedItem?.key === c.caseKey) {
     const left = c.runs.find((r) => !r.rope);
-    if (left) return takeRoll(w, c);
+    if (left && !carried(c)) return takeRoll(w, c);
     const wait = c.runs.find((r) => r.rope && inCase(r.b));
-    if (wait) return grabEnd(w, c, wait.key, "b");
+    if (wait && !carried(c)) return grabEnd(w, c, wait.key, "b");
+    if (left) return takeCable(w, c);
   }
+  if (h) return j ? plug(w, c, j.owner, j.jack) : dropEnd(c);
   return null;
 }
 
@@ -506,7 +594,10 @@ export function cableState(w: World, c: Cables) {
       ...(r.roll ? { roll: { kind: r.roll.kind, state: r.roll.state, leftM: cm(leftM(r.roll)), kg: cm(rollKg(r.roll)), x: cm(r.roll.x), z: cm(r.roll.z), pullKg: cm(r.roll.pullKg) } } : {}),
     })),
     cableKg: cm(w.cableKg ?? 0),
+    /** What each hand holds: a cable's key and end, or null. */
+    hold: Object.fromEntries((["right", "left"] as const).map((s) => { const h = held(c).find((x) => x.side === s); return [s, h ? `${h.run.key} ${h.end}` : null]; })),
     hazards: hazards(w, c),
+    mess: mess(w, c),
     ...patch(w, c),
   };
 }

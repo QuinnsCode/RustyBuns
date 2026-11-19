@@ -161,6 +161,8 @@ const list: Gear[] = [
   },
   { id: "cable-ramp-2ch", what: "two-channel cable ramp, links end to end", size: box(0.9, 0.08, 0.5), kg: 13, jacks: {} },
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
+  // A crew's load (Sound Guy Simulator): stands and drum hardware in a trunk with no wheels, a lift for two.
+  { id: "trunk-case", what: "hardware trunk", size: box(0.95, 0.6, 0.55), kg: 65, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
   // Out on sand: a beach cart on balloon tyres (a generator rides it).

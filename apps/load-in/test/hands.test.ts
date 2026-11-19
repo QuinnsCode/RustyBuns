@@ -3,7 +3,7 @@
 // placement are plain TS, so this runs without a page. The skin over the bones is one closed surface, and bent by the
 // same pose its fingers close on what the hand holds.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, type What } from "@rustybuns/rig/hand";
+import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, thumbOverlap, type What } from "@rustybuns/rig/hand";
 import * as THREE from "three";
 import { PALM_FACE, carryFrames, inFrame } from "../src/hands/place.ts";
 import { handsView } from "../src/hands/view.ts";
@@ -22,10 +22,11 @@ describe("hands", () => {
     ["a cabinet handle", { kind: "handle" }],
     ["a coil over the fingers", { kind: "roll" }],
   ];
-  test.each(holds)("a fist round %s: every fingertip on its surface, every joint in range", (_, what) => {
+  test.each(holds)("a fist round %s: every fingertip on its surface, every joint in range, the thumb clear of the fingers", (_, what) => {
     const p = solver.pose(gripFor(what));
     for (const f of FINGERS) expect(Math.abs(p.tips[f]!)).toBeLessThan(0.003);
     expect(p.limitsHeld).toBe(true);
+    expect(thumbOverlap((j) => [p.mats[j * 16 + 12], p.mats[j * 16 + 13], p.mats[j * 16 + 14]])).toBe(0);
   });
 
   const skin = buildSkin();

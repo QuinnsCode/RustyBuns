@@ -9,8 +9,8 @@ import type { Fed, Rig } from "../audio/hear.ts";
 import { heatColour } from "./dive-bar-view.ts";
 import type { Zone } from "./dive-bar.ts";
 import {
-  FEEDS, FLOOR, LEGS, PASS, POINTS, SPLAYS, SWITCH, TARGET, ZONES, type Leg, type Score, type Show,
-  arena, crewTick, fly, handsNow, heat, legs, lower, powered, reserved, score, send, setHang, setLeg, setSub, show,
+  FEEDS, FLOOR, LEGS, PASS, POINTS, SPLAYS, SWITCH, TARGET, ZONES, type PadLabel, type Score, type Show,
+  arena, atSwitch, nextLeg, pad, crewTick, fly, handsNow, heat, legs, lower, powered, reserved, score, send, setHang, setLeg, setSub, show,
 } from "./arena.ts";
 
 export type ArenaView = {
@@ -21,6 +21,8 @@ export type ArenaView = {
   update(): void;
   /** What the hint line says for the arena's own moves, or null. */
   hint(): string | null;
+  /** What each key does right now, for the touch pad's labels. */
+  pad(): Record<string, PadLabel>;
   /** Who plays (a flown, powered box; a sub on powered amps) and each box's tilt, for what you hear. */
   fed(): Fed;
   rig(): Rig;
@@ -148,8 +150,9 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
         return false;
       }
       if (!selected) return false;
-      if (code === "KeyL") {
-        const now = a.legs[selected], next: Leg | null = now === null ? "L1" : now === "L3" ? null : LEGS[LEGS.indexOf(now) + 1];
+      // L at the switch moves the selected feed to its next leg; anywhere else it is the strike, as on every level.
+      if (code === "KeyL" && atSwitch(w)) {
+        const next = nextLeg(a.legs[selected] ?? null);
         return say(setLeg(w, selected, next), `${selected} on ${next ?? "no leg"}`);
       }
       if (selected === "subs") return false;
@@ -160,6 +163,7 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
       return false;
     },
     tick() { crewTick(getWorld()); },
+    pad: () => pad(getWorld(), selected, tagged),
     hint() {
       if (performance.now() < note.until) return note.text;
       const w = getWorld(), at = aimed(w);

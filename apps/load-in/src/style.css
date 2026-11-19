@@ -53,6 +53,15 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 .bar-card .pass, .bar-card .warn, .bar-card .trip { font-weight: 700; }
 .bar-card small { color: var(--ink-soft); font-size: 12px; margin-top: 3px; }
 .bar-card > div:first-child { display: grid; gap: 1px; }
+/* A card whose lines change while a form on it keeps its focus (the DJ booth): the lines sit in the card's grid as if loose. */
+.bar-card > div.lines { display: contents; }
+.bar-card > div.lines > div:first-child > b:first-child { font: 400 17px var(--marker); margin-bottom: 2px; }
+.sesh-load { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+.sesh-load[hidden] { display: none; }
+.sesh-load input { flex: 1; min-width: 0; font: inherit; padding: 2px 6px; border: 1px solid var(--ink-soft); border-radius: 4px; background: transparent; color: inherit; }
+.sesh-load button { font: inherit; font-weight: 700; min-width: 2em; padding: 2px 6px; border: 1px solid var(--ink-soft); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.sesh-load span { flex-basis: 100%; color: var(--ink-soft); font-size: 12px; }
+.sesh-load span:empty { display: none; }
 .strike-card { left: auto; right: 16px; top: 60px; --tilt: 1.4deg; }
 .show-card { --tilt: -.5deg; }
 .show-card meter { width: 7rem; vertical-align: middle; accent-color: var(--spot); }
@@ -140,5 +149,6 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 .touch-pad.venue { bottom: calc(48px + 2 * 3rem + 18px); grid-template-columns: repeat(5, 2.75rem); }
 .touch-pad button { height: 3rem; min-height: 44px; padding: 0 !important; font: 700 1rem var(--pen) !important; color: var(--chalk) !important; background: linear-gradient(180deg, rgba(255, 255, 255, .1), transparent 50%), rgba(34, 33, 37, .88) !important; border: 0 !important; border-radius: 2px !important; touch-action: none; user-select: none; -webkit-user-select: none; }
 .touch-pad.venue button { height: 2.75rem; font-size: .95rem !important; }
+.touch-pad button.word { font-size: .7rem !important; line-height: 1.05; white-space: pre-line; }
 .touch-pad button[aria-pressed="true"] { background: var(--spot) !important; color: var(--ink) !important; }
 @media (pointer: coarse) and (orientation: landscape) { .touch-pad.venue { grid-template-columns: repeat(8, 2.75rem); } }

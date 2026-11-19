@@ -1,6 +1,6 @@
 // Between your world (sim.ts) and the crew's room (room.ts): what to tell the room, and what its views do to your
 // world. No socket here, so a test passes messages between two worlds and a room by hand.
-import { heldItem, holdPose, seeCrew, type World } from "../sim.ts";
+import { crewLoad, heldItem, holdPose, seeCrew, type World } from "../sim.ts";
 import { endAt, setEnd, type Cables, type EndAt } from "../cables/cables.ts";
 import { whole, type Sent, type ServerMsg, type Wire, type WireEnd } from "./room.ts";
 import { tickDecks, type Decks } from "../audio/decks.ts";
@@ -15,7 +15,7 @@ export type Booth = {
   mood: number; heardMood: number | null;
 };
 /** What the DJ's hands set (not where the track has got to): a change here is worth telling the room. */
-const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch]), d.fader, d.cross]);
+const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch, k.sesh, k.bpm]), d.fader, d.cross]);
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -37,7 +37,7 @@ const ENDS = ["a", "b"] as const;
 const word = (e: EndAt) => ("plug" in e ? `plug:${e.plug.join(" ")}` : "hand" in e ? "hand:" : "mate" in e ? `hand:${e.mate}` : "case" in e ? "case" : "loose");
 const wireWord = (e: WireEnd, you: string) => (e.at === "plug" ? `plug:${e.plug!.join(" ")}` : e.at === "hand" ? `hand:${e.hand === you ? "" : e.hand}` : e.at);
 const toLocal = (e: WireEnd, you: string): EndAt =>
-  e.at === "plug" ? { plug: [e.plug![0]!, e.plug![1]!] } : e.at === "hand" ? (e.hand === you ? { hand: true } : { mate: e.hand ?? "" }) : e.at === "case" ? { case: true } : { loose: true };
+  e.at === "plug" ? { plug: [e.plug![0]!, e.plug![1]!] } : e.at === "hand" ? (e.hand === you ? { hand: "right" } : { mate: e.hand ?? "" }) : e.at === "case" ? { case: true } : { loose: true };
 const CASED: Omit<Wire, "key"> = { n: 0, a: { at: "case" }, b: { at: "case" }, twists: 0 };
 
 /** The cable ends that moved on this page since last time (not a friend's: the room tells you those). */
@@ -80,7 +80,7 @@ export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>
     if (booth.dj?.me && set !== s.sentDecks) {
       s.sentDecks = set;
       const d = booth.decks;
-      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat) })), fader: [...d.fader], cross: d.cross, mood: Math.round(booth.mood) });
+      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat), bpm: k.bpm, sesh: k.sesh })), fader: [...d.fader], cross: d.cross, mood: Math.round(booth.mood) });
     }
   }
   // The switches you threw (`on` is what is switched on, on your page).
@@ -121,6 +121,8 @@ export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<str
     if (c?.runs.some((r) => r.key === m.key)) hearWire(w, c, s, s.wires.get(m.key) ?? { key: m.key, ...CASED }, true);
     return;
   }
+  // The first word from the room: the crew's load is on the truck too.
+  if (!s.you) crewLoad(w);
   s.you = m.you;
   if (booth) {
     const mine = m.dj === m.you;

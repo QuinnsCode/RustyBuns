@@ -10,6 +10,12 @@ export function seshName(rand: () => number = Math.random): string {
   return `${pick(ADJECTIVES)}-${pick(COLORS)}-${pick(ANIMALS)}`;
 }
 
+/** The sesh whose bounce a path names: /sesh/<name>/bounce (a DJ's deck plays it). */
+export function bounceFromPath(path: string): string | null {
+  const m = /^\/sesh\/([a-z0-9-]{1,64})\/bounce$/.exec(path);
+  return m ? m[1] : null;
+}
+
 /** The room a path names: /sesh/<name>, lowercase letters, digits and dashes. Anything else is no sesh. */
 export function seshFromPath(path: string): string | null {
   const m = /^\/sesh\/([a-z0-9-]{1,64})\/?$/.exec(path);

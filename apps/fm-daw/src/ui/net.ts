@@ -67,6 +67,21 @@ export function saveCode(room: string | null, code: string) {
   try { if (code) localStorage.setItem(codeKey(room), code); else localStorage.removeItem(codeKey(room)); } catch { /* private window: ask again next time */ }
 }
 
+/**
+ * A bounce filed with this sesh online, so a DJ's deck can play it (Sound Guy Simulator's live set): the sesh's name is
+ * all the deck needs. Each bounce replaces the last. False on the desktop (no sesh) or when the edge said no.
+ */
+export async function shareBounce(wav: Uint8Array, bpm: number): Promise<boolean> {
+  const room = seshFromPath(location.pathname);
+  if (!room) return false;
+  const url = new URL(`/sesh/${room}/bounce`, location.href);
+  url.searchParams.set("bpm", String(bpm));
+  url.searchParams.set("key", seshKey(room));
+  const code = savedCode(room);
+  if (code) url.searchParams.set("code", code);
+  try { return (await fetch(url, { method: "PUT", body: wav as Uint8Array<ArrayBuffer>, headers: { "Content-Type": "audio/wav" } })).ok; } catch { return false; }
+}
+
 export function connect(opts: {
   /** Called with the saved project, or null when the world is empty. */
   onSnapshot(p: Project | null): void;

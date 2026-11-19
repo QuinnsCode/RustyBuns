@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { setDial } from "../src/assists.ts";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
-import { cableState, endInHand, fedBy, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
+import { cableState, dropEnd, endInHand, fedBy, grabEnd, newCables, plug, settle, takeCable, takeRoll, unplug, walkWith } from "../src/cables/cables.ts";
 
 test("run power from the outlet to the speaker across the walkway, see the hazard, lay a ramp over it", () => {
   // Sim: no slack past the cable's length (another file may leave the dial on Cozy).
@@ -67,4 +67,27 @@ test("a power cable only goes one way round: the wall plug into the wall, the IE
   expect(plug(w, c, "top", "power-in")).toEqual({ ok: false, why: "that's the wall plug end: it goes in an output, the IEC socket end goes here" });
   walkWith(w, c, -2.2, 0.6);
   expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
+});
+
+test("two hands: an end in each, a roll on the right, the end that fits goes in, G lets go of the last", () => {
+  setDial("sim");
+  const w = newWorld(), c = newCables(w), hold = () => cableState(w, c).hold;
+  walkWith(w, c, -1.6, 3.2);
+  expect(takeCable(w, c, "power")).toEqual({ ok: true });
+  expect(hold()).toEqual({ right: "power-10 a", left: null });
+  // A roll hangs on the right: the power end moves over to the left hand.
+  expect(takeRoll(w, c, "speaker")).toEqual({ ok: true });
+  expect(hold()).toEqual({ right: "speaker-10 b", left: "power-10 a" });
+  expect(takeCable(w, c)).toEqual({ ok: false, why: "your hands are full" });
+  // At the wall, the power end goes in though the roll was picked up last; the roll stays in the right hand.
+  walkWith(w, c, -2.2, 0.6);
+  expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
+  expect(hold()).toEqual({ right: "speaker-10 b", left: null });
+  // A free hand picks the plug back out; G (dropEnd) lets go of that one, the last picked, and keeps the roll.
+  expect(unplug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
+  expect(hold()).toEqual({ right: "speaker-10 b", left: "power-10 a" });
+  expect(dropEnd(c)).toEqual({ ok: true });
+  expect(hold()).toEqual({ right: "speaker-10 b", left: null });
+  expect(dropEnd(c)).toEqual({ ok: true });
+  expect(cableState(w, c).cables.find((r) => r.key === "speaker-10")?.roll?.state).toBe("down");
 });

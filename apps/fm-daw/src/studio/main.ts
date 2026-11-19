@@ -16,7 +16,7 @@ import { cleanAvatar, defaultAvatar, drawAvatar, randomAvatar, type Avatar } fro
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
 import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
-import { apply, loopBeats, type Live, type Op, type Project } from "../project.ts";
+import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
@@ -345,7 +345,7 @@ async function startAudio() {
     opusEncoder = opus?.encoder ?? null;
     if (opus) opusIn = new OpusIn(opus.decoder, (peer, track, b, pcm) => { for (const m of band.sound(peer, track, b, pcm)) out?.send(m); });
     out.send(loadMsg(project));
-    out.send({ t: "master", gain: dbToGain(START_DB) });
+    out.send(masterMsg(project));
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
     for (const peer of plugged.keys()) guitars.ask(peer);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
@@ -571,7 +571,9 @@ function drawMade() {
   }
 }
 let lane: LaneModel | null = null;
-function groove(p: Project) { project = p; out?.send(loadMsg(p)); drawMade(); lane?.refresh(); }
+/** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
+const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); }
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
 const rights: Rights = { floor: null, grants: null, me: null, asked: null };

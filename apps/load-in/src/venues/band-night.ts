@@ -42,6 +42,8 @@ export const BAND_NIGHT: Level = {
     { key: "vox-2", gear: "mic-condenser", x: 0.8, y: 0, z: 14.6, rot: 0 },
     { key: "case", gear: "road-case-m", x: 0, y: 0, z: 15.5, rot: 0 },
   ],
+  // With a crew, the band's stands and hardware come too, set down on the dock by the truck: 65 kg, a lift for two.
+  crewItems: [{ key: "trunk", gear: "trunk-case", x: -2.4, y: 0, z: 13.8, rot: Math.PI / 2 }],
   // Six 10 m mic cables and two spares, the 30 m snake, a power lead for the desk.
   caseLoad: [
     ...["a", "b", "c", "d", "e", "f", "g", "h"].map((k) => ({ key: `xlr-${k}`, kind: "xlr" as const, lengthM: 10 })),

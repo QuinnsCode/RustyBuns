@@ -261,6 +261,8 @@ function draw() {
   camera.position.set(you.x, (you.crouch ? EYE_CROUCH : EYE) + (world.level.floorAt?.(you.x, you.z) ?? 0), you.z);
   camera.rotation.set(you.pitch, you.yaw, 0);
   for (const i of world.items) {
+    // A piece that came in after the level was built (a crew's load, crewLoad in sim.ts) gets its model now.
+    if (!meshes.has(i.key)) { const n = modelOf(i.gear, undefined, i.key); meshes.set(i.key, n); scene.add(n); }
     const tall = i.gear === "stand-tripod" ? standHeight(world, i.key) : 0;
     // A stand raised or lowered is a new model: its pole grows.
     if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = modelOf(i.gear, tall); meshes.set(i.key, n); scene.add(n); }
@@ -292,7 +294,12 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
+  if (phase === "play") touch.relabel(ar?.pad() ?? {});
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
+  // In a crew room, the mess everyone sees: cables left loose and gear left in the walkways.
+  const left = phase === "play" && online?.status === "in" ? cable.mess(world, cables) : [];
+  $("mess").hidden = !left.length;
+  $("mess").textContent = left.length ? `Mess: ${left.map((m) => `${m.what} ${m.where}`).join(", ")}` : "";
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -303,18 +310,19 @@ function draw() {
 
 const whd = ([w, h, d]: [number, number, number]) => ({ w, h, d });
 
-/** What your hands are doing: palms flat on a carried box's sides, a roll hooked over the fingers, a plug ready at a
- * jack, a fist round a cable you drag (the wrist dropping with what it pulls), or nothing. */
+/** What your hands are doing: palms flat on a carried box's sides, a roll hooked over the right hand's fingers, a plug
+ * ready at a jack, a fist round each cable you drag (the wrist dropping with what it pulls), or nothing. */
 function holding(): Hold {
   const held = heldItem(world), hp = holdPose(world), end = cable.inHand(cables), roll = cable.carried(cables)?.roll;
   if (held && hp) return { right: { kind: "flat" }, left: { kind: "flat" }, kg: gear(held.gear).kg / (world.held?.team ? 2 : 1), carry: { ...hp, ...whd(dims(held)) } };
-  if (roll) return { right: { kind: "roll" }, left: roll.tailIn ? REST : { kind: "cable", radius: CABLE[roll.kind].radius }, kg: world.cableKg ?? 0 };
-  if (end) {
-    const at = cable.handAt(world), roll = end.run.roll, radius = roll ? CABLE[roll.kind].radius : CABLE_RADIUS[end.run.kind] ?? 0.004;
-    const what = cable.aimedJack(world) ? { kind: "plug" as const } : { kind: "cable" as const, radius };
-    return { right: what, left: REST, kg: world.cableKg ?? 0, lead: { at: [at.x, at.y, at.z], color: COLOR[end.run.kind] ?? 0x222222, end: cable.endInHand(cables) ?? undefined } };
-  }
-  return { right: REST, left: REST, kg: 0 };
+  const ends = cable.held(cables), left = ends.find((h) => h.side === "left"), right = ends.find((h) => h.side === "right");
+  const fist = (h: cable.Held | undefined): Hold["left"] => (h ? { kind: "cable", radius: h.run.roll ? CABLE[h.run.roll.kind].radius : CABLE_RADIUS[h.run.kind] ?? 0.004 } : REST);
+  if (roll) return { right: { kind: "roll" }, left: left ? fist(left) : roll.tailIn ? REST : { kind: "cable", radius: CABLE[roll.kind].radius }, kg: world.cableKg ?? 0 };
+  if (!end) return { right: REST, left: REST, kg: 0 };
+  // The plug ready at a lit jack is the hand F would plug with; the lead is drawn from the right fist.
+  const jack = cable.aimedJack(world), ready = jack && end.side === "right";
+  const at = cable.handAt(world), lead = right ? { lead: { at: [at.x, at.y, at.z] as [number, number, number], color: COLOR[right.run.kind] ?? 0x222222, end: cable.connectorOf(right) } } : {};
+  return { right: right ? (ready ? { kind: "plug" } : fist(right)) : REST, left: left ? (jack && end.side === "left" ? { kind: "plug" } : fist(left)) : REST, kg: world.cableKg ?? 0, ...lead };
 }
 /** How fast you're actually moving (m/s), for the bob of your steps. */
 let lastStep = { x: 0, z: 0, t: -1, v: 0 };
@@ -332,7 +340,10 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   const conn = cable.endInHand(cables), named = conn ? CONNECTOR_NAME[conn] : "";
   if (roll && jack) return `F plug the ${named} into ${jack.owner} ${jack.jack}`;
   if (roll) return roll.tailIn ? "Carry it to where the run starts, F plug the end, or Space bowl it holding the end" : "Hold Space to wind up, let go to bowl. F set it down";
-  if (end) return jack ? `F plug the ${named} into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : `${named.replace(/^./, (ch) => ch.toUpperCase())} end in hand. F drop the cable`;
+  if (end) {
+    const two = cable.held(cables).length > 1;
+    return jack ? `F plug the ${named} into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : two ? `${named.replace(/^./, (ch) => ch.toUpperCase())} end in each hand. F or G let go of the last` : `${named.replace(/^./, (ch) => ch.toUpperCase())} end in hand. F drop it (or grab another with your free hand), G drop it`;
+  }
   if (world.held) return "F put down, Q / E turn";
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
@@ -372,6 +383,7 @@ function press(code: string) {
   if (band?.key(code)) return;
   if (foh?.key(code)) return;
   if (!world.held && !cable.inHand(cables) && dj?.key(code)) return;
+  if (code === "KeyG" && cable.inHand(cables)) return void say(cable.dropEnd(cables));
   if (code === "KeyF") grab();
   if (code === "Space") { if (windup) letGo(); else if (cable.carried(cables)) windup = { power: 0 }; }
   if ((code === "KeyQ" || code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, code === "KeyQ" ? "over" : "under"));
@@ -585,7 +597,7 @@ const harness = {
   plug: (owner: string, jack: string) => cable.plug(world, cables, owner, jack),
   unplug: (owner: string, jack: string) => cable.unplug(world, cables, owner, jack),
   grabEnd: (key: string, end: "a" | "b") => cable.grabEnd(world, cables, key, end),
-  dropEnd: () => cable.dropEnd(cables),
+  dropEnd: (side?: cable.Side) => cable.dropEnd(cables, side),
   /** Start coiling a cable at the case (neither end plugged in); then `loop` it, or `coilAll` in one call. */
   coil: (key: string) => cable.coil(world, cables, key),
   /** One loop onto the coil being made: "over" (Q) or "under" (E). */

@@ -105,7 +105,36 @@ function curlTip(f: Exclude<Finger, "thumb">, [a, b, c]: V3): V3 {
   return [chain[0].at[0], y, z];
 }
 
-/** Places to try the thumb's tip: round the far side of a cylinder over the index finger, or flat beside it. */
+/** How deep the thumb's outer two segments sink into the index and middle fingers, metres (0: clear), each segment a
+ * capsule between its joints. `at(j)` is joint j's position in the hand frame. */
+export function thumbOverlap(at: (j: number) => V3): number {
+  const t = HAND.chains.thumb;
+  let worst = 0;
+  for (const f of ["index", "middle"] as const) {
+    const c = HAND.chains[f];
+    for (let a = 2; a < t.length; a++) for (let b = 1; b < c.length; b++) {
+      const r = (HAND.bones[t[a - 1]].radius + HAND.bones[t[a]].radius + HAND.bones[c[b - 1]].radius + HAND.bones[c[b]].radius) / 2;
+      worst = Math.max(worst, r - segmentGap(at(t[a - 1]), at(t[a]), at(c[b - 1]), at(c[b])));
+    }
+  }
+  return worst;
+}
+
+/** The closest two segments come: points along the first, each to its nearest on the second. */
+function segmentGap(p: V3, q: V3, a: V3, b: V3): number {
+  const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2 || 1;
+  let best = Infinity;
+  for (let u = 0; u <= 1.001; u += 0.0625) {
+    const x = [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u, p[2] + (q[2] - p[2]) * u];
+    const w = Math.max(0, Math.min(1, ((x[0] - a[0]) * ab[0] + (x[1] - a[1]) * ab[1] + (x[2] - a[2]) * ab[2]) / L));
+    best = Math.min(best, Math.hypot(x[0] - a[0] - ab[0] * w, x[1] - a[1] - ab[1] * w, x[2] - a[2] - ab[2] * w));
+  }
+  return best;
+}
+
+/** Where along the cylinder the thumb tip tries: past the index finger (x = -0.025), on the thing beside it. */
+const GOAL_X = [-0.042, -0.05];
+/** Places to try the thumb's tip: round the far side of a cylinder beside the index finger, or flat beside it. */
 function thumbGoals(s: Surface | null): V3[] {
   if (!s) return [];
   const pad = HAND.bones[HAND.tips.thumb].radius, out: V3[] = [];
@@ -114,7 +143,7 @@ function thumbGoals(s: Surface | null): V3[] {
     return out;
   }
   const R = s.r + pad;
-  for (const x of [-0.032, -0.02]) for (let deg = 24; deg <= 266; deg += 22) {
+  for (const x of GOAL_X) for (let deg = 24; deg <= 266; deg += 22) {
     const p = (deg * Math.PI) / 180;
     out.push([x, s.y + R * Math.cos(p), s.z - R * Math.sin(p)]);
   }
@@ -194,7 +223,8 @@ export class HandSolver {
         if (d < 0) cost += -d * 12;
       }
     }
-    return cost;
+    // A fist's thumb closes beside the fingers, never through them.
+    return cost + thumbOverlap((j) => this.rig.worldPosition(j)) * 12;
   }
 
 }

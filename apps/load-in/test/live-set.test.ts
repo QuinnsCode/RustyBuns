@@ -5,7 +5,8 @@ import { expect, test } from "bun:test";
 import { newWorld, type World } from "../src/sim.ts";
 import { Crew, readSent } from "../src/crew/room.ts";
 import { hear, outbox, synced, type Booth, type Synced } from "../src/crew/sync.ts";
-import { TRACKS, newDecks, play, setCross, setPitch, tickDecks } from "../src/audio/decks.ts";
+import { bpmOf, load, newDecks, play, setCross, setPitch, tickDecks, trackName } from "../src/audio/decks.ts";
+import { fetchBounce, seshOf } from "../src/audio/sesh-track.ts";
 import { DJ_BOOTH } from "../src/venues/dj-booth.ts";
 
 interface Page { id: string; w: World; s: Synced; booth: Booth }
@@ -36,7 +37,7 @@ function room() {
 }
 
 /** How far apart two pages are in a deck's track, in milliseconds of music. */
-const apartMs = (a: Page, b: Page, deck = 0) => (Math.abs(a.booth.decks.deck[deck]!.beat - b.booth.decks.deck[deck]!.beat) / (TRACKS[deck]!.bpm / 60)) * 1000;
+const apartMs = (a: Page, b: Page, deck = 0) => (Math.abs(a.booth.decks.deck[deck]!.beat - b.booth.decks.deck[deck]!.beat) / (a.booth.decks.deck[deck]!.bpm / 60)) * 1000;
 
 test("one DJ plays and the whole crew is in step: a second DJ is refused, a late joiner lands in time, a handover doesn't restart the music", () => {
   const { join, pump, pass } = room();
@@ -95,6 +96,44 @@ test("one DJ plays and the whole crew is in step: a second DJ is refused, a late
   pass(5);
   expect(apartMs(bea, ada)).toBeLessThan(50);
   expect(apartMs(bea, cy)).toBeLessThan(50);
+});
+
+test("an FM DAW sesh on deck 1: the DJ loads its bounce, the crew's decks take it at the sesh's tempo, and they stay in step", async () => {
+  const { join, pump, pass } = room();
+  const ada = join("Ada"), bea = join("Bea");
+  ada.booth.want = true;
+  pump();
+  // FM DAW hands out a sesh's last bounce with its tempo (packages/desktop/world.ts); one that was never bounced is a 404.
+  const fm = async (url: string | URL | Request) => String(url).endsWith("/sesh/mellow-jade-otter/bounce")
+    ? new Response(new Uint8Array(64), { headers: { "X-Bpm": "97" } }) : new Response("no bounce yet", { status: 404 });
+  const get = fm as typeof fetch;
+  expect(await fetchBounce("sleepy-teal-yak", "https://fm.test", get)).toBe("sleepy-teal-yak has no bounce yet: bounce it in FM DAW first");
+  // The DJ pastes the sesh's link: the deck takes the bounce's tempo and waits at the top.
+  const sesh = seshOf("https://fm.test/sesh/mellow-jade-otter?x=1")!;
+  const b = await fetchBounce(sesh, "https://fm.test", get);
+  if (typeof b === "string") throw new Error(b);
+  load(ada.booth.decks, 1, { sesh, bpm: b.bpm });
+  play(ada.booth.decks, 1);
+  pump();
+  expect(bea.booth.decks.deck[0]).toMatchObject({ sesh: "mellow-jade-otter", bpm: 97, playing: true });
+  expect(trackName(bea.booth.decks, 1)).toBe("mellow-jade-otter");
+  // Half a minute in, with a pitch ride on the way: the sesh's beat runs at its own tempo on both pages, together.
+  pass(15);
+  setPitch(ada.booth.decks, 1, -3);
+  pump();
+  pass(15);
+  expect(bpmOf(bea.booth.decks, 1)).toBeCloseTo(97 * 0.97, 5);
+  expect(ada.booth.decks.deck[0]!.beat).toBeCloseTo((97 / 60) * 15 + (97 * 0.97 / 60) * 15, 3);
+  expect(apartMs(ada, bea)).toBeLessThan(50);
+  // Back to the deck's own track: everyone's deck 1 leaves the sesh.
+  load(ada.booth.decks, 1, null);
+  pump();
+  expect(bea.booth.decks.deck[0]).toMatchObject({ sesh: "", bpm: 124, playing: false, beat: 0 });
+});
+
+test("a sesh is its name or its link; anything else is no sesh", () => {
+  for (const [typed, want] of [["fuzzy-black-panda", "fuzzy-black-panda"], [" Fuzzy-Black-Panda ", "fuzzy-black-panda"], ["https://fm-daw.example/sesh/fuzzy-black-panda", "fuzzy-black-panda"], ["https://fm-daw.example/sesh/fuzzy-black-panda/", "fuzzy-black-panda"], ["two words", null], ["", null]] as const)
+    expect(seshOf(typed)).toBe(want);
 });
 
 test("the floor takes the set: a matched blend lifts it, a trainwreck clears it, dead air drops it, a hot master tires it", async () => {

@@ -8,7 +8,7 @@ Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deplo
 
 **Your ink** (`src/you/`): each rung of the tour you pass puts a flash tattoo on a forearm, and the Ink scrap on the menu takes one picture of your own (kept in this browser only). Hold Y to look at your arms.
 
-**A live set** (`src/crew/`, `src/audio/decks.ts`): in a crew room one player at a time has the DJ seat, and the decks are shared, so every page plays the same mix in step and each player hears it from where they stand. A late joiner lands in time; a handover does not restart the track.
+**A live set** (`src/crew/`, `src/audio/decks.ts`): in a crew room one player at a time has the DJ seat, and the decks are shared, so every page plays the same mix in step and each player hears it from where they stand. A late joiner lands in time; a handover does not restart the track. A deck can play an FM DAW sesh: type the sesh's name or paste its link in the booth's box and press 1 or 2, and the deck plays that sesh's last bounce at the tempo it was made at (`src/audio/sesh-track.ts`; `?fm=<origin>` for a local FM DAW). The crew's decks load the same sesh with the DJ's, so everyone plays one mix in step.
 
 **Dust** (the desert, `src/venues/desert.ts`): a plugged joint lying within 20 cm of the sand fills with dust by sunrise and crackles. Stand the gear on a case or the cart, or tape the joint (G).
 
@@ -22,7 +22,9 @@ bun test                 # the garage load-in and a power run, played by the tes
 ```
 
 Click to take the mouse. WASD walk, mouse look, F (or a click) picks up, puts down, takes a cable from the case, plugs
-it into the jack you look at or pulls it out; Q / E turn what you hold, P switch on what you look at, M speakers up or
+it into the jack you look at or pulls it out. A cable end goes in each hand: with one held, F picks up the end you look
+at with the free hand (a roll always hangs on the right), F at a jack plugs whichever end fits, and G lets go of the
+one you picked up last. Q / E turn what you hold, P switch on what you look at, M speakers up or
 down, C crouch, Esc lets go. A speaker with no cable in it plays once switched on; once cabled, it plays only when the
 patch feeds it.
 The dial under Play goes from **Cozy** (no clock, gear weighs half, a cable you let go of coils itself, ramps snap end to end, free jacks glow when you hold a cable, breakers never trip) through **Crew** to **Sim** (real weights, doors on time, breakers trip, a short cable is short). A new player starts on Crew, and the browser remembers the stop. With a clock, the doors time is at the top of the screen. Each minute late, after Crew's two minutes of grace, costs 10% of the pay and 8 points of crowd mood, and the mood scales the show score when the doors open.
