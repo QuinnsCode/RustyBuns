@@ -30,6 +30,10 @@ export const WAIT = { chance: 0.5, closing: 0.5, back: 20 } as const;
 /** A ranged move painted on the ground under us (sim `warning`, or a lob still in the air): the chance each tick of
  * dashing out of it, by archetype; a tick it doesn't, it walks out (ATTACKS.md step 5). The light ones read it best. */
 export const DODGE = { skirmisher: 0.25, flyer: 0.2, bruiser: 0.15, tank: 0.08 } as const;
+/** Hit and run (#5226 round 9): a skirmisher that strikes from the front (not behind it, not on a stunned target) doesn't
+ * stand there trading blows; for `ticks` free ticks it slips back out round the target, with a dash sideways first if it
+ * has the stamina, and comes in again from the side. */
+export const RUN = { ticks: 40 } as const;
 
 /** Which way out of shape `a` for fighter `me`, as a unit [x, z]: sideways out of a column's or wall's lane or a cone's fan,
  * to the side it already stands on; straight out from a ring's middle. A way that runs off the ring turns: a lane's to its
@@ -51,7 +55,7 @@ export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 /** A bot for fighter `side`: it fights the nearest foe still in (`foeOf`), so it plays a team fight as it plays one on one. */
 export function bot(side: number, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, dir = rnd() < 0.5 ? 1 : -1;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, away = 0, leave = false, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
@@ -184,11 +188,21 @@ export function bot(side: number, seed: number): Bot {
         // Circle at arm's length, outside its swing, until its back is turned, or until circling wears it out
         // (sim ORBIT): then it goes straight in and works the front.
         const gap = d - (reach + 1.5), dizzy = Math.abs(me.orbit) > ORBIT.free;
-        if (dizzy) goTo(o.pos.x - (dx / d) * (reach - 0.4), o.pos.z - (dz / d) * (reach - 0.4));
-        else if (!behind && d < reach + 3) goTo(me.pos.x - (dz / d) * orbit * 3 + (dx / d) * gap, me.pos.z + (dx / d) * orbit * 3 + (dz / d) * gap);
+        if (away > 0) away--;
+        if (leave && d < reach + 1 && me.stamina > me.b.dashCost * 2) {
+          leave = false; i.mx = (-dz / d) * orbit - (dx / d) * 0.5; i.mz = (dx / d) * orbit - (dz / d) * 0.5; press("dash"); if (i.dash) return i;
+        }
+        leave = false;
+        if (dizzy && away === 0) goTo(o.pos.x - (dx / d) * (reach - 0.4), o.pos.z - (dz / d) * (reach - 0.4));
+        else if (away > 0 || (!behind && d < reach + 3)) goTo(me.pos.x - (dz / d) * orbit * 3 + (dx / d) * gap, me.pos.z + (dx / d) * orbit * 3 + (dz / d) * gap);
         else goTo(back.x, back.z);
         // It turns fast enough that the swing itself aims; no need to face first.
-        if (d < reach && Math.abs(above) < 2 && (open || (dizzy && rnd() < 0.25))) { press(o.state === "stun" && rnd() < 0.3 ? "heavy" : "light"); return i; }
+        const free = behind || o.state === "stun";
+        if (d < reach && Math.abs(above) < 2 && (free || away === 0) && (open || (dizzy && rnd() < 0.25))) {
+          press(o.state === "stun" && rnd() < 0.3 ? "heavy" : "light");
+          if (!free && o.state === "attack") { away = RUN.ticks; leave = true; }
+          return i;
+        }
         if (d < reach + 0.5 && !open && o.state === "attack" && me.stamina > me.b.dashCost * 2 && rnd() < 0.4) {
           i.mx = (-dz / d) * orbit; i.mz = (dx / d) * orbit; press("dash"); return i;
         }

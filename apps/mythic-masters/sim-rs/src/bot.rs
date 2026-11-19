@@ -20,6 +20,7 @@ fn sidestep(a: Archetype) -> f64 {
     }
 }
 const PUNISH: f64 = 60.0;
+const RUN_TICKS: f64 = 40.0;
 const WAIT_CHANCE: f64 = 0.5;
 const WAIT_CLOSING: f64 = 0.5;
 const WAIT_BACK: f64 = 20.0;
@@ -87,6 +88,8 @@ pub struct Bot {
     commit: f64,
     punish: f64,
     back: f64,
+    away: f64,
+    leave: bool,
     dir: f64,
     orbit: f64,
 }
@@ -113,6 +116,8 @@ impl Bot {
             commit: 0.0,
             punish: 0.0,
             back: 0.0,
+            away: 0.0,
+            leave: false,
             dir,
             orbit,
         }
@@ -389,9 +394,22 @@ impl Bot {
                 }
                 let gap = d - (reach + 1.5);
                 let dizzy = me.orbit.abs() > ORBIT_FREE;
-                if dizzy {
+                if c.bot.away > 0.0 {
+                    c.bot.away -= 1.0;
+                }
+                if c.bot.leave && d < reach + 1.0 && me.stamina > me.b.dash_cost * 2.0 {
+                    c.bot.leave = false;
+                    c.i.mx = (-dz / d) * orbit - (dx / d) * 0.5;
+                    c.i.mz = (dx / d) * orbit - (dz / d) * 0.5;
+                    c.press(me, Key::Dash);
+                    if c.i.dash {
+                        return c.i;
+                    }
+                }
+                c.bot.leave = false;
+                if dizzy && c.bot.away == 0.0 {
                     c.go_to(me, o.pos.x - (dx / d) * (reach - 0.4), o.pos.z - (dz / d) * (reach - 0.4));
-                } else if !behind && d < reach + 3.0 {
+                } else if c.bot.away > 0.0 || (!behind && d < reach + 3.0) {
                     c.go_to(
                         me,
                         me.pos.x - (dz / d) * orbit * 3.0 + (dx / d) * gap,
@@ -400,13 +418,18 @@ impl Bot {
                 } else {
                     c.go_to(me, back.0, back.1);
                 }
-                if d < reach && above.abs() < 2.0 && (open || (dizzy && c.bot.rnd.float() < 0.25)) {
+                let free = behind || o.state == State::Stun;
+                if d < reach && above.abs() < 2.0 && (free || c.bot.away == 0.0) && (open || (dizzy && c.bot.rnd.float() < 0.25)) {
                     let k = if o.state == State::Stun && c.bot.rnd.float() < 0.3 {
                         Key::Heavy
                     } else {
                         Key::Light
                     };
                     c.press(me, k);
+                    if !free && o.state == State::Attack {
+                        c.bot.away = RUN_TICKS;
+                        c.bot.leave = true;
+                    }
                     return c.i;
                 }
                 if d < reach + 0.5 && !open && o.state == State::Attack && me.stamina > me.b.dash_cost * 2.0 && c.bot.rnd.float() < 0.4 {
