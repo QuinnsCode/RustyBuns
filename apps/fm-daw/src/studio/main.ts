@@ -25,6 +25,7 @@ import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
+import type { Aim } from "./fingers.ts";
 import { keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
@@ -319,7 +320,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
   d.fig.group.position.set(d.x, 0, d.z);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.speed, seated: !!seat, play: handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.speed, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
@@ -732,16 +733,25 @@ function soundingAt(id: string): string[] {
   for (const o of jam.others.values()) if (o.seat === id) return [...o.held];
   return [];
 }
+/** The notes sounding at a spot as [track, midi], and its keys' own track's notes on its keyboard from `low`. */
+function notesAt(s: Spot) {
+  const notes = soundingAt(s.id).map((k) => k.split(":").map(Number)).filter(([tr]) => project.tracks[tr]), tr = trackFor(s, project);
+  return { notes, keyed: notes.filter(([n]) => n === tr).map(([, m]) => m), low: lowC(project.tracks[tr]?.root ?? 60) };
+}
+/** What a seated player's fingers and sticks land on (fingers.ts): the spot's keys and the notes on them, or its kit. */
+function aimAt(s: Spot): Aim | null {
+  const p = played.get(s.id);
+  if (!p) return null;
+  const n = notesAt(s);
+  return { keys: p.keys, kit: p.kit, notes: n.keyed, low: n.low };
+}
 /** The keys that sound go down, the drums that are hit flash. */
 function showPlayed(dt: number, t: number) {
   for (const s of def.spots) {
     const p = played.get(s.id);
     if (!p) continue;
-    const notes = soundingAt(s.id).map((k) => k.split(":").map(Number)).filter(([tr]) => project.tracks[tr]);
-    if (p.keys) {
-      const tr = trackFor(s, project);
-      p.keys.press(notes.filter(([n]) => n === tr).map(([, m]) => m), lowC(project.tracks[tr]?.root ?? 60));
-    }
+    const { notes, keyed, low } = notesAt(s);
+    if (p.keys) p.keys.press(keyed, low);
     if (p.kit) {
       p.kit.hear(new Map(notes.filter(([tr]) => project.tracks[tr].kind === "drum").map(([tr, m]): [string, Part] => [`${tr}:${m}`, partOf(project.tracks[tr].name)])));
       p.kit.tick(dt, t);

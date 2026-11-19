@@ -3,10 +3,10 @@
 // placement are plain TS, so this runs without a page. The skin over the bones is one closed surface, and bent by the
 // same pose its fingers close on what the hand holds.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, type What } from "../src/hands/grip.ts";
+import { CABLE_RADIUS, HandSolver, gripFor, surfaceDistance, type What } from "@rustybuns/rig/hand";
 import { PALM_FACE, carryFrames, inFrame } from "../src/hands/place.ts";
-import { FINGERS, HAND } from "../src/hands/skeleton.ts";
-import { buildSkin } from "../src/hands/skin.ts";
+import { FINGERS, HAND } from "@rustybuns/rig/hand";
+import { buildSkin } from "@rustybuns/rig/hand";
 
 setDefaultTimeout(30_000);
 const solver = new HandSolver();

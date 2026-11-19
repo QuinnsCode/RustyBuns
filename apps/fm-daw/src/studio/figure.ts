@@ -5,6 +5,7 @@ import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
 import { character, type Play } from "@rustybuns/models/character";
 import type { Reach, SpotKind } from "./room.ts";
+import { hands as wearHands, type Aim, type Hands } from "./fingers.ts";
 
 export interface Figure {
   group: THREE.Group;
@@ -13,8 +14,11 @@ export interface Figure {
    *  since the groove started, to nod on;
    *  `reach`, seated: where its palms should be (metres ahead of the seat and up off the floor); it shifts on its seat, as
    *  a player sets a stool's height and pulls it in, so its hands land there whatever its build. `sticks`: a drumstick in
-   *  each hand (sat at the kit). */
-  pose(o: { speed: number; seated: boolean; play: Play | null; note: boolean; t: number; look?: THREE.Vector3 | null; beat?: number | null; reach?: Reach | null; sticks?: boolean }): void;
+   *  each hand (sat at the kit). `aim`: the spot's keys or kit and what sounds there, for its fingers and stick tips to land on
+   *  (fingers.ts). */
+  pose(o: { speed: number; seated: boolean; play: Play | null; note: boolean; t: number; look?: THREE.Vector3 | null; beat?: number | null; reach?: Reach | null; sticks?: boolean; aim?: Aim | null }): void;
+  /** Its real hands (fingers.ts): where each fingertip and stick tip is. */
+  hands: Hands;
   /** How solid the head (and its hair and hat) is drawn, 0 to 1: your own, seen up close beside it, so you see past it. */
   fade(k: number): void;
   dispose(): void;
@@ -33,9 +37,6 @@ export function handsOn(kind: SpotKind | undefined, note: boolean): Play | null 
 
 /** How far (metres) a figure shifts on its seat, up or down and in or back, to reach. */
 export const SHIFT = 0.15;
-
-/** A drumstick's length (metres), and how far (radians) it tips off the fist's axis: resting toward the snare and the floor tom. */
-const STICK = 0.4, STICK_TILT = 0.5;
 
 /** The top of a stool or the desk's chair in the room (room.ts builds them at 0.45, 0.06 thick). */
 const SEAT = 0.48;
@@ -65,16 +66,8 @@ export function figure(a: Avatar, name: string | null): Figure {
   // where its palms sit in each play pose, from the seat (measured once: a build's arms don't change)
   const palms = new Map<Play, Reach>(), hands: THREE.Object3D[] = [];
   c.group.traverse((o) => { if (o.name === "hand") hands.push(o); });
-  // a drumstick in each fist, out past the thumb along the grip, shown at the kit
-  const wood = new THREE.MeshStandardMaterial({ color: "#d9b98a", roughness: 0.55 }), stickGeo = new THREE.CylinderGeometry(0.007, 0.01, STICK, 8);
-  const sticks = hands.map((h) => {
-    const m = new THREE.Mesh(stickGeo, wood);
-    m.rotation.x = STICK_TILT;
-    m.translateY(-STICK * 0.35);
-    m.visible = false;
-    h.add(m);
-    return m;
-  });
+  // Sound Guy Simulator's hands on its wrists, a drumstick in each fist at the kit
+  const real = wearHands(group, c.group, c.height);
   const palm = (p: Play, t: number): Reach => {
     let r = palms.get(p);
     if (!r) {
@@ -89,12 +82,13 @@ export function figure(a: Avatar, name: string | null): Figure {
   };
   return {
     group,
-    pose({ speed, seated, play, note, t, look = null, beat = null, reach = null, sticks: holding = false }) {
-      for (const m of sticks) m.visible = holding;
+    hands: real,
+    pose({ speed, seated, play, note, t, look = null, beat = null, reach = null, sticks: holding = false, aim = null }) {
       const p = seated && play && reach && hands.length ? palm(play, t) : null;
       const up = p && reach ? clamp(reach.up - p.up, -SHIFT, SHIFT) : 0, ahead = p && reach ? clamp(reach.ahead - p.ahead, -SHIFT, SHIFT) : 0;
       c.group.position.set(0, seated ? SEAT - c.seat + up : 0, -ahead);
       c.pose({ t, speed, seated, play, note, look, beat });
+      real.pose({ play, aim: seated ? aim : null, sticks: holding, t });
       if (tag) { c.head.getWorldPosition(at); group.worldToLocal(at); tag.position.set(0, at.y + 0.55, 0); }
     },
     fade(k) {
@@ -116,7 +110,7 @@ export function figure(a: Avatar, name: string | null): Figure {
     },
     dispose() {
       for (const m of faded ?? []) m.dispose();
-      stickGeo.dispose(); wood.dispose();
+      real.dispose();
       c.dispose();
       tag?.material.map?.dispose(); tag?.material.dispose();
     },

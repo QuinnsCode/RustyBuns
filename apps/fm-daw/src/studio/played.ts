@@ -78,6 +78,20 @@ export class Keys {
     this.set(this.white, this.whiteAt, whites, this.whiteLen, this.whiteRest);
     this.set(this.black, this.blackAt, blacks, this.blackLen, this.blackRest);
   }
+  /** Where a finger lands on the key a note presses, in world space: on its top, a third of the way in from its near
+   *  end, as the key sits now (down, if it's pressed). */
+  strike(midi: number, low: number, out = new THREE.Vector3()): THREE.Vector3 {
+    const k = keyAt(midi, low, this.lay), mesh = k.black ? this.black : this.white, len = k.black ? this.blackLen : this.whiteLen;
+    mesh.geometry.boundingBox ?? mesh.geometry.computeBoundingBox();
+    mesh.getMatrixAt(k.i, this.m);
+    mesh.updateWorldMatrix(true, false);
+    return out.set(0, mesh.geometry.boundingBox!.max.y, len / 2 - len / 3).applyMatrix4(this.m).applyMatrix4(mesh.matrixWorld);
+  }
+  /** The keyboard's turn in the world: +x up the keys, +y up off them, +z toward the player. */
+  turn(out = new THREE.Quaternion()): THREE.Quaternion {
+    this.white.updateWorldMatrix(true, false);
+    return out.setFromRotationMatrix(this.r.extractRotation(this.white.matrixWorld));
+  }
   private set(mesh: THREE.InstancedMesh, at: [number, number, number][], down: Set<number>, len: number, rest: THREE.Color) {
     at.forEach(([x, y, z], i) => {
       const d = down.has(i);
@@ -116,6 +130,15 @@ export class Kit {
     for (const [n, p] of notes) if (!this.held.has(n)) this.hit(p);
     this.held = new Set(notes.keys());
   }
+  /** Where a stick lands on `part`, in world space, and how hard it rings now; null for a part the kit hasn't (the kick
+   *  is the foot's, so it's never a stick's). */
+  strike(part: Part, out = new THREE.Vector3()): { at: THREE.Vector3; k: number; cymbal: boolean } | null {
+    const p = this.parts.get(part);
+    if (!p || part === "kick") return null;
+    return { at: p.obj.getWorldPosition(out), k: p.k, cymbal: p.cymbal };
+  }
+  /** The parts a stick plays. */
+  sticks(): Part[] { return [...this.parts.keys()].filter((p) => p !== "kick"); }
   hit(part: Part) { const p = this.parts.get(part); if (p) p.k = 1; }
   /** Let each ring die away by `dt` seconds; `t` the page's clock, for a cymbal's rock. */
   tick(dt: number, t: number) {

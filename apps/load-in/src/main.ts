@@ -49,7 +49,7 @@ import { expectTonight } from "./crowd/crowd.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 import { eyeFill, readable, venueLights } from "./look.ts";
-import { CABLE_RADIUS, REST } from "./hands/grip.ts";
+import { CABLE_RADIUS, REST } from "@rustybuns/rig/hand";
 import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
