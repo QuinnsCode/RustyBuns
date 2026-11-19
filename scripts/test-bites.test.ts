@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { addedLines, changedTests, passesOnBase, ranges, unrunLines } from "./test-bites.ts";
+import { addedLines, changedTests, mutate, passesOnBase, ranges, survivors, unrunLines } from "./test-bites.ts";
 
 setDefaultTimeout(30_000);
 
@@ -55,4 +55,35 @@ test("reads the new side of a -U0 diff", () => {
   const diff = ["+++ b/a.ts", "@@ -1 +1 @@", "@@ -5,0 +6,3 @@", "@@ -9,2 +11,0 @@", "+++ /dev/null", "@@ -1,4 +0,0 @@"].join("\n");
   expect([...addedLines(diff)]).toEqual([["a.ts", [1, 6, 7, 8]]]);
   expect(ranges([1, 6, 7, 8, 10])).toBe("1, 6-8, 10");
+});
+
+test("--mutate: a flip the tests check is caught, one they only run survives, and the working tree is left alone", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "bites-mut-"));
+  const git = (...args: string[]) => Bun.$`git -c user.name=t -c user.email=t@t ${args}`.cwd(repo).quiet();
+  await git("init", "-q", "-b", "main");
+  writeFileSync(join(repo, "price.ts"), "export const total = (a: number) => a;\n");
+  await git("add", "."), await git("commit", "-qm", "base");
+  const base = (await git("rev-parse", "HEAD")).text().trim();
+
+  const src = "export const total = (a: number, b: number) => a + b;\nexport const free = (a: number) => a === 0;\n";
+  writeFileSync(join(repo, "price.ts"), src); // uncommitted: the scratch copy must carry it
+  writeFileSync(join(repo, "price.test.ts"), `import { expect, test } from "bun:test";\nimport { free, total } from "./price.ts";\ntest("x", () => { expect(total(2, 3)).toBe(5); free(0); });\n`);
+
+  const r = await survivors(repo, base, ["price.test.ts"]);
+  expect(r).toEqual({ tried: 2, survived: [{ file: "price.ts", line: 2, now: "export const free = (a: number) => a !== 0;" }] });
+  expect(await Bun.file(join(repo, "price.ts")).text()).toBe(src);
+  expect((await git("worktree", "list")).text().trim().split("\n")).toHaveLength(1);
+});
+
+test("mutate flips one operator, outside quotes, comments and imports", () => {
+  const rows: [string, string | undefined][] = [
+    ["if (a === b && c) {", "if (a !== b && c) {"],
+    ["for (let i = 0; i < n; i++) {", "for (let i = 0; i >= n; i++) {"],
+    ["const m = new Map<string, number>(); const f = (x) => x - 1;", "const m = new Map<string, number>(); const f = (x) => x + 1;"],
+    [`log("a === b", ok || bad);`, `log("a === b", ok && bad);`],
+    ["  // if (a === b)", undefined],
+    [`import { a } from "./b.ts";`, undefined],
+    ["const s = \"done\";", undefined],
+  ];
+  for (const [line, want] of rows) expect(mutate(line)).toBe(want);
 });

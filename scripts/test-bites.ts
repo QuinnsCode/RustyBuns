@@ -6,11 +6,18 @@
 // a workspace package (`@rustybuns/util`) resolves to the base's source, not this branch's.
 //
 // `--lines` also lists the changed source lines those tests never ran (`bun test --coverage` here, lines from
-// `git diff -U0`): code nobody ran. A report, not a gate; there is no percentage to hit. Not in CI yet (#4154).
+// `git diff -U0`): code nobody ran. A report, not a gate; there is no percentage to hit. CI runs it on every PR that
+// edits a test, report only: the `bites` job in apps.yml writes this to its summary and never fails the PR (#4154).
+//
+// `--mutate [n]` is mutation testing on the diff: up to n (default 20) changed source lines each get one operator
+// flipped (`===` to `!==`, `<` to `>=`, `&&` to `||`, `true` to `false`, `+` to `-`) in a scratch copy of the working
+// tree, and the changed tests run against each. A flip no test notices is printed as a survivor: a line the tests run
+// but don't check. A report too: some flips change nothing anyone could see.
 //
 //   bun scripts/test-bites.ts                 against origin/main
 //   bun scripts/test-bites.ts --base <ref>    against another ref
 //   bun scripts/test-bites.ts --lines         and the changed lines they never ran
+//   bun scripts/test-bites.ts --mutate 10     and which of 10 flipped changed lines no test notices
 import { $ } from "bun";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -51,28 +58,87 @@ function linkModules(repo: string, into: string, dir = "."): void {
   }
 }
 
-/** Runs `files` (from the working tree of `repo`) on `base`'s source and returns the ones that pass there. */
-export async function passesOnBase(repo: string, base: string, files: string[]): Promise<string[]> {
-  if (!files.length) return [];
-  const scratch = join(mkdtempSync(join(tmpdir(), "test-bites-")), "base");
-  await $`git worktree add -q --detach ${scratch} ${base}`.cwd(repo).quiet();
+/** `ref` checked out in a scratch worktree with `files` copied over it from `repo`'s working tree and its
+ *  node_modules linked, handed to `use`, then removed. */
+async function scratchTree<T>(repo: string, ref: string, files: string[], use: (scratch: string) => Promise<T>): Promise<T> {
+  const scratch = join(mkdtempSync(join(tmpdir(), "test-bites-")), "tree");
+  await $`git worktree add -q --detach ${scratch} ${ref}`.cwd(repo).quiet();
   try {
     for (const file of files) {
       mkdirSync(dirname(join(scratch, file)), { recursive: true });
       copyFileSync(join(repo, file), join(scratch, file));
     }
     linkModules(repo, scratch);
-    const passing: string[] = [];
-    for (const file of files) {
-      const cwd = home(scratch, file);
-      const run = await $`bun test ${"./" + relative(cwd, join(scratch, file))}`.cwd(cwd).quiet().nothrow();
-      if (run.exitCode === 0) passing.push(file);
-    }
-    return passing;
+    return await use(scratch);
   } finally {
     await $`git worktree remove --force ${scratch}`.cwd(repo).quiet().nothrow();
     rmSync(dirname(scratch), { recursive: true, force: true });
   }
+}
+
+/** Runs `files` (from the working tree of `repo`) on `base`'s source and returns the ones that pass there. */
+export async function passesOnBase(repo: string, base: string, files: string[]): Promise<string[]> {
+  if (!files.length) return [];
+  return scratchTree(repo, base, files, async (scratch) => {
+    const passing: string[] = [];
+    for (const file of files) if (await testsPass(scratch, [file])) passing.push(file);
+    return passing;
+  });
+}
+
+/** True when every one of `tests` passes in `root`; a run that outlives `ms` (a flip can loop forever) is a failure. */
+async function testsPass(root: string, tests: string[], ms = 180_000): Promise<boolean> {
+  for (const [cwd, group] of Map.groupBy(tests, (t) => home(root, t))) {
+    const cmd = ["bun", "test", ...group.map((t) => "./" + relative(cwd, join(root, t)))];
+    if ((await Bun.spawn(cmd, { cwd, stdout: "ignore", stderr: "ignore", timeout: ms }).exited) !== 0) return false;
+  }
+  return true;
+}
+
+/** The flips `--mutate` tries, in order; spaces around `<`, `>`, `+` and `-` keep generics, arrows and `++` out. */
+const FLIPS: [RegExp, string][] = [
+  [/===/, "!=="], [/!==/, "==="], [/<=/, ">"], [/>=/, "<"], [/ < /, " >= "], [/ > /, " <= "],
+  [/&&/, "||"], [/\|\|/, "&&"], [/\btrue\b/, "false"], [/\bfalse\b/, "true"], [/ \+ /, " - "], [/ - /, " + "],
+];
+
+/** `line` with its first flippable operator flipped, or undefined: comments, imports and text in quotes stay as they are. */
+export function mutate(line: string): string | undefined {
+  if (/^\s*(\/\/|\/?\*|import\b)/.test(line)) return undefined;
+  const bare = line.replace(/(["'`])(?:\\.|(?!\1).)*\1/g, (q) => q[0] + "_".repeat(q.length - 2) + q[0]).replace(/\/\/.*$/, "");
+  for (const [op, to] of FLIPS) {
+    const m = op.exec(bare);
+    if (m) return line.slice(0, m.index) + to + line.slice(m.index + m[0].length);
+  }
+  return undefined;
+}
+
+export type Flip = { file: string; line: number; now: string };
+
+/** Up to `max` changed source lines flipped one at a time (`mutate`) in a scratch copy of `repo`'s working tree, with
+ *  `tests` run against each: the flips they all still pass. Undefined when `tests` fail before anything is flipped. */
+export async function survivors(repo: string, base: string, tests: string[], max = 20): Promise<{ tried: number; survived: Flip[] } | undefined> {
+  const flips: Flip[] = [];
+  for (const [file, lines] of await changedSource(repo, base)) {
+    const src = (await Bun.file(join(repo, file)).text()).split("\n");
+    for (const n of lines) {
+      const now = mutate(src[n - 1] ?? "");
+      if (now !== undefined && flips.length < max) flips.push({ file, line: n, now });
+    }
+  }
+  if (!tests.length || !flips.length) return { tried: 0, survived: [] };
+  const dirty = `${await $`git diff --name-only HEAD`.cwd(repo).text()}\n${await $`git ls-files --others --exclude-standard`.cwd(repo).text()}`.split("\n");
+  return scratchTree(repo, "HEAD", dirty.filter((f) => f && existsSync(join(repo, f))), async (scratch) => {
+    if (!(await testsPass(scratch, tests))) return undefined;
+    const survived: Flip[] = [];
+    for (const flip of flips) {
+      const path = join(scratch, flip.file), was = await Bun.file(path).text(), lines = was.split("\n");
+      lines[flip.line - 1] = flip.now;
+      await Bun.write(path, lines.join("\n"));
+      if (await testsPass(scratch, tests)) survived.push(flip);
+      await Bun.write(path, was);
+    }
+    return { tried: flips.length, survived };
+  });
 }
 
 /** Lines on the new side of a `git diff -U0`, by file. */
@@ -89,12 +155,17 @@ export function addedLines(diff: string): Map<string, number[]> {
   return out;
 }
 
+/** The lines each changed source file (not a test) adds since the merge-base with `base`, by file. */
+async function changedSource(repo: string, base: string): Promise<Map<string, number[]>> {
+  const diff = await $`git diff -U0 --no-color --diff-filter=AM ${await fork(repo, base)} -- ${"*.ts"} ${"*.tsx"} ${":!*.test.ts"} ${":!*.test.tsx"}`.cwd(repo).text();
+  return addedLines(diff);
+}
+
 /** Changed source lines (not tests) that `tests` never ran, by file; a file they never loaded maps to "unloaded". */
 export async function unrunLines(repo: string, base: string, tests: string[]): Promise<Map<string, number[] | "unloaded">> {
   const out = new Map<string, number[] | "unloaded">();
   if (!tests.length) return out;
-  const diff = await $`git diff -U0 --no-color --diff-filter=AM ${await fork(repo, base)} -- ${"*.ts"} ${"*.tsx"} ${":!*.test.ts"} ${":!*.test.tsx"}`.cwd(repo).text();
-  const added = addedLines(diff);
+  const added = await changedSource(repo, base);
   if (!added.size) return out;
   const hits = new Map<string, Map<number, number>>();
   const scratch = mkdtempSync(join(tmpdir(), "test-lines-"));
@@ -152,6 +223,14 @@ if (import.meta.main) {
     const unrun = await unrunLines(repo, base, files);
     console.log(unrun.size ? "changed lines these tests never ran:" : "these tests ran every changed source line");
     for (const [file, lines] of unrun) console.log(`  ${file}: ${lines === "unloaded" ? "never loaded" : ranges(lines)}`);
+  }
+  const m = process.argv.indexOf("--mutate");
+  if (m > 0) {
+    const r = await survivors(repo, base, files, Number(process.argv[m + 1]) > 0 ? Number(process.argv[m + 1]) : 20);
+    if (!r) console.log("--mutate: these tests fail on the working tree as it is, so nothing was flipped");
+    else if (!r.tried) console.log("--mutate: no changed source line has an operator to flip");
+    else console.log(`--mutate: these tests catch ${r.tried - r.survived.length} of ${r.tried} flipped lines`);
+    for (const s of r?.survived ?? []) console.log(`  ${s.file}:${s.line} survives: ${s.now.trim()}`);
   }
   process.exit(passing.length ? 1 : 0);
 }
