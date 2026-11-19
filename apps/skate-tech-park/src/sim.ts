@@ -207,6 +207,7 @@ const STALL_REACH = 0.6; // metres: a vert air whose apex is this close above th
 const STALL_FALL = Math.sqrt(2 * G * STALL_REACH); // m/s down at the coping, from that apex
 const STALL_MAX = 4; // seconds on the coping before the board drops back in on its own
 const STALL_OUT = 0.3; // m/s a stall drops back toward the wall it came up, so it comes down on the face
+const PLANT_OUT = 2; // m/s a footplant's foot shoves the board back in off the coping, clear of it, so it lands on the wall
 const STALL_TIPPY = 1.2; // a stall stands still, so it tips like a slow grind
 const STALL_HOLD = 100; // points a second held
 const WALL_MIN = 3; // m/s along a sheer face: slower than this the board just stops against it
@@ -581,8 +582,9 @@ function advance(s: State, inp: Input, level: Level): State {
       const nx = -o.dz, nz = o.dx, drop = level.height(s.x + nx * 0.6, s.z + nz * 0.6) < level.height(s.x - nx * 0.6, s.z - nz * 0.6) ? 1 : -1;
       s.grind = -1; s.stall = false; s.grindNose = 0;
       s.x += nx * drop * 0.3; s.z += nz * drop * 0.3;
-      s.vx = nx * drop * STALL_OUT; s.vz = nz * drop * STALL_OUT; s.vy = 0;
-      if (pressed) pop(s, popOf(inp, "coping"), "coping"); else takeOff(s);
+      const popKind = pressed ? popOf(inp, "coping") : null, out = popKind === "footplant" ? PLANT_OUT : STALL_OUT;
+      s.vx = nx * drop * out; s.vz = nz * drop * out; s.vy = 0;
+      if (popKind) pop(s, popKind, "coping"); else takeOff(s);
     }
     return s;
   }
@@ -791,7 +793,7 @@ function advance(s: State, inp: Input, level: Level): State {
     { // dropping onto a rail starts a grind; a bar climbing faster than you fall meets you from below just the same
       // Straight back down a vert wall the board drops past the coping, not onto it, unless it only just reached the lip and nobody
       // is pushing it over onto the deck: then it is a stall, caught on the coping
-      const stalling = s.vy < 0 && s.vy > -STALL_FALL && inp.throttle <= 0 && s.airTime > 0.3;
+      const stalling = s.vy < 0 && s.vy > -STALL_FALL && inp.throttle <= 0 && s.airTime > 0.3 && !s.plant; // a footplant is on its way back in, not up to the coping again
       const alongBar = (r: Rail) => { const o = onRail(r, s.x, s.z); return Math.abs(s.vx * o.dx + s.vz * o.dz); };
       const i = level.rails.findIndex((r) => {
         const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s

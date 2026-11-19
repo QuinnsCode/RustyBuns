@@ -91,9 +91,10 @@ test("a no-comply from a stall plants the foot on the coping: a footplant back d
   };
   const foot = plant({});
   expect(foot.feet).toEqual(["front coping", "back tail"]); // the foot on the lip, the tail pops off it
-  expect(foot.seen.slice(0, 2)).toEqual(["Rock to fakie", "footplant"]);
+  expect(foot.seen[0]).toBe("Rock to fakie");
+  expect(foot.seen[1]).toMatch(/^footplant fakie/); // shoved back in, landing rolling down the wall
   expect(foot.s.bail).toBe(0);
-  expect(plant({ manual: 1 }).seen[1]).toBe("fastplant"); // the hand carries the board while the foot is down
+  expect(plant({ manual: 1 }).seen[1]).toMatch(/^fastplant fakie/); // the hand carries the board while the foot is down
 });
 
 test("thrown along a sheer face fast enough the board rides the wall, scores it and rolls on; slower, or head on, it stops against it", () => {
