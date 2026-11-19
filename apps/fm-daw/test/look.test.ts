@@ -2,7 +2,7 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cans, caseSpot, metreUV, pickQuality, practicals, slats, surface, useKit, wedges3d, type Quality } from "../src/studio/look.ts";
+import { cans, caseSpot, metreUV, pickQuality, practicals, roomMaterial, slats, surface, useKit, wedges3d, type Quality } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { ROOM_LIST, SCORING_HALL } from "../src/studio/rooms/index.ts";
 import { thingBox } from "../src/studio/room.ts";
@@ -52,6 +52,15 @@ test("gear surfaces come from the photo-texture kit once it's set, and the room'
   expect(surface("rubber", "#1a1a1b").name).toBe("rubber"); // the kit hasn't got it: look.ts makes its own
   expect(asked).toEqual(["tolex #1a1a1b", "rubber #1a1a1b"]);
 });
+test("a floor painted near black takes a flat paint's low sheen, so the lights don't wash it out; a wood floor keeps its gloss", () => {
+  const stage = ROOM_LIST.find((r) => r.id === "sound-stage")!;
+  const black = roomMaterial({ color: new THREE.Color(stage.colors.floor), roughness: 1 });
+  expect(black).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+  expect(black instanceof THREE.MeshPhysicalMaterial && black.specularIntensity).toBeLessThan(0.2);
+  const boards = roomMaterial({ color: new THREE.Color(LIVE_ROOM.colors.floor), roughness: 0.5 });
+  expect(boards).not.toBeInstanceOf(THREE.MeshPhysicalMaterial); // the full 4%, as every room was lit for
+});
+
 test("floor lamps stand in the corners nobody plays in, clear of the booths, and a hall gets none", () => {
   const lamps = practicals(LIVE_ROOM);
   expect(lamps.length).toBe(2);

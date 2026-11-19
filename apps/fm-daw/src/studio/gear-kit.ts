@@ -10,7 +10,7 @@
 // Browser only (import.meta.glob).
 import * as THREE from "three";
 import { surface as kitSurface, type SurfaceName } from "@rustybuns/models/surfaces";
-import type { Quality } from "./look.ts";
+import { roomMaterial, type Quality } from "./look.ts";
 import { MATERIALS } from "./sound.ts";
 
 const FILES = import.meta.glob<string>("../../../../packages/models/textures/*/*.jpg", { eager: true, query: "?url", import: "default" });
@@ -117,7 +117,7 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
     const r = ROOM[name];
     if (!r || quality === "low") return null;
     const want = new THREE.Color(color ?? MATERIALS[r.as ?? (name as keyof typeof MATERIALS)].color).multiplyScalar(r.shade ?? 1);
-    const m = new THREE.MeshStandardMaterial({ color: want, roughness: r.rough, metalness: 0 });
+    const m = roomMaterial({ color: want, roughness: r.rough, metalness: 0 });
     m.name = `room-${name}-${want.getHexString()}`;
     if (r.tone || r.wear) weather(m, r.tone ?? 0, r.wear ?? 0);
     void Promise.all([
