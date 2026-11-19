@@ -113,8 +113,9 @@ export interface FmEngine {
    * the Space send bus: each track times its SEND, after pan, its insert and master.
    * With `taps` (length >= frames * TRACKS), each tapped track's mono chunk at
    * `taps[f * TRACKS + t]` (0 for a track not tapped), left out of `out` and `send`.
+   * With `send2`, the desk's aux 2 bus the same way as `send`: each track times its SEND2.
    */
-  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array): void;
+  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array, send2?: Float32Array): void;
   /** [peakL, peakR, lowest limiter gain, NaN resets] since the last call. */
   meter(out: Float32Array): void;
   free?(): void;
@@ -215,6 +216,7 @@ export class TsEngine implements FmEngine {
   private readonly tb = new Float64Array(TRACKS * CHUNK * 2);
   private readonly mix = new Float64Array(CHUNK * 2);
   private readonly snd = new Float64Array(CHUNK * 2);
+  private readonly snd2 = new Float64Array(CHUNK * 2);
 
   constructor(sampleRate: number) {
     this.sr = sampleRate;
@@ -353,16 +355,16 @@ export class TsEngine implements FmEngine {
 
   setTap(track: number, on: boolean) { if (track >= 0 && track < TRACKS) this.tapped[track | 0] = on ? 1 : 0; }
 
-  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array) {
-    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity);
+  render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array, send2?: Float32Array) {
+    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity, send2 ? send2.length >> 1 : Infinity);
     const sr = this.sr;
     const beatInc = this.tempo / 60 / sr;
-    const { tb, mix, snd } = this;
+    const { tb, mix, snd, snd2 } = this;
     for (let at = 0; at < n; at += CHUNK) {
       const k = Math.min(CHUNK, n - at);
       for (let t = 0; t < TRACKS; t++) { this.insLive[t] = this.inserts[t].live() ? 1 : 0; this.tapNow[t] = taps && this.tapped[t] ? 1 : 0; }
       for (let j = 0; j < k; j++) {
-        let l = 0, r = 0, sl = 0, sr2 = 0;
+        let l = 0, r = 0, sl = 0, sr2 = 0, al = 0, ar = 0;
         for (let t = 0; t < TRACKS; t++) {
           const p = t * NPARAMS;
           const gainTarget = this.muted[t] ? 0 : this.params[p + P.GAIN];
@@ -651,6 +653,9 @@ export class TsEngine implements FmEngine {
           const sa = this.params[p + P.SEND];
           sl += ml * sa;
           sr2 += mr * sa;
+          const sb = this.params[p + P.SEND2];
+          al += ml * sb;
+          ar += mr * sb;
         }
         this.chW = this.chW + 1 === CH_LEN ? 0 : this.chW + 1;
         this.beat += beatInc;
@@ -661,7 +666,7 @@ export class TsEngine implements FmEngine {
           this.clickEnv *= this.clickCoef;
           l += c; r += c;
         }
-        mix[j * 2] = l; mix[j * 2 + 1] = r; snd[j * 2] = sl; snd[j * 2 + 1] = sr2;
+        mix[j * 2] = l; mix[j * 2 + 1] = r; snd[j * 2] = sl; snd[j * 2 + 1] = sr2; snd2[j * 2] = al; snd2[j * 2 + 1] = ar;
       }
       // each Shape on its track's chunk, then into the sum and the send, track by track
       // a tapped one (after its Shape) out to its amp in mono, centred as the amp hears a take
@@ -670,8 +675,8 @@ export class TsEngine implements FmEngine {
         const buf = tb.subarray(t * CHUNK * 2, (t * CHUNK + k) * 2);
         if (this.insLive[t]) this.inserts[t].insert(buf, k);
         if (this.tapNow[t]) continue;
-        const sa = this.params[t * NPARAMS + P.SEND];
-        for (let j = 0; j < k * 2; j++) { mix[j] += buf[j]; snd[j] += buf[j] * sa; }
+        const sa = this.params[t * NPARAMS + P.SEND], sb = this.params[t * NPARAMS + P.SEND2];
+        for (let j = 0; j < k * 2; j++) { mix[j] += buf[j]; snd[j] += buf[j] * sa; snd2[j] += buf[j] * sb; }
       }
       if (taps) {
         for (let t = 0; t < TRACKS; t++) {
@@ -717,6 +722,12 @@ export class TsEngine implements FmEngine {
           const ok = Number.isFinite(a) && Number.isFinite(b);
           send[f * 2] = ok ? Math.min(Math.max(a, -1), 1) : 0;
           send[f * 2 + 1] = ok ? Math.min(Math.max(b, -1), 1) : 0;
+        }
+        if (send2) {
+          const a = snd2[j * 2] * this.master, b = snd2[j * 2 + 1] * this.master;
+          const ok = Number.isFinite(a) && Number.isFinite(b);
+          send2[f * 2] = ok ? Math.min(Math.max(a, -1), 1) : 0;
+          send2[f * 2 + 1] = ok ? Math.min(Math.max(b, -1), 1) : 0;
         }
       }
     }

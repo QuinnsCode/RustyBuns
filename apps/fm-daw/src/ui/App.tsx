@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
 import { connect, roomName, shareBounce, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
@@ -47,7 +47,9 @@ import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { flatEq } from "../engine/eq.ts";
-import { loadMsg } from "./load.ts";
+import { DeskFeed, loadMsg, type HeardPlayer } from "./load.ts";
+import { applyStudio, emptyStudio, type Patch } from "../studio.ts";
+import { auxGear } from "../room/room.ts";
 import { LANE_BEND, LANE_STUTTER, P } from "../engine/params.ts";
 import { Band } from "../studio/band.ts";
 import { FarSound, PluginOut } from "../studio/plugin-line.ts";
@@ -162,6 +164,15 @@ export function App() {
   const chat = useChat();
   const floor = netStatus.state === "online" ? netStatus.floor : undefined;
   const [grants, setGrants] = useState<GrantServer | null>(null);
+  // ---- the desk beyond the tracks (src/mixer.ts): a channel for each player the live line plays sound for, and the
+  // aux 2 return over what the sesh's gear room has cabled into it ----
+  const [heard, setHeard] = useState<number[]>([]);
+  const studio = useRef(emptyStudio());
+  const [patch, setPatch] = useState<Patch | null>(null);
+  const aux2 = useMemo(() => (patch ? auxGear(patch) : { settings: null, label: "" }), [patch]);
+  const heardPlayers = useMemo(() => heard.flatMap((peer): HeardPlayer[] => { const who = grants?.peers[peer]; return who ? [{ peer, who, name: chat.view.names[who] || "Player" }] : []; }), [heard, grants, chat.view.names]);
+  const deskPlayers = useMemo(() => [...new Map(heardPlayers.map((h) => [h.who, { who: h.who, name: h.name }])).values()], [heardPlayers]);
+  const [deskFeed] = useState(() => new DeskFeed((m) => audioRef.current?.send(m)));
   const may1 = (c: Can, track?: number) => !floor || (grants ? may(grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c, track) : floor.state === "free" || floor.host);
   const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
   // a grant of some tracks plays the selected track when it is one of them
@@ -355,6 +366,7 @@ export function App() {
       const a = await AudioOut.start(onWorklet);
       audioRef.current = a;
       a.send(loadMsg(proj.current));
+      deskFeed.reset();
       a.send({ t: "metro", on: metro });
       pump.current = new PluginPump((m, tr) => a.send(m, tr), a.ctx.sampleRate, undefined, (track, changes) => {
         let plug = proj.current.tracks[track]?.plugin;
@@ -419,6 +431,7 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plugins, online, audio]);
+  useEffect(() => { deskFeed.sync(project, heardPlayers, aux2.settings); }, [deskFeed, project, heardPlayers, aux2, audio]);
   // someone came in: they hear which tracks your plugins voice
   useEffect(() => { for (const o of pluginOuts.current.values()) o.hello(); }, [netStatus.peers]);
   useEffect(() => {
@@ -435,6 +448,10 @@ export function App() {
       onStatus: setNetStatus,
       onChat: chat.onChat,
       onGrants: setGrants,
+      onStudio(m) {
+        studio.current = m.t === "studio-all" ? m.studio : applyStudio(studio.current, m.from, m.op);
+        setPatch(studio.current.patch);
+      },
       onTakeBytes(m) {
         const pcm = inbox.current.add(m);
         if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
@@ -506,9 +523,11 @@ export function App() {
     if (!s) peerState.current.set(from, (s = { bends: new Set(), repeat: false, held: new Set() }));
     return s;
   };
+  /** Who the live line plays sound for changed, maybe: each has a channel on the desk. */
+  const heardNow = () => { const now = far.players(); setHeard((was) => (was.join() === now.join() ? was : now)); };
   function onLive(from: number, e: Live) {
     const key = (track: number, midi: number) => `net:${from}:${track}:${midi}`;
-    if (far.heard(from, e)) return;
+    if (far.heard(from, e)) { heardNow(); return; }
     if (band.onBeat(e) !== null) {
       // stamped: the audio thread plays it on the beat this listener hears it on, a loop late or at the desk
       // (MIDI out and the keyboard's lit keys follow only what comes as it comes)
@@ -533,6 +552,7 @@ export function App() {
     const s = peerState.current.get(from);
     peerState.current.delete(from);
     far.gone(from);
+    heardNow();
     // what they held, bent or stuttered lets go now, and again on the beat it would have, for a listener behind
     const b = band.beat(), letGo = (e: Live) => { for (const m of band.heard(from, e)) send(m); };
     for (const k of s?.held ?? []) { const [track, midi] = k.split(":").map(Number); send({ t: "off", track, midi }); letGo({ t: "off", track, midi, b }); }
@@ -723,7 +743,7 @@ export function App() {
       // a plugin track's sound comes from the desktop host, which has the plugin; one it can't play is named below
       const secs = loopSeconds(p, bounceLoops(p));
       const { sound, missed } = await bouncePlugins(p, sr, bounceFrames(p, sr, secs));
-      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takeSound.current.get(id), (t) => sound.get(t));
+      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takeSound.current.get(id), (t) => sound.get(t), aux2.settings);
       e.free?.();
       const wav = encodeWav(pcm, sr);
       // Online, the sesh keeps its last bounce, so a DJ's decks can play it by the sesh's name.
@@ -883,7 +903,7 @@ export function App() {
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
           ) : view === "desk" ? (
-            <DeskPanel project={project} onOps={(ops) => { for (const o of ops) commit(o, { group: "desk" }); }} />
+            <DeskPanel project={project} players={deskPlayers} cabled={aux2.label} onOps={(ops) => { for (const o of ops) commit(o, { group: "desk" }); }} />
           ) : view === "amp" ? (
             <AmpPanel name={t.name} amp={t.amp} onChange={(amp, group) => commit({ t: "amp", track: selected, amp }, group ? { group } : {})}
               armed={armed === selected} monitor={monitor && armed === selected}

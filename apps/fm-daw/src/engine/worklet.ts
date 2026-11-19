@@ -15,6 +15,7 @@ import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
+import { Mixer, RigReturn } from "../mixer.ts";
 import type { FromWorklet, ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
 
@@ -79,6 +80,20 @@ class FmProcessor extends AudioWorkletProcessor {
   private remotes = new Map<string, { line: RemoteLine; peer: number; track: number }>();
   private wasm: Exports | null = null;
   private far = new Float32Array(256);
+  /** The sesh's desk beyond its tracks: the players' channels (by live-line number) and the aux 2 return, with its bus from the engine. */
+  private desk = new Mixer(sampleRate);
+  private deskOf = new Map<number, string>();
+  private deskIn = new Map<string, Float32Array>();
+  private deskFed = false;
+  private deskOut = new Float32Array(256);
+  private rig: RigReturn | null = null;
+  private send2 = new Float32Array(256);
+  private readonly buses = (bus: readonly Float32Array[]) => {
+    const n = this.blockFrames, space = bus[0], aux2 = bus[1];
+    if (this.deskFed) for (let f = 0; f < n; f++) { this.send[f * 2] += space[f]; this.send[f * 2 + 1] += space[f]; }
+    if (this.rig) for (let f = 0; f < n; f++) aux2[f] += (this.send2[f * 2] + this.send2[f * 2 + 1]) * 0.5;
+  };
+  private blockFrames = 0;
   private blockBeat = 0;
   private blockBpf = 0;
   /** The remote sound bound for amped tracks, as the Amp inserts ask for it. */
@@ -158,6 +173,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "dueBend": s.liveAt(m.at, m.track, BEND, m.semis); break;
       case "dueRepeat": s.liveAt(m.at, 0, REPEAT, m.beats); break;
       case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
+      case "desk": this.setDesk(m); break;
       case "quiet": this.quiet(m.peer, m.track); break;
       case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.input.reset(); break;
       case "pluginSend": if (!m.on) this.pluginOut.delete(m.track); else if (!this.pluginOut.has(m.track)) this.pluginOut.set(m.track, new Slicer(m.track)); break;
@@ -217,16 +233,44 @@ class FmProcessor extends AudioWorkletProcessor {
     for (let f = 0; f < frames; f++) { this.buf[f * 2] += l[f] * this.master; this.buf[f * 2 + 1] += r[f] * this.master; }
   }
 
-  /** Everyone else's sound for this block, from beat `beat0`: through its track's amp when it has one, else straight in. */
+  /** The players' channels and the aux 2 return as the page worked them out; a new rig only when gear is first cabled in. */
+  private setDesk(m: Extract<ToWorklet, { t: "desk" }>) {
+    this.desk.set({ channels: m.players.map((p) => p.channel), returns: [{ aux: 2, name: "Aux 2", fx: "cabled", fader: m.aux2.fader, mute: m.aux2.mute }] });
+    this.deskOf.clear();
+    for (const p of m.players) this.deskOf.set(p.peer, p.channel.id);
+    for (const id of this.deskIn.keys()) if (!m.players.some((p) => p.channel.id === id)) this.deskIn.delete(id);
+    for (const p of m.players) if (!this.deskIn.has(p.channel.id)) this.deskIn.set(p.channel.id, new Float32Array(this.far.length));
+    if (!m.aux2.gear) this.rig = null;
+    else if (this.rig) this.rig.set(m.aux2.gear);
+    else this.rig = new RigReturn(sampleRate, m.aux2.gear);
+    this.desk.setReturn(2, this.rig);
+  }
+
+  /**
+   * Everyone else's sound for this block, from beat `beat0`: through its track's amp when it has one, else onto its
+   * player's channel on the desk (or straight in, for a player the desk has no channel for yet).
+   */
   private mixRemote(frames: number, beat0: number, bpf: number) {
+    this.deskFed = false;
+    for (const [id, b] of this.deskIn) { if (b.length < frames) this.deskIn.set(id, new Float32Array(frames)); else b.fill(0, 0, frames); }
     if (!this.remotes.size) return;
     if (this.far.length < frames) this.far = new Float32Array(frames);
     for (const r of this.remotes.values()) {
       if ((r.track >= 0 && (this.muted[r.track] || this.amps.has(r.track)))) continue;
+      const id = this.deskOf.get(r.peer), strip = id === undefined ? undefined : this.deskIn.get(id);
+      if (strip) { r.line.mix(strip, frames, beat0, bpf, this.master); this.deskFed = true; continue; }
       this.far.fill(0, 0, frames);
       r.line.mix(this.far, frames, beat0, bpf, this.master);
       for (let f = 0; f < frames; f++) { this.buf[f * 2] += this.far[f]; this.buf[f * 2 + 1] += this.far[f]; }
     }
+  }
+  /** The desk beyond the tracks into the mix: the players' channels, their sends into Space, and the aux 2 return over the tracks' sends and theirs. */
+  private mixDesk(frames: number) {
+    if (!this.deskFed && !this.rig) return;
+    if (this.deskOut.length < frames * 2) this.deskOut = new Float32Array(frames * 2);
+    this.blockFrames = frames;
+    this.desk.process(this.deskIn, this.deskOut, frames, this.buses);
+    for (let f = 0; f < frames * 2; f++) this.buf[f] += this.deskOut[f];
   }
   /** The remote sound bound for track `t`'s amp, added into its dry input. */
   private remoteInto(t: number, dry: Float32Array, frames: number, beat0: number, bpf: number) {
@@ -357,7 +401,7 @@ class FmProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const L = out[0], R = out[1] ?? out[0];
     const frames = L.length;
-    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); }
+    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.send2 = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); }
     try {
       const grid = this.gridNow();
       if (Number.isFinite(grid)) this.seq.sync(grid);
@@ -365,11 +409,12 @@ class FmProcessor extends AudioWorkletProcessor {
       const bpf = (this.seq.bpm / 60 / sampleRate) * this.seq.rate;
       // with no amp on any track, no taps: every track stays in the engine's sum
       const taps = this.amps.any ? this.taps : undefined;
-      this.seq.process(this.buf, frames, this.send, taps);
+      this.seq.process(this.buf, frames, this.send, taps, this.rig ? this.send2 : undefined);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
       this.blockBeat = abs0; this.blockBpf = bpf;
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
+      this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       this.mixWeb(inputs[1], frames);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);

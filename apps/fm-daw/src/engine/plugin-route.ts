@@ -129,7 +129,7 @@ export class PluginRoute {
       setTrackBand: (...a) => engine.setTrackBand(...a),
       setTap: (t, on) => engine.setTap(t, on),
       // the sequencer renders between its events (QUANTUM frames at a time), so the clock is where each one falls
-      render: (out, frames, send, taps) => { engine.render(out, frames, send, taps); this.now += frames; },
+      render: (out, frames, send, taps, send2) => { engine.render(out, frames, send, taps, send2); this.now += frames; },
       meter: (out) => engine.meter(out),
       free: () => engine.free?.(),
     };

@@ -1,7 +1,7 @@
 // The desk view (Tab in the gear room): FM DAW's desk as strips, a channel per source (gain, Shape low / mid / high,
 // pan, aux sends, fader, mute, solo), then a strip per aux return (what is cabled in, its fader, mute). Plain DOM: every
 // change hands back a new Desk and the page redraws from it.
-import { AUXES, faderDb, TRACK_AUXES, withChannel, withReturn, withSend, type Channel, type Desk } from "../mixer.ts";
+import { AUXES, faderDb, withChannel, withReturn, withSend, type Channel, type Desk } from "../mixer.ts";
 import type { EqBand, EqDoc } from "../engine/eq.ts";
 
 /** The three Shape bands a strip turns: a low shelf, a mid bell and a high shelf, in the channel's first three slots. */
@@ -45,19 +45,19 @@ function toggle(label: string, title: string, on: boolean, set: (v: boolean) => 
 
 /**
  * Draw `desk` into `host`; `change` gets the desk after each move. `cabled` names what is cabled into each aux.
- * `returnMute: false` leaves the returns' mutes off (the sesh's Space return is the project's Space amount, which has none).
+ * `spaceMute: false` leaves the Space return's mute off (the sesh's Space return is the project's Space amount, which has none).
  */
-export function drawDesk(host: HTMLElement, desk: Desk, cabled: string[], change: (d: Desk) => void, { returnMute = true } = {}) {
+export function drawDesk(host: HTMLElement, desk: Desk, cabled: string[], change: (d: Desk) => void, { spaceMute = true } = {}) {
   host.replaceChildren();
   const strip = (c: Channel) => {
     const s = el("div", "desk-strip");
     s.append(el("h3", "", c.name || c.id));
-    // a track's channel is the track (mixer.ts `trackChannel`): no input gain, and one send, into Space
+    // a track's channel is the track (mixer.ts `trackChannel`): its fader is its level, so it has no input gain
     const track = c.source === "track";
     if (!track) s.append(slider("Gain", -24, 24, 0.5, c.gain, (v) => `${v > 0 ? "+" : ""}${v} dB`, (v) => change(withChannel(desk, c.id, { gain: v }))));
     STRIP_SHAPE.forEach((b, i) => s.append(slider(b.label, -12, 12, 0.5, c.eq[i]?.g ?? 0, (v) => `${v > 0 ? "+" : ""}${v} dB`, (v) => change(withChannel(desk, c.id, { eq: withShapeBand(c.eq, i, v) })))));
     s.append(slider("Pan", -1, 1, 0.05, c.pan, (v) => (Math.abs(v) < 0.01 ? "C" : `${v < 0 ? "L" : "R"}${Math.round(Math.abs(v) * 100)}`), (v) => change(withChannel(desk, c.id, { pan: v }))));
-    for (let a = 1; a <= (track ? TRACK_AUXES : AUXES); a++) s.append(slider(`Send ${desk.returns.find((r) => r.aux === a)?.name ?? a}`, 0, 1, 0.01, c.sends[a - 1] ?? 0, (v) => `${Math.round(v * 100)}%`, (v) => change(withSend(desk, c.id, a, v))));
+    for (let a = 1; a <= AUXES; a++) s.append(slider(`Send ${desk.returns.find((r) => r.aux === a)?.name ?? a}`, 0, 1, 0.01, c.sends[a - 1] ?? 0, (v) => `${Math.round(v * 100)}%`, (v) => change(withSend(desk, c.id, a, v))));
     s.append(slider("Fader", 0, 1, 0.005, c.fader, dbText, (v) => change(withChannel(desk, c.id, { fader: v })), true));
     const row = el("div", "desk-row");
     row.append(toggle("M", "Mute", c.mute, (v) => change(withChannel(desk, c.id, { mute: v }))), toggle("S", "Solo", c.solo, (v) => change(withChannel(desk, c.id, { solo: v }))));
@@ -70,7 +70,7 @@ export function drawDesk(host: HTMLElement, desk: Desk, cabled: string[], change
     s.append(el("h3", "", `Return ${r.aux}: ${r.name}`));
     s.append(el("p", "desk-what", r.fx === "space" ? "FM DAW's Space reverb" : cabled[r.aux - 1] || `Nothing cabled in: aux-send-${r.aux} to an effect, back into aux-return-${r.aux}`));
     s.append(slider("Fader", 0, 1, 0.005, r.fader, dbText, (v) => change(withReturn(desk, r.aux, { fader: v })), true));
-    if (returnMute) {
+    if (spaceMute || r.fx !== "space") {
       const row = el("div", "desk-row");
       row.append(toggle("M", "Mute", r.mute, (v) => change(withReturn(desk, r.aux, { mute: v }))));
       s.append(row);

@@ -69,6 +69,9 @@ export class FarSound {
     return [...this.plugins].flatMap(([peer, m]) => { const name = m.get(track); return name === undefined ? [] : [{ peer, name }]; });
   }
 
+  /** Everyone whose sound the live line plays right now (a guitar, a mic or a plugin track): each gets a channel on the desk. */
+  players(): number[] { return [...new Set([...this.guitars.keys(), ...this.plugins.keys()])]; }
+
   /** Someone's live event: true when it was about sound (a slice, a guitar or plugin coming or going), handled here. */
   heard(from: number, e: Live): boolean {
     if (e.t === "sound") {

@@ -11,6 +11,7 @@ import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 import { decodeGrantServer, type GrantClient, type GrantServer } from "../grants.ts";
 import { decodeRtcServer, type Line, type RtcClient, type RtcServer, type Signal } from "../guitar.ts";
 import { decodeClockServer, type ClockClient, type ClockServer } from "../clock.ts";
+import { decodeStudioServer, type StudioClient, type StudioOp, type StudioServer } from "../studio.ts";
 
 /** `locked`: the sesh is private (it has a code). */
 export type NetStatus = { state: "connecting" | "online" | "offline" | "full"; peers: number; full?: Full; floor?: FloorState; locked?: boolean };
@@ -39,6 +40,8 @@ export interface Net {
   rtc(to: number, line: Line, s: Signal): void;
   /** The shared clock: a ping to the leader, or (the leader) an answer to one (src/clock.ts); dropped while offline. */
   clock(m: ClockClient): void;
+  /** One thing done in the sesh's gear room (src/studio.ts); dropped while offline (the room is sent whole on the way back in). */
+  studio(op: StudioOp): void;
   close(): void;
 }
 
@@ -101,6 +104,8 @@ export function connect(opts: {
   onRtc?(m: RtcServer): void;
   /** Someone's clock ping (you lead), or the answer to yours. */
   onClock?(m: ClockServer): void;
+  /** The sesh's gear room: all of it on joining, then each thing someone does in it (src/studio.ts). */
+  onStudio?(m: StudioServer): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
   /** An eqosys token, asked on every try (it lasts minutes): the Worker seats you under your eqosys id. Null plays as a guest. */
@@ -116,14 +121,14 @@ export function connect(opts: {
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg | ChatServer | GrantServer | RtcServer | ClockServer, ClientMsg | ChatClient | GrantClient | RtcClient | ClockClient>(() => {
+  const link = connectSocket<ServerMsg | ChatServer | GrantServer | RtcServer | ClockServer | StudioServer, ClientMsg | ChatClient | GrantClient | RtcClient | ClockClient | StudioClient>(() => {
     const t = opts.token?.();
     if (!t) return url;
     const signed = new URL(url);
     signed.searchParams.set("token", t);
     return signed;
   }, {
-    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v), queue: 200,
+    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v) ?? decodeStudioServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "op") opts.onOp(m.op);
@@ -137,6 +142,7 @@ export function connect(opts: {
       else if (m.t === "rewound") opts.onRewound?.(m.ago, m.at, m.project);
       else if (m.t === "rtc") opts.onRtc?.(m);
       else if (m.t === "tick" || m.t === "tock") opts.onClock?.(m);
+      else if (m.t === "studio-all" || m.t === "studio-op") opts.onStudio?.(m);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
@@ -166,6 +172,7 @@ export function connect(opts: {
     rewind: (ago) => { if (link.open) link.send({ t: "rewind", ago }); },
     rtc: (to, line, s) => { if (link.open) link.send({ t: "rtc", to, line, s }); },
     clock: (m) => { if (link.open) link.send(m); },
+    studio: (step) => { if (link.open) link.send({ t: "studio", op: step }); },
     close: () => link.close(),
   };
 }

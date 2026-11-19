@@ -269,12 +269,12 @@ export class Sequencer {
 
   /** Render `frames` of interleaved stereo into out, firing events on the way. */
   /** The engine's render in QUANTUM steps, events between; `taps` as FmEngine.render's (frames * TRACKS). */
-  process(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array) {
+  process(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array, send2?: Float32Array) {
     this.engine.setTempo(this.bpm);
     for (let at = 0; at < frames; at += QUANTUM) {
       const n = Math.min(QUANTUM, frames - at);
       this.tick(n);
-      this.engine.render(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps?.subarray(at * TRACKS, (at + n) * TRACKS));
+      this.engine.render(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps?.subarray(at * TRACKS, (at + n) * TRACKS), send2?.subarray(at * 2, (at + n) * 2));
     }
   }
 
@@ -399,6 +399,8 @@ export function renderPattern(
    */
   post?: (block: Float32Array, frames: number, taps?: Float32Array) => void,
   tapping = false,
+  /** The desk's aux 2 bus, as `send`. */
+  send2?: Float32Array,
 ): Float32Array {
   const seq = new Sequencer(engine, sampleRate);
   setup(seq);
@@ -409,7 +411,7 @@ export function renderPattern(
   const taps = tapping ? new Float32Array(BLOCK * TRACKS) : undefined;
   for (let at = 0; at < frames; at += BLOCK) {
     const n = Math.min(BLOCK, frames - at);
-    seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps);
+    seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2), taps, send2?.subarray(at * 2, (at + n) * 2));
     post?.(out.subarray(at * 2, (at + n) * 2), n, taps);
   }
   return out;

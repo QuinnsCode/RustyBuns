@@ -199,7 +199,11 @@ export function furnish(p: Patch): Patch {
 
 export interface You { x: number; z: number; yaw: number; pitch: number }
 /** You in the room: your body, and the sesh's studio (the patch and what your hand holds as player `me`). */
-export interface Room { studio: Studio; you: You; me: number; /** How far you turned what you hold from where you face. */ heldTurn: number }
+export interface Room {
+  studio: Studio; you: You; me: number; /** How far you turned what you hold from where you face. */ heldTurn: number;
+  /** In a sesh: each thing you did that the studio took, to pass on to the World (the others apply the same step). */
+  sent?: (step: StudioOp) => void;
+}
 
 export function newRoom(patch: Patch = startPatch()): Room {
   return { studio: { ...emptyStudio(), patch }, you: { x: 0, z: 1.8, yaw: 0, pitch: -0.15 }, me: 1, heldTurn: 0 };
@@ -214,6 +218,7 @@ function act(r: Room, op: StudioOp): boolean {
   const next = applyStudio(r.studio, r.me, op);
   if (next === r.studio) return false;
   r.studio = next;
+  r.sent?.(op);
   return true;
 }
 
@@ -539,6 +544,17 @@ export interface AuxReturn {
   problems: string[];
   settings: AmpSettings | null;
   running: string[];
+}
+
+/**
+ * What the desk's aux `aux` return plays in this patch: the cabled gear's settings when the loop is whole (null: the
+ * return is silent), and what a strip says of it (the gear by name, or why it is silent).
+ */
+export function auxGear(patch: Patch, aux = 2): { settings: AmpSettings | null; label: string } {
+  const r = listen(patch).returns.find((x) => x.aux === aux);
+  if (!r) return { settings: null, label: "" };
+  const name = (id: string) => { const p = patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) || id; };
+  return { settings: r.whole ? r.settings : null, label: r.whole ? r.chain.slice(1, -1).map(name).join(" > ") : r.problems[0] ?? "" };
 }
 
 const BBD_MODES: BbdMode[] = ["chorus", "flanger", "delay"];

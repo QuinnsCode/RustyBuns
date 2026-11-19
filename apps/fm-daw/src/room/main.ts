@@ -1,10 +1,12 @@
 // Qollab Studio's gear room (/studio.html): you stand in it in first person, the same controls as Load In (mouse or
 // right stick to look, WASD or left stick to walk). Click a box to pick it up and click again to set it down; click
 // a jack to pull a cable out of it, walk the cable to another jack and click there; look at a knob and drag. The
-// room's patch is the sesh's Studio (../studio.ts), kept in this browser for now. What you hear is the walk back
+// room's patch is the sesh's Studio (../studio.ts): through a door from a sesh (?room=) it is the one the World keeps,
+// shared with everyone in it; on its own it is kept in this browser. What you hear is the walk back
 // from the cab (room.ts `listen`): that amp and its pedal run their circuits in Q Amp's audio thread, and nothing
 // else does. That sound comes up through FM DAW's desk (../mixer.ts): Tab opens it, a strip for you and one for each
-// aux return (Space, or the gear cabled between the desk's aux-send and aux-return jacks). `window.qstudio` is the
+// aux return (Space, or the gear cabled between the desk's aux-send and aux-return jacks). In a sesh it is the sesh's
+// desk: a strip per track too, and every move an edit the sesh keeps (`deskOps`). `window.qstudio` is the
 // harness (scripts/probe.ts HANDLES).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
@@ -15,7 +17,10 @@ import { clamp } from "@rustybuns/util";
 import workletUrl from "../amp/worklet.ts?worker&url";
 import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
-import { Desk, deskFor, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
+import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
+import { apply, type Project } from "../project.ts";
+import { connect, roomName, type Net } from "../ui/net.ts";
+import { localMe, myKey } from "../ui/me.ts";
 import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
@@ -23,7 +28,7 @@ import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
 import { BuildSheet, savedDrive, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
-import { sanitizePatch, type Patch } from "../studio.ts";
+import { applyStudio, patchOps, sanitizePatch, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
@@ -70,7 +75,8 @@ let room: Room = newRoom(loadPatch());
 { const p = newAmpBench(); if (p) benchIn(room, p, { x: 0.6, z: 1.0 }); }
 let savedPatch: Patch | null = null;
 const save = () => {
-  if (room.studio.patch === savedPatch) return;
+  // the sesh's room is the World's to keep; this browser's own room stays as it was left
+  if (sesh || room.studio.patch === savedPatch) return;
   savedPatch = room.studio.patch;
   try { localStorage.setItem(KEY, JSON.stringify(savedPatch)); } catch { /* not kept, fine */ }
 };
@@ -78,13 +84,57 @@ const save = () => {
 // The desk: a channel for you (the guitar, through whatever the room plays) and the aux returns, kept in this browser.
 const SOURCES: Source[] = [{ id: "you", name: "You: guitar", source: "player" }];
 const keptDesk = () => { try { return check(Desk, JSON.parse(localStorage.getItem(DESK) ?? "null")); } catch { return null; } };
-let desk = deskFor(SOURCES, keptDesk());
+let ownDesk = deskFor(SOURCES, keptDesk());
 let deskKey = "";
 let drawn = "";
+
+// ---- the sesh (a door from the jam room or the desk carries ?room=): its gear room and its desk are this room's ----
+const sesh = roomName();
+let net: Net | null = null;
+/** The sesh's groove, once it came, and who you are in it (your person id, src/chat.ts). */
+let project: Project | null = null;
+let me: string | null = null;
+let seeded = false;
+let asked = false;
+/** In a sesh the desk is the sesh's: its tracks, your own channel (the guitar) and its returns. */
+const inSesh = () => (project && me ? { project, who: { who: me, name: "You: guitar" } } : null);
+const shownDesk = (): Desk => { const s = inSesh(); return s ? seshDesk(s.project, [s.who]) : ownDesk; };
+/** What this room's own audio thread plays of it: your channel (every solo worked out) and the returns. */
+function playedDesk(): { desk: Desk; channel: string } {
+  const s = inSesh();
+  if (!s) return { desk: ownDesk, channel: "you" };
+  return { desk: { channels: deskPlays(s.project, [s.who]).players, returns: seshDesk(s.project).returns }, channel: playerId(s.who.who) };
+}
 function setDesk(d: Desk) {
-  desk = d;
-  try { localStorage.setItem(DESK, JSON.stringify(d)); } catch { /* not kept, fine */ }
+  const s = inSesh();
   drawn = "";
+  if (s) { for (const edit of deskOps(s.project, d)) { project = apply(project ?? s.project, edit); net?.send(edit); } return; }
+  ownDesk = d;
+  try { localStorage.setItem(DESK, JSON.stringify(d)); } catch { /* not kept, fine */ }
+}
+/** The World's gear room: all of it (on joining, or after it said no to a step), or one step someone else took. */
+function onStudio(m: StudioServer) {
+  if (m.t === "studio-op") { if (m.from !== room.me) room.studio = applyStudio(room.studio, m.from, m.op); return; }
+  if (m.you) room.me = m.you;
+  if (m.studio.patch.placed.length) { room.studio = m.studio; seeded = true; return; }
+  // an empty one: this room as it stands goes in, once (a guest who may not play keeps their own room to themselves)
+  if (seeded) return;
+  seeded = true;
+  room.studio = { patch: room.studio.patch, held: {} };
+  for (const step of patchOps(room.studio.patch)) net?.studio(step);
+}
+if (sesh) {
+  room.sent = (step) => net?.studio(step);
+  net = connect({
+    onSnapshot(p) { project = p; drawn = ""; },
+    onOp(edit) { project = edit.t === "replace" ? edit.project : project && apply(project, edit); drawn = ""; },
+    onStudio,
+    onChat(m) { if (m.t === "chat") { me = m.you; drawn = ""; } },
+    // in (again): ask the World for its gear room, which it sends unasked only once someone has used it
+    onStatus(s) { if (s.state !== "online") asked = false; else if (!asked) { asked = true; net?.studio({ t: "drop" }); } },
+    onLive() {}, onGone() {}, onTakeBytes() {},
+    hello: () => ({ key: myKey(), name: localMe().name || "Someone" }),
+  });
 }
 
 let phase: "menu" | "play" | "desk" | "sheet" = "menu";
@@ -208,8 +258,9 @@ async function speakers(up: boolean) {
 
 /** The desk's audio thread gets the desk and what each aux has cabled in, when either changes. */
 function deskSound(h: Heard) {
-  const cabled = Array.from({ length: desk.returns.length }, (_, i) => h.returns.find((r) => r.aux === i + 1)?.settings ?? null);
-  const m: ToDesk = { t: "desk", desk, channel: "you", cabled };
+  const played = playedDesk();
+  const cabled = Array.from({ length: played.desk.returns.length }, (_, i) => h.returns.find((r) => r.aux === i + 1)?.settings ?? null);
+  const m: ToDesk = { t: "desk", ...played, cabled };
   const key = JSON.stringify(m);
   if (!deskNode || key === deskKey) return;
   deskKey = key;
@@ -220,11 +271,12 @@ function deskSound(h: Heard) {
 function deskView(h: Heard) {
   $("desk").hidden = phase !== "desk";
   if (phase !== "desk") return;
+  const desk = shownDesk();
   const cabled = desk.returns.map((r) => { const x = h.returns.find((y) => y.aux === r.aux); return x?.whole ? x.chain.slice(1, -1).map(nameOfId).join(" > ") : x?.problems[0] ?? ""; });
   const key = JSON.stringify([desk, cabled]);
   if (key === drawn) return;
   drawn = key;
-  drawDesk($("desk-strips"), desk, cabled, setDesk);
+  drawDesk($("desk-strips"), desk, cabled, setDesk, { spaceMute: !inSesh() });
 }
 const nameOfId = (id: string) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; };
 function openDesk(open: boolean) {
@@ -403,7 +455,7 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk, returns: listen(room.studio.patch).returns }),
+  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me } : null, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
   /** The open sheet's tab: "schematic", "pcb", "parts", "files" or "band" (the tolerance band). */
@@ -416,10 +468,10 @@ const harness = {
   sheetClose: () => sheet.close(),
   /** The desk view open or shut (Tab). */
   desk: (open: boolean) => openDesk(open),
-  /** A channel's controls (`you` is the guitar's), an aux send 0 to 1, or a return's fader 0 to 1 (0.75 is 0 dB). */
-  channel: (id: string, ch: Parameters<typeof withChannel>[2]) => setDesk(withChannel(desk, id, ch)),
-  send: (id: string, aux: number, v: number) => setDesk(withSend(desk, id, aux, v)),
-  returnFader: (aux: number, v: number) => setDesk(withReturn(desk, aux, { fader: v })),
+  /** A channel's controls (`you` is the guitar's; in a sesh the ids are `state().desk`'s), an aux send 0 to 1, or a return's fader 0 to 1 (0.75 is 0 dB). */
+  channel: (id: string, ch: Parameters<typeof withChannel>[2]) => setDesk(withChannel(shownDesk(), id, ch)),
+  send: (id: string, aux: number, v: number) => setDesk(withSend(shownDesk(), id, aux, v)),
+  returnFader: (aux: number, v: number) => setDesk(withReturn(shownDesk(), aux, { fader: v })),
   /** Into the room, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z); the seconds it took. The rack is the back wall (z = -3), the door end is z = 3. */

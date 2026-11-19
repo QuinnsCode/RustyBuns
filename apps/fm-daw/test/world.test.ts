@@ -411,7 +411,7 @@ test("studio: friends share one patch, two can't carry one amp, a held lead is i
   expect(a.sent).toEqual(b.sent);                                 // the world's word, to the one who did it too
   b.sent = [];
   act(b, { t: "pick", id: "amp-1" });                             // a has it: b is put back in step instead
-  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } } }]);
+  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } }, you: expect.any(Number) }]);
   act(a, { t: "put", at: [2, 0, 3], turn: 1.5 });
   act(a, { t: "bring", id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 });
   act(a, { t: "put", at: [1, 0, 1], turn: 0 });
@@ -439,7 +439,7 @@ test("studio: friends share one patch, two can't carry one amp, a held lead is i
   // the Durable Object is reset: the studio comes back from the bucket, nobody holding anything
   expect(JSON.parse(bucket.get("sesh/grand-amber-lynx.json")!).studio).toEqual(patch);
   const fresh = await setup(worldEnv, "grand-amber-lynx");
-  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} } });
+  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} }, you: expect.any(Number) });
 });
 
 test("jam room: one walks up to the keys, sits and plays; the other sees them seated, gets the note, and can't take the seat", async () => {

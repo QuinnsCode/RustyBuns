@@ -95,17 +95,20 @@ test("200 random patches stay finite and under the ceiling", () => {
   }
 }, HEAVY);
 
-async function compare(name: string, make: () => Promise<FmEngine | null>, p: Project = demoProject()) {
+async function compare(name: string, make: () => Promise<FmEngine | null>, p0: Project = demoProject()) {
+  // every track into the desk's aux 2 as well: that bus has to match too
+  const p: Project = { ...p0, tracks: p0.tracks.map((t) => ({ ...t, params: t.params.map((v, i) => (i === P.SEND2 ? 0.5 : v)) })) };
   const rust = await make();
   if (!rust) { console.log(`  (skipped: ${name} not built; run \`bun run build:native\`)`); return; }
   // the Space send bus too: what the reverb hears has to match as well
-  const sa = new Float32Array(SR * 8 * 2), sb = new Float32Array(SR * 8 * 2);
-  const a = renderPattern(rust, SR, 8, load(rust, p), sa);
+  const sa = new Float32Array(SR * 8 * 2), sb = new Float32Array(SR * 8 * 2), xa = new Float32Array(SR * 8 * 2), xb = new Float32Array(SR * 8 * 2);
+  const a = renderPattern(rust, SR, 8, load(rust, p), sa, undefined, false, xa);
   rust.free?.();
   const ts = new TsEngine(SR);
-  const b = renderPattern(ts, SR, 8, load(ts, p), sb);
+  const b = renderPattern(ts, SR, 8, load(ts, p), sb, undefined, false, xb);
+  expect(xb.some((x) => Math.abs(x) > 0.01)).toBe(true);
   let maxDiff = 0;
-  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]), Math.abs(sa[i] - sb[i]));
+  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]), Math.abs(sa[i] - sb[i]), Math.abs(xa[i] - xb[i]));
   console.log(`  ${name}: max |rust - ts| = ${maxDiff.toExponential(2)} over ${a.length / 2} frames`);
   expect(maxDiff).toBeLessThan(1e-4);
 }

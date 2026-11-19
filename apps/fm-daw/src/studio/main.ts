@@ -20,7 +20,9 @@ import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "..
 import { demoProject } from "../presets.ts";
 import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
-import { loadMsg } from "../ui/load.ts";
+import { DeskFeed, loadMsg } from "../ui/load.ts";
+import { applyStudio, emptyStudio } from "../studio.ts";
+import { auxGear } from "../room/room.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
 import { encodeTake } from "../take.ts";
@@ -346,6 +348,7 @@ async function startAudio() {
     opusEncoder = opus?.encoder ?? null;
     if (opus) far.decodeWith(opus.decoder);
     out.send(loadMsg(project));
+    deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
     for (const peer of plugged.keys()) guitars.ask(peer);
@@ -442,14 +445,14 @@ function onLive(from: number, e: Live) {
   hear(jam, from, e);
   if (e.t === "wear") people();
   if (e.t === "guitar") {
-    far.heard(from, e);
+    far.heard(from, e); deskSync();
     if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); }
     else { plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from); guitars?.ask(from); }
     return;
   }
   if (e.t === "play" || e.t === "stop") return void playGroove(e.t === "play", false);
   // a far plugin's track: kept quiet here, its sound in slices
-  if (e.t === "plugin") return void far.heard(from, e);
+  if (e.t === "plugin") { far.heard(from, e); deskSync(); return; }
   if (!sounds(mutes, from, e)) return;
   if (far.heard(from, e)) return;
   for (const m of band.heard(from, e)) out?.send(m);
@@ -460,6 +463,15 @@ const wall = () => performance.timeOrigin + performance.now();
 const band = new Band(() => ({ bpm: project.bpm, loopBeats: loopBeats(project) }), wall);
 /** Everyone else's guitars and plugin tracks, coming in as slices (src/studio/plugin-line.ts). */
 const far = new FarSound(band, (m) => out?.send(m));
+/**
+ * The sesh's desk beyond the tracks, as FM DAW's Mixer tab sets it (src/mixer.ts): the sound that comes here in slices
+ * plays on its player's channel, and the aux 2 return plays what the sesh's gear room has cabled into it.
+ */
+const deskFeed = new DeskFeed((m) => out?.send(m));
+let gearRoom = emptyStudio();
+function deskSync() {
+  deskFeed.sync(project, far.players().flatMap((peer) => { const who = peerIds[peer]; return who ? [{ peer, who, name: "" }] : []; }), auxGear(gearRoom.patch).settings);
+}
 /** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
 let transport = { abs: 0, synced: false, late: 0, playing: false };
 /** Enter, or anyone's Play on the live line: the groove and its click, on the shared beat, for everyone. */
@@ -551,7 +563,7 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from);
-  far.gone(from);
+  far.gone(from); deskSync();
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
   gone(jam, from);
@@ -584,7 +596,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); }
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
 const rights: Rights = { floor: null, grants: null, me: null, asked: null };
@@ -611,8 +623,9 @@ lane = mountLane({
 });
 
 if (here) net = connect({
-  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
+  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
   onRewound: back.answer,
+  onStudio(m) { gearRoom = m.t === "studio-all" ? m.studio : applyStudio(gearRoom, m.from, m.op); deskSync(); },
   onRtc: (m) => void guitars?.signal(m),
   onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
