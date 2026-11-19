@@ -8,7 +8,8 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
-import { DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, score, windFor, windText } from "../src/venues/park.ts";
+import { clearCrowd, letIn } from "../src/crowd/crowd.ts";
+import { CROWD, DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, score, windFor, windText } from "../src/venues/park.ts";
 import { setDial } from "../src/assists.ts";
 
 setDefaultTimeout(60_000);
@@ -132,6 +133,16 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   const s = score(w, c);
   expect(s.fuel!.hours).toBeGreaterThan(DAY_HOURS);
   expect(s).toMatchObject({ hazards: 0, tripped: false, pass: true });
+
+  // Show time: the crowd comes onto the grass. Their bodies soak up some highs, so the back hears less of it (the card
+  // says so), and out of doors there is no room to ring.
+  letIn(w, CROWD);
+  const crowded = parkState(w, c);
+  expect(crowded.people).toMatchObject({ in: true, count: CROWD.capacity, full: { rt60: null } });
+  expect(crowded.full.crowd!).toBeLessThan(s.crowd!);
+  expect(crowded.full.score).toBeLessThan(s.score);
+  expect(crowded.people.regions.map((r) => r.name)).toEqual(["front", "middle", "back"]);
+  clearCrowd(w);
 
   // The breeze picks up toward the road: it carries the highs a few dB further and the houses complain, so the fader
   // has to come down again. Turned the other way it carries them off and the houses go quieter than calm.

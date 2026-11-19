@@ -11,8 +11,10 @@ import { type World } from "../sim.ts";
 import { heatColour } from "./dive-bar-view.ts";
 import {
   COMPOUND, FEEDERS, FEEDS, FENCE_LIMIT, FENCE_Z, FIELD, HOUSES, HOUSE_LIMIT, LEGS, MIX_LIMIT, PASS, STAGES, STAGE_KEYS, TARGET, TRADERS, WINDOW,
-  type Heat, type Show, type StageKey, awgName, clockAt, face, feeder, festivalState, heat, master, phase, rig, run, show, snake, subs,
+  type Heat, type Show, type StageKey, awgName, clockAt, crowdSpot, crowdState, face, feeder, festivalState, heat, master, phase, rig, run, scores, show, snake, subs,
 } from "./festival.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { MAX_BIG, crowdView } from "../crowd/crowd-view.ts";
 
 export type FestivalView = {
   key(code: string): boolean;
@@ -111,11 +113,18 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
   card.className = "bar-card festival-card";
   hud.appendChild(card);
 
+  // The mids map with the crowd on the field, worked out when something moves, not every frame.
+  let full: Heat | null = null;
+  const people = crowdView(scene, { max: MAX_BIG });
   let seen = "", h: Heat | null = null, band: "high" | "low" = "high", opened: Show | null = null;
-  const signature = (w: World) => JSON.stringify([band, w.items.filter((i) => /-(rack|desk)$/.test(i.key)).map((i) => [i.x, i.z]), rig(w).yaw, rig(w).subs, rig(w).master, rig(w).phase, rig(w).feeder, rig(w).snake]);
+  const signature = (w: World) => JSON.stringify([band, w.items.filter((i) => /-(rack|desk)$/.test(i.key)).map((i) => [i.x, i.z]), rig(w).yaw, rig(w).subs, rig(w).master, rig(w).phase, rig(w).feeder, rig(w).snake, !!crowdOf(w)]);
   function paint(w: World) {
     h = heat(w);
-    const shown = band === "high" ? h.high : h.low;
+    const both = scores(w, h);
+    full = both.fullHeat;
+    people.moods(crowdState(w, both).stages);
+    // The mids show the empty field until show time, then the field as the crowd hears it.
+    const shown = band === "low" ? h.low : crowdOf(w) ? full.high : h.high;
     for (let k = 0; k < shown.db.length; k++) data.set(band === "high" ? heatColour(shown.db[k]!, TARGET, WINDOW) : heatColour(shown.db[k]!, FENCE_LIMIT + 10, 8), k * 4);
     tex.needsUpdate = true;
     for (const k of STAGE_KEYS) {
@@ -158,7 +167,8 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
     update() {
       const w = getWorld(), sig = signature(w);
       if (sig !== seen || !h) { seen = sig; paint(w); }
-      const s = festivalState(w, h!), r = rig(w), atCompound = near(w, COMPOUND.x, COMPOUND.z, 8);
+      people.update(w, crowdOf(w));
+      const s = festivalState(w, h!, full!), r = rig(w), atCompound = near(w, COMPOUND.x, COMPOUND.z, 8);
       const stageLine = (k: StageKey) => {
         const t = s.stages[k]!;
         if (!t.live) return `<span class="warn">${esc(STAGES[k].name)}: ${esc(t.why)}</span>`;
@@ -170,6 +180,7 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
         : `<span class="${s.powerOk ? "" : "warn"}">Power ${s.power.amps.join(" / ")} A${s.power.trips ? ", tripped" : ""}${s.power.imbalance > 0.2 ? ", unbalanced" : ""}</span>`;
       card.innerHTML = `<b>${opened ? "Show time" : "The festival"} ${clockAt(r.clock)}</b>`
         + STAGE_KEYS.map(stageLine).join("")
+        + `<span>Crowd in: ${STAGE_KEYS.map((k) => `${k} ${db(s.full.stages[k]!.level)}, ${Math.round(s.full.stages[k]!.covered * 100)}% in`).join("; ")}, score ${s.full.score}${crowdOf(w) ? `, ${crowdOf(w)!.people} on the field` : ""}</span>`
         + `<span class="${s.fence !== null && s.fence > FENCE_LIMIT ? "warn" : ""}">Fence 63 Hz ${db(s.fence)} (limit ${FENCE_LIMIT})</span>`
         + `<span class="${s.houses !== null && s.houses > HOUSE_LIMIT ? "warn" : ""}">Houses ${db(s.houses)} (limit ${HOUSE_LIMIT}), desks ${MIX_LIMIT} LAeq</span>`
         + power
@@ -178,6 +189,7 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
     },
     doors() {
       const w = getWorld();
+      if (!crowdOf(w)) letIn(w, crowdSpot(w));
       run(w, 3600);
       seen = "";
       view.update();
@@ -185,6 +197,7 @@ export function festivalView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
       return opened;
     },
     dispose() {
+      people.dispose();
       scene.remove(g);
       scene.background = was.background;
       scene.fog = was.fog;

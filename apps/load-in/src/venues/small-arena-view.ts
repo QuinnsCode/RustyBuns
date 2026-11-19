@@ -10,9 +10,11 @@ import type { Fed } from "../audio/hear.ts";
 import { master, rig, type Zone } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
 import {
-  CLEAR, PASS, POINTS, STEEL_Y, TARGET, WEIGHTS, ZONES, BOX, bowl, calc, check, deskAtFoh, earAt, fly, frameY, hang, hangsOf,
-  land, loadKg, pin, plan, playing, score, show, under, unhang, type Score, type Show,
+  CLEAR, CROWD, PASS, POINTS, STEEL_Y, TARGET, WEIGHTS, ZONES, BOX, bowl, calc, check, crowdState, deskAtFoh, earAt, fly, frameY, hang, hangsOf,
+  land, loadKg, pin, plan, playing, scores, show, under, unhang, type Score, type Show,
 } from "./small-arena.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { MAX_BIG, crowdView } from "../crowd/crowd-view.ts";
 
 export type ArenaView = {
   /** A key while playing; true when the arena used it. `say` shows a refusal under the crosshair. */
@@ -93,14 +95,18 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
   card.className = "bar-card";
   hud.appendChild(card);
 
-  let seen = "", last: Score | null = null, opened: Show | null = null;
-  const signature = (w: World) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w), hangsOf(w)]);
+  let seen = "", last: Score | null = null, full: Score | null = null, opened: Show | null = null;
+  const signature = (w: World) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w), hangsOf(w), !!crowdOf(w)]);
+  const people = crowdView(scene, { max: MAX_BIG });
 
+  // The map shows the empty bowl until the doors open, then the bowl with the floor full.
   function paint(w: World) {
-    const now = bowl(w);
+    const both = scores(w), now = crowdOf(w) ? both.fullSeats : both.empty;
     now.forEach((s, k) => { const [r, gg, b] = heatColour(s.db, TARGET); tiles.setColorAt(k, colour.setRGB(r / 255, gg / 255, b / 255)); });
     if (tiles.instanceColor) tiles.instanceColor.needsUpdate = true;
-    last = score(w, now);
+    last = both.soundcheck;
+    full = both.full;
+    people.moods(crowdState(w, both).regions);
     for (const p of POINTS) {
       const h = hangsOf(w)[p.key], c = chains.get(p.key)!, top = h.boxes.length > 0;
       const y = frameY(h);
@@ -149,6 +155,7 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
     update() {
       const w = getWorld(), sig = signature(w);
       if (sig !== seen) { seen = sig; paint(w); }
+      people.update(w, crowdOf(w));
       const s = last!, p = under(w, CLEAR * 3), db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       const rows = POINTS.map((q) => {
         const h = hangsOf(w)[q.key], kg = loadKg(h), over = kg > q.limitKg;
@@ -160,6 +167,7 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
       card.innerHTML = `<b>${opened ? "Doors open" : "Small arena"}</b>` + rows
         + (c ? `<span>Calculator, ${p.name} at ${c.trim} m: top ${c.tilt}, pins ${c.splays.join(" ") || "none"}</span>` : "")
         + `<span>${parts} (target ${TARGET})</span>`
+        + `<span>Floor full: front ${Math.round(full!.covered.front * 100)}%, floor ${Math.round(full!.covered.floor * 100)}%, score ${full!.score}${crowdOf(w) ? `, ${crowdOf(w)!.people} in` : ""}</span>`
         + `<span class="${s.desk ? "" : "warn"}">${s.desk ? "Desk at front of house" : "The desk goes out at front of house"}, fader ${rig(w).master} dB</span>`
         + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid $${opened.pay} of $${opened.fee}</span>`
@@ -167,10 +175,12 @@ export function arenaView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => 
         + `<small>Under a point: G hang, K pins, I check; clear: O motor, U / J trim. H map, [ ] fader at the desk, Enter doors</small>`;
     },
     doors() {
+      const w = getWorld();
+      if (!crowdOf(w)) letIn(w, CROWD);
       view.update();
-      return (opened = show(getWorld()));
+      return (opened = show(w));
     },
-    dispose() { scene.remove(g); scene.fog = was; card.remove(); },
+    dispose() { people.dispose(); scene.remove(g); scene.fog = was; card.remove(); },
   };
   return view;
 }

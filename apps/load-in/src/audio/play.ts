@@ -3,7 +3,12 @@
 // goes to one bus at the phase-summed level, so the alley between two subs is loud and the lobes beside it dip.
 // The speakers start down behind a card: a click (or M) brings them up, and a limiter holds the mix at -1 dBFS.
 // `feed` swaps the house loop for another source (the DJ booth's decks, audio/decks.ts) on the same speaker path.
+// `room` sends the mix to a convolver that rings for the room's reverb time (audio/reverb.ts), rebuilt as the crowd comes in.
 import { gainOf, type Hearing } from "./hear.ts";
+import { DRY, impulse, wetOf } from "./reverb.ts";
+
+/** Rebuild the room's impulse when its reverb time moves this far, s: people walk in a few at a time. */
+const REBUILD = 0.05;
 
 const BPM = 120;
 const BARS = 2;
@@ -59,6 +64,8 @@ export function soundSystem(card: HTMLElement) {
   let make: ((c: AudioContext) => AudioNode) | null = null, fed: AudioNode | null = null;
   const voices = new Map<string, Voice>();
   let up = false;
+  let verb: ConvolverNode | null = null, wet: GainNode | null = null, rang = { rt60: 0, rt60Low: 0 };
+  let ring: { rt60: number; rt60Low: number } | null = null;
 
   function build(): AudioContext {
     const c = new AudioContext();
@@ -74,6 +81,11 @@ export function soundSystem(card: HTMLElement) {
     master = c.createGain();
     master.gain.value = 0;
     master.connect(limiter);
+    // The room: the whole mix into a convolver, back in under the speakers at the room's wet level.
+    verb = c.createConvolver();
+    wet = c.createGain();
+    wet.gain.value = 0;
+    master.connect(verb).connect(wet).connect(limiter);
 
     const data = houseLoop(c.sampleRate);
     const buf = c.createBuffer(1, data.length, c.sampleRate);
@@ -99,7 +111,21 @@ export function soundSystem(card: HTMLElement) {
     loop.start();
     ctx = c;
     plugIn();
+    tune();
     return c;
+  }
+
+  /** Load the room's impulse when its reverb time has moved, and set how much of it you hear. */
+  function tune() {
+    if (!ctx || !verb || !wet) return;
+    const r = ring && ring.rt60 >= DRY ? ring : null;
+    wet.gain.setTargetAtTime(r ? wetOf(r.rt60) : 0, ctx.currentTime, 0.3);
+    if (!r || (Math.abs(r.rt60 - rang.rt60) < REBUILD && Math.abs(r.rt60Low - rang.rt60Low) < REBUILD)) return;
+    const [l, rt] = impulse(r.rt60, r.rt60Low, ctx.sampleRate), buf = ctx.createBuffer(2, l.length, ctx.sampleRate);
+    buf.copyToChannel(l, 0);
+    buf.copyToChannel(rt, 1);
+    verb.buffer = buf;
+    rang = { rt60: r.rt60, rt60Low: r.rt60Low };
   }
 
   function voice(key: string): Voice {
@@ -151,6 +177,15 @@ export function soundSystem(card: HTMLElement) {
       plugIn();
     },
     setUp,
+    /** The room you stand in: its reverb time, mids and bass, s (`ringing` in crowd/crowd.ts); null for no room (out of doors). */
+    room(r: { rt60: number | null; rt60Low: number | null } | null) {
+      ring = r && r.rt60 !== null && r.rt60Low !== null ? { rt60: r.rt60, rt60Low: r.rt60Low } : null;
+      tune();
+    },
+    /** The reverb loaded now, s (0 before any), and the wet level it plays at. */
+    get reverb() {
+      return { rt60: rang.rt60, rt60Low: rang.rt60Low, wet: ring ? Math.round(wetOf(ring.rt60) * 100) / 100 : 0 };
+    },
     /** Follow the hearing: each fed speaker's gain, top end and side, and the sub bus. */
     update(h: Hearing) {
       if (!ctx || !lowGain) return;

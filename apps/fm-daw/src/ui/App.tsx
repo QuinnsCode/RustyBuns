@@ -12,7 +12,7 @@ import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
 import { startMidiOut, type MidiOut } from "./midi-out.ts";
 import { onCc } from "./learn.ts";
-import { PluginPump, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
+import { PluginPump, bouncePlugins, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
 
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
@@ -41,7 +41,7 @@ import { SONGS, fromAddress } from "../songs.ts";
 import { GRIDS, quantize, quantizeNote } from "../quantize.ts";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
-import { renderProject, loopSeconds } from "../engine/offline.ts";
+import { renderProject, loopSeconds, bounceFrames } from "../engine/offline.ts";
 import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
@@ -137,7 +137,7 @@ export function App() {
   const [page, setPage] = useState(0);
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
-  const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string; decks?: boolean }>({ busy: false });
+  const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string; decks?: boolean; missed?: string[] }>({ busy: false });
   /** The track the input records onto while recording, or null with the input off. */
   const [armed, setArmed] = useState<number | null>(null);
   const [inputNote, setInputNote] = useState<string | null>(null);
@@ -720,21 +720,24 @@ export function App() {
         const bytes = await fetchWasm();
         if (bytes) e = new WasmEngine(await instantiateFm(bytes), sr);
       }
-      const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6), (id) => takeSound.current.get(id));
+      // a plugin track's sound comes from the desktop host, which has the plugin; one it can't play is named below
+      const secs = loopSeconds(p, bounceLoops(p));
+      const { sound, missed } = await bouncePlugins(p, sr, bounceFrames(p, sr, secs));
+      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takeSound.current.get(id), (t) => sound.get(t));
       e.free?.();
       const wav = encodeWav(pcm, sr);
       // Online, the sesh keeps its last bounce, so a DJ's decks can play it by the sesh's name.
       if (!solo && netStatus.state === "online") void shareBounce(wav, p.bpm).then((ok) => ok && setBounce((b) => ({ ...b, decks: true })));
       try {
         const path = await saveBounce("FM DAW", toBase64(wav));
-        setBounce({ busy: false, path, saved: true });
+        setBounce({ busy: false, path, saved: true, missed });
       } catch {
         // no desktop host (browser or edge): hand the file to the browser instead
         const a = document.createElement("a");
         a.href = URL.createObjectURL(new Blob([wav as Uint8Array<ArrayBuffer>], { type: "audio/wav" }));
         a.download = "fm-daw-bounce.wav";
         a.click();
-        setBounce({ busy: false, path: "Downloaded fm-daw-bounce.wav" });
+        setBounce({ busy: false, path: "Downloaded fm-daw-bounce.wav", missed });
       }
     } catch (err) { setBounce({ busy: false, error: (err as Error).message }); }
   }
@@ -987,6 +990,7 @@ export function App() {
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
+        {!!bounce.missed?.length && <span className="err">Bounced without {bounce.missed.join(", ")}</span>}
         {bounce.error && <span className="err">{bounce.error}</span>}
         {bounce.decks && <span className="dim" title="A DJ booth's deck plays this bounce: load the sesh's name on a deck in Sound Guy Simulator">On the decks as {roomName()}</span>}
         <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : bounceLoops(project) === 1 ? "Bounce the song to WAV" : "Bounce 4 loops to WAV"}</button>

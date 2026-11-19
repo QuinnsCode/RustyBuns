@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import { candidates } from "@rustybuns/native";
 import { check, int, num, str } from "@rustybuns/util/guard";
-import { openBundle, scanPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
+import { openBundle, renderEvents, scanPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
 import { ownCopy, PluginAskArgs, TrackPlugin, type BlockReply, type PluginChoice, type StartReply } from "../plugin-track.ts";
 
 const bundles = new Map<string, Bundle>();
@@ -35,7 +35,7 @@ export async function findPlugins(): Promise<PluginChoice[]> {
 }
 
 /**
- * Starts `plugin` on track `track` at the context's rate, with its moved sliders where they were. The groove may be a
+ * Starts `plugin` on track `track` (or a bounce's slot, BOUNCE_SLOT) at the context's rate, with its moved sliders where they were. The groove may be a
  * friend's, naming the `.clap` in their folder: this computer's own copy of the same plugin plays (`ownCopy`).
  */
 export async function startPlugin(track: unknown, plugin: unknown, sampleRate: unknown): Promise<StartReply> {
@@ -53,20 +53,15 @@ export async function startPlugin(track: unknown, plugin: unknown, sampleRate: u
   return { params: made.params(), editor: made.editor !== null };
 }
 
-/** The next `frames` of track `track`'s plugin, after the notes and slider moves in `events`. */
+/** The next `frames` of track `track`'s plugin, the notes and slider moves in `events` each on its frame of them. */
 export async function renderPlugin(args: unknown): Promise<BlockReply> {
   const a = check(PluginAskArgs, args);
   const p = a && playing.get(a.track);
   if (!a || !p) return { pcm: "", ok: false, error: "no plugin on this track" };
   if (p.failed) return { pcm: "", ok: false, error: p.failed };
   const { plugin } = p;
-  for (const e of a.events) {
-    if (e.t === "on") plugin.noteOn(e.key, e.vel);
-    else if (e.t === "off") plugin.noteOff(e.key);
-    else plugin.setParam(e.id, e.v);
-  }
-  const out = new Float32Array(2 * a.frames);
-  if (!plugin.render(out, a.frames)) {
+  const out = renderEvents(plugin, a.events, a.frames);
+  if (!out) {
     p.failed = `${plugin.info.name} stopped working`;
     return { pcm: "", ok: false, error: p.failed };
   }

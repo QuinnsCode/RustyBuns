@@ -11,7 +11,7 @@ import { aimKey, heatColour } from "./dive-bar-view.ts";
 import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, type Score, type Show } from "./desert.ts";
 import { playing } from "./park.ts";
 import { cellsIn, mean } from "./dive-bar.ts";
-import { crowdOf, letIn, regions } from "../crowd/crowd.ts";
+import { comingTonight, crowdOf, letIn, move, regions } from "../crowd/crowd.ts";
 import { crowdView } from "../crowd/crowd-view.ts";
 import type { Grid } from "@rustybuns/gear";
 
@@ -156,8 +156,10 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     },
     update() {
       const w = getWorld(), cs = getCables(), sig = signature(w, cs), now = performance.now();
-      const crowd = crowdOf(w), map = heard;
-      if (crowd && map) people.moods(regions(crowd, (zone) => ({ soundcheck: null, full: mean(cellsIn(map, zone)) }), TARGET, SPREAD));
+      const map = heard, moods = crowdOf(w) && map ? regions(crowdOf(w)!, (zone) => ({ soundcheck: null, full: mean(cellsIn(map, zone)) }), TARGET, SPREAD) : [];
+      // The floor moves on how each part of it hears the wall: forward, back from the stacks, or off into the night.
+      const crowd = move(w, moods);
+      people.moods(moods);
       people.update(w, crowd);
       if (sig !== seen) { seen = sig; paint(w, cs); }
       const s = last!, st = desertState(w, cs), gen = st.generator, fuel = st.fuel, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
@@ -189,8 +191,8 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     doors() {
       view.update();
       opened = show(getWorld(), getCables());
-      // Nobody walks out into the desert for a wall that makes no sound.
-      const coming = Math.round(DANCE_FLOOR.capacity * Math.min(1, opened.sound / 100));
+      // Nobody walks out into the desert for a wall that makes no sound: of those the tour says are coming, the better it sounds the more.
+      const coming = Math.round(comingTonight(getWorld(), DANCE_FLOOR) * Math.min(1, opened.sound / 100));
       if (!crowdOf(getWorld()) && coming > 0) letIn(getWorld(), DANCE_FLOOR, coming);
       night = { at: performance.now(), hours: opened.night, dawn: opened.sunrise };
       return opened;

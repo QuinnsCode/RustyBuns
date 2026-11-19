@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
 import { arr, type Guard } from "@rustybuns/util/guard";
-import { ParamChange, PluginInfo, PluginParam } from "../plugin-track.ts";
+import { ParamChange, PluginInfo, PluginParam, type PluginEvent } from "../plugin-track.ts";
 import { audible, type Project } from "../project.ts";
 import { P } from "./params.ts";
 
@@ -159,6 +159,32 @@ export function scanPlugins(folders: string[] = pluginFolders(), depth = 4): str
   };
   for (const f of folders) walk(f, depth);
   return [...found];
+}
+
+/**
+ * The next `frames` of a plugin's sound (interleaved stereo), each note and slider move landing on its own frame
+ * (`at`, none: the first): the render stops there, the event goes in, and it plays on. null once the plugin has failed.
+ */
+export function renderEvents(plugin: Pick<HostedPlugin, "noteOn" | "noteOff" | "setParam" | "render">, events: PluginEvent[], frames: number): Float32Array | null {
+  const out = new Float32Array(2 * frames);
+  let pos = 0;
+  const upTo = (to: number): boolean => {
+    const n = to - pos;
+    if (n <= 0) return true;
+    // a plugin adds into the start of what it's handed, so a stretch that starts further in gets its own
+    const part = pos === 0 ? out : new Float32Array(2 * n);
+    const ok = plugin.render(part, n);
+    if (part !== out) out.set(part, 2 * pos);
+    pos = to;
+    return ok;
+  };
+  for (const e of events) {
+    if (!upTo(Math.min(frames, e.at ?? 0))) return null;
+    if (e.t === "on") plugin.noteOn(e.key, e.vel);
+    else if (e.t === "off") plugin.noteOff(e.key);
+    else plugin.setParam(e.id, e.v);
+  }
+  return upTo(frames) ? out : null;
 }
 
 /** How fast a plugin track's level follows its fader, per sample: the native desk's GAIN_SMOOTH, so the two sound alike. */

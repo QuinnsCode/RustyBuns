@@ -5,7 +5,8 @@
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, paint rolled on by hand, a framed
-// control-room window whose glass reflects the room, the cables, tape, wall plates and road cases a room in use collects, and on high a little bloom, a vignette and grain.
+// control-room window whose glass reflects the room, the cables, tape, wall plates and road cases a room in use collects,
+// the marks and paper of one people work in (scuffed walls, worn floor, posters, a music stand, a set list, a clock, sockets, air grilles), and on high a little bloom, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
@@ -22,7 +23,7 @@ import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLigh
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mulberry32 } from "@rustybuns/util";
-import { propBlocks, thingBox, wallPieces, type Side, type StudioDef } from "./room.ts";
+import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type StudioDef } from "./room.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 
 export type Quality = "low" | "high";
@@ -35,7 +36,6 @@ export function pickQuality(search: string, stored: string | null, coarse: boole
 }
 export function loadQuality(): Quality {
   let stored: string | null = null;
-let sheen: THREE.CanvasTexture | null = null;
   try { stored = localStorage.getItem(KEY); } catch { /* no storage */ }
   return pickQuality(location.search, stored, matchMedia("(pointer: coarse)").matches);
 }
@@ -45,9 +45,9 @@ export function saveQuality(q: Quality) { try { localStorage.setItem(KEY, q); } 
 interface Painted { map: THREE.Texture; bump?: THREE.Texture; rough?: THREE.Texture; metres: number }
 type Paint = (g: CanvasRenderingContext2D, n: number, rnd: () => number, base: THREE.Color) => void;
 
-function canvasTex(n: number, draw: (g: CanvasRenderingContext2D) => void, color: boolean): THREE.CanvasTexture {
+function canvasTex(n: number, draw: (g: CanvasRenderingContext2D) => void, color: boolean, tall = n): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = c.height = n;
+  c.width = n; c.height = tall;
   const g = c.getContext("2d");
   if (!g) throw new Error("no 2d canvas");
   draw(g);
@@ -362,8 +362,8 @@ function foamMat(): THREE.MeshStandardMaterial {
 }
 
 /** The absorbers and curtains a room's `panels` list, hung on their walls; skirting along the floor. */
-function hang(def: StudioDef, group: THREE.Group) {
-  const { h } = def.size;
+function hang(def: StudioDef, group: THREE.Group): Record<Side, [number, number][]> {
+  const { h } = def.size, taken: Record<Side, [number, number][]> = { front: [], back: [], left: [], right: [] };
   for (const side of ["front", "back", "left", "right"] as const) {
     const s = sideOf(def, side), wall = new THREE.Group();
     wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
@@ -397,6 +397,7 @@ function hang(def: StudioDef, group: THREE.Group) {
         c.position.set(Math.min(along + wide / 2, s.len / 2 - wide / 2 - 0.2), tall / 2 + (h - tall) - 0.1, 0.16); wall.add(c);
         const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, wide + 0.2, 8), surface("metal", "#2a2b2e"));
         rail.rotation.z = Math.PI / 2; rail.position.set(c.position.x, h - 0.08, 0.16); wall.add(rail);
+        taken[side].push([c.position.x - wide / 2, c.position.x + wide / 2]);
         along += wide + 0.5;
       } else if (p.material === "panel") {
         // fabric-wrapped absorbers: 60 by 120 cm, 10 cm deep with soft rounded edges, standing tall at ear height,
@@ -407,10 +408,13 @@ function hang(def: StudioDef, group: THREE.Group) {
         const row = new THREE.Group();
         for (let i = 0; i < n; i++) row.add(at(new THREE.Mesh(geo, mat), along + 0.3 + (i % cols) * cell, rows === 1 ? 1.5 : 0.95 + Math.floor(i / cols) * 1.3, 0.11));
         wall.add(flatten(row));
+        taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
       } else if (p.material === "slats") {
-        wall.add(slats(Math.min(s.len / 2 - along - 0.3, p.m2 / Math.min(h - 0.6, 2.4)), Math.min(h - 0.6, 2.4), along));
-        along += Math.min(s.len / 2 - along - 0.3, p.m2 / Math.min(h - 0.6, 2.4)) + 0.5;
+        const wide = Math.min(s.len / 2 - along - 0.3, p.m2 / Math.min(h - 0.6, 2.4));
+        wall.add(slats(wide, Math.min(h - 0.6, 2.4), along));
+        taken[side].push([along, along + wide]);
+        along += wide + 0.5;
       } else {
         // absorbers: 60 cm squares, five centimetres proud of the wall, centred at ear height, in rows of two or three
         const n = Math.max(1, Math.round(p.m2 / 0.36)), rows = Math.min(3, Math.max(1, Math.round(Math.sqrt(n / 2)))), cols = Math.ceil(n / rows);
@@ -423,10 +427,12 @@ function hang(def: StudioDef, group: THREE.Group) {
           m.position.set(along + 0.3 + c * cell, 1.45 + (r - (rows - 1) / 2) * 0.64, foam ? 0.06 : 0.085);
           wall.add(m);
         }
+        taken[side].push([along, along + cols * cell]);
         along += cols * cell + 0.5;
       }
     }
   }
+  return taken;
 }
 
 // ---- light that stays put, baked once: where things meet the floor, and the room's own reflections ----
@@ -591,7 +597,7 @@ function flatten(root: THREE.Object3D): THREE.Group {
   const inv = root.matrixWorld.clone().invert(), by = new Map<THREE.Material, THREE.BufferGeometry[]>();
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.Material)) return;
-    const g = o.geometry.clone();
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); // a rounded box has no index, and one merge takes all or none
     g.applyMatrix4(inv.clone().multiply(o.matrixWorld));
     by.set(o.material, [...(by.get(o.material) ?? []), g]);
   });
@@ -773,7 +779,316 @@ function lived(def: StudioDef, group: THREE.Group) {
   }
   cans2.position.y = 0.83 + 0.05;
   stack.add(cans2);
+  // beside them a spare mic stand on its round base, a cable coiled at its foot, and a roll of gaffer left on the lid
+  const dark = surface("metal", "#1c1d1f");
+  const part = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => at(new THREE.Mesh(geo, m), x, y, z);
+  stack.add(part(new THREE.CylinderGeometry(0.13, 0.135, 0.018, 24), dark, 0.68, 0.009, 0), part(new THREE.CylinderGeometry(0.011, 0.011, 0.9, 8), dark, 0.68, 0.46, 0),
+    part(new THREE.CylinderGeometry(0.016, 0.016, 0.05, 10), rubber, 0.68, 0.9, 0), part(new THREE.CylinderGeometry(0.008, 0.008, 0.6, 8), latch, 0.68, 1.18, 0),
+    part(new THREE.BoxGeometry(0.03, 0.05, 0.03), rubber, 0.68, 1.5, 0));
+  for (let i = 0; i < 4; i++) {
+    const loop = part(new THREE.TorusGeometry(0.14 + rnd() * 0.025, 0.0055, 6, 28), rubber, 0.66 + (rnd() - 0.5) * 0.03, 0.007 + i * 0.01, 0.36 + (rnd() - 0.5) * 0.03);
+    loop.rotation.set(Math.PI / 2 + (rnd() - 0.5) * 0.06, (rnd() - 0.5) * 0.06, 0);
+    stack.add(loop);
+  }
+  const roll = part(new THREE.TorusGeometry(0.042, 0.021, 8, 22), tape, 0.02, 0.851, 0.13); roll.rotation.x = Math.PI / 2;
+  stack.add(roll);
   group.add(flatten(stack));
+}
+
+let kicks: THREE.CanvasTexture | null = null, wear: THREE.CanvasTexture | null = null, sheets: THREE.CanvasTexture | null = null;
+/** Cells across the paper atlas (`sheets`): four posters, a page of music, a set list, a clock's face (the top two thirds of its cell). */
+const SHEETS = 7;
+/** Walls nothing is pinned or hung on: soft ones, and glass. */
+const SOFT = new Set<Material>(["foam", "curtain", "panel", "glass"]);
+
+/**
+ * The clear stretches of an outside wall, each [from, to] in metres along it from its middle and at least `min` long:
+ * not behind what hangs there (`taken`, as hang() lays the panels out), not where an inner wall meets it, not behind
+ * a floor lamp or the room's own furniture. Where a poster can go.
+ */
+export function clearWall(def: StudioDef, side: Side, taken: [number, number][], min = 1.1): [number, number][] {
+  const s = sideOf(def, side), ux = Math.cos(s.turn), uz = -Math.sin(s.turn), nx = Math.sin(s.turn), nz = Math.cos(s.turn);
+  const lamps = practicals(def), runs: [number, number][] = [], end = s.len / 2 - 0.5;
+  const blocked = (a: number) => {
+    const p: [number, number] = [s.cx + ux * a + nx * 0.2, s.cz + uz * a + nz * 0.2];
+    return taken.some(([f, t]) => a > f - 0.2 && a < t + 0.2) || def.walls.some((wl) => toSegment(p, wl.from, wl.to) < 0.4)
+      || lamps.some((l) => Math.hypot(p[0] - l[0], p[1] - l[1]) < 0.7)
+      || (def.props ?? []).some((q) => Math.hypot(p[0] - q.at[0], p[1] - q.at[1]) < Math.max(q.w, q.d) / 2 + 0.3);
+  };
+  let from: number | null = null;
+  for (let i = 0; ; i++) {
+    const a = -end + i * 0.1, open = a <= end + 1e-9 && !blocked(a);
+    if (open && from === null) from = a;
+    if (!open && from !== null) { if (a - 0.1 - from >= min) runs.push([from, a - 0.1]); from = null; }
+    if (a > end) break;
+  }
+  return runs;
+}
+
+/**
+ * Where a keys player's music stand goes: beside the instrument, a step off its end, on whichever side is clear of
+ * the walls, the other seats and their gear, and the furniture. Null when neither side is.
+ */
+export function standSpot(def: StudioDef, s: Spot): [number, number] | null {
+  const { w, d } = def.size, b = thingBox(s), rx = Math.cos(s.yaw), rz = -Math.sin(s.yaw);
+  const clear = (p: [number, number]) => Math.abs(p[0]) < w / 2 - 0.4 && Math.abs(p[1]) < d / 2 - 0.4 && def.walls.every((wl) => toSegment(p, wl.from, wl.to) > 0.4)
+    && def.spots.every((o) => { const ob = thingBox(o); return o === s || (Math.hypot(p[0] - o.at[0], p[1] - o.at[1]) > 0.8 && Math.hypot(p[0] - ob.cx, p[1] - ob.cz) > Math.max(ob.hw, ob.hd) + 0.35); })
+    && (def.props ?? []).every((q) => !propBlocks(q) || Math.hypot(p[0] - q.at[0], p[1] - q.at[1]) > Math.max(q.w, q.d) / 2 + 0.3);
+  return ([1, -1] as const).map((k): [number, number] => [b.cx + rx * k * (b.hw + 0.42), b.cz + rz * k * (b.hw + 0.42)]).find(clear) ?? null;
+}
+
+/** The paper in a room, painted once: gig posters in flat inks with blocks for type (nothing to read, nobody's name), a page of music, a set list in marker. */
+function paperSheets() {
+  const W = 256, H = 384;
+  return canvasTex(W * SHEETS, (g) => {
+    const r = mulberry32(5305);
+    const type = (x: number, y: number, wide: number, tall: number, ink: string) => {
+      g.fillStyle = ink;
+      for (let x0 = x; x0 < x + wide - tall;) { const ww = tall * (1.2 + r() * 4); g.fillRect(x0, y, Math.min(ww, x + wide - x0), tall); x0 += ww + tall * 0.6; }
+    };
+    const disc = (x: number, y: number, rad: number, ink: string) => { g.fillStyle = ink; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill(); };
+    const inks = [["#e9dfc8", "#b5432e", "#1d2a33"], ["#1f2d3a", "#e3b23c", "#efe6d2"], ["#d9a441", "#22201d", "#f1e9d6"], ["#ece4d2", "#2f6b62", "#c9532f"]] as const;
+    inks.forEach(([paper, a, b], i) => {
+      g.save(); g.translate(i * W, 0); g.beginPath(); g.rect(0, 0, W, H); g.clip();
+      g.fillStyle = paper; g.fillRect(0, 0, W, H);
+      if (i === 0) { for (let k = 6; k >= 1; k--) disc(128, 168, k * 17, k % 2 ? a : paper); type(24, 296, 208, 26, b); type(24, 334, 208, 6, b); type(24, 348, 150, 6, b); type(24, 20, 120, 6, a); }
+      if (i === 1) {
+        g.fillStyle = a;
+        for (let k = 0; k < 24; k += 2) { g.beginPath(); g.moveTo(128, 210); g.arc(128, 210, 300, (k / 24) * Math.PI * 2, ((k + 1) / 24) * Math.PI * 2); g.fill(); }
+        disc(128, 210, 46, b); disc(128, 210, 30, paper);
+        g.fillStyle = paper; g.fillRect(0, 0, W, 78); g.fillRect(0, 322, W, 62);
+        type(20, 26, 216, 30, b); type(20, 336, 216, 7, a); type(20, 352, 130, 7, b);
+      }
+      if (i === 2) { disc(150, 176, 64, b); g.fillStyle = a; for (let y = 124; y < 260; y += 30) g.fillRect(0, y, W, 13); type(22, 300, 212, 24, a); type(22, 336, 180, 6, a); type(22, 24, 90, 8, b); }
+      if (i === 3) {
+        for (let yy = 0; yy < 9; yy++) for (let xx = 0; xx < 9; xx++) disc(36 + xx * 23, 96 + yy * 23, 2 + yy * 1.1, a);
+        g.fillStyle = b; g.beginPath(); g.moveTo(0, 0); g.lineTo(150, 0); g.lineTo(0, 70); g.fill();
+        type(24, 318, 208, 22, b); type(24, 350, 160, 6, a); type(110, 30, 122, 7, a);
+      }
+      // folded in four to post it
+      g.fillStyle = "rgba(0,0,0,0.09)"; g.fillRect(0, H / 2, W, 1); g.fillRect(W / 2, 0, 1, H);
+      g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(0, H / 2 + 1, W, 1); g.fillRect(W / 2 + 1, 0, 1, H);
+      g.restore();
+    });
+    // a page of music: nine staves, notes on stems, a title
+    g.save(); g.translate(4 * W, 0);
+    g.fillStyle = "#f3efe4"; g.fillRect(0, 0, W, H);
+    type(78, 14, 110, 7, "#2a2a2c");
+    g.strokeStyle = "rgba(30,30,32,0.75)"; g.fillStyle = "#1c1c1e"; g.lineWidth = 0.8;
+    for (let s = 0; s < 9; s++) {
+      const y0 = 40 + s * 38;
+      for (let l = 0; l < 5; l++) { g.beginPath(); g.moveTo(22, y0 + l * 4); g.lineTo(234, y0 + l * 4); g.stroke(); }
+      for (let x = 22; x <= 234; x += 53) { g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y0 + 16); g.stroke(); }
+      for (let n = 0; n < 13; n++) {
+        const x = 32 + n * 15.5 + r() * 5, y = y0 + Math.round(r() * 10 - 2) * 2;
+        g.beginPath(); g.ellipse(x, y, 2.7, 2, -0.35, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.moveTo(x + 2.4, y); g.lineTo(x + 2.4, y - 12); g.stroke();
+      }
+    }
+    g.restore();
+    // a set list: a title underlined, nine songs in marker, one struck out
+    g.save(); g.translate(5 * W, 0);
+    g.fillStyle = "#f1ede2"; g.fillRect(0, 0, W, H);
+    g.strokeStyle = "#1b1b22"; g.lineCap = "round"; g.lineJoin = "round";
+    const scrawl = (x: number, y: number, len: number, wide: number) => {
+      g.lineWidth = wide; g.beginPath(); g.moveTo(x, y);
+      for (let x0 = x + 7; x0 < x + len; x0 += 5 + r() * 6) g.lineTo(x0, y + (r() - 0.5) * 13);
+      g.stroke();
+    };
+    scrawl(70, 26, 110, 6); g.lineWidth = 3; g.beginPath(); g.moveTo(62, 40); g.lineTo(196, 43); g.stroke();
+    for (let i = 0; i < 9; i++) { const y = 74 + i * 33, len = 80 + r() * 100; scrawl(24, y, 8, 4); scrawl(46, y, len, 4.5); if (i === 5) { g.strokeStyle = "#a3231f"; g.lineWidth = 3; g.beginPath(); g.moveTo(40, y + 2); g.lineTo(52 + len, y - 3); g.stroke(); g.strokeStyle = "#1b1b22"; } }
+    g.restore();
+    speckle(g, W * 6, r, 5000, 0.07, 2); // handled, a little foxed
+    // a wall clock's face: twelve ticks, the hands at ten past ten
+    g.save(); g.translate(6 * W + 128, 128);
+    g.fillStyle = "#efece4"; g.fillRect(-128, -128, W, W);
+    g.strokeStyle = "#17181a"; g.lineCap = "butt";
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; g.lineWidth = k % 3 ? 4 : 9; g.beginPath(); g.moveTo(Math.sin(a) * 98, -Math.cos(a) * 98); g.lineTo(Math.sin(a) * 116, -Math.cos(a) * 116); g.stroke(); }
+    for (const [a, len, wide] of [[-1.0, 62, 9], [1.05, 92, 6]] as const) { g.lineWidth = wide; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.sin(a) * len, -Math.cos(a) * len); g.stroke(); }
+    g.fillStyle = "#17181a"; g.beginPath(); g.arc(0, 0, 9, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }, true, H);
+}
+
+/**
+ * What a room people work in picks up (round 10). Scuffs low on the painted walls and on the wall under the glass,
+ * where cases, stands and shoes knock them, and a dirty line over the skirting; the floor worn dull round every
+ * seat. Paper: gig posters on the clear stretches of the walls (clearWall()), taped up in pairs with their bottom
+ * corners curling on paint, framed on brick; a music stand beside the keys with pages on it (standSpot()) and a set
+ * list gaffered to the floor by the stool. And the fittings nobody draws: socket plates, two air grilles and a smoke
+ * detector in the ceiling. All of it merged per material, so it is a dozen draw calls. A hall too big to tell gets none.
+ */
+function used(def: StudioDef, group: THREE.Group, taken: Record<Side, [number, number][]>) {
+  const { w, d, h } = def.size;
+  if (w > 16 || d > 16) return;
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 37 + ch.charCodeAt(0)) | 0, 10));
+  // one tile is 4 m of wall by its bottom metre: rubber streaks, most of them low, rubbed patches, the dirty line at the foot
+  kicks ??= canvasTex(512, (g) => {
+    const r = mulberry32(10);
+    g.lineCap = "round";
+    for (let i = 0; i < 60; i++) {
+      const y = 122 - r() ** 2 * 104, x = r() * 512, len = 3 + r() ** 2 * 60, bend = (r() - 0.5) * 1.6, drop = (r() - 0.5) * 2.4;
+      g.strokeStyle = `rgba(0,0,0,${0.05 + r() ** 2 * 0.4})`; g.lineWidth = 0.5 + r() ** 2 * 2.4;
+      for (const dx of [0, -512]) { g.beginPath(); g.moveTo(x + dx, y); g.quadraticCurveTo(x + dx + len / 2, y - bend, x + dx + len, y + drop); g.stroke(); }
+    }
+    for (let i = 0; i < 9; i++) {
+      const x = r() * 512, y = 128 - r() * 70, rad = 14 + r() * 26, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, "rgba(0,0,0,0.16)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    const foot = g.createLinearGradient(0, 128, 0, 100);
+    foot.addColorStop(0, "rgba(0,0,0,0.22)"); foot.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = foot; g.fillRect(0, 100, 512, 28);
+  }, false, 128);
+  kicks.wrapT = THREE.ClampToEdgeWrapping;
+  // 1.7 m of floor round a seat: the finish gone dull, arcs where a stool's feet turn, scratches from stands dragged
+  wear ??= canvasTex(256, (g) => {
+    const r = mulberry32(11), halo = g.createRadialGradient(128, 128, 10, 128, 128, 124);
+    halo.addColorStop(0, "rgba(0,0,0,0.3)"); halo.addColorStop(0.6, "rgba(0,0,0,0.14)"); halo.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = halo; g.fillRect(0, 0, 256, 256);
+    g.lineCap = "round";
+    for (let i = 0; i < 46; i++) {
+      const rad = 16 + r() * 92, a0 = r() * Math.PI * 2;
+      g.strokeStyle = `rgba(0,0,0,${0.1 + r() * 0.3})`; g.lineWidth = 0.5 + r() * 1.6;
+      g.beginPath(); g.arc(128 + (r() - 0.5) * 30, 128 + (r() - 0.5) * 30, rad, a0, a0 + 0.08 + r() * 0.45); g.stroke();
+    }
+    for (let i = 0; i < 30; i++) {
+      const a = r() * Math.PI * 2, rad = r() * 100, x = 128 + Math.cos(a) * rad, y = 128 + Math.sin(a) * rad, t = r() * Math.PI, len = 4 + r() * 22;
+      g.strokeStyle = `rgba(0,0,0,${0.1 + r() * 0.25})`; g.lineWidth = 0.5 + r();
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(t) * len, y + Math.sin(t) * len); g.stroke();
+    }
+  }, false);
+  wear.wrapS = wear.wrapT = THREE.ClampToEdgeWrapping;
+  sheets ??= paperSheets();
+  const marks = shade(kicks, 0.5), worn = shade(wear, 0.85);
+  const paper = new THREE.MeshStandardMaterial({ map: sheets, color: "#b4b1aa", roughness: 0.82, side: THREE.DoubleSide, name: "paper" });
+  const masking = new THREE.MeshStandardMaterial({ color: "#d9cfb2", roughness: 0.6 }), gaffer = new THREE.MeshStandardMaterial({ color: "#3d3e40", roughness: 0.62 });
+  const black = surface("metal", "#1a1b1d"), white = new THREE.MeshStandardMaterial({ color: "#d8d5cd", roughness: 0.45, name: "fitting" }), hole = surface("rubber", "#151618");
+  const stuff = new THREE.Group(), flat = new THREE.Group();
+  stuff.name = "used"; flat.name = "floor-marks";
+  const box = (bw: number, bh: number, bd: number, m: THREE.Material, x: number, y: number, z: number) => at(new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), m), x, y, z);
+  /** One cell of the paper atlas on a sheet `pw` by `ph`; `curl` lifts its bottom corners off the wall. */
+  const page = (cell: number, pw: number, ph: number, curl = 0) => {
+    const geo = new THREE.PlaneGeometry(pw, ph, curl ? 6 : 1, curl ? 8 : 1), uv = geo.getAttribute("uv"), pos = geo.getAttribute("position");
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i), v = uv.getY(i);
+      if (curl) pos.setZ(i, curl * (1 - v) ** 3 * (2 * u - 1) ** 2);
+      uv.setX(i, (cell + 0.01 + u * 0.98) / SHEETS);
+    }
+    if (curl) geo.computeVertexNormals();
+    return new THREE.Mesh(geo, paper);
+  };
+  /** A strip of the scuffs `len` along a wall and `tall` up it, starting somewhere of its own along the tile. */
+  const scuffs = (len: number, tall: number) => {
+    const geo = new THREE.PlaneGeometry(len, tall), uv = geo.getAttribute("uv"), off = rnd();
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, off + (uv.getX(i) * len) / 4, uv.getY(i) * tall);
+    return new THREE.Mesh(geo, marks);
+  };
+  const outlet = () => {
+    const o = new THREE.Group();
+    o.add(new THREE.Mesh(new RoundedBoxGeometry(0.078, 0.118, 0.007, 2, 0.003), white));
+    for (const sy of [-0.026, 0.026]) o.add(box(0.034, 0.024, 0.002, hole, 0, sy, 0.0035));
+    return o;
+  };
+
+  let cell = Math.floor(rnd() * 4), fitted = false;
+  for (const side of ["front", "back", "left", "right"] as const) {
+    const s = sideOf(def, side), g = new THREE.Group(), made = def.materials?.walls[side] ?? "drywall", painted = !BARE.has(made) && made !== "wood" && !SOFT.has(made);
+    g.position.set(s.cx, 0, s.cz); g.rotation.y = s.turn; stuff.add(g);
+    if (painted) g.add(at(scuffs(s.len, 1), 0, 0.62, 0.063));
+    if (SOFT.has(made)) continue;
+    const run = clearWall(def, side, taken[side]).sort((p, q) => q[1] - q[0] - (p[1] - p[0]))[0];
+    if (!run) continue;
+    const len = run[1] - run[0], y = Math.min(1.62, h * 0.52);
+    if (painted) g.add(at(outlet(), run[0] + 0.2 + rnd() * 0.3, 0.34, 0.0635));
+    if (painted && !fitted && len > 2.4 && h > 2.7) {
+      // one wall keeps the clock, up out of the way, and the bin under it
+      fitted = true;
+      const face = new THREE.CircleGeometry(0.14, 36), uv = face.getAttribute("uv");
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (6 + uv.getX(i)) / SHEETS, 1 - ((1 - uv.getY(i)) * 2) / 3);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.146, 0.013, 8, 36), black);
+      g.add(at(new THREE.Mesh(face, paper), run[1] - 0.35, 2.3, 0.072), at(rim, run[1] - 0.35, 2.3, 0.072), at(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.012, 24).rotateX(Math.PI / 2), black), run[1] - 0.35, 2.3, 0.064));
+      const bin = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.3, 20), black), top = new THREE.Mesh(new THREE.CircleGeometry(0.128, 20).rotateX(-Math.PI / 2), hole);
+      const wad = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05, 0), white);
+      g.add(at(bin, run[1] - 0.3, 0.15, 0.24), at(top, run[1] - 0.3, 0.3005, 0.24), at(wad, run[1] - 0.33, 0.3, 0.26));
+    }
+    if (painted && len > 1.9 && rnd() < 0.6) {
+      // two posters taped up side by side, neither quite level, their bottom corners curling
+      const mid = run[0] + 0.7 + rnd() * (len - 1.4);
+      for (const k of [-1, 1]) {
+        const p = new THREE.Group(); p.position.set(mid + k * (0.27 + rnd() * 0.06), y + (rnd() - 0.5) * 0.14, 0.0635); p.rotation.z = (rnd() - 0.5) * 0.05;
+        p.add(page(cell++ % 4, 0.42, 0.63, 0.016));
+        for (const sx of [-1, 1]) { const t = box(0.055, 0.02, 0.0008, masking, sx * 0.195, 0.3, 0.001); t.rotation.z = -sx * (0.7 + rnd() * 0.3); p.add(t); }
+        g.add(p);
+      }
+    } else {
+      // one poster in a thin black frame
+      const p = new THREE.Group(), pw = 0.6, ph = 0.9, bar = 0.022;
+      p.position.set(run[0] + 0.5 + rnd() * (len - 1), y, 0.06); p.rotation.z = (rnd() - 0.5) * 0.012;
+      p.add(at(page(cell++ % 4, pw, ph), 0, 0, 0.014), box(pw + bar, ph + bar, 0.012, black, 0, 0, 0.006));
+      for (const k of [-1, 1]) p.add(box(pw + 2 * bar, bar, 0.028, black, 0, (k * (ph + bar)) / 2, 0.014), box(bar, ph, 0.028, black, (k * (pw + bar)) / 2, 0, 0.014));
+      g.add(p);
+    }
+  }
+  // the wall under each window: knocked about on both sides, a socket on one
+  for (const wl of def.walls) {
+    if (!wl.glass) continue;
+    for (const p of wallPieces(wl, 0.12)) {
+      const g = new THREE.Group(); g.position.set(p.cx, 0, p.cz); g.rotation.y = p.turn; stuff.add(g);
+      for (const k of [-1, 1]) { const m = at(scuffs(p.hw * 2, 0.86), 0, 0.44, k * (p.hd + 0.0115)); if (k < 0) m.rotation.y = Math.PI; g.add(m); }
+      if (p.hw > 1) g.add(at(outlet(), (rnd() - 0.5) * p.hw, 0.34, p.hd + 0.0135));
+    }
+  }
+  // the floor round every seat that stands on bare boards
+  const hard = (def.materials?.floor ?? "floorboards") !== "carpet";
+  for (const s of def.spots) {
+    if (!hard || s.kind === "drums" || s.kind === "couch" || floorAt(def, s.at[0], s.at[1]) > 0) continue;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), worn);
+    m.rotation.set(-Math.PI / 2, 0, rnd() * Math.PI * 2); m.position.set(s.at[0], 0.003, s.at[1]);
+    flat.add(m);
+  }
+  // the keys player's music stand and set list
+  const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 8), black);
+    c.position.copy(a).add(b).multiplyScalar(0.5); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    return c;
+  };
+  for (const s of def.spots) {
+    if (s.kind !== "keys" || floorAt(def, s.at[0], s.at[1]) > 0) continue;
+    const spot = standSpot(def, s);
+    if (!spot) continue;
+    const st = new THREE.Group(); st.position.set(spot[0], 0, spot[1]); st.rotation.y = Math.atan2(s.at[0] - spot[0], s.at[1] - spot[1]) + (rnd() - 0.5) * 0.3;
+    for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2 + 0.5; st.add(rod(new THREE.Vector3(0, 0.34, 0), new THREE.Vector3(Math.cos(a) * 0.3, 0.006, Math.sin(a) * 0.3), 0.007)); }
+    st.add(rod(new THREE.Vector3(0, 0.1, 0), new THREE.Vector3(0, 0.72, 0), 0.011), rod(new THREE.Vector3(0, 0.7, 0), new THREE.Vector3(0, 1.1, 0), 0.008), rod(new THREE.Vector3(0, 0.7, 0), new THREE.Vector3(0, 0.75, 0), 0.016));
+    const desk = new THREE.Group(); desk.position.y = 1.08; desk.rotation.x = -0.3;
+    desk.add(box(0.48, 0.32, 0.004, black, 0, 0.16, 0), box(0.48, 0.012, 0.045, black, 0, 0.004, 0.022));
+    for (const [x, turn, z] of [[-0.11, 0.02, 0.004], [0.112, -0.045, 0.005], [0.02, 0.09, 0.003]] as const) { const pg = at(page(4, 0.21, 0.297), x, 0.162, z); pg.rotation.z = turn; desk.add(pg); }
+    st.add(desk); stuff.add(st);
+    // the set list, gaffered to the boards on the stool's other side, its top toward the keys
+    const b = thingBox(s), side = Math.sign((spot[0] - b.cx) * Math.cos(s.yaw) - (spot[1] - b.cz) * Math.sin(s.yaw)) || 1;
+    const list = new THREE.Group(); list.position.set(s.at[0] - side * Math.cos(s.yaw) * 0.55 - Math.sin(s.yaw) * 0.1, 0.004, s.at[1] + side * Math.sin(s.yaw) * 0.55 - Math.cos(s.yaw) * 0.1); list.rotation.y = s.yaw + (rnd() - 0.5) * 0.5;
+    const sheet = page(5, 0.21, 0.297); sheet.rotation.x = -Math.PI / 2;
+    list.add(sheet, box(0.09, 0.001, 0.024, gaffer, 0, 0.0008, -0.146), box(0.09, 0.001, 0.024, gaffer, 0, 0.0008, 0.146));
+    flat.add(list);
+  }
+  // in the ceiling: two air grilles and a smoke detector, clear of the cans and the inner walls
+  if (h <= 4.5) {
+    const lit = cans(w, d), free = (p: [number, number]) => Math.abs(p[0]) < w / 2 - 0.6 && Math.abs(p[1]) < d / 2 - 0.6 && lit.every(([x, z]) => Math.hypot(p[0] - x, p[1] - z) > 0.75) && def.walls.every((wl) => toSegment(p, wl.from, wl.to) > 0.5);
+    const first = (fx: number, fz: number) => { for (let n = 0; n < 6; n++) { const p: [number, number] = [fx * w + n * 0.45, fz * d + (n % 2) * 0.45]; if (free(p)) return p; } return null; };
+    for (const [fx, fz] of [[-0.24, 0.2], [0.26, -0.27]] as const) {
+      const p = first(fx, fz);
+      if (!p) continue;
+      const v = new THREE.Group(); v.position.set(p[0], h, p[1]);
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.52), hole); back.rotation.x = Math.PI / 2; back.position.y = -0.002;
+      v.add(back);
+      for (const k of [-1, 1]) v.add(box(0.58, 0.01, 0.035, white, 0, -0.005, k * 0.2725), box(0.035, 0.01, 0.51, white, k * 0.2725, -0.005, 0));
+      for (let i = 0; i < 13; i++) { const l = box(0.51, 0.003, 0.044, white, 0, -0.014, -0.234 + i * 0.039); l.rotation.x = 0.8; v.add(l); }
+      stuff.add(v);
+    }
+    const p = first(0.06, 0.09);
+    if (p) stuff.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.032, 20), white), p[0], h - 0.016, p[1]));
+  }
+  group.add(flatten(stuff), flatten(flat));
 }
 
 /**
@@ -836,11 +1151,12 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const group = new THREE.Group();
   group.name = "look";
   scene.add(group);
-  hang(def, group);
+  const taken = hang(def, group);
   corners(def, group);
   walls(def, group);
   windows(def, group);
   lived(def, group);
+  used(def, group, taken);
   scene.add(new THREE.HemisphereLight(0xf4efe8, 0x4a3a2e, 0.42)); // the bounce that reaches the tops of the walls
 
   // downlights in the ceiling (cans()), each a warm spot with a soft edge; on high the ones nearest the middle throw shadows
