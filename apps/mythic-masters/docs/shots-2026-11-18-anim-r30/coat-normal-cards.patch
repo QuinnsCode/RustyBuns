@@ -1,0 +1,110 @@
+diff --git a/apps/mythic-masters/src/beasts.ts b/apps/mythic-masters/src/beasts.ts
+index 628f4565e..9fb1d2c19 100644
+--- a/apps/mythic-masters/src/beasts.ts
++++ b/apps/mythic-masters/src/beasts.ts
+@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
+ import { loadGlb, type Model } from "@rustybuns/rig/model";
+ import { pupils } from "./eyes.ts";
+ import { Secondary } from "./secondary.ts";
+-import { CARD_COLOR, CARD_FRAG_PARS, CARD_LIGHT, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LOOSE_VERT, LooseLag, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
++import { CARD_COLOR, CARD_FACE, CARD_FRAG_PARS, CARD_LIGHT, CARD_NORMAL, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LooseLag, looseVert, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
+ import { smoothNormals } from "./smooth.ts";
+ import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
+ import type { Archetype, Body, Move } from "./roster.ts";
+@@ -180,8 +180,9 @@ const HideMean = arr(num(0, 1), 3, { min: 3 });
+ /** Each card part's shading per vertex, worked out once per beast: how far along the card (loose.ts `tipOf`, its reach
+  * from the coat) and the coat's colour at its root (`rootOf`: the coat's vertex colour times its material and baked
+  * hide's mean). The coat is the mapped part (the biggest with no map); a card's reach is from every part that isn't one. */
+-const CARDS = new WeakMap<Beast, Map<number, { tip: Float32Array; root: Float32Array }>>();
+-function cardFor(beast: Beast, part: number, cards: readonly boolean[]): { tip: Float32Array; root: Float32Array } {
++type Card = { tip: Float32Array; root: Float32Array; normal: Float32Array };
++const CARDS = new WeakMap<Beast, Map<number, Card>>();
++function cardFor(beast: Beast, part: number, cards: readonly boolean[]): Card {
+   let byPart = CARDS.get(beast);
+   if (!byPart) CARDS.set(beast, (byPart = new Map()));
+   let c = byPart.get(part);
+@@ -195,7 +196,9 @@ function cardFor(beast: Beast, part: number, cards: readonly boolean[]): { tip:
+     const mean = (m.map ? check(HideMean, m.userData.hide_mean) : null) ?? [1, 1, 1];
+     const colour = new Float32Array(pos.count * 3);
+     for (let i = 0; i < pos.count; i++) { colour[i * 3] = col ? col.getX(i) : 1; colour[i * 3 + 1] = col ? col.getY(i) : 1; colour[i * 3 + 2] = col ? col.getZ(i) : 1; }
+-    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]) };
++    const nrm = cg.getAttribute("normal");
++    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]),
++      normal: nrm ? rootOf(own, pos.array, nrm.array, [1, 1, 1]) : Float32Array.from(parts[part]!.geometry.getAttribute("normal").array) };
+     byPart.set(part, c);
+   }
+   return c;
+@@ -281,10 +284,10 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
+     if (hd) sh.vertexShader = "varying vec3 vHideP;\n" + sh.vertexShader;
+     if (loose) {
+       Object.assign(sh.uniforms, loose);
+-      sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + LOOSE_VERT);
++      sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + looseVert(card));
+     }
+     if (card) {
+-      sh.vertexShader = CARD_VERT_PARS + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + CARD_VERT);
++      sh.vertexShader = CARD_VERT_PARS + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + CARD_VERT).replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n" + CARD_NORMAL);
+     }
+     // half-Lambert squared: a surface turned from the light keeps a soft share of it
+     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
+@@ -312,7 +315,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
+         ${fx?.frag ?? ""}
+         ${card ? CARD_LIGHT : ""}`);
+     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
+-    if (card) sh.fragmentShader = CARD_FRAG_PARS + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n" + CARD_COLOR);
++    if (card) sh.fragmentShader = CARD_FRAG_PARS + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n" + CARD_COLOR).replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n" + CARD_FACE);
+     if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
+   };
+   m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "") + (card ? ":card" : "");
+@@ -485,7 +488,7 @@ export class Puppet {
+       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
+       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
+       const card = !!cards[pi];
+-      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); }
++      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); g.setAttribute("aRootN", new THREE.BufferAttribute(c.normal, 3)); }
+       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       const mats = Array.isArray(part.material) ? part.material : [part.material];
+diff --git a/apps/mythic-masters/src/loose.ts b/apps/mythic-masters/src/loose.ts
+index ece7c7891..4718be4bf 100644
+--- a/apps/mythic-masters/src/loose.ts
++++ b/apps/mythic-masters/src/loose.ts
+@@ -103,9 +103,11 @@ export class LooseLag {
+ 
+ /** The vertex shader's share: declarations, and the offset added to `transformed` after skinning. `aLoose` is the
+  * vertex's reach (reachOf), `uTop` the model's height. A card moves by its bones' springs (by skin weight), never
+- * further than 0.6 of its own reach, and flutters a touch on a phase from where it sits. */
++ * further than 0.6 of its own reach, and flutters a touch on a phase from where it sits. A fur card (`card`) swings
++ * along the coat but barely out of it: its normal is the coat's where it grows (CARD_NORMAL), and the share of the
++ * offset along it is held to a fifth of its reach, so a hit drags the cards back over the hide, not off it as a skirt. */
+ export const LOOSE_PARS = "attribute float aLoose;\nuniform sampler2D uLoose;\nuniform float uLooseTime;\nuniform float uLooseReach;\n";
+-export const LOOSE_VERT = `
++export const looseVert = (card: boolean) => `
+   if ( aLoose > 0.0 ) {
+     vec3 lag = texelFetch( uLoose, ivec2( int( skinIndex.x ), 0 ), 0 ).xyz * skinWeight.x
+       + texelFetch( uLoose, ivec2( int( skinIndex.y ), 0 ), 0 ).xyz * skinWeight.y
+@@ -114,7 +116,8 @@ export const LOOSE_VERT = `
+     vec3 off = lag * uLooseReach * aLoose * uTop;
+     float most = 0.6 * aLoose * uTop, len = length( off );
+     if ( len > most ) off *= most / len;
+-    float ph = dot( position, vec3( 7.1, 5.3, 6.7 ) ) / max( uTop, 1e-4 ) * 3.0;
++${card ? `    { vec3 n = normalize( objectNormal ); float o = dot( off, n ), cap = 0.2 * aLoose * uTop; if ( o > cap ) off -= n * ( o - cap ); }
++` : ""}    float ph = dot( position, vec3( 7.1, 5.3, 6.7 ) ) / max( uTop, 1e-4 ) * 3.0;
+     off += aLoose * uTop * 0.05 * vec3( sin( uLooseTime * 2.3 + ph ), 0.4 * sin( uLooseTime * 1.7 + ph * 1.3 ), cos( uLooseTime * 2.9 + ph * 0.7 ) );
+     transformed += off;
+   }
+@@ -157,8 +160,13 @@ export function rootOf(pos: ArrayLike<number>, coat: ArrayLike<number>, colour:
+   return out;
+ }
+ 
+-export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\n";
++export const CARD_VERT_PARS = "attribute float aTip;\nattribute vec3 aRoot;\nattribute vec3 aRootN;\nvarying float vCardTip;\nvarying vec3 vCardRoot;\n";
+ export const CARD_VERT = "vCardTip = aTip; vCardRoot = aRoot;";
++/** Before skinning: a card is lit with the coat's normal where it grows (`rootOf` over the coat's normals), not its own.
++ * A flat card's two faces lit one dark and one pale, and lit the same from root to tip it read as a paper plate. */
++export const CARD_NORMAL = "objectNormal = normalize( aRootN );";
++/** After the normal is read: both faces of a card take that one normal (a double-sided material flips it on the back). */
++export const CARD_FACE = "#ifndef FLAT_SHADED\n  normal = normalize( vNormal ); nonPerturbedNormal = normal;\n#endif";
+ export const CARD_FRAG_PARS = "varying float vCardTip;\nvarying vec3 vCardRoot;\n";
+ /** After the colour is read: the coat's colour at the root, the card's own toward the tip, darker at the very end. */
+ export const CARD_COLOR = `
