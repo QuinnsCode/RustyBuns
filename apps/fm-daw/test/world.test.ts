@@ -760,7 +760,7 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   const amyWs = (await join({}, "a".repeat(32))).ws;              // first key in: Amy leads the sesh
   world.webSocketMessage(amyWs, JSON.stringify({ t: "init", project: demoProject() }));
   const botWs = (await join()).ws;
-  const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(3)), wait: async () => {},
+  const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(3)), wait: async () => {}, now: () => 1000,
     send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
   const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
   pump();
@@ -772,12 +772,12 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   };
   // Amy's page: the groove, the room with what's made in it, and the people in it, from her socket
   let groove: Project = demoProject();
-  const amy = newJam(LIVE_ROOM), notes: { track: number; midi: number }[] = [];
+  const amy = newJam(LIVE_ROOM), notes: { track: number; midi: number }[] = [], stamps: (number | undefined)[] = [];
   const read = () => {
     for (const m of amyWs.sent.splice(0)) {
       const d = decodeServer(m);
       if (d?.t === "op") { groove = apply(groove, d.op); amy.def = roomWith(LIVE_ROOM, groove); }
-      if (d?.t === "live") { hear(amy, d.from, d.e); if (d.e.t === "on") notes.push({ track: d.e.track, midi: d.e.midi }); }
+      if (d?.t === "live") { hear(amy, d.from, d.e); if (d.e.t === "on") notes.push({ track: d.e.track, midi: d.e.midi }); if (d.e.t === "on" || d.e.t === "off") stamps.push(d.e.b); }
     }
   };
   const glass = { name: "Glass pad", voice: "analog", patch: { sound: "Reese", cutoff: 0.4 } };
@@ -816,10 +816,21 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   await tick();
   await answer("play");
   read();
-  // two notes: Amy sees it seated there and gets them on that track
+  // the bot keeps Amy's clock: its ping goes to her, she answers on hers (a minute ahead of its own), and it locks on
+  expect((await call("studio_state")).clock).toMatchObject({ source: null });
+  read();
+  bot.ping();
+  const ping = amyWs.sent.findLast((m) => m.t === "tick");
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "tock", to: ping.from, n: ping.n, sent: ping.sent, at: 61_000 }));
+  pump();
+  expect((await call("studio_state")).clock).toMatchObject({ source: "leader", offset: 60_000, rtt: 0, samples: 1 });
+  read();
+  // two notes: Amy sees it seated there and gets them on that track, each stamped with the beat it is meant for
   expect(await call("studio_play", { notes: [{ n: 48, len: 1 }, { n: 55, at: 1, len: 1 }] })).toMatchObject({ ok: true, played: 2, track: "Glass pad" });
   read();
   expect(notes).toEqual([{ track: made.track, midi: 48 }, { track: made.track, midi: 55 }]);
+  const b0 = (61_000 * groove.bpm) / 60_000;
+  expect(stamps).toEqual([b0, b0 + 1, b0 + 1, b0 + 2]);                // on 48, off 48 and on 55 together, off 55
   expect(snapshot(amy, groove).others).toEqual([expect.objectContaining({ name: "Bot", seat: "made-glass-pad", dressed: true, playing: [] })]);
   // and the seat is taken for a person now, the same as any other
   amy.me.x = seat.at[0]; amy.me.z = seat.at[1] + 0.5;

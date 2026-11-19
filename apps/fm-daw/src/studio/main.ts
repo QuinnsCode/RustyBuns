@@ -573,6 +573,7 @@ const player: Player = {
   rewind: back.rewind,
   wait: (ms) => new Promise((r) => setTimeout(r, ms)),
   clock: () => ({ ...band.clock.state(), behindMs: band.behind() }),
+  beat: () => (band.synced ? band.beat() : null),
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 // Tab, seated: the track's lane over the room (lane.tsx), its edits over the sesh as the player's

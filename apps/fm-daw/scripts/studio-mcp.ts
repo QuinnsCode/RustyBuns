@@ -32,6 +32,9 @@ const seat = remotePlayer({
   send: (m) => { const s = JSON.stringify(m); if (sock.readyState === WebSocket.OPEN) sock.send(s); else outbox.push(s); },
 });
 sock.addEventListener("open", () => { for (const s of outbox.splice(0)) sock.send(s); });
+// the shared clock: ask the leader the time, fast at first, then every couple of seconds, so its notes go out stamped
+const pingLeader = () => { const next = sock.readyState === WebSocket.OPEN ? seat.ping() : 200; setTimeout(pingLeader, next).unref(); };
+setTimeout(pingLeader, 200).unref();
 sock.addEventListener("message", (e) => { if (typeof e.data === "string") seat.hear(e.data); });
 sock.addEventListener("close", (e) => { console.error(`the sesh closed the socket (${e.code} ${e.reason})`); process.exit(e.code === 1000 ? 0 : 1); });
 
