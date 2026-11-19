@@ -74,7 +74,7 @@ const read = (p: string) => { try { return readFileSync(join(root, p), "utf8"); 
 
 const worst = (cs: string[]): string | null => (cs.length === 0 ? null : cs.includes("failure") ? "failure" : cs.includes("cancelled") ? "cancelled" : cs.every((c) => c === "skipped") ? "skipped" : "success");
 
-async function ping(url: string): Promise<{ ok: boolean; status: number; ms: number }> {
+export async function ping(url: string): Promise<{ ok: boolean; status: number; ms: number }> {
   const t = performance.now();
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(8000), redirect: "follow" });

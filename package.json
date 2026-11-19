@@ -17,6 +17,7 @@
     "usdz": "bun scripts/usdz.ts",
     "manual": "bun scripts/manual-runs.ts",
     "bridge": "bun scripts/bridge.ts",
+    "releases": "bun scripts/releases.ts",
     "pushes": "bun scripts/pushes.ts",
     "pr": "bun scripts/pr.ts",
     "issue": "bun scripts/issue.ts",
