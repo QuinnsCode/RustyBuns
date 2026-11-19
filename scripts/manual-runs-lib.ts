@@ -44,6 +44,7 @@ export const RUNS: Record<number, Run> = {
   5096: { app: "loadIn", links: [{ label: "Cable feel room", path: "/feel.html" }, { label: "DJ booth, wired", path: "/?level=dj-booth&wired=1" }, { label: "Menu", path: "/" }, { label: "First gig", path: "/?level=first-gig" }, { label: "Feel room, phone", path: "/feel.html", phone: true }] },
   4889: { app: "loadIn", links: ["garage", "dive-bar", "bigger-bar"].map((l) => ({ label: l, path: `/?level=${l}` })) },
   4959: { app: "loadIn", links: [{ label: "Desert", path: "/?level=desert" }] },
+  5353: { app: "loadIn", links: [{ label: "Dive bar", path: "/?level=dive-bar" }, { label: "Park", path: "/?level=park" }] },
   3259: { app: "skate", links: [{ label: "Solid kit", path: "/?level=el-capitan" }, { label: "1 km park", path: "/?level=half-dome" }, { label: "Halfpipe", path: hp }] },
   2486: { app: "skate", links: [{ label: "Push and ollie", path: "/?level=el-capitan" }, { label: "Halfpipe", path: hp }] },
   2794: { app: "skate", links: [{ label: "Grabs and flicks", path: "/?level=el-capitan" }, { label: "Touch pad", path: "/?level=el-capitan&controls=touch" }] },
