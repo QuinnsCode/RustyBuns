@@ -25,7 +25,7 @@ const LABEL: Record<string, [glyph: string, what: string]> = {
   KeyH: ["▦", "Heat map"],
   KeyB: ["B", "Bass map / reset the breakers"],
   Enter: ["→|", "Open the doors"],
-  KeyG: ["G", "Hang it on the point / tape the joints"],
+  KeyG: ["G", "Let go of the cable you picked up last / hang it on the point / tape the joints"],
   KeyK: ["K", "Send the crew / pin the point / the DI's ground lift"],
   KeyI: ["I", "Check / sub polarity"],
   KeyO: ["O", "Run the motor"],
@@ -39,18 +39,18 @@ const LABEL: Record<string, [glyph: string, what: string]> = {
 };
 for (let n = 1; n <= 7; n++) LABEL[`Digit${n}`] = [String(n), `Select ${n}`];
 
-/** The hands pad, on every level: grab, bowl, turn, crouch, switch, strike and the truck. The cable jobs ride on F, Space, Q and E. */
-export const HANDS = ["KeyF", "Space", "KeyQ", "KeyE", "KeyC", "KeyP", "KeyL", "KeyT"];
+/** The hands pad, on every level: grab, let go (G, with a cable in hand), bowl, turn, crouch, switch, strike and the truck. The cable jobs ride on F, Space, Q and E. */
+export const HANDS = ["KeyF", "KeyG", "Space", "KeyQ", "KeyE", "KeyC", "KeyP", "KeyL", "KeyT"];
 
 /** Each venue's own keys, the ones its card lists. The garage has none. */
 const VENUE: Record<string, string[]> = {
   "dive-bar": ["KeyR", "KeyV", "KeyZ", "KeyX", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   park: ["KeyR", "KeyV", "KeyZ", "KeyX", "KeyH", "BracketLeft", "BracketRight", "Enter"],
-  desert: ["KeyR", "KeyV", "KeyG", "KeyH", "KeyB", "BracketLeft", "BracketRight", "Enter"],
+  desert: ["KeyR", "KeyV", "KeyH", "KeyB", "BracketLeft", "BracketRight", "Enter"],
   "bigger-bar": ["KeyB", "Enter"],
   "band-night": ["KeyV", "KeyK", "Enter"],
-  amphitheatre: ["KeyU", "KeyJ", "KeyK", "KeyI", "KeyO", "Comma", "Period", "KeyN", "KeyB", "KeyG", "KeyV", "KeyH", "BracketLeft", "BracketRight", "Enter"],
-  "small-arena": ["KeyG", "KeyK", "KeyI", "KeyO", "KeyU", "KeyJ", "KeyH", "BracketLeft", "BracketRight", "Enter"],
+  amphitheatre: ["KeyU", "KeyJ", "KeyK", "KeyI", "KeyO", "Comma", "Period", "KeyN", "KeyB", "KeyV", "KeyH", "BracketLeft", "BracketRight", "Enter"],
+  "small-arena": ["KeyK", "KeyI", "KeyO", "KeyU", "KeyJ", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   arena: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "KeyK", "KeyU", "KeyR", "KeyV", "Comma", "Period", "KeyI", "KeyH", "Enter"],
   show: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "BracketLeft", "BracketRight", "Semicolon", "Quote", "Comma", "Period", "KeyJ", "KeyK", "KeyN", "Enter"],
 };
