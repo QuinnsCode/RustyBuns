@@ -126,7 +126,7 @@ test("three players with skewed clocks and laggy links count the same beats, and
   }
   // they start the groove at different moments; each joins the shared beat where it is
   amy.seq.play(); run(300); ben.seq.play(); run(700); cat.seq.play();
-  run(8000);
+  run(10000);
   // every beat 1 Amy heard, Ben and Cat heard within a few ms of it (a bar is 2 s)
   const ones = amy.ones.slice(1, -1);
   expect(ones.length).toBeGreaterThanOrEqual(3);
