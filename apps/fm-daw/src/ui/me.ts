@@ -2,6 +2,7 @@
 // see its hash), and your profile (chat name, chat layout). The page shows the localStorage copy
 // at once, then takes the profile online (GET /me) when there is one; every change saves to both.
 // The desktop has no /me, so its copy is the localStorage one.
+import { cleanAvatar, defaultAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { defaultMe, sanitizeMe, type Me } from "../profile.ts";
 
 const KEY = "fm-daw:key";
@@ -59,3 +60,12 @@ export function saveMe(me: Me) {
     void fetch("/me", { method: "PUT", headers: { "X-User-Key": myKey(), "Content-Type": "application/json" }, body: JSON.stringify(me) }).catch(() => {});
   }, SAVE_AFTER_MS);
 }
+
+const LOOK = "qollab-studio:avatar";
+/** Your look in Qollab Studio's rooms as this browser keeps it, or the one your name gives. */
+export function savedLook(name: string): Avatar {
+  try { const a = cleanAvatar(JSON.parse(localStorage.getItem(LOOK) ?? "null")); if (a) return a; } catch { /* none saved */ }
+  return defaultAvatar(name);
+}
+/** Keep the look you picked, for every Qollab Studio room in this browser. */
+export function saveLook(a: Avatar) { try { localStorage.setItem(LOOK, JSON.stringify(a)); } catch { /* this visit only */ } }

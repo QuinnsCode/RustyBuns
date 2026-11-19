@@ -6,21 +6,28 @@
 // from the cab (room.ts `listen`): that amp and its pedal run their circuits in Q Amp's audio thread, and nothing
 // else does. That sound comes up through FM DAW's desk (../mixer.ts): Tab opens it, a strip for you and one for each
 // aux return (Space, or the gear cabled between the desk's aux-send and aux-return jacks). In a sesh it is the sesh's
-// desk: a strip per track too, and every move an edit the sesh keeps (`deskOps`). `window.qstudio` is the
-// harness (scripts/probe.ts HANDLES).
+// desk: a strip per track and per player the live line plays sound for, and every move an edit the sesh keeps
+// (`deskOps`). In a sesh you also see who else is in the room: each page says where its body is on the live line,
+// and a box or a cable end in someone's hand is drawn at their body. A board dropped here goes to the sesh too, so
+// it is the same pedal for everyone. `window.qstudio` is the harness (scripts/probe.ts HANDLES).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./studio.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
-import { clamp } from "@rustybuns/util";
+import { clamp, lerp } from "@rustybuns/util";
+import { defaultAvatar } from "@rustybuns/util/avatar";
 import workletUrl from "../amp/worklet.ts?worker&url";
 import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
-import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
-import { apply, type Project } from "../project.ts";
+import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, withChannel, withReturn, withSend, type Player, type Source } from "../mixer.ts";
+import { apply, decodeServer, type Live, type Project } from "../project.ts";
 import { connect, roomName, type Net } from "../ui/net.ts";
-import { localMe, myKey } from "../ui/me.ts";
+import { localMe, myKey, savedLook } from "../ui/me.ts";
+import { Band } from "../studio/band.ts";
+import { figure, type Figure } from "../studio/figure.ts";
+import { BODY_HZ } from "../studio/jam.ts";
+import { FarSound } from "../studio/plugin-line.ts";
 import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
@@ -28,9 +35,9 @@ import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
 import { BuildSheet, savedDrive, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
-import { applyStudio, patchOps, sanitizePatch, type Patch, type StudioServer } from "../studio.ts";
+import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, theirLeads, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
@@ -43,15 +50,19 @@ const Kept = obj({ name: str(80), board: raw });
 const keptBenches = (): Record<string, Of<typeof Kept>> => {
   try { return check(rec(Kept, 32), JSON.parse(localStorage.getItem(BENCHES) ?? "{}")) ?? {}; } catch { return {}; }
 };
+/** Each board read here, as the sesh carries it to the others (room.ts `boardFor`), by gear id; one too long to carry isn't here. */
+const myBoards = new Map<string, Board>();
+function mine(pedal: BenchPedal, json: unknown, name: string) { const b = boardFor(pedal, json, name); if (b) myBoards.set(b.gear, b); }
 function readBench(json: unknown, name: string): Bench {
   const b = bench(json, { name });
   if (b.ok) {
+    mine(b.pedal, json, name);
     const id = benchGear(b.pedal).id;
     try { localStorage.setItem(BENCHES, JSON.stringify({ ...keptBenches(), [id]: { name: name.slice(0, 80), board: json } })); } catch { /* not kept, fine */ }
   }
   return b;
 }
-for (const k of Object.values(keptBenches())) { const b = bench(k.board, { name: k.name }); if (b.ok) benchGear(b.pedal); }
+for (const k of Object.values(keptBenches())) { const b = bench(k.board, { name: k.name }); if (b.ok) mine(b.pedal, k.board, k.name); }
 /** Q Amp's bench pedal when it plays and this room hasn't had it before (binned once, it stays binned). */
 function newAmpBench(): BenchPedal | null {
   try {
@@ -96,14 +107,25 @@ let project: Project | null = null;
 let me: string | null = null;
 let seeded = false;
 let asked = false;
-/** In a sesh the desk is the sesh's: its tracks, your own channel (the guitar) and its returns. */
-const inSesh = () => (project && me ? { project, who: { who: me, name: "You: guitar" } } : null);
-const shownDesk = (): Desk => { const s = inSesh(); return s ? seshDesk(s.project, [s.who]) : ownDesk; };
+/** Which person each number on the live line is (the World's grants), and whose sound the live line plays (their guitar, mic or plugin track). */
+let peerIds: Record<string, string> = {};
+const far = new FarSound(new Band(() => ({ bpm: project?.bpm ?? 120, loopBeats: 16 }), () => performance.timeOrigin + performance.now()), () => {});
+const myName = localMe().name || "Someone", myLook = savedLook(myName);
+/** In a sesh the desk is the sesh's: its tracks, your own channel (the guitar), a channel per player the live line plays sound for (as FM DAW's Mixer tab shows them), and its returns. */
+function inSesh(): { project: Project; who: Player; players: Player[] } | null {
+  if (!project || !me) return null;
+  const who = { who: me, name: "You: guitar" };
+  const others = far.players().flatMap((peer): Player[] => { const id = peerIds[peer]; return id && id !== me ? [{ who: id, name: room.looks.get(peer)?.name || "Player" }] : []; });
+  return { project, who, players: [who, ...new Map(others.map((o) => [o.who, o])).values()] };
+}
+const shownDesk = (): Desk => { const s = inSesh(); return s ? seshDesk(s.project, s.players) : ownDesk; };
 /** What this room's own audio thread plays of it: your channel (every solo worked out) and the returns. */
 function playedDesk(): { desk: Desk; channel: string } {
   const s = inSesh();
   if (!s) return { desk: ownDesk, channel: "you" };
-  return { desk: { channels: deskPlays(s.project, [s.who]).players, returns: seshDesk(s.project).returns }, channel: playerId(s.who.who) };
+  // only your own channel has sound here (the others' strips are for mixing them); a solo on any strip still counts
+  const channel = playerId(s.who.who);
+  return { desk: { channels: deskPlays(s.project, s.players).players.filter((c) => c.id === channel), returns: seshDesk(s.project).returns }, channel };
 }
 function setDesk(d: Desk) {
   const s = inSesh();
@@ -114,6 +136,8 @@ function setDesk(d: Desk) {
 }
 /** The World's gear room: all of it (on joining, or after it said no to a step), or one step someone else took. */
 function onStudio(m: StudioServer) {
+  // someone's bench pedal: read here, so its box is that pedal on this page too
+  if (m.t === "studio-board") { boardIn(m.board); return; }
   if (m.t === "studio-op") { if (m.from !== room.me) room.studio = applyStudio(room.studio, m.from, m.op); return; }
   if (m.you) room.me = m.you;
   if (m.studio.patch.placed.length) { room.studio = m.studio; seeded = true; return; }
@@ -121,7 +145,35 @@ function onStudio(m: StudioServer) {
   if (seeded) return;
   seeded = true;
   room.studio = { patch: room.studio.patch, held: {} };
+  for (const gear of new Set(room.studio.patch.placed.map((p) => p.gear))) shareBoard(gear);
   for (const step of patchOps(room.studio.patch)) net?.studio(step);
+}
+/** A bench pedal's board to the sesh, before the step that brings its box in. False: it is too long to carry, so only this page plays it. */
+function shareBoard(gear: string): boolean {
+  const b = myBoards.get(gear);
+  if (b) net?.board(b);
+  return !!b;
+}
+/** Someone's live event: their body and look, and whether the live line plays sound for them. */
+function onLive(from: number, e: Live) {
+  hear(room, from, e);
+  // who has a guitar, a mic or a plugin track on the live line: each gets a strip on the desk
+  if (e.t === "guitar" || e.t === "plugin") far.heard(from, e);
+}
+/** Where you are and how you look, to everyone else in the sesh (again when someone comes in). */
+function wear() {
+  sentBody = JSON.stringify(bodyOf(room));
+  net?.live(bodyOf(room));
+  net?.live({ t: "wear", avatar: myLook, name: myName });
+}
+let sentAt = 0, sentBody = "", peersIn = 0;
+/** Your body on the live line as you move, BODY_HZ times a second at most. */
+function sayBody(now: number) {
+  if (!net || now - sentAt < 1000 / BODY_HZ) return;
+  const b = bodyOf(room), key = JSON.stringify(b);
+  if (key === sentBody) return;
+  sentAt = now; sentBody = key;
+  net.live(b);
 }
 if (sesh) {
   room.sent = (step) => net?.studio(step);
@@ -131,9 +183,16 @@ if (sesh) {
     onStudio,
     onChat(m) { if (m.t === "chat") { me = m.you; drawn = ""; } },
     // in (again): ask the World for its gear room, which it sends unasked only once someone has used it
-    onStatus(s) { if (s.state !== "online") asked = false; else if (!asked) { asked = true; net?.studio({ t: "drop" }); } },
-    onLive() {}, onGone() {}, onTakeBytes() {},
-    hello: () => ({ key: myKey(), name: localMe().name || "Someone" }),
+    onStatus(s) {
+      if (s.state !== "online") asked = false; else if (!asked) { asked = true; net?.studio({ t: "drop" }); }
+      if (s.state === "online" && s.peers > peersIn) wear();
+      peersIn = s.state === "online" ? s.peers : 0;
+    },
+    onGrants(m) { peerIds = m.peers; },
+    onLive,
+    onGone(from) { left(room, from); far.gone(from); },
+    onTakeBytes() {},
+    hello: () => ({ key: myKey(), name: myName }),
   });
 }
 
@@ -211,7 +270,27 @@ function syncCables() {
   for (const c of room.studio.patch.cables) drawCable(c.from.join(":") + ">" + c.to.join(":"), jackAt(room, c.from), jackAt(room, c.to), seen);
   const h = hand(room);
   if (h && "lead" in h) drawCable("hand", jackAt(room, h.lead), handAt(room), seen);
+  for (const l of theirLeads(room)) drawCable(`hand-${l.peer}`, jackAt(room, l.from), l.hand, seen);
   for (const [k, c] of cables) if (!seen.has(k)) { scene.remove(c.mesh); c.mesh.geometry.dispose(); cables.delete(k); }
+}
+
+// The others in the sesh's gear room: an eqosys figure each, gliding to where its last body said.
+const people = new Map<number, { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }>();
+function syncPeople(dt: number, t: number) {
+  for (const [peer, p] of people) if (!room.bodies.has(peer)) { scene.remove(p.fig.group); p.fig.dispose(); people.delete(peer); }
+  for (const [peer, b] of room.bodies) {
+    const l = room.looks.get(peer), name = l?.name ?? "", avatar = l?.avatar ?? defaultAvatar(name), key = JSON.stringify([avatar, name]);
+    let p = people.get(peer);
+    if (p && p.key !== key) { scene.remove(p.fig.group); p.fig.dispose(); p = undefined; }
+    if (!p) { p = { fig: figure(avatar, name), key, x: b.x, z: b.z, yaw: b.yaw, speed: 0 }; scene.add(p.fig.group); people.set(peer, p); }
+    const k = 1 - Math.exp(-dt * 12), nx = lerp(p.x, b.x, k), nz = lerp(p.z, b.z, k);
+    p.speed = lerp(p.speed, dt > 0 ? Math.hypot(nx - p.x, nz - p.z) / dt : 0, 0.3);
+    p.x = nx; p.z = nz;
+    p.yaw += Math.atan2(Math.sin(b.yaw - p.yaw), Math.cos(b.yaw - p.yaw)) * k;
+    p.fig.group.position.set(p.x, 0, p.z);
+    p.fig.group.rotation.y = p.yaw;
+    p.fig.pose({ speed: p.speed, seated: false, play: null, note: false, t: t / 1000 });
+  }
 }
 
 let lit: THREE.Mesh | null = null;
@@ -337,7 +416,8 @@ document.addEventListener("keyup", (e) => keys.delete(e.code));
 function dropBoard(json: unknown, name: string): Answer {
   const b = readBench(json, name);
   if (!b.ok) return say(no(`${name} won't play: ${b.why[0]}`));
-  return say(benchIn(room, b.pedal));
+  const shared = !sesh || shareBoard(benchGear(b.pedal).id), a = say(benchIn(room, b.pedal));
+  return a.ok && !shared ? say(no(`${name} is too big a board for the sesh to carry: only you hear it`)) : a;
 }
 const no = (why: string): Answer => ({ ok: false, why });
 document.addEventListener("dragover", (e) => e.preventDefault());
@@ -405,8 +485,10 @@ function frame(now: number) {
     step(room, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX });
   }
   save();
+  sayBody(now);
   syncModels();
   syncCables();
+  syncPeople(dt, now);
   const a = aimed(room);
   highlight(a);
   const heard = listen(room.studio.patch);
@@ -455,7 +537,7 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me } : null, returns: listen(room.studio.patch).returns }),
+  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me, drawn: [...people.keys()] } : null, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
   /** The open sheet's tab: "schematic", "pcb", "parts", "files" or "band" (the tolerance band). */
@@ -466,6 +548,8 @@ const harness = {
   sheetDownload: () => sheet.download(),
   /** Close the sheet, back into the room. */
   sheetClose: () => sheet.close(),
+  /** A live event from player `from`, as the sesh's live line brings it (a body with room "gear" stands them in the room): false when it isn't one. */
+  live: (from: number, e: unknown) => { const m = decodeServer({ t: "live", from, e }); if (m?.t === "live") onLive(m.from, m.e); return m?.t === "live"; },
   /** The desk view open or shut (Tab). */
   desk: (open: boolean) => openDesk(open),
   /** A channel's controls (`you` is the guitar's; in a sesh the ids are `state().desk`'s), an aux send 0 to 1, or a return's fader 0 to 1 (0.75 is 0 dB). */

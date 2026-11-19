@@ -12,17 +12,18 @@ import "./door.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
-import { cleanAvatar, defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
 import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
-import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
+import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
-import { DeskFeed, loadMsg } from "../ui/load.ts";
+import { DeskFeed, loadMsg, type HeardPlayer } from "../ui/load.ts";
+import { AUXES, callStrips } from "../mixer.ts";
 import { applyStudio, emptyStudio } from "../studio.ts";
-import { auxGear } from "../room/room.ts";
+import { auxGear, boardIn } from "../room/room.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
 import { encodeTake } from "../take.ts";
@@ -30,7 +31,7 @@ import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
-import { localMe, myKey } from "../ui/me.ts";
+import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
@@ -59,7 +60,6 @@ import { mountLane } from "./lane.tsx";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 
 const CONTROLS = "qollab-studio:controls";
-const LOOK = "qollab-studio:avatar";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
 
 /** The room this page is in, from its link; null on the front door. */
@@ -75,11 +75,7 @@ const signedIn = () => !!eq.login();
 /** A fresh token for /ws, or null: a guest (signed out, or a page eqosys won't send anyone back to). */
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
 const name = eq.login()?.name || localMe().name || "Someone";
-function myLook(): Avatar {
-  try { const a = cleanAvatar(JSON.parse(localStorage.getItem(LOOK) ?? "null")); if (a) return a; } catch { /* none saved */ }
-  return defaultAvatar(name);
-}
-let look = myLook();
+let look: Avatar = savedLook(name);
 /** Where your look came from: your eqosys account once it answers, else this browser's. */
 let lookFrom: "eqosys" | "local" = "local";
 {
@@ -351,6 +347,7 @@ async function startAudio() {
     deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
+    guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
@@ -391,7 +388,7 @@ let lags = new Map<number, Lag>();
 /** I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. */
 async function guitar() {
   if (myGuitar !== null) {
-    guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null });
+    guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null }); deskSync();
     out?.send({ t: "send", on: false, inLatency: 0 }); mySource?.disconnect(); mySource = null;
     opusOut?.close(); opusOut = null;
     return void say({ ok: false, why: `Your ${myInput} is out` });
@@ -409,6 +406,7 @@ async function guitar() {
   myInput = input;
   await guitars.plugIn(stream);
   myGuitar = track;
+  deskSync();
   if (opusEncoder) opusOut = new OpusOut(opusEncoder, live, () => project.bpm, () => myGuitar);
   // and into the audio thread, which cuts it into stamped slices for whoever hears the band a loop late or at the desk
   if (out) {
@@ -426,6 +424,9 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 function hearGuitars() {
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
+  // each guitar's chain at its channel on the sesh's desk: its level, and its sends into the audio thread's aux buses
+  const calls = [...(myGuitar === null ? [] : [{ key: "me" as const, who: rights.me ?? undefined, track: myGuitar }]), ...[...plugged].map(([peer, track]) => ({ key: peer, who: peerIds[peer], track }))];
+  callStrips(project, heardPlayers(), calls).forEach((strip, i) => guitars?.desk(calls[i].key, strip));
   if (myGuitar !== null) guitars.set("me", guitarSettings(project.tracks[myGuitar]?.amp));
   for (const [peer, track] of plugged) {
     const o = jam.others.get(peer);
@@ -469,8 +470,16 @@ const far = new FarSound(band, (m) => out?.send(m));
  */
 const deskFeed = new DeskFeed((m) => out?.send(m));
 let gearRoom = emptyStudio();
+/**
+ * Everyone with a channel on the desk here: whoever the live line plays sound for, and you while your guitar is in
+ * (number 0: nothing of yours comes in, but a solo on your channel quiets the rest for you as for everyone).
+ */
+function heardPlayers(): HeardPlayer[] {
+  const others = far.players().flatMap((peer) => { const who = peerIds[peer]; return who ? [{ peer, who, name: "" }] : []; });
+  return myGuitar !== null && rights.me ? [...others, { peer: 0, who: rights.me, name: "" }] : others;
+}
 function deskSync() {
-  deskFeed.sync(project, far.players().flatMap((peer) => { const who = peerIds[peer]; return who ? [{ peer, who, name: "" }] : []; }), auxGear(gearRoom.patch).settings);
+  deskFeed.sync(project, heardPlayers(), auxGear(gearRoom.patch).settings);
 }
 /** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
 let transport = { abs: 0, synced: false, late: 0, playing: false };
@@ -625,7 +634,12 @@ lane = mountLane({
 if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
   onRewound: back.answer,
-  onStudio(m) { gearRoom = m.t === "studio-all" ? m.studio : applyStudio(gearRoom, m.from, m.op); deskSync(); },
+  onStudio(m) {
+    // a bench pedal's board: read here, so aux 2 plays its circuit when it is cabled in
+    if (m.t === "studio-board") boardIn(m.board);
+    else gearRoom = m.t === "studio-all" ? m.studio : applyStudio(gearRoom, m.from, m.op);
+    deskSync();
+  },
   onRtc: (m) => void guitars?.signal(m),
   onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
@@ -780,7 +794,7 @@ function play() { if (!here) return; phase = "play"; menu(); lock(); void startA
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {
   look = randomAvatar(Math.random);
-  try { localStorage.setItem(LOOK, JSON.stringify(look)); } catch { /* this visit only */ }
+  saveLook(look);
   wear();
 });
 mountControls({

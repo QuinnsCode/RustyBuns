@@ -7,7 +7,7 @@
 import { applySettings, LINE_SCALE, type Live } from "./amp/live.ts";
 import type { AmpSettings } from "./amp/messages.ts";
 import { flatEq, TsEq } from "./engine/eq.ts";
-import { AUXES, audible, faderGain, MAX_CHANNELS, newChannel, playerId, RETURNS, UNITY, type Channel, type Desk } from "./desk.ts";
+import { AUXES, audible, callStrip, faderGain, MAX_CHANNELS, newChannel, playerId, RETURNS, UNITY, type Channel, type Desk } from "./desk.ts";
 import { P } from "./engine/params.ts";
 import { Space } from "./engine/space.ts";
 import type { Op, Project } from "./project.ts";
@@ -87,6 +87,21 @@ export function deskOps(p: Project, next: Desk): Op[] {
 export function deskPlays(p: Project, players: readonly Player[]): { mask: boolean[]; players: Channel[] } {
   const d = seshDesk(p, players), on = audible(d);
   return { mask: p.tracks.map((_, ti) => on[ti] ?? false), players: d.channels.flatMap((c, i) => (c.source === "player" ? [{ ...c, mute: !on[i], solo: false }] : [])) };
+}
+
+/**
+ * The strips for guitars heard on calls (the jam room, as it comes: src/studio/guitar-line.ts), which play outside the
+ * desk's audio thread. Each follows the channel its slices would play on: its track's, when it is plugged into a track
+ * with an amp (the amp insert plays it down that track's strip), else its player's own. `players` is everyone with a
+ * channel, so a solo anywhere on the desk counts. A guitar with no channel yet plays as it comes.
+ */
+export function callStrips(p: Project, players: readonly Player[], calls: readonly { who: string | undefined; track: number }[]): { level: number; sends: number[] }[] {
+  const d = seshDesk(p, players), on = audible(d);
+  return calls.map((call) => {
+    const id = call.track >= 0 && p.tracks[call.track]?.amp ? trackId(call.track) : call.who ? playerId(call.who) : "";
+    const i = d.channels.findIndex((c) => c.id === id);
+    return i < 0 ? { level: 1, sends: [] } : callStrip(d.channels[i], on[i]);
+  });
 }
 
 /** An effect on a return: its aux bus in (mono), the wet signal out (stereo, interleaved, written over). */

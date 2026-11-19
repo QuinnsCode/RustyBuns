@@ -6,7 +6,11 @@ import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv }
 import Lobby from "../src/lobby.ts";
 import { P, TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
-import { decodeServer } from "../src/project.ts";
+import { decodeServer, type Live } from "../src/project.ts";
+import { MAX_BOARD_CHARS, applyStudio, boardsIn, decodeStudioServer, emptyPatch } from "../src/studio.ts";
+import * as gear from "../src/room/room.ts";
+import { bench } from "../src/circuit/bench.ts";
+import benchDrive from "../circuits/bench-drive.circuit.json";
 import { encodeWav } from "../src/engine/wav.ts";
 import { demoProject } from "../src/presets.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
@@ -397,6 +401,84 @@ test("a recorded take: its sound reaches the room in chunks before it lands on a
   await settle();
   expect([...fresh.store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
   expect([...bucket.keys()].filter((k) => k.includes("/take/"))).toEqual([]);
+});
+
+test("the gear room in a sesh: you see who carries what, and a bench pedal one person drops is that pedal for everyone", async () => {
+  const { worldEnv } = await edge();
+  const { ctx, world, join, leave } = await setup(worldEnv, "brave-teal-otter");
+  /** The gear room's page on a socket, as src/room/main.ts keeps it: its room in step with what the World sends. */
+  const page = async () => {
+    const ws = (await join()).ws, r = gear.newRoom(emptyPatch()), boards: boolean[] = [];
+    let read = 0;
+    r.sent = (op) => world.webSocketMessage(ws, JSON.stringify({ t: "studio", op }));
+    const pump = () => {
+      for (; read < ws.sent.length; read++) {
+        const s = decodeStudioServer(ws.sent[read]), m = s ? null : decodeServer(ws.sent[read]);
+        if (s?.t === "studio-board") boards.push(gear.boardIn(s.board));
+        else if (s?.t === "studio-all") { r.studio = s.studio; if (s.you) r.me = s.you; }
+        else if (s?.t === "studio-op") { if (s.from !== r.me) r.studio = applyStudio(r.studio, s.from, s.op); }
+        else if (m?.t === "live") gear.hear(r, m.from, m.e);
+        else if (m?.t === "gone") gear.left(r, m.from);
+      }
+    };
+    const say = (e: Live) => world.webSocketMessage(ws, JSON.stringify({ t: "live", e }));
+    world.webSocketMessage(ws, JSON.stringify({ t: "studio", op: { t: "drop" } }));   // asks for the room, and which hand is its own
+    pump();
+    return { ws, r, boards, pump, say };
+  };
+  const amy = await page(), ben = await page();
+  // someone in the jam room, on the same live line
+  const cat = (await join()).ws, jam = newJam(LIVE_ROOM);
+  const jamHears = () => { for (const raw of cat.sent.splice(0)) { const m = decodeServer(raw); if (m?.t === "live") hear(jam, m.from, m.e); } };
+
+  // Amy drops a board off the bench: it goes to the sesh, then its box comes in
+  const read = bench(benchDrive, { name: "Bench Drive" });
+  if (!read.ok) throw new Error(read.why[0]);
+  const board = gear.boardFor(read.pedal, benchDrive, "Bench Drive")!;
+  world.webSocketMessage(amy.ws, JSON.stringify({ t: "studio-board", board }));
+  world.webSocketMessage(amy.ws, JSON.stringify({ t: "studio-board", board: { ...board, gear: "too-big", json: "x".repeat(MAX_BOARD_CHARS + 1) } }));
+  expect(gear.benchIn(amy.r, read.pedal)).toEqual({ ok: true, id: "bench-1" });
+  ben.pump();
+  expect(ben.ws.sent.filter((m) => m.t === "studio-board")).toEqual([{ t: "studio-board", board }]);   // the one that fits, once
+  expect(ben.boards).toEqual([true]);
+  expect(gear.gearOf(gear.item(ben.r, "bench-1")!)).toMatchObject({ id: board.gear, kind: "pedal" });
+
+  // she picks it up and walks: Ben sees her, with the box in her hands where she stands
+  expect(gear.pickUp(amy.r, "bench-1")).toEqual({ ok: true });
+  amy.r.you = { x: 1, z: 0.5, yaw: 0.5, pitch: 0 };
+  amy.say(gear.bodyOf(amy.r));
+  amy.say({ t: "wear", avatar: randomAvatar(mulberry32(3)), name: "Amy" });
+  ben.pump();
+  expect(gear.snapshot(ben.r).people).toEqual([{ peer: amy.r.me, name: "Amy", x: 1, z: 0.5, yaw: 29, holding: { item: "bench-1" } }]);
+  const hers = gear.placedNow(amy.r, gear.item(amy.r, "bench-1")!), his = gear.placedNow(ben.r, gear.item(ben.r, "bench-1")!);
+  expect(his.at).toEqual(hers.at);
+  expect(his.at).not.toEqual(gear.item(ben.r, "bench-1")!.at);
+  // the jam room is on the same line: someone in the gear room has no body there
+  jamHears();
+  expect(jam.others.size).toBe(0);
+
+  // a cable end in her hand hangs from it; when she leaves it falls, and she is gone from the room
+  expect(gear.putDown(amy.r)).toEqual({ ok: true });
+  expect(gear.lead(amy.r, ["bench-1", "out"])).toEqual({ ok: true });
+  ben.pump();
+  expect(gear.theirLeads(ben.r)).toEqual([{ peer: amy.r.me, from: ["bench-1", "out"], hand: gear.handAt(amy.r) }]);
+  leave(amy.ws);
+  ben.pump();
+  expect(gear.theirLeads(ben.r)).toEqual([]);
+  expect(gear.snapshot(ben.r)).toMatchObject({ people: [], holding: null });
+  expect(ben.r.studio.held).toEqual({});
+
+  // whoever comes in later gets the board before the room, and after the sesh is saved and opened again
+  const dan = (await join()).ws.sent.map((m) => m.t);
+  expect(dan.indexOf("studio-board")).toBeGreaterThan(-1);
+  expect(dan.indexOf("studio-board")).toBeLessThan(dan.indexOf("studio-all"));
+  for (const ws of ctx.getWebSockets()) leave(ws);
+  await settle();
+  const later = await setup(worldEnv, "brave-teal-otter");
+  const eve = (await later.join()).ws;
+  expect(eve.sent).toContainEqual({ t: "studio-board", board });
+  // a board with no box left in the room is let go
+  expect(boardsIn([board], emptyPatch())).toEqual([]);
 });
 
 test("studio: friends share one patch, two can't carry one amp, a held lead is in its player's hand, and it's kept", async () => {

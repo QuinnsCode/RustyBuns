@@ -5,7 +5,7 @@
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
 import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
-import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, type Studio, type StudioOp, type StudioServer } from "../../src/studio.ts";
+import { applyStudio, boardsIn, decodeStudioClient, emptyStudio, letGo, sanitizeBoards, sanitizePatch, withBoard, type Board, type Studio, type StudioOp, type StudioServer } from "../../src/studio.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
@@ -51,7 +51,7 @@ const bounceKey = (room: string) => `sesh/${room}/bounce.wav`;
 export const MAX_BOUNCE_BYTES = 24 * 2 ** 20;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch, who may do what and the wind-back ladder. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, grants: raw, ladder: raw });
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, ladder: raw });
 /** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
 const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
@@ -95,6 +95,8 @@ export default class World {
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
+  /** The bench pedals' boards (src/studio.ts): what circuit each bench box in the patch is, for everyone who comes in. */
+  private boards: Board[] = [];
   private chat: Chat = empty();
   private chatDirty = false;
   private talk = new WeakMap<RoomSocket, TokenBucket>();
@@ -137,6 +139,7 @@ export default class World {
       this.project = sanitize(await ctx.storage.get("project"));
       this.chat = sanitizeChat(await ctx.storage.get("chat"));
       this.studio = { patch: sanitizePatch(await ctx.storage.get("studio")), held: {} };
+      this.boards = sanitizeBoards(await ctx.storage.get("boards"));
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
@@ -177,6 +180,8 @@ export default class World {
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
     void this.sendTakes(takeIds(this.project), [server]);
+    // the boards first, so the patch's bench boxes are pedals by the time it comes
+    for (const board of this.boards) this.sockets.send(server, { t: "studio-board", board } satisfies StudioServer);
     if (this.studioUsed()) this.sockets.send(server, this.studioAll(server));
     this.broadcastPeers();
     return response;
@@ -220,7 +225,11 @@ export default class World {
       const b = check(Backup, v);
       const p = sanitize(b?.project) ?? sanitize(v);
       // a studio with no groove yet is a sesh too
-      if (b?.studio && !this.studioUsed()) { this.studio = { patch: sanitizePatch(b.studio), held: {} }; this.saveStudio(); }
+      if (b?.studio && !this.studioUsed()) {
+        this.studio = { patch: sanitizePatch(b.studio), held: {} };
+        this.boards = boardsIn(sanitizeBoards(b.boards), this.studio.patch);
+        this.saveStudio();
+      }
       if (!p || this.project) return;
       this.project = p;
       this.save();
@@ -297,7 +306,7 @@ export default class World {
       const rtc = decodeRtcClient(frame.value);
       if (rtc) { this.onRtc(ws, rtc); return; }
       const st = decodeStudioClient(frame.value);
-      if (st) { this.onStudio(ws, st.op); return; }
+      if (st) { if (st.t === "studio") this.onStudio(ws, st.op); else this.onBoard(ws, st.board); return; }
       const g = decodeGrantClient(frame.value);
       if (g) { void this.onGrant(ws, g); return; }
       const c = decodeChatClient(frame.value);
@@ -499,8 +508,21 @@ export default class World {
     if (next === this.studio) { this.sockets.send(ws, this.studioAll(ws)); return; }
     const saved = next.patch !== this.studio.patch;
     this.studio = next;
+    // a bench box binned: its board goes with the last box of its kind
+    if (op.t === "bin") this.boards = boardsIn(this.boards, next.patch);
     if (saved) this.saveStudio();
     this.broadcast({ t: "studio-op", from: seat.peer, op });
+  }
+
+  /** A bench pedal's board from whoever dropped it: kept (the first for its gear id) and passed on to the others. */
+  private onBoard(ws: RoomSocket, board: Board) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer || !this.may(seat, "play")) return;
+    const next = withBoard(this.boards, board, this.studio.patch);
+    if (next === this.boards) return;
+    this.boards = next;
+    this.saveStudio();
+    this.broadcast({ t: "studio-board", board }, ws);
   }
 
   /** The whole studio for one socket, with its own number on the live line (which hand in `held` is its own). */
@@ -644,6 +666,7 @@ export default class World {
     if (this.studioDirty) {
       this.studioDirty = false;
       await s.put("studio", this.studio.patch);
+      if (this.boards.length) await s.put("boards", this.boards); else await s.delete("boards");
     }
     if (this.bucket && this.room && (this.project || this.studioUsed()) && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
@@ -652,7 +675,7 @@ export default class World {
         const snaps: { at: number; project: unknown }[] = [];
         for (const at of this.ladder.snaps) { const p = await s.get(snapKey(at)); if (p) snaps.push({ at, project: p }); }
         const ladder = snaps.length ? { edited: this.ladder.edited, snaps } : undefined;
-        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, grants: this.grants, ladder }));
+        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, ladder }));
       } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
@@ -666,12 +689,13 @@ export default class World {
       await s.deleteAlarm();
       await this.dropTakes(new Set());
       this.ladderTakes.clear();
-      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "boards", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
       this.chat = empty();
       this.studio = emptyStudio();
+      this.boards = [];
       this.idleAt = 0;
       this.host = "";
       this.floor = "free";

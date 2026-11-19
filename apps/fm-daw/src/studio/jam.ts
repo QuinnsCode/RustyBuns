@@ -22,11 +22,12 @@ export type Cam = "shoulder" | "first";
 export interface Me { x: number; z: number; yaw: number; pitch: number; seat: string | null; cam: Cam }
 /** Someone else in the room, from their live line: where they are, their seat, who they look like, the notes they hold. */
 export interface Other { at: [number, number]; yaw: number; seat: string | null; avatar: Avatar | null; name: string; held: Set<string> }
-export interface Jam { def: StudioDef; me: Me; others: Map<number, Other> }
+/** `away`: who on the live line is in the sesh's gear room (src/room/), not this room: they have no body here. */
+export interface Jam { def: StudioDef; me: Me; others: Map<number, Other>; away: Set<number> }
 export interface Input { forward: number; right: number; turn: number }
 
 export function newJam(def: StudioDef): Jam {
-  return { def, me: { x: def.door.at[0], z: def.door.at[1], yaw: def.door.yaw, pitch: 0, seat: null, cam: "shoulder" }, others: new Map() };
+  return { def, me: { x: def.door.at[0], z: def.door.at[1], yaw: def.door.yaw, pitch: 0, seat: null, cam: "shoulder" }, others: new Map(), away: new Set() };
 }
 
 export const spotOf = (j: Jam, id: string | null) => (id ? j.def.spots.find((s) => s.id === id) ?? null : null);
@@ -184,6 +185,9 @@ function other(j: Jam, from: number): Other {
 
 /** Someone's live event: their body, their look, or a note they play. */
 export function hear(j: Jam, from: number, e: Live) {
+  // a body in the gear room: they are in the sesh but not in this room, whatever else they say
+  if (e.t === "body" && e.room) { j.others.delete(from); j.away.add(from); return; }
+  if (j.away.has(from)) return;
   if (e.t === "body") {
     const o = other(j, from);
     o.at = [e.at[0], e.at[2]];
@@ -197,7 +201,7 @@ export function hear(j: Jam, from: number, e: Live) {
 }
 
 /** They left: their avatar goes, and so do the notes they held. */
-export function gone(j: Jam, from: number) { j.others.delete(from); }
+export function gone(j: Jam, from: number) { j.others.delete(from); j.away.delete(from); }
 
 /** The FM DAW track a spot plays in this project, or -1. */
 export function trackFor(s: Spot, p: Project): number {
