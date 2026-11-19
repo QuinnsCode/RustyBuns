@@ -408,6 +408,7 @@
         "@rustybuns/rig": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
+        "@webaudiomodules/sdk": "0.0.12",
         "react": "19.3.1",
         "react-dom": "19.3.1",
         "three": "^0.180.0",
@@ -423,6 +424,7 @@
         "@types/react": "19",
         "@types/react-dom": "19",
         "@types/three": "^0.180.0",
+        "@webaudiomodules/api": "2.0.0-alpha.6",
         "alchemy": "2.0.0-beta.84",
         "effect": "4.0.5",
         "vite": "^6.4.4",
@@ -2649,6 +2651,10 @@
     "@webassemblyjs/wasm-parser": ["@webassemblyjs/wasm-parser@1.14.1", "", { "dependencies": { "@webassemblyjs/ast": "1.14.1", "@webassemblyjs/helper-api-error": "1.13.2", "@webassemblyjs/helper-wasm-bytecode": "1.13.2", "@webassemblyjs/ieee754": "1.13.2", "@webassemblyjs/leb128": "1.13.2", "@webassemblyjs/utf8": "1.13.2" } }, "sha512-JLBl+KZ0R5qB7mCnud/yyX08jWFw5MsoalJ1pQ4EdFlgj9VdXKGuENGsiCIjegI1W7p91rUlcB/LB5yRJKNTcQ=="],
 
     "@webassemblyjs/wast-printer": ["@webassemblyjs/wast-printer@1.14.1", "", { "dependencies": { "@webassemblyjs/ast": "1.14.1", "@xtuc/long": "4.2.2" } }, "sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw=="],
+
+    "@webaudiomodules/api": ["@webaudiomodules/api@2.0.0-alpha.6", "", {}, "sha512-GFyp7fVgNd26aFlmk7svGWtwrS1PqrwWajR+JDnbF3aSka9TteZbIcKA6lQ1D7gMc+n8h+te69h+zG5DWwYKIw=="],
+
+    "@webaudiomodules/sdk": ["@webaudiomodules/sdk@0.0.12", "", {}, "sha512-8eV+7wX8Wjrkjs3sIysq508ehS4mBEkLdwk8xinY3IXGi/zvWIfoipbWfvQ+AsaKnN3hBMGZI0AgLf1GlApBIA=="],
 
     "@webgpu/types": ["@webgpu/types@0.1.72", "", {}, "sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw=="],
 

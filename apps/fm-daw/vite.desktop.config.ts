@@ -25,6 +25,9 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   esbuild: { jsx: "automatic" },
+  // The WAM SDK sends its audio-thread classes over as text (src/ui/wam.ts). Pre-bundled, their static fields become
+  // helper calls that text doesn't carry, and a web plugin never starts: it's served as it is.
+  optimizeDeps: { exclude: ["@webaudiomodules/sdk"] },
   build: {
     outDir: resolve(__dirname, "dist/desktop"),
     emptyOutDir: true,

@@ -17,9 +17,10 @@ import { PluginPump, pluginChoices, usePlugins, type PluginShown } from "./plugi
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
 import { PluginPanel, TrackSound } from "./PluginPanel.tsx";
-import { withValue } from "../plugin-track.ts";
+import { withValue, type TrackPlugin } from "../plugin-track.ts";
+import { pageRack } from "./wam.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
-import { pushEqPlayed, pushTick, useTick } from "./store.ts";
+import { lastTick, pushEqPlayed, pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
 import { DrumGrid } from "./DrumGrid.tsx";
 import { PianoRoll } from "./PianoRoll.tsx";
@@ -47,7 +48,7 @@ import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { flatEq } from "../engine/eq.ts";
 import { loadMsg } from "./load.ts";
-import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
+import { LANE_BEND, LANE_STUTTER, P } from "../engine/params.ts";
 import { Band } from "../studio/band.ts";
 import { FarSound, PluginOut } from "../studio/plugin-line.ts";
 import { webOpus, type MakeEncoder } from "../studio/opus.ts";
@@ -360,7 +361,7 @@ export function App() {
         if (!plug) return;
         for (const c of changes) plug = withValue(plug, c.id, c.value);
         commit({ t: "plugin", track, plugin: plug }, { group: `plugEd:${track}` });
-      });
+      }, pageRack(a.ctx, a.webBus));
       // others' guitars and plugin tracks come as Opus where this browser has WebCodecs, and yours go out that way
       const opus = await webOpus();
       if (opus) { far.decodeWith(opus.decoder); opusEncoder.current = opus.encoder; }
@@ -375,6 +376,31 @@ export function App() {
   useEffect(() => { pump.current?.sync(project); }, [audio, project]);
   // what you hear: your own master, under the room's (the remote's master fader, src/remote/)
   useEffect(() => { audio?.send({ t: "master", gain: dbToGain(masterDb) * roomGain(project) }); }, [audio, masterDb, project.master]);
+
+  // Ask the desk instead of screenshotting it (scripts/probe.ts): what plays each track, and how loud it is. `peak` is
+  // the engine's own meter (FM voices); `out` is what leaves for the speakers, plugins and amps too, over the last 170 ms.
+  useEffect(() => {
+    const out = () => {
+      const an = audioRef.current?.analyser;
+      if (!an) return 0;
+      const buf = new Float32Array(an.fftSize);
+      an.getFloatTimeDomainData(buf);
+      return buf.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+    };
+    Object.assign(window, { fmdaw: {
+      state: () => ({
+        audio: audioRef.current?.ctx.state ?? null, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
+        tracks: proj.current.tracks.map((tr, i) => {
+          const s = pump.current?.state.get(i);
+          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], plays: tr.plugin ? { name: tr.plugin.name, path: tr.plugin.path, web: !!tr.plugin.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) } : "fm" };
+        }),
+      }),
+      start: startAudio,
+      plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
+      mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      trust: (track: number) => pump.current?.trust(track, proj.current),
+    } });
+  });
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
@@ -919,7 +945,8 @@ export function App() {
             <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={trackSound}
               onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
               onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
-              onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")} />
+              onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
+              onTrust={() => pump.current?.trust(selected, proj.current)} />
           ) : <PatchEditor track={t} color={color} head={trackSound}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}

@@ -197,6 +197,13 @@ class FmProcessor extends AudioWorkletProcessor {
     for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
   }
 
+  /** The page's own plugins (Web Audio Modules, src/ui/wam.ts), each already at its track's fader, under the room's master. */
+  private mixWeb(bus: Float32Array[] | undefined, frames: number) {
+    const l = bus?.[0], r = bus?.[1] ?? l;
+    if (!l || !r) return;
+    for (let f = 0; f < frames; f++) { this.buf[f * 2] += l[f] * this.master; this.buf[f * 2 + 1] += r[f] * this.master; }
+  }
+
   /** Everyone else's sound for this block, from beat `beat0`: through its track's amp when it has one, else straight in. */
   private mixRemote(frames: number, beat0: number, bpf: number) {
     if (!this.remotes.size) return;
@@ -350,6 +357,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
+      this.mixWeb(inputs[1], frames);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
