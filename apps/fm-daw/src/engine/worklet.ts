@@ -73,8 +73,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private gridBeat = NaN;
   /** Frames rendered, for the context's time where the platform gives none (tests). */
   private frames = 0;
-  /** Each other player's sound coming in, on its beats, and the track it goes into. */
-  private remotes = new Map<number, { line: RemoteLine; track: number }>();
+  /** Each other player's sound coming in, on its beats, one line per player and track (a guitar and a plugin apart). */
+  private remotes = new Map<string, { line: RemoteLine; peer: number; track: number }>();
   private wasm: Exports | null = null;
   private far = new Float32Array(256);
   private blockBeat = 0;
@@ -87,9 +87,9 @@ class FmProcessor extends AudioWorkletProcessor {
   /** Your input going out in slices, each stamped with its beat. */
   private sending = false;
   private sendLatency = 0;
-  private slice = new Float32Array(0);
-  private sliceLen = 0;
-  private sliceBeat = 0;
+  private input = new Slicer();
+  /** Plugin tracks whose sound goes to the sesh too, at their fader, cut the same way (src/studio/plugin-line.ts). */
+  private pluginOut = new Map<number, Slicer>();
 
   constructor() {
     super();
@@ -156,8 +156,9 @@ class FmProcessor extends AudioWorkletProcessor {
       case "dueBend": s.liveAt(m.at, m.track, BEND, m.semis); break;
       case "dueRepeat": s.liveAt(m.at, 0, REPEAT, m.beats); break;
       case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
-      case "quiet": this.remotes.get(m.peer)?.line.free?.(); this.remotes.delete(m.peer); break;
-      case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.sliceLen = 0; break;
+      case "quiet": this.quiet(m.peer, m.track); break;
+      case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.input.reset(); break;
+      case "pluginSend": if (!m.on) this.pluginOut.delete(m.track); else if (!this.pluginOut.has(m.track)) this.pluginOut.set(m.track, new Slicer(m.track)); break;
     }
   }
 
@@ -165,11 +166,15 @@ class FmProcessor extends AudioWorkletProcessor {
   private nominal() { return (TAKE_RATE * 60) / this.seq.bpm; }
 
   private hearSound(peer: number, track: number, at: number, pcm: Float32Array) {
-    let r = this.remotes.get(peer);
-    if (!r) { r = { line: this.newRemote(), track }; this.remotes.set(peer, r); }
-    r.track = track;
+    const key = `${peer}:${track}`;
+    let r = this.remotes.get(key);
+    if (!r) { r = { line: this.newRemote(), peer, track }; this.remotes.set(key, r); }
     r.line.setNominal(this.nominal());
     r.line.push(at, pcm);
+  }
+  /** Their sound into `track` stopped (every track's, with none): what's buffered goes. */
+  private quiet(peer: number, track?: number) {
+    for (const [k, r] of this.remotes) if (r.peer === peer && (track === undefined || r.track === track)) { r.line.free?.(); this.remotes.delete(k); }
   }
   private newRemote(): RemoteLine { return this.wasm ? new WasmRemote(this.wasm, this.nominal()) : new TsRemote(this.nominal()); }
 
@@ -182,8 +187,11 @@ class FmProcessor extends AudioWorkletProcessor {
   }
 
   /** Each plugin track at its fader and the room's master, then asks the host for what comes next. */
-  private mixPlugins(frames: number) {
-    this.plugins.mix(this.buf, frames, (t) => this.muted[t] ? 0 : this.params[t * NPARAMS + P.GAIN] * this.master);
+  private mixPlugins(frames: number, beat0: number, bpf: number) {
+    const fader = (t: number) => this.muted[t] ? 0 : this.params[t * NPARAMS + P.GAIN];
+    // a track going to the sesh too: its sound at its fader, on the beat it's heard on here (nobody played it in late)
+    const tap = this.pluginOut.size ? (t: number, mono: Float32Array, n: number) => this.pluginOut.get(t)?.push(mono, fader(t), n, beat0, bpf, this.port) : undefined;
+    this.plugins.mix(this.buf, frames, (t) => fader(t) * this.master, tap);
     for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
   }
 
@@ -205,19 +213,8 @@ class FmProcessor extends AudioWorkletProcessor {
 
   /** Your input into slices of SOUND_FRAMES (at TAKE_RATE), each stamped with the beat you heard as you played it. */
   private sendSlices(input: Float32Array[] | undefined, frames: number, beat0: number, bpf: number) {
-    const want = Math.round((SOUND_FRAMES * sampleRate) / TAKE_RATE);
-    if (this.slice.length !== want) { this.slice = new Float32Array(want); this.sliceLen = 0; }
-    const mono = this.downmix(input, frames), back = (this.seq.latency + this.sendLatency) * (this.seq.bpm / 60);
-    for (let f = 0; f < frames; f++) {
-      if (this.sliceLen === 0) this.sliceBeat = beat0 + f * bpf - back;
-      this.slice[this.sliceLen++] = mono[f];
-      if (this.sliceLen === want) {
-        const pcm = this.slice;
-        this.port.postMessage({ t: "sound", beat: this.sliceBeat, pcm, rate: sampleRate }, [pcm.buffer]);
-        this.slice = new Float32Array(want);
-        this.sliceLen = 0;
-      }
-    }
+    const back = (this.seq.latency + this.sendLatency) * (this.seq.bpm / 60);
+    this.input.push(this.downmix(input, frames), 1, frames, beat0 - back, bpf, this.port);
   }
 
   /** The pass recorded so far goes to the page, which puts it on the track. */
@@ -350,7 +347,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.blockBeat = abs0; this.blockBpf = bpf;
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
-      if (this.plugins.any) this.mixPlugins(frames);
+      if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
@@ -375,6 +372,32 @@ class FmProcessor extends AudioWorkletProcessor {
       });
     }
     return true;
+  }
+}
+
+/**
+ * Sound for the sesh cut into slices of SOUND_FRAMES (at TAKE_RATE), each stamped with the beat its first frame is
+ * heard on: your input (no track), or a plugin track's own sound (its track, so the page knows which line it is).
+ */
+class Slicer {
+  private slice = new Float32Array(0);
+  private len = 0;
+  private beat = 0;
+  constructor(private readonly track?: number) {}
+  reset() { this.len = 0; }
+  push(mono: Float32Array, gain: number, frames: number, beat0: number, bpf: number, port: MessagePort) {
+    const want = Math.round((SOUND_FRAMES * sampleRate) / TAKE_RATE);
+    if (this.slice.length !== want) { this.slice = new Float32Array(want); this.len = 0; }
+    for (let f = 0; f < frames; f++) {
+      if (this.len === 0) this.beat = beat0 + f * bpf;
+      this.slice[this.len++] = mono[f] * gain;
+      if (this.len === want) {
+        const pcm = this.slice;
+        port.postMessage({ t: "sound", beat: this.beat, pcm, rate: sampleRate, ...(this.track === undefined ? {} : { track: this.track }) } satisfies FromWorklet, [pcm.buffer]);
+        this.slice = new Float32Array(want);
+        this.len = 0;
+      }
+    }
   }
 }
 

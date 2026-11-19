@@ -94,19 +94,20 @@ export class OpusOut {
   close() { this.enc.close(); }
 }
 
-/** Everyone else's guitar coming in: a decoder per far end, each message's sound out whole on its beat. */
+/** Everyone else's guitar and plugin tracks coming in: a decoder per far end and track, each message's sound out whole on its beat. */
 export class OpusIn {
-  private lines = new Map<number, { dec: Decoder; queue: Pending[] }>();
+  private lines = new Map<string, { dec: Decoder; queue: Pending[]; peer: number; track: number }>();
   constructor(private make: MakeDecoder, private heard: (peer: number, track: number, b: number, pcm: Float32Array) => void) {}
 
   hear(peer: number, e: Sound) {
     const packets = unpack(e.data);
     if (!packets) return;
-    let line = this.lines.get(peer);
+    const key = `${peer}:${e.track}`;
+    let line = this.lines.get(key);
     if (!line) {
       const queue: Pending[] = [];
-      line = { dec: this.make((pcm) => this.out(peer, queue, pcm), () => this.drop(peer)), queue };
-      this.lines.set(peer, line);
+      line = { dec: this.make((pcm) => this.out(peer, queue, pcm), () => this.drop(peer, e.track)), queue, peer, track: e.track };
+      this.lines.set(key, line);
     }
     line.queue.push({ track: e.track, b: e.b, want: packets.length, got: [] });
     for (const p of packets) line.dec.decode(p);
@@ -124,11 +125,13 @@ export class OpusIn {
     this.heard(peer, head.track, head.b, all);
   }
 
-  /** They unplugged or left (or their stream broke): the next message starts a fresh decoder. */
-  drop(peer: number) {
-    const line = this.lines.get(peer);
-    this.lines.delete(peer);
-    line?.dec.close();
+  /** They unplugged or stopped the plugin on `track`, or left (no track), or their stream broke: the next message starts a fresh decoder. */
+  drop(peer: number, track?: number) {
+    for (const [k, line] of this.lines) {
+      if (line.peer !== peer || (track !== undefined && line.track !== track)) continue;
+      this.lines.delete(k);
+      line.dec.close();
+    }
   }
 }
 

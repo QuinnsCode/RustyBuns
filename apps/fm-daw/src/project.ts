@@ -256,7 +256,12 @@ export type Live =
    */
   | { t: "guitar"; track: number | null; mic?: boolean }
   /**
-   * A slice of their guitar's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
+   * Their own plugin (a CLAP the desktop app hosts, src/engine/plugins.ts) voices this track, named so others can see what
+   * it is, or stopped (null). Nobody else has the plugin: they keep that track quiet and hear its sound in slices (below).
+   */
+  | { t: "plugin"; track: number; name: string | null }
+  /**
+   * A slice of their guitar's or plugin track's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
    * latency taken off), into `track` (-1: straight in): base64url of Opus packets (`c: "opus"`, src/studio/opus.ts),
    * or of 16-bit samples at TAKE_RATE from a browser with no WebCodecs.
    */
@@ -275,13 +280,14 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
   obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
+  obj({ t: tag("plugin"), track: TRACK, name: nul(str(500)) }),
   obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || (e.t === "guitar" && e.track === null) || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || (e.t === "guitar" && e.track === null) || (e.t === "plugin" && e.name === null) || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the

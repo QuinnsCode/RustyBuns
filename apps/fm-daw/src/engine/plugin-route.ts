@@ -38,6 +38,7 @@ const lane = (): Lane => ({ events: [], blocks: [], at: 0, queued: 0, asked: 0, 
 
 export class PluginRoute {
   private lanes: (Lane | null)[] = Array.from({ length: TRACKS }, () => null);
+  private mono = new Float32Array(0);
   /** Frames a plugin track had nothing queued for: the host fell behind. */
   misses = 0;
 
@@ -124,21 +125,27 @@ export class PluginRoute {
     if (frames) { l.blocks.push(pcm); l.queued += frames; l.heard = true; }
   }
 
-  /** Adds `frames` of each plugin track into `out` (interleaved stereo), at the level `gain(t)` says (0 when muted). */
-  mix(out: Float32Array, frames: number, gain: (t: number) => number) {
+  /**
+   * Adds `frames` of each plugin track into `out` (interleaved stereo), at the level `gain(t)` says (0 when muted).
+   * `tap`, if given, also gets each track's own sound, mono and before its fader (the sesh hears it: src/studio/plugin-line.ts).
+   */
+  mix(out: Float32Array, frames: number, gain: (t: number) => number, tap?: (t: number, mono: Float32Array, frames: number) => void) {
+    if (tap && this.mono.length < frames) this.mono = new Float32Array(frames);
     this.lanes.forEach((l, t) => {
       if (!l) return;
-      const target = gain(t);
+      const target = gain(t), mono = tap ? this.mono.fill(0, 0, frames) : null;
       for (let f = 0; f < frames; f++) {
         l.level += (target - l.level) * SMOOTH;
         const b = l.blocks[0];
         if (!b) { if (l.heard && !l.dead) this.misses += frames - f; break; }
         out[2 * f] += b[l.at] * l.level;
         out[2 * f + 1] += b[l.at + 1] * l.level;
+        if (mono) mono[f] = (b[l.at] + b[l.at + 1]) / 2;
         l.at += 2;
         l.queued--;
         if (l.at >= b.length) { l.blocks.shift(); l.at = 0; }
       }
+      if (mono) tap?.(t, mono, frames);
     });
   }
 }

@@ -58,10 +58,12 @@ export type ToWorklet =
   /** Someone else's bend (semitones) or stutter (beats, 0 off) to take hold on beat `at`, in order with their notes. */
   | { t: "dueBend"; at: number; track: number; semis: number }
   | { t: "dueRepeat"; at: number; beats: number }
-  /** A slice of someone's guitar (mono at TAKE_RATE) to play from beat `at`, into `track` (-1: straight in). */
+  /** A slice of someone's guitar or plugin track (mono at TAKE_RATE) to play from beat `at`, into `track` (-1: straight in). */
   | { t: "sound"; peer: number; track: number; at: number; pcm: Float32Array }
-  /** Their sound stopped (unplugged, left): drop what's buffered. */
-  | { t: "quiet"; peer: number }
+  /** Their sound stopped (unplugged, left): drop what's buffered, into `track` or (none) every track. */
+  | { t: "quiet"; peer: number; track?: number }
+  /** Send plugin track `track`'s own sound to the sesh in stamped slices (`on`), or stop: this page's plugin plays it. */
+  | { t: "pluginSend"; track: number; on: boolean }
   /** Send the input out in slices, each with the beat it was played on (`inLatency`: seconds the input comes in late). */
   | { t: "send"; on: boolean; inLatency: number };
 
@@ -74,5 +76,5 @@ export type FromWorklet =
   | { t: "engine"; kind: "ts" | "rust"; error?: string }
   /** A pass of the input recorded on the armed track: mono at `rate`, starting where the player heard `beat`. */
   | { t: "taken"; track: number; beat: number; pcm: Float32Array; rate: number }
-  /** A slice of the input to send: mono at `rate`, played on `beat` (abs, on the shared clock). */
-  | { t: "sound"; beat: number; pcm: Float32Array; rate: number };
+  /** A slice of the input to send (`track`: of that plugin track's sound instead): mono at `rate`, played on `beat` (abs, on the shared clock). */
+  | { t: "sound"; beat: number; pcm: Float32Array; rate: number; track?: number };
