@@ -82,6 +82,7 @@ test("a web plugin from another site asks first, then plays the track's notes at
   d.say({ t: "on", track: 0, midi: 69, vel: 1 });
   await d.play(0.05);
   d.say({ t: "off", track: 0, midi: 69 });
+  await d.play(0.05);
   expect(s.told.midi).toEqual([]);
 
   d.pump.trust(0, d.project);
