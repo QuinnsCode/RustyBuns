@@ -146,12 +146,15 @@ export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, 
  *  hips (as the dial feels it). Your hands on its sides sit just under the top, so they stay in view. */
 export const carryDrop = (kg: number) => 0.1 + 0.4 * clamp((feltKg(kg) - 10) / (MAX_LIFT - 10), 0, 1);
 
+/** How far in front of you the middle of what you hold sits, m: a box you carry far enough out that its sides, and your
+ *  hands on them, fit across a phone held upright; gear you push, right against you. It lands there when you set it down. */
+export const holdOut = (i: Item) => (wheeled(i.gear) ? 0.3 : 0.45) + dims(i)[2] / 2;
+
 /** Where the held item sits now: in front of you, at your chest (lower if it's heavy), turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
   const i = heldItem(w);
   if (!i || !w.held) return null;
-  // Out far enough that its sides, and your hands on them, fit across a phone held upright.
-  const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.45 + d / 2;
+  const [, h] = dims(i), f = facing(w.you.yaw), out = holdOut(i);
   if (w.held.team) {
     // Carried together: between the two of you, low, turned with the line from you to them.
     const m = partner(w);
