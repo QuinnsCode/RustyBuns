@@ -3,6 +3,14 @@
 import { betterAuth } from "better-auth";
 import { symmetricDecrypt } from "better-auth/crypto";
 import type { Env } from "./env.ts";
+import { ssoPlugin } from "./sso.ts";
+
+/** The social mark cookie for an ask carried as a query (sso.ts): handle.ts is loaded when it's asked for, as it imports this file. */
+const markFor = async (conf: Env, query: string) => {
+  const { askOf, socialMark, SOCIAL_COOKIE } = await import("./handle.ts");
+  const q = new URLSearchParams(query), ask = await askOf((k) => q.get(k), conf);
+  return ask && ask !== "bad" ? { name: SOCIAL_COOKIE, value: await socialMark(conf, ask), path: "/login" } : null;
+};
 
 export interface Me { id: string; email: string; name: string }
 
@@ -50,6 +58,8 @@ const make = (conf: Env, origin: string) => betterAuth({
   // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
   // and would ride along to eqosys.qntbr.com beside ours.
   advanced: { cookiePrefix: "eqosys" },
+  // Company sign-in through a studio's own provider (sso.ts): its callback is a Better Auth endpoint, so its session is one of these.
+  plugins: [ssoPlugin(conf, (ask) => markFor(conf, ask))],
   databaseHooks: { user: { create: { before: async (user) => ({ data: { ...user, name: user.name?.trim() || nameFor(user.email) } }) } } },
   socialProviders: {
     ...(conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET ? { github: { clientId: conf.GITHUB_CLIENT_ID, clientSecret: conf.GITHUB_CLIENT_SECRET } } : {}),

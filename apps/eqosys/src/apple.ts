@@ -3,21 +3,16 @@
 // turns their relay email on or off (email-enabled, email-disabled). The JWT is RS256, signed with a key from
 // https://appleid.apple.com/auth/keys, for `aud` = our Services ID (APPLE_CLIENT_ID). Its `events` claim is itself a
 // JSON string. The URL is registered with the Services ID in Apple's developer portal (#3306).
-import { sha256, unb64url } from "@rustybuns/util/bytes";
-import { arr, check, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { sha256 } from "@rustybuns/util/bytes";
+import { check, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { readBody } from "@rustybuns/util/http";
-import { JWKS_KEEP_MS, JWKS_RETRY_MS } from "@rustybuns/util/token";
+import { JwksKeyring, verifiedClaims } from "./jwks.ts";
 import { json, type Env } from "./env.ts";
 import { deleteAccount, signOutEverywhere } from "./members.ts";
 
 export const APPLE_ISS = "https://appleid.apple.com";
 export const APPLE_KEYS = `${APPLE_ISS}/auth/keys`;
 
-const RsaJwk = obj({ kty: oneOf(["RSA"]), kid: str(64), n: str(1024, { re: /^[A-Za-z0-9_-]+$/ }), e: str(16, { re: /^[A-Za-z0-9_-]+$/ }), alg: opt(oneOf(["RS256"])) });
-// A key that is not RS256 (should Apple add one) is dropped, not the whole set.
-const AppleKeys = obj({ keys: arr(RsaJwk, 16, { drop: true }) });
-type AppleKeys = Of<typeof AppleKeys>;
-const Head = obj({ alg: oneOf(["RS256"]), kid: str(64) });
 const Claims = obj({ iss: str(200), aud: str(200), iat: num(0, 1e11), exp: opt(num(0, 1e11)), jti: opt(str(200)), events: str(4000) });
 /** How long a handled notification's `jti` is kept, and so how old a notification may be. Apple retries a 500 for a while, not for a month. */
 export const SEEN_DAYS = 30;
@@ -26,54 +21,19 @@ export const SEEN_DAYS = 30;
 export const AppleEvent = obj({ type: str(64), sub: str(200) });
 export type AppleEvent = Of<typeof AppleEvent>;
 
-const RS256 = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
-const decode = (part: string): unknown => JSON.parse(new TextDecoder().decode(unb64url(part)));
-
-/** Apple's keys, fetched once and kept JWKS_KEEP_MS; a kid we don't have fetches again, at most every JWKS_RETRY_MS. One per isolate. */
-export class AppleKeyring {
-  private keys: AppleKeys = { keys: [] };
-  private fetchedAt = -Infinity;
-  private loading: Promise<void> | null = null;
-  constructor(private readonly get: (url: string) => Promise<Response> = (u) => fetch(u, { signal: AbortSignal.timeout(10_000) })) {}
-
-  async key(kid: string, now: number) {
-    const has = () => this.keys.keys.find((k) => k.kid === kid);
-    if ((now - this.fetchedAt > JWKS_KEEP_MS || !has()) && now - this.fetchedAt > JWKS_RETRY_MS) {
-      this.loading ??= (async () => {
-        try {
-          const res = await this.get(APPLE_KEYS);
-          const got = res.ok ? check(AppleKeys, await res.json().catch(() => null)) : null;
-          if (got) this.keys = got;
-        } catch { /* keep what we had */ }
-        this.fetchedAt = now;
-        this.loading = null;
-      })();
-      await this.loading;
-    }
-    return has() ?? null;
-  }
-}
-
 /** The event in Apple's JWT when Apple signed it for `aud` and it isn't from the future, expired or older than SEEN_DAYS; else null.
  * `jti` names this notification (its signature's hash when Apple left `jti` out), so a replay of it can be told apart. */
-export async function verifyApple(token: string, aud: string, ring: AppleKeyring, now = Date.now()): Promise<(AppleEvent & { jti: string }) | null> {
-  const [h, p, s, extra] = token.split(".");
-  if (!h || !p || !s || extra !== undefined || token.length > 8000) return null;
+export async function verifyApple(token: string, aud: string, ring: JwksKeyring, now = Date.now()): Promise<(AppleEvent & { jti: string }) | null> {
   try {
-    const head = check(Head, decode(h));
-    const jwk = head && await ring.key(head.kid, now);
-    if (!jwk) return null;
-    const pub = await crypto.subtle.importKey("jwk", { kty: "RSA", n: jwk.n, e: jwk.e, alg: "RS256", ext: true }, RS256, false, ["verify"]);
-    if (!await crypto.subtle.verify(RS256, pub, unb64url(s), new TextEncoder().encode(`${h}.${p}`))) return null;
-    const claims = check(Claims, decode(p));
+    const claims = check(Claims, await verifiedClaims(token, ring, now));
     const at = now / 1000;
     if (!claims || claims.iss !== APPLE_ISS || claims.aud !== aud || claims.iat > at + 60 || claims.iat < at - SEEN_DAYS * 86_400 || (claims.exp !== undefined && claims.exp <= at)) return null;
     const event = check(AppleEvent, JSON.parse(claims.events));
-    return event && { ...event, jti: claims.jti ?? await sha256(s) };
+    return event && { ...event, jti: claims.jti ?? await sha256(token.split(".")[2]!) };
   } catch { return null; }
 }
 
-const ring = new AppleKeyring();
+const ring = new JwksKeyring(APPLE_KEYS);
 
 /** POST /api/apple/events. 401 for anything Apple didn't sign for us; 200 once handled, so Apple stops retrying. */
 export async function appleEvents(req: Request, conf: Env, iss: string, keys = ring): Promise<Response> {

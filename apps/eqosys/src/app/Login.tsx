@@ -30,6 +30,9 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .social button.apple{background:var(--ink);border-color:var(--ink);color:rgb(from var(--ink) calc(255 - r) calc(255 - g) calc(255 - b))}
 .pane .social svg{width:1.05em;height:1.05em;fill:currentColor}
 .pane .me{margin-bottom:1.3rem}
+.pane .work{margin-top:1rem;text-align:center;font-size:.88rem;color:var(--mut)}
+.pane .work summary{cursor:pointer;width:max-content;margin-inline:auto}
+.pane .work form{margin-top:.8rem;text-align:left}
 .pane .again{text-align:center;margin-top:1rem}
 .pane .again button{width:auto;font:inherit;cursor:pointer;background:none;border:0;color:var(--mut);font-weight:400;font-size:.86rem;padding:.2rem .4rem;text-decoration:underline;text-underline-offset:3px}
 .pane .again button:hover{filter:none;color:var(--ink)}
@@ -113,6 +116,12 @@ export function Login({ ask, me, social, appleTop, error, t0, friend, opens = "i
                 <button className={btn(true)} type="submit">Make my account</button>
               </form>
               {!top && social.length > 0 && <><div className="or">or</div><Social ask={ask} social={social} /></>}
+              <details className="work"><summary>Sign in through your company</summary>
+                <form method="post" action="/do/sso">
+                  <Carry ask={ask} />
+                  <Field label="Work email" name="email" type="email" autoComplete="username" placeholder="you@company.com" required />
+                  <button className={btn()} type="submit">Continue with my company</button>
+                </form></details>
               <p className="flip">
                 <span className="to-new">New here? <label htmlFor="t-new">Make an account</label></span>
                 <span className="to-in">Already have one? <label htmlFor="t-in">Sign in</label></span>
