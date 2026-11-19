@@ -89,8 +89,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
         const show = !!hold.show && !carry && what.kind === "rest";
         const f = carry ? toCam(s.side > 0 ? carry.right : carry.left) : show ? showFrame(t, s.side) : viewFrame(what.kind, hold.kg, t, speed, s.side);
-        // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view.
-        if (!carry && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
+        // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view. Not
+        // the raised arms: they already reach across the view, and pulled in they cross in the middle (#5157).
+        if (!carry && !show && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
