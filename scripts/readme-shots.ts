@@ -4,6 +4,7 @@
 //   bun scripts/readme-shots.ts                       every app with an eqosys card (apps/eqosys/public/cards)
 //   bun scripts/readme-shots.ts two-fronts=shot.png   one app from any picture (a `bun run probe --shot`)
 //
+// `bun run card-shots` shoots an app and calls this for it; run this alone for a picture you took yourself.
 // macOS only: it uses `sips`, which ships with the OS. Run `bun run docs` after, to write the gallery.
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { DIR, readGroups, shotOf } from "./readme-apps.ts";
