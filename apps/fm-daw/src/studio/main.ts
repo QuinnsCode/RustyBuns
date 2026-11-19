@@ -26,7 +26,7 @@ import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
-import { keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
+import { floorAt, keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -126,7 +126,8 @@ function buildRoom() {
       }
     }
   }
-  for (const s of def.spots) scene.add(thing(s));
+  // a seat on a riser stands on its deck, and so does what's played there
+  for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
   for (const p of def.props ?? []) scene.add(prop(p, surface));
 }
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
@@ -294,7 +295,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.speed = lerp(d.speed, dt > 0 ? Math.hypot(nx - d.x, nz - d.z) / dt : 0, 0.3);
   d.x = nx; d.z = nz;
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
-  d.fig.group.position.set(d.x, 0, d.z);
+  d.fig.group.position.set(d.x, floorAt(jam.def, d.x, d.z), d.z);
   d.fig.group.rotation.y = d.yaw;
   d.fig.pose({ speed: d.speed, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }

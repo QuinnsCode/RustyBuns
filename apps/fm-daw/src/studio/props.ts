@@ -8,6 +8,7 @@ import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import type { Prop } from "./room.ts";
 import { speaker } from "./gear-models.ts";
+import { dressing, type Item, type Kit } from "./set-dressing.ts";
 
 /** A material by what it's made of (sound.ts's names, or metal, plastic, fabric, glass, screen) and its colour. */
 export type Mat = (name: string, color: string) => THREE.Material;
@@ -43,13 +44,14 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
     return o;
   };
   const glow = <T extends THREE.Object3D>(o: T, k: number) => { o.userData.glow = k; return o; };
-  /** Many small boxes in one draw: each [w, h, d, x, y, z, colour]. */
-  const many = (name: string, items: [number, number, number, number, number, number, string][], k = 0) => {
+  /** Many small boxes (or cylinders, or balls) in one draw: each [w, h, d, x, y, z, colour, turn]. */
+  const many = (name: string, items: Item[], k = 0, shape: "box" | "cyl" | "ball" = "box") => {
     if (!items.length) return;
-    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), m(name, "#ffffff"), items.length);
+    const geo = shape === "cyl" ? new THREE.CylinderGeometry(0.5, 0.5, 1, 14) : shape === "ball" ? new THREE.SphereGeometry(0.5, 12, 8) : new THREE.BoxGeometry(1, 1, 1);
+    const im = new THREE.InstancedMesh(geo, m(name, "#ffffff"), items.length);
     const o = new THREE.Object3D(), c = new THREE.Color();
-    items.forEach(([w, h, d, x, y, z, col], i) => {
-      o.position.set(x, y, z); o.scale.set(w, h, d); o.updateMatrix();
+    items.forEach(([w, h, d, x, y, z, col, turn], i) => {
+      o.position.set(x, y, z); o.rotation.set(0, turn ?? 0, 0); o.scale.set(w, h, d); o.updateMatrix();
       im.setMatrixAt(i, o.matrix); im.setColorAt(i, c.set(col));
     });
     if (k) glow(im, k);
@@ -297,6 +299,10 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       box(w, 0.04, d, 0, h - 0.02, 0, wood);
       for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.05, h - 0.04, 0.05, x * (w / 2 - 0.05), (h - 0.04) / 2, z * (d / 2 - 0.05), wood);
       break;
+    }
+    default: {
+      const kit: Kit = { g, m, rnd, pick, box, cyl, glow, many };
+      dressing(p, kit);
     }
   }
   return g;

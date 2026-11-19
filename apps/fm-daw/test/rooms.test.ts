@@ -7,7 +7,7 @@ import { Edit, edit, problems, Studio } from "../src/studio/builder.ts";
 import type { StudioDef } from "../src/studio/room.ts";
 import { BARN, BASEMENT, ROOM_LIST, ROOMS } from "../src/studio/rooms/index.ts";
 import { type Acoustics, acoustics, impulse } from "../src/studio/sound.ts";
-import { keyNote, nearSpot, newJam, RADIUS, sit, solids, stand, walkTo, type Jam } from "../src/studio/jam.ts";
+import { cameraPose, keyNote, nearSpot, newJam, RADIUS, sit, solids, stand, walkTo, type Jam } from "../src/studio/jam.ts";
 import { pushOut } from "../src/studio/walk.ts";
 import { prop } from "../src/studio/props.ts";
 import { demoProject } from "../src/presets.ts";
@@ -82,6 +82,7 @@ test("every room can be built, loads in /jam.html, and rings as it says", () => 
   const rings: Record<string, [Acoustics["word"], string, Acoustics["word"]]> = {
     "live-room": ["tight", "booth", "dead"], "scoring-hall": ["big", "desk", "warm"], basement: ["warm", "drums", "dead"],
     "stone-room": ["huge", "vocal", "huge"], barn: ["live", "vocal", "dead"], "desk-concert": ["tight", "vocal", "tight"], "orchestra-room": ["big", "piano", "big"], "console-room": ["tight", "vocal", "tight"],
+    "sound-stage": ["tight", "vocal", "tight"],
   };
   for (const r of ROOM_LIST) {
     expect({ id: r.id, problems: problems(r), loads: check(Studio, r) !== null }).toEqual({ id: r.id, problems: [], loads: true });
@@ -118,7 +119,7 @@ function walkUpTo(j: Jam, id: string) {
 
 test("the new studios: walk in at the door, round the furniture to every seat, sit and play", () => {
   const groove = demoProject();
-  for (const id of ["desk-concert", "orchestra-room", "console-room"]) {
+  for (const id of ["desk-concert", "orchestra-room", "console-room", "sound-stage"]) {
     const room = ROOMS[id], j = newJam(room);
     for (const s of room.spots) {
       expect({ id, seat: s.id, reached: walkUpTo(j, s.id) }).toEqual({ id, seat: s.id, reached: true });
@@ -126,6 +127,8 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
       expect(sit(j, s.id)).toEqual({ ok: true });
       // at an instrument, a key plays its track
       if (s.kind === "keys" || s.kind === "bass" || s.kind === "drums") expect(keyNote(j, groove, "KeyA")).not.toBeNull();
+      // up on the sound stage's band riser, your eyes ride half a metre higher than at the floor mix desk
+      if (id === "sound-stage") expect({ seat: s.id, eye: Math.round((cameraPose(j).at[1] - 1.35) * 10) / 10 + 0 }).toEqual({ seat: s.id, eye: ({ desk: 0, couch: 0.3 } as Record<string, number>)[s.id] ?? 0.5 });
       stand(j);
     }
     // the dressing builds, and its lamps and screens glow for the look to light
