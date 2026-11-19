@@ -65,7 +65,9 @@ function shapeOf(face: string): Shape {
     // every face has cheeks: a little fullness low on the front
     const cheek = Math.max(0, -p.z) * Math.max(0, 0.6 - Math.abs(p.y + 0.25)) * 0.06;
     const jaw = 1 - 0.14 * Math.max(0, -p.y - 0.2);
-    return p.set(p.x * scale[0]! * 0.84 * jaw * (1 + cheek), p.y * scale[1]!, p.z * scale[2]! * 0.95 * (1 + cheek * 0.5));
+    // a full back of the skull, behind the ears
+    const back = 1 + 0.08 * Math.max(0, p.z) * Math.max(0, 1 - Math.abs(p.y - 0.15));
+    return p.set(p.x * scale[0]! * 0.82 * jaw * (1 + cheek), p.y * scale[1]!, p.z * scale[2]! * 0.97 * (1 + cheek * 0.5) * back);
   };
 }
 
@@ -86,17 +88,17 @@ export function character(a: Avatar, o: { seed?: number; material?: (color: stri
 
   // lengths (metres), an adult's: legs about half the height, the torso, a neck, and a head about a seventh of it
   const thighL = 0.42 * tall, shinL = 0.4 * tall, ankleH = 0.08, hipY = thighL + shinL + ankleH;
-  const bodyL = 0.52 * tall, neckL = 0.07, headR = 0.115;
+  const bodyL = 0.52 * tall, neckL = 0.06, headR = 0.128;
   const shape = shapeOf(a.face ?? "round"), crown = shape(new THREE.Vector3(0, 1, 0)).y, chin = -shape(new THREE.Vector3(0, -1, 0)).y;
   const headY = bodyL + neckL + headR * chin * 0.9;
   const height = hipY + headY + headR * crown;
-  const shoulderX = 0.16 * wide + 0.03, hipX = 0.09 * wide;
+  const shoulderX = 0.15 * wide + 0.02, hipX = 0.09 * wide;
 
   const group = new THREE.Group();
   const hips = node(group, [0, hipY, 0]);
   // the torso: trousers below the waist, the top over them with a hem; its outline, as radius at height (metres, before
   // `wide`): hips, a waist, the chest, and shoulders rounding in to the neck
-  const outline: [number, number][] = [[0, -0.06], [0.12, -0.05], [0.165, 0], [0.17, 0.08], [0.152, 0.2], [0.16, 0.3], [0.178, 0.4], [0.172, 0.46], [0.13, 0.5], [0.06, 0.53], [0, 0.535]];
+  const outline: [number, number][] = [[0, -0.06], [0.12, -0.05], [0.16, 0], [0.165, 0.08], [0.145, 0.2], [0.152, 0.3], [0.165, 0.39], [0.158, 0.44], [0.12, 0.48], [0.075, 0.51], [0, 0.52]];
   const lathe = (from: number, to: number, grow: number, c: string, depth = 0.64) => {
     const pts = outline.filter(([, y]) => y >= from && y <= to).map(([r, y]) => new THREE.Vector2(r * wide * grow, y * tall));
     return mesh(new THREE.LatheGeometry(pts, 32).scale(1, 1, depth), c);
@@ -136,7 +138,7 @@ export function character(a: Avatar, o: { seed?: number; material?: (color: stri
 
   // the head, on a neck node that turns it to look and nods it to the beat
   const neck = node(spine, [0, bodyL - 0.02, 0], "neck");
-  neck.add(mesh(new THREE.CylinderGeometry(0.042, 0.048, neckL + 0.06, 14).translate(0, (neckL + 0.06) / 2, 0.005), skin));
+  neck.add(mesh(new THREE.CylinderGeometry(0.052, 0.06, neckL + 0.06, 14).translate(0, (neckL + 0.06) / 2, 0.005), skin));
   const head = node(neck, [0, headY - bodyL + 0.02, 0], "head");
   const skull = new THREE.SphereGeometry(headR, 44, 30), sp = skull.attributes.position!, v = new THREE.Vector3();
   for (let i = 0; i < sp.count; i++) { v.fromBufferAttribute(sp, i); const p = shape(v).multiplyScalar(headR); sp.setXYZ(i, p.x, p.y, p.z); }
@@ -167,12 +169,12 @@ export function character(a: Avatar, o: { seed?: number; material?: (color: stri
   // arms: shoulder, elbow, wrist and a hand; sleeves to the elbow on a tee, to the wrist on the long ones
   const upperL = 0.29 * tall, foreL = 0.25 * tall;
   const arms = [-1, 1].map((s) => {
-    const shoulder = node(spine, [s * shoulderX, bodyL * 0.83, 0]);
-    shoulder.add(mesh(new THREE.SphereGeometry(0.052 * Math.sqrt(wide), 14, 10), top));
-    shoulder.add(limb(0.046 * Math.sqrt(wide), upperL, top));
+    const shoulder = node(spine, [s * shoulderX, bodyL * 0.78, 0]);
+    shoulder.add(mesh(new THREE.SphereGeometry(0.043 * Math.sqrt(wide), 14, 10).scale(1.05, 0.9, 1), top));
+    shoulder.add(limb(0.042 * Math.sqrt(wide), upperL, top));
     const elbow = node(shoulder, [0, -upperL, 0]);
-    elbow.add(limb(0.037, foreL, longSleeves ? top : skin));
-    if (!longSleeves) elbow.add(mesh(new THREE.CylinderGeometry(0.05 * Math.sqrt(wide), 0.048, 0.06, 14), top, [0, 0.045, 0]));
+    elbow.add(limb(0.034, foreL, longSleeves ? top : skin));
+    if (!longSleeves) elbow.add(mesh(new THREE.CylinderGeometry(0.046 * Math.sqrt(wide), 0.044, 0.06, 14), top, [0, 0.045, 0]));
     // a hand to scale: a flat palm, a thumb, and four fingers that each curl from a knuckle
     const wrist = node(elbow, [0, -foreL, 0]);
     const hand = mesh(new THREE.SphereGeometry(0.046, 14, 10).scale(0.55, 1, 0.92), skin, [0, -0.045, 0]); hand.name = "hand";
