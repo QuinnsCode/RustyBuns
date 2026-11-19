@@ -2,7 +2,7 @@
 // - Gear (metal, plastic, rubber, tolex, grille cloth, painted steel, ply, grilles) from the shared photo-texture kit
 //   (`@rustybuns/models/surfaces`, CC0 from ambientCG, #5021), so the keys, the cab, the desk and the props' racks and
 //   stands are photographed material.
-// - The room (floorboards, wedge foam, ceiling tiles, drywall and plaster, concrete) from this app's own CC0 set in
+// - The room (floorboards, wedge foam, ceiling tiles, drywall and plaster, concrete, brick, walnut veneer, absorber cloth) from this app's own CC0 set in
 //   `textures/` (CREDITS.md there), laid in metres like look.ts's painted ones (`metreUV`).
 // Vite bundles the maps (hashed URLs). A caller's colour is what the surface should average out to: once the colour map
 // is in, the tint is that colour over the map's own average, so a "#16191c" keyboard comes out that dark with the
@@ -21,15 +21,24 @@ const ROOM_URLS = new Map(Object.entries(ROOM_FILES).map(([path, url]) => [path.
 /** look.ts's names for what gear is made of, and the kit surface each one is. */
 const KIT: Record<string, SurfaceName> = { metal: "aluminium", plastic: "plastic", rubber: "rubber", grille: "grille", tolex: "tolex", cloth: "cloth", steel: "steel", ply: "ply" };
 
-/** The room's surfaces: the folder under textures/, metres one copy covers, and how rough and bumpy it is. `shade`
- * scales the colour asked for (in linear light): look.ts painted boards darker than their colour (seams, grain), and the rooms were lit for that. */
-const ROOM: Record<string, { dir: string; tile: number; rough: number; color: boolean; normal?: number; shade?: number; tone?: number; wear?: number }> = {
+/** The room's surfaces: the folder under textures/, metres one copy covers across (`tall` up, when the photo isn't
+ * square), and how rough and bumpy it is. `shade` scales the colour asked for (in linear light): look.ts painted
+ * boards darker than their colour (seams, grain), and the rooms were lit for that. `turn` stands the photo on its
+ * side (veneer whose grain should run up the wall), and `as` is the sound material whose colour it takes when none is asked. */
+interface RoomSurface { dir: string; tile: number; tall?: number; rough: number; color: boolean; normal?: number; shade?: number; tone?: number; wear?: number; turn?: boolean; as?: keyof typeof MATERIALS }
+const ROOM: Record<string, RoomSurface> = {
   floorboards: { dir: "floorboards", tile: 1.5, rough: 0.55, color: true, normal: 0.8, shade: 0.32, tone: 0.14, wear: 0.8 },
   foam: { dir: "foam", tile: 1.2, rough: 1, color: false, normal: 0.9 },
   ceilingTile: { dir: "ceilingTile", tile: 3.6, rough: 1, color: true, normal: 1.2, tone: 0.05 },
   drywall: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 0.3, tone: 0.07 },
   plaster: { dir: "drywall", tile: 2.5, rough: 1, color: true, normal: 1, tone: 0.08 },
   concrete: { dir: "concrete", tile: 2.5, rough: 1, color: true, normal: 0.8, tone: 0.12, wear: 0.5 },
+  // old red brick laid in courses 7.5 cm high: one copy is twelve bricks across and nineteen courses up
+  brick: { dir: "bricks", tile: 2.86, tall: 1.43, rough: 1, color: true, normal: 1.1, shade: 0.75, tone: 0.1, wear: 0.25 },
+  // walnut veneer on the walls, the grain running up them (look.ts's `walls()` cuts the sheets' joints)
+  woodPanel: { dir: "walnut", tile: 1.3, rough: 0.62, color: true, normal: 0.5, shade: 0.55, turn: true, tone: 0.08, as: "wood" },
+  // the woven cloth stretched over an absorber's frame
+  panel: { dir: "panelCloth", tile: 0.32, rough: 1, color: true, normal: 0.9, tone: 0.04 },
 };
 
 /**
@@ -87,7 +96,7 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
   const kits = new Map<SurfaceName, { material: THREE.MeshStandardMaterial; ready: Promise<void> }>();
   const made = new Map<string, THREE.MeshStandardMaterial>();
   const maps = new Map<string, Promise<THREE.Texture>>();
-  const map = (dir: string, which: string, tile: number, srgb: boolean) => {
+  const map = (dir: string, which: string, r: RoomSurface, srgb: boolean) => {
     const id = `${dir}/${which}`;
     let p = maps.get(id);
     if (!p) maps.set(id, (p = new Promise<THREE.Texture>((ok, no) => {
@@ -95,7 +104,8 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
       if (!url) return no(new Error(`no ${id}`));
       new THREE.TextureLoader().load(url, (t) => {
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
-        t.repeat.set(1 / tile, 1 / tile);
+        t.repeat.set(1 / r.tile, 1 / (r.tall ?? r.tile));
+        if (r.turn) { t.rotation = Math.PI / 2; t.repeat.set(1 / (r.tall ?? r.tile), 1 / r.tile); }
         t.anisotropy = 8;
         if (srgb) t.colorSpace = THREE.SRGBColorSpace;
         ok(t);
@@ -106,14 +116,14 @@ export function gearKit(quality: Quality): (name: string, color?: string) => THR
   const room = (name: string, color: string | undefined) => {
     const r = ROOM[name];
     if (!r || quality === "low") return null;
-    const want = new THREE.Color(color ?? MATERIALS[name as keyof typeof MATERIALS].color).multiplyScalar(r.shade ?? 1);
+    const want = new THREE.Color(color ?? MATERIALS[r.as ?? (name as keyof typeof MATERIALS)].color).multiplyScalar(r.shade ?? 1);
     const m = new THREE.MeshStandardMaterial({ color: want, roughness: r.rough, metalness: 0 });
     m.name = `room-${name}-${want.getHexString()}`;
     if (r.tone || r.wear) weather(m, r.tone ?? 0, r.wear ?? 0);
     void Promise.all([
-      r.color ? map(r.dir, "color", r.tile, true).then((t) => void (m.map = t)) : undefined,
-      map(r.dir, "normal", r.tile, false).then((t) => { m.normalMap = t; m.normalScale.setScalar(r.normal ?? 1); }),
-      map(r.dir, "rough", r.tile, false).then((t) => void (m.roughnessMap = t)),
+      r.color ? map(r.dir, "color", r, true).then((t) => void (m.map = t)) : undefined,
+      map(r.dir, "normal", r, false).then((t) => { m.normalMap = t; m.normalScale.setScalar(r.normal ?? 1); }),
+      map(r.dir, "rough", r, false).then((t) => void (m.roughnessMap = t)),
     ]).then(() => { tintTo(m, want); m.needsUpdate = true; }, () => { /* a missing map leaves the flat colour */ });
     return m;
   };

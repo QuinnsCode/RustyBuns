@@ -45,7 +45,7 @@ import { isMuted, leaders, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
-import { dress, loadQuality, metreUV, saveQuality, surface, useKit, type Quality } from "./look.ts";
+import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
@@ -113,7 +113,7 @@ function buildRoom() {
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
   for (const wall of [...outside.map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
-    const wallMat = surface(wall.material ?? "drywall", wall.material ? undefined : def.colors.walls);
+    const wallMat = surface(wallSurface(wall.material ?? "drywall"), wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
       const m = new THREE.Mesh(metreUV(new THREE.BoxGeometry(p.hw * 2, isGlass ? h - 1.1 : h, p.hd * 2)), isGlass ? glass : wallMat);

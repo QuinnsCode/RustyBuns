@@ -270,8 +270,8 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       break;
     }
     case "panel": {
-      // an acoustic panel on a wall: fabric over a wooden frame
-      box(w, h, d, 0, h / 2, 0, m("foam", color));
+      // an acoustic panel on a wall: woven cloth over a wooden frame
+      box(w, h, d, 0, h / 2, 0, m("panel", color));
       box(w + 0.02, 0.02, d + 0.01, 0, h, 0, m("wood", "#6a4a30"));
       break;
     }
