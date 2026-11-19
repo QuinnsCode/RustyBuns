@@ -348,7 +348,7 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   leave(maker);
   await settle();
   const back = (await join({}, MAKER)).ws;
-  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "lock", on: false }, { t: "studio-all", studio: { patch: { placed: [], cables: [], knobs: {} }, held: {} }, you: expect.any(Number) }, { t: "peers", n: 1 }]);
+  expect(back.sent).toEqual([{ t: "snapshot", project: expect.objectContaining({ bpm: 140 }) }, { t: "floor", state: "closed", host: true }, { t: "lock", on: false }, { t: "peers", n: 1 }]);
   world.webSocketMessage(back, JSON.stringify({ t: "floor", state: "free" }));
   await settle();
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();
@@ -411,7 +411,7 @@ test("studio: friends share one patch, two can't carry one amp, a held lead is i
   expect(a.sent).toEqual(b.sent);                                 // the world's word, to the one who did it too
   b.sent = [];
   act(b, { t: "pick", id: "amp-1" });                             // a has it: b is put back in step instead
-  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } } }]);
+  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } }, you: expect.any(Number) }]);
   act(a, { t: "put", at: [2, 0, 3], turn: 1.5 });
   act(a, { t: "bring", id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 });
   act(a, { t: "put", at: [1, 0, 1], turn: 0 });

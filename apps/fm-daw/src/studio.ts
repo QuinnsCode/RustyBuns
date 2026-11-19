@@ -75,7 +75,8 @@ const OP = (v: unknown) => { const op = decodeStudioOp(v); if (!op) throw new Ba
 export type StudioClient = { t: "studio"; op: StudioOp };
 /**
  * World to page: the whole studio (on joining, or to put a player back in step when the world said no), then each op a
- * player did. `you`: your own number on the live line, on joining, so the page knows which hand in `held` is its own.
+ * player did. `you`: your own number on the live line, so the page knows which hand in `held` is its own. A room nobody
+ * has used yet isn't sent on joining: a page that wants it asks with a step that changes nothing (`drop`).
  */
 export type StudioServer = { t: "studio-all"; studio: Studio; you?: number } | { t: "studio-op"; from: number; op: StudioOp };
 const PEER = num(1, Infinity);

@@ -177,8 +177,7 @@ export default class World {
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
     void this.sendTakes(takeIds(this.project), [server]);
-    const you = this.sockets.who(server)?.peer;
-    this.sockets.send(server, { t: "studio-all", studio: this.studio, ...(you ? { you } : {}) } satisfies StudioServer);
+    if (this.studioUsed()) this.sockets.send(server, this.studioAll(server));
     this.broadcastPeers();
     return response;
   }
@@ -497,11 +496,17 @@ export default class World {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: not in the room
     const next = this.may(seat, "play") ? applyStudio(this.studio, seat.peer, op) : this.studio;
-    if (next === this.studio) { this.sockets.send(ws, { t: "studio-all", studio: this.studio }); return; }
+    if (next === this.studio) { this.sockets.send(ws, this.studioAll(ws)); return; }
     const saved = next.patch !== this.studio.patch;
     this.studio = next;
     if (saved) this.saveStudio();
     this.broadcast({ t: "studio-op", from: seat.peer, op });
+  }
+
+  /** The whole studio for one socket, with its own number on the live line (which hand in `held` is its own). */
+  private studioAll(ws: RoomSocket): StudioServer {
+    const you = this.sockets.who(ws)?.peer;
+    return { t: "studio-all", studio: this.studio, ...(you ? { you } : {}) };
   }
 
   private studioUsed() { return this.studio.patch.placed.length > 0 || Object.keys(this.studio.held).length > 0; }

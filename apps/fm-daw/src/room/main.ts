@@ -95,6 +95,7 @@ let net: Net | null = null;
 let project: Project | null = null;
 let me: string | null = null;
 let seeded = false;
+let asked = false;
 /** In a sesh the desk is the sesh's: its tracks, your own channel (the guitar) and its returns. */
 const inSesh = () => (project && me ? { project, who: { who: me, name: "You: guitar" } } : null);
 const shownDesk = (): Desk => { const s = inSesh(); return s ? seshDesk(s.project, [s.who]) : ownDesk; };
@@ -129,7 +130,9 @@ if (sesh) {
     onOp(edit) { project = edit.t === "replace" ? edit.project : project && apply(project, edit); drawn = ""; },
     onStudio,
     onChat(m) { if (m.t === "chat") { me = m.you; drawn = ""; } },
-    onLive() {}, onGone() {}, onStatus() {}, onTakeBytes() {},
+    // in (again): ask the World for its gear room, which it sends unasked only once someone has used it
+    onStatus(s) { if (s.state !== "online") asked = false; else if (!asked) { asked = true; net?.studio({ t: "drop" }); } },
+    onLive() {}, onGone() {}, onTakeBytes() {},
     hello: () => ({ key: myKey(), name: localMe().name || "Someone" }),
   });
 }
