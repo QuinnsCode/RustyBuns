@@ -53,12 +53,8 @@ for (const id of ["short", "full"] as const) {
   });
 }
 
-test("the short galaxy is joined up", () => {
-  const g = GALAXIES.short;
-  expect(reachable(g, "aster").size).toBe(g.systems.length);
-});
-
-test("the full galaxy is joined up, every world in a region", () => {
+test("both galaxies are joined up, every world of the full one in a region", () => {
+  expect(reachable(GALAXIES.short, "aster").size).toBe(GALAXIES.short.systems.length);
   const g = GALAXIES.full;
   expect(reachable(g, "aster").size).toBe(g.systems.length);
   for (const s of g.systems) expect(g.regions.some((r) => r.id === s.region)).toBe(true);
@@ -66,22 +62,17 @@ test("the full galaxy is joined up, every world in a region", () => {
   for (const s of g.systems) if (s.sectors.includes("spaceport")) expect(s.sectors, s.id).toContain("warren");
 });
 
-test("income counts sectors and the region bonus, and halves when morale breaks", () => {
+test("income counts sectors and the region bonus, itemised, and halves when morale breaks", () => {
   const c = newCampaign();
   // Thunder Marines: four capitals (12), Lumen's crystal field (4), spaceport (2), shield, jungle and
   // warren (1 each), Corva's cannon (1) and the whole Thunder Reach (2).
   expect(income(c, "marines")).toBe(24);
-  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
-  expect(keyShare(c, "marines")).toBeLessThan(0.3);
-  expect(income(c, "marines")).toBe(1); // 3 halved, rounded down
-});
-
-test("the income breakdown itemises sectors, region bonuses and the morale cut", () => {
-  const c = newCampaign();
   expect(regionHolder(c, "west")).toBe("marines");
   expect(regionHolder(c, "core")).toBeNull();
   expect(incomeBreakdown(c, "marines")).toEqual({ sectors: 22, regions: [{ name: "Thunder Reach", bonus: 2 }], morale: 0, total: 24 });
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
+  expect(keyShare(c, "marines")).toBeLessThan(0.3);
+  expect(income(c, "marines")).toBe(1); // 3 halved, rounded down
   expect(incomeBreakdown(c, "marines")).toEqual({ sectors: 3, regions: [], morale: -2, total: 1 });
 });
 

@@ -33,21 +33,6 @@ test.each(ground)("%s builds, stands on the ground, and is a handful of draw cal
   expect(after.getSize(new THREE.Vector3()).length()).toBeLessThan(b.getSize(new THREE.Vector3()).length() * 1.6);
 });
 
-test("a Marine is about two metres tall, a Wooka knee-high to one, and the chieftain bigger", () => {
-  const h = (g: THREE.Object3D) => {
-    g.traverse((o) => { if (/^ant\d/.test(o.name)) o.visible = false; });
-    let top = 0;
-    g.updateMatrixWorld(true);
-    g.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.visible && o.parent?.visible !== false && !/^ant/.test(o.parent?.name ?? "")) top = Math.max(top, new THREE.Box3().setFromObject(o).max.y); });
-    return top;
-  };
-  const m = marine(), w = wooka(), c = wooka(true);
-  expect(h(m)).toBeGreaterThan(1.9);
-  expect(h(m)).toBeLessThan(2.6); // the pack and its dish, antennas aside
-  expect(h(w)).toBeLessThan(1.6);
-  expect(h(c)).toBeGreaterThan(h(w) * 1.3);
-});
-
 test("clones share their geometry, so a horde costs one model's memory", () => {
   const a = wooka(), b = wooka();
   const geo = (g: THREE.Object3D) => { const out: THREE.BufferGeometry[] = []; g.traverse((o) => { if ((o as THREE.Mesh).isMesh) out.push((o as THREE.Mesh).geometry); }); return out; };

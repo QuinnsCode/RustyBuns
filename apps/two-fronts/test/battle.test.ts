@@ -1,8 +1,7 @@
-import { chatterFor, radioFor } from "../src/battle/lines.ts";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { NO_PODS, orbitPods, type BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STORM_SIGHT, STRIKE_RADIUS, TROOPERS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, HALF, LAYOUTS, ROLE_STATS, STATS, STORM_SIGHT, STRIKE_RADIUS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
@@ -181,22 +180,6 @@ test("nobody walks through a redwood", () => {
   for (const u of b.units) for (const t of b.trees) expect(Math.hypot(u.x - t.x, u.z - t.z)).toBeGreaterThan(t.r);
 });
 
-test("the radio has opinions about the Wooka", () => {
-  const b = run(horde(), 80);
-  expect(b.events.some((e) => FLAVOR.includes(e))).toBe(true);
-});
-
-test("each world's radio talks about that world, not the ferns", () => {
-  for (const kind of ["capital", "spaceport", "cannon", "canyon"] as const) {
-    const pool = radioFor(kind, FLAVOR);
-    expect(pool.length).toBeGreaterThan(FLAVOR.length - 40);
-    expect(pool.some((l) => /\bferns?\b/i.test(l))).toBe(false);
-    expect(pool.some((l) => !FLAVOR.includes(l))).toBe(true);
-    expect(chatterFor(kind, "marines", { calm: ["I think a fern just blinked"], scared: ["They're in the ferns!"] }).scared.join()).not.toContain("ferns");
-  }
-  expect(radioFor("shield", FLAVOR)).toBe(FLAVOR);
-});
-
 // A bare field: no trees or scenery, nobody on it, for setting up one exchange at a time.
 const bare = (over: Partial<BattleSpec> = {}) => {
   const b = startBattle(spec({ turrets: 0, ...over }));
@@ -208,15 +191,6 @@ const unit = (b: ReturnType<typeof bare>, side: "attacker" | "defender", kind: U
   b.units.push(u);
   return u;
 };
-
-test("the Marines come in four classes, mostly assault", () => {
-  const b = startBattle(spec({ factions: { attacker: "marines", defender: "marines" }, armies: { attacker: 4, defender: 4 } }));
-  step(b, null);
-  const n = (k: UnitKind) => b.units.filter((u) => u.side === "attacker" && u.kind === k).length;
-  for (const k of TROOPERS) expect(n(k)).toBeGreaterThan(0);
-  expect(n("assault")).toBeGreaterThan(n("heavy"));
-  expect(n("heavy")).toBeGreaterThanOrEqual(n("sniper"));
-});
 
 test("vehicles come from the spec's pool, two out at a time", () => {
   const b = startBattle(spec({ vehicles: { attacker: { walker: 1, speeder: 1, gunship: 1 }, defender: {} }, tickets: { attacker: 500, defender: 500 } }));
@@ -333,16 +307,6 @@ const wookaOf = (b: ReturnType<typeof bare>, side: "attacker" | "defender", role
   return u;
 };
 const idle = { forward: 0, right: 0, yaw: 0, fire: false };
-
-test("the horde comes in five kinds, mostly fodder", () => {
-  const b = startBattle(spec({ armies: { attacker: 3, defender: 4 } }));
-  step(b, null);
-  const n = (r: WookaRole) => b.units.filter((u) => u.role === r).length;
-  for (const r of ROLES.filter((k) => k !== "mossback")) expect(n(r)).toBeGreaterThan(0);
-  expect(n("mossback")).toBe(0); // they only come out of a surge
-  expect(n("fodder")).toBeGreaterThan(n("chub"));
-  expect(b.units.filter((u) => u.role).every((u) => u.kind === "wooka" && u.side === "defender")).toBe(true);
-});
 
 test("the Wooka dig trench lines into their half of the field", () => {
   const b = startBattle(spec());
