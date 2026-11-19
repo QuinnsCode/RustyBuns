@@ -26,7 +26,7 @@
     "pkg": "@rustybuns/models",
     "dir": "models",
     "name": "Models",
-    "does": "three.js models apps share (the rocket roadster; shrubs and cacti; Load In's sound gear; Qollab Studio's keyboard synths, its mono bass synth and its character) and the shapes and GLB writer model scripts build with. Plain TS on three; each app brings its own materials.",
+    "does": "three.js models apps share (the rocket roadster; shrubs and cacti; Load In's sound gear; Qollab Studio's keyboard synths, its mono bass synth, its drum kit and its character) and the shapes and GLB writer model scripts build with. Plain TS on three; each app brings its own materials.",
     "add": "bun add @rustybuns/models",
     "published": true,
     "picture": "skate-tech-park",
