@@ -6,7 +6,7 @@ import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { mulberry32 } from "@rustybuns/util";
 import { setup, useWorld, type Sock } from "./world-kit.ts";
-import { Clock, DESK_MS, JUMP_MS, SLEW, decodeClockServer, estimate, gridBeatAt, sampleOf } from "../src/clock.ts";
+import { Clock, DESK_MS, JUMP_MS, SLEW, decodeClockServer, estimate, gridBeatAt, sampleOf, type Listen } from "../src/clock.ts";
 import { Band } from "../src/studio/band.ts";
 import { BEND, LIVE_ID, QUANTUM, Sequencer } from "../src/engine/sequencer.ts";
 import { decodeServer, type Live } from "../src/project.ts";
@@ -208,6 +208,18 @@ test("the offset jumps until locked, then only slews while the groove plays; ano
   c.step(3020, true);
   expect(c.source).toBe("world");
   expect(c.offset).toBe(c.target);
+});
+
+test("the sesh page hears a stamped event on its beat a loop late or at the desk, and as it comes otherwise", () => {
+  const band = new Band(() => ({ bpm: BPM, loopBeats: LOOP }), () => 1000);
+  const on = (b?: number): Live => ({ t: "on", track: 0, midi: 60, vel: 1, ...(b === undefined ? {} : { b }) });
+  expect(band.onBeat(on(3))).toBeNull();                 // no clock yet: as it comes
+  band.leading(true);
+  const rows: [Listen, Live, number | null][] = [
+    ["loop", on(3), 3 + LOOP], ["desk", on(3), 3], ["now", on(3), null], ["loop", on(), null],
+    ["loop", { t: "cursor", x: 0, y: 0 }, null],
+  ];
+  for (const [listen, e, want] of rows) { band.listen = listen; expect([listen, band.onBeat(e)]).toEqual([listen, want]); }
 });
 
 /** A far end's guitar: a ramp, in 2400-sample slices, its sound card 0.1 % fast, stamped on the shared beat. */

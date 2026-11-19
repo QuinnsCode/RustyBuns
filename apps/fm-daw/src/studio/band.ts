@@ -45,14 +45,18 @@ export class Band {
   /** How far behind the band this listener hears, ms: a loop, the desk's delay, or nothing. */
   behind(): number { const { bpm, loopBeats } = this.tempo(); return this.listen === "loop" ? (loopBeats * 60000) / bpm : this.listen === "desk" ? DESK_MS : 0; }
 
+  /** The beat this listener hears a stamped event on, or null: unstamped, no clock yet, or listening as it comes. */
+  onBeat(e: Live): number | null {
+    return "b" in e && e.b !== undefined && this.synced ? playAt(e.b, this.listen, this.tempo().loopBeats) : null;
+  }
+
   /**
    * Someone else's live event, as messages for the audio thread: a stamped note, bend or stutter on the beat this
    * listener hears it on (so a bend lands on the note it bends); anything else (and everything when listening as it
    * comes) now. A slice of sound is held until near its beat.
    */
   heard(from: number, e: Live): ToWorklet[] {
-    const { loopBeats } = this.tempo();
-    const at = "b" in e && e.b !== undefined && this.synced ? playAt(e.b, this.listen, loopBeats) : null;
+    const at = this.onBeat(e);
     if (e.t === "sound") {
       if (at === null) return [];                    // as it comes, a guitar is the WebRTC call (src/guitar.ts)
       this.held.push({ t: "sound", peer: from, track: e.track, at, pcm: decodeTake([e.data]) });

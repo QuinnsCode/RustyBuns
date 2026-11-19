@@ -41,6 +41,8 @@ import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { flatEq } from "../engine/eq.ts";
 import { loadMsg } from "./load.ts";
 import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
+import { Band } from "../studio/band.ts";
+import { DESK_MS, LISTENS, type Listen } from "../clock.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -151,7 +153,12 @@ export function App() {
   const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed });
   live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed };
 
-  const send = (m: ToWorklet) => audioRef.current?.send(m);
+  const send = (m: ToWorklet, transfer?: Transferable[]) => audioRef.current?.send(m, transfer);
+
+  // ---- the sesh's shared clock (src/clock.ts), as the jam room keeps it: the leader's beat, and how you hear the others ----
+  const [band] = useState(() => new Band(() => ({ bpm: proj.current.bpm, loopBeats: loopBeats(proj.current) }), () => performance.timeOrigin + performance.now()));
+  const [listen, setListenState] = useState<Listen>(band.listen);
+  function chooseListen(l: Listen) { band.listen = l; setListenState(l); }
 
   function commit(op: Op, opts: { remote?: boolean; group?: string } = {}) {
     if (aside.current) {
@@ -357,12 +364,39 @@ export function App() {
         if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
       },
       onRewound,
+      onClock(m) { const r = band.onClock(m); if (r) n.clock(r); },
       hello: chat.hello,
     });
     net.current = n;
     return () => { n.close(); net.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, solo]);
+
+  // the clock: ping the leader (or, leading, answer), and tell the audio thread which beat its speakers play now
+  useEffect(() => {
+    // solo, there's no sesh to keep time with: what comes in (nothing) and what goes out (nothing) aren't stamped
+    if (solo) { band.clock.source = null; return; }
+    let ping: ReturnType<typeof setTimeout>;
+    const pingLeader = () => {
+      const floor = live.current.floor;
+      band.leading(!!floor?.host);
+      if (!band.leads && band.listen === "desk") chooseListen("loop");
+      const m = floor ? band.ping() : null;
+      if (m) net.current?.clock(m);
+      ping = setTimeout(pingLeader, band.clock.every);
+    };
+    ping = setTimeout(pingLeader, 200);
+    const grid = setInterval(() => {
+      band.step(live.current.transportOn);
+      const a = audioRef.current;
+      if (!a) return;
+      const ts = a.ctx.getOutputTimestamp();
+      if (ts.contextTime !== undefined && ts.performanceTime !== undefined) a.send(band.grid(ts.contextTime, performance.timeOrigin + ts.performanceTime));
+      for (const m of band.due()) a.send(m, m.t === "sound" ? [m.pcm.buffer] : []);
+    }, 50);
+    return () => { clearTimeout(ping); clearInterval(grid); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solo]);
 
   // ---- yours alone: my setup, and the solo project ----
   const [mySetup, setMySetup] = useState(() => loadMine("setup") !== null);
@@ -389,14 +423,26 @@ export function App() {
   }, [solo, project]);
 
   // ---- the live line: other players' hands, heard here, recorded only into their own take ----
-  const peerState = useRef(new Map<number, { bends: Set<number>; repeat: boolean }>());
+  /** What each player has going here: bends, a stutter, and the notes held on the shared beat ("track:midi"). */
+  const peerState = useRef(new Map<number, { bends: Set<number>; repeat: boolean; held: Set<string> }>());
   const peer = (from: number) => {
     let s = peerState.current.get(from);
-    if (!s) peerState.current.set(from, (s = { bends: new Set(), repeat: false }));
+    if (!s) peerState.current.set(from, (s = { bends: new Set(), repeat: false, held: new Set() }));
     return s;
   };
   function onLive(from: number, e: Live) {
     const key = (track: number, midi: number) => `net:${from}:${track}:${midi}`;
+    if (band.onBeat(e) !== null) {
+      // stamped: the audio thread plays it on the beat this listener hears it on, a loop late or at the desk
+      // (MIDI out and the keyboard's lit keys follow only what comes as it comes)
+      const s = peer(from);
+      if (e.t === "on") s.held.add(`${e.track}:${e.midi}`);
+      else if (e.t === "off") s.held.delete(`${e.track}:${e.midi}`);
+      else if (e.t === "bend") s.bends.add(e.track);
+      else if (e.t === "repeat") s.repeat = e.beats > 0;
+      for (const m of band.heard(from, e)) send(m, m.t === "sound" ? [m.pcm.buffer] : []);
+      return;
+    }
     if (e.t === "on") noteOn(key(e.track, e.midi), e.track, e.midi, e.vel, false);
     else if (e.t === "off") noteOff(key(e.track, e.midi));
     else if (e.t === "bend") { peer(from).bends.add(e.track); send({ t: "bend", track: e.track, semis: e.semis }); }
@@ -409,8 +455,12 @@ export function App() {
     for (const k of [...liveNotes.current.keys()]) if (k.startsWith(`net:${from}:`)) noteOff(k);
     const s = peerState.current.get(from);
     peerState.current.delete(from);
-    for (const track of s?.bends ?? []) send({ t: "bend", track, semis: 0 });
-    if (s?.repeat) { setRepeatState(0); send({ t: "repeat", beats: 0 }); }
+    band.quiet(from); send({ t: "quiet", peer: from });
+    // what they held, bent or stuttered lets go now, and again on the beat it would have, for a listener behind
+    const b = band.beat(), letGo = (e: Live) => { for (const m of band.heard(from, e)) send(m); };
+    for (const k of s?.held ?? []) { const [track, midi] = k.split(":").map(Number); send({ t: "off", track, midi }); letGo({ t: "off", track, midi, b }); }
+    for (const track of s?.bends ?? []) { send({ t: "bend", track, semis: 0 }); letGo({ t: "bend", track, semis: 0, b }); }
+    if (s?.repeat) { setRepeatState(0); send({ t: "repeat", beats: 0 }); letGo({ t: "repeat", beats: 0, b }); }
     dropCursor(from);
   }
   // your pointer, for everyone else, about 20 times a second
@@ -452,7 +502,7 @@ export function App() {
     liveNotes.current.set(key, { track, midi, share });
     send({ t: "on", track, midi, vel, rec: share });
     midiOut.current?.on(track, midi, vel);
-    if (share) live1({ t: "on", track, midi, vel });
+    if (share) live1({ t: "on", track, midi, vel, ...band.stamp() });
     setHeld((h) => new Set(h).add(midi));
   }
   function noteOff(key: string) {
@@ -461,7 +511,7 @@ export function App() {
     liveNotes.current.delete(key);
     send({ t: "off", track: n.track, midi: n.midi });
     midiOut.current?.off(n.track, n.midi);
-    if (n.share) live1({ t: "off", track: n.track, midi: n.midi });
+    if (n.share) live1({ t: "off", track: n.track, midi: n.midi, ...band.stamp() });
     setHeld((h) => { const s = new Set(h); s.delete(n.midi); return s; });
   }
   function releaseAll() { for (const k of [...liveNotes.current.keys()]) noteOff(k); }
@@ -476,14 +526,14 @@ export function App() {
   // ---- performance: not saved, not undone ----
   function setRepeat(beats: number) {
     move(live.current.selected, LANE_STUTTER, beats, live.current.repeat);
-    setRepeatState(beats); send({ t: "repeat", beats }); live1({ t: "repeat", beats });
+    setRepeatState(beats); send({ t: "repeat", beats }); live1({ t: "repeat", beats, ...band.stamp() });
   }
   function setBend(semis: number) {
     const track = live.current.selected;
     move(track, LANE_BEND, semis, live.current.bend);
     setBendState(semis);
     send({ t: "bend", track, semis });
-    shareBend({ t: "bend", track, semis });
+    shareBend({ t: "bend", track, semis, ...band.stamp() });
   }
 
   // ---- transport: everyone in the room plays and stops together ----
@@ -645,6 +695,15 @@ export function App() {
           </button>
           <label className="check"><input type="checkbox" checked={countIn} onChange={(e) => setCountIn(e.currentTarget.checked)} /> Count-in</label>
           <label className="check"><input type="checkbox" checked={metro} onChange={(e) => { setMetro(e.currentTarget.checked); send({ t: "metro", on: e.currentTarget.checked }); }} /> Click</label>
+          {!solo && (
+            <label className="field" title="How you hear the others: a loop late (everyone in time, a loop behind), at the desk (the leader: the whole band a fixed delay behind, lined up), or as it comes"><span className="silk">Hear the band</span>
+              <select value={listen} onChange={(e) => { const v = e.currentTarget.value, l = LISTENS.find((x) => x === v); if (l) chooseListen(l); }}>
+                {LISTENS.filter((l) => l !== "desk" || floor?.host).map((l) => (
+                  <option key={l} value={l}>{l === "loop" ? "A loop late" : l === "desk" ? `At the desk (${DESK_MS} ms)` : "As it comes"}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="tempo">
