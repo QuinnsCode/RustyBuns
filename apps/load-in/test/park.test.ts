@@ -2,14 +2,16 @@
 // the case and the tops into the tent, run the 25 m power cable from the generator to the distro and the short ones to
 // the tops and the mixer, ramp the crossing on the lakeside path, aim the tops down and turn the master down until the
 // houses across the road sit under the limit, carry a jerry can from the truck to fill the generator for the whole
-// day, and pass. Then the band's amp racks trip the generator. The same calls
+// day, and pass. The third top goes on its stand past the lakeside path, turned back toward the stage, as the fill for
+// the back of the grass: with the crowd in, the show passes with it and not without. Then the band's amp racks trip
+// the generator. The same calls
 // `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
-import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
+import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, takeRoll, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
 import { clearCrowd, letIn } from "../src/crowd/crowd.ts";
-import { CROWD, DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, score, windFor, windText } from "../src/venues/park.ts";
+import { CROWD, DAY_HOURS, PARK, PASS, SPILL_LIMIT, blow, load, parkState, pour, score, show, windFor, windText } from "../src/venues/park.ts";
 import { setDial } from "../src/assists.ts";
 
 setDefaultTimeout(60_000);
@@ -69,6 +71,9 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   move(w, c, "stand-r", 3, 4.3);
   move(w, c, "top-l", -3, 4.3);
   move(w, c, "top-r", 3, 4.3);
+  // The fill: the third top on its stand just past the lakeside path, behind the back rows.
+  move(w, c, "stand-fill", 0, 21);
+  move(w, c, "top-fill", 0, 21);
   const stand = w.items.find((i) => i.key === "stand-l")!;
   expect(w.items.find((i) => i.key === "top-l")).toMatchObject({ x: stand.x, z: stand.z, y: 1.2 });
 
@@ -82,33 +87,46 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   run(w, c, "xlr", ["mixer", "xlr-out-1"], ["top-l", "xlr-in"]);
   run(w, c, "xlr", ["mixer", "xlr-out-2"], ["top-r", "xlr-in"]);
   expect(load(w, c)).toMatchObject({ watts: 350, trips: false });
+  // The fill's signal: the 25 m mic cable from the mixer's third output, down the grass and over the lakeside path.
+  // Its power: the generator is right there, so the last roll is carried out to it, plugged in and paid out to the fill.
+  run(w, c, "xlr", ["mixer", "xlr-out-3"], ["top-fill", "xlr-in"]);
+  walkWith(w, c, 2.1, 2.1);
+  expect(takeRoll(w, c, "power")).toEqual({ ok: true });
+  walkWith(w, c, -4.5, 22.7);
+  expect(plug(w, c, "generator", "power-out-2")).toEqual({ ok: true });
+  walkWith(w, c, 0.5, 21.7);
+  expect(plug(w, c, "top-fill", "power-in")).toEqual({ ok: true });
+  settle(w, c, 3);
+  expect(load(w, c)).toMatchObject({ watts: 510, trips: false });
 
-  // Aimed at the crowd, turned up: loud enough at the houses across the road to fail, and the 25 m run lies across the
-  // lakeside path.
-  for (const k of ["top-l", "top-r"]) {
+  // Aimed at the crowd (the fill back toward the stage, away from the road), turned up: loud enough at the houses
+  // across the road to fail, and the two 25 m runs lie across the lakeside path.
+  for (const k of ["top-l", "top-r", "top-fill"]) {
     const t = w.items.find((i) => i.key === k)!;
     walkWith(w, c, t.x * 0.7, t.z + 1);
-    expect(aim(w, k, { turn: -t.rot })).toEqual({ ok: true });
+    expect(aim(w, k, { turn: (k === "top-fill" ? Math.PI : 0) - t.rot })).toEqual({ ok: true });
   }
   master(w, -8);
   const loud = parkState(w, c);
   expect(loud.houses!).toBeGreaterThan(SPILL_LIMIT + 4);
-  expect(loud.hazards).toBe(1);
+  expect(loud.hazards).toBe(2);
   expect(loud.pass).toBe(false);
 
-  // A ramp over the crossing, turned along the cable.
-  const cross = c.runs.find((r) => r.key === "power-25")!.rope!.pts.find((p) => p.z > 18.2 && p.z < 19.2)!;
-  move(w, c, "ramp-1", cross.x, 18.7, Math.PI / 2);
-  linkRamp(w, "ramp-1");
-  settle(w, c, 3);
+  // A ramp over each crossing, turned along the cable.
+  for (const [ramp, cable] of [["ramp-1", "power-25"], ["ramp-2", "xlr-25"]] as const) {
+    const cross = c.runs.find((r) => r.key === cable)!.rope!.pts.find((p) => p.z > 18.2 && p.z < 19.2)!;
+    move(w, c, ramp, cross.x, 18.7, Math.PI / 2);
+    linkRamp(w, ramp);
+    settle(w, c, 3);
+  }
   expect(parkState(w, c).hazards).toBe(0);
 
   // Stands up, tops tilted down a touch, master down: the crowd still hears it, the houses don't complain.
-  for (const k of ["l", "r"]) {
+  for (const k of ["l", "r", "fill"]) {
     const s = w.items.find((i) => i.key === `stand-${k}`)!;
     walkWith(w, c, s.x * 0.7, s.z + 1);
     expect(raise(w, `stand-${k}`, 2)).toEqual({ ok: true });
-    expect(aim(w, `top-${k}`, { tilt: -10 * DEG })).toEqual({ ok: true });
+    if (k !== "fill") expect(aim(w, `top-${k}`, { tilt: -10 * DEG })).toEqual({ ok: true });
   }
   master(w, -14);
   const short = score(w, c);
@@ -134,14 +152,26 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   expect(s.fuel!.hours).toBeGreaterThan(DAY_HOURS);
   expect(s).toMatchObject({ hazards: 0, tripped: false, pass: true });
 
-  // Show time: the crowd comes onto the grass. Their bodies soak up some highs, so the back hears less of it (the card
-  // says so), and out of doors there is no room to ring.
+  // Show time: the crowd comes onto the grass. Their bodies soak up some highs (out of doors there is no room to ring),
+  // and the show is scored with them in: the fill keeps the back rows at the level, so the night passes and pays
+  // (the doors clock set aside: this walk takes its time).
   letIn(w, CROWD);
-  const crowded = parkState(w, c);
+  const crowded = parkState(w, c), late = w.t;
   expect(crowded.people).toMatchObject({ in: true, count: CROWD.capacity, full: { rt60: null } });
-  expect(crowded.full.crowd!).toBeLessThan(s.crowd!);
-  expect(crowded.full.score).toBeLessThan(s.score);
   expect(crowded.people.regions.map((r) => r.name)).toEqual(["front", "middle", "back"]);
+  expect(crowded.full.score).toBeLessThan(s.score);
+  expect(crowded.full.houses!).toBeLessThanOrEqual(SPILL_LIMIT);
+  w.t = 0;
+  expect(show(w, c)).toMatchObject({ sound: crowded.full.score, mood: 100, pass: true, pay: 400 });
+  // Someone kicks the fill's signal out: the back rows lose it through the bodies and the show no longer passes.
+  const feed = c.runs.find((r) => r.key === "xlr-25")!, was = feed.b;
+  feed.b = { loose: true };
+  const without = show(w, c);
+  expect(without.sound).toBeLessThan(PASS);
+  expect(without.pass).toBe(false);
+  expect(parkState(w, c).people.regions[2]!.full!).toBeLessThan(crowded.people.regions[2]!.full! - 2);
+  feed.b = was;
+  w.t = late;
   clearCrowd(w);
 
   // The breeze picks up toward the road: it carries the highs a few dB further and the houses complain, so the fader
@@ -161,12 +191,12 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   blow(w, () => ({ toward: 0, speed: 0 }));
 
   // The band brings four amp racks and plugs them in: past the generator's 6.3 kW its breaker trips and the park goes quiet.
-  const outs = [["generator", "power-out-2"], ["distro", "power-out-4"], ["distro", "power-out-5"], ["distro", "power-out-6"]] as const;
+  const outs = [["generator", "power-out-3"], ["distro", "power-out-4"], ["distro", "power-out-5"], ["distro", "power-out-6"]] as const;
   outs.forEach(([owner, jack], n) => {
     w.items.push({ key: `rack-${n}`, gear: "amp-rack-4u", x: -6 + n, y: 0, z: 1, rot: 0 });
     c.runs.push({ key: `band-${n}`, kind: "power", lengthM: 5, a: { plug: [owner, jack] }, b: { plug: [`rack-${n}`, "power-in"] }, rope: null });
   });
-  expect(parkState(w, c)).toMatchObject({ generator: { watts: 6350, trips: true }, tripped: true, crowd: null, pass: false });
+  expect(parkState(w, c)).toMatchObject({ generator: { watts: 6510, trips: true }, tripped: true, crowd: null, pass: false });
 });
 
 test("a run's breeze is seeded: the same seed blows the same, and it swings over the day", () => {

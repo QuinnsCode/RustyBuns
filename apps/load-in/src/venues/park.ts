@@ -3,7 +3,11 @@
 // tent, and feed the tops and the mixer from there, all inside the generator's kVA. People walk the park's paths, so a
 // cable across one needs a ramp. Across the road are houses: the score adds the level at their property line, which
 // has a noise limit, to the crowd's coverage. The generator comes with little in its tank: the jerry cans on the truck
-// (18 kg full, one in your hands at a time) fill it for the whole day, and the harder it works the faster it burns. Plain data, no DOM; the page (park-view.ts) draws it.
+// (18 kg full, one in your hands at a time) fill it for the whole day, and the harder it works the faster it burns.
+// The two tops at the tent can't reach the back of the grass through a crowd without the houses hearing more, so a
+// third top and stand come off the truck as a fill: set past the lakeside path, turned back toward the stage (its back
+// to the road), on the generator's spare outlet and the mixer's third output. Show time scores the park with the crowd
+// on the grass. Plain data, no DOM; the page (park-view.ts) draws it.
 import { clamp, mulberry32 } from "@rustybuns/util";
 import { type Area, type CrowdField, type Feed, type Grid, type Source, coverage, coverageThrough, densityAt, gear as catalog, generatorLoad, runHours } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World, heldItem } from "../sim.ts";
@@ -37,17 +41,23 @@ export const PARK: Level = {
     { key: "top-r", gear: "top-12-powered", x: -3.2, y: 0, z: 29.4, rot: 0 },
     { key: "stand-l", gear: "stand-tripod", x: 3.0, y: 0, z: 29.2, rot: 0 },
     { key: "stand-r", gear: "stand-tripod", x: 4.2, y: 0, z: 29.2, rot: 0 },
+    // The fill for the back of the grass, with its own stand.
+    { key: "top-fill", gear: "top-12-powered", x: -2.9, y: 0, z: 28.6, rot: 0 },
+    { key: "stand-fill", gear: "stand-tripod", x: 5.4, y: 0, z: 29.2, rot: 0 },
     { key: "ramp-1", gear: "cable-ramp-2ch", x: -4.4, y: 0, z: 30.6, rot: 0 },
     { key: "ramp-2", gear: "cable-ramp-2ch", x: -4.4, y: 0, z: 29.8, rot: 0 },
   ],
-  // Out of doors the runs are long: 25 m from the generator to the distro, then the tent's own.
+  // Out of doors the runs are long: 25 m from the generator to the distro, then the tent's own, and the fill's: 10 m
+  // of power from the generator and 25 m of signal from the mixer, down the grass and over the lakeside path.
   caseLoad: [
     { key: "power-25", kind: "power", lengthM: 25 },
     { key: "power-10a", kind: "power", lengthM: 10 },
     { key: "power-10b", kind: "power", lengthM: 10 },
     { key: "power-5", kind: "power", lengthM: 5 },
+    { key: "power-10c", kind: "power", lengthM: 10 },
     { key: "xlr-10a", kind: "xlr", lengthM: 10 },
     { key: "xlr-10b", kind: "xlr", lengthM: 10 },
+    { key: "xlr-25", kind: "xlr", lengthM: 25 },
   ],
 };
 
@@ -251,13 +261,10 @@ export function crowdState(w: World, c: Cables, s = scores(w, c)) {
   };
 }
 
-/**
- * Show time: the sound as set at soundcheck, scaled by the crowd's mood (late doors cost it), and the pay. The score with
- * the crowd on the grass is on the card and in the state, but doesn't count yet: the park's rig can't reach the back
- * through them under the houses' limit until it has a fill for the back (#5307).
- */
+/** Show time: the sound with the crowd on the grass (their bodies soak up the highs, so the back needs the fill),
+ * scaled by the crowd's mood (late doors cost it), and the pay. */
 export function show(w: World, c: Cables) {
-  const s = score(w, c), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  const s = scores(w, c).full, d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
