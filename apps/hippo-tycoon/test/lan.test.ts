@@ -104,9 +104,10 @@ test("LAN party: host and guests share one ticking world", async () => {
     const ticks = g1.of("snap").map((s) => s.tick);
     // the sim tick never runs backwards within a round (it holds still through the countdown)
     expect(ticks.every((t, i) => i === 0 || t >= ticks[i - 1]! || g1.of("snap")[i]!.round !== g1.of("snap")[i - 1]!.round)).toBe(true);
-    const last = g1.of("snap").at(-1)!;
-    expect(last.hp[1]![0]).toBeGreaterThan(0);        // guest one slid right: input crossed the LAN
-    expect(last.dr.length).toBeGreaterThan(0);        // and the drops are dripping
+    // guest one slid right: input crossed the LAN. Wait for the snap that shows it: on a
+    // loaded runner 30 snaps can arrive before the input is applied (#5070)
+    await g1.until(() => (g1.of("snap").at(-1)?.hp[1]?.[0] ?? 0) > 0);
+    expect(g1.of("snap").at(-1)!.dr.length).toBeGreaterThan(0);   // and the drops are dripping
     // the couch partner drives their own seat over the shared socket
     g2.send({ t: "in", m: -100, g: 0, h: 0, s: pair[1] });
     await g2.until(() => (g2.of("snap").at(-1)?.hp[pair[1]!]?.[0] ?? 0) < 0);
