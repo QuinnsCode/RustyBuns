@@ -371,7 +371,9 @@ pinnedTest("an agent's hire on files an open PR or a queued task is changing is 
   const bin = mkdtempSync(path.join(tmpdir(), "rb-gh-"));
   const prsFile = path.join(bin, "prs.json");
   mkdirSync(path.join(dir, "apps/x/src"), { recursive: true });
-  for (const f of ["a.ts", "b.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  mkdirSync(path.join(dir, "apps/y/src"), { recursive: true });
+  for (const f of ["a.ts", "c.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  writeFileSync(path.join(dir, "apps/y/src/b.ts"), "");
   spawnSync("git", ["init", "-q"], { cwd: dir });
   spawnSync("git", ["add", "."], { cwd: dir });
   writeFileSync(path.join(bin, "gh"), `#!/bin/sh\ncat ${JSON.stringify(prsFile)}\n`);
@@ -395,7 +397,9 @@ pinnedTest("an agent's hire on files an open PR or a queued task is changing is 
     expect(no.body.error).toContain("PR #12 office/a (apps/x/src/a.ts)");
     expect(no.body.error).toContain("anyway: true");
     expect(no.body.clash.files).toEqual(["apps/x/src/a.ts"]);
-    expect((await call(ctx, "", { prompt: "and apps/x/src/b.ts" })).body.error).toContain('the queued task "Tidy b" (apps/x/src/b.ts)');
+    expect((await call(ctx, "", { prompt: "and apps/y/src/b.ts" })).body.error).toContain('the queued task "Tidy b" (apps/y/src/b.ts)');
+    // another file in the PR's app clashes too (#4956): a task names a file or two and edits dozens
+    expect((await call(ctx, "", { prompt: "Restyle c.ts" })).body.error).toContain("PR #12 office/a (apps/x/)");
 
     // a task on other files, or one sent with anyway, is hired as before
     expect((await call(ctx, "", { prompt: "write a README" })).status).toBe(200);
@@ -425,7 +429,9 @@ pinnedTest("a second hire on a file a worker with no PR yet is changing is refus
   const dir = mkdtempSync(path.join(tmpdir(), "rb-seated-"));
   const bin = mkdtempSync(path.join(tmpdir(), "rb-gh-"));
   mkdirSync(path.join(dir, "apps/x/src"), { recursive: true });
-  for (const f of ["a.ts", "b.ts", "c.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  mkdirSync(path.join(dir, "apps/y/src"), { recursive: true });
+  for (const f of ["a.ts", "b.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  writeFileSync(path.join(dir, "apps/y/src/c.ts"), "");
   const git = (cwd: string, ...a: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", ".");

@@ -8,7 +8,9 @@
 //   bun scripts/preflight.ts [--base origin/main] [--json]
 //
 // Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a card or an unsettled
-// clash in your files (so a hook can stop and ask), 0 otherwise. Lock and generated files are listed apart:
+// clash in your files (so a hook can stop and ask), 0 otherwise. It only reports: nothing holds or reorders the merges,
+// so the PR body says "merge after #N" for each PR it names. It notes the HEAD it read in the worktree's git folder
+// (`rustybuns-preflight`), and .claude/hooks/guard.ts turns away `gh pr create` on a commit it hasn't read (#4956). Lock and generated files are listed apart:
 // they are expected to clash and are regenerated.
 
 import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
@@ -79,7 +81,7 @@ if (import.meta.main) {
     if (!v) console.log("no other open PR changes your files");
     else {
       const after = (f: FileRow) => f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : "";
-      console.log(`\nMervin, your branch merged after ${others.map((p) => `#${p.number}`).join(" ")}:`);
+      console.log(`\nMervin's board, your branch merged after ${others.map((p) => `#${p.number}`).join(" ")} (write "merge after" them in the PR body: nothing orders it for you):`);
       for (const s of v.skipped) console.log(`  skipped #${s.pr}: ${s.why}`);
       for (const f of v.cards) console.log(`  card    ${f.path}  ${f.why}${after(f)}`);
       for (const c of v.clashes) console.log(`  clash   ${c.kind} ${c.key} with ${c.prs.filter((n) => n !== ME).map((n) => `#${n}`).join(", ") || "main"}`);
@@ -90,5 +92,8 @@ if (import.meta.main) {
       else console.log("  every shared file merges clean");
     }
   }
-  process.exit(v && (v.cards.length || v.clashes.length) ? 1 : 0);
+  const code = v && (v.cards.length || v.clashes.length) ? 1 : 0;
+  const stamp = run$(["git", "rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight"]).trim();
+  await Bun.write(stamp, `${head} ${code}\n`);
+  process.exit(code);
 }

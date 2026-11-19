@@ -4,14 +4,18 @@
 // It can hire anyway (Mervin orders the merges) or hold: the office queues it itself once that work has merged.
 //
 // The task's files are the repo's paths its text names (@rustybuns/util/overlap taskFiles), its issue's title and
-// body included. A seated worker with no PR yet counts too (#3427): the files its branch and worktree change against
-// origin/main, and the ones its first prompt names. Anything the office can't read (no gh, no git, not a GitHub checkout) lets the hire through.
+// body included, and its apps are the `apps/<name>` those files sit in or its text names (#4956): two tasks on one
+// app clash even when they name different files, since a task names a file or two and then edits dozens. A seated
+// worker with no PR yet counts too (#3427): the files its branch and worktree change against origin/main, and the
+// files and apps its first prompt names. Anything the office can't read (no gh, no git, not a GitHub checkout) lets the hire through.
+// The queue asks again when it seats a task (seatClash, patched into server/queue.js): tasks queued together had no
+// branch to clash with yet, so a queued task whose app an open PR or a seated worker is changing stays queued.
 // AGENT_OFFICE_OVERLAP=off turns it off.
 
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { arr, check, int, maybe, obj, raw, str } from "@rustybuns/util/guard";
-import { busyOn, GENERATED, taskFiles } from "@rustybuns/util/overlap";
+import { GENERATED, taskFiles } from "@rustybuns/util/overlap";
 import { stillBusy } from "../codesplitter/hint.ts";
 
 /** An open pull request and the files it changes. */
@@ -21,12 +25,13 @@ export interface QueueTask { id: string; title: string; prompt?: string; issue?:
 /** What the new task would collide with. Empty lists: nothing. */
 export interface Clash {
   files: string[];
+  apps: string[];
   prs: { pr: number; title: string; branch: string; files: string[] }[];
   queued: { id: string; title: string; files: string[] }[];
   workers: { id: string; name: string; branch: string; files: string[] }[];
 }
 /** A seated worker with no pull request yet, and the files it is changing (or will, by its first prompt). */
-export interface BusyWorker { id: string; name: string; branch: string; files: string[] }
+export interface BusyWorker { id: string; name: string; branch: string; files: string[]; apps?: string[] }
 
 type Issue = { number: number; title?: string; body?: string };
 
@@ -36,17 +41,45 @@ export function taskText(t: { prompt?: unknown; title?: unknown; issue?: unknown
   return [t.title, t.prompt, issue?.title, issue?.body].filter((s) => typeof s === "string" && s).join("\n").slice(0, 20_000);
 }
 
-/** The pure part: which open PRs and queued tasks change the files `text` names. Lock and generated files don't count. */
+const APP = /^apps\/([^/]+)\//;
+const real = (f: string) => !GENERATED.some((g) => g.test(f));
+
+/** The apps `files` sit in, by directory name. */
+export const appsOf = (files: string[]) => [...new Set(files.flatMap((f) => APP.exec(f)?.[1] ?? []))].sort();
+
+/**
+ * A task's apps (#4956): the ones its named files sit in, an `apps/<name>` it writes out, and an app whose name has a
+ * hyphen in it (`fm-daw`, `load-in`) as a word. A one-word name (`example`, `borg`) is too often plain English to count.
+ */
+export function taskApps(text: string, paths: string[]): string[] {
+  const names = new Set(appsOf(paths));
+  const out = new Set(appsOf(taskFiles(text, paths).filter(real)));
+  for (const [, name] of text.matchAll(/(?<![\w-])apps\/([\w.-]+)/g)) if (names.has(name!)) out.add(name!);
+  for (const word of text.match(/[\w-]+/g) ?? []) if (word.includes("-") && names.has(word)) out.add(word);
+  return [...out].sort();
+}
+
+/** The pure part: which open PRs, queued tasks and seated workers change the files `text` names, or its apps. Lock and generated files don't count. */
 export function clashOf(text: string, paths: string[], prs: OpenPr[], queued: QueueTask[], issues: Issue[] = [], workers: BusyWorker[] = []): Clash {
-  const real = (f: string) => !GENERATED.some((g) => g.test(f));
-  const files = taskFiles(text, paths).filter(real);
-  const byBranch = new Map(prs.map((p) => [p.branch, p]));
-  const changed = prs.flatMap((p) => p.files.map((path) => ({ branch: p.branch, path })));
-  const hit = busyOn(files, changed).map((b) => ({ pr: byBranch.get(b.branch)!.number, title: byBranch.get(b.branch)!.title, branch: b.branch, files: b.files }));
-  const want = new Set(files);
-  const others = queued.filter((t) => t.status === "queued").map((t) => ({ id: t.id, title: t.title, files: taskFiles(taskText(t, issues), paths).filter((f) => want.has(f)) }));
-  const seated = workers.map((w) => ({ ...w, files: w.files.filter((f) => want.has(f)) })).filter((w) => w.files.length);
-  return { files, prs: hit, queued: others.filter((o) => o.files.length), workers: seated };
+  const files = taskFiles(text, paths).filter(real), apps = taskApps(text, paths);
+  const want = new Set(files), mine = new Set(apps);
+  // what another piece of work shares: the same files, then each shared app it touches elsewhere as `apps/<name>/`
+  const shared = (theirs: string[], theirApps = appsOf(theirs)) => {
+    const same = [...new Set(theirs.filter((f) => want.has(f)))].sort();
+    const covered = new Set(appsOf(same));
+    return [...same, ...theirApps.filter((a) => mine.has(a) && !covered.has(a)).map((a) => `apps/${a}/`)];
+  };
+  // a dependency bump is the lockfile and a package.json: rebuilt, not merged by hand
+  const hit = prs.filter((p) => !p.branch.startsWith("dependabot/"))
+    .map((p) => ({ pr: p.number, title: p.title, branch: p.branch, files: shared(p.files.filter(real)) }))
+    .filter((p) => p.files.length).sort((a, b) => b.files.length - a.files.length || a.branch.localeCompare(b.branch));
+  const others = queued.map((t) => {
+    const text = taskText(t, issues);
+    return { id: t.id, title: t.title, files: shared(taskFiles(text, paths), taskApps(text, paths)) };
+  });
+  const seated = workers.map(({ apps: theirs = [], ...w }) => ({ ...w, files: shared(w.files.filter(real), [...new Set([...appsOf(w.files), ...theirs])]) }))
+    .filter((w) => w.files.length);
+  return { files, apps, prs: hit, queued: others.filter((o) => o.files.length), workers: seated };
 }
 
 export const clashes = (c: Clash) => c.prs.length + c.queued.length + c.workers.length > 0;
@@ -71,7 +104,8 @@ const run: Run = (cmd, args, cwd) => new Promise((ok, no) =>
   execFile(cmd, args, { cwd, timeout: 15_000, maxBuffer: 32 << 20 }, (err, out) => (err ? no(err) : ok(out))));
 
 const FRESH_MS = 60_000;
-const seen = new Map<string, { at: number; paths: Promise<string[]>; prs: Promise<OpenPr[]> }>();
+type Snapshot = { paths: string[]; prs: OpenPr[] };
+const seen = new Map<string, { at: number; paths: Promise<string[]>; prs: Promise<OpenPr[]>; ready?: Snapshot }>();
 
 /** The checkout's tracked paths and its open PRs with their files. Throws when either can't be read. */
 export function look(dir: string, exec: Run = run, now = Date.now()) {
@@ -79,8 +113,9 @@ export function look(dir: string, exec: Run = run, now = Date.now()) {
   if (hit && now - hit.at < FRESH_MS) return hit;
   const paths = exec("git", ["ls-files"], dir).then((o) => o.split("\n").filter(Boolean));
   const prs = exec("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,headRefName,files"], dir).then(parsePrs);
-  const fresh = { at: now, paths, prs };
+  const fresh: { at: number; paths: Promise<string[]>; prs: Promise<OpenPr[]>; ready?: Snapshot } = { at: now, paths, prs, ready: hit?.ready };
   seen.set(dir, fresh);
+  void Promise.all([paths, prs]).then(([p, r]) => { fresh.ready = { paths: p, prs: r }; }, () => {});
   // a failed read is tried again next time, not cached for a minute
   void Promise.all([paths, prs]).catch(() => seen.get(dir) === fresh && seen.delete(dir));
   return fresh;
@@ -116,7 +151,7 @@ export async function busyWorkers(floor: GuardFloor, paths: string[], issues: Is
       lines(exec("git", ["status", "--porcelain", "-uall"], cwd), statusPaths),
     ]);
     const guess = taskFiles(taskText({ prompt: w.prompt }, issues), paths);
-    return { id: w.id, name: w.name, branch: w.worktree!.branch, files: [...new Set([...branch, ...dirty, ...guess])].sort() };
+    return { id: w.id, name: w.name, branch: w.worktree!.branch, files: [...new Set([...branch, ...dirty, ...guess])].sort(), apps: taskApps(w.prompt ?? "", paths) };
   }));
 }
 
@@ -137,7 +172,8 @@ export async function hireClash(floor: GuardFloor, body: unknown, exec: Run = ru
     const seen = look(floor.dir, exec);
     const [paths, prs] = await Promise.all([seen.paths, seen.prs]);
     const issues = floor.github?.issues?.items ?? [];
-    const c = clashOf(taskText(b, issues), paths, prs, floor.queue.state().tasks, issues, await busyWorkers(floor, paths, issues, exec));
+    const queued = floor.queue.state().tasks.filter((t) => t.status === "queued");
+    const c = clashOf(taskText(b, issues), paths, prs, queued, issues, await busyWorkers(floor, paths, issues, exec));
     return clashes(c) ? c : null;
   } catch {
     return null;
@@ -146,6 +182,44 @@ export async function hireClash(floor: GuardFloor, body: unknown, exec: Run = ru
 
 /** Whether the request said to go ahead, or to wait. */
 export const flagOf = (body: unknown, k: "anyway" | "hold") => typeof body === "object" && body !== null && k in body && Reflect.get(body, k) === true;
+
+// --- asked again when the queue seats a task (#4956) ---
+
+const goAhead = new Set<string>();
+/** A request sent with anyway: its prompt is remembered, so the queue seats it later without asking again. Returns null (no clash). */
+export function anyway(body: unknown): null {
+  const prompt = check(obj({ prompt: str(Infinity) }), body)?.prompt.trim();
+  if (prompt) goAhead.add(prompt);
+  if (goAhead.size > 200) goAhead.delete(goAhead.values().next().value!);
+  return null;
+}
+
+const waitSaid = new Map<string, string>();
+/**
+ * Whether the queue should leave queued task `t` for now: an open PR or a seated worker with no PR is changing its files
+ * or its apps. Synchronous, as the queue's seating is: it reads the last minute's look at the checkout, and lets the task
+ * through until there is one. Toasts once per task what it waits on.
+ */
+export function seatClash(floor: GuardFloor, t: unknown, toast: (m: string) => void = () => {}, setting = process.env.AGENT_OFFICE_OVERLAP ?? ""): boolean {
+  if (setting.trim().toLowerCase() === "off" || !floor.dir) return false;
+  const task = check(obj({ id: str(200), title: str(Infinity, { min: 0, dflt: "" }), prompt: maybe(str(Infinity, { min: 0 })), issue: maybe(int(1, Infinity)) }), t);
+  if (!task) return false;
+  if ([...goAhead].some((p) => task.prompt?.includes(p))) return false;
+  let snap: Snapshot | undefined;
+  try { snap = look(floor.dir).ready; } catch { return false; }
+  if (!snap) return false;
+  const issues = floor.github?.issues?.items ?? [];
+  const seated = (floor.workers?.list() ?? []).map((w) => check(Seated, w)).filter((w) => w !== null && !!w.worktree && !w.pr)
+    .map((w) => ({ id: w!.id, name: w!.name, branch: w!.worktree!.branch, files: taskFiles(w!.prompt ?? "", snap.paths), apps: taskApps(w!.prompt ?? "", snap.paths) }));
+  const c = clashOf(taskText(task, issues), snap.paths, snap.prs, [], issues, seated);
+  if (!clashes(c)) { waitSaid.delete(task.id); return false; }
+  const on = [...c.prs.map((p) => `PR #${p.pr}`), ...c.workers.map((w) => `${w.name}'s work`)].join(", ");
+  if (waitSaid.get(task.id) !== on) {
+    waitSaid.set(task.id, on);
+    toast(`📋 "${task.title || "A task"}" stays queued until ${on} merges: they change ${[...new Set([...c.prs, ...c.workers].flatMap((x) => x.files))].slice(0, 3).join(", ")}`);
+  }
+  return true;
+}
 
 // --- hold until merged ---
 
@@ -201,6 +275,8 @@ export const heldTasks = (floor?: string): HeldTask[] =>
 export function resetOverlap() {
   held.clear();
   seen.clear();
+  goAhead.clear();
+  waitSaid.clear();
   if (timer) clearInterval(timer);
   timer = undefined;
 }
