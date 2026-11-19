@@ -8,6 +8,7 @@ import { hubAsk, hubOf, Op } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
 import { makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
+import { board, isBoard } from "./board.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { RoomMintGate } from "@rustybuns/util/limits";
@@ -27,11 +28,13 @@ const tryCode = (req: Request, who: string, code: string) => {
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
+  // Posts and reactions (board.ts): read signed out, written with the app's token.
+  if (isBoard(pathname)) return board(req, conf);
   // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
   // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
   if (pathname === "/hub" || pathname === "/api/hub") {

@@ -174,9 +174,13 @@ How a person reaches their friends, from the easiest case to the hardest (owner,
 - **One account, several ways in.** The Account tab adds GitHub, Google or Apple to the account someone is signed in to, so the
   phone's Apple sign-in and the laptop's Google one open the same games, friends, saves and achievements.
 
-## Posts and reactions ([#4020](https://github.com/QuinnsCode/RustyBuns/issues/4020)): design, not built
+## Posts and reactions ([#4020](https://github.com/QuinnsCode/RustyBuns/issues/4020), [#4810](https://github.com/QuinnsCode/RustyBuns/issues/4810))
 
-**Not built. The owner reads this before any code.** For Excalibrawl and What Would Fantano Say, whose people never meet in
+**The core is built** (owner said yes to the design, 2026-11-19): the `posts` and `reactions` tables, the routes in
+`src/qollab/board.ts`, `eqosys().board()` with its guards in `@rustybuns/util/board`, and the posts and reactions in account
+delete and the privacy export. An app takes part once `APPS` gives it a `board` (its kinds of post and its icons). Counts
+are added up on read rather than kept on the post's row, so a reaction taken back or an account deleted never leaves one
+behind. Not yet: the two apps' sign-in and pages, report and hide, and hiding a blocked person's posts. For Excalibrawl and What Would Fantano Say, whose people never meet in
 a party: one person puts something up, and others react to it (owner, 2026-11-08). Neither app signs in through eqosys yet;
 that comes first (both are already in `APPS`).
 
@@ -215,14 +219,10 @@ second, burst 5. Anyone signed in can report a post (the game-report path); the 
 the person's posts and reactions; the privacy export lists them. A blocked person's posts are hidden from the one who
 blocked them.
 
-**Questions for the owner:**
+**The owner's answers** (2026-11-19): a post can stand alone (`ref` is optional); no replies, reactions only; a signed-out
+visitor reads the feed; and posts show only in the app at first, not on eqosys.
 
-1. Is a post always about one thing in the app, or can it stand alone (Excalibrawl's prompt does)? The note says it can.
-2. Replies to a post: none, or one level? The note says none for now; reactions only.
-3. Does a signed-out visitor see the feed? The note says yes, read only.
-4. Do these show anywhere on eqosys (your posts on the Account tab, a feed on the home)? The note says only in the app at first.
-
-**The build, once the owner says yes:** (1) eqosys sign-in in both apps (account chip, `signInHere`); (2) the tables, routes
+**The build:** (1) eqosys sign-in in both apps (account chip, `signInHere`); (2) the tables, routes
 and `board()` client with one journey test (two people: one posts, the other reacts, both see the count, the reaction taken
 back); (3) Excalibrawl's prompt posts and fight reactions; (4) Fantano's shared reviews and their reactions; (5) report, hide,
 delete and export.

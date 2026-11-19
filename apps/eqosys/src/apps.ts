@@ -31,6 +31,9 @@ export interface QApp {
   blurb?: string;
   /** Listed as coming soon, with no link into it, until the owner says it is ready. It still signs in from its origins. */
   soon?: boolean;
+  /** Qollab posts and reactions (qollab/board.ts): the kinds of post the app takes (`prompt`, `review`) and the icons a reaction may
+   * be (up to 6 lucide names). Left out, the app has neither. */
+  board?: { kinds: string[]; icons: string[] };
   /** The app runs per studio (QView3D: a studio is a shop), so its tokens name the person's studios and their role in each. */
   studios?: boolean;
 }
@@ -52,8 +55,8 @@ export const APPS: QApp[] = [
   { id: "mythic-masters", name: "Mythic Masters", kind: "game", origins: ["https://mythic-masters.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental", featured: true },
   // Splat Rooms already signs in through eqosys (its client returns to https://splat-rooms.notryanquinn.workers.dev): add that origin when it deploys.
   { id: "splat-rooms", name: "Splat Rooms", kind: "game", origins: ["https://splat-rooms.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
-  { id: "excalibrawl", name: "Excalibrawl", kind: "game", origins: ["https://excalibrawl.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music" },
-  { id: "what-would-fantano-say", name: "What Would Fantano Say?", kind: "game", origins: ["https://what-would-fantano-say.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music" },
+  { id: "excalibrawl", name: "Excalibrawl", kind: "game", origins: ["https://excalibrawl.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music", board: { kinds: ["prompt"], icons: ["flame", "laugh", "skull"] } },
+  { id: "what-would-fantano-say", name: "What Would Fantano Say?", kind: "game", origins: ["https://what-would-fantano-say.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music", board: { kinds: ["review"], icons: ["flame", "laugh", "skull"] } },
   { id: "fm-daw", name: "FM DAW", kind: "suite", origins: ["https://fm-daw.notryanquinn.workers.dev"], returns: ["https://fm-daw.notryanquinn.workers.dev/", "https://fm-daw.notryanquinn.workers.dev/jam", "https://fm-daw.notryanquinn.workers.dev/jam.html"], starts: ["member"], shot: true, genre: "Party & Music" },
   { id: "motion-midi", name: "Motion MIDI", kind: "suite", origins: ["https://motion-midi.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Party & Music", maturity: "experimental" },
   { id: "brianfloresblitzing", name: "One Team in 32", kind: "suite", origins: ["https://brianfloresblitzing.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Sports & Skate" },

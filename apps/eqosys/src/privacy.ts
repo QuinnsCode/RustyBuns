@@ -55,6 +55,14 @@ export const HOLDERS: Holder<Subject>[] = [
     },
   },
   {
+    id: "posts", what: "Posts you put up in a game for anyone to see, and the reactions you pressed", why: "So others can see and react to them", basis: "contract",
+    keep: "until you take a post down, take a reaction back or delete your account",
+    export: async ({ conf, me }) => ({
+      posts: await rows(conf, "SELECT id, app, kind, ref, text, at FROM posts WHERE user_id = ? ORDER BY at", me.id),
+      reactions: await rows(conf, "SELECT app, ref, icon, at FROM reactions WHERE user_id = ? ORDER BY at", me.id),
+    }),
+  },
+  {
     id: "avatar", what: "Your character: the parts and colours you picked", why: "So you look the same in every Q app", basis: "contract", keep: UNTIL,
     export: ({ conf, me }) => rows(conf, "SELECT data, at FROM avatars WHERE user_id = ?", me.id),
   },
