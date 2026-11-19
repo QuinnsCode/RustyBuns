@@ -508,6 +508,17 @@ pub enum Phase {
     Tracking,
     Locked,
 }
+/// Follow-through: the share of its pace a swinger walks at through the recovery of a blow that landed (sim.ts FOLLOW).
+pub const FOLLOW: f64 = 0.6;
+/// Is `f` in the recovery of a melee swing on the ground that landed? (sim.ts `through`)
+pub fn through(f: &Fighter) -> bool {
+    let Some(a) = f.act.as_ref() else { return false };
+    if f.state != State::Attack || !a.hit || !f.on_ground || !a.mv.delivery.is_touch() {
+        return false;
+    }
+    let fr = frames(&a.mv, a.tired);
+    f.t >= fr.startup + fr.active
+}
 pub fn swing_phase(f: &Fighter) -> Option<Phase> {
     let a = f.act.as_ref()?;
     let slot = a.mv.slot;
@@ -766,8 +777,9 @@ fn move_body(m: &mut Match, side: usize, i: &Input) {
     };
     let rising = f.state == State::Attack && f.act.as_ref().is_some_and(|a| a.mv.slot == Slot::Launcher) && !f.on_ground;
     if f.state == State::Attack && !rising {
-        wx *= 0.3;
-        wz *= 0.3;
+        let k = if through(f) { FOLLOW } else { 0.3 };
+        wx *= k;
+        wz *= k;
     }
     let lock = f.on_ground && !f.flying && f.state == State::Free;
     if lock {

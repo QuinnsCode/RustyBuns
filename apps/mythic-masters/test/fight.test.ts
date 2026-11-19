@@ -338,6 +338,24 @@ describe("the bruiser bot", () => {
     for (let k = 0; k < 60 && free.f[0].state !== "attack"; k++) step(free, [b(free), IDLE]);
     expect(Math.abs(bearing() - Math.PI)).toBeGreaterThan(0.01);
   });
+
+  test("follows through: a heavy that lands keeps it walking through the recovery, a whiff plants it", () => {
+    // How far it moves over its heavy's recovery, the target standing in reach or well out of it.
+    const walked = (gap: number) => {
+      const m = newMatch(bruiser, tank), me = bot(0, 1), f = m.f[0], fr = frames(f.moves.heavy);
+      f.pos = { x: 0, y: 0, z: 0 }; f.yaw = 0; m.f[1].pos = { x: f.b.radius + m.f[1].b.radius + gap, y: 0, z: 0 };
+      step(m, [hold({ heavy: true }), IDLE]);
+      while (f.state === "attack" && f.t < fr.startup + fr.active) step(m, [IDLE, IDLE]);
+      const from = { ...f.pos }, landed = !!f.act?.hit;
+      while (f.state === "attack") step(m, [me(m), IDLE]);
+      return { landed, moved: Math.hypot(f.pos.x - from.x, f.pos.z - from.z) };
+    };
+    const hit = walked(0.5), whiff = walked(8);
+    expect(hit.landed).toBe(true);
+    expect(whiff.landed).toBe(false);
+    expect(hit.moved).toBeGreaterThan(0.8);
+    expect(whiff.moved).toBeLessThan(0.2);
+  });
 });
 
 describe("the skirmisher bot", () => {

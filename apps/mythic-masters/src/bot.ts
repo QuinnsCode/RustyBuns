@@ -8,7 +8,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { atan2, cos, hypot, sin } from "./dmath.ts";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
-import { ARENA, COST, covers, DIVE, foeOf, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, under, warning, type Area, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, foeOf, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, through, under, warning, type Area, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -69,6 +69,17 @@ export function bot(side: number, seed: number): Bot {
       const a = me.act, h = a.hold ?? 0, key = me.act.key;
       const keep = a.area ? covers(a.area, o) || h < 30 + a.area.land : hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) > 8 && o.state !== "attack" && h < 50;
       return keep ? { ...IDLE, [key]: true } : IDLE;
+    }
+    // Follow-through (sim FOLLOW): our blow landed, so its recovery isn't spent standing square. Walk on round the target,
+    // closing in if the blow sent it away and easing out if we're chest to chest; back the other way at the edge. No rnd().
+    // Not the skirmisher: it has its own way out (RUN), and walking on round put it back behind the target, jabbing from one spot.
+    if (through(me) && me.c.archetype !== "skirmisher") {
+      const dx = o.pos.x - me.pos.x, dz = o.pos.z - me.pos.z, d = hypot(dx, dz) || 1;
+      const rad = d > me.b.radius + o.b.radius + 1 + RING ? 0.7 : -0.4;
+      let s = dir;
+      if (hypot(me.pos.x - (dz / d) * s * 3, me.pos.z + (dx / d) * s * 3) > ARENA.radius - 1.5) s = -s;
+      const vx = (-dz / d) * s + (dx / d) * rad, vz = (dx / d) * s + (dz / d) * rad, n = hypot(vx, vz);
+      return { ...IDLE, mx: vx / n, mz: vz / n };
     }
     if (me.state === "attack" || me.state === "stun") return IDLE;
     const i: Input = { ...IDLE };

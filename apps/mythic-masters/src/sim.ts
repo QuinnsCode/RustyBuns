@@ -18,6 +18,7 @@
 //   its aim (AIM). Where the target stands in a shape picks the damage between its high end and moves.ts LOW.
 // - A heavy or launcher swing turns to follow its target through the first half of its wind-up (LUNGE.lock), then goes
 //   where it was pointed: what moves out of its sweep after that is missed, and the whiff's recovery is the opening.
+// - A melee swing on the ground that lands lets you walk through its recovery (FOLLOW of your pace); a whiff plants you.
 // - Energy comes from landing and taking hits, plus a trickle standing still; the Big button fires the beam slot.
 // - A flyer's heavy with down held is a dive: it drops on the target and stays live until it lands,
 //   so it pays to come down: one that lands bounces back up out of reach, one that misses recovers on
@@ -253,6 +254,15 @@ export function sweep(f: Fighter, o: Fighter, slot: Slot) {
   const heavy = slot === "heavy" || slot === "launcher", step = heavy || slot === "ultimate" ? LUNGE.step + f.b.radius : 0;
   return { reach: f.b.radius + o.b.radius + (slot === "light" ? SWEEP.light : SWEEP.heavy) + step, ahead: heavy ? SWEEP.ahead.heavy : SWEEP.ahead.light };
 }
+/** Follow-through: a blow that landed doesn't plant its swinger. Through that swing's recovery it walks at this share
+ * of its pace (any other swing, a whiff included, at 0.3), so it presses on or circles instead of standing square (#5235 round 10). */
+export const FOLLOW = 0.6;
+/** Is `f` in the recovery of a melee swing on the ground that landed? */
+export function through(f: Fighter): boolean {
+  if (f.state !== "attack" || !f.act || !f.act.hit || !f.onGround || f.act.move.delivery.shape !== "touch") return false;
+  const fr = frames(f.act.move, f.act.tired);
+  return f.t >= fr.startup + fr.active;
+}
 export function swingPhase(f: Fighter): "tracking" | "locked" | null {
   const slot = f.act?.move.slot;
   if (f.state !== "attack" || !f.act || f.act.dive || f.act.move.delivery.shape !== "touch" || (slot !== "heavy" && slot !== "launcher")) return null;
@@ -363,7 +373,7 @@ function moveBody(m: Match, side: number, i: Input) {
   const wish = canSteer ? { x: i.mx * b.topSpeed * slow, z: i.mz * b.topSpeed * slow } : { x: 0, z: 0 };
   // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
   const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
-  if (f.state === "attack" && !rising) { wish.x *= 0.3; wish.z *= 0.3; }
+  if (f.state === "attack" && !rising) { const k = through(f) ? FOLLOW : 0.3; wish.x *= k; wish.z *= k; }
   // Orbit: on the ground, sideways input circles the opponent instead of running off along a tangent: the gap
   // you had when you started circling is pulled back to, so the path is a ring. Forward or back resets the gap.
   const lock = f.onGround && !f.flying && f.state === "free";
