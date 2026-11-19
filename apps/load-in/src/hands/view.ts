@@ -5,10 +5,8 @@
 // matrices. The forearm's material has an empty `tattoo` slot (its map) and the forearm's UVs run as one clean
 // rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
 import * as THREE from "three";
-import { HandSolver, gripFor, type HandPose, type What } from "./grip.ts";
+import { FINGERS, FOREARM, HAND, HandSolver, gripFor, handMesh, localQuats, placeHand, type HandPose, type V3, type What } from "@rustybuns/rig/hand";
 import { type Box, type Frame, type Side, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
-import { FINGERS, FOREARM, HAND, type V3 } from "./skeleton.ts";
-import { buildSkin, type SkinMesh } from "./skin.ts";
 import { connectorMesh } from "../cables/ends-view.ts";
 import type { Connector } from "../cables/ends.ts";
 
@@ -28,60 +26,6 @@ export type Hold = {
 const SKIN = 0xb57a58;
 const BLEND = 0.2;
 
-/** The skin, meshed once for both hands (the left is it mirrored). */
-let skinGeo: { right: THREE.BufferGeometry; left: THREE.BufferGeometry; nails: SkinMesh["nails"] } | null = null;
-function skinGeometry() {
-  if (skinGeo) return skinGeo;
-  const s = buildSkin(), g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(s.positions, 3));
-  g.setAttribute("normal", new THREE.BufferAttribute(s.normals, 3));
-  g.setAttribute("color", new THREE.BufferAttribute(s.colors, 3));
-  g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(s.joints, 4));
-  g.setAttribute("skinWeight", new THREE.BufferAttribute(s.weights, 4));
-  g.setIndex(new THREE.BufferAttribute(s.index, 1));
-  return (skinGeo = { right: g, left: mirrored(g), nails: s.nails });
-}
-
-/** A geometry mirrored in x, its triangles turned back round so they still face out. */
-function mirrored(g: THREE.BufferGeometry) {
-  const m = g.clone().applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)), ix = m.getIndex()!;
-  for (let i = 0; i < ix.count; i += 3) { const a = ix.getX(i + 1); ix.setX(i + 1, ix.getX(i + 2)); ix.setX(i + 2, a); }
-  return m;
-}
-
-/** One hand: a joint per bone (its matrix set each frame), the skin over them, and a nail riding each last joint. */
-function handMesh(side: Side, skin: THREE.Material, nail: THREE.Material) {
-  const root = new THREE.Group(), geo = skinGeometry();
-  const m = (v: V3): V3 => [v[0] * side, v[1], v[2]];
-  const bones = HAND.bones.map(() => { const o = new THREE.Bone(); o.matrixAutoUpdate = false; root.add(o); return o; });
-  // Bound at rest: each joint where the skeleton puts it, turned the way the skin was meshed.
-  const inverses = HAND.bones.map((b) => { const a = m(b.at); return new THREE.Matrix4().makeTranslation(-a[0], -a[1], -a[2]); });
-  const mesh = new THREE.SkinnedMesh(side > 0 ? geo.right : geo.left, skin);
-  mesh.bind(new THREE.Skeleton(bones, inverses), new THREE.Matrix4());
-  mesh.frustumCulled = false;
-  root.add(mesh);
-  const nailGeo = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-  for (const n of geo.nails) {
-    const b = HAND.bones[n.bone].at, across = new THREE.Vector3(...n.along).cross(new THREE.Vector3(...n.out));
-    const o = new THREE.Mesh(nailGeo, nail);
-    // a shallow dome on the back of the finger: wide across it, long along it, barely raised
-    const basis = new THREE.Matrix4().makeBasis(across.multiplyScalar(n.w / 2), new THREE.Vector3(...n.out).multiplyScalar(0.0034), new THREE.Vector3(...n.along).multiplyScalar(n.l / 2));
-    basis.setPosition(n.at[0] - b[0], n.at[1] - b[1], n.at[2] - b[2]);
-    if (side < 0) basis.premultiply(new THREE.Matrix4().makeScale(-1, 1, 1));
-    o.matrix.copy(basis);
-    o.matrixAutoUpdate = false;
-    bones[n.bone].add(o);
-  }
-  return { root, bones };
-}
-
-/** A pose's joint rotations, each relative to its parent's, so two poses blend joint by joint. */
-function localQuats(p: HandPose): THREE.Quaternion[] {
-  const w = HAND.bones.map((_, j) => new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().fromArray(p.mats, j * 16)));
-  return HAND.bones.map((b, j) => (b.parent < 0 ? w[j].clone() : w[b.parent].clone().invert().multiply(w[j])));
-}
-
-
 /** Your two hands and forearms, children of the camera. `update(hold, t, speed)` each frame; `state()` for the harness. */
 export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   const solver = new HandSolver();
@@ -100,11 +44,10 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
     forearm.matrixAutoUpdate = false;
     camera.add(h.root, forearm);
     return {
-      side, ...h, forearm, key: "", pose: null as HandPose | null, since: 0,
+      ...h, forearm, key: "", pose: null as HandPose | null, since: 0,
       /** the joint turns and the placement shown now, and where a blend started from */
       cur: HAND.bones.map(() => new THREE.Quaternion()), from: [] as THREE.Quaternion[], to: [] as THREE.Quaternion[],
       at: new THREE.Vector3(), turn: new THREE.Quaternion(), fromAt: null as THREE.Vector3 | null, fromTurn: new THREE.Quaternion(),
-      mats: HAND.bones.map(() => new THREE.Matrix4()),
     };
   });
   const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 }));
@@ -122,7 +65,7 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   camera.add(plug);
   lead.visible = plug.visible = false;
 
-  const mPlace = new THREE.Matrix4(), mLocal = new THREE.Matrix4(), mJoint = new THREE.Matrix4(), mirrorX = new THREE.Matrix4().makeScale(-1, 1, 1), camInv = new THREE.Matrix4();
+  const mPlace = new THREE.Matrix4(), camInv = new THREE.Matrix4();
   const tAt = new THREE.Vector3(), tTurn = new THREE.Quaternion();
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
   const toV = (v: V3, out = new THREE.Vector3()) => out.set(v[0], v[1], v[2]);
@@ -168,21 +111,7 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         if (s.fromAt && e < 1) { s.at.copy(s.fromAt).lerp(tAt, e); s.turn.copy(s.fromTurn).slerp(tTurn, e); }
         else { s.at.copy(tAt); s.turn.copy(tTurn); }
         mPlace.compose(s.at, s.turn, one);
-        // Down the chain: each joint's rest offset from its parent, then its turn.
-        HAND.bones.forEach((b, j) => {
-          mLocal.makeRotationFromQuaternion(s.cur[j]);
-          if (b.parent < 0) { s.mats[j].copy(mLocal); return; }
-          const p = HAND.bones[b.parent].at;
-          mLocal.setPosition(b.at[0] - p[0], b.at[1] - p[1], b.at[2] - p[2]);
-          s.mats[j].multiplyMatrices(s.mats[b.parent], mLocal);
-        });
-        HAND.bones.forEach((_, j) => {
-          // The left hand is the right one mirrored: S J S, in its own mirrored frame.
-          mJoint.copy(s.mats[j]);
-          if (s.side < 0) mJoint.premultiply(mirrorX).multiply(mirrorX);
-          s.bones[j].matrix.multiplyMatrices(mPlace, mJoint);
-          s.bones[j].matrixWorldNeedsUpdate = true;
-        });
+        placeHand(s, mPlace, s.cur);
         // The forearm, wrist to elbow, its flat side with the back of the hand; a touch thicker under load.
         const shown: Frame = { o: fromV(s.at), x: [0, 0, 0], y: [0, 0, 0], z: fromV(vA.set(0, 0, 1).applyQuaternion(s.turn)) };
         const dir = toV(elbow(shown, s.side, hold.kg), vB).sub(s.at), len = dir.length();

@@ -4,7 +4,7 @@
 // surface. A planar pass picks each fingertip's contact (the most wrapped curl that doesn't pass through the thing),
 // then the rig reaches it in 3D within the joints' limits, the thumb trying a few places and keeping the best. One
 // solve per grip, cached: a frame never solves. Plain TS, no three.js, no game world.
-import { IkRig } from "@rustybuns/rig/ik";
+import { IkRig } from "../ik.ts";
 import { FINGERS, type Finger, HAND, PALM, type V3 } from "./skeleton.ts";
 
 /** What the surface is, in the hand frame: a cylinder lying across the palm (its axis along x), or a plane under it. */

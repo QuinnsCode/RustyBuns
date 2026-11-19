@@ -3,7 +3,7 @@
 // fingers of three joints each (the thumb: its base, its knuckle and its tip joint), with the range each joint really
 // has: knuckles curl a long way toward the palm, barely back, and spread a little; the two finger joints past them are
 // hinges. Plain numbers, no three.js, so the solver and its test run anywhere.
-import type { JointLimit } from "@rustybuns/rig/ik";
+import type { JointLimit } from "../ik.ts";
 
 export type V3 = [number, number, number];
 

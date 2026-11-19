@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { GEAR_SIZES, gear, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { bundleR, coilGeometry, strapOn } from "../cables/draw.ts";
-import { REST } from "../hands/grip.ts";
+import { REST } from "@rustybuns/rig/hand";
 import { handsView, type Hold } from "../hands/view.ts";
 import { mountInk } from "../you/ink-view.ts";
 import { shoesView } from "../you/shoes.ts";

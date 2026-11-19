@@ -3,8 +3,7 @@
 // handle) that space is the camera's; on a carried cabinet it is the world, palms flat on its two sides. Weight
 // shows: the heavier it is, the lower the wrist and the steeper the forearm, and the hands bob with your steps.
 // The forearm runs from the wrist to an elbow low and outside the view. Plain numbers, no three.js.
-import type { What } from "./grip.ts";
-import { FOREARM, PALM, type V3 } from "./skeleton.ts";
+import { FOREARM, PALM, type V3, type What } from "@rustybuns/rig/hand";
 
 export type Frame = { o: V3; x: V3; y: V3; z: V3 };
 /** A carried box: its base centre, its turn about y, its size (metres). */
