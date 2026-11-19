@@ -6,6 +6,7 @@
   "scripts": {
     "build:native": "bun scripts/build-native.ts",
     "test": "bun test test",
+    "test:rust": "bun scripts/build-native.ts --wasm && bun test test/circuit.test.ts",
     "bench": "bun bench/engines.ts",
     "dev": "vite",
     "build": "bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && vite build --outDir dist/client",

@@ -105,8 +105,13 @@ export function plan(v: Valve, up: boolean, batt: Battery, cap: number): Plan {
 
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const BUSY = 75;
-// Locks older than this are from a run whose ssh died; take them back.
-const STALE_MIN = 90;
+// A run touches its slot's lock every HEARTBEAT_MS while it holds it, however long its tests take. A lock untouched
+// for STALE_MIN is a run that died (its worker sent home, its ssh dropped, its Mac asleep): the next claim takes it back.
+// It was 90 minutes with no heartbeat, and one dead run held its slot that long while every other run waited.
+const STALE_MIN = 3;
+const HEARTBEAT_MS = 60_000;
+// A push to a slot that hasn't finished in this long is hung (seen at over 2 hours): give up and give the slot back.
+const PUSH_MS = 5 * 60_000;
 
 export type Builder = { host: string; dir: string; ssh: string[] };
 
@@ -171,7 +176,10 @@ export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   const push = Bun.spawn(["git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `+${sha}:${ref}`], {
     cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
   });
-  if (await push.exited) return 1;
+  const hung = setTimeout(() => { console.error(`the push to ${slot} hung for ${PUSH_MS / 60_000} minutes; giving up`); push.kill(); }, PUSH_MS);
+  const pushed = await push.exited;
+  clearTimeout(hung);
+  if (pushed) return 1;
   const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref -d ${ref} `
     + `&& git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
   return code;
@@ -387,7 +395,9 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
     await Bun.sleep(poll);
   }
 
-  const finish = (code: number) => release(b, slot, { ...rec, ended: Date.now(), code });
+  // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
+  const beat = setInterval(() => { remote(b, `touch locks/${q(slot)}`); }, HEARTBEAT_MS);
+  const finish = (code: number) => { clearInterval(beat); return release(b, slot, { ...rec, ended: Date.now(), code }); };
   const giveBack = () => { finish(130).finally(() => process.exit(130)); };
   process.once("SIGINT", giveBack);
   process.once("SIGTERM", giveBack);

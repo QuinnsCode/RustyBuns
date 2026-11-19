@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readdirSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
 import { battery, ciJobs, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, TYPECHECK, type Valve } from "./remote-ci.ts";
@@ -71,12 +71,16 @@ test("the pool never runs more than the cap and returns the worst code", async (
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
 // Each run leaves a record its menu bar reads: who and what while it runs, then how it ended.
-test("a run sends the working tree, untracked files too, to a free slot, shows on the builder's menu and gives it back", async () => {
+test("a run takes back a dead run's slot, sends the working tree, untracked files too, shows on the builder's menu and gives it back", async () => {
   const root = mkdtempSync(`${tmpdir()}/remote-ci-`), work = `${root}/work`, home = `${root}/home`;
   const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   await Bun.write(`${work}/package.json`, `{"name":"w"}`);
   await Bun.$`git init -q && git add -A && git commit -qm one`.cwd(work).env({ ...process.env, ...id });
   await Bun.$`mkdir -p ${home}/builder/locks && git clone -q ${work} ${home}/builder/slot-1`;
+  // The only slot is locked by a run that died ten minutes ago (no heartbeat since): this run takes it back, not waits.
+  mkdirSync(`${home}/builder/locks/slot-1`);
+  const dead = new Date(Date.now() - 10 * 60_000);
+  utimesSync(`${home}/builder/locks/slot-1`, dead, dead);
   // The first ssh fails (Bob off) and the valve is shut, so the run waits for the next one; a fake pmset says AC.
   const ssh = `${root}/ssh`, pmset = `${root}/bin/pmset`;
   await Bun.write(ssh, `#!/bin/sh\n[ -f "${root}/up" ] || { touch "${root}/up"; exit 255; }\nshift\nexport PATH="${root}/bin:$PATH"\ncd "${home}" && exec sh -c "$*"\n`);
