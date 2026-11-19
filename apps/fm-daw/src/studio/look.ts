@@ -21,7 +21,7 @@ import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShade
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import { thingBox, wallPieces, type Side, type StudioDef } from "./room.ts";
+import { propBlocks, thingBox, wallPieces, type Side, type StudioDef } from "./room.ts";
 import { MATERIALS } from "./sound.ts";
 
 export type Quality = "low" | "high";
@@ -705,8 +705,8 @@ function toSegment(p: [number, number], a: [number, number], b: [number, number]
 
 /**
  * Where a room's floor lamps stand: the corners nobody plays in, as a real room keeps a lamp or two out of the way
- * for warm light at head height. A corner is free when no seat is within 1.4 m and no inner wall within half a
- * metre; of those, the two farthest from any seat, at most. A hall too big for a lamp to tell gets none.
+ * for warm light at head height. A corner is free when no seat is within 1.4 m, no inner wall within half a
+ * metre and no furniture the room set there (a desk, a cabinet); of those, the two farthest from any seat, at most. A hall too big for a lamp to tell gets none.
  */
 export function practicals(def: StudioDef): [number, number][] {
   const { w, d } = def.size;
@@ -714,7 +714,7 @@ export function practicals(def: StudioDef): [number, number][] {
   const inset = 0.45, near = (p: [number, number]) => Math.min(Infinity, ...def.spots.map((s) => Math.hypot(p[0] - s.at[0], p[1] - s.at[1])));
   const free = ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const)
     .map(([sx, sz]): [number, number] => [sx * (w / 2 - inset), sz * (d / 2 - inset)])
-    .filter((p) => near(p) > 1.4 && def.walls.every((wl) => toSegment(p, wl.from, wl.to) > 0.5));
+    .filter((p) => near(p) > 1.4 && def.walls.every((wl) => toSegment(p, wl.from, wl.to) > 0.5) && (def.props ?? []).every((q) => !propBlocks(q) || Math.hypot(p[0] - q.at[0], p[1] - q.at[1]) > Math.max(q.w, q.d) / 2 + 0.35));
   return free.sort((a, b) => near(b) - near(a)).slice(0, 2);
 }
 
@@ -861,7 +861,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       const mat = o.material;
       if (glow > 0 && mat instanceof THREE.MeshStandardMaterial) {
         o.material = mat.clone();
-        if (o.material instanceof THREE.MeshStandardMaterial) { o.material.emissive.copy(mat.color); o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass
+        if (o.material instanceof THREE.MeshStandardMaterial) { if (mat.emissive.getHex() === 0) o.material.emissive.copy(mat.color); /* a screen is dark glass lit by its own colour: keep it */ o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass
         if (o.userData.lamp && lamps.length < 4) { const p = new THREE.PointLight(0xffd7a8, 6 * glow, 6, 2); o.add(p); lamps.push(p); }
         return;
       }

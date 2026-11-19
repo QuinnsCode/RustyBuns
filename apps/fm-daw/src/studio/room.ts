@@ -89,7 +89,11 @@ export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw:
 }
 
 /** Set dressing: what fills a room besides its seats. Drawn by src/studio/props.ts; it doesn't change how the room sounds. */
-export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "monitor", "stairs", "balcony", "window", "piano", "micStand", "panel", "frames", "sampler", "table"] as const;
+export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "monitor", "stairs", "balcony", "window", "piano", "micStand", "panel", "frames", "sampler", "table",
+  // an office's clutter: a desk with its screen and papers, a cubicle's edge, books stacked on the floor, cables, what's left on a desk, a filing cabinet
+  "officeDesk", "cubicle", "books", "cables", "clutter", "cabinet",
+  // a TV sound stage: a riser you stand on, the lighting grid, bleachers, a camera on its pedestal, a floor wedge, a cyc, a painted flat, the host's desk
+  "riser", "grid", "bleachers", "camera", "wedge", "cyc", "flat", "hostDesk"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 export interface Prop {
   kind: PropKind;
@@ -103,6 +107,18 @@ export interface Prop {
   seed?: number;
 }
 /** Dressing you walk round: anything standing on the floor except what's flat or thin. */
-export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony"].includes(p.kind);
+export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony", "cables", "clutter", "riser", "grid"].includes(p.kind);
 /** A prop's footprint, as a box on the floor turned by its yaw. */
 export const propBox = (p: Prop) => ({ cx: p.at[0], cz: p.at[1], hw: p.w / 2, hd: p.d / 2, turn: p.yaw });
+/** How high the floor is here: a riser's deck under (x, z) lifts whoever stands or sits on it, and what they play. */
+export function floorAt(def: StudioDef, x: number, z: number): number {
+  let y = 0;
+  for (const p of def.props ?? []) {
+    if (p.kind !== "riser") continue;
+    const dx = x - p.at[0], dz = z - p.at[1], c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+    // into the riser's own frame (three.js turns +x toward -z by yaw)
+    const lx = dx * c - dz * s, lz = dx * s + dz * c;
+    if (Math.abs(lx) <= p.w / 2 && Math.abs(lz) <= p.d / 2) y = Math.max(y, (p.y ?? 0) + p.h);
+  }
+  return y;
+}

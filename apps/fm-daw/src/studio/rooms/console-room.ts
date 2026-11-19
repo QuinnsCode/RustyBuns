@@ -48,6 +48,6 @@ export const CONSOLE_ROOM: StudioDef = {
     { kind: "lamp", at: [-3.5, -3.5], yaw: 0, w: 0.4, d: 0.4, h: 1.4, color: "#c88a4a" },
     { kind: "lamp", at: [1.45, 0.75], yaw: 0, w: 0.22, d: 0.22, h: 0.4, y: 0.8, color: "#3a2a1a" },
     { kind: "plant", at: [-1.6, 3.4], yaw: 0, w: 0.5, d: 0.5, h: 1.1, color: "#6a4a2e", seed: 37 },
-    { kind: "frames", at: [0, -3.97], yaw: Math.PI, w: 4, d: 0.02, h: 1.2, y: 1.3, color: "#000000", seed: 38 },
+    { kind: "frames", at: [0, -3.93], yaw: Math.PI, w: 4, d: 0.02, h: 1.2, y: 1.3, color: "#000000", seed: 38 },
   ],
 };

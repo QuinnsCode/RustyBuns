@@ -5,7 +5,7 @@ import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
 import type { Live, Project } from "../project.ts";
 import { QWERTY } from "../ui/input.ts";
-import { propBlocks, propBox, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { floorAt, propBlocks, propBox, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
 import { pushOut as walkOut, type Rect } from "./walk.ts";
 
 export const WALK = 2.2;           // metres a second
@@ -132,8 +132,9 @@ export const SIT_EYE = { back: 0.04, up: 0.15 };
  * draw your own head (1 solid): close to the camera, seated beside your shoulder, it fades so the keys and the kit show through.
  */
 export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number; head: number } {
-  const p = pose(j), m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
-  return { ...p, head: headFade(Math.hypot(p.at[0] - m.x, p.at[1] - eye, p.at[2] - m.z)) };
+  const p = pose(j), m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND, lift = floorAt(j.def, m.x, m.z);
+  // up on a riser, the camera rides up with you
+  return { ...p, at: [p.at[0], p.at[1] + lift, p.at[2]], head: headFade(Math.hypot(p.at[0] - m.x, p.at[1] - eye, p.at[2] - m.z)) };
 }
 
 /** How solid your head is drawn, the camera this far (metres) from it: solid out on the full boom, see-through up close. */
