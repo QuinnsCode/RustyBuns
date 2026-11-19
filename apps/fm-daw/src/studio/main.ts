@@ -25,7 +25,8 @@ import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
 import { encodeTake } from "../take.ts";
 import { b64url } from "@rustybuns/util/bytes";
-import { OpusIn, OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
+import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
+import { FarSound } from "./plugin-line.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
@@ -335,7 +336,7 @@ async function startAudio() {
     out = await AudioOut.start((m) => {
       if (m.t === "tick") { transport = { abs: m.abs, synced: m.synced, late: m.late, playing: m.playing }; return; }
       // a slice of your guitar, stamped with the beat you played it on, to everyone hearing a loop late or at the desk
-      if (m.t !== "sound" || myGuitar === null) return;
+      if (m.t !== "sound" || m.track !== undefined || myGuitar === null) return;
       const pcm = encodeTake(m.pcm, m.rate);
       if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
       else live(Band.slice(myGuitar, m.beat, pcm, b64url));
@@ -343,7 +344,7 @@ async function startAudio() {
     // Opus over the World when this browser has WebCodecs (a quarter of PCM's bytes), else PCM
     const opus = await webOpus();
     opusEncoder = opus?.encoder ?? null;
-    if (opus) opusIn = new OpusIn(opus.decoder, (peer, track, b, pcm) => { for (const m of band.sound(peer, track, b, pcm)) out?.send(m); });
+    if (opus) far.decodeWith(opus.decoder);
     out.send(loadMsg(project));
     out.send(masterMsg(project));
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
@@ -375,8 +376,8 @@ function releaseAll() { for (const by of [...holding.keys()]) noteOff(by); }
 let guitars: GuitarLine | null = null;
 /** The track your guitar is plugged into (-1: straight in), or null while it's out. */
 let myGuitar: number | null = null;
-/** Your guitar's Opus encoder while it's plugged in, and everyone else's decoders (src/studio/opus.ts); null with no WebCodecs. */
-let opusEncoder: MakeEncoder | null = null, opusOut: OpusOut | null = null, opusIn: OpusIn | null = null;
+/** Your guitar's Opus encoder while it's plugged in (src/studio/opus.ts); null with no WebCodecs. */
+let opusEncoder: MakeEncoder | null = null, opusOut: OpusOut | null = null;
 /** Whose guitar is in, by peer, and the track it's plugged into. */
 const plugged = new Map<number, number>();
 /** Whose of those is a voice from the booth's mic, not a guitar; and what yours is while it's in. */
@@ -441,19 +442,24 @@ function onLive(from: number, e: Live) {
   hear(jam, from, e);
   if (e.t === "wear") people();
   if (e.t === "guitar") {
-    if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); opusIn?.drop(from); }
+    far.heard(from, e);
+    if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); }
     else { plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from); guitars?.ask(from); }
     return;
   }
   if (e.t === "play" || e.t === "stop") return void playGroove(e.t === "play", false);
+  // a far plugin's track: kept quiet here, its sound in slices
+  if (e.t === "plugin") return void far.heard(from, e);
   if (!sounds(mutes, from, e)) return;
-  if (e.t === "sound" && e.c === "opus") return void (band.hearsSlices && opusIn?.hear(from, e));
+  if (far.heard(from, e)) return;
   for (const m of band.heard(from, e)) out?.send(m);
 }
 
 // ---- the shared clock (src/clock.ts): the leader's time, the groove and click on it, and how you hear the others ----
 const wall = () => performance.timeOrigin + performance.now();
 const band = new Band(() => ({ bpm: project.bpm, loopBeats: loopBeats(project) }), wall);
+/** Everyone else's guitars and plugin tracks, coming in as slices (src/studio/plugin-line.ts). */
+const far = new FarSound(band, (m) => out?.send(m));
 /** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
 let transport = { abs: 0, synced: false, late: 0, playing: false };
 /** Enter, or anyone's Play on the live line: the groove and its click, on the shared beat, for everyone. */
@@ -545,7 +551,7 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from);
-  band.quiet(from); opusIn?.drop(from); out?.send({ t: "quiet", peer: from });
+  far.gone(from);
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
   gone(jam, from);
