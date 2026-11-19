@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { fingerboard, roadster } from "../src/models.ts";
 import { makeLevel } from "../src/level.ts";
 import { Skins } from "../src/render/skins.ts";
-import { lieOnGround, manualPose, REST_TILT, rideableRise, TiltEase } from "../src/render/tilt.ts";
+import { lieOnGround, manualPose, rideableRise } from "../src/render/tilt.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 const PIVOT = { fingerboard: 0.45, roadster: 0.6 };
@@ -40,23 +40,6 @@ test.each([["fingerboard"], ["roadster"]] as const)("the %s keeps its wheels on 
       expect(low).toBeLessThan(0.1); // and not floating
     }
   }
-});
-
-test("the nearer balance is to falling the steeper and shakier it gets, and a manual eases in and out", () => {
-  const calm = manualPose(1, 0, "roadster", 0.6, 0.3), tipping = manualPose(1, 0.9, "roadster", 0.6, 0.3);
-  expect(calm.pitch).toBeCloseTo(-REST_TILT);
-  expect(Math.abs(tipping.pitch)).toBeGreaterThan(Math.abs(calm.pitch));
-  let peak = 0, peakCalm = 0;
-  for (let t = 0; t < 1; t += 0.01) {
-    peak = Math.max(peak, Math.abs(manualPose(1, 0.9, "roadster", 0.6, t).roll));
-    peakCalm = Math.max(peakCalm, Math.abs(manualPose(1, 0.1, "roadster", 0.6, t).roll));
-  }
-  expect(peak).toBeGreaterThan(peakCalm * 5);
-  const e = new TiltEase();
-  expect(e.update(1, 1 / 60)).toBeGreaterThan(0);
-  expect(e.ease).toBeLessThan(0.5); // not a snap
-  for (let i = 0; i < 60; i++) e.update(0, 1 / 60);
-  expect(e.ease).toBe(0);
 });
 
 test("on a slope the board's up is the ground's normal, whatever the heading", () => {

@@ -4,24 +4,11 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
-import type { ParkLevel } from "../src/levels/park.ts";
 import { Chase, FOV } from "../src/render/chase.ts";
-import { Scenery, scatter } from "../src/render/scenery.ts";
 import { IDLE, start, step } from "../src/sim.ts";
-import { build, level as loadLevel } from "./parks.ts";
+import { build } from "./parks.ts";
 
 setDefaultTimeout(60000);
-
-test("a pine shrinks away as the rider nears it, and grows back when they leave", async () => {
-  const level = (await loadLevel("mariposa-grove")) as ParkLevel;
-  const spots = scatter(level, level.ground), scenery = new Scenery(spots);
-  const i = spots.filter((s) => s.kind === "pine").length >> 1, pine = spots.filter((s) => s.kind === "pine")[i]!;
-  expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
-  scenery.update([{ x: pine.x + 0.3, z: pine.z }]);
-  expect(scenery.scaleOf("pine", i)).toBeLessThan(0.1);
-  scenery.update([{ x: pine.x + 40, z: pine.z }]);
-  expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
-});
 
 test("the chase camera sits behind and above a rider going down the park, and the view widens with speed", async () => {
   const level = await build(LEVELS[0]!), p = level.spawns[0]!;

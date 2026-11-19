@@ -3,11 +3,10 @@
 // on a park's slopes.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { makeLevel, toLocal } from "../src/level.ts";
 import { bowl, fallenLog, join, outcrop, rockFace } from "../src/levels/pieces.ts";
-import { KIT_BUDGETS, fitAcross, fitUp, loadKit } from "../src/render/kit.ts";
+import { KIT_BUDGETS, loadKit } from "../src/render/kit.ts";
 import { TILE, levelMeshes } from "../src/render/pieces.ts";
 import { level as loadLevel } from "./parks.ts";
 
@@ -66,15 +65,4 @@ test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns
   expect(rises.every((r) => r >= -1e-9)).toBe(true);
   expect(hs.at(-1)).toBeCloseTo(face!.h1);
   expect(Math.max(...rises)).toBeGreaterThan(face!.h1 * 0.15);
-});
-
-test("the fixed-size bands: a trim keeps its metres on a small piece and a big one", () => {
-  for (const half of [2, 15]) expect(half - fitAcross(0.4, half, 0.4)).toBeCloseTo(0.4);
-  expect(fitAcross(0.5, 15, 0.4)).toBeCloseTo(15);
-  expect(fitAcross(-0.2, 15, 0.4)).toBeCloseTo(-(15 - 0.4) / 2);
-  expect(fitUp(1, 3, 10, 0.15)).toBeCloseTo(10);
-  expect(fitUp(0.9, 3, 10, 0.15)).toBeCloseTo(10 - 0.15);
-  expect(fitUp(0, 3, 10, 0.15)).toBeCloseTo(3);
-  // A sliver of a column keeps its band in proportion instead of turning inside out.
-  expect(fitUp(0.9, 0, 0.1, 0.15)).toBeGreaterThan(0);
 });

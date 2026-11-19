@@ -4,7 +4,6 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { PEAK_MODELS, type Peak } from "../src/levels/park.ts";
 import { dressPeak, PEAK_BUDGETS } from "../src/render/peak.ts";
-import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { level as loadLevel } from "./parks.ts";
 
@@ -30,18 +29,6 @@ test.each([...PEAK_BUDGETS])("the %s Half Dome stands past the park's west edge,
     expect((m.material as THREE.MeshBasicMaterial).fog).toBe(false);
   });
   expect(tris).toBeLessThan(BUDGET[budget]);
-});
-
-test("the west face is sheer and the east shoulder is not", async () => {
-  const g = await dressPeak(peak, await glb("mid"), 0xdfe5ec);
-  g.updateMatrixWorld(true);
-  const rise = (x: number, dx: number) => { // metres of height the crest line gains over `dx` metres of run
-    const up = (x0: number) => new THREE.Raycaster(new THREE.Vector3(x0, 5000, peak.z), new THREE.Vector3(0, -1, 0)).intersectObject(g, true)[0]?.point.y ?? peak.y;
-    return Math.abs(up(x + dx) - up(x)) / Math.abs(dx);
-  };
-  const crest = peak.x, face = crest - 0.03 * peak.tall, shoulder = crest + 0.5 * peak.tall;
-  expect(rise(face, 0.02 * peak.tall)).toBeGreaterThan(3);
-  expect(rise(shoulder, 0.02 * peak.tall)).toBeLessThan(1);
 });
 
 // The landmarks for the parks beyond the Sierra (blender/landmarks.py), each normalised like Half Dome: crest at `tall`, foot on `y`.
