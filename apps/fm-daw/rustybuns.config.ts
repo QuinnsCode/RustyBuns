@@ -27,6 +27,10 @@ export default defineConfig({
     ROOM_SEATS: { type: "var", value: "16" },
     // Reads the sign-up list (GET /signups with "Authorization: Bearer <token>"). Missing, nobody can.
     SIGNUPS_TOKEN: { type: "secret", op: "op://fm-daw/signups/password", optional: true },
+    // Cloudflare Realtime's TURN key, so two players behind strict networks still hear each other's guitar (GET /ice,
+    // src/worker.ts). Billed per GB relayed. Missing, a guitar call gets STUN alone.
+    TURN_KEY_ID: { type: "secret", op: "op://fm-daw/turn-key-id/password", optional: true },
+    TURN_KEY_API_TOKEN: { type: "secret", op: "op://fm-daw/turn-key-token/password", optional: true },
   },
   targets: {
     // The URL is fm-daw.<subdomain>.workers.dev, the play link apps/playground/public/apps.json gets.

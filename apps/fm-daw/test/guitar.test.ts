@@ -1,7 +1,10 @@
 // The guitar line's pure half (src/guitar.ts): Opus set for a guitar, the lag in words, which track a guitar goes into.
 // The World passing a call's setup is in world.test.ts; the call itself, sound and all, is scripts/guitar-check.ts.
+// The Worker handing a call its servers (a TURN relay pass, or STUN alone) is GET /ice.
 import { expect, test } from "bun:test";
-import { feel, guitarSettings, guitarTrack, lagMs, tuneOpus, type Feel } from "../src/guitar.ts";
+import { check } from "@rustybuns/util/guard";
+import { feel, guitarSettings, guitarTrack, IceReply, lagMs, STUN, tuneOpus, type Feel } from "../src/guitar.ts";
+import worker, { ICE_TTL_S } from "../src/worker.ts";
 import { TrackAmp } from "../src/amp/track-amp.ts";
 import { demoProject } from "../src/presets.ts";
 import { apply } from "../src/project.ts";
@@ -33,6 +36,51 @@ test("the lag: half the round trip, the jitter buffer and the codec, and how pla
     expect(lagMs(trip)).toBe(ms);
     if (ms !== null) expect(feel(ms)).toBe(f!);
   }
+});
+
+test("a call's servers from GET /ice: Cloudflare's TURN pass when the key is set (no port 53), else STUN alone", async () => {
+  const stub = { fetch: async () => new Response("") };
+  const place = { idFromName: (n: string) => n, get: () => stub };
+  const env: Parameters<typeof worker.fetch>[1] = { ASSETS: stub, WORLD: place, LOBBY: place, PROFILE: place };
+  const ask = async (e: typeof env, ip: string) => {
+    const r = await worker.fetch(new Request("https://fm-daw.test/ice", { headers: { "CF-Connecting-IP": ip } }), e);
+    return { status: r.status, cache: r.headers.get("Cache-Control"), body: check(IceReply, await r.json().catch(() => null)) };
+  };
+  const real = globalThis.fetch;
+  const asked: { url: string; auth: string | null; body: unknown }[] = [];
+  let cloudflare = (): Response => Response.json({ iceServers: [
+    { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.cloudflare.com:53"] },
+    { urls: ["turn:turn.cloudflare.com:3478?transport=udp", "turn:turn.cloudflare.com:53?transport=udp", "turns:turn.cloudflare.com:443?transport=tcp"], username: "u1", credential: "c1" },
+  ] });
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push({ url: String(url), auth: new Headers(init?.headers).get("Authorization"), body: JSON.parse(String(init?.body)) });
+    return cloudflare();
+  }, { preconnect: real.preconnect });
+  try {
+    // no TURN key (the desktop, a local run): STUN, and nothing to keep, so the next call asks again
+    expect(await ask(env, "1.1.1.1")).toEqual({ status: 200, cache: expect.stringContaining("no-store"), body: { iceServers: STUN, ttl: 0 } });
+    expect(asked).toEqual([]);
+
+    const keyed = { ...env, TURN_KEY_ID: "key1", TURN_KEY_API_TOKEN: "tok" };
+    const got = await ask(keyed, "1.1.1.2");
+    expect(asked).toEqual([{ url: "https://rtc.live.cloudflare.com/v1/turn/keys/key1/credentials/generate-ice-servers", auth: "Bearer tok", body: { ttl: ICE_TTL_S } }]);
+    expect(got.body).toEqual({ ttl: ICE_TTL_S, iceServers: [
+      { urls: ["stun:stun.cloudflare.com:3478"] },
+      { urls: ["turn:turn.cloudflare.com:3478?transport=udp", "turns:turn.cloudflare.com:443?transport=tcp"], username: "u1", credential: "c1" },
+    ] });
+
+    // Cloudflare down or answering nonsense: the call still gets STUN
+    for (const down of [() => new Response("nope", { status: 503 }), () => Response.json({ iceServers: "x" })]) {
+      cloudflare = down;
+      expect((await ask(keyed, "1.1.1.3")).body).toEqual({ iceServers: STUN, ttl: 0 });
+    }
+
+    // one address asking over and over is turned away within the minute
+    const statuses = [];
+    for (let i = 0; i < 8; i++) statuses.push((await ask(keyed, "9.9.9.9")).status);
+    expect(statuses.slice(0, 6).every((s) => s === 200)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
+  } finally { globalThis.fetch = real; }
 });
 
 test("a guitar goes into the seat's track when it has an amp, else the first track with one, else straight in", () => {

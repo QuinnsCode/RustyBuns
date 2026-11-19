@@ -7,7 +7,7 @@
 // Each guitar is its own call: the player's `out` line to each listener, the listener's `in` line from them. Two
 // players with guitars make two calls between them, one each way, so neither offer ever crosses the other.
 // No DOM and no Bun here: the World and the page both import it (studio/guitar-line.ts is the browser half).
-import { check, int, obj, oneOf, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { TRACKS } from "./engine/params.ts";
 import type { Project } from "./project.ts";
 import { TrackAmp } from "./amp/track-amp.ts";
@@ -42,6 +42,29 @@ export const RtcServer = obj({ t: tag("rtc"), from: PEER, line: oneOf(LINES), s:
 export type RtcServer = Of<typeof RtcServer>;
 export const decodeRtcClient = (v: unknown): RtcClient | null => check(RtcClient, v);
 export const decodeRtcServer = (v: unknown): RtcServer | null => check(RtcServer, v);
+
+/** A public STUN server to find each end's address: all a call has when no relay is set up (the desktop, or no TURN key). */
+export const STUN: IceServer[] = [{ urls: ["stun:stun.cloudflare.com:3478"] }];
+const URL_ = str(256, { min: 1 });
+/** One server a call may use; WebRTC lets `urls` be one string or a list. */
+const IceServerGuard = obj({ urls: (v: unknown) => (typeof v === "string" ? [URL_(v)] : arr(URL_, 16, { min: 1 })(v)), username: opt(str(512)), credential: opt(str(512)) });
+export type IceServer = Of<typeof IceServerGuard>;
+/**
+ * What GET /ice answers (src/worker.ts): the servers a guitar call may use and how many seconds they last. With a TURN
+ * relay among them, two players whose networks both refuse a direct path still connect, through Cloudflare's relay.
+ */
+export const IceReply = obj({ iceServers: arr(IceServerGuard, 8, { min: 1 }), ttl: int(0, 7 * 86_400) });
+export type IceReply = Of<typeof IceReply>;
+/**
+ * Cloudflare's TURN key API answers its servers; a browser can't use port 53 (Firefox blocks it, and a call then waits on
+ * it), so those go. Null when the reply isn't the shape it should be.
+ */
+export function browserIce(v: unknown): IceServer[] | null {
+  const got = check(obj({ iceServers: arr(IceServerGuard, 8, { min: 1 }) }), v);
+  if (!got) return null;
+  const out = got.iceServers.map((x) => ({ ...x, urls: x.urls.filter((u) => !/:53(\?|$)/.test(u)) })).filter((x) => x.urls.length);
+  return out.length ? out : null;
+}
 
 /** A live-line track: -1 is straight in, no track (no amp, heard dry). */
 export const GUITAR_TRACK = int(-1, TRACKS - 1);
@@ -116,7 +139,7 @@ export type Lag = number | null | "failed";
 /** The lag in words, for the room's status line. */
 export function lagWords(name: string, ms: Lag): string {
   if (ms === null) return `${name}'s guitar: connecting`;
-  if (ms === "failed") return `${name}'s guitar couldn't get through to you (both networks are strict; TURN is #5187)`;
+  if (ms === "failed") return `${name}'s guitar couldn't get through to you (no path between your two networks, not even the relay)`;
   const f = feel(ms);
   return `${name}'s guitar ${ms} ms behind, ${f === "tight" ? "tight" : f === "loose" ? "loose: lean on the beat" : "too far to play tight"}`;
 }
