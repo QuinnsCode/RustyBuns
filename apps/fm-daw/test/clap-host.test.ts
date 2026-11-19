@@ -1,5 +1,6 @@
 // A player's own CLAP plugin, hosted by the Rust engine (#5244): the desktop's native library is itself a `.clap`
 // holding Test Tone, so the whole path (find it, open it, list it, start it, play it, move a slider) runs on it.
+// The editor window itself is tried in the crate's own tests (src/clap/gui.rs), with a pretend editor swapped in.
 // Skips (with a note) when the crate isn't built.
 import { test, expect } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -72,6 +73,23 @@ test("a plugin track's fader and mute, from the desk or the remote, set the plug
   expect(level([levelOp(t, 0.5)])).toBeCloseTo(0.5, 3);
   expect(level([muteOp(t, true)])).toBeCloseTo(0, 3);
   expect(level([muteOp(t, false), { t: "track", track: 1, solo: true }])).toBeCloseTo(0, 3);
+});
+
+test("a plugin without an editor of its own says so, and turns no knobs itself", async () => {
+  if (!built) return console.log("  (skipped: cdylib not built; run `bun run build:native`)");
+  const b = await openBundle(built);
+  if (typeof b === "string") throw new Error(b);
+  const p = b.make(0, SR);
+  if (typeof p === "string") throw new Error(p);
+  expect(p.editor).toBeNull();
+  expect(p.openEditor("Test Tone, track 1")).toBe("Test Tone has no editor of its own");
+  p.noteOn(60, 1);
+  p.render(new Float32Array(2 * 512), 512);
+  expect(p.changes()).toEqual([]);
+  p.free();
+  expect(p.openEditor("again")).toBe("the plugin has stopped");
+  expect(p.changes()).toEqual([]);
+  b.close();
 });
 
 test("a file that isn't a plugin says why", async () => {
