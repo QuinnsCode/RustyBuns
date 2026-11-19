@@ -69,30 +69,26 @@ test("a silent room scores nothing; tops at the wall score low; aimed at the cro
 
 test("the centre prompt names a key only when you look at what it works on", () => {
   const w = newWorld(DIVE_BAR), map = { on: false, band: "high" as const };
-  const lookAt = (key: string) => {
-    const i = w.items.find((o) => o.key === key)!;
-    walkTo(w, i.x, i.z + 0.9);
-    w.you.yaw = 0;
-  };
-  // Out on the floor, past the gear at the door, looking at nothing: no keys.
-  walkTo(w, 0.5, 8);
-  w.you.yaw = 0;
-  expect(aimHint(w)).toBe("");
-  expect(roomHint(w, map, false)).toBe("");
-
-  // A top on the floor turns and tilts; the mixer has the fader, with where it is now.
-  lookAt("top-l");
-  expect(aimHint(w)).toBe("Q / E turn, R / V tilt");
-  walkTo(w, -1.6, 10.8);
-  w.you.yaw = Math.PI;
-  expect(aimHint(w)).toBe("[ ] fader, -14 dB");
-
-  // On its stand at the stage, the top also has the stand's keys; the bare stand has only those.
+  // The test is about where you look, so it stands you at each spot instead of threading the gear at the door.
+  const standAt = (x: number, z: number, yaw: number) => Object.assign(w.you, { x, z, yaw });
+  // One top carried to its stand at the stage: it turns and tilts, and has the stand's keys too.
   carry(w, "stand-l", -1.7, 2.0);
   carry(w, "top-l", -1.7, 1.95);
   expect(aimHint(w)).toBe("Q / E turn, R / V tilt, Z / X stand");
-  lookAt("stand-r");
+
+  // Back at the door: the top still on the floor only turns and tilts, the mixer has the fader (with where it is
+  // now), the bare stand has only Z / X.
+  standAt(-0.4, 11.3, 0);
+  expect(aimHint(w)).toBe("Q / E turn, R / V tilt");
+  standAt(-1.6, 10.5, Math.PI);
+  expect(aimHint(w)).toBe("[ ] fader, -14 dB");
+  standAt(1.6, 9.9, Math.PI);
   expect(aimHint(w)).toBe("Z / X stand");
+
+  // Out on the floor, looking at nothing: no keys.
+  standAt(0.5, 8, 0);
+  expect(aimHint(w)).toBe("");
+  expect(roomHint(w, map, false)).toBe("");
 
   // The heat map is on the floor: look down for H, which says what the next press does.
   walkTo(w, 0.7, 6);
