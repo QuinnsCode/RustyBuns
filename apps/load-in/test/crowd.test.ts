@@ -16,6 +16,7 @@ import { ARRIVE, MOVE_EVERY, type CrowdSpot, crowdOf, drawn, expectTonight, hous
 import { AMPHITHEATRE, CROWD as BENCHES, amphitheatreState, floorAt } from "../src/venues/amphitheatre.ts";
 import { BAND_NIGHT, CROWD as BAND_FLOOR } from "../src/venues/band-night.ts";
 import { AUDIENCE, SHOW } from "../src/venues/show.ts";
+import { ARENA } from "../src/venues/arena.ts";
 import type { Level } from "../src/sim.ts";
 import { hear, switchedOnIsFed } from "../src/audio/hear.ts";
 
@@ -204,4 +205,14 @@ test("band night and the show let a crowd in at doors: you walk slower through i
   const w = newWorld(SHOW);
   letIn(w, AUDIENCE);
   expect(w.underfoot!(3.2, 6)).toBe(1);
+});
+
+test("the page rings the new rooms too: the arena tightens as 3,000 walk in, the festival and the amphitheatre don't ring", () => {
+  const w = newWorld(ARENA), hall = spotOf("arena")!, empty = ringing(w, hall).rt60!;
+  letIn(w, hall);
+  w.t += ARRIVE;
+  expect(ringing(w, hall)).toMatchObject({ people: 3000 });
+  expect(ringing(w, hall).rt60!).toBeLessThan(empty - 1);
+  for (const name of ["band-night", "show", "small-arena"]) expect(spotOf(name)!.room).not.toBeNull();
+  for (const name of ["festival", "amphitheatre"]) expect(ringing(w, spotOf(name)!).rt60).toBeNull();
 });
