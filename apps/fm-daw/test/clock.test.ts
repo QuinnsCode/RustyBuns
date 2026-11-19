@@ -103,7 +103,7 @@ test("three players with skewed clocks and laggy links count the same beats, and
         for (let q = 0; q < BLOCK; q += QUANTUM) { p.seq.process(out, QUANTUM); p.frames += QUANTUM; }
       }
     });
-};
+  };
   // each message is delivered at its own moment, the sound cards rendering up to it
   const run = (ms: number) => {
     const until = T + ms;
