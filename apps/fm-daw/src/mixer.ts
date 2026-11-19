@@ -1,5 +1,6 @@
 // FM DAW's desk: a channel strip per source (each player, instrument and track) with gain, Shape, pan, fader, mute
-// and solo, and aux sends to returns. A return is an effect: FM DAW's Space, or the gear cabled between the desk's
+// and solo, and aux sends to returns. On FM DAW's page (the Mixer tab) it is the sesh's desk, a channel per track
+// over the project itself (`seshDesk`, `deskOps`). A return is an effect: FM DAW's Space, or the gear cabled between the desk's
 // `aux-send-N` and `aux-return-N` jacks in the gear room (a pedal, Q Tape, Q Spring, run by Q Amp's rig at line
 // level), and it comes back on its own fader. Pure, no DOM: the gear room's audio thread runs a `Mixer`, a test runs
 // one on buffers.
@@ -7,7 +8,9 @@ import { arr, bool, int, num, obj, oneOf, str, type Of } from "@rustybuns/util/g
 import { applySettings, LINE_SCALE, type Live } from "./amp/live.ts";
 import type { AmpSettings } from "./amp/messages.ts";
 import { flatEq, sanitizeEq, TsEq } from "./engine/eq.ts";
+import { P } from "./engine/params.ts";
 import { Space } from "./engine/space.ts";
+import type { Op, Project } from "./project.ts";
 
 /** How many aux sends each channel has, and so how many returns the desk has. */
 export const AUXES = 2;
@@ -75,6 +78,54 @@ export const faderGain = (f: number) => (f <= 0 ? 0 : 10 ** (((Math.min(f, 1) - 
 export const faderDb = (f: number) => (f <= 0 ? -Infinity : (Math.min(f, 1) - UNITY) * 48);
 /** Which channels play: any solo means only the soloed ones, otherwise every one not muted. */
 export const audible = (d: Desk): boolean[] => { const any = d.channels.some((c) => c.solo); return d.channels.map((c) => (any ? c.solo : !c.mute)); };
+
+// ---- the sesh's desk: a channel per track, over the project itself ----
+// A track's channel is the track: its fader is the engine's level, its pan and its Space send the engine's own, its
+// mute, solo and Shape the track's. So an edit on the desk is the same op the rest of FM DAW sends, the sesh keeps
+// it with the groove, everyone hears the same mix, and the bounce plays it. The Space return's fader is the
+// project's Space amount.
+
+/** A track's channel id on the desk. */
+export const trackId = (ti: number) => `track-${ti + 1}`;
+const trackOf = (id: string) => { const m = /^track-(\d+)$/.exec(id); return m ? Number(m[1]) - 1 : -1; };
+/** A track sends to aux 1 only: the engine has one send (into Space), in Rust as in TS. */
+export const TRACK_AUXES = 1;
+/** An engine level, 0 to 1, as a fader: 1 is the fader's top (+6 dB), a half is 0 dB. */
+export const levelFader = (v: number) => (v <= 0 ? 0 : Math.min(1, Math.max(0, UNITY + (20 * Math.log10(v * 2)) / 48)));
+/** A fader as an engine level, the other way. */
+export const faderLevel = (f: number) => Math.min(1, faderGain(f) / 2);
+
+/** A track as a channel on the desk. */
+export function trackChannel(p: Project, ti: number): Channel {
+  const t = p.tracks[ti];
+  const sends = Array.from({ length: AUXES }, () => 0);
+  sends[0] = t.params[P.SEND];
+  return { id: trackId(ti), name: t.name, source: "track", gain: 0, eq: t.eq ?? flatEq(), pan: t.params[P.PAN], fader: levelFader(t.params[P.GAIN]), mute: t.mute, solo: t.solo, sends };
+}
+
+/** The sesh's desk: a channel per track, then the Space return on the project's Space amount. */
+export function seshDesk(p: Project): Desk {
+  return { channels: p.tracks.slice(0, MAX_CHANNELS).map((_, ti) => trackChannel(p, ti)), returns: [{ ...RETURNS[0], fader: levelFader(p.space) }] };
+}
+
+const moved = (a: number, b: number) => Math.abs(a - b) > 1e-6;
+/** The ops that take the project to the desk `next` (from seshDesk, with some controls moved). */
+export function deskOps(p: Project, next: Desk): Op[] {
+  const ops: Op[] = [];
+  for (const c of next.channels) {
+    const ti = trackOf(c.id);
+    if (ti < 0 || ti >= p.tracks.length) continue;
+    const was = trackChannel(p, ti);
+    if (moved(c.fader, was.fader)) ops.push({ t: "param", track: ti, i: P.GAIN, v: faderLevel(c.fader) });
+    if (moved(c.pan, was.pan)) ops.push({ t: "param", track: ti, i: P.PAN, v: c.pan });
+    if (moved(c.sends[0] ?? 0, was.sends[0])) ops.push({ t: "param", track: ti, i: P.SEND, v: c.sends[0] ?? 0 });
+    if (c.mute !== was.mute || c.solo !== was.solo) ops.push({ t: "track", track: ti, ...(c.mute !== was.mute ? { mute: c.mute } : {}), ...(c.solo !== was.solo ? { solo: c.solo } : {}) });
+    if (JSON.stringify(c.eq) !== JSON.stringify(was.eq)) ops.push({ t: "eq", track: ti, bands: c.eq });
+  }
+  const space = next.returns.find((r) => r.fx === "space");
+  if (space && moved(space.fader, levelFader(p.space))) ops.push({ t: "global", space: faderLevel(space.fader) });
+  return ops;
+}
 
 /** An effect on a return: its aux bus in (mono), the wet signal out (stereo, interleaved, written over). */
 export interface ReturnFx { process(input: Float32Array, out: Float32Array, frames: number): void }

@@ -314,3 +314,18 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .person-cans .ms { width: auto; padding: 0 6px; display: inline-flex; align-items: center; }
 .person-tracks { display: flex; flex-wrap: wrap; gap: 2px; flex-basis: 100%; }
 .person-tracks .ms { width: auto; min-width: 1.6em; padding: 0 4px; font-size: .75rem; }
+
+/* the Mixer tab: the gear room's strips (src/room/desk.ts), one per track, then the Space return */
+.desk-panel { display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; min-width: 0; }
+.desk-strips { display: flex; align-items: flex-start; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.desk-strip { flex: 0 0 132px; display: flex; flex-direction: column; gap: 6px; background: var(--raised); border: 1px solid var(--edge); border-radius: 6px; padding: 8px; }
+.desk-strip.desk-return { border-color: var(--hot); }
+.desk-strip h3 { margin: 0; font: 600 16px/1.1 var(--silk); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk-what { margin: 0; color: var(--dim); font-size: 12px; min-height: 2.6em; }
+.desk-knob, .desk-fader { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--dim); }
+.desk-knob input, .desk-fader input { grid-column: 1 / -1; width: 100%; accent-color: var(--hot); margin: 0; }
+.desk-val { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
+.desk-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk-row { display: flex; gap: 6px; }
+.desk-toggle { flex: 1; background: var(--cell); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 0; font: 600 14px var(--silk); cursor: pointer; }
+.desk-toggle.on { background: var(--hot); color: var(--bg); border-color: var(--hot); }

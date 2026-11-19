@@ -23,6 +23,7 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Shape } from "./Shape.tsx";
 import { AmpPanel } from "./AmpPanel.tsx";
+import { DeskPanel } from "./DeskPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { TakeInbox, encodeTake, newTakeId, toChunks } from "../take.ts";
@@ -120,7 +121,7 @@ export function App() {
   const midiOut = useRef<MidiOut | null>(null);
   const [outPorts, setOutPorts] = useState<{ ports: string[]; picked: string | null }>({ ports: [], picked: null });
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
-  const [view, setView] = useState<"pattern" | "shape" | "amp" | "engines">("pattern");
+  const [view, setView] = useState<"pattern" | "shape" | "amp" | "desk" | "engines">("pattern");
   /** Which Shape the tab shows: the master's (null) or a track's own insert. */
   const [shapeOn, setShapeOn] = useState<number | null>(null);
   const [page, setPage] = useState(0);
@@ -776,6 +777,7 @@ export function App() {
               <button className={view === "pattern" ? "on" : ""} onClick={() => setView("pattern")}>Pattern</button>
               <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: an EQ on the master or on any one track (cuts, shelves, bells, notch)">Shape</button>
               <button className={view === "amp" ? "on" : ""} onClick={() => setView("amp")} title="Amp: play this track's take, or your guitar live, through a Q Amp head">Amp</button>
+              <button className={view === "desk" ? "on" : ""} onClick={() => setView("desk")} title="Mixer: the sesh's desk, a strip per track (level, pan, Shape, Space send, mute, solo) and the Space return, for everyone in the sesh">Mixer</button>
               <button className={view === "engines" ? "on" : ""} onClick={() => setView("engines")}>Engine race</button>
             </div>
             <label className="field inline"><span className="silk">Grid</span>
@@ -801,6 +803,8 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
+          ) : view === "desk" ? (
+            <DeskPanel project={project} onOps={(ops) => { for (const o of ops) commit(o, { group: "desk" }); }} />
           ) : view === "amp" ? (
             <AmpPanel name={t.name} amp={t.amp} onChange={(amp, group) => commit({ t: "amp", track: selected, amp }, group ? { group } : {})}
               armed={armed === selected} monitor={monitor && armed === selected}
