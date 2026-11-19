@@ -83,9 +83,10 @@ test("a slatted diffuser stands on its wall: slats a hand apart, their ends a sk
   expect(box.min.x).toBeCloseTo(-1.02); expect(box.max.x).toBeCloseTo(0.52); // its frame 2 cm past each side
   const wood = g.children.find((o) => o instanceof THREE.Mesh && o.material instanceof THREE.Material && o.material.name !== "felt");
   if (!(wood instanceof THREE.Mesh)) throw new Error("no slats");
-  const p = wood.geometry.getAttribute("position"), ends = new Set<string>();
-  for (let i = 0; i < p.count; i++) if (p.getY(i) < 2.6 && p.getY(i) > 0.4) ends.add(p.getZ(i).toFixed(3));
-  expect(ends.size).toBeGreaterThan(4); // the front faces sit at several depths, not one flat fence
+  const p = wood.geometry.getAttribute("position"), n = wood.geometry.getAttribute("normal"), ends = new Set<string>();
+  // the slats' faces looking into the room (the frame's, 11 cm deep, left out): several depths, not one flat fence
+  for (let i = 0; i < p.count; i++) if (n.getZ(i) > 0.9 && p.getZ(i) < 0.165) ends.add(p.getZ(i).toFixed(3));
+  expect(ends.size).toBe(4); // n² mod 7 takes four values
 });
 
 test("road cases stand against a free wall in every room, never in a seat's way, at the door or by a lamp", () => {
