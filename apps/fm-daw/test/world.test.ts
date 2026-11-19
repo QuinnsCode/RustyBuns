@@ -3,7 +3,7 @@
 import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun:test";
 import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
-import { TRACKS } from "../src/engine/params.ts";
+import { P, TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
@@ -11,10 +11,11 @@ import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { keysReach } from "../src/studio/room.ts";
 import { figure, handsOn, type Figure } from "../src/studio/figure.ts";
 import * as THREE from "three";
-import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, toggleCam, walkTo } from "../src/studio/jam.ts";
+import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, toggleCam, trackFor, walkTo } from "../src/studio/jam.ts";
+import { laneModel } from "../src/studio/lane-model.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
-import { remotePlayer, studioTools } from "../src/studio/agent.ts";
+import { may, remotePlayer, studioTools } from "../src/studio/agent.ts";
 import { mcpAnswer } from "../src/studio/mcp.ts";
 import { roomWith } from "../src/studio/instrument.ts";
 import { facing, mutePeer, muteRoom, noMutes, sounds } from "../src/studio/mute.ts";
@@ -900,4 +901,54 @@ test("a guitar call: its setup goes to the one person it names, and a listen-onl
   say(guest, { t: "live", e: { t: "guitar", track: 0 } });
   say(guest, { t: "live", e: { t: "guitar", track: null } });
   expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "want" } }, { t: "live", from: G, e: { t: "guitar", track: null } }]);
+});
+
+test("jam room lane: sit at the keys, open its lane, turn a knob, and the op lands on the leader's page; read only until she says yes", async () => {
+  const { world, join } = await setup({}, "lane-keys-room");
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const amyWs = (await join({}, "a".repeat(32))).ws;              // first key in: Amy leads the sesh
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "init", project: demoProject() }));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "hello", key: "a".repeat(48), name: "Amy" }));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "floor", state: "held" }));
+  const botWs = (await join()).ws;
+  const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
+    send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
+  const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
+  await tick(); pump();
+  const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
+  const lane = laneModel({
+    project: () => pl.project()!, edit: pl.edit, may: () => may(pl), audition() {},
+    seat: () => { const s = spotOf(pl.jam, pl.jam.me.seat); return s ? { label: s.label, drums: s.kind === "drums", track: trackFor(s, pl.project()!) } : null; },
+  });
+  expect(lane.open()).toBe(false);                                // standing: no lane to open
+  const at = spotOf(pl.jam, "keys")!.at;
+  walkTo(pl.jam, at[0], at[1] + 0.6);
+  expect(sit(pl.jam, "keys").ok).toBe(true);
+  expect(lane.open()).toBe(true);
+  const keys = lane.state().track;
+  expect(lane.state()).toMatchObject({ open: true, tab: "patch", name: "Keys", readOnly: { edit: true } });
+
+  // Amy holds the floor: the knob is refused here, and nothing goes to her
+  ops();
+  expect(lane.edit({ t: "param", track: keys, i: P.GAIN, v: 0.3 })).toBe(false);
+  expect(lane.state().refused).toContain("raises your hand");
+  await tick();
+  expect(ops()).toEqual([]);
+
+  // the bot raises its hand to edit, she says yes, and the same knob lands on her page
+  pl.ask("edit");
+  await tick();
+  const hand = amyWs.sent.findLast((m) => m.t === "grants" && Object.values(m.asks).includes("edit"));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "answer", who: Object.keys(hand.asks)[0], yes: true }));
+  await tick(); pump(); ops();
+  expect(lane.state().readOnly.edit).toBe(false);
+  expect(lane.edit({ t: "param", track: keys, i: P.GAIN, v: 0.3 })).toBe(true);
+  await tick();
+  expect(ops()).toEqual([{ t: "param", track: keys, i: P.GAIN, v: 0.3 }]);
+  expect(pl.project()!.tracks[keys]!.params[P.GAIN]).toBeCloseTo(0.3);
+
+  // standing up closes it
+  stand(pl.jam);
+  lane.refresh();
+  expect(lane.isOpen()).toBe(false);
 });
