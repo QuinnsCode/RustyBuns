@@ -79,7 +79,8 @@ test("an owner connects the provider; a coworker signs in through it and lands i
   expect(back!.to).toBe("/?tab=studio");
   const bo = (await userOf("bo@acme.dev"))!;
   expect((await studiosOf(conf, bo)).map((s) => [s.name, s.role])).toEqual([["Acme", "maker"]]);
-  expect((await call("/login", { cookie: back!.cookie })).to).toBe("/");
+  // Signed in: Continue goes home (signed out, it would go back to /login?e=in).
+  expect((await call("/do/continue", { cookie: back!.cookie, form: {} })).to).toBe("/");
 
   // Next time, on his way to a game: the same account, and straight on to the game with a code.
   const a = await asks("park-hide-seek", PARK);
