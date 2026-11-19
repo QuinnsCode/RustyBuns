@@ -7,12 +7,13 @@
 // and a leg over its breaker trips. It is too much for one person: the hired hands carry what you send them to, two to
 // a box. Plain data, no DOM; the page (arena-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
-import { type Area, type Grid, type Source, SPEED_OF_SOUND, coverage, gear as catalog, source } from "@rustybuns/gear";
+import { type Area, type CrowdField, type Grid, type Source, SPEED_OF_SOUND, coverage, coverageThrough, gear as catalog, source } from "@rustybuns/gear";
 import { MAX_LIFT, REACH, WALK, type Answer, type Item, type Level, type World, aimed, carrySpeed, dims, over } from "../sim.ts";
 import { stow } from "../strike.ts";
 import { assist, feltKg } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Zone, cellsIn, mean } from "./dive-bar.ts";
+import { type CrowdSpot, comingTonight, crowdOf, expected, regions, roomWith } from "../crowd/crowd.ts";
 
 const BOX = "line-array-box";
 const DOCK_Z = 53;
@@ -469,23 +470,66 @@ export function score(w: World, g: Grid = heat(w)): Score {
   };
 }
 
-/** Show time: the room's sound as the crowd takes it, scaled by their mood, and the pay. */
+/**
+ * The arena's crowd: 3,000 standing on the floor from the barrier to the dock end, packed at the front and thinning past
+ * the towers. A 40 by 56 m hall under a 16 m roof with seats and drapes round it (mean absorption about 0.25): empty it
+ * rings for three seconds, full for under two.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { ...ZONES.crowd, nx: 64, nz: 78 },
+  stageZ: 10.5,
+  capacity: 3000,
+  room: { w: 40, d: 56, h: 16, alpha: 0.25 },
+  regions: [
+    { name: "front", zone: ZONES.front },
+    { name: "middle", zone: { ...ZONES.crowd, z0: 20, z1: 38 } },
+    { name: "rear", zone: ZONES.rear },
+  ],
+};
+
+/** The crowd the floor is set for: the one that came in, else the one expected at doors. */
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD, comingTonight(w, CROWD));
+
+/**
+ * Mids and highs over the floor with it full, at 2 kHz: each flown box heard through the bodies in its way. A hang at
+ * trim fires over the heads, so only the last few rows before a listener count; the far floor, where the mains come in
+ * low, loses most. The same 1 m cells as the empty map: about 2,200 cells by 16 boxes, some 20 ms.
+ */
+export const heatFull = (w: World, field: CrowdField = crowdField(w)): Grid => coverageThrough(hangSources(w), field, FLOOR, 2000);
+
+/** The floor at soundcheck (empty) and with the crowd on it: the towers' timing, the stage's bass and the power are the same in both. */
+export function scores(w: World) {
+  const empty = heat(w), full = heatFull(w);
+  return { soundcheck: score(w, empty), full: score(w, full), empty, fullGrid: full };
+}
+
+/** The crowd for the harness: how many, each region's people, dB at soundcheck and full, and mood; the hall's reverb empty and full. */
+export function crowdState(w: World, s = scores(w)) {
+  const c = crowdOf(w), level = (g: Grid) => (z: Zone) => { const v = mean(cellsIn(g, z)); return Number.isFinite(v) ? Math.round(v * 10) / 10 : null; };
+  return {
+    in: !!c, count: c?.people ?? 0, expected: comingTonight(w, CROWD),
+    empty: roomWith(CROWD, 0), full: roomWith(CROWD, c?.people ?? comingTonight(w, CROWD)),
+    regions: c ? regions(c, (z) => ({ soundcheck: level(s.empty)(z), full: level(s.fullGrid)(z) }), TARGET, WINDOW, TARGET + WINDOW) : [],
+  };
+}
+
+/** Show time: the floor's sound with the crowd on it, scaled by their mood, and the pay. */
 export function show(w: World) {
-  const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  const s = scores(w).full, d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the arena: the hangs, the subs, the legs, the crew and the score. */
+/** What the harness adds for the arena: the hangs, the subs, the legs, the crew, the score at soundcheck and with the floor full, and the crowd. */
 export function arenaState(w: World) {
   crewTick(w);
-  const a = arena(w);
+  const a = arena(w), s = scores(w);
   return {
     hangs: Object.fromEntries(POINTS.map((p) => [p.key, { ...a.hangs[p.key], boxes: a.hangs[p.key].boxes.length, powered: powered(w, p.key) }])),
     subs: { ...a.subs },
     legs: legs(w).map(({ leg, feeds, watts, limit, warn, tripped }) => ({ leg, feeds, watts, limit, warn, tripped })),
     crew: handsNow(w),
     queued: a.jobs.filter((j) => !j.sched).map((j) => j.key),
-    ...score(w),
+    ...s.soundcheck, full: s.full, people: crowdState(w, s),
   };
 }
