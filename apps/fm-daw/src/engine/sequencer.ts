@@ -20,6 +20,8 @@ const MAX_DUE = 512;
  */
 export const SNAP_BEATS = 0.25, MAX_PULL = 0.002, PULL = 0.5;
 export const LIVE_ID = 2_000_000;
+/** In place of a pitch on Sequencer.liveAt: a bend (the value is semitones) or a stutter (beats, 0 off), not a note. */
+export const BEND = -1, REPEAT = -2;
 
 export interface RecordedNote { track: number; note: Note }
 /** The "track" a move on the master (Shape's dots) is recorded on: past the last real track. */
@@ -58,7 +60,8 @@ export class Sequencer {
   synced = false;
   /** How fast the beats run against this sound card: 1, or a hair off while catching up with the shared clock. */
   rate = 1;
-  // live notes due on a beat (abs), in the order they came: beat, track, midi, velocity (-1: a note off)
+  // live notes, bends and stutters due on a beat (abs), in the order they came: beat, track, midi (BEND, REPEAT),
+  // velocity (-1: a note off; a bend's semitones, a stutter's beats)
   private dueAt = new Float64Array(MAX_DUE);
   private dueTrack = new Int32Array(MAX_DUE);
   private dueMidi = new Int32Array(MAX_DUE);
@@ -142,14 +145,24 @@ export class Sequencer {
     this.synced = true;
   }
 
-  /** A live note (vel < 0: a note off) to sound on beat `at` (abs); one already past sounds now. */
+  /** Live bends as the hand left them, per track (an engine swap keeps them). */
+  readonly bends = new Float64Array(TRACKS);
+  liveBend(track: number, semis: number) {
+    if (track < 0 || track >= TRACKS) return;
+    this.bends[track] = semis; this.engine.setBend(track, semis);
+  }
+
+  /**
+   * A live note (vel < 0: a note off) to sound on beat `at` (abs); one already past sounds now. `midi` BEND or
+   * REPEAT: a bend of `vel` semitones or a stutter of `vel` beats instead, in order with the notes.
+   */
   liveAt(at: number, track: number, midi: number, vel: number) {
-    if (track < 0 || track >= TRACKS || midi < 0 || midi > 127 || !Number.isFinite(at)) return;
+    if (track < 0 || track >= TRACKS || midi < REPEAT || midi > 127 || !Number.isFinite(at)) return;
     if (this.dueCount === MAX_DUE) this.fireDue(Infinity, 1);
     const i = this.dueCount++;
     this.dueAt[i] = at; this.dueTrack[i] = track; this.dueMidi[i] = midi; this.dueVel[i] = vel;
   }
-  /** How many live notes wait for their beat. */
+  /** How many live notes, bends and stutters wait for their beat. */
   get due() { return this.dueCount; }
 
   /** Live notes due before beat `b` (at most `max` of them, oldest first) sound now, as someone else's. */
@@ -157,7 +170,9 @@ export class Sequencer {
     let fired = 0;
     for (let i = 0; i < this.dueCount; ) {
       if (fired < max && this.dueAt[i] < b) {
-        if (this.dueVel[i] < 0) this.liveOff(this.dueTrack[i], this.dueMidi[i]);
+        if (this.dueMidi[i] === BEND) this.liveBend(this.dueTrack[i], this.dueVel[i]);
+        else if (this.dueMidi[i] === REPEAT) this.setRepeat(this.dueVel[i]);
+        else if (this.dueVel[i] < 0) this.liveOff(this.dueTrack[i], this.dueMidi[i]);
         else this.liveOn(this.dueTrack[i], this.dueMidi[i], this.dueVel[i], false);
         fired++;
         this.dueCount--;

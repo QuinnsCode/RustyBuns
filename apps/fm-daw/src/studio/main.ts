@@ -808,7 +808,7 @@ function showPlayed(dt: number, t: number) {
 const overlay = new Overlay((track, semis) => {
   if (semis !== 0 && !may(player).play) return;
   out?.send({ t: "bend", track, semis });
-  live(bendEvent(track, semis));
+  live(bendEvent(track, semis, band.stamp()));
 });
 
 // ---- every frame ----
