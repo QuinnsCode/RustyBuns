@@ -532,9 +532,10 @@ test("jam room: whoever sits at the keys has their palms on the keys, short arms
     }
     // at the kit: a stick in each hand, and its hands come up only to strike
     fig.pose({ speed: 0, seated: true, play: handsOn("drums", false), note: false, t: 1, sticks: true });
-    const sticks: THREE.Object3D[] = [];
-    fig.group.traverse((o) => { if (o.parent?.name === "hand" && o instanceof THREE.Mesh && o.visible && o.geometry instanceof THREE.CylinderGeometry) sticks.push(o); });
-    expect(sticks.length).toBe(2);
+    // each stick's tip out past its fist, on the far side from the other's
+    const [right, left] = fig.hands.stickTips(), wrist = fig.hands.tips();
+    for (const [tip, hand] of [[right, wrist.right], [left, wrist.left]] as const) expect(fig.group.worldToLocal(tip.clone()).distanceTo(fig.group.worldToLocal(hand.index.clone()))).toBeGreaterThan(0.15);
+    expect(right.distanceTo(left)).toBeGreaterThan(0.2);
     expect(handsOn("drums", true)).toBe("sticks");
     fig.dispose();
   }
