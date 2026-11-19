@@ -81,6 +81,24 @@ describe("the Book talks back", () => {
     expect(friendsOf(creature("hoop-snake"))).toEqual(["Ozark Howler"]);
   });
 
+  test("what you say at a campfire decides what the Book asks at the next one, through a reload", () => {
+    const after = (reply: string) => {
+      const j = newJourney(["hodag", "squonk", "jackalope"])!;
+      beat(j, "campfire", reply, { n: 1 });
+      return momentFor("campfire", loadJourney(JSON.stringify(j))!, { n: 1 })!;
+    };
+    expect(after("thanks").talk.id).toBe("fire-2"); // the usual order
+    expect(after("sleep").ask).toContain("asleep"); // "Do you ever sleep?": the Book turns to the line-up asleep
+    // "Nothing." when it asks for something true: it presses on where you were before it, and the order picks up after
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    beat(j, "campfire", "thanks", { n: 1 });
+    beat(j, "campfire", "nothing", { n: 1 });
+    expect(beat(j, "campfire", "home", { n: 1 }).m.talk.id).toBe("fire-4");
+    expect(momentFor("campfire", j, { n: 1 })!.talk.id).toBe("fire-3");
+    // every `next` names a talk at the same beat
+    for (const t of LINES) for (const r of t.replies) if (r.next) expect(LINES.find((x) => x.id === r.next)?.beat).toBe(t.beat);
+  });
+
   test("a lost fight: streak before a member down, the whole line-up before the streak", () => {
     expect([lossBeats(1, true), lossBeats(2, true), lossBeats(1, false), lossBeats(3, false)])
       .toEqual([["downed"], ["streak", "downed"], ["loss"], ["loss", "streak"]]);

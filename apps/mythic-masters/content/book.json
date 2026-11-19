@@ -137,7 +137,8 @@
       {
         "id": "sleep",
         "say": "Do you ever sleep?",
-        "book": "I was made four hundred years ago. I am still waiting for my lunch break."
+        "book": "I was made four hundred years ago. I am still waiting for my lunch break.",
+        "next": "fire-3"
       },
       {
         "id": "want",
@@ -173,7 +174,8 @@
       {
         "id": "nothing",
         "say": "Nothing.",
-        "book": "Then I will start with nothing. Most entries do."
+        "book": "Then I will start with nothing. Most entries do.",
+        "next": "fire-4"
       }
     ]
   },

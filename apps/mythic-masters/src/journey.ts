@@ -194,6 +194,8 @@ export const Journey = obj({
     notes: opt(arr(str(120), 20, { drop: true })), losses: opt(int(0, 1000)),
     /** Spare drops of ink a reply earned, spent on the next world fight; the kind of beast you asked the Book to want next. */
     ink: opt(int(0, 3)), wants: opt(oneOf(ARCHETYPES)),
+    /** The talks your replies asked the Book to say next (book.ts `next`), each said ahead of its beat's usual order. */
+    next: opt(arr(str(40), 8, { drop: true })),
   })),
   /** The three factions behind you (src/factions/model.ts): who you met and in what order, the quest steps done, the
    * flags, and each one's standing with you. */
