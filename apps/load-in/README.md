@@ -22,7 +22,9 @@ bun test                 # the garage load-in and a power run, played by the tes
 ```
 
 Click to take the mouse. WASD walk, mouse look, F (or a click) picks up, puts down, takes a cable from the case, plugs
-it into the jack you look at or pulls it out; Q / E turn what you hold, P switch on what you look at, M speakers up or
+it into the jack you look at or pulls it out. A cable end goes in each hand: with one held, F picks up the end you look
+at with the free hand (a roll always hangs on the right), F at a jack plugs whichever end fits, and G lets go of the
+one you picked up last. Q / E turn what you hold, P switch on what you look at, M speakers up or
 down, C crouch, Esc lets go. A speaker with no cable in it plays once switched on; once cabled, it plays only when the
 patch feeds it.
 The dial under Play goes from **Cozy** (no clock, gear weighs half, a cable you let go of coils itself, ramps snap end to end, free jacks glow when you hold a cable, breakers never trip) through **Crew** to **Sim** (real weights, doors on time, breakers trip, a short cable is short). A new player starts on Crew, and the browser remembers the stop. With a clock, the doors time is at the top of the screen. Each minute late, after Crew's two minutes of grace, costs 10% of the pay and 8 points of crowd mood, and the mood scales the show score when the doors open.

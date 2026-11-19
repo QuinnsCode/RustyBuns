@@ -37,7 +37,7 @@ const ENDS = ["a", "b"] as const;
 const word = (e: EndAt) => ("plug" in e ? `plug:${e.plug.join(" ")}` : "hand" in e ? "hand:" : "mate" in e ? `hand:${e.mate}` : "case" in e ? "case" : "loose");
 const wireWord = (e: WireEnd, you: string) => (e.at === "plug" ? `plug:${e.plug!.join(" ")}` : e.at === "hand" ? `hand:${e.hand === you ? "" : e.hand}` : e.at);
 const toLocal = (e: WireEnd, you: string): EndAt =>
-  e.at === "plug" ? { plug: [e.plug![0]!, e.plug![1]!] } : e.at === "hand" ? (e.hand === you ? { hand: true } : { mate: e.hand ?? "" }) : e.at === "case" ? { case: true } : { loose: true };
+  e.at === "plug" ? { plug: [e.plug![0]!, e.plug![1]!] } : e.at === "hand" ? (e.hand === you ? { hand: "right" } : { mate: e.hand ?? "" }) : e.at === "case" ? { case: true } : { loose: true };
 const CASED: Omit<Wire, "key"> = { n: 0, a: { at: "case" }, b: { at: "case" }, twists: 0 };
 
 /** The cable ends that moved on this page since last time (not a friend's: the room tells you those). */
