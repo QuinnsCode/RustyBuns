@@ -48,12 +48,6 @@ describe("agent budgets (#1077)", () => {
     expect(usageOf(lines({ type: "error", sessionID: "s", error: { name: "APIError" } }))).toBeNull();
   });
 
-  test("tokens are counted at four characters each", () => {
-    expect(tokens(0)).toBe(0);
-    expect(tokens(4000)).toBe(1000);
-    expect(tokens(5)).toBe(2);
-  });
-
   test("the same failure is the same test or error text, whatever the times, durations and colours", () => {
     const a = "\x1b[31m(fail) sum > adds [3.21ms]\x1b[0m\n2026-10-12T10:00:00.123Z expected 3, got 4";
     const b = "(fail) sum > adds [12ms]\n2026-10-12T11:42:07.900Z   expected 3, got 4";

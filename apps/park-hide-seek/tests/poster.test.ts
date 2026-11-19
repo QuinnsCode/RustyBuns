@@ -3,25 +3,21 @@
 import { expect, test } from "bun:test";
 import { backdropSvg, halftoneSvg, headSvg, insigniaSvg, patchSvg, permitNo, posterSvg, todAt } from "../src/ui/poster.ts";
 
-// Round 7 (#4229): the screen behind the menus, for a laptop, a tablet and a phone.
-test.each([["day", 0.625], ["night", 0.625], ["dusk", 1.45], ["night", 2.15]] as const)("the %s backdrop for a screen %d tall per wide draws only numbers", (tod, aspect) => {
-  expect(backdropSvg(tod, aspect)).not.toMatch(/NaN|undefined|Infinity/);
-  for (const h of [76, 120, 230]) expect(headSvg(tod, h)).not.toMatch(/NaN|undefined|Infinity/);
+test("every time of day, at every size the menus use, draws only numbers", () => {
+  const clean = (svg: string) => expect(svg).not.toMatch(/NaN|undefined|Infinity/);
+  // the screen behind the menus (#4229), for a laptop, a tablet and a phone
+  for (const [tod, aspect] of [["day", 0.625], ["night", 0.625], ["dusk", 1.45], ["night", 2.15]] as const) clean(backdropSvg(tod, aspect));
+  for (const tod of ["day", "dusk", "night"] as const) {
+    for (const h of [76, 120, 230]) clean(headSvg(tod, h));
+    clean(posterSvg(tod, { h: 200, strip: false }));
+    for (const ribbon of [false, true]) clean(insigniaSvg(tod, { ribbon }));
+    clean(halftoneSvg(tod));
+  }
+  for (const tod of ["day", "night"] as const) clean(posterSvg(tod, { h: 90, strip: true }));
 });
-
-test.each([["day", 200, false], ["dusk", 200, false], ["night", 200, false], ["night", 90, true], ["day", 90, true]] as const)(
-  "the %s poster at height %d draws only numbers", (tod, h, strip) => {
-    const svg = posterSvg(tod, { h, strip });
-    expect(svg).not.toMatch(/NaN|undefined|Infinity/);
-  });
 
 test("the player's clock picks the poster: day, dusk either side, night with the torches", () => {
   expect([3, 7, 12, 18, 22].map(todAt)).toEqual(["night", "dusk", "day", "dusk", "night"]);
-});
-
-test.each(["day", "dusk", "night"] as const)("the %s insignia and paper halftone draw only numbers", (tod) => {
-  for (const ribbon of [false, true]) expect(insigniaSvg(tod, { ribbon })).not.toMatch(/NaN|undefined|Infinity/);
-  expect(halftoneSvg(tod)).not.toMatch(/NaN|undefined|Infinity/);
 });
 
 test("a results card's park patch carries the park's name and outcome, its own skyline, and no stray markup", () => {

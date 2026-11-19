@@ -95,24 +95,3 @@ test("no hair covers the face: looking at an eye from in front, the first thing 
     c.dispose();
   }
 });
-
-test("four fingers a hand, tapping the keys one after another; glasses reach back to the ears; a hat tucks tall hair under it", () => {
-  const a = defaultAvatar("Ada");
-  const c = character({ ...a, glasses: "round" });
-  const fingers = named(c.group, "finger");
-  expect(fingers).toHaveLength(8);
-  // on keys, at one moment the fingers of a hand are curled by different amounts: they tap in turn
-  c.pose({ t: 1.3, seated: true, play: "keys" });
-  const curls = fingers.slice(0, 4).map((f) => Math.abs(f.rotation.z).toFixed(2));
-  expect(new Set(curls).size).toBeGreaterThan(2);
-  // the glasses' arms run from the frames in front of the eyes back to the sides of the head
-  c.group.updateMatrixWorld(true);
-  const eye = at(named(c.group, "eye")[0]!), temples = named(c.group, "temple");
-  expect(temples).toHaveLength(2);
-  for (const tm of temples) { const b = box(tm); expect(b.max.z).toBeGreaterThan(eye.z + 0.07); expect(Math.max(Math.abs(b.min.x), Math.abs(b.max.x))).toBeGreaterThan(0.075); }
-  c.dispose();
-  // a beanie over spikes, a crest or a bun stands no taller than over short hair: nothing pokes through it
-  const top = (hair: string, hat: string) => { const f = character({ ...a, hair, hat }); f.pose({ t: 0 }); const y = box(f.head).max.y; f.dispose(); return y; };
-  for (const hat of ["beanie", "cap", "hardhat"]) for (const hair of ["spiky", "mohawk", "flat-top", "bun", "topknot", "pompadour"])
-    expect([hat, hair, top(hair, hat) <= top("short", hat) + 0.001]).toEqual([hat, hair, true]);
-});

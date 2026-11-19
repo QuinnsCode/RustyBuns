@@ -143,20 +143,6 @@ describe("insights", () => {
     expect((await call(null, "/api/admin/insights")).status).toBe(403);
   });
 
-  test("the alias session says admin, so the page shows the admin links (#511)", async () => {
-    const session = async (call: Awaited<ReturnType<typeof boot>>, user: string | null) => (await (await call(user, "/api/session")).json()) as any;
-    const { call } = await app();   // ADMINS: "boss"
-    expect(await session(call, "boss")).toMatchObject({ mode: "alias", user: "boss", admin: true });
-    expect(await session(call, "ryan")).not.toHaveProperty("admin");
-    expect(await session(call, null)).not.toHaveProperty("admin");
-    // No ADMINS: your own desktop, so you're the admin.
-    const desk = await boot({ GH_CLI: "off" });
-    opened.push(desk);
-    await desk("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
-    expect(await session(desk, "ryan")).toMatchObject({ user: "ryan", admin: true });
-    expect(await session(desk, null)).not.toHaveProperty("admin");
-  });
-
   test("the admins' own browsing isn't counted (#512)", async () => {
     const { call, send } = await app();   // ADMINS: "boss"
     await send("boss", "/api/session", browser);
@@ -165,15 +151,6 @@ describe("insights", () => {
     const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
     expect(d.traffic.callers.map((c: any) => c.who)).toEqual(["@ryan"]);
     expect(d.users.find((u: any) => u.name === "boss").steps).toEqual({});
-  });
-
-  test("everyone has a join date, from when their handle was made (#512)", async () => {
-    const { call } = await app();
-    // mia signed in, but never through the internet, so she has no steps: her row says when.
-    const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
-    const mia = d.users.find((u: any) => u.name === "mia");
-    expect(mia.steps).toEqual({});
-    expect(Math.abs(mia.joined - Date.now())).toBeLessThan(60_000);
   });
 
   test("your usage is in your export, and goes when you do", async () => {

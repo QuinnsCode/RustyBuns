@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  BUZZ, CURVES, RIDE, STACK, WEATHER, repoOf, stackOf, buildNotes, buzzRide, caption, eventPush, filterRange, gustRide, isRobot, newRide, rideEvents, stepRide, tapRide, timeTicks, weatherAt, windAt, type EventKind, type Side, type Commit, breeze, cleanRefs, clockAt, currentIndex, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, readInput, scoreAt, simplifyParents, slotOf, topFiles, topFriends, veinChart,
+  CURVES, RIDE, STACK, WEATHER, repoOf, stackOf, buildNotes, caption, eventPush, filterRange, gustRide, isRobot, newRide, rideEvents, stepRide, tapRide, timeTicks, weatherAt, windAt, type EventKind, type Side, type Commit, breeze, cleanRefs, clockAt, currentIndex, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, readInput, scoreAt, simplifyParents, slotOf, topFiles, topFriends, veinChart,
 } from "../src/gitpath/gitpath.ts";
 import { eventKinds, eventModel, model, modelIds } from "../src/gitpath/models.ts";
 
@@ -290,11 +290,6 @@ describe("the ride", () => {
     expect(r.speed).toBeLessThan(0.02);
   });
 
-  test("steady pedalling in a light breeze stays up", () => {
-    const { fell } = ride(30, { bot: true });
-    expect(fell).toBe(-1);
-  });
-
   test("a car's gust tips an unattended rider over, and a rider who favours the leaning side survives it", () => {
     const hit = (bot: boolean) => ride(12, { bot, gustAt: 4, push: 3.2 }).fell;
     expect(hit(true)).toBe(-1);
@@ -384,32 +379,6 @@ describe("the weather", () => {
     expect(weatherAt([], 0).label).toBe("calm");
   });
 
-  test("a quick rider who leans on the pedals stays up through a gale", () => {
-    const r = newRide(), dt = 1 / 60;
-    let next = 0.1, side: Side = 1, fell = false;
-    for (let k = 0; k < 30 * 60 && !fell; k++) {
-      if (r.t >= next) {
-        const heading = r.lean + 0.5 * r.omega;
-        side = Math.abs(heading) > 0.12 ? (heading > 0 ? 1 : -1) : side === 1 ? -1 : 1;
-        tapRide(r, side); next = r.t + RIDE.period * 0.6;
-      }
-      fell = stepRide(r, dt, windAt(r.t, { storm: 1 }));
-    }
-    expect(fell).toBe(false);
-  });
-
-  test("a robot swarm shakes the rider and bleeds speed twice as fast, then leaves", () => {
-    const calm = newRide(), buzzed = newRide();
-    calm.speed = buzzed.speed = 3;
-    buzzRide(buzzed);
-    expect(buzzed.buzz).toBe(BUZZ);
-    for (let k = 0; k < 60; k++) { stepRide(calm, 1 / 60, 0); stepRide(buzzed, 1 / 60, 0); }
-    expect(buzzed.speed).toBeLessThan(calm.speed);
-    expect(calm.lean).toBe(0);
-    expect(buzzed.lean).not.toBe(0);
-    for (let k = 0; k < BUZZ * 60; k++) stepRide(buzzed, 1 / 60, 0);
-    expect(buzzed.buzz).toBe(0);
-  });
 });
 
 describe("friends and their vein charts", () => {

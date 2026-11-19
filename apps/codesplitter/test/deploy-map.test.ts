@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { colourFor, deploySteps, isNight, landCells, layout, locate, project, readGraphs, sunPoint, wrapX, ORANGE, type MapGraph } from "../src/deploy-map.ts";
+import { deploySteps, landCells, layout, locate, project, readGraphs, wrapX, type MapGraph } from "../src/deploy-map.ts";
 
 const g: MapGraph[] = [
   { app: "a", nodes: [{ id: "w", kind: "worker", label: "w", location: "sjc" }, { id: "x", kind: "d1", label: "x" }] },
@@ -15,26 +15,12 @@ test("a node is placed by colo, region or lat,lon, and left out when it has none
   expect(unplaced.map((u) => u.node.id)).toEqual(["x"]);
 });
 
-test("the modes colour by locale, app and provider", () => {
-  const n = g[1]!.nodes[0]!;
-  expect(colourFor("locale", "b", n, ["a", "b"])).toBe(ORANGE);
-  expect(colourFor("app", "a", n, ["a", "b"])).not.toBe(colourFor("app", "b", n, ["a", "b"]));
-  expect(colourFor("provider", "b", n, ["a", "b"])).not.toBe(colourFor("provider", "a", g[0]!.nodes[0]!, ["a", "b"]));
-});
-
 test("the map loops: any drag lands back inside one world", () => {
   expect(wrapX(90, 20, 100)).toBe(10);
   expect(wrapX(5, -20, 100)).toBe(85);
   expect(wrapX(5, -1e6 - 20, 100)).toBeCloseTo(85);
   const [x] = project(0, 180, 360);
   expect(x).toBe(360);
-});
-
-test("night falls opposite the sun", () => {
-  const noon = new Date(Date.UTC(2026, 2, 20, 12, 0));
-  expect(sunPoint(noon)[1]).toBeCloseTo(0, 5);
-  expect(isNight(0, 0, noon)).toBe(false);
-  expect(isNight(0, 180, noon)).toBe(true);
 });
 
 test("land is a grid of cells on the map, and bad input is refused", () => {

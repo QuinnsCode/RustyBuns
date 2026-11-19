@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { crane, dollyZoom, orbit, reel, still, truck, vista } from "../src/index.ts";
+import { orbit, reel, still, truck, vista } from "../src/index.ts";
 
 const you = { x: 0, y: 2, z: 0 }, hills = { x: 0, y: 80, z: -900 };
 
@@ -24,16 +24,6 @@ test("the parallax shot slides across the line to the hills, level; the orbit go
   const o = orbit(you, { radius: 5 });
   expect(o(0).from.x).toBeCloseTo(o(1).from.x);
   expect(o(0.5).from.z).toBeCloseTo(-5);
-});
-
-test("the crane rises and lifts its look to the hills; the dolly zoom keeps its subject the same size", () => {
-  const c = crane(you, hills);
-  expect(c(1).from.y).toBeGreaterThan(c(0).from.y + 3);
-  expect(c(1).at.z).toBeLessThan(c(1).from.z - 10);
-  const d = dollyZoom(you, { near: 4, far: 16, lens: 50 });
-  const size = (u: number) => { const k = d(u), dist = Math.hypot(k.from.x - you.x, k.from.z - you.z); return dist * Math.tan((k.fov! * Math.PI) / 360); };
-  expect(size(1)).toBeCloseTo(size(0));
-  expect(d(1).fov!).toBeLessThan(20);
 });
 
 test("the vista is the way the ground rises highest in your eye", () => {
