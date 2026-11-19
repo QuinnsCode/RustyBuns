@@ -8,7 +8,7 @@ import { AvatarReply, type Avatar } from "@rustybuns/util/avatar";
 export const APP = "fm-daw";
 export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to; a local page or the desktop window jams as a guest. */
-export const SIGN_IN_FROM = ["https://fm-daw-worker-live-ryanquinn-ugis7btfi5dsu52t.notryanquinn.workers.dev"];
+export const SIGN_IN_FROM = ["https://fm-daw.notryanquinn.workers.dev"];
 
 /** The character kept on eqosys for whoever holds `token`, or null (signed out, eqosys down, no endpoint yet). */
 export async function eqosysAvatar(base: string, token: string): Promise<Avatar | null> {
