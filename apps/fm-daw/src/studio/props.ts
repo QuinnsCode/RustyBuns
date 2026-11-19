@@ -7,6 +7,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import type { Prop } from "./room.ts";
+import { speaker } from "./gear-models.ts";
 
 /** A material by what it's made of (sound.ts's names, or metal, plastic, fabric, glass, screen) and its colour. */
 export type Mat = (name: string, color: string) => THREE.Material;
@@ -179,16 +180,8 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       break;
     }
     case "monitor": {
-      // a speaker: a cabinet, a big woofer and a tweeter on its front
-      box(w, h, d, 0, h / 2, 0, m("wood", color));
-      const cone = m("plastic", "#141414"), ring = m("metal", "#55585c");
-      const woof = Math.min(w, h * 0.6) * 0.4;
-      for (const [r, y, mat] of [[woof * 1.08, h * 0.36, ring], [woof, h * 0.36, cone], [woof * 0.4, h * 0.78, ring], [woof * 0.3, h * 0.78, cone]] as const) {
-        const c = new THREE.Mesh(new THREE.CircleGeometry(r, 28), mat);
-        c.position.set(0, y, -d / 2 - 0.002 - (mat === cone ? 0.001 : 0));
-        c.rotation.y = Math.PI;
-        g.add(c);
-      }
+      // a speaker: Sound Guy Simulator's detailed powered cabinet (gear-models.ts), fitted to the box, in the room's wood
+      g.add(speaker(w, h, d, m("wood", color)));
       break;
     }
     case "stairs": {

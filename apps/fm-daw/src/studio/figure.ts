@@ -22,13 +22,13 @@ export interface Figure {
 
 /**
  * Where a seated figure's hands are at its spot: on the keys whenever it sits at them, so you see your hands over the
- * keys before you press one; the sticks only while a drum sounds (the sticks pose strikes all the time); a bass's
- * strings while a note sounds. Anywhere else, the keys pose while a note sounds, and hands free.
+ * keys before you press one (the bass seat's mono synth too); the sticks only while a drum sounds (the sticks pose
+ * strikes all the time). Anywhere else, the keys pose while a note sounds, and hands free.
  */
 export function handsOn(kind: SpotKind | undefined, note: boolean): Play | null {
-  if (kind === "keys") return "keys";
+  if (kind === "keys" || kind === "bass") return "keys";
   if (!note) return null;
-  return kind === "drums" ? "sticks" : kind === "bass" ? "strings" : "keys";
+  return kind === "drums" ? "sticks" : "keys";
 }
 
 /** How far (metres) a figure shifts on its seat, up or down and in or back, to reach. */
