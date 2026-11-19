@@ -13,7 +13,9 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { GEAR_IDS, type GearId, gear, gearLook } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 
-const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18] } as const;
+// `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
+// half a millimetre, so the coat's grain, the grille's holes and the hardware show as they would in a close photo.
+const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16] } as const;
 type Angle = keyof typeof ANGLES;
 
 const q = new URLSearchParams(location.search), size = Number(q.get("size") ?? 768), plain = q.has("plain"), hdri = q.get("hdri") !== "0";
@@ -99,9 +101,10 @@ async function show(id: GearId, angle: Angle) {
   shown.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(shown), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
   const [az, el] = ANGLES[angle].map((d) => (d * Math.PI) / 180);
-  const dist = (r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.02;
-  camera.position.set(c.x + Math.sin(az) * Math.cos(el) * dist, c.y + Math.sin(el) * dist, c.z + Math.cos(az) * Math.cos(el) * dist);
-  camera.lookAt(c);
+  const far = (r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.02, dist = angle === "close" ? far * 0.4 : far;
+  const aim = angle === "close" ? c.clone().lerp(box.max, 0.62) : c;
+  camera.position.set(aim.x + Math.sin(az) * Math.cos(el) * dist, aim.y + Math.sin(el) * dist, aim.z + Math.cos(az) * Math.cos(el) * dist);
+  camera.lookAt(aim);
   camera.updateProjectionMatrix();
   // the key sits up and to the camera's left, so faces read and the shadow falls behind and right; the rim comes from
   // behind on the other side, so a black box's edges part from the dark room
