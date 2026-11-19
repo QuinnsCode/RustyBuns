@@ -56,3 +56,11 @@ export function busiest<R extends Counts & { name: string; dot: Dot }>(rows: R[]
   const rank: Record<Dot, number> = { error: 0, live: 1, testing: 2, code: 3 };
   return [...rows].sort((a, b) => b.today - a.today || b.week - a.week || rank[a.dot] - rank[b.dot] || a.name.localeCompare(b.name));
 }
+
+/** A time as the owner reads it, in Pacific time: "4:56pm PST Dec-13-2026" (PDT in summer). */
+export function pacific(iso: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", hour12: true, month: "short", day: "2-digit", year: "numeric", timeZoneName: "short",
+  }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  return `${parts.hour}:${parts.minute}${(parts.dayPeriod ?? "").toLowerCase()} ${parts.timeZoneName} ${parts.month}-${parts.day}-${parts.year}`;
+}

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appDot, busiest, repoDot, tally } from "./releases-lib.ts";
+import { appDot, busiest, pacific, repoDot, tally } from "./releases-lib.ts";
 
 test("each app gets the dot the owner reads it by", () => {
   const up = { ok: true }, down = { ok: false };
@@ -35,4 +35,8 @@ test("PRs count today and this week, busiest first", () => {
   expect(Object.fromEntries(c)).toEqual({ a: { today: 2, week: 2 }, b: { today: 1, week: 2 } });
   const rows = [{ name: "b", dot: "live" as const, ...c.get("b")! }, { name: "quiet", dot: "error" as const, today: 0, week: 0 }, { name: "a", dot: "live" as const, ...c.get("a")! }];
   expect(busiest(rows).map((r) => r.name)).toEqual(["a", "b", "quiet"]);
+});
+
+test("last push reads in Pacific time, PST or PDT by the date", () => {
+  expect([pacific("2026-12-14T00:56:00Z"), pacific("2026-07-04T21:05:00Z")]).toEqual(["4:56pm PST Dec-13-2026", "2:05pm PDT Jul-04-2026"]);
 });
