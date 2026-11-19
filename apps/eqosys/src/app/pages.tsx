@@ -48,6 +48,13 @@ export const MESSAGES: Record<string, string> = {
   game: "Check the game: an id like rocket-golf, a name, a genre, and at least one https origin with nothing after it.",
   gamestep: "That id is taken, or the game can't take that step now.",
   gameowner: "Only a studio's owner or admin changes its games.",
+  nosso: "No studio signs in that email's company here. Sign in with your password, or ask your studio's owner.",
+  sso: "Your company's sign-in didn't go through. Start again from here.",
+  ssomail: "Your company's sign-in didn't say your email is verified, so it can't sign you in here.",
+  ssodomain: "Your company signed you in with an email off its domain, so it can't sign you in here.",
+  ssotaken: "An account with that email was made another way. Sign in with it as usual.",
+  ssoform: "Check the company sign-in: an https issuer that answers OpenID discovery, a client id, and the company's own mail domain (not public mail).",
+  ssoclash: "Another studio already signs in that domain.",
 };
 
 const nameOf = (id: string) => cardOf(id, ourApp(id)?.name ?? id).name;
@@ -712,7 +719,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} invite={invite} origin={origin} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
-        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} />}
+        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} origin={origin} />}
 
         {tab === "people" && everyone && (
           <>

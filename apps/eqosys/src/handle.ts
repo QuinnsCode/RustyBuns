@@ -31,6 +31,7 @@ import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
 import { avatarRoute, savedAvatar } from "./avatar.ts";
+import { connectSso, dropSso, SSO_CALLBACK, ssoCookie, SsoForm, ssoStart } from "./sso.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -365,6 +366,17 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return out;
   }
 
+  // "Sign in through your company" (sso.ts): the work email's domain names the studio, and its provider takes it from there.
+  if (act === "sso") {
+    if (await limited()) return back("slow");
+    const base = conf.BETTER_AUTH_URL ?? new URL(req.url).origin;
+    const go = await ssoStart(conf, field(form, "email"), base + SSO_CALLBACK, ask ? askQuery(ask) : null);
+    if (!go) return back("nosso");
+    const out = see(go.to);
+    out.headers.append("set-cookie", ssoCookie(new URL(base).protocol === "https:", go.state));
+    return out;
+  }
+
   const me = await meOf(req, conf);
   if (!me) return back("in");
 
@@ -419,6 +431,16 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!name) return see("/?tab=studio&e=name");
     const r = await makeSpace(conf, me.id, name, studio);
     return see(r.ok ? "/spaces" : "/?tab=studio&e=studio");
+  }
+  // The Studio tab's company sign-in (sso.ts): its owner connects the company's provider, or takes it off. An empty secret keeps the sealed one.
+  if (act === "studio-sso") {
+    const studio = field(form, "studio");
+    if (field(form, "off")) { const r = await dropSso(conf, studio, me.id); return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=studio"); }
+    const f = check(SsoForm, { issuer: field(form, "issuer").trim(), clientId: field(form, "clientId").trim(), secret: field(form, "secret").trim() || undefined,
+      domain: field(form, "domain").trim().toLowerCase(), role: field(form, "role") });
+    if (!f) return see("/?tab=studio&e=ssoform");
+    const r = await connectSso(conf, studio, me.id, f);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 403 ? "studio" : r.status === 409 ? "ssoclash" : "ssoform"}`);
   }
   if (act === "studio-make") {
     const name = check(STUDIO_NAME, field(form, "name").trim()), kind = check(Kind, field(form, "kind"));

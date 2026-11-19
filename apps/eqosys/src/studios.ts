@@ -31,8 +31,10 @@ export interface ShelfApp {
   state?: State; note?: string; draft?: Draft; reports?: Received[];
 }
 export interface StudioPerson { name: string; email: string; role: Role }
-/** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it. */
-export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; apps: ShelfApp[] }
+/** A studio's company sign-in (sso.ts) as the Studio tab shows it: never the secret, only whether one is sealed. */
+export interface SsoShown { issuer: string; clientId: string; domain: string; role: Role; secret: boolean }
+/** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it; `sso` its company sign-in, shown to its owner. */
+export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; apps: ShelfApp[]; sso?: SsoShown }
 
 const shelfApp = async (conf: Env, id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): Promise<ShelfApp> => {
   const l = theirs.find((x) => x.id === id), a: QApp | undefined = ourApp(id) ?? l;
@@ -54,13 +56,19 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number; space: string | null }>();
   if (!mine.length) return [];
   const ids = mine.map((s) => s.id), marks = ids.map(() => "?").join(", ");
-  const [{ results: apps }, { results: people }] = await Promise.all([
+  const [{ results: apps }, { results: people }, { results: sso }] = await Promise.all([
     conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${marks}) ORDER BY app`).bind(...ids).all<{ app: string; studio_id: string; repo: string | null }>(),
     conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
+    conf.DB.prepare(`SELECT studio_id, issuer, client_id, secret IS NOT NULL AS sealed, domain, role FROM studio_sso WHERE studio_id IN (${marks})`).bind(...ids)
+      .all<{ studio_id: string; issuer: string; client_id: string; sealed: number; domain: string; role: Role }>(),
   ]);
   const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
-  return Promise.all(mine.map(async (s) => ({ ...s,
+  const ssoShown = (s: { id: string; role: Role }) => {
+    const r = s.role === "owner" ? sso.find((x) => x.studio_id === s.id) : undefined;
+    return r ? { sso: { issuer: r.issuer, clientId: r.client_id, domain: r.domain, role: r.role, secret: !!r.sealed } } : {};
+  };
+  return Promise.all(mine.map(async (s) => ({ ...s, ...ssoShown(s),
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
     apps: await Promise.all(apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(conf, a.app, a.repo, shipped.get(a.app) ?? null, theirs))) })));
 }
@@ -142,6 +150,7 @@ export function studioErase(conf: Env, userId: string) {
     conf.DB.prepare(`DELETE FROM studios WHERE id IN (${SOLE_OWNED})`).bind(userId),
     conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare(`DELETE FROM spaces WHERE studio_id IS NOT NULL AND studio_id NOT IN (SELECT id FROM studios)`),
+    conf.DB.prepare(`DELETE FROM studio_sso WHERE studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare("DELETE FROM studio_members WHERE user_id = ?").bind(userId),
   ];
 }

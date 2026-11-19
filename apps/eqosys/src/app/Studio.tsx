@@ -8,6 +8,7 @@ import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
 import type { Draft, State } from "../listings.ts";
 import { GENRES, ourApp } from "../apps.ts";
 import { btn } from "./Glass.tsx";
+import { SSO_CALLBACK } from "../sso.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -116,7 +117,27 @@ function Inbox({ reports }: { reports: NonNullable<Shelf["apps"][number]["report
   );
 }
 
-export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unlocks }) {
+/** Company sign-in (sso.ts), for the studio's owner: the provider's issuer, the client it made for us, and the company's mail
+ * domain. Anyone signing in with an email there lands in the studio as `role`. The secret is sealed; a blank one keeps it. */
+function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
+  const c = s.sso;
+  return (
+    <details className="add"><summary className="pill">{c ? `Company sign-in: ${c.domain}` : "Company sign-in"}</summary>
+      <p className="mut">Register <code>{origin}{SSO_CALLBACK}</code> as the redirect URI with your company's provider (Google Workspace, Entra, Okta).</p>
+      <form method="post" action="/do/studio-sso" aria-label={`${s.name}'s company sign-in`}>
+        <input type="hidden" name="studio" value={s.id} />
+        <input name="issuer" type="url" placeholder="issuer, like https://acme.okta.com" required defaultValue={c?.issuer} />
+        <input name="clientId" placeholder="client id" required defaultValue={c?.clientId} />
+        <input name="secret" type="password" autoComplete="off" placeholder={c?.secret ? "client secret (kept; type to change)" : "client secret"} />
+        <input name="domain" placeholder="mail domain, like acme.com" required defaultValue={c?.domain} />
+        <select name="role" defaultValue={c?.role ?? "maker"} aria-label="Their role">{ROLES.filter((r) => r !== "owner").map((r) => <option key={r} value={r}>{ROLE_WORD[r]}</option>)}</select>
+        <button className={btn(true)} type="submit">{c ? "Save" : "Connect"}</button>
+        {c && <button className={btn()} type="submit" name="off" value="1" formNoValidate>Take it off</button>}
+      </form></details>
+  );
+}
+
+export function Studios({ studios, unlocks, origin = "" }: { studios: Shelf[]; unlocks: Unlocks; origin?: string }) {
   return (
     <>
       <h2>Studios</h2>
@@ -153,6 +174,7 @@ export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unloc
               <button className={btn()} type="submit">Make its space</button>
             </form>
           )}
+          {s.role === "owner" && <CompanySignIn s={s} origin={origin} />}
           {runs(s) && (
             <form method="post" action="/do/studio-add" aria-label={`Add someone to ${s.name}`}>
               <input type="hidden" name="studio" value={s.id} />
