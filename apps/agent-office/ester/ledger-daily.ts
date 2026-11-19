@@ -57,9 +57,11 @@ export function mergeHistory(old: Row[], fresh: Row[]): Row[] {
 }
 
 const PAGE = ["date", "sessions", "turns", "units", "output", "mervin", "ester", "dexter", "prs", "added", "removed", "codeAdded", "codeRemoved", "opus", "sonnet", "haiku", "fable", "other"] as const;
+/** A day with only the fields the pages draw, counts rounded. */
+const slim = (r: Row) => Object.fromEntries(PAGE.map((k) => [k, k === "date" ? r.date : Math.round(r[k])]));
 /** The weekly page with every recorded day in it (only the fields it draws); it picks the weeks itself. */
 export function weekPage(template: string, ledger: { generated: string; dayStarts: number; saves: number; settles: number }, history: Row[], budget: Budget = []): string {
-  const rows = history.map((r) => Object.fromEntries(PAGE.map((k) => [k, k === "date" ? r.date : Math.round(r[k])])));
+  const rows = history.map(slim);
   return fill(template, { generated: ledger.generated, dayStarts: ledger.dayStarts, saves: ledger.saves, settles: ledger.settles, rows, budget });
 }
 
@@ -75,6 +77,15 @@ const shift = (date: string, days: number) => { const t = new Date(`${date}T12:0
 /** The plan week resets Thursday morning: the Thursday on or before `date` (a 10am-to-10am day). */
 export const weekStart = (date: string) => shift(date, -((new Date(`${date}T12:00:00Z`).getUTCDay() + 3) % 7));
 
+/** The ISO week a plan week falls in: a plan week starts on a Thursday, and a Thursday names its ISO week, so the week
+ *  number is that Thursday's (W47 of 53 in 2026). `of` is how many weeks the year has: 53 when it starts on a Thursday,
+ *  or on a Wednesday in a leap year. */
+export function isoWeek(thursday: string) {
+  const t = new Date(`${thursday}T12:00:00Z`), year = t.getUTCFullYear(), jan1 = Date.UTC(year, 0, 1, 12);
+  const first = new Date(jan1).getUTCDay(), leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  return { year, n: Math.floor((t.getTime() - jan1) / 864e5 / 7) + 1, of: first === 4 || (leap && first === 3) ? 53 : 52 };
+}
+
 /** Every plan week in the history, added up, oldest first. `pct` is what /usage said (budget.json), `fablePct` the Fable
  *  limit's; the week still running is estimated from the last read week's units per 1% until it gets a reading. */
 export function planWeeks(history: Row[], budget: Budget) {
@@ -87,7 +98,7 @@ export function planWeeks(history: Row[], budget: Budget) {
     const running = i === all.length - 1;
     const pct = read ? read.pct : running && perPct ? Math.round(units / perPct) : null;
     if (read?.pct) perPct = units / read.pct;
-    return { start, ends, days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), cut: sum(rows, "codeRemoved"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
+    return { start, ends, week: isoWeek(start), days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), cut: sum(rows, "codeRemoved"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
       pct, fablePct: read?.fable ?? null, approx: read?.approx ?? false, estimated: running && !read && pct !== null, running };
   });
 }
@@ -148,12 +159,12 @@ export const conflictCost = (history: Row[]) => {
   return episodes ? Math.round(history.reduce((a, r) => a + r.fights, 0) / episodes) : 0;
 };
 
-/** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar), every week,
- *  issues opened against closed over the last 30 days and hour by hour over the last 24, and the conflicts Mervin saved, priced as fought by hand. */
+/** The plan-week report: every recorded day and plan week, so the page can show any week (`#w2026-47`), not just this one;
+ *  issues opened against closed and the conflicts Mervin saved on each of those days, issues hour by hour over the last 24,
+ *  and a conflict priced as fought by hand (over the last 30 days). `start` is the running week's reset. */
 export function reportPage(template: string, generated: string, history: Row[], budget: Budget, issues: Issues = [], saved: ReturnType<typeof savedDays> = []): string {
   const start = history.length ? weekStart(history.at(-1)!.date) : "";
-  const days = history.filter((r, i) => r.date >= start || i >= history.length - 8);
-  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)), hours: issueHours(issues, generated), saved, conflictCost: conflictCost(history.slice(-30)) });
+  return fill(template, { generated, start, days: history.map(slim), weeks: planWeeks(history, budget), issues: issueDays(issues, history.map((r) => r.date)), hours: issueHours(issues, generated), saved, conflictCost: conflictCost(history.slice(-30)) });
 }
 
 const read = <T>(name: string, g: (v: unknown) => T, none: T): T => { const f = path.join(out, name); return existsSync(f) ? g(JSON.parse(readFileSync(f, "utf8"))) : none; };
@@ -168,7 +179,7 @@ function page(ledger: Of<typeof Ledger>, history: Row[]) {
   const budget = readBudget(), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
   writeFileSync(path.join(out, "week.html"), weekPage(template("ledger-week.html"), ledger, history, budget));
   writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget, readIssues(),
-    savedDays(readRemoteSaved(), readLocalSaved(), history.slice(-30).map((r) => r.date))));
+    savedDays(readRemoteSaved(), readLocalSaved(), history.map((r) => r.date))));
 }
 
 async function build() {

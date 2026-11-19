@@ -65,12 +65,26 @@ tr:last-child td{border-bottom:0}
 tr.reset td{border-top:2px dashed var(--reset)}
 .pill{display:inline-block;font:500 .72rem var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--grid);color:var(--ink2)}
 .note{font-size:.8rem;color:var(--muted)}
+.titlerow{display:flex;align-items:center;justify-content:space-between;gap:10px 20px;flex-wrap:wrap}
+.weeknav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.weeknav a,.weeknav span{color:var(--ink2);text-decoration:none}
+.weeknav .step{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--grid);border-radius:6px;background:var(--panel)}
+.weeknav .step.off{opacity:.35}
+.weeknav .step svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.weeknav .now{font:600 1.15rem var(--display);color:var(--accent);padding:0 4px}
+.weeknav .now small{font:500 .75rem var(--mono);color:var(--muted)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chips a{font:500 .72rem var(--mono);padding:3px 8px;border-radius:999px;border:1px solid var(--grid);background:var(--panel);color:var(--ink2);text-decoration:none}
+.chips a.on{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+tr.sel td{background:var(--accent-bg)}
+td a{color:inherit}
 </style></head><body>
 <main>
   <header>
     <div class="eyebrow" id="eyebrow"></div>
-    <h1>Plan week</h1>
+    <div class="titlerow"><h1>Plan week</h1><nav class="weeknav" id="weeknav" aria-label="Plan weeks"></nav></div>
     <p class="sub" id="lede"></p>
+    <nav class="chips" id="chips" aria-label="Every plan week" style="margin-top:10px"></nav>
   </header>
 
   <div class="kpis" id="kpis"></div>
@@ -87,7 +101,7 @@ tr.reset td{border-top:2px dashed var(--reset)}
       <div class="rows" id="mixrows"></div>
     </div>
     <div class="card">
-      <div class="head"><h2>Units per day, by model</h2><small>last day still running</small></div>
+      <div class="head"><h2>Units per day, by model</h2><small id="modelsnote"></small></div>
       <div class="legend"><span><i style="background:var(--m-opus)"></i>Opus</span><span><i style="background:var(--m-sonnet)"></i>Sonnet</span><span><i style="background:var(--m-fable)"></i>Fable</span><span><i class="dash"></i>Plan reset</span></div>
       <div id="models"></div>
     </div>
@@ -106,7 +120,7 @@ tr.reset td{border-top:2px dashed var(--reset)}
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="hourcard">
     <div class="head"><h2>Issues per hour, last 24 hours</h2><small id="hsum"></small></div>
     <div class="legend"><span><i style="background:var(--c-open)"></i>Opened (above the line)</span><span><i style="background:var(--c-closed)"></i>Closed (below)</span><span><i class="line" style="border-color:var(--ink2)"></i>Running net: under zero is closing faster</span></div>
     <div id="hours"></div>
@@ -136,7 +150,7 @@ tr.reset td{border-top:2px dashed var(--reset)}
   </section>
 
   <section class="card" style="padding:0;border:0;background:none">
-    <h2>Plan weeks</h2>
+    <h2>Every plan week</h2>
     <div class="tw"><table id="weeks"></table></div>
     <p class="note">PRs per 1% of the weekly limit is the efficiency number: higher is better. ~ marks a week read approximately; "est." is the running week, from last week's units per 1% until /usage is entered with --budget.</p>
   </section>
@@ -153,6 +167,15 @@ const $=id=>document.getElementById(id);
 const fmt=n=>{const a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(2)+"B":a>=1e6?(n/1e6).toFixed(a>=1e8?0:1)+"M":a>=1e3?(n/1e3).toFixed(a>=1e5?0:1)+"k":String(Math.round(n))};
 const comma=n=>Math.round(n).toLocaleString("en-US");
 const day=s=>{const t=new Date(s+"T12:00:00Z"),o={timeZone:"UTC"};return {wd:t.toLocaleDateString("en-US",{...o,weekday:"short"}),md:t.toLocaleDateString("en-US",{...o,month:"short",day:"numeric"})}};
+// Every recorded week is on the page: #w2026-47 shows that one (week 47 of the year, its Thursday's ISO week), no hash the
+// running one. view() cuts the data to the chosen week as the page used to get it for this week alone.
+const ALL=D,wk=w=>`w${w.week.year}-${w.week.n}`;
+const pick=()=>ALL.weeks.find(w=>w.week&&wk(w)===location.hash.slice(1))??ALL.weeks.at(-1);
+function view(w){if(!w)return ALL;const before=r=>r.date<w.ends;let days=ALL.days.filter(r=>r.date>=w.start&&before(r));
+ if(w.running&&days.length<8)days=ALL.days.filter(before).slice(-8); // a Thursday morning isn't a page of one bar
+ return {...ALL,generated:w.running?ALL.generated:new Date(w.ends+"T10:00:00").toISOString(),start:w.start,days,weeks:ALL.weeks.filter(x=>x.start<=w.start),
+  issues:ALL.issues.filter(before).slice(-30),hours:w.running?ALL.hours??[]:[],saved:ALL.saved.filter(before).slice(-30)}}
+function render(D){
 const days=D.days,week=days.filter(r=>r.date>=D.start),sum=(rows,k)=>rows.reduce((a,r)=>a+r[k],0);
 const cur=D.weeks.at(-1)??{pct:null,units:0,prs:0,code:0,cut:0,opus:0,sonnet:0,fable:0,start:D.start,ends:D.start},prev=D.weeks.at(-2);
 const gen=new Date(D.generated||Date.now()),into=Math.max(0,Math.min(7,(gen-new Date(cur.start+"T10:00:00"))/864e5)),left=7-into;
@@ -162,12 +185,17 @@ const units=sum(week,"units"),prs=sum(week,"prs"),add=sum(week,"codeAdded"),cut=
 const KINDS=[{k:"do-save",c:"--c-mervin",n:"Saves (DO)"},{k:"branch-merge",c:"--c-dexter",n:"Branch merges"},{k:"preflight",c:"--c-ester",n:"Preflight"},{k:"hold",c:"--m-fable",n:"Office holds"}];
 const savedOf=r=>KINDS.reduce((a,s)=>a+(r[s.k]??0),0),savedWeek=sum(D.saved.filter(r=>r.date>=D.start).map(r=>({n:savedOf(r)})),"n"),savedUnits=savedWeek*D.conflictCost;
 
-$("eyebrow").textContent=`${day(cur.start).wd} ${day(cur.start).md} to ${day(cur.ends).wd} ${day(cur.ends).md} · ${into.toFixed(1)} of 7 days in · refreshed ${gen.toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}`;
-$("lede").textContent=`Tokens used, PRs merged, scope added and closed, this plan week so far. Refreshed every morning at 10.`;
+const live=cur.running!==false;
+$("eyebrow").textContent=`${day(cur.start).wd} ${day(cur.start).md} to ${day(cur.ends).wd} ${day(cur.ends).md} · ${live?`${into.toFixed(1)} of 7 days in · refreshed ${gen.toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}`:`closed, ${cur.days} day${cur.days===1?"":"s"} recorded`}`;
+$("lede").textContent=live?`Tokens used, PRs merged, scope added and closed, this plan week so far. Refreshed every morning at 10.`:`Tokens used, PRs merged, scope added and closed in that plan week. Week ${ALL.weeks.at(-1)?.week?.n} is the one running now.`;
+{const W=ALL.weeks,ix=W.indexOf(cur),chev=d=>`<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`,step=(w,d,n)=>w?`<a class="step" href="#${wk(w)}" title="${n} week: W${w.week.n}" aria-label="${n} week">${chev(d)}</a>`:`<span class="step off">${chev(d)}</span>`;
+ $("weeknav").innerHTML=cur.week?`${step(W[ix-1],"m15 18-6-6 6-6","Previous")}<a class="now" href="#${wk(cur)}" title="Link to this week">Week ${cur.week.n} <small>of ${cur.week.of}</small></a>${step(W[ix+1],"m9 18 6-6-6-6","Next")}`:"";
+ $("chips").innerHTML=W.filter(w=>w.week).map(w=>`<a href="#${wk(w)}" class="${w===cur?"on":""}" title="${day(w.start).md} to ${day(w.ends).md}">W${w.week.n}</a>`).join("");}
+$("modelsnote").textContent=live?"last day still running":"";$("hourcard").hidden=!live;
 
 $("kpis").innerHTML=[
- ["lead",cur.pct==null?"?":`${cur.estimated?"~":""}${pct}%`,"Plan used",`on pace for ~${land}%`],
- ...(cur.fablePct==null?[]:[["",`${cur.fablePct}%`,"Fable used",`on pace for ~${Math.round(cur.fablePct+(into>0.2?cur.fablePct/into:0)*left)}%`]]),
+ ["lead",cur.pct==null?"?":`${cur.estimated?"~":""}${pct}%`,"Plan used",live?`on pace for ~${land}%`:"where the week ended"],
+ ...(cur.fablePct==null?[]:[["",`${cur.fablePct}%`,"Fable used",live?`on pace for ~${Math.round(cur.fablePct+(into>0.2?cur.fablePct/into:0)*left)}%`:"where the week ended"]]),
  ["",fmt(units),"Units",`${comma(sum(week,"turns"))} turns`],
  ["",comma(prs),"PRs merged",`${comma(into>0.2?prs/into:prs)} a day`],
  ["",`<span class="add">+${fmt(add)}</span> <span class="cut">−${fmt(cut)}</span>`,"Code lines","added, removed"],
@@ -180,12 +208,13 @@ $("kpis").innerHTML=[
 $("resets").textContent=`resets ${day(cur.ends).wd} ${day(cur.ends).md}, 10am`;
 $("used").innerHTML=cur.pct==null?"?<small>usage not known</small>":`${cur.estimated?"~":""}${pct}%<small>${cur.estimated?"estimated":"of the weekly limit"}</small>`;
 $("bar").innerHTML=`<div class="pace" style="left:${Math.min(pct,100)}%;width:${Math.max(0,Math.min(land,100)-pct)}%"></div><div class="used" style="width:${Math.min(pct,100)}%"></div><div class="now" style="left:${into/7*100}%" title="Now: ${into.toFixed(1)} of 7 days in"></div>`;
-$("pace").innerHTML=`About ${rate.toFixed(1)}% a day: on pace for <b>${land}%</b> by the reset. Using it all takes <b>${need.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left${rate>0?` (${(need/rate).toFixed(1)}x the current rate)`:""}.${prev&&prev.pct!=null?` Last week ended at ${prev.approx?"~":""}${prev.pct}%.`:""}`;
+$("pace").innerHTML=!live?`About ${rate.toFixed(1)}% a day over the week.${prev&&prev.pct!=null?` The week before ended at ${prev.approx?"~":""}${prev.pct}%.`:""}`:`About ${rate.toFixed(1)}% a day: on pace for <b>${land}%</b> by the reset. Using it all takes <b>${need.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left${rate>0?` (${(need/rate).toFixed(1)}x the current rate)`:""}.${prev&&prev.pct!=null?` Last week ended at ${prev.approx?"~":""}${prev.pct}%.`:""}`;
 // the Fable limit, read off /usage beside the weekly one: same meter, its own pace
+$("fablemeter").hidden=cur.fablePct==null;
 if(cur.fablePct!=null){const fp=cur.fablePct,fr=into>0.2?fp/into:0,fl=Math.round(fp+fr*left),fn=left>0?Math.max(0,100-fp)/left:0;
  $("fablemeter").hidden=false;$("fableused").textContent=`${fp}% used`;
  $("fablebar").innerHTML=`<div class="pace" style="left:${Math.min(fp,100)}%;width:${Math.max(0,Math.min(fl,100)-fp)}%;background:repeating-linear-gradient(135deg,var(--m-fable) 0 3px,transparent 3px 7px)"></div><div class="used" style="width:${Math.min(fp,100)}%;background:var(--m-fable)"></div><div class="now" style="left:${into/7*100}%"></div>`;
- $("fablepace").innerHTML=`About ${fr.toFixed(1)}% a day: on pace for <b>${fl}%</b>. Using it all takes <b>${fn.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left.`;}
+ $("fablepace").innerHTML=!live?`About ${fr.toFixed(1)}% a day over the week.`:`About ${fr.toFixed(1)}% a day: on pace for <b>${fl}%</b>. Using it all takes <b>${fn.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left.`;}
 {const M=[["opus","--m-opus","Opus"],["sonnet","--m-sonnet","Sonnet"],["fable","--m-fable","Fable"]],t=cur.opus+cur.sonnet+cur.fable||1;
  $("mix").innerHTML=M.map(([k,c])=>`<div style="width:${cur[k]/t*100}%;background:var(${c})"></div>`).join("");
  $("mixrows").innerHTML=M.map(([k,c,n])=>`<div><span><i style="background:var(${c})"></i>${n}</span><span>${fmt(cur[k])} · ${Math.round(cur[k]/t*100)}%</span></div>`).join("");}
@@ -202,7 +231,7 @@ function bars(el,rows,up,{down=[],fmtY=fmt,H=210}={}){
   rows.forEach((r,i)=>{const x=L+i*bw+gap/2,dd=day(r.date);let acc=0;
     for(const s of up){const v=r[s.k];if(v>0){g+=`<rect x="${x}" y="${y(acc+v)}" width="${bw-gap}" height="${y(acc)-y(acc+v)}" fill="var(${s.c})"><title>${dd.md} ${s.n}: ${fmt(v)}</title></rect>`;acc+=v}}
     acc=0;for(const s of down){const v=r[s.k];if(v>0){g+=`<rect x="${x}" y="${y(-acc)}" width="${bw-gap}" height="${y(-acc-v)-y(-acc)}" fill="var(${s.c})"><title>${dd.md} ${s.n}: ${fmt(v)}</title></rect>`;acc+=v}}
-    if(n<=16||i%2===0)g+=`<text x="${x+(bw-gap)/2}" y="${H-B+15}" text-anchor="middle">${dd.wd.slice(0,2)}</text><text x="${x+(bw-gap)/2}" y="${H-B+28}" text-anchor="middle">${dd.md.split(" ")[1]}${i===n-1?"*":""}</text>`;
+    if(n<=16||i%2===0)g+=`<text x="${x+(bw-gap)/2}" y="${H-B+15}" text-anchor="middle">${dd.wd.slice(0,2)}</text><text x="${x+(bw-gap)/2}" y="${H-B+28}" text-anchor="middle">${dd.md.split(" ")[1]}${i===n-1&&live?"*":""}</text>`;
     if(i>0&&resetAt(r)){const rx=L+i*bw;g+=`<line x1="${rx}" x2="${rx}" y1="${T-4}" y2="${T+ih}" stroke="var(--reset)" stroke-width="2" stroke-dasharray="5 4"/>`}});
   $(el).innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
 }
@@ -251,12 +280,16 @@ $("locsum").textContent=`+${comma(add)} −${comma(cut)} this week`;
  $("hsum").textContent=Hs.length?`${ho} opened, ${hc} closed`:"no hourly data yet";
  $("hnote").textContent=Hs.length?`${hc>=ho?`Closed ${hc-ho} more than opened`:`Scope grew by ${ho-hc}`} in the 24 hours to ${hr(new Date(Date.parse(Hs.at(-1).hour)+36e5).toISOString())} on ${new Date(Date.parse(Hs.at(-1).hour)+36e5).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}: ${better} hours closed more than they opened, ${worse} opened more. Times are your own clock; the page refreshes at 10am.`:"";}
 
-$("weeks").innerHTML=`<thead><tr><th>Plan week ending</th><th>Used</th><th>Units</th><th>PRs</th><th>PRs per 1%</th><th>Lines + / −</th><th>Opus / Sonnet / Fable</th></tr></thead><tbody>`+
- D.weeks.slice(-6).map(w=>{const t=w.opus+w.sonnet+w.fable||1,p=k=>Math.round(w[k]/t*100),d=day(w.ends);
-  return `<tr><td>${d.wd} ${d.md}${w.running?' <span class="pill">in progress</span>':""}</td><td>${w.pct==null?"-":`${w.approx||w.estimated?"~":""}${w.pct}%${w.estimated?" est.":""}`}</td><td>${fmt(w.units)}</td><td>${comma(w.prs)}</td><td><b>${w.pct?(w.prs/w.pct).toFixed(1):"-"}</b></td><td><span class="add">+${fmt(w.code)}</span> <span class="cut">−${fmt(w.cut)}</span></td><td>${p("opus")} / ${p("sonnet")} / ${p("fable")}%</td></tr>`}).join("")+"</tbody>";
+$("weeks").innerHTML=`<thead><tr><th>Week</th><th>Plan week ending</th><th>Used</th><th>Units</th><th>PRs</th><th>PRs per 1%</th><th>Lines + / −</th><th>Opus / Sonnet / Fable</th></tr></thead><tbody>`+
+ ALL.weeks.map(w=>{const t=w.opus+w.sonnet+w.fable||1,p=k=>Math.round(w[k]/t*100),d=day(w.ends);
+  return `<tr class="${w===cur?"sel":""}"><td>${w.week?`<a href="#${wk(w)}">W${w.week.n}</a>`:"-"}</td><td>${d.wd} ${d.md}${w.running?' <span class="pill">in progress</span>':""}</td><td>${w.pct==null?"-":`${w.approx||w.estimated?"~":""}${w.pct}%${w.estimated?" est.":""}`}</td><td>${fmt(w.units)}</td><td>${comma(w.prs)}</td><td><b>${w.pct?(w.prs/w.pct).toFixed(1):"-"}</b></td><td><span class="add">+${fmt(w.code)}</span> <span class="cut">−${fmt(w.cut)}</span></td><td>${p("opus")} / ${p("sonnet")} / ${p("fable")}%</td></tr>`}).join("")+"</tbody>";
 
 $("days").innerHTML=`<thead><tr><th>Day</th><th>Units</th><th>Opus</th><th>PRs</th><th>Lines + / −</th><th>Issues + / −</th><th>Turns</th><th>Mervin</th><th>Dexter</th><th>Ester</th></tr></thead><tbody>`+
  days.map((r,i)=>{const dd=day(r.date),reset=r.date===D.start,is=D.issues.find(x=>x.date===r.date);
-  return `<tr class="${reset?"reset":""}"><td>${dd.wd} ${dd.md}${i===days.length-1?"*":""}${reset?' <span class="pill">reset</span>':""}</td><td>${fmt(r.units)}</td><td>${r.units?Math.round(r.opus/r.units*100):0}%</td><td><b>${r.prs}</b></td><td><span class="add">+${comma(r.codeAdded)}</span> <span class="cut">−${comma(r.codeRemoved)}</span></td><td>${is?`${is.opened} / ${is.closed}`:"-"}</td><td>${comma(r.turns)}</td><td>${fmt(r.mervin)}</td><td>${fmt(r.dexter)}</td><td>${fmt(r.ester)}</td></tr>`}).join("")+"</tbody>";
+  return `<tr class="${reset?"reset":""}"><td>${dd.wd} ${dd.md}${i===days.length-1&&live?"*":""}${reset?' <span class="pill">reset</span>':""}</td><td>${fmt(r.units)}</td><td>${r.units?Math.round(r.opus/r.units*100):0}%</td><td><b>${r.prs}</b></td><td><span class="add">+${comma(r.codeAdded)}</span> <span class="cut">−${comma(r.codeRemoved)}</span></td><td>${is?`${is.opened} / ${is.closed}`:"-"}</td><td>${comma(r.turns)}</td><td>${fmt(r.mervin)}</td><td>${fmt(r.dexter)}</td><td>${fmt(r.ester)}</td></tr>`}).join("")+"</tbody>";
+}
+const go=()=>render(view(pick()));
+addEventListener("hashchange",()=>{go();scrollTo(0,0)});
+go();
 </script>
 </body></html>
