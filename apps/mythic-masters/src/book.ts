@@ -23,6 +23,8 @@ const Reply = obj({
   /** A line it writes about you in its ledger, shown under its standing demand. */ note: opt(str(120)),
   /** Spare drops of ink it hands you for the next fight. */ ink: opt(int(1, 2)),
   /** The kind of beast its next demand names, while one is left. */ wants: opt(oneOf(ARCHETYPES)),
+  /** A talk at this talk's beat that the Book picks the next time that beat comes, ahead of its usual order: what you said decides what it asks next. */
+  next: opt(str(40)),
 });
 /** One thing the Book says at a beat. `lead` is what it says first, one short page each, turned with Go on before it
  * asks (the first open uses it to say what the Book is). `from` is the lowest region number it plays in, `region` (a region id) the only region it
@@ -101,7 +103,8 @@ function fill(text: string, j: Reader, ctx: Ctx, said = "", at?: number) {
 export function momentFor(beat: Beat, j: Reader, ctx: Ctx = {}, lines: readonly Talk[] = LINES): Moment | null {
   const heard = j.talk?.heard ?? [];
   const open = lines.filter((t) => t.beat === beat && !heard.includes(t.id) && (t.from ?? 1) <= (ctx.n ?? 1) && (!t.region || t.region === ctx.regionId));
-  const talk = open.find((t) => t.region) ?? open[0];
+  const asked = j.talk?.next ?? [];
+  const talk = open.find((t) => t.region) ?? open.find((t) => asked.includes(t.id)) ?? open[0];
   if (!talk) return null;
   const said = j.talk?.said ?? {};
   const hit = talk.recall?.find((r) => { const [id, reply] = r.of.split("."); return !!id && said[id] === reply; });
@@ -124,6 +127,7 @@ export function answer(j: Reader, m: Moment, replyId: string): { said: string; n
   if (r.note) t.notes = [...(t.notes ?? []), r.note].slice(-20);
   if (r.ink) t.ink = Math.min(3, (t.ink ?? 0) + r.ink);
   if (r.wants) t.wants = r.wants;
+  if (r.next && !t.heard.includes(r.next)) t.next = [...(t.next ?? []).filter((id) => !t.heard.includes(id)), r.next].slice(-8);
   return { said: fill(r.book, j, m.ctx), named };
 }
 
