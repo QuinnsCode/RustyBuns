@@ -340,6 +340,37 @@ describe("the bruiser bot", () => {
   });
 });
 
+describe("the skirmisher bot", () => {
+  test("hits and runs: two skirmishers don't plant and trade lights at contact (#5226 round 9)", () => {
+    // Before: lights traded on one spot in runs of 8 and more, and at contact both stood still nearly half the time.
+    const [a, b] = ["wampus-cat", "black-shuck"].map(creature) as [Creature, Creature];
+    let longest = 0, near = 0, still = 0;
+    for (let s = 1; s <= 6; s++) {
+      const m = newMatch(a, b), bots = [bot(0, s), bot(1, s * 7 + 1)];
+      const run = [0, 0], from = [{ x: 0, z: 0 }, { x: 0, z: 0 }], was = ["", ""];
+      while (!m.over) {
+        step(m, [bots[0]!(m), bots[1]!(m)]);
+        const [p, q] = m.f;
+        if (Math.hypot(p.pos.x - q.pos.x, p.pos.z - q.pos.z) < 3.2) {
+          near++;
+          if (m.f.every((f) => Math.hypot(f.vel.x, f.vel.z) < 0.4)) still++;
+        }
+        m.f.forEach((f, k) => {
+          const now = f.state === "attack" ? f.act?.move.slot ?? "" : f.state;
+          if (now === "light" && was[k] !== "light") {
+            run[k] = Math.hypot(f.pos.x - from[k]!.x, f.pos.z - from[k]!.z) < 0.8 ? run[k]! + 1 : 1;
+            from[k] = { x: f.pos.x, z: f.pos.z };
+            longest = Math.max(longest, run[k]!);
+          }
+          was[k] = now;
+        });
+      }
+    }
+    expect(longest).toBeLessThan(7);
+    expect(still / near).toBeLessThan(0.2);
+  });
+});
+
 describe("tight like a platform fighter", () => {
   test("a press made in a heavy's recovery goes off on the first free frame", () => {
     const m = newMatch(tank, bruiser), [me] = m.f;
