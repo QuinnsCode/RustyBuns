@@ -78,7 +78,7 @@ export const DANCE_FLOOR: CrowdSpot = {
   floor: { ...ZONES.floor, nx: 14, nz: 14 },
   stageZ: ZONES.floor.z0 - 0.5,
   capacity: 500,
-  room: { w: 200, d: 200, h: 100, alpha: 1 },
+  room: null,
   regions: [
     { name: "front", zone: { ...ZONES.floor, z1: 10.5 } },
     { name: "middle", zone: { ...ZONES.floor, z0: 10.5, z1: 15.5 } },

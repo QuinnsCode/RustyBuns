@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { aimed, facing, type World } from "../sim.ts";
 import type { Band } from "@rustybuns/gear";
 import { CROWD, FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, aim, crowdState, heat, master, raise, rig, scores, show, type Score } from "./dive-bar.ts";
-import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { crowdOf, letIn, move, type Mood } from "../crowd/crowd.ts";
 import { crowdView } from "../crowd/crowd-view.ts";
 
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
@@ -112,7 +112,7 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
   card.append(info);
 
   let seen = "", last: Score | null = null, full: Score | null = null, opened: Show | null = null;
-  const signature = (w: World) => JSON.stringify([view.band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w), !!crowdOf(w)]);
+  const signature = (w: World) => JSON.stringify([view.band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w), crowdOf(w)?.moves ?? -1]);
   const people = crowdView(scene);
 
   // The mids map shows the empty room until the doors open, then the room as the crowd hears it.
@@ -122,8 +122,10 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
     tex.needsUpdate = true;
     last = s.soundcheck;
     full = s.full;
-    people.moods(crowdState(w, s).regions);
+    moods = crowdState(w, s).regions;
+    people.moods(moods);
   }
+  let moods: Mood[] = [];
 
   const view: BarView = {
     heatOn: false,
@@ -139,7 +141,10 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
     },
     look: () => roomHint(getWorld(), { on: view.heatOn, band: view.band }, !!opened),
     update() {
-      const w = getWorld(), sig = signature(w);
+      const w = getWorld();
+      // The crowd moves on how each part of the room hears it: forward, back from the stack, or out of the door.
+      move(w, moods);
+      const sig = signature(w);
       if (sig !== seen) { seen = sig; paint(w); }
       people.update(w, crowdOf(w));
       const s = last!, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
