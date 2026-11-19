@@ -45,22 +45,29 @@ export function withValue(p: TrackPlugin, id: number, v: number): TrackPlugin {
  * What the worklet and the host trade for a plugin track. The worklet asks for `frames` more of its sound and says
  * which notes it played since it last asked; the host plays them into the plugin, renders, and the page hands the
  * block (interleaved stereo at the context's rate) back. `on` with `vel` 0..1, `off`; `set` moves a slider.
+ * `at` is the frame of the block the event lands on (none: its first), so a note keeps its place inside the block.
  */
-export type PluginEvent = { t: "on"; key: number; vel: number } | { t: "off"; key: number } | { t: "set"; id: number; v: number };
+export type PluginEvent = ({ t: "on"; key: number; vel: number } | { t: "off"; key: number } | { t: "set"; id: number; v: number }) & { at?: number };
 
-const KEY = int(0, 127), ID = int(0, 2 ** 32 - 1);
+/** A block asks for this many frames at most (a page asking for a minute at once is refused). */
+export const MAX_PLUGIN_FRAMES = 8192;
+/**
+ * The host keeps one plugin per slot. The desk's tracks are the first slots; a bounce plays its own copy of track
+ * `t`'s plugin in slot `BOUNCE_SLOT + t`, so the one the player hears is left as it is.
+ */
+export const BOUNCE_SLOT = 32;
+
+const KEY = int(0, 127), ID = int(0, 2 ** 32 - 1), AT = opt(int(0, MAX_PLUGIN_FRAMES - 1));
 const EVENTS: Guard<PluginEvent>[] = [
-  obj({ t: oneOf(["on"]), key: KEY, vel: num(0, 1) }),
-  obj({ t: oneOf(["off"]), key: KEY }),
-  obj({ t: oneOf(["set"]), id: ID, v: num(-1e300, 1e300) }),
+  obj({ t: oneOf(["on"]), key: KEY, vel: num(0, 1), at: AT }),
+  obj({ t: oneOf(["off"]), key: KEY, at: AT }),
+  obj({ t: oneOf(["set"]), id: ID, v: num(-1e300, 1e300), at: AT }),
 ];
 /** A note or slider move off the page: one of PluginEvent's three, or refused. */
 export const PluginEvent: Guard<PluginEvent> = (v) => {
   for (const g of EVENTS) { const e = check(g, v); if (e) return e; }
   throw new Bad("a note or a slider move");
 };
-/** A block asks for this many frames at most (a page asking for a minute at once is refused). */
-export const MAX_PLUGIN_FRAMES = 8192;
 export const PluginAskArgs = obj({ track: int(0, 63), frames: int(1, MAX_PLUGIN_FRAMES), events: arr(PluginEvent, 4096) });
 
 // What the host's actions answer (src/actions/plugins.ts), read on the page through these.

@@ -6,10 +6,11 @@
 // house. The score is the coverage over the whole bowl: the floor, the front rows, the side seats and the end seats,
 // each at its own height on the rake. Plain data, no DOM; the page (small-arena-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
-import { type Source, type Vec3, MAX_SPLAY_DEG, arrayPoses, gear as catalog, levelAt, splayCalc } from "@rustybuns/gear";
+import { type CrowdField, type Source, type Vec3, MAX_SPLAY_DEG, arrayPoses, gear as catalog, levelAt, levelThrough, splayCalc } from "@rustybuns/gear";
 import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Zone, mean, rig, sources as placed } from "./dive-bar.ts";
+import { type CrowdSpot, comingTonight, crowdOf, expected, regions, roomWith } from "../crowd/crowd.ts";
 
 export const BOX = "line-array-10";
 const BOX_H = catalog(BOX).size.h, BOX_KG = catalog(BOX).kg;
@@ -238,13 +239,17 @@ export const sources = (w: World): Source[] => placed(w, (i) => playing(w, i));
 /** One seat (or a square metre of floor) on the map: where its ears are and what they hear. */
 export type Seat = { x: number; y: number; z: number; part: Part; db: number };
 
-/** The coverage map over the whole bowl, a cell a metre square at every seat's own height. */
-export function bowl(w: World): Seat[] {
+/**
+ * The coverage map over the whole bowl, a cell a metre square at every seat's own height. With `field` (the crowd on the
+ * floor), each box is heard through the bodies in its way at 2 kHz: the hangs fire over the heads and the raked seats
+ * look over them, so those barely change; the fills on the floor at the stage fire into the front row's chests.
+ */
+export function bowl(w: World, field?: CrowdField): Seat[] {
   const src = sources(w), out: Seat[] = [];
   for (const part of Object.keys(PARTS) as Part[]) for (const z of PARTS[part]) {
     for (let x = z.x0 + 0.5; x < z.x1; x++) for (let zz = z.z0 + 0.5; zz < z.z1; zz++) {
       const p = { x, y: earAt(x, zz), z: zz };
-      out.push({ ...p, part, db: src.length ? levelAt(src, p, "high") : -Infinity });
+      out.push({ ...p, part, db: !src.length ? -Infinity : field ? levelThrough(src, field, p, 2000) : levelAt(src, p, "high") });
     }
   }
   return out;
@@ -281,20 +286,58 @@ export function score(w: World, seats: Seat[] = bowl(w)): Score {
   return { covered, level, desk, score: total, pass: desk && total >= PASS };
 }
 
-/** The show when the doors open: the bowl's sound scaled by the crowd's mood, and the pay. */
+/**
+ * The small arena's crowd: 800 standing on the floor, packed at the stage and thinning to the end seats. The people in
+ * the seats aren't counted: an upholstered seat soaks up about what the person in it does, so the stands ring the same
+ * full or empty, and only the bare floor changes. A 36 by 39 m hall under a 15 m roof, seats on three sides (mean
+ * absorption about 0.3).
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: ZONES.floor.x0, x1: ZONES.floor.x1, z0: ZONES.floor.z0, z1: ZONES.front.z1, nx: 36, nz: 39 },
+  stageZ: ZONES.stage.z0,
+  capacity: 800,
+  room: { w: 36, d: 39, h: 15, alpha: 0.3 },
+  regions: [
+    { name: "front", zone: ZONES.front },
+    { name: "floor", zone: { ...ZONES.floor, z0: 18 } },
+    { name: "back of the floor", zone: { ...ZONES.floor, z1: 18 } },
+  ],
+};
+
+/** The crowd the floor is set for: the one that came in, else the one expected at doors. */
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD, comingTonight(w, CROWD));
+
+/** The bowl at soundcheck (empty) and with the floor full. */
+export function scores(w: World) {
+  const empty = bowl(w), full = bowl(w, crowdField(w));
+  return { soundcheck: score(w, empty), full: score(w, full), empty, fullSeats: full };
+}
+
+/** The crowd for the harness: how many, each part of the floor's people, dB at soundcheck and full, and mood; the hall's reverb empty and full. */
+export function crowdState(w: World, s = scores(w)) {
+  const c = crowdOf(w);
+  const level = (seats: Seat[]) => (z: Zone) => { const v = mean(seats.filter((p) => p.x >= z.x0 && p.x <= z.x1 && p.z >= z.z0 && p.z <= z.z1).map((p) => p.db)); return Number.isFinite(v) ? Math.round(v * 10) / 10 : null; };
+  return {
+    in: !!c, count: c?.people ?? 0, expected: comingTonight(w, CROWD),
+    empty: roomWith(CROWD, 0), full: roomWith(CROWD, c?.people ?? comingTonight(w, CROWD)),
+    regions: c ? regions(c, (z) => ({ soundcheck: level(s.empty)(z), full: level(s.fullSeats)(z) }), TARGET, WINDOW) : [],
+  };
+}
+
+/** The show when the doors open: the bowl's sound with the floor full, scaled by the crowd's mood, and the pay. */
 export function show(w: World) {
-  const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  const s = scores(w).full, d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: s.desk && total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the arena: each point's hang, its load against its limit, and the score. */
+/** What the harness adds for the arena: each point's hang, its load against its limit, the score at soundcheck and with the floor full, and the crowd. */
 export function arenaState(w: World) {
-  const h = hangsOf(w);
+  const h = hangsOf(w), s = scores(w);
   return {
     master: rig(w).master,
     points: Object.fromEntries(POINTS.map((p) => [p.key, { ...h[p.key], boxes: h[p.key].boxes.length, kg: loadKg(h[p.key]), limit: p.limitKg }])),
     under: under(w)?.key ?? null,
-    ...score(w),
+    ...s.soundcheck, full: s.full, people: crowdState(w, s),
   };
 }

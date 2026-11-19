@@ -422,7 +422,7 @@ const linksOf = (a) => {
   if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
   return links;
 };
-// Screenshots are eqosys's card art (`bun run shots` copies them). Without one, the entry's `image` (its site's own og:image, say)
+// Screenshots are eqosys's card art (`bun run card-shots` at the repo root writes both). Without one, the entry's `image` (its site's own og:image, say)
 // stands in; with neither, no picture.
 const shotOf = (a, gone) => {
   const srcs = [a.app && `shots/${a.app}.jpg`, a.image].filter(Boolean);

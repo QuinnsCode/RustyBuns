@@ -4,7 +4,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { holdOut, newWorld, pickUp, putDown, walkTo, type World } from "../src/sim.ts";
 import { master } from "../src/venues/dive-bar.ts";
-import { CLEAR, SMALL_ARENA, arenaState, calc, check, fly, hang, hangsOf, point, pin, score, unhang } from "../src/venues/small-arena.ts";
+import { CLEAR, CROWD, SMALL_ARENA, arenaState, calc, check, fly, hang, hangsOf, point, pin, score, scores, show, unhang } from "../src/venues/small-arena.ts";
+import { letIn } from "../src/crowd/crowd.ts";
 
 setDefaultTimeout(60_000);
 
@@ -112,4 +113,15 @@ test("hang the arrays, fail and pass the point's check, fly them clear, fill the
   const after = score(w);
   expect(after.covered.front).toBeGreaterThan(0.9);
   expect(after).toMatchObject({ desk: true, pass: true });
+
+  // Doors: 800 on the floor. The fills on the floor fire into the front row's chests, so the rows behind lose them;
+  // the hangs and the raked seats are over the heads and don't change. It still passes, and the show scores it full.
+  letIn(w, CROWD);
+  const full = scores(w).full;
+  expect(full.covered.front).toBeLessThan(after.covered.front - 0.2);
+  expect(full.covered.sides).toBe(after.covered.sides);
+  expect(full.covered.floor).toBeGreaterThan(0.9);
+  expect(full.pass).toBe(true);
+  expect(show(w).sound).toBe(full.score);
+  expect(arenaState(w).people).toMatchObject({ in: true, count: 800 });
 });

@@ -252,5 +252,31 @@
     "stage": 4,
     "best": ["phone", "tablet", "desktop"],
     "group": "apps"
+  },
+  {
+    "name": "Sound Guy Simulator",
+    "line": "A first-person sound-crew sim on real numbers: carry the gear at its real weight, roll out the cable, wire power and signal, and aim the speakers, from a garage to an arena.",
+    "app": "load-in",
+    "stage": 1,
+    "best": ["desktop"],
+    "group": "games"
+  },
+  {
+    "name": "QView3D",
+    "line": "A 3D product customiser for a shop page, from one script tag: drag a photo onto a hat, tee or hoodie, choose its colour and save a snapshot.",
+    "play": "https://qview3d.notryanquinn.workers.dev",
+    "app": "qview3d",
+    "stage": 1,
+    "best": ["desktop", "phone"],
+    "group": "apps"
+  },
+  {
+    "name": "One Team in 32",
+    "line": "One page that shows how a single team's blitz rate drags a whole league's average, with a slider to try it.",
+    "play": "https://brianfloresblitzing.notryanquinn.workers.dev",
+    "app": "brianfloresblitzing",
+    "stage": 3,
+    "best": ["phone", "tablet", "desktop"],
+    "group": "apps"
   }
 ]

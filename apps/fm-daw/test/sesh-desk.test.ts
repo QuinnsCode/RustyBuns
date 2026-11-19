@@ -110,7 +110,7 @@ test("a player's channel sent to the aux 2 return comes back on its fader", asyn
 test("a track's send to aux 2 comes back through the cabled gear in the bounce", () => {
   const patch = gearRoom(), p0 = quiet(), clap = p0.tracks.findIndex((t) => t.name === "Clap");
   const one: Project = { ...p0, tracks: p0.tracks.map((t, i) => (i === clap ? { ...t, notes: [{ s: 0, l: 0.25, m: t.root, v: 1 }] } : t)) };
-  const bounce = (p: Project, gear = auxGear(patch).settings) => renderProject(new TsEngine(SR), p, SR, 2, 1, undefined, gear);
+  const bounce = (p: Project, gear = auxGear(patch).settings) => renderProject(new TsEngine(SR), p, SR, 2, 1, undefined, undefined, gear);
   /** What the aux 2 return adds to the bounce: the most any sample moves from the same groove with nothing cabled in. */
   const back = (p: Project) => { const dry = bounce(p, null); return bounce(p).reduce((m, x, i) => Math.max(m, Math.abs(x - dry[i])), 0); };
   expect(bounce(one, null).reduce((m, x) => Math.max(m, Math.abs(x)), 0)).toBeGreaterThan(0.02); // the clap itself

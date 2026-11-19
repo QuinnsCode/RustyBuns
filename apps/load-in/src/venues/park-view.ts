@@ -1,14 +1,17 @@
 // The park on the page: grass under an open sky, the pop-up tent, the paths, the road and the houses across it (red
 // when they hear more than the limit), the heat map over the lot (painted only when something
 // moved, or the breeze shifted) and the card: the generator's load and the hours its fuel lasts at it, the breeze, the
-// crowd, the houses and the score. main.ts calls `parkView` once per world and then `key` and `update`, the same as the
+// crowd, the houses and the score. Show time lets the crowd onto the grass (the tour's following among them), and they
+// move on how each part of it hears the sound. main.ts calls `parkView` once per world and then `key` and `update`, the same as the
 // dive bar's view.
 import * as THREE from "three";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { DAY_HOURS, GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, blow, heat, parkState, score, show, wind, windFor, windText, type Score, type Show } from "./park.ts";
+import { CROWD, DAY_HOURS, GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, blow, crowdState, load, scores, show, wind, windFor, windText, type Score, type Show } from "./park.ts";
+import { crowdOf, letIn, move } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
 
 export type ParkView = {
   /** A key while playing with hands free; true when the park used it. */
@@ -82,19 +85,26 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
   card.className = "bar-card";
   hud.appendChild(card);
 
-  let seen = "", last: Score | null = null, opened: Show | null = null;
+  let seen = "", last: Score | null = null, full: Score | null = null, opened: Show | null = null;
+  const people = crowdView(scene);
   const breeze = (w: World) => { const b = wind(w); return [Math.round(b.toward * 36 / Math.PI), Math.round(b.speed * 2)]; };
-  const signature = (w: World, cs: Cables) => JSON.stringify([breeze(w), w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
+  const signature = (w: World, cs: Cables) => JSON.stringify([breeze(w), w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w), crowdOf(w)?.moves ?? -1,
     cs.runs.map((r) => [r.a, r.b, r.rope?.pts.filter((p, k) => k % 8 === 0).map((p) => [Math.round(p.x * 10), Math.round(p.z * 10)])])]);
 
+  // The map shows the empty grass until show time, then the sound as the crowd on it hears it.
   function paint(w: World, cs: Cables) {
-    const grid = heat(w, cs);
+    const s = scores(w, cs), grid = crowdOf(w) ? s.fullGrid : s.empty;
     for (let k = 0; k < grid.db.length; k++) data.set(heatColour(grid.db[k], TARGET), k * 4);
     tex.needsUpdate = true;
-    last = score(w, cs, grid);
+    last = s.soundcheck;
+    full = s.full;
+    moods = crowdState(w, cs, s).regions;
+    people.moods(moods);
     const loud = last.houses !== null && last.houses > SPILL_LIMIT;
     for (const h of houses) h.material = loud ? loudMat : houseMat;
   }
+
+  let moods: ReturnType<typeof crowdState>["regions"] = [];
 
   const view: ParkView = {
     heatOn: false,
@@ -107,15 +117,17 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
       return aimKey(w, code);
     },
     update() {
-      const w = getWorld(), cs = getCables(), sig = signature(w, cs);
-      if (sig !== seen) { seen = sig; paint(w, cs); }
-      const s = last!, gen = parkState(w, cs).generator, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
+      const w = getWorld(), cs = getCables();
+      move(w, moods);
+      if (signature(w, cs) !== seen) { seen = signature(w, cs); paint(w, cs); }
+      people.update(w, crowdOf(w));
+      const s = last!, gen = load(w, cs), db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       const power = !gen ? "no generator" : s.tripped ? "tripped" : `${(gen.watts / 1000).toFixed(1)} of ${(gen.limit / 1000).toFixed(1)} kW`;
       card.innerHTML = `<b>${opened ? "Show time" : "The park"}</b>`
         + `<span class="${s.tripped || gen?.warn ? "warn" : ""}">Generator ${power}</span>`
         + (s.fuel ? `<span class="${s.fuel.hours < DAY_HOURS ? "warn" : ""}">Fuel ${s.fuel.hours <= 0 ? "dry" : `${s.fuel.hours.toFixed(1)} h`} (the day is ${DAY_HOURS} h)</span>` : "")
         + `<span>${windText(wind(w))}</span>`
-        + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span>`
+        + `<span>Crowd ${db(s.crowd)} (target ${TARGET}), with them in ${db(full!.crowd)}${crowdOf(w) ? `, ${crowdOf(w)!.people} on the grass` : ""}</span>`
         + `<span class="${s.houses !== null && s.houses > SPILL_LIMIT ? "warn" : ""}">Houses ${db(s.houses)} (limit ${SPILL_LIMIT})</span>`
         + `<span class="${s.hazards ? "warn" : ""}">${s.hazards ? `${s.hazards} cable${s.hazards > 1 ? "s" : ""} across a path` : "Paths clear"}</span>`
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
@@ -124,10 +136,13 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
         + `<small>F push the generator or pour a jerry can into it, H heat map, Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter show time</small>`;
     },
     doors() {
+      const w = getWorld();
+      if (!crowdOf(w)) letIn(w, CROWD);
       view.update();
       return (opened = show(getWorld(), getCables()));
     },
     dispose() {
+      people.dispose();
       scene.remove(g);
       scene.background = was.background;
       scene.fog = was.fog;

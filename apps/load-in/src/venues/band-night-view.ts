@@ -5,10 +5,12 @@
 import * as THREE from "three";
 import { esc } from "@rustybuns/util";
 import type { Heard, Sound } from "@rustybuns/gear";
-import { INPUTS, PASS, ZONES, type Judged, type Show, bandNightState, check, judge, keyedRuns, night, show } from "./band-night.ts";
+import { CROWD, INPUTS, PASS, ZONES, type Judged, type Show, bandNightState, check, judge, keyedRuns, night, show } from "./band-night.ts";
 import { REACH, type World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
 import type { Switches } from "../audio/hear.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
 
 export type BandNightView = {
   key(code: string): boolean;
@@ -85,6 +87,7 @@ export function bandNightView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
   card.className = "bar-card";
   hud.append(card);
   let last = "", opened: Show | null = null, ctx: AudioContext | null = null;
+  const people = crowdView(scene);
   const near = (gearId: string) => {
     const w = getWorld(), i = w.items.find((x) => x.gear === gearId);
     return !!i && i.key !== w.held?.key && Math.hypot(w.you.x - i.x, w.you.z - i.z) <= REACH;
@@ -114,6 +117,7 @@ export function bandNightView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
     lift: (on) => void (night(getWorld()).lift = on),
     tick() {
       const w = getWorld(), r = runs();
+      people.update(w, crowdOf(w));
       j = judge(w, r, getOn());
       const n = night(w), st = bandNightState(w, r, getOn());
       const row = (h: Heard) => {
@@ -133,7 +137,11 @@ export function bandNightView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       if (html !== last) card.innerHTML = last = html;
       return j;
     },
-    doors: () => (opened = show(getWorld(), runs(), getOn())),
+    doors: () => {
+      const w = getWorld();
+      if (!crowdOf(w)) letIn(w, CROWD);
+      return (opened = show(w, runs(), getOn()));
+    },
     hint: () => {
       const n = night(getWorld());
       if (near("mixer-small")) return `L line check, V 48 V (${n.phantom ? "on" : "off"})`;
@@ -143,6 +151,7 @@ export function bandNightView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
     state: () => bandNightState(getWorld(), runs(), getOn()),
     dispose() {
       void ctx?.close();
+      people.dispose();
       scene.remove(group);
       card.remove();
     },

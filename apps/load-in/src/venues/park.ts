@@ -5,12 +5,13 @@
 // has a noise limit, to the crowd's coverage. The generator comes with little in its tank: the jerry cans on the truck
 // (18 kg full, one in your hands at a time) fill it for the whole day, and the harder it works the faster it burns. Plain data, no DOM; the page (park-view.ts) draws it.
 import { clamp, mulberry32 } from "@rustybuns/util";
-import { type Area, type Feed, type Grid, coverage, gear as catalog, generatorLoad, runHours } from "@rustybuns/gear";
+import { type Area, type CrowdField, type Feed, type Grid, type Source, coverage, coverageThrough, densityAt, gear as catalog, generatorLoad, runHours } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World, heldItem } from "../sim.ts";
 import { assist } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, hazards, patch } from "../cables/cables.ts";
 import { type Zone, WINDOW, cellsIn, mean, sources } from "./dive-bar.ts";
+import { comingTonight, crowdOf, type CrowdSpot, expected, regions, roomWith } from "../crowd/crowd.ts";
 
 export const PARK: Level = {
   name: "park",
@@ -143,8 +144,16 @@ export function windText({ toward, speed }: Wind): string {
 /** The heat map over the park and the road: only the fed speakers, the highs bent by the breeze (louder downwind of the
  * rig, quieter upwind, measured from the speakers' middle). */
 export function heat(w: World, c: Cables): Grid {
-  const on = playing(w, c), src = sources(w, (i) => on.has(i.key));
-  const g = coverage(src, GROUND, "high"), { toward, speed } = wind(w);
+  const src = fed(w, c);
+  return bend(w, src, coverage(src, GROUND, "high"));
+}
+
+/** The speakers the patch feeds. */
+const fed = (w: World, c: Cables): Source[] => { const on = playing(w, c); return sources(w, (i) => on.has(i.key)); };
+
+/** The breeze on a map of the highs: louder downwind of the rig, quieter upwind. */
+function bend(w: World, src: Source[], g: Grid): Grid {
+  const { toward, speed } = wind(w);
   if (!speed || !src.length) return g;
   const ux = Math.sin(toward), uz = Math.cos(toward);
   const cx = src.reduce((s, o) => s + o.pos.x, 0) / src.length, cz = src.reduce((s, o) => s + o.pos.z, 0) / src.length;
@@ -173,11 +182,11 @@ export type Score = {
   pass: boolean;
 };
 
-/** 60 points for the crowd at the target, 25 for the houses under the limit (5 dB over is none), 15 for clear paths,
+/** 60 points for the crowd at the target (with `field`, the share of the people standing in it, not of the grass), 25 for the houses under the limit (5 dB over is none), 15 for clear paths,
  * all times the share of the day the fuel lasts: a tank that runs dry at 4 hours leaves the park quiet for the other 4. */
-export function score(w: World, c: Cables, g: Grid = heat(w, c)): Score {
+export function score(w: World, c: Cables, g: Grid = heat(w, c), field?: CrowdField): Score {
   const crowd = cellsIn(g, ZONES.crowd), houses = cellsIn(g, ZONES.houses);
-  const covered = crowd.filter((d) => Math.abs(d - TARGET) <= WINDOW).length / crowd.length;
+  const covered = field ? heardBy(g, field) : crowd.filter((d) => Math.abs(d - TARGET) <= WINDOW).length / crowd.length;
   const loudest = Math.max(...houses), live = Number.isFinite(loudest);
   const quiet = live ? clamp(1 - (loudest - SPILL_LIMIT) / 5, 0, 1) : 1;
   const crossings = hazards(w, c).length, off = tripped(w, c);
@@ -187,16 +196,75 @@ export function score(w: World, c: Cables, g: Grid = heat(w, c)): Score {
   return { covered: Math.round(covered * 100) / 100, crowd: r1(mean(crowd)), houses: r1(loudest), hazards: crossings, tripped: off, fuel, score: s, pass: s >= PASS };
 }
 
-/** Show time: the sound as the crowd takes it, scaled by their mood (late doors cost it), and the pay. */
+/**
+ * The afternoon's crowd on the grass: up to 300 in front of the tent, packed at the stage lip and thinning back to the
+ * lakeside path, looser than a club (2 a square metre at the front: room to sit on the grass). Out of doors: no room rings, the people only stand in the sound, and soak up its highs.
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -6, x1: 6, z0: 5, z1: 17, nx: 12, nz: 12 },
+  stageZ: ZONES.tent.z1,
+  peak: 2,
+  capacity: 200,
+  room: null,
+  regions: [
+    { name: "front", zone: { ...ZONES.crowd, z1: 9.5 } },
+    { name: "middle", zone: { ...ZONES.crowd, z0: 9.5, z1: 13 } },
+    { name: "back", zone: { ...ZONES.crowd, z0: 13 } },
+  ],
+};
+
+/** The crowd the park is set for: the one that came, else the one the tour says is coming. */
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? expected(CROWD, comingTonight(w, CROWD));
+
+/** The highs over the park with the crowd on the grass: each speaker heard through the bodies in its way at 2 kHz, bent by the breeze. */
+export function heatFull(w: World, c: Cables, field: CrowdField = crowdField(w)): Grid {
+  const src = fed(w, c);
+  return bend(w, src, coverageThrough(src, field, GROUND, 2000));
+}
+
+/** The share of the people on the grass who hear the target, each cell of the crowd area counted by who stands in it. */
+function heardBy(g: Grid, field: CrowdField): number {
+  const dx = (g.x1 - g.x0) / g.nx, dz = (g.z1 - g.z0) / g.nz, z = ZONES.crowd;
+  let all = 0, near = 0;
+  for (let iz = 0; iz < g.nz; iz++) for (let ix = 0; ix < g.nx; ix++) {
+    const x = g.x0 + (ix + 0.5) * dx, y = g.z0 + (iz + 0.5) * dz;
+    if (x < z.x0 || x > z.x1 || y < z.z0 || y > z.z1) continue;
+    const n = densityAt(field, x, y);
+    all += n;
+    if (Math.abs(g.db[iz * g.nx + ix]! - TARGET) <= WINDOW) near += n;
+  }
+  return all > 0 ? near / all : 0;
+}
+
+/** The park at soundcheck (the grass empty) and with the crowd on it, scored by where its people stand. */
+export function scores(w: World, c: Cables) {
+  const field = crowdField(w), empty = heat(w, c), full = heatFull(w, c, field);
+  return { soundcheck: score(w, c, empty), full: score(w, c, full, field), empty, fullGrid: full };
+}
+
+/** The crowd for the harness: how many, each region's people, dB at soundcheck and full, and mood. */
+export function crowdState(w: World, c: Cables, s = scores(w, c)) {
+  const crowd = crowdOf(w), r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+  return {
+    in: !!crowd, count: crowd?.people ?? 0, expected: comingTonight(w, CROWD), full: roomWith(CROWD, crowd?.people ?? comingTonight(w, CROWD)),
+    regions: crowd ? regions(crowd, (z) => ({ soundcheck: r1(mean(cellsIn(s.empty, z))), full: r1(mean(cellsIn(s.fullGrid, z))) }), TARGET, WINDOW) : [],
+  };
+}
+
+/**
+ * Show time: the sound as set at soundcheck, scaled by the crowd's mood (late doors cost it), and the pay. The score with
+ * the crowd on the grass is on the card and in the state, but doesn't count yet: the park's rig can't reach the back
+ * through them under the houses' limit until it has a fill for the back (#5307).
+ */
 export function show(w: World, c: Cables) {
   const s = score(w, c), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the park: the generator's load and fuel, the breeze and the score. */
+/** What the harness adds for the park: the generator's load and fuel, the breeze, the score at soundcheck and with the crowd in. */
 export function parkState(w: World, c: Cables) {
-  const l = load(w, c);
+  const l = load(w, c), s = scores(w, c);
   const { toward, speed } = wind(w);
-  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips, litres: Math.round(l.litres * 10) / 10 }, spillLimit: SPILL_LIMIT, wind: { toward: Math.round(toward * 100) / 100, speed: Math.round(speed * 10) / 10 }, ...score(w, c) };
+  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips, litres: Math.round(l.litres * 10) / 10 }, spillLimit: SPILL_LIMIT, wind: { toward: Math.round(toward * 100) / 100, speed: Math.round(speed * 10) / 10 }, ...s.soundcheck, full: s.full, people: crowdState(w, c, s) };
 }

@@ -32,8 +32,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private engine: FmEngine = new TsEngine(sampleRate);
   private kind: "ts" | "rust" = "ts";
   /** Plugin tracks: their notes go to the host, their sound comes back in blocks (src/engine/plugin-route.ts). */
-  private plugins = new PluginRoute();
-  private seq = new Sequencer(this.plugins.wrap(this.engine), sampleRate);
+  private plugins = new PluginRoute(sampleRate);
+  private seq = new Sequencer(this.wrapped(this.engine), sampleRate);
   private space = new Space(sampleRate);
   private squash = new Squash(sampleRate);
   /** The EQ as saved, and as it plays right now (with its automation on). */
@@ -204,12 +204,25 @@ class FmProcessor extends AudioWorkletProcessor {
     return gridBeatAt(this.gridBeat, this.gridCtx, now, this.seq.bpm);
   }
 
-  /** Each plugin track at its fader and the room's master, then asks the host for what comes next. */
+  /** The engine as the sequencer plays it: plugin tracks' notes to their plugins, and a lane's moves kept, so a plugin track's strip follows them. */
+  private wrapped(engine: FmEngine): FmEngine {
+    return this.plugins.wrap(engine, (t, i, v) => { if (t >= 0 && t < TRACKS && i >= 0 && i < NPARAMS) this.params[t * NPARAMS + i] = v; });
+  }
+
+  private fader = (t: number) => this.muted[t] ? 0 : this.params[t * NPARAMS + P.GAIN];
+  /** A plugin track's strip: the track's own fader (under the room's master), PAN and SEND. */
+  private strip = {
+    gain: (t: number) => this.fader(t) * this.master,
+    pan: (t: number) => this.params[t * NPARAMS + P.PAN],
+    send: (t: number) => this.params[t * NPARAMS + P.SEND],
+  };
+
+  /** Each plugin track down its strip into the mix and the Space send, then asks the host for what comes next. */
   private mixPlugins(frames: number, beat0: number, bpf: number) {
-    const fader = (t: number) => this.muted[t] ? 0 : this.params[t * NPARAMS + P.GAIN];
+    const fader = this.fader;
     // a track going to the sesh too: its sound at its fader, on the beat it's heard on here (nobody played it in late)
     const tap = this.pluginOut.size ? (t: number, mono: Float32Array, n: number) => this.pluginOut.get(t)?.push(mono, fader(t), n, beat0, bpf, this.port) : undefined;
-    this.plugins.mix(this.buf, frames, (t) => fader(t) * this.master, tap);
+    this.plugins.mix(this.buf, frames, this.strip, this.send, tap);
     for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
   }
 
@@ -317,6 +330,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (t < 0 || t >= TRACKS) return;
     this.trackEq[t] = doc;
     sendTrackEq(this.engine, t, doc, this.trackLast[t]);
+    this.plugins.shape(t, doc);
   }
 
   /**
@@ -364,7 +378,7 @@ class FmProcessor extends AudioWorkletProcessor {
       next.panic();
       const old = this.engine;
       this.engine = next;
-      this.seq.engine = this.plugins.wrap(next);
+      this.seq.engine = this.wrapped(next);
       this.seq.resendAuto();
       this.kind = m.kind;
       this.wasm = x;

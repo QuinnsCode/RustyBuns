@@ -11,12 +11,13 @@
 // Plain data, no DOM; the page (festival-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import {
-  AMPACITY, type Area, type Grid, HIGH_HZ, MAX_DROP, type Phases, type Source, type Stretch, type SubMode,
-  airLoss, cableLoss, gear, imbalance, levelAt, feederDrop, runningLeq, source, splAt, subBlock, sumPower, worstLeq,
+  AMPACITY, type Area, type CrowdField, type Grid, HIGH_HZ, MAX_DROP, type Phases, type Source, type Stretch, type SubMode,
+  airLoss, cableLoss, crowdLoss, gear, imbalance, levelAt, feederDrop, runningLeq, source, splAt, subBlock, sumPower, worstLeq,
 } from "@rustybuns/gear";
 import { REACH, type Answer, type Item, type Level, type World } from "../sim.ts";
 import { assist } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
+import { type CrowdSpot, comingTonight, crowdOf, moodOf } from "../crowd/crowd.ts";
 
 // ---- the site ----
 
@@ -306,27 +307,33 @@ export function stageSources(w: World, k: StageKey, force = false): Source[] {
   return out;
 }
 
-/** Mids and highs from one stage at a point: the air's share taken off, and the tent's back wall behind the dance tent. */
-export function highAt(w: World, k: StageKey, x: number, z: number, src = stageSources(w, k)): number {
+/** Mids and highs from one stage at a point: the air's share taken off, the tent's back wall behind the dance tent, and
+ * with `field` the bodies between each box and the listener (at 2 kHz). */
+export function highAt(w: World, k: StageKey, x: number, z: number, src = stageSources(w, k), field?: CrowdField): number {
   if (!src.length) return -Infinity;
   const p = { x, y: FIELD.y, z };
   const behind = STAGES[k].system === "dance" && local(k, rig(w).yaw[k], x, z).f < -2 ? TENT_WALL : 0;
-  return sumPower(src.filter((s) => s.speaker.highCut > 500).map((s) => splAt(s, p) - airLoss(HIGH_HZ, Math.hypot(x - s.pos.x, z - s.pos.z)))) - behind;
+  return sumPower(src.filter((s) => s.speaker.highCut > 500).map((s) => splAt(s, p) - airLoss(HIGH_HZ, Math.hypot(x - s.pos.x, z - s.pos.z)) - (field ? crowdLoss(field, s.pos, p, 2000) : 0))) - behind;
 }
 /** The 63 Hz level from both stages' subs and mid-basses at a point, summed with phase. */
 export const lowAt = (src: Source[], x: number, z: number) => (src.length ? levelAt(src, { x, y: FIELD.y, z }, "low", 63) : -Infinity);
 
 export type Heat = { high: Grid; low: Grid; own: Record<StageKey, Grid> };
-/** The heat maps: mids and highs from both stages (and each on its own, for the bleed), and the 63 Hz. */
-export function heat(w: World): Heat {
+/**
+ * The heat maps: mids and highs from both stages (and each on its own, for the bleed), and the 63 Hz. With `field` (the
+ * crowd), the mids and highs are heard through the bodies, but only where people stand: tracing every box through the
+ * crowd to all 7,900 cells of the site costs about ten times the empty map, and the score only reads the audiences.
+ */
+export function heat(w: World, field?: CrowdField): Heat {
   const src = { tent: stageSources(w, "tent"), open: stageSources(w, "open") }, all = [...src.tent, ...src.open];
   const grid = () => ({ ...FIELD, db: new Float32Array(FIELD.nx * FIELD.nz) });
   const high = grid(), low = grid(), own = { tent: grid(), open: grid() };
   const dx = (FIELD.x1 - FIELD.x0) / FIELD.nx, dz = (FIELD.z1 - FIELD.z0) / FIELD.nz;
   for (let iz = 0; iz < FIELD.nz; iz++) for (let ix = 0; ix < FIELD.nx; ix++) {
     const x = FIELD.x0 + (ix + 0.5) * dx, z = FIELD.z0 + (iz + 0.5) * dz, c = iz * FIELD.nx + ix;
-    own.tent.db[c] = highAt(w, "tent", x, z, src.tent);
-    own.open.db[c] = highAt(w, "open", x, z, src.open);
+    const through = field && STAGE_KEYS.some((k) => inAudience(k, rig(w).yaw[k], x, z)) ? field : undefined;
+    own.tent.db[c] = highAt(w, "tent", x, z, src.tent, through);
+    own.open.db[c] = highAt(w, "open", x, z, src.open, through);
     high.db[c] = sumPower([own.tent.db[c]!, own.open.db[c]!].filter(Number.isFinite));
     low.db[c] = lowAt(all, x, z);
   }
@@ -418,7 +425,75 @@ export function score(w: World, h: Heat = heat(w)): Score {
   return { stages, fence: r1(fence), houses: r1(houses), power: p, powerOk, licenceOk, curfewOk, score: s, pass: s >= PASS };
 }
 
-/** Show time: the field as the crowd takes it, scaled by their mood (a late start costs it), and the pay. */
+// ---- the crowd ----
+
+/** The ground people can stand on: the field inside the fence, in the map's 2 m cells. */
+const GROUND = { x0: FIELD.x0, x1: FIELD.x1, z0: -52, z1: FIELD.z1, nx: FIELD.nx, nz: 60 };
+/** A festival crowd stands looser than a club's: about two a square metre at the barrier, thinning to the mix tent. */
+const BARRIER = 2.2, THIN = 0.05;
+
+/** `people`, half at each stage: in its audience wherever the stage faces, densest at the barrier 8 m out and thinning back. */
+export function audiences(yaw: Record<StageKey, number>, people: number): CrowdField {
+  const { x0, x1, z0, z1, nx, nz } = GROUND, dx = (x1 - x0) / nx, dz = (z1 - z0) / nz, density = new Float32Array(nx * nz);
+  for (const k of STAGE_KEYS) {
+    const share = new Float32Array(nx * nz);
+    let sum = 0;
+    for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) {
+      const x = x0 + (ix + 0.5) * dx, z = z0 + (iz + 0.5) * dz;
+      if (inAudience(k, yaw[k], x, z)) sum += share[iz * nx + ix] = Math.exp(-THIN * (local(k, yaw[k], x, z).f - 8));
+    }
+    const each = sum > 0 ? Math.min(BARRIER, people / STAGE_KEYS.length / (sum * dx * dz)) : 0;
+    for (let c = 0; c < share.length; c++) density[c] = Math.max(density[c]!, share[c]! * each);
+  }
+  return { ...GROUND, density };
+}
+
+/** The box round a stage's audience on the field, whichever way it faces. */
+function audienceBox(k: StageKey, yaw: number) {
+  const corners = [[-15, 8], [15, 8], [-15, 38], [15, 38]].map(([a, f]) => onStage(k, yaw, a!, f!));
+  return { x0: Math.min(...corners.map((p) => p.x)), x1: Math.max(...corners.map((p) => p.x)), z0: Math.min(...corners.map((p) => p.z)), z1: Math.max(...corners.map((p) => p.z)) };
+}
+
+/** A festival's crowd as the stages face: 1,000 at each. Out of doors, so nothing rings. */
+const spotFacing = (yaw: Record<StageKey, number>): CrowdSpot => ({
+  floor: GROUND, stageZ: 0, peak: BARRIER, capacity: 2000, room: null,
+  fill: (people) => audiences(yaw, people),
+  regions: STAGE_KEYS.map((k) => ({ name: STAGES[k].name, zone: audienceBox(k, yaw[k]) })),
+});
+/** The festival's crowd with the stages as they come (facing each other); `crowdSpot` is the one for the stages as you turned them. */
+export const CROWD: CrowdSpot = spotFacing({ tent: Math.PI / 2, open: -Math.PI / 2 });
+export const crowdSpot = (w: World): CrowdSpot => spotFacing({ ...rig(w).yaw });
+
+/** The crowd the field is set for: the one that came in, else the one expected, standing where the stages face now. */
+const crowdField = (w: World): CrowdField => crowdOf(w)?.field ?? audiences(rig(w).yaw, comingTonight(w, CROWD));
+
+/** The field at soundcheck (empty) and with the crowd on it: the lows, the licence and the power are the same in both. */
+export function scores(w: World, empty: Heat = heat(w), full: Heat = heat(w, crowdField(w))) {
+  return { soundcheck: score(w, empty), full: score(w, full), empty, fullHeat: full };
+}
+
+/** The crowd for the harness: how many, and each stage's people, what they hear at soundcheck and with everyone in, and their mood. */
+export function crowdState(w: World, s = scores(w)) {
+  const c = crowdOf(w), f = crowdField(w), cell = ((f.x1 - f.x0) / f.nx) * ((f.z1 - f.z0) / f.nz), yaw = rig(w).yaw;
+  return {
+    in: !!c, count: c?.people ?? 0, expected: comingTonight(w, CROWD),
+    stages: !c ? [] : STAGE_KEYS.map((k) => {
+      let people = 0;
+      for (let iz = 0; iz < f.nz; iz++) for (let ix = 0; ix < f.nx; ix++) {
+        if (inAudience(k, yaw[k], f.x0 + ((ix + 0.5) * (f.x1 - f.x0)) / f.nx, f.z0 + ((iz + 0.5) * (f.z1 - f.z0)) / f.nz)) people += f.density[iz * f.nx + ix]! * cell;
+      }
+      const soundcheck = s.soundcheck.stages[k].level, full = s.full.stages[k].level;
+      return { name: STAGES[k].name, people: Math.round(people), density: Math.round((people / 900) * 10) / 10, soundcheck, full, ...moodOf(full, TARGET, WINDOW) };
+    }),
+  };
+}
+
+/**
+ * Show time: the field as set at soundcheck, scaled by the crowd's mood (a late start costs it), and the pay. The score
+ * with the crowd in is on the card and in the state but doesn't count yet: both systems stand on the ground at head
+ * height, so the back of each audience hears them through every row, and the level has no way to lift the tops over
+ * the heads (#5352).
+ */
 export function show(w: World) {
   const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
@@ -426,12 +501,14 @@ export function show(w: World) {
 export type Show = ReturnType<typeof show>;
 
 /** What the harness adds for the festival. */
-export function festivalState(w: World, h?: Heat) {
-  const r = rig(w), s = score(w, h);
+export function festivalState(w: World, h?: Heat, full?: Heat) {
+  const r = rig(w), both = scores(w, h, full), s = both.soundcheck;
   return {
     clock: clockAt(r.clock), curfew: clockAt(CURFEW_H * 3600),
     stages: Object.fromEntries(STAGE_KEYS.map((k) => [k, { ...s.stages[k], facing: Math.round((r.yaw[k] * 180) / Math.PI), subs: r.subs[k], master: r.master[k], snake: r.snake[k], running: r1(runningLeq(r.log[k])) }])),
     fence: s.fence, fenceLimit: FENCE_LIMIT, houses: s.houses, houseLimit: HOUSE_LIMIT, mixLimit: MIX_LIMIT,
     phases: r.phase, power: s.power, powerOk: s.powerOk, licenceOk: s.licenceOk, curfewOk: s.curfewOk, score: s.score, pass: s.pass,
+    full: { score: both.full.score, pass: both.full.pass, stages: Object.fromEntries(STAGE_KEYS.map((k) => [k, { covered: both.full.stages[k].covered, level: both.full.stages[k].level, bleedOk: both.full.stages[k].bleedOk }])) },
+    people: crowdState(w, both),
   };
 }
