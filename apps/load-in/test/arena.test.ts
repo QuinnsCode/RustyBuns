@@ -5,7 +5,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newWorld, pickUp, type World } from "../src/sim.ts";
 import { type Cables, newCables, walkWith } from "../src/cables/cables.ts";
-import { ARENA, POINTS, SWITCH, type Leg, arena, arenaState, fly, legs, score, send, setHang, setLeg, setSub, wait } from "../src/venues/arena.ts";
+import { ARENA, POINTS, SWITCH, type Leg, arena, arenaState, fly, legs, pad, score, send, setHang, setLeg, setSub, wait } from "../src/venues/arena.ts";
 import { setDial } from "../src/assists.ts";
 import { doors } from "../src/clock.ts";
 
@@ -90,4 +90,28 @@ test("everything on one leg trips it, and plain subs fill the stage", () => {
     setSub(w, k, { delay: 0, invert: false });
   }
   expect(score(w).stageGap!).toBeLessThan(cardioid - 8);
+});
+
+test("on a phone the arena's buttons say what they do where you stand: send, fly then lower, the leg at the switch", () => {
+  setDial("crew");
+  const w = newWorld(ARENA), c = newCables(w);
+  const words = (selected: string) => Object.fromEntries(Object.entries(pad(w, selected, null)).map(([k, l]) => [k, l.glyph]));
+
+  // At the dock, looking at a box: K sends the crew with it to the selected hang; with the subs selected it tags it.
+  walkWith(w, c, -10, 54);
+  w.you.yaw = 0;
+  expect(pad(w, "main-l", null)).toMatchObject({ KeyK: { glyph: "Send", what: "Send the crew with box-1 to main-l's fly bar" }, Digit1: { on: true }, Digit2: { on: false } });
+  expect(words("subs").KeyK).toBe("Tag");
+  expect(words("main-l").KeyL).toBeUndefined(); // away from the switch L is still the strike
+
+  for (const k of [1, 2, 3, 4]) send(w, `box-${k}`, "main-l");
+  wait(w, 400);
+  walkWith(w, c, 0, 20);
+  walkWith(w, c, POINTS[0]!.x, POINTS[0]!.z + 2.5);
+  expect(words("main-l").KeyU).toBe("Fly");
+  expect(fly(w, "main-l")).toEqual({ ok: true });
+  expect(words("main-l").KeyU).toBe("Lower");
+
+  walkWith(w, c, SWITCH.x - 1, SWITCH.z);
+  expect(pad(w, "main-l", null).KeyL).toEqual({ glyph: "Leg", what: "Put main-l on L1" });
 });

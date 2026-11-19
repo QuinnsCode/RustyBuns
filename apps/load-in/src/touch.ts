@@ -2,9 +2,10 @@
 // looks, and two pads of buttons press the same keys a keyboard does (the hands pad everywhere, the venue's own pad
 // at each venue), so touch, keys and the gamepad share one path. Shown only where the pointer is a finger
 // (`pointer: coarse`). main.ts mounts it once, reads `move()`, `look()` and `crouch` into `step()` each frame, and
-// calls `venue(level)` on each new level.
+// calls `venue(level)` on each new level. A venue whose keys change meaning as you work (the arena: fly or lower, send
+// or tag) hands `relabel` what each key does right now, each frame.
 
-export type Button = { code: string; glyph: string; what: string };
+export type Button = { code: string; glyph: string; what: string; on?: boolean };
 
 /** Every key a touch button can press: its glyph and what it does. */
 const LABEL: Record<string, [glyph: string, what: string]> = {
@@ -77,6 +78,8 @@ export type TouchPlay = {
   crouch: boolean;
   /** The venue pad for this level. */
   venue(level: string): void;
+  /** Words for the keys that mean something else right now, by code; a key left out shows its own label again. */
+  relabel(now: Record<string, { glyph: string; what: string; on?: boolean }>): void;
   /** Shown while playing, hidden on the menu. */
   show(on: boolean): void;
 };
@@ -95,11 +98,22 @@ export function touchPlay(canvas: HTMLElement, host: HTMLElement, press: (code: 
   root.append(ring, venuePadEl, hands);
   host.append(root);
 
+  const shown = new Map<HTMLButtonElement, Button>();
+  const label = (btn: HTMLButtonElement, l: { glyph: string; what: string; on?: boolean }) => {
+    if (btn.textContent !== l.glyph) btn.textContent = l.glyph;
+    if (btn.title !== l.what) { btn.title = l.what; btn.setAttribute("aria-label", l.what); }
+    // A word (not a glyph) sets smaller so it fits the key, up to two lines.
+    btn.classList.toggle("word", l.glyph.length > 4 || l.glyph.includes("\n"));
+    if (l.on) btn.setAttribute("aria-pressed", "true");
+    else btn.removeAttribute("aria-pressed");
+  };
   const fill = (el: HTMLElement, list: Button[]) => {
+    for (const b of el.children) shown.delete(b as HTMLButtonElement);
     el.replaceChildren(...list.map((b) => {
       const btn = document.createElement("button");
-      Object.assign(btn, { type: "button", textContent: b.glyph, title: b.what });
-      btn.setAttribute("aria-label", b.what);
+      btn.type = "button";
+      label(btn, b);
+      shown.set(btn, b);
       // pointerdown, not click: a finger shouldn't wait for the lift, and preventDefault keeps the tap from zooming.
       btn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
@@ -155,6 +169,12 @@ export function touchPlay(canvas: HTMLElement, host: HTMLElement, press: (code: 
     look() { const m = moved; moved = { dx: 0, dy: 0 }; return m; },
     crouch: false,
     venue: (level) => fill(venuePadEl, venuePad(level)),
+    relabel(now) {
+      for (const [btn, b] of shown) {
+        if (b.code === "KeyC") continue;
+        label(btn, now[b.code] ?? b);
+      }
+    },
     show(on) {
       root.hidden = !on;
       if (!on) { walk = eye = null; ring.hidden = true; moved = { dx: 0, dy: 0 }; }
