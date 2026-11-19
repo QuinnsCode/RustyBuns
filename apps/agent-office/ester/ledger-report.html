@@ -82,6 +82,7 @@ tr.reset td{border-top:2px dashed var(--reset)}
       <div class="bar" id="bar"></div>
       <div class="scale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
       <p id="pace"></p>
+      <div id="fablemeter" hidden><div class="head"><h2>Fable limit</h2><small id="fableused"></small></div><div class="bar" id="fablebar" style="margin-top:8px"></div><p id="fablepace" style="margin-top:8px"></p></div>
       <div class="mix" id="mix"></div>
       <div class="rows" id="mixrows"></div>
     </div>
@@ -159,6 +160,7 @@ $("lede").textContent=`Tokens used, PRs merged, scope added and closed, this pla
 
 $("kpis").innerHTML=[
  ["lead",cur.pct==null?"?":`${cur.estimated?"~":""}${pct}%`,"Plan used",`on pace for ~${land}%`],
+ ...(cur.fablePct==null?[]:[["",`${cur.fablePct}%`,"Fable used",`on pace for ~${Math.round(cur.fablePct+(into>0.2?cur.fablePct/into:0)*left)}%`]]),
  ["",fmt(units),"Units",`${comma(sum(week,"turns"))} turns`],
  ["",comma(prs),"PRs merged",`${comma(into>0.2?prs/into:prs)} a day`],
  ["",`<span class="add">+${fmt(add)}</span> <span class="cut">−${fmt(cut)}</span>`,"Code lines","added, removed"],
@@ -172,6 +174,11 @@ $("resets").textContent=`resets ${day(cur.ends).wd} ${day(cur.ends).md}, 10am`;
 $("used").innerHTML=cur.pct==null?"?<small>usage not known</small>":`${cur.estimated?"~":""}${pct}%<small>${cur.estimated?"estimated":"of the weekly limit"}</small>`;
 $("bar").innerHTML=`<div class="pace" style="left:${Math.min(pct,100)}%;width:${Math.max(0,Math.min(land,100)-pct)}%"></div><div class="used" style="width:${Math.min(pct,100)}%"></div><div class="now" style="left:${into/7*100}%" title="Now: ${into.toFixed(1)} of 7 days in"></div>`;
 $("pace").innerHTML=`About ${rate.toFixed(1)}% a day: on pace for <b>${land}%</b> by the reset. Using it all takes <b>${need.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left${rate>0?` (${(need/rate).toFixed(1)}x the current rate)`:""}.${prev&&prev.pct!=null?` Last week ended at ${prev.approx?"~":""}${prev.pct}%.`:""}`;
+// the Fable limit, read off /usage beside the weekly one: same meter, its own pace
+if(cur.fablePct!=null){const fp=cur.fablePct,fr=into>0.2?fp/into:0,fl=Math.round(fp+fr*left),fn=left>0?Math.max(0,100-fp)/left:0;
+ $("fablemeter").hidden=false;$("fableused").textContent=`${fp}% used`;
+ $("fablebar").innerHTML=`<div class="pace" style="left:${Math.min(fp,100)}%;width:${Math.max(0,Math.min(fl,100)-fp)}%;background:repeating-linear-gradient(135deg,var(--m-fable) 0 3px,transparent 3px 7px)"></div><div class="used" style="width:${Math.min(fp,100)}%;background:var(--m-fable)"></div><div class="now" style="left:${into/7*100}%"></div>`;
+ $("fablepace").innerHTML=`About ${fr.toFixed(1)}% a day: on pace for <b>${fl}%</b>. Using it all takes <b>${fn.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left.`;}
 {const M=[["opus","--m-opus","Opus"],["sonnet","--m-sonnet","Sonnet"],["fable","--m-fable","Fable"]],t=cur.opus+cur.sonnet+cur.fable||1;
  $("mix").innerHTML=M.map(([k,c])=>`<div style="width:${cur[k]/t*100}%;background:var(${c})"></div>`).join("");
  $("mixrows").innerHTML=M.map(([k,c,n])=>`<div><span><i style="background:var(${c})"></i>${n}</span><span>${fmt(cur[k])} · ${Math.round(cur[k]/t*100)}%</span></div>`).join("");}

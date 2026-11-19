@@ -307,6 +307,9 @@ test("the daily report shows this plan week from its Thursday reset, the running
   });
   // Four days into the week still charts the last eight, so a Thursday morning isn't a page of one bar.
   expect(D).toHaveProperty("days.length", 8);
+  // Read off /usage mid-week (weekly and Fable), the running week shows the reading, still in progress.
+  const read = reportPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-report.html"), "utf8"), "2026-11-15T22:00:00Z", history, [{ ends: "2026-11-12", pct: 76 }, { ends: "2026-11-19", pct: 77, fable: 40 }]);
+  expect(JSON.parse(/const D=(.*);\n/.exec(read)![1]!)).toMatchObject({ weeks: [{ fablePct: null }, { pct: 77, fablePct: 40, estimated: false, running: true }] });
 });
 
 test("conflicts Mervin saved, from codeSplitter and this Mac's log, land on their day once each, priced as fought by hand", async () => {
