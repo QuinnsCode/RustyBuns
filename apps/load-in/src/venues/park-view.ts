@@ -132,7 +132,7 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
         + `<span class="${s.hazards ? "warn" : ""}">${s.hazards ? `${s.hazards} cable${s.hazards > 1 ? "s" : ""} across a path` : "Paths clear"}</span>`
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
-          : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
+          : `<span class="${full!.pass ? "pass" : ""}">Score ${full!.score} with the crowd in (${s.score} at soundcheck) / ${PASS} to pass</span>`)
         + `<small>F push the generator or pour a jerry can into it, H heat map, Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter show time</small>`;
     },
     doors() {
