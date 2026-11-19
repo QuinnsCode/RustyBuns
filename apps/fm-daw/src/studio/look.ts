@@ -189,6 +189,22 @@ function paint(name: string, base: THREE.Color): Painted | null {
   return p;
 }
 
+/**
+ * How much of the 4% gloss every painted surface has a room surface of colour `c` keeps (a MeshPhysicalMaterial's
+ * `specularIntensity`). Paint darker than about 5% (a sound stage's flat black floor) is a matte finish: at full gloss,
+ * seen low across the floor under bright cans, its sheen outshines the paint and the black reads light beige (#5257).
+ * It keeps a share in step with how dark it is; every lighter colour keeps all of it.
+ */
+export function gloss(c: THREE.Color): number {
+  const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; // linear light
+  return Math.min(1, Math.max(0.12, lum / 0.05));
+}
+/** A room surface's material: a standard one, or one with a flat paint's sheen when it's painted that dark. */
+export function roomMaterial(o: THREE.MeshStandardMaterialParameters & { color: THREE.Color }, tint = o.color): THREE.MeshStandardMaterial {
+  const s = gloss(tint);
+  return s < 1 ? new THREE.MeshPhysicalMaterial({ ...o, specularIntensity: s }) : new THREE.MeshStandardMaterial(o);
+}
+
 const mats = new Map<string, THREE.MeshStandardMaterial>();
 type Kit = (name: string, color?: string) => THREE.MeshStandardMaterial | null;
 let kit: Kit | null = null;
@@ -220,7 +236,7 @@ export function surface(name: string, color?: string): THREE.MeshStandardMateria
   else if (name === "screen") m = new THREE.MeshStandardMaterial({ color: "#05070a", emissive: c, emissiveIntensity: 1.4, roughness: 0.2 });
   else {
     const p = paint(name, c);
-    m = new THREE.MeshStandardMaterial({ color: p ? 0xffffff : c, map: p?.map ?? null, bumpMap: p?.bump ?? null, bumpScale: l?.bump ?? 1, roughness: l?.rough ?? 0.85, metalness: l?.metal ?? 0 });
+    m = roomMaterial({ color: p ? new THREE.Color(0xffffff) : c, map: p?.map ?? null, bumpMap: p?.bump ?? null, bumpScale: l?.bump ?? 1, roughness: l?.rough ?? 0.85, metalness: l?.metal ?? 0 }, c);
     if (p) { const s = 1 / p.metres; for (const t of [p.map, p.bump]) t?.repeat.set(s, s); }
   }
   m.name = name;
