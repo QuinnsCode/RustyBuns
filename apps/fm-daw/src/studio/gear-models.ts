@@ -10,10 +10,16 @@ import type { Reach, Spot } from "./room.ts";
 /** A spot's id as a seed, so a room's bass synth grows the same for everyone. */
 export const seedOf = (id: string) => [...id].reduce((h, c) => Math.imul(h, 31) + c.charCodeAt(0), 7) >>> 0;
 
-/** The bass seat's mono synth, centred on the spot's thing with its keys toward the seat (+z in the thing's frame), and
+/** How far (metres) in front of the seat the bass synth's keys start: as near as the stage synth's, in a seated reach. */
+const EDGE = 0.3;
+/** How far the synth sits nearer the seat than the spot's thing (a rig's box stood further out than keys need). */
+const pull = (s: Spot) => Math.max(0, s.thing.ahead - MONO_KEY_FRONT - EDGE);
+
+/** The bass seat's mono synth, on the spot's thing (pulled in toward the seat until its keys are in reach) with its keys toward the seat (+z in the thing's frame), and
  *  its keys to press. It may run a little past the spot's old box either side: the rig it replaces was narrower. */
 export function bassSynth(s: Spot): { synth: MonoSynth; keys: Keys } {
   const synth = monosynth(seedOf(s.id), { fit: s.thing.w + 0.12 }), k = synth.keys;
+  synth.group.position.z = pull(s);
   const keys = new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, undefined, k.blackRest);
   return { synth, keys };
 }
@@ -21,24 +27,24 @@ export function bassSynth(s: Spot): { synth: MonoSynth; keys: Keys } {
 /** Where a seated player's palms go at the bass synth: just over the near half of its white keys (as `keysReach`). */
 export function bassReach(s: Spot): Reach | null {
   if (s.kind !== "bass") return null;
-  return { ahead: s.thing.ahead - MONO_KEY_FRONT + 0.07, up: MONO_KEY_TOP + 0.06 };
+  return { ahead: s.thing.ahead - pull(s) - MONO_KEY_FRONT + 0.07, up: MONO_KEY_TOP + 0.06 };
 }
 
 /** A monitor `w` x `h` x `d` (metres), its front toward -z as a prop's is: a powered fill speaker for a small one, a
- *  passive 15" top for a big one, each at its own proportions as large as the box lets it, the big one on a plinth up
+ *  passive 15" top for a big one, each at its own proportions as large as the box lets it, on a plinth up
  *  to the box's height. `paint` is the cabinet (a wood the room picked). */
 export function speaker(w: number, h: number, d: number, paint?: THREE.Material): THREE.Group {
   const look: GearLook = gearLook();
   if (paint) look.paint = look.shell = paint;
   const id = h > 0.7 ? "top-15-passive" : "fill-8-powered", model = gear(id, { look });
-  const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+  const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3());
   const k = Math.min(w / size.x, d / size.z, h / size.y), lift = h - size.y * k;
   model.scale.setScalar(k);
-  model.position.y = lift;
+  model.position.y = lift - bounds.min.y * k;
   model.rotation.y = Math.PI;
   const g = new THREE.Group();
   g.add(model);
-  if (lift > 0.02) {
+  if (lift > 0.001) {
     const plinth = new THREE.Mesh(new THREE.BoxGeometry(size.x * k, lift, size.z * k), look.paint);
     plinth.position.y = lift / 2;
     g.add(plinth);
