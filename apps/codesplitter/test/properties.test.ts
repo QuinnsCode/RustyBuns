@@ -110,8 +110,8 @@ test("one line both sides rewrote is asked about, and the pick decides it", () =
   fc.assert(fc.property(lines, fc.nat(), fc.constantFrom("main" as const, "branch" as const), (ls, at, pick) => {
     const base = file(ls).doc, branch = fork(base), main = fork(base), i = at % ls.length, id = base.lines[i]!.id;
     const said = { main: `main says ${i}`, branch: `the branch said ${i} instead` };
-    apply(branch, [{ kind: "set", line: id, text: said.branch, base: 1 }], "cy", 2);
-    apply(main, [{ kind: "set", line: id, text: said.main, base: 1 }], "bo", 2);
+    apply(branch, [{ kind: "set", line: id, text: said.branch, base: base.lines[i]!.rev }], "cy", 2);
+    apply(main, [{ kind: "set", line: id, text: said.main, base: base.lines[i]!.rev }], "bo", 2);
     const asked = merge(base, branch, main, {}, "cy", "a.ts", "cy", "code", false);
     expect(asked.conflicts.map((c) => c.line)).toEqual([id]);
     const m = merge(base, branch, main, { [id]: pick }, "cy", "a.ts", "cy", "code", false);

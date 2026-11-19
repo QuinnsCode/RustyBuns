@@ -123,8 +123,9 @@ test("every operation whose spec names a required field refuses a body without o
   const wrong: string[] = [];
   for (const o of strict) {
     const url = `/api${o.path.replace(/\{(\w+)\}/g, (_, k: string) => fill[k] ?? "1")}`;
-    const res = await Promise.race([call("ana", url, { method: o.method, headers: { "content-type": "application/json" }, body: "{}" }), Bun.sleep(10_000).then(() => null)]);
+    const res = await Promise.race([call("ana", url, { method: o.method, headers: { "content-type": "application/json" }, body: "{}" }).catch((e: unknown) => String(e)), Bun.sleep(10_000).then(() => null)]);
     if (!res) { wrong.push(`${o.id}: no answer in 10 s`); continue; }
+    if (typeof res === "string") { wrong.push(`${o.id}: threw ${res.slice(0, 120)}`); continue; }
     const body: unknown = await res.json().catch(() => null);
     if (res.status < 400 || res.status > 499) wrong.push(`${o.id}: answered ${res.status}`);
     else if (!isRecord(body) || typeof body.error !== "string") wrong.push(`${o.id}: its ${res.status} has no error sentence`);

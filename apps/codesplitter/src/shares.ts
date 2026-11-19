@@ -36,6 +36,7 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
   if (!user) return fail("SignInFirst", "sign in to share lines");
   if (private_ && !access.write) return fail("NoWriteAccess", "only the crew can share lines from a private repo");
   const path = String(body?.path ?? "");
+  if (!path) return fail("BadInput", "path: the file to share lines from");
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return unread(m);
   const lines = await fileLines(env, owner, repo, path, "share", false);
