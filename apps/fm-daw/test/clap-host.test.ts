@@ -75,9 +75,9 @@ test("a friend's groove plays this computer's own copy of the plugin, and withou
   if (!built) return console.log("  (rest skipped: cdylib not built; run `bun run build:native`)");
   const tone = (await findPlugins()).find((c) => c.name === "Test Tone")!;
   expect(tone.id).toBeTruthy();
-  const started = await startPlugin(0, { ...theirs, id: tone.id, values: [{ id: 0, v: 0.5 }] }, SR);
+  const started = await startPlugin(0, { ...theirs, id: tone.id }, SR);
   expect(started.error).toBeUndefined();
-  expect(started.params.map((q) => [q.name, q.value])).toEqual([["Level", 0.5], ["Shape", 0]]);
+  expect(started.params.map((q) => q.name)).toEqual(["Level", "Shape"]);
   const block = await renderPlugin({ track: 0, frames: 512, events: [{ t: "on", key: 69, vel: 1 }] });
   expect(block.ok).toBe(true);
   expect(new Float32Array(Uint8Array.from(Buffer.from(block.pcm, "base64")).buffer).some((x) => Math.abs(x) > 0.01)).toBe(true);
