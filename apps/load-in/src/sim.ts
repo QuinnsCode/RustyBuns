@@ -40,6 +40,8 @@ export interface Level {
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
+  /** What comes off the truck only when a crew plays: a load too heavy for one (crewLoad puts it in the world). */
+  crewItems?: Item[];
   /** Out of doors: no walls or ceiling, only the ground. */
   outdoor?: boolean;
   /** The ground's height under (x, z) where it is not flat (the amphitheatre's benches): your eyes ride on it. */
@@ -162,6 +164,11 @@ const lineYaw = (w: World, m: Mate) => Math.atan2(-(m.x - w.you.x), -(m.z - w.yo
  * the span you stand apart; a lone carry of something heavy becomes a team carry when a friend grabs it. If the friend
  * on the other end lets go of a piece you lifted together (or leaves), it comes down where it is: true then, so the page
  * tells the room where it landed. */
+/** In a crew room the truck holds the crew's load too: the level's crewItems, once each. */
+export function crewLoad(w: World) {
+  for (const i of w.level.crewItems ?? []) if (!w.items.some((o) => o.key === i.key)) w.items.push({ ...i });
+}
+
 export function seeCrew(w: World, crew: Mate[]): boolean {
   w.crew = crew;
   const i = heldItem(w);
