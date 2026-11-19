@@ -111,6 +111,7 @@ To try the Cloudflare version on your machine, seshes and all: `bun run build`, 
 - **Synths** show as a piano roll: drag to draw a note (you hear it as you press), click a note to delete it.
 - **Quantize** a track to 1/4 through 1/32 or triplets, at any strength. 50% keeps half the feel. **Quantize input** does it as you record.
 - **MIDI keyboards** work as soon as they're plugged in (Web MIDI, no driver). On drum tracks middle C plays the drum's own note. MIDI "all notes off" triggers the panic.
+- **Your own plugins (VST, AU, CLAP):** **To my DAW** under the keys sends every note played on the desk, yours and everyone's on the live line, to a MIDI port: track 1 on channel 1, track 12 on channel 12. On macOS turn on the IAC Driver in Audio MIDI Setup (Windows: a loopMIDI port), then in your DAW give an instrument track that port and channel as its input. The page never loads a plugin; your DAW already hosts them. Panic lets go of all sixteen channels. Only played notes go out for now, not the sequencer's.
 - **Bounce** renders four loops to a WAV in `~/Music/FM DAW` (set `FM_DAW_DIR` to change it), and **Show** opens it in Finder.
 
 ## Where the new voices come from
@@ -185,7 +186,7 @@ Deploying is yours to run, from this folder: `bunx rustybuns plan` (creates noth
 - **Switching engines cuts the notes that are sounding**; the groove carries on from the next note.
 - **Event timing is quantized to 16 samples** (a third of a millisecond at 48 kHz) to keep the audio thread simple.
 - **Edits go to everyone, last write wins.** There's no conflict merging beyond that, and undo is per person.
-- **No MIDI clock or MIDI out yet.** MIDI learn maps sliders only, not the button rows (filter type, LFO shape, chorus).
+- **No MIDI clock yet, and MIDI out sends played notes only.** MIDI learn maps sliders only, not the button rows (filter type, LFO shape, chorus).
 - **No input monitoring:** you don't hear the input through the app while recording (use your interface's monitoring).
 - **Voice stealing can click** when a track plays more than 8 notes at once.
 

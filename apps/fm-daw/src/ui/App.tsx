@@ -10,6 +10,7 @@ import { may, opNeeds, type Can, type GrantServer } from "../grants.ts";
 import { WindBack, type Rewound } from "./WindBack.tsx";
 import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
+import { startMidiOut, type MidiOut } from "./midi-out.ts";
 import { onCc } from "./learn.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
 import { pushTick, useTick } from "./store.ts";
@@ -111,6 +112,9 @@ export function App() {
   const [octave, setOctave] = useState(0);
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
+  /** MIDI out to the plugins in your own DAW: the port list and the pick, redrawn when either changes. */
+  const midiOut = useRef<MidiOut | null>(null);
+  const [outPorts, setOutPorts] = useState<{ ports: string[]; picked: string | null }>({ ports: [], picked: null });
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "shape" | "amp" | "engines">("pattern");
   /** Which Shape the tab shows: the master's (null) or a track's own insert. */
@@ -447,6 +451,7 @@ export function App() {
     if (midi < 0 || midi > 127 || liveNotes.current.has(key)) return;
     liveNotes.current.set(key, { track, midi, share });
     send({ t: "on", track, midi, vel, rec: share });
+    midiOut.current?.on(track, midi, vel);
     if (share) live1({ t: "on", track, midi, vel });
     setHeld((h) => new Set(h).add(midi));
   }
@@ -455,6 +460,7 @@ export function App() {
     if (!n) return;
     liveNotes.current.delete(key);
     send({ t: "off", track: n.track, midi: n.midi });
+    midiOut.current?.off(n.track, n.midi);
     if (n.share) live1({ t: "off", track: n.track, midi: n.midi });
     setHeld((h) => { const s = new Set(h); s.delete(n.midi); return s; });
   }
@@ -491,7 +497,7 @@ export function App() {
     send({ t: "rec", on: true });
     if (!transportOn) send({ t: "play", countIn: countIn ? COUNT_IN : 0 });
   }
-  function panic() { releaseAll(); stop(); setRepeatState(0); send({ t: "panic" }); }
+  function panic() { releaseAll(); stop(); setRepeatState(0); send({ t: "panic" }); midiOut.current?.panic(); }
 
   async function chooseEngine(kind: "ts" | "rust") {
     setEngineNote(null);
@@ -567,7 +573,10 @@ export function App() {
       },
       devices: setMidiDevices,
     }).then((s) => { stopMidi = s; });
-    return () => stopMidi?.();
+    let out: MidiOut | null = null;
+    const sync = () => { if (out) setOutPorts({ ports: out.ports(), picked: out.picked() }); };
+    void startMidiOut(sync).then((o) => { out = midiOut.current = o; sync(); });
+    return () => { stopMidi?.(); out?.panic(); out?.stop(); midiOut.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audio]);
 
@@ -798,6 +807,7 @@ export function App() {
       </div>
 
       <Keys base={keyBase(selected, octave)} octave={octave} held={held} midiDevices={midiDevices} color={color}
+        outPorts={outPorts} onOutPort={(name) => { releaseAll(); midiOut.current?.pick(name); }}
         onKey={(m, on) => (on ? noteOn(`ui:${m}`, selected, m, 0.8) : noteOff(`ui:${m}`))}
         onOctave={(d) => setOctave((o) => Math.min(Math.max(o + d, -3), 3))} />
 

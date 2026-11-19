@@ -10,6 +10,9 @@ export function Keys(props: {
   octave: number;
   held: Set<number>;
   midiDevices: string[];
+  /** MIDI outputs, and the one the desk's notes go to (track N on channel N). */
+  outPorts: { ports: string[]; picked: string | null };
+  onOutPort(name: string | null): void;
   color: string;
   onKey(midi: number, on: boolean): void;
   onOctave(d: number): void;
@@ -48,6 +51,13 @@ export function Keys(props: {
         Letters play, <kbd>Shift</kbd> accents. {props.midiDevices.length
           ? <>MIDI: <strong>{props.midiDevices.join(", ")}</strong></>
           : "Plug in a MIDI keyboard any time."}
+        {props.outPorts.ports.length > 0 && <label className="midi-out" title="Every note on the desk goes out too, track 1 on channel 1 and so on, for the plugins in your own DAW">
+          To my DAW{" "}
+          <select value={props.outPorts.picked ?? ""} onChange={(e) => props.onOutPort(e.target.value || null)}>
+            <option value="">Off</option>
+            {props.outPorts.ports.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>}
       </p>
     </section>
   );
