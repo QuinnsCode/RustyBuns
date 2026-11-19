@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { GROUND_BIOMES, groundWeights, LAYERS, LAYER_COUNT, type Cover } from "../src/world/ground.ts";
+import { GROUND_BIOMES, groundWeights, heaveOf, LAYERS, LAYER_COUNT, moundNoise, type Cover } from "../src/world/ground.ts";
 import { decodeNormals } from "../src/arena.ts";
 
 const none: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 };
@@ -31,4 +31,18 @@ test("a baked normal map decodes to a tangent-space one: level ground points str
   expect(d[2]).toBe(255);
   const nx = 218 / 127.5 - 1, nz = d[6]! / 127.5 - 1;
   expect(Math.hypot(nx, nz)).toBeCloseTo(1, 1);
+});
+
+test("the floor round your feet heaves in smooth mounds, most where a litter floor lies over roots, least on sand and snow", () => {
+  // smooth: across a 40 m patch, no two points a centimetre apart differ by more than a hair, and the mounds span the range
+  let lo = 1, hi = 0, step = 0;
+  for (let x = 0; x < 40; x += 0.37) for (let z = 0; z < 40; z += 0.41) {
+    const h = moundNoise(x * 0.55, z * 0.55);
+    lo = Math.min(lo, h); hi = Math.max(hi, h);
+    step = Math.max(step, Math.abs(moundNoise((x + 0.01) * 0.55, z * 0.55) - h), Math.abs(moundNoise(x * 0.55, (z + 0.01) * 0.55) - h));
+  }
+  expect([lo < 0.15, hi > 0.85, step < 0.02]).toEqual([true, true, true]);
+  const heave = (biome: Parameters<typeof groundWeights>[0], c: Partial<Cover> = {}) => { const w = new Float32Array(LAYER_COUNT); groundWeights(biome, { ...none, ...c }, w); return heaveOf(w); };
+  const forest = heave("forest", { litter: 0.8 });
+  expect([forest > heave("desert"), forest > heave("forest", { snow: 1 })]).toEqual([true, true]);
 });
