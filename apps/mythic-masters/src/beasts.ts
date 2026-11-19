@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
 import { pupils } from "./eyes.ts";
 import { Secondary } from "./secondary.ts";
-import { CARD_COLOR, CARD_FRAG_PARS, CARD_LIGHT, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LOOSE_VERT, LooseLag, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
+import { CARD_COLOR, CARD_FACE, CARD_FRAG_PARS, CARD_LIGHT, CARD_NORMAL, CARD_VERT, CARD_VERT_PARS, LOOSE_PARS, LooseLag, looseVert, cardParts, looseParts, reachOf, rootOf, tipOf } from "./loose.ts";
 import { smoothNormals } from "./smooth.ts";
 import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
@@ -180,8 +180,9 @@ const HideMean = arr(num(0, 1), 3, { min: 3 });
 /** Each card part's shading per vertex, worked out once per beast: how far along the card (loose.ts `tipOf`, its reach
  * from the coat) and the coat's colour at its root (`rootOf`: the coat's vertex colour times its material and baked
  * hide's mean). The coat is the mapped part (the biggest with no map); a card's reach is from every part that isn't one. */
-const CARDS = new WeakMap<Beast, Map<number, { tip: Float32Array; root: Float32Array }>>();
-function cardFor(beast: Beast, part: number, cards: readonly boolean[]): { tip: Float32Array; root: Float32Array } {
+type Card = { tip: Float32Array; root: Float32Array; normal: Float32Array };
+const CARDS = new WeakMap<Beast, Map<number, Card>>();
+function cardFor(beast: Beast, part: number, cards: readonly boolean[]): Card {
   let byPart = CARDS.get(beast);
   if (!byPart) CARDS.set(beast, (byPart = new Map()));
   let c = byPart.get(part);
@@ -195,7 +196,9 @@ function cardFor(beast: Beast, part: number, cards: readonly boolean[]): { tip: 
     const mean = (m.map ? check(HideMean, m.userData.hide_mean) : null) ?? [1, 1, 1];
     const colour = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) { colour[i * 3] = col ? col.getX(i) : 1; colour[i * 3 + 1] = col ? col.getY(i) : 1; colour[i * 3 + 2] = col ? col.getZ(i) : 1; }
-    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]) };
+    const nrm = cg.getAttribute("normal");
+    c = { tip: tipOf(reachOf(own, rest, beast.sheet.height, 1)), root: rootOf(own, pos.array, colour, [m.color.r * mean[0]!, m.color.g * mean[1]!, m.color.b * mean[2]!]),
+      normal: nrm ? rootOf(own, pos.array, nrm.array, [1, 1, 1]) : Float32Array.from(parts[part]!.geometry.getAttribute("normal").array) };
     byPart.set(part, c);
   }
   return c;
@@ -281,10 +284,10 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     if (hd) sh.vertexShader = "varying vec3 vHideP;\n" + sh.vertexShader;
     if (loose) {
       Object.assign(sh.uniforms, loose);
-      sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + LOOSE_VERT);
+      sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + looseVert(card));
     }
     if (card) {
-      sh.vertexShader = CARD_VERT_PARS + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + CARD_VERT);
+      sh.vertexShader = CARD_VERT_PARS + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + CARD_VERT).replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n" + CARD_NORMAL);
     }
     // half-Lambert squared: a surface turned from the light keeps a soft share of it
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
@@ -312,7 +315,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
         ${fx?.frag ?? ""}
         ${card ? CARD_LIGHT : ""}`);
     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
-    if (card) sh.fragmentShader = CARD_FRAG_PARS + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n" + CARD_COLOR);
+    if (card) sh.fragmentShader = CARD_FRAG_PARS + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n" + CARD_COLOR).replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n" + CARD_FACE);
     if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
   };
   m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "") + (card ? ":card" : "");
@@ -485,7 +488,7 @@ export class Puppet {
       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
       const card = !!cards[pi];
-      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); }
+      if (card) { const c = cardFor(beast, pi, cards); g.setAttribute("aTip", new THREE.BufferAttribute(c.tip, 1)); g.setAttribute("aRoot", new THREE.BufferAttribute(c.root, 3)); g.setAttribute("aRootN", new THREE.BufferAttribute(c.normal, 3)); }
       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];

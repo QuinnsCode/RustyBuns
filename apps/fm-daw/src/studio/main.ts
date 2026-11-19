@@ -35,6 +35,7 @@ import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "
 import { madeSpot } from "./instrument.ts";
 import { bassReach, bassSynth } from "./gear-models.ts";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
+import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { isMuted, leaders, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
@@ -436,6 +437,7 @@ function onLive(from: number, e: Live) {
   if (!sounds(mutes, from, e)) return;
   if (e.t === "on") out?.send({ t: "on", track: e.track, midi: e.midi, vel: e.vel });
   else if (e.t === "off") out?.send({ t: "off", track: e.track, midi: e.midi });
+  else if (e.t === "bend") out?.send({ t: "bend", track: e.track, semis: e.semis });
 }
 // ---- mutes: yours (the room, or one person) and the leader's for everyone ----
 const mutes = noMutes();
@@ -607,6 +609,10 @@ function keyDown(code: string, shift = false) {
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
     if (code === "KeyX") { releaseAll(); octave = Math.min(3, octave + 1); return; }
+    // the see-through keys and the wheels (overlay.ts)
+    if (code === "Slash") return overlay.toggle();
+    if (code === "ArrowUp" || code === "ArrowDown") return overlay.wheels.push(code === "ArrowUp" ? 1 : -1);
+    if (code === "BracketLeft" || code === "BracketRight") return overlay.wheels.modPush(code === "BracketRight" ? 1 : -1);
     const n = keyNote(jam, project, code, octave);
     if (n) noteOn(`kb:${code}`, n, shift ? 1 : 0.75);
   }
@@ -616,7 +622,11 @@ document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (!e.repeat) keyDown(e.code, e.shiftKey);
 });
-document.addEventListener("keyup", (e) => { keys.delete(e.code); noteOff(`kb:${e.code}`); });
+document.addEventListener("keyup", (e) => {
+  keys.delete(e.code); noteOff(`kb:${e.code}`);
+  if (e.code === "ArrowUp" || e.code === "ArrowDown") overlay.wheels.push(0);
+  if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
+});
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
 document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
@@ -628,7 +638,7 @@ void startMidi({
     if (n) noteOn(`midi:${note}`, s.kind === "drums" ? n : { track: n.track, midi: note }, vel);
   },
   off(note) { noteOff(`midi:${note}`); },
-  panic: releaseAll, bend() {}, cc() {}, devices() {},
+  panic: releaseAll, bend(x) { overlay.wheels.midi(x); }, cc(n, v) { if (n === 1) overlay.wheels.mod = v; }, devices() {},
 });
 
 // ---- the front door ----
@@ -700,7 +710,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["Tab (seated)", "The track's lane: patch, EQ, mixer, notes"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["Tab (seated)", "The track's lane: patch, EQ, mixer, notes"], ["Up / down arrows (seated)", "Pitch bend"], ["[ / ] (seated)", "Mod wheel: vibrato"], ["/ (seated)", "Show or hide the keys' notes"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -720,7 +730,7 @@ function hint(): string {
     const n = keyNote(jam, project, "KeyA", octave);
     if (!may(player).play) return `At ${s.label}, listen only: ${rights.asked === "play" ? "your hand is up" : "H raises your hand to play"}. Space stands up`;
     if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Space stands up, V camera`;
-    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}). Space stands up, V camera`;
+    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, / the keys. Space stands up, V camera`;
     return `At ${s.label}. Space stands up, V camera`;
   }
   const near = nearSpot(jam);
@@ -759,6 +769,13 @@ function showPlayed(dt: number, t: number) {
   }
 }
 
+// ---- the see-through keys and the pitch and mod wheels: a bend goes to your sound and the room's ----
+const overlay = new Overlay((track, semis) => {
+  if (semis !== 0 && !may(player).play) return;
+  out?.send({ t: "bend", track, semis });
+  live(bendEvent(track, semis));
+});
+
 // ---- every frame ----
 let last = performance.now(), sentAt = 0, sentBody = "";
 function frame(now: number) {
@@ -796,6 +813,7 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
