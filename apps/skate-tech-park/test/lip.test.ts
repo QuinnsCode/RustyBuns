@@ -87,7 +87,7 @@ test("a no-comply from a stall plants the foot on the coping: a footplant back d
     for (let i = 0; i < 0.3 / DT; i++) step(s, { ...IDLE, steer: hold(s) }, pipe);
     step(s, { ...IDLE, noComply: true }, pipe);
     const feet = s.feet.map((f) => `${f.foot} ${f.at}`);
-    return { feet, seen: awards(s, 3, (s) => (s.air ? air : {})), s };
+    return { feet, seen: [s.last!.name, ...awards(s, 3, (s) => (s.air ? air : {}))], s }; // the stall is scored as the foot pushes off
   };
   const foot = plant({});
   expect(foot.feet).toEqual(["front coping", "back tail"]); // the foot on the lip, the tail pops off it
