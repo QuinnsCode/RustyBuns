@@ -348,6 +348,19 @@ test("issues opened and closed land on 10am-to-10am days, with how many stood op
   ]);
 });
 
+test("issues opened and closed land on their hour of the last 24, older ones and the unfinished hour left out", async () => {
+  const { issueHours } = await import("../ester/ledger-daily.ts");
+  const now = "2026-11-19T10:07:00Z", at = (h: string) => `2026-11-${h}Z`;
+  // Opened 9:30 and closed 9:50 (the last whole hour); one opened two days back closed at 10:00 yesterday (the first hour);
+  // one opened 10:05 today, inside the hour still running, counts for nothing yet.
+  const issues = [{ createdAt: at("19T09:30:00"), closedAt: at("19T09:50:00") }, { createdAt: at("17T12:00:00"), closedAt: at("18T10:00:00") }, { createdAt: at("19T10:05:00"), closedAt: undefined }];
+  const hours = issueHours(issues, now);
+  expect(hours).toHaveLength(24);
+  expect(hours[0]).toEqual({ hour: "2026-11-18T10:00:00.000Z", opened: 0, closed: 1 });
+  expect(hours[23]).toEqual({ hour: "2026-11-19T09:00:00.000Z", opened: 1, closed: 1 });
+  expect(hours.reduce((a, h) => a + h.opened + h.closed, 0)).toBe(3);
+});
+
 test("the plan's weekly usage is entered by the morning it reset, a second entry replacing the first, and models split the spend", async () => {
   const { setBudget } = await import("../ester/ledger-daily.ts");
   const { familyOf } = await import("../ester/dexter.ts");

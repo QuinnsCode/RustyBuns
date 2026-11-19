@@ -106,6 +106,13 @@ tr.reset td{border-top:2px dashed var(--reset)}
     </div>
   </section>
 
+  <section class="card">
+    <div class="head"><h2>Issues per hour, last 24 hours</h2><small id="hsum"></small></div>
+    <div class="legend"><span><i style="background:var(--c-open)"></i>Opened (above the line)</span><span><i style="background:var(--c-closed)"></i>Closed (below)</span><span><i class="line" style="border-color:var(--ink2)"></i>Running net: under zero is closing faster</span></div>
+    <div id="hours"></div>
+    <p class="note" id="hnote"></p>
+  </section>
+
   <section class="grid2 even">
     <div class="card">
       <div class="head"><h2>Code lines added and removed</h2><small id="locsum"></small></div>
@@ -224,6 +231,25 @@ $("locsum").textContent=`+${comma(add)} −${comma(cut)} this week`;
  $("issues").innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
  $("isum").textContent=pts.length?`last ${pts.length} days, ${o} opened, ${c} closed`:"no issue data yet";
  $("inote").textContent=pts.length?`${o>c?`Scope grew by ${o-c}`:`Closed ${c-o} more than opened`} over the ${pts.length} days; ${comma(openNow)} issues open now (${I[0].open} on ${day(I[0].date).md}).`:"";}
+
+// issues hour by hour over the last 24: opened stand above the line, closed hang below it, and the running net
+// (opened minus closed so far) is the line: ending under zero means the day closed more than it opened
+{const Hs=D.hours??[],W=1100,H=220,L=40,R=40,T=12,B=30,iw=W-L-R,ih=H-T-B,n=Math.max(Hs.length,1),bw=iw/n,gap=bw*.25;
+ let run=0;const net=Hs.map(h=>run+=h.opened-h.closed);
+ const hi=Math.max(1,...Hs.map(h=>h.opened),...net),lo=Math.max(1,...Hs.map(h=>h.closed),...net.map(v=>-v));
+ const step=nice((hi+lo)/4),ymax=Math.ceil(hi/step)*step,ymin=-Math.ceil(lo/step)*step,y=v=>T+ih-((v-ymin)/(ymax-ymin))*ih;
+ const hr=iso=>new Date(iso).toLocaleTimeString("en-US",{hour:"numeric"}).replace(" AM","a").replace(" PM","p");
+ let g="";for(let v=ymin;v<=ymax+1e-9;v+=step)g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(${v===0?"--ink2":"--grid"})"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${Math.abs(v)}</text>`;
+ Hs.forEach((h,i)=>{const x=L+i*bw+gap/2,w=bw-gap,t=`${hr(h.hour)}: ${h.opened} opened, ${h.closed} closed`;
+  if(h.opened)g+=`<rect x="${x}" y="${y(h.opened)}" width="${w}" height="${y(0)-y(h.opened)}" fill="var(--c-open)"><title>${t}</title></rect>`;
+  if(h.closed)g+=`<rect x="${x}" y="${y(0)}" width="${w}" height="${y(-h.closed)-y(0)}" fill="var(--c-closed)"><title>${t}</title></rect>`;
+  if(i%3===0)g+=`<text x="${x+w/2}" y="${H-B+18}" text-anchor="middle">${hr(h.hour)}</text>`;});
+ if(Hs.length){g+=`<path d="${net.map((v,i)=>`${i?"L":"M"}${L+i*bw+bw/2},${y(v)}`).join("")}" fill="none" stroke="var(--ink2)" stroke-width="2"/>`;
+  g+=`<text x="${L+(n-1)*bw+bw/2+6}" y="${y(run)+4}" style="fill:var(--ink)">${run>0?"+":""}${run}</text>`;}
+ $("hours").innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+ const ho=sum(Hs,"opened"),hc=sum(Hs,"closed"),better=Hs.filter(h=>h.closed>h.opened).length,worse=Hs.filter(h=>h.opened>h.closed).length;
+ $("hsum").textContent=Hs.length?`${ho} opened, ${hc} closed`:"no hourly data yet";
+ $("hnote").textContent=Hs.length?`${hc>=ho?`Closed ${hc-ho} more than opened`:`Scope grew by ${ho-hc}`} in the 24 hours to ${hr(new Date(Date.parse(Hs.at(-1).hour)+36e5).toISOString())} on ${new Date(Date.parse(Hs.at(-1).hour)+36e5).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}: ${better} hours closed more than they opened, ${worse} opened more. Times are your own clock; the page refreshes at 10am.`:"";}
 
 $("weeks").innerHTML=`<thead><tr><th>Plan week ending</th><th>Used</th><th>Units</th><th>PRs</th><th>PRs per 1%</th><th>Lines + / −</th><th>Opus / Sonnet / Fable</th></tr></thead><tbody>`+
  D.weeks.slice(-6).map(w=>{const t=w.opus+w.sonnet+w.fable||1,p=k=>Math.round(w[k]/t*100),d=day(w.ends);
