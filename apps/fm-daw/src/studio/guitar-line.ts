@@ -3,10 +3,14 @@
 // thread, then your mutes, then placed where its player stands. Signals go through the sesh's World (`send`).
 import ampWorkletUrl from "../amp/worklet.ts?worker&url";
 import type { AmpSettings, ToAmp } from "../amp/messages.ts";
-import { lagMs, otherEnd, tuneOpus, type Lag, type Line, type RtcServer, type Signal } from "../guitar.ts";
+import { getJson } from "@rustybuns/util/http";
+import { IceReply, lagMs, otherEnd, STUN, tuneOpus, type IceServer, type Lag, type Line, type RtcServer, type Signal } from "../guitar.ts";
 
-/** A public STUN server to find each end's address. No TURN yet: two players behind strict NATs don't connect. */
-const ICE: RTCIceServer[] = [{ urls: "stun:stun.cloudflare.com:3478" }];
+/**
+ * The servers a call may use, from the Worker's GET /ice: STUN to find each end's address, and a TURN relay for two
+ * players whose networks both refuse a direct path. No answer (the desktop host has no /ice), STUN alone.
+ */
+export const askIce = async (): Promise<IceReply> => (await getJson("/ice", IceReply)) ?? { iceServers: STUN, ttl: 0 };
 /** Opus's ceiling for the guitar, bits a second (tuneOpus asks the far end for the same). */
 const BITRATE = 128_000;
 
@@ -24,9 +28,25 @@ export class GuitarLine {
   /** Whose guitar's call couldn't get through (no path between the two networks): asked again when they plug in again. */
   private failed = new Set<number>();
   private ready: Promise<void>;
-  /** `to` is where every guitar ends up: the speakers, or a meter in a test. */
-  constructor(private ctx: AudioContext, private send: (to: number, line: Line, s: Signal) => void, private to: AudioNode = ctx.destination) {
+  /** The servers for new calls, and when to ask for them again (a TURN pass runs out; a call already up keeps going). */
+  private ice: Promise<IceServer[]> | null = null;
+  private iceUntil = 0;
+  /** `to` is where every guitar ends up: the speakers, or a meter in a test. `servers` says which servers a call may use. */
+  constructor(private ctx: AudioContext, private send: (to: number, line: Line, s: Signal) => void, private to: AudioNode = ctx.destination, private servers: () => Promise<IceReply> = askIce) {
     this.ready = ctx.audioWorklet.addModule(ampWorkletUrl);
+    void this.iceServers();
+  }
+
+  /** Asked once and kept until half its pass is gone; a reply with no ttl (STUN alone) is asked again in a minute. */
+  private iceServers(): Promise<IceServer[]> {
+    if (!this.ice || Date.now() > this.iceUntil) {
+      this.iceUntil = Date.now() + 60_000;
+      this.ice = this.servers().then((r) => {
+        if (r.ttl > 0) this.iceUntil = Date.now() + (r.ttl * 1000) / 2;
+        return r.iceServers;
+      }, () => STUN);
+    }
+    return this.ice;
   }
 
   get plugged() { return !!this.mine; }
@@ -55,9 +75,11 @@ export class GuitarLine {
 
   /** A signal from the World. The line is the sender's side, so the call here is the other end of it. */
   async signal(m: RtcServer) {
+    // every signal waits on the same answer, so they keep their order: a call is set up before its candidates arrive
+    const ice = await this.iceServers();
     const { from, s } = m, here = otherEnd(m.line);
-    if (s.k === "want") { if (here === "out" && this.mine) await this.callOut(from); return; }
-    if (s.k === "sdp" && s.type === "offer" && here === "in") return this.answer(from, s.sdp);
+    if (s.k === "want") { if (here === "out" && this.mine) await this.callOut(from, ice); return; }
+    if (s.k === "sdp" && s.type === "offer" && here === "in") return this.answer(from, s.sdp, ice);
     const c = this.calls.get(key(from, here));
     if (!c) return;
     if (s.k === "sdp" && s.type === "answer" && here === "out") {
@@ -128,10 +150,10 @@ export class GuitarLine {
   /** The calls as data, for the harness: each one's peer, side and connection state. */
   state() { return [...this.calls.values()].map((c) => ({ peer: c.peer, line: c.line, state: c.pc.connectionState })); }
 
-  private async callOut(peer: number) {
+  private async callOut(peer: number, ice: IceServer[]) {
     const was = this.calls.get(key(peer, "out"));
     if (was) this.hang(was);
-    const c = this.call(peer, "out");
+    const c = this.call(peer, "out", ice);
     for (const t of this.mine?.getAudioTracks() ?? []) {
       const tx = c.pc.addTransceiver(t, { direction: "sendonly", streams: [this.mine!] });
       const p = tx.sender.getParameters();
@@ -144,10 +166,10 @@ export class GuitarLine {
     this.send(peer, "out", { k: "sdp", type: "offer", sdp });
   }
 
-  private async answer(peer: number, offer: string) {
+  private async answer(peer: number, offer: string, ice: IceServer[]) {
     const was = this.calls.get(key(peer, "in"));
     if (was) this.hang(was);
-    const c = this.call(peer, "in");
+    const c = this.call(peer, "in", ice);
     c.pc.ontrack = (e) => {
       // as little waiting as the network lets it: the jitter buffer is most of the lag on a good line
       for (const f of ["jitterBufferTarget", "playoutDelayHint"]) if (f in e.receiver) Reflect.set(e.receiver, f, 0);
@@ -161,8 +183,8 @@ export class GuitarLine {
     this.send(peer, "in", { k: "sdp", type: "answer", sdp });
   }
 
-  private call(peer: number, line: Line): Call {
-    const pc = new RTCPeerConnection({ iceServers: ICE });
+  private call(peer: number, line: Line, iceServers: IceServer[]): Call {
+    const pc = new RTCPeerConnection({ iceServers });
     const c: Call = { pc, peer, line, early: [], held: { delay: 0, count: 0 } };
     pc.onicecandidate = (e) => this.send(peer, line, { k: "ice", candidate: e.candidate?.candidate ?? "", mid: e.candidate?.sdpMid ?? "", index: e.candidate?.sdpMLineIndex ?? 0 });
     pc.onconnectionstatechange = () => {
