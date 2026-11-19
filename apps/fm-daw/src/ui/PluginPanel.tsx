@@ -3,7 +3,7 @@
 // are the sliders, MIDI learn works on them, and a plugin that stops says so here.
 import { useEffect, useState } from "react";
 import type { TrackDoc } from "../project.ts";
-import type { PluginChoice, PluginParam, TrackPlugin } from "../plugin-track.ts";
+import { ownCopy, type PluginChoice, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
 import type { PluginShown } from "./plugins.ts";
 import { armPlugin, useLearn } from "./learn.ts";
 import { Slider } from "./Slider.tsx";
@@ -19,7 +19,9 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
   const cur = props.track.plugin;
   const [link, setLink] = useState<string | null>(null);
   const key = (c: { path: string; index: number; web?: boolean }) => `${c.web ? "w" : ""}${c.index}:${c.path}`;
-  const all = cur && !list?.some((c) => key(c) === key(cur)) ? [{ path: cur.path, index: cur.index, name: cur.name, vendor: "", web: cur.web }, ...(list ?? [])] : list ?? [];
+  // a friend's groove names the plugin in their folder: this computer's own copy is the one picked in the menu
+  const mine = cur && list ? ownCopy(cur, list) : null;
+  const all = cur && !mine ? [{ path: cur.path, index: cur.index, name: cur.name, vendor: "", web: cur.web }, ...(list ?? [])] : list ?? [];
   const at = link === null ? null : siteOf(link.trim(), location.href);
   if (link !== null) return (
     <form className="field inline" onSubmit={(e) => {
@@ -38,11 +40,11 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
   );
   return (
     <label className="field inline"><span className="silk">Plays</span>
-      <select value={cur ? key(cur) : ""} aria-label="What plays this track"
+      <select value={cur ? key(mine ?? cur) : ""} aria-label="What plays this track"
         onChange={(e) => {
           if (e.currentTarget.value === "link") return setLink("");
           const c = all.find((x) => key(x) === e.currentTarget.value);
-          props.onPlugin(c ? { path: c.path, index: c.index, name: c.name, ...(c.web ? { web: true } : {}), values: [] } : null);
+          props.onPlugin(c ? { path: c.path, index: c.index, ...(c.id ? { id: c.id } : {}), name: c.name, ...(c.web ? { web: true } : {}), values: [] } : null);
         }}>
         <option value="">FM synth</option>
         {all.length > 0 && <optgroup label="Plugins">

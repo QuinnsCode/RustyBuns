@@ -9,10 +9,17 @@ import { CROWD as PARK } from "../venues/park.ts";
 import { CROWD as FIRST_GIG } from "../venues/first-gig.ts";
 import { DANCE_FLOOR } from "../venues/desert.ts";
 import { DANCE } from "../venues/dj-booth.ts";
+import { CROWD as BAND_NIGHT } from "../venues/band-night.ts";
+import { AUDIENCE as SHOW } from "../venues/show.ts";
+import { CROWD as SMALL_ARENA } from "../venues/small-arena.ts";
+import { CROWD as ARENA } from "../venues/arena.ts";
+import { CROWD as FESTIVAL } from "../venues/festival.ts";
+import { CROWD as AMPHITHEATRE } from "../venues/amphitheatre.ts";
 
 export const SPOTS: Readonly<Record<string, CrowdSpot>> = {
   "first-gig": FIRST_GIG, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, desert: DANCE_FLOOR,
   "dj-booth": DANCE, "dj-booth-media": DANCE,
+  "band-night": BAND_NIGHT, show: SHOW, "small-arena": SMALL_ARENA, arena: ARENA, festival: FESTIVAL, amphitheatre: AMPHITHEATRE,
 };
 
 /** A level's crowd spot, or null where no crowd stands yet. */

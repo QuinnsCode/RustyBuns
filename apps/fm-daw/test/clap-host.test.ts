@@ -11,6 +11,8 @@ import { openBundle, pluginFader, pluginFolders, scanPlugins, trackLevel } from 
 import { demoProject } from "../src/presets.ts";
 import { apply, type Op } from "../src/project.ts";
 import { levelOp, muteOp } from "../src/remote/remote.ts";
+import { ownCopy, type PluginChoice } from "../src/plugin-track.ts";
+import { findPlugins, renderPlugin, startPlugin, stopPlugin } from "../src/actions/plugins.ts";
 
 const SR = 48000;
 const built = candidates("fm_daw", {}).find(existsSync);
@@ -54,6 +56,33 @@ test("a plugin found in the CLAP folder plays notes and its sliders move it", as
   expect(peak(play)).toBe(0);
   p.free();
   expect(p.render(new Float32Array(2), 1)).toBe(false);
+});
+
+test("a friend's groove plays this computer's own copy of the plugin, and without one says so", async () => {
+  // the groove's maker keeps the plugin in their own folder; nobody else has that path
+  const theirs = { path: "/Users/friend/Library/Audio/Plug-Ins/CLAP/Tone.clap", index: 0, name: "Tone", values: [] };
+  const here: PluginChoice[] = [
+    { path: "/Library/Audio/Plug-Ins/CLAP/Other.clap", index: 0, name: "Other", vendor: "", id: "com.example.other" },
+    { path: "/Library/Audio/Plug-Ins/CLAP/Pack.clap", index: 3, name: "Tone", vendor: "", id: "com.example.tone" },
+  ];
+  expect(ownCopy({ ...theirs, id: "com.example.tone" }, here)).toBe(here[1]!);
+  expect(ownCopy({ ...theirs, id: "com.example.missing" }, here)).toBeNull();
+  expect(ownCopy(theirs, here)).toBeNull();                                         // a groove from before ids: the path is all it has
+  expect(ownCopy(here[0]!, here)).toBe(here[0]!);
+  // the same file name holding another plugin isn't a copy
+  expect(ownCopy({ ...here[0]!, id: "com.example.tone" }, here)).toBe(here[1]!);
+
+  if (!built) return console.log("  (rest skipped: cdylib not built; run `bun run build:native`)");
+  const tone = (await findPlugins()).find((c) => c.name === "Test Tone")!;
+  expect(tone.id).toBeTruthy();
+  const started = await startPlugin(0, { ...theirs, id: tone.id }, SR);
+  expect(started.error).toBeUndefined();
+  expect(started.params.map((q) => q.name)).toEqual(["Level", "Shape"]);
+  const block = await renderPlugin({ track: 0, frames: 512, events: [{ t: "on", key: 69, vel: 1 }] });
+  expect(block.ok).toBe(true);
+  expect(new Float32Array(Uint8Array.from(Buffer.from(block.pcm, "base64")).buffer).some((x) => Math.abs(x) > 0.01)).toBe(true);
+  await stopPlugin(0);
+  expect((await startPlugin(0, { ...theirs, id: "com.example.missing" }, SR)).error).toBe("Tone isn't on this computer");
 });
 
 test("a plugin track's fader and mute, from the desk or the remote, set the plugin's level in the mix", () => {
