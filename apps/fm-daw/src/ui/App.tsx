@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
-import { connect, roomName, type Net, type NetStatus } from "./net.ts";
+import { connect, roomName, shareBounce, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
 import { ChatDock, useChat } from "./Chat.tsx";
@@ -124,7 +124,7 @@ export function App() {
   const [page, setPage] = useState(0);
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
-  const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string }>({ busy: false });
+  const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string; decks?: boolean }>({ busy: false });
   /** The track the input records onto while recording, or null with the input off. */
   const [armed, setArmed] = useState<number | null>(null);
   const [inputNote, setInputNote] = useState<string | null>(null);
@@ -644,6 +644,8 @@ export function App() {
       const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6), (id) => takeSound.current.get(id));
       e.free?.();
       const wav = encodeWav(pcm, sr);
+      // Online, the sesh keeps its last bounce, so a DJ's decks can play it by the sesh's name.
+      if (!solo && netStatus.state === "online") void shareBounce(wav, p.bpm).then((ok) => ok && setBounce((b) => ({ ...b, decks: true })));
       try {
         const path = await saveBounce("FM DAW", toBase64(wav));
         setBounce({ busy: false, path, saved: true });
@@ -897,6 +899,7 @@ export function App() {
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
         {bounce.error && <span className="err">{bounce.error}</span>}
+        {bounce.decks && <span className="dim" title="A DJ booth's deck plays this bounce: load the sesh's name on a deck in Sound Guy Simulator">On the decks as {roomName()}</span>}
         <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : bounceLoops(project) === 1 ? "Bounce the song to WAV" : "Bounce 4 loops to WAV"}</button>
       </footer>
 

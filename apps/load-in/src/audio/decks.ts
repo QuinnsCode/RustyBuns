@@ -2,9 +2,12 @@
 // so a mix is heard, each on a deck you start and stop, nudge in pitch, and bring up on its mixer channel's fader and
 // across the crossfader. The state and the mix are plain numbers (a test reads them); `deckSound` turns them into a
 // WebAudio node that play.ts plays through every fed speaker in place of the house loop, so the mix is heard by where
-// you stand. A turntable with no ground wire hums on its channel; a media player into a phono input distorts.
+// you stand. A turntable with no ground wire hums on its channel; a media player into a phono input distorts. A deck
+// can play an FM DAW sesh's bounce instead (audio/sesh-track.ts): the deck keeps the bounce's tempo, so its beat runs
+// as the sesh was made.
 import { clamp } from "@rustybuns/util";
 import { houseLoop } from "./play.ts";
+import { fetchBounce, FM_DAW } from "./sesh-track.ts";
 
 /** The two tracks: their tempo, the bass line and the stab's chord. */
 export const TRACKS = [
@@ -17,7 +20,8 @@ export const TRACK_BEATS = 128 * 6;
 /** The pitch fader's range, per cent either way. */
 export const PITCH_RANGE = 8;
 
-export type Deck = { playing: boolean; pitch: number; beat: number };
+/** `bpm` is the track's own tempo (the pitch fader moves it); `sesh` names the FM DAW sesh it is, "" for the deck's own track. */
+export type Deck = { playing: boolean; pitch: number; beat: number; bpm: number; sesh: string };
 export type Decks = {
   deck: [Deck, Deck];
   /** Channel faders 1 to 4, 0 (down) to 1 (up). */
@@ -27,7 +31,7 @@ export type Decks = {
 };
 
 export const newDecks = (): Decks => ({
-  deck: [{ playing: false, pitch: 0, beat: 0 }, { playing: false, pitch: 0, beat: 0 }],
+  deck: [{ playing: false, pitch: 0, beat: 0, bpm: TRACKS[0].bpm, sesh: "" }, { playing: false, pitch: 0, beat: 0, bpm: TRACKS[1].bpm, sesh: "" }],
   fader: [0.8, 0.8, 0.8, 0.8],
   cross: 0,
 });
@@ -39,7 +43,15 @@ export const setCross = (d: Decks, v: number) => void (d.cross = clamp(v, -1, 1)
 export const setPitch = (d: Decks, n: number, pct: number) => void (deckOf(d, n).pitch = clamp(pct, -PITCH_RANGE, PITCH_RANGE));
 
 /** A deck's tempo now: its track's, moved by the pitch fader. */
-export const bpmOf = (d: Decks, n: number) => TRACKS[n - 1]!.bpm * (1 + deckOf(d, n).pitch / 100);
+export const bpmOf = (d: Decks, n: number) => deckOf(d, n).bpm * (1 + deckOf(d, n).pitch / 100);
+/** What a deck has on: the sesh's name, or its own track's. */
+export const trackName = (d: Decks, n: number) => deckOf(d, n).sesh || TRACKS[clamp(Math.round(n), 1, 2) - 1]!.name;
+
+/** Put a track on a deck: an FM DAW sesh at the tempo it was bounced at, or (null) the deck's own track. It stops, cued to the top. */
+export function load(d: Decks, n: number, sesh: { sesh: string; bpm: number } | null) {
+  const own = TRACKS[clamp(Math.round(n), 1, 2) - 1]!;
+  Object.assign(deckOf(d, n), { playing: false, beat: 0, sesh: sesh?.sesh ?? "", bpm: sesh ? clamp(sesh.bpm, 40, 240) : own.bpm });
+}
 
 /** The clock runs: playing decks move through their tracks, and stop at the end. */
 export function tickDecks(d: Decks, dt: number) {
@@ -89,7 +101,7 @@ export const HUM_HZ = 60;
  * The decks in WebAudio: each track a looping buffer, started at its deck's place when it plays, its rate the pitch; a
  * gain per deck from the mix, a waveshaper that clips a deck that is overloading its input, and a hum per deck.
  */
-export function deckSound(ctx: AudioContext) {
+export function deckSound(ctx: AudioContext, fm = FM_DAW) {
   const out = ctx.createGain();
   const lanes = TRACKS.map((t) => {
     const data = houseLoop(ctx.sampleRate, t);
@@ -114,8 +126,25 @@ export function deckSound(ctx: AudioContext) {
     const cue = ctx.createGain();
     cue.gain.value = 0;
     dry.connect(cue).connect(ctx.destination);
-    return { buf, beatS: 60 / t.bpm, dry, clip, wet, gain, cue, hum, humGain, src: null as AudioBufferSourceNode | null };
+    return { own: buf, buf, beatS: 60 / t.bpm, sesh: "", dry, clip, wet, gain, cue, hum, humGain, src: null as AudioBufferSourceNode | null };
   });
+  type Lane = (typeof lanes)[number];
+  const restart = (l: Lane) => { if (l.src) { l.src.stop(); l.src.disconnect(); l.src = null; } };
+  /** A deck took another track: its own at once, a sesh's bounce once it has come and decoded (silent till then). */
+  const retrack = (l: Lane, i: number, sesh: string, bpm: number) => {
+    l.sesh = sesh;
+    restart(l);
+    if (!sesh) return void Object.assign(l, { buf: l.own, beatS: 60 / TRACKS[i]!.bpm });
+    l.buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    void fetchBounce(sesh, fm).then(async (b) => {
+      if (typeof b === "string" || l.sesh !== sesh) return;
+      const buf = await ctx.decodeAudioData(b.wav.slice(0));
+      if (l.sesh !== sesh) return;
+      Object.assign(l, { buf, beatS: 60 / bpm });
+      // Playing already (the room's DJ started it while it came): start again at the deck's place, on its beat.
+      restart(l);
+    }).catch(() => {});
+  };
   return {
     node: out as AudioNode,
     /** `cue` is the deck in the headphones (1 or 2), or 0 for none. */
@@ -123,6 +152,7 @@ export function deckSound(ctx: AudioContext) {
       const t = ctx.currentTime;
       lanes.forEach((l, i) => {
         const k = d.deck[i]!;
+        if (k.sesh !== l.sesh) retrack(l, i, k.sesh, k.bpm);
         if (k.playing && !l.src) {
           const s = ctx.createBufferSource();
           s.buffer = l.buf;

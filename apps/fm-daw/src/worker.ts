@@ -6,7 +6,7 @@
 // be private: the World keeps its code (hashed) and lets in only who brings it (?code= on /ws).
 import World, { type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby, { IDLE_MS } from "./lobby.ts";
-import { seshFromPath, seshName } from "./sesh.ts";
+import { bounceFromPath, seshFromPath, seshName } from "./sesh.ts";
 import Profile from "./profile.ts";
 import { personId } from "./chat.ts";
 import { RoomMintGate } from "@rustybuns/util/limits";
@@ -17,6 +17,8 @@ export { World, Lobby, Profile };
 const mintGate = new RoomMintGate();
 // A few sign-ups a minute from one address (each one a new key, so the gate counts them all).
 const signupGate = new RoomMintGate(3);
+// Seshes one address files bounces for a minute (each a few MB in the bucket; a sesh's next bounce replaces its last).
+const bounceGate = new RoomMintGate(6);
 // New profiles saved a minute from one address (a profile is one person's key).
 const profileGate = new RoomMintGate(10);
 const KEY = /^[0-9a-f]{32,64}$/;
@@ -68,6 +70,28 @@ export default {
       // an old ?room= link keeps its groove under the new address
       const old = url.searchParams.get("room")?.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 64);
       return Response.redirect(new URL(`/sesh/${old || seshName()}`, url).href, 302);
+    }
+    const bounce = bounceFromPath(url.pathname);
+    if (bounce) {
+      // Any page may play a sesh's bounce (a DJ's decks on another site), so the read is open to every origin.
+      const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "X-Bpm" };
+      if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors, "Access-Control-Allow-Methods": "GET" } });
+      if (req.method === "PUT" && ip && !bounceGate.allow(ip, bounce, Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
+      const headers = new Headers({ "X-Room": bounce });
+      const code = url.searchParams.get("code")?.slice(0, 32);
+      if (code) headers.set("X-Sesh-Code", code);
+      if (ip) headers.set("CF-Connecting-IP", ip);
+      const len = req.headers.get("Content-Length");
+      if (len) headers.set("Content-Length", len);
+      const key = url.searchParams.get("key")?.slice(0, 128);
+      const to = new URL("https://world/bounce");
+      if (key) to.searchParams.set("key", key);
+      const bpm = url.searchParams.get("bpm");
+      if (bpm) to.searchParams.set("bpm", bpm.slice(0, 16));
+      const r = await env.WORLD.get(env.WORLD.idFromName(bounce)).fetch(new Request(to, { method: req.method, headers, body: req.method === "PUT" ? req.body : undefined }));
+      const out = new Response(r.body, r);
+      if (req.method === "GET") for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
+      return out;
     }
     if (seshFromPath(url.pathname)) return env.ASSETS.fetch(new Request(new URL("/", url), req));
     if (url.pathname === "/me" && (req.method === "GET" || req.method === "PUT")) {
