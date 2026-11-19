@@ -6,11 +6,11 @@ import { existsSync } from "node:fs";
 import { candidates } from "@rustybuns/native";
 import { check, int, num, str } from "@rustybuns/util/guard";
 import { openBundle, scanPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
-import { PluginAskArgs, TrackPlugin, type BlockReply, type PluginChoice, type StartReply } from "../plugin-track.ts";
+import { ownCopy, PluginAskArgs, TrackPlugin, type BlockReply, type PluginChoice, type StartReply } from "../plugin-track.ts";
 
 const bundles = new Map<string, Bundle>();
 const playing = new Map<number, { plugin: HostedPlugin; failed: string | null }>();
-let found: Set<string> = new Set();
+let found: PluginChoice[] = [];
 
 async function bundle(path: string): Promise<Bundle | string> {
   const had = bundles.get(path);
@@ -24,26 +24,29 @@ async function bundle(path: string): Promise<Bundle | string> {
 export async function findPlugins(): Promise<PluginChoice[]> {
   // the desk's own native library is a `.clap` holding Test Tone: a dev build lists it, so there's always one to try
   const own = candidates("fm_daw", {}).find((p) => !p.startsWith("/$bunfs") && existsSync(p));
-  found = new Set([...scanPlugins(), ...(own ? [own] : [])]);
   const out: PluginChoice[] = [];
-  for (const path of found) {
+  for (const path of new Set([...scanPlugins(), ...(own ? [own] : [])])) {
     const b = await bundle(path);
     if (typeof b === "string") continue;
-    b.plugins.forEach((p, index) => out.push({ path, index, name: p.name, vendor: p.vendor }));
+    b.plugins.forEach((p, index) => out.push({ path, index, name: p.name, vendor: p.vendor, id: p.id }));
   }
+  found = out;
   return out;
 }
 
-/** Starts `plugin` on track `track` at the context's rate, with its moved sliders where they were. */
+/**
+ * Starts `plugin` on track `track` at the context's rate, with its moved sliders where they were. The groove may be a
+ * friend's, naming the `.clap` in their folder: this computer's own copy of the same plugin plays (`ownCopy`).
+ */
 export async function startPlugin(track: unknown, plugin: unknown, sampleRate: unknown): Promise<StartReply> {
   const t = check(int(0, 63), track), p = check(TrackPlugin, plugin), sr = check(num(8000, 384000), sampleRate);
   if (t === null || !p || sr === null) return { params: [], editor: false, error: "not a plugin track" };
   stop(t);
-  if (!found.has(p.path)) await findPlugins();
-  if (!found.has(p.path)) return { params: [], editor: false, error: `${p.name} isn't in the CLAP folders any more` };
-  const b = await bundle(p.path);
+  const mine = ownCopy(p, found) ?? ownCopy(p, await findPlugins());
+  if (!mine) return { params: [], editor: false, error: `${p.name} isn't on this computer` };
+  const b = await bundle(mine.path);
   if (typeof b === "string") return { params: [], editor: false, error: b };
-  const made = b.make(p.index, sr);
+  const made = b.make(mine.index, sr);
   if (typeof made === "string") return { params: [], editor: false, error: made };
   for (const { id, v } of p.values) made.setParam(id, v);
   playing.set(t, { plugin: made, failed: null });
