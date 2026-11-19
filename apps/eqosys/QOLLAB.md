@@ -185,7 +185,11 @@ How a person reaches their friends, from the easiest case to the hardest (owner,
 `src/qollab/board.ts`, `eqosys().board()` with its guards in `@rustybuns/util/board`, and the posts and reactions in account
 delete and the privacy export. An app takes part once `APPS` gives it a `board` (its kinds of post and its icons). Counts
 are added up on read rather than kept on the post's row, so a reaction taken back or an account deleted never leaves one
-behind. Not yet: the two apps' sign-in and pages, report and hide, and hiding a blocked person's posts. For Excalibrawl and What Would Fantano Say, whose people never meet in
+behind. Report and hide are built too (#5317): `POST /q/posts/<id>/report` files a row through the game-report path (the post's
+id and its author's opaque id, never the words), and an owner or admin of the app's studio hides a post with
+`PUT /q/posts/<id>/hidden` (a `hidden` column, left out of every feed; `DELETE` brings it back) or deletes it; in the page,
+`board().report(id)` and `board().hide(id, on)`. Not yet: the two apps' sign-in and pages, and hiding a blocked person's posts
+(eqosys has no blocking yet). For Excalibrawl and What Would Fantano Say, whose people never meet in
 a party: one person puts something up, and others react to it (owner, 2026-11-08). Neither app signs in through eqosys yet;
 that comes first (both are already in `APPS`).
 

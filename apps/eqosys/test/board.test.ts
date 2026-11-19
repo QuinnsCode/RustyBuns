@@ -1,19 +1,31 @@
 // Qollab posts and reactions, the everyday walk: one person posts a prompt, a visitor reads the feed signed out, another person
 // flames it, both see the count (only the presser as theirs), the flame is taken back, and the author takes the post down.
-import { expect, setDefaultTimeout, test } from "bun:test";
+// Then keeping it clean: a post is reported (a row on the game-report path), and the app's studio hides it, brings it back and deletes it.
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { Counts, PostList, PostMade, Pressed } from "@rustybuns/util/board";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD } from "./kit.ts";
+import { house } from "../src/studios.ts";
+import { ADMIN, asks, boot, codeIn, ORIGIN, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
-const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), GITHUB_REPORT_TOKEN: "test-token" });
+// The issue tracker, stood in for: what a report files.
+const real = globalThis.fetch, filed: { title: string; body: string }[] = [];
+beforeAll(() => {
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    if (!String(url).startsWith("https://api.github.com/")) return real(url as never, init);
+    filed.push(check(obj({ title: str(500), body: str(5000) }), JSON.parse(String(init?.body)))!);
+    return new Response(JSON.stringify({ number: 900 + filed.length }), { status: 201 });
+  }) as never;
+});
+afterAll(() => { globalThis.fetch = real; });
 const BRAWL = "https://excalibrawl.notryanquinn.workers.dev";
 
-async function signUp(name: string, app: string, origin: string) {
+async function signUp(name: string, app: string, origin: string, email = `${name.toLowerCase()}@example.com`) {
   const a = await asks(app, origin);
-  const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
+  const up = await call("/do/signup", { form: { ...a.form, name, email, password: PASSWORD } });
   return check(PostToken, await (await call("/api/exchange", { json: { app, code: codeIn(up.to), verifier: a.verifier } })).res.json())!.token;
 }
 const PostToken = obj({ token: str(4000) });
@@ -54,4 +66,35 @@ test("post, read signed out, react, both see the count, take it back, take the p
   expect((await ask("DELETE", `/q/posts/${post.id}`, bo)).status).toBe(404);
   expect((await ask("DELETE", `/q/posts/${post.id}`, ada)).status).toBe(200);
   expect((await read(await ask("GET", "/q/posts?app=excalibrawl&kind=prompt"), PostList)).posts).toEqual([]);
+});
+
+test("a reported post reaches the report path; the studio hides it, brings it back and deletes it", async () => {
+  const dee = await signUp("Dee", "excalibrawl", BRAWL), eli = await signUp("Eli", "excalibrawl", BRAWL);
+  // The house studio holds Excalibrawl, with the super admin as its owner.
+  const boss = await signUp("Boss", "excalibrawl", BRAWL, ADMIN);
+  await house(conf, (await conf.DB.prepare('SELECT id FROM "user" WHERE email = ?').bind(ADMIN).first<string>("id"))!);
+  const { post } = await read(await ask("POST", "/q/posts", dee, { kind: "prompt", text: "something rude" }), PostMade);
+  const feed = async () => (await read(await ask("GET", "/q/posts?app=excalibrawl&kind=prompt"), PostList)).posts.map((p) => p.id);
+
+  // Eli reports it: one issue, naming the post but not its words. Signed out, or on your own post, nothing is filed.
+  expect((await ask("POST", `/q/posts/${post.id}/report`)).status).toBe(401);
+  expect((await ask("POST", `/q/posts/${post.id}/report`, dee)).status).toBe(400);
+  expect((await ask("POST", `/q/posts/${post.id}/report`, eli)).status).toBe(200);
+  expect(filed.length).toBe(1);
+  expect(filed[0]!.title).toContain("[excalibrawl]");
+  expect(filed[0]!.body).toContain(post.id);
+  expect(filed[0]!.body).not.toContain("something rude");
+
+  // Only the studio hides: the post leaves both feeds, and comes back.
+  expect((await ask("PUT", `/q/posts/${post.id}/hidden`, eli)).status).toBe(403);
+  expect((await ask("PUT", `/q/posts/${post.id}/hidden`, boss)).status).toBe(200);
+  expect(await feed()).toEqual([]);
+  expect((await read(await ask("GET", "/q/posts?app=excalibrawl&kind=prompt&sort=top&since=0"), PostList)).posts).toEqual([]);
+  expect((await ask("DELETE", `/q/posts/${post.id}/hidden`, boss)).status).toBe(200);
+  expect(await feed()).toEqual([post.id]);
+
+  // The studio deletes someone else's post; another player still can't.
+  expect((await ask("DELETE", `/q/posts/${post.id}`, eli)).status).toBe(404);
+  expect((await ask("DELETE", `/q/posts/${post.id}`, boss)).status).toBe(200);
+  expect(await feed()).toEqual([]);
 });
