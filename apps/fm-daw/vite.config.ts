@@ -13,6 +13,6 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   server: { headers: isolation },
   preview: { headers: isolation },
-  // Five pages: the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room) and its studio builder (rooms.html).
-  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html") } } },
+  // Six pages: the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).
+  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html"), remote: resolve(__dirname, "remote.html") } } },
 });

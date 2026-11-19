@@ -1,0 +1,49 @@
+/* The remote: one column, phone first, every target at least 48 px. */
+:root {
+  --bg: #15171b; --soft: #23262c; --line: #3a3e45; --ink: #f4f1ea; --dim: #a9adb4; --accent: #ff6b4a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.3 "IBM Plex Sans", system-ui, sans-serif; }
+body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+#remote { max-width: 560px; margin: 0 auto; padding: 60px 16px calc(24px + env(safe-area-inset-bottom)); display: grid; gap: 14px; }
+header { display: flex; align-items: center; gap: 10px; }
+h1, h2 { font: 600 22px/1 "Barlow Condensed", system-ui, sans-serif; letter-spacing: .02em; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--dim); flex: none; }
+.dot.online { background: #7bd389; }
+.dot.offline, .dot.full { background: var(--accent); }
+.sign { margin-left: auto; color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; text-decoration: none; white-space: nowrap; }
+
+button { display: grid; place-items: center; min-width: 56px; min-height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--soft); color: var(--ink); cursor: pointer; padding: 0; }
+button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+
+input[type=range] { --fill: var(--accent); flex: 1; min-width: 0; height: 48px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; }
+input[type=range]::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: var(--line); }
+input[type=range]::-moz-range-track { height: 10px; border-radius: 5px; background: var(--line); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; margin-top: -12px; border-radius: 10px; background: var(--fill); border: 3px solid var(--bg); }
+input[type=range]::-moz-range-thumb { width: 28px; height: 28px; border-radius: 10px; background: var(--fill); border: 3px solid var(--bg); }
+input[type=range]:disabled { opacity: .4; }
+
+#top { display: flex; gap: 12px; align-items: center; }
+#top > button { min-width: 72px; min-height: 72px; border-radius: 50%; }
+.master { flex: 1; display: flex; align-items: center; gap: 8px; background: var(--soft); border-radius: 14px; padding: 4px 14px; color: var(--dim); }
+.why { margin: 0; color: var(--dim); font-size: 14px; }
+
+.card { --track: var(--accent); background: var(--soft); border: 2px solid var(--track); border-radius: 18px; padding: 14px; display: grid; gap: 10px; }
+.card.none { border-style: dashed; border-color: var(--line); color: var(--dim); }
+.card.none p { margin: 0; }
+.card h2 { color: var(--track); font-size: 28px; }
+.row { display: flex; gap: 12px; align-items: center; }
+.knobs { justify-content: space-around; }
+.knob { position: relative; width: 96px; height: 96px; border-radius: 50%; background: var(--bg); border: 2px solid var(--line); display: grid; place-items: center; color: var(--dim); touch-action: none; cursor: ns-resize; }
+.knob:focus-visible { outline: 3px solid var(--track, var(--accent)); outline-offset: 3px; }
+.knob .dial { position: absolute; inset: 6px; border-radius: 50%; transform: rotate(var(--turn)); }
+.knob .dial::before { content: ""; position: absolute; left: calc(50% - 3px); top: 2px; width: 6px; height: 22px; border-radius: 3px; background: var(--track, var(--accent)); }
+.knob[aria-disabled=true] { opacity: .4; cursor: not-allowed; }
+
+#strips { display: grid; gap: 6px; }
+.strip { display: flex; gap: 8px; align-items: center; }
+.strip .name { --track: var(--accent); width: 104px; flex: none; justify-content: start; padding: 0 10px; border-left: 6px solid var(--track); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; text-align: left; line-height: 56px; }
+.strip.mine .name { background: var(--track); color: var(--bg); }
+.strip.muted input { opacity: .45; }

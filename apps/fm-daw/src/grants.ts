@@ -5,7 +5,7 @@
 // hand) and the leader answers Yes or No. The World checks every message against this; the page only shows it.
 // Pure, so the World, the page and the tests share it.
 import { arr, bool, check, int, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
-import { TRACKS } from "./engine/params.ts";
+import { P, TRACKS } from "./engine/params.ts";
 import type { ClientMsg, Floor, Op } from "./project.ts";
 
 export const CANS = ["play", "edit", "mix", "lead"] as const;
@@ -96,8 +96,12 @@ export function mute(g: Grants, who: string, on: boolean): Grants {
 }
 export const isMuted = (g: Grants, who: string | undefined) => !!who && !!g.muted?.includes(who);
 
-/** What an edit needs: the desk (mutes, solos, EQ, amps, space and squash) is mix; the rest of the groove is edit. */
+/** A track's params that belong to the desk, not the patch: its level, pan, Space send and its own hi- and low-cut. */
+export const MIX_PARAMS: readonly number[] = [P.GAIN, P.PAN, P.SEND, P.HICUT, P.LOCUT];
+
+/** What an edit needs: the desk (mutes, solos, EQ, amps, levels, sends, space and squash, the room's level) is mix; the rest of the groove is edit. */
 export function opNeeds(op: Op): Can {
+  if (op.t === "param" && MIX_PARAMS.includes(op.i)) return "mix";
   if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase" || op.t === "amp") return "mix";
   if (op.t === "global" && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return "mix";
   return "edit";

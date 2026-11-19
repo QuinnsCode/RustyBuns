@@ -44,15 +44,16 @@ export interface TrackDoc {
  * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
  * eqLinear: Shape in linear phase (src/engine/linear.ts), only there when on.
  * instruments: the ones made in the jam room (src/studio/made.ts), each a seat at its track; only there when there are some.
+ * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
-  | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
+  | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number; master?: number }
   /** Shape on the master, or with `track` that track's own. */
   | { t: "eq"; bands: EqDoc; track?: number }
   | { t: "eqAuto"; lanes: Lane[] }
@@ -65,6 +66,10 @@ export type Op =
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   | { t: "replace"; project: Project };
 
+/** The room's level at its lowest, dB: silence. */
+export const MASTER_MIN = -60;
+/** The room's level as a gain, to multiply each listener's own master by. */
+export const roomGain = (p: Project) => (p.master ?? 0) <= MASTER_MIN ? 0 : Math.pow(10, (p.master ?? 0) / 20);
 export const BEATS_PER_BAR = 4;
 export const MAX_NOTES = 8192;
 export const MAX_LANES = 16;
@@ -155,7 +160,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -165,8 +170,11 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])) };
 }
+
+/** The room's level only below 0 dB, so a groove nobody turned down reads as before it had the field. */
+const masterOf = (db: number): { master?: number } => (db < 0 ? { master: db } : {});
 
 /** instruments only when there are some, so a groove nobody made one in reads as it did, one per track. */
 function madeOf(list: Instrument[]): { instruments?: Instrument[] } {
@@ -202,7 +210,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("notes"), track: TRACK, notes: (v: unknown) => sanitizeNotes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
-  obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
+  obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS), master: maybe(real) }),
   obj({ t: tag("eq"), bands: sanitizeEq, track: maybe(TRACK) }),
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("eqPhase"), linear: bool() }),
@@ -344,6 +352,7 @@ export function apply(p: Project, op: Op): Project {
         squash: num(0, 1, p.squash)(op.squash),
         bars,
       };
+      if (op.master !== undefined) { delete next.master; Object.assign(next, masterOf(num(MASTER_MIN, 0, p.master ?? 0)(op.master))); }
       // shrinking the loop drops notes past the new end
       return bars < p.bars ? { ...next, tracks: fitTakes(next.tracks.map((t) => ({ ...t, notes: sanitizeNotes(t.notes, bars * BEATS_PER_BAR) })), bars * BEATS_PER_BAR) } : next;
     }

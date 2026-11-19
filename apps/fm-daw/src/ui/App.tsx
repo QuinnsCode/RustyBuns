@@ -26,7 +26,7 @@ import { AmpPanel } from "./AmpPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { TakeInbox, encodeTake, newTakeId, toChunks } from "../take.ts";
-import { apply, audible, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { apply, audible, roomGain, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS, fromAddress } from "../songs.ts";
@@ -85,6 +85,8 @@ function opMsg(op: Op, next: Project): ToWorklet {
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
         if (op.squash !== undefined && op.space === undefined) return { t: "squash", amount: next.squash };
+        // the room's level alone: the master effect in App sends it, beside your own
+        if (op.space === undefined && op.squash === undefined) return { t: "audible", mask: audible(next) };
       }
       return loadMsg(next);
     default: return loadMsg(next);
@@ -324,7 +326,6 @@ export function App() {
       const a = await AudioOut.start(onWorklet);
       audioRef.current = a;
       a.send(loadMsg(proj.current));
-      a.send({ t: "master", gain: dbToGain(masterDb) });
       a.send({ t: "metro", on: metro });
       takesSent.current = [];
       syncTakes(proj.current);
@@ -333,6 +334,8 @@ export function App() {
   }
 
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
+  // what you hear: your own master, under the room's (the remote's master fader, src/remote/)
+  useEffect(() => { audio?.send({ t: "master", gain: dbToGain(masterDb) * roomGain(project) }); }, [audio, masterDb, project.master]);
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
@@ -684,7 +687,7 @@ export function App() {
           </div>
           <label className="field master"><span className="silk">Master {masterDb <= -60 ? "−∞" : `${masterDb} dB`}</span>
             <input type="range" min={-60} max={0} value={masterDb}
-              onChange={(e) => { const v = Number(e.currentTarget.value); setMasterDb(v); send({ t: "master", gain: dbToGain(v) }); }} />
+              onChange={(e) => { const v = Number(e.currentTarget.value); setMasterDb(v); }} />
           </label>
           <Meter />
           <button className="panic" onClick={panic} title="Stop all sound (Esc)">Panic</button>
