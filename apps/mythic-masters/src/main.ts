@@ -1653,7 +1653,10 @@ function draw(m: Match, alpha: number) {
   // a hit shakes the camera, hardest on the tick it lands
   shake *= Math.exp(-9 * alpha);
   shove.x *= Math.exp(-7 * alpha); shove.z *= Math.exp(-7 * alpha);
-  camera.position.x += shove.x; camera.position.z += shove.z;
+  // the shove never carries the view further out past the ring's edge: its outward part is dropped there (#5198)
+  const cr = Math.hypot(camera.position.x, camera.position.z), out = cr > 0.01 ? (shove.x * camera.position.x + shove.z * camera.position.z) / cr : 0;
+  const cut = out > 0 && cr > ARENA.radius - 2 ? out / cr : 0;
+  camera.position.x += shove.x - camera.position.x * cut; camera.position.z += shove.z - camera.position.z * cut;
   if (shake > 0.002) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
   // at chest height, a little past the middle toward them: you stay at the frame's edge, they hold its centre
   const aim = camMode === "side" ? 0.5 : 0.58, chest = 0.3 + tall * 0.35;
