@@ -292,6 +292,7 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
+  if (phase === "play") touch.relabel(ar?.pad() ?? {});
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? dj?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? band?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)

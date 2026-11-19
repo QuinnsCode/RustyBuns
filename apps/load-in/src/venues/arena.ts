@@ -8,7 +8,7 @@
 // a box. Plain data, no DOM; the page (arena-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import { type Area, type Grid, type Source, SPEED_OF_SOUND, coverage, gear as catalog, source } from "@rustybuns/gear";
-import { MAX_LIFT, REACH, WALK, type Answer, type Item, type Level, type World, carrySpeed, dims, over } from "../sim.ts";
+import { MAX_LIFT, REACH, WALK, type Answer, type Item, type Level, type World, aimed, carrySpeed, dims, over } from "../sim.ts";
 import { stow } from "../strike.ts";
 import { assist, feltKg } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
@@ -317,9 +317,45 @@ export function setSub(w: World, key: string, { delay, invert }: { delay?: numbe
 /** Put a feed on a leg of the company switch (or take it off with null): at the switch. */
 export function setLeg(w: World, feed: string, leg: Leg | null): Answer {
   if (!(FEEDS as readonly string[]).includes(feed)) return { ok: false, why: `no feed ${feed}` };
-  if (!near(w, SWITCH.x, SWITCH.z, REACH + 0.5)) return { ok: false, why: "the company switch is out of reach" };
+  if (!atSwitch(w)) return { ok: false, why: "the company switch is out of reach" };
   arena(w).legs[feed] = leg;
   return { ok: true };
+}
+/** Within reach of the company switch, where L moves a feed to its next leg (anywhere else L strikes, as on every level). */
+export const atSwitch = (w: World) => near(w, SWITCH.x, SWITCH.z, REACH + 0.5);
+/** The leg after `now` on the switch: off, L1, L2, L3, then off again. */
+export const nextLeg = (now: Leg | null): Leg | null => (now === null ? "L1" : now === "L3" ? null : LEGS[LEGS.indexOf(now) + 1]);
+
+// ---- the touch pad ----------------------------------------------------------------------------------------------
+
+/** One button's words on a phone: a short name on the key, the whole of it for the title and screen readers, and lit
+ * when it is the selected feed. */
+export type PadLabel = { glyph: string; what: string; on?: boolean };
+const FEED_GLYPH: Record<string, string> = { "main-l": "Main\nL", "main-r": "Main\nR", "side-l": "Side\nL", "side-r": "Side\nR", "tower-l": "Tower\nL", "tower-r": "Tower\nR", subs: "Subs" };
+
+/** What each arena key does right now, for the touch pad: the digits name the feeds, U says fly or lower for the
+ * selected hang, K says what the crew will do with what you look at, L is the leg at the switch. A key that does
+ * nothing different here is left out, so it keeps its own label. */
+export function pad(w: World, selected: string | null, tagged: string | null): Record<string, PadLabel> {
+  const a = arena(w), at = aimed(w), out: Record<string, PadLabel> = {};
+  FEEDS.forEach((f, n) => { out[`Digit${n + 1}`] = { glyph: FEED_GLYPH[f]!, what: `Select ${f}`, on: f === selected }; });
+  const hang = selected && selected !== "subs" ? selected : null, h = hang ? a.hangs[hang] : null;
+  const box = at?.gear === BOX && !reserved(w, at.key), piece = at && !reserved(w, at.key);
+  out.KeyK = box && hang ? { glyph: "Send", what: `Send the crew with ${at.key} to ${hang}'s fly bar` }
+    : piece ? { glyph: "Tag", what: `Tag ${at.key} for the crew, then press again where it goes` }
+    : tagged ? { glyph: "Here", what: `Send the crew with ${tagged} to where you stand` }
+    : { glyph: "Crew", what: "Look at a box or a sub to send the crew with it" };
+  out.KeyU = h?.flown ? { glyph: "Lower", what: `Lower ${hang} to the floor` } : { glyph: "Fly", what: hang ? `Fly ${hang} to trim` : "Pick a hang to fly" };
+  out.KeyR = { glyph: "Aim\nup", what: hang ? `Tilt ${hang} up a degree` : "Pick a hang to aim" };
+  out.KeyV = { glyph: "Aim\ndown", what: hang ? `Tilt ${hang} down a degree` : "Pick a hang to aim" };
+  const sub = at?.gear === "sub-18";
+  out.Comma = { glyph: "−ms", what: sub ? `${at.key} delay down half a millisecond` : hang ? `${hang} delay down 5 ms` : "Delay down" };
+  out.Period = { glyph: "+ms", what: sub ? `${at.key} delay up half a millisecond` : hang ? `${hang} delay up 5 ms` : "Delay up" };
+  out.KeyI = { glyph: "Flip", what: sub ? `Flip ${at.key}'s polarity` : "Look at a sub to flip its polarity" };
+  out.KeyH = { glyph: "Heat", what: "Heat map of the floor" };
+  out.Enter = { glyph: "Show", what: "Open the doors: show time" };
+  if (atSwitch(w) && selected) out.KeyL = { glyph: "Leg", what: `Put ${selected} on ${nextLeg(a.legs[selected] ?? null) ?? "no leg"}` };
+  return out;
 }
 
 /** What a feed draws at show level: a hang its flown boxes, the sub amps a share per sub on the floor. */
