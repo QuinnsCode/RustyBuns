@@ -15,7 +15,7 @@ function logged(start: () => Match, seed: number) {
 }
 
 test.each([
-  ["a hare against a spined tank", () => newMatch(creature("jackalope"), creature("hodag")), 3],
+  ["a hare against a spined tank", () => newMatch(creature("jackalope"), creature("hodag")), 1],
   ["a winged devil against the squonk", () => newMatch(creature("jersey-devil"), creature("squonk")), 5],
   ["two friends against a wild one", () => newTeamMatch([[creature("jackalope"), creature("agropelter")], [creature("hodag")]]), 7],
 ] as const)("a Mythic duel round-trips: %s", (_name, start, seed) => {
