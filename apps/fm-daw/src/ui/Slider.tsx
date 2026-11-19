@@ -16,8 +16,8 @@ export function Slider(props: {
   const fromPos = (x: number) => props.log ? lo * Math.pow(hi / lo, x) : lo + x * (hi - lo);
   const fmt = props.format ?? defaultFormat(props.unit);
   const learn = useLearn();
-  const cc = learn.map.find((m) => m.i === props.index)?.cc;
-  const armed = learn.armed?.i === props.index;
+  const cc = learn.map.find((m) => !m.plug && m.i === props.index)?.cc;
+  const armed = !learn.armed?.plug && learn.armed?.i === props.index;
   return (
     <label className={learn.on ? (armed ? "fader learn armed" : "fader learn") : "fader"}
       onPointerDown={() => arm(props.index, !!props.log, props.label)} onFocus={() => arm(props.index, !!props.log, props.label)}>

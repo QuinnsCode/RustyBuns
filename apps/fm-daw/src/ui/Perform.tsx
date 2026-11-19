@@ -119,7 +119,7 @@ function Learn() {
     {l.on && <span className="dim keys-help">{l.armed ? `Move a knob for ${l.armed.label}…` : "Touch a slider below…"}</span>}
     <ul className="learn-map" aria-label="MIDI mappings">
       {l.map.map((m) => (
-        <li key={m.cc}>CC {m.cc} → {paramName(m.i)}
+        <li key={m.cc}>CC {m.cc} → {m.plug ? `plugin slider ${m.plug.id}` : paramName(m.i)}
           {l.on && <button className="ghost" onClick={() => forget(m.cc)} title={`Forget CC ${m.cc}`} aria-label={`Forget CC ${m.cc}`}>×</button>}
         </li>
       ))}

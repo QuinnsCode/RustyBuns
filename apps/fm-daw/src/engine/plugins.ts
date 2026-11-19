@@ -9,7 +9,8 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
-import { arr, bool, int, num, obj, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, int, num, obj, type Guard, type Of } from "@rustybuns/util/guard";
+import { PluginInfo, PluginParam } from "../plugin-track.ts";
 import { audible, type Project } from "../project.ts";
 import { P } from "./params.ts";
 
@@ -39,15 +40,7 @@ export async function clapLib(): Promise<Lib | null> {
   return lib;
 }
 
-/** One plugin a `.clap` holds, as the track menu lists it. */
-export const PluginInfo = obj({ id: str(500), name: str(500), vendor: str(500, { min: 0 }), version: str(200, { min: 0 }), features: arr(str(200, { min: 0 }), 32) });
-export type PluginInfo = Of<typeof PluginInfo>;
-/** One of a running plugin's parameters: a slider, so MIDI learn works on it. */
-export const PluginParam = obj({
-  id: int(0, 2 ** 32 - 1), name: str(500), module: str(2000, { min: 0 }),
-  min: num(-1e300, 1e300), max: num(-1e300, 1e300), default: num(-1e300, 1e300), value: num(-1e300, 1e300), stepped: bool(),
-});
-export type PluginParam = Of<typeof PluginParam>;
+export { PluginInfo, PluginParam } from "../plugin-track.ts";
 /** A knob the plugin turned itself (in its own editor): the slider for `id` moves to `value`. */
 export const ParamChange = obj({ id: int(0, 2 ** 32 - 1), value: num(-1e300, 1e300) });
 export type ParamChange = Of<typeof ParamChange>;

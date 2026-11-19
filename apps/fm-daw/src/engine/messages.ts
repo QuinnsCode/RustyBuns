@@ -3,9 +3,10 @@ import type { Lane, Note } from "../project.ts";
 import type { RecordedMove } from "./sequencer.ts";
 import type { EqDoc, EqListen } from "./eq.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
+import type { PluginEvent } from "../plugin-track.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[] }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[]; plugins: boolean[] }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
@@ -19,6 +20,12 @@ export type ToWorklet =
   | { t: "trackEq"; track: number; bands: EqDoc }
   /** A track's Amp insert (src/amp/insert.ts), or null for none. */
   | { t: "amp"; track: number; amp: TrackAmp | null }
+  /** A hosted plugin plays this track (src/engine/plugin-route.ts), or its FM voice again. */
+  | { t: "plugin"; track: number; on: boolean }
+  /** A plugin slider moved: on to the host in order with the notes. */
+  | { t: "pluginParam"; track: number; id: number; v: number }
+  /** A block of a plugin track's sound from the host, interleaved stereo at the context's rate; `ok` false: it failed. */
+  | { t: "pluginBlock"; track: number; pcm: Float32Array; ok: boolean }
   /** Hear the input through the armed track's amp. Every `arm` turns it off, so the input starts muted. Not saved. */
   | { t: "monitor"; on: boolean }
   /** A held dot: hear only this range until null. Not saved, not bounced. */
@@ -59,8 +66,10 @@ export type ToWorklet =
   | { t: "send"; on: boolean; inLatency: number };
 
 export type FromWorklet =
-  | { t: "tick"; pos: number; abs: number; synced: boolean; late: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number }
+  | { t: "tick"; pos: number; abs: number; synced: boolean; late: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number; pluginMisses: number }
   | { t: "rec"; track: number; note: Note }
+  /** More of a plugin track's sound, please, and the notes and slider moves since the last ask. */
+  | { t: "pluginAsk"; track: number; frames: number; events: PluginEvent[] }
   | ({ t: "move" } & RecordedMove)
   | { t: "engine"; kind: "ts" | "rust"; error?: string }
   /** A pass of the input recorded on the armed track: mono at `rate`, starting where the player heard `beat`. */

@@ -13,6 +13,8 @@ export function PatchEditor(props: {
   onReset(): void;
   onAudition(): void;
   onSound(s: Sound): void;
+  /** What plays the track (the track menu), beside the title. */
+  head?: React.ReactNode;
 }) {
   const { track: t, onParam } = props;
   const p = t.params;
@@ -22,6 +24,7 @@ export function PatchEditor(props: {
     <section className="patch" style={{ "--track": props.color } as React.CSSProperties} aria-label={`${t.name} sound`}>
       <header className="patch-head">
         <h2>{t.name} <span className="dim">· {analog ? "analog" : "4-op FM"}</span></h2>
+        {props.head}
         <div className="seg" role="radiogroup" aria-label="Voice">
           <button role="radio" aria-checked={!analog} className={analog ? "" : "on"} onClick={() => onParam(P.MODE, 0)}>FM</button>
           <button role="radio" aria-checked={analog} className={analog ? "on" : ""} onClick={() => onParam(P.MODE, 1)}>Analog</button>
