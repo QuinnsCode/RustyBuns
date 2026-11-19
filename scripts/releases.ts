@@ -1,4 +1,4 @@
-// Releases: every QuinnsCode repo in a row, then every app inside RustyBuns, busiest first. A dot for where it stands
+// Releases: every app inside RustyBuns in a row, then every QuinnsCode repo, busiest first. A dot for where it stands
 // (green live, red error, yellow testing and not released yet, grey a code example only), the PRs merged today and
 // this week, and its prod link. RustyBuns' apps come from the bridge's scan (scripts/bridge.ts: live pings, release
 // tags, hourly CI); the other repos from gh (homepage as the prod link, the default branch's last run). Which apps are
@@ -130,9 +130,9 @@ tr:last-child td { border-bottom: 0; }
 a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 2px; }
 </style>
 <main>
-  <header><h1>Releases</h1><p>Every repo, then every app in RustyBuns. Busiest first. Scanned ${esc(when)}; "today" starts at midnight.</p></header>
-  <section><h2><b>Repos</b> ${d.repos.length} on QuinnsCode</h2><div class="legend">${legend(d.repos)}</div>${table(d.repos, "repos")}</section>
+  <header><h1>Releases</h1><p>Every app in RustyBuns, then every repo. Busiest first. Scanned ${esc(when)}; "today" starts at midnight.</p></header>
   <section><h2><b>Apps in RustyBuns</b> ${d.apps.length}</h2><div class="legend">${legend(d.apps)}</div>${table(d.apps, "apps")}</section>
+  <section><h2><b>Repos</b> ${d.repos.length} on QuinnsCode</h2><div class="legend">${legend(d.repos)}</div>${table(d.repos, "repos")}</section>
 </main>`;
 }
 
@@ -143,7 +143,7 @@ if (import.meta.main) {
   const out = args[args.indexOf("--html") + 1];
   if (args.includes("--json")) console.log(JSON.stringify(d, null, 2));
   else if (args.includes("--html") && out) { writeFileSync(out, page(d)); console.log(`Wrote ${out}`); }
-  else for (const [title, rows] of [["Repos", d.repos], ["Apps in RustyBuns", d.apps]] as const) {
+  else for (const [title, rows] of [["Apps in RustyBuns", d.apps], ["Repos", d.repos]] as const) {
     console.log(`\n${title}`);
     for (const r of rows) console.log(`${{ live: "●", error: "✕", testing: "◐", code: "·" }[r.dot]} ${r.name.padEnd(28)} ${String(r.today).padStart(3)} ${String(r.week).padStart(4)}  ${r.link ?? "-"}`);
   }
