@@ -1,9 +1,10 @@
 // The dive bar on the page: the counter, the stage and the crowd area marked on the floor, the coverage heat map
 // (painted only when something moved, not every frame; mids and highs or the sub's bass), the aim keys and the score
-// card (touch.ts has the aim keys' touch pad). main.ts calls `barView`
+// card (touch.ts has the aim keys' touch pad). The card holds only the scores: each key is named in the centre prompt
+// when you look at what it works on (`aimHint`, `roomHint`). main.ts calls `barView`
 // once per world and then `keys` and `update`; everything else stays in here.
 import * as THREE from "three";
-import { aimed, type World } from "../sim.ts";
+import { aimed, facing, type World } from "../sim.ts";
 import type { Band } from "@rustybuns/gear";
 import { CROWD, FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, aim, crowdState, heat, master, raise, rig, scores, show, type Score } from "./dive-bar.ts";
 import { crowdOf, letIn } from "../crowd/crowd.ts";
@@ -36,7 +37,28 @@ export function aimKey(w: World, code: string): boolean {
   return false;
 }
 
+/** The keys that work on the gear you look at, for the centre prompt: turn and tilt on a top or a front fill, Z / X on a
+ * stand (or the top sat on one), the fader on the mixer. "" when you look at nothing they work on. */
+export function aimHint(w: World): string {
+  const at = aimed(w);
+  if (!at) return "";
+  const speaker = at.gear.startsWith("top-") || at.gear === "fill-8-powered";
+  const stand = at.gear === "stand-tripod" || w.items.some((s) => s.gear === "stand-tripod" && Math.hypot(s.x - at.x, s.z - at.z) < 0.05);
+  return [...(speaker ? ["Q / E turn", "R / V tilt"] : []), ...(stand ? ["Z / X stand"] : []), ...(at.gear.startsWith("mixer-") ? [`[ ] fader, ${rig(w).master} dB`] : [])].join(", ");
+}
+
+/** The keys that work on the room, shown when you look at the part they work on with no gear in the way: H when you
+ * look down at the floor (the heat map is painted on it), Enter when you face the street door from inside. */
+export function roomHint(w: World, map: { on: boolean; band: Band }, opened: boolean): string {
+  const { you } = w, r = w.level.room;
+  if (you.pitch < -0.45) return !map.on ? "H heat map" : map.band === "high" ? "H bass map (mids now)" : "H map off (bass now)";
+  const dx = (r.x0 + r.x1) / 2 - you.x, dz = r.z1 - you.z, d = Math.hypot(dx, dz), f = facing(you.yaw);
+  return !opened && dz > 0 && d < 5 && (dx * f.x + dz * f.z) / d > 0.9 ? "Enter open the doors" : "";
+}
+
 export type BarView = {
+  /** The centre prompt with your hands free and no gear in front of you: the key for the part of the room you look at. */
+  look(): string;
   /** A key while playing with hands free; true when the dive bar used it. */
   key(code: string): boolean;
   /** Each frame: repaint the heat map if anything moved, refresh the card. */
@@ -115,18 +137,18 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
       if (code === "Enter") return view.doors(), true;
       return aimKey(w, code);
     },
+    look: () => roomHint(getWorld(), { on: view.heatOn, band: view.band }, !!opened),
     update() {
       const w = getWorld(), sig = signature(w);
       if (sig !== seen) { seen = sig; paint(w); }
       people.update(w, crowdOf(w));
       const s = last!, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       info.innerHTML = `<b>${opened ? "Doors open" : "Dive bar"}</b>`
-        + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span><span>Bar ${s.gap === null ? "silent" : `${s.gap.toFixed(0)} dB under`}</span>`
+        + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span><span>Bar ${s.gap === null ? "silent" : `${Math.abs(Math.round(s.gap))} dB ${Math.round(s.gap) < 0 ? "over" : "under"}`}</span>`
         + `<span>Room full: crowd ${db(full!.crowd)}, score ${full!.score}</span>`
-        + `<span>Bass ${Math.round(s.bass * 100)}% even</span><span>Fader ${rig(w).master} dB${view.heatOn ? `, map: ${view.band === "low" ? "bass" : "mids"}` : ""}</span>` + (opened
+        + `<span>Bass ${Math.round(s.bass * 100)}% even</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid $${opened.pay} of $${opened.fee}</span>`
-          : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
-        + `<small>H heat map (mids, bass), Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter doors</small>`;
+          : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`);
     },
     doors() {
       const w = getWorld();

@@ -13,7 +13,7 @@ import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { CONNECTOR_NAME } from "./cables/ends.ts";
 import { CROWD, DIVE_BAR, aim, barState, crowdState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
-import { type BarView, barView } from "./venues/dive-bar-view.ts";
+import { type BarView, aimHint, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { FIRST_GIG, gigState, runsOf } from "./venues/first-gig.ts";
@@ -353,7 +353,11 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a roll of cable";
   const sw = at && hasSwitch(at.gear, !!big || !!foh || !!gig || !!band) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
-  if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}`;
+  // Under the F line, the venue's own keys for this piece of gear (turn, tilt, stand, fader).
+  const own = bar ? aimHint(world) : "";
+  if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}${own && `\n${own}`}`;
+  const room = bar && "look" in bar ? bar.look() : "";
+  if (room) return room;
   return idlePrompt(world, cables, switchedOn, { doors: !!(bar || big || gig || band || arena || ar), open: doorsOpen });
 }
 
@@ -375,7 +379,11 @@ document.addEventListener("keydown", (e) => {
 /** A key while playing, from the keyboard or a touch button: the venue's view first, then the hands. */
 function press(code: string) {
   if (code === "Enter" && (bar || big)) return void openDoors();
-  if (!world.held && !cable.inHand(cables) && bar?.key(code)) return;
+  if (!world.held && !cable.inHand(cables) && bar?.key(code)) {
+    // The dive bar's fader has no line on the card: say where it went.
+    if (code.startsWith("Bracket") && "look" in bar) flash = { text: `Fader ${rig(world).master} dB`, until: performance.now() + 1800 };
+    return;
+  }
   if (!cable.inHand(cables) && arena?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && amp?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && ar?.key(code)) return;

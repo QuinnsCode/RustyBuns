@@ -4,6 +4,7 @@
 // fades at the front, so carry it to the stage, and pass. The same calls `window.loadIn` makes.
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown, type World, walkTo } from "../src/sim.ts";
+import { aimHint, roomHint } from "../src/venues/dive-bar-view.ts";
 import { DIVE_BAR, PASS, aim, raise, score, settle, sources } from "../src/venues/dive-bar.ts";
 
 const DEG = Math.PI / 180;
@@ -64,4 +65,43 @@ test("a silent room scores nothing; tops at the wall score low; aimed at the cro
   expect(aimed.crowd!).toBeGreaterThan(95);
   expect(aimed.gap!).toBeGreaterThan(4);
   expect(raise(w, "top-r", 1.8)).toEqual({ ok: false, why: '12" two-way powered speaker isn\'t a stand' });
+});
+
+test("the centre prompt names a key only when you look at what it works on", () => {
+  const w = newWorld(DIVE_BAR), map = { on: false, band: "high" as const };
+  // The test is about where you look, so it stands you at each spot instead of threading the gear at the door.
+  const standAt = (x: number, z: number, yaw: number) => Object.assign(w.you, { x, z, yaw });
+  // One top carried to its stand at the stage: it turns and tilts, and has the stand's keys too.
+  carry(w, "stand-l", -1.7, 2.0);
+  carry(w, "top-l", -1.7, 1.95);
+  expect(aimHint(w)).toBe("Q / E turn, R / V tilt, Z / X stand");
+
+  // Back at the door: the top still on the floor only turns and tilts, the mixer has the fader (with where it is
+  // now), the bare stand has only Z / X.
+  standAt(-0.4, 11.3, 0);
+  expect(aimHint(w)).toBe("Q / E turn, R / V tilt");
+  standAt(-1.6, 10.5, Math.PI);
+  expect(aimHint(w)).toBe("[ ] fader, -14 dB");
+  standAt(1.6, 9.9, Math.PI);
+  expect(aimHint(w)).toBe("Z / X stand");
+
+  // Out on the floor, looking at nothing: no keys.
+  standAt(0.5, 8, 0);
+  expect(aimHint(w)).toBe("");
+  expect(roomHint(w, map, false)).toBe("");
+
+  // The heat map is on the floor: look down for H, which says what the next press does.
+  walkTo(w, 0.7, 6);
+  w.you.yaw = 0;
+  w.you.pitch = -0.6;
+  expect(roomHint(w, map, false)).toBe("H heat map");
+  expect(roomHint(w, { on: true, band: "high" }, false)).toBe("H bass map (mids now)");
+  // Face the street door from inside for Enter, until the doors are open.
+  walkTo(w, 0, 9.5);
+  w.you.yaw = Math.PI;
+  w.you.pitch = 0;
+  expect(roomHint(w, map, false)).toBe("Enter open the doors");
+  expect(roomHint(w, map, true)).toBe("");
+  w.you.yaw = 0;
+  expect(roomHint(w, map, false)).toBe("");
 });
