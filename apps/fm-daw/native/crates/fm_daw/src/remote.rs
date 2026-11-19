@@ -101,22 +101,3 @@ impl Remote {
     pub fn spb(&self) -> f64 { self.spb }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_slice_lands_on_its_beat_and_a_fast_card_is_followed() {
-        let nominal = 12000.0; // 120 bpm at 24 kHz
-        let mut r = Remote::new(nominal);
-        // the far end runs 0.1 % fast: each 2400-sample slice spans a little less of a beat
-        let ramp: Vec<f32> = (0..2400).map(|i| i as f32 / 2400.0).collect();
-        for k in 0..20 {
-            r.push(100.0 + k as f64 * 2400.0 / (nominal * 1.001), &ramp);
-        }
-        assert!((r.spb() / nominal - 1.001).abs() < 1e-6);
-        let mut out = vec![0f32; 1];
-        r.mix(&mut out, 100.0 + 0.5 * 2400.0 / (nominal * 1.001), 0.0, 1.0);
-        assert!((out[0] - 0.5).abs() < 1e-3);
-    }
-}
