@@ -2,6 +2,7 @@
 // (#5244). `pluginFolders` and `scanPlugins` find the `.clap` files where plugin installers put them; `openBundle`
 // loads one and lists the plugins inside; `make` starts one, and from then on this side only sends notes and
 // parameter changes, and asks for blocks of its sound (interleaved stereo, the layout `fm_render` writes).
+// `openEditor` opens the plugin's own editor as a native window (#5267), and `changes` hands back the knobs turned in it.
 // null from `clapLib` => no native build for this platform (or Cloudflare): no plugin tracks.
 import { FFIType, ptr } from "bun:ffi";
 import { readdirSync, statSync } from "node:fs";
@@ -24,6 +25,11 @@ export const clapSymbols = {
   fm_clap_note_on: { args: [FFIType.ptr, FFIType.u32, FFIType.f64, FFIType.u32], returns: FFIType.void },
   fm_clap_note_off: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.void },
   fm_clap_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_clap_editor: { args: [FFIType.ptr], returns: FFIType.u32 },
+  fm_clap_open_editor: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_clap_close_editor: { args: [FFIType.ptr], returns: FFIType.void },
+  fm_clap_pump: { args: [FFIType.ptr], returns: FFIType.u32 },
+  fm_clap_changes: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
 } as const;
 
 type Lib = NonNullable<Awaited<ReturnType<typeof loadNative<typeof clapSymbols>>>>;
@@ -42,6 +48,13 @@ export const PluginParam = obj({
   min: num(-1e300, 1e300), max: num(-1e300, 1e300), default: num(-1e300, 1e300), value: num(-1e300, 1e300), stepped: bool(),
 });
 export type PluginParam = Of<typeof PluginParam>;
+/** A knob the plugin turned itself (in its own editor): the slider for `id` moves to `value`. */
+export const ParamChange = obj({ id: int(0, 2 ** 32 - 1), value: num(-1e300, 1e300) });
+export type ParamChange = Of<typeof ParamChange>;
+/** How a plugin's own editor opens: in a window of its own, inside one of ours, or not at all here. */
+export type EditorKind = "floating" | "window" | null;
+/** How often an open editor's window gets its events, and what the plugin asked for is done. */
+export const PUMP_MS = 16;
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 
@@ -64,6 +77,14 @@ export interface HostedPlugin {
   noteOff(key: number, channel?: number): void;
   /** Adds `frames` of its sound into `out` (interleaved stereo). False once the plugin has failed: silent from then on. */
   render(out: Float32Array, frames: number): boolean;
+  /** How its own editor opens here; null when it has none (or only one this OS can't hold yet). */
+  readonly editor: EditorKind;
+  /** Opens its editor as a native window titled `title` beside the app (or brings it forward); a string says why not.
+   *  `onClose` runs when the player closes the window. */
+  openEditor(title: string, onClose?: () => void): true | string;
+  closeEditor(): void;
+  /** Knobs it turned itself since last asked (last value per parameter), for the desk's sliders. Ask after `render`. */
+  changes(): ParamChange[];
   free(): void;
 }
 
@@ -93,14 +114,28 @@ export async function openBundle(path: string): Promise<Bundle | string> {
       const ph = l.fm_clap_new(h, index >>> 0, sampleRate);
       if (!ph) return lastError(l);
       let alive = true;
+      let pump: ReturnType<typeof setInterval> | undefined, closed: (() => void) | undefined;
+      const stop = () => { clearInterval(pump); pump = undefined; const c = closed; closed = undefined; c?.(); };
+      const editor = ([null, "floating", "window"] as const)[l.fm_clap_editor(ph)] ?? null;
       return {
+        editor,
+        openEditor(title, onClose) {
+          if (!alive) return "the plugin has stopped";
+          const t = enc.encode(title);
+          if (l.fm_clap_open_editor(ph, t.length ? ptr(t) : null, t.length) !== 1) return lastError(l);
+          if (onClose) closed = onClose;
+          pump ??= setInterval(() => { if (!alive || l.fm_clap_pump(ph) !== 1) stop(); }, PUMP_MS);
+          return true;
+        },
+        closeEditor: () => { if (alive) l.fm_clap_close_editor(ph); clearInterval(pump); pump = undefined; closed = undefined; },
+        changes: () => alive ? json(arr(ParamChange, 4096), text((o, c) => l.fm_clap_changes(ph, o ? ptr(o) : null, c))) : [],
         info,
         params: () => alive ? json(arr(PluginParam, 4096), text((o, c) => l.fm_clap_params(ph, o ? ptr(o) : null, c))) : [],
         setParam: (id, v) => { if (alive && Number.isFinite(v)) l.fm_clap_set_param(ph, id >>> 0, v); },
         noteOn: (k, v, ch = 0) => { if (alive) l.fm_clap_note_on(ph, k >>> 0, v, ch >>> 0); },
         noteOff: (k, ch = 0) => { if (alive) l.fm_clap_note_off(ph, k >>> 0, ch >>> 0); },
         render: (out, frames) => alive && l.fm_clap_render(ph, ptr(out), Math.min(frames, out.length >> 1) >>> 0) === 1,
-        free: () => { if (alive) { alive = false; l.fm_clap_free(ph); } },
+        free: () => { if (alive) { clearInterval(pump); pump = undefined; closed = undefined; alive = false; l.fm_clap_free(ph); } },
       };
     },
     close: () => { if (open) { open = false; l.fm_clap_close(h); } },

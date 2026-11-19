@@ -14,8 +14,10 @@
 //! tested) without anyone's plugin installed.
 
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+pub mod gui;
 pub mod tone;
 
 // ---- the CLAP ABI (clap/include/clap/*.h, version 1.2) ----
@@ -309,8 +311,33 @@ impl Drop for Bundle {
 
 // ---- the host side a plugin sees ----
 
-unsafe extern "C" fn host_get_extension(_: *const ClapHost, _: *const c_char) -> *const c_void { std::ptr::null() }
+/// What a plugin asked of the host since the last [`Plugin::pump`]. A plugin may ask from any thread, so it's atomics.
+#[derive(Default)]
+pub struct HostState {
+    /// `clap.host.gui closed`: its editor went away (the player closed a floating window, or it lost its window).
+    pub closed: AtomicBool,
+    /// `request_callback`: it wants `on_main_thread` called.
+    pub callback: AtomicBool,
+    /// `clap.host.params request_flush`: it has parameter moves to hand over while no block is running.
+    pub flush: AtomicBool,
+    /// `clap.host.gui request_resize`: the editor wants this size; 0 while it wants none.
+    pub resize: AtomicU64,
+}
+
+unsafe fn state<'a>(h: *const ClapHost) -> Option<&'a HostState> {
+    if h.is_null() { return None; }
+    ((*h).host_data as *const HostState).as_ref()
+}
+
+unsafe extern "C" fn host_get_extension(_: *const ClapHost, id: *const c_char) -> *const c_void {
+    if id.is_null() { return std::ptr::null(); }
+    let id = CStr::from_ptr(id);
+    if id == gui::HOST_GUI { &gui::HOST_GUI_EXT as *const gui::ClapHostGui as *const c_void }
+    else if id == gui::HOST_PARAMS { &gui::HOST_PARAMS_EXT as *const gui::ClapHostParams as *const c_void }
+    else { std::ptr::null() }
+}
 unsafe extern "C" fn host_request(_: *const ClapHost) {}
+unsafe extern "C" fn host_request_callback(h: *const ClapHost) { if let Some(s) = state(h) { s.callback.store(true, Ordering::Release); } }
 
 /// The events queued for the next block: notes and parameter values, all at the block's start.
 #[repr(C)]
@@ -322,8 +349,25 @@ unsafe extern "C" fn in_get(list: *const ClapInputEvents, i: u32) -> *const Clap
     let q = &*((*list).ctx as *const Vec<Event>);
     q.get(i as usize).map_or(std::ptr::null(), |e| &e.header as *const ClapEventHeader)
 }
-/// What a plugin says back (its own parameter moves, note ends) is dropped for now.
-unsafe extern "C" fn out_push(_: *const ClapOutputEvents, _: *const ClapEventHeader) -> bool { true }
+/// What a plugin says back: its own parameter moves (a knob turned in its editor) are kept, last value per
+/// parameter, for the desk's sliders; the rest (note ends, gestures) is dropped.
+unsafe extern "C" fn out_push(list: *const ClapOutputEvents, e: *const ClapEventHeader) -> bool {
+    if list.is_null() || e.is_null() || (*list).ctx.is_null() { return true; }
+    let h = std::ptr::read_unaligned(e);
+    if h.space_id != 0 || h.kind != EVENT_PARAM_VALUE || (h.size as usize) < std::mem::size_of::<ClapEventParamValue>() { return true; }
+    let ev = std::ptr::read_unaligned(e as *const ClapEventParamValue);
+    if !ev.value.is_finite() { return true; }
+    let changes = &mut *((*list).ctx as *mut Vec<(u32, f64)>);
+    match changes.iter().position(|c| c.0 == ev.param_id) {
+        Some(i) => changes[i].1 = ev.value,
+        None if changes.len() < MAX_CHANGES => changes.push((ev.param_id, ev.value)),
+        None => {}
+    }
+    true
+}
+
+/// Parameter moves kept between asks past this are dropped (a plugin has fewer parameters than this).
+pub const MAX_CHANGES: usize = 4096;
 
 /// One of a plugin's parameters, for a slider.
 pub struct Param { pub id: u32, pub name: String, pub module: String, pub min: f64, pub max: f64, pub default: f64, pub value: f64, pub stepped: bool }
@@ -337,8 +381,13 @@ pub const MAX_EVENTS: usize = 1024;
 pub struct Plugin {
     _bundle: Arc<Bundle>,
     _host: Box<ClapHost>,
+    host_state: Box<HostState>,
+    name: String,
     plugin: *const ClapPlugin,
     params: *const ClapPluginParams,
+    gui: *const gui::ClapPluginGui,
+    editor: Option<gui::Editor>,
+    changes: Vec<(u32, f64)>,
     queue: Vec<Event>,
     inputs: Vec<Vec<Vec<f32>>>,
     outputs: Vec<Vec<Vec<f32>>>,
@@ -369,10 +418,11 @@ impl Plugin {
     pub fn new(bundle: &Arc<Bundle>, index: u32, sample_rate: f64) -> Result<Plugin, String> {
         let d = bundle.describe(index).ok_or("no plugin at that index")?;
         let id = CString::new(d.id.clone()).map_err(|_| "a plugin id with a NUL in it")?;
+        let host_state = Box::new(HostState::default());
         let host = Box::new(ClapHost {
-            clap_version: CLAP_VERSION, host_data: std::ptr::null_mut(),
+            clap_version: CLAP_VERSION, host_data: &*host_state as *const HostState as *mut c_void,
             name: HOST_NAME.as_ptr(), vendor: HOST_VENDOR.as_ptr(), url: HOST_URL.as_ptr(), version: HOST_VERSION.as_ptr(),
-            get_extension: host_get_extension, request_restart: host_request, request_process: host_request, request_callback: host_request,
+            get_extension: host_get_extension, request_restart: host_request, request_process: host_request, request_callback: host_request_callback,
         });
         unsafe {
             let f = bundle.factory;
@@ -381,6 +431,7 @@ impl Plugin {
             if !((*plugin).init)(plugin) { ((*plugin).destroy)(plugin); return Err(format!("{} refused to start", d.name)); }
             let params = ((*plugin).get_extension)(plugin, EXT_PARAMS.as_ptr()) as *const ClapPluginParams;
             let aports = ((*plugin).get_extension)(plugin, EXT_AUDIO_PORTS.as_ptr()) as *const ClapPluginAudioPorts;
+            let gui = ((*plugin).get_extension)(plugin, gui::EXT_GUI.as_ptr()) as *const gui::ClapPluginGui;
             let inputs = ports(plugin, aports, true);
             let outputs = ports(plugin, aports, false);
             if !((*plugin).activate)(plugin, sample_rate, 1, MAX_FRAMES as u32) {
@@ -388,8 +439,8 @@ impl Plugin {
                 return Err(format!("{} won't run at {sample_rate} Hz", d.name));
             }
             Ok(Plugin {
-                _bundle: bundle.clone(), _host: host, plugin, params, queue: Vec::with_capacity(MAX_EVENTS),
-                inputs, outputs, steady: 0, processing: false, broken: false,
+                _bundle: bundle.clone(), _host: host, host_state, name: d.name, plugin, params, gui, editor: None,
+                changes: Vec::new(), queue: Vec::with_capacity(MAX_EVENTS), inputs, outputs, steady: 0, processing: false, broken: false,
             })
         }
     }
@@ -473,7 +524,7 @@ impl Plugin {
         let ins: Vec<ClapAudioBuffer> = in_ptrs.iter_mut().map(buf).collect();
         let mut outs: Vec<ClapAudioBuffer> = out_ptrs.iter_mut().map(buf).collect();
         let in_events = ClapInputEvents { ctx: &self.queue as *const Vec<Event> as *mut c_void, size: in_size, get: in_get };
-        let out_events = ClapOutputEvents { ctx: std::ptr::null_mut(), try_push: out_push };
+        let out_events = ClapOutputEvents { ctx: &mut self.changes as *mut Vec<(u32, f64)> as *mut c_void, try_push: out_push };
         let process = ClapProcess {
             steady_time: self.steady, frames_count: n as u32, transport: std::ptr::null(),
             audio_inputs: ins.as_ptr(), audio_outputs: outs.as_mut_ptr(),
@@ -489,6 +540,7 @@ impl Plugin {
 
 impl Drop for Plugin {
     fn drop(&mut self) {
+        self.close_editor();
         unsafe {
             if self.processing { ((*self.plugin).stop_processing)(self.plugin); }
             ((*self.plugin).deactivate)(self.plugin);

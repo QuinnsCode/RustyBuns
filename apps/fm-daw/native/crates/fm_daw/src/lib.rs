@@ -1016,7 +1016,7 @@ pub extern "C" fn fm_amp_iterations(r: *mut circuit::Rig) -> f64 { unsafe { r.as
 
 #[cfg(not(target_arch = "wasm32"))]
 mod clap_ffi {
-    use super::clap::{describe_json, params_json, Bundle, Plugin};
+    use super::clap::{describe_json, gui::Kind, params_json, Bundle, Plugin};
     use std::cell::RefCell;
     use std::sync::Arc;
 
@@ -1095,6 +1095,38 @@ mod clap_ffi {
         let Some(p) = p.as_mut() else { return 0 };
         if out.is_null() { return 0; }
         p.render(std::slice::from_raw_parts_mut(out, frames as usize * 2), frames as usize) as u32
+    }
+
+    /// How the plugin's own editor opens here: 0 it has none (or none we can hold), 1 its own window, 2 inside ours.
+    #[no_mangle]
+    pub extern "C" fn fm_clap_editor(p: *mut Plugin) -> u32 {
+        match unsafe { p.as_ref() }.and_then(|p| p.editor_kind()) { None => 0, Some(Kind::Floating) => 1, Some(Kind::Window) => 2 }
+    }
+
+    /// Opens the plugin's editor titled `title` (or brings it forward): 1, or 0 with `fm_clap_error` saying why. Main thread.
+    /// # Safety
+    /// `p` from `fm_clap_new`; `title` must point to `len` bytes of UTF-8, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_open_editor(p: *mut Plugin, title: *const u8, len: u32) -> u32 {
+        let Some(p) = p.as_mut() else { return 0 };
+        let title = if title.is_null() { "" } else { std::str::from_utf8(std::slice::from_raw_parts(title, len as usize)).unwrap_or("") };
+        match p.open_editor(title) { Ok(()) => 1, Err(why) => { fail::<u8>(why); 0 } }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn fm_clap_close_editor(p: *mut Plugin) { if let Some(p) = unsafe { p.as_mut() } { p.close_editor() } }
+
+    /// Runs the editor's window and what the plugin asked of the host; 1 while the editor is open. Main thread.
+    #[no_mangle]
+    pub extern "C" fn fm_clap_pump(p: *mut Plugin) -> u32 { unsafe { p.as_mut() }.is_some_and(|p| p.pump()) as u32 }
+
+    /// The parameter moves the plugin made itself since last asked, as JSON (`Plugin::take_changes`).
+    /// # Safety
+    /// `p` from `fm_clap_new`; `out` must point to `cap` bytes, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_clap_changes(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
+        let Some(p) = p.as_mut() else { return 0 };
+        give(&p.take_changes(if out.is_null() { 0 } else { cap as usize }), out, cap)
     }
 }
 
