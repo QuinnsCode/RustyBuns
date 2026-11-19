@@ -20,7 +20,7 @@ export const CELL = 256 * SCALE; // metres of game world a region spans, whateve
 export const ARENA_R = 4;     // walk this close to a region's arena marker to go in
 export const STEP = CELL / (GROUND_N - 1); // metres between ground samples
 const SEAM = 6;               // samples either side of a border that blend into the next region
-const WILD_EVERY = 400;       // metres walked in a high-level region before the wild creatures come
+export const WILD_EVERY = 400;       // metres walked in a high-level region before the wild creatures come
 const PAD_R = 16;             // metres of level ground around every arena marker
 
 /** coarse.json: COARSE_N × COARSE_N Int16 metres per region, base64, row 0 the north edge: the far land, always bundled.

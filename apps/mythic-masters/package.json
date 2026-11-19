@@ -8,6 +8,8 @@
     "build": "bun --bun vite build",
     "test": "bun test test",
     "tune": "bun scripts/tune.ts",
+    "levels": "bun scripts/levels.ts",
+    "rules": "bun scripts/rules.ts",
     "beasts": "bun scripts/beasts.ts --render",
     "flora": "bun scripts/flora.ts",
     "bearer": "bun scripts/bearer.ts --render",

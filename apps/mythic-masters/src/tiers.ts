@@ -23,7 +23,7 @@ export const TIERED = [...TIER.keys()];
 export const tierOf = (id: string): Tier => TIER.get(id) ?? "common";
 
 /** An event creature's season, as [month, day] from and to (inclusive; it may wrap the new year). */
-const SEASON: Record<string, [[number, number], [number, number]]> = {
+export const SEASON: Record<string, [[number, number], [number, number]]> = {
   "yule-cat": [[12, 1], [1, 6]],   // the Yule nights
   nian: [[1, 20], [2, 20]],        // around the lunar new year
   ...PACK_SEASON,                  // a pack's beasts, in its season
