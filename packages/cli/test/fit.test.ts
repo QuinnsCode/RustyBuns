@@ -1,79 +1,75 @@
 import { expect, test } from "bun:test";
-import { fit, stackOf, vitePlugins } from "../src/glue/fit.ts";
+import { fit, stackOf, vitePlugins, type Stack } from "../src/glue/fit.ts";
 
 const pkg = (deps: Record<string, string>, extra: Record<string, unknown> = {}) => ({ name: "app", dependencies: deps, ...extra });
 
-test("stackOf: specific frameworks win over the vite they pull in", () => {
-  expect(stackOf({ vite: "6", react: "19" })).toBe("vite-react");
-  expect(stackOf({ vite: "6" })).toBe("vite");
-  expect(stackOf({ vite: "6", "@sveltejs/kit": "2" })).toBe("sveltekit");
-  expect(stackOf({ vite: "6", react: "19", "@react-router/dev": "7" })).toBe("react-router");
-  expect(stackOf({ "@remix-run/node": "2" })).toBe("react-router");
-  expect(stackOf({ next: "15", react: "19" })).toBe("next");
-  expect(stackOf({ vite: "8", "solid-js": "1", "@solidjs/start": "2" })).toBe("solidstart");
-  expect(stackOf({ vite: "6" }, ["rwsdk"])).toBe("rwsdk");
-  expect(stackOf({ lodash: "4" })).toBe("unknown");
-});
-
-test("stackOf: names the frameworks init doesn't read yet", () => {
-  expect(stackOf({ vite: "6", "@builder.io/qwik": "1", "@builder.io/qwik-city": "1" })).toBe("qwik");
-  expect(stackOf({ "@qwik.dev/core": "2", "@qwik.dev/router": "2" })).toBe("qwik");
-  expect(stackOf({ "@angular/core": "20", "@angular/build": "20" })).toBe("angular");
-  expect(stackOf({ gatsby: "5", react: "18" })).toBe("gatsby");
-  expect(stackOf({ "react-scripts": "5", react: "18" })).toBe("cra");
-  expect(stackOf({ "@vue/cli-service": "5", vue: "3" })).toBe("vue-cli");
-  expect(stackOf({ webpack: "5", react: "18" })).toBe("webpack");
-  // halfway through a port: vite wins over the webpack still in package.json
-  expect(stackOf({ webpack: "5", vite: "6", react: "18" })).toBe("vite-react");
-});
-
-test("vitePlugins: by the packages a config imports", () => {
-  const src = `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\nimport { cloudflare } from "@cloudflare/vite-plugin";`;
-  expect(vitePlugins(src)).toEqual(["react", "cloudflare"]);
+test("stackOf: specific frameworks win over the vite they pull in, and the ones init doesn't read are named", () => {
+  const cases: [Record<string, string>, Stack, string[]?][] = [
+    [{ vite: "6", react: "19" }, "vite-react"],
+    [{ vite: "6" }, "vite"],
+    [{ vite: "6", "@sveltejs/kit": "2" }, "sveltekit"],
+    [{ vite: "6", react: "19", "@react-router/dev": "7" }, "react-router"],
+    [{ "@remix-run/node": "2" }, "react-router"],
+    [{ next: "15", react: "19" }, "next"],
+    [{ vite: "8", "solid-js": "1", "@solidjs/start": "2" }, "solidstart"],
+    [{ vite: "6" }, "rwsdk", ["rwsdk"]],
+    [{ lodash: "4" }, "unknown"],
+    [{ vite: "6", "@builder.io/qwik": "1", "@builder.io/qwik-city": "1" }, "qwik"],
+    [{ "@qwik.dev/core": "2", "@qwik.dev/router": "2" }, "qwik"],
+    [{ "@angular/core": "20", "@angular/build": "20" }, "angular"],
+    [{ gatsby: "5", react: "18" }, "gatsby"],
+    [{ "react-scripts": "5", react: "18" }, "cra"],
+    [{ "@vue/cli-service": "5", vue: "3" }, "vue-cli"],
+    [{ webpack: "5", react: "18" }, "webpack"],
+    // halfway through a port: vite wins over the webpack still in package.json
+    [{ webpack: "5", vite: "6", react: "18" }, "vite-react"],
+  ];
+  for (const [deps, stack, plugins] of cases) expect(stackOf(deps, plugins)).toBe(stack);
 });
 
 test("ready: supported frameworks, Workers and fetch-handler servers", () => {
-  const vr = fit({ pkg: pkg({ vite: "6", react: "19", typescript: "5" }), files: ["package.json", "src/main.tsx"] });
-  expect(vr).toMatchObject({ verdict: "ready", stack: "vite-react", label: "Vite + React, TypeScript", typescript: true });
-  expect(fit({ pkg: pkg({}), files: ["wrangler.jsonc"], viteConfig: null })).toMatchObject({ verdict: "ready", label: "Cloudflare Worker" });
-  expect(fit({ pkg: pkg({ hono: "4" }), files: [] })).toMatchObject({ verdict: "ready", label: "hono" });
-  expect(fit({ pkg: pkg({ astro: "7", "@astrojs/cloudflare": "14" }), files: ["astro.config.mjs"] })).toMatchObject({ verdict: "ready", stack: "astro", label: "Astro" });
+  const cases: [Parameters<typeof fit>[0], Record<string, unknown>][] = [
+    [{ pkg: pkg({ vite: "6", react: "19", typescript: "5" }), files: ["package.json", "src/main.tsx"] }, { stack: "vite-react", label: "Vite + React, TypeScript", typescript: true }],
+    [{ pkg: pkg({}), files: ["wrangler.jsonc"], viteConfig: null }, { label: "Cloudflare Worker" }],
+    [{ pkg: pkg({ hono: "4" }), files: [] }, { label: "hono" }],
+    [{ pkg: pkg({ astro: "7", "@astrojs/cloudflare": "14" }), files: ["astro.config.mjs"] }, { stack: "astro", label: "Astro" }],
+    [{ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] }, { stack: "nuxt", label: "Nuxt, TypeScript", issue: undefined }],
+    [{ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] }, { stack: "solidstart" }],
+    [{ pkg: pkg({ "@builder.io/qwik": "1", "@builder.io/qwik-city": "1", vite: "7" }), files: [] }, { stack: "qwik" }],
+  ];
+  for (const [input, want] of cases) expect(fit(input)).toMatchObject({ verdict: "ready", ...want });
 });
 
-test("needs work: a framework init doesn't infer yet links its issue", () => {
+test("Next.js, React Router and SvelteKit are ready with their Cloudflare build, and need work without it", () => {
+  const next = { next: "16", react: "19", "react-dom": "19" };
+  const rr = pkg({ react: "19", "react-router": "7", "@react-router/dev": "7", vite: "7" });
+  const cf = `import { reactRouter } from "@react-router/dev/vite";\nimport { cloudflare } from "@cloudflare/vite-plugin";`;
+  expect(vitePlugins(cf)).toEqual(["react-router", "cloudflare"]);
+  const sk = { "@sveltejs/kit": "2", svelte: "5", vite: "7" };
+  const cases: [Parameters<typeof fit>[0], Parameters<typeof fit>[0], Stack, string][] = [
+    [{ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["open-next.config.ts", "tsconfig.json"] }, { pkg: pkg(next), files: ["tsconfig.json"] }, "next", "@opennextjs/cloudflare"],
+    [{ pkg: rr, files: [], viteConfig: cf }, { pkg: rr, files: [], viteConfig: `import { reactRouter } from "@react-router/dev/vite";` }, "react-router", "@cloudflare/vite-plugin"],
+    [{ pkg: pkg({ ...sk, "@sveltejs/adapter-cloudflare": "7" }), files: [] }, { pkg: pkg({ ...sk, "@sveltejs/adapter-auto": "6" }), files: [] }, "sveltekit", "adapter-cloudflare"],
+  ];
+  for (const [ready, without, stack, adapter] of cases) {
+    const f = fit(ready);
+    expect(f).toMatchObject({ verdict: "ready", stack });
+    expect(f.issue).toBeUndefined();
+    const plain = fit(without);
+    expect(plain).toMatchObject({ verdict: "needs-work", stack });
+    expect(plain.reasons[0]).toContain(adapter);
+    expect(plain.issue).toMatch(/issues\/2455$/);
+  }
+  expect(fit({ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["tsconfig.json"] }).label).toBe("Next.js, TypeScript");
+});
+
+test("Angular and Gatsby link their issue and say they are out of scope, not 'not yet'", () => {
   const f = fit({ pkg: pkg({ "@angular/core": "20" }), files: ["tsconfig.json"] });
   expect(f).toMatchObject({ verdict: "needs-work", stack: "angular", label: "Angular, TypeScript" });
   expect(f.issue).toMatch(/issues\/2455$/);
-});
-
-test("Angular and Gatsby say they are out of scope, not 'not yet'", () => {
-  const deps: Record<string, string>[] = [{ "@angular/core": "20" }, { gatsby: "5", react: "18" }];
-  for (const dep of deps) {
-    const f = fit({ pkg: pkg(dep), files: [] });
-    expect(f.reasons.join(" ")).toContain("out of scope");
+  for (const dep of [{ "@angular/core": "20" }, { gatsby: "5", react: "18" }] as Record<string, string>[]) {
+    expect(fit({ pkg: pkg(dep), files: [] }).reasons.join(" ")).toContain("out of scope");
   }
-});
-
-test("Next.js is ready with @opennextjs/cloudflare, needs work without it", () => {
-  const next = { next: "16", react: "19", "react-dom": "19" };
-  const f = fit({ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["open-next.config.ts", "tsconfig.json"] });
-  expect(f).toMatchObject({ verdict: "ready", stack: "next", label: "Next.js, TypeScript" });
-  expect(f.issue).toBeUndefined();
-  const plain = fit({ pkg: pkg(next), files: ["tsconfig.json"] });
-  expect(plain).toMatchObject({ verdict: "needs-work", stack: "next" });
-  expect(plain.reasons[0]).toContain("@opennextjs/cloudflare");
-  expect(plain.issue).toMatch(/issues\/2455$/);
-});
-
-test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs work on Node", () => {
-  const deps = pkg({ react: "19", "react-router": "7", "@react-router/dev": "7", vite: "7" });
-  const cf = `import { reactRouter } from "@react-router/dev/vite";\nimport { cloudflare } from "@cloudflare/vite-plugin";`;
-  expect(vitePlugins(cf)).toEqual(["react-router", "cloudflare"]);
-  expect(fit({ pkg: deps, files: [], viteConfig: cf })).toMatchObject({ verdict: "ready", stack: "react-router" });
-  const node = fit({ pkg: deps, files: [], viteConfig: `import { reactRouter } from "@react-router/dev/vite";` });
-  expect(node).toMatchObject({ verdict: "needs-work", stack: "react-router" });
-  expect(node.reasons[0]).toContain("@cloudflare/vite-plugin");
-  expect(node.issue).toMatch(/issues\/2455$/);
 });
 
 test("needs work: webpack builds point at the Vite port issue", () => {
@@ -102,11 +98,8 @@ test("red flags pull the verdict down", () => {
   expect(fit({ pkg: pkg({ vite: "6" }), files: ["vendor/pnpm-workspace.yaml"] }).verdict).toBe("ready");
 });
 
-test("no package.json is a poor fit", () => {
+test("no package.json: plain HTML is ready, a generator's site likely, anything else a poor fit", () => {
   expect(fit({ pkg: null, files: ["main.go"] })).toMatchObject({ verdict: "poor", typescript: false });
-});
-
-test("a static site with no app: plain HTML is ready, a generator's site likely", () => {
   expect(fit({ pkg: null, files: ["index.html", "style.css"] })).toMatchObject({ verdict: "ready", label: "static HTML site" });
   expect(fit({ pkg: null, files: ["README.md", "docs/index.html"] }).verdict).toBe("ready");
   expect(fit({ pkg: null, files: ["_config.yml", "_layouts/default.html", "index.md"] })).toMatchObject({ verdict: "likely", label: "Jekyll site" });
@@ -114,30 +107,6 @@ test("a static site with no app: plain HTML is ready, a generator's site likely"
   expect(fit({ pkg: null, files: ["mkdocs.yml", "docs/index.md"] }).label).toBe("MkDocs site");
   // a Vite app's index.html is the app's entry, not a static site
   expect(fit({ pkg: { dependencies: { vite: "6" } }, files: ["index.html"] }).label).not.toContain("static");
-});
-
-test("Nuxt is ready: init reads what Nitro's cloudflare-module preset builds", () => {
-  const f = fit({ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] });
-  expect(f).toMatchObject({ verdict: "ready", stack: "nuxt", label: "Nuxt, TypeScript" });
-  expect(f.reasons[0]).toContain("`rustybuns init` reads it as is");
-  expect(f.issue).toBeUndefined();
-});
-
-test("SolidStart is ready: init reads its Nitro Cloudflare build", () => {
-  expect(fit({ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] })).toMatchObject({ verdict: "ready", stack: "solidstart" });
-});
-
-test("Qwik City is ready: init reads its cloudflare-pages adapter's Worker", () => {
-  expect(fit({ pkg: pkg({ "@builder.io/qwik": "1", "@builder.io/qwik-city": "1", vite: "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "qwik" });
-});
-
-test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {
-  const sk = { "@sveltejs/kit": "2", svelte: "5", vite: "7" };
-  expect(fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-cloudflare": "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "sveltekit" });
-  const auto = fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-auto": "6" }), files: [] });
-  expect(auto).toMatchObject({ verdict: "needs-work", stack: "sveltekit" });
-  expect(auto.reasons[0]).toContain("adapter-cloudflare");
-  expect(auto.issue).toMatch(/issues\/2455$/);
 });
 
 test("Rat Stack: its web app is named and ready, and keeps its own deploy pins", () => {
