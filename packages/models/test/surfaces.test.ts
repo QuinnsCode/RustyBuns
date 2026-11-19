@@ -5,7 +5,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
 import { GEAR_IDS, gear } from "../src/gear.ts";
-import { SURFACE_NAMES, gearSurfaces, surfaceFiles } from "../src/surfaces.ts";
+import { SURFACES, SURFACE_NAMES, gearSurfaces, surfaceFiles, wornShader } from "../src/surfaces.ts";
 
 const dir = join(import.meta.dir, "..", "textures");
 
@@ -27,4 +27,14 @@ test("low quality dresses every piece of gear in flat colour, loading nothing", 
     expect(mat.map ?? mat.normalMap ?? null, m.name).toBeNull();
   }
   expect(asked).toBe(0);
+});
+
+test("every worn surface hooks into three's standard material", () => {
+  // `wornShader` throws when a chunk it hooks is gone; this is what a three.js update would break
+  for (const name of SURFACE_NAMES) {
+    const s = SURFACES[name];
+    if (!("wear" in s)) continue;
+    const out = wornShader(THREE.ShaderLib.physical, "backing" in s ? s.backing : 0, s.wear);
+    expect(out.fragmentShader, name).toContain("wChip");
+  }
 });
