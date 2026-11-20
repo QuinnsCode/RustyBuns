@@ -481,6 +481,8 @@ const far = new FarSound(band, (m) => out?.send(m));
  */
 const deskFeed = new DeskFeed((m) => out?.send(m));
 const atWall = new GearHands(def, (op) => net?.studio(op));
+/** The sesh's gear room as the World keeps it, kept in step by the wall's hands: what the desk reads (aux 2) and shows. */
+const gearRoom = { get patch() { return atWall.room.studio.patch; } };
 /**
  * Everyone with a channel on the desk here: whoever the live line plays sound for, and you while your guitar is in
  * (number 0: nothing of yours comes in, but a solo on your channel quiets the rest for you as for everyone).
@@ -490,7 +492,7 @@ function heardPlayers(): HeardPlayer[] {
   return myGuitar !== null && rights.me ? [...others, { peer: 0, who: rights.me, name: "" }] : others;
 }
 function deskSync() {
-  deskFeed.sync(project, heardPlayers(), auxGear(atWall.room.studio.patch).settings);
+  deskFeed.sync(project, heardPlayers(), auxGear(gearRoom.patch).settings);
 }
 /** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
 let transport = { abs: 0, synced: false, late: 0, playing: false };
