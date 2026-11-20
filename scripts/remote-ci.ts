@@ -11,6 +11,11 @@
 //   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
 //   bun run builder queue [base-ref]           send the pushed HEAD's suites (what both required checks run) to the test swarm
 //   bun run builder join [--slots N]           this Mac takes test jobs from the swarm, N at a time (default 1), until Ctrl-C
+//   bun run builder serve                      on Bob: he takes runs until Ctrl-C (and stays awake while he does)
+//
+// Bob says when he takes work, not the runs: nothing is sent to him until `bun run builder serve` is running on him,
+// which keeps `serving` in his builder folder fresh. Off, asleep, or not serving, a run waits for him (valve shut).
+// If he goes away mid-run (ssh drops, a push hangs), the run doesn't fail: it waits for him again and runs from the start.
 //
 // The test swarm (apps/test-swarm, #4758) is a queue any of our Macs pulls from when GitHub is slow: SWARM_URL is its
 // Worker and SWARM_TOKEN its bearer token (the owner's, from 1Password). With both set, a run that finds no builder
@@ -23,7 +28,7 @@
 // BUILDER_HOST is an ssh name (user@max.local, or a Tailscale name). BUILDER_DIR is the builder's folder,
 // relative to its home (default builder). BUILDER_WORKERS caps the suites one run starts at once (default 4).
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
-// No builder (unset, or ssh can't reach it in 5 s): `run` runs its command here; a base-ref run names the
+// No builder (unset, or not serving): `run` runs its command here; a base-ref run names the
 // suites GitHub CI will run and exits 0, so you push and let `bun run pr <n>` wait for them.
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
@@ -96,7 +101,7 @@ export type Plan = { where: "bob" | "here" | "wait"; cap: number; why?: string }
 export function plan(v: Valve, up: boolean, batt: Battery, cap: number): Plan {
   const low = up && !batt.onPower && batt.pct < 20;
   if (!up || low) {
-    const why = low ? `builder is on battery at ${batt.pct}%` : "builder is off";
+    const why = low ? `builder is on battery at ${batt.pct}%` : "Bob isn't taking runs (on him: bun run builder serve)";
     return v === "off" ? { where: "wait", cap, why: `valve shut, waiting for Bob (${why})` } : { where: "here", cap, why };
   }
   if (!batt.onPower) return { where: "bob", cap: 1, why: `builder is on battery (${batt.pct}%): one suite at a time` };
@@ -112,6 +117,8 @@ const STALE_MIN = 3;
 const HEARTBEAT_MS = 60_000;
 // A push to a slot that hasn't finished in this long is hung (seen at over 2 hours): give up and give the slot back.
 const PUSH_MS = 5 * 60_000;
+/** What `load` answers when the push to the slot failed or hung: Bob went away. */
+const PUSH_FAILED = 254;
 
 export type Builder = { host: string; dir: string; ssh: string[] };
 
@@ -179,15 +186,22 @@ export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   const hung = setTimeout(() => { console.error(`the push to ${slot} hung for ${PUSH_MS / 60_000} minutes; giving up`); push.kill(); }, PUSH_MS);
   const pushed = await push.exited;
   clearTimeout(hung);
-  if (pushed) return 1;
+  if (pushed) return PUSH_FAILED;
   const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref -d ${ref} `
     + `&& git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
   return code;
 }
 
-// One quick ssh round trip: false when Bob is off, charging or asleep, so a run never hangs on him.
+/** The file `bun run builder serve` keeps fresh in Bob's builder folder while he takes runs, and how often. */
+export const SERVING = "serving";
+const SERVE_BEAT_MS = 20_000;
+/** An ssh exit that means the connection, not the command: Bob went away. */
+const LOST = 255;
+
+// One quick ssh round trip: true only while Bob is serving (`serving` touched in the last 2 minutes). Off, asleep,
+// or not serving reads false, so nothing is sent to him until he says he takes runs.
 export async function reachable(b: Builder): Promise<boolean> {
-  const p = Bun.spawn([...b.ssh, b.host, "true"], { stdout: "ignore", stderr: "ignore" });
+  const p = remote(b, `[ -n "$(find ${SERVING} -mmin -2 2>/dev/null)" ]`);
   const timer = setTimeout(() => p.kill(), 10_000);
   try { return (await p.exited) === 0; } finally { clearTimeout(timer); }
 }
@@ -333,14 +347,32 @@ async function joinSwarm(argv: string[], cwd: string): Promise<number> {
   return 0;
 }
 
+/** `bun run builder serve`, on Bob: he takes runs until Ctrl-C. `serving` stays fresh while this runs (a run is sent only
+ *  then), and caffeinate keeps him awake so a run isn't cut off by sleep. Stopping lets running runs finish; new ones wait. */
+async function serve(): Promise<number> {
+  const dir = resolve(homedir(), process.env.BUILDER_DIR ?? "builder"), file = `${dir}/${SERVING}`;
+  if (!(await Bun.file(`${dir}/slot-1/.git/HEAD`).exists())) { console.error(`no slots in ${dir}: run scripts/builder-setup.sh here first`); return 2; }
+  const beat = () => Bun.write(file, `${new Date().toISOString()}\n`);
+  await beat();
+  const timer = setInterval(beat, SERVE_BEAT_MS);
+  const awake = Bun.which("caffeinate") ? Bun.spawn(["caffeinate", "-i", "-w", String(process.pid)], { stdout: "ignore", stderr: "ignore" }) : null;
+  console.log(`taking runs (${dir}); Ctrl-C to stop: runs already going finish, new ones wait for the next serve`);
+  await new Promise<void>((done) => { process.once("SIGINT", done); process.once("SIGTERM", done); });
+  clearInterval(timer);
+  awake?.kill();
+  await Bun.$`rm -f ${file}`.quiet().nothrow();
+  console.log("not taking runs");
+  return 0;
+}
+
 const builder = (host: string): Builder =>
-  ({ host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5").split(" ") });
+  ({ host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=4").split(" ") });
 
 // `bun run builder off|on` sets the valve; bare `bun run builder` says which way it is and whether the builder answers.
 async function setValve(arg: string | undefined): Promise<number> {
   if (arg === "on" || arg === "off") await Bun.write(valveFile(), `${arg}\n`);
   const v = await valve(), host = process.env.BUILDER_HOST;
-  const bob = host ? ((await reachable(builder(host))) ? `builder ${host} answers` : `builder ${host} is off`) : "no BUILDER_HOST";
+  const bob = host ? ((await reachable(builder(host))) ? `builder ${host} is taking runs` : `builder ${host} isn't taking runs (off, asleep, or not serving: bun run builder serve on him)`) : "no BUILDER_HOST";
   console.log(`valve ${v === "off" ? "shut: heavy work goes to the builder, and waits for him" : "open: with no builder, work runs here"}; ${bob}`);
   return 0;
 }
@@ -352,12 +384,13 @@ export const NOT_RUN = 125;
  *  (unset, off, charging) answers NOT_RUN at once instead of running here or waiting. scripts/ring-red.ts bisects with it. */
 export async function main(argv: string[], cwd: string, at?: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
+  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder serve  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
   if (argv[0] === "nightly") return nightly(host);
   if (argv[0] === "passed") return passed(cwd);
   if (argv[0] === "queue") return queue(argv[1] ?? "origin/main", cwd);
   if (argv[0] === "join") return joinSwarm(argv, cwd);
+  if (argv[0] === "serve") return serve();
   const all = argv[0] === "all";
   if (all) argv = [argv[1] ?? "origin/main"];
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
@@ -382,50 +415,66 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
   const who = process.env.BUILDER_WHO || (branch && branch !== "HEAD" ? branch.replace(/^office\//, "") : basename(cwd));
   const rec: RunRecord = { who, started: Date.now(),
     cmd: argv[0] === "run" ? `${argv[1]}: ${argv.slice(2).join(" ")}` : `suites: ${jobs.map((j) => j.label).join(", ")}` };
-  let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
-  for (let said = ""; ; ) {
-    const up = await reachable(b);
-    const got = up ? await claim(b, { ...rec, started: (rec.started = Date.now()) }) : undefined;
-    const p = plan(v, up, got?.batt ?? { onPower: true, pct: 100 }, cap);
-    if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
-    if (got) await release(b, got.slot);
-    if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
-    if (p.where === "here") return fallback(argv, cwd, p.why!);
-    if (said !== p.why) console.log((said = p.why!));
-    await Bun.sleep(poll);
+  for (;;) {
+    const r = await attempt();
+    if (r !== LOST) return r;
+    if (at) { console.error("the builder went away mid-run"); return NOT_RUN; }
+    console.log("lost Bob mid-run: waiting for him again, then running it from the start");
   }
 
-  // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
-  const beat = setInterval(() => { remote(b, `touch locks/${q(slot)}`); }, HEARTBEAT_MS);
-  const finish = (code: number) => { clearInterval(beat); return release(b, slot, { ...rec, ended: Date.now(), code }); };
-  const giveBack = () => { finish(130).finally(() => process.exit(130)); };
-  process.once("SIGINT", giveBack);
-  process.once("SIGTERM", giveBack);
-  let code = 1;
-  try {
-    const sent = at ?? await snapshot(cwd);
-    const setup = await load(b, slot, sent, cwd);
-    if (setup) return (code = setup);
-    console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
-    const t0 = performance.now();
-    const worst = await pool(jobs, cap, async (j) => (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code);
-    console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
-    if (all && !worst) {
-      // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.
-      const head = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
-      if (sent !== head) console.log("not written down as ready: the working tree has uncommitted changes");
-      else {
-        const named = branch && branch !== "HEAD" ? branch
-          : (await Bun.$`git branch -a --points-at HEAD ${"--format=%(refname:short)"}`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
-        await recordPass({ sha: head, branch: named.replace(/^origin\//, ""), base: argv[0]!, at: Date.now(), jobs: jobs.map((j) => j.label) });
-        console.log(`${head.slice(0, 8)} ${named} written down as ready: bun run builder passed`);
-      }
+  /** Wait for Bob and a slot, then run: the run's code, or LOST when Bob went away under it (nothing to blame on the code). */
+  async function attempt(): Promise<number> {
+    let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
+    for (let said = ""; ; ) {
+      const up = await reachable(b);
+      // he can go between the check and the claim: that is waiting, not a failure
+      const got = up ? await claim(b, { ...rec, started: (rec.started = Date.now()) }).catch(() => undefined) : undefined;
+      const p = plan(v, !!got, got?.batt ?? { onPower: true, pct: 100 }, cap);
+      if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
+      if (got) await release(b, got.slot);
+      if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
+      if (p.where === "here") return fallback(argv, cwd, p.why!);
+      if (said !== p.why) console.log((said = p.why!));
+      await Bun.sleep(poll);
     }
-    return (code = worst);
-  } finally {
-    process.off("SIGINT", giveBack);
-    process.off("SIGTERM", giveBack);
-    await finish(code);
+
+    // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
+    const beat = setInterval(() => { remote(b, `touch locks/${q(slot)}`); }, HEARTBEAT_MS);
+    const finish = (code: number) => { clearInterval(beat); return code === LOST ? release(b, slot) : release(b, slot, { ...rec, ended: Date.now(), code }); };
+    const giveBack = () => { finish(130).finally(() => process.exit(130)); };
+    process.once("SIGINT", giveBack);
+    process.once("SIGTERM", giveBack);
+    let code = 1;
+    try {
+      const sent = at ?? await snapshot(cwd);
+      const setup = await load(b, slot, sent, cwd);
+      // a push that failed or hung, or a setup whose ssh dropped, is Bob going away, not the branch
+      if (setup === PUSH_FAILED || setup === LOST) return (code = LOST);
+      if (setup) return (code = setup);
+      console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
+      const t0 = performance.now();
+      const codes: number[] = [];
+      const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code; codes.push(c); return c; });
+      if (codes.includes(LOST)) return (code = LOST);
+      console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
+      if (all && !worst) {
+        // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.
+        const head = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
+        if (sent !== head) console.log("not written down as ready: the working tree has uncommitted changes");
+        else {
+          const named = branch && branch !== "HEAD" ? branch
+            : (await Bun.$`git branch -a --points-at HEAD ${"--format=%(refname:short)"}`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
+          await recordPass({ sha: head, branch: named.replace(/^origin\//, ""), base: argv[0]!, at: Date.now(), jobs: jobs.map((j) => j.label) });
+          console.log(`${head.slice(0, 8)} ${named} written down as ready: bun run builder passed`);
+        }
+      }
+      return (code = worst);
+    } finally {
+      process.off("SIGINT", giveBack);
+      process.off("SIGTERM", giveBack);
+      // Bob gone: giving the slot back may not reach him either (a lock untouched for STALE_MIN is taken back anyway)
+      await finish(code).catch(() => {});
+    }
   }
 }
 
@@ -434,7 +483,7 @@ async function nightly(host: string | undefined): Promise<number> {
   let text = "";
   if (host) {
     const b = builder(host);
-    if (!(await reachable(b))) { console.log(`builder ${host} is off`); return 1; }
+    if (!(await reachable(b))) { console.log(`builder ${host} isn't taking runs`); return 1; }
     text = (await stream(remote(b, "cat nightly/results.json"), "nightly", true)).out;
   } else {
     const f = Bun.file(resolve(homedir(), "builder", "nightly", "results.json"));

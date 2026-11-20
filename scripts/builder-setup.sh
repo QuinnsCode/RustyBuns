@@ -105,6 +105,19 @@ if [ "$MAC" ]; then
   fi
 fi
 
+# Bob takes runs only while ~/builder/serve runs (scripts/remote-ci.ts serve): until then every run waits for him.
+say "The switch: ~/builder/serve"
+{
+  echo '#!/bin/sh'
+  echo '# Bob takes runs while this runs; Ctrl-C stops (runs going finish, new ones wait). Serves from main, freshly pulled.'
+  echo "S=\"$ROOT/serve-src\""
+  echo "[ -d \"\$S/.git\" ] || git clone -q $REPO \"\$S\""
+  echo 'git -C "$S" pull -q --ff-only origin main || echo "could not pull main: serving the copy there"'
+  echo 'cd "$S" && exec bun scripts/remote-ci.ts serve'
+} > "$ROOT/serve"
+chmod +x "$ROOT/serve"
+echo "turn Bob on for runs: ~/builder/serve   (until Ctrl-C; nothing is sent to him otherwise)"
+
 say "Last step, on the office Mac"
 # A cloud VM has no .local name: use its Tailscale name (tailscale up), or its public address.
 if [ "$MAC" ]; then name="$(whoami)@$(scutil --get LocalHostName).local"; else name="$(whoami)@$(hostname)"; fi

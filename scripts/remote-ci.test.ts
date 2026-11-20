@@ -71,7 +71,7 @@ test("the pool never runs more than the cap and returns the worst code", async (
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
 // Each run leaves a record its menu bar reads: who and what while it runs, then how it ended.
-test("a run takes back a dead run's slot, sends the working tree, untracked files too, shows on the builder's menu and gives it back", async () => {
+test("a run waits until Bob serves, takes back a dead run's slot, sends the working tree, shows on his menu, and outlasts losing him mid-run", async () => {
   const root = mkdtempSync(`${tmpdir()}/remote-ci-`), work = `${root}/work`, home = `${root}/home`;
   const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   await Bun.write(`${work}/package.json`, `{"name":"w"}`);
@@ -93,6 +93,8 @@ test("a run takes back a dead run's slot, sends the working tree, untracked file
   const builder = `${home}/builder`;
   try {
     await Bun.write(`${work}/new.txt`, "hello");
+    // Bob answers ssh but isn't serving yet: nothing is sent until `bun run builder serve` touches his `serving`
+    setTimeout(() => void Bun.write(`${builder}/serving`, "now\n"), 300);
     // Mid-run, the slot is locked and its record is there: what the menu bar shows.
     expect(await main(["run", ".", "sh", "-c", `cat new.txt; cp -R ${builder} ${root}/mid`], work)).toBe(0);
     expect(await Bun.file(`${builder}/slot-1/new.txt`).text()).toBe("hello");
@@ -101,10 +103,12 @@ test("a run takes back a dead run's slot, sends the working tree, untracked file
     expect(menu(mid, mid.running[0]!.started + 75_000).split("\n").slice(0, 3)).toEqual(["Bob: 1 running", "---", expect.stringMatching(/^slot-1 {2}byte {2}1m 15s \|/)]);
 
     expect(await main(["run", ".", "sh", "-c", "echo nope; exit 1"], work)).toBe(1);
+    // He goes away mid-run (ssh exits 255): the run waits for him again and runs from the start, not a failure
+    expect(await main(["run", ".", "sh", "-c", `[ -f ${root}/dropped ] || { touch ${root}/dropped; exit 255; }; echo back`], work)).toBe(0);
     expect(readdirSync(`${builder}/locks`)).toEqual([]);
     const after = readRuns(builder);
     expect(after.running).toEqual([]);
-    expect(after.done.map((r) => [r.code, r.last])).toEqual([[1, "nope"], [0, "hello"]]);
+    expect(after.done.map((r) => [r.code, r.last])).toEqual([[0, "back"], [1, "nope"], [0, "hello"]]);
     expect(menu(after, Date.now()).split("\n")[0]).toBe("Bob: idle");
     expect(await Bun.file(`${root}/up`).exists()).toBe(true);
     expect((await Bun.$`git status --porcelain`.cwd(work).text()).trim()).toBe("?? new.txt");

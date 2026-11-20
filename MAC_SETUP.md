@@ -107,10 +107,13 @@ Then on the Mac you work on:
 
 - [ ] `ssh-copy-id you@Your-Mac.local` (once; asks for the builder's password one last time).
 - [ ] `echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv`, then restart the office so the workers see it.
+- [ ] Turn the builder on for runs: on it, `~/builder/serve` (the setup line writes it). Nothing is sent to it until that
+      runs, and it stays awake while it does; Ctrl-C stops taking runs (runs already going finish). A run that loses
+      the builder halfway (asleep, unplugged, off the network) waits for it again and starts over, never fails for it.
 - [ ] Check it from your clone: `bun run builder run scripts bun test ./ci-tier.test.ts`. It should print the tests
       passing "on you@Your-Mac.local".
-- [ ] From then on this Mac's valve is shut: tests and native builds run on the builder and wait for it while it is off
-      or on battery under 20%. `bun run builder on` lets them run here again, `bun run builder off` shuts it, and
+- [ ] From then on this Mac's valve is shut: tests and native builds run on the builder and wait for it while it is off,
+      not serving, or on battery under 20%. `bun run builder on` lets them run here again, `bun run builder off` shuts it, and
       `bun run builder` says which way it is set (the state lives in `~/.rustybuns/valve`, outside the repo).
 - [ ] Optional, to see the runs on the builder's own screen: on the builder, `brew install --cask swiftbar`, run the
       setup line again, and in SwiftBar's menu tick Preferences > Launch at login. The menu bar then says
