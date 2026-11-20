@@ -23,10 +23,11 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   When GitHub Actions is down, `bun run builder all` runs everything the `typecheck` and `apps` checks run (container
   images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
-  tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Shut, the
+  tests and `build:native` go to Bob only while he serves (`~/builder/serve` on him: the owner turns him on for runs)
+  and wait otherwise (one suite at a time on battery, wait under 20%). Losing him mid-run waits and starts over, never fails. Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
   and opening it is the owner's. Open, with
-  no builder (`BUILDER_HOST` unset, or Bob off: ssh gives up after 5 s) `run` runs the test here, and a base-ref run
+  no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
