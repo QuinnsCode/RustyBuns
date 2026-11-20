@@ -53,7 +53,9 @@ import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
 import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
-import { runScoped, spawnScoped, step } from "./lifecycle.ts";
+import { runScoped, spawnScoped, spawnScopedTee, step } from "./lifecycle.ts";
+import { formatPlanSummary, readPlanRows } from "./plan-summary.ts";
+import { isProtected } from "./protect.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
@@ -73,6 +75,7 @@ import { isRecord } from "@rustybuns/shell-bun/guard";
 import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
+import { skillCommand } from "./skill.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -1144,11 +1147,17 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     return;
   }
   if (sub === "plan") {
-    const code = yield* timed(prof, "alchemy plan", run(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
+    // Alchemy's plain log (stdin closed), read back for the summary of what happens to each resource (plan-summary.ts).
+    const tee = step(() => alchemyCommand(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv, cf))
+      .pipe(Effect.flatMap(({ cmd, env }) => spawnScopedTee(cmd, env, (pid) => lockBase && noteChild(lockBase, pid))));
+    const { code, out } = yield* timed(prof, "alchemy plan", tee);
     yield* step(() => prof.finish());
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     yield* step(() => Bun.write(stampFile, hash));
-    console.log("\n" + mode);
+    const types = Object.fromEntries(plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8")).map((r) => [r.id, r.type.replace(/^Cloudflare\./, "")]));
+    const kept = new Set(Object.entries(cfg.bindings ?? {}).filter(([, b]) => isProtected(b)).map(([n]) => n));
+    const summary = formatPlanSummary(readPlanRows(out), types, kept, !!process.stdout.isTTY && !process.env.NO_COLOR);
+    console.log("\n" + (summary || "couldn't read each resource's change from the plan above: read it before you deploy.") + "\n\n" + mode);
     return;
   }
   if (drifting) {
@@ -1306,7 +1315,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "skill", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1356,6 +1365,12 @@ try {
     case "mem": await memCommand(rest); break;
     case "history": await historyCommand(rest); break;
     case "triage": await triageCommand(rest); break;
+    case "skill": {
+      let r;
+      try { r = skillCommand(rest); } catch (e) { throw new UsageError({ message: e instanceof Error ? e.message : String(e) }); }
+      console.log(r.path ? `${r.changed ? "wrote" : "up to date:"} ${r.path}` : r.text);
+      break;
+    }
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
       if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>] | add deploy [--dry-run]");
@@ -1530,6 +1545,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              something wrong? start your coding agent on it, with this project's
                              facts (versions, config, the box and its memory) in .rustybuns/triage/
                              and a playbook: it asks what went wrong, digs in, and drafts the issue
+  skill [add] [--dir D]      the agent skill for building with Rusty Buns: print it, or add it to
+                             D/rustybuns/SKILL.md (default .claude/skills; .agents/skills for Codex)
   --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and

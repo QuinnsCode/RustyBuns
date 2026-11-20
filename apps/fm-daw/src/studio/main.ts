@@ -23,8 +23,10 @@ import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
 import { startMidi } from "../ui/input.ts";
 import { DeskFeed, loadMsg, type HeardPlayer } from "../ui/load.ts";
 import { AUXES, callStrips } from "../mixer.ts";
-import { applyStudio, emptyStudio } from "../studio.ts";
-import { auxGear, boardIn } from "../room/room.ts";
+import { auxGear } from "../room/room.ts";
+import { GearScene } from "../room/gear-scene.ts";
+import { GearHands } from "./gear-hands.ts";
+import { gearPlace } from "./gear-wall.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
 import { encodeTake } from "../take.ts";
@@ -58,6 +60,8 @@ import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine } from "./guitar-line.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
+import { mountHelp } from "./help.ts";
+import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
 
@@ -135,7 +139,13 @@ function buildRoom() {
   // a seat on a riser stands on its deck, and so does what's played there
   for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
   for (const p of def.props ?? []) scene.add(prop(p, surface));
+  // the gear wall (gear-wall.ts): the sesh's rack, pedal wall and gear, in the gear room's frame where the studio stands it
+  const g = gearPlace(def);
+  gearScene.group.position.set(g.at[0], 0, g.at[1]);
+  gearScene.group.rotation.y = g.yaw;
+  scene.add(gearScene.group);
 }
+const gearScene = new GearScene();
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
 /** A spot's instrument or furniture, and its seat. */
@@ -429,13 +439,15 @@ function hearGuitars() {
   // each guitar's chain at its channel on the sesh's desk: its level, and its sends into the audio thread's aux buses
   const calls = [...(myGuitar === null ? [] : [{ key: "me" as const, who: rights.me ?? undefined, track: myGuitar }]), ...[...plugged].map(([peer, track]) => ({ key: peer, who: peerIds[peer], track }))];
   callStrips(project, heardPlayers(), calls).forEach((strip, i) => guitars?.desk(calls[i].key, strip));
-  if (myGuitar !== null) guitars.set("me", guitarSettings(project.tracks[myGuitar]?.amp));
+  // a guitar cabled through the gear wall to a cab plays through that chain, from the cab, for everyone in the sesh
+  const rig = atWall.rig();
+  if (myGuitar !== null) { guitars.set("me", rig?.settings ?? guitarSettings(project.tracks[myGuitar]?.amp)); if (rig) guitars.place("me", ...rig.at); }
   for (const [peer, track] of plugged) {
     const o = jam.others.get(peer);
-    guitars.set(peer, guitarSettings(project.tracks[track]?.amp));
+    guitars.set(peer, rig?.settings ?? guitarSettings(project.tracks[track]?.amp));
     // a loop late or at the desk their guitar comes in stamped slices (the audio thread plays it); the call is for "now"
     guitars.level(peer, band.listen !== "now" || mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
-    if (o) guitars.place(peer, o.at[0], o.at[1]);
+    if (rig) guitars.place(peer, ...rig.at); else if (o) guitars.place(peer, o.at[0], o.at[1]);
   }
 }
 setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) => { lags = l; }); }, 1000);
@@ -471,7 +483,9 @@ const far = new FarSound(band, (m) => out?.send(m));
  * plays on its player's channel, and the aux 2 return plays what the sesh's gear room has cabled into it.
  */
 const deskFeed = new DeskFeed((m) => out?.send(m));
-let gearRoom = emptyStudio();
+const atWall = new GearHands(def, (op) => net?.studio(op));
+/** The sesh's gear room as the World keeps it, kept in step by the wall's hands: what the desk reads (aux 2) and shows. */
+const gearRoom = { get patch() { return atWall.room.studio.patch; } };
 /**
  * Everyone with a channel on the desk here: whoever the live line plays sound for, and you while your guitar is in
  * (number 0: nothing of yours comes in, but a solo on your channel quiets the rest for you as for everyone).
@@ -664,14 +678,19 @@ const desk = mountDesk({
   cabled: (aux) => (aux === 2 ? auxGear(gearRoom.patch).label : ""),
   onToggle: (open) => { if (open) { lane?.close(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
 });
+// ? or the menu: what you can do here (help.ts, from actions.ts), and the key strip by the hint
+const help = mountHelp({
+  parent: $("hud").parentElement ?? document.body, hint: $("hint"), seat: () => spotOf(jam, jam.me.seat)?.kind ?? null,
+  onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
+});
+$("help-open").addEventListener("click", () => help.open());
 
 if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); },
   onRewound: back.answer,
   onStudio(m) {
-    // a bench pedal's board: read here, so aux 2 plays its circuit when it is cabled in
-    if (m.t === "studio-board") boardIn(m.board);
-    else gearRoom = m.t === "studio-all" ? m.studio : applyStudio(gearRoom, m.from, m.op);
+    // the sesh's gear, at this studio's gear wall: a bench board read here, so aux 2 plays its circuit when it is cabled in
+    atWall.onStudio(m);
     deskSync();
   },
   onRtc: (m) => void guitars?.signal(m),
@@ -687,6 +706,8 @@ if (here) net = connect({
   onStatus(s) {
     // someone new came in: say who you are again, so they see you before you next move
     if (s.state === "online" && s.peers > status.peers) wear();
+    // online again: ask for the sesh's gear, and which hand at the wall is yours
+    if (s.state === "online" && status.state !== "online") net?.studio({ t: "drop" });
     status = s;
   },
   onChat(m) { if (m.t === "chat") rights.me = m.you; },
@@ -705,21 +726,28 @@ function sitOrStand() {
   if (!s) return void say({ ok: false, why: "Walk up to an instrument or a seat" });
   if (say(sit(jam, s.id)).ok) live(body(jam));
 }
-canvas.addEventListener("mousedown", () => {
+canvas.addEventListener("mousedown", (e) => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
   if (desk.isOpen()) return desk.close();
   if (!locked()) return lock();
+  // at the gear wall a click is the gear's: right-click lets go of a cable
+  if (e.button === 2 && !jam.me.seat) return void say(atWall.letGo());
+  if (atWall.wants(jam)) return void say(atWall.click(jam));
   sitOrStand();
 });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+addEventListener("mouseup", () => { atWall.turning = null; });
 document.addEventListener("mousemove", (e) => {
   if (!locked()) return;
+  if (atWall.turning) return atWall.drag(e.movementY);
   const s = 0.0022;
   jam.me.yaw -= e.movementX * s * ctl.lookX;
   jam.me.pitch = clamp(jam.me.pitch - e.movementY * s * ctl.lookY * (ctl.invertY ? -1 : 1), -1.2, 1.1);
 });
 function keyDown(code: string, shift = false) {
   if (code === "KeyM") return void startAudio();
+  if (code === "Slash" && shift) return help.toggle();
   if (phase !== "play") return;
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
@@ -735,6 +763,9 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyI") return void guitar();
   if (code === "Enter") return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
+  if (!jam.me.seat && code === "KeyF") return void say(atWall.click(jam));
+  if (!jam.me.seat && code === "KeyG") return void say(atWall.letGo());
+  if (!jam.me.seat && (code === "KeyQ" || code === "KeyE") && atWall.turn(code === "KeyQ" ? -1 : 1)) return;
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
@@ -758,7 +789,7 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
 });
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !desk.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen() && !desk.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -833,7 +864,7 @@ void eq.finishSignIn().then((back) => {
 });
 
 function menu() { $("menu").hidden = phase === "play"; door(); people(); }
-function play() { if (!here) return; phase = "play"; menu(); lock(); void startAudio(); }
+function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {
   look = randomAvatar(Math.random);
@@ -842,7 +873,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["Tab (seated)", "The track's lane: patch, EQ, mixer, notes"], ["Up / down arrows (seated)", "Pitch bend"], ["[ / ] (seated)", "Mod wheel: vibrato"], ["/ (seated)", "Show or hide the keys' notes"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
+  keys: keysTable(),
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -861,12 +892,12 @@ function hint(): string {
   if (s) {
     const n = keyNote(jam, project, "KeyA", octave);
     if (!may(player).play) return `At ${s.label}, listen only: ${rights.asked === "play" ? "your hand is up" : "H raises your hand to play"}. Space stands up`;
-    if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Space stands up, V camera`;
-    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, / the keys. Space stands up, V camera`;
+    if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Tab opens the instrument's panel. Space stands up`;
+    if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, / the keys. Tab opens the instrument's panel. Space stands up`;
     return `At ${s.label}. Space stands up, V camera`;
   }
-  const near = nearSpot(jam);
-  return near ? `Space or click: sit at ${near.label}` : "";
+  const near = nearSpot(jam), gear = atWall.hint(jam);
+  return gear || (near ? `Space or click: sit at ${near.label}` : "");
 }
 
 /** The notes sounding at a spot, as `track:midi`: whoever sits there holds them. */
@@ -945,12 +976,14 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
-  $("cross").hidden = jam.me.cam !== "first";
+  $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
   $("hint").textContent = now < flash.until ? flash.text : hint();
+  help.frame(phase === "play");
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
   $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
@@ -965,7 +998,16 @@ declare global { interface Window { qjam?: typeof harness } }
 const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
-    grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) } }),
+    grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
+    gear: atWall.state(jam) }),
+  /** At the gear wall: look straight at a box, or one of its jacks or knobs by name (from where you stand). */
+  gearLook: (id: string, part?: string) => atWall.lookAt(jam, id, part),
+  /** A click (F) at the gear wall: set down, plug, unplug, take a cable, pick up. */
+  gearClick: () => atWall.click(jam),
+  /** Let go of the cable in your hand (G). */
+  gearDrop: () => atWall.letGo(),
+  /** A box on the wall's floor in studio metres (x, z), to walk up to. */
+  gearAt: (id: string) => atWall.at(id),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
@@ -979,6 +1021,8 @@ const harness = {
     return out;
   },
   cam: () => { toggleCam(jam); return jam.me.cam; },
+  /** The "What you can do here" card (?): open or closed (left out: as it is); then whether it's open, the key strip and the card's groups. */
+  help: (open?: boolean) => { if (open !== undefined) (open ? help.open() : help.close()); return help.state(); },
   /** The lane (Tab, seated): open or closed (left out: as it is), on a tab; then its state. */
   lane: (open?: boolean, tab?: Tab) => { if (tab && TABS.includes(tab)) lane?.setTab(tab); if (open !== undefined) (open ? lane?.open() : lane?.close()); return lane?.state() ?? null; },
   /** The mixer (Tab standing, its button, or sitting at the desk): open or closed (left out: as it is), then its state (open, readOnly, refused, desk: channels and returns). */

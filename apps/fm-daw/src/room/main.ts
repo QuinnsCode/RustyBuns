@@ -37,8 +37,8 @@ import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, theirLeads, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
-import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
+import { type Aim, type Answer, EYE, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { GearScene } from "./gear-scene.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -231,48 +231,11 @@ scene.add(lamp);
   const rug = new THREE.Mesh(new THREE.CircleGeometry(1.3, 40), new THREE.MeshStandardMaterial({ color: 0x5a2a2e, roughness: 1 }));
   rug.rotation.x = -Math.PI / 2;
   rug.position.set(0.2, 0.003, 0.2);
-  scene.add(floor, walls, rug, rackModel(), pedalWallModel());
+  scene.add(floor, walls, rug);
 }
-
-const models = new Map<string, GearModel>();
-function syncModels() {
-  const ids = new Set(room.studio.patch.placed.map((p) => p.id));
-  for (const [id, m] of models) if (!ids.has(id)) { scene.remove(m.group); models.delete(id); }
-  for (const p of room.studio.patch.placed) {
-    const g = gearOf(p);
-    if (!g) continue;
-    let m = models.get(p.id);
-    if (!m) { m = gearModel(g); models.set(p.id, m); scene.add(m.group); }
-    const now = placedNow(room, p);
-    m.group.position.set(now.at[0], now.at[1], now.at[2]);
-    m.group.rotation.y = now.turn;
-    for (const k of g.knobs) { const km = m.knobs.get(k.name); if (km) turnKnob(km, knobValue(room.studio.patch, p.id, k)); }
-  }
-}
-
-// Cables: a tube along the sagging curve, rebuilt only when an end moves.
-const cableMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.6 });
-const cables = new Map<string, { mesh: THREE.Mesh; ends: string }>();
-function drawCable(key: string, a: number[] | null, b: number[] | null, seen: Set<string>) {
-  if (!a || !b) return;
-  seen.add(key);
-  const ends = [...a, ...b].map((v) => v.toFixed(3)).join(",");
-  const had = cables.get(key);
-  if (had?.ends === ends) return;
-  if (had) { scene.remove(had.mesh); had.mesh.geometry.dispose(); }
-  const pts = sag([a[0], a[1], a[2]], [b[0], b[1], b[2]]).map((p) => new THREE.Vector3(...p));
-  const mesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.0045, 6), cableMat);
-  scene.add(mesh);
-  cables.set(key, { mesh, ends });
-}
-function syncCables() {
-  const seen = new Set<string>();
-  for (const c of room.studio.patch.cables) drawCable(c.from.join(":") + ">" + c.to.join(":"), jackAt(room, c.from), jackAt(room, c.to), seen);
-  const h = hand(room);
-  if (h && "lead" in h) drawCable("hand", jackAt(room, h.lead), handAt(room), seen);
-  for (const l of theirLeads(room)) drawCable(`hand-${l.peer}`, jackAt(room, l.from), l.hand, seen);
-  for (const [k, c] of cables) if (!seen.has(k)) { scene.remove(c.mesh); c.mesh.geometry.dispose(); cables.delete(k); }
-}
+// the rack, the pedal wall and the gear on them, in this room's own frame (the gear wall in a studio draws the same)
+const gear = new GearScene();
+scene.add(gear.group);
 
 // The others in the sesh's gear room: an eqosys figure each, gliding to where its last body said.
 const people = new Map<number, { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }>();
@@ -291,14 +254,6 @@ function syncPeople(dt: number, t: number) {
     p.fig.group.rotation.y = p.yaw;
     p.fig.pose({ speed: p.speed, seated: false, play: null, note: false, t: t / 1000 });
   }
-}
-
-let lit: THREE.Mesh | null = null;
-function highlight(a: Aim | null) {
-  if (lit) { const m = lit.material; if (m instanceof THREE.MeshStandardMaterial) m.emissiveIntensity = 0; lit = null; }
-  if (a?.t !== "jack") return;
-  const ring = models.get(a.end[0])?.jacks.get(a.end[1]);
-  if (ring && ring.material instanceof THREE.MeshStandardMaterial) { ring.material.emissiveIntensity = 1.4; lit = ring; }
 }
 
 // ---- sound: Q Amp's audio thread, fed only when the chain is whole ----
@@ -434,16 +389,6 @@ document.addEventListener("drop", (e) => {
 addEventListener("blur", () => { keys.clear(); dragging = null; });
 document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play") { phase = "menu"; menu(); } });
 
-function hint(a: Aim | null): string {
-  const h = hand(room);
-  const name = (id: string) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; };
-  if (h && "item" in h) return `Click to set ${name(h.item)} down, Q / E to turn it`;
-  if (a?.t === "jack") return h ? `Plug into ${name(a.end[0])}'s ${a.end[1]}` : room.studio.patch.cables.some((c) => c.from.join() === a.end.join() || c.to.join() === a.end.join()) ? `Pull the cable out of ${name(a.end[0])}'s ${a.end[1]}` : `Take a cable from ${name(a.end[0])}'s ${a.end[1]}`;
-  if (a?.t === "knob") { const p = room.studio.patch.placed.find((x) => x.id === a.id), k = p && gearOf(p)?.knobs.find((x) => x.name === a.knob); return k && p ? `${name(a.id)} ${k.label} ${(knobValue(room.studio.patch, p.id, k) * 10).toFixed(1)}: drag to turn` : ""; }
-  if (a?.t === "item") return h ? "Plug the cable into a jack" : `Pick up ${name(a.id)}${pedalAt(room) ? ", B for its build sheet" : ""}`;
-  return h ? "Right-click or G lets go of the cable" : "";
-}
-
 function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; if (phase !== "sheet") sheet.el.hidden = true; }
 
 // ---- a pedal's build sheet (../kit/sheet.ts): B, or the pad's Y, on a pedal on the wall or in your hand ----
@@ -486,11 +431,9 @@ function frame(now: number) {
   }
   save();
   sayBody(now);
-  syncModels();
-  syncCables();
   syncPeople(dt, now);
   const a = aimed(room);
-  highlight(a);
+  gear.sync(room, a);
   const heard = listen(room.studio.patch);
   sound(heard);
   deskSound(heard);
@@ -505,7 +448,7 @@ function frame(now: number) {
     l.positionX.value = room.you.x; l.positionY.value = EYE; l.positionZ.value = room.you.z;
     l.forwardX.value = f.x; l.forwardY.value = f.y; l.forwardZ.value = f.z;
   }
-  $("hint").textContent = now < flash.until ? flash.text : hint(a);
+  $("hint").textContent = now < flash.until ? flash.text : hint(room, a);
   $("heard").textContent = heard.playing ? `Playing: ${heard.chain.map((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; }).join(" > ")}${hopText()}${heard.problems.length ? `. ${heard.problems[0]}` : ""}` : `Silent: ${heard.problems[0] ?? ""}`;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -524,7 +467,7 @@ function glow(h: Heard) {
   // The meter's levels: each pedal on the board first, then the amp's stages.
   const ampId = h.running.find((id) => kindOf(id) === "amp"), offset = h.running.filter((id) => kindOf(id) === "pedal").length;
   const stages = speakersUp ? meter.levels.length - offset - 1 : 0;
-  for (const [id, m] of models) {
+  for (const [id, m] of gear.models) {
     m.tubes.forEach((t, i) => {
       const v = clamp(Math.log10(1 + (meter.levels[offset + i] ?? 0)) / 2, 0, 1);
       if (t.material instanceof THREE.MeshStandardMaterial) t.material.emissiveIntensity = id === ampId && i < stages ? 0.3 + v * 2.5 : 0;
