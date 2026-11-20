@@ -53,7 +53,9 @@ import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
 import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
-import { runScoped, spawnScoped, step } from "./lifecycle.ts";
+import { runScoped, spawnScoped, spawnScopedTee, step } from "./lifecycle.ts";
+import { formatPlanSummary, readPlanRows } from "./plan-summary.ts";
+import { isProtected } from "./protect.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
@@ -1144,11 +1146,17 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     return;
   }
   if (sub === "plan") {
-    const code = yield* timed(prof, "alchemy plan", run(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
+    // Alchemy's plain log (stdin closed), read back for the summary of what happens to each resource (plan-summary.ts).
+    const tee = step(() => alchemyCommand(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv, cf))
+      .pipe(Effect.flatMap(({ cmd, env }) => spawnScopedTee(cmd, env, (pid) => lockBase && noteChild(lockBase, pid))));
+    const { code, out } = yield* timed(prof, "alchemy plan", tee);
     yield* step(() => prof.finish());
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     yield* step(() => Bun.write(stampFile, hash));
-    console.log("\n" + mode);
+    const types = Object.fromEntries(plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8")).map((r) => [r.id, r.type.replace(/^Cloudflare\./, "")]));
+    const kept = new Set(Object.entries(cfg.bindings ?? {}).filter(([, b]) => isProtected(b)).map(([n]) => n));
+    const summary = formatPlanSummary(readPlanRows(out), types, kept, !!process.stdout.isTTY && !process.env.NO_COLOR);
+    console.log("\n" + (summary || "couldn't read each resource's change from the plan above: read it before you deploy.") + "\n\n" + mode);
     return;
   }
   if (drifting) {
