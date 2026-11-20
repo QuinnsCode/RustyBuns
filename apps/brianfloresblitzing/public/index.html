@@ -99,41 +99,120 @@ td.num { white-space: nowrap; }
 td.no { color: var(--muted); }
 tr.cur td { background: var(--accent-soft); }
 .note { font-size: 14px; color: var(--muted); max-width: 66ch; }
+.points { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.points li { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.points svg { height: 84px; width: 100%; }
+.points b { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; line-height: 1.1; }
+.points p { font-size: 15px; }
+.coach { font-style: italic; color: var(--muted); }
+svg .dot { fill: var(--bar); }
+svg .dot.team { fill: var(--accent); }
+svg .rush { fill: var(--gold); }
+svg .ol { fill: var(--muted); }
+svg .los { stroke: var(--line); stroke-width: 2; }
+svg .arrow { stroke: var(--gold); stroke-width: 2.5; fill: none; marker-end: url(#tip); }
+svg .rec { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 4; }
+dl.words { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 15px; }
+dl.words dt { font-weight: 600; }
+dl.words dd { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
 </style>
 
 <main class="wrap">
   <header>
-    <p class="eyebrow">NFL blitz rate, 2026</p>
+    <p class="eyebrow">NFL blitz rate, 2026, through Week 10</p>
     <h1>One team in 32 can move the whole league average</h1>
     <div class="lede">
-      <p>There are 32 teams. Each one counts once in the league average. That is 1 out of 32, or 3.1%.</p>
-      <p>The Vikings blitz way more than everyone else. So they drag the average up. By a lot.</p>
+      <p>Brian Flores runs the Vikings defense. He sends extra rushers more than any coach in the league.</p>
+      <p class="coach">Coach style: bring pressure. Make the quarterback guess. Do it again.</p>
     </div>
   </header>
 
-  <p class="units"><strong>Percentage points, not game points.</strong> A team that blitzes 70% of the time and a team that blitzes 30% of the time are 40 percentage points apart. Nothing to do with the scoreboard.</p>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="tip" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a86a00"/></marker></defs></svg>
+
+  <ol class="points" aria-label="The short version">
+    <li>
+      <svg viewBox="0 0 220 84" role="img" aria-label="Four rushers and one extra rusher run at the offense.">
+        <line class="los" x1="20" x2="200" y1="46" y2="46"/>
+        <circle class="dot" cx="70" cy="34" r="7"/><circle class="dot" cx="95" cy="34" r="7"/>
+        <circle class="dot" cx="120" cy="34" r="7"/><circle class="dot" cx="145" cy="34" r="7"/>
+        <circle class="rush" cx="188" cy="16" r="8"/><path class="arrow" d="M182 24 L160 44"/>
+        <rect class="ol" x="64" y="52" width="12" height="12" rx="2"/><rect class="ol" x="83" y="52" width="12" height="12" rx="2"/>
+        <rect class="ol" x="102" y="52" width="12" height="12" rx="2"/><rect class="ol" x="121" y="52" width="12" height="12" rx="2"/>
+        <rect class="ol" x="140" y="52" width="12" height="12" rx="2"/><circle class="ol" cx="108" cy="77" r="5"/>
+      </svg>
+      <b>A blitz is 5 or more rushers</b>
+      <p>Most plays, a defense sends 4. A blitz sends 1 or more extra. Send one more than they can block.</p>
+    </li>
+    <li>
+      <svg id="gGrid" viewBox="0 0 220 84" role="img" aria-label="100 squares. 72 are blue."></svg>
+      <b>72 of every 100 pass plays</b>
+      <p>The Vikings blitz on 72.3% of pass plays. A typical team blitzes on about 31.</p>
+    </li>
+    <li>
+      <svg viewBox="0 0 220 84" role="img" aria-label="Three bars. Vikings 72.3, Commanders 43.6, typical team 30.7.">
+        <rect class="team" x="0" y="6" width="152" height="18" rx="3"/><text class="blue" x="158" y="20">72.3%</text>
+        <rect class="bar" x="0" y="33" width="92" height="18" rx="3"/><text x="98" y="47">43.6% No. 2</text>
+        <rect class="bar" x="0" y="60" width="65" height="18" rx="3"/><text x="71" y="74">30.7% typical</text>
+      </svg>
+      <b>No. 2 is not close</b>
+      <p>Washington is second at 43.6%. The Vikings are almost 30 points ahead. Nobody else is close.</p>
+    </li>
+    <li>
+      <svg id="gDots" viewBox="0 0 220 84" role="img" aria-label="32 dots. One is blue."></svg>
+      <b>One team is 1 vote in 32</b>
+      <p>Each team counts once in the league average. That is 1 out of 32, or 3.1%.</p>
+    </li>
+    <li>
+      <svg viewBox="0 0 220 84" role="img" aria-label="The league average line moves up.">
+        <line class="before" x1="10" x2="150" y1="64" y2="64"/><text x="156" y="68">30.7%</text>
+        <line class="after" x1="10" x2="150" y1="24" y2="24"/><text class="gold" x="156" y="28">32.0%</text>
+        <path class="arrow" d="M80 60 L80 30"/>
+      </svg>
+      <b>The average goes up 1.3 points</b>
+      <p>One very high number pulls the league average up. Without the Vikings it is 30.7%. With them it is 32.0%.</p>
+    </li>
+    <li>
+      <svg viewBox="0 0 220 84" role="img" aria-label="A bar for 72.3 percent passes a dashed line at the old record of 52.4 percent.">
+        <rect class="team" x="0" y="30" width="152" height="24" rx="3"/>
+        <line class="rec" x1="110" x2="110" y1="14" y2="70"/>
+        <text x="110" y="10" text-anchor="middle">old high 52.4%</text>
+        <text class="blue" x="158" y="47">72.3%</text>
+      </svg>
+      <b>Past the old high</b>
+      <p>Since 2006, no team blitzed more than 52.4% for a full season. That record is gone.</p>
+    </li>
+  </ol>
+
+  <dl class="words" aria-label="Words to know">
+    <dt>Blitz</dt><dd>The defense sends 5 or more players at the quarterback.</dd>
+    <dt>Pass play</dt><dd>The quarterback drops back to throw. Stats call this a dropback.</dd>
+    <dt>Blitz rate</dt><dd>Blitzes out of every 100 pass plays.</dd>
+  </dl>
+
+  <p class="units"><strong>Percentage points, not game points.</strong> A team that blitzes 72% of the time and a team that blitzes 31% of the time are 41 percentage points apart. This is not about the scoreboard.</p>
 
   <section class="card" aria-labelledby="play">
     <h2 id="play">Drag the Vikings' blitz rate</h2>
+    <p class="coach">Move the slider. Watch the gold line. That is the league average.</p>
     <div class="control">
       <label for="rate">Vikings blitz rate <output id="rateOut"></output></label>
-      <input type="range" id="rate" min="30.1" max="90" step="0.1" value="70.4">
+      <input type="range" id="rate" min="30.7" max="90" step="0.1" value="72.3">
     </div>
     <div class="chips" id="chips"></div>
-    <svg id="chart" viewBox="0 0 560 300" role="img" aria-label="Thirty-two bars of blitz rate. Thirty-one bars sit at about 30 percent. The Vikings bar is much taller."></svg>
+    <svg id="chart" viewBox="0 0 560 300" role="img" aria-label="Thirty-two bars of blitz rate. Thirty-one bars sit at about 31 percent. The Vikings bar is much taller."></svg>
     <p class="sentence" id="sentence" aria-live="polite"></p>
     <dl class="stats" aria-live="polite">
       <div class="hl"><dt>Vikings vs. a typical team</dt><dd id="sGap"></dd><small>percentage points higher</small></div>
       <div class="gl"><dt>League average goes up</dt><dd id="sShift"></dd><small id="sRel"></small></div>
       <div><dt>Gap vs. move</dt><dd id="sMult"></dd><small>the gap is this many times the move</small></div>
     </dl>
-    <p class="note">The other 31 teams are shown as one group at their average, about 30.1%. Data: muffed.ai 2026 blitz rate table.</p>
+    <p class="note">The other 31 teams show as one group at their average, about 30.7%. Data: Vikings 72.3% through Week 10 (Vikings.com, Nov 20). Other teams: muffed.ai 2026 table, through Week 9 (the newest full table). The Colts game is from ESPN.</p>
   </section>
 
   <section class="card" aria-labelledby="share">
     <h2 id="share">3% of the teams is not 3% of the blitzes</h2>
-    <p>Every team counts once in the average. That is the 3%. But a team that blitzes more throws more blitzes. Look at who supplies them.</p>
+    <p>Each team counts once in the average. That is the 3%. But a team that blitzes more sends more blitzes. Count who sends them.</p>
     <div class="scale">
       <div class="row">
         <div class="lab"><span>Vikings' share of the teams</span><span class="num" id="shTeams"></span></div>
@@ -152,8 +231,8 @@ tr.cur td { background: var(--accent-soft); }
       <span class="op" aria-hidden="true">=</span>
       <div class="res"><span class="eqn" id="eqP"></span><small>percentage points the league average moves</small></div>
     </div>
-    <p>The 3.1% never changes. The gap does. A big gap makes a big move.</p>
-    <p class="note">Blitz shares assume every team has about the same number of dropbacks. Real counts vary a bit, so treat the share as close, not exact.</p>
+    <p class="coach">The 3.1% stays the same. The gap is what we control. A big gap makes a big move.</p>
+    <p class="note">Blitz shares use the same number of pass plays for each team. Real counts are a little different. So the share is close, not exact.</p>
   </section>
 
   <section class="card" aria-labelledby="scale">
@@ -168,7 +247,7 @@ tr.cur td { background: var(--accent-soft); }
         <div class="track"><div class="fill g" id="fShift"></div></div>
       </div>
     </div>
-    <p>The top bar is 32 times longer. The other 31 teams hold the average in place. So one team has to go 32 times as far as the average goes.</p>
+    <p>The top bar is 32 times longer. The other 31 teams hold the average in place. So one team must go 32 times as far as the average goes.</p>
   </section>
 
   <section class="card" aria-labelledby="calc">
@@ -179,7 +258,7 @@ tr.cur td { background: var(--accent-soft); }
         <input type="number" id="teams" min="2" max="100" step="1" value="32" inputmode="numeric">
       </label>
       <label for="target">Average moves up (percentage points)
-        <input type="number" id="target" min="0" step="0.05" value="1.26" inputmode="decimal">
+        <input type="number" id="target" min="0" step="0.05" value="1.3" inputmode="decimal">
       </label>
     </div>
     <div class="tablewrap">
@@ -195,18 +274,18 @@ tr.cur td { background: var(--accent-soft); }
 
 <script>
 (function () {
-  var BASE = 30.07;      // average blitz rate of the other 31 teams, shown as about 30.1%
+  var BASE = 30.7;       // plain mean of the other 31 teams, muffed.ai through Week 9 (newest full table)
   var N = 32;
-  var rate = 70.4;
+  var rate = 72.3;       // Vikings through Week 10 (Vikings.com, Nov 20, 2026)
   var $ = function (id) { return document.getElementById(id); };
   function fmt(x, d) { return String(+x.toFixed(d)); }
   function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
 
   var CHIPS = [
-    { label: "Typical team 30.1%", v: BASE },
-    { label: "Commanders (#2) 45.5%", v: 45.5 },
-    { label: "Vikings season 70.4%", v: 70.4 },
-    { label: "Vikings vs. Colts 85.2%", v: 85.2 }
+    { label: "Typical team 30.7%", v: BASE },
+    { label: "Commanders (No. 2) 43.6%", v: 43.6 },
+    { label: "Vikings season 72.3%", v: 72.3 },
+    { label: "Vikings vs. Colts 85.3%", v: 85.3 }
   ];
   var chipsEl = $("chips");
   CHIPS.forEach(function (c) {
@@ -287,9 +366,9 @@ tr.cur td { background: var(--accent-soft); }
     $("classroom").textContent = n + " teams. The other " + (n - 1) + " blitz about " + fmt(BASE, 1) +
       "% of the time. One team wants to move the league average up " + fmt(t, 2) + " percentage points. It has to blitz " +
       fmt(need, 1) + " percentage points more than the rest. That is a " + fmt(needRate, 1) + "% blitz rate." +
-      (needRate > 100 ? " Not possible. No team blitzes more than 100%." : "") +
+      (needRate > 100 ? " That is not possible. No team can blitz more than 100%." : "") +
       " The most one team could ever move the average is " + fmt(maxMove, 1) + " percentage points, by blitzing on every dropback.";
-    var shifts = [0.5, 1, 1.26, 2, 3], html = "";
+    var shifts = [0.5, 1, 1.3, 2, 3], html = "";
     function row(sv, cur) {
       var nr = BASE + sv * n, bad = nr > 100;
       return '<tr' + (cur ? ' class="cur"' : '') + '><td class="num">+' + fmt(sv, 2) + '</td><td class="num' + (bad ? ' no' : '') + '">+' +
@@ -299,6 +378,19 @@ tr.cur td { background: var(--accent-soft); }
     if (shifts.every(function (sv) { return Math.abs(sv - t) >= 0.005; })) html += row(t, true);
     $("rows").innerHTML = html;
   }
+
+  // Point graphics: 100 squares with 72 blue, and 32 dots with 1 blue.
+  var g = "";
+  for (var k = 0; k < 100; k++) {
+    g += '<rect class="' + (k < 72 ? "team" : "bar") + '" x="' + (k % 20) * 11 + '" y="' + Math.floor(k / 20) * 16 +
+         '" width="9" height="13" rx="2"/>';
+  }
+  $("gGrid").innerHTML = g;
+  g = "";
+  for (k = 0; k < N; k++) {
+    g += '<circle class="dot' + (k === 0 ? " team" : "") + '" cx="' + (8 + (k % 16) * 13.6) + '" cy="' + (k < 16 ? 26 : 58) + '" r="5.5"/>';
+  }
+  $("gDots").innerHTML = g;
 
   $("rate").addEventListener("input", function () { rate = parseFloat(this.value); sync(); });
   $("teams").addEventListener("input", renderCalc);
