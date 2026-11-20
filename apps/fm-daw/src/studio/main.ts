@@ -59,6 +59,7 @@ import { GuitarLine } from "./guitar-line.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
+import { mountDesk } from "./desk-panel.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -655,6 +656,14 @@ lane = mountLane({
   audition: (track) => { const midi = project.tracks[track]?.root ?? 60; noteOn("lane", { track, midi }, 0.8); setTimeout(() => noteOff("lane"), 220); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
 });
+// the full desk over the room (desk-panel.ts): the button, Tab standing, or sitting at the control room's desk
+const desk = mountDesk({
+  project: () => project, edit: player.edit, may: () => may(player), ready: () => phase === "play" && !!here,
+  players: () => heardPlayers().map((h) => ({ who: h.who, name: h.peer === 0 ? "You: guitar" : jam.others.get(h.peer)?.name || "Player" })),
+  atDesk: () => phase === "play" && spotOf(jam, jam.me.seat)?.kind === "desk",
+  cabled: (aux) => (aux === 2 ? auxGear(gearRoom.patch).label : ""),
+  onToggle: (open) => { if (open) { lane?.close(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
+});
 
 if (here) net = connect({
   onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); },
@@ -699,6 +708,7 @@ function sitOrStand() {
 canvas.addEventListener("mousedown", () => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
+  if (desk.isOpen()) return desk.close();
   if (!locked()) return lock();
   sitOrStand();
 });
@@ -714,7 +724,12 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
-  if (code === "Tab") return void (jam.me.seat && lane?.toggle());
+  if (code === "Tab") {
+    if (desk.isOpen()) return desk.close();
+    if (lane?.isOpen()) return lane.close();
+    if (jam.me.seat && lane?.open()) return;
+    return desk.open();
+  }
   if (code === "Space") return sitOrStand();
   if (code === "KeyH") return raise();
   if (code === "KeyI") return void guitar();
@@ -743,7 +758,7 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
 });
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !desk.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -827,7 +842,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["Tab (seated)", "The track's lane: patch, EQ, mixer, notes"], ["Up / down arrows (seated)", "Pitch bend"], ["[ / ] (seated)", "Mod wheel: vibrato"], ["/ (seated)", "Show or hide the keys' notes"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["Tab (seated)", "The track's lane: patch, EQ, mixer, notes"], ["Tab (standing, or at the desk)", "The mixer: every track and player"], ["Up / down arrows (seated)", "Pitch bend"], ["[ / ] (seated)", "Mod wheel: vibrato"], ["/ (seated)", "Show or hide the keys' notes"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Q (standing)", "Picture quality, high or low"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -966,6 +981,11 @@ const harness = {
   cam: () => { toggleCam(jam); return jam.me.cam; },
   /** The lane (Tab, seated): open or closed (left out: as it is), on a tab; then its state. */
   lane: (open?: boolean, tab?: Tab) => { if (tab && TABS.includes(tab)) lane?.setTab(tab); if (open !== undefined) (open ? lane?.open() : lane?.close()); return lane?.state() ?? null; },
+  /** The mixer (Tab standing, its button, or sitting at the desk): open or closed (left out: as it is), then its state (open, readOnly, refused, desk: channels and returns). */
+  desk: (open?: boolean) => { if (open !== undefined) (open ? desk.open() : desk.close()); return desk.state(); },
+  /** A mixer channel's controls, an aux send (0 to 1), or a return's fader; then whether the sesh took it. */
+  channel: (id: string, ch: Parameters<typeof desk.channel>[1]) => desk.channel(id, ch),
+  send: (id: string, aux: number, v: number) => desk.send(id, aux, v),
   /** What shows played: each instrument's keys down (white and black indices) and how hard each drum rings, 0 to 1. */
   played: () => Object.fromEntries([...played].map(([id, p]) => [id, p.keys ? p.keys.down : p.kit?.rings()])),
   /** Play a note at your seat, as a key would (A, S, ... ; the kit's home row), for `ms` milliseconds. */

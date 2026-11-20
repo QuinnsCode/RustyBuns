@@ -19,6 +19,8 @@ import { figure, handsOn, type Figure } from "../src/studio/figure.ts";
 import * as THREE from "three";
 import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, toggleCam, trackFor, walkTo } from "../src/studio/jam.ts";
 import { laneModel } from "../src/studio/lane-model.ts";
+import { deskModel } from "../src/studio/desk-model.ts";
+import { seshDesk } from "../src/mixer.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import { may, remotePlayer, studioTools } from "../src/studio/agent.ts";
@@ -989,6 +991,60 @@ test("a guitar call: its setup goes to the one person it names, and a listen-onl
   say(guest, { t: "live", e: { t: "guitar", track: 0 } });
   say(guest, { t: "live", e: { t: "guitar", track: null } });
   expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "want" } }, { t: "live", from: G, e: { t: "guitar", track: null } }]);
+});
+
+test("jam room mixer: sit at the desk, pull a track's fader down and raise its aux 1 send, and the leader's page plays both; read only until she says yes", async () => {
+  const { world, join } = await setup({}, "desk-mix-room");
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const amyWs = (await join({}, "a".repeat(32))).ws;              // first key in: Amy leads the sesh
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "init", project: demoProject() }));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "hello", key: "a".repeat(48), name: "Amy" }));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "floor", state: "held" }));
+  const botWs = (await join()).ws;
+  const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
+    send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
+  const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
+  await tick(); pump();
+  const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
+  const desk = deskModel({
+    project: () => pl.project()!, players: () => [], edit: pl.edit, may: () => may(pl),
+    atDesk: () => spotOf(pl.jam, pl.jam.me.seat)?.kind === "desk",
+  });
+  // sitting at the control room's desk opens it: a strip per track and the two returns
+  const at = spotOf(pl.jam, "desk")!.at;
+  walkTo(pl.jam, at[0], at[1] - 0.6);
+  expect(sit(pl.jam, "desk").ok).toBe(true);
+  desk.refresh();
+  expect(desk.state()).toMatchObject({ open: true, readOnly: true });
+  expect(desk.state().desk.channels.length).toBe(pl.project()!.tracks.length);
+  expect(desk.state().desk.returns.map((r) => r.aux)).toEqual([1, 2]);
+
+  // Amy holds the floor: the fader is refused here, and nothing goes to her
+  ops();
+  expect(desk.channel("track-1", { fader: 0.25 })).toBe(false);
+  expect(desk.state().refused).toContain("raises your hand");
+  await tick();
+  expect(ops()).toEqual([]);
+
+  // the bot raises its hand to mix, she says yes, and the fader and the send land on her page
+  pl.ask("mix");
+  await tick();
+  const hand = amyWs.sent.findLast((m) => m.t === "grants" && Object.values(m.asks).includes("mix"));
+  world.webSocketMessage(amyWs, JSON.stringify({ t: "answer", who: Object.keys(hand.asks)[0], yes: true }));
+  await tick(); pump(); ops();
+  expect(desk.state().readOnly).toBe(false);
+  expect(desk.channel("track-1", { fader: 0.25 })).toBe(true);
+  expect(desk.send("track-1", 1, 0.6)).toBe(true);
+  await tick();
+  const amy = ops().reduce((p: Project, op) => apply(p, op), demoProject());
+  const strip = seshDesk(amy).channels[0]!;
+  expect(strip.fader).toBeCloseTo(0.25, 3);
+  expect(strip.sends[0]).toBeCloseTo(0.6, 3);
+
+  // standing up closes it
+  stand(pl.jam);
+  desk.refresh();
+  expect(desk.isOpen()).toBe(false);
 });
 
 test("jam room lane: sit at the keys, open its lane, turn a patch knob, and the op lands on the leader's page; read only until she says yes", async () => {
