@@ -1011,8 +1011,8 @@ test("jam room mixer: sit at the desk, pull a track's fader down and raise its a
     atDesk: () => spotOf(pl.jam, pl.jam.me.seat)?.kind === "desk",
   });
   // sitting at the control room's desk opens it: a strip per track and the two returns
-  const at = spotOf(pl.jam, "desk")!.at;
-  walkTo(pl.jam, at[0], at[1] - 0.6);
+  // in through the control room's door (the right end of its window wall), round behind the desk
+  for (const [x, z] of [[3.6, -0.5], [3.6, -3.3], [0, -3.3]] as const) walkTo(pl.jam, x, z);
   expect(sit(pl.jam, "desk").ok).toBe(true);
   desk.refresh();
   expect(desk.state()).toMatchObject({ open: true, readOnly: true });
