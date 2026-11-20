@@ -35,3 +35,11 @@ main { position: fixed; inset: 0; }
 .desk-row { display: flex; gap: 6px; }
 .desk-toggle { flex: 1; background: #2b2e33; color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 5px 0; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
 .desk-toggle.on { background: var(--hot); color: #1d1f23; border-color: var(--hot); }
+/* the jam room's mixer (src/studio/desk-panel.ts): the same desk over the room, and the button that opens it */
+#desk-open { position: fixed; left: 16px; bottom: 64px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
+#desk-open[hidden] { display: none; }
+body > #desk { position: fixed; z-index: 32; max-height: calc(100% - 72px); }
+#desk.ro #desk-strips { pointer-events: none; opacity: 0.7; }
+.desk-note { margin: 0 0 10px; padding: 6px 10px; border-radius: 8px; background: #2b2e33; color: var(--hot); font-size: 13px; }
+.desk-note[hidden] { display: none; }
+@media (max-width: 520px) { #desk-open { bottom: 96px; left: 12px; } body > #desk { left: 0; right: 0; bottom: 0; max-height: calc(100% - 52px); border-radius: 14px 14px 0 0; padding: 12px; } }
