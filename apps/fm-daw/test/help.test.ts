@@ -35,8 +35,9 @@ test("the card and the key strip follow you from the door to a seat to the desk"
   expect(keysOf(strip(kind()))).toEqual(["Tab", "?", "Space", "Esc"]);
   expect(keysOf(card(kind())[0].actions)).toEqual(expect.arrayContaining(["Tab", "A to L"]));
 
-  // Over at the desk: the groove and how you hear the band, and standing up.
-  stand(j); walkTo(j, 0, -1.9);
+  // Into the control room, to the desk: the groove and how you hear the band, and standing up.
+  stand(j);
+  for (const [x, z] of [[1, -0.8], [3.6, -0.8], [3.6, -2.2], [1.8, -3.2], [0.3, -3.2]]) walkTo(j, x, z);   // through the control room's door, round behind the desk
   expect(sit(j, "desk")).toEqual({ ok: true });
   expect(keysOf(strip(kind()))).toEqual(["Enter", "C", "?", "Space", "Esc"]);
   expect(card(kind())[0]).toMatchObject({ where: "desk", here: true });
