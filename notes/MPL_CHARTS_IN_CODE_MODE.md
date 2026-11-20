@@ -1,13 +1,15 @@
 # Charts in code mode with mpljs
 
 Research note, 2026-11-20. The question: should a code-mode program (codeSplitter's `execute`, eqosys's, qCRM's
-script runs) be able to draw a chart and hand back a picture, using [ivarvong/mpl](https://github.com/ivarvong/mpl)?
-Someone did this for another coding agent ("gave it a codemode charting tool based on the JS port of matplotlib")
-and it fits our code mode well.
+script runs) be able to draw a chart, using [ivarvong/mpl](https://github.com/ivarvong/mpl)? Someone did this for
+another coding agent ("gave it a codemode charting tool based on the JS port of matplotlib"), and it fits our
+code mode well.
 
-**Short answer: yes, it's worth a small spike.** The library runs on Workers, needs no network, and its output is
-a PNG or SVG. In code mode the program already does the filtering. With a chart, the model gets one picture back
-instead of a thousand rows. Three things in our own code mode have to change first. They're listed below.
+**Short answer: yes, it's worth a small spike (#5402).** A chart is just code. The program draws it in its sandbox
+with mpl, then calls a `save_chart` tool that puts the PNG or SVG in R2 and answers with a signed link. The same
+program can run when an agent asks for it, on an event, or on a cron (Cron Swanson). The link goes into an artifact,
+a PR or a dashboard. The picture is for people. The model doesn't need to see it, because the program already has
+the numbers and can work out the max, p95 or the outlier in code.
 
 ## What mpljs is
 
@@ -27,42 +29,40 @@ instead of a thousand rows. Three things in our own code mode have to change fir
 
 ## Why it fits code mode
 
-A code-mode program already calls tools, joins and filters their results, and sends back only what it returns.
-Charts take that one step further:
+- **The chart is code.** Models already write matplotlib well, so the mpl calls come out right on the first try.
+  The program fetches the rows with tools, filters them, plots them and saves the result. Only a short answer
+  and a link come back to the model.
+- **Run it anywhere.** The program doesn't care what starts it: an agent's `execute`, an event or a cron job.
+  A dashboard chart is just a saved program that runs every hour.
+- **Artifact charts for cheap.** An artifact page shows the chart with `<img src="<signed link>">`, so the model
+  doesn't write chart code in the page. A `toSVG({ interactive: true })` file adds hover tooltips if a page wants
+  them. The in-session chart tool (easel) and the dataviz palette are still the right choice for a live chart in chat.
 
-1. **Debugging by looking.** Some questions are about the shape of the data: CI times over 200 runs
-   (`test-times.json`), a climb's scores round by round, a game's frame times, latency spread, where a
-   rate limit kicks in. A program can fetch the rows, plot them and return one image. The model sees the
-   trend or the outlier without reading the numbers.
-2. **Cheaper.** A Claude image costs about `width × height / 750` tokens, so an 800 × 500 PNG is about 530
-   tokens. The same 500 points as JSON cost several thousand. The trade-off: the model reads the shape, not
-   exact values. So the program should return the few numbers that matter (max, p95, the outlier's id) next
-   to the image.
-3. **Artifact charts.** `toSVG()` gives finished SVG text that an artifact page can embed as it is, so the
-   model doesn't have to write chart code in the page. An interactive SVG comes with its own hover client. The
-   in-session chart tool (easel) and the dataviz palette are still the right choice for a live chart in chat.
-   Use mpl when the chart comes out of a program run.
+## Why a tool, not a pre-signed upload URL
 
-## What has to change on our side
+A program runs with no network (`globalOutbound: null`). That's on purpose, so code an agent writes can't send
+data anywhere, and it means the program can't PUT to a pre-signed URL itself. The code-mode way out of the sandbox
+is a tool call, so `save_chart` does the upload on the server's side of the wall. A pre-signed GET URL is still
+the right way to hand the link out: charts from a private repo stay private, and the link expires.
 
-Code mode is built once, in `@rustybuns/util/codemode` (`runProgram`, `wrap`). codeSplitter and eqosys only
-pass in their own limits. So the change happens in one place.
+## The design
 
-1. **Pictures need their own way back.** `MAX_BACK` is 20,000 characters, and the reply is a single
-   `{ type: "text" }` block (`result()` in `apps/codesplitter/src/mcp.ts`). A base64 PNG doesn't fit there, and
-   it shouldn't. Give the program a `chart(fig)` (or `image(png)`) helper that puts the PNG in a separate
-   `images` list with its own cap (for example 2 images of 300 KB each). Then `execute` answers with MCP
-   `{ type: "image", data, mimeType: "image/png" }` blocks after the text. SVG can stay in the text result when
-   it fits.
-2. **Load the library as a static import.** A program is a function body that `wrap` writes into one
-   module, `program.js`. The local loader's wall (`walled` in `packages/shell-bun/src/bindings/worker-loader.ts`)
-   refuses any `import()` in an isolated Worker. So the program can't `await import("mpl")`. Instead,
-   `runProgram` takes optional extra `modules`, and `wrap` puts `import * as mpl from "./mpl.js"` at the top
-   when charts are on. The edge loader accepts the same `modules` map.
-3. **mpl's one call that reaches the machine.** The tracer's `flush(path)` runs `await import('node:fs/promises')`
+1. **mpl in the sandbox.** A program is a function body that `wrap` (`@rustybuns/util/codemode`) writes into
+   one module, `program.js`. The local loader's wall (`walled` in `packages/shell-bun/src/bindings/worker-loader.ts`)
+   refuses any `import()` in an isolated Worker, so the program can't `await import("mpl")`. Instead, `runProgram`
+   takes optional extra `modules`, and `wrap` puts `import * as mpl from "./mpl.js"` at the top when charts are
+   on. The edge loader accepts the same `modules` map.
+2. **mpl's one call that reaches the machine.** The tracer's `flush(path)` runs `await import('node:fs/promises')`
    (`src/trace.ts`). Our wall would turn the whole bundle away because of that line. So bundle mpl ourselves
    with that path stubbed out, or ask upstream to move the tracer behind its own entry point. Also check
    that the bundle doesn't use `new Function` or `eval`, because the isolated thread removes both.
+3. **`save_chart({ name, png | svg })`.** A normal codeSplitter tool, so it goes through the existing bridge and
+   the caller's token, scope and rate limits. It writes to a new R2 bucket under the token's account and answers
+   `{ url, expires }` with a signed GET link (7 days).
+   - The bucket gets a lifecycle rule that deletes charts after 7 days, which keeps it in R2's free tier.
+   - Cap a chart at about 300 KB. The PNG crosses the bridge as base64 in the tool's arguments, so check the
+     argument size limit fits that.
+   - A program's text answer stays under `MAX_BACK` (20,000 characters) as now. Nothing about MCP replies changes.
 
 Also check during the spike:
 
@@ -74,16 +74,18 @@ Also check during the spike:
   a dependency's `prepare` script. Vendor a built, pinned `dist/` (with mpl's commit sha, `LICENSE` and
   `THIRD_PARTY_NOTICES.md`) as a text module that codeSplitter's build reads. Don't make it a new package
   that other packages depend on.
-- **Safety.** It's pure computation, and the program already has no network (`globalOutbound: null`). The
-  remaining risk is a large or hostile spec burning CPU. The CPU limit already ends a run like that.
+- **Safety.** It's pure computation, and the program has no network. The remaining risk is a large or hostile
+  spec burning CPU, and the CPU limit already ends a run like that. A saved chart can only be read through its
+  signed link.
 
 ## Suggested spike (one PR, #5402)
 
 1. Vendor a pinned mpl build (DejaVu Sans only, about 179 KiB gzip) with the tracer stubbed out.
-2. `runProgram` gets `modules` and an `images` channel. `wrap` passes `mpl` and `chart(fig)` to the program.
-3. codeSplitter's `execute` returns image blocks. Update the `INSTRUCTIONS` text to say a program can draw.
-4. One journey test through `local()`: a program reads `test-times.json`-shaped rows from a tool, plots them,
-   and gets back a valid PNG and a short text result. Measure CPU time in the same test.
+2. `runProgram` takes extra `modules`, and `wrap` gives the program `mpl` when charts are on.
+3. The R2 bucket (with its 7-day rule) and the `save_chart` tool with signed links. Update `INSTRUCTIONS` to say a
+   program can draw and save a chart.
+4. One journey test through `local()`: a program reads `test-times.json`-shaped rows from a tool, plots them, calls
+   `save_chart`, and the link it gets back serves a valid PNG. Measure CPU time in the same test.
 
-eqosys and qCRM get it free by turning it on in their `runProgram` options. Leave them off until codeSplitter
-has used it for a while.
+Running a saved chart program on a cron or an event comes after, through Cron Swanson. eqosys and qCRM get mpl
+by turning it on in their `runProgram` options. Leave them off until codeSplitter has used it for a while.
