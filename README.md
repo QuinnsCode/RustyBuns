@@ -873,6 +873,7 @@ The jobs that agents did by hand in many small steps (wait for CI, read an issue
 - `bun run pr <n>`: waits for a PR's checks and prints one line for each result, with the log tail of a failed step.
 - `bun run issue <n>`: an issue's brief, with the PRs that close it and the last comments.
 - `bun run probe <app>`: a game's state as JSON from headless Chrome, plus its errors, with no tabs or screenshots.
+- `bun run brief <app>`: an app's brief from its own files: what it is, its notes, scripts, tests, port and page handle.
 - `bun run outline <file> [name]`: a file's symbols with line ranges, or one symbol's source. `--api` shows a package's exports as one-line signatures.
 - Each script answers `--help` with its own top comment.
 
@@ -907,6 +908,18 @@ Tokens by model, code lines that landed for each percent of the plan, and the co
 <details><summary>More</summary>
 
 `apps/agent-office/ester/ledger.ts` reads the session transcripts and git. It counts tokens by kind and model, subagents too, PRs merged, the code that landed on `main` and what Mervin, Ester and Dexter handed back. The weekly page compares each week with the last, and shows if the repo is growing or getting smaller. A day runs 10am to 10am, and `ledger-daily.ts` refreshes both pages.
+
+</details>
+
+### Agent skills: one for building with Rusty Buns, one for each app
+
+`rustybuns skill add` puts a skill in your project that teaches your coding agent how to build with Rusty Buns.
+
+<details><summary>More</summary>
+
+The skill ships inside `@rustybuns/cli` (`skills/rustybuns/SKILL.md`). It covers the command loop (init, dev, plan, deploy, build), the five primitives, and the habits this repo's agents work by: check what comes in with a guard, one operation behind every door, import the shared helpers, effects at the edges, a TypeScript twin for any Rust, and tests of behaviour. `rustybuns skill` prints it. `rustybuns skill add` writes it to `.claude/skills/rustybuns/`, and `--dir .agents/skills` writes it for Codex. Run it again after an upgrade to bring it up to date.
+
+In this repo the same file loads as the `rustybuns` skill. The `rustybuns-apps` skill sends an agent to `bun run brief <app>`, which builds an app's brief from the app's own README, notes, scripts, tests, port and page handle. That way there is no skill file for each app that can go out of date.
 
 </details>
 

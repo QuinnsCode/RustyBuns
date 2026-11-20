@@ -276,6 +276,7 @@ To redeploy, rsync again, then `docker rm -f my-app` and the same `build` and `r
 | `mem [--url U] [--json]` | the deployed box's memory: RSS, heap, peak and MB/h slope |
 | `history [--runs N] [--json]` | the box's runs, newest first, with memory slope, profiles and ceiling restarts; needs `RB_PROF_SECRET` |
 | `triage [--agent claude\|codex] [--print]` | start your coding agent on a problem, with this project's facts in `.rustybuns/triage/` |
+| `skill [add] [--dir d]` | print the agent skill for building with Rusty Buns, or write it to `d/rustybuns/SKILL.md` (default `.claude/skills`; `.agents/skills` for Codex) |
 | `smoke [dir] [--keep] [--edge-like]` | does this app run on Rusty Buns? Installs, inits, builds and boots a throwaway copy |
 | `jekyll`, `copy-site <from> <to>` | helpers for a Jekyll or static site's Worker build; `init` wires them in |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |

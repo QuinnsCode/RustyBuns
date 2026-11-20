@@ -73,6 +73,7 @@ import { isRecord } from "@rustybuns/shell-bun/guard";
 import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
+import { skillCommand } from "./skill.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -1306,7 +1307,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "skill", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1356,6 +1357,12 @@ try {
     case "mem": await memCommand(rest); break;
     case "history": await historyCommand(rest); break;
     case "triage": await triageCommand(rest); break;
+    case "skill": {
+      let r;
+      try { r = skillCommand(rest); } catch (e) { throw new UsageError({ message: e instanceof Error ? e.message : String(e) }); }
+      console.log(r.path ? `${r.changed ? "wrote" : "up to date:"} ${r.path}` : r.text);
+      break;
+    }
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
       if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>] | add deploy [--dry-run]");
@@ -1530,6 +1537,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              something wrong? start your coding agent on it, with this project's
                              facts (versions, config, the box and its memory) in .rustybuns/triage/
                              and a playbook: it asks what went wrong, digs in, and drafts the issue
+  skill [add] [--dir D]      the agent skill for building with Rusty Buns: print it, or add it to
+                             D/rustybuns/SKILL.md (default .claude/skills; .agents/skills for Codex)
   --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and
