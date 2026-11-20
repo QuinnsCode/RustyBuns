@@ -5,9 +5,26 @@ import { arr, bool, check, int, obj, str, type Of } from "@rustybuns/util/guard"
 import { seshName } from "../sesh.ts";
 import { ROOMS, ROOM_LIST, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
+import type { StudioDef } from "./room.ts";
 
+/** A studio as the pickers show it: its id, name, a line on what it is, and the room itself (for its shot). */
+export interface Studio { id: string; name: string; about: string; def: StudioDef }
 /** The studios a room can be in: the builder's rooms, and the one you built in /rooms.html (?studio=yours) when there is one. */
-export const studios = () => [...ROOM_LIST.map((r) => ({ id: r.id, name: r.name })), ...(yours() ? [{ id: "yours", name: "The one you built" }] : [])];
+export function studios(): Studio[] {
+  const mine = yours();
+  return [...ROOM_LIST.map((r) => ({ id: r.id, name: r.name, about: r.about ?? "", def: r })),
+    ...(mine ? [{ id: "yours", name: "The one you built", about: "Your own room, from the studio builder.", def: mine }] : [])];
+}
+
+/**
+ * Where this page goes when the sesh's studio isn't the one its link names: the same room's link in the sesh's studio,
+ * so everyone in it walks into the room the leader picked and the invite link names it. Null: stay (it matches, or the
+ * sesh names none yet, or a studio this page doesn't know).
+ */
+export function follow(origin: string, here: { room: string; studio: string; name: string }, sesh: string | undefined): string | null {
+  if (!sesh || sesh === here.studio || !(ROOMS[sesh] || sesh === "yours")) return null;
+  return inviteLink(origin, here.room, sesh, here.name);
+}
 
 const SUFFIX = "abcdefghijkmnpqrstuvwxyz23456789";
 /** A sesh id for a room called `name`: its words, then four letters so two "Friday jam"s are two rooms. No name, a sesh name. */

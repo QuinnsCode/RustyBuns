@@ -1,5 +1,6 @@
 // Qollab Studio's front door, the way two friends meet it: both sign in with eqosys, Ada makes a room and is its leader,
-// Bo opens her invite link and walks into the same sesh, and each sees the other wearing the character kept on eqosys.
+// Bo opens her invite link and walks into the same sesh, and each sees the other wearing the character kept on eqosys;
+// then Ada moves the room to another studio, and Bo walks into it with her.
 // The page's steps are its own functions (door.ts, account.ts, the eqosys client, the jam's live line), run against the
 // Worker's /ws and a real World on a fake platform; eqosys is a stand-in serving its JWKS, the exchange and /me/avatar.
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -10,7 +11,8 @@ import { mulberry32 } from "@rustybuns/util";
 import World from "../packages/desktop/world.ts";
 import worker from "../src/worker.ts";
 import { APP, eqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
-import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
+import { follow, fromLink, inviteLink, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
+import { demoProject } from "../src/presets.ts";
 import { decodeServer } from "../src/project.ts";
 import { body, hear, newJam, walkTo } from "../src/studio/jam.ts";
 import { LIVE_ROOM, ROOMS } from "../src/studio/rooms/index.ts";
@@ -163,4 +165,43 @@ test("two friends: Ada signs in and makes a room she leads, Bo joins from her li
   // a token eqosys didn't sign gets no seat: sign in again
   const forged = (await sign({ EQOSYS_SIGNING_KEY: await newKey() }, EQ, handoff(people.eq_bo!)))!;
   expect((await walkIn(forged, "c".repeat(32))).status).toBe(401);
+});
+
+test("the leader moves the room to the console room, everyone walks into it, and the invite link names it", async () => {
+  const ada = browser(), bo = browser();
+  const a = await signIn(ada, "eq_ada"), b = await signIn(bo, "eq_bo");
+  const id = roomId("Studio hop", mulberry32(2));
+  const link = inviteLink(SITE, id, LIVE_ROOM.id, "Studio hop");
+  ada.address = link; use(ada);
+  const A = await walkIn(a.login.token, "d".repeat(32));
+  // the maker seeds the sesh in the studio its link names
+  const { world } = room(id);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "init", project: { ...demoProject(), studio: LIVE_ROOM.id } }));
+  bo.address = link; use(bo);
+  const B = await walkIn(b.login.token, "e".repeat(32));
+  expect(B.ws.sent.find((m) => m.t === "snapshot")?.project.studio).toBe(LIVE_ROOM.id);
+  expect(follow(SITE, fromLink(location.search)!, LIVE_ROOM.id)).toBeNull();
+
+  // Bo has no Lead grant: his pick goes nowhere, and he is put back in step
+  const ops = (ws: Sock) => ws.sent.splice(0).map((m) => decodeServer(m)).filter((m) => m?.t === "op" || m?.t === "snapshot");
+  A.ws.sent = []; B.ws.sent = [];
+  await world.webSocketMessage(B.ws, JSON.stringify({ t: "op", op: { t: "studio", id: "console-room" } }));
+  expect(ops(A.ws)).toEqual([]);
+  expect(ops(B.ws).map((m) => m?.t === "snapshot" && m.project?.studio)).toEqual([LIVE_ROOM.id]);
+
+  // Ada leads: the console room goes on the sesh, kept with the groove, and Bo's page walks over into it
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "studio", id: "console-room" } }));
+  const heard = ops(B.ws);
+  expect(heard).toEqual([{ t: "op", op: { t: "studio", id: "console-room" } }]);
+  const to = follow(SITE, fromLink(location.search)!, "console-room")!;
+  bo.address = to; use(bo);
+  expect(fromLink(location.search)).toEqual({ room: id, studio: "console-room", name: "Studio hop" });
+  // ...and his Copy invite link now names it; someone coming in later gets the sesh in the console room
+  expect(new URL(inviteLink(SITE, id, fromLink(location.search)!.studio, "Studio hop")).searchParams.get("studio")).toBe("console-room");
+  const C = await walkIn(b.login.token, "f".repeat(32));
+  expect(C.ws.sent.find((m) => m.t === "snapshot")?.project.studio).toBe("console-room");
+  // an undo (a whole groove sent back) doesn't move the room back
+  C.ws.sent = [];
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
+  expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.studio)).toEqual(["console-room"]);
 });
