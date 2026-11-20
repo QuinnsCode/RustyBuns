@@ -201,6 +201,7 @@ test("the leader moves the room to the console room, everyone walks into it, and
   const C = await walkIn(b.login.token, "f".repeat(32));
   expect(C.ws.sent.find((m) => m.t === "snapshot")?.project.studio).toBe("console-room");
   // an undo (a whole groove sent back) doesn't move the room back
+  C.ws.sent = [];
   await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
   expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.studio)).toEqual(["console-room"]);
 });
