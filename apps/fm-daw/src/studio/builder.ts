@@ -3,7 +3,8 @@
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import { PROP_KINDS, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
+import { PROP_KINDS, propBlocks, propBox, thingBox, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
+import { footprint, inFootprint } from "./gear-wall.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
@@ -38,6 +39,7 @@ export const Studio: Guard<StudioDef> = obj({
   props: opt(arr(obj({
     kind: oneOf(PROP_KINDS), at: XZ, yaw: num(-7, 7), w: num(0.02, 40), d: num(0.01, 50), h: num(0.01, 20), y: opt(num(0, 20)), color: COLOR, seed: opt(int(0, 2 ** 31)),
   }), MAX_PROPS)),
+  gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
 });
 
 /** Where this browser keeps the studio you built: /rooms.html writes it, /jam.html?studio=yours walks into it. */
@@ -51,7 +53,8 @@ export type Surface = "floor" | "ceiling" | Side;
 /**
  * What the builder does: `size` the room, make a `surface` of something, hang a `panel` on an outside wall or take
  * one off, make an inside `wall` of something, add a `spot` (a seat with its instrument), `move` or take one out,
- * put up a `booth` (four walls, glass toward the room and a door), move one or take it down, `rename` the studio.
+ * put up a `booth` (four walls, glass toward the room and a door), move one or take it down, move the gear wall
+ * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio.
  */
 export type Edit =
   | { t: "size"; w: number; d: number; h: number }
@@ -65,6 +68,7 @@ export type Edit =
   | { t: "booth"; id: string; at: [number, number]; w: number; d: number }
   | { t: "moveBooth"; id: string; at: [number, number] }
   | { t: "unbooth"; id: string }
+  | { t: "moveGear"; at: [number, number]; turns?: number }
   | { t: "rename"; name: string; about: string };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
@@ -79,6 +83,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("booth"), id: ID, at: XZ, w: num(1.2, 8), d: num(1.2, 8) }),
   obj({ t: tag("moveBooth"), id: ID, at: XZ }),
   obj({ t: tag("unbooth"), id: ID }),
+  obj({ t: tag("moveGear"), at: XZ, turns: opt(int(-3, 3)) }),
   obj({ t: tag("rename"), name: str(60, { min: 1 }), about: str(400) }),
 ];
 /** A builder edit from the wire, checked. */
@@ -143,6 +148,19 @@ export function problems(def: StudioDef): string[] {
     if (Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1]) < SEAT_ROOM) out.push(`${a.id} and ${b.id} are on top of each other`);
   }
   if (!inRoom(def.door.at, WALL_ROOM)) out.push("the way in is outside the room");
+  out.push(...gearProblems(def));
+  return out;
+}
+
+/** What is in the gear wall's way: the room's walls, a seat or what it plays, furniture you walk round, the way in. */
+function gearProblems(def: StudioDef): string[] {
+  const { w, d } = def.size, near = (x: number, z: number, pad: number) => inFootprint(def, x, z, pad);
+  if (footprint(def).some(([x, z]) => Math.abs(x) > w / 2 + 1e-6 || Math.abs(z) > d / 2 + 1e-6)) return ["the gear wall sticks out of the room"];
+  const out: string[] = [];
+  for (const s of def.spots) { const b = thingBox(s); if (near(s.at[0], s.at[1], 0.5) || near(b.cx, b.cz, Math.max(b.hw, b.hd))) out.push(`${s.id} is in the gear wall's way`); }
+  if (def.walls.some((x) => Array.from({ length: 51 }, (_, i) => i / 50).some((t) => near(x.from[0] + (x.to[0] - x.from[0]) * t, x.from[1] + (x.to[1] - x.from[1]) * t, 0.1)))) out.push("a wall runs through the gear wall");
+  for (const p of (def.props ?? []).filter(propBlocks)) { const b = propBox(p); if (near(b.cx, b.cz, Math.min(b.hw, b.hd))) out.push(`a ${p.kind} is in the gear wall's way`); }
+  if (near(def.door.at[0], def.door.at[1], 0.6)) out.push("the gear wall blocks the way in");
   return out;
 }
 
@@ -224,6 +242,12 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (!next.walls.some((x) => x.booth === e.id)) return no(`there is no booth ${e.id}`);
       next.walls = next.walls.filter((x) => x.booth !== e.id);
       break;
+    case "moveGear": {
+      // a quarter turn at a time, so the rack and the pedal wall can stand square against the room's walls
+      const yaw = (next.gear?.yaw ?? 0) + (e.turns ?? 0) * (Math.PI / 2);
+      next.gear = { at: e.at, yaw: Math.atan2(Math.sin(yaw), Math.cos(yaw)) };
+      break;
+    }
     case "rename": next.name = e.name; next.about = e.about; break;
   }
   const wrong = problems(next);

@@ -32,6 +32,7 @@ export const ORCHESTRA_ROOM: StudioDef = {
     seat("desk", "desk", [3, -12.4], BAND, "the talkback desk"),
   ],
   door: { at: [6, 12.8], yaw: 0 },
+  gear: { at: [-9.25, -11], yaw: 0 },
   props: [
     // stairs up the back to the balcony, and the control room's lit window above it
     { kind: "stairs", at: [-3.75, -11], yaw: Math.PI, w: 1.3, d: 6, h: 4, color: "#6a4a2e" },

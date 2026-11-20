@@ -15,13 +15,14 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
 
   // The lead amp is on the rack's top shelf: from the door it is out of reach.
   expect(click(r, "lead")).toEqual({ ok: false, why: "nothing in reach" });
-  expect(walkTo(r, 0, -1.9)).toBeGreaterThan(0);
+  // round the patch bay in front of the rack
+  expect(walkTo(r, 1.0, 0.6)).toBeGreaterThan(0); walkTo(r, 1.0, -1.9); walkTo(r, 0, -1.9);
   lookAt(r, "lead");
   expect(aimed(r)).toEqual({ t: "item", id: "lead" });
   expect(use(r)).toEqual({ ok: true });
 
   // Carry it over to the cab and set it down on top.
-  walkTo(r, 1.4, -0.05);
+  walkTo(r, 1.0, -0.95); walkTo(r, 1.8, -0.95);
   r.you.yaw = 0; r.you.pitch = -0.35; // face the back wall, looking down at the cab
   expect(use(r)).toEqual({ ok: true });
   const lead = item(r, "lead")!, cab = item(r, "cab")!;
@@ -29,18 +30,18 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
   expect(Math.hypot(lead.at[0] - cab.at[0], lead.at[2] - cab.at[2])).toBeLessThan(0.35);
 
   // Guitar out -> Q Fuzz in, fuzz out -> amp in, amp speaker -> cab in.
-  walkTo(r, -1.2, 0.9);
+  walkTo(r, 1.8, 0.6); walkTo(r, -0.6, 0.6);
   expect(click(r, "guitar", "out")).toEqual({ ok: true });
-  // The pedals hang on the pedal wall.
-  walkTo(r, -2.4, 0.9); walkTo(r, -2.7, -1.35);
+  // The pedals hang on the pedal wall, at the rack's left end.
+  walkTo(r, -0.7, -1.9);
   expect(click(r, "fuzz", "out")).toEqual({ ok: false, why: "two outputs: Guitar's out and Q Fuzz's out" });
   expect(click(r, "fuzz", "in")).toEqual({ ok: true });
   expect(click(r, "fuzz", "out")).toEqual({ ok: true });
-  walkTo(r, 1.2, 0.5);
+  walkTo(r, 1.0, -0.9); walkTo(r, 1.6, -0.85);
   expect(click(r, "lead", "in")).toEqual({ ok: true });
   expect(listen(r.studio.patch)).toMatchObject({ playing: false, problems: ["nothing plugged into 2x12 cab"] });
   // Round the cab to the amp's back: its speaker out into the cab.
-  walkTo(r, 2.3, 0.3); walkTo(r, 1.7, -1.3);
+  walkTo(r, 2.5, -0.9); walkTo(r, 2.1, -2.2);
   expect(click(r, "lead", "speaker")).toEqual({ ok: true });
   expect(click(r, "cab", "in")).toEqual({ ok: true });
 
@@ -49,7 +50,7 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
   expect(heard.settings).toMatchObject({ amp: "lead", board: [{ pedal: "fuzz", drive: 7 }], bypass: false });
 
   // Back at the front, look at the gain knob and turn it down.
-  walkTo(r, 2.3, 0.3); walkTo(r, 1.2, 0.2);
+  walkTo(r, 2.5, -0.9); walkTo(r, 1.6, -0.7);
   lookAt(r, "lead", "gain");
   expect(aimed(r)).toEqual({ t: "knob", id: "lead", knob: "gain" });
   setKnob(r, "lead", "gain", 0.2);
@@ -175,7 +176,7 @@ test("two pedals off the pedal wall: in a row, reordered while it plays, then si
     expect(putDown(r)).toEqual({ ok: true });
     expect(item(r, id)!.at[1]).toBe(0);
   };
-  walkTo(r, -2.4, 0.9); walkTo(r, -2.7, -1.0);
+  walkTo(r, -0.6, 0.6); walkTo(r, -0.8, -1.5);
   takeDown("drive", 0);
   takeDown("fuzz", -1.2);
 

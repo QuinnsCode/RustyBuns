@@ -24,6 +24,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mulberry32 } from "@rustybuns/util";
 import { floorAt, propBlocks, thingBox, wallPieces, type Side, type Spot, type StudioDef } from "./room.ts";
+import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 
 export type Quality = "low" | "high";
@@ -667,7 +668,7 @@ function windows(def: StudioDef, group: THREE.Group) {
 
 /**
  * Where a room's road cases stand: against an outside wall, at least 1.4 m from every seat and its instrument, clear of the
- * door, the floor lamps and any inner wall, so nobody walks or plays into them. `pick` (0 to 1) chooses among the free
+ * door, the floor lamps, the gear wall and any inner wall, so nobody walks or plays into them. `pick` (0 to 1) chooses among the free
  * stretches, the same every visit. A hall too big to notice them, or a room with no free wall, gets none.
  */
 export function caseSpot(def: StudioDef, pick: number): { at: [number, number]; turn: number } | null {
@@ -680,7 +681,7 @@ export function caseSpot(def: StudioDef, pick: number): { at: [number, number]; 
     const sd = sideOf(def, side), ux = Math.cos(sd.turn), uz = -Math.sin(sd.turn), nx = Math.sin(sd.turn), nz = Math.cos(sd.turn);
     for (let a = -sd.len / 2 + 0.9; a <= sd.len / 2 - 0.9; a += 0.5) {
       const p: [number, number] = [sd.cx + ux * a + nx * 0.38, sd.cz + uz * a + nz * 0.38];
-      if (near(p) < 1.4 || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.2 || lamps.some((l) => Math.hypot(p[0] - l[0], p[1] - l[1]) < 0.9)) continue;
+      if (near(p) < 1.4 || Math.hypot(p[0] - door[0], p[1] - door[1]) < 1.2 || lamps.some((l) => Math.hypot(p[0] - l[0], p[1] - l[1]) < 0.9) || inFootprint(def, p[0], p[1], 0.5)) continue;
       if (def.walls.some((wl) => toSegment(p, wl.from, wl.to) < 0.7)) continue;
       free.push({ at: p, turn: sd.turn });
     }
