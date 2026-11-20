@@ -1,400 +1,348 @@
 # Game idea 4: Branch of Influence
 
-Working title, and probably the real one. A small pixel god game where you mostly watch. Societies
-grow, trade, fight and fall on their own over 15,000 years. You can step in with a few "miracles",
-but every one you spend makes the people who saw it lean on you a little more, and your reach over
-the world shrinks the whole time. You can't save everyone. The game is picking who.
+Working title, and probably the real one. A real-time pixel sim for 2 to 6 players. Each player is
+a rival **Influence**: an unseen power with followers. You start looking down on one city, where people
+are a few pixels tall. Followers make influence for you, and influence leaks all the time. Hold
+enough and you can zoom out, from the city to its region, a land, the world, its sky and the stars,
+and the clock speeds up as you go. Fall below and the view pulls back in.
 
-The world is a git repo. Every game you play writes into it for good: rules, map, peoples and
-legends. Forking it is a timeline split. No two players' worlds stay the same.
+You never click a unit. You **plant events in time**: a prophecy for year 340, a plague held back
+twenty years, an idea that sprouts in eighty. Rival faiths meet, convert each other, split and go to
+holy war. Every game writes into the world's git repo for good, and the **branch** in the name is a
+branch of time: the winner of a holy war decides which timeline is the real one.
+
+Every rate in the world is a leaky bucket: something filling it, something draining it, and a curve
+for each. The constants are rolled from the world's seed and bent by every game played on it, so no
+two worlds play the same.
+
+### What changed from draft 1 (owner's calls, 2026-11-20)
+
+| Draft 1 | Now |
+|---|---|
+| One player, a god-like influence | 2 to 6 rival Influences, multiplayer from the start (Qollab rooms, eqosys accounts). Solo is a room with AI rivals |
+| Influence drawn as a literal tree's branches | No tree. The "branch" is a branch of time: events you plant, timelines that split and merge |
+| Your reach only shrinks | You earn reach by holding influence, which unlocks zooming out. It leaks, so stop earning and the view closes back in |
+| Start on a wide valley map | Start on one city, people a few pixels tall, RTS-style |
+| A few nature miracles | Events planted in time, and holy wars between rival faiths |
+| Peoples | Unchanged: ways of living, not real nations, with real history only as design notes |
 
 ## Pillars
 
-1. **Watch first, touch rarely.** The best run is the one with the fewest miracles that still
-   carries a people to the stars. The score rewards a light hand.
-2. **You fade.** Your influence works like spreading creep in a real-time strategy game, but backwards.
-   It starts wide and pulls in toward the few people who still remember you. Each epoch the world
-   gets bigger and your share of it gets smaller.
-3. **The Wild always wins by default.** Forest, desert, ice and swamp are a faction. Any land that
-   people stop working goes back to them, slowly, and you get to watch it happen.
-4. **The world remembers forever.** It is a real repo, not a save slot. The map, the rules and the
-   peoples' sheets change through commits. A collapse leaves ruins in every later game on that world.
-5. **Timelines are branches.** Going back to before the collapse doesn't undo it. It forks the
-   world, and both histories stay.
-
-## The feeling we're after
-
-You sit back for 30 minutes on "Watch" speed. A river valley city has grown lazy on three good
-harvests you gave it. You stop helping. Granaries go empty, the canals silt up, the terraces
-crumble. Grass comes first, then scrub, then young trees, and after a few hundred years there is
-old forest with broken walls under it. Years later a forest people finds those walls. You never
-touched any of it.
+1. **Steer, don't command.** You never click a unit. You plant events and raise omens, and crowds
+   decide. Every visible act makes your followers lean on you a little more.
+2. **Reach is earned and leaks.** Holding influence lets you see and act wider. Stop earning and
+   the world closes back in on you.
+3. **Everything is a bucket.** Food, faith, fervor, plague, soil, climate: each fills and drains
+   on its own curve. The drama is in what happens when one overflows or runs dry.
+4. **Time is the board.** The best moves are placed in the future: prophecies, delays, seeds.
+5. **The world remembers.** It is a real repo, not a save slot. Each game leaves marks every later
+   game on that world (or any fork of it) has to live with.
+6. **The Wild wins by default.** Land nobody works goes back to grass, scrub and forest. A city its
+   Influence gave up on is a forest in three hundred years.
 
 ---
 
-## 1. What "editing our own code" can mean (the polymorphic layer)
+## 1. The loop
 
-The legacy board-game idea is that you write on the board and tear up cards, and the box you own
-ends up different from everyone else's. Here the "box" is a git repo held in a Cloudflare Artifact.
-These are the ways a game can rewrite it, from safest to wildest:
+1. **Watch** your followers live. Crowds walk, farm, build, trade and pray on their own.
+2. **Earn** influence from the faith of people who follow you. It leaks every tick.
+3. **Plant** events in time: now, or years ahead. They cost influence, and seen ones add dependence.
+4. **Collide** with rival faiths at your borders. Fervor builds. Convert them, or let it boil
+   over into holy war.
+5. **Zoom out** when your influence is high enough. The clock speeds up, and the whole city
+   becomes a few pixels on a bigger map.
+6. **Leave marks** at the end of each age: the calendar, a founding creed, saints, sealed
+   prophecies. They are commits, and they stay in the world.
 
-| # | What changes | Git primitive | In the game |
-|---|---|---|---|
-| 1 | **Map scars.** A flood moves a river, a fire clears a forest, a city leaves ruins. | commit to `map/` | The next game on this world starts with those scars |
-| 2 | **Rule stickers.** A big event changes a law of the world for good ("on this world, fire spreads twice as fast"). | commit to `rules/*.json` | Legacy rule cards, chosen at an age's end |
-| 3 | **Peoples' sheets.** A people that lived through the Long Winter gains a trait. Its unit roster grows a named hero. | commit to `peoples/<id>.json` | Your history becomes their stats |
-| 4 | **Extinction is a delete.** A dead people's file is removed from HEAD. | `git rm` | The file is still in history, so it can come back |
-| 5 | **Archaeology is checkout.** Digging up a ruin restores a lost tech or people from an old commit. | `git checkout <old> -- file` | Relic digs bring the past back |
-| 6 | **Timeline split.** Rewind to year 1200 and play it again. | `git branch timeline/<name> <commit>` | Both histories exist; you can visit either |
-| 7 | **Ages are tags.** Each age you finish is a tag. | `git tag age/bronze` | The world's chronicle has chapter marks |
-| 8 | **Oracle of the fall.** "When did this empire start to die?" | `git bisect` over replays | A miracle that costs a lot and tells you the year the trouble started |
-| 9 | **Who made this desert?** | `git blame` on a tile | Click a tile, see which people (or which of your miracles) changed it |
-| 10 | **A gift from another timeline.** Bring the wheel from branch B into branch A. | `git cherry-pick` | Expensive miracle, has side effects |
-| 11 | **Two timelines meet.** Merge a friend's world, or two of your own branches. | `git merge` (through Mervin) | Merge conflicts happen in the world: two rivers in one valley, two peoples claiming one coast |
-| 12 | **Undo.** Revert one event. | `git revert` | The most expensive miracle, and the commit log says you did it |
-| 13 | **Behaviour that evolves.** Each people's choices come from a tiny rule script (a small DSL, not JS). Between ages the scripts change: the habits that survived spread and the others die out. | commit to `peoples/<id>.rules` | The AI of your world is not the AI of mine |
-| 14 | **An agent chronicler.** A cheap model reads the commit log and writes the history book. Later it can suggest new rule stickers. | PR into the world repo | The world's "laws" suite has to pass before a sticker lands |
+## 2. Zoom is reach, and reach sets the clock
 
-Number 14 is "CI as the laws of physics". Each world repo has an invariant suite (energy is
-bounded, at least one people can still survive, the map stays connected), and nothing merges into a
-world's trunk unless it passes. Agents, players and events all change the world the same way: a
-commit, checked by the world's own laws.
+You start on the City tier. Each tier above it costs a level of influence to open and to keep.
+When your influence drops under a tier's level, your view snaps back one step, and anything you
+had planted out there carries on without you.
 
-**Safety rule:** no game ever evaluates JS from a world repo. Rules are JSON checked by guards
-(`@rustybuns/util/guard`), and behaviour scripts are a small DSL run by an interpreter with a step
-limit. That way a forked world from a stranger is just data.
+| Tier | You see | A person is | A tile is | Clock | 30 minutes is about |
+|---|---|---|---|---|---|
+| City | one city and its fields | 2-3 px, single sprites | 10 m | 1 week / s | 35 years |
+| Region | a few towns, roads, a river | a dot; crowds read as blobs | 100 m | 1 month / s | 150 years |
+| Land | a whole land and its peoples | gone; towns are a few px | 1 km | 1 season / s | 450 years |
+| World | one planet (Epoch II) | - | 100 km | 1 year / s | 1,800 years |
+| Sky | planet, moons, orbits | - | a body | 10 years / s | 18,000 years |
+| Stars | a cluster of systems (Epoch III) | - | a system | 50 years / s | - |
 
-### Seed + log = the whole world
+Region is where you watch a city you stopped caring about turn back into forest.
 
-The base world comes from a seed (terrain, rivers, starting peoples), the way a voxel sandbox
-world grows out of one number. Everything after that is in the log: the miracles you made and the
-commits at legacy moments. The sim is deterministic (`mulberry32` from `@rustybuns/util`), so any
-commit can be replayed to any year. That is what makes bisect, blame and timeline splits cheap: we
-store choices, not frames.
+**One clock for everyone.** In a shared world the clock runs at the speed of the highest tier any
+player holds. Time is the leader's tax: a faster clock drains everyone's buckets faster, and the
+leader has the most to lose. Anyone can pay for a **Moment** (below) to slow the whole world to day
+speed for a battle or a birth, and keep paying to hold it.
 
-### Repo layout for one world
+The zoom works like a map. You can always zoom back into any tile you can see, but you only *act*
+at your tier or below, and events are sized for the tier: a City event moves a crowd, a Land event
+moves a river.
+
+## 3. Everything is a leaky bucket
+
+Every quantity in the sim is the same small thing:
 
 ```
-world.json            seed, name, created, current epoch/age
-rules/                laws: growth.json, fire.json, decay.json, influence.json, miracles.json
-map/                  terrain layers per chunk (RLE JSON or tiny PNGs), ruins layer
-peoples/<id>.json     traits, roster, memory, faith; <id>.rules behaviour script
-legends/              named heroes, relics, wonders (each one a file)
-chronicle/<age>.md    the written history, one file per age
-log/<session>.jsonl   inputs (miracles with tick + target): enough to replay
+bucket = { level, capacity, inflow(level, world), leak(level, world), onFull, onEmpty }
+```
+
+The curve of each inflow and leak is one of a few shapes, and the shape is the personality:
+
+| Shape | Formula feel | Feels like |
+|---|---|---|
+| Flat | constant per tick | Rations, upkeep |
+| Linear | rate times level | Interest; leaks faster the fuller it is |
+| Log | fast at first, then less and less | Learning, faith from repeated sightings |
+| Exponential | grows on itself until it hits the cap | Trade wealth, fervor, plague, rumors |
+| Logistic (S) | slow, fast, then flat at capacity | Population, a forest filling a field |
+| Threshold | nothing until a level, then a jump | Revolt, schism, a city founding |
+| Seasonal | rises and falls with the year | Harvest, floods, pilgrimages |
+
+**The buckets** (per people unless it says otherwise):
+
+| Bucket | Fills from | Drains by | Overflows into | Empties into |
+|---|---|---|---|---|
+| **Influence** (per player) | followers' faith (linear) | flat leak that grows with your tier | nothing: hold it to keep your zoom | view snaps back a tier |
+| **Faith** (per people, per player) | events they see (log), legends, saints | time (linear), rival preaching | converts the neighbours | the people drops you |
+| **Dependence** (per people, per player) | every event they *see* you do | slow (log) | Vigor leaks faster | - |
+| **Vigor** | need: hunger, threat, hardship | comfort, dependence (linear) | wonders, expansion | upkeep fails, decay starts |
+| **Population** | food surplus (logistic) | hunger, plague, war | new town founded | the people is gone (a `git rm`) |
+| **Food** | fields times soil times season | eating (flat per person), rot | stores, trade | famine, Unrest pulse |
+| **Soil** | fallow years, floods (slow) | every farmed season | - | fields turn to dust: the Wild moves in |
+| **Memory** | scribes, trade, saints (log) | collapse (a threshold drop) | a new age's techs | a dark age |
+| **Wealth** | trade (exponential while routes hold) | upkeep, war | wonders | routes close |
+| **Unrest** | hunger, mixed faiths, wealth gaps | festivals, Vigor | revolt or **schism** (a faith splits) | - |
+| **Fervor** (per border) | two faiths touching (exponential) | conversion, distance | **holy war** | border goes quiet |
+| **Plague** | crowding, trade routes (exponential) | herbalists, time | spreads to neighbours | gone, leaves Memory of it |
+| **Wild pressure** (per tile) | nobody working it | farming, building | grass, scrub, forest (logistic) | - |
+| **Climate** (world) | industry, burning forest (slow, huge) | forest cover | droughts, floods, ice everywhere | - |
+| **Legend** (per event) | retelling (log) | time | the event becomes a saint or a holy day | forgotten |
+
+**Why no two playthroughs match:** each world's seed rolls every curve's constants inside a band
+(food rot 0.8 to 1.2, faith leak, fervor growth...). Exponential buckets turn small differences
+into big ones within a few decades, and legacy marks shift the bands for good. One world rots food
+fast and its peoples live by trade; another keeps faith long and holy wars come early.
+
+```mermaid
+flowchart LR
+  Food --> Population
+  Soil --> Food
+  Population --> Faith
+  Faith --> Influence
+  Influence -->|you plant events| Faith
+  Influence -->|seen events| Dependence
+  Dependence -->|drains| Vigor
+  Vigor -->|keeps up| Soil
+  Faith -->|two faiths meet| Fervor
+  Fervor -->|overflow| HolyWar[Holy war]
+  HolyWar --> Population
+  HolyWar --> Wild[Wild pressure]
+  Population -->|leaves land| Wild
+```
+
+**Engineering note:** buckets use whole-number fixed-point math, never floats, so every player's
+browser computes exactly the same world. That is what makes multiplayer cheap (section 7).
+
+## 4. Bending time: events you plant
+
+An event is data, not code: `{ bucket, shape, size, delay, duration, where, seen }`. A plague is
+a pulse into Plague; a prophecy is a promise checked at a tick; a seed is an inflow that starts
+later. Because events are data, new kinds can be written into a world's repo and played by
+everyone who forks it.
+
+| Event | What it does | The catch |
+|---|---|---|
+| **Prophecy** | Name a thing and a year ("the river will move before 340"). If it comes true, faith in you multiplies | If it fails, faith crashes. Rivals will work to break it |
+| **Seed** | Plant an idea or a tech; it sprouts years later, somewhere in your faith | You don't pick where it lands |
+| **Delay** | Hold back a coming plague, famine or migration | It arrives bigger: delay charges interest |
+| **Hasten** | Pull an event forward | It arrives smaller, and you spend more |
+| **Echo** | Repeat an event from the chronicle (the great flood returns) | Echoes fade with each repeat |
+| **Ripple** | A tiny nudge into an exponential bucket | Cheap and slow, and nobody controls where it ends |
+| **Dam** | Stop a bucket draining for a while | When the dam breaks, it all goes at once |
+| **Floodgate** | Empty a bucket on purpose, now | Seen by everyone |
+| **Omen** | A sign crowds walk toward: the RTS rally point | Followers who chase omens chase rivals' omens too |
+| **Moment** | Slow the shared clock to day speed | Costs influence every second you hold it |
+| **Fixed Point** | Lock a moment: no one can branch from before it | Very costly; it also locks your own mistakes |
+| **Fork** | Split the timeline now. Players pick a side and play their branch | The branches meet again later, and only one stays canon |
+| **Rewind** | Branch from an earlier commit and play from there | The timeline you left becomes a ghost branch anyone can visit |
+
+**Seen or hidden.** An event people see gives faith and dependence. A hidden one costs three times
+as much and gives neither: the rain just comes. That is the old pillar kept: the best Influence is
+the one its people barely notice.
+
+## 5. Legacy marks: our own ways to stamp a world
+
+Each one is a commit to the world repo. None copies the board-game mechanics this idea grew from;
+they come from what this world already has (faiths, a calendar, timelines).
+
+| Mark | When | What stays forever |
+|---|---|---|
+| **The Calendar** | The strongest Influence at an age's end | Picks the event the world counts years from. Every later game dates things "Year 312 after the Drowning of Ash" |
+| **Founding Creed** | Your faith first holds a whole region | You write one law for that region from a deck of rule changes (fire spreads faster, wells run deeper, the dead are buried in the fields) |
+| **Canon Rights** | You win a holy war across a Fork | You decide which branch is the trunk. The loser's timeline isn't deleted; it becomes a branch anyone can play from |
+| **Saints** | A follower does something huge (holds a pass, ends a plague) | A named saint file. In later games they are born again, loyal to whichever faith finds them first |
+| **Sealed Prophecies** | Each player at game end | Writes one prophecy with a trigger ("the first time any people crosses the sea"). It waits sealed in the repo and fires in some later game, maybe in someone else's fork |
+| **Sacred and Cursed Ground** | Big battles and big events | The tiles keep a bucket modifier: crops fail on the field of the Ten-Year War |
+| **Pilgrim Roads** | Paths crowds walk often | Become roads in the base map |
+| **Schisms** | A faith splits on Unrest overflow | The new faith is its own file. A player can take it up in the next game |
+| **Relics** | Wonders and ruins | Stay in the map. Digging one up restores a bucket from an old commit |
+| **Myths** | A faith with no followers left | Becomes a myth. Anyone can revive it, at great cost |
+| **Fossil Laws** | A rule change that survives two ages | Can't be changed by a Founding Creed any more, only worn down slowly |
+| **Your Name** | Always | Your Influence's name, sigil and record live on your eqosys account across every world. Peoples in a forked world still tell stories about you |
+
+## 6. Faiths and holy wars
+
+- Every Influence has a faith: a name, a sigil, a colour and a few tenets (picked from a deck,
+  so faiths play differently). All made up; no real religion appears anywhere.
+- Each people carries a Faith bucket per Influence. The biggest one is its creed. A people split
+  between faiths gains Unrest.
+- Where two creeds touch, Fervor fills. You can drain it with conversion (preachers, festivals,
+  shared saints) or let it overflow into **holy war**.
+- Holy war is crowds: a few hundred pixels marching under your Omens, towns changing colour,
+  smoke over fields. No gore. War burns Vigor and Population and feeds the Wild, so the winner of a
+  long war often rules a forest.
+- Winning in a shared world: at each age's end, followers times tier, with a **Light Hand** bonus
+  for the most followers per influence spent. The campaign ends at Last Light; a faith that has
+  died out can still win on marks left in the world.
+
+## 7. Multiplayer from day one: Qollab and eqosys
+
+Qollab is the multiplayer layer (rooms, seats, reconnect, late join, chat), eqosys is the account.
+The game keeps its own tick and sync.
+
+- **eqosys:** sign in once. Your Influence (name, sigil, faith tenets, record) and your library of
+  worlds hang off your account. Friends come from there too.
+- **Qollab:** a party opens a room for one world session. 2 to 6 seats for Influences, plus
+  spectators. Reconnect and late join are Qollab's job; chat too.
+- **Sync: deterministic lockstep.** The room (the game's own Durable Object) only orders the
+  players' event casts and stamps each with a tick. Every browser runs the same integer sim, so the
+  server never simulates the world, and a room costs almost nothing. A checksum every few hundred
+  ticks catches drift.
+- **Late join:** load the world's last commit, replay the session log.
+- **Between sessions nothing runs.** A world is just its repo when nobody's in it: no server
+  ticking all night, no bill. The next session picks up where the last commit left it.
+- **Solo** is a room with one seat and AI Influences (simple scripted rivals to start).
+- **Async play** comes free from the repo: fork a friend's world, play your timeline, send it back
+  as a merge.
+
+## 8. The world is a repo
+
+The world lives in a Cloudflare Artifact (git). These are the ways a game rewrites it:
+
+| What changes | Git | In the game |
+|---|---|---|
+| Map scars, roads, ruins | commit `map/` | The next game starts with them |
+| Founding Creeds, Fossil Laws | commit `rules/` | Laws of this world |
+| A people dies out | `git rm peoples/<id>.json` | Still in history |
+| Digging up a relic | `git checkout <old> -- ...` | An old bucket state comes back |
+| Fork, Rewind | `git branch timeline/<name>` | Both histories exist |
+| Canon Rights | move `trunk` | The losing side stays as a branch |
+| Ages | `git tag age/<n>` | Chapter marks |
+| "When did this faith start to die?" | `git bisect` over replays | A costly event names the year |
+| "Who made this desert?" | `git blame` on a tile | Shows which faith or which event |
+| Two timelines meet | `git merge` (through Mervin) | Conflicts happen in the world: two creeds claim one city |
+| New event kinds | commit `events/` | Everyone who forks the world can play them |
+| The chronicle | pull request from a cheap model | Written from the commit log |
+
+**CI is the laws of physics.** Each world has an invariant suite (buckets stay bounded, someone can
+still survive, the map stays connected). Nothing merges into a world's trunk unless it passes.
+**No game ever runs code from a world:** rules and events are JSON read through guards
+(`@rustybuns/util/guard`), and peoples' habits are a tiny step-limited rule language. A stranger's
+world is only data.
+
+**Seed + log = the whole world.** The base map grows from a seed. After that the repo stores
+choices (event casts with tick and target) and commits at legacy moments, not frames. Any commit
+replays to any year, which is what makes bisect, blame, late join and forks cheap.
+
+```
+world.json            seed, name, calendar, current epoch and age, bucket constants
+rules/                laws: growth, fire, decay, buckets.json (the curve bands)
+map/                  terrain per chunk, ruins, roads, sacred ground
+peoples/<id>.json     traits, roster, buckets; <id>.rules habit script
+faiths/<id>.json      sigil, tenets, schisms, myths
+saints/  relics/      named people and things
+events/               event kinds this world knows
+prophecies/           sealed prophecies and their triggers
+chronicle/<age>.md    the written history
+log/<session>.jsonl   event casts per tick: enough to replay
 laws.test.json        the invariants a commit must pass
 ```
 
-Branches: `trunk` (canon), `timeline/<name>`. Tags: `age/<n>-<name>`, `epoch/<n>`.
-Commits happen at legacy moments (end of session, age change, a people dies, a miracle that
-rewrites a rule), not every tick.
+## 9. Time and the ages
 
----
+15,000 years in three epochs of about 5,000: the human story we know, then one world and its sky,
+then the stars. About 25 sessions of 30 to 60 minutes, one age each. Big moments slow the clock by
+themselves; anyone can pay for a Moment.
 
-## 2. Time: how fast it runs
+**Ecology clock**, an abandoned field back to old forest (a range per tile, so it looks patchy and
+creeps in from the edge): grass in 2-5 years, scrub in 10-30, young forest in 30-80, old forest in
+150-300. Ruins stay under the canopy.
 
-The whole campaign is **15,000 years in three epochs of about 5,000 each**: the human story we
-know, then 5,000 years of one world and its sky, then 5,000 years among the stars.
+| Epoch | Ages |
+|---|---|
+| I, Earthbound (about -3000 to 2000) | 1 Kindling, 2 Furrow, 3 Crown, 4 Bronze Road, 5 Long Faith, 6 Sail & Script, 7 Powder & Press, 8 Steam, 9 Wire & Signal |
+| II, Worldbound (2000 to 7000) | 10 Satellite, 11 Moonrise, 12 Inner Worlds, 13 The Belt, 14 Giants' Moons, 15 Sunshade, 16 Long Haul, 17 The Leaving |
+| III, Starbound (7000 to 12000) | 18 First Light, 19 Seeding, 20 Swarm, 21 The Lattice, 22 Drift, 23 Long Silence, 24 Return Signal, 25 Last Light |
 
-One tick is one season. The speed dial:
+From Long Faith on, peoples grow faiths of their own that compete with every player's. From Steam
+on, industry beats the Wild back faster than ever and fills the Climate bucket.
 
-| Speed | Rate | Used for |
-|---|---|---|
-| Moment | 1 day / s | Aiming a miracle, a battle, a flood cresting |
-| Season | 1 season / s | Planting, a migration, a siege |
-| **Watch** | **1 year / 6 s** | The default. 30 minutes is about 300 years: long enough to see a city go back to forest |
-| Drift | 1 year / s | A quiet stretch |
-| Era | 10 years / s | Skipping a quiet dark age |
+## 10. The peoples
 
-The game slows down by itself when something worth seeing happens (a people near collapse, two
-borders meeting, a wonder going up) and speeds up when nothing is. You can always lock it.
+Ways of living, not nations; the seed picks which a world gets. Each has five unit lines, a few
+pixels each, that change look and job each age.
 
-**Ecology clock (so the forest timing feels real):** bare ground to grass in 2-5 years, grass to
-scrub in 10-30, scrub to young forest in 30-80, young to old forest in 150-300. Ruins stay as tiles
-under the canopy. Desert spreads from overgrazed grass over decades, and comes back only with water.
-
-**Session shape:** one session is about one age, 30-60 minutes. The campaign is about 25 sessions
-(9 + 8 + 8 ages), a legacy campaign's length. A world you finish keeps going: you can come back and
-play it on another branch.
-
----
-
-## 3. Influence: the reverse creep
-
-Influence is a field over the map, drawn as **glowing branches**: veins of light running out from
-the shrines and the people who remember you, like roots or a tree's branches. That is where the name
-comes from. The branches pull back every year. Where they don't reach, you can't act.
-
-- **Sources:** faith. Shrines, priests, legends of past miracles, a people that saw you help.
-- **Fade:** every year each tile loses a fixed share. The rate goes up each epoch (you are a smaller
-  thing in a bigger world).
-- **Cost:** a miracle spends the influence where it lands. A big one can cut a branch off.
-- **Dependence (the catch):** people who see a miracle gain faith (more influence for you later) and
-  dependence (less effort of their own). Dependence slowly lowers a people's **Vigor**. A people
-  that waits for you stops maintaining its world. That's how a society "atrophies on effort".
-- **Hidden hand:** a miracle nobody sees costs three times as much and gives no faith and no
-  dependence. The rain just comes.
-
-So every miracle is a trade: help now, a weaker people later, and more reach for you if they
-remember it.
-
-### Tiers of reach
-
-Your view and your miracles scale up each epoch. The finer tools go away and bigger, blunter ones come.
-
-| Tier | Epoch | Map | Tile is about | Your miracles touch |
+| Epoch I | Units | Lives by / breaks by | Epoch II | Epoch III |
 |---|---|---|---|---|
-| Valley | I, early | 128 x 128 | 1 km | One field, one herd, one dream |
-| Land | I, late | 256 x 256 | 10 km | A river, a season's weather, a plague |
-| World | II, early | one planet | 100 km | A climate, an ocean current, a sky omen |
-| Sky | II, late | planet + moons + orbit | a body or orbit | A solar flare, a comet's path, a signal |
-| Stars | III | a cluster of systems | one system | A stellar wind, a seed ship's course, a quiet star |
+| **River Folk** | Tiller, Canal-digger, Scribe, Granary Keeper, River Guard | flood farming, writing / drought, salt soil | Arcologists | Lattice |
+| **Steppe Riders** | Herder, Outrider, Yurt-raiser, Storyteller, Horse Lord | herds, speed / overgrazing, hard winters | Ring Nomads | Swarm Dwellers |
+| **Sea Traders** | Fisher, Shipwright, Merchant, Navigator, Harbour Watch | trade spreads Memory / storms, a partner's fall | Signal Guilds | Lattice, Couriers |
+| **Forest Keepers** | Forager, Ranger, Grove Speaker, Herbalist, Bark Warden | living with the Wild / others cutting it | Greenwrights | Seed Clades |
+| **Mountain Terracers** | Terracer, Miner, Mason, Pass Warden, Star-watcher | terraces, metal / quakes, steep decay | Deep Delvers | Swarm Dwellers |
+| **Desert Caravaners** | Well-digger, Caravan Master, Salt Trader, Dune Scout, Oasis Keeper | linking peoples / wells drying | Sun Farmers | Star Tenders |
+| **Island Navigators** | Wayfinder, Canoe-builder, Fisher, Chant-keeper, Reef Tender | settling empty islands / running out of trees | Void Sailors | Lightsail Couriers |
+| **Ice Hunters** | Hunter, Sled-runner, Snow-builder, Lore-keeper, Ice Watcher | almost nothing breaks them | Cold Keepers | Swarm Dwellers |
+| **The Wild** (not a people) | Seedling, Grass, Thicket, Forest, Swamp, Dune, Glacier, beasts | takes any tile nobody works | the planet's health | The Quiet |
 
-At each step the old map **folds** into one tile of the new one: your whole valley world becomes
-one pixel of the planet, the planet becomes one dot of the cluster. You can still zoom back in and
-watch (and the repo keeps every layer).
+Peoples merge (a new file with both parents in its history), split when they grow too wide, and
+die out (a delete). A world with four starting peoples might reach Epoch II with ten, or one.
 
----
-
-## 4. The peoples
-
-**Our call:** peoples are **ways of living**, not real nations. Each one is a pattern that shows
-up many times in real history, under our own made-up names, and the seed decides which of them a
-world gets and where. That keeps the game away from caricatures of real peoples, keeps it out of
-politics, and lets every world grow its own. The real-history patterns behind each one are listed
-in the appendix, as design references only.
-
-Every people has the same four stats:
-
-- **Vigor:** effort. The work done to keep fields, walls and canals up. Falls with comfort and dependence.
-- **Memory:** what they know. Lost in collapses, found again in ruins.
-- **Faith:** how much they remember you. Feeds your influence.
-- **Reach:** how much land they hold and work.
-
-When Vigor falls below what their land and buildings need, things decay in order: outer fields,
-roads, walls, then the city. Decayed tiles become ruins, then the Wild takes them.
-
-Units are a few sprites standing in for many people, drawn on the map at the settlement level. Each
-people has five unit lines that get new looks and powers each age (role: Epoch I name to Epoch III name).
-
-### Epoch I: the Earthbound (about 3000 before year zero to about 2000 after)
-
-**1. River Folk (the Furrowed).** Floodplain farmers. They grow tall fast and fall hard.
-- Grow by: flood farming, canals, granaries, writing.
-- Break by: drought, salt in the soil, silted canals, a capital too big to feed.
-- Units: Tiller (farm), Canal-digger (land shaping), Scribe (memory), Granary Keeper (store), River Guard (defence).
-- Asks you for: rain, a flood at the right time.
-
-**2. Steppe Riders (the Long Grass).** Herders who move with their animals.
-- Grow by: herds, horses, speed. No cities until late, and few buildings to keep up.
-- Break by: overgrazing (they make the desert themselves), hard winters, losing grazing land to farmers.
-- Units: Herder, Outrider (scout and raid), Yurt-raiser (camps that move), Storyteller (memory, no writing), Horse Lord (leader).
-- Asks you for: mild winters, new grass.
-
-**3. Sea Traders (the Salt Roads).** Coastal ports and ships.
-- Grow by: trade routes that carry goods and ideas to other peoples.
-- Break by: storms, a trade partner collapsing, coast lost to the sea.
-- Units: Fisher, Shipwright, Merchant, Navigator, Harbour Watch.
-- Asks you for: calm seas, a fair wind.
-- Special: they spread Memory to anyone they trade with, so they can save other peoples' knowledge.
-
-**4. Forest Keepers (the Canopy).** They live inside the Wild instead of against it.
-- Grow by: foraging, small gardens, slow growth that never goes too far.
-- Break by: other peoples cutting the forest, fire.
-- Units: Forager, Ranger, Grove Speaker, Herbalist (stops plague), Bark Warden.
-- Asks you for: almost nothing. They are hard to lose and hard to grow.
-- Special: the Wild doesn't fight them. They find ruins in forests first.
-
-**5. Mountain Terracers (the Stairs).** Stone terraces, mines and passes.
-- Grow by: terraced farms, metal, strongholds that are hard to take.
-- Break by: earthquakes, terraces falling apart when Vigor drops (steep land decays fastest), isolation.
-- Units: Terracer, Miner, Mason, Pass Warden, Star-watcher (calendar and sky, early science).
-- Asks you for: a steady mountain, a good ore vein.
-
-**6. Desert Caravaners (the Wells).** Oases joined by caravan routes.
-- Grow by: wells, salt and spice routes, linking peoples who never meet.
-- Break by: wells drying up, sand moving over routes.
-- Units: Well-digger, Caravan Master, Salt Trader, Dune Scout, Oasis Keeper.
-- Asks you for: water under the sand.
-
-**7. Island Navigators (the Wayfinders).** Ocean voyagers who read the stars and swells.
-- Grow by: finding empty islands and settling them, fishing, star navigation.
-- Break by: small islands running out of trees and soil, storms, being cut off.
-- Units: Wayfinder, Canoe-builder, Fisher, Chant-keeper (memory), Reef Tender.
-- Asks you for: a sign pointing to land.
-- Special: the best future spacefarers. Their Memory of star paths carries forward.
-
-**8. Ice Hunters (the White).** Small groups on tundra and ice edge.
-- Grow by: hunting, sleds, almost no buildings.
-- Break by: almost nothing. They rarely grow either.
-- Units: Hunter, Sled-runner, Snow-builder, Lore-keeper, Ice Watcher.
-- Asks you for: a herd's path. They are the people who outlast everyone in a bad world.
-
-**9. The Wild.** Not a people, but it plays like one and wins by default.
-- Units (tile states): Seedling, Grass, Thicket, Young Forest, Old Forest, Swamp, Dune, Glacier,
-  plus the beasts that live in them.
-- It takes any tile nobody works. It never attacks. It just waits.
-
-**How the peoples meet:** borders touch, then trade, war, marriage or one swallowing the other.
-Peoples can merge into a new people with traits from both (a new file in `peoples/`, both parents in
-its history). Peoples can split when they grow too wide. Over 5,000 years a world with 4 starting
-peoples might end Epoch I with 10, or 1.
-
-**Ages of Epoch I** (each one a tag in the world repo, each about one session):
-
-| # | Age | Rough real-world years | What opens up |
-|---|---|---|---|
-| 1 | Kindling | before -3000 | Bands, fire, first camps |
-| 2 | Furrow | -3000 to -2000 | Farms, herds, first towns |
-| 3 | Crown | -2000 to -1000 | Cities, writing, kings |
-| 4 | Bronze Road | -1000 to 0 | Empires, roads, coined trade |
-| 5 | Long Faith | 0 to 700 | Great beliefs spread (your faith competes with theirs) |
-| 6 | Sail & Script | 700 to 1450 | Ocean trade, universities, plague |
-| 7 | Powder & Press | 1450 to 1750 | Printing, ocean crossings, peoples meet everywhere |
-| 8 | Steam | 1750 to 1900 | Engines, the first big forest losses, cities explode |
-| 9 | Wire & Signal | 1900 to 2000 | Electricity, flight, the first look up |
-
-From age 5 on, peoples have their own beliefs. Your faith is one among several. From age 8,
-industry can beat the Wild back faster than ever, and can also wreck land for good.
-
-### Epoch II: the Worldbound (2000 to 7000)
-
-One planet, all of it known. Then its sky.
-
-Descendant peoples (who each Epoch I people tends to become, depending on its history):
-
-| Descends from | Becomes | Lives by | Fails by |
-|---|---|---|---|
-| River Folk | **Arcologists** | Huge planned cities fed by machines | Machines failing with no one who remembers how they work |
-| Steppe Riders | **Ring Nomads** | Moving stations in orbit, never settling | Supply chains, cold |
-| Sea Traders | **Signal Guilds** | Networks; they hold the world's Memory | Network collapse (a dark age for everyone) |
-| Forest Keepers | **Greenwrights** | Regrowing the world, gene gardens | Being overrun by those who want the land |
-| Mountain Terracers | **Deep Delvers** | Underground cities, mining moons | Being cut off |
-| Desert Caravaners | **Sun Farmers** | Solar fields, water from air | Dust storms, losing water tech |
-| Island Navigators | **Void Sailors** | First crewed ships to other planets | Ships lost; a ship is a whole island of people |
-| Ice Hunters | **Cold Keepers** | Polar stations, then icy moons | Barely anything; they inherit hard places |
-
-New things in Epoch II: one shared climate (any people can wreck it for all), satellites, the moon,
-the first colonies. The Wild becomes the **planet's health**: forest cover, clean sea, stable climate.
-A dead planet is the Wild winning in a new way.
-
-Ages: 10 Satellite, 11 Moonrise, 12 Inner Worlds, 13 The Belt, 14 Gas Giants' Moons, 15 Sunshade
-(managing the climate on purpose), 16 Long Haul (ships that take generations), 17 The Leaving.
-
-Your miracles here: steer a storm system, a mild solar year, a comet that brings water to a moon,
-a signal in the noise (a dream at planet scale: an idea everyone gets at once).
-
-### Epoch III: the Starbound (7000 to 12000)
-
-Several star systems, slow light, generation ships. Peoples drift apart so far they become new peoples.
-
-| Becomes | From | Lives by |
-|---|---|---|
-| **Seed Clades** | Greenwrights, Wayfinders | Ships that plant whole biospheres on empty worlds (they *bring* the Wild) |
-| **Lattice** | Signal Guilds, Arcologists | Minds spread over many ships; one people across light years |
-| **Swarm Dwellers** | Ring Nomads, Deep Delvers, Cold Keepers | Habitats around a star, no planets needed |
-| **Lightsail Couriers** | Void Sailors | Fast tiny ships that carry Memory between systems |
-| **Star Tenders** | Sun Farmers | Harvesting stars; can make or end a system |
-| **The Quiet** | anyone | A people that stopped reaching out. They are the Wild's new face: silence |
-
-Ages: 18 First Light (the first other star), 19 Seeding, 20 Swarm, 21 The Lattice, 22 Drift (peoples
-split by distance), 23 Long Silence, 24 Return Signal, 25 Last Light (the campaign's end).
-
-Your miracles here: a stellar wind, a seed ship's course, a quiet star made loud. Your branches
-cross between stars only along Courier routes, so a system with no Couriers is a system you can't
-touch anymore.
-
-**The Wild in Epoch III** is the dark between stars. Peoples that stop sending ships and signals go
-quiet, then go out. The map shows them fading the same way a city went back to forest in Epoch I.
-
----
-
-## 5. Miracles
-
-Few, slow to come back, and all of them leave marks in the repo.
-
-| Miracle | Epoch | Effect | Side effect |
-|---|---|---|---|
-| Rain | I | Ends a drought on a few tiles | Floods if overused |
-| Fire | I | Clears forest for farms, or stops an army | The Wild remembers: forest grows back thicker |
-| Seed | I | Grows grass or forest on bare land | Can shut out farmers |
-| Calm Sea | I | Safe crossing for one season | Traders take bigger risks next time |
-| Dream | I-III | One people gets an idea (a tech) early | Big dependence if they know it came from you |
-| Omen | I-II | Points a migration one way | They follow omens after that, even false ones |
-| Plague's End | I | Stops a plague | Very visible: big faith, big dependence |
-| Quake | I | Moves a river or opens a pass | Kills; rewrites the map for good |
-| Storm Steer | II | Moves a weather system | Climate drift |
-| Comet | II-III | Water or metal to a moon | Can also hit |
-| Signal | II-III | A planet-wide idea | Every people gets it, friend or not |
-| Stellar Wind | III | Speeds a fleet | The system's planets take radiation |
-| Oracle | any | `git bisect`: shows the year the trouble began | Costs most of your influence |
-| Gift Across Time | any | `cherry-pick` a tech from another branch | The branch you took it from loses it |
-| Undo | any | `revert` one event | Logged forever as your doing; peoples sense it (faith drops everywhere) |
-
----
-
-## 6. Winning, losing, scoring
-
-- **You lose** a world when every people is gone and the Wild holds it all. The world doesn't end:
-  the repo gets a "Long Quiet" commit, and a later game can start from it (new peoples, old ruins).
-- **You win the campaign** if at least one people (any descendant line) reaches Last Light.
-- **Score: Light Hand** = people-years lived across the campaign divided by influence spent. A run
-  that carried two lines to the stars with forty miracles beats one that carried four lines with
-  four hundred.
-- **Lines carried:** how many of the starting peoples have a descendant at the end. You can't save
-  them all, by design: the tuning should make 2 of 8 a good run and 4 of 8 a great one.
-
-Retry is a timeline split, never a reset. Going back costs nothing but leaves the old branch in the
-world, and the chronicle tells both stories.
-
----
-
-## 7. How we'd build it (small steps, each one playable)
-
-The sim is plain TypeScript with no Effect (per-tick code), deterministic and headless-testable. The
-page is a pixel canvas. Effect only at the edges: saving to the world repo, Artifacts sync.
+## 11. Build order (each step playable)
 
 | Step | What ships | Proof |
 |---|---|---|
-| 0 | This plan, the owner's calls on the open questions | - |
-| 1 | **Ecology toy.** Seeded map, rivers, the succession rules, fire, flood, desert spread, the speed dial. No people. | Headless: 300 years on a bare map gives the forest timing above. `window.branchOfInfluence.state()` and a `probe` row |
-| 2 | **One people (River Folk)**, settlements, Vigor and upkeep, decay to ruins, the Wild taking ruins back | The "city goes back to forest" journey in 30 minutes of Watch |
-| 3 | **Influence branches** + Rain, Fire, Seed, Dream + dependence | A run where helping too much makes the people collapse sooner |
-| 4 | **The world is a repo.** Local git first: commit at session end, timeline split, replay from seed + log | Replaying a commit gives the same map, bit for bit |
-| 5 | **Artifacts.** Worlds live in Cloudflare Artifacts (reuse codeSplitter's code), share a world as a link, fork it | Two browsers, two forks of one world |
-| 6 | Four more peoples, borders, trade, merge/split, ages 1-9 | A full Epoch I campaign |
-| 7 | Rule stickers, archaeology (checkout), blame on a tile, the chronicle written by a cheap model | A sticker that fails the world's laws gets turned away |
-| 8 | Epoch II fold and zoom | Valley folds into a planet tile |
-| 9 | Epoch III, timeline merges through Mervin | Two friends' worlds merged, conflicts as events |
+| 1 | **One city.** Buckets, pixel crowds that farm and build, decay to ruins, the Wild coming back, the City and Region clocks | Headless: a city nobody helps is forest within 300 years. `window.branchOfInfluence.state()` and a `probe` row |
+| 2 | **Two Influences, one screen.** Faith and dependence per player, Omens, a first six events, Fervor and a small holy war. AI rival | A run where the side that acts least still holds more followers |
+| 3 | **Lockstep in a Qollab room**, signed in through eqosys. Two browsers, one world | Same checksum on both after 10,000 ticks; late join catches up |
+| 4 | **Zoom tiers** and the shared clock | Gaining influence opens Region; losing it snaps back |
+| 5 | **The world is a repo.** Commit at session end, Fork and Rewind, replay from seed + log | A replayed commit matches bit for bit |
+| 6 | **Legacy marks**: Calendar, Founding Creed, Saints, Sealed Prophecies; the world's laws suite | A creed that breaks the laws is turned away |
+| 7 | **Artifacts**: worlds in Cloudflare Artifacts (codeSplitter's code), share and fork as links, merges through Mervin | Two friends' forks merged, conflicts as events |
+| 8 | All eight peoples, ages 1-9, Land tier | A full Epoch I campaign |
+| 9 | Epochs II and III, World / Sky / Stars tiers | The land folds into a planet tile |
 
-Steps 1-3 are the game. Steps 4-5 are what makes it this game. Everything after is the long tail.
+Steps 1-3 are the game. 5-7 are what make it this game.
 
----
+## 12. Still open
 
-## 8. Open questions for the owner
-
-1. **Peoples: ways of living (our recommendation) or real civilizations by name?** Real names make it
-   a history game, with all the care that needs. Archetypes keep every world its own.
-2. **What are you?** A nameless influence, or a literal world tree whose branches are the influence
-   map? (The tree would give the title, the art and the UI one picture.)
-3. **One player or shared worlds?** Shared worlds (friends fork and merge) is the strongest use of
-   the repo idea, but it's step 9.
-4. **War:** how much do we show? Proposal: peoples clash as borders moving and settlements changing
-   hands, small sprite skirmishes, nothing gory, and war is one of the main ways peoples fall.
-5. **Pixel scale:** 8 x 8 tiles (more world on screen) or 16 x 16 (more readable units)?
-6. **Where it runs:** web first (canvas), desktop through Rusty Buns later?
+1. **Players per world:** 2 to 6 rivals, or bigger worlds with teams?
+2. **Holy war tone:** crowds and colours with no gore, as above. Is that the level?
+3. **Fork in multiplayer:** do players on different branches play at the same time (two rooms,
+   one world), or one branch per session?
+4. **Pixel scale:** 8 x 8 or 16 x 16 tiles at City tier?
+5. **Where it runs:** web canvas first, desktop through Rusty Buns later?
 
 ---
 
-## Appendix: the real-history patterns behind each people (design reference only)
-
-These are the patterns we're drawing on, not factions in the game.
+## Appendix: the real-history patterns behind each people (design notes only)
 
 | People | Pattern | Seen in (broadly) |
 |---|---|---|
 | River Folk | Flood farming states that rise fast and fall to drought and salt | The early river valley states of the Near East, the Nile, the Indus, the Yellow River |
 | Steppe Riders | Mobile herders who sweep across wide grassland | The peoples of the Eurasian steppe across 4,000 years |
-| Sea Traders | Ports linked by sea routes, spreading goods and writing | Eastern Mediterranean traders, the Swahili coast, the North Sea and Baltic trading towns, Indian Ocean ports |
+| Sea Traders | Ports linked by sea routes, spreading goods and writing | Eastern Mediterranean traders, the Swahili coast, North Sea and Baltic trading towns, Indian Ocean ports |
 | Forest Keepers | Living in and with forest, with managed gardens | Amazon and Congo basin peoples, early woodland Europe and North America |
 | Mountain Terracers | Terraces, stone, mountain roads | The Andes, the Himalaya, highland Ethiopia, terraced Southeast Asian hills |
 | Desert Caravaners | Oases joined by caravan routes | Saharan and Arabian routes, the overland silk routes |
