@@ -15,7 +15,8 @@ test("walk the room, set the amp on the cab, cable guitar, pedal, amp and cab, a
 
   // The lead amp is on the rack's top shelf: from the door it is out of reach.
   expect(click(r, "lead")).toEqual({ ok: false, why: "nothing in reach" });
-  expect(walkTo(r, 0, -1.9)).toBeGreaterThan(0);
+  // round the patch bay in front of the rack
+  expect(walkTo(r, 1.0, 0.6)).toBeGreaterThan(0); walkTo(r, 1.0, -1.9); walkTo(r, 0, -1.9);
   lookAt(r, "lead");
   expect(aimed(r)).toEqual({ t: "item", id: "lead" });
   expect(use(r)).toEqual({ ok: true });
