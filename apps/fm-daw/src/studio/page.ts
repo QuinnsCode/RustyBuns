@@ -9,6 +9,7 @@ import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
 import { boothMiddle, Edit, edit, type Surface, yours, YOURS } from "./builder.ts";
+import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, StudioDef } from "./room.ts";
 import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
@@ -77,6 +78,12 @@ function render() {
     for (const [a, b] of runs) g.append(el("line", { class: `wall${wl.booth ? " movable" : ""}`, x1: x0 + ux * a, y1: z0 + uz * a, x2: x0 + ux * b, y2: z0 + uz * b, stroke: tint(wallMaterial(wl)), "stroke-width": 0.14 * scale }));
     plan.append(g);
   }
+  // the gear wall's corner: the rack along its long side, dragged like a booth
+  const gear = footprint(room), g = el("g", { "data-gear": "gear" });
+  g.append(el("polygon", { class: "gear movable", points: gear.map((p) => p.join(",")).join(" "), "stroke-width": 0.06 * scale }));
+  g.append(el("line", { class: "rack", x1: gear[0][0], y1: gear[0][1], x2: gear[1][0], y2: gear[1][1], "stroke-width": 0.16 * scale }));
+  g.append(el("text", { x: gear.reduce((t, p) => t + p[0], 0) / 4, y: gear.reduce((t, p) => t + p[1], 0) / 4, "font-size": 0.32 * scale }, "gear"));
+  plan.append(g);
   const [dx, dz] = room.door.at;
   plan.append(el("path", { class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
   for (const sp of room.spots) {
@@ -94,22 +101,22 @@ function render() {
 
 // ---- dragging a seat, or a booth by one of its walls ----
 
-let drag: { kind: "spot" | "booth"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+let drag: { kind: "spot" | "booth" | "gear"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
 function toRoom(e: PointerEvent): number[] {
   const m = plan.getScreenCTM(), p = new DOMPoint(e.clientX, e.clientY), q = m ? p.matrixTransform(m.inverse()) : p;
   return [q.x, q.y];
 }
 const tenth = (v: number) => Math.round(v * 10) / 10;
 plan.addEventListener("pointerdown", (e) => {
-  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth]") : null;
+  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear]") : null;
   if (!g) return;
-  const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth");
+  const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), gear = g.getAttribute("data-gear");
   if (spot) { picked = spot; render(); }
-  const id = spot ?? booth;
-  const from = !id ? null : spot ? room.spots.find((x) => x.id === id)?.at : boothMiddle(room, id);
+  const id = spot ?? booth ?? gear;
+  const from = !id ? null : spot ? room.spots.find((x) => x.id === id)?.at : gear ? gearPlace(room).at : boothMiddle(room, id);
   if (!id || !from) return;
-  const moving = [...plan.querySelectorAll<SVGElement>(spot ? `[data-spot="${CSS.escape(id)}"]` : `[data-booth="${CSS.escape(id)}"]`)];
-  drag = { kind: spot ? "spot" : "booth", id, from: [...from], at: [...from], g: moving, start: toRoom(e) };
+  const moving = [...plan.querySelectorAll<SVGElement>(spot ? `[data-spot="${CSS.escape(id)}"]` : gear ? "[data-gear]" : `[data-booth="${CSS.escape(id)}"]`)];
+  drag = { kind: spot ? "spot" : gear ? "gear" : "booth", id, from: [...from], at: [...from], g: moving, start: toRoom(e) };
   plan.setPointerCapture(e.pointerId);
 });
 plan.addEventListener("pointermove", (e) => {
@@ -122,7 +129,7 @@ plan.addEventListener("pointerup", () => {
   if (!drag) return;
   const d = drag; drag = null;
   if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
-  apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
+  apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
 });
 
 // ---- what it sounds like ----
@@ -191,10 +198,12 @@ function renderEdit() {
     <h2>Booths</h2>
     <ul>${booths.map((b) => `<li><span>${esc(b)}</span><button type="button" class="x" data-unbooth="${esc(b)}" aria-label="Take down" title="Take down">${X}</button></li>`).join("")}</ul>
     <div class="row"><button type="button" id="add-booth">Put up a booth</button></div>
+    <h2>Gear wall</h2>
+    <div class="row"><button type="button" id="turn-gear">Turn it a quarter</button></div>
     <h2>Seats</h2>
     <div class="row"><label>Kind<select id="sk">${KINDS.map((k) => `<option>${k}</option>`).join("")}</select></label><button type="button" id="add-spot">Add seat</button>
       ${picked ? `<button type="button" id="del-spot">Take out ${esc(picked)}</button>` : ""}</div>
-    <p class="hint">Drag a seat, or a booth by its walls, on the plan to move it.</p>`;
+    <p class="hint">Drag a seat, a booth by its walls, or the gear wall on the plan to move it.</p>`;
   const q = <T extends Element>(sel: string) => [...$("edit").querySelectorAll<T>(sel)];
   for (const i of q<HTMLInputElement>("[data-size]")) i.addEventListener("change", () => {
     const v = (k: string) => Number(q<HTMLInputElement>(`[data-size="${k}"]`)[0].value);
@@ -215,6 +224,7 @@ function renderEdit() {
     apply({ t: "spot", id, kind, at });
   });
   document.getElementById("del-spot")?.addEventListener("click", () => { if (picked && apply({ t: "unspot", id: picked })) { picked = room.spots[0]?.id; render(); } });
+  $("turn-gear").addEventListener("click", () => apply({ t: "moveGear", at: gearPlace(room).at, turns: 1 }));
   $("add-booth").addEventListener("click", () => {
     const id = free("booth", (x) => room.walls.some((wl) => wl.booth === x));
     const at = grid().find((p) => edit(room, { t: "booth", id, at: p, w: 2.4, d: 2.4 }).ok);

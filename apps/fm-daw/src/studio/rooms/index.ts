@@ -26,6 +26,7 @@ export const SCORING_HALL: StudioDef = {
     seat("piano", "keys", [-8, -4], Math.PI, "the piano"), seat("desk", "desk", [0, 14.4], 0),
   ],
   door: { at: [-10, 10], yaw: 0 },
+  gear: { at: [-11.25, -13], yaw: 0 },
 };
 
 /** A basement studio: a low concrete room, and a drum booth so dead the kit sounds like it's in your lap. */
@@ -37,11 +38,13 @@ export const BASEMENT: StudioDef = {
   materials: { floor: "carpet", ceiling: "drywall", walls: all("concrete") },
   walls: boothWalls("drum-booth", [-1.8, -2.9], 3.2, 3, { w: 7, d: 9 }),
   spots: [
-    seat("drums", "drums", [-1.8, -2.4], 0), seat("bass", "bass", [1.8, -2.5], Math.PI / 2),
+    seat("drums", "drums", [-1.8, -2.4], 0), seat("bass", "bass", [-0.1, -0.9], Math.PI / 2),
     seat("keys", "keys", [-2, 1], 0), seat("vocal", "booth", [1.5, 1.2], 0, "the mic"),
     seat("couch", "couch", [1.8, 3.6], Math.PI),
   ],
   door: { at: [0, 3.8], yaw: 0 },
+  // the rack down the right wall by the drum booth
+  gear: { at: [0.5, -2.75], yaw: -Math.PI / 2 },
 };
 
 /** A stone room: hard on every side and tall, for big booming drums and a long vocal tail. */
@@ -52,8 +55,9 @@ export const STONE_ROOM: StudioDef = {
   colors: colors("stone", "brick", "plaster"),
   materials: { floor: "stone", ceiling: "plaster", walls: all("brick") },
   walls: [],
-  spots: [seat("drums", "drums", [0, -1.5], 0), seat("vocal", "booth", [0, 1.6], Math.PI, "the mic")],
+  spots: [seat("drums", "drums", [-1.2, 1.3], 0), seat("vocal", "booth", [0, 1.6], Math.PI, "the mic")],
   door: { at: [1.5, 3], yaw: 0 },
+  gear: { at: [-0.75, -0.5], yaw: 0 },
 };
 
 /** A wooden barn: a big room of boards, warm and lively, with a dead booth for the singer. */
@@ -71,6 +75,7 @@ export const BARN: StudioDef = {
     seat("desk", "desk", [-3, 4.5], 0),
   ],
   door: { at: [-1, 6], yaw: 0 },
+  gear: { at: [2, -5.25], yaw: -Math.PI / 2 },
 };
 
 export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT, ORCHESTRA_ROOM, CONSOLE_ROOM, SOUND_STAGE];

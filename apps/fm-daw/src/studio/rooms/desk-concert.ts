@@ -4,11 +4,13 @@
 // into it, a second desk against the right wall, a filing cabinet, books piled on the floor, papers and mugs left
 // everywhere and the band's cables run across the carpet to the desk. The middle stays clear, the way in to every seat.
 import type { StudioDef } from "../room.ts";
-import { colors, seat } from "./kit.ts";
+import { colors, grow, seat } from "./kit.ts";
 
 const Q = Math.PI / 2;
 
 export const DESK_CONCERT: StudioDef = {
+  // 3.4 metres more at the back (what stood against the back wall went with it): the gear wall stands there
+  ...grow({
   id: "desk-concert", name: "The desk concert",
   about: "A band crammed in behind an office desk: carpet underfoot, a low ceiling, and every wall a shelf of books, records and toys, so the room stays out of the way and the band sounds right there with you.",
   size: { w: 6, d: 5, h: 2.7 },
@@ -63,4 +65,6 @@ export const DESK_CONCERT: StudioDef = {
     { kind: "monitor", at: [-1.2, -2.3], yaw: Math.PI, w: 0.2, d: 0.22, h: 0.3, y: 2.3, color: "#2a2420" },
     { kind: "monitor", at: [1.2, -2.3], yaw: Math.PI, w: 0.2, d: 0.22, h: 0.3, y: 2.3, color: "#2a2420" },
   ],
+}, "back", 3.4),
+  gear: { at: [-1.25, -0.7], yaw: 0 },
 };

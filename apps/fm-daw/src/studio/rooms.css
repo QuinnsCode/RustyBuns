@@ -33,5 +33,8 @@ li { display: flex; justify-content: space-between; gap: 8px; align-items: cente
 button.x { padding: 4px 6px; line-height: 0; flex: none; }
 #plan .wall { stroke-linecap: round; }
 #plan .wall.movable { cursor: grab; }
+#plan .gear { fill: rgba(255, 180, 107, 0.16); stroke: #ffb46b; cursor: grab; }
+#plan .rack { stroke: #ffb46b; stroke-linecap: round; pointer-events: none; }
+#plan [data-gear] text { fill: #ffb46b; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
 #plan .door { fill: none; stroke: var(--hot); stroke-linecap: round; stroke-linejoin: round; }
 a.button { display: inline-block; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; text-decoration: none; }

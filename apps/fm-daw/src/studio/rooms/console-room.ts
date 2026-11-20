@@ -3,12 +3,14 @@
 // monitors on stands, a couch behind the desk for whoever came along, and low warm light. Carpet, a tiled ceiling
 // and the wood keep it from ringing, so the low end you hear is the record, not the room.
 import type { StudioDef } from "../room.ts";
-import { all, colors, seat } from "./kit.ts";
+import { all, colors, grow, seat } from "./kit.ts";
 
 const Q = Math.PI / 2;
 const desk = seat("desk", "desk", [0, 1.2], 0, "the console");
 
 export const CONSOLE_ROOM: StudioDef = {
+  // 3.4 metres more at the back (what stood against the back wall went with it): the gear wall stands there
+  ...grow({
   id: "console-room", name: "The console room",
   about: "A wood-panelled room built round a big analog console: racks of outboard gear down the walls, drum machines and samplers on a table, big monitors, a couch behind the desk, and low warm light. Carpet and wood keep it dry, so the low end is the record's, not the room's.",
   size: { w: 8, d: 8, h: 3 },
@@ -50,4 +52,6 @@ export const CONSOLE_ROOM: StudioDef = {
     { kind: "plant", at: [-1.6, 3.4], yaw: 0, w: 0.5, d: 0.5, h: 1.1, color: "#6a4a2e", seed: 37 },
     { kind: "frames", at: [0, -3.93], yaw: Math.PI, w: 4, d: 0.02, h: 1.2, y: 1.3, color: "#000000", seed: 38 },
   ],
+}, "back", 3.4),
+  gear: { at: [-2.25, -2.7], yaw: 0 },
 };

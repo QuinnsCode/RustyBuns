@@ -7,6 +7,7 @@
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
+import { GEAR_ROOM, HALF_D, HALF_W, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./frame.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { Avatar } from "@rustybuns/util/avatar";
 import { bench, type BenchPedal } from "../circuit/bench.ts";
@@ -177,18 +178,10 @@ function benchNet(patch: Patch, p: Placed) {
 
 // ---- the room ----
 
-/** The live room: x from -HALF_W to HALF_W, z from -HALF_D (the back wall, with the rack) to HALF_D. */
-export const HALF_W = 3.5, HALF_D = 3, WALL_H = 2.8;
+export { HALF_W, HALF_D, WALL_H, RACK, PEDAL_WALL, shelvingRects, GEAR_ROOM, type Bounds } from "./frame.ts";
 export const EYE = 1.62, RADIUS = 0.25, WALK = 1.5;
 /** How far your hands reach from your eyes, metres. */
 export const REACH = 2.1;
-/** The wall rack: a frame against the back wall, its shelves' tops in metres. */
-export const RACK = { x0: -2, x1: 2, z0: -HALF_D, z1: -HALF_D + 0.45, shelves: [0.45, 0.95, 1.45] };
-
-/** The pedal wall: ledges on the left wall, where the pedals and Q Split hang until you take one down. */
-export const PEDAL_WALL = { x0: -HALF_W, x1: -HALF_W + 0.25, z0: -1.9, z1: -0.1, shelves: [1.0, 1.4] };
-/** Everything with shelves: what blocks your walk and what a box set down can land on. */
-const SHELVING = [RACK, PEDAL_WALL];
 
 const at = (x: number, y: number, z: number) => [x, y, z];
 const rackZ = (RACK.z0 + RACK.z1) / 2, wallX = (PEDAL_WALL.x0 + PEDAL_WALL.x1) / 2, facing = Math.PI / 2;
@@ -196,20 +189,20 @@ const rackZ = (RACK.z0 + RACK.z1) / 2, wallX = (PEDAL_WALL.x0 + PEDAL_WALL.x1) /
 export function startPatch(): Patch {
   return {
     placed: [
-      { id: "drive", gear: "pedal-drive", at: at(wallX, PEDAL_WALL.shelves[0], -1.7), turn: facing },
-      { id: "fuzz", gear: "pedal-fuzz", at: at(wallX, PEDAL_WALL.shelves[0], -1.35), turn: facing },
-      { id: "dist", gear: "pedal-dist", at: at(wallX, PEDAL_WALL.shelves[0], -1.0), turn: facing },
-      { id: "comp", gear: "pedal-comp", at: at(wallX, PEDAL_WALL.shelves[0], -0.65), turn: facing },
-      { id: "split", gear: "split", at: at(wallX, PEDAL_WALL.shelves[0], -0.3), turn: facing },
-      { id: "bucket", gear: "machine-bbd", at: at(0.05, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "tape", gear: "machine-tape", at: at(0.5, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "spring", gear: "machine-spring", at: at(1.2, RACK.shelves[0], rackZ), turn: 0 },
-      { id: "brit", gear: "amp-brit", at: at(-1.1, RACK.shelves[1], rackZ), turn: 0 },
-      { id: "triple", gear: "amp-triple", at: at(1.1, RACK.shelves[1], rackZ), turn: 0 },
+      { id: "drive", gear: "pedal-drive", at: at(wallX, PEDAL_WALL.shelves[0], -2.25), turn: facing },
+      { id: "fuzz", gear: "pedal-fuzz", at: at(wallX, PEDAL_WALL.shelves[0], -1.9), turn: facing },
+      { id: "dist", gear: "pedal-dist", at: at(wallX, PEDAL_WALL.shelves[0], -1.55), turn: facing },
+      { id: "comp", gear: "pedal-comp", at: at(wallX, PEDAL_WALL.shelves[0], -1.2), turn: facing },
+      { id: "split", gear: "split", at: at(wallX, PEDAL_WALL.shelves[0], -0.85), turn: facing },
+      { id: "bucket", gear: "machine-bbd", at: at(-0.7, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "tape", gear: "machine-tape", at: at(-0.1, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "spring", gear: "machine-spring", at: at(0.65, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "brit", gear: "amp-brit", at: at(-0.64, RACK.shelves[1], rackZ), turn: 0 },
+      { id: "triple", gear: "amp-triple", at: at(0.64, RACK.shelves[1], rackZ), turn: 0 },
       { id: "lead", gear: "amp-lead", at: at(0, RACK.shelves[2], rackZ), turn: 0 },
-      { id: "cab", gear: "cab-2x12", at: at(1.4, 0, -0.6), turn: -0.4 },
-      { id: "guitar", gear: "guitar", at: at(-1.6, 0, 0.2), turn: 0.5 },
-      { id: "desk", gear: "desk", at: at(-2.5, 0, 1.9), turn: 0 },
+      { id: "cab", gear: "cab-2x12", at: at(1.8, 0, -1.5), turn: -0.4 },
+      { id: "guitar", gear: "guitar", at: at(-1.0, 0, -0.3), turn: 0.5 },
+      { id: "desk", gear: "desk", at: at(0.2, 0, -0.25), turn: 0 },
     ],
     cables: [],
     knobs: {},
@@ -233,6 +226,8 @@ export interface Room {
   bodies: Map<number, Body>;
   /** How everyone in the sesh looks and is called, the jam room's people too (the desk names their strips). */
   looks: Map<number, { avatar: Avatar; name: string }>;
+  /** Where a box can be set down (the gear room's walls when left out). */
+  bounds?: Bounds;
 }
 /** Where someone else stands and which way they face. */
 export interface Body { x: number; z: number; yaw: number }
@@ -369,8 +364,7 @@ function solids(r: Room): Rect[] {
     const g = gearOf(p);
     return g ? [{ cx: p.at[0], cz: p.at[2], hw: g.size[0] / 2, hd: g.size[2] / 2, turn: p.turn }] : [];
   });
-  const shelving = SHELVING.map((s) => ({ cx: (s.x0 + s.x1) / 2, cz: (s.z0 + s.z1) / 2, hw: (s.x1 - s.x0) / 2, hd: (s.z1 - s.z0) / 2, turn: 0 }));
-  return [...shelving, ...gear];
+  return [...shelvingRects(), ...gear];
 }
 
 /** Push you out of the walls, the rack and the gear standing on the floor. */
@@ -443,15 +437,28 @@ function landing(r: Room, id: string, x: number, z: number, fromY: number): numb
   return y;
 }
 
-export function putDown(r: Room): Answer {
+/**
+ * Where the box in your hand would land if you let go now: under where you hold it, on the highest shelf or box top
+ * no higher than it (so a box lands on a stack only held level with its top: looking down drops it to the floor).
+ * `on` says what it lands on, for the ghost the page draws. Null with nothing in your hand.
+ */
+export function landingPose(r: Room): { at: Vec3; turn: number; on: string } | null {
   const id = heldId(r), p = id ? item(r, id) : undefined;
-  if (!id || !p) return no("you aren't carrying anything");
-  const pose = holdPose(r, p);
-  const x = Math.max(-HALF_W + 0.2, Math.min(HALF_W - 0.2, pose.at[0]));
-  const z = Math.max(-HALF_D + 0.2, Math.min(HALF_D - 0.2, pose.at[2]));
+  if (!id || !p) return null;
+  const pose = holdPose(r, p), b = r.bounds ?? GEAR_ROOM;
+  const x = Math.max(b.x0 + 0.2, Math.min(b.x1 - 0.2, pose.at[0]));
+  const z = Math.max(b.z0 + 0.2, Math.min(b.z1 - 0.2, pose.at[2]));
   const y = landing(r, id, x, z, pose.at[1]);
   const notch = Math.PI / 12, turn = Math.round(pose.turn / notch) * notch;
-  act(r, { t: "put", at: [x, y, z], turn: ((turn % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) });
+  const under = y > 0 ? r.studio.patch.placed.find((q) => { const g = gearOf(q); return g && q.id !== id && Math.abs(q.at[1] + g.size[1] - y) < 1e-6 && sitsOn({ id, gear: "", at: [x, 0, z], turn: 0 }, q); }) : undefined;
+  const on = y === 0 ? "the floor" : under ? nameOf(r, under.id) : SHELVING.some((s) => s === RACK && x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) ? "the rack" : "the pedal wall";
+  return { at: [x, y, z], turn: ((turn % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2), on };
+}
+
+export function putDown(r: Room): Answer {
+  const to = landingPose(r);
+  if (!to) return no("you aren't carrying anything");
+  act(r, { t: "put", at: to.at, turn: to.turn });
   r.heldTurn = 0;
   return OK;
 }
@@ -480,6 +487,12 @@ export function turnHeld(r: Room, dir: number) { if (heldId(r)) r.heldTurn += (d
 const same = (a: End, b: End) => a[0] === b[0] && a[1] === b[1];
 const jackDef = (r: Room, end: End) => { const p = item(r, end[0]); return p ? gearOf(p)?.jacks.find((j) => j.name === end[1]) : undefined; };
 export const cableIn = (r: Room, end: End) => r.studio.patch.cables.find((c) => same(c.from, end) || same(c.to, end));
+/** With a cable end in your hand, every jack it can go into: free, the other way round, on another box. Else none. */
+export function openJacks(r: Room): End[] {
+  const h = hand(r), from = h && "lead" in h ? h.lead : null, dir = from && jackDef(r, from)?.dir;
+  if (!from || !dir) return [];
+  return r.studio.patch.placed.flatMap((p) => p.id === from[0] ? [] : (gearOf(p)?.jacks ?? []).filter((j) => j.dir !== dir && !cableIn(r, [p.id, j.name])).map((j): End => [p.id, j.name]));
+}
 const label = (r: Room, end: End) => `${nameOf(r, end[0])}'s ${end[1]}`;
 
 /** Take a cable from a free jack: its other end is in your hand. */
@@ -533,6 +546,16 @@ export function use(r: Room, a: Aim | null = aimed(r)): Answer {
   if (a?.t === "knob") return no("drag to turn it");
   if (a?.t === "item") return h ? no("plug the cable into a jack") : pickUp(r, a.id);
   return h ? drop(r) : no("nothing in reach");
+}
+
+/** What a click would do, in words: the line under the crosshair. */
+export function hint(r: Room, a: Aim | null = aimed(r)): string {
+  const h = hand(r), held = heldId(r);
+  if (held) { const to = landingPose(r); return `Click to set ${nameOf(r, held)} down on ${to?.on ?? "the floor"}, Q / E to turn it`; }
+  if (a?.t === "jack") return h ? `Plug into ${label(r, a.end)}` : cableIn(r, a.end) ? `Pull the cable out of ${label(r, a.end)}` : `Take a cable from ${label(r, a.end)}`;
+  if (a?.t === "knob") { const p = item(r, a.id), k = p && gearOf(p)?.knobs.find((x) => x.name === a.knob); return k && p ? `${nameOf(r, a.id)} ${k.label} ${(knobValue(r.studio.patch, p.id, k) * 10).toFixed(1)}: drag to turn` : ""; }
+  if (a?.t === "item") return h ? "Plug the cable into a lit jack" : `Pick up ${nameOf(r, a.id)}${pedalAt(r) ? ", B for its build sheet" : ""}`;
+  return h ? "Right-click or G lets go of the cable" : "";
 }
 
 // ---- cables ----

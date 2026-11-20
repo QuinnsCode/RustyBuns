@@ -58,7 +58,15 @@ export interface StudioDef {
   door: { at: [number, number]; yaw: number };
   /** What fills it besides the seats: shelves, lamps, racks, a piano. */
   props?: Prop[];
+  /** Its gear wall (src/studio/gear-wall.ts): where the sesh's gear room stands in it. In the back right corner when left out. */
+  gear?: GearPlace;
 }
+
+/**
+ * Where the sesh's gear room (src/room/room.ts: the rack on its back wall, the pedal wall on its left, the cab, the
+ * guitar and the patch bay on the floor) stands in a studio: the middle of that 7 by 6 metre frame, and its turn.
+ */
+export interface GearPlace { at: [number, number]; yaw: number }
 
 /** The spot's thing, as a box on the floor: its middle and half sizes, turned by the spot's yaw. */
 export function thingBox(s: Spot): { cx: number; cz: number; hw: number; hd: number; turn: number } {
