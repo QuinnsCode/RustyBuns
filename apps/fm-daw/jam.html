@@ -29,9 +29,10 @@
           <p class="row"><button id="look" type="button" class="ghost">New look</button><button id="sign-out" type="button" class="ghost">Sign out</button></p>
         </div>
       </div>
+      <h2>Make a room</h2>
+      <div id="room-studio" class="studios" aria-label="Studio"></div>
       <form id="make" class="row">
         <input id="room-name" maxlength="40" placeholder="Name your room" aria-label="Room name" autocomplete="off" />
-        <select id="room-studio" aria-label="Studio"></select>
         <button type="submit" class="go">Make a room</button>
       </form>
       <h2>Your rooms</h2>
@@ -44,6 +45,9 @@
       <p class="keys">WASD walk, mouse look. Space or click sits you at the spot in front of you, and again stands you up. Seated, A to &#39; are notes (Z / X octave), or play a MIDI keyboard. V switches the camera. Esc lets go of the mouse.</p>
       <p class="keys">A guitar into your computer's audio input: I plugs it in (sitting at the bass, into its amp; else the first track with an amp), and everyone hears it through that amp, where you stand. In the vocal booth, I plugs in your mic instead: your voice, straight to everyone (headphones keep the band out of it).</p>
       <p class="row"><button id="guitar" type="button" class="ghost">Plug in your guitar</button></p>
+      <h2>Studio</h2>
+      <p id="studios-note" class="keys"></p>
+      <div id="studios" class="studios" aria-label="Studio"></div>
       <h2>Who's here</h2>
       <p class="row"><span id="me-may"></span><button id="raise" type="button" class="ghost" hidden>Raise your hand to play</button></p>
       <p class="row"><button id="mute-room" type="button" class="ghost">Mute the room</button></p>

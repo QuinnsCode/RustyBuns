@@ -15,7 +15,8 @@ import { clamp, lerp } from "@rustybuns/util";
 import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
-import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { follow, fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
@@ -605,7 +606,31 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); }
+/** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
+let movingTo: string | null = null;
+function walkOver(p: Project) {
+  const to = here && follow(location.origin, here, p.studio);
+  if (!to || movingTo) return;
+  movingTo = to;
+  flash = { text: `Moving to ${studios().find((x) => x.id === p.studio)?.name ?? "another studio"}`, until: performance.now() + 2000 };
+  setTimeout(() => location.replace(to), 300);
+}
+/** The leader moves the whole sesh to this studio; anyone else is told no (the World refuses it too). */
+function moveStudio(id: string): Answer {
+  if (!here) return { ok: false, why: "Not in a room" };
+  if (!iLead()) return { ok: false, why: "Only the leader moves the room" };
+  if (!studios().some((x) => x.id === id)) return { ok: false, why: `No studio ${id}` };
+  player.edit({ t: "studio", id });
+  return { ok: true };
+}
+/** The room's studio cards in the Esc menu: the leader's to pick, read-only for everyone else. */
+function roomStudios() {
+  if (!here) return;
+  const lead = iLead();
+  $("studios-note").textContent = lead ? "Pick one and everyone in the room walks into it." : `You're in ${def.name}. The leader picks the studio.`;
+  studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
+}
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
 const rights: Rights = { floor: null, grants: null, me: null, asked: null };
@@ -632,7 +657,7 @@ lane = mountLane({
 });
 
 if (here) net = connect({
-  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
+  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); },
   onRewound: back.answer,
   onStudio(m) {
     // a bench pedal's board: read here, so aux 2 plays its circuit when it is cabled in
@@ -643,7 +668,8 @@ if (here) net = connect({
   onRtc: (m) => void guitars?.signal(m),
   onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
-    if (!p) { net?.init(project); return; }
+    // the room's maker seeds the sesh, in the studio its link names
+    if (!p) { net?.init({ ...project, ...(here ? { studio: here.studio } : {}) }); return; }
     groove(p);
   },
   onOp(op) { groove(apply(project, op)); },
@@ -743,6 +769,7 @@ function door() {
   if (here) $("room-title").textContent = here.name || here.room;
   $("room-studio-name").textContent = `${def.name}.`;
   $("room-about").textContent = def.about ?? "";
+  roomStudios();
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
   $("look").hidden = lookFrom === "eqosys";
@@ -762,12 +789,13 @@ function door() {
     a.append(t, m); li.append(a); list.append(li);
   }
 }
-const studioPick = $("room-studio");
-if (studioPick instanceof HTMLSelectElement) for (const s of studios()) studioPick.append(new Option(s.name, s.id));
+let doorStudio = LIVE_ROOM.id;
+const doorStudios = () => studioCards($("room-studio"), studios(), doorStudio, (id) => { doorStudio = id; doorStudios(); });
+doorStudios();
 $("make").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("room-name"), label = input instanceof HTMLInputElement ? input.value.trim().slice(0, 40) : "";
-  const studio = studioPick instanceof HTMLSelectElement ? studioPick.value : LIVE_ROOM.id;
+  const studio = doorStudio;
   const room = roomId(label);
   saveRecent(remember(loadRecent(), { room, name: label, studio, mine: true, at: Date.now() }));
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
@@ -920,7 +948,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) } }),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
@@ -965,6 +993,8 @@ const harness = {
   clock: () => ({ ...band.clock.state(), beat: Math.round(band.beat() * 1000) / 1000, behindMs: band.behind(), waiting: band.waiting, transport }),
   /** How you hear the others: "loop" (a loop late), "now", or (the leader) "desk"; then the clock. */
   listen: (l: Listen) => { setListen(l); return harness.clock(); },
+  /** The studio: this page's and the sesh's, and every one the picker shows; with an id, the leader moves the sesh there. */
+  studio: (id?: string) => ({ ...(id ? moveStudio(id) : {}), here: pick, sesh: project.studio ?? null, lead: iLead(), studios: studios().map((x) => x.id), moving: movingTo }),
   /** The groove and its click on the shared beat, for everyone (Enter). */
   groove: (on: boolean) => { playGroove(on); return harness.clock(); },
 };
