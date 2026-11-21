@@ -184,6 +184,7 @@ jobs:
     permissions:
       contents: read
       statuses: write
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
       RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -196,6 +197,12 @@ jobs:
       - run: bun scripts/rings.ts status hourly "$SHA" "$STATE" "$RUN"
       - if: env.STATE == 'success'
         run: bun scripts/rings.ts move hourly "$SHA"
+      # A green run closes the open ci-hourly issue, so it only stands while the ring is red.
+      - if: env.STATE == 'success'
+        env: { GH_REPO: "${{ github.repository }}" }
+        run: |
+          open=$(gh issue list --label ci-hourly --state open --json number -q '.[0].number')
+          if [ -n "$open" ]; then gh issue close "$open" --comment "Green again on ${SHA:0:7}: $RUN"; fi
 
   flag:
     needs: [plan, smoke, suite, apps, packages]

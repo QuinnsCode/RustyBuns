@@ -135,6 +135,7 @@ jobs:
     permissions:
       contents: read
       statuses: write
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
       PICK: ${{ needs.pick.outputs.sha }}
@@ -147,6 +148,12 @@ jobs:
       - run: bun scripts/rings.ts status daily "$PICK" "$STATE" "$RUN"
       - if: env.STATE == 'success'
         run: bun scripts/rings.ts move daily "$PICK"
+      # A green run closes the open ci-daily issue, so it only stands while the ring is red.
+      - if: env.STATE == 'success'
+        env: { GH_REPO: "${{ github.repository }}" }
+        run: |
+          open=$(gh issue list --label ci-daily --state open --json number -q '.[0].number')
+          if [ -n "$open" ]; then gh issue close "$open" --comment "Green again on ${PICK:0:7}: $RUN"; fi
 
   flag:
     needs: [pick, phone, preview]
