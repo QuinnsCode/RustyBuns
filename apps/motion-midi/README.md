@@ -4,6 +4,16 @@
 
 **Live:** https://motion-midi.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** a small music player that makes its song from notes, with the sound engine written twice (Rust and TypeScript).
+
+**Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/motion-midi && bunx rustybuns build desktop --dev && bunx rustybuns run desktop`.
+
+**How to use:** press *Render and play* to hear the song. *Compare engines* plays it on each engine and shows which was faster.
+
+**Account:** not needed.
+
 A synth written twice, once in Rust and once in TypeScript, inside one downloadable app.
 
 The main view is a player: hit **Render and play** and the best available engine computes the song from its notes, then plays it. Behind **Compare engines** the same song is rendered by each engine in turn, so you can see what the Rust build buys. The audio is identical whichever engine renders it; `test/golden.test.ts` checks that sample by sample.

@@ -2,6 +2,16 @@
 
 **Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call.**
 
+## Use it
+
+**What it is:** the part of eqosys that lets players meet up: rooms, parties, friends online and saves, for any game.
+
+**Use:** not online on its own: it runs inside [eqosys](https://eqosys.qntbr.com). Try it from any Q game's *With friends* button.
+
+**How to use:** for players, start a party in a game and send the link to a friend. For game makers, the code below makes a party in one call.
+
+**Account:** an eqosys account.
+
 Your game keeps its own ticks and world. Qollab handles the lobby, the reconnect and the chat around it: the multiplayer
 every game ends up rebuilding.
 
