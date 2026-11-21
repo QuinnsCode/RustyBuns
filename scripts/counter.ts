@@ -82,7 +82,7 @@ export function formIn(html: string): { action: string; body: URLSearchParams } 
 }
 
 /** `host` is the command that serves the app (a built binary); by default the dev host, built here first. */
-export async function counterJourney(app: string, opts: { build?: boolean; spa?: string; host?: string[] } = {}): Promise<void> {
+export async function counterJourney(app: string, opts: { build?: boolean; spa?: string; host?: string[]; edge?: false } = {}): Promise<void> {
   if (opts.build !== false && !opts.host) {
     const build = Bun.spawn(["bun", cli, "build", "desktop", "--dev"], { cwd: app, stdout: "pipe", stderr: "pipe" });
     if (await build.exited) throw new Error(`build desktop --dev failed:\n${await new Response(build.stdout).text()}\n${await new Response(build.stderr).text()}`);
@@ -115,7 +115,7 @@ export async function counterJourney(app: string, opts: { build?: boolean; spa?:
     await stop(host);
     rmSync(home, { recursive: true, force: true });
   }
-  if (!opts.spa) await edgePlan(app);
+  if (!opts.spa && opts.edge !== false) await edgePlan(app);
 }
 
 /**

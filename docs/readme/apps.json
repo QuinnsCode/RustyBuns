@@ -299,6 +299,11 @@
         "line": "A Hono Worker from Hono's own docs (one KV binding), as a desktop app with no edits. It is the sample app contract that each framework example meets, and one shared HTTP journey checks it."
       },
       {
+        "app": "express-example",
+        "name": "Express",
+        "line": "An Express server on Postgres, the server half of a Wasp app, as a desktop app with no edits. Bun runs Express beside the host, and PGlite in the data dir is its Postgres."
+      },
+      {
         "app": "elysia-conduit",
         "name": "Elysia RealWorld",
         "line": "The RealWorld backend of bedstack (Elysia, Drizzle, postgres.js) with no source edits. It is a desktop binary on PGlite that passes their Postman suite. The doc lists the five ways that it breaks on Workers.",

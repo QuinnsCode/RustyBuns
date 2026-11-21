@@ -59,6 +59,7 @@ export const APPS: Record<string, App> = {
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hono-example":      { test: "bun test test", boot: true },
+  "express-example":   { test: "bun test test", boot: true },
   "nextjs-example":    { test: "bun test test", boot: true },
   "nuxt-example":      { test: "bun test test", boot: true },
   "svelte-spa-example": { test: "bun test test", boot: true },
