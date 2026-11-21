@@ -5,6 +5,12 @@ import type { Ask } from "../handle.ts";
 import { Brand, Glass, btn, greeting } from "./Glass.tsx";
 import { messageOf } from "./pages.tsx";
 import { contactHref } from "@rustybuns/util/report";
+import { ourApp, playOf, type QApp } from "../apps.ts";
+import { cardOf } from "../cards.ts";
+
+/** The games a stranger's first visit shows: ones that play in a browser with no account, in plain words. */
+export const WELCOME = ["park-hide-seek", "skate-tech-park", "alien-disc-golf", "two-fronts"]
+  .map(ourApp).filter((a): a is QApp => !!a && !!playOf(a));
 
 const CSS = `
 body:has(.sky) main{display:grid;align-content:center}
@@ -36,7 +42,36 @@ body:has(.sky) main{display:grid;align-content:center}
 .pane .again{text-align:center;margin-top:1rem}
 .pane .again button{width:auto;font:inherit;cursor:pointer;background:none;border:0;color:var(--mut);font-weight:400;font-size:.86rem;padding:.2rem .4rem;text-decoration:underline;text-underline-offset:3px}
 .pane .again button:hover{filter:none;color:var(--ink)}
+.hello{display:grid;gap:1.1rem;width:min(100%,25rem);margin-inline:auto;padding-top:3.2rem}
+.hello .pane{width:100%}
+.hello #join .brand{display:none}
+.what h1{font-size:2rem}
+.what .lead{margin-bottom:1.1rem}
+.what h2{font-size:.74rem;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 .6rem .1rem}
+.what .games{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.what .games a{display:block;border-radius:14px;overflow:hidden;border:1px solid var(--rim);background:var(--field);color:var(--ink);text-decoration:none;transition:border-color .2s,transform .2s}
+.what .games a:hover{border-color:color-mix(in oklab,var(--acc) 60%,var(--rim));transform:translateY(-2px)}
+.what .games img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover}
+.what .games b{display:block;padding:.5rem .65rem .15rem;font-weight:500;font-size:.92rem}
+.what .games span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:0 .65rem .6rem;font-size:.78rem;line-height:1.35;color:var(--mut)}
+.what .go{display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:1.1rem}
+@media(min-width:60rem){.hello{width:min(100%,64rem);grid-template-columns:minmax(0,1fr) clamp(28rem,34vw,32rem);align-items:center;gap:1.6rem;padding-top:0}.what .go{display:none}.what .games img{aspect-ratio:2/1}.what .games span{-webkit-line-clamp:1}}
+@media(prefers-reduced-motion:reduce){.what .games a{transition:none}}
 `;
+
+/** A stranger's first visit: what eqosys is, games to play right now with no account, and the form one tap away (beside it on a wide screen). */
+const Welcome = () => (
+  <section className="pane what" aria-label="What eqosys is">
+    <Brand />
+    <h1>One account for every Q game.</h1>
+    <p className="lead">Keep your games, friends and saves in one place. Play first: these games need no account.</p>
+    <h2>Play now</h2>
+    <div className="games">{WELCOME.map((a) => { const c = cardOf(a.id, a.name); return (
+      <a key={a.id} href={playOf(a)!}><img src={`/cards/${a.id}.jpg`} alt="" width={640} height={360} decoding="async" draggable={false} /><b>{c.name}</b><span>{c.blurb}</span></a>
+    ); })}</div>
+    <a className={`${btn(true)} go`} href="#join">Make your account</a>
+  </section>
+);
 
 /** The ask passed along by every form on the page. */
 const Carry = ({ ask }: { ask: Ask | null }) => ask && (
@@ -75,9 +110,10 @@ export function Login({ ask, me, social, appleTop, error, t0, friend, opens = "i
   const app = ask?.app.name;
   const top = !!appleTop && social[0] === "apple";
   const hello = greeting(t0);
-  return (
-    <Glass t0={t0} css={CSS}>
-      <div>
+  // Nobody sent them and this browser has never signed up here: say what this is first. A game's /login?app=... stays a straight sign-in.
+  const welcome = !me && !ask && !friend && !error && opens === "new";
+  const form = (
+      <div id="join">
         <section className="pane">
           <Brand />
           {me ? (
@@ -131,6 +167,6 @@ export function Login({ ask, me, social, appleTop, error, t0, friend, opens = "i
         </section>
         <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."} <a href="/privacy">Privacy</a> · <a href={contactHref("Trouble signing in to eqosys")}>Help</a></p>
       </div>
-    </Glass>
   );
+  return <Glass t0={t0} css={CSS}>{welcome ? <div className="hello"><Welcome />{form}</div> : form}</Glass>;
 }
