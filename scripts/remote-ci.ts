@@ -1,4 +1,4 @@
-// Run tests on the builder Mac over SSH (notes/local-build-monster.md, #2329). The builder holds a few warm
+// Run tests on the builder Mac over SSH (#2329). The builder holds a few warm
 // checkouts (slots, made by scripts/builder-setup.sh); each run claims a free one, so agents can share it.
 // What runs is your working tree as it is, committed or not, untracked files included. Nothing goes to GitHub.
 //
@@ -35,6 +35,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
 import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { Matrix, report } from "./builder-nightly.ts";
+import { tierLine } from "./ci-tier.ts";
 
 /** A row of ci-apps' matrix: one without an app, test and prep isn't a job. */
 const line = str(Infinity, { min: 0 });
@@ -405,6 +406,8 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
   if (argv[0] === "run") {
     jobs = [{ label: argv[1]!, dir: argv[1]!, cmd: argv.slice(2).map(q).join(" ") }];
   } else {
+    const files = (await Bun.$`git diff --name-only ${argv[0]!}...HEAD`.cwd(cwd).quiet().nothrow().text()).split("\n").filter(Boolean);
+    console.log(tierLine(files));
     jobs = await touched(argv[0]!, cwd, all);
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }

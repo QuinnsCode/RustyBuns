@@ -1,6 +1,6 @@
-// Risk tier of a change, from its file list (notes/local-build-monster.md, Part 2). Cheapest test wins.
+// Risk tier of a change, from its file list (#2329, "Local build monster", Part 2). Cheapest test wins.
 //
-//   bun scripts/ci-tier.ts <base-ref>    prints the highest tier the diff touches, then each file's tier
+//   bun scripts/ci-tier.ts <base-ref>    prints the highest tier the diff touches (and whether it may stack), then each file's tier
 //
 // 0 docs   1 one app's source   2 packages/, lockfile, shared config   3 build tooling, CI, Docker images
 // 4 secrets and deploys (a human gate)
@@ -25,10 +25,19 @@ export const classify = (files: string[]): Tier => files.reduce<Tier>((t, f) => 
 // Tiers 0 and 1 ride together; 2 is already everything; 3 and 4 never stack with anything.
 export const stackable = (tier: Tier) => tier <= 2;
 
+const NAMES = ["docs", "one app", "shared code", "tooling", "secrets or deploys"] as const;
+
+/** One line naming a diff's tier and whether it may share a test run, for `bun run builder <base-ref>`. */
+export function tierLine(files: string[]): string {
+  const t = classify(files);
+  const why = t === 4 ? "a person checks it before it merges" : stackable(t) ? "may share a test run" : "runs alone, never stacked";
+  return `tier ${t} (${NAMES[t]}): ${why}`;
+}
+
 if (import.meta.main) {
   const base = process.argv[2];
   if (!base) throw new Error("usage: bun scripts/ci-tier.ts <base-ref>");
   const files = (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
-  console.log(`tier=${classify(files)}`);
+  console.log(tierLine(files));
   for (const f of files) console.log(`${tierOf(f)} ${f}`);
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { classify, stackable, tierOf } from "./ci-tier.ts";
+import { classify, stackable, tierLine, tierOf } from "./ci-tier.ts";
 
 test("each file lands in its tier", () => {
   expect(tierOf("README.md")).toBe(0);
@@ -20,4 +20,10 @@ test("a diff takes its highest tier, and only 3 and 4 refuse to stack", () => {
   expect(classify(["README.md", "apps/borg/src/a.ts"])).toBe(1);
   expect(classify(["apps/borg/src/a.ts", "scripts/ci-apps.ts"])).toBe(3);
   expect([0, 1, 2, 3, 4].map((t) => stackable(t as 0))).toEqual([true, true, true, false, false]);
+});
+
+test("the builder's tier line says whether a diff may share a run", () => {
+  expect(tierLine(["apps/borg/src/a.ts"])).toBe("tier 1 (one app): may share a test run");
+  expect(tierLine(["scripts/ci-apps.ts"])).toBe("tier 3 (tooling): runs alone, never stacked");
+  expect(tierLine(["apps/x/wrangler.jsonc"])).toBe("tier 4 (secrets or deploys): a person checks it before it merges");
 });
