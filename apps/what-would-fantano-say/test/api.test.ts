@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { handleReview, type ReviewEnv } from "../src/api.ts";
+import { handleReview, humanCheckKey, type ReviewEnv } from "../src/api.ts";
 import { pickBoxes } from "../src/boxes.ts";
 import { youtubeId } from "../src/guard.ts";
 
@@ -35,9 +35,13 @@ describe("POST /api/review", () => {
     expect(((await res.json()) as { by: string }).by).toBe("estimate");
   });
 
-  test("AI without Turnstile never calls it", async () => {
+  // Local dev: the site key is a plain var, the secret only comes at deploy. The page then shows no human check (it
+  // would fail off the widget's hostnames and lock Judge me), and a review sent without one is the estimate.
+  test("AI without Turnstile never calls it, and the page asks no human check", async () => {
     const { env, calls } = liveEnv();
+    expect(humanCheckKey(env)).toBe("k");
     delete env.TURNSTILE_SECRET;
+    expect(humanCheckKey(env)).toBe("");
     expect(((await (await handleReview(post({ features, clip }), env)).json()) as { by: string }).by).toBe("estimate");
     expect(calls.length).toBe(0);
   });

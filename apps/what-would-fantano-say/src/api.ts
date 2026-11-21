@@ -21,6 +21,14 @@ export interface ReviewEnv {
 
 const MAX_BODY = MAX_CLIP + 8 * 1024;
 
+/**
+ * The Turnstile site key the page should show, or "" when this deploy can't make a live review anyway (local dev never
+ * has the secret or the AI). Then the page shows no human check, which would fail off the widget's own hostnames and
+ * leave Judge me dead, and its reviews are the free estimate.
+ */
+export const humanCheckKey = (e: Pick<ReviewEnv, "AI" | "BUDGET" | "TURNSTILE_SECRET" | "TURNSTILE_SITE_KEY">) =>
+  e.AI && e.BUDGET && e.TURNSTILE_SECRET && e.TURNSTILE_SITE_KEY ? e.TURNSTILE_SITE_KEY : "";
+
 export async function handleReview(request: Request, env: ReviewEnv, cache?: Cache): Promise<Response> {
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return json({ error: "too big" }, 413);
   const raw = await request.text();
@@ -34,7 +42,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     return json({ error: "slow down. even he only drops one review a day." }, 429);
   }
 
-  const live = !!(env.AI && env.BUDGET && env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY && req.clip);
+  const live = !!(humanCheckKey(env) && req.clip);
   if (live && !(await turnstileOk(env.TURNSTILE_SECRET!, req.turnstile, ip))) return json({ error: "turnstile said no: the human check expired or didn't match. Wait for the check to finish again and retry." }, 403);
 
   if (req.youtube) {

@@ -63,7 +63,7 @@ export function Critic({ siteKey }: { siteKey: string }) {
   const widgetId = useRef<string | null>(null);
   const player = useRef<{ ctx: AudioContext; src: AudioBufferSourceNode } | null>(null);
 
-  // Turnstile only loads when the deploy has a site key; locally there's none and reviews are estimates.
+  // Turnstile only loads when the deploy can make live reviews (api.ts humanCheckKey); locally there's none and reviews are estimates.
   useEffect(() => {
     if (!siteKey || !widget.current) return;
     const mount = () => {
@@ -159,6 +159,7 @@ export function Critic({ siteKey }: { siteKey: string }) {
       {siteKey && <div ref={widget} className="turnstile" />}
       <button className="go" disabled={!ready} onClick={judge}>{busy && track ? stage.what : "JUDGE ME"}</button>
 
+      {!siteKey && <p className="note">This copy has no AI judge hooked up, so reviews are a quick guess from the song's numbers.</p>}
       {stage.kind === "error" && <p className="error">{stage.message}</p>}
       {stage.kind === "done" && <Card review={stage.review} />}
     </section>
