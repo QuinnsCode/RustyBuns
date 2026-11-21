@@ -234,7 +234,7 @@ type Well = { at: THREE.Vector3Tuple; w: number; h: number; r: number; deep: num
 
 /** A D's outline, counter-clockwise in (u, v), `w` by `h` round (cu, cv): a half ellipse on a flat edge, its two
  * corners rounded `r`, the flat at the bottom for `up` +1 and at the top for -1; the same count of points whatever its size. */
-function dShape(cu: number, cv: number, w: number, h: number, r: number, up: 1 | -1, per = 14): THREE.Vector2[] {
+function dShape(cu: number, cv: number, w: number, h: number, r: number, up: 1 | -1, per = 12): THREE.Vector2[] {
   const a = w / 2, base = cv - (up * h) / 2, rr = Math.max(Math.min(r, h / 3, a / 3), 1e-4), t0 = Math.asin(rr / h), pts: THREE.Vector2[] = [];
   // the dome from the right end of the flat over to the left, stopping `r` short of the flat, then the flat's two
   // ends pulled in, so each corner is a short round, not a point
@@ -326,7 +326,8 @@ function sink(piece: Piece, out: THREE.Vector3Tuple, wells: Well[]): Piece[] {
     const [cu, cv] = centres[i];
     const lip = Math.min(w.lip ?? 0.004, w.w / 4, w.h / 4), dr = Math.min(w.draft ?? 0, w.w / 4 - lip, w.h / 4 - lip);
     const ring = (k: number) => outline2(w, centres[i], k);
-    const rings: [THREE.Vector2[], number][] = [[mouths[i], 0], [ring(lip), lip], [ring(lip + dr), w.deep]];
+    // (a well with no lip goes straight down: no flat band at the mouth)
+    const rings: [THREE.Vector2[], number][] = lip > 0 ? [[mouths[i], 0], [ring(lip), lip], [ring(lip + dr), w.deep]] : [[mouths[i], 0], [ring(dr), w.deep]];
     const walls: number[] = [], centre = (d: number) => at3(new THREE.Vector2(cu, cv), d);
     for (let r = 0; r + 1 < rings.length; r++) {
       const [ra, da] = rings[r], [rb, db] = rings[r + 1];
@@ -930,16 +931,22 @@ function lineArray(id: "line-array-10" | "line-array-box"): Build {
     const cheek = prism("cheek", [[z1, run(z1) + rim], [z1, h - run(z1) - rim], [z0, h - run(z0) - rim], [z0, run(z0) + rim]], tc, s * (inner / 2 + tc / 2), 0.0015);
     sunk(b, cheek, [[[s, 0, 0], ds(s, tc, tc, { lip, walls: "cheek", floor: null })]]);
   }
-  // the panels: black steel backed nearly solid, so the drivers set well back behind them are only a shadow
-  const gz = front - g - 0.002, sit = 0.03, deep = cave - g - sit - 0.008;
+  // a raised black steel frame round the cavity's mouth, standing a centimetre proud of the shell
+  const fw = 0.012, proud = 0.01, mw = span + 0.004, mh = gh + 0.004;
+  for (const k of [-1, 1]) {
+    b.pieces.push(box("panel", [mw + 2 * fw, fw, proud + 0.002], [0, yc + k * (mh + fw) / 2, front + proud / 2 - 0.001], { bevel: 0.003 }));
+    b.pieces.push(box("panel", [fw, mh, proud + 0.002], [k * (mw + fw) / 2, yc, front + proud / 2 - 0.001], { bevel: 0.003 }));
+  }
+  // the panels: black steel backed nearly solid, set back inside the frame, so the drivers well behind them are only a shadow
+  const gz = front - g - 0.012, sit = 0.03, deep = cave - (front - gz) - sit - 0.006;
   xs.forEach((x, i) => {
     const [sheet, edge] = grilleSlab(ws[i], gh, g, yc, gz, 0.004, new THREE.Matrix4().makeTranslation(x, 0, 0));
     b.pieces.push({ ...sheet, slot: "mesh" }, { ...edge, slot: "knob" });
     const at = new THREE.Matrix4().makeTranslation(x, yc, gz - sit);
-    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at, 12));
-    else b.pieces.push(...cone(Math.min(sw, gh) * 0.42, deep, at, 12));
+    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at, 10));
+    else b.pieces.push(...cone(Math.min(sw, gh) * 0.42, deep, at, 10));
   });
-  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, front));
+  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, gz + g));
   // the rigging, black steel: a pin through each hole the hang uses, each pin on a wire lanyard to an eye beside it
   const pin = (x: number, y: number, z: number, s: number, t: number) => {
     const head: THREE.Vector3Tuple = [x + s * 0.019, y, z], eye: THREE.Vector3Tuple = [x + s * 0.014, y + t * 0.055, z - 0.026];
@@ -949,11 +956,16 @@ function lineArray(id: "line-array-10" | "line-array-box"): Build {
   };
   for (const s of [-1, 1]) {
     const x = s * (w / 2 - 0.012), rx = s * (w / 2 - 0.0115);
-    // the front bracket: a deep U channel, its two flanges standing out past the web, the grip between the pins
-    b.pieces.push(box("panel", [0.024, h - 0.002, 0.08], [x, h / 2, plateZ], { bevel: 0.004 }));
-    for (const k of [-1, 1]) b.pieces.push(box("panel", [0.008, h - 0.004, 0.009], [s * (w / 2 + 0.003), h / 2, plateZ + k * 0.034], { bevel: 0.002 }));
+    // the front corner rail: a heavy U channel the full height, wrapped round onto the front beside the frame, its two
+    // flanges standing out past the web; the pins top and bottom, a cast grip on a bracket between them
+    b.pieces.push(box("panel", [0.03, h - 0.002, 0.094], [s * (w / 2 - 0.015), h / 2, plateZ - 0.004], { bevel: 0.005 }));
+    b.pieces.push(box("panel", [w / 2 - inner / 2 + 0.006, h - 0.002, 0.012], [s * (w / 2 + inner / 2 - 0.006) / 2, h / 2, front + 0.004], { bevel: 0.003 }));
+    for (const k of [-1, 1]) b.pieces.push(box("panel", [0.012, h - 0.004, 0.011], [s * (w / 2 + 0.004), h / 2, plateZ + k * 0.04], { bevel: 0.003 }));
     pinY.forEach((y, i) => pin(x, y, plateZ, s, i ? -1 : 1));
-    b.pieces.push(...handle("knob", [s * w / 2, h / 2, plateZ], s > 0 ? "x" : "-x", 0.05, 0.02));
+    const gx = s * (w / 2 - 0.002), out = s * 0.022, gy = 0.055;
+    b.pieces.push(box("panel", [0.008, 2 * gy + 0.03, 0.05], [gx, h / 2, plateZ], { bevel: 0.002 }));
+    for (const k of [-1, 1]) b.pieces.push(rod("knob", [gx, h / 2 + k * gy, plateZ], [gx + out, h / 2 + k * gy * 0.85, plateZ], 0.009, 6));
+    b.pieces.push(rod("knob", [gx + out, h / 2 - gy * 0.85 - 0.006, plateZ], [gx + out, h / 2 + gy * 0.85 + 0.006, plateZ], 0.011, 6));
     // the rear link bar: drilled down its length in two staggered rows of splay holes, the pin in the one this box hangs at
     b.pieces.push(box("panel", [0.021, bh - 0.004, 0.06], [rx, h / 2, linkZ], { bevel: 0.004 }));
     for (let i = 0; i < 6; i++) for (const k of [-1, 1]) {
