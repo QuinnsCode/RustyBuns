@@ -2,6 +2,16 @@
 
 > **What it proves:** a social network's open protocol fits in one small Worker. Type a handle and see the [AT Protocol](https://atproto.com/) do its job step by step: the domain gives a DID, the DID gives a data server, and the data server gives typed records. Then watch the account live on the public firehose, and sign in to write a record of our own type back into your repo. No keys, no session store, no bindings. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+## Use it
+
+**What it is:** type a Bluesky name and see, step by step, where that account really lives and what it posts, live.
+
+**Use:** not online yet. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/at-lens && bun run edge:dev` and open http://localhost:8787.
+
+**How to use:** type a handle like `bsky.app` and press enter. Watch each step, then watch the account's posts and likes come in as they happen.
+
+**Account:** not needed. Sign in with your Bluesky handle to post a short status of your own.
+
 - **The walk.** `src/edge/atproto.ts` resolves a handle (an `_atproto` DNS TXT record through Cloudflare's DNS over HTTPS, else `https://<handle>/.well-known/atproto-did`), fetches the DID document (plc.directory, or the host's own `did.json` for `did:web`), checks that the document claims the handle back, and asks the data server (PDS) it names for the repo's collections and records over XRPC. A handle that doesn't point back shows as unverified. Step by step, that is the spec's rule for when a handle can be trusted.
 - **Live.** The page opens [Jetstream](https://bsky.network/docs/jetstream/) (the firehose as JSON) filtered to that one DID, so a post, like or follow from any app shows up as it happens. Pick a collection and a second stream counts it across the whole network, per second.
 - **The Worker is only there for what a browser can't do**: a DNS lookup, and a handle's own domain, which sends no CORS headers. Each reply is capped in size and time, and a data server has to be an https hostname before it's fetched.

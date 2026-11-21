@@ -7,6 +7,17 @@ misses). Turn "Box in a box" off to see what a tool that treats every product as
 
 **Live:** https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** tells you which shipping box your products fit in, even when one product can go inside another.
+
+**Use:** https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev
+
+**How to use:** add your boxes and your products with their sizes, then see which box takes them all.
+Mark a product that opens (like a case) and smaller things will go inside it.
+
+**Account:** not needed. Everything stays in your browser.
+
 Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
 noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
 (hello@qntbr.com). The rest of this repository stays under its own license.

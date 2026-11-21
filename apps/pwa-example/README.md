@@ -2,6 +2,16 @@
 
 > **What it proves:** one web page can become an Android app with no Android code. Pocket Dice is a Progressive Web App (PWA): a TypeScript page, a Rust dice roller compiled to WebAssembly, a service worker that keeps it all on the phone, and a manifest that lets Chrome on Android install it. One of the [Rusty Buns](../../README.md) examples.
 
+## Use it
+
+**What it is:** Pocket Dice: roll dice on your phone, and install it like an app with no app store.
+
+**Use:** not online yet. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/pwa-example && bun run dev`.
+
+**How to use:** tap *Roll*. On an Android phone, tap *Install app* (on the page or in Chrome's menu) to keep it on your home screen; it works with no internet.
+
+**Account:** not needed.
+
 ## Run it
 
 ```

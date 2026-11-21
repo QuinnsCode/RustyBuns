@@ -2,6 +2,17 @@
 
 > **What it proves:** one Rust index, one shared memory, every worker. Web or desktop. No vector DB bill. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+## Use it
+
+**What it is:** drop in screenshots or photos and find the parts that look alike across all of them.
+
+**Use:** https://pixel-rag.notryanquinn.workers.dev
+
+**How to use:** it opens with some made-up web pages. Click a button, a chart or a logo in one, and it shows the same thing in the others.
+Drop in your own photos and click a face to see every photo of that person.
+
+**Account:** not needed.
+
 **Drop in your screenshots and find the parts that look alike across all of them.** Click a button, a chart or a
 logo in one, and it shows every spot in the rest that looks the same. **Drop in photos and click a face**, and it
 shows every photo of that person.
