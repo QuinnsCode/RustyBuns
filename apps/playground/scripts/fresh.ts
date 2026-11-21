@@ -12,7 +12,7 @@ const FRAMEWORKS: { name: string; app: string; pkg: string }[] = [
   { name: "Qwik City", app: "frameworks/qwik-example", pkg: "@builder.io/qwik-city" },
   { name: "Hono", app: "frameworks/hono-example", pkg: "hono" },
   { name: "Elysia", app: "frameworks/elysia-example", pkg: "elysia" },
-  { name: "RealWorld on Elysia", app: "elysia-conduit", pkg: "elysia" },
+  { name: "RealWorld on Elysia", app: "frameworks/elysia-conduit", pkg: "elysia" },
   { name: "Vite + React", app: "frameworks/spa-example", pkg: "react" },
   { name: "Vite + Svelte", app: "frameworks/svelte-spa-example", pkg: "svelte" },
   { name: "Postgres", app: "borg-postgres", pkg: "@electric-sql/pglite" },
