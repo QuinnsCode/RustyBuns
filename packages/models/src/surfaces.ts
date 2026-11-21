@@ -19,6 +19,8 @@ type Spec = {
   tint: number;
   roughness: number;
   metalness: number;
+  /** The folder under textures/ when it is another surface's (the same photo, laid on another way). */
+  dir?: string;
   /** Which maps the folder has besides normal and roughness. */
   color?: boolean;
   alpha?: boolean;
@@ -43,6 +45,9 @@ export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
   grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.4, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
+  /** A hung line array box's grille: the same perforated steel, but black and backed nearly solid, so the drivers
+   * behind it stay out of sight, as through a real box's foam-lined grille. */
+  mesh: { dir: "grille", tile: 0.05, tint: 0x16171a, roughness: 0.6, metalness: 0.35, alpha: true, normalScale: 0.7, backing: 0.93, wear: { chip: 0x45484d, scuff: 0.2, matte: 0.5 } },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -58,6 +63,10 @@ export const SURFACES = {
   ply: { tile: 0.6, tint: 0xffffff, roughness: 0.9, metalness: 0, color: true },
   /** Textured black plastic or polyurea: a moulded PA box, a cable's jacket. */
   plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 0.5, wear: { chip: 0x6a6866, stipple: 1.0, scuff: 1, matte: 0.6 } },
+  /** A line array box's shell: the black plastic in an even fine pebble coat, hardly scuffed (no blotches on the top). */
+  coat: { dir: "plastic", tile: 0.35, tint: 0x7a7a7a, roughness: 1, metalness: 0, color: true, normalScale: 0.35, wear: { chip: 0x5a5856, stipple: 1.3, scuff: 0.15, matte: 0.7 } },
+  /** A line array box's side cheeks: a warm grey pebble-coat panel, set off against the black shell. */
+  cheek: { dir: "plastic", tile: 0.35, tint: 0xd8d6c8, roughness: 1, metalness: 0, color: true, normalScale: 0.6, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.2, matte: 0.75 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
@@ -74,7 +83,7 @@ export type SurfaceOptions = {
 /** The texture files a surface loads, relative to `base` (for a service worker's or a bundler's list). */
 export function surfaceFiles(name: SurfaceName): string[] {
   const s: Spec = SURFACES[name];
-  return [s.color && "color", "normal", "rough", s.alpha && "alpha"].filter(Boolean).map((m) => `${name}/${m}.jpg`);
+  return [s.color && "color", "normal", "rough", s.alpha && "alpha"].filter(Boolean).map((m) => `${s.dir ?? name}/${m}.jpg`);
 }
 
 /** One surface as a material, and a promise that settles once its maps have loaded (at once for `low`). */
@@ -84,7 +93,7 @@ export function surface(name: SurfaceName, { base, quality = "high", loader = ne
   material.name = `surface-${name}`;
   if (quality === "low") return { material, ready: Promise.resolve() };
   const load = (map: string, srgb: boolean) => new Promise<THREE.Texture>((ok, no) => {
-    loader.load(`${base}${name}/${map}.jpg`, (t) => {
+    loader.load(`${base}${s.dir ?? name}/${map}.jpg`, (t) => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.repeat.set(1 / s.tile, 1 / s.tile);
       t.anisotropy = 4;
@@ -196,16 +205,18 @@ function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wea
   material.customProgramCacheKey = () => `surface-${backing}-${JSON.stringify(wear ?? null)}`;
 }
 
-/** The gear's look made of the kit: cabinets in textured plastic, perforated steel grilles, brushed aluminium,
+/** The gear's look made of the kit: cabinets in textured plastic (a line array box's in an even coat with paler
+ * cheeks, and a black grille backed nearly solid), perforated steel grilles, brushed aluminium,
  * painted steel panels, rubber and tolex; the rest (the guitar's paint, chrome, knobs, LEDs) as `gearLook()` has them. */
 export function gearSurfaces(opts: SurfaceOptions): { look: GearLook; ready: Promise<void> } {
   const flat = gearLook(), loader = opts.loader ?? new THREE.TextureLoader();
   const pick = (name: SurfaceName) => surface(name, { ...opts, loader });
-  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex") };
+  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek") };
   const lid = parts.paint.material.clone();
   lid.color.setHex(0xf2c230);
   lid.map = null;
   const lidReady = parts.paint.ready.then(() => { lid.normalMap = parts.paint.material.normalMap; lid.roughnessMap = parts.paint.material.roughnessMap; lid.needsUpdate = true; });
-  const look: GearLook = { ...flat, paint: parts.paint.material, grille: parts.grille.material, metal: parts.metal.material, rubber: parts.rubber.material, panel: parts.panel.material, tolex: parts.tolex.material, lid };
+  const look: GearLook = { ...flat, paint: parts.paint.material, grille: parts.grille.material, metal: parts.metal.material, rubber: parts.rubber.material, panel: parts.panel.material, tolex: parts.tolex.material, lid,
+    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material };
   return { look, ready: Promise.all([...Object.values(parts).map((p) => p.ready), lidReady]).then(() => {}) };
 }
