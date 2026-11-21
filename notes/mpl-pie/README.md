@@ -8,16 +8,18 @@ mpl's own code, drawn with its new `ax.pie`.
 
 Each slice is how many of mpl's 426 pixel-exact reference fixtures (`fixtures/ref/*.json`) call that chart type.
 A fixture with a line and a bar counts once for each. Pie has 8 so far, all from #85, and its slice is pulled out.
-There's no legend box: each label sits beside the pie in its slice's colour, with a leader line to its slice, and the
-thinnest slices' labels fan out so none overlap.
+The look is one pumpkin hue, brighter for bigger, as a donut with the fixture count in the hole. The three big slices
+carry their names inside; the eight small ones are a count-and-name table down the right, each with a leader.
 
-- `pie.png`: the plain chart, straight from mpl's `toPNG()`.
-- `oilslick.html`: mpl's `toSVG()` like oil on asphalt: near-black slices with a hint of their colour, a faint, slow
-  rainbow film and a sheen of light sweeping across, masked to the slices (a second SVG of the slices alone is the
-  mask). CSS only; open it in a browser.
-- `oilslick.gif`: that page recorded. Every animation steps to an exact time per frame, and the 8 s loop has no seam. The
-  GIF palette is built with the label colours in it, so they don't drift on a mostly black page.
-- `lavalamp.svg`: the lava-lamp edition, one animated SVG (SMIL, no script; open it in a browser, it scales to any size). In each slice, wax in a lighter shade of its label colour rises, stretches, merges (a blur + threshold goo filter) and sinks through a darker shade, with bubbles streaming up, all clipped to the slice under crisp labels and leaders. `lavalamp.gif` is it recorded the same seamless way (12 s loop) for chat apps; the code is `lavalamp.ts`.
+- `pie.png`: the chart, straight from mpl's `toPNG()`.
+- `oilslick.html`: mpl's `toSVG()` with one slow warm sheen sweeping across the slices, masked to them (a second SVG
+  of the slices alone is the mask). CSS only; open it in a browser. `oilslick.gif` is it recorded.
+- `lavalamp.svg`: one animated SVG (SMIL, no script; open it in a browser, it scales to any size). In each slice,
+  pale wax rises, stretches, merges (a blur + threshold goo filter) and sinks, with bubbles streaming up, clipped to
+  the slice under the labels. `lavalamp.gif` is it recorded for chat apps; the code is `lavalamp.ts`.
+
+Both GIFs step every animation to an exact time per frame, so their loops (8 s and 12 s) have no seam, and each GIF's
+palette is built with the chart's colours in it so they don't drift.
 
 ```sh
 bun notes/mpl-pie/pie.ts          # clones mpl at the pinned commit into a temp folder, counts, writes pie.png, oilslick.html, lavalamp.svg

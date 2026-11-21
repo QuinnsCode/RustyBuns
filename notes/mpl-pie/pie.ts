@@ -18,9 +18,10 @@ help(import.meta.path);
 const PIN = "689ebd4383c0f55b4219e73303f0b1dea6660bbf";
 /** The plotting calls in mpl's Axes API that draw a chart (docs/api.md), not lines or text laid on one. */
 const CHARTS = ["plot", "step", "errorbar", "hist", "boxplot", "pie", "bar", "barh", "fill_between", "imshow", "scatter"];
-/** tab10 for the other ten chart types; pie gets pumpkin. */
-const TAB10 = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
-const PUMPKIN = "#C8601A";
+/** One pumpkin hue for every slice, from the biggest (brightest) to the smallest (darkest). */
+const BRIGHT = "#ffae4f", DARK = "#4a220e";
+/** The page, the gaps between slices, and the light and quiet inks on it. */
+const PAGE = "#0d0f13", INK = "#f4efe6", QUIET = "#9a9ca3";
 
 const dir = mkdtempSync(join(tmpdir(), "mpl-pie-"));
 const git = (...args: string[]) => {
@@ -51,120 +52,110 @@ for (const f of fixtures) {
 const counts = [...tally].sort((a, b) => b[1] - a[1]);
 
 const { subplots, registerFonts } = await import(join(dir, "src/index.ts"));
-const { dejavuSansBold } = await import(join(dir, "src/fonts/dejavu-sans-bold.ts"));
-registerFonts(dejavuSansBold);
+for (const face of ["regular", "medium", "semibold", "bold"]) {
+  const name = `inter${face[0].toUpperCase()}${face.slice(1)}`;
+  registerFonts((await import(join(dir, `src/fonts/inter-${face}.ts`)))[name]);
+}
 
-let next = 0;
-const colors = counts.map(([k]) => (k === "pie" ? PUMPKIN : TAB10[next++ % TAB10.length]));
+const mix = (a: string, b: string, t: number) => `#${[1, 3, 5].map((j) => Math.round(parseInt(a.slice(j, j + 2), 16) * (1 - t) + parseInt(b.slice(j, j + 2), 16) * t).toString(16).padStart(2, "0")).join("")}`;
+/** Brighter is bigger: counts are sorted, so slice i takes step i of the ramp. */
+const colors = counts.map((_, i) => mix(BRIGHT, DARK, Math.pow(i / (counts.length - 1), 0.85)));
 
-/** Turned so the three thinnest slices sit just left of 12 o'clock: with plot, they fill the left label column. */
-const START = 102;
-const EXPLODE = 0.18;
-/** Label columns at x = ±COL (pie radius 1), labels at least GAP apart so the thin slices' names fan out. */
-const COL = 1.28, GAP = 0.13, TOP = 1.2, BOTTOM = -0.98;
-const total = counts.reduce((s, [, n]) => s + n, 0);
+/** Turned so the eight smaller slices sit around 3 o'clock, each label level with its slice down the right. */
+const START = 36.5;
+const EXPLODE = 0.08;
+/** The ring: outer radius 1, this thick. */
+const RING = 0.42;
+/** Slices this many degrees or wider carry their label inside the ring; the rest get a leader to the right column. */
+const INSIDE = 30;
+/** The right column at x = COL, labels at least GAP apart so the thin slices' names fan out. */
+const COL = 1.3, GAP = 0.15, TOP = 1.2;
+const total = counts.reduce((sum, [, n]) => sum + n, 0);
 let before = 0;
-const labelled = counts.map(([k, n], i) => {
-  const mid = START + (360 * (before + n / 2)) / total;
+const slices = counts.map(([k, n], i) => {
+  const span = (360 * n) / total, mid = START + (360 * (before + n / 2)) / total;
   before += n;
   const [cx, cy] = [Math.cos((mid * Math.PI) / 180), Math.sin((mid * Math.PI) / 180)];
   const off = k === "pie" ? EXPLODE : 0;
-  const deg = ((mid % 360) + 360) % 360;
-  // Slices within 5° right of 12 o'clock go left too (pie, pulled out), so the columns split 5 and 6.
-  const left = deg >= 85 && deg <= 275;
   return {
-    i, left, text: k === "pie" ? `pie ${n} (new!)` : `${k} ${n}`,
-    rim: [cx * (1.02 + off), cy * (1.02 + off)], elbow: [cx * (1.08 + off), cy * (1.08 + off)], at: [left ? -COL : COL, 0], y: 0, ink: "",
+    i, name: k === "pie" ? "pie (new!)" : k, n, inside: span >= INSIDE,
+    centre: [cx * (1 - RING / 2), cy * (1 - RING / 2)], rim: [cx * (1.06 + off), cy * (1.06 + off)], elbow: [cx * (1.13 + off), cy * (1.13 + off)], y: 0,
   };
 });
-for (const left of [true, false]) {
-  const side = labelled.filter((l) => l.left === left).sort((a, b) => b.elbow[1] - a.elbow[1]);
-  side.forEach((l, j) => (l.y = Math.min(l.elbow[1], TOP, j ? side[j - 1].y - GAP : TOP)));
-  for (let j = side.length - 1; j >= 0; j--) side[j].y = Math.max(side[j].y, j < side.length - 1 ? side[j + 1].y + GAP : BOTTOM);
-}
+const outside = slices.filter((l) => !l.inside).sort((a, b) => b.elbow[1] - a.elbow[1]);
+outside.forEach((l, j) => (l.y = Math.min(l.elbow[1], TOP, j ? outside[j - 1].y - GAP : TOP)));
+// Then centre the column on its slices, so it doesn't all sag below them.
+const sag = (outside.reduce((sum, l) => sum + l.elbow[1] - l.y, 0)) / outside.length;
+for (const l of outside) l.y += sag;
 
-/** `hex` mixed toward white by k: tab10's darker colours, lifted a little to read as text on a dark page. */
-const lift = (hex: string, k: number) => `#${[1, 3, 5].map((j) => parseInt(hex.slice(j, j + 2), 16)).map((v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, "0")).join("")}`;
-/** Oil on asphalt: each slice near black, with a hint of its own colour. */
-const OIL = colors.map((c) => `#${[1, 3, 5].map((j) => Math.round(parseInt(c.slice(j, j + 2), 16) * 0.2).toString(16).padStart(2, "0")).join("")}`);
-
-/** The chart. `dark` draws light text on a see-through figure for the dark pages; `wedgesOnly` draws just the slices
- *  in the same place, which the oil-slick page uses as the shimmer's mask; `wedgeColors` fills the slices. */
-function chart({ dark = false, wedgesOnly = false, wedgeColors = colors } = {}) {
-  for (const l of labelled) l.ink = dark ? lift(colors[l.i], 0.2) : colors[l.i];
-  const ink = dark ? "#f4efe6" : "#000000";
+/** The chart: a pumpkin donut on a dark page. `clear` leaves the page see-through (the oil-slick page draws its own);
+ *  `wedgesOnly` draws just the slices in the same place, which that page uses as its sheen's mask. */
+function chart({ clear = false, wedgesOnly = false } = {}) {
   const rc = {
-    "figure.subplot.left": 0.02,
-    "figure.subplot.right": 0.6,
-    // Text as glyph outlines: a browser without DejaVu Sans would swap in its own font.
-    ...(dark ? { "figure.facecolor": "none", "axes.facecolor": "none", "text.color": ink, "svg.fonttype": "path" } : {}),
+    "font.family": "Inter", "text.color": INK, "figure.facecolor": clear ? "none" : PAGE, "axes.facecolor": "none",
+    "figure.subplot.left": 0, "figure.subplot.right": 1, "figure.subplot.bottom": 0, "figure.subplot.top": 1,
+    // Text as glyph outlines: a browser without Inter would swap in its own font.
+    "svg.fonttype": "path",
   };
-  const [fig, ax] = subplots({ figsize: [12, 7], dpi: 120, rc: { ...rc, "figure.subplot.left": 0, "figure.subplot.right": 1, "figure.subplot.bottom": 0.01, "figure.subplot.top": 0.925 } });
-  ax.pie(counts.map(([, n]) => n), {
-    colors: wedgeColors,
-    startangle: START,
-    labels: counts.map(() => ""),
-    explode: counts.map(([k]) => (k === "pie" ? EXPLODE : 0)),
-    wedgeprops: { edgecolor: dark ? "#0b0a12" : "white", linewidth: 1.5 },
-  });
-  // The pie fills the height; the two label columns take the width a legend box used to.
-  ax.set_xlim(-2.4, 2.4);
-  ax.set_ylim(-1.04, 1.27);
+  const [fig, ax] = subplots({ figsize: [12, 7], dpi: 120, rc });
+  const values = counts.map(([, n]) => n), explode = counts.map(([k]) => (k === "pie" ? EXPLODE : 0));
+  // As a mask the slices are white and the gaps black, read by brightness, so the sheen stays off the gaps and edges.
+  ax.pie(values, { colors: wedgesOnly ? counts.map(() => "white") : colors, startangle: START, explode, labels: counts.map(() => ""), wedgeprops: { width: RING, edgecolor: wedgesOnly ? "black" : PAGE, linewidth: 4 } });
+  // The donut is the star: centred and as tall as the page allows under the two-line greeting.
+  ax.set_xlim(-2.09, 2.09);
+  ax.set_ylim(-1.06, 1.38);
   if (wedgesOnly) return fig;
-  for (const l of labelled) {
-    ax.plot([l.rim[0], l.elbow[0], l.at[0]], [l.rim[1], l.elbow[1], l.y], { color: l.ink, linewidth: 1 });
-    // A dot where the leader leaves its slice: the thin slices' leaders start close together.
-    ax.plot([l.rim[0]], [l.rim[1]], { color: l.ink, marker: "o", markersize: 3.5, linestyle: "none" });
-    ax.text(l.at[0] + (l.left ? -0.03 : 0.03), l.y, l.text, { ha: l.left ? "right" : "left", va: "center", fontsize: 14, color: l.ink });
+  for (const l of slices) {
+    if (l.inside) {
+      // Dark ink on the bright slices, light on the dark ones, as on a printed chart.
+      const ink = l.i < 3 ? "#2a1406" : INK;
+      ax.text(l.centre[0], l.centre[1] + 0.045, l.name, { ha: "center", va: "center", fontsize: 17, fontweight: "semibold", color: ink });
+      ax.text(l.centre[0], l.centre[1] - 0.075, String(l.n), { ha: "center", va: "center", fontsize: 14, color: ink });
+    } else {
+      ax.plot([l.rim[0], l.elbow[0], COL], [l.rim[1], l.elbow[1], l.y], { color: "#5b5d63", linewidth: 1 });
+      // A small table: the count right-aligned in grey, then the name.
+      ax.text(COL + 0.17, l.y, String(l.n), { ha: "right", va: "center", fontsize: 14, color: QUIET });
+      // The one accent: pie, new in #85, in the bright pumpkin.
+      ax.text(COL + 0.23, l.y, l.name, { ha: "left", va: "center", fontsize: 14, fontweight: "medium", color: l.name.startsWith("pie") ? BRIGHT : INK });
+    }
   }
-  fig.suptitle("Happy Thanksgiving, mpl: a pie of your own chart types", { fontsize: 18, fontweight: "bold" });
+  ax.text(0, 0.06, String(fixtures.length), { ha: "center", va: "center", fontsize: 44, fontweight: "bold", color: INK });
+  ax.text(0, -0.13, "fixtures", { ha: "center", va: "center", fontsize: 14, color: QUIET });
+  // The greeting, small and centred above the pie so it doesn't compete with it.
+  ax.text(0.5, 0.95, "Thanks for adding Pie charts!", { transform: ax.transAxes, ha: "center", va: "center", fontsize: 20, fontweight: "semibold", color: INK });
+  ax.text(0.5, 0.905, "Happy Thanksgiving!", { transform: ax.transAxes, ha: "center", va: "center", fontsize: 14, color: QUIET });
   return fig;
 }
 
 const here = import.meta.dir;
 await Bun.write(join(here, "pie.png"), await chart().toPNG());
 
-// The oil-slick page: mpl's own SVG with the slices near black, like oil on asphalt, a faint slow rainbow film and a
-// sheen of light sweeping across, both masked to the slices. Every animation's period divides
-// LOOP seconds, so frame LOOP is frame 0 again and the GIF loops without a seam.
+// The oil-slick page: mpl's own SVG with one slow sheen of light sweeping across the slices, like light on a glossy
+// glaze, masked to the slices (a second SVG of the slices alone is the mask). Its period divides LOOP seconds, so frame
+// LOOP is frame 0 again and the GIF loops without a seam.
 const LOOP = 8;
 const uri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+const mask = uri(chart({ clear: true, wedgesOnly: true }).toSVG());
 const html = `<!doctype html>
 <meta charset="utf-8">
 <title>A pie of mpl's chart types</title>
 <style>
-  @property --a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-  html, body { margin: 0; height: 100%; background: radial-gradient(ellipse at 50% 45%, #2a2a2e 0%, #17171a 75%); }
+  html, body { margin: 0; height: 100%; background: ${PAGE}; }
   .stage { position: relative; width: 1440px; height: 840px; margin: 0 auto; }
   .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .slick {
-    -webkit-mask: url(${uri(chart({ dark: true, wedgesOnly: true }).toSVG())}) center / 100% 100% no-repeat;
-    mask: url(${uri(chart({ dark: true, wedgesOnly: true }).toSVG())}) center / 100% 100% no-repeat;
-  }
-  .slick::before, .slick::after { content: ""; position: absolute; inset: 0; }
-  /* The film: fine rainbow rings over a rainbow that sways a sixth of a turn and back each loop (out and back, so half a loop each way), its hue drifting a
-     little. Faint and slow: the slices stay black with a hint of their own colour. */
-  .slick::before {
-    background:
-      repeating-radial-gradient(circle at 24% 38%, #ff5ec8 0, #ffb35e 22px, #f7ff6b 44px, #5effa4 66px, #5ed8ff 88px, #8a6bff 110px, #ff5ec8 132px),
-      conic-gradient(from var(--a) at 31% 50%, #ff5ec8, #ffb35e, #f7ff6b, #5effa4, #5ed8ff, #8a6bff, #ff5ec8);
-    background-blend-mode: overlay;
-    mix-blend-mode: soft-light; opacity: .07;
-    animation: turn ${LOOP / 2}s ease-in-out infinite alternate, drift ${LOOP / 2}s ease-in-out infinite alternate;
-  }
-  /* The sheen: a soft band of light sliding across, once per loop. */
-  .slick::after {
-    background: linear-gradient(115deg, transparent 45%, rgba(255,255,255,.06) 47.5%, rgba(255,255,255,.3) 49.5%, rgba(205,235,255,.16) 50.7%, transparent 53.5%) 0 0 / 300% 100%;
+  .sheen { mask: url(${mask}) center / 100% 100% no-repeat luminance; }
+  /* A narrow band of warm light, with a soft glow either side, crossing once per loop and resting off the pie between. */
+  .sheen::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(110deg, transparent 43%, rgba(255,240,215,.07) 47%, rgba(255,246,230,.42) 49.6%, rgba(255,240,215,.07) 52%, transparent 56%) 0 0 / 300% 100%;
     mix-blend-mode: screen;
-    animation: sheen ${LOOP}s ease-in-out infinite;
+    animation: sheen ${LOOP}s cubic-bezier(.55, 0, .45, 1) infinite;
   }
-  @keyframes turn { to { --a: 60deg; } }
-  @keyframes drift { to { filter: hue-rotate(-40deg); } }
-  @keyframes sheen { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  @keyframes sheen { 0% { background-position: 100% 0; } 70%, 100% { background-position: 0% 0; } }
 </style>
 <div class="stage">
-  <img src="${uri(chart({ dark: true, wedgeColors: OIL }).toSVG())}" alt="Chart types in mpl: ${counts.map(([k, n]) => `${k} ${n}`).join(", ")}">
-  <div class="slick"></div>
+  <img src="${uri(chart({ clear: true }).toSVG())}" alt="Chart types in mpl: ${counts.map(([k, n]) => `${k} ${n}`).join(", ")}">
+  <div class="sheen"></div>
 </div>
 `;
 await Bun.write(join(here, "oilslick.html"), html);
@@ -173,13 +164,13 @@ console.log(`pie.png + oilslick.html: ${counts.map(([k, n]) => `${k} ${n}`).join
 
 // The lava-lamp edition: one SVG, SMIL only, so it plays straight from the file. Its loop is slower than the sheen's.
 const LAVA_LOOP = 12;
-const lava = lavaLamp(chart({ dark: true }).toSVG(), colors, LAVA_LOOP);
+const lava = lavaLamp(chart().toSVG(), colors, LAVA_LOOP, PAGE);
 await Bun.write(join(here, "lavalamp.svg"), lava);
 console.log(`lavalamp.svg: ${Math.round(lava.length / 1024)} KB`);
 
 /** Records `page` as a 960 px GIF, `loop` seconds at `fps`. Every animation is paused and stepped to each frame's exact
  *  time before its screenshot, so frames are exact, not as fast as Chrome draws, and frame `loop` would be frame 0.
- *  The GIF's one 256-colour palette is built from the frames plus a picture of the label colours in stripes: without
+ *  The GIF's one 256-colour palette is built from the frames plus a picture of the chart's colours in stripes: without
  *  it, a page that is mostly near black spends the palette on greys and the small coloured labels drift (red to orange). */
 async function record(page: string, gif: string, loop: number, fps: number, step: (ms: number) => string) {
   const { launchChrome, openTab } = await import("../../scripts/chrome.ts");
@@ -194,7 +185,7 @@ async function record(page: string, gif: string, loop: number, fps: number, step
       const { data } = await tab.call("Page.captureScreenshot", { format: "png" });
       await Bun.write(join(frames, `f${String(i).padStart(4, "0")}.png`), Buffer.from(data, "base64"));
     }
-    const inks = [...new Set(labelled.map((l) => lift(colors[l.i], 0.2)))];
+    const inks = [...new Set([...colors, INK, QUIET, PAGE])];
     const stripes = inks.map((c, j) => `<rect y="${j * 10}" width="10" height="10" fill="${c}"/>`).join("");
     await tab.call("Page.navigate", { url: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 ${inks.length * 10}" preserveAspectRatio="none" width="100%" height="100%">${stripes}</svg>`)}` });
     await Bun.sleep(300);

@@ -53,11 +53,12 @@ function shade(hex: string, k: number): string {
   return `#${c.map((v) => Math.round(lerp(v, to, Math.abs(k))).toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** mpl's SVG with a lava lamp in every wedge. `colors[i]` is wedge i's colour. */
-export function lavaLamp(svg: string, colors: string[], loop: number, seed = 7): string {
+/** mpl's SVG with a lava lamp in each of its first `colors.length` wedges (a second pie drawn after, such as a thin rim,
+ *  is left alone). `colors[i]` is wedge i's colour and `page` the background, which also fills the gaps between slices. */
+export function lavaLamp(svg: string, colors: string[], loop: number, page: string, seed = 7): string {
   const rand = mulberry32(seed);
   const pick = <T>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
-  const wedges = [...svg.matchAll(/<g data-artist="artist\/(\d+)\/wedge">\s*<path d="([^"]+)"/g)].map((m) => ({ i: Number(m[1]), d: m[2] }));
+  const wedges = [...svg.matchAll(/<g data-artist="artist\/(\d+)\/wedge">\s*<path d="([^"]+)"/g)].map((m) => ({ i: Number(m[1]), d: m[2] })).slice(0, colors.length);
   if (wedges.length !== colors.length) throw new Error(`found ${wedges.length} wedges for ${colors.length} colours`);
   const defs: string[] = [];
   const lamps: string[] = [];
@@ -71,7 +72,9 @@ export function lavaLamp(svg: string, colors: string[], loop: number, seed = 7):
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     const area = Math.abs(poly.reduce((s, [ax, ay], k) => s + ax * poly[(k + 1) % poly.length][1] - poly[(k + 1) % poly.length][0] * ay, 0)) / 2;
     const base = colors[i];
-    const wax = shade(base, 0.42), waxHi = shade(base, 0.72), deep = shade(base, -0.55), warm = shade(base, -0.05);
+    // The liquid stays near the slice's own colour (a touch darker at the top, as if lit from below), so a bright slice
+    // still reads bright; the wax is a paler tint of it.
+    const wax = shade(base, 0.38), waxHi = shade(base, 0.68), deep = shade(base, -0.28), warm = shade(base, 0.04);
     // A column at a random x that is at least `min` tall, or the tallest of the tries.
     const spot = (min: number) => {
       let best: { x: number; top: number; bot: number } | null = null;
@@ -134,13 +137,13 @@ export function lavaLamp(svg: string, colors: string[], loop: number, seed = 7):
       `<rect x="${fx}" y="${fy}" width="${fw}" height="${fh}" fill="url(#lava-g${i})"/>` +
       (blobs.length ? `<g filter="url(#lava-f${i})" fill="url(#lava-w${i})">${blobs.join("")}</g>` : "") +
       `<g fill="${waxHi}" fill-opacity=".25" stroke="${waxHi}" stroke-opacity=".8" stroke-width=".8">${bubbles.join("")}</g>` +
-      `</g><path d="${d}" fill="none" stroke="#0b0a12" stroke-width="2.5"/>`);
+      `</g><path d="${d}" fill="none" stroke="${page}" stroke-width="4"/>`);
   }
-  const last = svg.lastIndexOf("/wedge\">");
+  const last = svg.indexOf(`artist/${wedges[wedges.length - 1].i}/wedge"`);
   const after = svg.indexOf("</g>", last) + 4;
   // Lamps go right after the last wedge, so every label and leader line draws over them. No width or height on the root:
   // with only a viewBox the picture fills whatever it is opened in.
   return (svg.slice(0, after) + `\n<g data-lavalamp="">${lamps.join("\n")}</g>` + svg.slice(after))
     .replace(/<svg ([^>]*?)width="\d+" height="\d+" /, "<svg $1")
-    .replace(/(<svg [^>]*>)/, `$1\n<defs><radialGradient id="lava-bg" cx=".3" cy=".45" r=".8"><stop offset="0" stop-color="#1b1626"/><stop offset=".7" stop-color="#0b0a12"/></radialGradient>${defs.join("")}</defs>\n<rect width="100%" height="100%" fill="url(#lava-bg)"/>`);
+    .replace(/(<svg [^>]*>)/, `$1\n<defs>${defs.join("")}</defs>\n<rect width="100%" height="100%" fill="${page}"/>`);
 }
