@@ -60,6 +60,8 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
   const stray = await tool("list_contacts", { org, first_name: "Flat" });
   expect(stray.isError).toBe(true);
   expect(stray.content[0].text).toContain("takes no first_name");
+  // Arguments that aren't a map of names (a list, a string) read as none: the tool says what it needs.
+  for (const args of [[org], "org"]) expect((await tool("get_contact", args)).content[0].text).toContain("org is required");
   expect((await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/call", { name: "nope" }) })).status).toBe(200);
 });
 

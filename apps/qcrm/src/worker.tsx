@@ -82,7 +82,8 @@ const app = defineApp([
 
 export default {
   fetch: app.fetch,
-  queue: async (batch: unknown) => handleQueue(batch as never, await e()),
+  // The HOOKS queue's batch: Cloudflare hands it over; its bodies are the deliveries this app sent (webhooks.ts).
+  queue: async (batch: Parameters<typeof handleQueue>[0]) => handleQueue(batch, await e()),
   // On the hour: demo orgs older than a day go, dead webhook deliveries are swept.
   scheduled: async () => hourly(await e()),
 };

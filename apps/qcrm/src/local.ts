@@ -11,7 +11,8 @@ const now = { run: (_priority: unknown, fn: (job?: any) => unknown) => Promise.r
 
 export const ORIGIN = "http://qcrm.local";
 
-export async function local(extra: Record<string, unknown> = {}) {
+/** `extra` sets or clears bindings (`{ LOADER: undefined }` turns scripts off). */
+export async function local(extra: Partial<Env> = {}) {
   const env: any = { DB: d1(":memory:"), BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, ...extra };
   env.HOOKS = queue(":memory:", "qcrm-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => handleQueue(batch, env as Env), { scheduler: now });

@@ -9,10 +9,10 @@
 // GET /api/mcp says the same in JSON. Risky tools (openapi.ts) are marked destructive so a
 // client asks a person first; the routes check the caller's role all the same.
 
-import { check, isRecord, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
+import { check, isRecord, maybe, obj, oneOf, raw, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { ErrorReply, json, NAME, VERSION, type Env } from "./env.ts";
-import { tools, toRequest, type Tool } from "./mcp-tools.ts";
+import { Args, tools, toRequest, type Tool } from "./mcp-tools.ts";
 
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "qCRM is a small CRM. Find your orgs with get_me; every other tool takes an org id (org_…). "
@@ -42,7 +42,7 @@ export const connectInfo = (origin: string) => ({
 /** One JSON-RPC 2.0 request; `id` and `params` are passed on as they came. */
 const Rpc = obj({ jsonrpc: oneOf(["2.0"]), id: raw, method: str(200), params: raw });
 /** The params the methods read: what `initialize` and `tools/call` were sent. A tool's `arguments` are checked by `toRequest` against the tool. */
-const Params = obj({ protocolVersion: raw, name: raw, arguments: maybe(rec(raw)) });
+const Params = obj({ protocolVersion: raw, name: raw, arguments: maybe(Args) });
 
 export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Promise<Response>): Promise<Response> {
   const origin = env.BETTER_AUTH_URL ?? new URL(req.url).origin;
