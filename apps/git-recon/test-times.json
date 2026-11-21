@@ -1,0 +1,16 @@
+{
+  "tests/arms.test.ts": 89,
+  "tests/battle.test.ts": 8108,
+  "tests/campaign.test.ts": 3614,
+  "tests/codemap.test.ts": 2551,
+  "tests/credits.test.ts": 36986,
+  "tests/director.test.ts": 2267,
+  "tests/edge.test.ts": 10,
+  "tests/eqosys.test.ts": 14,
+  "tests/figure.test.ts": 118,
+  "tests/party.test.ts": 19968,
+  "tests/rewatch.test.ts": 3312,
+  "tests/sidearm.test.ts": 9,
+  "tests/sim.test.ts": 4440,
+  "tests/tutorial.test.ts": 18965
+}

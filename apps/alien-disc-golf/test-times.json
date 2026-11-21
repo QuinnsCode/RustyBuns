@@ -1,0 +1,9 @@
+{
+  "test/course.test.ts": 15,
+  "test/currents.test.ts": 60,
+  "test/eqosys.test.ts": 67,
+  "test/flight.test.ts": 15,
+  "test/gfs.test.ts": 2,
+  "test/grib2.test.ts": 28,
+  "test/round.test.ts": 61484
+}

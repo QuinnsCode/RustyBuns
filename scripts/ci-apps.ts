@@ -5,6 +5,9 @@
 //                                              packages/ or the lockfile moving runs bun test packages, and
 //                                              every app waits for the hourly ring), whether .claude/ moved
 //                                              (the guard hook tests). With the root commit as base: every app.
+//                                              Each app's tests run in up to LANES time-balanced jobs ("test mythic-masters 2/3")
+//   bun scripts/ci-apps.ts lanes <app>         that app's lanes as `bun run builder run` lines, to run one locally
+//   --lanes n (or CI_LANES=n)                  lanes per app instead of 3, for every row without its own `shards`
 //   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
 //                                              plus a job per bootOn target: desktop-hourly.yml, not PRs
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
@@ -14,7 +17,7 @@
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
   test?: string;        // run in apps/<name>
-  shards?: number;      // split test's files over this many jobs by their time (apps/<name>/test-times.json, scripts/test-times.ts)
+  shards?: number;      // lanes for this app instead of LANES (below): test's files spread over that many jobs by their time
   prep?: string;        // before test and build: cargo for native/ (cdylib or wasm)
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
   build?: string;       // default: rustybuns build desktop --target <t>, for each target
@@ -28,6 +31,7 @@ type App = {
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
 import { check, num, rec } from "../packages/util/src/guard.ts";
+import { testFiles } from "./ci-test-count.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -55,7 +59,7 @@ export const APPS: Record<string, App> = {
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
   "cron-swanson":      { test: "bun test test", drop: false },
   "test-swarm":        { test: "bun test test", drop: false },
-  "codesplitter":     { test: "bun test --parallel test", shards: 3, boot: true },
+  "codesplitter":     { test: "bun test --parallel test", boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hono-example":      { test: "bun test test", boot: true },
@@ -74,7 +78,7 @@ export const APPS: Record<string, App> = {
   "qcrm":              { test: "bun test test", drop: false },
   "react-router-example": { test: "bun test test", boot: true },
   "qwik-example":      { test: "bun test test", boot: true },
-  "skate-tech-park":   { test: "bun test --parallel --timeout 30000 test", shards: 3, drop: false },
+  "skate-tech-park":   { test: "bun test --parallel --timeout 30000 test", drop: false },
   "solidstart-example": { test: "bun test test", boot: true },
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
@@ -84,7 +88,7 @@ export const APPS: Record<string, App> = {
   "terraviz-demo":     { test: "bun test test", drop: false },
   "tanstack-start-example": { test: "bun test test", boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
-  "mythic-masters":    { test: "bun test test", shards: 3, drop: false },
+  "mythic-masters":    { test: "bun test test", drop: false },
 };
 
 const RUNNERS = [
@@ -109,18 +113,27 @@ function buildCmd(app: string, a: App, targets: string[]) {
   return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
 }
 
-// `test` run as one `bun test ...` per shard, each over the files Ester's shard() gives it. A file's weight is its recorded
-// ms, or its size when it has none, so a new file still lands somewhere sensible.
+// How many lanes each app's tests split into unless its row says `shards`: one knob for the whole matrix, so the same
+// buckets can go to more boxes later. `--lanes n` on the command line, else CI_LANES, else 3.
+const laneArg = import.meta.main ? process.argv.indexOf("--lanes") : -1;
+export const LANES = Math.max(1, Number(laneArg > 0 ? process.argv.splice(laneArg, 2)[1] : process.env.CI_LANES || 3) || 3);
+
+/** `test` as one command per lane, its files spread by Ester's shard() on their times: the same files and times always
+ *  give the same lanes, and never an empty one (an app with two files gets two lanes). Flags stay, paths and filters go. */
+export function laneCommands(test: string, files: { name: string; ms: number }[], n: number): string[] {
+  const words = test.split(/\s+/), at = words.indexOf("test");
+  const flags = words.slice(at + 1).filter((w, i, all) => w.startsWith("-") || (/^\d+$/.test(w) && !!all[i - 1]?.startsWith("-")));
+  const prefix = [...words.slice(0, at + 1), ...flags].join(" ");
+  return shard(files, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
+}
+
+// An app's lanes. A file's weight is its recorded ms (apps/<name>/test-times.json, written by scripts/test-times.ts
+// from CI's own logs), or its size when it has none, so a new file still lands somewhere sensible.
 async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
   const dir = `apps/${app}`;
-  const [root = "test"] = test.split(/\s+/).slice(-1);
   const times = check(rec(num(0, Infinity)), await Bun.file(`${dir}/test-times.json`).json().catch(() => null)) ?? {};
-  const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: `${dir}/${root}` })].map((f) => `${root}/${f}`).sort();
-  const timed = await Promise.all(files.map(async (name) => {
-    return { name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) };
-  }));
-  const prefix = test.slice(0, test.lastIndexOf(root)).trim();
-  return shard(timed, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
+  const files = testFiles(test, dir).map((name) => ({ name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) }));
+  return laneCommands(test, files, n);
 }
 
 const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : [];
@@ -188,9 +201,10 @@ if (cmd === "drop") {
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
     const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
-    if (!a.test || !a.shards) return [{ ...row, test: a.test ?? "", shard: "" }];
-    // Boot runs once, with the first shard.
-    return (await shardedTests(app, a.test, a.shards)).map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
+    const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES) : [];
+    if (lanes.length < 2) return [{ ...row, test: a.test ?? "", shard: "" }];
+    // Boot runs once, with the first lane.
+    return lanes.map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
   }))).flat();
   out("apps", { include });
   out("any", names.length > 0);
@@ -202,6 +216,12 @@ if (cmd === "drop") {
   out("hooks", shared || deps || changed.some((f) => f.startsWith(".claude/")));
   // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.
   out("scripts", shared || deps || changed.some((f) => f.startsWith("scripts/")));
+} else if (cmd === "lanes") {
+  // The lanes apps.yml gives one app, one line each, to run a single lane here or on the builder.
+  const a = APPS[arg];
+  if (!a?.test) throw new Error(`no tests for app "${arg}". Known: ${Object.keys(APPS).filter((n) => APPS[n]!.test).join(", ")}`);
+  const lanes = await shardedTests(arg, a.test, a.shards ?? LANES);
+  for (const [i, t] of (lanes.length < 2 ? [a.test] : lanes).entries()) console.log(`${i + 1}/${Math.max(1, lanes.length)}  bun run builder run apps/${arg} ${t}`);
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))

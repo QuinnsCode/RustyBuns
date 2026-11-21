@@ -1,0 +1,18 @@
+{
+  "tests/characters.test.ts": 125,
+  "tests/eqosys.test.ts": 6,
+  "tests/first-round.test.ts": 56121,
+  "tests/flora.test.ts": 1,
+  "tests/geo.test.ts": 4,
+  "tests/hunt.test.ts": 15224,
+  "tests/ios.test.ts": 7,
+  "tests/lobby.test.ts": 6,
+  "tests/match.test.ts": 1,
+  "tests/offline.test.ts": 292,
+  "tests/poster.test.ts": 7,
+  "tests/requests.test.ts": 3,
+  "tests/scenario.test.ts": 1,
+  "tests/two-player.test.ts": 55988,
+  "tests/weather.test.ts": 7,
+  "tests/world.test.ts": 49
+}

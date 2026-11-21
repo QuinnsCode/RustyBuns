@@ -29,6 +29,9 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
+- CI runs each app's tests in up to three lanes balanced by `apps/<app>/test-times.json` (`--lanes n` or `CI_LANES` in
+  `scripts/ci-apps.ts` is the knob; `bun scripts/test-times.ts` refreshes the times from CI's own logs). A red
+  `test <app> 2/3` is one lane: `bun scripts/ci-apps.ts lanes <app>` prints each lane's `builder run` line.
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - A fix's or a feature's tests should fail on the old code: `bun scripts/test-bites.ts` runs your changed test files on

@@ -1,0 +1,21 @@
+{
+  "test/auth-rbac.test.ts": 1223,
+  "test/bodies.test.ts": 124,
+  "test/cli.test.ts": 97,
+  "test/crm-sync.test.ts": 341,
+  "test/csv-import.test.ts": 87,
+  "test/demo.test.ts": 819,
+  "test/desktop.test.ts": 6765,
+  "test/engine.test.ts": 747,
+  "test/eqosys.test.ts": 288,
+  "test/files.test.ts": 304,
+  "test/mcp.test.ts": 250,
+  "test/oauth.test.ts": 264,
+  "test/plugins.test.ts": 619,
+  "test/scenario.test.ts": 646,
+  "test/scripts.test.ts": 20604,
+  "test/seal.test.ts": 5,
+  "test/seed.test.ts": 4319,
+  "test/tour.test.ts": 1,
+  "test/webhooks.test.ts": 841
+}
