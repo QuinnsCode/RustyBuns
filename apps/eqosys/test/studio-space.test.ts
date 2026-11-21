@@ -37,14 +37,15 @@ const until = async (f: () => unknown) => { const end = Date.now() + 10_000; whi
 function member(token: string) {
   const c = space({ url: () => base, token: () => token });
   const heard: string[] = [], refused: string[] = [];
-  let channels: string[] = [], max = 0, gone = "", runs = false;
+  let channels: string[] = [], max = 0, gone = "", runs = false, role = "", online: string[] = [];
   const open = (id: string) => c.open(id, {
-    space: (s) => { channels = s.channels; max = s.max ?? 0; runs = s.owner; },
+    space: (s) => { channels = s.channels; max = s.max ?? 0; runs = s.owner; role = s.role ?? ""; },
+    online: (ms) => (online = ms.map((m) => `${m.name}:${m.role}`).sort()),
     said: (_, m) => heard.push(m.text),
     refused: (w) => refused.push(w),
     gone: (w) => (gone = w),
   });
-  return { c, open, heard, refused, channels: () => channels, max: () => max, gone: () => gone, runs: () => runs };
+  return { c, open, heard, refused, channels: () => channels, max: () => max, gone: () => gone, runs: () => runs, role: () => role, online: () => online };
 }
 
 test("a studio's space: the studio's members are in, its admins run it, a new role at once, long messages, coworker presence, out with the studio", async () => {
@@ -53,13 +54,13 @@ test("a studio's space: the studio's members are in, its admins run it, a new ro
   for (const [email, role] of [["bo@example.com", "maker"], ["cy@example.com", "admin"]] as const)
     expect((await run("eq_studio_add", { studio, email, role }, { cookie: ada.cookie })).status).toBe(200);
 
-  // A maker can't make it; the owner can, once, and it has no invite to hand out.
+  // A maker can't make it; the owner can, once. Its invite is for those who run it to hand to guests (the test below).
   const a = member(ada.token), b = member(bo.token), c = member(cy.token);
   expect(await b.c.makeForStudio(studio, "Acme")).toBeNull();
   const made = (await a.c.makeForStudio(studio, "Acme"))!;
   expect(await a.c.makeForStudio(studio, "Acme again")).toBeNull();
   expect(await b.c.mine()).toEqual([{ id: made.id, name: "Acme", owner: false, studio }]);
-  expect(await c.c.mine()).toEqual([{ id: made.id, name: "Acme", owner: true, studio }]);
+  expect(await c.c.mine()).toEqual([{ id: made.id, name: "Acme", owner: true, invite: expect.any(String), studio }]);
 
   // Bo and Cy are in with no invite. A long message goes through whole; the space says how long one may be.
   b.open(made.id); c.open(made.id);
@@ -98,4 +99,55 @@ test("a studio's space: the studio's members are in, its admins run it, a new ro
   // The last owner stays.
   expect((await run("eq_studio_remove", { studio, email: "ada@example.com" }, { cookie: ada.cookie })).status).toBe(409);
   tab.close(); c.c.close();
+});
+
+test("a guest in a studio's space: in by its invite, only #general, no powers, leaves or is kicked without the studio, and joining the studio makes them its own", async () => {
+  const ann = await signUp("Ann"), gus = await signUp("Gus"), max = await signUp("Max");
+  const studio = (await run("eq_studio_make", { name: "Bolt", kind: "team" }, { token: ann.token })).body.result!.id!;
+  const a = member(ann.token), g = member(gus.token), m = member(max.token);
+  const made = (await a.c.makeForStudio(studio, "Bolt"))!;
+  const invite = (await a.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  a.open(made.id);
+  await until(() => a.runs());
+  a.c.channel("plans");
+  await until(() => a.channels().join() === "general,plans");
+
+  // Gus, outside the studio, comes in by the invite as a guest: #general only, no powers, and not in the studio.
+  expect(await g.c.join(invite)).toEqual({ id: made.id, name: "Bolt" });
+  expect(await g.c.mine()).toEqual([{ id: made.id, name: "Bolt", owner: false, studio }]);
+  g.open(made.id);
+  await until(() => g.role() === "guest" && a.online().join() === "Ann:owner,Gus:guest");
+  expect(g.channels()).toEqual(["general"]);
+  g.c.channel("gus-only");
+  await until(() => g.refused.includes("only the space's owner or an admin can do that"));
+  g.c.say("general", "hi from outside");
+  await until(() => a.heard.includes("hi from outside"));
+  expect((await hubState(ann.token)).coworkers ?? []).toEqual([]);
+
+  // A guest can leave it on their own (the studio's people can't), and is out of the list.
+  g.c.leave();
+  await until(() => g.gone() !== "" && a.online().join() === "Ann:owner");
+  expect(await g.c.mine()).toEqual([]);
+
+  // Kicked, a guest is out of the space and the studio is untouched; the old invite stops working.
+  expect(await m.c.join(invite)).not.toBeNull();
+  m.open(made.id);
+  await until(() => m.role() === "guest");
+  a.c.kick(max.id);
+  await until(() => m.gone() === "removed from the space");
+  expect(await m.c.mine()).toEqual([]);
+  expect(await m.c.join(invite)).toBeNull();
+
+  // A guest who joins the studio sits there as the studio's from then on, and leaving the studio takes them out of the space.
+  const fresh = (await a.c.mine())!.find((s) => s.id === made.id)!.invite!;
+  expect(await g.c.join(fresh)).not.toBeNull();
+  expect((await run("eq_studio_add", { studio, email: "gus@example.com", role: "maker" }, { cookie: ann.cookie })).status).toBe(200);
+  g.open(made.id);
+  await until(() => g.role() === "member" && g.channels().join() === "general,plans");
+  expect((await run("eq_studio_remove", { studio, email: "gus@example.com" }, { cookie: ann.cookie })).status).toBe(200);
+  await until(() => g.gone() === "removed from the studio");
+  expect(await g.c.mine()).toEqual([]);
+  // One of the studio's own joining by the invite gets no guest row.
+  expect(await a.c.join(fresh)).toEqual({ id: made.id, name: "Bolt" });
+  a.c.close();
 });

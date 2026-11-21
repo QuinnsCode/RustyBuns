@@ -100,14 +100,18 @@ export const SPACES_OF = `SELECT space_id AS id FROM space_members WHERE user_id
 
 /** A seat in a space, or null when they aren't in it. `runs`: channels, mute and kick are theirs (an owner or an admin, SpaceRole). */
 export type Seat = { name: string; studio: string | null; runs: boolean; role: SpaceRole };
-/** Someone's role in a space (bind their id as ?2): a studio's space maps the studio's roles (a maker is a member), any other space its owner and space_members rows. */
-export const ROLE_OF = `CASE WHEN s.studio_id IS NOT NULL THEN CASE sm.role WHEN 'maker' THEN 'member' ELSE sm.role END
+/**
+ * Someone's role in a space (bind their id as ?2): a studio's space maps the studio's roles (a maker is a member), and anyone else
+ * there with a space_members row is a guest, whatever the row says; any other space its owner and space_members rows.
+ */
+export const ROLE_OF = `CASE WHEN s.studio_id IS NOT NULL THEN CASE WHEN sm.role = 'maker' THEN 'member' WHEN sm.role IS NOT NULL THEN sm.role
+    WHEN m.user_id IS NOT NULL THEN 'guest' END
   WHEN s.owner = ?2 THEN 'owner' ELSE m.role END`;
-/** A studio's space seats the studio's members; any other space its space_members rows. */
+/** A studio's space seats the studio's members and its guests (space_members rows, joined by its invite); any other space its space_members rows. */
 export async function seatIn(conf: Pick<Env, "DB">, sid: string, userId: string): Promise<Seat | null> {
   const r = await conf.DB.prepare(`SELECT s.name, s.studio_id AS studio, ${ROLE_OF} AS role
     FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?2
-    LEFT JOIN space_members m ON s.studio_id IS NULL AND m.space_id = s.id AND m.user_id = ?2
+    LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?2
     WHERE s.id = ?1 AND (sm.user_id IS NOT NULL OR m.user_id IS NOT NULL)`)
     .bind(sid, userId).first<{ name: string; studio: string | null; role: string }>();
   const role = r && check(SpaceRole, r.role);
@@ -162,8 +166,13 @@ export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string,
   const before = await conf.DB.prepare(`SELECT u.id, m.role FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<{ id: string; role: Role }>();
   const r = await addMember(conf, studio, by, email, role);
-  const sid = r.ok && before && before.role !== role && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid && before) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: before.id })}`)).catch(() => null);
+  // A guest of the studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the
+  // studio later takes them out of the space too.
+  const guest = r.ok ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?)
+    AND user_id IN (SELECT id FROM "user" WHERE lower(email) = lower(?)) RETURNING user_id`).bind(studio, email.trim()).first<string>("user_id") : null;
+  const who = guest ?? (before && before.role !== role ? before.id : null);
+  const sid = r.ok && who && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who })}`)).catch(() => null);
   return r;
 }
 
@@ -223,7 +232,8 @@ export class Space {
     if (!msg || !me) return;
     const channels = await this.channels(), locked = await this.locked();
     const ch = msg.channel ?? "general";
-    if (msg.t === "leave") return await this.studio() ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
+    // A guest in a studio's space leaves it like any space; the studio's own people leave it by leaving the studio.
+    if (msg.t === "leave") return await this.studio() && me.role !== "guest" ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
     if (msg.t === "history") return channels.includes(ch) && sees(me, ch, locked) ? this.sockets.send(ws, await this.history(ch, msg.before)) : undefined;
     if (msg.t === "thread") return channels.includes(ch) && sees(me, ch, locked) && msg.of ? this.sockets.send(ws, await this.thread(ch, msg.of)) : undefined;
@@ -292,11 +302,11 @@ export class Space {
       const sid = await this.sid();
       return this.enqueue(voices.map((v): Order => ({ t: "mute", room: roomOf(sid, v.id), sub: id, on })));
     }
-    // kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space, out of the studio,
-    // by the studio's own rules (an admin can't take out an owner).
+    // kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space a guest goes the
+    // same way; one of the studio's own goes out of the studio, by the studio's own rules (an admin can't take out an owner).
     const studio = await this.studio();
     if (!studio && me.role !== "owner" && theirs === "admin") return this.sockets.send(ws, { t: "refused", why: "only the owner takes out an admin" });
-    if (!studio) return this.leave(id, "removed from the space");
+    if (!studio || theirs === "guest") return this.leave(id, "removed from the space");
     const r = await removeMember(this.env, studio, me.id, id);
     return r.ok ? this.out(id, "removed from the studio") : this.sockets.send(ws, { t: "refused", why: r.error });
   }

@@ -103,7 +103,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one (with { studio }, the studio's own space, its owner or admin asks),
   // POST /q/space/join { invite } joins one, and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's:
-  // a token from any Q app opens it. A studio's space has no invite to hand out: its members are the studio's.
+  // a token from any Q app opens it. A studio's members are in its space with no invite; its invite lets someone outside the studio in as a guest.
   if (pathname === "/q/space" || pathname === "/q/space/join") {
     const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -113,12 +113,12 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.method === "GET" && pathname === "/q/space") {
       const { results } = await conf.DB.prepare(`SELECT s.id, s.name, s.invite, s.studio_id AS studio, ${ROLE_OF} AS role
         FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?1
-        LEFT JOIN space_members m ON s.studio_id IS NULL AND m.space_id = s.id AND m.user_id = ?1 WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
+        LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?1 WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
         .bind(t.who.id, t.who.id).all<{ id: string; name: string; invite: string; studio: string | null; role: string }>();
-      // `owner`: they run it (an owner or an admin). The invite is for those who run a person's own space; a studio's has none.
+      // `owner`: they run it (an owner or an admin). The invite is for those who run it; in a studio's space it brings in guests.
       const spaces = results.map((r): SpaceRow => {
         const runs = r.role === "owner" || r.role === "admin";
-        return r.studio ? { id: r.id, name: r.name, owner: runs, studio: r.studio } : { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}) };
+        return { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}), ...(r.studio ? { studio: r.studio } : {}) };
       });
       return json({ spaces }, 200, head);
     }
@@ -127,8 +127,11 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (pathname === "/q/space/join") {
       const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
       if (invite && !tryCode(req, t.who.id, invite)) return json({ error: "too many invites just now; wait a minute" }, 429, head);
-      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ? AND studio_id IS NULL").bind(invite).first<{ id: string; name: string }>();
+      const s = invite && await conf.DB.prepare("SELECT id, name, studio_id AS studio FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string; studio: string | null }>();
       if (!s) return json({ error: "no space has that invite" }, 404, head);
+      // One of the studio's own is in its space already: no guest row, which would outlast their seat in the studio.
+      if (s.studio && await conf.DB.prepare("SELECT 1 AS y FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(s.studio, t.who.id).first("y"))
+        return json({ id: s.id, name: s.name }, 200, head);
       if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
         return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
       await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
