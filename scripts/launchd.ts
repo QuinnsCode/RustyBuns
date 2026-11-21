@@ -66,17 +66,17 @@ export function catchUp(repo: string): "moved" | "current" | "skipped" {
   return "moved";
 }
 
-/** A checkout for a job to run from: `repo` itself, unless it is an office worktree (deleted when its worker goes home),
- *  then a detached worktree at `home` on `origin/main`, made once and installed. */
+/** The checkout a job runs from: a detached worktree at `home` on `origin/main`, made once and installed, whichever
+ *  checkout installs it (an office worktree is deleted when its worker goes home; the owner's own is on a branch with
+ *  their edits, which catchUp never moves). Throws when `home` has edits, since catchUp would never move it either. */
 export function jobCheckout(repo: string, home: string): string {
-  if (!repo.includes(`${path.sep}.agent-office${path.sep}worktrees${path.sep}`)) return repo;
   if (!git(home, "rev-parse", "--git-dir").ok) {
     mkdirSync(path.dirname(home), { recursive: true });
     git(repo, "fetch", "-q", "origin", "main");
     const r = git(repo, "worktree", "add", "-q", "--detach", home, "FETCH_HEAD");
     if (!r.ok) throw new Error(`git worktree add ${home}: ${r.err}`);
     Bun.spawnSync(["bun", "install", "--frozen-lockfile"], { cwd: home, stdout: "ignore", stderr: "inherit" });
-  } else catchUp(home);
+  } else if (catchUp(home) === "skipped") throw new Error(`${home} has edits or is on a branch, so it can't follow origin/main: see git -C ${home} status`);
   return home;
 }
 
