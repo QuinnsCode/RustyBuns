@@ -1,5 +1,6 @@
 // codeSplitter over ssh://, the spike (#5500): a TCP client reaches this Worker's `connect()` handler, the Worker pipes
-// the bytes to a Durable Object, and the DO pipes them into its container, where `sshd` and `git-shell` serve git.
+// the bytes to a Durable Object, and the DO pipes them into its container, where `sshd` and `git-serve.sh` bridge
+// git to the repo's smart-HTTP remote (Artifacts), so the container keeps no repos (#5505).
 // Run it with `bun ssh/try.ts` from apps/codesplitter. The findings are in ssh/README.md.
 //
 // The Worker sees only encrypted SSH bytes, so it can't tell which repo a connection asks for. It sends every
@@ -20,8 +21,12 @@ interface ContainerApi {
 }
 interface Env {
   GATE: { getByName(name: string): { connect(address: string, opts?: SocketOptions): Socket } };
-  /** The one public key let in, for the spike. Step 2 of #5500 swaps it for a lookup of codeSplitter users' keys. */
+  /** The one public key let in, and the codeSplitter user it is, till #5504 looks keys up per user. */
   AUTHORIZED_KEY: string;
+  AUTHORIZED_USER: string;
+  /** Where git-serve.sh asks for a repo's smart-HTTP remote and a token for the user (#5505), and the secret it shows. */
+  LOOKUP_URL: string;
+  GATE_SECRET: string;
 }
 
 const SSHD = 2222;
@@ -67,7 +72,10 @@ export class SshGate {
   async connect(socket: Socket): Promise<void> {
     const container = this.ctx.container;
     if (!container) throw new Error("SshGate has no container");
-    if (!container.running) container.start({ enableInternet: false, env: { AUTHORIZED_KEY: this.env.AUTHORIZED_KEY } });
+    // The internet is on so git-serve.sh can reach the lookup and the repo's HTTP remote (#5505). A Worker binding back
+    // instead would keep the container off the internet; that waits on rustybuns carrying this app (see README).
+    const { AUTHORIZED_KEY, AUTHORIZED_USER, LOOKUP_URL, GATE_SECRET } = this.env;
+    if (!container.running) container.start({ enableInternet: true, env: { AUTHORIZED_KEY, AUTHORIZED_USER, LOOKUP_URL, GATE_SECRET } });
     const { up, banner } = await dialSshd(container);
     const writer = socket.writable.getWriter();
     await writer.write(banner);
