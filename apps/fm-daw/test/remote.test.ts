@@ -1,7 +1,7 @@
 // The remote (/remote.html): a phone in the same sesh as the desk and the jam room. Its knobs follow the person's seat
 // in the jam room, its edits land on the desk only with a Mix grant, and the transport only with Play.
 import { expect, test } from "bun:test";
-import { setup, useWorld, type Sock } from "./world-kit.ts";
+import { heard, setup, useWorld, type Sock } from "./world-kit.ts";
 import { demoProject } from "../src/presets.ts";
 import { apply, roomGain, type Project } from "../src/project.ts";
 import { P } from "../src/engine/params.ts";
@@ -11,7 +11,6 @@ import { levelOp, masterOp, muteOp, myTrack, rights, spaceOp, tone, toneOp, tran
 
 useWorld();
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-const tick = () => new Promise((r) => setTimeout(r, 5));           // hello hashes the key
 
 test("the remote follows your seat, mixes the room once the leader lets it, and starts the groove only with Play", async () => {
   const { world, join } = await setup({}, "quiet-amber-lynx");
@@ -21,8 +20,7 @@ test("the remote follows your seat, mixes the room once the leader lets it, and 
   const ids: string[] = [];
   for (const [ws, key] of [[desk, "a"], [jam, "b"], [phone, "b"]] as const) {
     said(ws, { t: "hello", key: key.repeat(48), name: "" });
-    await tick();
-    ids.push(ws.sent.find((m) => m.t === "chat").you);
+    ids.push((await heard(ws, "chat")).you);
   }
   const [leadId, amyId] = ids;
   expect(ids[2]).toBe(amyId);

@@ -1,0 +1,38 @@
+# Lands PRs that wait on others (#5344): scripts/after.ts merges main into each open PR whose body says
+# "Merge after #N" once every PR it names has merged, and pushes; on a conflict it comments and tags the author.
+# Runs on every push to main (a blocker just landed), hourly as a catch-up, and by hand.
+# A push made with the workflow's own token starts no checks, so the merged-in branch would sit unchecked: set the
+# AFTER_TOKEN secret (a fine-grained token with contents and pull-requests write) and its pushes run CI as usual.
+name: after
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: after
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AFTER_TOKEN || github.token }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - env:
+          GH_TOKEN: ${{ secrets.AFTER_TOKEN || github.token }}
+        run: |
+          git config user.name "rustybuns-after"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bun scripts/after.ts

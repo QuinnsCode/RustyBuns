@@ -33,7 +33,7 @@ With `SWARM_URL` (the Worker) and `SWARM_TOKEN` set in the shell:
   characters of its log. Ctrl-C stops the running suites; their leases run out and the jobs go back on the queue.
 
 Tests (`bun test test`): two fake runners with a lease that runs out and a stub GitHub, then a Mac with two slots on a
-local git repo. Still to come: a watch page.
+local git repo. `bun run builder queue` and `GET /jobs?sha=` are how you watch it; no page (#4779 closed: Bob over ssh is what runs our tests).
 
 ## Cost
 

@@ -144,6 +144,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 | `persona` | `balanced` | The budget the box's crons and queue batches share: `balanced`, `power-user`, `background-beatdown` or `background-burner` (a build box). `RB_PERSONA` overrides. |
 | `webmcp` | `false` | Triage tools for an agent in the browser, over WebMCP: `mem_stats`, and `take_cpu_profile` and `mem_history` with `RB_PROF_SECRET`. See below. |
 | `allowLargeServer` | `false` | `plan` and `deploy` refuse a large server type unless this is `true` ([COSTS.md](COSTS.md)). |
+| `apps` | none | Other apps on the same server: `[{ dir: "../golf", port: 3001 }]`. See [Several apps on one box](#several-apps-on-one-box). |
 
 Current limits on the box:
 
@@ -170,6 +171,32 @@ Current limits on the box:
   ```
 
   The Docker build, the staging, the cross check and the box image all skip it, so an app whose crates all opt out cross-compiles like pure TS without Docker (hippo-tycoon's `native/` works this way). `desktop.native: false` still keeps all of `native/` out of the binary (and the box image) from the app config.
+
+### Several apps on one box
+
+One server can run a whole monorepo. Pick one app to hold the server, and list the others under its `targets.box.apps`:
+
+```ts
+// apps/skate/rustybuns.config.ts: this app's deploy makes the server and runs all three
+targets: {
+  box: { provider: "hetzner", serverType: "cpx22", apps: [
+    { dir: "../golf", port: 3001 },
+    { dir: "../hippo", port: 3002 },
+  ] },
+}
+```
+
+`plan` and `deploy` from that app load each listed app's own `rustybuns.config.ts`, build its box host in its own folder
+(for this server's arch), and run it as its own systemd unit on its port. Each keeps its data in its own folder on the one
+Volume (`/mnt/HC_Volume_<id>/<name>`), or in `/var/lib/<name>` with `volumeSize: 0`. `deploy` prints each one's URL
+under `apps`, and `destroy` stops them all with the server.
+
+- A listed app reads its `secret` bindings from the same shell, so two apps with a secret of the same name get the same value.
+- A listed app keeps its own `memMaxMb`, `persona` and `webmcp` when its config has a Hetzner box; drop that box (or
+  don't deploy it), or its own deploy makes a second server.
+- Ports must differ from each other and from the holder's, and names must differ, or `plan` refuses. An app with
+  `hyperdrive` bindings or `experimental.wheel` needs its own stack.
+- `rustybuns mem`, `prof` and `history` read the holder's unit; give `--url http://<ipv4>:<port>` for another.
 
 ## Azure (not a deploy target yet)
 

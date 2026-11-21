@@ -14,7 +14,7 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { smoke } from "./smoke.ts";
 import { signDarwin } from "./sign.ts";
-import { buildBox, checkBox } from "./box.ts";
+import { buildBox, buildGuests, checkBox, loadGuests } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { codeSecrets, eachSource, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
@@ -771,7 +771,8 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   const cpu = cfg.worker?.cpuMs;
   if (cpu !== undefined && !(Number.isInteger(cpu) && cpu >= 10 && cpu <= 300_000)) throw new Error(`worker.cpuMs: ${cpu} isn't a whole number of ms from 10 to 300000`);
   await mkdir(".rustybuns", { recursive: true });
-  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(stack));
+  const guests = (await loadGuests(stack, loadRawConfig)).map((g) => g.guest);
+  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(stack, guests));
   console.log("wrote .rustybuns/alchemy.run.ts");
   await writeEnvSchema(cfg);
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
@@ -1150,6 +1151,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if ((profiled || drifting) && cfg.targets.box) {
     console.log(`built ${yield* step(() => prof.step("build box", () => buildBox(cfg)))}`);
+    for (const b of yield* step(() => prof.step("build box apps", () => buildGuests(cfg, loadRawConfig)))) console.log(`built ${b}`);
   }
   // The Worker hashes (and uploads) its bundle from disk at plan time, before the
   // stack's Build runs, so build it first or it ships the previous build (#362).

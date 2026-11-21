@@ -25,13 +25,15 @@ export type Load = {
   regions: number;
   /** Socket work one server vCPU keeps up with a second: a message in plus its sends out, each one unit.
    *  scripts/room-stress.ts measured 210-240k on an M1 Pro core (2026-11-06); a shared Hetzner vCPU is
-   *  taken as about half that. */
+   *  taken as about half that. Our live rooms all run on Durable Objects, so this stays an estimate until a
+   *  game runs on a box host; no box is rented just to measure it (#3892). */
   perCore: number;
   /** Memory one room holds, MB. A room of 4 measured about 1 MB on a box host (ONE_BOX below); 4 leaves room for bigger state. */
   roomMb: number;
   /** Wall-clock ms a Durable Object spends handling one incoming message (what it is billed while hibernating).
    *  The relay's own JavaScript measured 0.014-0.028 ms (scripts/room-stress.ts); workerd's per-event cost on
-   *  top can't be measured off Cloudflare, so the default allows 0.1. */
+   *  top can't be measured off Cloudflare, so the default allows 0.1 until scripts/do-ms.ts reads the live
+   *  rooms' billed active time per message from Cloudflare's analytics. */
   ms: number;
   /** 1: the room hibernates between messages; 0: it can not (`accept()`, a server tick loop), so it bills all day. */
   hibernate: number;

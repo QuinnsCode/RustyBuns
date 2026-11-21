@@ -49,12 +49,17 @@ const quietStart = ["--no-first-run", "--no-default-browser-check", "--password-
  * has sat silent past 30 s while the next went straight up (#3350, #3435). Each stall's error says what Chrome's processes were blocked on. */
 export interface Chrome { cdp: Cdp; dir: string; stop: () => void }
 
+const startWaits = [20_000, 30_000];
+/** The longest `launchChrome` takes to start or to throw why it couldn't (both waits plus the clean-up after each stall). A test
+ *  that launches Chrome sizes its timeout past this, or bun's timeout cuts the stall report off (#4915). */
+export const chromeStartMs = startWaits.reduce((a, b) => a + b + 3000, 0);
+
 /** A headless Chrome; `flags` are added to its command line (a check that needs no sound card asks for `--disable-audio-output`). */
 export async function launchChrome(flags: string[] = []): Promise<Chrome> {
   const bin = chromePath();
   if (!bin) throw new Error("no Chrome found: set CHROME=/path/to/chrome");
   const stalls: string[] = [];
-  for (const wait of [20_000, 30_000]) {
+  for (const wait of startWaits) {
     const started = await startChrome(bin, wait, flags);
     if ("cdp" in started) {
       if (stalls.length) console.warn(`Chrome stalled once, then started:\n${stalls.join("\n")}`);

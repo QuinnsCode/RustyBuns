@@ -1,7 +1,7 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
 import { expect, test, setSystemTime, afterEach } from "bun:test";
-import { setup, useWorld, type Sock } from "./world-kit.ts";
+import { heard, setup, useWorld, type Sock } from "./world-kit.ts";
 import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { P, TRACKS } from "../src/engine/params.ts";
@@ -283,10 +283,9 @@ test("chat: the sesh's maker deletes even when a guest says hello first, lines r
   const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
   const tick = () => new Promise((r) => setTimeout(r, 5));        // hello hashes the key
   said(guest, { t: "hello", key: "b".repeat(48), name: "" });     // the guest's hello lands first
-  await tick();
+  const them = await heard(guest, "chat");
   said(host, { t: "hello", key: "a".repeat(48), name: "Ryan" });
-  await tick();
-  const me = host.sent.find((m) => m.t === "chat"), them = guest.sent.find((m) => m.t === "chat");
+  const me = await heard(host, "chat");
   expect(me.host).toBe(true);
   expect(them.host).toBe(false);
   expect(guest.sent).toContainEqual({ t: "named", who: me.you, name: "Ryan" });
@@ -624,13 +623,11 @@ test("grants: the leader lets one play, another plays one track only, another as
   const room = "humble-jade-heron";
   const first = await setup(worldEnv, room);
   const said = (ws: Sock, m: object) => first.world.webSocketMessage(ws, JSON.stringify(m));
-  const tick = () => new Promise((r) => setTimeout(r, 5));          // hello hashes the key
   const lead = (await first.join({}, "a".repeat(32))).ws, amy = (await first.join({}, "b".repeat(32))).ws, bo = (await first.join({}, "c".repeat(32))).ws;
   const ids: string[] = [];
   for (const [ws, k] of [[lead, "a"], [amy, "b"], [bo, "c"]] as const) {
     said(ws, { t: "hello", key: k.repeat(48), name: "" });
-    await tick();
-    ids.push(ws.sent.find((m) => m.t === "chat").you);
+    ids.push((await heard(ws, "chat")).you);
   }
   const [leadId, amyId, boId] = ids;
   const lastGrants = (ws: Sock) => ws.sent.filter((m) => m.t === "grants").at(-1);
@@ -693,7 +690,7 @@ test("grants: the leader lets one play, another plays one track only, another as
   const fresh = await setup(worldEnv, room);
   const back = (await fresh.join({}, "c".repeat(32))).ws;
   fresh.world.webSocketMessage(back, JSON.stringify({ t: "hello", key: "c".repeat(48), name: "" }));
-  await tick();
+  await heard(back, "chat");
   expect(lastGrants(back)).toMatchObject({ grants: { who: { [amyId]: ["play", "mix"] }, maker: leadId }, here: [boId] });
   back.sent = [];
   fresh.world.webSocketMessage(back, JSON.stringify({ t: "op", op: { t: "global", bpm: 90 } }));
@@ -705,14 +702,12 @@ test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo
   const room = "quiet-jade-wren";
   const { world, join, leave } = await setup(worldEnv, room);
   const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
-  const tick = () => new Promise((r) => setTimeout(r, 5));
   // Amy made the room, so she leads; Bo and Cy came in from her link
   const people = [];
   for (const [k, name] of [["a", "Amy"], ["b", "Bo"], ["c", "Cy"]] as const) {
     const ws = (await join({}, k.repeat(32))).ws;
     said(ws, { t: "hello", key: k.repeat(48), name });
-    await tick();
-    people.push({ ws, id: ws.sent.find((m) => m.t === "chat").you as string, jam: newJam(LIVE_ROOM), mutes: noMutes(), heard: [] as string[] });
+    people.push({ ws, id: (await heard(ws, "chat")).you as string, jam: newJam(LIVE_ROOM), mutes: noMutes(), heard: [] as string[] });
   }
   const [amy, bo, cy] = people;
   said(amy.ws, { t: "init", project: demoProject() });
@@ -780,8 +775,7 @@ test("hands in the jam room: on a held floor Bo is listen only, raises his hand,
   for (const k of ["a", "b"]) {
     const ws = (await join({}, k.repeat(32))).ws;
     said(ws, { t: "hello", key: k.repeat(48), name: "" });
-    await new Promise((r) => setTimeout(r, 5));
-    people.push({ ws, id: ws.sent.find((m) => m.t === "chat").you as string });
+    people.push({ ws, id: (await heard(ws, "chat")).you as string });
   }
   const [amy, bo] = people;
   said(amy.ws, { t: "init", project: demoProject() });
@@ -819,8 +813,8 @@ test("wind back: play a while, hear it 5 minutes back alone, whoever holds Lead 
   const maker = (await join({}, MAKER)).ws, guest = (await join({}, "b".repeat(32))).ws;
   const send = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
   for (const [ws, k] of [[maker, "a"], [guest, "b"]] as const) send(ws, { t: "hello", key: k.repeat(48), name: "" });
-  await new Promise((r) => setTimeout(r, 5));                     // hello hashes the key
-  const guestId = guest.sent.find((m) => m.t === "chat").you;
+  await heard(maker, "chat");
+  const guestId = (await heard(guest, "chat")).you;
   send(maker, { t: "init", project: { ...project, bpm: 100 } });
   const s16 = new Int16Array(TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
   const chunks = toChunks("take0001", s16);
@@ -912,7 +906,7 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   // Amy holds the floor: the bot may only listen, so it raises its hand to change the groove, and she says yes
   world.webSocketMessage(amyWs, JSON.stringify({ t: "hello", key: "a".repeat(48), name: "Amy" }));
   world.webSocketMessage(amyWs, JSON.stringify({ t: "floor", state: "held" }));
-  await tick();
+  await heard(amyWs, "chat"); await heard(botWs, "chat");        // both hellos hash a key
   pump();
   expect(await call("studio_make_instrument", glass)).toMatchObject({ ok: false, why: expect.stringContaining("raises your hand") });
   expect(await call("studio_ask_to_play", { can: "edit" })).toMatchObject({ asked: "edit" });
@@ -1004,7 +998,7 @@ test("jam room mixer: sit at the desk, pull a track's fader down and raise its a
   const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
     send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
   const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
-  await tick(); pump();
+  await heard(amyWs, "chat"); await heard(botWs, "chat"); pump(); // both hellos hash a key
   const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
   const desk = deskModel({
     project: () => pl.project()!, players: () => [], edit: pl.edit, may: () => may(pl),
@@ -1058,7 +1052,7 @@ test("jam room lane: sit at the keys, open its lane, turn a patch knob, and the 
   const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
     send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
   const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
-  await tick(); pump();
+  await heard(amyWs, "chat"); await heard(botWs, "chat"); pump(); // both hellos hash a key
   const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
   const lane = laneModel({
     project: () => pl.project()!, edit: pl.edit, may: () => may(pl), audition() {},

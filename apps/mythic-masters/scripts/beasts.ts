@@ -6,8 +6,10 @@
 // that touches the ground) and the row says so; so is a wing count off from the sheet's `wings`, when it has one.
 //
 // The model loop, with no hand-driven Chrome:
-//   --watch <id>          rebuild on every save of beasts/<id>.json; a running `vite` dev server swaps that beast in the
-//                         ?gallery page without a reload
+//   --watch <id>          rebuild on every save of beasts/<id>.json in one warm Blender (no cold start after the first);
+//                         a running `vite` dev server swaps that beast in the ?gallery page without a reload
+//   --serve               one beast id a line on stdin, built in one warm Blender, one `@@built {id, ok, log}` line each;
+//                         stdin closing ends it (the dev server's `beast_nudge` keeps one open: dev-beasts.ts)
 //   --silhouette <id>     blender/out/<id>.silhouette.png: the contact sheet in flat black on white
 //   --close               blender/out/<id>.close.png: the GLB's own mesh up close, to judge a baked `hide`
 //   --swatch [pattern ...] [--sample <id>]   blender/out/hides.png: every hide pattern (or those) baked on a sphere and on
@@ -20,7 +22,7 @@
 // 16 GB Mac has. Each runs on 8 threads and on Blender 5.2.0 only (BLENDER_THREADS, BLENDER_VERSION below), so any
 // Mac writes the committed GLBs byte for byte; another Blender stops with what to install.
 import { readdirSync, watch } from "node:fs";
-import { runBlender } from "@rustybuns/cli/blender";
+import { runBlender, warmBlender, type WarmBlender } from "@rustybuns/cli/blender";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { int, num, obj, opt } from "@rustybuns/util/guard";
@@ -83,10 +85,33 @@ if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1
 const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 
 
+// --watch and --serve build in one warm Blender (#3822): a warm build is byte for byte a cold one
+// (test/warm-blender.test.ts) and skips Blender's start. A failed build closes it, so the next starts clean.
+const WARM = flags.has("--watch") || flags.has("--serve");
+let warm: Promise<WarmBlender> | null = null, said: string[] = [];
+const NOTE = /triangles|render ->|^hide:/;
+
 async function blender(id: string, step: string): Promise<string[]> {
   const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : []), ...(flags.has("--close") ? ["--close"] : [])];
-  const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS, version: BLENDER_VERSION });
-  return (out + err).split("\n").filter((l) => /triangles|render ->|^hide:/.test(l));
+  if (!WARM) {
+    const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS, version: BLENDER_VERSION });
+    return (out + err).split("\n").filter((l) => NOTE.test(l));
+  }
+  warm ??= warmBlender({ cwd: APP, threads: BLENDER_THREADS, version: BLENDER_VERSION, onLog: (l) => { said.push(l); } });
+  const b = await warm.catch((e: unknown) => { warm = null; throw e; });
+  said = [];
+  try {
+    await b.call("build", { script: "blender/beast.py", args, env: { SNAP_STEP: step } });
+  } catch (e) {
+    await closeWarm();
+    throw e;
+  }
+  return said.filter((l) => NOTE.test(l));
+}
+async function closeWarm() {
+  const w = warm;
+  warm = null;
+  await (await w?.catch(() => null))?.close();
 }
 
 async function rig(id: string, feet: number, expectWings?: number) {
@@ -125,9 +150,9 @@ async function build(id: string): Promise<Built> {
   return built!;
 }
 type Built = { id: string; sheet: ReturnType<typeof Sheet>; notes: string[]; r: Awaited<ReturnType<typeof rig>> };
-function report({ id, sheet, notes, r }: Built) {
-  for (const n of notes) console.log(`  ${n}`);
-  console.log(`${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`);
+const report = (b: Built) => console.log(row(b));
+function row({ id, sheet, notes, r }: Built) {
+  return [...notes.map((n) => `  ${n}`), `${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`].join("\n");
 }
 
 if (flags.has("--watch")) {
@@ -148,6 +173,28 @@ if (flags.has("--watch")) {
   };
   watch(sheetPath, kick);
   await new Promise(() => {});
+}
+
+if (flags.has("--serve")) {
+  const lines = console.log;
+  console.log = console.error; // stdout is the reply lines only
+  const reader = Bun.stdin.stream().pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    buf += r.value;
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const id = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!id) continue;
+      let reply: { id: string; ok: boolean; log: string };
+      if (!SHEETS.has(id)) reply = { id, ok: false, log: `no sheet for ${id}` };
+      else try { reply = { id, ok: true, log: row(await build(id)) }; } catch (e) { reply = { id, ok: false, log: e instanceof Error ? e.message : String(e) }; }
+      lines(`@@built ${JSON.stringify(reply)}`);
+    }
+  }
+  await closeWarm();
+  process.exit(0);
 }
 
 // Each slot takes the next id until none are left; rows keep the sheet order.

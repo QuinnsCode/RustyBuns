@@ -5,11 +5,13 @@
 // eject path is "keep this file, delete the config".
 
 import { hyperdriveUrlEnv, workerName, type AiGateway, type Binding, type RustyBunsConfig } from "../config.ts";
-import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
+import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults, type BoxGuest } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
 import { isProtected, workerKept } from "../protect.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
+/** A guest's Service id, which also names its systemd unit. */
+const guestId = (g: BoxGuest) => `App_${ident(g.name)}`;
 
 /** `, { ... }` from the props that are set, or nothing. */
 const propsArg = (props: Record<string, string | number | undefined>) => {
@@ -172,7 +174,8 @@ function edgeRoutes(edge: RustyBunsConfig["targets"]["edge"]): { pattern: string
   return routes;
 }
 
-export function generateAlchemy(c: RustyBunsConfig): string {
+/** `guests`: the apps sharing a Hetzner box (`targets.box.apps`, read by loadGuests). */
+export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] = []): string {
   // Edge is on when asked for, or when nothing else is (configs from before targets.box).
   const edge = !!c.targets.edge || !c.targets.box;
   if (edge && !c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
@@ -350,6 +353,22 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       `  port: ${box.port},`,
       `  env: { ${env.join(", ")} },`,
     ], "", boxPg));
+    if (guests.length) lines.push(`// targets.box.apps: each its own unit on the same server, its data in its own folder on the Volume.`);
+    for (const g of guests) {
+      const dir = `${g.dir.replace(/\/+$/, "")}/${BOX_DIR}`;
+      const genv = [
+        ...g.secrets.map((n) => `${n}: process.env[${JSON.stringify(n)}] ?? ""`),
+        ...(box.volumeSize > 0 ? [] : [`DATA_DIR: ${JSON.stringify(`/var/lib/${g.name}`)}`]),
+      ];
+      lines.push(`export const ${guestId(g)} = Hetzner.Service(${JSON.stringify(guestId(g))}, {`);
+      lines.push(`  server: Box,`);
+      lines.push(`  main: ${JSON.stringify(`${dir}/launch.mjs`)},`);
+      lines.push(`  extraFiles: [{ source: ${JSON.stringify(dir)}, destination: "." }],`);
+      lines.push(`  isExternal: true,`);
+      lines.push(`  port: ${g.port},`);
+      lines.push(`  env: { ${genv.join(", ")} },`);
+      lines.push(`});`);
+    }
     lines.push(``);
   }
 
@@ -389,11 +408,12 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   // Box secrets, optional Worker secrets and RUSTYBUNS_BUILT are read from the deploying shell. The
   // stack is checked with types: [], so declare the one piece of node it touches.
   const optional = edge && (!!w.build || Object.values(bindings).some((b) => b.type === "secret" && b.optional));
-  if (((box || rail) && secrets.length) || optional)
+  if (((box || rail) && secrets.length) || (box && guests.some((g) => g.secrets.length)) || optional)
     lines.splice(lines.findIndex((l) => l === ""), 0, `declare const process: { env: Record<string, string | undefined> };`);
 
   const providers = providerList.length > 1 ? `Layer.mergeAll(${providerList.join(", ")})` : providerList[0]!;
-  const out = [edge && "url: worker.url", (box || rail) && "box: service.url"].filter(Boolean).join(", ");
+  const shared = box ? guests.map((g) => `${JSON.stringify(g.name)}: (yield* ${guestId(g)}).url`) : [];
+  const out = [edge && "url: worker.url", (box || rail) && "box: service.url", shared.length && `apps: { ${shared.join(", ")} }`].filter(Boolean).join(", ");
   lines.push(`export default Alchemy.Stack(`);
   lines.push(`  ${JSON.stringify(c.name)},`);
   lines.push(`  { providers: ${providers}, state: Alchemy.localState() },`);

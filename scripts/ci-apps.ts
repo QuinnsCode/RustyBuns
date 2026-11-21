@@ -63,6 +63,7 @@ export const APPS: Record<string, App> = {
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hono-example":      { test: "bun test test", boot: true },
+  "express-example":   { test: "bun test test", boot: true },
   "nextjs-example":    { test: "bun test test", boot: true },
   "nuxt-example":      { test: "bun test test", boot: true },
   "svelte-spa-example": { test: "bun test test", boot: true },
@@ -94,7 +95,9 @@ const RUNNERS = [
   { runner: "ubuntu-latest", target: "linux-x64" },
   { runner: "ubuntu-24.04-arm", target: "linux-arm64" },
   { runner: "macos-latest", target: "darwin-arm64" },
-  { runner: "macos-15-intel", target: "darwin-x64" },
+  // GitHub's Intel Mac runs fm-daw's suite about twice as slow as the arm one (#5498): a test near bun's 5 s
+  // default there gets a longer one. A file's own setDefaultTimeout still wins, so heavy files set theirs.
+  { runner: "macos-15-intel", target: "darwin-x64", timeout: 30_000 },
   { runner: "windows-latest", target: "windows-x64" },
   { runner: "windows-11-arm", target: "windows-arm64" },
 ];
@@ -178,7 +181,7 @@ if (cmd === "drop") {
   const include = names.flatMap((app) => {
     const a = APPS[app]!;
     const base = { app, prep: a.prep ?? "", cargo: cargo(app) };
-    if (a.perOs) return RUNNERS.map((r) => ({ ...base, ...r, test: a.test ?? "", build: buildCmd(app, a, [r.target]) }));
+    if (a.perOs) return RUNNERS.map(({ timeout, ...r }) => ({ ...base, ...r, test: a.test && timeout ? `${a.test} --timeout ${timeout}` : a.test ?? "", build: buildCmd(app, a, [r.target]) }));
     // Pure TS (or wasm, same on every OS): one Linux job builds every target.
     return [{ ...base, runner: "ubuntu-latest", target: "all", test: "", build: buildCmd(app, a, RUNNERS.map((r) => r.target)) }];
   });

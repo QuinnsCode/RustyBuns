@@ -198,6 +198,10 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
   const pgs = Object.entries(bindings).flatMap(([n, b]) => b.type === "hyperdrive" ? [[n, b] as const] : []);
+  // An app server reads Postgres from its URL variable (DATABASE_URL), as it would under Node: each
+  // hyperdrive's connection string goes there, so with the URL unset it reaches the PGlite twin.
+  const serverEnv = (own?: Record<string, string>) => !pgs.length && !own ? ""
+    : `, env: { ${pgs.map(([n, b]) => `${JSON.stringify(hyperdriveUrlEnv(n, b))}: (env.${n} as { connectionString: string }).connectionString, `).join("")}...${JSON.stringify(own ?? {})} }`;
   // Desktop has no secrets; a box reads them from its env file.
   const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
@@ -298,7 +302,7 @@ const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guest
 ${d.server ? `// desktop.server: the app's own servers, bundled beside this host, each run as its child. They
 // answer the paths the Vite dev server's proxy sent them, WebSocket upgrades too.
 const appSrvs = await Promise.all([
-${desktopServers(d).map((s, i) => `  appServer({ file: join(import.meta.dir, ${JSON.stringify(APP_SERVER_DIR)}, ${JSON.stringify(appServerFile(i))}), name: ${JSON.stringify(s.entry)}, paths: ${JSON.stringify(s.paths)}, dataDir${s.port ? `, port: ${s.port}` : ""}${s.env ? `, env: ${JSON.stringify(s.env)}` : ""} }),
+${desktopServers(d).map((s, i) => `  appServer({ file: join(import.meta.dir, ${JSON.stringify(APP_SERVER_DIR)}, ${JSON.stringify(appServerFile(i))}), name: ${JSON.stringify(s.entry)}, paths: ${JSON.stringify(s.paths)}, dataDir${s.port ? `, port: ${s.port}` : ""}${serverEnv(s.env)} }),
 `).join("")}]);
 ` : ""}
 // A guest's identity rides on its upgrade: trust on first use, shaped like

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { empty, merge, text, type Doc } from "../src/lines.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
@@ -119,9 +119,11 @@ describe("github", () => {
       return new Response("{}", { status: 404 });
     }) as any;
     call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
-    // Two new copies an hour, so the budget runs out within the test (rules are read once, then kept a while).
+    // Two new copies an hour, so the budget runs out within the test (rules are read once, then kept a while). The budget
+    // counts in hours on the clock, so the clock stands mid-hour: a slow run near :59 would start a fresh hour.
     await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('wreck', 2, 3600, 1, 'reject')").run();
     try {
+      setSystemTime(new Date("2026-11-05T12:30:00Z"));
       await post(call, "ana", "/api/login", { name: "ana" });
       expect((await post(call, "ana", "/api/github/dig", { repo: "o/mine" })).status).toBe(201);
       // One signed-out client asking for repos that aren't there spends none of the hour's copies.
@@ -134,7 +136,7 @@ describe("github", () => {
       const over = await post(call, null, "/api/github/wreck", { repo: "o/real-three" });
       expect(over.status).toBe(429);
       expect(Number(over.headers.get("retry-after"))).toBeGreaterThan(0);
-    } finally { globalThis.fetch = real; }
+    } finally { globalThis.fetch = real; setSystemTime(); }
   }, 30_000);
 
   test("a sign-in can link several GitHubs, encrypted at rest, and pick which one digs", async () => {

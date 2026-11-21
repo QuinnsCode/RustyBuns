@@ -1,9 +1,10 @@
-// Host-only: a player's own CLAP plugins, run by the Rust host (native/crates/fm_daw/src/clap.rs) through bun:ffi
-// (#5244). `pluginFolders` and `scanPlugins` find the `.clap` files where plugin installers put them; `openBundle`
+// Host-only: a player's own CLAP and VST3 plugins, run by the Rust host (native/crates/fm_daw/src/clap.rs, src/vst3.rs,
+// one surface in src/hosted.rs) through bun:ffi (#5244, #5268). `pluginFolders` and `scanPlugins` find the `.clap` and
+// `.vst3` files where plugin installers put them; `openBundle`
 // loads one and lists the plugins inside; `make` starts one, and from then on this side only sends notes and
 // parameter changes, and asks for blocks of its sound (interleaved stereo, the layout `fm_render` writes).
 // `openEditor` opens the plugin's own editor as a native window (#5267), and `changes` hands back the knobs turned in it.
-// null from `clapLib` => no native build for this platform (or Cloudflare): no plugin tracks.
+// The format follows the file's name and nothing on this side cares which it is. null from `pluginLib` => no native build for this platform (or Cloudflare): no plugin tracks.
 import { FFIType, ptr } from "bun:ffi";
 import { readdirSync, statSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
@@ -14,29 +15,29 @@ import { ParamChange, PluginInfo, PluginParam, type PluginEvent } from "../plugi
 import { audible, type Project } from "../project.ts";
 import { P } from "./params.ts";
 
-export const clapSymbols = {
-  fm_clap_error: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
-  fm_clap_open: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
-  fm_clap_close: { args: [FFIType.ptr], returns: FFIType.void },
-  fm_clap_list: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
-  fm_clap_new: { args: [FFIType.ptr, FFIType.u32, FFIType.f64], returns: FFIType.ptr },
-  fm_clap_free: { args: [FFIType.ptr], returns: FFIType.void },
-  fm_clap_params: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
-  fm_clap_set_param: { args: [FFIType.ptr, FFIType.u32, FFIType.f64], returns: FFIType.void },
-  fm_clap_note_on: { args: [FFIType.ptr, FFIType.u32, FFIType.f64, FFIType.u32], returns: FFIType.void },
-  fm_clap_note_off: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.void },
-  fm_clap_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
-  fm_clap_editor: { args: [FFIType.ptr], returns: FFIType.u32 },
-  fm_clap_open_editor: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
-  fm_clap_close_editor: { args: [FFIType.ptr], returns: FFIType.void },
-  fm_clap_pump: { args: [FFIType.ptr], returns: FFIType.u32 },
-  fm_clap_changes: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+export const pluginSymbols = {
+  fm_plugin_error: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_open: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
+  fm_plugin_close: { args: [FFIType.ptr], returns: FFIType.void },
+  fm_plugin_list: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_new: { args: [FFIType.ptr, FFIType.u32, FFIType.f64], returns: FFIType.ptr },
+  fm_plugin_free: { args: [FFIType.ptr], returns: FFIType.void },
+  fm_plugin_params: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_set_param: { args: [FFIType.ptr, FFIType.u32, FFIType.f64], returns: FFIType.void },
+  fm_plugin_note_on: { args: [FFIType.ptr, FFIType.u32, FFIType.f64, FFIType.u32], returns: FFIType.void },
+  fm_plugin_note_off: { args: [FFIType.ptr, FFIType.u32, FFIType.u32], returns: FFIType.void },
+  fm_plugin_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_editor: { args: [FFIType.ptr], returns: FFIType.u32 },
+  fm_plugin_open_editor: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_close_editor: { args: [FFIType.ptr], returns: FFIType.void },
+  fm_plugin_pump: { args: [FFIType.ptr], returns: FFIType.u32 },
+  fm_plugin_changes: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
 } as const;
 
-type Lib = NonNullable<Awaited<ReturnType<typeof loadNative<typeof clapSymbols>>>>;
+type Lib = NonNullable<Awaited<ReturnType<typeof loadNative<typeof pluginSymbols>>>>;
 let lib: Lib | null | undefined;
-export async function clapLib(): Promise<Lib | null> {
-  if (lib === undefined) lib = await loadNative("fm_daw", clapSymbols);
+export async function pluginLib(): Promise<Lib | null> {
+  if (lib === undefined) lib = await loadNative("fm_daw", pluginSymbols);
   return lib;
 }
 
@@ -57,7 +58,7 @@ function text(call: (out: Uint8Array | null, cap: number) => number): string {
   return dec.decode(buf.subarray(0, n));
 }
 const json = <T>(g: Guard<T[]>, s: string): T[] => g(JSON.parse(s));
-const lastError = (l: Lib) => text((o, c) => l.fm_clap_error(o ? ptr(o) : null, c)) || "unknown failure";
+const lastError = (l: Lib) => text((o, c) => l.fm_plugin_error(o ? ptr(o) : null, c)) || "unknown failure";
 
 export interface HostedPlugin {
   readonly info: PluginInfo;
@@ -88,66 +89,72 @@ export interface Bundle {
   close(): void;
 }
 
-/** Opens a `.clap` (a file, or a macOS bundle folder); a string says why it couldn't. */
+/** Opens a `.clap` or a `.vst3` (a file, or a bundle folder); a string says why it couldn't. */
 export async function openBundle(path: string): Promise<Bundle | string> {
-  const l = await clapLib();
+  const l = await pluginLib();
   if (!l) return "plugins need the desktop app's native engine";
   const p = enc.encode(path);
-  const h = l.fm_clap_open(p.length ? ptr(p) : null, p.length);
+  const h = l.fm_plugin_open(p.length ? ptr(p) : null, p.length);
   if (!h) return lastError(l);
   let open = true;
-  const plugins = json(arr(PluginInfo, 256), text((o, c) => l.fm_clap_list(h, o ? ptr(o) : null, c)));
+  const plugins = json(arr(PluginInfo, 256), text((o, c) => l.fm_plugin_list(h, o ? ptr(o) : null, c)));
   return {
     path, plugins,
     make(index, sampleRate) {
       const info = plugins[index];
       if (!open || !info) return "no plugin there";
-      const ph = l.fm_clap_new(h, index >>> 0, sampleRate);
+      const ph = l.fm_plugin_new(h, index >>> 0, sampleRate);
       if (!ph) return lastError(l);
       let alive = true;
       let pump: ReturnType<typeof setInterval> | undefined, closed: (() => void) | undefined;
       const stop = () => { clearInterval(pump); pump = undefined; const c = closed; closed = undefined; c?.(); };
-      const editor = ([null, "floating", "window"] as const)[l.fm_clap_editor(ph)] ?? null;
+      const editor = ([null, "floating", "window"] as const)[l.fm_plugin_editor(ph)] ?? null;
       return {
         editor,
         openEditor(title, onClose) {
           if (!alive) return "the plugin has stopped";
           const t = enc.encode(title);
-          if (l.fm_clap_open_editor(ph, t.length ? ptr(t) : null, t.length) !== 1) return lastError(l);
+          if (l.fm_plugin_open_editor(ph, t.length ? ptr(t) : null, t.length) !== 1) return lastError(l);
           if (onClose) closed = onClose;
-          pump ??= setInterval(() => { if (!alive || l.fm_clap_pump(ph) !== 1) stop(); }, PUMP_MS);
+          pump ??= setInterval(() => { if (!alive || l.fm_plugin_pump(ph) !== 1) stop(); }, PUMP_MS);
           return true;
         },
-        closeEditor: () => { if (alive) l.fm_clap_close_editor(ph); clearInterval(pump); pump = undefined; closed = undefined; },
-        changes: () => alive ? json(arr(ParamChange, 4096), text((o, c) => l.fm_clap_changes(ph, o ? ptr(o) : null, c))) : [],
+        closeEditor: () => { if (alive) l.fm_plugin_close_editor(ph); clearInterval(pump); pump = undefined; closed = undefined; },
+        changes: () => alive ? json(arr(ParamChange, 4096), text((o, c) => l.fm_plugin_changes(ph, o ? ptr(o) : null, c))) : [],
         info,
-        params: () => alive ? json(arr(PluginParam, 4096), text((o, c) => l.fm_clap_params(ph, o ? ptr(o) : null, c))) : [],
-        setParam: (id, v) => { if (alive && Number.isFinite(v)) l.fm_clap_set_param(ph, id >>> 0, v); },
-        noteOn: (k, v, ch = 0) => { if (alive) l.fm_clap_note_on(ph, k >>> 0, v, ch >>> 0); },
-        noteOff: (k, ch = 0) => { if (alive) l.fm_clap_note_off(ph, k >>> 0, ch >>> 0); },
-        render: (out, frames) => alive && l.fm_clap_render(ph, ptr(out), Math.min(frames, out.length >> 1) >>> 0) === 1,
-        free: () => { if (alive) { clearInterval(pump); pump = undefined; closed = undefined; alive = false; l.fm_clap_free(ph); } },
+        params: () => alive ? json(arr(PluginParam, 4096), text((o, c) => l.fm_plugin_params(ph, o ? ptr(o) : null, c))) : [],
+        setParam: (id, v) => { if (alive && Number.isFinite(v)) l.fm_plugin_set_param(ph, id >>> 0, v); },
+        noteOn: (k, v, ch = 0) => { if (alive) l.fm_plugin_note_on(ph, k >>> 0, v, ch >>> 0); },
+        noteOff: (k, ch = 0) => { if (alive) l.fm_plugin_note_off(ph, k >>> 0, ch >>> 0); },
+        render: (out, frames) => alive && l.fm_plugin_render(ph, ptr(out), Math.min(frames, out.length >> 1) >>> 0) === 1,
+        free: () => { if (alive) { clearInterval(pump); pump = undefined; closed = undefined; alive = false; l.fm_plugin_free(ph); } },
       };
     },
-    close: () => { if (open) { open = false; l.fm_clap_close(h); } },
+    close: () => { if (open) { open = false; l.fm_plugin_close(h); } },
   };
 }
 
-/** Where CLAP installers put plugins on each OS (the CLAP spec's list), `CLAP_PATH` first. */
+/** Where installers put plugins on each OS: the CLAP spec's list (`CLAP_PATH` first), then VST3's. */
 export function pluginFolders(platform = process.platform, env: Record<string, string | undefined> = process.env, home = homedir()): string[] {
   const sep = platform === "win32" ? ";" : ":";
   // The target OS's separators, not the host's: a mac folder is built with `/` even when the test runs on Windows.
   const at = platform === "win32" ? win32.join : posix.join;
   const extra = (env.CLAP_PATH ?? "").split(sep).filter(Boolean);
-  if (platform === "darwin") return [...extra, at(home, "Library/Audio/Plug-Ins/CLAP"), "/Library/Audio/Plug-Ins/CLAP"];
+  if (platform === "darwin") {
+    return [...extra, ...["CLAP", "VST3"].flatMap((f) => [at(home, "Library/Audio/Plug-Ins", f), at("/Library/Audio/Plug-Ins", f)])];
+  }
   if (platform === "win32") {
-    return [...extra, ...[env.COMMONPROGRAMFILES && at(env.COMMONPROGRAMFILES, "CLAP"), env.LOCALAPPDATA && at(env.LOCALAPPDATA, "Programs/Common/CLAP")]
+    return [...extra, ...["CLAP", "VST3"].flatMap((f) => [env.COMMONPROGRAMFILES && at(env.COMMONPROGRAMFILES, f), env.LOCALAPPDATA && at(env.LOCALAPPDATA, "Programs/Common", f)])
       .filter((d): d is string => !!d)];
   }
-  return [...extra, at(home, ".clap"), "/usr/lib/clap"];
+  return [...extra, at(home, ".clap"), "/usr/lib/clap", at(home, ".vst3"), "/usr/lib/vst3", "/usr/local/lib/vst3"];
 }
 
-/** Every `.clap` in these folders and the folders inside them (a few deep), each once. A folder that isn't there is skipped. */
+/** A file (or bundle folder) the host can open: a `.clap` or a `.vst3`. */
+export const isPluginFile = (name: string) => /\.(clap|vst3)$/i.test(name);
+
+/** Every `.clap` and `.vst3` in these folders and the folders inside them (a few deep), each once; a bundle folder isn't
+ *  looked inside. A folder that isn't there is skipped. */
 export function scanPlugins(folders: string[] = pluginFolders(), depth = 4): string[] {
   const found = new Set<string>();
   const walk = (dir: string, left: number) => {
@@ -155,7 +162,7 @@ export function scanPlugins(folders: string[] = pluginFolders(), depth = 4): str
     try { names = readdirSync(dir); } catch { return; }
     for (const n of names.sort()) {
       const p = join(dir, n);
-      if (n.toLowerCase().endsWith(".clap")) { found.add(p); continue; }
+      if (isPluginFile(n)) { found.add(p); continue; }
       if (left > 0) { try { if (statSync(p).isDirectory()) walk(p, left - 1); } catch { /* gone or unreadable */ } }
     }
   };
