@@ -59,19 +59,23 @@ Agent Office isn't headed for either store.
   there (CI suites plus the E2E runs), and signing happens a few days before each release, not on every push.
   TestFlight betas need signing too, so they ship in those same windows rather than on every beta tag.
 
-## Issues
-- Plan and order: [#2875](https://github.com/QuinnsCode/RustyBuns/issues/2875)
-- Lanes:
-  - iOS shell, xcframework and TestFlight: [#2876](https://github.com/QuinnsCode/RustyBuns/issues/2876)
-  - Steam shell and SteamPipe: [#2877](https://github.com/QuinnsCode/RustyBuns/issues/2877)
-  - edge protocol versions: [#2878](https://github.com/QuinnsCode/RustyBuns/issues/2878)
-  - eqosys account deletion and Sign in with Apple: [#2879](https://github.com/QuinnsCode/RustyBuns/issues/2879)
-  - builder-Mac control plane: [#2880](https://github.com/QuinnsCode/RustyBuns/issues/2880)
-- Apps:
-  - Park Hide & Seek on iOS: [#2881](https://github.com/QuinnsCode/RustyBuns/issues/2881)
-  - Hippo Tycoon on Steam: [#2882](https://github.com/QuinnsCode/RustyBuns/issues/2882)
-  - Hippo Tycoon on iOS: [#2883](https://github.com/QuinnsCode/RustyBuns/issues/2883)
-  - qCRM on iOS: [#2884](https://github.com/QuinnsCode/RustyBuns/issues/2884)
-- Owner's hands:
-  - Steamworks sign-up and fee: [#2885](https://github.com/QuinnsCode/RustyBuns/issues/2885)
-  - App Store Connect records and upload key: [#2886](https://github.com/QuinnsCode/RustyBuns/issues/2886)
+## Where each lane stands (2026-11-20)
+
+The plan issue, [#2875](https://github.com/QuinnsCode/RustyBuns/issues/2875), is closed: every lane below is done or
+lives in an issue of its own. iOS work is gathered in [#5432](https://github.com/QuinnsCode/RustyBuns/issues/5432)
+and builder-Mac work in [#5431](https://github.com/QuinnsCode/RustyBuns/issues/5431); each folded issue's body is
+still the long version of its checkbox there.
+
+| Lane or app | Issue | Where it stands |
+| --- | --- | --- |
+| Edge protocol versions | [#2878](https://github.com/QuinnsCode/RustyBuns/issues/2878) | Done in #2900 |
+| eqosys account deletion, Sign in with Apple | [#2879](https://github.com/QuinnsCode/RustyBuns/issues/2879) | Done in #2899 |
+| Park Hide & Seek on iOS | [#2881](https://github.com/QuinnsCode/RustyBuns/issues/2881) | Done in #2906 (`apps/park-hide-seek/ios`) |
+| iOS shell, xcframework, TestFlight | [#2876](https://github.com/QuinnsCode/RustyBuns/issues/2876) | In #5432 |
+| Hippo Tycoon on iOS | [#2883](https://github.com/QuinnsCode/RustyBuns/issues/2883) | In #5432 |
+| qCRM on iOS | [#2884](https://github.com/QuinnsCode/RustyBuns/issues/2884) | In #5432 |
+| App Store Connect records, upload key | [#2886](https://github.com/QuinnsCode/RustyBuns/issues/2886) | In #5432 (by way of #3306) |
+| Builder-Mac control plane | [#2880](https://github.com/QuinnsCode/RustyBuns/issues/2880) | In #5431 |
+| Steam shell and SteamPipe | [#2877](https://github.com/QuinnsCode/RustyBuns/issues/2877) | Open, backburner |
+| Hippo Tycoon on Steam | [#2882](https://github.com/QuinnsCode/RustyBuns/issues/2882) | Open, backburner, needs #2877 |
+| Steamworks sign-up and fee (owner) | [#2885](https://github.com/QuinnsCode/RustyBuns/issues/2885) | Open MANUAL RUN; the 30-day clock starts at the fee |
