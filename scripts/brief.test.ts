@@ -25,3 +25,18 @@ test("an app's brief comes from its own files", () => {
   expect(index(root)).toStartWith("skate-tech-park");
   expect(() => brief("nope", root)).toThrow("no apps/nope");
 });
+
+test("\"how do I use this?\" is answered from the README's Play it or Use it section, or the brief says it's missing", () => {
+  const root = mkdtempSync(join(tmpdir(), "brief-"));
+  const write = (app: string, md: string) => { mkdirSync(join(root, "apps", app), { recursive: true }); writeFileSync(join(root, "apps", app, "README.md"), md); };
+  write("golf", "# Golf\n\n> **What it proves:** wind data in a game.\n\n## Play it\n\n**Play:** https://golf.example\n**Controls:** Desktop: drag · Phone: swipe\n\n## Run it\n\nbun run dev\n");
+  write("crm", "# CRM\n\nA CRM your agents can use, for a real place of business.\n\n## Use it\n\n**How to use:** open it and add a contact.\n\n**Account:** needed.\n\nThe long story of how the CRM was built.\n");
+  write("bare", "# Bare\n\nA game with only build notes, no word on how to play.\n\n## Run it\n");
+  const golf = brief("golf", root);
+  expect(golf).toContain("Play it:\n**Play:** https://golf.example\n**Controls:** Desktop: drag · Phone: swipe");
+  expect(golf).not.toContain("bun run dev");
+  const crm = brief("crm", root);
+  expect(crm).toContain("Use it:\n**How to use:** open it and add a contact.\n\n**Account:** needed.");
+  expect(crm).not.toContain("long story");
+  expect(brief("bare", root)).toContain("no \"## Play it\" or \"## Use it\"");
+});
