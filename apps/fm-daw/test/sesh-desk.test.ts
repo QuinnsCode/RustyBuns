@@ -4,7 +4,7 @@
 // whoever mixes sends it to aux 2, and the spring's tail comes back only on the aux 2 return's fader. A track's send
 // to aux 2 comes back the same way in the bounce. In the jam room, heard as it comes, the same guitar is on a call
 // outside the audio thread: its chain plays at the channel's level and its sends go into the audio thread's buses.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
 import { BLOCK, SR, processor, run, useWorklet } from "./worklet-kit.ts";
 import { callStrips, deskOps, playerId, seshDesk, trackId, withChannel, withReturn, withSend, type Desk } from "../src/mixer.ts";
@@ -22,6 +22,8 @@ import { P } from "../src/engine/params.ts";
 import { TAKE_RATE } from "../src/take.ts";
 
 useWorklet();
+// Each test renders through the worklet or bounces a mix: 1-5 s on a Linux runner, past bun's 5 s default when it is busy.
+setDefaultTimeout(30_000);
 
 const BPM = 120, LOOP = 8, START = 1000, PEER = 7, WHO = "0a1b2c3d4e5f", SLICE = 2400;
 const PLAYERS = [{ who: WHO, name: "Mo" }];
