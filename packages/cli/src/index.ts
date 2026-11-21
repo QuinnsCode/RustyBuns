@@ -47,7 +47,7 @@ import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
 import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout, caseCollisions } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
-import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
+import { generateBoundaryFiles, scaffoldDesktopPackage, wireBoundaryPlugin } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, deployDeps, ownDeploySet, pkgDeps, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
@@ -674,6 +674,30 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   };
   // The servers beside or inside the app the proxy points at, whose files init can name: the host runs each
   // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
+  // A page that imports "use server" modules needs the boundary plugin in its own vite config, and every
+  // build that config makes needs .rustybuns/vite.ts first (#4815): without it the action module, node:fs
+  // and all, is bundled into the page and it throws on load. `build desktop` makes that file on its own.
+  const modules = astro || bunServer || !inf.vite.configPath ? [] : analyze({ root: ".", srcDir: inf.srcDir, aliases: inf.aliases }).modules;
+  const actions = modules.filter((m) => m.tier === "action");
+  if (actions.length) {
+    const boundaryCmd = `${inf.execCmd("rustybuns")} boundary`;
+    const conf = inf.vite.configPath!;
+    const from = relative(dirname(conf), ".rustybuns/vite.ts").split("\\").join("/");
+    const wired = wireBoundaryPlugin(readFileSync(conf, "utf8"), /^\.\.?\//.test(from) ? from : `./${from}`);
+    const name = relative(".", conf);
+    if (wired === null) console.log(`warning:  ${name} has no defineConfig({ or plugins: [ to add the boundary plugin to. Add it first in plugins yourself:\n          import { rustybuns } from "./.rustybuns/vite.ts";  plugins: [rustybuns(), ...]`);
+    else if (wired !== readFileSync(conf, "utf8")) writeFileSync(conf, wired);
+    if (web) web.build = `${boundaryCmd} && ${web.build}`;
+    // package.json is edited as text so its key order and spacing stay the app's.
+    const build = inf.scripts.build;
+    if (build && /\bvite\b/.test(build) && !/\brustybuns boundary\b/.test(build)) {
+      const pkg = readFileSync("package.json", "utf8");
+      const was = new RegExp(`("build"\\s*:\\s*)${JSON.stringify(build).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+      if (was.test(pkg)) writeFileSync("package.json", pkg.replace(was, (_m, k: string) => k + JSON.stringify(`rustybuns boundary && ${build}`)));
+    }
+    await generateBoundaryFiles(process.cwd(), inf, modules);
+    console.log(`boundary: ${actions.map((m) => m.file).join(", ")} ${actions.length > 1 ? "are" : "is"} "use server": ${wired === null ? "" : `${name} loads the rustybuns() plugin, which swaps ${actions.length > 1 ? "them" : "it"} for calls to the host, and `}the build scripts run \`rustybuns boundary\` first`);
+  }
   const servers = proxied.length ? siblingServers(".") : [];
   const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
   const specs = found.map((f) => ({ entry: f.server.entry!, paths: f.paths, ...(f.port ? { port: f.port } : {}) }));
