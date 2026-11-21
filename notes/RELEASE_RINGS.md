@@ -1,6 +1,6 @@
 # Release rings (proposal)
 
-The picture (the rings and their sweeps, the PR lanes, the express lane, the week simulator):
+The picture (five points beside the rings: PRs, rings and the week simulator, the straight-through score, three lanes side by side, security express):
 https://claude.ai/artifact/CLz7Z7hkcQYPVvg11PAsD2, built from [release-rings.html](release-rings.html). Publish that file
 to the same URL to update it.
 
@@ -50,6 +50,12 @@ Built: `express.yml` runs on a merged PR (or a manual run with its number). `rin
 put the label on last (anyone else's is ignored) and gives the squash commit; then it calls `desktop-hourly.yml` and,
 on green, `daily-ring.yml` with that SHA. Each writes a pending `ring/<name>` status while it runs (the hourly gate and
 the daily pick skip that commit), and `bun run rings` adds an `express <sha7>  <ring> sweep running` line for it.
+
+Lanes (#5429, proposal): three lanes side by side through the same sweeps, only the wait differs. A straight-through
+score (0 to 100: what the PR touches, whether its tests fail on the old code, how many changed lines they run, its size,
+its app's last 30 days) puts it in the fast lane (60 or more and no CI, deploy or secrets wiring: 1 green hour, 1 green
+night, then the OK; a red drops it to standby) or standby (the full soak). Express stays owner-only, for a security
+advisory, a hijacked package or Action in the build chain, or a host incident. A red sweep keeps it in express.
 
 Open: whether daily auto-deploys previews, and whether
 "Ringo" (moves pointers, writes notes) is its own helper or a job inside Ester.
