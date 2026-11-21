@@ -1246,6 +1246,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 - [FRAMEWORKS.md](FRAMEWORKS.md): frameworks other than Vite + React
 - [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md): how many real GitHub apps for each framework run with no changes
 - [notes/ROADMAP.md](notes/ROADMAP.md): the resource matrix, and the build order for what is built and what is not
+- [notes/INBOUND_TCP_GRPC.md](notes/INBOUND_TCP_GRPC.md): raw TCP and gRPC into Workers (Cloudflare beta, 2026-11-19), its Pro-zone cost gate, and where it would help (codeSplitter over ssh first)
 
 ## License
 
