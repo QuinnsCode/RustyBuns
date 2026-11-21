@@ -4,14 +4,16 @@
 // one needs a browser's audio (scripts/web-plugin-check.ts plays Test Tone in Chrome).
 import { test, expect } from "bun:test";
 import { BLOCK, SR, posted, processor, useWorklet, type Proc } from "./worklet-kit.ts";
-import { PluginPump } from "../src/ui/plugins.ts";
-import { WamRack, paramId, siteOf, type Fader } from "../src/ui/wam.ts";
+import { PluginPump, bouncePlugins } from "../src/ui/plugins.ts";
+import { WamRack, paramId, siteOf, type Fader, type WamEvent } from "../src/ui/wam.ts";
 import { loadMsg } from "../src/ui/load.ts";
 import { demoProject } from "../src/presets.ts";
 import { apply, type Op, type Project } from "../src/project.ts";
-import { P } from "../src/engine/params.ts";
+import { P, TRACKS } from "../src/engine/params.ts";
 import { withValue, type TrackPlugin } from "../src/plugin-track.ts";
 import type { ToWorklet } from "../src/engine/messages.ts";
+import { bounceFrames, renderProject } from "../src/engine/offline.ts";
+import { TsEngine } from "../src/engine/engine.ts";
 
 useWorklet();
 
@@ -55,12 +57,13 @@ function desk(plugin: TrackPlugin, modules: Record<string, unknown>) {
     pump, loaded, fader, say, settle,
     get project() { return proj; },
     op(o: Op, msg?: ToWorklet) { proj = apply(proj, o); if (msg) say(msg); pump.sync(proj); },
-    /** `seconds` of the left side out, the plugins' bus steady at `bus`, the asks carried to the pump as the page would. */
-    async play(seconds: number, bus = 0): Promise<number> {
+    /** `seconds` of the left side out, the plugins' bus steady at `bus` (track 0's own channel at `tap`), the asks carried to the pump as the page would. */
+    async play(seconds: number, bus = 0, tap = 0): Promise<number> {
       let last = 0;
       for (let at = 0; at < seconds * SR; at += BLOCK) {
         const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
-        (p as Proc).process([[new Float32Array(BLOCK)], [new Float32Array(BLOCK).fill(bus), new Float32Array(BLOCK).fill(bus)]], [[L, R]]);
+        const taps = Array.from({ length: TRACKS }, (_, t) => new Float32Array(BLOCK).fill(t === 0 ? tap : 0));
+        (p as Proc).process([[new Float32Array(BLOCK)], [new Float32Array(BLOCK).fill(bus), new Float32Array(BLOCK).fill(bus)], [], taps], [[L, R]]);
         last = L[BLOCK - 1]!;
         for (; seen < posted.length; seen++) { const m = posted[seen]!; if (m.t === "pluginAsk") pump.ask(m); }
         await settle();
@@ -124,4 +127,69 @@ test("an address that isn't a plugin says so, and the page loads only https or i
   expect(["javascript:alert(1)", "http://plugins.example/x.js", "data:text/javascript,1", "file:///x.js"].map((p) => siteOf(p, here))).toEqual([null, null, null, null]);
   expect(siteOf("https://plugins.example/x.js", here)?.site).toBe("https://plugins.example");
   expect(siteOf("builtin:tone", here)).toEqual({ site: null, url: "builtin:tone" });
+});
+
+test("a web plugin track goes down the sesh's live line, its own sound at its fader, as a CLAP track's does", async () => {
+  const s = synth(), here = "https://fm-daw.example/synth.js";
+  const d = desk({ path: here, index: 0, name: "synth", web: true, values: [] }, { [here]: s.module });
+  d.op({ t: "param", track: 0, i: P.GAIN, v: 0.5 }, { t: "param", track: 0, i: P.GAIN, v: 0.5 });
+  await d.settle();
+  expect(d.pump.state.get(0)).toMatchObject({ error: null, starting: false });
+  const from = posted.length;
+  d.say({ t: "pluginSend", track: 0, on: true, web: true });          // online: the page sends what plays here
+  await d.play(0.5, 0, 0.25);
+  const slices = posted.slice(from).flatMap((m) => (m.t === "sound" && m.track === 0 ? [m.pcm] : []));
+  expect(slices.length).toBeGreaterThan(2);
+  for (const pcm of slices) expect([Math.min(...pcm), Math.max(...pcm)].map((x) => x.toFixed(4))).toEqual(["0.1250", "0.1250"]);   // the plugin, at the fader, and nothing else
+  d.say({ t: "pluginSend", track: 0, on: false });
+  const off = posted.length;
+  await d.play(0.2, 0, 0.25);
+  expect(posted.slice(off).some((m) => m.t === "sound")).toBe(false);
+});
+
+test("a bounce renders a web plugin track on an offline context of its own, and leaves out one from a site nobody said yes to", async () => {
+  const told: WamEvent[] = [];
+  const node = {
+    connect() {},
+    getParameterInfo: async () => ({ cutoff: { label: "Cutoff", type: "float", defaultValue: 0.5, minValue: 0, maxValue: 1 } }),
+    getParameterValues: async () => ({ cutoff: { value: 0.5 } }),
+    setParameterValues() {},
+    scheduleEvents(...e: WamEvent[]) { told.push(...e); },
+    destroy() {},
+  };
+  const mod = { default: { createInstance: async () => ({ audioNode: node }) } };
+  const ours = "https://fm-daw.example/synth.js", theirs = "https://plugins.example/synth.js";
+  let rendered = 0;
+  const rack = new WamRack({
+    now: () => 0, here: "https://fm-daw.example/", host: async () => "page", load: async () => mod,
+    make: () => { throw new Error("a bounce doesn't use the page's audio"); }, fader: () => { throw new Error("nor its faders"); },
+    // the offline context plays the note it was told: 0.3 on both sides from its frame on
+    offline: (_sr, frames) => ({
+      host: async () => "offline", make: (cls, g) => cls.createInstance(g, null), out() {},
+      async render() {
+        rendered++;
+        const on = told.find((e) => e.type === "wam-midi"), pcm = new Float32Array(2 * frames);
+        if (on) pcm.fill(0.3, 2 * Math.round(on.time * SR));
+        return pcm;
+      },
+    }),
+  });
+  const project = (path: string): Project => {
+    const p = apply(demoProject(), { t: "plugin", track: 0, plugin: { path, index: 0, name: "synth", web: true, values: [] } });
+    return { ...p, space: 0, tracks: p.tracks.map((t, i) => (i === 0 ? { ...t, solo: true, notes: [{ s: 1, l: 1, m: 69, v: 1 }], auto: [], params: t.params.map((v, j) => (j === P.GAIN ? 1 : v)) } : t)) };
+  };
+  const secs = 2, frames = bounceFrames(project(ours), SR, secs), beat = 60 / project(ours).bpm;
+  const { sound, missed } = await bouncePlugins(project(ours), SR, frames, undefined, rack);
+  expect(missed).toEqual([]);
+  // the track's note, at its beat on the offline context's clock
+  expect(told.filter((e) => e.type === "wam-midi").map((e) => [e.data.bytes, Math.round(e.time / beat)])).toEqual([[[0x90, 69, 127], 1], [[0x80, 69, 0], 2]]);
+  const out = renderProject(new TsEngine(SR), project(ours), SR, secs, 0.5, undefined, (t) => sound.get(t));
+  const loudest = (a: Float32Array) => a.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  expect(loudest(out.subarray(0, 2 * Math.floor(beat * SR) - 128))).toBe(0);
+  expect(loudest(out.subarray(2 * Math.ceil(beat * SR) + 128))).toBeGreaterThan(0.1);   // in the mix from its beat
+
+  const away = await bouncePlugins(project(theirs), SR, frames, undefined, rack);
+  expect(away.missed).toEqual(["synth (nobody here has said plugins.example may run code in this page)"]);
+  expect(rendered).toBe(1);                                                                // never loaded
+  expect((await bouncePlugins(project(ours), SR, frames)).missed).toEqual(["synth (a web plugin plays in FM DAW's own page)"]);
 });

@@ -115,6 +115,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private input = new Slicer();
   /** Plugin tracks whose sound goes to the sesh too, at their fader, cut the same way (src/studio/plugin-line.ts). */
   private pluginOut = new Map<number, Slicer>();
+  /** Those of them played by a plugin in the page: their sound is on the fourth input, a channel each. */
+  private webOut = new Set<number>();
+  private hush = new Float32Array(128);
 
   constructor() {
     super();
@@ -184,7 +187,11 @@ class FmProcessor extends AudioWorkletProcessor {
       case "desk": this.setDesk(m); break;
       case "quiet": this.quiet(m.peer, m.track); break;
       case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.input.reset(); break;
-      case "pluginSend": if (!m.on) this.pluginOut.delete(m.track); else if (!this.pluginOut.has(m.track)) this.pluginOut.set(m.track, new Slicer(m.track)); break;
+      case "pluginSend":
+        if (!m.on) { this.pluginOut.delete(m.track); this.webOut.delete(m.track); break; }
+        if (!this.pluginOut.has(m.track)) this.pluginOut.set(m.track, new Slicer(m.track));
+        if (m.web) this.webOut.add(m.track); else this.webOut.delete(m.track);
+        break;
     }
   }
 
@@ -229,9 +236,15 @@ class FmProcessor extends AudioWorkletProcessor {
   private mixPlugins(frames: number, beat0: number, bpf: number) {
     const fader = this.fader;
     // a track going to the sesh too: its sound at its fader, on the beat it's heard on here (nobody played it in late)
-    const tap = this.pluginOut.size ? (t: number, mono: Float32Array, n: number) => this.pluginOut.get(t)?.push(mono, fader(t), n, beat0, bpf, this.port) : undefined;
+    const tap = this.pluginOut.size ? (t: number, mono: Float32Array, n: number) => { if (!this.webOut.has(t)) this.pluginOut.get(t)?.push(mono, fader(t), n, beat0, bpf, this.port); } : undefined;
     this.plugins.mix(this.buf, frames, this.strip, this.send, tap);
     for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
+  }
+
+  /** The page's plugins going to the sesh: each track's channel of `taps`, before its fader, cut as a CLAP track's is. */
+  private sendWeb(taps: Float32Array[] | undefined, frames: number, beat0: number, bpf: number) {
+    if (this.hush.length < frames) this.hush = new Float32Array(frames);
+    for (const t of this.webOut) this.pluginOut.get(t)?.push(taps?.[t] ?? this.hush, this.fader(t), frames, beat0, bpf, this.port);
   }
 
   /** The page's own plugins (Web Audio Modules, src/ui/wam.ts), each already at its track's fader, under the room's master. */
@@ -426,6 +439,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       this.mixWeb(inputs[1], frames);
+      if (this.webOut.size) this.sendWeb(inputs[3], frames, abs0, bpf);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);

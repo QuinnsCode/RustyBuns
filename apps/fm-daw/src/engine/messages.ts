@@ -69,8 +69,11 @@ export type ToWorklet =
   | { t: "sound"; peer: number; track: number; at: number; pcm: Float32Array }
   /** Their sound stopped (unplugged, left): drop what's buffered, into `track` or (none) every track. */
   | { t: "quiet"; peer: number; track?: number }
-  /** Send plugin track `track`'s own sound to the sesh in stamped slices (`on`), or stop: this page's plugin plays it. */
-  | { t: "pluginSend"; track: number; on: boolean }
+  /**
+   * Send plugin track `track`'s own sound to the sesh in stamped slices (`on`), or stop: this page's plugin plays it.
+   * `web`: a plugin in the page (src/ui/wam.ts), whose sound is the track's channel of the fourth input.
+   */
+  | { t: "pluginSend"; track: number; on: boolean; web?: boolean }
   /** Send the input out in slices, each with the beat it was played on (`inLatency`: seconds the input comes in late). */
   | { t: "send"; on: boolean; inLatency: number };
 
