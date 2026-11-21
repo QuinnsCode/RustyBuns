@@ -197,8 +197,8 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   if (m) geo.applyMatrix4(m);
-  geo.computeVertexNormals();
-  return { geo, slot };
+  // smooth round the turn (a cone's dish, a knob's skirt), creased where a ring folds sharply (a horn's lip)
+  return { geo: toCreasedNormals(geo, 0.6), slot };
 }
 
 /** A loudspeaker as it shows through a grille: the cone's dish, its rolled rubber surround, the dust cap and the
@@ -206,7 +206,8 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
 function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
   const roll = Math.min(deep, 0.01);
   return [
-    lathe("rubber", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
+      // the dish is coated paper with a satin sheen (it catches the light through the holes); the surround is rubber
+    lathe("knob", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
     lathe("rubber", [[0, r, r], [roll * 0.25, r * 1.04, r * 1.04], [roll * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
     lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: 16 }),
     lathe("knob", [[0, r * 1.12, r * 1.12], [roll * 0.1, r * 1.13, r * 1.13], [roll * 0.1, r * 1.2, r * 1.2], [-roll * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
