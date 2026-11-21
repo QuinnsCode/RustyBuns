@@ -33,17 +33,17 @@ const PEDAL_DRIVE: Record<string, number> = { drive: 3, dist: 5, fuzz: 7 };
 
 const ampGear = (a: (typeof AMPS)[number]): GearDef => ({
   id: `amp-${a.id}`, name: a.name, kind: "amp", size: [0.62, 0.26, 0.26], kg: 15, circuit: a.id,
-  // On the back: the effects loop (send out to machines, return back in), a line out (the cab and mic, as a load box's
+  // The shared amp head's front panel (models.ts): the input and the knobs along it. On the back: the effects loop (send out to machines, return back in), a line out (the cab and mic, as a load box's
   // out, for a desk insert) and the speaker out.
   jacks: [
-    { name: "in", dir: "in", at: [-0.26, 0.15, 0.13], face: "front" },
+    { name: "in", dir: "in", at: [-0.25, 0.075, 0.13], face: "front" },
     { name: "send", dir: "out", at: [-0.2, 0.13, -0.13], face: "back" },
     { name: "return", dir: "in", at: [-0.12, 0.13, -0.13], face: "back" },
     { name: "line", dir: "out", at: [0.08, 0.13, -0.13], face: "back" },
     { name: "speaker", dir: "out", at: [0.22, 0.13, -0.13], face: "back" },
   ],
   knobs: (a.trem ? [...AMP_KNOBS, "rate", "depth"] as const : AMP_KNOBS).map((k, i) => ({
-    name: k, label: LABEL[k], at: a.trem ? [-0.17 + i * 0.055, 0.15, 0.13] : [-0.14 + i * 0.075, 0.15, 0.13], face: "front", dflt: a.knobs[k] / 10,
+    name: k, label: LABEL[k], at: a.trem ? [-0.17 + i * 0.055, 0.075, 0.13] : [-0.14 + i * 0.075, 0.075, 0.13], face: "front", dflt: a.knobs[k] / 10,
   })),
 });
 const pedalGear = (p: (typeof PEDALS)[number]): GearDef => ({
@@ -98,7 +98,7 @@ const DESK: GearDef = {
 
 /** Every piece of gear the studio has, by id. */
 export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries([
-  { id: "guitar", name: "Guitar", kind: "guitar", size: [0.34, 1.0, 0.06], kg: 3.5, jacks: [{ name: "out", dir: "out", at: [0.1, 0.22, 0.03], face: "front" }], knobs: [] } satisfies GearDef,
+  { id: "guitar", name: "Guitar", kind: "guitar", size: [0.34, 1.0, 0.06], kg: 3.5, jacks: [{ name: "out", dir: "out", at: [0.12, 0.07, 0.03], face: "front" }], knobs: [] } satisfies GearDef,
   ...PEDALS.map(pedalGear),
   SPLIT,
   ...AMPS.map(ampGear),
@@ -106,7 +106,7 @@ export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries
   machineGear("tape", "Q Tape", [0.34, 0.14, 0.22], 4, [["time", "Time", 0.4], ["repeats", "Repeats", 0.4], ["mix", "Mix", 0.4]]),
   machineGear("spring", "Q Spring", [0.42, 0.12, 0.16], 3, [["dwell", "Dwell", 0.5], ["mix", "Mix", 0.4]]),
   DESK,
-  { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0.25, 0.1, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
+  { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0, 0.165, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
 ].map((g) => [g.id, g]));
 
 // ---- bench pedals: tscircuit boards dropped in the room (../circuit/bench.ts) ----

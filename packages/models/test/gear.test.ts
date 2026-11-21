@@ -2,7 +2,7 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, type GearId, gear, gearJacks, rigging } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, rigging, stompbox } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
@@ -114,4 +114,19 @@ test("a frame pins onto the top box, and the motor's hook bites its shackle with
   const jacks = gearJacks(motor), centre = new THREE.Box3().setFromObject(motor).getCenter(new THREE.Vector3());
   expect([...jacks.keys()].sort()).toEqual(["control-in", "power-in"]);
   for (const j of jacks.values()) expect(j.getWorldPosition(new THREE.Vector3()).sub(centre).dot(new THREE.Vector3(0, 0, 1).applyQuaternion(j.quaternion))).toBeGreaterThan(0);
+});
+
+test("a stompbox builds at the size asked, its jacks out of each end and its footswitch on the lid", () => {
+  for (const size of [STOMP_SIZE, [0.12, 0.06, 0.2] as THREE.Vector3Tuple]) {
+    const g = stompbox(size);
+    g.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(g), got = box.getSize(new THREE.Vector3()).toArray();
+    got.forEach((s, i) => expect(Math.abs(s - size[i])).toBeLessThan(0.004));
+    expect(Math.abs(box.min.y)).toBeLessThan(0.001);
+    const jacks = gearJacks(g);
+    expect(jacks.get("in")!.position.x).toBeGreaterThan(size[0] / 2);
+    expect(jacks.get("out")!.position.x).toBeLessThan(-size[0] / 2);
+    expect(g.getObjectByName("switch")!.position.y).toBeGreaterThan(size[1] - 0.012);
+    expect(triangles(g)).toBeLessThan(2000);
+  }
 });
