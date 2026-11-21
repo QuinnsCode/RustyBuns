@@ -23,13 +23,13 @@ export function readable(look: GearLook) {
 }
 
 /** A neon's `word` is what its tubes spell; without one it is a plain looped tube. */
-type Fixture = { kind: "strip" | "spot" | "neon" | "work"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number]; word?: string };
+type Fixture = { kind: "strip" | "spot" | "neon" | "work" | "pendant"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number]; word?: string };
 
 /** The fixtures in a room, from its size: where a real one would hang them. */
 export function fixtures(l: Level): Fixture[] {
   if (l.outdoor) return [];
   const r = l.room, cx = (r.x0 + r.x1) / 2, d = r.z1 - r.z0, top = r.height - 0.04;
-  const work: Fixture = { kind: "work", x: r.x1 - 0.4, y: 1.9, z: r.z1 - 0.6, color: 0xf4f8ff, power: 18, to: [cx, 0, r.z1 - 2.8] };
+  const work: Fixture = { kind: "work", x: r.x1 - 0.4, y: 1.9, z: r.z1 - 0.6, color: 0xf4f8ff, power: l.name === "dive-bar" ? 9 : 18, to: [cx, 0, r.z1 - 2.8] };
   if (l.name === "garage") return [
     { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.28, color: 0xeef4ff, power: 7 },
     { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.72, color: 0xeef4ff, power: 7 },
@@ -44,12 +44,17 @@ export function fixtures(l: Level): Fixture[] {
     work,
   ];
   // A bar: warm spots on the stage end, one over the room, a neon sign on the long wall, the work light by the door.
+  // The dive bar adds the lamps over its counter: warm pools on the bar top and the tiles, the stools' shadows under them.
+  const pendants: Fixture[] = l.name === "dive-bar"
+    ? [0.5, 0.68, 0.86].map((t) => ({ kind: "pendant", x: r.x0 + 0.85, y: top - 0.7, z: r.z0 + d * t, color: 0xffb871, power: 9, to: [r.x0 + 0.75, 0, r.z0 + d * t] }))
+    : [];
   return [
     { kind: "spot", x: cx - 1.2, y: top, z: r.z0 + 2.6, color: 0xffc47a, power: 40, to: [cx - 0.6, 0, r.z0 + 1.2] },
     { kind: "spot", x: cx + 1.2, y: top, z: r.z0 + 2.6, color: 0xffb36a, power: 40, to: [cx + 0.6, 0, r.z0 + 1.2] },
-    { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.6, color: 0xffd9a8, power: 9 },
-    { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.45, color: 0xff3fa4, power: 5, word: "LIVE MUSIC" },
-    { kind: "neon", x: r.x0 + 0.03, y: 1.85, z: r.z0 + d * 0.7, color: 0x3fd8ff, power: 4, word: "Cold Beer" },
+    { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.6, color: 0xffd9a8, power: pendants.length ? 5 : 9 },
+    { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.45, color: 0xff3fa4, power: 0.9, word: "LIVE MUSIC" },
+    { kind: "neon", x: r.x0 + 0.03, y: 1.85, z: r.z0 + d * 0.7, color: 0x3fd8ff, power: 0.8, word: "Cold Beer" },
+    ...pendants,
     work,
   ];
 }
@@ -65,7 +70,7 @@ function neonWord(word: string, color: number, x: number, y: number, z: number):
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   // Glow, then the tube, then its hot white core.
-  for (const [blur, width, style] of [[40, 16, hex], [14, 10, hex], [0, 3, "#ffffff"]] as const) {
+  for (const [blur, width, style] of [[18, 12, hex], [8, 8, hex], [0, 2.5, "#ffffff"]] as const) {
     ctx.shadowColor = hex;
     ctx.shadowBlur = blur;
     ctx.lineWidth = width;
@@ -76,12 +81,39 @@ function neonWord(word: string, color: number, x: number, y: number, z: number):
   tex.colorSpace = THREE.SRGBColorSpace;
   const w = 1.3, h = w / 4, turn = x > 0 ? -Math.PI / 2 : Math.PI / 2, out = x > 0 ? -1 : 1;
   const board = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.96, h * 0.8), new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.3 }));
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, color: 0xb0b0b0, transparent: true, depthWrite: false, toneMapped: false }));
   board.position.set(x + out * 0.02, y, z);
   sign.position.set(x + out * 0.035, y, z);
   board.rotation.y = sign.rotation.y = turn;
   g.add(board, sign);
   return g;
+}
+
+/** A spot that throws shadows, at a map size the room can afford. */
+function shadows(s: THREE.SpotLight, size: number) {
+  s.castShadow = true;
+  s.shadow.mapSize.set(size, size);
+  s.shadow.bias = -0.0004;
+  s.shadow.normalBias = 0.02;
+  s.shadow.camera.near = 0.1;
+  s.shadow.camera.far = 8;
+}
+
+/** How much the sky-and-floor fill lights a room: a bar runs dark between its lamps, the rest as they were. */
+export function fill(l: Level) {
+  return l.name === "dive-bar" ? 0.6 : 0.85;
+}
+
+/** Every solid mesh casts and takes shadows; glows (unlit, see-through) don't, so a sign never darkens its own wall. */
+export function shade(root: THREE.Object3D) {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || o.userData.shaded) return;
+    o.userData.shaded = true;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    const solid = !(m instanceof THREE.MeshBasicMaterial) && !m?.transparent;
+    o.castShadow = solid;
+    o.receiveShadow = solid;
+  });
 }
 
 /** The lights and the fixtures you see for a level, as one group to add and remove with the room. */
@@ -97,7 +129,8 @@ export function venueLights(l: Level): THREE.Group {
   for (const f of fixtures(l)) {
     if (f.kind === "strip") {
       box(1.25, 0.05, 0.14, new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.6 }), f.x, f.y, f.z);
-      box(1.18, 0.02, 0.09, glow(f.color), f.x, f.y - 0.03, f.z);
+      // The tube reads lit without burning white: a warm grey that the tone mapping keeps under the top.
+      box(1.18, 0.02, 0.09, glow(new THREE.Color(f.color).multiplyScalar(Math.min(1, 0.35 + f.power / 14)).getHex()), f.x, f.y - 0.03, f.z);
       for (const dx of [-0.4, 0.4]) {
         const p = new THREE.PointLight(f.color, f.power, 9, 1.4);
         p.position.set(f.x + dx, f.y - 0.12, f.z);
@@ -105,9 +138,23 @@ export function venueLights(l: Level): THREE.Group {
       }
     } else if (f.kind === "neon" && f.word) {
       g.add(neonWord(f.word, f.color, f.x, f.y, f.z));
-      const p = new THREE.PointLight(f.color, f.power, 5, 1.6);
+      const p = new THREE.PointLight(f.color, f.power, 3, 2);
       p.position.set(f.x + (f.x > 0 ? -0.35 : 0.35), f.y, f.z);
       g.add(p);
+    } else if (f.kind === "pendant") {
+      // A bar lamp: a cord from the ceiling, an enamel shade, the bulb under it, a cone of warm light with shadows.
+      const to = new THREE.Vector3(...(f.to ?? [f.x, 0, f.z]));
+      box(0.008, l.room.height - f.y - 0.12, 0.008, new THREE.MeshStandardMaterial({ color: 0x111111 }), f.x, (l.room.height + f.y + 0.12) / 2, f.z);
+      const shade = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.16, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0x24402f, roughness: 0.45, metalness: 0.3, side: THREE.DoubleSide }));
+      shade.position.set(f.x, f.y + 0.06, f.z);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), glow(0xffd9a0));
+      bulb.position.set(f.x, f.y - 0.01, f.z);
+      g.add(shade, bulb);
+      const s = new THREE.SpotLight(f.color, f.power, 5, 0.85, 0.7, 1.6);
+      s.position.set(f.x, f.y - 0.03, f.z);
+      s.target.position.copy(to);
+      shadows(s, 512);
+      g.add(s, s.target);
     } else if (f.kind === "neon") {
       // A sign of our own: a looped tube on a backing, washing the wall in its colour.
       const tube = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.018, 6, 28), glow(f.color));
@@ -123,6 +170,8 @@ export function venueLights(l: Level): THREE.Group {
     } else {
       const s = new THREE.SpotLight(f.color, f.power, 14, f.kind === "work" ? 0.75 : 0.55, 0.5, 1.3);
       s.position.set(f.x, f.y, f.z);
+      // The stage spots throw the band's shadows on the curtain and the boards; the work light the gear's on the floor.
+      shadows(s, f.kind === "work" ? 512 : 1024);
       s.target.position.set(...(f.to ?? [f.x, 0, f.z]));
       g.add(s, s.target);
       const can = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.16, 10), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 }));
@@ -136,6 +185,8 @@ export function venueLights(l: Level): THREE.Group {
       g.add(lens);
     }
   }
+  // A lamp's own can and shade would shadow its own beam: the fixtures stay out of the shadow pass.
+  g.traverse((o) => { o.userData.shaded = true; });
   return g;
 }
 
