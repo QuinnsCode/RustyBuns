@@ -55,7 +55,7 @@ export function framePage(org: string, product: string, settings: Org): Response
 <style>html, body { margin: 0; height: 100%; background: transparent; } qview-3d { height: 100%; }</style>
 </head>
 <body>
-<qview-3d org="${esc(org)}" product="${esc(product)}"></qview-3d>
+<qview-3d org="${esc(org)}" product="${esc(product)}" loading="eager"></qview-3d>
 <script type="module">(${relay.toString()})(${JSON.stringify(origins).replace(/</g, "\\u003c")});</script>
 </body>
 </html>`;
