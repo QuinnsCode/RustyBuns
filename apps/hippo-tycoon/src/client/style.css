@@ -40,6 +40,11 @@ button, input, select { font: inherit; color: inherit; }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn.go { background: linear-gradient(135deg, #ff3d9a, #ff8a3a); border-color: transparent; color: #1a0610; box-shadow: 0 8px 28px rgba(255, 61, 154, 0.35); }
 .btn.go:hover:not(:disabled) { background: linear-gradient(135deg, #ff5aac, #ffa05a); }
+.btn small { display: block; margin-top: 2px; font-weight: 400; font-size: 12px; opacity: 0.72; }
+.btn.big { padding: 20px 18px; font-size: 22px; }
+.btn.big small { font-size: 13px; }
+.btn.quiet { background: none; border-color: transparent; color: var(--dim); }
+.split { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .row { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 .row > label { color: var(--dim); font-size: 14px; }
 .seg { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.25); }
