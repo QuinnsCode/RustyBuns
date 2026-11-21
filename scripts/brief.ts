@@ -1,5 +1,5 @@
 // An app as a brief, for an agent about to work in it: `bun run brief <app>` prints what the app is (its README's
-// lede), the sections its README has, the other notes in its folder with their first lines, its license note, the
+// lede), how a person uses it (its "## Play it" or "## Use it" section: the answer to "how do I use this?"), the sections its README has, the other notes in its folder with their first lines, its license note, the
 // scripts in its package.json, its tests, its default port, and the page handle `bun run probe` reads. All of it is
 // read from the app's own files, so it can't go stale the way a hand-written skill per app would. With no app, it
 // lists every app and its one-line lede. `--full` prints the probe handle in full.
@@ -30,6 +30,17 @@ export function lede(md: string): string {
   return "";
 }
 
+/** The README's "## Play it" (a game) or "## Use it" (a tool) section: what a person asking "how do I use this?" needs,
+ *  in plain words (what it is, the link, how to play, controls, account). Empty when the README has neither. */
+export function playIt(md: string): string {
+  const m = md.match(/^##\s+(Play it|Use it)\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m);
+  if (!m) return "";
+  // It ends at its **Account:** line (always last); what follows under the same heading is the README's own prose.
+  const body = m[2]!.trim(), account = body.search(/^\*\*Account:\*\*/m);
+  const after = account < 0 ? -1 : body.indexOf("\n\n", account);
+  return `${m[1]}:\n${after < 0 ? body : body.slice(0, after)}`;
+}
+
 /** The first line of a notes file worth showing: its title, else its first prose. */
 const firstLine = (md: string) => (md.match(/^#\s+(.+)$/m)?.[1] ?? lede(md)).trim();
 
@@ -55,7 +66,8 @@ export function brief(app: string, root = ROOT, full = false): string {
   const rel = appDir(app, root), dir = path.join(root, rel);
   if (!existsSync(dir)) throw new Error(`no ${rel}: \`bun run brief\` lists them`);
   const readme = read(path.join(dir, "README.md"));
-  const lines = [`# ${app}`, "", lede(readme) || "(no README lede)"];
+  const lines = [`# ${app}`, "", lede(readme) || "(no README lede)", "",
+    playIt(readme) || "(no \"## Play it\" or \"## Use it\" in its README: someone asking how to use it gets the build notes; add one)"];
   const sections = [...readme.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.trim());
   if (sections.length) lines.push("", `README sections: ${sections.join(" · ")}`);
 

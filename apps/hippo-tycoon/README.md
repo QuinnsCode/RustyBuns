@@ -4,6 +4,19 @@
 
 **Live:** https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app · on [eqosys](https://eqosys.qntbr.com)
 
+## Play it
+
+**What it is:** four greedy hippos round an oil geyser in the jungle, each trying to gulp the most oil.
+
+**Play:** https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app
+
+**How to play:** pick *Solo* to play against computer hippos, or *Couch* to play with someone on the same screen.
+Slide along your side, chomp the oil drops and stay away from the sludge. Press H in a round to see the controls.
+
+**Controls:** Desktop: A D slide, W or Space chomp, Q bellow (player 2: arrows, ↑ or Enter, /). Gamepad works too. · Phone: drag to slide, tap to chomp.
+
+**Account:** not needed. Sign in with eqosys to play online under your own name.
+
 Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode.
 
 The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output. The game's rules (`step()`) have a Rust twin too, held to the same state hash on every tick.
@@ -112,7 +125,7 @@ Deploying is yours to run: `bunx rustybuns plan` (creates nothing; it lists `[Bu
 
 | Menu | A round |
 |---|---|
-| ![The menu: Solo, Couch, Host and Join a LAN game, your name, bot difficulty and round length](docs/menu.png) | ![A round in progress: the net-worth HUD, 15 seconds left, drops on the pan](docs/round.png) |
+| ![The menu: a big Solo button, then Couch, Join LAN and Online, each with a short line saying what it is, and Options below](docs/menu.png) | ![A round in progress: the net-worth HUD, 15 seconds left, drops on the pan](docs/round.png) |
 
 | | Slide | Chomp | Bellow (ready) |
 |---|---|---|---|

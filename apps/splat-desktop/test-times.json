@@ -1,0 +1,6 @@
+{
+  "tests/editor-hook.test.ts": 0,
+  "tests/editor-src.test.ts": 3,
+  "tests/host.test.ts": 4,
+  "tests/scene-info.test.ts": 33
+}

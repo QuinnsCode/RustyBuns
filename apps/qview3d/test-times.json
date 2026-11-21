@@ -1,0 +1,14 @@
+{
+  "test/billing.test.ts": 63,
+  "test/hooks.test.ts": 63,
+  "test/live.test.ts": 19,
+  "test/orgs.test.ts": 611,
+  "test/print.test.ts": 5071,
+  "test/samples.test.ts": 375,
+  "test/sandbox.test.ts": 44,
+  "test/shopify.test.ts": 345,
+  "test/tops.test.ts": 1497,
+  "test/touch.test.ts": 14757,
+  "test/uploads.test.ts": 68,
+  "test/widget.test.ts": 72135
+}

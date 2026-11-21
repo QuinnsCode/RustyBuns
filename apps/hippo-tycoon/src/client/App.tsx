@@ -82,9 +82,9 @@ export function App({ signInNote }: { signInNote?: string } = {}) {
     : screen.t === "joinOnline" ? <JoinOnline onBack={() => setScreen({ t: "menu" })} onJoin={(room) => playNet(() => onlineSocket(room, name))} />
     : <Menu note={signInNote} settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}
         extra={<>
-          {desktop && <button className="btn" onClick={hostLan}>Host LAN</button>}
-          {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>Join LAN</button>}
-          {!desktop && <button className="btn" onClick={() => setScreen({ t: "joinOnline" })}>Online</button>}
+          {desktop && <button className="btn" onClick={hostLan}>Host LAN<small>Friends on your home network join you</small></button>}
+          {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>Join LAN<small>A game on your home network</small></button>}
+          {!desktop && <button className="btn" onClick={() => setScreen({ t: "joinOnline" })}>Online<small>Play friends over the internet</small></button>}
           {screen.error && <p className="err" role="alert">{screen.error}</p>}
         </>} />;
   return <><Backdrop view={view} />{page}</>;

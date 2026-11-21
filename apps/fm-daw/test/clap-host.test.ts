@@ -130,8 +130,9 @@ test("a file that isn't a plugin says why", async () => {
   expect(await openBundle(join(dir, "Gone.clap"))).toContain("couldn't load");
 });
 
-test("plugin folders follow the CLAP spec per OS, CLAP_PATH first", () => {
-  expect(pluginFolders("darwin", { CLAP_PATH: "/a:/b" }, "/Users/q")).toEqual(["/a", "/b", "/Users/q/Library/Audio/Plug-Ins/CLAP", "/Library/Audio/Plug-Ins/CLAP"]);
-  expect(pluginFolders("linux", {}, "/home/q")).toEqual(["/home/q/.clap", "/usr/lib/clap"]);
-  expect(pluginFolders("win32", { COMMONPROGRAMFILES: "C:/Common", LOCALAPPDATA: "C:/Local" }, "C:/q").length).toBe(2);
+test("plugin folders follow the CLAP and VST3 specs per OS, CLAP_PATH first", () => {
+  expect(pluginFolders("darwin", { CLAP_PATH: "/a:/b" }, "/Users/q")).toEqual(["/a", "/b",
+    "/Users/q/Library/Audio/Plug-Ins/CLAP", "/Library/Audio/Plug-Ins/CLAP", "/Users/q/Library/Audio/Plug-Ins/VST3", "/Library/Audio/Plug-Ins/VST3"]);
+  expect(pluginFolders("linux", {}, "/home/q")).toEqual(["/home/q/.clap", "/usr/lib/clap", "/home/q/.vst3", "/usr/lib/vst3", "/usr/local/lib/vst3"]);
+  expect(pluginFolders("win32", { COMMONPROGRAMFILES: "C:/Common", LOCALAPPDATA: "C:/Local" }, "C:/q").filter((d) => d.endsWith("VST3")).length).toBe(2);
 });

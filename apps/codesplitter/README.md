@@ -3,6 +3,17 @@
 **Git for the agentic era.
 Every line is its own record, every agent and person edits live, and git keeps going even when other gits don't.**
 
+## Use it
+
+**What it is:** a place to keep code, where people and AI helpers can all work on the same files at once.
+
+**Use:** https://codesplitter.notryanquinn.workers.dev
+
+**How to use:** sign in, then bring in a GitHub project or make a new one.
+Open a file, change a line, or start an AI helper on its own copy, then look over what it did and keep it.
+
+**Account:** needed online. The free desktop app (below) only asks for a nickname.
+
 **Never let your git quit.** Run it as a desktop app and your git lives on your machine, syncing out to the cloud instead of the cloud syncing in to you.
 If a cloud dies, you and your agents keep going.
 

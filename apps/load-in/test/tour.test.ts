@@ -5,6 +5,7 @@ import { expect, test } from "bun:test";
 import { VENUES } from "../src/clock.ts";
 import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
 import { FIRST_GIG } from "../src/venues/first-gig.ts";
+import { homeOpen } from "../src/tour-view.ts";
 import { FIRST_FOLLOWING, LADDER, RIGS, bookedRung, buy, crowd, newTour, readTour, ready, record } from "../src/tour.ts";
 
 test("from the first gig to the red-rock amphitheatre: each pass books the next rung, and the following and the pay climb", () => {
@@ -81,4 +82,10 @@ test("a save read back: a good one as it was, one from before the following as y
   for (const bad of [null, "tour", { ...t, cash: "lots" }, { ...t, truck: "jet" }, { ...t, booked: "the moon" }]) {
     expect(readTour(bad)).toEqual(newTour());
   }
+});
+
+test("home base starts folded for a newcomer, so Play is what they see, and open once they have played a night", () => {
+  const t = newTour();
+  expect(homeOpen(t)).toBe(false);
+  expect(homeOpen(record(t, FIRST_GIG, { score: 40, pay: 0, pass: false }).tour)).toBe(true);
 });

@@ -4,6 +4,17 @@ Every scheduled thing in one place, by app: the nightly backups, the weekly chec
 Part alarm, part reminder, part note: each job says when it runs, why it exists, what it calls, and carries
 tags. Its engine, **bacron**, ticks on each minute boundary and fires on time to well under a second.
 
+## Use it
+
+**What it is:** one list of every job that runs on a timer (nightly backups, weekly check-ins, yearly renewals), sorted by app.
+
+**Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
+
+**How to use:** pick an app on the side, add a job, and say when it runs ("weekdays at 09:00") and why it is there.
+Each job shows when it runs next, and tags and search find it again.
+
+**Account:** not needed.
+
 - **Five lanes**: async (every N minutes, one-offs, busy cron lines), daily, weekly, monthly, yearly. Each has a count.
 - **Per app and all apps**: the side lists every app; pick one or see them all grouped. Tags and search narrow it down.
 - **Plain cadences or cron lines**: "Weekdays at 09:00", "Monthly on the last day", or `*/15 9-17 * * 1-5`. Each runs on

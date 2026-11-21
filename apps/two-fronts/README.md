@@ -2,6 +2,19 @@
 
 > **What it proves:** a turn-based strategy engine and three.js battles, on the ground and in orbit, built apart and joined by small JSON types. Against the AI or hotseat it runs in the page; online, each campaign is a Durable Object that keeps the turns in its SQLite. One of the [Rusty Buns](../../README.md#see-it-work) examples.
 
+## Play it
+
+**What it is:** a war game in space and on the ground: tough space marines against a horde of small, furry forest fighters.
+
+**Play:** https://two-fronts.notryanquinn.workers.dev
+
+**How to play:** press *Hold the line* to jump straight into a fight, or *Be the horde* to play the other side.
+For the long game, start a campaign (↺): take planets on a star map, one turn at a time, against the computer or a friend.
+
+**Controls:** Desktop: click the field, then WASD move, mouse look, click fire, Q air strike, E get in a vehicle, Esc let go of the mouse. · Phone: a stick to move, drag to look, buttons to fire.
+
+**Account:** not needed. Sign in with eqosys to play a campaign with friends.
+
 *The Wooka came with a furry ferocity unseen by the likes of man.*
 
 The Thunder Marines landed on Doren, the forest moon, to clear out a few knee-high locals. They brought walkers, gunships and orbital strikes. The locals brought clubs, and they know every fern. Somewhere between the drop and the generator, the hunters became the hunted.

@@ -2,6 +2,19 @@
 
 > **What it proves:** a repo can be a level. Real ground, a codebase laid onto it, and a third-person shooter played through it, in the page on your own, or by up to 64 players in one battle that the desktop app hosts in its world and opens to the LAN, or online in a Durable Object per room. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+## Play it
+
+**What it is:** a toy soldier shooting game where the map is built from a real code project: big files are tall buildings.
+
+**Play:** https://git-recon.notryanquinn.workers.dev
+
+**How to play:** pick the first open chapter on the menu and fight your way through the orange guards.
+Your guns are named after git commands. Battles with other players are on the same menu.
+
+**Controls:** Desktop: click the view, then WASD move, mouse aim, click fire, Space jump, R reload, F get in a vehicle. · Phone: a stick on the left, drag to aim, buttons on the right to fire, jump and reload.
+
+**Account:** not needed. Sign in with eqosys to play online battles under your own name.
+
 A toy-soldier third-person shooter, fought in a codebase. You're a glossy black clay soldier with a rifle: pick a thick, average or lank build, and swap your head for a logo. The repo's biggest folders are compounds in conflict, held by orange guards; its files are the buildings you fight around, and the bigger the file, the taller the building. What it is decides its shape: code is a tower, a doc a house with a pitched roof, config a silo, a test a bunker under a slab, styles and assets a stepped stack. Down a compound's guards and the folder is merged. Merge them all and you win.
 
 The story: somebody committed the nuclear launch codes to main, and the Conflict's folders want them. The campaign plays it straight, through hedgerows, farmhouses, shelled villages and a landing craft, with command on the radio sounding like a techno-thriller read by someone who hasn't slept.

@@ -1,6 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { findBlender, runBlender, warmBlender } from "@rustybuns/cli/blender";
+import { blenderVersion, findBlender, runBlender, warmBlender } from "@rustybuns/cli/blender";
 
 // The warm Blender (#3941): a build through it is byte for byte a cold one, and the MCP in front of it answers
 // load, stats and render and refuses what it shouldn't. Needs Blender (CI has none, so there it skips).
@@ -44,5 +44,23 @@ test.skipIf(!findBlender())("the MCP loads a beast, counts a part, renders a vie
   expect(png.subarray(1, 4).toString()).toBe("PNG");
   expect(outside.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("outside") }] });
   expect(missing.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("antler") }] });
+  expect(await p.exited).toBe(0);
+});
+
+// `--serve` (the dev server's beast_nudge) and `--watch` build in one warm Blender (#3822); beasts.ts pins 5.2.0.
+const blender = findBlender();
+test.skipIf(!blender || (await blenderVersion(blender)) !== "5.2.0")("beasts --serve builds one beast a line, the same GLB each time, and names a sheet it lacks", async () => {
+  expect(await Bun.spawn(["bun", join(APP, "scripts", "beasts.ts"), "jackalope"], { cwd: APP, stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+  const cold = await sha(); // a cold build, snap steps and all
+  const p = Bun.spawn(["bun", join(APP, "scripts", "beasts.ts"), "--serve"], { cwd: APP, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+  p.stdin.write("jackalope\nnope\njackalope\n");
+  p.stdin.end();
+  const built = (await new Response(p.stdout).text()).trim().split("\n").map((l) => JSON.parse(l.replace(/^@@built /, "")));
+  expect(built).toEqual([
+    { id: "jackalope", ok: true, log: expect.stringContaining("feet 4/4") },
+    { id: "nope", ok: false, log: "no sheet for nope" },
+    { id: "jackalope", ok: true, log: expect.stringContaining("feet 4/4") },
+  ]);
+  expect(await sha()).toBe(cold);
   expect(await p.exited).toBe(0);
 });

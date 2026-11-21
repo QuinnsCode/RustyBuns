@@ -16,12 +16,13 @@ import { appDir } from "./app-dirs.ts";
 import { counterJourney, start, stop } from "./counter.ts";
 
 // `spa`: the counter is a "use server" action. `page`: not on the counter contract (its own test is the journey),
-// so the binary check is that it serves behind its token and the page says this.
-export const EXAMPLES: Record<string, { spa?: string; page?: string }> = {
+// so the binary check is that it serves behind its token and the page says this. `edge: false`: desktop and box
+// only (a node:http server), so no edge plan.
+export const EXAMPLES: Record<string, { spa?: string; page?: string; edge?: false }> = {
   "hono-example": {}, "elysia-example": {}, "astro-example": {}, "react-router-example": {}, "sveltekit-example": {},
   "nuxt-example": {}, "solidstart-example": {}, "qwik-example": {}, "nextjs-example": {}, "tanstack-start-example": { page: "Rendered on the server from D1" },
   "svelte-spa-example": { spa: "src/actions/counter.ts" }, "vue-spa-example": { spa: "src/actions/counter.ts" },
-  "solid-spa-example": { spa: "src/actions/counter.ts" },
+  "solid-spa-example": { spa: "src/actions/counter.ts" }, "express-example": { edge: false },
 };
 
 const root = join(import.meta.dir, "..");
@@ -38,9 +39,9 @@ async function binary(app: string, dir: string): Promise<string> {
   const out = await run(["bun", cli, "build", "desktop"], dir);
   const bin = /^built (\S+)$/m.exec(out)?.[1];
   if (!bin) throw new Error(`build desktop printed no binary:\n${out.slice(-1000)}`);
-  const { spa, page } = EXAMPLES[app]!;
+  const { spa, page, edge } = EXAMPLES[app]!;
   if (page) await serves(dir, [join(dir, bin)], page);
-  else await counterJourney(dir, { host: [join(dir, bin)], spa });
+  else await counterJourney(dir, { host: [join(dir, bin)], spa, edge });
   return `journey passed on ${bin} (${Math.round(Bun.file(join(dir, bin)).size / 1e6)} MB)`;
 }
 
@@ -76,7 +77,8 @@ async function shot(app: string, dir: string): Promise<string> {
   }
 }
 
-async function plan(_app: string, dir: string): Promise<string> {
+async function plan(app: string, dir: string): Promise<string> {
+  if (EXAMPLES[app]!.edge === false) return "desktop and box only: no edge to plan";
   // A plan writes wrangler.jsonc where the app has none (the SPAs); a read-only check leaves the tree as it was.
   const wrangler = join(dir, "wrangler.jsonc"), had = existsSync(wrangler);
   const out = await run(["bun", cli, "plan", "--offline"], dir).finally(() => { if (!had) rmSync(wrangler, { force: true }); });

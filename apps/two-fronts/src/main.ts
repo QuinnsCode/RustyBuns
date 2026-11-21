@@ -797,6 +797,7 @@ function chooseGame(first = false) {
     <div id="my-wars" hidden></div>
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
   void showWars();
+  dockCoach();
   // Who you are, on the title as in the panel: your eqosys name with Sign out, or Sign in.
   $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first), onSignIn: () => chooseGame(first) }));
 }
@@ -1346,8 +1347,13 @@ async function flyOrbit(o: NonNullable<ReturnType<typeof parseOrbit>>) {
   orbitOver(o.spec)(result);
 }
 
-function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "ui-panel ui-dialog"; $("modal").hidden = false; }
-function hideModal() { $("modal").hidden = true; }
+/** The how-to card floats over the map, but on the title it sits in the sheet under the header, where it covers
+ *  nothing (a fixed card lay over the title's art and name on a phone). Back on `body` before the sheet is rewritten or shut. */
+const coachCard = () => document.querySelector<HTMLElement>("aside.eq-coach");
+function dockCoach() { const card = coachCard(), crest = $("modal-body").querySelector("header.crest"); if (card && crest) crest.after(card); }
+function parkCoach() { const card = coachCard(); if (card && card.parentElement !== document.body) document.body.append(card); }
+function showModal(html: string) { parkCoach(); $("modal-body").innerHTML = html; $("modal-body").className = "ui-panel ui-dialog"; $("modal").hidden = false; }
+function hideModal() { parkCoach(); $("modal").hidden = true; }
 
 // Back from the battle's result: the next seat, or the waiting room.
 document.addEventListener("click", (e) => {
