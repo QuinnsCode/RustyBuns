@@ -31,9 +31,13 @@ export const unknownTools = (code: string, names: Iterable<string>): string[] =>
   return [...new Set([...bare.matchAll(/(?<![\w$]|\.\s*)tools\s*\.\s*([A-Za-z_$][\w$]*)/g)].map((m) => m[1]!))].filter((n) => !known.has(n));
 };
 
-/** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.<binding>. */
-export const wrap = (code: string, input: unknown, binding: string, maxCalls: number) => `
-const INPUT = ${JSON.stringify(input ?? null)};
+/** A library a program can use by name: `{ mpl: source }` is the module `./mpl.js`, and the program reads it as `mpl`. */
+const LIB = /^[A-Za-z_$][\w$]*$/;
+const TAKEN = new Set(["program", "tools", "input", "console", "INPUT", "call", "made"]);
+
+/** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.<binding> and each of `libs` by name. */
+export const wrap = (code: string, input: unknown, binding: string, maxCalls: number, libs: string[] = []) => `
+${libs.map((n) => `import * as ${n} from "./${n}.js";\n`).join("")}const INPUT = ${JSON.stringify(input ?? null)};
 // The count lives in a closure, not a name the program's code could assign (calls = 0 from inside it).
 const [call, made] = ((n) => [async (env, name, args) => {
   if (++n > ${maxCalls}) { const e = new Error("429: a program makes at most ${maxCalls} tool calls"); e.status = 429; throw e; }
@@ -41,7 +45,7 @@ const [call, made] = ((n) => [async (env, name, args) => {
   if (r.status >= 300) { const e = new Error(r.status + ": " + r.text); e.status = r.status; throw e; }
   try { return JSON.parse(r.text); } catch { return r.text; }
 }, () => n])(0);
-const program = async ({ tools, console, input }) => {
+const program = async ({ tools, console, input${libs.map((n) => ", " + n).join("")} }) => {
 ${code}
 };
 export default {
@@ -50,7 +54,7 @@ export default {
     const say = (...a) => { log.push(a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")); };
     const tools = new Proxy({}, { get: (_, name) => (args) => call(env, String(name), args) });
     try {
-      const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say } });
+      const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say }${libs.map((n) => ", " + n).join("")} });
       return Response.json({ ok: true, result: result === undefined ? null : result, log, calls: made() });
     } catch (e) {
       return Response.json({ ok: false, error: String(e && e.message || e), log, calls: made() });
@@ -77,6 +81,9 @@ export interface RunOptions {
   cpuMs: number;
   maxBack: number;
   maxCode: number;
+  /** Libraries the program reads by name, each one ES module's source with no imports (`{ mpl: MPL_JS }`). They load beside it
+   *  as `<name>.js`, since an isolated Worker can't `import()` anything. */
+  libs?: Record<string, string>;
   /** What to say when the program names tools that don't exist. */
   unknownMessage: (unknown: string[]) => string;
 }
@@ -109,9 +116,14 @@ export async function runProgram(loader: WorkerLoaderLike, code: string, o: RunO
     ? Promise.resolve({ status: 429, text: JSON.stringify({ error: `a program makes at most ${o.maxCalls} tool calls` }) })
     : o.run(name, json);
   try {
+    const libs = Object.keys(o.libs ?? {});
+    const bad = libs.find((n) => !LIB.test(n) || TAKEN.has(n));
+    if (bad !== undefined) throw new Error(`a library is named like a variable the wrap doesn't use, not "${bad}"`);
+    const modules: Record<string, string> = { "program.js": wrap(code, o.input, o.binding, o.maxCalls, libs) };
+    for (const [n, js] of Object.entries(o.libs ?? {})) modules[`${n}.js`] = js;
     // A Worker for each run: one cached by id would keep the first caller's binding, and so their reach.
     const stub = loader.get(`prog:${crypto.randomUUID()}`, () => ({
-      compatibilityDate: "2026-06-01", mainModule: "program.js", modules: { "program.js": wrap(code, o.input, o.binding, o.maxCalls) },
+      compatibilityDate: "2026-06-01", mainModule: "program.js", modules,
       env: { [o.binding]: o.bridge ?? { call: run } }, globalOutbound: null,
       // The program's only outbound is its binding, so each tool call is a subrequest: the edge holds the call cap too.
       limits: { cpuMs: o.cpuMs, subRequests: o.maxCalls },

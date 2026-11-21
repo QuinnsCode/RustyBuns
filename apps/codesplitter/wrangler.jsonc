@@ -37,6 +37,10 @@
     {
       "binding": "LEVEL_CHUNKS",
       "bucket_name": "codesplitter-level-chunks"
+    },
+    {
+      "binding": "CHARTS",
+      "bucket_name": "codesplitter-charts"
     }
   ],
   "artifacts": [
