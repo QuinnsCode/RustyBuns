@@ -183,18 +183,7 @@ impl Plugin {
 
     /// The parameter moves the plugin made itself since the last call (last value per parameter), as
     /// `[{"id","value"}]`. Kept until they fit `cap` bytes, so a caller whose buffer was short asks again.
-    pub fn take_changes(&mut self, cap: usize) -> String {
-        let mut s = String::from("[");
-        for (k, (id, v)) in self.changes.iter().enumerate() {
-            if k > 0 { s.push(','); }
-            s.push_str(&format!("{{\"id\":{id},\"value\":"));
-            json_num(*v, &mut s);
-            s.push('}');
-        }
-        s.push(']');
-        if s.len() <= cap { self.changes.clear(); }
-        s
-    }
+    pub fn take_changes(&mut self, cap: usize) -> String { take_changes(&mut self.changes, cap) }
 }
 
 /// Our window for an editor that embeds. Hand-written over the Objective-C runtime (the engine keeps no dependencies),

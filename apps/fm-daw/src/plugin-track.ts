@@ -4,7 +4,7 @@
 // `web`) runs in the page itself (src/ui/wam.ts).
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 
-/** One plugin a `.clap` holds, as the track menu lists it. */
+/** One plugin a `.clap` or `.vst3` holds, as the track menu lists it. */
 export const PluginInfo = obj({ id: str(500), name: str(500), vendor: str(500, { min: 0 }), version: str(200, { min: 0 }), features: arr(str(200, { min: 0 }), 32) });
 export type PluginInfo = Of<typeof PluginInfo>;
 /** One of a running plugin's parameters: a slider, so MIDI learn works on it. */
@@ -24,13 +24,13 @@ export const PluginValue = obj({ id: int(0, 2 ** 32 - 1), v: num(-1e300, 1e300) 
 export type PluginValue = Of<typeof PluginValue>;
 
 export const TrackPlugin = obj({
-  /** The `.clap` on the host's disk (a file, or a macOS bundle folder); for a web plugin, its module's address. */
+  /** The `.clap` or `.vst3` on the host's disk (a file, or a macOS bundle folder); for a web plugin, its module's address. */
   path: str(4096),
   /** A Web Audio Module, played in the page; left out for a CLAP plugin on the desktop host. */
   web: opt(bool()),
-  /** Which plugin inside it (a `.clap` can hold several). */
+  /** Which plugin inside it (a bundle can hold several). */
   index: int(0, 255),
-  /** The plugin's own id (CLAP's reverse-domain one): how a friend's computer finds its copy, wherever it's installed. */
+  /** The plugin's own id (CLAP's reverse-domain one, a VST3's class id in hex): how a friend's computer finds its copy, wherever it's installed. */
   id: opt(str(500)),
   name: str(200),
   values: arr(PluginValue, MAX_PLUGIN_VALUES, { drop: true }),
@@ -73,7 +73,7 @@ export const PluginEvent: Guard<PluginEvent> = (v) => {
 export const PluginAskArgs = obj({ track: int(0, 63), frames: int(1, MAX_PLUGIN_FRAMES), events: arr(PluginEvent, 4096) });
 
 // What the host's actions answer (src/actions/plugins.ts), read on the page through these.
-/** One plugin the track menu offers: the `.clap` it's in, its place there, and its name. */
+/** One plugin the track menu offers: the `.clap` or `.vst3` it's in, its place there, and its name. */
 export const PluginChoice = obj({ path: str(4096), index: int(0, 255), name: str(500), vendor: str(500, { min: 0 }), web: opt(bool()),
   /** The plugin's own id, the same on every computer that has it. */
   id: opt(str(500)) });
