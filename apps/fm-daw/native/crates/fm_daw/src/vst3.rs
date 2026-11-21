@@ -515,7 +515,13 @@ pub fn binary_of(path: &str) -> String {
 
 /// The module's own start and stop calls, which each OS names differently (`bundleEntry`, `ModuleEntry`, `InitDll`).
 /// A library without them (ours) starts as it is.
-struct Module { lib: *mut c_void, exit: Option<unsafe extern "C" fn() -> bool>, cf_bundle: *mut c_void }
+struct Module {
+    lib: *mut c_void,
+    exit: Option<unsafe extern "C" fn() -> bool>,
+    /// macOS only: the CFBundleRef handed to `bundleEntry`, released after `bundleExit`.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    cf_bundle: *mut c_void,
+}
 
 #[cfg(target_os = "macos")]
 mod cf {
@@ -919,7 +925,7 @@ mod tests {
 
     #[test]
     fn ids_read_the_same_on_every_os() {
-        assert_eq!(uid_text(&FUNKNOWN), "00000000000000000000C00000000046");
+        assert_eq!(uid_text(&FUNKNOWN), "0000000000000000C000000000000046");
         assert_eq!(uid_text(&IEDIT_CONTROLLER), "DCD7BBE37742448DA874AACC979C759E");
     }
 
