@@ -9,26 +9,27 @@
   <body>
     <header class="top">
       <b class="brand"><span data-icon="box"></span>ShareSplat</b>
-      <span class="tag">Phone photos of a product in, a 3D spin for the store page out.</span>
+      <span class="tag">Walk round a product taking photos with your phone, and get a 3D view shoppers can spin on your shop page.</span>
     </header>
     <main>
       <section class="panel capture" aria-labelledby="cap-h">
-        <h2 id="cap-h"><span data-icon="camera"></span>Shoot it</h2>
+        <h2 id="cap-h"><span data-icon="camera"></span>Take the photos</h2>
+        <p class="hint">Pick how many, then tap Take a photo. The dial shows where to stand for each one.</p>
         <div class="plans" role="radiogroup" aria-label="Capture plan">
           <button type="button" role="radio" data-plan="six" aria-checked="false">
-            <b>Six sides</b><small>6 photos. An AI guesses the shape: quick, not exact.</small>
+            <b>Six sides</b><small>6 photos, about a minute: front, back, both sides, top, bottom. Quick, but the shape is a guess.</small>
           </button>
           <button type="button" role="radio" data-plan="orbit" aria-checked="true">
-            <b>Orbit</b><small>72 photos in rings. A real Gaussian splat: what you shot, as shot.</small>
+            <b>All the way round</b><small>72 photos in rings, about 10 minutes. Slower, but it looks just like the real thing.</small>
           </button>
         </div>
         <svg id="dial" viewBox="-110 -110 220 220" aria-label="Which shots are done"></svg>
         <p id="say" class="say" aria-live="polite"></p>
         <div class="row">
-          <label class="btn primary"><span data-icon="aperture"></span>Take next
+          <label class="btn primary"><span data-icon="aperture"></span>Take a photo
             <input id="shoot" type="file" accept="image/*" capture="environment" hidden />
           </label>
-          <label class="btn"><span data-icon="images"></span>Add a batch
+          <label class="btn"><span data-icon="images"></span>Add many
             <input id="batch" type="file" accept="image/*,video/*" multiple hidden />
           </label>
           <button id="reset" type="button" class="btn icon" title="Start over"><span data-icon="rotate-ccw"></span></button>
@@ -38,10 +39,10 @@
       </section>
 
       <section class="panel view" aria-labelledby="view-h">
-        <h2 id="view-h"><span data-icon="rotate-3d"></span>Spin it</h2>
+        <h2 id="view-h"><span data-icon="rotate-3d"></span>Your 3D view</h2>
         <div id="stage" class="stage">
           <canvas id="canvas"></canvas>
-          <div id="drop" class="drop"><span data-icon="upload"></span>Drop a .ply, .spz, .sog or .splat here, or <label class="link">pick one<input id="file" type="file" accept=".ply,.spz,.sog,.splat,.ksplat" hidden /></label></div>
+          <div id="drop" class="drop"><span data-icon="upload"></span><span>Have a 3D scan already? Drop it here, or <label class="link">pick one<input id="file" type="file" accept=".ply,.spz,.sog,.splat,.ksplat" hidden /></label>. Or <button id="example" type="button" class="link">see an example</button>.</span></div>
         </div>
         <div class="row">
           <button id="spin" type="button" class="btn icon" title="Turntable on/off" aria-pressed="true"><span data-icon="refresh-cw"></span></button>
