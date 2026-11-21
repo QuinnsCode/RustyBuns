@@ -39,7 +39,7 @@ import { blockOf, buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
 import { bind, KEY, pad } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { drawTally } from "./tally.ts";
 import { mountPortrait } from "./portrait.ts";
@@ -1283,6 +1283,11 @@ const reconState = () => {
 /** A one-frame press, as the keys make one: the next frame reads it and lets go. */
 const press = (fn: () => void) => () => { playing(); fn(); };
 addCommands([
+  // The "?" panel's words (the lede, the touch line, the key list) and the coach card's steps.
+  howToPlay("recon", () => {
+    const at = (sel: string) => wordsOf(document.querySelector(`#about ${sel}`)), steps = coach.steps();
+    return { goal: at(".lede"), desktop: at("dl.keys"), phone: at(".touch-hint"), first: `Pick the first open level on the menu. Then ${steps[0]?.title.toLowerCase()}: ${steps[0]?.say ?? ""}`, steps };
+  }),
   { name: "recon_state", title: "Look at the fight", group: "Level", description: "The level, status, lives, objective, scope step, look angles and your soldier (hp, shield, gun, rounds, kit, position); on the menu, your role and wins.",
     annotations: { readOnlyHint: true }, execute: reconState },
   { name: "recon_levels", title: "List the levels", group: "Level", description: "The campaign's chapters in order: level id, title, and whether it is open yet.",

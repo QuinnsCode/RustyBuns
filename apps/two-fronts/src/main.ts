@@ -14,7 +14,7 @@ import { EVENT_ICONS, eventLine, eventNow, eventSoon, forecasting, galeAt, shelt
 import { yearOf } from "./war/objectives.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { applyTheme, installUi, toast as say } from "@rustybuns/ui";
-import { WAR_TABLE, mountControlsPanel } from "./ui/controls-panel.ts";
+import { BATTLE_KEYS, WAR_TABLE, mountControlsPanel } from "./ui/controls-panel.ts";
 import { KIND_ICONS, drawMap, drawPlanet, galeOn, mapLegend } from "./ui/map.ts";
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
@@ -28,7 +28,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, reportButton, signInHere } from "./eqosys.ts";
@@ -960,6 +960,10 @@ function passTo(f: Faction) {
 
 // --- Choosing and placing a fleet ---
 
+/** How a war goes, as the fleet picker's "?" says it (and tf_how_to_play reads it out). */
+const WAR_STEPS = `<ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
+      <li><b>Fight</b>: each turn give orders at once with the other side. Moving into enemy space is an attack. Win the sky over a world and you can bombard its garrison; hold the ground to win the war.</li></ol>`;
+
 // The first thing a war asks: which fleet. A preset, or a mix of your own, from a pool of value.
 function pickFleet() {
   const l = loadout ?? loadoutOf(c, me, "line"), pool = c.pool?.[me] ?? 0, left = room(c, me, l);
@@ -967,8 +971,7 @@ function pickFleet() {
     <button type="button" class="icon-btn" data-custom="${kind}:-1" aria-label="Fewer ${name}" ${l[kind] ? "" : "disabled"}>${icon("minus", 13)}</button><b>${l[kind]}</b>
     <button type="button" class="icon-btn" data-custom="${kind}:1" aria-label="More ${name}" ${left >= cost ? "" : "disabled"}>${icon("plus", 13)}</button></span>`;
   showModal(`<h2>Choose your fleet ${info("about-fleet", "How a war goes")}</h2>
-    ${about("about-fleet", `<ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
-      <li><b>Fight</b>: each turn give orders at once with the other side. Moving into enemy space is an attack. Win the sky over a world and you can bombard its garrison; hold the ground to win the war.</li></ol>
+    ${about("about-fleet", `${WAR_STEPS}
       <dl class="keys">${PRESET_IDS.map((id) => `<dt>${PRESETS[id].name}</dt><dd>${PRESETS[id].blurb}</dd>`).join("")}</dl>`)}
     <div class="presets">${PRESET_IDS.map((id) => {
       const p = PRESETS[id], x = loadoutOf(c, me, id);
@@ -1389,6 +1392,16 @@ Object.assign(window, { twoFronts });
 const flat = (a: unknown): Record<string, string | number | boolean> =>
   Object.fromEntries(Object.entries(isRecord(a) ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
 addCommands([
+  // The fleet picker's "?" (how a war goes), the Controls cog's battle keys and the coach card's steps.
+  howToPlay("tf", () => {
+    const box = document.createElement("div"), steps = coach.steps();
+    box.innerHTML = WAR_STEPS;
+    return {
+      goal: wordsOf(box), desktop: `On the map, click a world, then the panel's buttons. In a battle:\n${BATTLE_KEYS.map(([k, v]) => `${k}: ${v}`).join("\n")}`,
+      phone: "On the map, tap where a mouse would click. In a battle: the stick moves, a drag looks, and the buttons fire and give orders (Controls swaps them to the other hand).",
+      first: `${steps[0]?.title}: ${steps[0]?.say ?? ""}`, steps,
+    };
+  }),
   { name: "tf_jump", title: "Jump into a battle", group: "Battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
     inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },
     execute: (a) => { const { assist, ...rest } = flat(a); return twoFronts.jump({ ...rest, ...(assist === false && { assist: "off" }) }); } },

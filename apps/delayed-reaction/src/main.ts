@@ -9,7 +9,7 @@ import { drawRunner } from "./runner.ts";
 import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { check, int, obj, oneOf } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
 import { tutorial } from "@rustybuns/util/tutorial";
@@ -325,7 +325,14 @@ const hook = {
 };
 Reflect.set(window, "delayedReaction", hook);
 const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" }, stem: { type: "string", enum: ["drums", "bass", "synth", "dub"] }, setup: { type: "string", enum: SETUP_NAMES } };
+// The "?" panel's words (its first line is the goal), the pads, and the coach card's steps.
+const howTo = () => {
+  const [goal = "", ...keys] = wordsOf(document.getElementById("about")).split("\n"), pads = document.querySelectorAll("#pads .pad").length;
+  const steps = coach.steps(), one = steps[0];
+  return { goal, desktop: keys.join("\n"), phone: `Tap the ${pads} pads at the bottom.`, first: `Pick a preset. ${one ? `${one.title}: ${one.say ?? ""}` : ""}`.trim(), steps };
+};
 addCommands([
+  howToPlay("dr", howTo),
   { name: "dr_start", title: "Start in a state", group: "Run", description: "Start a run at a level, tempo, delay, beat, speed and lane, optionally hearing one stem (drums, bass, synth, dub) or playing one of the arranged dub tracks (setup). Returns the link that lands in the same state.",
     inputSchema: { type: "object", properties: props }, execute: (a) => ({ link: hook.start(a) }) },
   { name: "dr_state", title: "Look at the run", group: "Run", description: "Score, combo, lives, speed, lane and beat of the run now (menu: true between runs), the next door to step into, and where the first-time tutorial is.",

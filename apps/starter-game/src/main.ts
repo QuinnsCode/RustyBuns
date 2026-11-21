@@ -3,6 +3,8 @@
 // asks the game instead of reading screenshots. Keep it in step when the game grows.
 import { H, W, newWorld, start, step, type World } from "./game.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
+import { addCommands, howToPlay } from "@rustybuns/util/commands";
+import { mountPalette } from "@rustybuns/util/palette";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage"), ctx = canvas.getContext("2d")!;
@@ -99,5 +101,18 @@ const harness = {
   aim: (x: number) => { aim = x; },
 };
 window.starterGame = harness;
+
+// The page's commands (@rustybuns/util/commands): WebMCP tools for an agent in the browser, window.__commands for a
+// probe or a test (bun run probe starter-game / --cmd starter_game_how_to_play), and the Cmd/Ctrl+K palette. Their
+// prefix is renamed with the game (bun run new-game). how_to_play reads the menu's own words, so they never drift.
+const PREFIX = "starter_game";
+const words = (id: string) => $(id).textContent?.trim() ?? "";
+addCommands([
+  howToPlay(PREFIX, () => ({ goal: words("goal"), desktop: words("desktop"), phone: words("phone"), first: `Press ${words("play")}.` })),
+  { name: `${PREFIX}_start`, title: "Start a round", group: "Play", description: "Start a new round (the Play button). Answers with the state.", execute: () => { play(); return harness.state(); } },
+  { name: `${PREFIX}_state`, title: "Look at the round", group: "Play", description: "The round now: phase (menu, play, over), score, lives, seconds in, the basket's x (0..400), stars falling, and the eqosys sign-in and party.",
+    annotations: { readOnlyHint: true }, execute: () => harness.state() },
+]);
+mountPalette();
 
 void boot();

@@ -35,7 +35,7 @@ import { gallery, PAGE } from "./gallery.ts";
 import { sparring, STATS, type Stat } from "./spar.ts";
 import { BELIEVERS, CAMPS, campers, campOf, visit as visitCamp } from "./believers.ts";
 import { mountAgent } from "./gallery-agent.ts";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { creatureModel } from "./model.ts";
 import { ALL_SKINS, fightSkin, REGIONS, type Region } from "./regions.ts";
@@ -2523,6 +2523,14 @@ const idArg = (a: unknown, k: string) => {
   return c.id;
 };
 addCommands([
+  // The title page's words, the "?" key lines under the picker and on the world map, the touch buttons' labels and the coach card's steps.
+  howToPlay("mm", () => ({
+    goal: `${LANDING.title.subtitle}\n${LANDING.title.tagline}`,
+    desktop: [wordsOf($("#fightKeys")), wordsOf($("#worldKeys"))].filter(Boolean).join("\n"),
+    phone: `Drag on the left half to move. The buttons on the right: ${TOUCH_BUTTONS.map((b) => b.label).join(", ")}.`,
+    first: `${LANDING.title.newJourney}. ${LANDING.starters.says} ${LANDING.starters.after}`,
+    steps: coach.steps(),
+  })),
   { name: "mm_state", title: "Look at the fight", group: "Fight", description: "The fight on screen: tick, over, winner, each fighter's hp, launch, stamina, energy, state and position; and the world trip it is, if any. { fight: null } when none is on.",
     annotations: { readOnlyHint: true }, execute: () => ({ fight: fightState(), trip: tripState() }) },
   { name: "mm_roster", title: "List the creatures", group: "Fight", palette: false, description: "Every creature: id, name, archetype, fields and home region.",
