@@ -1,7 +1,7 @@
 // The lava-lamp edition of the mpl pie: mpl's own SVG with a little lamp inside each slice. Soft blobs of wax in a
 // lighter shade of the slice's colour rise, stretch, merge and sink through a darker shade of it, and bubbles stream
 // up. Each slice's wax goes through a goo filter (blur, then a colour-matrix threshold on alpha), so blobs that touch
-// flow into one, and everything is clipped to the slice's own path, drawn under the labels and legend.
+// flow into one, and everything is clipped to the slice's own path, drawn under the labels and their leader lines.
 //
 // SMIL only, no script, so the file plays when opened in a browser. Every animation's period divides `loop`, so the
 // file at `loop` seconds is the file at 0 and a recording of it loops without a seam. Imported by pie.ts.
@@ -53,7 +53,7 @@ function shade(hex: string, k: number): string {
   return `#${c.map((v) => Math.round(lerp(v, to, Math.abs(k))).toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** mpl's SVG with a lava lamp in every wedge. `colors[i]` is wedge i's legend colour. */
+/** mpl's SVG with a lava lamp in every wedge. `colors[i]` is wedge i's colour. */
 export function lavaLamp(svg: string, colors: string[], loop: number, seed = 7): string {
   const rand = mulberry32(seed);
   const pick = <T>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
