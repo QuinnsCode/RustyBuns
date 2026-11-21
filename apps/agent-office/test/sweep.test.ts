@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, lockVersions, pruneBunCache, slug, sweepModules, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -34,28 +34,65 @@ test("a sent-home worker's scratch folder goes; live worktrees, their subfolders
   for (const [k, n] of Object.entries(names)) expect([k, existsSync(path.join(base, n))]).toEqual([k, k !== "gone"]);
 });
 
-test("node_modules go from worktrees nobody sits at; a seated one, a fresh hire's and the code stay", async () => {
+test("node_modules and ignored build output go from worktrees nobody sits at; a seated one, a fresh hire's, a checked-in dist and the code stay", async () => {
   const repo = tmp();
+  const git = (dir: string, ...a: string[]) => Bun.spawnSync(["git", "-C", dir, ...a], { stdout: "ignore", stderr: "ignore" });
   const tree = (name: string, hoursOld: number) => {
     const dir = path.join(repo, WORKTREES, name);
-    for (const m of ["node_modules/effect", "apps/game/node_modules/three"]) mkdirSync(path.join(dir, m), { recursive: true });
+    for (const m of ["node_modules/effect", "apps/game/node_modules/three", "apps/game/dist", "apps/tool/target/debug", "apps/game/.wrangler/tmp", "apps/docs/dist"]) mkdirSync(path.join(dir, m), { recursive: true });
     writeFileSync(path.join(dir, "node_modules/effect/index.js"), Buffer.alloc(1 << 20));
     writeFileSync(path.join(dir, "apps/game/main.ts"), "work");
-    writeFileSync(path.join(dir, ".git"), "gitdir: x");
+    writeFileSync(path.join(dir, "apps/docs/dist/index.html"), "checked in");
+    writeFileSync(path.join(dir, ".gitignore"), "node_modules\ndist\ntarget\n.wrangler\n");
+    git(dir, "init", "-q");
+    git(dir, "add", "-f", ".gitignore", "apps/game/main.ts", "apps/docs/dist/index.html");
     const at = (Date.now() - hoursOld * 3_600_000) / 1000;
     utimesSync(path.join(dir, ".git"), at, at);
     return dir;
   };
   const seated = tree("gizmo-1", 30), left = tree("nibble-2", 30), hiring = tree("bolt-3", 0.1);
+  const gone = ["node_modules", "apps/game/node_modules", "apps/game/dist", "apps/tool/target", "apps/game/.wrangler/tmp"].map((p) => path.join(left, p));
 
-  const dry = await sweepModules(repo, [seated], false);
-  expect(dry.paths.sort()).toEqual([path.join(left, "apps/game/node_modules"), path.join(left, "node_modules")]);
+  const dry = await sweepBuilt(repo, [seated], false);
+  expect(dry.paths.sort()).toEqual([...gone].sort());
   expect(dry.bytes).toBeGreaterThanOrEqual(1 << 20);
   expect(existsSync(path.join(left, "node_modules"))).toBe(true);
 
-  await sweepModules(repo, [seated], true);
-  expect([existsSync(path.join(left, "node_modules")), existsSync(path.join(left, "apps/game/node_modules")), existsSync(path.join(left, "apps/game/main.ts"))]).toEqual([false, false, true]);
-  expect([existsSync(path.join(seated, "node_modules")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
+  await sweepBuilt(repo, [seated], true);
+  expect(gone.filter((p) => existsSync(p))).toEqual([]);
+  expect([existsSync(path.join(left, "apps/game/main.ts")), existsSync(path.join(left, "apps/docs/dist/index.html"))]).toEqual([true, true]);
+  expect([existsSync(path.join(seated, "apps/game/dist")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
+});
+
+test("Playwright keeps the builds any installed playwright-core names and drops the rest", async () => {
+  const root = tmp();
+  const dir = path.join(root, "ms-playwright"), cache = path.join(root, "cache"), checkout = path.join(root, "checkout");
+  const core = (at: string, builds: Record<string, string>) => {
+    mkdirSync(at, { recursive: true });
+    writeFileSync(path.join(at, "browsers.json"), JSON.stringify({ browsers: Object.entries(builds).map(([name, revision]) => ({ name, revision })) }));
+  };
+  core(path.join(cache, "playwright-core@1.62.1@@@1"), { chromium: "1234", "chromium-headless-shell": "1234" });
+  core(path.join(checkout, "node_modules", ".pnpm", "playwright-core@1.57.0", "node_modules", "playwright-core"), { firefox: "1497" });
+  const elsewhere = path.join(root, "elsewhere", "playwright-core"); // known only through Playwright's own .links
+  core(elsewhere, { webkit: "2227" });
+  mkdirSync(path.join(dir, ".links"), { recursive: true });
+  writeFileSync(path.join(dir, ".links", "abc"), elsewhere);
+  writeFileSync(path.join(dir, ".links", "old"), path.join(root, "deleted-project"));
+  const kept = ["chromium-1234", "chromium_headless_shell-1234", "firefox-1497", "webkit-2227", "notes"];
+  const old = ["chromium-1200", "chromium_headless_shell-1200", "ffmpeg-1011"];
+  for (const n of [...kept, ...old, "chromium-1300"]) mkdirSync(path.join(dir, n), { recursive: true });
+  const at = (Date.now() - 2 * 3_600_000) / 1000;
+  for (const n of [...kept, ...old]) utimesSync(path.join(dir, n), at, at); // chromium-1300 is an install running now
+
+  const dry = await prunePlaywright([checkout], false, dir, cache);
+  expect([dry.paths.map((p) => path.basename(p)).sort(), dry.locks]).toEqual([[...old].sort(), 3]);
+  await prunePlaywright([checkout], true, dir, cache);
+  expect(old.filter((n) => existsSync(path.join(dir, n)))).toEqual([]);
+  expect([...kept, "chromium-1300"].filter((n) => !existsSync(path.join(dir, n)))).toEqual([]);
+
+  // no playwright-core found: nothing is known to be unused, so nothing goes
+  expect((await prunePlaywright([], true, path.join(root, "empty"), path.join(root, "none"))).refused).toContain("nothing is known");
+  expect(playwrightBuilds({ browsers: [{ name: "webkit", revision: "2227", revisionOverrides: { mac12: "2009" } }] })).toEqual(["webkit-2227", "webkit-2009"]);
 });
 
 test("the bun cache keeps what any bun.lock names and recent downloads, and drops other versions with their links", async () => {

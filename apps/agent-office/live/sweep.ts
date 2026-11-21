@@ -7,14 +7,18 @@
 //     started in a subfolder). Anything that doesn't parse stays. The office runs it on start and after each send-home.
 //  2. Bun's cache, ~/.bun/install/cache, which keeps every version ever downloaded. `pruneBunCache` keeps what any
 //     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. Manual, dry run first.
-//  3. node_modules in worktrees no worker sits at (kept on send-home because git sees work main lacks). The office runs
-//     it after each send-home, with the workers it has; `office:sweep` asks `office-workers list` and skips without it.
+//  3. node_modules and build output (`dist`, `target`, `.wrangler/tmp`, only where git ignores them) in worktrees no
+//     worker sits at (kept on send-home because git sees work main lacks). A seated worker may be serving its `dist`, so
+//     the rule needs the office's list of who sits where: the office runs it after each send-home, with the workers it
+//     has; `office:sweep` asks `office-workers list` and skips without it (#3387).
+//  4. Playwright's browser builds no installed playwright-core names (`prunePlaywright`, manual, dry run first).
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync } from "node:fs";
 import { lstat, readdir, readFile, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -103,33 +107,50 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
   return { paths, bytes };
 }
 
-/** The `node_modules` folders in a worktree: its root's and each workspace's, a few levels down, never inside another. */
-async function modulesIn(tree: string, depth = 3): Promise<string[]> {
-  const out: string[] = [];
+/** Build output a build or dev server puts back; it goes only where git ignores it (an app may check a `dist` in). */
+const BUILT = new Set(["dist", "target"]);
+
+/**
+ * What `bun install` and a build put back in a worktree: each `node_modules` (root's and each workspace's), and each
+ * git-ignored `dist`, `target` and `.wrangler/tmp`, a few levels down, never inside another.
+ */
+async function rebuildableIn(tree: string, depth = 3): Promise<string[]> {
+  const modules: string[] = [];
+  const built: string[] = [];
   async function walk(dir: string, left: number) {
     let entries;
     try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (!e.isDirectory() || e.name === ".git") continue;
-      if (e.name === "node_modules") out.push(path.join(dir, e.name));
-      else if (left > 0) await walk(path.join(dir, e.name), left - 1);
+      const p = path.join(dir, e.name);
+      if (e.name === "node_modules") modules.push(p);
+      else if (BUILT.has(e.name)) built.push(p);
+      else if (e.name === ".wrangler") { if (existsSync(path.join(p, "tmp"))) built.push(path.join(p, "tmp")); }
+      else if (left > 0) await walk(p, left - 1);
     }
   }
   await walk(tree, depth);
-  return out;
+  if (!built.length) return modules;
+  // a folder git doesn't call ignored (or can't say), or that holds a tracked file (check-ignore skips the index), stays
+  const rel = built.map((p) => path.relative(tree, p));
+  const lines = async (cmd: string[]) => (await run(["git", "-C", tree, ...cmd, "--", ...rel])).split("\n").filter(Boolean);
+  const ignored = new Set((await lines(["check-ignore"])).map((r) => path.resolve(tree, r)));
+  const tracked = (await lines(["ls-files"])).map((r) => path.resolve(tree, r));
+  return [...modules, ...built.filter((p) => ignored.has(p) && !tracked.some((t) => t.startsWith(p + path.sep)))];
 }
 
 /**
- * Removes (`go`) or lists the `node_modules` of `repo`'s worktrees that no worker sits at (`live`: their paths). A worker
- * sent home with work git can't see on main (a squash-merged branch looks unlanded) keeps its worktree, and the hire step's
- * `bun install` (#3167) left 3-5 GB in each. The code stays; only what `bun install` puts back goes. Never throws.
+ * Removes (`go`) or lists the `node_modules` and git-ignored build output of `repo`'s worktrees that no worker sits at
+ * (`live`: their paths). A worker sent home with work git can't see on main (a squash-merged branch looks unlanded) keeps
+ * its worktree, and the hire step's `bun install` (#3167) left 3-5 GB in each. The code stays; only what `bun install`
+ * or a build puts back goes. Never throws.
  */
-export async function sweepModules(repo: string, live: string[], go: boolean, now = Date.now()): Promise<Swept> {
+export async function sweepBuilt(repo: string, live: string[], go: boolean, now = Date.now()): Promise<Swept> {
   const seated = new Set(live.map((p) => path.resolve(p)));
   const trees = ((await treesOf(repo)) ?? []).map((n) => path.join(repo, WORKTREES, n)).filter((t) => !seated.has(t));
   // a worktree made in the last hour may be a hire still installing, before its worker is on the list
   const old = await Promise.all(trees.map(async (t) => { try { return now - (await lstat(path.join(t, ".git"))).mtimeMs > 3_600_000; } catch { return false; } }));
-  const paths = (await Promise.all(trees.filter((_, i) => old[i]).map((t) => modulesIn(t)))).flat();
+  const paths = (await Promise.all(trees.filter((_, i) => old[i]).map((t) => rebuildableIn(t)))).flat();
   const sizes = await duKb(paths);
   let bytes = 0;
   for (const p of paths) {
@@ -141,16 +162,16 @@ export async function sweepModules(repo: string, live: string[], go: boolean, no
 
 /**
  * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
- * worktree paths workers sit at), also the `node_modules` of every other worktree.
+ * worktree paths workers sit at), also the `node_modules` and build output of every other worktree.
  */
 export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
     const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
-    const m = live ? await sweepModules(dir, live, true) : { paths: [], bytes: 0 };
+    const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
-      m.paths.length && `node_modules of ${m.paths.length} worktree folder${m.paths.length === 1 ? "" : "s"} nobody sits at`,
+      m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody sits at`,
     ].filter(Boolean);
     return said.length ? `🧹 Swept ${said.join(" and ")}, ${gb(r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
@@ -280,10 +301,78 @@ export function caches(home = homedir()): Cache[] {
     { name: "npm", dir: path.join(home, ".npm"), clean: ["npm", "cache", "clean", "--force"] },
     { name: "Homebrew", dir: path.join(lib, "Homebrew"), clean: ["brew", "cleanup"] },
     { name: "pnpm", dir: path.join(lib, "pnpm"), clean: ["pnpm", "store", "prune"] },
-    { name: "Playwright", dir: path.join(lib, "ms-playwright") },
     { name: "Google", dir: path.join(lib, "Google") },
     { name: "VS Code updater", dir: path.join(lib, "com.microsoft.VSCode.ShipIt") },
   ];
+}
+
+// --- Playwright's browser builds ---------------------------------------------------------------------------------------
+
+/** What a playwright-core's `browsers.json` says it downloads; only the names and revisions matter here. */
+const BrowsersJson = obj({ browsers: arr(obj({ name: str(100), revision: str(40), revisionOverrides: opt(rec(str(40), 100)) }), 100) });
+
+/** The build folders (`chromium_headless_shell-1200`) a `browsers.json` names, every platform's override included. */
+export function playwrightBuilds(json: unknown): string[] {
+  const got = check(BrowsersJson, json);
+  return (got?.browsers ?? []).flatMap((b) => [b.revision, ...Object.values(b.revisionOverrides ?? {})].map((r) => `${b.name.replace(/-/g, "_")}-${r}`));
+}
+
+/**
+ * The playwright-core packages on this Mac we can find: the ones `playwright install` wrote into `.links` (Playwright's
+ * own record of who uses the folder), each version in Bun's cache, and each checkout's `node_modules/playwright-core`.
+ */
+async function playwrightCores(dir: string, roots: string[], cache: string): Promise<string[]> {
+  const out = new Set<string>();
+  for (const l of await readdir(path.join(dir, ".links")).catch(() => [])) {
+    const to = (await readFile(path.join(dir, ".links", l), "utf8").catch(() => "")).trim();
+    if (to) out.add(to);
+  }
+  for (const e of await readdir(cache).catch(() => [])) if (e.startsWith("playwright-core@")) out.add(path.join(cache, e));
+  for (const r of roots) for (const d of existsSync(path.join(r, ".git")) ? await checkoutsOf(r) : [r]) {
+    out.add(path.join(d, "node_modules", "playwright-core"));
+    // pnpm keeps each version in its own store folder, linked only where it's a direct dependency
+    const pnpm = path.join(d, "node_modules", ".pnpm");
+    for (const e of await readdir(pnpm).catch(() => [])) if (e.startsWith("playwright-core@")) out.add(path.join(pnpm, e, "node_modules", "playwright-core"));
+  }
+  return [...out];
+}
+
+/**
+ * Removes (`go`) or lists the browser builds in Playwright's folder that no playwright-core we can find names. Playwright
+ * has no such command (`playwright uninstall` drops this install's own builds). Folders that aren't `<name>-<revision>`,
+ * and any touched in the last `freshMs` (an install running now), stay; a missed user only costs a `playwright install`.
+ */
+export async function prunePlaywright(roots: string[], go: boolean, dir = path.join(homedir(), "Library", "Caches", "ms-playwright"), cache = path.join(homedir(), ".bun", "install", "cache"), freshMs = 3_600_000): Promise<Pruned> {
+  const keep = new Set<string>();
+  let locks = 0;
+  for (const core of await playwrightCores(dir, roots, cache)) {
+    const text = await readFile(path.join(core, "browsers.json"), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    let json: unknown;
+    try { json = JSON.parse(text); } catch { continue; }
+    const builds = playwrightBuilds(json);
+    if (!builds.length) continue;
+    for (const b of builds) keep.add(b);
+    locks++;
+  }
+  if (!keep.size) return { paths: [], bytes: 0, locks, refused: "no playwright-core's browsers.json found, so nothing is known to be unused" };
+  const now = Date.now();
+  const paths: string[] = [];
+  for (const e of await readdir(dir).catch(() => [])) {
+    if (!/^[a-z][a-z_]*-\d+$/.test(e) || keep.has(e)) continue;
+    const p = path.join(dir, e);
+    try {
+      const s = await lstat(p);
+      if (s.isDirectory() && now - s.mtimeMs > freshMs) paths.push(p);
+    } catch {}
+  }
+  const sizes = await duKb(paths);
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) try { await rm(p, { recursive: true, force: true }); } catch { continue; }
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths, bytes, locks };
 }
 
 // --- worktrees still on disk ------------------------------------------------------------------------------------------
