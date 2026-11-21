@@ -9,7 +9,7 @@
     "test": "bun test test",
     "models": "blender -b --factory-startup -P blender/fingerboard.py && blender -b --factory-startup -P blender/kit.py && bun scripts/roadster.ts && blender -b --factory-startup -P blender/landmark.py && bun scripts/scenery.ts && blender -b --factory-startup -P blender/landmarks.py",
     "edge:dev": "vite build && bunx wrangler dev",
-    "deploy": "vite build && bunx wrangler deploy",
+    "deploy": "vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app skate-tech-park",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"
   },

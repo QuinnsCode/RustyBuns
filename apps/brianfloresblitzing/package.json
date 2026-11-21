@@ -5,6 +5,6 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "bunx wrangler dev",
-    "deploy": "bunx wrangler deploy"
+    "deploy": "bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app brianfloresblitzing"
   }
 }

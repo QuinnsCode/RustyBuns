@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "test": "bun test test",
-    "deploy": "bunx wrangler deploy",
+    "deploy": "bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app playground",
     "sky": "bun scripts/sky.ts",
     "sizes": "bun scripts/sizes.ts",
     "fresh": "bun scripts/fresh.ts",

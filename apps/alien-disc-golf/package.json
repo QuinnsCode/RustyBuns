@@ -10,7 +10,7 @@
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
     "edge:dev": "vite build && bunx wrangler dev",
-    "deploy": "vite build && bunx wrangler deploy",
+    "deploy": "vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app alien-disc-golf",
     "currents": "bun scripts/currents.ts"
   },
   "dependencies": {
