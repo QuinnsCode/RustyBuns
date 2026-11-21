@@ -7,6 +7,7 @@ import { turnstileOk, youtubeId, youtubeTitle } from "./guard.ts";
 import { clefRequest, estimate, MODEL, parseClef, Verdict } from "./judge.ts";
 import { MAX_CLIP, parseRequest } from "./review.ts";
 import { cameo, writeReview } from "./write.ts";
+import { remember, reviewId, type Kv } from "./board.ts";
 import { sha256 } from "@rustybuns/util/bytes";
 import { privateJson as json, readJson } from "@rustybuns/util/http";
 
@@ -17,6 +18,8 @@ export interface ReviewEnv {
   TURNSTILE_SECRET?: string;
   TURNSTILE_SITE_KEY?: string;
   REVIEW_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /** Where reviews are kept by id, so one can be shared (src/board.ts). */
+  REVIEWS?: Kv;
 }
 
 const MAX_BODY = MAX_CLIP + 8 * 1024;
@@ -71,5 +74,10 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     }
   }
 
-  return json(cameo(verdict, req.title, req.hint) ?? writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title));
+  const review = cameo(verdict, req.title, req.hint) ?? writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title);
+  if (!env.REVIEWS) return json(review);
+  // Kept a day by the hash of what was judged, so the card can share it; a link-only review is judged on its link.
+  const id = await reviewId(req.clip || req.youtube, req.hint, req.title);
+  const kept = await remember(env.REVIEWS, id, review).then(() => true, (e) => (console.error("keeping the review failed", e), false));
+  return json(kept ? { ...review, id } : review);
 }

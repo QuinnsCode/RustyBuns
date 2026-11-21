@@ -2,7 +2,8 @@ import { defineConfig } from "@rustybuns/cli/config";
 
 // One Worker. The browser decodes the song, measures it and cuts the listener's best
 // 15 seconds; Clef-omni (Workers AI) listens to that clip and answers four typed
-// questions, about $0.00005 a review; templates write the text. Nothing is stored.
+// questions, about $0.00005 a review; templates write the text. REVIEWS keeps the text a day (a shared one for good),
+// and the votes of people who aren't signed in; posts and signed-in reactions live in Qollab on eqosys.
 //
 // Live reviews need all of AI, BUDGET, a Turnstile site key and TURNSTILE_SECRET (from
 // 1Password through varlock, experimental.wheel "human"). Missing any, the review is the
@@ -32,12 +33,14 @@ export default defineConfig({
     // A few reviews a minute per address. Cloudflare's limiter, so it's per colo.
     REVIEW_LIMIT: { type: "ratelimit", namespaceId: "7401", simple: { limit: 4, period: 60 } },
     TURNSTILE_SITE_KEY: { type: "var", value: turnstileSiteKey },
+    // Review text by id (src/board.ts): a day unless shared. Plus one signed-out vote per address and the votes per post.
+    REVIEWS: { type: "kv" },
     TURNSTILE_SECRET: op("turnstile/password"),
   },
   targets: {
     // adopt names the Worker `workerName`, so the URL is what-would-fantano-say.<subdomain>.workers.dev
     // and not Alchemy's `<app>-worker-<random>`. The next deploy replaces the randomly named Worker
-    // (nothing is stored; BUDGET is only today's counter).
+    // (BUDGET is only today's counter; REVIEWS is new).
     edge: { provider: "cloudflare", adopt: true, workerName: "what-would-fantano-say" },
   },
 });
