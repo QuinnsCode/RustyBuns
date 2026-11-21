@@ -122,3 +122,25 @@ export function healthOf(h: { test: string | null; live: { ok: boolean } | null;
   if (h.test === "success" || h.live?.ok) return "green";
   return h.test === null && h.live === null ? "off" : "amber";
 }
+
+// ---- deploys and PRs -----------------------------------------------------------------------------
+
+/** One line of ~/.rustybuns/deploys.jsonl, as `rustybuns deploy` writes it (packages/cli/src/report-deploy.ts). */
+const DeployLine = obj({ app: str(64), stage: str(32), version: str(64), at: int(0, 1e15), dir: str(200, { min: 0, dflt: "" }) });
+export type Deploy = { stage: string; version: string; at: string };
+
+/** Each app's newest deploy in the log, keyed by its folder (or its config name when that is an app id). Bad lines are skipped. */
+export function lastDeploys(text: string | null, ids: string[]): Map<string, Deploy> {
+  const known = new Set(ids), out = new Map<string, Deploy & { ms: number }>();
+  for (const line of (text ?? "").split("\n")) {
+    let d;
+    try { d = DeployLine(JSON.parse(line)); } catch { continue; }
+    const id = known.has(d.dir) ? d.dir : known.has(d.app) ? d.app : null;
+    if (!id || (out.get(id)?.ms ?? -1) > d.at) continue;
+    out.set(id, { stage: d.stage, version: d.version, at: new Date(d.at).toISOString(), ms: d.at });
+  }
+  return new Map([...out].map(([id, { ms: _, ...d }]) => [id, d]));
+}
+
+/** The PR a squash commit came from: GitHub ends its subject with (#N). */
+export const prOf = (subject: string): number | null => Number(/\(#(\d+)\)\s*$/.exec(subject)?.[1] ?? NaN) || null;

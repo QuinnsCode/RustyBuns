@@ -59,7 +59,7 @@ import { isProtected } from "./protect.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
-import { reportDeploy, versionHere } from "./report-deploy.ts";
+import { logDeploy, reportDeploy, versionHere } from "./report-deploy.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
@@ -1199,7 +1199,12 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // A check of the live app right after this (a smoke run, a health probe) can still meet the old code (#3433).
   if (sub === "deploy" && objects) console.log("\nbusy Durable Objects keep the old code until they go idle, up to 5 minutes; a check before then may still meet it");
   // A studio's Ship door on eqosys (report-deploy.ts): what went out, where and when. Off without RB_DEPLOY_REPORT_KEY.
-  if (sub === "deploy") console.log("\n" + (yield* step(async () => reportDeploy({ app: cfg.name, stage, version: await versionHere(), at: Date.now() }))));
+  // It is also written down locally (logDeploy) for the bridge's Deploy line.
+  if (sub === "deploy") console.log("\n" + (yield* step(async () => {
+    const r = { app: cfg.name, stage, version: await versionHere(), at: Date.now() };
+    logDeploy(r);
+    return reportDeploy(r);
+  })));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
@@ -1345,7 +1350,9 @@ try {
       const flag = (n: string) => { const i = rest.indexOf(`--${n}`); return i >= 0 ? rest[i + 1] : undefined; };
       const app = flag("app");
       if (!app) throw new UsageError({ message: "report-deploy needs --app <the app's id in eqosys's APPS>" });
-      console.log(await reportDeploy({ app, stage: flag("stage") ?? "production", version: flag("version") ?? await versionHere(), at: Date.now() }));
+      const r = { app, stage: flag("stage") ?? "production", version: flag("version") ?? await versionHere(), at: Date.now() };
+      logDeploy(r);
+      console.log(await reportDeploy(r));
       break;
     }
     case "destroy": await alchemy("destroy", rest); break;
