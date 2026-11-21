@@ -16,7 +16,7 @@ bun test                 # a round, played by the test
 | File | What it does |
 | --- | --- |
 | `src/game.ts` | the game: plain data and one `step`, no DOM. Rewrite this first. |
-| `src/main.ts` | the page: draws, reads input, the menu, and `window.starterGame` (the harness) |
+| `src/main.ts` | the page: draws, reads input, the menu, `window.starterGame` (the harness), and its page commands `starter_game_how_to_play`, `_start` and `_state` (WebMCP tools for an agent, and the Cmd/Ctrl+K list). Keep how_to_play's words on the menu: it reads them from there |
 | `src/eqosys.ts` | the eqosys sign-in and the Qollab party client, with this game's id |
 | `test/game.test.ts` | a round as a player plays it |
 

@@ -126,5 +126,8 @@ export function tutorial(cfg: TutorialConfig) {
   /** For a probe or a test: whether it is up, which step (0-based), and that step's title. */
   const state = () => ({ learned: learned(), running: running(), step: at, of: cfg.steps.length, title: cfg.steps[at]?.title ?? null });
 
-  return { start, learned, forget, state, tick };
+  /** Its steps in words (no `done`): what `<prefix>_how_to_play` (commands.ts `howToPlay`) reads out. */
+  const steps = () => cfg.steps.map(({ title, say, keys }) => ({ title, ...(say ? { say } : {}), ...(keys?.length ? { keys } : {}) }));
+
+  return { start, learned, forget, state, tick, steps };
 }

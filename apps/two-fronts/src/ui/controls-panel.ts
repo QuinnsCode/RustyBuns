@@ -25,6 +25,9 @@ const KEY = "two-fronts.controls";
 /** The war table is the theme: dark slate panel, orange accent (the colours of styles.css). */
 export const WAR_TABLE = { "--ui-bg": "#161b24", "--ui-ink": "#e5e7eb", "--ui-dim": "#9aa3b2", "--ui-line": "#2a3140", "--ui-soft": "#222a37", "--ui-accent": "#ff7a1a", "--ui-accent-soft": "#3a2a1c", "--ui-scrim": "#000a" };
 
+/** The battle's keys, as the Controls cog lists them (and tf_how_to_play reads them out). */
+export const BATTLE_KEYS: [string, string][] = [["Mouse", "Look (click the field first)"], ["Click", "Fire"], ["1 to 4, F", "Squad orders"], ["Esc", "Let go of the mouse"]];
+
 export function mountControlsPanel() {
   migrate();
   const host = Object.assign(document.createElement("div"), { id: "controls-host" });
@@ -32,7 +35,7 @@ export function mountControlsPanel() {
   mountControls({
     key: KEY, parent: host,
     skin: "house", theme: WAR_TABLE,
-    keys: [["Mouse", "Look (click the field first)"], ["Click", "Fire"], ["1 to 4, F", "Squad orders"], ["Esc", "Let go of the mouse"]],
+    keys: BATTLE_KEYS,
     onChange: setLook,
     onToggle: (open) => { if (open && document.pointerLockElement) document.exitPointerLock(); },
     extras,

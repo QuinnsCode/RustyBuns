@@ -5,7 +5,7 @@
 // `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
 import { loadPad, mountControls } from "@rustybuns/game-controls";
 import { clamp, esc } from "@rustybuns/util";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { cssUrl, forecastStrip, fronds, lieGlyph, markFor, orbitMark, punchStrip, routeMap, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
 import { countries, countryAt } from "./countries.ts";
@@ -566,6 +566,17 @@ const LOFTS = ["low", "high"] as const satisfies readonly Loft[];
 const AimArgs = obj({ heading: num(-1e6, 1e6, 0), power: num(-1e6, 1e6, 0.5), loft: maybe(oneOf(LOFTS)) });
 const SplashArgs = obj({ lat: num(-90, 90, 0), lon: num(-180, 180, 0) });
 addCommands([
+  // The screen's "?" panels and the coach card's steps: their keys are the computer's controls, their "Or ..." the touch ones.
+  howToPlay("golf", () => {
+    const steps = coach.steps(), last = steps[steps.length - 1];
+    const panels = [...document.querySelectorAll(".about[popover]")].map(wordsOf).filter(Boolean);
+    const touch = steps.flatMap((s) => { const or = s.say?.match(/^Or ([^.:]*)/); return or ? [`${s.title}: ${or[1]}.`] : []; });
+    return {
+      goal: [...panels, last?.say ?? ""].filter(Boolean).join("\n"),
+      desktop: steps.filter((s) => s.keys).map((s) => `${s.keys!.join(" ")}: ${s.title.toLowerCase()}`).join("\n"),
+      phone: touch.join(" "), first: `Press Tee off. Then ${steps[0]?.title} ${steps[0]?.say ?? ""}`, steps,
+    };
+  }),
   { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },
   { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low or high).",
     inputSchema: { type: "object", properties: { heading: { type: "number" }, power: { type: "number" }, loft: { type: "string", enum: [...LOFTS] } }, required: ["heading", "power"] },

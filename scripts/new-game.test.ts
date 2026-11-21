@@ -9,8 +9,8 @@ import { starterNames } from "../apps/codesplitter/src/starter.ts";
 const root = join(import.meta.dir, "..");
 
 test("names from an id", () => {
-  expect(starterNames("rocket-golf")).toEqual({ id: "rocket-golf", handle: "rocketGolf", title: "Rocket Golf" });
-  expect(starterNames("3d-golf", " Golf 3D ")).toEqual({ id: "3d-golf", handle: "game3dGolf", title: "Golf 3D" });
+  expect(starterNames("rocket-golf")).toEqual({ id: "rocket-golf", handle: "rocketGolf", title: "Rocket Golf", prefix: "rocket_golf" });
+  expect(starterNames("3d-golf", " Golf 3D ")).toEqual({ id: "3d-golf", handle: "game3dGolf", title: "Golf 3D", prefix: "game_3d_golf" });
   for (const bad of ["", "ab", "Rocket", "rocket--golf", "-rocket", "a".repeat(41)]) expect(starterNames(bad)).toBeNull();
 });
 
@@ -24,8 +24,9 @@ test("the starter, copied as rocket-golf: its eqosys id, window handle, title an
     expect(JSON.parse(read("package.json")).name).toBe("rocket-golf");
     expect(read("src/eqosys.ts")).toContain('APP = "rocket-golf"');
     expect(read("src/main.ts")).toContain("window.rocketGolf = harness");
+    expect(read("src/main.ts")).toContain('PREFIX = "rocket_golf"'); // its page commands: rocket_golf_how_to_play, _start, _state
     expect(read("index.html")).toContain("<title>Rocket Golf</title>");
-    for (const f of files) expect(read(f)).not.toMatch(/starter-game|starterGame|Starter Game/);
+    for (const f of files) expect(read(f)).not.toMatch(/starter-game|starterGame|Starter Game|starter_game/);
   } finally { rmSync(to, { recursive: true, force: true }); }
 
   const probe = readFileSync(join(root, "scripts/probe.ts"), "utf8"), added = withHandle(probe, n);
