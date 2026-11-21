@@ -5,7 +5,8 @@
 //   <script type="module" src="https://qview3d.example/v1/qview3d.js"></script>
 //   <qview-3d org="acme" product="classic-cap"></qview-3d>
 //
-// This file is small and loads at once; three.js and the hats (viewer.ts) load only when the tag scrolls into view.
+// This file is small and loads at once; three.js and the hats (viewer.ts) load only when the tag scrolls into view,
+// or at once with loading="eager" (the iframe page, where the widget is all there is).
 // The page stays in charge (inversion of control): it styles the defaults through --qv-* properties and ::part(),
 // adds its own buttons in slot="controls", or turns them all off (controls="none") and drives the element through
 // its methods and events instead:
@@ -121,9 +122,14 @@ export class QView3D extends HTMLElement {
 
   connectedCallback() {
     // Load the 3D half when the tag is near the screen, not before: a product page with the widget below the fold
-    // pays for one small script until the shopper scrolls to it.
-    const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) { io.disconnect(); void this.boot(); } }, { rootMargin: "200px" });
-    io.observe(this);
+    // pays for one small script until the shopper scrolls to it. In a cross-origin iframe the frame only learns it is
+    // on screen from the page round it, late or never (a frame below the fold, a busy browser), so the frame page
+    // asks for loading="eager"; the page that frames it can lazy-load the <iframe> itself.
+    if (this.getAttribute("loading") === "eager") void this.boot().catch(() => {});
+    else {
+      const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) { io.disconnect(); void this.boot(); } }, { rootMargin: "200px" });
+      io.observe(this);
+    }
     this.addEventListener("dragover", this.dragOver);
     this.addEventListener("dragleave", this.dragLeave);
     this.addEventListener("drop", this.drop);

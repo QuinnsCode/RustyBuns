@@ -126,9 +126,9 @@ test("the hat, the shirt and the hoodie each go in the cart with their design id
 });
 
 // A site builder that strips scripts gets the iframe: the shop's page hears the widget's events through
-// postMessage, and asks it for a snapshot the same way.
+// postMessage, and asks it for a snapshot the same way. The frame sits below the fold: the widget in it boots anyway.
 test("the iframe tells the page round it what the widget does", async () => {
-  const shop = Bun.serve({ port: 0, fetch: () => new Response(`<!doctype html><body><iframe src="${app.url}/v1/frame?org=demo&product=crew-tee" style="width:600px;height:500px;border:0"></iframe>
+  const shop = Bun.serve({ port: 0, fetch: () => new Response(`<!doctype html><body><div style="height:3000px"></div><iframe src="${app.url}/v1/frame?org=demo&product=crew-tee" style="width:600px;height:500px;border:0"></iframe>
     <script>window.heard = []; addEventListener("message", (e) => { if (e.data?.source === "qview3d") window.heard.push({ type: e.data.type, from: e.origin, detail: e.data.detail }); });</script>`, { headers: { "content-type": "text/html" } }) });
   try {
     const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
