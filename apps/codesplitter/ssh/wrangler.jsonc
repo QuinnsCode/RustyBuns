@@ -1,0 +1,11 @@
+// The ssh spike's own local config (#5500), apart from codeSplitter's generated wrangler.jsonc: rustybuns can't
+// deploy or serve a `connect` export yet. `bun ssh/try.ts` runs it under wrangler dev. TCP on 8788, HTTP on 8787.
+{
+  "name": "codesplitter-ssh-spike",
+  "main": "worker.ts",
+  "compatibility_date": "2026-06-01",
+  "connect": [{ "protocol": "tcp", "port": 8788 }],
+  "containers": [{ "class_name": "SshGate", "image": "./Dockerfile", "max_instances": 1, "instance_type": "lite" }],
+  "durable_objects": { "bindings": [{ "name": "GATE", "class_name": "SshGate" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SshGate"] }]
+}
