@@ -133,7 +133,10 @@ jobs:
     name: drop ${{ matrix.app }}
     runs-on: macos-latest   # codesign and notarytool are Apple's
     timeout-minutes: 45     # notarization waits on Apple, usually a few minutes
-    concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
+    # channels.json is read, changed, written: one real drop per app at a time. A PR or a dry run
+    # writes nothing, so it gets its own group: a real drop waiting on the owner's approval holds
+    # the app's group, and a PR queued behind it would be cancelled by the next one (#4760).
+    concurrency: drop-${{ matrix.app }}${{ (github.event_name == 'pull_request' || inputs.dry) && format('-{0}', github.run_id) || '' }}
     # The drop secrets live in the `drops` environment, which waits for the owner's approval, so a
     # workflow_dispatch of an edited copy of this file on some branch can't reach them. A PR and a
     # dry dispatch (which uploads nothing) get none, so neither asks for the approval either.
