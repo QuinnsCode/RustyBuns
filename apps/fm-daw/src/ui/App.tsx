@@ -12,11 +12,11 @@ import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
 import { startMidiOut, type MidiOut } from "./midi-out.ts";
 import { onCc } from "./learn.ts";
-import { PluginPump, bouncePlugins, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
+import { PluginPump, bouncePlugins, effectChoices, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
 
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
-import { PluginPanel, TrackSound } from "./PluginPanel.tsx";
+import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
 import { pageRack } from "./wam.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
@@ -96,6 +96,8 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "eqPhase": return { t: "eqPhase", linear: !!next.eqLinear };
     case "amp": return { t: "amp", track: op.track, amp: next.tracks[op.track].amp ?? null };
     case "plugin": return { t: "plugin", track: op.track, on: !!next.tracks[op.track].plugin };
+    // the worklet hears of an effect once it runs (src/ui/plugins.ts): the track stays dry until then
+    case "insert": return { t: "audible", mask: audible(next) };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -152,10 +154,14 @@ export function App() {
   /** Plugin tracks: their plugins on the desktop host, their sound into the worklet (src/ui/plugins.ts). */
   const pump = useRef<PluginPump | null>(null);
   /** The page's own plugins (src/ui/wam.ts): played on the audio once it's on, and bounced with or without it. */
-  const [webRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps }; }));
+  const [webRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, inserts: a.inserts }; }));
+  /** Each FM track's Insert (#5359): a web effect on its sound, its own rack and pump beside the instruments'. */
+  const [fxRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, inserts: a.inserts }; }, "effect"));
+  const fxPump = useRef<PluginPump | null>(null);
   /** The loudest of the last slice each plugin track sent the sesh (the probe's `line`). */
   const linePeaks = useRef(new Map<number, number>());
   const plugins = usePlugins(audio ? pump.current : null);
+  const effects = usePlugins(audio ? fxPump.current : null);
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
 
@@ -373,6 +379,12 @@ export function App() {
         for (const c of changes) plug = withValue(plug, c.id, c.value);
         commit({ t: "plugin", track, plugin: plug }, { group: `plugEd:${track}` });
       }, webRack);
+      fxPump.current = new PluginPump((m, tr) => a.send(m, tr), a.ctx.sampleRate, undefined, (track, changes) => {
+        let fx = proj.current.tracks[track]?.insert;
+        if (!fx) return;
+        for (const c of changes) fx = withValue(fx, c.id, c.value);
+        commit({ t: "insert", track, insert: fx }, { group: `fxEd:${track}` });
+      }, fxRack, "insert");
       // others' guitars and plugin tracks come as Opus where this browser has WebCodecs, and yours go out that way
       const opus = await webOpus();
       if (opus) { far.decodeWith(opus.decoder); opusEncoder.current = opus.encoder; }
@@ -386,7 +398,7 @@ export function App() {
   // played some other way (Space, the transport's Play, the room): the first-try card has done its job
   useEffect(() => { if (transportOn && audio && !tried) markTried(); }, [transportOn]);
   // each plugin track's plugin, started, stopped and its sliders sent on as the groove changes
-  useEffect(() => { pump.current?.sync(project); }, [audio, project]);
+  useEffect(() => { pump.current?.sync(project); fxPump.current?.sync(project); }, [audio, project]);
   // what you hear: your own master, under the room's (the remote's master fader, src/remote/)
   useEffect(() => { audio?.send({ t: "master", gain: dbToGain(masterDb) * roomGain(project) }); }, [audio, masterDb, project.master]);
 
@@ -405,14 +417,15 @@ export function App() {
         audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
         line: Object.fromEntries(linePeaks.current),
         tracks: proj.current.tracks.map((tr, i) => {
-          const s = pump.current?.state.get(i);
-          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], plays: tr.plugin ? { name: tr.plugin.name, path: tr.plugin.path, web: !!tr.plugin.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) } : "fm" };
+          const shown = (p: TrackPlugin, s: PluginShown | undefined) => ({ name: p.name, path: p.path, web: !!p.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) });
+          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], plays: tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
         }),
       }),
       start: startAudio,
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
+      insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
-      trust: (track: number) => pump.current?.trust(track, proj.current),
+      trust: (track: number) => { pump.current?.trust(track, proj.current); fxPump.current?.trust(track, proj.current); },
       // the sesh's live line for one plugin track, as going online turns it on; `state().line` is what it last sent
       line: (track: number, on: boolean) => { linePeaks.current.delete(track); send({ t: "pluginSend", track, on, web: !!proj.current.tracks[track]?.plugin?.web }); },
       // a bounce of one web plugin track holding a key for half of `seconds`: the loudest it got, or why it couldn't
@@ -985,12 +998,16 @@ export function App() {
               onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
               onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
               onTrust={() => pump.current?.trust(selected, proj.current)} />
-          ) : <PatchEditor track={t} color={color} head={trackSound}
+          ) : <><PatchEditor track={t} color={color} head={<>{trackSound}<TrackSound slot="insert" track={t} choices={effectChoices} onPlugin={(insert) => commit({ t: "insert", track: selected, insert })} /></>}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}
             onReset={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: KIT[i].params.slice() } : x)) } })}
-            onAudition={() => audition(selected)} />}
+            onAudition={() => audition(selected)} />
+            <InsertPanel track={t} color={color} shown={effects.get(selected)}
+              onValue={(id, v) => { if (t.insert) commit({ t: "insert", track: selected, insert: withValue(t.insert, id, v) }, { group: `fx:${selected}:${id}` }); }}
+              onEditor={() => fxPump.current?.openEditor(selected, `${t.name} · ${t.insert?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
+              onTrust={() => fxPump.current?.trust(selected, proj.current)} /></>}
         </main>
       </div>
 

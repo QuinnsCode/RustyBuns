@@ -118,6 +118,8 @@ class FmProcessor extends AudioWorkletProcessor {
   /** Those of them played by a plugin in the page: their sound is on the fourth input, a channel each. */
   private webOut = new Set<number>();
   private hush = new Float32Array(128);
+  /** Tracks whose sound goes out to a web effect on the second output (an amp on the track has it first). */
+  private inserts = new Set<number>();
 
   constructor() {
     super();
@@ -150,6 +152,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.engine.setParam(m.track, m.i, m.v);
         break;
       case "plugin": this.plugins.set(m.track, m.on); break;
+      case "insert": if (m.on) this.inserts.add(m.track); else this.inserts.delete(m.track); this.engine.setTap(m.track, this.tapped(m.track)); break;
       case "pluginParam": this.plugins.param(m.track, m.id, m.v); break;
       case "pluginBlock": this.plugins.push(m.track, m.pcm, m.ok); break;
       case "notes": s.setNotes(m.track, m.notes); break;
@@ -378,7 +381,22 @@ class FmProcessor extends AudioWorkletProcessor {
   /** A track's amp, and its synth tapped out of the engine's sum to play through it. */
   private setAmp(t: number, amp: TrackAmp | null) {
     this.amps.set(t, amp);
-    this.engine.setTap(t, this.amps.has(t));
+    this.engine.setTap(t, this.tapped(t));
+  }
+  /** A track out of the engine's sum: through its amp, or out to its web effect. */
+  private tapped(t: number) { return this.amps.has(t) || this.inserts.has(t); }
+
+  /**
+   * Each inserted track's sound (after its fader, before the master) on its channel of the second output, for its
+   * effect: the tap is (L+R)/√2, as an amp hears it; out here it is (L+R)/2, so a centred track comes back as loud.
+   */
+  private sendInserts(out: Float32Array[] | undefined, taps: Float32Array, frames: number) {
+    if (!out) return;
+    for (let t = 0; t < out.length; t++) {
+      const ch = out[t];
+      if (!this.inserts.has(t) || this.amps.has(t)) { ch.fill(0); continue; }
+      for (let f = 0; f < frames; f++) ch[f] = taps[f * TRACKS + t] * Math.SQRT1_2;
+    }
   }
 
   private setLatency() { this.seq.latency = this.outLatency + (this.eq.latency ?? 0) / sampleRate; }
@@ -392,7 +410,7 @@ class FmProcessor extends AudioWorkletProcessor {
       eq.set(this.eqPlayed);
       eq.listen(this.listening);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
-      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.seq.bends[t]); next.setTap(t, this.amps.has(t)); }
+      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.seq.bends[t]); next.setTap(t, this.tapped(t)); }
       next.setMaster(this.master);
       // a new engine starts with every insert where it is now, not fading in
       this.trackEq.forEach((d, t) => sendTrackEq(next, t, d, []));
@@ -428,8 +446,8 @@ class FmProcessor extends AudioWorkletProcessor {
       if (Number.isFinite(grid)) this.seq.sync(grid);
       const pos = this.seq.pos, playing = this.seq.playing, abs0 = this.seq.abs;
       const bpf = (this.seq.bpm / 60 / sampleRate) * this.seq.rate;
-      // with no amp on any track, no taps: every track stays in the engine's sum
-      const taps = this.amps.any ? this.taps : undefined;
+      // with no amp or web effect on any track, no taps: every track stays in the engine's sum
+      const taps = this.amps.any || this.inserts.size ? this.taps : undefined;
       this.seq.process(this.buf, frames, this.send, taps, this.rig ? this.send2 : undefined);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
       this.blockBeat = abs0; this.blockBpf = bpf;
@@ -439,6 +457,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       this.mixWeb(inputs[1], frames);
+      if (this.inserts.size) this.sendInserts(outputs[1], this.taps, frames);
       if (this.webOut.size) this.sendWeb(inputs[3], frames, abs0, bpf);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
