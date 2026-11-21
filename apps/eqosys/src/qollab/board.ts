@@ -4,7 +4,9 @@
 // takes part once APPS gives it a `board` (its kinds of post and its icons). What a `ref` points at is the app's, never read here.
 // Keeping it clean: anyone signed in reports a post (POST /q/posts/<id>/report, through the game-report path in reports.ts), and
 // an owner or admin of the app's studio hides one (PUT /q/posts/<id>/hidden, DELETE to bring it back) or deletes it.
-import { Counts, Post, PostList, PostMade, POST_MAX, Pressed, REF, REFS_MAX } from "@rustybuns/util/board";
+// Blocking is the account's, in every app: PUT /q/posts/<id>/block blocks the post's author, GET /q/blocks lists them by their id in
+// this app, DELETE /q/blocks/<id> unblocks. A signed-in feed leaves out everyone the reader blocked; the signed-out one can't.
+import { Blocked, BLOCKS_MAX, Counts, Post, PostList, PostMade, POST_MAX, Pressed, REF, REFS_MAX } from "@rustybuns/util/board";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { publicId } from "@rustybuns/util/seats";
@@ -57,7 +59,12 @@ const runsApp = async (conf: Env, app: string, who: string) => !!(await conf.DB.
   "SELECT 1 FROM studio_apps a JOIN studio_members m ON m.studio_id = a.studio_id WHERE a.app = ? AND m.user_id = ? AND m.role IN ('owner', 'admin')").bind(app, who).first());
 
 /** The paths this file answers. */
-export const isBoard = (pathname: string) => /^\/q\/(?:posts(?:\/[^/]+(?:\/(?:report|hidden))?)?|reactions)$/.test(pathname);
+export const isBoard = (pathname: string) => /^\/q\/(?:posts(?:\/[^/]+(?:\/(?:report|hidden|block))?)?|reactions|blocks(?:\/[^/]+)?)$/.test(pathname);
+
+/** The people this person blocked, newest first. */
+const blocksOf = async (conf: Env, who: string) => (await conf.DB.prepare(
+  `SELECT b.blocked_id, u.name, b.at FROM blocks b JOIN "user" u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.at DESC LIMIT ${BLOCKS_MAX}`)
+  .bind(who).all<{ blocked_id: string; name: string; at: number }>()).results;
 
 export async function board(req: Request, conf: Env): Promise<Response> {
   const url = new URL(req.url), { pathname } = url, now = Date.now();
@@ -73,11 +80,13 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     const app = t?.app.board ? t.app : boardApp(url.searchParams.get("app"));
     const kind = url.searchParams.get("kind") ?? "";
     if (!app || !app.board!.kinds.includes(kind)) return json({ error: "name an app with posts (?app=) and one of its kinds (?kind=)" }, 400, head);
+    // Signed in, the reader's blocks are left out (a signed-out reader has none: "" is nobody's id).
+    const unblocked = "AND p.user_id NOT IN (SELECT blocked_id FROM blocks WHERE user_id = ?)", reader = t?.who.id ?? "";
     const top = url.searchParams.get("sort") === "top", since = Number(url.searchParams.get("since")) || 0, before = Number(url.searchParams.get("before")) || Infinity;
     const { results } = await conf.DB.prepare(top
-      ? `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 AND p.at >= ? ORDER BY reacts DESC, p.at DESC LIMIT ${PAGE}`
-      : `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 AND p.at < ? ORDER BY p.at DESC LIMIT ${PAGE}`)
-      .bind(app.id, kind, top ? since : Math.min(before, Number.MAX_SAFE_INTEGER)).all<Row>();
+      ? `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 ${unblocked} AND p.at >= ? ORDER BY reacts DESC, p.at DESC LIMIT ${PAGE}`
+      : `${SELECT} WHERE p.app = ? AND p.kind = ? AND p.hidden = 0 ${unblocked} AND p.at < ? ORDER BY p.at DESC LIMIT ${PAGE}`)
+      .bind(app.id, kind, reader, top ? since : Math.min(before, Number.MAX_SAFE_INTEGER)).all<Row>();
     const posts = await Promise.all(results.map(toPost));
     return json({ posts } satisfies PostList, 200, { ...head, ...(t ? {} : { "cache-control": "public, max-age=30" }) });
   }
@@ -131,6 +140,38 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     return done ? json({ ok: true }, 200, head) : json({ error: "no post has that id" }, 404, head);
   }
 
+  const block = /^\/q\/posts\/([^/]+)\/block$/.exec(pathname);
+  if (block && req.method === "PUT") {
+    const me = signedIn();
+    if (!me) return refused();
+    const author = await conf.DB.prepare("SELECT user_id FROM posts WHERE id = ? AND app = ?").bind(block[1]!, me.app.id).first<string>("user_id");
+    if (!author) return json({ error: "no post has that id" }, 404, head);
+    if (author === me.who.id) return json({ error: "that post is yours" }, 400, head);
+    const n = await conf.DB.prepare("SELECT COUNT(*) AS n FROM blocks WHERE user_id = ?").bind(me.who.id).first<number>("n");
+    if ((n ?? 0) >= BLOCKS_MAX) return json({ error: `that's ${BLOCKS_MAX} blocked; unblock someone first` }, 429, head);
+    await conf.DB.prepare("INSERT INTO blocks (user_id, blocked_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(me.who.id, author, now).run();
+    return json({ ok: true }, 200, head);
+  }
+
+  if (pathname === "/q/blocks" && req.method === "GET") {
+    const me = signedIn();
+    if (!me) return refused();
+    const blocked = await Promise.all((await blocksOf(conf, me.who.id)).map(async (b) => ({ id: await publicId(me.app.id, b.blocked_id), name: b.name, at: b.at })));
+    return json({ blocked } satisfies Blocked, 200, head);
+  }
+
+  // Unblocking names the person by their id in this app, which only runs one way: it is matched against the asker's own list.
+  const unblock = /^\/q\/blocks\/([^/]+)$/.exec(pathname);
+  if (unblock && req.method === "DELETE") {
+    const me = signedIn();
+    if (!me) return refused();
+    let who: string | null = null;
+    for (const b of await blocksOf(conf, me.who.id)) if (await publicId(me.app.id, b.blocked_id) === unblock[1]) { who = b.blocked_id; break; }
+    if (!who) return json({ error: "you haven't blocked anyone with that id" }, 404, head);
+    await conf.DB.prepare("DELETE FROM blocks WHERE user_id = ? AND blocked_id = ?").bind(me.who.id, who).run();
+    return json({ ok: true }, 200, head);
+  }
+
   if (pathname === "/q/reactions" && req.method === "GET") {
     const app = t?.app.board ? t.app : boardApp(url.searchParams.get("app"));
     const refs = [...new Set(url.searchParams.getAll("ref"))];
@@ -151,5 +192,5 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     const c = await countsOf(conf, me.app.id, [asked.ref], me.who.id);
     return json({ ref: asked.ref, counts: c.counts[asked.ref]!, mine: c.mine[asked.ref]! } satisfies Pressed, 200, head);
   }
-  return json({ error: "GET or POST /q/posts, DELETE /q/posts/<id>, POST /q/posts/<id>/report, PUT or DELETE /q/posts/<id>/hidden, GET, PUT or DELETE /q/reactions" }, 405, head);
+  return json({ error: "GET or POST /q/posts, DELETE /q/posts/<id>, POST /q/posts/<id>/report, PUT or DELETE /q/posts/<id>/hidden, PUT /q/posts/<id>/block, GET /q/blocks, DELETE /q/blocks/<id>, GET, PUT or DELETE /q/reactions" }, 405, head);
 }

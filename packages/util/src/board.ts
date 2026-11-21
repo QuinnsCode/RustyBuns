@@ -28,6 +28,11 @@ export type Counts = Of<typeof Counts>;
 /** After a press: that ref's counts and the asker's icons on it. */
 export const Pressed = obj({ ref: str(80), counts: rec(int(0, Number.MAX_SAFE_INTEGER), 6), mine: arr(str(40), 6) });
 export type Pressed = Of<typeof Pressed>;
+/** How many people one account may block. */
+export const BLOCKS_MAX = 500;
+/** The people the asker blocked: each by their id in this app (as a post's `by.id`) and name, newest first. */
+export const Blocked = obj({ blocked: arr(obj({ id: str(64), name: str(100), at: int(0, Number.MAX_SAFE_INTEGER) }), BLOCKS_MAX) });
+export type Blocked = Of<typeof Blocked>;
 
 const Refused = obj({ error: str(500) });
 
@@ -85,6 +90,21 @@ export function board({ url, token, app }: BoardConfig) {
     /** The app's studio (an owner or admin) hides a post from every feed, or brings it back (`on: false`). */
     hide: async (id: string, on = true): Promise<Said<true>> => {
       const r = await ask(`/q/posts/${encodeURIComponent(id)}/hidden`, Gone, on ? "PUT" : "DELETE");
+      return r.ok ? { ok: true, value: true } : r;
+    },
+    /** Block a post's author, account-wide: their posts leave every feed you read, in every app. Not yourself. */
+    block: async (postId: string): Promise<Said<true>> => {
+      const r = await ask(`/q/posts/${encodeURIComponent(postId)}/block`, Gone, "PUT");
+      return r.ok ? { ok: true, value: true } : r;
+    },
+    /** The people you blocked, with their ids in this app. */
+    blocked: async (): Promise<Said<Blocked["blocked"]>> => {
+      const r = await ask("/q/blocks", Blocked);
+      return r.ok ? { ok: true, value: r.value.blocked } : r;
+    },
+    /** Unblock someone by their id in this app (a post's `by.id`, or one from `blocked()`). */
+    unblock: async (id: string): Promise<Said<true>> => {
+      const r = await ask(`/q/blocks/${encodeURIComponent(id)}`, Gone, "DELETE");
       return r.ok ? { ok: true, value: true } : r;
     },
     /** Press an icon on a thing (`on`), or take it back (`on: false`). */

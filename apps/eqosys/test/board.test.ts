@@ -2,7 +2,7 @@
 // flames it, both see the count (only the presser as theirs), the flame is taken back, and the author takes the post down.
 // Then keeping it clean: a post is reported (a row on the game-report path), and the app's studio hides it, brings it back and deletes it.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { Counts, PostList, PostMade, Pressed } from "@rustybuns/util/board";
+import { Blocked, Counts, PostList, PostMade, Pressed } from "@rustybuns/util/board";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
@@ -97,4 +97,37 @@ test("a reported post reaches the report path; the studio hides it, brings it ba
   expect((await ask("DELETE", `/q/posts/${post.id}`, eli)).status).toBe(404);
   expect((await ask("DELETE", `/q/posts/${post.id}`, boss)).status).toBe(200);
   expect(await feed()).toEqual([]);
+});
+
+test("Ada blocks Bo: Bo's post leaves Ada's feed only, until she unblocks him", async () => {
+  const ada = await signUp("Ada2", "excalibrawl", BRAWL), bo = await signUp("Bo2", "excalibrawl", BRAWL), cy = await signUp("Cy2", "excalibrawl", BRAWL);
+  const { post: hers } = await read(await ask("POST", "/q/posts", ada, { kind: "prompt", text: "a duck in armour" }), PostMade);
+  const { post } = await read(await ask("POST", "/q/posts", bo, { kind: "prompt", text: "a goose with a lance" }), PostMade);
+  const feed = async (token?: string, top = false) =>
+    (await read(await ask("GET", `/q/posts?app=excalibrawl&kind=prompt${top ? "&sort=top&since=0" : ""}`, token), PostList)).posts.map((p) => p.id);
+
+  // Not your own, not signed out, not a post that isn't there; blocking twice is still one.
+  expect((await ask("PUT", `/q/posts/${hers.id}/block`, ada)).status).toBe(400);
+  expect((await ask("PUT", `/q/posts/${post.id}/block`)).status).toBe(401);
+  expect((await ask("PUT", "/q/posts/nope/block", ada)).status).toBe(404);
+  expect((await ask("PUT", `/q/posts/${post.id}/block`, ada)).status).toBe(200);
+  expect((await ask("PUT", `/q/posts/${post.id}/block`, ada)).status).toBe(200);
+
+  // Gone from Ada's feed, both sorts; still in Cy's, Bo's and the signed-out one.
+  expect(await feed(ada)).not.toContain(post.id);
+  expect(await feed(ada, true)).not.toContain(post.id);
+  expect(await feed(ada)).toContain(hers.id);
+  for (const who of [cy, bo, undefined]) expect(await feed(who)).toContain(post.id);
+
+  // Ada's list names Bo by his id here, and that id unblocks him (only for her).
+  const { blocked } = await read(await ask("GET", "/q/blocks", ada), Blocked);
+  expect(blocked.map((b) => ({ id: b.id, name: b.name }))).toEqual([post.by]);
+  expect((await ask("DELETE", `/q/blocks/${post.by.id}`, cy)).status).toBe(404);
+  expect((await ask("DELETE", `/q/blocks/${post.by.id}`, ada)).status).toBe(200);
+  expect(await feed(ada)).toContain(post.id);
+
+  // Blocked again, then Bo deletes his account: the block goes with him.
+  await ask("PUT", `/q/posts/${post.id}/block`, ada);
+  expect((await call("/api/account/delete", { json: {}, bearer: bo, origin: BRAWL })).res.status).toBe(200);
+  expect(await conf.DB.prepare("SELECT COUNT(*) AS n FROM blocks").first<number>("n")).toBe(0);
 });

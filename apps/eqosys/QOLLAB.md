@@ -194,8 +194,11 @@ are added up on read rather than kept on the post's row, so a reaction taken bac
 behind. Report and hide are built too (#5317): `POST /q/posts/<id>/report` files a row through the game-report path (the post's
 id and its author's opaque id, never the words), and an owner or admin of the app's studio hides a post with
 `PUT /q/posts/<id>/hidden` (a `hidden` column, left out of every feed; `DELETE` brings it back) or deletes it; in the page,
-`board().report(id)` and `board().hide(id, on)`. Not yet: the two apps' sign-in and pages, and hiding a blocked person's posts
-(eqosys has no blocking yet). For Excalibrawl and What Would Fantano Say, whose people never meet in
+`board().report(id)` and `board().hide(id, on)`. Blocking is built (#5349): an account blocks another, in every app, with
+`PUT /q/posts/<id>/block` (the post's author), lists them with `GET /q/blocks` (each by their id in this app) and unblocks with
+`DELETE /q/blocks/<id>` (a `blocks` table, in account delete and the privacy export); a signed-in `GET /q/posts` leaves out
+everyone the reader blocked, and the cached signed-out read is as it was. In the page, `board().block(postId)`, `blocked()` and
+`unblock(id)`. Not yet: the two apps' sign-in and pages. For Excalibrawl and What Would Fantano Say, whose people never meet in
 a party: one person puts something up, and others react to it (owner, 2026-11-08). Neither app signs in through eqosys yet;
 that comes first (both are already in `APPS`).
 
