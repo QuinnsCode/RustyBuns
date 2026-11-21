@@ -102,7 +102,8 @@ function table(rows: Row[], id: string) {
 export function page(d: Releases) {
   const count = (rows: Row[], dot: Dot) => rows.filter((r) => r.dot === dot).length;
   const legend = (rows: Row[]) => (["live", "error", "testing", "code"] as const).map((k) => `<span class="key d-${k}"><span class="dot"></span>${count(rows, k)} ${say[k].toLowerCase()}</span>`).join("");
-  const when = new Date(d.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  // Pacific, like the push column: the headless publisher's clock may not be.
+  const when = pacific(d.at);
   return `<title>QNTBR Releases</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
