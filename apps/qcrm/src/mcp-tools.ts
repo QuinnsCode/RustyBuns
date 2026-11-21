@@ -1,9 +1,14 @@
 // Every API operation as a tool, from the OpenAPI spec (openapi.ts), so the doors never drift:
 // the MCP server (mcp.ts), the page's commands (Cmd/Ctrl-K, WebMCP and window.__commands, through
 // app/api-commands.ts) and the command line (scripts/cli.ts) all list these and call them with
-// `toRequest`. Like the spec it imports nothing else, so a docs page, the browser and a script can load it.
+// `toRequest`. Besides the spec it imports only the guards (which import nothing), so the browser and a script can load it.
 
+import { raw, rec, type Of } from "@rustybuns/util/guard";
 import { openapi } from "./openapi.ts";
+
+/** A tool call's arguments: names to values, each checked by `toRequest` against the tool. The MCP server, the page and the CLI read them through this. */
+export const Args = rec(raw);
+export type Args = Of<typeof Args>;
 
 type Schema = Record<string, any>;
 export interface Tool {
@@ -66,8 +71,8 @@ export function tools(o: { cookieOnly?: boolean } = {}): Tool[] {
  * Agents often send a row's fields beside `org` rather than under `body` (`{ org, first_name }`): those go into the
  * body, as the CLI's flags do. A name the tool can't take is refused rather than dropped, which made blank rows.
  */
-export function toRequest(t: Tool, input: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
-  const args: Record<string, unknown> = {}, loose: Record<string, unknown> = {};
+export function toRequest(t: Tool, input: Args, origin: string, headers: Record<string, string>): Request | string {
+  const args: Args = {}, loose: Args = {};
   for (const [k, v] of Object.entries(input)) (k === "body" || t.pathParams.includes(k) || t.queryParams.includes(k) ? args : loose)[k] = v;
   const stray = Object.keys(loose);
   if (stray.length && !t.hasBody) return `${t.name} takes no ${stray.join(", ")}: its arguments are ${Object.keys(t.inputSchema.properties).join(", ") || "none"}`;

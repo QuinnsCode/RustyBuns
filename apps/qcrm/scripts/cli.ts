@@ -9,7 +9,7 @@
 // QCRM_URL (default http://localhost:5173) and QCRM_KEY (an org API key, qk_…, from Settings). The org is
 // QCRM_ORG, or --org, or the key's first org. Answers print as JSON; a failure prints to stderr and exits 1.
 
-import { tools, toRequest, type Tool } from "../src/mcp-tools.ts";
+import { tools, toRequest, type Args, type Tool } from "../src/mcp-tools.ts";
 
 type Fetcher = (r: Request) => Promise<Response>;
 interface Io { out(s: string): void; err(s: string): void }
@@ -34,7 +34,7 @@ export async function cli(argv: string[], o: { url: string; key?: string; org?: 
   if (!t) { io.err(`no tool "${name}": \`bun run cli\` lists them`); return 1; }
 
   // Path and query flags stay strings; the rest are body fields, which toRequest gathers.
-  const args: Record<string, unknown> = {};
+  const args: Args = {};
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]!;
     if (!flag.startsWith("--")) { io.err(`expected --name value, got "${flag}"`); return 1; }

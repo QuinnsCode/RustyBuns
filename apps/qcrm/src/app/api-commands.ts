@@ -6,16 +6,14 @@
 // row shows what it expects and whether the line parses); a risky one with nothing to ask asks for "yes" first.
 // A write that lands fires `qcrm-changed`, so the open table reloads.
 
-import { raw, rec } from "@rustybuns/util/guard";
 import type { Command, InputSchema } from "@rustybuns/util/commands";
 import { esc } from "@rustybuns/util";
-import { reaches, toRequest, tools, type Tool } from "../mcp-tools.ts";
+import { Args, reaches, toRequest, tools, type Tool } from "../mcp-tools.ts";
 
 const ICONS: Record<string, string> = {
   Account: "users", Org: "building", Members: "users", Contact: "users", Company: "building", Deal: "badge-dollar-sign", Activity: "activity",
   Sync: "refresh-cw", Webhooks: "webhook", Keys: "key-round", Scripts: "scroll-text", Files: "upload", Plugins: "plug", Admin: "shield-check",
 };
-const Args = rec(raw);
 const CONFIRM = { type: "string", description: 'type "yes": this one can\'t be undone or changes who can get in' };
 
 /** How the palette's one line becomes this tool's arguments. */
