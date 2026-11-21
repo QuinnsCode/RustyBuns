@@ -12,7 +12,8 @@ import { isRecord } from "@rustybuns/util/guard";
 // typed client, and every body sent and every reply that comes back is checked against that operation's schema in
 // the spec, so a route that renames a field, changes its type or its status fails here without a test of its own.
 // The sweep then sends an empty body to every operation whose spec names a required field: each must refuse it.
-// Checked: types, required fields, enums and the success status. A field the spec doesn't mention is let through.
+// Checked: types, required fields, enums and the success status. A reply field an object's spec doesn't name is a fault
+// too (`unnamed`), unless the spec leaves that object open (`loose`, or additionalProperties).
 setDefaultTimeout(60_000);
 const root = mkdtempSync(join(tmpdir(), "codesplitter-contract-"));
 writeFileSync(join(root, "gitconfig"), "[user]\n\tname = Ana Real\n\temail = ana@example.com\n[init]\n\tdefaultBranch = main\n");
@@ -39,7 +40,8 @@ function faults(schema: unknown, v: unknown, at = "body"): string[] {
   if (!isRecord(v)) return [];
   const props = isRecord(schema.properties) ? schema.properties : {};
   const missing = (Array.isArray(schema.required) ? schema.required : []).filter((k) => v[k] === undefined).map((k) => `${at}.${k}: missing`);
-  return [...missing, ...Object.keys(props).filter((k) => v[k] !== undefined).flatMap((k) => faults(props[k], v[k], `${at}.${k}`))];
+  const unnamed = schema.properties && schema.additionalProperties === undefined ? Object.keys(v).filter((k) => !(k in props)).map((k) => `${at}.${k}: unnamed`) : [];
+  return [...missing, ...unnamed, ...Object.keys(props).filter((k) => v[k] !== undefined).flatMap((k) => faults(props[k], v[k], `${at}.${k}`))];
 }
 
 /** One operation as the spec has it: where it is, the body it takes, and the status and shape of its answer. */
@@ -59,10 +61,11 @@ async function app() {
   return call;
 }
 
-test("a day's work through the API: every body sent and every answer is the shape the spec says", async () => {
+/** A signed-in app and `ask`: operation `id` as `user` through the typed client, its body and answer checked against the
+ * spec, each fault in `drift` and each operation called in `seen`. */
+async function asker() {
   const call = await app();
   const drift: string[] = [], seen = new Set<string>();
-  /** Operation `id` as `user`, checked both ways against the spec; answers what came back. */
   const ask = async (user: string, id: string, args: Record<string, unknown> = {}): Promise<unknown> => {
     const op = OPERATIONS.find((o) => o.id === id);
     if (!op) throw new Error(`the spec has no operation ${id}`);
@@ -79,6 +82,17 @@ test("a day's work through the API: every body sent and every answer is the shap
     seen.add(id);
     return body;
   };
+  return { ask, drift, seen };
+}
+const field = (v: unknown, k: string): unknown => isRecord(v) ? v[k] : undefined;
+const sh = async (cmd: string, cwd = root) => {
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [code, err] = await Promise.all([p.exited, new Response(p.stderr).text()]);
+  if (code) throw new Error(`${cmd}: ${err}`);
+};
+
+test("a day's work through the API: every body sent and every answer is the shape the spec says", async () => {
+  const { ask, drift, seen } = await asker();
   const at = { owner: "ana", repo: "lab" };
 
   await ask("ana", "create_repo", { body: { name: "lab", visibility: "public" } });
@@ -86,8 +100,8 @@ test("a day's work through the API: every body sent and every answer is the shap
   await ask("ana", "add_file", { ...at, body: { path: "src/a.ts", content: "export const a = 1;\nexport const b = 2;" } });
   await ask("bo", "list_files", { ...at, path: "src" });
   const doc = await ask("ana", "read_file", { ...at, path: "src/a.ts" });
-  const first = isRecord(doc) && Array.isArray(doc.lines) && isRecord(doc.lines[0]) ? doc.lines[0] : {};
-  await ask("ana", "edit_lines", { ...at, path: "src/a.ts", body: { ops: [{ kind: "set", line: first.id, base: first.rev, text: "export const a = 3;" }, { kind: "insert", after: first.id, text: "// three now" }] } });
+  const lines = field(doc, "lines"), first = Array.isArray(lines) ? lines[0] : undefined;
+  await ask("ana", "edit_lines", { ...at, path: "src/a.ts", body: { ops: [{ kind: "set", line: field(first, "id"), base: field(first, "rev"), text: "export const a = 3;" }, { kind: "insert", after: field(first, "id"), text: "// three now" }] } });
   await ask("bo", "file_log", { ...at, path: "src/a.ts", since: 0 });
 
   await ask("ana", "start_branch", { ...at, body: { name: "tidy" } });
@@ -99,7 +113,7 @@ test("a day's work through the API: every body sent and every answer is the shap
   await ask("bo", "get_user", { name: "ana" });
   const follow = await ask("bo", "follow", { body: { name: "ana" } });
   await ask("bo", "list_following");
-  await ask("bo", "unfollow", { id: isRecord(follow) ? follow.id : "" });
+  await ask("bo", "unfollow", { id: field(follow, "id") });
 
   await ask("ana", "save_program", { name: "count", body: { code: "return 1;", description: "one" } });
   await ask("ana", "list_programs");
@@ -108,6 +122,58 @@ test("a day's work through the API: every body sent and every answer is the shap
 
   expect(drift).toEqual([]);
   expect(seen.size).toBe(19);
+});
+
+test("a mirror's day, its checks and its deploy settings: every answer is the shape the spec says", async () => {
+  const { ask, drift, seen } = await asker();
+  // Upstream: a bare repo on disk with a main and Bo's branch.
+  const up = join(root, "up.git"), work = mkdtempSync(join(root, "work-"));
+  await sh(`git init -q --bare ${up}`);
+  await sh(`git clone -q ${up} . 2>/dev/null; printf 'hello\\n' > README && git add -A && git commit -qm init && git push -q origin HEAD:main`, work);
+  await sh(`git checkout -qb shiny && printf 'new\\n' > NEW && git add -A && git commit -qm shiny && git push -q origin shiny`, work);
+  const at = { owner: "ana", repo: "up" };
+
+  await ask("ana", "create_mirror", { body: { url: `file://${up}`, name: "up", visibility: "public" } });
+  await ask("bo", "mirror_status", at);
+  await ask("ana", "sync_mirror", { ...at, body: {} });
+  await ask("bo", "list_upstream_branches", at);
+  await ask("ana", "open_upstream_branch", { ...at, body: { ref: "shiny" } });
+  await ask("ana", "pull_upstream_branch", { ...at, branch: "shiny" });
+  await ask("ana", "add_file", { ...at, body: { path: "MORE", content: "more", branch: "shiny" } });
+  await ask("ana", "push_branch_upstream", { ...at, branch: "shiny" });
+  await ask("ana", "make_tag", { ...at, body: { name: "v1" } });
+  await ask("ana", "push_tag_upstream", { ...at, name: "v1" });
+  await sh(`git tag v0 shiny~1 && git push -q origin v0`, work);
+  await ask("bo", "list_upstream_tags", at);
+  await ask("ana", "fetch_upstream_tags", { ...at, body: {} });
+
+  // Checks: Ana's CI reports by hand, a runner of Bo's takes one, Ester hears what a red one was.
+  const sha = "a".repeat(40);
+  await ask("ana", "set_check_settings", { ...at, body: { required: ["test", { name: "lint", paths: ["src"] }] } });
+  await ask("bo", "check_settings", at);
+  const token = await ask("ana", "create_ci_token", { ...at, body: { label: "jenkins" } });
+  await ask("ana", "list_ci_tokens", at);
+  await ask("ana", "revoke_ci_token", { ...at, id: field(token, "id") });
+  await ask("ana", "record_check", { ...at, body: { ref: "main", sha, name: "lint", runner: "external", status: "failed" } });
+  await ask("ana", "record_check", { ...at, body: { ref: "main", sha, name: "test" } });
+  await ask("ana", "record_check", { ...at, body: { ref: "main", sha, name: "e2e" } });
+  await ask("ana", "invite", { ...at, body: { name: "bo" } });
+  const run = await ask("bo", "claim_check", { ...at, body: { runner_label: "bo-box", names: ["test"] } });
+  await ask("bo", "update_check", { ...at, id: field(run, "id"), body: { status: "passed", append: "3 pass\n", runner_label: "bo-box" } });
+  await ask("bo", "get_check", { ...at, id: field(run, "id") });
+  const e2e = await ask("ana", "claim_check", { ...at, body: { runner_label: "ana-box" } });
+  await ask("ana", "cancel_check", { ...at, id: field(e2e, "id") });
+  await ask("bo", "checks", { ...at, ref: "main" });
+  await ask("bo", "answer_ester", { ...at, body: { name: "lint", kind: "flaky", ref: "main", note: "the network" } });
+  await ask("bo", "ester_memory", at);
+
+  // Deploys: the settings and what they show, nothing run (a deploy here would run rustybuns on this machine).
+  await ask("ana", "set_deploy_settings", { ...at, body: { stage: "live", dir: "", on_commit: false } });
+  await ask("ana", "deploy_status", at);
+  await ask("ana", "deploy_plan_status", at);
+
+  expect(drift).toEqual([]);
+  expect(seen.size).toBe(29);
 });
 
 test("every operation whose spec names a required field refuses a body without one", async () => {

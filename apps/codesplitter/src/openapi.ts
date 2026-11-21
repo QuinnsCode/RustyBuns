@@ -373,6 +373,7 @@ export const OP_ERRORS = {
   cancel_check: [...REPO, "NoSuchCheck", "NoWriteAccess", "GitHubRun", "CheckDone"],
   // deploy.ts
   deploy_status: [...REPO, "OwnerOnly"],
+  set_deploy_settings: [...REPO, "OwnerOnly", "BadInput"],
   deploy: [...REPO, "OwnerOnly", "PersonOnly", "DesktopOnly", "NoHostedDeploys", "NoDeployKey", "DeployRunning", "NoGit", "BranchMoved", "DiffCutShort", "DeployWaits", "PlanStale"],
   deploy_plan_status: [...REPO, "OwnerOnly"],
   deploy_plan: [...REPO, "OwnerOnly", "DesktopOnly", "DeployRunning", "NoGit", "DeployWaits"],
@@ -961,7 +962,11 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: loose("{source, pipeline, plan, counts}") } },
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
-    get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },
+    get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, can_run, hosted, why, keys, review?, rollbacks, run, history: the last 20}") },
+    put: { id: "set_deploy_settings", risky: true, summary: "Set the deploy's stage, folder, whether a commit to main ships it, and whether its stage is Real (owner only)", tag: "Deploys",
+      description: "Only what's sent changes. A stage is lowercase letters, digits and dashes, and not preview-*: those are preview deploys'.",
+      body: obj({ stage: str("the Alchemy stage it deploys to"), dir: str("the app's folder in the repo, like apps/web; the root without it"), on_commit: bool("a commit to main deploys it"), production: bool("the stage is Real: tearing it down takes --real") }),
+      ok: ref("DeploySettings") },
     post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, body: obj({ approve: str("approve main up to this sha first"), allow_delete: bool("pass --allow-delete: a deploy that deletes or replaces a D1, R2, KV or queue, this once"), force: bool("pass --force: deploy from a HEAD behind origin/main, this once"), plan: str("a stage plan's id: ship only the commit it ran on (409 once main moved)") }), ok: loose("{run}"), status: 202 },
   },
   [`${repo}/deploy/plan`]: {
@@ -982,6 +987,7 @@ const OPS: Record<string, Record<string, Op>> = {
 const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str("what went wrong, for a person"), tag: { type: "string", enum: Object.keys(ERRORS), description: "which failure it is, to match on: the operation's `x-codesplitter-errors` lists its own, and any operation can answer TokenCantDo; a 401, a rate limit's 429 and a 5xx carry none" } }, ["error"]),
   Ok: obj({ ok: bool() }),
+  DeploySettings: obj({ stage: str(), dir: str(), on_commit: bool(), production: bool() }, ["stage", "dir", "on_commit", "production"]),
   Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), kind: { type: "string", enum: ["git", "codesplitter"] }, by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
     onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the clean commit, at refs/beams/{id}: the top one of a stacked branch's"), commits: int("commits in the stack it squashed; 0 for a codeSplitter branch"),
     stack: { ...arr(obj({ branch: str(), sha: str(), title: str() })), description: "its commits, the bottom one first: one per branch for a stacked codeSplitter branch, else just the one" },
