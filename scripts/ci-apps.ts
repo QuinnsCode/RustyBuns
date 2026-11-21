@@ -118,7 +118,11 @@ async function shardedTests(app: string, test: string, n: number): Promise<strin
   return shard(timed, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
 }
 
-const [cmd, arg = "", base = ""] = process.argv.slice(2);
+const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : [];
+
+// A change here can break any app: shared packages, the lockfile, this workflow. Prose can't, so a README or
+// skill under packages/ runs that package's tests (`packages` below) but not every app's.
+export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
 
@@ -171,7 +175,7 @@ if (cmd === "drop") {
   const changed = await changedFiles(arg);
   // A change to the shared code, the lockfile or the root package.json's dependencies can break any app.
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
-  const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f))
+  const shared = rows === "all" || changed.some(sharedCode)
     || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
@@ -198,6 +202,6 @@ if (cmd === "drop") {
       RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
-} else {
+} else if (import.meta.main) {
   throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | smoke | drop <all|a,b,c>");
 }
