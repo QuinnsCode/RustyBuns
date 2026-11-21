@@ -6,7 +6,7 @@
 // null from `clapLib` => no native build for this platform (or Cloudflare): no plugin tracks.
 import { FFIType, ptr } from "bun:ffi";
 import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
 import { arr, type Guard } from "@rustybuns/util/guard";
@@ -136,13 +136,15 @@ export async function openBundle(path: string): Promise<Bundle | string> {
 /** Where CLAP installers put plugins on each OS (the CLAP spec's list), `CLAP_PATH` first. */
 export function pluginFolders(platform = process.platform, env: Record<string, string | undefined> = process.env, home = homedir()): string[] {
   const sep = platform === "win32" ? ";" : ":";
+  // The target OS's separators, not the host's: a mac folder is built with `/` even when the test runs on Windows.
+  const at = platform === "win32" ? win32.join : posix.join;
   const extra = (env.CLAP_PATH ?? "").split(sep).filter(Boolean);
-  if (platform === "darwin") return [...extra, join(home, "Library/Audio/Plug-Ins/CLAP"), "/Library/Audio/Plug-Ins/CLAP"];
+  if (platform === "darwin") return [...extra, at(home, "Library/Audio/Plug-Ins/CLAP"), "/Library/Audio/Plug-Ins/CLAP"];
   if (platform === "win32") {
-    return [...extra, ...[env.COMMONPROGRAMFILES && join(env.COMMONPROGRAMFILES, "CLAP"), env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Programs/Common/CLAP")]
+    return [...extra, ...[env.COMMONPROGRAMFILES && at(env.COMMONPROGRAMFILES, "CLAP"), env.LOCALAPPDATA && at(env.LOCALAPPDATA, "Programs/Common/CLAP")]
       .filter((d): d is string => !!d)];
   }
-  return [...extra, join(home, ".clap"), "/usr/lib/clap"];
+  return [...extra, at(home, ".clap"), "/usr/lib/clap"];
 }
 
 /** Every `.clap` in these folders and the folders inside them (a few deep), each once. A folder that isn't there is skipped. */
