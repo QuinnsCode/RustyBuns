@@ -11,13 +11,14 @@ import { cpSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { walled } from "../../../packages/shell-bun/src/bindings/worker-loader.ts";
 import { help } from "../../../scripts/help.ts";
+import { check, obj, str } from "@rustybuns/util/guard";
 
 help(import.meta.path);
 const src = process.argv[2];
 if (!src) { console.error("usage: bun scripts/vendor-mpl.ts <mpl checkout>"); process.exit(1); }
 const out = join(import.meta.dir, "../vendor/mpl");
 const sha = (await Bun.$`git -C ${src} rev-parse HEAD`.text()).trim();
-const version: string = (await Bun.file(join(src, "package.json")).json()).version;
+const { version } = check(obj({ version: str(40) }), await Bun.file(join(src, "package.json")).json()) ?? { version: "unknown" };
 
 const built = await Bun.build({
   entrypoints: [join(src, "src/index.ts")], target: "browser", format: "esm", minify: true,

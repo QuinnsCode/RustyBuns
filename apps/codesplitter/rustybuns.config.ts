@@ -133,8 +133,8 @@ export default defineConfig({
     // git takes any size anyway.
     LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks", protect: true },
     // Charts a code-mode program drew and saved (src/charts.ts), each behind a 7-day signed link. The hourly cron deletes
-    // each day's past the week, so the bucket holds a week of them at most; nothing in it is kept, so it isn't protected.
-    CHARTS: { type: "r2", bucketName: "codesplitter-charts" },
+    // each day's past the week, so the bucket holds a week of them at most; protected like every live bucket, so a destroy keeps it.
+    CHARTS: { type: "r2", bucketName: "codesplitter-charts", protect: true },
     // Code mode (src/codemode.ts): an agent's program over the MCP tools runs in a dynamic Worker of its own, with no network and the tools as its only reach.
     LOADER: { type: "worker_loader" },
     // Hosted coding agents (super experimental): one container per run, each CLI
@@ -206,7 +206,7 @@ export default defineConfig({
       bindings: {
         DB: { databaseName: "codesplitter-office-preview-db", protect: false },
         LEVEL_CHUNKS: { bucketName: "codesplitter-office-preview-chunks", protect: false },
-        CHARTS: { bucketName: "codesplitter-office-preview-charts" },
+        CHARTS: { bucketName: "codesplitter-office-preview-charts", protect: false },
         STATS: { protect: false },
         HOOKS: { queueName: "codesplitter-office-preview-hooks" },
         JOBS: { queueName: "codesplitter-office-preview-jobs" },
