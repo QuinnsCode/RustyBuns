@@ -12,7 +12,7 @@ import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports, 
 
 // Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
-const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
+const root = new URL("../../../apps/frameworks/spa-example", import.meta.url).pathname;
 
 test("infer: framework, pm, deps, vite aliases from the repo itself", () => {
   const i = infer(root);
