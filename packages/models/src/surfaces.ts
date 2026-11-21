@@ -42,7 +42,7 @@ export type Wear = { chip: number; metal?: number; stipple?: number; scuff?: num
 export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
-  grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.6, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
+  grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.4, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -57,7 +57,7 @@ export const SURFACES = {
   /** Birch ply, its face grain. */
   ply: { tile: 0.6, tint: 0xffffff, roughness: 0.9, metalness: 0, color: true },
   /** Textured black plastic or polyurea: a moulded PA box, a cable's jacket. */
-  plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 1.2, wear: { chip: 0x6a6866, stipple: 1.6, scuff: 1, matte: 0.6 } },
+  plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 0.5, wear: { chip: 0x6a6866, stipple: 1.0, scuff: 1, matte: 0.6 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
