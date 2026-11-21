@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { arr, num, obj, oneOf, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { appDir as dirOf } from "./app-dirs.ts";
 
 export const CAP = 5, TTL_MS = 3 * 24 * 3600_000, MARK = "<!-- rustybuns-preview -->";
 
@@ -89,7 +90,7 @@ async function rustybuns(appDir: string, args: string[]): Promise<{ code: number
 }
 
 async function takeDown(l: Live, why: string): Promise<boolean> {
-  const dir = join(root(), "apps", l.app);
+  const dir = join(root(), dirOf(l.app, root()));
   const { code } = await rustybuns(dir, ["destroy", "--stage", l.stage, "--ephemeral", "--yes"]);
   if (code !== 0) { console.error(`destroy of ${l.stage} (${l.app}) failed; it stays on the list`); return false; }
   try { comment(l.pr, commentBody(null, why)); } catch (e) { console.error(`note: couldn't edit #${l.pr}'s comment: ${(e as Error).message}`); }
@@ -125,8 +126,8 @@ async function main(argv: string[]) {
   }
   const app = argv.find((a, i) => !a.startsWith("--") && argv[i - 1] !== "--pr");
   if (!app || !/^[a-z0-9-]+$/.test(app)) throw new Error("name the app: bun run preview <app>   (--help for the rest)");
-  const appDir = join(root(), "apps", app);
-  if (!existsSync(join(appDir, "rustybuns.config.ts"))) throw new Error(`apps/${app} has no rustybuns.config.ts, so there is nothing to deploy`);
+  const appDir = join(root(), dirOf(app, root()));
+  if (!existsSync(join(appDir, "rustybuns.config.ts"))) throw new Error(`${dirOf(app, root())} has no rustybuns.config.ts, so there is nothing to deploy`);
   const d = decide(live, pr);
   if (d.do === "refuse") throw new Error(d.why);
   const stage = stageOf(pr);

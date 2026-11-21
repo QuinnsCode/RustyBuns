@@ -178,9 +178,10 @@ export interface Run { dir: string; cmd: string; junit?: string }
 export function testRuns(ciApps: string, paths: string[]): Run[] {
   const rows = new Map([...ciApps.matchAll(/^\s*"([\w-]+)":\s*\{(.*)\},?\s*$/gm)].map((m) => [m[1]!, m[2]!.match(/\btest:\s*"([^"]*)"/)?.[1]]));
   const runs: Run[] = [];
-  for (const app of new Set(paths.map((p) => p.match(/^apps\/([^/]+)\//)?.[1]).filter((a): a is string => !!a))) {
-    const cmd = rows.get(app);
-    if (cmd) runs.push({ dir: `apps/${app}`, cmd });
+  // The framework samples sit a level down, in apps/frameworks/.
+  for (const dir of new Set(paths.map((p) => p.match(/^apps\/(?:frameworks\/)?[^/]+(?=\/)/)?.[0]).filter((a): a is string => !!a))) {
+    const cmd = rows.get(dir.slice(dir.lastIndexOf("/") + 1));
+    if (cmd) runs.push({ dir, cmd });
   }
   if (paths.some((p) => p.startsWith("packages/"))) runs.push({ dir: ".", cmd: "bun test packages" });
   return runs;

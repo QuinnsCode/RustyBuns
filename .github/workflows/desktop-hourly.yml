@@ -77,7 +77,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { ref: "${{ env.SHA }}" }
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ring-${{ env.SHA }}-${{ matrix.app }}-${{ matrix.target }}
-          path: apps/${{ matrix.app }}/dist/${{ matrix.app }}-*
+          path: ${{ matrix.dir }}/dist/${{ matrix.app }}-*
           if-no-files-found: warn
           retention-days: 7
 
@@ -140,7 +140,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { ref: "${{ env.SHA }}" }
@@ -152,14 +152,14 @@ jobs:
       - if: matrix.prep
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with: { workspaces: "${{ matrix.cargo }}" }
-      - run: bun install --frozen-lockfile --filter rustybuns --filter "./apps/${{ matrix.app }}"
+      - run: bun install --frozen-lockfile --filter rustybuns --filter "./${{ matrix.dir }}"
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}
       - if: matrix.test
-        run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+        run: bun ${{ matrix.up }}scripts/ci-test-count.ts "${{ matrix.test }}"
       - if: matrix.boot
-        run: bun ../../scripts/boot.ts
+        run: bun ${{ matrix.up }}scripts/boot.ts
 
   packages:
     needs: plan

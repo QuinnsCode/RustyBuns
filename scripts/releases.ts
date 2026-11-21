@@ -17,6 +17,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { help } from "./help.ts";
+import { appDir } from "./app-dirs.ts";
 import { catchUp, headless, install, jobCheckout, uninstall } from "./launchd.ts";
 import { esc } from "../packages/util/src/index.ts";
 import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
@@ -63,7 +64,7 @@ export async function releases(now = new Date()): Promise<Releases> {
     const why = dot === "error" ? (a.live && !a.live.ok ? `prod link answered ${a.live.status || "nothing"}` : a.release?.ok === false ? `release ${a.release.tag} failed` : "hourly tests failed")
       : dot === "live" ? (a.good && !a.play ? `released ${a.good.tag}` : "prod link answers") : dot === "code" ? say.code : a.play ? "prod link not checked" : "no prod deploy yet";
     const link = a.id === "rustybuns" ? "https://www.npmjs.com/package/rustybuns" : a.play;
-    return { name: a.name, dot, why, link, pushed: a.commit?.at ?? null, code: `https://github.com/${OWNER}/${HOME}/tree/main/${a.id === "rustybuns" ? "packages" : `apps/${a.id}`}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }) };
+    return { name: a.name, dot, why, link, pushed: a.commit?.at ?? null, code: `https://github.com/${OWNER}/${HOME}/tree/main/${a.id === "rustybuns" ? "packages" : appDir(a.id)}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }) };
   });
 
   const perRepo = tally(found.map((f) => ({ mergedAt: f.closedAt, repo: f.repository.name })), (p) => [p.repo], now);

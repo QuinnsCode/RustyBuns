@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arr, check, num, obj, opt, rec, str, type Guard, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { appDir, appDirs, appOf as appOfPath } from "./app-dirs.ts";
 
 const REPO = "QuinnsCode/RustyBuns", WORKFLOWS = ["apps.yml", "typecheck.yml"];
 const t = opt(str(60, { min: 0 })), name = str(500, { min: 0 });
@@ -103,7 +104,7 @@ export function stepKind(step: string): "checkout" | "setup" | "install" | "test
 /** The app a job tests, from its name: "test two-fronts 2/4" is two-fronts; the plain jobs map to the folder they test. */
 export function appOf(job: string): string | undefined {
   const m = job.match(/^(?:test|containers) (\S+)/);
-  if (m) return `apps/${m[1]}/`;
+  if (m) return `${appDir(m[1]!)}/`;
   return ({ packages: "packages/", scripts: "scripts/", hooks: ".claude/" } as Record<string, string>)[job];
 }
 
@@ -204,7 +205,7 @@ function appsUsing(): Map<string, Set<string>> {
   const deps = (file: string) => { try { const j: unknown = JSON.parse(readFileSync(file, "utf8")); const d = check(obj({ name: opt(str(200)), dependencies: opt(rec(str(200), 200)), devDependencies: opt(rec(str(200), 200)) }), j); return d && { name: d.name, deps: Object.keys({ ...d.dependencies, ...d.devDependencies }) }; } catch { return undefined; } };
   const pkgs = new Map<string, string[]>(), apps = new Map<string, string[]>();
   for (const f of new Bun.Glob("packages/*/package.json").scanSync()) { const d = deps(f); if (d?.name) pkgs.set(f.split("/")[1]!, d.deps); }
-  for (const f of new Bun.Glob("apps/*/package.json").scanSync()) { const d = deps(f); if (d) apps.set(f.split("/")[1]!, d.deps); }
+  for (const [id, dir] of appDirs()) { const d = deps(`${dir}/package.json`); if (d) apps.set(id, d.deps); }
   const nameOf = (dir: string) => `@rustybuns/${dir}`;
   const out = new Map<string, Set<string>>();
   for (const dir of pkgs.keys()) {
@@ -318,7 +319,7 @@ export function reach(files: string[], using: Map<string, Set<string>>): Set<str
   if (files.some((f) => /^(bun\.lock|package\.json|\.github\/workflows\/apps\.yml|scripts\/ci-apps\.ts)$/.test(f))) return "all";
   const out = new Set<string>();
   for (const f of files) {
-    const a = f.match(/^apps\/([^/]+)\//)?.[1], p = f.match(/^packages\/([^/]+)\//)?.[1];
+    const a = appOfPath(f), p = f.match(/^packages\/([^/]+)\//)?.[1];
     if (a) out.add(a);
     if (p) for (const x of using.get(p) ?? []) out.add(x);
   }
@@ -331,7 +332,7 @@ function touchedBy(job: string, files: string[] | undefined, using: Map<string, 
   if (!files || !dir) return undefined;
   const r = reach(files, using);
   if (r === "all") return true;
-  const app = dir.match(/^apps\/([^/]+)\//)?.[1];
+  const app = appOfPath(dir);
   return app ? r.has(app) : files.some((f) => f.startsWith(dir));
 }
 

@@ -33,6 +33,7 @@
 // Needs GH_TOKEN and GITHUB_REPOSITORY (owner/name), as in a workflow; rollback falls back to gh's own login and repo.
 import { arr, bool, nul, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { appDir, appDirs, appOf } from "./app-dirs.ts";
 import { WEB_APPS } from "./phone-smoke-lib.ts";
 
 /** A commit on main, newest first, with its ring status (undefined when the ring never ran it). */
@@ -145,7 +146,7 @@ export function soaked(history: Tested[], runs: number): string | undefined {
 export function previewApps(changed: string[] | "all", builds: Record<string, string>, apps: readonly string[] = WEB_APPS): string[] {
   const vite = apps.filter((a) => /\bvite build\b/.test(builds[a] ?? "")).sort();
   if (changed === "all" || changed.some((f) => f.startsWith("packages/") || f === "bun.lock" || f === "package.json")) return vite;
-  const touched = new Set(changed.map((f) => /^apps\/([^/]+)\//.exec(f)?.[1]).filter(Boolean));
+  const touched = new Set(changed.map(appOf).filter(Boolean));
   return vite.filter((a) => touched.has(a));
 }
 
@@ -240,7 +241,7 @@ async function rollback(repo: string, ring: string, app: string, target: string,
     const name = savedName(sha, app, target);
     const run = await savedRun(repo, name);
     if (!run) { console.error(`${sha.slice(0, 7)} was green but has no saved ${app} ${target} build (expired, or before #4497)`); continue; }
-    const dir = `apps/${app}/dist/ring-${sha.slice(0, 7)}`;
+    const dir = `${appDir(app)}/dist/ring-${sha.slice(0, 7)}`;
     await Bun.$`gh run download ${run} -R ${repo} -n ${name} -D ${dir}`.quiet();
     // An artifact zip drops the executable bit.
     for (const file of new Bun.Glob("*").scanSync(dir)) await Bun.$`chmod +x ${`${dir}/${file}`}`.quiet();
@@ -293,11 +294,11 @@ if (import.meta.main) {
     if ((ring && !isSha(ring)) || !isSha(sha)) { console.error("usage: bun scripts/rings.ts previews <base sha or \"\"> <sha>"); process.exit(2); }
     const changed = ring ? (await Bun.$`git diff --name-only ${ring} ${sha}`.text()).split("\n").filter(Boolean) : "all" as const;
     const builds: Record<string, string> = {};
-    for (const dir of await Array.fromAsync(new Bun.Glob("apps/*/package.json").scan())) {
-      const pkg: unknown = await Bun.file(dir).json();
+    for (const [id, at] of appDirs()) {
+      const pkg: unknown = await Bun.file(`${at}/package.json`).json();
       const scripts = typeof pkg === "object" && pkg !== null && "scripts" in pkg ? pkg.scripts : undefined;
       const build = typeof scripts === "object" && scripts !== null && "build" in scripts ? scripts.build : undefined;
-      if (typeof build === "string") builds[dir.split("/")[1]!] = build;
+      if (typeof build === "string") builds[id] = build;
     }
     console.log(`previews=${JSON.stringify(previewApps(changed, builds))}`);
     process.exit(0);
