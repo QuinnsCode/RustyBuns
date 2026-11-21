@@ -455,16 +455,21 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   const shell = rounded("paint", { wf: w, wb, h: fh, d, r, e, y0 });
   // The grille fills the flat of the front, inside the rounded shell, seated in a dark cavity: the baffle 7 cm back,
   // the woofer's cone and the horn's flare reaching forward to just behind the sheet.
-  const mw = w - 2 * r - 0.008, mh = fh - 2 * e - 0.008, gw = mw + 0.004, gh = mh + 0.004, yc = y0 + fh / 2, cave = Math.min(0.08, d * 0.2);
+  // Under it, a band of the shell carries two bass port slots (a tall enough box only).
+  const mw = w - 2 * r - 0.008, fl = fh - 2 * e - 0.008, pb = fl > 0.3 ? Math.min(0.06, fl * 0.12) : 0, mh = fl - pb;
+  const gw = mw + 0.004, gh = mh + 0.004, yc = y0 + fh / 2 + pb / 2, cave = Math.min(0.08, d * 0.2);
+  const ph0 = pb - 0.02, ports: Well[] = pb ? [-1, 1].map((x) => ({ at: [x * mw * 0.22, yc - mh / 2 - pb / 2 - 0.002, d / 2], w: mw * 0.36, h: ph0, r: ph0 / 2 - 0.001, deep: 0.09, lip: 0.004, walls: "knob", floor: "knob" })) : [];
   const lean = Math.atan2((w - wb) / 2, d - 2 * r), side = (s: number): THREE.Vector3Tuple => [s * Math.cos(lean), 0, -Math.sin(lean)];
   // handles: a pocket in each side the fingers curl into, a pocket with a bridge across it on top, and the back's
   // amp plate (or a passive box's jack cup) sunk in a moulded recess, inside the flat of the back
   const rec = 0.02, lo = y0 + e + 0.008, hi = body - e - 0.008;
   const rw0 = Math.min(w * 0.62, wb - 2 * r - 0.016 - 0.03) + 0.03, rh0 = Math.min(powered ? h * 0.4 : h * 0.18, hi - lo - 0.03) + 0.03;
   const pw = rw0 - 0.03, ph = rh0 - 0.03, py = clamp(powered ? h * 0.32 : h * 0.3, lo + rh0 / 2, hi - rh0 / 2);
-  const grip = (s: number): [THREE.Vector3Tuple, Well[]] => [side(s), [{ at: [s * w * 0.43, y0 + fh * 0.62, -0.01], w: Math.min(d * 0.34, d - 2 * r - 0.04), h: 0.055, r: 0.022, deep: 0.04, lip: 0.006, draft: 0.004 }]];
+  // a scoop moulded deep into each side, high up where the box balances: a hand goes in to the knuckles
+  const sh = Math.min(0.1, fh * 0.18), sy = clamp(y0 + fh * 0.7, lo + sh / 2 + 0.01, hi - sh / 2 - 0.01);
+  const grip = (s: number): [THREE.Vector3Tuple, Well[]] => [side(s), [{ at: [s * w * 0.43, sy, -0.01], w: Math.min(d * 0.45, d - 2 * r - 0.05), h: sh, r: Math.min(0.03, sh / 2 - 0.004), deep: 0.065, lip: 0.012, draft: 0.008 }]];
   sunk(b, shell, [
-    [[0, 0, 1], [{ at: [0, yc, d / 2], w: mw, h: mh, r: 0.012, deep: cave, lip: 0.003, walls: "knob" }]],
+    [[0, 0, 1], [{ at: [0, yc, d / 2], w: mw, h: mh, r: 0.012, deep: cave, lip: 0.003, walls: "knob" }, ...ports]],
     grip(-1), grip(1),
     [[0, 1, 0], [{ at: [0, body, -d * 0.04], w: w * 0.42, h: d * 0.2, r: 0.02, deep: 0.035, lip: 0.006, draft: 0.003 }]],
     [[0, 0, -1], [{ at: [0, py, -d / 2], w: rw0, h: rh0, r: 0.014, deep: rec, lip: 0.005, draft: 0.002 }]],
@@ -477,7 +482,7 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   b.pieces.push(...horn(gw * 0.62, gh * 0.2, deep, at(yc + gh * 0.3)));
   grillePlate(b, new THREE.Matrix4().makeTranslation(gw / 2 - 0.045, yc - gh / 2 + 0.03, d / 2 - 0.003));
   grilleScrews(b, gw, gh, new THREE.Matrix4().makeTranslation(0, yc, d / 2 - 0.003));
-  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.065), (y0 + 0.002) / 2, z], 0.006));
+  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.055, y0 + 0.003, 0.045], [x * (half - 0.07), (y0 + 0.003) / 2, z], 0.008));
   // the pole cup: a steel ring round a dark socket
   b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
   // the fly points: a threaded insert in a steel washer
