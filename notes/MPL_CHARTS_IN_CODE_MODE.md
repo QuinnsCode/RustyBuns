@@ -89,3 +89,19 @@ Also check during the spike:
 
 Running a saved chart program on a cron or an event comes after, through Cron Swanson. eqosys and qCRM get mpl
 by turning it on in their `runProgram` options. Leave them off until codeSplitter has used it for a while.
+
+## What the spike found (#5402)
+
+- **It runs.** `apps/codesplitter/vendor/mpl/mpl.ts` is mpl 0.1.0 at `689ebd4383c0`, bundled by
+  `apps/codesplitter/scripts/vendor-mpl.ts`: 554 KiB, 194 KiB gzip. Besides the tracer's `node:fs` import, the local
+  loader's wall refused the words `module` (a font field name, and doc links in the bundled matplotlibrc) and
+  `globalThis` (one `Reflect.apply`). The script renames them, counting each, and checks the result with `walled`.
+- **CPU under Bun:** the journey in `test/charts.test.ts` (read `test-times.json` through `read_file`, a 12-bar `barh`,
+  `tight_layout`, a 33 KB PNG, `save_chart`) took 212 ms of CPU on its first run and 134 ms after, against `CPU_MS`
+  (2,000 ms). Each run is a fresh Worker, so the bundle parses every time; only a program that names `mpl` gets it.
+- **Signed links without S3 keys.** R2's pre-signed URLs need S3 credentials. The link is
+  `/charts/<day>/<file>?exp=&sig=` on codeSplitter itself, an HMAC under the site's auth secret, served from the bucket.
+  An SVG is served with `sandbox` CSP, so it runs no script.
+- **The week's delete** is the hourly cron's `sweepCharts`, by day prefix: the config has no R2 lifecycle rule yet.
+- **The size limit:** a 300,000-byte chart is 400 KB of base64 in one tool argument, well inside a Workers RPC call
+  (32 MiB); the HTTP route checks the string's length before decoding.
