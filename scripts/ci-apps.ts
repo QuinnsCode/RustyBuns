@@ -144,6 +144,8 @@ const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : []
 
 // Code every app leans on: shared packages, the lockfile, this workflow. Prose isn't, so a README or skill under
 // packages/ runs only the packages' tests (`packages` below), not the hooks and scripts tests a code change brings.
+// The app folders a test lane checks out (apps.yml's sparse checkout, #5509): its own and the apps it runs (`with`).
+export const sparseDirs = (app: string) => [app, ...(APPS[app]!.with ?? [])].map((n) => `/${appDir(n)}/`).join("\n");
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
@@ -204,7 +206,7 @@ if (cmd === "drop") {
   const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
-    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
+    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app) };
     const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES) : [];
     if (lanes.length < 2) return [{ ...row, test: a.test ?? "", shard: "" }];
     // Boot runs once, with the first lane.
