@@ -1,12 +1,13 @@
 ---
 name: rustybuns-apps
-description: Start work in one app under apps/ (a game, eqosys, qCRM, codeSplitter, an example). Gives the app's brief in one call instead of paging its README and notes.
+description: Start work in one app under apps/ (a game, eqosys, qCRM, codeSplitter, an example), or answer "how do I use / play this app?". Gives the app's brief in one call instead of paging its README and notes.
 ---
 
 # Working in one app
 
 1. `bun run brief <app>` (no app: every app, one line each). It prints, from the app's own files: what the app is,
-   its README sections, its notes files (VISION.md, LEVEL_DESIGN.md, ...) with their titles, its license note,
+   how a person uses it (the README's `## Play it` / `## Use it`: link, how to play, controls, account; that is the
+   answer when someone asks "how do I use this?"), its README sections, its notes files (VISION.md, LEVEL_DESIGN.md, ...) with their titles, its license note,
    its scripts, its tests and the one-line command to run one, its port, and its page handle.
 2. Read only the notes the task needs. A licence note (eqosys, qCRM, QView3D, geoboxq) means read that app's
    `AGENTS.md` before copying code out of it.
