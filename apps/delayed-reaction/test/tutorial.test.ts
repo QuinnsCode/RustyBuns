@@ -1,4 +1,4 @@
-// The first run through the running page, in headless Chrome over CDP (scripts/chrome.ts): pick preset 1 from the menu
+// The first run through the running page, in headless Chrome over CDP (scripts/chrome.ts): the landing page's one Play button
 // and the tutorial coach walks it (hear a call, step into a lane, answer it, on the beat, four in a row), answered by a
 // player who steps into each door on its due beat. Then it never shows again in that browser, and a jump link never
 // starts it. Any page error or console.error fails it.
@@ -36,13 +36,14 @@ async function open(cdp: Cdp, path: string, own = false) {
 
 const CODES = ["KeyD", "KeyF", "KeyJ", "KeyK"];
 
-test("the first preset is the tutorial; done once, it never shows again", async () => {
+test("Play on the landing page is the tutorial on preset 1; done once, it never shows again", async () => {
   const tab = await open(chrome.cdp, "/");
   expect(await tab.coach()).toMatchObject({ learned: false, running: false });
 
-  // Preset 1 from the menu: the run starts and the coach waits on the first call.
-  await tab.click(".preset");
+  // One tap on Play from the landing page: preset 1 starts and the coach waits on the first call.
+  await tab.click("#play");
   await tab.until("the run", `!delayedReaction.state().menu`);
+  expect(await tab.page<number>("delayedReaction.state().level")).toBe(1);
   expect(await tab.coach()).toMatchObject({ running: true, step: 0, title: "Hear the call" });
   expect(await tab.page<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
   await tab.until("the coach on the lanes", `delayedReaction.state().tutorial.title === "Step into a lane"`);
