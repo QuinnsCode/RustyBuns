@@ -876,26 +876,57 @@ function barCooler(): Build {
 }
 
 /**
- * A hung line array box: a cabinet that tapers to the back (so the box below can splay down), a full-width grille
- * over two 10" drivers and a horn, steel rigging plates on both sides. The front plates carry the hinge pins the hang
- * turns on; the rear link bars hold the splay pins. The amp panel and its jacks are on the back.
+ * A hung line array box: a wedge seen from the side (the cabinet's top and bottom draw in toward the back, so the box
+ * below can splay down), its front split into three grille panels (a 10" woofer behind each outer one, the tall
+ * waveguide behind the middle), a pair of D-shaped hand-holds moulded into each side, and black steel rigging on both
+ * sides: a front bracket carrying the hinge pins the hang turns on and a pull handle, and a rear link bar drilled
+ * with the splay holes, a pin in one. The amp plate sits in a recess in the back.
  */
-function lineArray(): Build {
-  const [w, h, d] = GEAR_SIZES["line-array-10"], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = 0.045;
+function lineArray(id: "line-array-10" | "line-array-box"): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = h * 0.15, ch = 0.008;
   const front = d / 2 - 0.012, back = -d / 2 + 0.01;
-  b.pieces.push(prism("paint", [[front, 0.004], [front, h - 0.004], [back, h - taper], [back, taper]], inner));
-  b.pieces.push(box("grille", [inner - 0.02, h - 0.03, 0.012], [0, h / 2, d / 2 - 0.006], { bevel: 0.003 }));
+  const body = prism("paint", [[front, 0], [front, h], [back, h - taper], [back, taper]], inner, 0, ch);
+  // the front: three panels with a strip of the shell between them, each over its own dark cavity
+  const m = 0.014, cw = inner * 0.2, sw = (inner - 2 * ch - 2 * 0.012 - 2 * m - cw) / 2, gh = h - 2 * ch - 0.026, yc = h / 2, cave = 0.07, g = 0.008;
+  const xs = [-(cw / 2 + m + sw / 2), 0, cw / 2 + m + sw / 2], ws = [sw, cw, sw];
+  // the hand-holds: two half-round pockets, one over the other with a bar of shell between, mid-way along each side
+  const hz = (front + back) / 2 - d * 0.04, hw = Math.min(0.18, d * 0.34), hh = Math.min(0.06, h * 0.19), gap = 0.03;
+  const holds = (s: number): [THREE.Vector3Tuple, Well[]] => [[s, 0, 0], [-1, 1].map((k) => ({ at: [s * inner / 2, yc + k * (hh + gap) / 2, hz], w: hw, h: hh, r: hh / 2 - 0.001, deep: 0.05, lip: 0.006, draft: 0.004, walls: "knob", floor: "knob" }))];
+  // the back: the amp plate in a recess
+  const rec = 0.016, bh = h - 2 * taper, pw = inner * 0.42, ph = bh * 0.62, px = -inner * 0.18, py = h / 2;
+  sunk(b, body, [
+    [[0, 0, 1], xs.map((x, i) => ({ at: [x, yc, front], w: ws[i] + 0.004, h: gh + 0.004, r: 0.006, deep: cave, lip: 0.002, walls: "knob" }))],
+    holds(-1), holds(1),
+    [[0, 0, -1], [{ at: [px, py, back], w: pw + 0.03, h: ph + 0.03, r: 0.01, deep: rec, lip: 0.004, draft: 0.002 }]],
+  ]);
+  const gz = front - g - 0.002, deep = cave - g - 0.012;
+  xs.forEach((x, i) => {
+    b.pieces.push(...grilleSlab(ws[i], gh, g, yc, gz, 0.006, new THREE.Matrix4().makeTranslation(x, 0, 0)));
+    if (i !== 1) grilleScrews(b, ws[i], gh, new THREE.Matrix4().makeTranslation(x, yc, front - 0.001), 2);
+    const at = new THREE.Matrix4().makeTranslation(x, yc, gz - 0.004);
+    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at));
+    else b.pieces.push(...cone(Math.min(sw, gh) * 0.44, deep, at));
+  });
+  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, front));
+  // the rigging: black steel, a pin through each hole the hang uses
   const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04;
+  const pin = (x: number, y: number, z: number, s: number) => b.pieces.push(disc("chrome", 0.007, 0.026, "x", [x, y, z], 8), disc("knob", 0.01, 0.005, "x", [x + s * 0.0125, y, z], 8));
   for (const s of [-1, 1]) {
     const x = s * (w / 2 - 0.01);
-    b.pieces.push(box("metal", [0.02, h, 0.07], [x, h / 2, plateZ]));
-    b.pieces.push(box("metal", [0.02, h - 2 * taper, 0.05], [x, h / 2, linkZ]));
-    for (const y of pinY) b.pieces.push(disc("chrome", 0.009, 0.028, "x", [x, y, plateZ], 6), disc("chrome", 0.007, 0.026, "x", [x, h / 2 + (y - h / 2) * 0.6, linkZ], 6));
+    b.pieces.push(box("panel", [0.02, h - 0.004, 0.07], [x, h / 2, plateZ], { bevel: 0.003 }));
+    b.pieces.push(box("panel", [0.016, bh - 0.01, 0.05], [x, h / 2, linkZ], { bevel: 0.003 }));
+    for (const y of pinY) pin(x, y, plateZ, s);
+    // the splay holes down the link bar, the pin in the one this box hangs at
+    for (const k of [-1, 0]) b.pieces.push(disc("knob", 0.0045, 0.018, "x", [x, h / 2 + k * bh * 0.2, linkZ], 6));
+    pin(x, h / 2 + bh * 0.2, linkZ, s);
+    b.pieces.push(...handle("panel", [x + s * 0.01, h / 2, plateZ - 0.085], s > 0 ? "x" : "-x", 0.09, 0.022));
   }
-  const py = h * 0.5;
-  b.pieces.push(box("panel", [w * 0.34, h * 0.5, 0.01], [-w * 0.3, py, back - 0.004]));
-  b.pieces.push(disc("light", 0.004, 0.006, "z", [-w * 0.18, py + h * 0.17, back - 0.01], 4));
-  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [-w * 0.42, py - h * 0.06, back - 0.009], [w * 0.09, 0, 0]);
+  const bz = back + rec - 0.008;
+  plate(b, pw, ph, [px, py, bz + 0.004]);
+  for (let i = 0; i < 7; i++) b.pieces.push(box("metal", [0.003, ph * 0.36, 0.008], [px - pw * 0.34 + (i * pw * 0.68) / 6, py + ph * 0.22, bz - 0.004]));
+  b.pieces.push(disc("light", 0.0035, 0.004, "z", [px + pw * 0.34, py - ph * 0.12, bz - 0.002], 8));
+  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [px - pw * 0.32, py - ph * 0.22, bz], [pw * 0.22, 0, 0]);
+  backPrint(b, "RISK OF SHOCK DO NOT OPEN", [px, py - ph / 2 + 0.01, bz - 0.0005], Math.min(0.006, pw / 50));
   mark(b, "hinge-top", [0, pinY[1], plateZ], [1, 0, 0]);
   mark(b, "hinge-bottom", [0, pinY[0], plateZ], [1, 0, 0]);
   mark(b, "grab", [0, h, 0]);
@@ -1389,8 +1420,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "sand-dolly": sandDolly,
   "jerry-can-20l": fuelCan,
   "bar-cooler": barCooler,
-  "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
-  "line-array-10": lineArray,
+  "line-array-box": () => lineArray("line-array-box"),
+  "line-array-10": () => lineArray("line-array-10"),
   "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
