@@ -19,8 +19,11 @@ const folders = (dir: string) => readdirSync(`${root}/${dir}`, { withFileTypes: 
 
 /** The shelf as the packages describe themselves today. */
 export async function shelf(): Promise<Part[]> {
-  const apps = await Promise.all(folders("apps").map(async (app) => {
-    const pj = await read(`${root}/apps/${app}/package.json`).catch(() => undefined);
+  // The framework samples sit a level down, in apps/frameworks/.
+  const dirs = folders("apps").flatMap((a) => (a === "frameworks" ? folders("apps/frameworks").map((f) => `frameworks/${f}`) : [a]));
+  const apps = await Promise.all(dirs.map(async (dir) => {
+    const app = dir.slice(dir.lastIndexOf("/") + 1);
+    const pj = await read(`${root}/apps/${dir}/package.json`).catch(() => undefined);
     return { app, deps: [...keys(field(pj, "dependencies")), ...keys(field(pj, "devDependencies"))] };
   }));
   const parts: Part[] = [];

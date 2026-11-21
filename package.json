@@ -5,6 +5,7 @@
   "workspaces": [
     "packages/*",
     "apps/*",
+    "apps/frameworks/*",
     "!apps/tscircuit-desktop"
   ],
   "scripts": {

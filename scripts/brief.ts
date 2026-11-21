@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { help } from "./help.ts";
+import { appDir, appDirs } from "./app-dirs.ts";
 import { HANDLES } from "./probe.ts";
 import { PORTS } from "../packages/util/src/ports.ts";
 import { isRecord } from "../packages/util/src/guard.ts";
@@ -51,8 +52,8 @@ function testFiles(dir: string): string[] {
 }
 
 export function brief(app: string, root = ROOT, full = false): string {
-  const dir = path.join(root, "apps", app);
-  if (!existsSync(dir)) throw new Error(`no apps/${app}: \`bun run brief\` lists them`);
+  const rel = appDir(app, root), dir = path.join(root, rel);
+  if (!existsSync(dir)) throw new Error(`no ${rel}: \`bun run brief\` lists them`);
   const readme = read(path.join(dir, "README.md"));
   const lines = [`# ${app}`, "", lede(readme) || "(no README lede)"];
   const sections = [...readme.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1]!.trim());
@@ -63,18 +64,18 @@ export function brief(app: string, root = ROOT, full = false): string {
   if (agents) notes.unshift("AGENTS.md");
   if (notes.length) {
     lines.push("", "Notes:");
-    for (const f of notes) lines.push(`- apps/${app}/${f}: ${cut(firstLine(read(path.join(dir, f))), 110)}`);
+    for (const f of notes) lines.push(`- ${rel}/${f}: ${cut(firstLine(read(path.join(dir, f))), 110)}`);
   }
   if (/License|PolyForm|QNTBR/i.test(agents)) lines.push("", "License: not the repo's Apache-2.0; read its AGENTS.md before copying code out.");
 
   const pkg: unknown = JSON.parse(read(path.join(dir, "package.json")) || "{}");
   const scripts = isRecord(pkg) && isRecord(pkg.scripts) ? Object.keys(pkg.scripts) : [];
-  if (scripts.length) lines.push("", `Scripts (bun run …, in apps/${app}): ${scripts.join(", ")}`);
+  if (scripts.length) lines.push("", `Scripts (bun run …, in ${rel}): ${scripts.join(", ")}`);
 
   const tests = testFiles(dir);
   if (tests.length) {
     lines.push("", `Tests (${tests.length}): ${tests.slice(0, 12).join(", ")}${tests.length > 12 ? ", …" : ""}`,
-      `Run one: cd apps/${app} && bun test ${tests[0]}`);
+      `Run one: cd ${rel} && bun test ${tests[0]}`);
   }
   const port = Object.entries(PORTS).find(([k]) => k === camel(app))?.[1];
   if (port) lines.push("", `Port: ${port} (PORTS.${camel(app)} in @rustybuns/util/ports)`);
@@ -84,10 +85,8 @@ export function brief(app: string, root = ROOT, full = false): string {
 }
 
 export function index(root = ROOT): string {
-  return readdirSync(path.join(root, "apps"))
-    .filter((a) => existsSync(path.join(root, "apps", a, "package.json")))
-    .sort()
-    .map((a) => `${a.padEnd(24)} ${cut(lede(read(path.join(root, "apps", a, "README.md"))), 96)}`)
+  return [...appDirs(root)]
+    .map(([a, dir]) => `${a.padEnd(24)} ${cut(lede(read(path.join(root, dir, "README.md"))), 96)}`)
     .join("\n");
 }
 

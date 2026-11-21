@@ -29,7 +29,7 @@ async function microChild(mode: (typeof MICRO)[number], n = 100_000) {
 }
 
 // ---- typecheck: real processes ----
-const projects = ["tsconfig.json", ...readdirSync(`${ROOT}apps`).sort().map((a) => `apps/${a}/tsconfig.json`).filter((p) => existsSync(`${ROOT}${p}`))];
+const projects = ["tsconfig.json", ...readdirSync(`${ROOT}apps`).flatMap((a) => a === "frameworks" ? readdirSync(`${ROOT}apps/${a}`).map((f) => `${a}/${f}`) : [a]).sort().map((a) => `apps/${a}/tsconfig.json`).filter((p) => existsSync(`${ROOT}${p}`))];
 const check = (p: string) => [process.execPath, "check", "-p", p, "--no-pretty"];
 const FAIL = [process.execPath, "-e", "process.exit(1)"];
 
