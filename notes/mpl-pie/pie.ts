@@ -2,14 +2,15 @@
 // brand-new `ax.pie` (ivarvong/mpl#85). Each slice is how many of mpl's pixel-exact reference fixtures
 // (`fixtures/ref/*.json`) call that chart type.
 //
-//   bun notes/mpl-pie/pie.ts          clones mpl at PIN into a temp folder, counts, writes pie.png and oilslick.html here
-//   bun notes/mpl-pie/pie.ts --gif    also records oilslick.html as oilslick.gif (headless Chrome + ffmpeg)
+//   bun notes/mpl-pie/pie.ts          clones mpl at PIN into a temp folder, counts, writes pie.png, oilslick.html and lavalamp.svg here
+//   bun notes/mpl-pie/pie.ts --gif    also records oilslick.gif and lavalamp.gif (headless Chrome + ffmpeg); --gif=lavalamp for one
 //
 // mpl isn't on npm (the `mpl` package there is someone else's), so this reads its source straight from a clone.
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { help } from "../../scripts/help.ts";
+import { lavaLamp } from "./lavalamp.ts";
 
 help(import.meta.path);
 
@@ -139,18 +140,25 @@ const html = `<!doctype html>
 await Bun.write(join(here, "oilslick.html"), html);
 console.log(`pie.png + oilslick.html: ${counts.map(([k, n]) => `${k} ${n}`).join(", ")} (${fixtures.length} fixtures)`);
 
-if (process.argv.includes("--gif")) {
-  // Pause every animation, step them to each frame's time, and screenshot: frames are exact, not as fast as Chrome draws.
+
+// The lava-lamp edition: one SVG, SMIL only, so it plays straight from the file. Its loop is slower than the sheen's.
+const LAVA_LOOP = 12;
+const lava = lavaLamp(chart({ dark: true }).toSVG(), colors, LAVA_LOOP);
+await Bun.write(join(here, "lavalamp.svg"), lava);
+console.log(`lavalamp.svg: ${Math.round(lava.length / 1024)} KB`);
+
+/** Records `page` as a 960 px GIF, `loop` seconds at `fps`. Every animation is paused and stepped to each frame's exact
+ *  time before its screenshot, so frames are exact, not as fast as Chrome draws, and frame `loop` would be frame 0. */
+async function record(page: string, gif: string, loop: number, fps: number, step: (ms: number) => string) {
   const { launchChrome, openTab } = await import("../../scripts/chrome.ts");
-  const FPS = 15;
   const frames = mkdtempSync(join(tmpdir(), "mpl-pie-frames-"));
   const chrome = await launchChrome();
   try {
     const tab = await openTab(chrome.cdp, { w: 1440, h: 840 });
-    await tab.call("Page.navigate", { url: `file://${join(here, "oilslick.html")}` });
+    await tab.call("Page.navigate", { url: `file://${join(here, page)}` });
     await Bun.sleep(1500);
-    for (let i = 0; i < LOOP * FPS; i++) {
-      await tab.eval(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = ${(i * 1000) / FPS}; })`);
+    for (let i = 0; i < loop * fps; i++) {
+      await tab.eval(step((i * 1000) / fps));
       const { data } = await tab.call("Page.captureScreenshot", { format: "png" });
       await Bun.write(join(frames, `f${String(i).padStart(4, "0")}.png`), Buffer.from(data, "base64"));
     }
@@ -158,9 +166,16 @@ if (process.argv.includes("--gif")) {
   } finally {
     chrome.stop();
   }
-  const gif = join(here, "oilslick.gif");
-  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", String(FPS), "-i", join(frames, "f%04d.png"),
-    "-vf", "scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a", "-loop", "0", gif], { stderr: "inherit" });
+  const ff = Bun.spawnSync(["ffmpeg", "-y", "-loglevel", "error", "-framerate", String(fps), "-i", join(frames, "f%04d.png"),
+    "-vf", "scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a", "-loop", "0", join(here, gif)], { stderr: "inherit" });
   if (ff.exitCode !== 0) throw new Error("ffmpeg failed (brew install ffmpeg)");
-  console.log(`${gif}: ${LOOP * FPS} frames, ${LOOP}s loop`);
+  console.log(`${gif}: ${loop * fps} frames, ${loop}s loop`);
+}
+
+const only = process.argv.find((a) => a.startsWith("--gif="))?.slice(6);
+if (process.argv.includes("--gif") || only) {
+  if (!only || only === "oilslick")
+    await record("oilslick.html", "oilslick.gif", LOOP, 15, (ms) => `document.getAnimations().forEach(a => { a.pause(); a.currentTime = ${ms}; })`);
+  if (!only || only === "lavalamp")
+    await record("lavalamp.svg", "lavalamp.gif", LAVA_LOOP, 15, (ms) => `(s => { s.pauseAnimations(); s.setCurrentTime(${ms / 1000}); })(document.documentElement)`);
 }

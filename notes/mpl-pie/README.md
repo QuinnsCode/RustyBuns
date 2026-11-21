@@ -13,10 +13,11 @@ A fixture with a line and a bar counts once for each. Pie has 8 so far, all from
 - `oilslick.html`: mpl's `toSVG()` on a dark page, with a faint oil-slick rainbow and a sliding sheen masked to the
   slices (a second SVG of the slices alone is the mask). CSS only; open it in a browser.
 - `oilslick.gif`: that page recorded. Every animation steps to an exact time per frame, and the 8 s loop has no seam.
+- `lavalamp.svg`: the lava-lamp edition, one animated SVG (SMIL, no script; open it in a browser, it scales to any size). In each slice, wax in a lighter shade of its legend colour rises, stretches, merges (a blur + threshold goo filter) and sinks through a darker shade, with bubbles streaming up, all clipped to the slice under crisp labels. `lavalamp.gif` is it recorded the same seamless way (12 s loop) for chat apps; the code is `lavalamp.ts`.
 
 ```sh
-bun notes/mpl-pie/pie.ts          # clones mpl at the pinned commit into a temp folder, counts, writes pie.png + oilslick.html
-bun notes/mpl-pie/pie.ts --gif    # also records oilslick.gif (headless Chrome + ffmpeg, about 2 minutes)
+bun notes/mpl-pie/pie.ts          # clones mpl at the pinned commit into a temp folder, counts, writes pie.png, oilslick.html, lavalamp.svg
+bun notes/mpl-pie/pie.ts --gif    # also records oilslick.gif and lavalamp.gif (headless Chrome + ffmpeg, 2 minutes each; --gif=lavalamp for one)
 ```
 
 mpl isn't on npm, so the script imports mpl's source from that clone. Nothing is added to our lockfile.
