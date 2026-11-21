@@ -49,7 +49,7 @@ import { ringing } from "./crowd/crowd.ts";
 import { fillFromTour, spotOf } from "./crowd/spots.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
-import { eyeFill, readable, venueLights } from "./look.ts";
+import { eyeFill, fill, readable, shade, venueLights } from "./look.ts";
 import { CABLE_RADIUS, REST } from "@rustybuns/rig/hand";
 import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
@@ -108,13 +108,16 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d1420);
 scene.fog = new THREE.Fog(0x0d1420, 8, 22);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 150);
 camera.rotation.order = "YXZ";
 scene.add(camera);
-scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
+const sky = new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, fill(world.level));
+scene.add(sky);
 eyeFill(camera);
 const hands = handsView(scene, camera);
 // Hold Y to look at your arms (I is taken: the arena levels check a point with it).
@@ -247,6 +250,7 @@ function load(level: Level) {
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
   scene.remove(lights); lights = venueLights(world.level); scene.add(lights);
+  sky.intensity = fill(world.level);
   buildItems();
   // A crew is a room on one level: another level is another room with the same code.
   if (online) crewRoom(online.room);
@@ -490,7 +494,7 @@ function menu() {
   $("start").hidden = !crew.code || !!crew.room;
 }
 
-let last = performance.now();
+let last = performance.now(), shadeTick = 0;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -523,6 +527,8 @@ function frame(now: number) {
   band?.tick();
   ar?.tick();
   dj?.tick(dt);
+  // New meshes (gear, cables, the crowd) pick up shadows within a few frames of turning up.
+  if (++shadeTick % 20 === 0) shade(scene);
   draw();
   sound.update(heard());
   // The room rings on the speakers: long when it is empty, tighter as the crowd comes in; out of doors, not at all.

@@ -126,7 +126,7 @@ export function diveBarDressing(l: Level): Dressing {
   floor.rotation.x = -Math.PI / 2;
   const ceiling = plane(W, D, std({ color: 0x141416, roughness: 1 }), cx, H - 0.004, (r.z0 + r.z1) / 2);
   ceiling.rotation.x = Math.PI / 2;
-  const duct = add(new THREE.CylinderGeometry(0.16, 0.16, D - 0.4, 18), std({ color: 0x8d9298, metalness: 0.7, roughness: 0.45 }), r.x1 - 0.8, H - 0.26, (r.z0 + r.z1) / 2);
+  const duct = add(new THREE.CylinderGeometry(0.16, 0.16, D - 0.4, 18), std({ color: 0x8d9298, metalness: 0.55, roughness: 0.7 }), r.x1 - 0.8, H - 0.26, (r.z0 + r.z1) / 2);
   duct.rotation.x = Math.PI / 2;
   const pipe = add(new THREE.CylinderGeometry(0.025, 0.025, D - 0.2, 8), std({ color: 0x5a3b22, metalness: 0.5, roughness: 0.5 }), r.x0 + 0.5, H - 0.12, (r.z0 + r.z1) / 2);
   pipe.rotation.x = Math.PI / 2;
