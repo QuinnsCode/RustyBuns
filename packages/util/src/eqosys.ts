@@ -585,7 +585,8 @@ export type SpaceVoice = Of<typeof SpaceVoice>;
 /**
  * Someone's role in a space. An owner and an admin run it (channels, private channels, mute and kick); a member sees every channel
  * that isn't private; a guest sees #general and the private channels they are let into, and no voice channels. In a studio's space
- * the studio's roles carry over (an owner, an admin, a maker is a member); in a person's own space the owner hands them out.
+ * the studio's roles carry over (an owner, an admin, a maker is a member) and someone outside the studio who joined by its invite
+ * is a guest; in a person's own space the owner hands them out.
  */
 export const SPACE_ROLES = ["owner", "admin", "member", "guest"] as const;
 export type SpaceRole = (typeof SPACE_ROLES)[number];
