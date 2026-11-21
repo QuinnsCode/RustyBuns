@@ -2,28 +2,46 @@
 
 `git push`, `git ls-remote` and `git clone` over `ssh://` go through a Worker's inbound TCP `connect()` handler, a Durable
 Object and a container running `sshd`. The container keeps no repos: each connection is bridged to the repo's
-smart-HTTP remote (Artifacts) with the user's token, so a push over ssh lands where an HTTP push does (#5505). It works
+smart-HTTP remote (Artifacts) with the user's token, so a push over ssh lands where an HTTP push does (#5505). A key gets in as the codeSplitter user who
+added it (#5504). It works
 locally under `wrangler dev`, from a cold container, in about 30 s (#5500). Background:
 [notes/INBOUND_TCP_GRPC.md](../../../notes/INBOUND_TCP_GRPC.md).
 
 ```sh
 cd apps/codesplitter
-bun ssh/try.ts          # needs Docker; nothing touches Cloudflare
+bun ssh/try.ts          # needs Docker; boots codeSplitter in-process, nothing touches Cloudflare
 bun ssh/try.ts --keep   # leave it up and try git by hand
 ```
 
 ```
 git -> tcp 127.0.0.1:8788 -> worker.ts connect() -> SshGate DO connect() -> container :2222 sshd -> git-serve.sh
     -> lookup (remote + token) -> scratch bare repo <-> the repo's smart-HTTP remote
+
+sshd's AuthorizedKeysCommand: authorized-keys.sh %u %f -> http://192.0.2.1/key?fingerprint= -> (caught by the DO)
+    -> worker.ts KeyLookup -> codeSplitter GET /api/ssh/key -> {user, key} -> command="/git-serve.sh <user>" ...
 ```
 
 | File | What it is |
 |---|---|
-| `worker.ts` | The Worker's `connect()` handler and the `SshGate` DO, which starts the container and joins the sockets |
-| `Dockerfile`, `entry.sh` | Alpine with `openssh-server`, `git` and `curl`. One `git` user, key login only, and every login is forced through `git-serve.sh <user>` |
+| `worker.ts` | The Worker's `connect()` handler, the `SshGate` DO, which starts the container and joins the sockets, and `KeyLookup`, which answers sshd's key lookups from codeSplitter |
+| `Dockerfile`, `entry.sh` | Alpine with `openssh-server`, `git` and `curl`. One `git` user, key login only, no authorized_keys file |
+| `authorized-keys.sh` | sshd's `AuthorizedKeysCommand`: asks whose the offered key is (fingerprint in) and prints one line, forced through `git-serve.sh <user>` |
 | `git-serve.sh` | Allows only `git-upload-pack` and `git-receive-pack` on `owner/repo`, and bridges it to the repo's HTTP remote (below) |
 | `wrangler.jsonc` | The spike's own config, because codeSplitter's generated one can't carry `connect` yet |
-| `try.ts` | The proof, against a stand-in codeSplitter on the Mac (the lookup, and `git http-backend` behind Bearer tokens): push, it landed in the HTTP remote, a second push, ls-remote, clone, the remote's refusal reaching the client, a repo the lookup refuses, a stranger's key, a bad path |
+| `try.ts` | The proof, against a stand-in codeSplitter on the Mac (the lookup, and `git http-backend` behind Bearer tokens): push, it landed in the HTTP remote, a second push, ls-remote, clone, the remote's refusal reaching the client, a repo the lookup refuses, a key nobody added, a bad path, and the key once it's removed. The key is added and removed through codeSplitter's real API (booted in-process), and the stand-in hands every path but its own to it |
+
+## Keys (#5504)
+
+The key store is codeSplitter's `ssh_keys` table (`src/ssh-keys.ts`): `GET`/`POST /api/me/ssh-keys` and
+`DELETE /api/me/ssh-keys/:id`. Adding a key is cookie only (an API token gets a 403: a key outlives any token), and a
+key is one person's. The lookup is `GET /api/ssh/key?fingerprint=`, open like a forge's public keys page, answering
+`{user, key}` or 404. Its one guard, `SshKeyOwner` in `src/ssh-key.ts`, is what the server `satisfies` and what
+`KeyLookup` reads with: it takes only a handle and `type base64`, so nothing from the store can break out of the
+authorized_keys line or the forced command.
+
+The container keeps no key list, and a removed key stops at the next login. sshd's lookups go to `192.0.2.1`, a
+documentation address nothing routes to; the DO catches HTTP to it with `interceptOutboundHttp` before `start` and
+hands it to `KeyLookup`. That works under `wrangler dev` with the internet on, and leaves the bridge's own HTTP alone.
 
 ## The bridge (#5505)
 
@@ -77,8 +95,7 @@ fetch nothing up front. That is the next thing to try if repos get big.
 
 ## Next steps (each its own issue)
 
-- **Key auth:** match the client's key to a codeSplitter user. `sshd`'s `AuthorizedKeysCommand` asks codeSplitter
-  over HTTP which user owns the offered key, so the container needs no key list baked in. The key store is still to be decided.
+- **Key auth:** done (#5504, above). The site still needs a page to paste a key into: #5545.
 - **Pushes into Artifacts:** done in the gate (#5505, above). codeSplitter's Worker still has to answer the lookup
   for real (access check, short Artifacts tokens, the after-push path): #5541.
 - **rustybuns:** carry a `connect` export and the `connect` port through `rustybuns dev` and deploy. Alchemy has no

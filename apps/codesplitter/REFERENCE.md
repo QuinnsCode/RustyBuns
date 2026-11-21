@@ -715,6 +715,7 @@ There are 53 promises today (`test/trust-promises.ts` reads them). Run on 2026-1
 | `DELETE /api/repos/:o/:r/stamps` | Your stamp on that line. | | `test/stamps.test.ts`: "a stamp goes on a line, an agent's too, and follows it by id through edits" |
 | `DELETE /api/me/programs/:name` | The saved program, by its owner only. | | `test/codemode.test.ts`: "an agent saves a program, reruns it by name with new input, and sees only its own" |
 | `DELETE /api/follows/:id` | The follow, by the follower only. | | `test/follows.test.ts`: "unfollow is the follower's alone" |
+| `DELETE /api/me/ssh-keys/:id` | The SSH key, by its owner only: the ssh gate's next login with it is refused, since the gate keeps no key list. | Its audit row, with the fingerprint. | `test/ssh-keys.test.ts`: "a key added is found by its fingerprint as whose it is, until it's removed" |
 | `rustybuns deploy --hosted --destroy` | The site's own Worker and the stored key. | The API token, to delete in the dashboard. | By hand: it's the owner's command against the live account. |
 
 **Not yet.** Open, each an issue labelled `security`:

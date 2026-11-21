@@ -10,6 +10,7 @@ import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { programRoutes } from "./programs.ts";
+import { sshKeyRoutes } from "./ssh-keys.ts";
 import { chartRoutes, serveChart, sweepCharts } from "./charts.ts";
 import { rankOf } from "./policy.ts";
 import { FileCommitted, FileTexts, fromText, text, type Doc } from "./lines.ts";
@@ -478,6 +479,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET/PUT/DELETE /api/me/programs[/:name]: saved code-mode programs (programs.ts)
   const programs = await programRoutes(req, env, p, user);
   if (programs) return programs;
+  // GET/POST/DELETE /api/me/ssh-keys[/:id], GET /api/ssh/key?fingerprint=: keys for git over ssh:// and the gate's lookup (ssh-keys.ts)
+  const sshKeys = await sshKeyRoutes(req, env, p, url, user);
+  if (sshKeys) return sshKeys;
   // POST /api/charts: a chart a program drew, kept for a week behind a signed link (charts.ts)
   const chart = await chartRoutes(req, env, p, user);
   if (chart) return chart;
