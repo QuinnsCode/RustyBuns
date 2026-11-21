@@ -26,6 +26,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue, floorGuardSeat } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
+import { slowCheckout } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -66,7 +67,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -144,6 +145,9 @@ async function prepare(tag: string) {
   prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\nimport { endIn as __rbEndIn } from '../rb-reaper.js';\n");
   patch("workers/manager.js", "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos);\n",
     "        return __rbEndIn(w.info.worktree?.path ? path.join(this.trees.dir, w.info.worktree.path) : '').then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos)).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
+
+  // 6a2. #5523: a checkout of this repo outran upstream's 20 s `git worktree add` timeout
+  writeFileSync(path.join(srv, "worktrees.js"), slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8")));
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
