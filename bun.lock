@@ -245,7 +245,7 @@
         "vite": "^6.4.4",
       },
     },
-    "apps/elysia-conduit": {
+    "apps/frameworks/elysia-conduit": {
       "name": "conduit-backend",
       "version": "0.0.0",
       "dependencies": {
@@ -604,11 +604,13 @@
         "@rustybuns/util": "^0.1.12",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
+        "three": "^0.180.0",
       },
       "devDependencies": {
         "@rustybuns/cli": "^0.1.12",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
+        "@types/three": "^0.180.0",
         "@vitejs/plugin-react": "^4.3.0",
         "vite": "^6.2.6",
       },
@@ -2992,7 +2994,7 @@
 
     "compress-commons": ["compress-commons@7.0.1", "", { "dependencies": { "crc-32": "^1.2.0", "crc32-stream": "^7.0.1", "is-stream": "^4.0.0", "normalize-path": "^3.0.0", "readable-stream": "^4.0.0" } }, "sha512-g0S8KAD8qf4+V//pr3BfB1aBnARLXNz2Gx+jmHU0LEriUuoQUOPOulVquHKTJ8+EAIIO7fhseNDr9wK5Q9FKBQ=="],
 
-    "conduit-backend": ["conduit-backend@workspace:apps/elysia-conduit"],
+    "conduit-backend": ["conduit-backend@workspace:apps/frameworks/elysia-conduit"],
 
     "confbox": ["confbox@0.3.1", "", {}, "sha512-cKUSoKa8YxFZZSmraVi7onONx3amu77ngK3kGpsYHDH7drPwCRkQE1RYMPlLRrMtnciRj274XNRxcHxnKmDSnA=="],
 

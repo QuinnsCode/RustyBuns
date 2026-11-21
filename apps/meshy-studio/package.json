@@ -17,12 +17,14 @@
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@rustybuns/cli": "^0.1.12",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^4.3.0",
     "vite": "^6.2.6"
   }

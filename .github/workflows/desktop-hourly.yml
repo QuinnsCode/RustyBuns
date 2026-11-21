@@ -8,10 +8,16 @@
 # A failure opens (or comments on) one issue labelled ci-hourly for triage, with the commits since the last green;
 # a PR is never held for it.
 # express.yml calls it with a sha (#4586): that commit runs now, gate or no gate, marked pending until the verdict.
+# A push to main that moves packages/ or the lockfile also runs it (#5410): GitHub starts the hourly cron only every 5 to 9
+# hours, and this ring is what sweeps every app after a shared-code change (#4492). The concurrency group queues these
+# behind a running sweep and keeps only the newest waiting one, so a burst of merges costs one more run, not one each.
 name: desktop-hourly
 on:
   schedule:
     - cron: "0 * * * *"
+  push:
+    branches: [main]
+    paths: ["packages/**", "bun.lock", "package.json"]
   workflow_dispatch:
   workflow_call:
     # The express lane (express.yml, #4586): this sweep on one squash commit, now.
