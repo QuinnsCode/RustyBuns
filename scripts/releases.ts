@@ -10,9 +10,9 @@
 //   bun run releases --publish        write ~/.rustybuns/releases/releases.html and have a headless Claude republish it
 //                                     to the releases artifact (same URL; artifacts have no API, only Claude's tools)
 //   bun run releases --install        a launchd job on the office Mac: --publish at :17 past every hour 7am to 10pm,
-//                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off). Run from an
-//                                     office worktree, it runs from its own detached checkout at ~/.rustybuns/releases/
-//                                     rustybuns instead, and each --publish there first moves it to origin/main
+//                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off). It runs from its
+//                                     own detached checkout at ~/.rustybuns/releases/rustybuns, made on the first install,
+//                                     and each --publish there first moves it to origin/main
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
