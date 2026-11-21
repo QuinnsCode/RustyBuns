@@ -6,6 +6,8 @@ import { newKey, peek } from "@rustybuns/util/token";
 import { APPS } from "../src/apps.ts";
 import { reportDeploy } from "../../../packages/cli/src/report-deploy.ts";
 import { handle } from "../src/handle.ts";
+import { addMember, makeStudio, STUDIO_MEMBERS } from "../src/studios.ts";
+import { SPACE_MEMBERS } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 const QVIEW = "https://qview3d.notryanquinn.workers.dev";
@@ -97,4 +99,19 @@ test("an app that runs per studio (QView3D) gets the person's studios in its tok
   const back = await call("/do/signin", { form: { ...form, email: "cy@example.com", password: PASSWORD } });
   const got = await (await call("/api/exchange", { json: { app: "qview3d", code: codeIn(back.to), verifier: a.verifier } })).res.json() as { token: string };
   expect(peek(got.token)?.studios).toEqual([{ id: expect.any(String), name: "Cy Hats", role: "owner" }]);
+});
+
+test("a studio holds more people than a person's own space, up to its cap; a role change still goes through when it is full", async () => {
+  await signUp("Lead"); await signUp("Late"); await signUp("Third");
+  const id = async (email: string) => (await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind(email).first<string>("id"))!;
+  const lead = await id("lead@example.com");
+  const made = await makeStudio(conf, lead, "Big band", "business");
+  if (!made.ok) throw new Error(made.error);
+  expect(STUDIO_MEMBERS).toBeGreaterThan(SPACE_MEMBERS);
+  // Fill it to one short of the cap with people who only exist as rows.
+  await conf.DB.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?) INSERT INTO studio_members (studio_id, user_id, role, at) SELECT ?, 'row-' || i, 'maker', 0 FROM n`)
+    .bind(STUDIO_MEMBERS - 2, made.id).run();
+  expect(await addMember(conf, made.id, lead, "late@example.com", "maker")).toEqual({ ok: true, id: made.id });
+  expect(await addMember(conf, made.id, lead, "third@example.com", "maker")).toEqual({ ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` });
+  expect(await addMember(conf, made.id, lead, "late@example.com", "admin")).toEqual({ ok: true, id: made.id });
 });

@@ -573,10 +573,11 @@ export function hub({ url, token, app }: PartyConfig & { app?: string }) {
 /**
  * A message in a space's channel: its number there, and who said what when. Up to 280 characters, 2000 in a studio's space (the `space`
  * frame's `max`). A reply in a thread names the number of the message it answers (`reply`); a message with a thread says how many
- * replies it has (`replies`).
+ * replies it has (`replies`). A message with `file` carries one (its text is the file's name): `fetchFile` brings it back.
  */
 export const SpaceMessage = obj({
   id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(2000), at: int(0, 1e15), reply: opt(int(1, 1e12)), replies: opt(int(1, 1e6)),
+  file: opt(obj({ id: str(64), name: str(200), size: int(1, 1e10), type: str(101) })),
 });
 export type SpaceMessage = Of<typeof SpaceMessage>;
 /** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
@@ -613,6 +614,7 @@ export const SpaceMsg: Guard<
   | ({ t: "space" } & SpaceInfo)
   | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
+  | { t: "unsaid"; channel: string; id: number }
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
   | { t: "thread"; channel: string; id: number; messages: SpaceMessage[] }
   | { t: "found"; channel: string; q: string; messages: SpaceMessage[] }
@@ -620,12 +622,13 @@ export const SpaceMsg: Guard<
   | { t: "reported"; by: string; id: string; name: string }
   | { t: "ticket"; channel: string; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["space", "online", "said", "history", "thread", "found", "refused", "reported", "ticket"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["space", "online", "said", "unsaid", "history", "thread", "found", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
   if (t === "space") return { t, ...SpaceInfo(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
   if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
+  if (t === "unsaid") return { t, ...obj({ channel: ch, id: int(1, 1e12) })(v) };
   if (t === "history") return { t, ...obj({ channel: ch, messages: arr(SpaceMessage, 100), more: bool() })(v) };
   if (t === "thread") return { t, ...obj({ channel: ch, id: int(1, 1e12), messages: arr(SpaceMessage, 100) })(v) };
   if (t === "found") return { t, ...obj({ channel: ch, q: str(100), messages: arr(SpaceMessage, 100) })(v) };
@@ -646,6 +649,8 @@ export interface SpaceHandlers {
   space?: (s: SpaceInfo) => void;
   online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
+  /** Message `id` in `channel` was deleted (by its sender, or by whoever runs the space). */
+  unsaid?: (channel: string, id: number) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
   /** The message `id` in `channel` first, then its newest replies, oldest first (`thread` asked for it). */
   thread?: (channel: string, id: number, messages: SpaceMessage[]) => void;
@@ -706,6 +711,7 @@ export function space({ url, token }: PartyConfig) {
           if (m.t === "space") on.space?.(m);
           else if (m.t === "online") on.online?.(m.members);
           else if (m.t === "said") { const { t: _, channel, ...msg } = m; on.said?.(channel, msg); }
+          else if (m.t === "unsaid") on.unsaid?.(m.channel, m.id);
           else if (m.t === "history") on.history?.(m.channel, m.messages, m.more);
           else if (m.t === "thread") on.thread?.(m.channel, m.id, m.messages);
           else if (m.t === "found") on.found?.(m.channel, m.q, m.messages);
@@ -722,6 +728,23 @@ export function space({ url, token }: PartyConfig) {
     },
     /** Say `text` in `channel`; with `reply`, as a reply in the thread under message number `reply`. */
     say: (channel: string, text: string, reply?: number) => send({ t: "say", channel, text, ...(reply ? { reply } : {}) }),
+    /** Delete message `id` in `channel`: your own, or anyone's when you run the space. Its file goes with it; everyone hears `unsaid`. */
+    unsay: (channel: string, id: number) => send({ t: "unsay", channel, of: id }),
+    /** Post a file (up to 10 MB) in `channel` of space `spaceId` as a message of its own: the file's id, or the space's reason it said no. */
+    async postFile(spaceId: string, channel: string, file: Blob, name: string): Promise<{ id: string } | { error: string }> {
+      const t = token();
+      if (!t) return { error: "Sign in with eqosys first." };
+      const at = `${url()}/q/space/${encodeURIComponent(spaceId)}/file?${new URLSearchParams({ channel, name })}`;
+      const r = await fetch(at, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": file.type || "application/octet-stream" }, body: file }).catch(() => null);
+      const body: unknown = r && await r.json().catch(() => null);
+      return check(obj({ id: str(64) }), body) ?? check(obj({ error: str(500) }), body) ?? { error: "Couldn't post that file. Try again in a minute." };
+    },
+    /** A file a message carries, as a Blob (null when it is gone or you can't see its channel). */
+    async fetchFile(spaceId: string, fileId: string): Promise<Blob | null> {
+      const t = token();
+      const r = t ? await fetch(`${url()}/q/space/${encodeURIComponent(spaceId)}/file/${encodeURIComponent(fileId)}`, { headers: { authorization: `Bearer ${t}` } }).catch(() => null) : null;
+      return r?.ok ? r.blob() : null;
+    },
     /** A message and its replies; they come back to `thread`. */
     thread: (channel: string, id: number) => send({ t: "thread", channel, of: id }),
     /** Search a channel's kept history for `q` (case aside); the newest matches come back to `found`. */

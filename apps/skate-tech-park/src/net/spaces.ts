@@ -1,12 +1,12 @@
 // Qollab spaces in the park: a signed-in rider's groups that last between sessions, with text channels
 // and voice channels (@rustybuns/util/spaces draws them, apps/eqosys/src/qollab/space.ts keeps them). The HUD's chat button opens the panel.
-import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2, Reply, Search } from "lucide";
+import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2, Reply, Search, Paperclip, Download } from "lucide";
 import { spacesPanel, type SpaceIcon } from "@rustybuns/util/spaces";
 import { fresh, login, space } from "../eqosys.ts";
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {
   "arrow-left": ArrowLeft, "arrow-up": ArrowUp, plus: Plus, "log-in": LogIn, send: Send, copy: Copy, hash: Hash,
-  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield, reply: Reply, search: Search,
+  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield, reply: Reply, search: Search, paperclip: Paperclip, download: Download,
 };
 const icon = (n: SpaceIcon) => createElement(ICONS[n], { width: 16, height: 16 });
 
