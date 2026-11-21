@@ -1,6 +1,7 @@
-# Everyday app tests, on PRs only: one Linux job per app the PR touched (every app if
-# packages/ or the lockfile moved), plus the packages' own tests when packages/ moved and the
+# Everyday app tests, on PRs only: one Linux job per app the PR touched (every app if the pipeline
+# itself changed), plus the packages' own tests when packages/ or the lockfile moved, the
 # agent guard hook's tests when .claude/ moved, and the root scripts' tests when scripts/ moved.
+# Every app's suite after a packages/ or lockfile change is the hourly ring's (desktop-hourly.yml, #4492).
 # An app with boot: true in scripts/ci-apps.ts also builds its dev host and boots it on the local twins.
 # Desktop binaries (smoke rows, bootOn) are built and started hourly by desktop-hourly.yml, not per PR.
 name: apps

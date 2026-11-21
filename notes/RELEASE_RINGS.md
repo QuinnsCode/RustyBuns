@@ -39,6 +39,8 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
    marks the blame in a ci-hourly issue comment; 60 minutes on, still red and no commit naming the PR, it opens
    `ring-revert-<sha7>`. Bob runs a commit, not a working tree, through `main(argv, cwd, at)` in `scripts/remote-ci.ts`.
 5. Trim `apps.yml`: the all-apps sweep on `packages/` moves to hourly, after 1-4 have run clean for a week.
+   Built (#4492): a PR that moves `packages/` or the lockfile runs the packages' tests, the hooks and scripts tests and
+   the apps it touched; only a pipeline change (`apps.yml`, `ci-apps.ts`'s machinery) still runs every app.
 6. `daily-ring.yml` at 10:17 UTC: `rings.ts pick daily` (3 green hourlies in a row), phone smoke at every size, vite builds of changed web apps (no deploys). Bob's natives gate it once he can report back.
 7. Stable: Monday pick, release notes from squash titles, one `MANUAL RUN:` taste issue, owner pushes the `v` tag.
    Built: `stable.yml` runs `scripts/stable.ts` (#4494); it picks nothing until the daily ring writes `ring/daily`.
