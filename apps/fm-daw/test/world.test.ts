@@ -906,7 +906,7 @@ test("jam room agent: no grant, it raises its hand; the leader says yes, and it 
   // Amy holds the floor: the bot may only listen, so it raises its hand to change the groove, and she says yes
   world.webSocketMessage(amyWs, JSON.stringify({ t: "hello", key: "a".repeat(48), name: "Amy" }));
   world.webSocketMessage(amyWs, JSON.stringify({ t: "floor", state: "held" }));
-  await tick();
+  await heard(amyWs, "chat"); await heard(botWs, "chat");        // both hellos hash a key
   pump();
   expect(await call("studio_make_instrument", glass)).toMatchObject({ ok: false, why: expect.stringContaining("raises your hand") });
   expect(await call("studio_ask_to_play", { can: "edit" })).toMatchObject({ asked: "edit" });
@@ -998,7 +998,7 @@ test("jam room mixer: sit at the desk, pull a track's fader down and raise its a
   const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
     send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
   const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
-  await tick(); pump();
+  await heard(amyWs, "chat"); await heard(botWs, "chat"); pump(); // both hellos hash a key
   const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
   const desk = deskModel({
     project: () => pl.project()!, players: () => [], edit: pl.edit, may: () => may(pl),
@@ -1052,7 +1052,7 @@ test("jam room lane: sit at the keys, open its lane, turn a patch knob, and the 
   const bot = remotePlayer({ base: LIVE_ROOM, name: "Bot", avatar: randomAvatar(mulberry32(5)), wait: async () => {},
     send: (m) => world.webSocketMessage(botWs, JSON.stringify(m)) });
   const pump = () => { for (const m of botWs.sent.splice(0)) bot.hear(m); };
-  await tick(); pump();
+  await heard(amyWs, "chat"); await heard(botWs, "chat"); pump(); // both hellos hash a key
   const pl = bot.player, ops = () => amyWs.sent.splice(0).filter((m) => m.t === "op").map((m) => m.op);
   const lane = laneModel({
     project: () => pl.project()!, edit: pl.edit, may: () => may(pl), audition() {},
