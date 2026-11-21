@@ -14,7 +14,7 @@ clocks behind it. Each ring is a ref on `main` that only moves forward; no relea
 | Ring | When | Runs | Promotes when |
 | --- | --- | --- | --- |
 | PR | every push | typecheck, touched-app tests, the feature's journey | green; Mervin merges |
-| hourly (`ring/hourly`) | :00, only if `main` moved | every app's suite, desktop smoke, codeSplitter whole suite, `bun test packages` | its run is green |
+| hourly (`ring/hourly`) | :00 (GitHub starts it every 5-9 h), and on a push to `main` that moves `packages/` or the lockfile; only if `main` moved | every app's suite, desktop smoke, codeSplitter whole suite, `bun test packages` | its run is green |
 | daily (`ring/daily`) | 10:17 | natives on Bob, phone smoke at every size, preview deploys, manual-run pre-checks | newest commit with 3 green hourlies in a row |
 | stable (`ring/stable`, `v*`) | Monday after deps-doctor | deps-doctor, TerraViz, framework trials, owner taste walk, npm, desktop drop | newest daily green 3 days running, plus the owner's OK |
 
