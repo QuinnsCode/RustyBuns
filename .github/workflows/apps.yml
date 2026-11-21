@@ -118,6 +118,7 @@ jobs:
       # apps/ is ~900 MB of the ~965 MB tree (Mythic Masters alone ~570 MB), so a full checkout took ~35 s a lane.
       # Check out everything but the other apps: only their package.json files stay, so bun's workspaces still
       # match bun.lock and --frozen-lockfile passes. matrix.sparse is this app plus its `with` apps (scripts/ci-apps.ts).
+      # The docs/shots-* screenshot folders (716 MB, 520 of Mythic Masters' 570) stay out too: no test reads them.
       # blob:none fetches only the blobs those paths need (#5509).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -129,6 +130,8 @@ jobs:
             /apps/*/package.json
             /apps/frameworks/*/package.json
             ${{ matrix.sparse }}
+            !/apps/*/docs/shots*/
+            !/apps/frameworks/*/docs/shots*/
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - if: matrix.prep
