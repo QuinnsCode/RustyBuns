@@ -117,6 +117,9 @@ export function App() {
   const [audio, setAudio] = useState<AudioOut | null>(null);
   const audioRef = useRef<AudioOut | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  // Someone new, once sound is on: one thing to try first, until they have played the groove once in this browser.
+  const [tried, setTried] = useState(() => { try { return localStorage.getItem("fm-daw.tried") === "1"; } catch { return false; } });
+  const markTried = () => { setTried(true); try { localStorage.setItem("fm-daw.tried", "1"); } catch {} };
   const [masterDb, setMasterDb] = useState(START_DB);
   const [engine, setEngine] = useState<"ts" | "rust">("ts");
   const [engineNote, setEngineNote] = useState<string | null>(null);
@@ -380,6 +383,8 @@ export function App() {
   }
 
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
+  // played some other way (Space, the transport's Play, the room): the first-try card has done its job
+  useEffect(() => { if (transportOn && audio && !tried) markTried(); }, [transportOn]);
   // each plugin track's plugin, started, stopped and its sliders sent on as the groove changes
   useEffect(() => { pump.current?.sync(project); }, [audio, project]);
   // what you hear: your own master, under the room's (the remote's master fader, src/remote/)
@@ -397,7 +402,7 @@ export function App() {
     };
     Object.assign(window, { fmdaw: {
       state: () => ({
-        audio: audioRef.current?.ctx.state ?? null, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
+        audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
         line: Object.fromEntries(linePeaks.current),
         tracks: proj.current.tracks.map((tr, i) => {
           const s = pump.current?.state.get(i);
@@ -1032,14 +1037,22 @@ export function App() {
         <FullCard why={netStatus.full ?? "rooms"} room={roomName()} onSolo={goSolo}
           onRetry={() => { setSolo(false); setAttempt((a) => a + 1); }} />
       )}
+      {audio && !tried && (
+        <div className="first-try" role="status">
+          <p><strong>Try this first:</strong> hear the groove that's already here.</p>
+          <button className="play big" onClick={() => { play(); markTried(); }}>▶ Play the groove</button>
+          <p className="dim">Then tap the squares in the grid to change it.<span className="keys-hint"> <kbd>Space</kbd> plays and stops, and the letter keys play notes.</span></p>
+          <button className="ghost close" onClick={markTried} aria-label="Close" title="Close">×</button>
+        </div>
+      )}
       {!audio && (netStatus.state !== "full" || solo) && (
         <div className="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
           <div className="gate-card">
-            <h2 id="gate-title">Speakers down first</h2>
-            <p>FM DAW starts at <strong>−12 dB</strong>, and a limiter keeps every sample under <strong>−1 dBFS</strong> whatever the patch. <kbd>Esc</kbd> stops all sound.</p>
-            <button className="play big" onClick={startAudio} autoFocus>Start audio</button>
+            <h2 id="gate-title">Make a beat</h2>
+            <p>A drum machine and synths in your browser: play a groove, change it, and play along.</p>
+            <p><strong>Turn your speakers down a bit first.</strong> It starts quiet and never gets painfully loud. <kbd>Esc</kbd> stops all sound.</p>
+            <button className="play big" onClick={startAudio} autoFocus>Start</button>
             {startError && <p className="err">{startError}</p>}
-            <p className="dim">Then: <kbd>Space</kbd> plays, letters <kbd>A</kbd>–<kbd>'</kbd> are a keyboard, <kbd>R</kbd> records, <kbd>1</kbd>–<kbd>8</kbd> pick a track.</p>
           </div>
         </div>
       )}
