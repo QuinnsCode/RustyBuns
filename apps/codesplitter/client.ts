@@ -193,6 +193,7 @@ export class NoSuchCar extends Schema.TaggedError<NoSuchCar>()("NoSuchCar", name
 export class NoDeletedHandle extends Schema.TaggedError<NoDeletedHandle>()("NoDeletedHandle", named) {}
 export class NoPublicCity extends Schema.TaggedError<NoPublicCity>()("NoPublicCity", named) {}
 export class NoSuchProgram extends Schema.TaggedError<NoSuchProgram>()("NoSuchProgram", named) {}
+export class NoSuchSshKey extends Schema.TaggedError<NoSuchSshKey>()("NoSuchSshKey", named) {}
 export class NoSuchGrant extends Schema.TaggedError<NoSuchGrant>()("NoSuchGrant", named) {}
 export class NoSuchBoardRow extends Schema.TaggedError<NoSuchBoardRow>()("NoSuchBoardRow", named) {}
 export class NoSuchFollow extends Schema.TaggedError<NoSuchFollow>()("NoSuchFollow", named) {}
@@ -205,6 +206,8 @@ export class ChecksElsewhere extends Schema.TaggedError<ChecksElsewhere>()("Chec
 export class CarUnsettled extends Schema.TaggedError<CarUnsettled>()("CarUnsettled", named) {}
 export class NoReleaseLanes extends Schema.TaggedError<NoReleaseLanes>()("NoReleaseLanes", named) {}
 export class TooManyPrograms extends Schema.TaggedError<TooManyPrograms>()("TooManyPrograms", named) {}
+export class SshKeyTaken extends Schema.TaggedError<SshKeyTaken>()("SshKeyTaken", named) {}
+export class TooManySshKeys extends Schema.TaggedError<TooManySshKeys>()("TooManySshKeys", named) {}
 export class ChartsOff extends Schema.TaggedError<ChartsOff>()("ChartsOff", named) {}
 export class NoVectorIndex extends Schema.TaggedError<NoVectorIndex>()("NoVectorIndex", named) {}
 export class NoArtifactsNext extends Schema.TaggedError<NoArtifactsNext>()("NoArtifactsNext", named) {}
@@ -233,7 +236,7 @@ export const NAMED = {
   DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NoSuchTrim, DexterOff, TrimStale, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
   NoSuchLevel, LevelNotDug, LevelTooBig, NoArtifacts, NoSuchWorktree, NoSuchCommit, MainMoves, WorktreeExists, WorktreeFailed,
   NoSecretsKey, NotYourShare, NotAGitHubFork, ForkBaseGone, NoSuchCut, NoSuchShare, NoSuchProvider, TryRunning, TagRefused, StillCopying, NothingNew, PickClash, NothingToPick, DigestRunning, CommitTooBig, UpstreamTooBig, GitHubRateLimit,
-  TooManyWebhooks, TooManyWatched, TooManyCiTokens, FollowToVisit, CrossSite, BotCheck, NoSuchWebhook, NoSuchDelivery, NoSuchCar, NoDeletedHandle, NoPublicCity, NoSuchProgram, NoSuchGrant, NoSuchBoardRow, NoSuchFollow, NoSuchOldGit, NoPulse, WrongMethod, DoctorRunning, RoomFull, ChecksElsewhere, CarUnsettled, NoReleaseLanes, TooManyPrograms, ChartsOff, NoVectorIndex, NoArtifactsNext, SocketOnly,
+  TooManyWebhooks, TooManyWatched, TooManyCiTokens, FollowToVisit, CrossSite, BotCheck, NoSuchWebhook, NoSuchDelivery, NoSuchCar, NoDeletedHandle, NoPublicCity, NoSuchProgram, NoSuchSshKey, NoSuchGrant, NoSuchBoardRow, NoSuchFollow, NoSuchOldGit, NoPulse, WrongMethod, DoctorRunning, RoomFull, ChecksElsewhere, CarUnsettled, NoReleaseLanes, TooManyPrograms, SshKeyTaken, TooManySshKeys, ChartsOff, NoVectorIndex, NoArtifactsNext, SocketOnly,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.

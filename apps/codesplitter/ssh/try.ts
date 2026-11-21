@@ -1,10 +1,13 @@
-// Prove git over ssh:// through a Worker's connect() handler, locally (#5500, #5505): `bun ssh/try.ts` from
-// apps/codesplitter. It makes a throwaway key, starts a stand-in for codeSplitter on this Mac (the remote lookup and a
-// smart-HTTP git remote that wants a Bearer token, like Artifacts), starts ssh/worker.ts under wrangler dev (Docker
+// Prove git over ssh:// through a Worker's connect() handler, locally (#5500, #5505, #5504): `bun ssh/try.ts` from
+// apps/codesplitter. It makes a throwaway key and adds it as spike's through codeSplitter's POST /api/me/ssh-keys
+// (codeSplitter booted in this process, src/local.ts), starts a stand-in for the parts codeSplitter doesn't answer yet
+// on this Mac (the remote lookup and a smart-HTTP git remote that wants a Bearer token, like Artifacts; any other
+// path goes to codeSplitter, so sshd's key lookups reach GET /api/ssh/key), starts ssh/worker.ts under wrangler dev (Docker
 // builds the sshd container the first time, a minute or so), then pushes a commit to
 // ssh://git@127.0.0.1:8788/spike/demo.git, checks it landed in the HTTP remote, lists its refs and clones it back,
 // each through Worker -> Durable Object -> container -> HTTP remote. It prints one line per step, with its time, and
-// exits 1 if any failed. Needs Docker running. Nothing touches Cloudflare: wrangler dev runs it all on this Mac.
+// exits 1 if any failed. Last, spike's key is removed through the API and turned away on the next login. Needs
+// Docker running. Nothing touches Cloudflare: wrangler dev runs it all on this Mac.
 //
 //   bun ssh/try.ts                  the run above
 //   bun ssh/try.ts --keep           leave wrangler dev up afterwards, and print the git line to try it by hand
@@ -12,6 +15,8 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { help } from "../../../scripts/help.ts";
+import { got, local } from "../src/local.ts";
+import { SshKeyRow } from "../src/ssh-key.ts";
 
 help(import.meta.path);
 const keep = process.argv.includes("--keep");
@@ -59,6 +64,8 @@ await run(["git", "init", "-q", "--bare", "-b", "main", remoteOf("spike/demo")])
 writeFileSync(path.join(remoteOf("spike/demo"), "hooks", "pre-receive"),
   `#!/bin/sh\nwhile read -r old new ref; do [ "$ref" = refs/heads/locked ] && { echo "locked is a protected branch: it changes through a merge" >&2; exit 1; }; done; exit 0\n`);
 chmodSync(path.join(remoteOf("spike/demo"), "hooks", "pre-receive"), 0o755);
+// codeSplitter itself, in alias mode (`call("spike", ...)` is spike signed in): the key store and its lookup.
+const call = await local({ GH_CLI: "off" });
 const backend = path.join((await run(["git", "--exec-path"])), "git-http-backend");
 
 const site = Bun.serve({
@@ -75,7 +82,7 @@ const site = Bun.serve({
       return new Response(`http://host.docker.internal:${site.port}/git/${repo}.git\n${mode === "write" ? WRITE : READ}\n`);
     }
     const m = u.pathname.match(/^\/git(\/[^/]+\/[^/]+\.git)(\/.*)$/);
-    if (!m) return new Response("not found\n", { status: 404 });
+    if (!m) return call(null, u.pathname + u.search, { method: req.method, headers: req.headers });
     const write = u.searchParams.get("service") === "git-receive-pack" || m[2] === "/git-receive-pack";
     if (bearer !== WRITE && (write || bearer !== READ)) return new Response("bad token\n", { status: 401 });
     // git http-backend as CGI: the request in env and stdin, headers then the body on stdout.
@@ -106,7 +113,12 @@ const site = Bun.serve({
 await run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "codesplitter-ssh-spike", "-f", key]);
 const pub = (await Bun.file(`${key}.pub`).text()).trim();
 
-const vars = { AUTHORIZED_KEY: pub, AUTHORIZED_USER: "spike", LOOKUP_URL: `http://host.docker.internal:${site.port}/lookup`, GATE_SECRET };
+await call("spike", "/api/login", { method: "POST", body: JSON.stringify({ name: "spike" }) });
+const added = await got(call("spike", "/api/me/ssh-keys", { method: "POST", body: JSON.stringify({ key: pub, title: "try.ts" }) }), SshKeyRow, "add the key", (n) => n === 201);
+step("key added through codeSplitter's API", true, added.fingerprint);
+
+// KeyLookup runs in workerd on this Mac, so it reaches codeSplitter on 127.0.0.1; the container reaches the rest through Docker's host name.
+const vars = { CODESPLITTER_URL: `http://127.0.0.1:${site.port}`, LOOKUP_URL: `http://host.docker.internal:${site.port}/lookup`, GATE_SECRET };
 const dev = Bun.spawn(
   ["bunx", "wrangler@4.156.0", "dev", "--ip", "127.0.0.1", "--port", "8797", ...Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`])],
   { cwd: here, stdout: "pipe", stderr: "pipe" },
@@ -169,11 +181,16 @@ try {
 
   const stranger = path.join(tmp, "stranger");
   await run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", stranger]);
-  await refused(["git", "ls-remote", url], ssh.replace(key, stranger));
-  step("other key refused", true);
+  const strangerSays = await refused(["git", "ls-remote", url], ssh.replace(key, stranger));
+  step("a key nobody added refused", strangerSays.includes("Permission denied"), strangerSays.includes("Permission denied") ? "" : strangerSays);
 
   await refused(["git", "ls-remote", "ssh://git@127.0.0.1:8788/../etc"]);
   step("bad path refused", true);
+
+  // The container keeps no key list: once spike's key is removed, the next login asks and is told no.
+  const removed = await call("spike", `/api/me/ssh-keys/${added.id}`, { method: "DELETE" });
+  const goneSays = await refused(["git", "ls-remote", url]);
+  step("the key refused once it's removed", removed.ok && goneSays.includes("Permission denied"), removed.ok ? "" : `the DELETE answered ${removed.status}`);
 } catch (e) {
   step("run", false, e instanceof Error ? e.message : String(e));
 }
@@ -186,6 +203,7 @@ if (keep && !failed) {
   await dev.exited;
 }
 site.stop(true);
+call.close();
 // wrangler dev leaves the containers it started (sshd and its proxy) running; only this spike's are named like this.
 const left = Bun.spawnSync(["docker", "ps", "-aq", "--filter", "name=workerd-codesplitter-ssh-spike-"]).stdout.toString().split("\n").filter(Boolean);
 if (left.length) Bun.spawnSync(["docker", "rm", "-f", ...left]);

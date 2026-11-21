@@ -1,4 +1,5 @@
-# The forced command for every ssh login (see entry.sh): `git-serve.sh <user>`. git asks for
+# The forced command for every ssh login: `git-serve.sh <user>`, the codeSplitter user who added the key
+# (authorized-keys.sh, #5504). git asks for
 # `git-upload-pack '/owner/repo.git'` (fetch, clone, ls-remote) or `git-receive-pack '...'` (push); anything else is
 # refused. The path must be owner/repo with plain characters.
 #
@@ -17,7 +18,7 @@ path=$(printf '%s' "$arg" | sed -e "s/^'//" -e "s/'\$//" -e 's#^/##' -e 's#\.git
 if ! printf '%s' "$path" | grep -Eq '^[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$'; then
   echo "codeSplitter ssh: the path is owner/repo" >&2; exit 1
 fi
-[ -n "$user" ] || { echo "codeSplitter ssh: no user for this key" >&2; exit 1; }
+printf '%s' "$user" | grep -Eq '^[a-z0-9]+(-[a-z0-9]+)*$' || { echo "codeSplitter ssh: no user for this key" >&2; exit 1; }
 
 # LOOKUP_URL and GATE_SECRET, written by entry.sh (sshd gives a login none of the container's env).
 . /etc/gate.env
