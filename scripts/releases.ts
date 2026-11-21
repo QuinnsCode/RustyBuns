@@ -10,12 +10,14 @@
 //   bun run releases --publish        write ~/.rustybuns/releases/releases.html and have a headless Claude republish it
 //                                     to the releases artifact (same URL; artifacts have no API, only Claude's tools)
 //   bun run releases --install        a launchd job on the office Mac: --publish at :17 past every hour 7am to 10pm,
-//                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off)
+//                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off). Run from an
+//                                     office worktree, it runs from its own detached checkout at ~/.rustybuns/releases/
+//                                     rustybuns instead, and each --publish there first moves it to origin/main
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { help } from "./help.ts";
-import { headless, install, uninstall } from "./launchd.ts";
+import { catchUp, headless, install, jobCheckout, uninstall } from "./launchd.ts";
 import { esc } from "../packages/util/src/index.ts";
 import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
@@ -159,16 +161,25 @@ Change nothing else. Reply: "releases published" or what failed.`;
 
 const publish = () => headless(prompt(), "Artifact ToolSearch", repo, dir);
 
-const job = { label: LABEL, script: import.meta.path, args: ["--publish"], cwd: repo, log: path.join(dir, "releases.log"),
-  when: Array.from({ length: 16 }, (_, i) => ({ Hour: 7 + i, Minute: 17 })) };
+const job = (from: string) => ({ label: LABEL, script: path.join(from, "scripts", "releases.ts"), args: ["--publish"], cwd: from,
+  log: path.join(dir, "releases.log"), when: Array.from({ length: 16 }, (_, i) => ({ Hour: 7 + i, Minute: 17 })) });
 
 if (import.meta.main) {
   help(import.meta.path);
   const args = process.argv.slice(2);
-  if (args.includes("--install")) { console.log(install(job) ? `installed: ${LABEL} publishes the releases page at :17, 7am to 10pm, log ${job.log}` : "launchctl bootstrap failed"); process.exit(); }
+  if (args.includes("--install")) {
+    const j = job(jobCheckout(repo, path.join(dir, "rustybuns")));
+    console.log(install(j) ? `installed: ${LABEL} publishes the releases page at :17, 7am to 10pm from ${j.cwd}, log ${j.log}` : "launchctl bootstrap failed");
+    process.exit();
+  }
   if (args.includes("--uninstall")) { uninstall(LABEL); console.log("uninstalled"); process.exit(); }
-  const d = await releases();
   const publishing = args.includes("--publish");
+  // The job's checkout stays wherever it was installed; catch it up so page changes and new apps reach the job (#5428).
+  if (publishing && !process.env.RELEASES_CAUGHT_UP && catchUp(repo) === "moved") {
+    const again = Bun.spawnSync([process.execPath, import.meta.path, ...args], { cwd: repo, stdout: "inherit", stderr: "inherit", env: { ...process.env, RELEASES_CAUGHT_UP: "1" } });
+    process.exit(again.exitCode ?? 1);
+  }
+  const d = await releases();
   const out = publishing ? file : args.includes("--html") ? args[args.indexOf("--html") + 1] : undefined;
   if (args.includes("--json")) console.log(JSON.stringify(d, null, 2));
   else if (out) {
