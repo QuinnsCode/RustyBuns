@@ -1,11 +1,13 @@
 // Where the CI time goes: the last N days of `apps` and `typecheck` runs, read-only through `gh api`, as one
 // short markdown report: queue waits and wall time per run, concurrency by hour of day, each job's median and
 // p90 with its checkout / install / test split, failures per test (and how many were on PRs that didn't touch
-// that app, the sign of a broken main or a flaky test), and what moving suites to a schedule would save.
+// that app, the sign of a broken main or a flaky test), what moving suites to a schedule would save, and the
+// slowest PR suites with their slowest test files and which release ring each could move to.
 //
 //   bun scripts/ci-report.ts               last 7 days, markdown on stdout
 //   bun scripts/ci-report.ts --days 3      a shorter window
-//   bun scripts/ci-report.ts --no-logs     skip the failed jobs' logs (no per-test failure names)
+//   bun scripts/ci-report.ts --top 5       how many suites the rings section lists (10)
+//   bun scripts/ci-report.ts --no-logs     skip the jobs' logs (no per-test failure names, no slow files)
 //
 // Finished runs, job lists, compares and logs are cached under $TMPDIR/ci-report-cache, so a second run is quick.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -119,6 +121,32 @@ export function failsOf(log: string): string[] {
     if (h) out.add(`${h[1]} › (hung)`);
   }
   return [...out];
+}
+
+/** Seconds per test file in a bun test log, slowest first: each file's "(pass)/(fail) name [12.3ms]" times summed
+ * under its group header. Bun prints a file's lines in one burst when it ends, so the log's own timestamps can't
+ * time a file; this misses setup outside a test (beforeAll, imports). */
+export function fileTimes(log: string): [string, number][] {
+  const out = new Map<string, number>();
+  let file = "";
+  for (const line of log.split("\n")) {
+    const body = line.replace(/^\S+Z /, "");
+    const g = body.match(/^##\[group\](\S+\.(?:test|spec)\.[cm]?[jt]sx?):\s*$/);
+    if (g) { file = g[1]!; continue; }
+    const t = body.match(/^\((?:pass|fail)\) .*\[([\d.]+)(ms|s)\]\s*$/);
+    if (t && file) out.set(file, (out.get(file) ?? 0) + Number(t[1]) / (t[2] === "ms" ? 1000 : 1));
+  }
+  return [...out].sort((a, b) => b[1] - a[1]);
+}
+
+/** Where a PR suite could run instead. The hourly sweep (desktop-hourly.yml) already runs every app's suite, so
+ * moving a suite there costs nothing new. A suite that rarely catches its own PR's break (2 or fewer a week) and
+ * costs 1.5+ job-min a run can leave PRs entirely; any other suite keeps its PRs that touch the app and drops only
+ * the runs a shared change (packages/, the lockfile) set off. A red hourly stops daily (3 green hourlies in a row),
+ * and stable takes only a 3-day green daily, so neither way lets a red reach stable. */
+export function ringPick(s: { perRun: number; caughtWeek: number; fanMin: number }): "hourly: whole suite" | "hourly: shared-change runs" | "keep on PRs" {
+  if (s.perRun >= 1.5 && s.caughtWeek <= 2) return "hourly: whole suite";
+  return s.fanMin > 0 ? "hourly: shared-change runs" : "keep on PRs";
 }
 
 // ---------- fetch
@@ -403,7 +431,45 @@ async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: 
   for (const s of ranked.slice(0, 15)) say(`| ${s.n}${cand.includes(s) ? " **(schedule)**" : ""} | ${s.runs.size} | ${m1(s.perRun)} | ${Math.round(s.min)} | ${s.caught} | ${s.noise} | ${Math.round(s.perRun * days)} | ${Math.round(s.perRun * days * 24)} |`);
   const save = sum(cand.map((s) => s.min - s.perRun * days)), saveH = sum(cand.map((s) => s.min - s.perRun * days * 24));
   say(`\nMoving the ${cand.length} marked suites to nightly saves **${Math.round(save)} job-min** (${share(save, total)}); hourly saves ${Math.round(saveH)}. The cost: a break in one of them lands on main and shows up on the next scheduled run instead of on its PR, so the scheduled run has to open an issue someone picks up.\n`);
-  say(`Of ${Math.round(total)} job-min in ${days} days, these overlap (a scheduled suite was also in the every-app runs), so don't add them up. Fewer and shorter jobs is what shortens the queue: the wait above comes from jobs past the concurrency ceiling, not from slow tests.\n`);
+  say(`Of ${Math.round(total)} job-min in ${days} days, these overlap (a scheduled suite was also in the every-app runs), so don't add them up. Fewer and shorter jobs is what shortens the queue: the wait above comes from jobs past the concurrency ceiling, not from slow tests. The hourly column counts a separate schedule; the hourly ring already runs every suite, so section 5 counts it as free.\n`);
+}
+
+/** The slowest PR suites, their slowest test files, and which release ring each could move to (notes/RELEASE_RINGS.md). */
+async function rings(rows: Row[], fails: Fail[], using: Map<string, Set<string>>, days: number, top: number, logs: boolean, say: (s: string) => void) {
+  say("## 5. Release rings: what could leave PRs\n");
+  const wk = 7 / days;
+  const by = new Map<string, { min: number; fanMin: number; runs: Set<number>; ok: Job[]; okAt: string }>();
+  await Promise.all(rows.filter((r) => r.wf === "apps.yml" && r.pr).map(async (row) => {
+    const files = await filesOf(row);
+    for (const j of row.jobs.filter((j) => ran(j) && j.completed_at && /^test /.test(j.name))) {
+      const n = suiteOf(j.name), d = span(j.started_at, j.completed_at);
+      const s = by.get(n) ?? { min: 0, fanMin: 0, runs: new Set(), ok: [], okAt: "" };
+      s.min += d; s.runs.add(row.run.id);
+      if (touchedBy(j.name, files, using) === false) s.fanMin += d;
+      // the newest run where every shard of this suite passed: its logs name the slow files
+      const shards = row.jobs.filter((x) => suiteOf(x.name) === n);
+      if (shards.every((x) => x.conclusion === "success") && row.run.created_at > s.okAt) { s.ok = shards; s.okAt = row.run.created_at; }
+      by.set(n, s);
+    }
+  }));
+  const caught = new Map<string, number>();
+  for (const f of fails) if (f.touched === true) caught.set(f.suite, (caught.get(f.suite) ?? 0) + 1);
+  const list = [...by].map(([n, s]) => ({ n, ...s, perRun: s.min / s.runs.size, caughtWeek: (caught.get(n) ?? 0) * wk, fanMin: s.fanMin })).sort((a, b) => b.min - a.min);
+  say(`PR runs of \`apps.yml\` only, per week. "Shared-change" minutes are runs where the PR changed nothing the app imports (a package it doesn't use, or one it does through the all-apps rule): the runs build order step 5 moves to hourly. The hourly sweep already runs every suite, so moving one there costs nothing new; daily would add one run a day to \`daily-ring.yml\` and wait up to a day to see a break, so it isn't picked for anything here. Slow files come from the newest PR run where the suite passed, test times summed per file.\n`);
+  say("| suite | PR runs/wk | job-min per run | PR job-min/wk | of it shared-change | caught on own PR/wk | slowest files (s) | pick | saves job-min/wk |\n|---|---:|---:|---:|---:|---:|---|---|---:|");
+  let whole = 0, fan = 0;
+  for (const s of list.slice(0, top)) {
+    const slow = (await Promise.all((logs ? s.ok : []).map(async (j) => fileTimes(await getLog(j.id))))).flat().sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const pick = ringPick(s), save = pick === "hourly: whole suite" ? s.min : pick === "keep on PRs" ? 0 : s.fanMin;
+    say(`| ${s.n.slice(5)} | ${Math.round(s.runs.size * wk)} | ${m1(s.perRun)} | ${Math.round(s.min * wk)} | ${share(s.fanMin, s.min)} | ${m1(s.caughtWeek)} | ${slow.map(([f, t]) => `${f.replace(/^(\.\/)?(tests?\/)?/, "")} ${Math.round(t)}`).join(", ") || "-"} | ${pick} | ${Math.round(save * wk)} |`);
+  }
+  for (const s of list) { const p = ringPick(s); if (p === "hourly: whole suite") whole += s.min; else if (p !== "keep on PRs") fan += s.fanMin; }
+  const all = sum(list.map((s) => s.min)), allFan = sum(list.map((s) => s.fanMin));
+  say(`\nAcross all ${list.length} suites, PR test jobs cost ${Math.round(all * wk)} job-min/wk. Three choices, smallest first:\n`);
+  say(`- **A. Only the picked whole suites go hourly:** ${list.filter((s) => ringPick(s) === "hourly: whole suite").map((s) => s.n.slice(5)).join(", ") || "none"}. Saves ${Math.round(whole * wk)} job-min/wk (${share(whole, all)}). A PR to one of those apps merges without its tests; a break shows on the next hourly, Ester bisects, Mervin reverts within 60 minutes.`);
+  say(`- **B. Every suite stops running on shared-change PRs (build order step 5).** Saves ${Math.round(allFan * wk)} job-min/wk (${share(allFan, all)}). PRs that touch an app still run its suite; only the fan-out from packages/ and the lockfile goes hourly.`);
+  say(`- **A and B together:** saves ${Math.round((whole + fan) * wk)} job-min/wk (${share(whole + fan, all)}).\n`);
+  say("Either way a red can't reach stable: the hourly sweep runs every suite, a red hourly stops daily (it needs 3 green hourlies in a row), and stable takes only a daily that stayed green 3 days, plus the owner's OK.\n");
 }
 
 if (import.meta.main) {
@@ -428,5 +494,6 @@ if (import.meta.main) {
   const jobs = perJob(rows, say);
   const fails = await failures(rows, using, logs, say);
   await suggestions(rows, jobs, fails, using, days, say);
+  await rings(rows, fails, using, days, Number(argv[argv.indexOf("--top") + 1]) || 10, logs, say);
   console.log(out.join("\n"));
 }
