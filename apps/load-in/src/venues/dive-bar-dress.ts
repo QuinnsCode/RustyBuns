@@ -199,6 +199,12 @@ export function diveBarDressing(l: Level): Dressing {
   const exit = keep(new THREE.MeshBasicMaterial({ map: keep(canvasTex(256, 96, exitFace)), toneMapped: false }));
   add(new THREE.BoxGeometry(0.4, 0.15, 0.05), std({ color: 0xdedede }), cx, doorTop + 0.22, r.z1 - 0.03);
   plane(0.38, 0.13, exit, cx, doorTop + 0.22, r.z1 - 0.056, Math.PI);
+  // A clip light on the door frame, pointed down at where the gear is stacked as it comes in, so the pile reads from the stage.
+  add(new THREE.CylinderGeometry(0.05, 0.07, 0.12, 10), black, cx + half - 0.1, doorTop - 0.02, r.z1 - 0.12).rotation.x = -0.6;
+  const key = new THREE.SpotLight(0xfff0dc, 16, 6, 0.7, 0.6, 1.4);
+  key.position.set(cx + half - 0.1, doorTop - 0.08, r.z1 - 0.2);
+  key.target.position.set(cx, 0.3, r.z1 - 1.5);
+  g.add(key, key.target);
   const glow = new THREE.PointLight(0xff3030, 0.6, 2.5, 2);
   glow.position.set(cx, doorTop + 0.2, r.z1 - 0.3);
   g.add(glow);

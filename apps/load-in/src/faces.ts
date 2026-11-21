@@ -1,6 +1,7 @@
 // Gear you can read from across the room: a perforated steel grille on the speakers, a woven cloth front on the guitar
 // cab, a badge of our own (RUSTY) where a real maker puts theirs, stencils on the road cases (the cable case says
-// CABLES) and a jack panel that lights up, each socket ringed and named, when you look at it or aim a cable at it.
+// CABLES), a strip of crew tape on the back and top of each piece saying which it is (TOP L, SUB), a pale edge on each
+// body so it holds its shape in a dark room, and a jack panel that lights up, each socket ringed and named, when you look at it or aim a cable at it.
 // View only: the sim never reads it. The models (@rustybuns/models/gear) have no UVs, so the grille and cloth are
 // drawn in the shader from each mesh's own coordinates.
 import * as THREE from "three";
@@ -57,12 +58,12 @@ export function jackLabel(id: string): string {
 
 const textures = new Map<string, THREE.CanvasTexture>();
 /** Text on a transparent card, cached by everything that changes it. */
-function textTexture(text: string, style: "badge" | "stencil" | "label" | "script"): THREE.CanvasTexture {
+function textTexture(text: string, style: "badge" | "stencil" | "label" | "script" | "tape"): THREE.CanvasTexture {
   const key = `${style}:${text}`;
   const hit = textures.get(key);
   if (hit) return hit;
   const c = document.createElement("canvas"), x = c.getContext("2d")!;
-  const [W, H] = style === "stencil" ? [512, 128] : style === "label" ? [256, 64] : [256, 96];
+  const [W, H] = style === "stencil" ? [512, 128] : style === "label" ? [256, 64] : style === "tape" ? [320, 120] : [256, 96];
   c.width = W; c.height = H;
   x.textAlign = "center";
   x.textBaseline = "middle";
@@ -77,6 +78,19 @@ function textTexture(text: string, style: "badge" | "stencil" | "label" | "scrip
     x.fillText(text, W / 2, H / 2 - 6);
     x.fillStyle = "#f07a1a";
     x.fillRect(W * 0.22, H - 26, W * 0.56, 6);
+  } else if (style === "tape") {
+    // White gaffer tape, its ends torn, the piece's name in thick black marker.
+    x.fillStyle = "#ece8dc";
+    x.beginPath();
+    x.moveTo(10, 8);
+    for (let y = 8; y <= H - 8; y += 11) x.lineTo(y % 22 ? 4 : 14, y);
+    x.lineTo(W - 12, H - 8);
+    for (let y = H - 8; y >= 8; y -= 11) x.lineTo(y % 22 ? W - 4 : W - 14, y);
+    x.closePath();
+    x.fill();
+    x.fillStyle = "#121212";
+    x.font = "900 80px 'Marker Felt', 'Comic Sans MS', 'Arial Black', sans-serif";
+    x.fillText(text, W / 2, H / 2 + 3, W - 40);
   } else if (style === "script") {
     x.fillStyle = "#efe4c8";
     x.font = "italic 800 64px Georgia, serif";
@@ -108,6 +122,39 @@ const card = (text: string, style: Parameters<typeof textTexture>[1], width: num
 };
 
 type Mark = { text: string; style: Parameters<typeof textTexture>[1]; width: number; at: THREE.Vector3Tuple; tilt?: number; turn?: number };
+
+/** The crew's tape on a piece: its key in caps (top-l -> TOP L). Cases carry a stencil already and stands have no face. */
+export function tapeLabel(key: string, id: string): string | undefined {
+  if (id.startsWith("road-case") || id.startsWith("stand") || id === "distro-box") return undefined;
+  return key.split("-").join(" ").toUpperCase();
+}
+
+/** Tape across the back near the top and on the lid, where a crew writes it so it reads from behind and from above. */
+function tapes(text: string, size: number[]): Mark[] {
+  const [w, h, d] = size, width = Math.min(0.32, w * 0.9);
+  return [
+    { text, style: "tape", width, at: [0, h * 0.86, -d / 2 - 0.004], turn: Math.PI },
+    { text, style: "tape", width, at: [0, h + 0.003, -d * 0.25], tilt: -Math.PI / 2 },
+  ];
+}
+
+/** A pale line round the sharp edges of a model's body (its biggest mesh), so it keeps its shape against a dark floor. */
+function edged(model: THREE.Object3D) {
+  let body: THREE.Mesh | null = null, most = 0;
+  for (const c of model.children) {
+    if (!(c instanceof THREE.Mesh)) continue;
+    c.geometry.computeBoundingBox();
+    const s = c.geometry.boundingBox!.getSize(new THREE.Vector3()), v = s.x * s.y * s.z;
+    if (v > most) { most = v; body = c; }
+  }
+  if (!body) return;
+  const lines = new THREE.LineSegments(new THREE.EdgesGeometry(body.geometry, 35), edgeLine);
+  lines.position.copy(body.position);
+  lines.quaternion.copy(body.quaternion);
+  lines.scale.copy(body.scale);
+  model.add(lines);
+}
+const edgeLine = new THREE.LineBasicMaterial({ color: 0xa9b0ba, transparent: true, opacity: 0.7 });
 
 /** Where a real maker would put a badge (or a crew its stencil), per model: a point on the face and the face's turn. */
 function marks(id: string, size: number[], stencil?: string): Mark[] {
@@ -154,10 +201,11 @@ export type Dressed = { lit(on: boolean, jack?: string): void };
  * Dress one model: its badge or stencil, the cab's cloth, and the jack rings and names (hidden until `lit`). A model's
  * jacks are its `jack:<id>` children (+z out of the panel).
  */
-export function dress(model: THREE.Object3D, f: FaceLook, opts: { stencil?: string } = {}): Dressed {
+export function dress(model: THREE.Object3D, f: FaceLook, opts: { stencil?: string; tape?: string } = {}): Dressed {
   const id = String(model.userData.gear ?? ""), size: number[] = model.userData.size ?? [0, 0, 0];
+  if (!id.startsWith("stand")) edged(model);
   if (id === "cab-4x12") for (const c of model.children) if (c.name === "cab-4x12-grille" && c instanceof THREE.Mesh) c.material = f.cloth;
-  for (const m of marks(id, size, opts.stencil)) {
+  for (const m of [...marks(id, size, opts.stencil), ...(opts.tape ? tapes(opts.tape, size) : [])]) {
     const c = card(m.text, m.style, m.width);
     c.position.set(...m.at);
     c.rotation.set(m.tilt ?? 0, m.turn ?? 0, 0, "YXZ");
