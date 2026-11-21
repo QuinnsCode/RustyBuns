@@ -181,7 +181,7 @@ jobs:
       - name: Drop
         run: |
           v="$VERSION"
-          [ -z "$v" ] && v="$(bun -p 'require("./apps/" + process.env.APP + "/package.json").version')"
+          [ -z "$v" ] && v="$(bun -p 'require("./" + require("./scripts/app-dirs.ts").appDir(process.env.APP) + "/package.json").version')"
           bun scripts/drop.ts --app "$APP" --version "$v" --channel "$CHANNEL" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
         env:
           # The version and channel can come from a typed input, so through env, not the script.
