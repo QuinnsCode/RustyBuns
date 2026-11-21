@@ -17,7 +17,7 @@
 
 import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { DesktopOs, HetznerBoxTarget, RailwayBoxTarget, RustyBunsConfig } from "./config.ts";
 import { buildDesktop, embeddedDirs, localRust, shippingCrates } from "./build.ts";
 
@@ -90,6 +90,73 @@ export function checkBox(c: RustyBunsConfig): void {
     throw new Error(`targets.box.volumeSize is ${volumeSize}: a Hetzner Volume is a whole number of GB from ${HETZNER_VOLUME_MIN} to ${HETZNER_VOLUME_MAX}, or 0 for none.`);
   if (!(Number.isInteger(port) && port >= 1 && port <= 65535))
     throw new Error(`targets.box.port is ${port}: give a port from 1 to 65535.`);
+}
+
+/**
+ * An app sharing this app's Hetzner server (`targets.box.apps`): where its built host sits
+ * (from this app's folder), the port it listens on, and the secrets it reads from the shell.
+ */
+export interface BoxGuest { dir: string; name: string; port: number; secrets: string[] }
+
+/** Run `fn` with `dir` as the working directory: the build and config loader read from it. */
+export async function inDir<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const back = process.cwd();
+  process.chdir(dir);
+  try { return await fn(); } finally { process.chdir(back); }
+}
+
+/**
+ * The guests' configs, each loaded in its own folder, checked against the host and each other:
+ * a port or a name two units would share, or a binding the shared box can't give.
+ */
+export async function loadGuests(c: RustyBunsConfig, load: () => Promise<RustyBunsConfig>): Promise<{ guest: BoxGuest; cfg: RustyBunsConfig }[]> {
+  const box = c.targets.box;
+  if (box?.provider !== "hetzner" || !box.apps?.length) return [];
+  const out = [];
+  for (const a of box.apps) {
+    if (!existsSync(join(a.dir, "rustybuns.config.ts"))) throw new Error(`targets.box.apps: ${a.dir} has no rustybuns.config.ts`);
+    const cfg = await inDir(a.dir, load);
+    const secrets = Object.entries(cfg.bindings ?? {}).flatMap(([n, b]) => b.type === "secret" ? [n] : []);
+    out.push({ guest: { dir: a.dir, name: cfg.name, port: a.port, secrets }, cfg });
+  }
+  checkGuests(c, out);
+  return out;
+}
+
+/** Throws on guests that would collide on the server, or need what only their own stack makes. */
+export function checkGuests(c: RustyBunsConfig, guests: readonly { guest: BoxGuest; cfg: RustyBunsConfig }[]): void {
+  const ports = new Map([[boxDefaults(c.targets.box as HetznerBoxTarget).port, c.name]]);
+  const names = new Set([c.name]);
+  for (const { guest: g, cfg } of guests) {
+    if (!(Number.isInteger(g.port) && g.port >= 1 && g.port <= 65535)) throw new Error(`targets.box.apps: ${g.name}'s port is ${g.port}: give a port from 1 to 65535.`);
+    const taken = ports.get(g.port);
+    if (taken) throw new Error(`targets.box.apps: ${g.name} and ${taken} both want port ${g.port} on the server. Give ${g.name} its own.`);
+    if (names.has(g.name)) throw new Error(`targets.box.apps: two apps are named "${g.name}", and they'd share one data folder. Rename one, or list it once.`);
+    ports.set(g.port, g.name);
+    names.add(g.name);
+    const odd = Object.entries(cfg.bindings ?? {}).filter(([, b]) => b.type === "hyperdrive").map(([n]) => n);
+    if (odd.length || cfg.experimental?.wheel)
+      throw new Error(`targets.box.apps: ${g.name} needs its own stack (${odd.length ? `hyperdrive ${odd.join(", ")}` : "experimental.wheel"}), which a shared server doesn't make yet. Give it its own targets.box.`);
+  }
+}
+
+/**
+ * The guest's config as the shared server runs it: a Hetzner box on the host's arch and Volume,
+ * keeping the guest's own memMaxMb, persona and webmcp when it has a Hetzner box of its own.
+ */
+export function asGuest(cfg: RustyBunsConfig, host: HetznerBoxTarget, port: number): RustyBunsConfig {
+  const own = cfg.targets.box?.provider === "hetzner" ? cfg.targets.box : {};
+  const { serverType, volumeSize } = boxDefaults(host);
+  return { ...cfg, targets: { ...cfg.targets, box: { ...own, provider: "hetzner", serverType, volumeSize, port, apps: undefined } } };
+}
+
+/** Build each guest's host in its own folder, for the host's server. Returns the binaries. */
+export async function buildGuests(c: RustyBunsConfig, load: () => Promise<RustyBunsConfig>): Promise<string[]> {
+  const host = c.targets.box as HetznerBoxTarget;
+  const out = [];
+  for (const { guest, cfg } of await loadGuests(c, load))
+    out.push(resolve(guest.dir, await inDir(guest.dir, () => buildBox(asGuest(cfg, host, guest.port)))));
+  return out;
 }
 
 /** Hetzner's cax* types are Ampere ARM; everything else is x86. */

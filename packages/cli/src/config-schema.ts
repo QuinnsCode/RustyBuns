@@ -96,7 +96,8 @@ const DesktopTarget = Schema.Struct({
 
 const BoxCommon = { memMaxMb: opt(int(64, 1_048_576)), webmcp: opt(Bool), persona: opt(Schema.Literals(Object.keys(PERSONAS) as [Persona, ...Persona[]])), region: opt(Str), port: opt(Port) };
 const BoxTarget = Schema.Union([
-  Schema.Struct({ provider: Schema.Literal("hetzner"), ...BoxCommon, location: opt(Str), serverType: opt(Str), image: opt(Str), volumeSize: opt(int(10, 10_240)), allowLargeServer: opt(Bool) }),
+  Schema.Struct({ provider: Schema.Literal("hetzner"), ...BoxCommon, location: opt(Str), serverType: opt(Str), image: opt(Str), volumeSize: opt(int(10, 10_240)), allowLargeServer: opt(Bool),
+    apps: opt(Schema.Array(Schema.Struct({ dir: Str, port: Port }))) }),
   Schema.Struct({ provider: Schema.Literal("railway"), ...BoxCommon, volume: opt(Bool), sleep: opt(Bool) }),
 ]);
 

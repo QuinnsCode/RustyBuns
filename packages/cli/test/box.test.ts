@@ -4,7 +4,7 @@ import { test, expect } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boxArch, boxDefaults, boxLauncher, checkBox } from "../src/box.ts";
+import { asGuest, boxArch, boxDefaults, boxLauncher, checkBox, loadGuests } from "../src/box.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { statefulDeletes } from "../src/guard.ts";
 import type { HetznerBoxTarget, RustyBunsConfig } from "../src/config.ts";
@@ -109,4 +109,51 @@ test("guard: dropping a deployed box's Volume, or moving the box to Railway, nam
     const rail = { name: "hippo", bindings: {}, targets: { box: { provider: "railway", volume } } } as RustyBunsConfig;
     expect(check(rail)).toEqual(["Volume Data (hippo-prod-data)"]);
   }
+});
+
+test("shared box: each app in targets.box.apps is its own unit on the one server, with its port, secrets and data folder", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-box-apps-")));
+  for (const n of ["host", "golf", "skate"]) { mkdirSync(join(root, n)); writeFileSync(join(root, n, "rustybuns.config.ts"), ""); }
+  // The loader runs in each app's folder, as loadRawConfig reads the cwd's config.
+  const configs: Record<string, RustyBunsConfig> = {
+    golf: { name: "golf", bindings: { WIND_KEY: { type: "secret" } }, targets: {} } as RustyBunsConfig,
+    skate: { name: "skate", bindings: {}, targets: { box: { provider: "railway" } } } as RustyBunsConfig,
+  };
+  const load = async () => configs[process.cwd().split("/").pop()!]!;
+  const host = (apps: { dir: string; port: number }[], box: Partial<HetznerBoxTarget> = {}) => boxed({ apps, ...box });
+  const back = process.cwd();
+  process.chdir(join(root, "host"));
+  try {
+    const guests = await loadGuests(host([{ dir: "../golf", port: 3001 }, { dir: "../skate/", port: 3002 }]), load);
+    expect(process.cwd()).toBe(join(root, "host"));
+    expect(guests.map((g) => g.guest)).toEqual([
+      { dir: "../golf", name: "golf", port: 3001, secrets: ["WIND_KEY"] },
+      { dir: "../skate/", name: "skate", port: 3002, secrets: [] },
+    ]);
+    const s = generateAlchemy(host([]), guests.map((g) => g.guest));
+    expect(s.match(/Hetzner\.Server\(/g)).toHaveLength(1);
+    expect(s).toContain(`export const App_golf = Hetzner.Service("App_golf", {\n  server: Box,\n  main: "../golf/.rustybuns/box/launch.mjs",`);
+    expect(s).toContain(`extraFiles: [{ source: "../skate/.rustybuns/box", destination: "." }],`);
+    expect(s).toContain(`  port: 3001,\n  env: { WIND_KEY: process.env["WIND_KEY"] ?? "" },`);
+    expect(s).toContain("declare const process:");
+    expect(s).toContain(`return { box: service.url, apps: { "golf": (yield* App_golf).url, "skate": (yield* App_skate).url } };`);
+    // No Volume: each app keeps its own folder on the server's disk.
+    expect(generateAlchemy(host([], { volumeSize: 0 }), guests.map((g) => g.guest))).toContain(`env: { DATA_DIR: "/var/lib/skate" },`);
+
+    // A guest builds as a Hetzner box on the host's arch and Volume, keeping its own triage knobs.
+    const g = asGuest({ ...configs.golf!, targets: { box: { provider: "hetzner", memMaxMb: 512, serverType: "cx23" } } }, { provider: "hetzner", serverType: "cax11", volumeSize: 0 }, 3001);
+    expect(g.targets.box).toEqual({ provider: "hetzner", memMaxMb: 512, serverType: "cax11", volumeSize: 0, port: 3001, apps: undefined });
+    expect(boxLauncher(asGuest(configs.skate!, { provider: "hetzner" }, 3002))).toContain(`return join("/mnt", v, "skate");`);
+
+    // What two units would share, or a guest the shared stack can't wire, is refused before anything is built.
+    for (const [apps, why] of [
+      [[{ dir: "../golf", port: 3000 }], /golf and hippo both want port 3000/],
+      [[{ dir: "../golf", port: 3001 }, { dir: "../skate", port: 3001 }], /skate and golf both want port 3001/],
+      [[{ dir: "../golf", port: 3001 }, { dir: "../golf", port: 3002 }], /two apps are named "golf"/],
+      [[{ dir: "../nowhere", port: 3001 }], /\.\.\/nowhere has no rustybuns.config.ts/],
+    ] as const) await expect(loadGuests(host([...apps]), load)).rejects.toThrow(why);
+    configs.golf = { ...configs.golf!, bindings: { DB: { type: "hyperdrive" } } } as RustyBunsConfig;
+    await expect(loadGuests(host([{ dir: "../golf", port: 3001 }]), load)).rejects.toThrow(/golf needs its own stack \(hyperdrive DB\)/);
+    expect(process.cwd()).toBe(join(root, "host"));
+  } finally { process.chdir(back); }
 });

@@ -55,7 +55,8 @@ export function billables(c: RustyBunsConfig): Billable[] {
     if (r.volume) out.push({ what: "Railway Volume", kind: "usage", note: "storage used, by the GB-month, until destroyed" });
   } else if (c.targets.box) {
     const b = boxDefaults(c.targets.box);
-    out.push({ what: `Hetzner ${b.serverType} in ${b.location}`, kind: "fixed", note: "billed hourly until destroyed, even powered off" });
+    const shared = c.targets.box.apps?.length ? `; ${c.targets.box.apps.length + 1} apps share it` : "";
+    out.push({ what: `Hetzner ${b.serverType} in ${b.location}`, kind: "fixed", note: `billed hourly until destroyed, even powered off${shared}` });
     if (b.volumeSize > 0) out.push({ what: `Hetzner Volume ${b.volumeSize} GB`, kind: "fixed", note: "billed until destroyed" });
   }
   return out;

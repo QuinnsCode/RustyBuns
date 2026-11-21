@@ -298,6 +298,8 @@ Run your real games side by side on one machine, fill them with players, and see
 
 `bun scripts/one-box.ts` builds each game's box host (the same Bun bundle that Railway runs and a Hetzner box compiles). It starts the games next to each other, each on its own port and data dir, and opens rooms of sockets on each. Then it prints the memory that each game holds idle and with players in, and the cost: an awake Durable Object room on Cloudflare, against a share of one box. `--box-ram` and `--box-price` set the box, and the answer is how many games fit on it.
 
+Then put them there: list the other apps under one app's `targets.box.apps` (`[{ dir: "../golf", port: 3001 }]`), and its `deploy` runs every one on the same Hetzner server, each its own unit with its own port and data folder ([Several apps on one box](REFERENCE.md#several-apps-on-one-box)).
+
 eqosys's Scale tab does the same for Qollab's rooms: measured room CPU and Durable Object handler time, priced on Durable Objects, on Rivet and on a Hetzner box behind Cloudflare, with the points where one gets cheaper than another.
 
 </details>
