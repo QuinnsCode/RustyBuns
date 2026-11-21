@@ -5,7 +5,9 @@ import { AMPS } from "../src/circuit/amps.ts";
 import { cut, padded } from "../src/circuit/capture.ts";
 import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, scramble, selfTakes, takesDistance, targetsOf, valuesOf, walkCaps, withValues } from "../src/circuit/fit.ts";
 
-setDefaultTimeout(120_000);
+// Each fit is a CMA-ES search over whole renders: the three-take tone stack takes 64 s on the arm Mac runner and
+// 121-143 s on the Intel one (#5498), so the limit leaves room for the slowest runner, not the median.
+setDefaultTimeout(300_000);
 
 test("parts round to values you can buy, and step along the E24 series", () => {
   for (const [v, steps, want] of [
