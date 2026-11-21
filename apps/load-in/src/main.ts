@@ -58,6 +58,7 @@ import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
 import { idlePrompt, nextStep } from "./next.ts";
+import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
 import { crewView } from "./crew/view.ts";
@@ -133,7 +134,7 @@ const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 let lights = venueLights(world.level);
 scene.add(lights);
 // The marker over what the Next line is about: a small cone pointing down, bobbing.
-const marker = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 12).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: 0x4cc9f0 }));
+const marker = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.26, 12).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(marker);
 
 function room(l: World["level"]) {
@@ -299,6 +300,11 @@ function draw() {
   const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
+  // Out of view, an arrow on the screen edge says which way to turn for it.
+  const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
+  const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
+  $("toward").hidden = !arrow;
+  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = gear(tgt.gear).what; }
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
@@ -312,7 +318,7 @@ function draw() {
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : roll ? `${CABLE[roll.kind].what} roll, ${rollKg(roll).toFixed(1)} kg, ${leftM(roll).toFixed(0)} m left, ${you.speed.toFixed(1)} m/s${windup ? `, bowl ${Math.round(windup.power * 100)}%` : ""}`
-    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${CONNECTOR_NAME[cable.endInHand(cables)!]} end${(world.cableKg ?? 0) > 0.3 ? `, pulling ${world.cableKg!.toFixed(1)} kg` : ""}, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
+    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${CONNECTOR_NAME[cable.endInHand(cables)!]} end${(world.cableKg ?? 0) > 0.3 ? `, pulling ${world.cableKg!.toFixed(1)} kg` : ""}, ${you.speed.toFixed(1)} m/s` : "";
   renderer.render(scene, camera);
 }
 
