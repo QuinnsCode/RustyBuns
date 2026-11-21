@@ -37,11 +37,12 @@ test("run power from the outlet to the speaker across the walkway, see the hazar
   expect(more).toEqual([]);
   expect(hz).toMatchObject({ cable: "power-10", walkway: "the way in" });
 
-  // The ramp, faced square, set down over the crossing: the cable lies on it and the hazard is gone.
+  // The ramp, faced square, set down centred on the crossing (it lands 0.7 m in front of you): the cable lies on it
+  // and the hazard is gone.
   walkWith(w, c, -2.1, 5.8);
   w.you.yaw = 0;
   expect(pickUp(w, "ramp")).toEqual({ ok: true });
-  walkWith(w, c, 0, hz!.z + 0.55);
+  walkWith(w, c, 0, hz!.z + 0.7);
   w.you.yaw = 0;
   expect(putDown(w)).toEqual({ ok: true });
   settle(w, c, 3);
