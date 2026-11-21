@@ -17,6 +17,10 @@
 // undoes it, or `git revert -m1` of a single inner merge undoes one PR. It builds with git plumbing
 // (merge-tree, commit-tree), so no worktree or checkout is touched. A PR git can't join cleanly onto the stack
 // so far is left out and named. `--push` pushes the branch and opens the PR, its body listing what was combined.
+// Only PRs of risk tier 0 to 2 (scripts/ci-tier.ts) share the stack; a tooling, CI or Docker PR (tier 3 or 4) is
+// left to a test run of its own, so a broken dev dep is blamed on the dep (#5476). `--test "<cmd>"` runs cmd through
+// sh, with MERVIN_TIP set to the stack's commit, before the stack is kept; when it fails the batch is split in half
+// and each half tested, down to the PRs that fail alone, which are left out and named.
 //
 // With no flag it only prints the plan (reads git and `gh pr list`). `--go` puts the first wave on the merge train
 // in Mervin's order (--squash, or --merge for a stack; `--method` overrides and warns) and waits until each has merged
@@ -35,6 +39,7 @@ import { run, order, ciOf, type Board, type BoardPr, BoardPrs } from "./mervin-b
 import { events, FEED, PAUSE, costOf, type Ev, type Round } from "../src/mervin-replay.ts";
 import { ghTrain, Train } from "@rustybuns/util/train";
 import { help } from "../../../scripts/help.ts";
+import { bisect, testWaves } from "../../../scripts/ci-tier.ts";
 
 help(import.meta.path);
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
@@ -268,19 +273,35 @@ if (import.meta.main) {
   for (const a of heads.advice) say(`#${a.pr} suggest ${a.who}: ${a.why}${a.blocks.length ? ` (blocks ${a.blocks.map((n) => `#${n}`).join(" ")})` : ""}`);
   recorded.advice = heads; save();
   if (args.includes("--stack")) {
-    const picks = stackable(board, verdicts);
+    const filesOf = new Map(board.stages.map((s) => [s.pr, s.files.map((f) => f.path)]));
+    const [shared = [], ...alone] = testWaves(stackable(board, verdicts), (n) => filesOf.get(n) ?? []);
+    const solo = alone.flat();
     const titles = new Map(prs.map((p) => [p.number, p.title ?? ""]));
     const git = (...a: string[]) => { const r = Bun.spawnSync(["git", ...a], { cwd: top, stderr: "pipe" }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
-    const { tip, joined, left } = buildStack(git, main, picks.map((n) => prs.find((p) => p.number === n)!), titles);
+    const stackOf = (ns: number[]) => buildStack(git, main, ns.map((n) => prs.find((p) => p.number === n)!), titles);
+    const cmd = arg("test");
+    let picks = shared, red: number[] = [];
+    if (cmd) {
+      const tried = await bisect(shared, async (ns) => {
+        process.env.MERVIN_TIP = stackOf(ns).tip;
+        const ok = Bun.spawnSync(["sh", "-c", cmd], { cwd: top, stdout: "inherit", stderr: "inherit" }).exitCode === 0;
+        say(`test ${ok ? "green" : "RED"} on ${ns.map((n) => `#${n}`).join(" ")}`);
+        return ok;
+      });
+      picks = tried.good; red = tried.bad;
+      say(`${tried.runs} test run${tried.runs === 1 ? "" : "s"}${red.length ? `, red: ${red.map((n) => `#${n}`).join(" ")}` : ""}`);
+    }
+    const { tip, joined, left } = stackOf(picks);
+    left.push(...red.map((pr) => ({ pr, why: "its tests failed in the stack" })), ...solo.map((pr) => ({ pr, why: "tooling, CI or Docker (tier 3+): it gets a test run of its own" })));
     const branch = `mervin/stack-${main.slice(0, 9)}`;
     git("update-ref", `refs/heads/${branch}`, tip);
     recorded.stack = { branch, tip, joined, left }; save();
     say(`stack ${branch}: ${joined.length} PRs joined${left.length ? `, left out ${left.map((l) => `#${l.pr} (${l.why})`).join(", ")}` : ""}`);
-    const held = verdicts.filter((v) => !v.go || !picks.includes(v.pr));
+    const held = verdicts.filter((v) => (!v.go || !picks.includes(v.pr)) && !left.some((l) => l.pr === v.pr));
     const body = [
       `Mervin stacked ${joined.length} clean PRs onto main ${main.slice(0, 9)}, one merge commit each, so this is one thing to merge and one thing to undo.`,
       "", "## Combined", ...joined.map((n) => `- #${n} ${titles.get(n) ?? ""}`),
-      ...(left.length ? ["", "## Left out (would not join cleanly)", ...left.map((l) => `- #${l.pr}: ${l.why}`)] : []),
+      ...(left.length ? ["", "## Left out", ...left.map((l) => `- #${l.pr}: ${l.why}`)] : []),
       "", "## Not in this stack, and why", ...held.map((v) => `- #${v.pr}: ${v.go ? "needs the merge engine to settle a file, review it" : v.why}`),
       "", "## Merge and undo", "Merge this as a merge commit (not a squash) so GitHub marks the PRs inside it merged.",
       `Undo it all: \`git revert -m1 <the merge commit>\`. Undo one PR: \`git revert -m1 <that PR's merge commit in this branch>\`.`,
