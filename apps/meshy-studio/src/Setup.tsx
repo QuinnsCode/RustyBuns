@@ -1,16 +1,18 @@
-// First run: the Meshy key, then a workspace folder.
+// First run: an example to look at (no key needed), then the Meshy key, then a workspace folder.
 import { useEffect, useState } from "react";
 import { api, type Status } from "./api.ts";
 import { KeyField } from "./Settings.tsx";
+import { Sample } from "./Sample.tsx";
 
 export function Setup({ status, onDone }: { status: Status; onDone: () => void }) {
   return (
     <main className="setup">
       <section className="hero">
         <div className="brand"><span className="mark" aria-hidden>◆</span> MESHY <span className="slash">//</span> BATCH STUDIO</div>
-        <h1>Concept art in. Game-ready models out.</h1>
-        <p>Drop a folder of labelled concept images, send them to Meshy's Image to 3D, and get game-ready <code>.glb</code> files back, already scaled with the origin where you want it.</p>
+        <h1>Turn pictures into 3D models for your games.</h1>
+        <p>Put your drawings in a folder. The app sends each one to Meshy, a paid service that makes 3D models, and saves the models back in your folder, sized and ready to drop into a game.</p>
       </section>
+      {!status.hasKey && <Sample />}
       <KeyStep status={status} onDone={onDone} />
       {status.hasKey && <FolderStep status={status} onDone={onDone} />}
     </main>
@@ -20,7 +22,7 @@ export function Setup({ status, onDone }: { status: Status; onDone: () => void }
 function KeyStep({ status, onDone }: { status: Status; onDone: () => void }) {
   return (
     <section className="step plate">
-      <h2><span className="stepnum">1</span> Your Meshy API key</h2>
+      <h2><span className="stepnum">1</span> Make your own: add your Meshy key</h2>
       <KeyField status={status} onSaved={onDone} />
     </section>
   );
