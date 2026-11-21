@@ -2,6 +2,17 @@
 
 **Your home for every Q game: one account with your games, friends, saves and the studio where you make them.**
 
+## Use it
+
+**What it is:** one account for every Q game: your games, friends, saves and the studio where you make games.
+
+**Use:** https://eqosys.qntbr.com
+
+**How to use:** sign up with an email and password, then pick a game on the home page.
+Add friends on the Friends tab; any Q game you sign in to then knows who you are and who your friends are.
+
+**Account:** this is the account. You only need it to save, play with friends or make games.
+
 eqosys is who you are; [Qollab](../qollab/README.md) is who you are with. eqosys holds the account and the home: sign-in, your
 library, saves and achievements, and the studio. Qollab is the live part it ships with (friends online, parties, rooms and
 spaces), and is its own product too ([QOLLAB.md](QOLLAB.md)). Every Q game gets both. The words the pages use are in

@@ -4,6 +4,19 @@
 
 **Live:** https://park-hide-seek.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Play it
+
+**What it is:** hide and seek in 3D, in real national parks like Yosemite and Yellowstone.
+
+**Play:** https://park-hide-seek.notryanquinn.workers.dev
+
+**How to play:** campers hide and park rangers seek. As a camper, pick where to land, find cover and stay hidden for three minutes.
+As a ranger, catch campers by reaching them. Whoever finds Bigfoot first wins the round for their side.
+
+**Controls:** Desktop: click the view, then WASD move, Shift run, mouse look, C crouch, Esc let go. · Phone: a stick on the left, drag on the right to look, buttons for the rest.
+
+**Account:** not needed. Sign in with eqosys to play under your own name online.
+
 Hide and seek in a real national park, in 3D. Campers drop into a zone around a famous attraction (Half Dome, El Capitan, Yosemite Falls, Glacier Point, the Mariposa Grove sequoias in Yosemite; Old Faithful and Grand Prismatic in Yellowstone; or the signature spot of any of the other 61 national parks, from Angels Landing to Wonder Lake) and hide. Park rangers come looking, with flashlights after dark. Last the whole hunt and you camped out successfully.
 
 - **The ground is real.** Each zone is 2 km of actual park terrain from public elevation data, shrunk six times in every direction: El Capitan is still a sheer wall, just 150 m tall instead of 900. People, trees and tents stay life-size.

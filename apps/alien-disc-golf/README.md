@@ -4,6 +4,19 @@
 
 **Live:** https://alien-disc-golf.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Play it
+
+**What it is:** disc golf for an alien with a huge arm: every hole goes across the whole planet, and the wind is today's real wind.
+
+**Play:** https://alien-disc-golf.notryanquinn.workers.dev
+
+**How to play:** guess which country you start in for a free stroke, then aim and throw.
+The wind bends the disc; land within 150 km of the basket to finish the hole. Nine holes, fewest throws wins.
+
+**Controls:** Desktop: ← → aim, ↑ ↓ power, L throw high or low, Space throw (or click the planet to aim). · Phone: tap the planet or use the Aim and Power sliders, then Throw.
+
+**Account:** not needed. Sign in with eqosys to put your name on the scorecard and keep achievements.
+
 Nine holes of disc golf for an alien with a very big arm. Each tee is a random spot in one country and each basket is in another, a continent or an ocean away. The disc hovers for a few seconds and the real wind carries it the whole flight: a low throw rides the surface wind, a lofted one rides the 250 mb jet stream, several times stronger and the gamble. Your scanner shows coastlines and wind, no names: say which country you're teeing off from and get a stroke back.
 
 - **The wind is real.** The Worker fetches NOAA's latest GFS run from [NOMADS](https://nomads.ncep.noaa.gov/) (1° global u and v at 10 m and 250 mb, about 200 KB of GRIB2) and keeps it for half an hour; the page decodes the GRIB itself ([`src/grib2.ts`](src/grib2.ts), complex packing with spatial differencing, no dependency) and reads the wind at the disc's own position every tenth of a second of flight. The streaks on the globe are that grid, advected. The credit line says which run and forecast hour you're playing in.

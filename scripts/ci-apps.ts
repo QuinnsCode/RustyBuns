@@ -16,7 +16,7 @@
 //
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
-  test?: string;        // run in apps/<name>
+  test?: string;        // run in the app's folder: apps/<name>, or apps/frameworks/<name> (scripts/app-dirs.ts)
   shards?: number;      // lanes for this app instead of LANES (below): test's files spread over that many jobs by their time
   prep?: string;        // before test and build: cargo for native/ (cdylib or wasm)
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
@@ -31,6 +31,7 @@ type App = {
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
 import { check, num, rec } from "../packages/util/src/guard.ts";
+import { appDir, appOf, upFrom } from "./app-dirs.ts";
 import { testFiles } from "./ci-test-count.ts";
 
 export const APPS: Record<string, App> = {
@@ -102,15 +103,18 @@ const RUNNERS = [
   { runner: "windows-11-arm", target: "windows-arm64" },
 ];
 // The Cargo workspace rust-cache keys on.
-const cargo = (app: string) => `apps/${app}/native`;
-const CLI = "bun ../../packages/cli/src/index.ts build desktop";
+const cargo = (app: string) => `${appDir(app)}/native`;
+// Commands run in the app's folder, one or two levels under apps/; `up` climbs back to the repo root.
+const up = (app: string) => upFrom(appDir(app));
+const cli = (app: string) => `bun ${up(app)}packages/cli/src/index.ts build desktop`;
+const where = (app: string) => ({ app, dir: appDir(app), up: up(app) });
 
 // Each binary is named for the app's folder, which is what the upload looks for, even when the
 // config's name differs (codesplitter keeps the name codesplitters for its state).
 const binFile = (app: string, t: string) => `dist/${app}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
 function buildCmd(app: string, a: App, targets: string[]) {
   if (a.build) return a.build;
-  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
+  return targets.map((t) => `${cli(app)}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
 }
 
 // How many lanes each app's tests split into unless its row says `shards`: one knob for the whole matrix, so the same
@@ -127,10 +131,10 @@ export function laneCommands(test: string, files: { name: string; ms: number }[]
   return shard(files, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
 }
 
-// An app's lanes. A file's weight is its recorded ms (apps/<name>/test-times.json, written by scripts/test-times.ts
+// An app's lanes. A file's weight is its recorded ms (<app dir>/test-times.json, written by scripts/test-times.ts
 // from CI's own logs), or its size when it has none, so a new file still lands somewhere sensible.
 async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
-  const dir = `apps/${app}`;
+  const dir = appDir(app);
   const times = check(rec(num(0, Infinity)), await Bun.file(`${dir}/test-times.json`).json().catch(() => null)) ?? {};
   const files = testFiles(test, dir).map((name) => ({ name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) }));
   return laneCommands(test, files, n);
@@ -180,7 +184,7 @@ if (cmd === "drop") {
   if (unknown.length) throw new Error(`unknown app(s): ${unknown.join(", ")}. Known: ${Object.keys(APPS).join(", ")}`);
   const include = names.flatMap((app) => {
     const a = APPS[app]!;
-    const base = { app, prep: a.prep ?? "", cargo: cargo(app) };
+    const base = { ...where(app), prep: a.prep ?? "", cargo: cargo(app) };
     if (a.perOs) return RUNNERS.map(({ timeout, ...r }) => ({ ...base, ...r, test: a.test && timeout ? `${a.test} --timeout ${timeout}` : a.test ?? "", build: buildCmd(app, a, [r.target]) }));
     // Pure TS (or wasm, same on every OS): one Linux job builds every target.
     return [{ ...base, runner: "ubuntu-latest", target: "all", test: "", build: buildCmd(app, a, RUNNERS.map((r) => r.target)) }];
@@ -197,10 +201,10 @@ if (cmd === "drop") {
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
-  const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
+  const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
-    const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
+    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
     const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES) : [];
     if (lanes.length < 2) return [{ ...row, test: a.test ?? "", shard: "" }];
     // Boot runs once, with the first lane.
@@ -221,12 +225,12 @@ if (cmd === "drop") {
   const a = APPS[arg];
   if (!a?.test) throw new Error(`no tests for app "${arg}". Known: ${Object.keys(APPS).filter((n) => APPS[n]!.test).join(", ")}`);
   const lanes = await shardedTests(arg, a.test, a.shards ?? LANES);
-  for (const [i, t] of (lanes.length < 2 ? [a.test] : lanes).entries()) console.log(`${i + 1}/${Math.max(1, lanes.length)}  bun run builder run apps/${arg} ${t}`);
+  for (const [i, t] of (lanes.length < 2 ? [a.test] : lanes).entries()) console.log(`${i + 1}/${Math.max(1, lanes.length)}  bun run builder run ${appDir(arg)} ${t}`);
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
-    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
+    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ ...where(app), ...r, smoke: APPS[app]!.smoke })))
     .concat(Object.keys(APPS).filter((n) => APPS[n]!.bootOn).flatMap((app) =>
-      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
+      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ ...where(app), ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ${up(app)}scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
 } else if (import.meta.main) {

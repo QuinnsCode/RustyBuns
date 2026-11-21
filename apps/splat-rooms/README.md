@@ -4,6 +4,19 @@
 
 **Live:** https://splat-rooms.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Play it
+
+**What it is:** a hunt in real-looking 3D rooms that start dark: light them up and find the thing you are asked for.
+
+**Play:** https://splat-rooms.notryanquinn.workers.dev
+
+**How to play:** press *Quick hunt*. You are told what to find; fire splats to light up the room, then pick the thing.
+Fewer seconds, shots and wrong picks score more. *How to play* on the menu shows every control.
+
+**Controls:** Desktop: drag to look, Space fires one splat, Shift and Space sprays twenty. · Phone: drag to look.
+
+**Account:** not needed. Sign in with eqosys to put your name on your score.
+
 Two things: a hunting game in photoreal splat rooms, and a browser for [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS) scenes: flick through rooms, see the splats, and click objects. Every object in these scenes ships with a label and a 3D box, so the room is queryable, not just viewable. This is the groundwork for the splat-gun hunting game.
 
 ## Play

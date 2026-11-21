@@ -4,6 +4,7 @@
 // `<!-- apps -->` markers, with a Play link wherever the playground's `apps.json` has one.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { appDir } from "./app-dirs.ts";
 import { arr, bool, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 export const DIR = "docs/readme";
@@ -37,7 +38,7 @@ export function plays(): Map<string, string | null> {
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 // The blurbs are written as Markdown for the README; a tooltip wants plain text.
 const plain = (s: string) => s.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[`*]/g, "").replace(/\\\|/g, "|");
-const docOf = (e: Entry) => e.doc ?? `apps/${e.app}/README.md`;
+const docOf = (e: Entry) => e.doc ?? `${appDir(e.app)}/README.md`;
 export const shotOf = (app: string) => join(DIR, `${app}.jpg`);
 
 function cell(e: Entry, play: Map<string, string | null>, width: number): string {

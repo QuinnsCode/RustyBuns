@@ -10,7 +10,9 @@ import { costReport } from "../src/costs.ts";
 const apps = resolve(import.meta.dir, "../../../apps");
 // A parked app (a "parked" note in its package.json) is out of the workspace, so its config's imports don't resolve.
 const parked = (a: string) => "parked" in JSON.parse(readFileSync(join(apps, a, "package.json"), "utf8"));
-const configs = readdirSync(apps).filter((a) => existsSync(join(apps, a, "package.json")) && !parked(a))
+// The framework samples sit a level down, in apps/frameworks/.
+const dirs = readdirSync(apps).flatMap((a) => a === "frameworks" ? readdirSync(join(apps, a)).map((f) => `${a}/${f}`) : [a]);
+const configs = dirs.filter((a) => existsSync(join(apps, a, "package.json")) && !parked(a))
   .map((a) => join(apps, a, "rustybuns.config.ts")).filter((f) => existsSync(f));
 
 // Every config in the repo is a real one: the schema must take all of them, or it would

@@ -158,7 +158,7 @@ function drawSplash() {
     <figure class="route-card">${route}<figcaption><span>Course #${seed}</span><span>9 holes · par ${coursePar(course)} · ${fmt(km)} km</span></figcaption></figure>
     <div class="splash-go">${phase === "loading"
       ? `<p class="scanning" role="status"><i></i>Scanning the planet: fetching NOAA's wind</p>`
-      : `<button type="button" id="tee-off" class="primary">${icon("disc")} Tee off</button><p class="dim"><span class="keys"><kbd>Space</kbd> · </span>${esc(wind.source === "noaa" ? wind.label : "Synthetic wind: no live NOAA grid")}</p>`}</div>`;
+      : `<button type="button" id="tee-off" class="primary">${icon("disc")} Tee off</button><p class="dim" title="${esc(wind.label)}"><span class="keys"><kbd>Space</kbd> · </span>${wind.source === "noaa" ? "Today's real wind, from NOAA's forecast" : "Practice wind: the real wind didn't load"}</p>`}</div>`;
   splash.querySelector("#tee-off")?.addEventListener("click", teeOff);
   (splash.querySelector("#tee-off") as HTMLButtonElement | null)?.focus({ preventScroll: true });
 }

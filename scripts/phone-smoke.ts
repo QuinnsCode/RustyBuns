@@ -11,6 +11,7 @@
 //   --out <dir> (default dist/phone-smoke)   --jobs <n> (default 3)   --fail   exit 1 when something is broken
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { appDir } from "./app-dirs.ts";
 import { launchChrome, load, openTab, startVite, type Cdp } from "./chrome.ts";
 import { PHONES, REFERENCE, WEB_APPS, analyze, appStatus, board, mergeReports, pageAudit, shardOf, Report, type AppResult, type Audit, type PhoneResult } from "./phone-smoke-lib.ts";
 
@@ -51,7 +52,7 @@ async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobi
 
 // ---- one app: boot it, look at it on the laptop and then on every phone.
 async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> {
-  const cwd = join(root, "apps", app);
+  const cwd = join(root, appDir(app, root));
   let server: { url: string; stop: () => void } | undefined;
   try {
     server = await serve(app, cwd);

@@ -5,9 +5,10 @@
 //   bun scripts/test-times.ts mythic-masters   just these apps
 //   bun scripts/test-times.ts --runs 300       look further back (an app nobody touched lately)
 //
-// Writes apps/<app>/test-times.json: { "test/foo.test.ts": ms }. A file's time is its tests' own times added up, or the
+// Writes <app dir>/test-times.json (scripts/app-dirs.ts): { "test/foo.test.ts": ms }. A file's time is its tests' own times added up, or the
 // wall time from its header to the next one when that is longer (a slow beforeAll, a browser launch), since bun runs
 // files one after another. Files that no longer exist are dropped; one missing from the record is weighed by its size.
+import { appDir } from "./app-dirs.ts";
 import { APPS } from "./ci-apps.ts";
 import { testFiles } from "./ci-test-count.ts";
 import { help } from "./help.ts";
@@ -68,10 +69,10 @@ if (import.meta.main) {
   for (const [app, ids] of found) {
     const times: Record<string, number> = {};
     for (const id of ids) Object.assign(times, timesFromLog(await Bun.$`gh api --allow-escape-sequences ${`repos/${repo}/actions/jobs/${id}/logs`}`.quiet().text()));
-    const live = new Set(testFiles(APPS[app]!.test!, `apps/${app}`));
+    const live = new Set(testFiles(APPS[app]!.test!, appDir(app)));
     const kept = Object.fromEntries(Object.entries(times).filter(([f]) => live.has(f)).sort(([a], [b]) => a.localeCompare(b)));
     if (!Object.keys(kept).length) continue;
-    await Bun.write(`apps/${app}/test-times.json`, JSON.stringify(kept, null, 2) + "\n");
+    await Bun.write(`${appDir(app)}/test-times.json`, JSON.stringify(kept, null, 2) + "\n");
     console.log(`${app}: ${Object.keys(kept).length} files, ${Math.round(Object.values(kept).reduce((a, b) => a + b, 0) / 1000)} s, from ${ids.length} job(s)`);
   }
   const missing = [...want].filter((a) => !found.has(a));

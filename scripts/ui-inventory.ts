@@ -1,7 +1,7 @@
 // Counts the UI drift per app (#3178): hand-rolled button rules, dialogs, toasts, colour literals, emojis.
 // `bun scripts/ui-inventory.ts` prints a markdown table, worst drift first; `--write` puts it in docs/UI_INVENTORY.md.
 import { Glob } from "bun";
-import { readdirSync } from "node:fs";
+import { appDirs } from "./app-dirs.ts";
 
 const COUNTS: [string, RegExp][] = [
   ["button rules", /(^|[\s,}])(button|\.btn[\w-]*|\.button)\s*(\{|,|:hover)/gm],
@@ -11,10 +11,10 @@ const COUNTS: [string, RegExp][] = [
   ["emojis", /\p{Extended_Pictographic}/gu],
 ];
 const rows: { app: string; n: number[]; colours: number }[] = [];
-for (const app of readdirSync("apps").sort()) {
+for (const [app, dir] of appDirs()) {
   const n = COUNTS.map(() => 0);
   const seen = new Set<string>();
-  for await (const f of new Glob(`apps/${app}/**/*.{ts,tsx,css,html,svelte,vue,astro}`).scan()) {
+  for await (const f of new Glob(`${dir}/**/*.{ts,tsx,css,html,svelte,vue,astro}`).scan()) {
     if (/node_modules|\/dist\/|\.test\.|\/test\//.test(f)) continue;
     // the emoji -> icon table is the migration itself, not drift
     if (/\/icons\/(emoji|split)\.ts$/.test(f)) continue;

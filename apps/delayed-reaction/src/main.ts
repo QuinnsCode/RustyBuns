@@ -63,6 +63,8 @@ el("tuner").innerHTML = tuningScale();
 for (const b of document.querySelectorAll("button.info")) b.replaceChildren(createElement(CircleHelp)); // opens the how-to (a popover)
 // The live meter swings on the menu's beat (frame() below), the knobs point at what you're on.
 el("knobs").innerHTML = knob("Tempo", 1) + knob("Delay", 2) + `<figure class="live">${vuMeter("LIVE")}</figure>`;
+// One tap from landing to playing: preset 1, which is the tutorial the first time.
+el("play").addEventListener("click", () => start(1));
 tracks.style.setProperty("--grille", grille);
 fascia.style.setProperty("--fibre", fibre);
 /** A delay as a tape label says it: "1 bar", "2 bars", "6 beats". */

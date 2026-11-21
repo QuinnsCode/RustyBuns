@@ -38,7 +38,7 @@ export function mountFront(note = ""): void {
   const roller = el("div", "rolls");
   roller.innerHTML = boardSvg();
   title.append(words, roller);
-  const hint = el("p", "skip", "Any key to skip");
+  const hint = el("p", "skip", matchMedia("(pointer: coarse)").matches ? "Tap to skip" : "Any key or click to skip");
   root.append(el("div", "rays"), stage, title, hint);
 
   const view = () => {

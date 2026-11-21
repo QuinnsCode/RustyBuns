@@ -2,6 +2,18 @@
 
 > **What it proves:** a new game's first hour, already done: a small game with an eqosys sign-in, a Qollab party and a harness (`window.starterGame.state()`) an agent reads instead of screenshots. Made from the Rusty Buns starter: `bun run new-game <id>` in the Rusty Buns repo, or **New game** on the eqosys Studio page for a codeSplitter repo of your own.
 
+## Play it
+
+**What it is:** a tiny game of catching falling stars in a basket, made to be copied when you start a new game.
+
+**Play:** not online yet. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/starter-game && bun run dev`.
+
+**How to play:** move the basket under the falling stars. A caught star is a point; miss three and the round is over.
+
+**Controls:** Desktop: the mouse or the arrow keys. · Phone: move your finger.
+
+**Account:** not needed: you play as a guest.
+
 ## Run it
 
 ```
