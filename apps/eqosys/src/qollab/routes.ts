@@ -6,7 +6,7 @@ import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
-import { makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
+import { FILE_MAX, makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { board, isBoard } from "./board.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
@@ -28,7 +28,7 @@ const tryCode = (req: Request, who: string, code: string) => {
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
@@ -161,6 +161,29 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (!s) return json({ error: "not a space you're in" }, 404);
     const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
+  }
+
+  // A space's files (space.ts): POST /q/space/<id>/file?channel=&name= with the bytes as the body posts one in that channel as a
+  // message; GET /q/space/<id>/file/<file id> brings it back. The token as a bearer, from any Q app, like the socket.
+  const fileAt = /^\/q\/space\/([0-9a-f-]{36})\/file(?:\/([0-9a-f-]{36}))?$/.exec(pathname);
+  if (fileAt) {
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST", "access-control-expose-headers": "content-disposition" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== (fileAt[2] ? "GET" : "POST")) return json({ error: fileAt[2] ? "GET a file" : "POST a file" }, 405, head);
+    if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
+    const t = await tokenOf(req, conf, bearerOf(req), { home: true });
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (!fileAt[2] && Number(req.headers.get("content-length")) > FILE_MAX) return json({ error: `a file is up to ${FILE_MAX / 1024 / 1024} MB` }, 413, head);
+    const s = await seatIn(conf, fileAt[1]!, t.who.id);
+    if (!s) return json({ error: "not a space you're in" }, 404, head);
+    const u = new URL(req.url).searchParams;
+    const q = new URLSearchParams({ ...t.who, sid: fileAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}),
+      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
+    const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
+      fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
+    const out = new Headers(r.headers);
+    for (const [k, v] of Object.entries(head)) out.set(k, v);
+    return new Response(r.body, { status: r.status, headers: out });
   }
 
   // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.

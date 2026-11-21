@@ -1,6 +1,7 @@
 // The Qollab spaces panel, shared by every page that signs in through eqosys (apps/eqosys/src/qollab/space.ts, QOLLAB.md#spaces):
 // your spaces, make one, join by invite; inside one, channel tabs, the messages with "Load older", a text box and who is
-// online. A message's reply button opens its thread, and a channel's search box finds what was said in it. Voice channels (QLAVE.md) join Qlave through ./voice.ts and list who is in them and who is talking. The owner
+// online. A message's reply button opens its thread, and a channel's search box finds what was said in it. The paperclip posts a
+// file as a message of its own (up to 10 MB), and a file's message downloads it; your own messages (anyone's, if you run the space) delete. Voice channels (QLAVE.md) join Qlave through ./voice.ts and list who is in them and who is talking. The owner
 // also adds and deletes channels, copies the invite, and mutes or kicks from a member's row. The party lobby's
 // sibling (./lobby.ts). Plain DOM with `rb-spaces*` classes in the page's eqosys skin (./skin.ts); the page places the
 // box and hands over its icons (lucide, say) so this package keeps no dependencies.
@@ -14,7 +15,7 @@ export type VoiceCall = Omit<VoiceHandle, "call">;
 
 /** The icons the panel asks for, by lucide name. */
 export type SpaceIcon = "arrow-left" | "arrow-up" | "plus" | "log-in" | "send" | "copy" | "hash" | "mic-off" | "mic" | "user-x" | "flag" | "log-out"
-  | "volume-2" | "phone-off" | "trash-2" | "lock" | "user-plus" | "user-minus" | "shield" | "reply" | "search";
+  | "volume-2" | "phone-off" | "trash-2" | "lock" | "user-plus" | "user-minus" | "shield" | "reply" | "search" | "paperclip" | "download";
 
 export interface SpacesPanel {
   box: HTMLElement;
@@ -107,6 +108,13 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
         if (ch === channel && view?.kind === "thread" && m.reply === view.id) view = { ...view, messages: [...view.messages, m] };
         if (ch === channel) draw();
       },
+      unsaid: (ch, id) => {
+        const gone = (msgs.get(ch) ?? []).find((x) => x.id === id);
+        const drop = (list: SpaceMessage[]) => list.filter((x) => x.id !== id).map((x) => x.id === gone?.reply && x.replies ? { ...x, replies: x.replies - 1 || undefined } : x);
+        msgs.set(ch, drop(msgs.get(ch) ?? []));
+        if (ch === channel && view) view = { ...view, messages: drop(view.messages) } as typeof view;
+        if (ch === channel) draw();
+      },
       history: (ch, m, mo) => { add(ch, m); more.set(ch, mo); if (ch === channel) draw(); },
       thread: (ch, id, m) => { if (ch === channel && view?.kind === "thread" && view.id === id) { view = { ...view, messages: m }; draw(); } },
       found: (ch, q, m) => { if (ch === channel && view?.kind === "found" && view.q === q) { view = { ...view, messages: m }; draw(); } },
@@ -163,6 +171,27 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   const copy = (invite: string) => void navigator.clipboard?.writeText(invite).then(() => { note = `Invite ${invite} copied`; say?.(note); draw(); }, () => {});
   const tab = (ch: string) => { channel = ch; view = null; if (channels.includes(ch) && !msgs.has(ch)) sp.history(ch); draw(); };
   const voiceName = (id?: string) => voices.find((v) => v.id === id)?.name;
+  const size = (n: number) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  /** A file a message carries, saved through a link the page makes for it (the file needs the token, so no plain href). */
+  async function download(f: NonNullable<SpaceMessage["file"]>) {
+    const blob = open && await sp.fetchFile(open.id, f.id);
+    if (!blob) { note = `${f.name} is gone.`; draw(); return; }
+    const a = el("a", { href: URL.createObjectURL(blob), download: f.name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  }
+  /** The paperclip: pick a file, and it goes up as a message in `ch`. */
+  function attach(ch: string) {
+    const pick = el("input", { type: "file", hidden: true });
+    pick.addEventListener("change", async () => {
+      const f = pick.files?.[0];
+      if (!f || !open) return;
+      note = `Sending ${f.name}…`; draw();
+      const r = await sp.postFile(open.id, ch, f, f.name);
+      note = "error" in r ? r.error : ""; draw();
+    });
+    return el("span", { className: "rb-spaces-attach" }, pick, btn("paperclip", `Send a file to #${ch}`, () => pick.click()));
+  }
 
   function drawList() {
     const items = rows.map((r) => {
@@ -214,7 +243,10 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     const openThread = (id: number) => { view = { kind: "thread", id, messages: [] }; sp.thread(ch, id); draw(); };
     const said = (m: SpaceMessage, inThread = false) => {
       const to = m.reply && !inThread ? shown.find((x) => x.id === m.reply) : undefined;
-      return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("b", {}, m.from.name), " ", m.text,
+      const f = m.file, mine = m.from.name === name();
+      return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("b", {}, m.from.name), " ",
+        ...(f ? [btn("download", `Download ${f.name}`, () => void download(f), true, "rb-spaces-file"), el("small", {}, ` ${size(f.size)}`)] : [m.text]),
+        ...(mine || owner ? [btn("trash-2", "Delete this message", () => sp.unsay(ch, m.id), false, "rb-spaces-unsay")] : []),
         ...(inThread ? [] : m.replies
           ? [btn("reply", m.replies === 1 ? "1 reply" : `${m.replies} replies`, () => openThread(m.reply ?? m.id), true, "rb-spaces-replies")]
           : [btn("reply", `Reply to ${m.from.name}`, () => openThread(m.reply ?? m.id), false, "rb-spaces-reply")]));
@@ -232,6 +264,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     }
     const older = more.get(ch) && shown[0] ? btn("arrow-up", "Load older", () => sp.history(ch, shown[0]!.id), true, "rb-spaces-older") : "";
     const typed = line(`Message #${ch}`, 280, "send", "Send", (v) => sp.say(ch, v));
+    typed.prepend(attach(ch));
     return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, find, older, log(shown)), who()), typed, drop, noteEl()];
   }
 

@@ -20,6 +20,9 @@ export default defineConfig({
     PARTY: { type: "durable_object", className: "Party", transferredFrom: "eqosys", protect: true },
     // One space a group: its channels and their history, voice channels and who may join them.
     SPACE: { type: "durable_object", className: "Space", transferredFrom: "eqosys", protect: true },
+    // The files posted in spaces' channels (apps/eqosys/src/qollab/space.ts): up to 10 MB each and 1 GB a space, deleted with
+    // their message, channel, space or sender's account.
+    FILES: { type: "r2", bucketName: "qollab-files", protect: true },
     // The key a person's saves are sealed with. Stays in eqosys (privacy is eqosys's).
     VAULT: { type: "durable_object", className: "Vault", app: "eqosys" },
     // eqosys's own Worker, for its public keys (/.well-known/jwks.json): an app's token is checked here without the signing key.
