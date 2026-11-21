@@ -511,6 +511,20 @@ export interface HetznerBoxTarget {
   volumeSize?: number;
   /** Required for ccx (dedicated) or tier 3+ types like cpx31. Small tiers need nothing. See COSTS.md. */
   allowLargeServer?: boolean;
+  /**
+   * Other apps that share this server, each as its own systemd unit on its own port, its data in
+   * its own folder on the same Volume: `[{ dir: "../hippo-tycoon", port: 3001 }]`. `dir` is the
+   * app's folder (its rustybuns.config.ts), from this one. This app's deploy builds and ships them.
+   */
+  apps?: BoxApp[];
+}
+
+/** An app on another app's Hetzner server (`targets.box.apps`). */
+export interface BoxApp {
+  /** The app's folder, from this config's. */
+  dir: string;
+  /** Its port on the server: not this app's, nor another's. */
+  port: number;
 }
 
 /**
