@@ -13,7 +13,7 @@
     "fetch-zones": "bun scripts/fetch-zones.ts",
     "models": "bun scripts/characters.ts",
     "edge:dev": "bun check && vite build && bunx wrangler dev",
-    "deploy": "bun check && vite build && bunx wrangler deploy"
+    "deploy": "bun check && vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app park-hide-seek"
   },
   "dependencies": {
     "@rustybuns/game-controls": "^0.1.12",

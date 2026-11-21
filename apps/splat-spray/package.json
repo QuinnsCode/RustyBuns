@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "edge:dev": "vite build && bunx wrangler dev",
-    "deploy": "vite build && bunx wrangler deploy && bunx wrangler deploy -c wrangler.alias.jsonc",
+    "deploy": "vite build && bunx wrangler deploy && bunx wrangler deploy -c wrangler.alias.jsonc && bun ../../packages/cli/src/index.ts report-deploy --app splat-spray",
     "test": "bun test --parallel",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"

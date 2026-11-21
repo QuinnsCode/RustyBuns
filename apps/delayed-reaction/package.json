@@ -9,7 +9,7 @@
     "test": "bun test test",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
-    "deploy": "vite build && bunx wrangler deploy"
+    "deploy": "vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app delayed-reaction"
   },
   "dependencies": {
     "@rustybuns/game-controls": "^0.1.12",
