@@ -5,7 +5,7 @@
 
 import { Counts, PostList, REF, type Post } from "@rustybuns/util/board";
 import { sha256 } from "@rustybuns/util/bytes";
-import { bool, check, obj, oneOf, str } from "@rustybuns/util/guard";
+import { bool, check, int, obj, oneOf, rec, str } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { Review } from "./write.ts";
 
@@ -50,9 +50,11 @@ export async function reviewOf(kv: Kv | undefined, id: string): Promise<Review |
 }
 
 type Tally = Partial<Record<Icon, number>>;
+const Counted = rec(int(0, Number.MAX_SAFE_INTEGER), 6);
+/** Counts by icon, only the board's icons and only the ones pressed. */
 const Tally = (v: unknown): Tally => {
-  const out: Tally = {};
-  if (v && typeof v === "object") for (const i of ICONS) { const n = (v as Record<string, unknown>)[i]; if (typeof n === "number" && n > 0) out[i] = Math.floor(n); }
+  const got = check(Counted, v) ?? {}, out: Tally = {};
+  for (const i of ICONS) if (got[i]) out[i] = got[i];
   return out;
 };
 const guestKey = async (ip: string) => `guest:${(await sha256(`wwfs-guest:${ip || "anon"}`)).slice(0, 32)}`;
