@@ -6,6 +6,8 @@ import { CLIP_SECONDS, RATE, clock, cut, encodeWav, loudestWindow, peaks } from 
 import { decode } from "../decode.ts";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { Review } from "../write.ts";
+import { account, changed, useSignedIn } from "./account.ts";
+import { Glyph } from "./icons.tsx";
 
 const MAX_BYTES = 200 * 1024 * 1024;
 // The browser decodes mp3, wav, aac/m4a, flac, ogg/opus and the audio in mp4/mov/webm video;
@@ -49,7 +51,7 @@ function toDataUrl(wav: Uint8Array): string {
   return `data:audio/wav;base64,${btoa(bin)}`;
 }
 
-type Stage = { kind: "idle" } | { kind: "busy"; what: string } | { kind: "done"; review: Review } | { kind: "error"; message: string };
+type Stage = { kind: "idle" } | { kind: "busy"; what: string } | { kind: "done"; review: Review; id?: string } | { kind: "error"; message: string };
 
 export function Critic({ siteKey }: { siteKey: string }) {
   const [track, setTrack] = useState<Track | null>(null);
@@ -127,7 +129,8 @@ export function Critic({ siteKey }: { siteKey: string }) {
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) throw new Error(check(obj({ error: str(2000) }), body)?.error ?? `HTTP ${res.status}`);
-      setStage({ kind: "done", review: Review(body) });
+      // The id the Worker kept the review under, so it can be shared and posted (src/board.ts).
+      setStage({ kind: "done", review: Review(body), id: check(obj({ id: str(40) }), body)?.id });
     } catch (e) {
       setStage({ kind: "error", message: (e as Error).message });
     } finally {
@@ -161,7 +164,7 @@ export function Critic({ siteKey }: { siteKey: string }) {
 
       {!siteKey && <p className="note">This copy has no AI judge hooked up, so reviews are a quick guess from the song's numbers.</p>}
       {stage.kind === "error" && <p className="error">{stage.message}</p>}
-      {stage.kind === "done" && <Card review={stage.review} />}
+      {stage.kind === "done" && <Card key={stage.id ?? ""} review={stage.review} id={stage.id} own />}
     </section>
   );
 }
@@ -198,15 +201,51 @@ function ClipPicker({ track, start, setStart, playing, onPreview, onClear }: {
   );
 }
 
-function Card({ review }: { review: Review }) {
-  const [shared, setShared] = useState(false);
+/**
+ * A review. SHARE sends its link (`/?r=<id>`, kept for good once shared); POST, on your own review, puts it on the board
+ * through Qollab (signing in with eqosys first), and the link then opens on its reactions too.
+ */
+export function Card({ review, id, post: posted = "", own = false }: { review: Review; id?: string; post?: string; own?: boolean }) {
+  const signedIn = useSignedIn();
+  const [post, setPost] = useState(posted);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const line = `${review.verdict} ${review.score}/10: ${review.headline}`;
+  const link = (p: string) => (id ? `${location.origin}/?r=${id}${p ? `&p=${encodeURIComponent(p)}` : ""}` : location.origin);
+  const keep = async () => !!id && !!(await fetch("/api/keep", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => null))?.ok;
+
   async function share() {
-    const text = `What Would Fantano Say? ${review.verdict} ${review.score}/10: "${review.headline}"`;
+    // Keep it for good alongside the share sheet, not before: waiting would cost the click that lets the sheet open.
+    if (id) void keep().then((ok) => { if (!ok) setNote("This review couldn't be kept, so its link may not open it."); });
+    const text = `What Would Fantano Say? ${line}`, url = link(post);
     try {
-      if (navigator.share) await navigator.share({ text, url: location.origin });
-      else { await navigator.clipboard.writeText(`${text} ${location.origin}`); setShared(true); }
+      if (navigator.share) await navigator.share({ text, url });
+      else { await navigator.clipboard.writeText(`${text} ${url}`); setNote("Link copied."); }
     } catch { /* the share sheet was closed */ }
   }
+
+  async function toBoard() {
+    if (busy || !id) return;
+    const a = account();
+    if (!a.login()) {
+      if (!a.canSignIn()) return setNote("Posting to the board needs an eqosys account, on the online version.");
+      // Straight from the click, so the browser lets eqosys open beside the page.
+      const r = await a.signInHere();
+      if (!r.login) return setNote(r.error ?? "");
+      changed();
+    }
+    setBusy(true);
+    try {
+      if (!(await keep())) return setNote("This review couldn't be kept, so it can't go on the board.");
+      const r = await a.board().post("review", line.slice(0, 280), `review:${id}`);
+      if (!r.ok) return setNote(r.error);
+      setPost(r.value.id);
+      setNote("On the board. Share the link and get votes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <article className={`card v-${review.verdict.replace(" ", "-").toLowerCase()}`}>
       <div className="score">
@@ -222,7 +261,15 @@ function Card({ review }: { review: Review }) {
         <dt>Worst</dt><dd>{review.worstBit}</dd>
       </dl>
       {review.by === "estimate" && <p className="canned">Estimated from the numbers: the critic didn't listen to this one.</p>}
-      <button className="share" onClick={share}>{shared ? "COPIED" : "SHARE"}</button>
+      <div className="card-acts">
+        <button className="share" onClick={share} title="Share this review's link"><Glyph name="share" /><span>SHARE</span></button>
+        {own && id && (
+          <button className="share" onClick={toBoard} disabled={busy || !!post} title={signedIn ? "Put it on the board for votes" : "Sign in with eqosys and put it on the board for votes"}>
+            <Glyph name="megaphone" /><span>{post ? "POSTED" : "POST"}</span>
+          </button>
+        )}
+      </div>
+      {note && <p className="note">{note}</p>}
     </article>
   );
 }

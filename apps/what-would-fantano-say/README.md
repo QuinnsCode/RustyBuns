@@ -11,9 +11,9 @@
 **Use:** https://what-would-fantano-say.notryanquinn.workers.dev
 
 **How to use:** pick a song file from your phone or computer, drag to the best 15 seconds, and ask for the review.
-Then share it if you like it. Your song stays on your device except the short clip.
+Then share it if you like it, or post it to the board for votes. Your song stays on your device except the short clip.
 
-**Account:** not needed.
+**Account:** not needed to get judged. Sign in with [eqosys](https://eqosys.qntbr.com) (the chip at the top) to post a review to the board and vote on every track; signed out you get one vote.
 
 Pick a track, drag to your best 15 seconds, and get a parody review in the style of a very online music critic: a score, a verdict (*light 4*, *strong 8*), the best and worst bits, and a share button. It's a joke site, labelled as parody, not affiliated with anyone real. Phone first; on desktop it's the same single column.
 
@@ -24,6 +24,16 @@ Pick a track, drag to your best 15 seconds, and get a parody review in the style
 3. **The text** (`src/write.ts`) comes from templates: Clef's answers set the box and the tone, the phone's numbers set the best and worst bits, and it ends on one of his real reviews in that box with a score near this one. The same clip always gets the same review.
 
 Two gags replace the review, for next to nothing. A title or hint that names the critic ("fantano", "needle drop", "melon") gets his own cheesy self-review: *"Well hey, what is going on here? I know me when I know me."* A clip Clef hears as speech with no music behind it gets told it's a podcast. That's the fourth question, which adds about 20 tokens to the call it's already making. Nothing tries to recognise his actual voice: no cheap model does that reliably, and identifying a real person by voice isn't something a parody site should do.
+
+## The board
+
+Shared reviews and their reactions run on Qollab, eqosys's posts and reactions ([apps/eqosys/QOLLAB.md](../eqosys/QOLLAB.md)); the review text stays here.
+
+- **Every review** comes back with an id, the hash of what was judged (the clip or the link, with the hint and title), and its text is kept a day in the `REVIEWS` KV (`src/board.ts`).
+- **SHARE** keeps it for good (`POST /api/keep`; only a review this Worker wrote can be kept, so nobody puts their own words on a card) and sends `/?r=<id>`, which opens on that review.
+- **POST** signs in through eqosys if needed (`signInHere`, the page never leaves) and puts it on the board: `board().post("review", "<verdict> <score>/10: <headline>", "review:<id>")`. The link then carries `&p=<post id>` and opens on its reactions too.
+- **Reactions** are on `post:<id>`, with the board's three icons. Signed in, one vote a track: picking another icon takes the first back. Signed out, one vote in all (`POST /api/vote`, kept by a hash of the address, never the address); after that the buttons offer sign-in.
+- **Most reacted this week** is `GET /api/board`: the Worker reads Qollab's `sort=top` list for the last 7 days, adds the review text and the signed-out votes, and sorts by every vote. Signed in, the page asks Qollab which icons are yours.
 
 ## The boxes
 
@@ -59,7 +69,7 @@ With no Turnstile secret, or no AI binding, or a failing call, the review is the
 
 ## How it's set up
 
-One Worker named `what-would-fantano-say` (`adopt` is on, so the workers.dev URL has no random suffix), declared in `rustybuns.config.ts` (RWSDK entry `src/worker.tsx`, static assets from `dist/client`). `wrangler.jsonc` is generated from it for local dev only; Alchemy owns the real infra. Nothing is stored.
+One Worker named `what-would-fantano-say` (`adopt` is on, so the workers.dev URL has no random suffix), declared in `rustybuns.config.ts` (RWSDK entry `src/worker.tsx`, static assets from `dist/client`). `wrangler.jsonc` is generated from it for local dev only; Alchemy owns the real infra. Clips aren't stored; review text is (see [the board](#the-board)).
 
 | Binding | What it is | Used for |
 | --- | --- | --- |
@@ -68,6 +78,7 @@ One Worker named `what-would-fantano-say` (`adopt` is on, so the workers.dev URL
 | `DAILY_REVIEWS` | var, `25000` | the budget's ceiling |
 | `REVIEW_LIMIT` | rate limit, 4 per 60 s | per-address throttle |
 | `TURNSTILE_SITE_KEY` | var, public | shows the widget; empty means no live calls |
+| `REVIEWS` | KV | review text by id (a day, or for good once shared), signed-out votes |
 | `TURNSTILE_SECRET` | secret, `op://fantano/turnstile/password` | siteverify, resolved by varlock at deploy |
 
 Leave out any of `AI`, `BUDGET`, the site key or the secret and every review is the free estimate, which is all local dev ever gets.
@@ -77,7 +88,7 @@ Leave out any of `AI`, `BUDGET`, the site key or the secret and every review is 
 ```sh
 cd apps/what-would-fantano-say
 bun run dev       # http://localhost:5173: estimated reviews, $0
-bun test test     # analysis, clip, decode fallback, boxes and their build, judge, writer, budget, the door
+bun test test     # analysis, clip, decode fallback, boxes and their build, judge, writer, budget, the door, the board
 ```
 
 ## Deploy
