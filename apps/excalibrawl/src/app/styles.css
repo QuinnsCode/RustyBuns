@@ -18,7 +18,8 @@ main { max-width: 720px; margin: 0 auto; padding: max(20px, env(safe-area-inset-
 h1 { margin: 0; font-size: clamp(36px, 10vw, 64px); line-height: 1; font-weight: 900; letter-spacing: -0.03em; }
 h1 span { color: var(--hot); }
 h2 { margin: 32px 0 8px; font-size: 18px; }
-.sub { color: var(--dim); margin: 8px 0 20px; }
+.sub { color: var(--dim); margin: 8px 0 16px; }
+.next { margin: 0 0 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .arena { border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; background: var(--paper); }
 .bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 2px solid var(--ink); min-width: 0; }
@@ -39,3 +40,4 @@ h2 { margin: 32px 0 8px; font-size: 18px; }
 }
 .replays button:hover, .replays button:focus-visible { border-color: var(--hot); }
 .replays span { color: var(--dim); font-size: 13px; }
+.replays .none { color: var(--dim); }

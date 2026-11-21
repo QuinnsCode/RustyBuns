@@ -1,5 +1,6 @@
 // The page's one script: the live fight over /api/live, and the replays from /api/matches.
-// Between fights the arena replays the last one and counts down to the hour.
+// Between fights the arena loops the newest fight that drew something (or the sample, when none is archived)
+// and counts down to the hour, so a first visitor sees a fight with no clicks.
 
 import { getJson } from "@rustybuns/util/http";
 import { esc } from "@rustybuns/util";
@@ -7,8 +8,11 @@ import { check } from "@rustybuns/util/guard";
 import { LiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from "../live-wire.ts";
 import { scenesAt } from "../engine/match.ts";
 import { sceneSvg } from "../engine/svg.ts";
+import { SAMPLE_ID, pickFight, sampleFight } from "./sample.ts";
 
-const REPLAY_TURN_MS = 180;
+// A replay takes about REPLAY_MS whatever its length (never under MIN_TURN_MS a turn), then holds the
+// finished picture for HOLD_MS and starts again.
+const REPLAY_MS = 8_000, MIN_TURN_MS = 180, HOLD_MS = 4_000;
 
 const clock = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -28,11 +32,11 @@ function said(e: ReplayEntry | undefined): string {
 }
 
 /** Paint the fight into `arena` and the replay list into `replays`. Returns the cleanup. */
-export function watch(arena: HTMLElement | null, replays: HTMLElement | null): () => void {
+export function watch(arena: HTMLElement | null, replays: HTMLElement | null, next?: HTMLElement | null): () => void {
   if (!arena || !replays) return () => {};
   let closed = false;
   let match: (LiveMatch & { log: ReplayEntry[] }) | null = null;
-  let replay: { m: Replay; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
+  let replay: { m: Replay; label: string; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
   let index: Summaries = [];
 
   const draw = (m: Pick<Replay, "fighters" | "prompt" | "turns" | "scores" | "winner">, log: ReplayEntry[], turn: number, label: string) => {
@@ -51,36 +55,40 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
   };
 
   const idle = () => {
-    if (match) return;
-    const next = Math.ceil(Date.now() / 3_600_000) * 3_600_000;
-    const bar = arena.querySelector(".bar .clock");
-    if (bar) {
-      bar.textContent = clock(next - Date.now());
-      bar.setAttribute("title", "Until the next fight, on the hour (the cron can run a few minutes late)");
-    }
+    if (!next) return;
+    if (match) { next.textContent = "Live now: this fight is happening as you watch."; return; }
+    const at = Math.ceil(Date.now() / 3_600_000) * 3_600_000;
+    next.textContent = `Next live fight in ${clock(at - Date.now())}${replay?.m.id === SAMPLE_ID ? ". Until then, a sample fight." : ""}`;
   };
 
-  const playReplay = async (id: string, label = "replay") => {
+  const play = (m: Replay, label: string) => {
     if (replay) clearInterval(replay.timer);
-    const m = await getJson(`/api/matches/${encodeURIComponent(id)}`, Replay);
-    if (!m) return;
-    const r = { m, turn: 0, timer: setInterval(() => {
+    const every = Math.max(MIN_TURN_MS, REPLAY_MS / Math.max(1, m.turns));
+    const hold = Math.ceil(HOLD_MS / every);
+    const r = { m, label, turn: 0, timer: setInterval(() => {
       if (match) return clearInterval(r.timer);
-      r.turn = Math.min(m.turns, r.turn + 1);
-      draw(m, m.log, r.turn, label);
+      r.turn = r.turn >= m.turns + hold ? 1 : r.turn + 1;
+      draw(m, m.log, Math.min(m.turns, r.turn), label);
       idle();
-    }, REPLAY_TURN_MS) };
+    }, every) };
     replay = r;
+    return r;
   };
+  const playReplay = async (id: string, label = "replay") => {
+    const m = await getJson(`/api/matches/${encodeURIComponent(id)}`, Replay);
+    if (m) play(m, label);
+  };
+  const playSample = () => play(sampleFight(), "sample fight");
 
   const loadReplays = async () => {
-    index = (await getJson("/api/matches", Summaries)) ?? [];
+    index = (await getJson("/api/matches", Summaries).catch(() => null)) ?? [];
     replays.innerHTML = index
       .filter((s) => s.shapes.some((n) => n > 0))
       .slice(0, 48)
       .map((s) => `<li><button data-id="${esc(s.id)}"><strong>${esc(s.prompt)}</strong><span>${new Date(s.startedAt).toLocaleString()} · ${s.fighters.map((f) => esc(f.name)).join(" vs ")}</span></button></li>`)
-      .join("");
-    if (!match && !replay && index[0]) void playReplay(index[0].id, "last fight");
+      .join("") || `<li class="none">None yet. Each live fight lands here when it ends.</li>`;
+    const best = pickFight(index);
+    if (!match && (!replay || replay.m.id === SAMPLE_ID) && best) await playReplay(best.id, "last fight").catch(() => {});
   };
 
   replays.addEventListener("click", (ev) => {
@@ -118,9 +126,24 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
   };
 
   const tick = setInterval(idle, 1000);
-  arena.innerHTML = `<div class="bar"><span class="tag">waiting</span><strong>Next fight on the hour</strong><span class="clock">--:--</span></div>`;
+  // The sample draws at once; the newest archived fight replaces it as soon as the list arrives.
+  const sample = playSample();
+  draw(sample.m, sample.m.log, 0, sample.label);
+  idle();
   connect();
   void loadReplays();
+  Object.assign(window, { excalibrawl: {
+    state: () => ({
+      showing: match ? "live" : replay?.label ?? null,
+      id: match?.id ?? replay?.m.id ?? null,
+      prompt: match?.prompt ?? replay?.m.prompt ?? null,
+      turn: match?.turn ?? Math.min(replay?.turn ?? 0, replay?.m.turns ?? 0),
+      turns: match?.turns ?? replay?.m.turns ?? 0,
+      shapes: arena.querySelectorAll(".canvas svg > *").length,
+      next: next?.textContent ?? null,
+      replays: index.length,
+    }),
+  } });
   return () => {
     closed = true;
     clearInterval(tick);
