@@ -30,7 +30,7 @@ Each step makes one point. Stop whenever the room has it.
 ## For a developer audience
 
 - **apps/example** builds a whole Worker (D1, KV, a Durable Object) into a binary in about half a second: `cd apps/example && bun run desktop`. `bun native-probe.ts` shows the Rust FFI path and its TypeScript fallback.
-- **apps/spa-example** is a fixture, not an app: `bun test packages/cli/test/glue.test.ts` shows `init` reading a real RWSDK app.
+- **apps/frameworks/spa-example** is a fixture, not an app: `bun test packages/cli/test/glue.test.ts` shows `init` reading a real RWSDK app.
 - **motion-midi**: `bun run bench 1 4 8` benchmarks Rust against TypeScript in the terminal.
 - Runtime detail, including LAN multiplayer, is in [REFERENCE.md](REFERENCE.md#multiplayer-on-a-lan).
 

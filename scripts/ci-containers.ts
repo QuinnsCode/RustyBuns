@@ -9,6 +9,7 @@
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { appDir, appDirs } from "./app-dirs.ts";
 import { type ContainerBinding, buildOne, containerBindings, mb, smokeOne } from "../packages/cli/src/containers.ts";
 
 /** The bindings a diff touches: those whose context folder holds a changed file, all of them when the generator moved. */
@@ -45,9 +46,10 @@ export function summary(rows: Row[]): string {
 async function baseSize(app: string, b: ContainerBinding, base: string): Promise<number | undefined> {
   const dir = mkdtempSync(join(tmpdir(), "ci-base-")), here = process.cwd();
   try {
-    await Bun.$`git archive ${base} apps/${app} | tar -x -C ${dir}`.quiet();
-    if (!existsSync(`${dir}/apps/${app}/${b.dockerfile}`)) return undefined;
-    process.chdir(`${dir}/apps/${app}`);
+    const at = appDir(app);
+    await Bun.$`git archive ${base} ${at} | tar -x -C ${dir}`.quiet();
+    if (!existsSync(`${dir}/${at}/${b.dockerfile}`)) return undefined;
+    process.chdir(`${dir}/${at}`);
     return (await buildOne(`${app}-base`, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL, dir })).size;
   } catch { return undefined; } finally {
     process.chdir(here);
@@ -60,15 +62,15 @@ async function plan(base: string) {
   const changed = (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
   const include: { app: string; bindings: string }[] = [];
   // A parked app (tscircuit-desktop) has no installed dependencies, so its config can't load.
-  for (const app of readdirSync("apps").filter((d) => d !== "tscircuit-desktop" && existsSync(`apps/${d}/rustybuns.config.ts`))) {
-    const hit = touched(containerBindings(await configOf(app)), changed, `apps/${app}`);
+  for (const [app, at] of [...appDirs()].filter(([d, at]) => d !== "tscircuit-desktop" && existsSync(`${at}/rustybuns.config.ts`))) {
+    const hit = touched(containerBindings(await configOf(app)), changed, at);
     for (const binding of hit) include.push({ app, bindings: binding });
   }
   return include;
 }
 
 async function configOf(app: string) {
-  const mod = await import(`${process.cwd()}/apps/${app}/rustybuns.config.ts`);
+  const mod = await import(`${process.cwd()}/${appDir(app)}/rustybuns.config.ts`);
   return mod.default as Parameters<typeof containerBindings>[0];
 }
 
@@ -86,7 +88,7 @@ if (import.meta.main) {
       }
     }
   } else if (cmd === "run") {
-    process.chdir(`apps/${a1}`);
+    process.chdir(appDir(a1));
     const cfg = (await import(`${process.cwd()}/rustybuns.config.ts`)).default;
     const bs = containerBindings(cfg).filter((b) => !names.length || names.includes(b.name));
     const rows: Row[] = [];

@@ -6,6 +6,7 @@
 // Exits non-zero if any project has errors.
 import { existsSync, readdirSync } from "node:fs";
 import { availableParallelism } from "node:os";
+import { appDirs } from "./app-dirs.ts";
 import { compactDiagnostics } from "../packages/cli/src/typecheck.ts";
 
 const bunCheck = Bun.semver.satisfies(Bun.version, ">=1.4.3-0");
@@ -15,8 +16,8 @@ const cmd = (p: string) => bunCheck
 
 // tscircuit-desktop is parked (its dependencies are not installed), so it is not checked.
 // An app imported unchanged keeps its own tsconfig.json for its tools; tsconfig.check.json beside it is what we check.
-const tsconfig = (a: string) => [`apps/${a}/tsconfig.check.json`, `apps/${a}/tsconfig.json`].find((p) => existsSync(p));
-const projects = ["tsconfig.json", ...readdirSync("apps").sort().filter((a) => a !== "tscircuit-desktop").flatMap((a) => tsconfig(a) ?? [])];
+const tsconfig = (d: string) => [`${d}/tsconfig.check.json`, `${d}/tsconfig.json`].find((p) => existsSync(p));
+const projects = ["tsconfig.json", ...[...appDirs()].filter(([a]) => a !== "tscircuit-desktop").flatMap(([, d]) => tsconfig(d) ?? [])];
 // At most one checker per core. All 18 at once took the same wall time (median 2.4s vs 2.2s on
 // 8 cores, noisy) and more memory (peak ~2.2 GB vs ~1.4 GB), which counts when several worktrees
 // type check side by side. packages/cli/bench/concurrency.ts has the measurements.

@@ -17,6 +17,7 @@ import { join, resolve } from "node:path";
 import { freePort, launchChrome, load, openTab, startVite } from "./chrome.ts";
 import { APPS as EQOSYS } from "../apps/eqosys/src/apps.ts";
 import { help } from "./help.ts";
+import { appDir } from "./app-dirs.ts";
 import { readGroups } from "./readme-apps.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -83,7 +84,7 @@ async function up(url: string, alive: () => boolean, said: () => Promise<string>
 
 /** The app's page, served the way `serve` says. */
 export async function serve(app: string, how?: Serve): Promise<Server> {
-  const dir = join(root, "apps", app);
+  const dir = join(root, appDir(app, root));
   // A config that imports ./.rustybuns/vite needs the generated folder, which a fresh checkout doesn't have.
   if ((!how || "config" in how) && !existsSync(join(dir, ".rustybuns/vite.ts")) && readFileSync(join(dir, how ? how.config : "vite.config.ts"), "utf8").includes("./.rustybuns/vite")) Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: dir, stdout: "ignore", stderr: "ignore" });
   if (!how) return startVite(dir);

@@ -302,7 +302,7 @@
         "app": "elysia-conduit",
         "name": "Elysia RealWorld",
         "line": "The RealWorld backend of bedstack (Elysia, Drizzle, postgres.js) with no source edits. It is a desktop binary on PGlite that passes their Postman suite. The doc lists the five ways that it breaks on Workers.",
-        "doc": "apps/elysia-conduit/RUSTYBUNS.md"
+        "doc": "apps/frameworks/elysia-conduit/RUSTYBUNS.md"
       },
       {
         "app": "tanstack-start-example",

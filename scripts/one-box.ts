@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DO_GB, PRICES } from "../packages/cli/src/usage-estimate.ts";
 import { help } from "./help.ts";
+import { appDir } from "./app-dirs.ts";
 
 help(import.meta.path);
 
@@ -34,7 +35,7 @@ async function build(app: string): Promise<void> {
 import { buildRailway } from ${JSON.stringify(join(ROOT, "packages/cli/src/box.ts"))};
 c.targets.box = { provider: "railway" };
 await buildRailway(c);`;
-  const p = Bun.spawn(["bun", "-e", code], { cwd: join(ROOT, "apps", app), stdout: "ignore", stderr: "pipe" });
+  const p = Bun.spawn(["bun", "-e", code], { cwd: join(ROOT, appDir(app)), stdout: "ignore", stderr: "pipe" });
   if (await p.exited) throw new Error(`${app}: box build failed\n${(await new Response(p.stderr).text()).slice(-1500)}`);
 }
 
@@ -50,9 +51,9 @@ async function treeRssMb(pid: number): Promise<number> {
 interface Host { app: string; port: number; proc: ReturnType<typeof Bun.spawn>; data: string; worldPath: string | null; sockets: WebSocket[]; opened: number }
 
 async function start(app: string, port: number): Promise<Host> {
-  const dir = join(ROOT, "apps", app, ".rustybuns/railway");
+  const dir = join(ROOT, appDir(app), ".rustybuns/railway");
   if (!existsSync(join(dir, "box.js"))) throw new Error(`${app}: no ${dir}/box.js; run without --no-build`);
-  const config = (await import(join(ROOT, "apps", app, "rustybuns.config.ts"))).default;
+  const config = (await import(join(ROOT, appDir(app), "rustybuns.config.ts"))).default;
   const d = config.targets?.desktop ?? {};
   const worldPath = d.world ? (d.worldPath ?? "/ws") : null;
   const data = mkdtempSync(join(tmpdir(), `one-box-${app}-`));

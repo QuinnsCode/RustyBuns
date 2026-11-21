@@ -34,6 +34,7 @@
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
 import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
 import { tierLine } from "./ci-tier.ts";
 
@@ -223,9 +224,10 @@ type RemoteJob = { label: string; dir: string; cmd: string };
  */
 export function ciJobs(out: string, all = false): RemoteJob[] {
   const apps = parseJobs(out).flatMap((j) => {
-    const steps = [j.test, all && j.boot ? "bun ../../scripts/boot.ts" : ""].filter(Boolean);
+    const dir = appDir(j.app);
+    const steps = [j.test, all && j.boot ? `bun ${upFrom(dir)}scripts/boot.ts` : ""].filter(Boolean);
     // A shard's label is the test swarm's suite name for it ("codesplitter:2/3").
-    return steps.length ? [{ label: j.shard ? `${j.app}:${j.shard}` : j.app, dir: `apps/${j.app}`, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
+    return steps.length ? [{ label: j.shard ? `${j.app}:${j.shard}` : j.app, dir, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
   });
   if (!all) return apps;
   const flag = (k: string) => out.split("\n").includes(`${k}=true`);

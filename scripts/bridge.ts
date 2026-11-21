@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readGroups, plays } from "./readme-apps.ts";
 import { help } from "./help.ts";
+import { appDir, appDirs, appOf } from "./app-dirs.ts";
 import { arr, bool, int, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { portArg } from "../packages/util/src/ports.ts";
 import { Move, Tiers, emptyTiers, healthOf, issueMatcher, lastDeploys, move, prOf, readConfig, type ConfigFacts, type Deploy, type Light } from "./bridge-lib.ts";
@@ -68,10 +69,9 @@ const Plays = arr(obj({ app: opt(str(80)), play: opt(str(300)) }), 300);
 
 /** Every app folder, plus `rustybuns` for the framework itself (packages/). */
 function appIds(): string[] {
-  const dirs = readdirSync(join(root, "apps"), { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(join(root, "apps", d.name, "package.json"))).map((d) => d.name);
-  return [...dirs.sort(), "rustybuns"];
+  return [...appDirs(root).keys(), "rustybuns"];
 }
-const dirOf = (id: string) => (id === "rustybuns" ? "packages" : `apps/${id}`);
+const dirOf = (id: string) => (id === "rustybuns" ? "packages" : appDir(id, root));
 // ci-apps.ts runs its CLI when imported, so its table is read as text: an app CI knows and doesn't mark `drop: false` ships desktop binaries.
 function drops(): Set<string> {
   const text = readFileSync(join(root, "scripts/ci-apps.ts"), "utf8");
@@ -115,7 +115,7 @@ export async function scan(offline = false): Promise<Scan> {
   const tracked = (await sh(["git", "ls-files", "apps", "packages"])) ?? "";
   const files = new Map<string, { files: number; tests: number }>();
   for (const f of tracked.split("\n")) {
-    const id = f.startsWith("packages/") ? "rustybuns" : f.split("/")[1];
+    const id = f.startsWith("packages/") ? "rustybuns" : appOf(f);
     if (!id) continue;
     const c = files.get(id) ?? { files: 0, tests: 0 };
     c.files++;
@@ -155,7 +155,7 @@ export async function scan(offline = false): Promise<Scan> {
   }
   const prs = new Map<string, number>(), newest = new Map<string, Row["pr"]>();
   for (const p of parse(prsRaw, GhPrs, [])) {
-    const touched = new Set(p.files.map((f) => (f.path.startsWith("packages/") ? "rustybuns" : f.path.startsWith("apps/") ? f.path.split("/")[1] : null)).filter((x): x is string => !!x));
+    const touched = new Set(p.files.map((f) => (f.path.startsWith("packages/") ? "rustybuns" : appOf(f.path) ?? null)).filter((x): x is string => !!x));
     for (const id of touched) {
       if (p.state === "OPEN") prs.set(id, (prs.get(id) ?? 0) + 1);
       if ((newest.get(id)?.number ?? -1) < p.number) newest.set(id, { number: p.number, title: p.title, state: p.state, at: p.createdAt });

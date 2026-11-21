@@ -112,7 +112,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -125,16 +125,16 @@ jobs:
         with: { workspaces: "${{ matrix.cargo }}" }
       # Only the root (TypeScript, bun's types) and this app's workspace with what it depends on, not the whole repo's
       # 3 GB: ~3 s instead of ~15. An app whose tests import another app's code lists it as a "workspace:*" devDependency.
-      - run: bun install --frozen-lockfile --filter rustybuns --filter "./apps/${{ matrix.app }}"
+      - run: bun install --frozen-lockfile --filter rustybuns --filter "./${{ matrix.dir }}"
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}
       # the test count goes on the check run as an annotation, for the office's PR health bar
       - if: matrix.test
-        run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+        run: bun ${{ matrix.up }}scripts/ci-test-count.ts "${{ matrix.test }}"
       # Borg tier 1: the dev host builds and boots on the local twins (scripts/boot.ts).
       - if: matrix.boot
-        run: bun ../../scripts/boot.ts
+        run: bun ${{ matrix.up }}scripts/boot.ts
 
   # The container images a PR touched (an app's rustybuns.config.ts bindings): planned once, then one job per image so
   # they build in parallel; each builds for linux/amd64 and boots (rustybuns containers smoke), with a size (and its change
