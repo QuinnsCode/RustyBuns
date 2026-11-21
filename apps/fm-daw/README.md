@@ -4,6 +4,19 @@
 
 **Live:** https://fm-daw.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** a music maker in the browser: drums and synths you play, record and loop.
+
+**Use:** https://fm-daw.notryanquinn.workers.dev
+
+**How to use:** press Space to play the beat, pick a track, and play notes on your keyboard.
+Press R to record what you play; click steps on the grid to add notes by hand.
+
+**Controls:** Desktop: Space play and stop, the A row plays notes, Z X change octave, R record, 1 to 0 pick a track, Esc stop all sound. · Phone: tap the pads and buttons.
+
+**Account:** not needed. Sign in with eqosys to jam in a room with friends.
+
 A small FM groovebox: twelve tracks (five drums and seven synths, each FM or analog), a drum machine (grooves and kits), a reverb and delay called Space with a send on every track, an EQ called Shape on the master and on any track, automation lanes, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
 
 ## Run it

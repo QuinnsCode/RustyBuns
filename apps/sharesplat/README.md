@@ -4,6 +4,17 @@
 
 **Live:** https://sharesplat.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** turn photos of a product into a 3D model that spins on your shop page.
+
+**Use:** https://sharesplat.notryanquinn.workers.dev (`?demo=1` shows a sample box spinning)
+
+**How to use:** pick a plan and take the photos it asks for, all the way round the product.
+Then drop in a 3D file to see it spin, and copy the code it gives you onto your product page.
+
+**Account:** not needed. Your photos stay on your device.
+
 A seller (a Shopify store, a drop shipper, someone shipping through a CRM) photographs a product with a phone and gets back a 3D model that spins on the product page. This first cut is the two ends of that pipeline: **guided capture** and **the viewer and embed**. The middle (turning photos into a splat) is the next step, below.
 
 ## Does splatting work on objects, or only rooms?

@@ -4,6 +4,19 @@
 
 **Live:** https://delayed-reaction.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Play it
+
+**What it is:** a music game where you run down a glowing tunnel and dodge walls to the beat.
+
+**Play:** https://delayed-reaction.notryanquinn.workers.dev
+
+**How to play:** a ring lights up in one lane and plays a note. A little later a wall comes with one door in that lane.
+Be standing in the door when the wall reaches you. The early levels play the note again to tell you when.
+
+**Controls:** Desktop: D F J K or the arrow keys (far left, left, right, far right), M mute, Esc quit. · Phone: the four buttons at the bottom.
+
+**Account:** not needed. Sign in with eqosys to show your name with your score.
+
 You sprint down an endless neon grid tunnel that rolls slowly round you, near-white lines on black, to a deep dub loop: half-time drums, a wobbling bass, a skank on the offbeat. Far down the tunnel a ring lights up in a lane's colour and calls out a note. *Later* (two beats, a bar, two bars, whatever the level's delay is) a wall fills the tunnel with one door in it, in that lane, and the four pads move you across the floor: far left, left, right, far right. Be standing in the door when the wall arrives and you run through; be anywhere else and you bounce off it. While you wait, more rings call, so you carry a queue of doors in your head and move to each on its beat, like a dub delay playing back what the tunnel said. Long calls are long doors: get in and stay in until they end. Every answer explodes in its lane's colour, and the explosion echoes back, smaller, on every repeat of the delay.
 
 - **The delay is the game.** A ring calls at beat *b*; its wall arrives at *b + delay*. Moving is free, so the only way to lose is to be in the wrong place when a wall comes: step across a beat too soon and the wall before your door, whose door is somewhere else, knocks you back. Nothing else about the timing is hidden: a call is a tail of rings, one a beat from the call to the answer, dimmer each one, so you watch the delay count down as they rush at you, and the last reaches the runner exactly on its due beat, so once you learn the song you can play it by ear with the screen covered.

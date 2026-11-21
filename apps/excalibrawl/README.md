@@ -4,6 +4,17 @@
 
 **Live:** https://excalibrawl.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** AI drawing fights: two AI models draw the same thing side by side and a third one picks the winner.
+
+**Use:** https://excalibrawl.notryanquinn.workers.dev
+
+**How to use:** a new fight starts every hour; open the page to watch it live.
+Between fights, pick an old fight and play it back turn by turn.
+
+**Account:** not needed.
+
 The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
 
 ## The fights

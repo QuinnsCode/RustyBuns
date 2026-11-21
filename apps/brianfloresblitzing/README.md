@@ -4,6 +4,16 @@
 
 **Live:** https://brianfloresblitzing.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** one page about American football: how one team that blitzes a lot pulls the whole league's average up.
+
+**Use:** https://brianfloresblitzing.notryanquinn.workers.dev
+
+**How to use:** read down the page, then drag the slider and watch the gold line (the league average) move.
+
+**Account:** not needed.
+
 ## Run it
 
 ```
