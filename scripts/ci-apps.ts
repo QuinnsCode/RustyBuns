@@ -31,7 +31,9 @@ type App = {
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
 import { check, num, rec } from "../packages/util/src/guard.ts";
-import { appDir, appOf, upFrom } from "./app-dirs.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { appDir, appDirs, appOf, upFrom } from "./app-dirs.ts";
 import { testFiles } from "./ci-test-count.ts";
 
 export const APPS: Record<string, App> = {
@@ -144,8 +146,27 @@ const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : []
 
 // Code every app leans on: shared packages, the lockfile, this workflow. Prose isn't, so a README or skill under
 // packages/ runs only the packages' tests (`packages` below), not the hooks and scripts tests a code change brings.
-// The app folders a test lane checks out (apps.yml's sparse checkout, #5509): its own and the apps it runs (`with`).
-export const sparseDirs = (app: string) => [app, ...(APPS[app]!.with ?? [])].map((n) => `/${appDir(n)}/`).join("\n");
+// The other apps an app's code reaches by a relative path: an import ("../../geoboxq/src/worker.ts") or a folder it
+// reads (join(import.meta.dir, "../../hello-world")). Every quoted "../" string in its code files that lands in another
+// app's folder counts, so a lane's sparse checkout has them without anyone listing them.
+export function reachedApps(app: string, root = join(import.meta.dir, "..")): string[] {
+  const dirs = [...appDirs(root)], own = appDir(app, root), found = new Set<string>();
+  for (const file of new Bun.Glob("**/*.{ts,tsx,js,jsx,mjs,cjs,css,html}").scanSync({ cwd: join(root, own) })) {
+    if (file.includes("node_modules/")) continue;
+    const text = readFileSync(join(root, own, file), "utf8");
+    for (const [, rel] of text.matchAll(/["'`]((?:\.\.\/)+[^"'`\s?]*)/g)) {
+      const to = relative(root, resolve(root, own, dirname(file), rel!));
+      const hit = dirs.find(([, d]) => d !== own && (to === d || to.startsWith(d + "/")));
+      if (hit) found.add(hit[0]);
+    }
+  }
+  return [...found].sort();
+}
+
+// The app folders a test lane checks out (apps.yml's sparse checkout, #5509): its own, its `with` apps and the ones
+// its code reaches (reachedApps).
+export const sparseDirs = (app: string, root?: string) =>
+  [...new Set([app, ...(APPS[app]!.with ?? []), ...reachedApps(app, root)])].map((n) => `/${appDir(n, root)}/`).join("\n");
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);

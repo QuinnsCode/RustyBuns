@@ -33,7 +33,10 @@ test("a table of file times becomes balanced lanes, with no empty one", () => {
 });
 
 // #5509: a lane checks out its own app, plus any app whose code it runs, and none of the other ~900 MB.
-test("a test lane's sparse checkout is its app and its `with` apps", () => {
+// The first run of it went red where an app reached another by a relative path nobody listed (PR #5537).
+test("a test lane's sparse checkout is its app, its `with` apps and the apps its code reaches", () => {
   expect(sparseDirs("two-fronts")).toBe("/apps/two-fronts/");
   expect(sparseDirs("agent-office")).toBe("/apps/agent-office/\n/apps/excalibrawl/");
+  expect(sparseDirs("geoboxq-shopify")).toBe("/apps/geoboxq-shopify/\n/apps/geoboxq/"); // imports its worker
+  expect(sparseDirs("codesplitter")).toContain("/apps/hello-world/"); // the welcome tour digs the folder up
 });
