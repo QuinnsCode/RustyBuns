@@ -4,6 +4,17 @@ The CRM your agents can use. Contacts, companies, deals and activities for a rea
 with an MCP server built in, a Rust engine for analysis in the browser, office sync, signed webhooks,
 a desktop build, and every row yours to export or delete. One Cloudflare Worker, one D1 database.
 
+## Use it
+
+**What it is:** a list of your customers, companies and sales for a small business, that AI helpers can use too.
+
+**Use:** https://qcrm.qntbr.com
+
+**How to use:** sign up, then add a contact or a company and log what happened (a call, a meeting).
+Add a deal and move it through its stages as it gets closer to a sale.
+
+**Account:** needed. Sign up with an email, or with your eqosys account.
+
 Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
 noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
 (hello@qntbr.com). The rest of this repository stays under its own license.

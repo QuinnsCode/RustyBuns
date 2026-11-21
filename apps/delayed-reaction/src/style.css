@@ -52,6 +52,13 @@ body:has(#menu[hidden]) .rb-report { display: none; }
 .display::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(160deg, #ffffff14, transparent 38%), repeating-linear-gradient(#0000 0 2px, #00000038 2px 3px); }
 #menu h1 { margin: 0; font: 700 clamp(22px, 6.6vw, 34px)/1.05 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #f4f6fa; text-shadow: 0 0 12px #e9ecf266, 0 0 2px #fff; }
+.pitch { margin: 6px 0 0; font: 14px/1.35 system-ui, sans-serif; color: #e9ecf2d8; }
+#menu .display:has(.readout) .pitch { display: none; }
+/* The big way in: one key, lit, wide as the panel, that starts preset 1 (the tutorial the first time). */
+.play { min-height: 60px; border: 1px solid #000; border-radius: 10px; cursor: pointer; font: 700 24px var(--mono); letter-spacing: 0.2em; text-transform: uppercase; color: #0b0714;
+  background: linear-gradient(#f4f8ff, #cfd8e6); box-shadow: inset 0 -3px 0 #8f9bb0, 0 3px 0 #000, 0 0 24px #cfe6ff55; transition: transform 60ms; }
+.play:hover, .play:focus-visible { outline: none; box-shadow: inset 0 -3px 0 #8f9bb0, 0 3px 0 #000, 0 0 0 2px var(--ink), 0 0 32px #cfe6ff88; }
+.play:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 #8f9bb0, 0 1px 0 #000; }
 .tuner { margin-top: 8px; }
 .tuner .scale { display: block; width: 100%; height: auto; overflow: visible; }
 .tuner .needle { transform: translateX(calc(var(--needle, 0.5) * 300px)); transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1); }

@@ -4,6 +4,17 @@
 
 **Live:** https://what-would-fantano-say.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+## Use it
+
+**What it is:** a joke site: give it a song and a pretend music critic gives it a score and a short review.
+
+**Use:** https://what-would-fantano-say.notryanquinn.workers.dev
+
+**How to use:** pick a song file from your phone or computer, drag to the best 15 seconds, and ask for the review.
+Then share it if you like it. Your song stays on your device except the short clip.
+
+**Account:** not needed.
+
 Pick a track, drag to your best 15 seconds, and get a parody review in the style of a very online music critic: a score, a verdict (*light 4*, *strong 8*), the best and worst bits, and a share button. It's a joke site, labelled as parody, not affiliated with anyone real. Phone first; on desktop it's the same single column.
 
 ## How a review works

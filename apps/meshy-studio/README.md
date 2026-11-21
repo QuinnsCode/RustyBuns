@@ -2,6 +2,17 @@
 
 > **What it proves:** a desktop tool that works on your own folders and holds your API key locally, with no server of yours in between. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+## Use it
+
+**What it is:** a desktop app that turns a folder of drawings or written ideas into 3D models for games.
+
+**Use:** not online: it is a desktop app. Run it: `bun install --frozen-lockfile` at the repo root, then `cd apps/meshy-studio && bun run desktop:dev`.
+
+**How to use:** pick a folder of pictures (the file name says what each one is), check the price, and press Send.
+Finished models land back in your folder, ready to drop into a game.
+
+**Account:** you need your own Meshy key (it costs credits). It stays on your computer.
+
 Put a folder of labelled concept images (or prompts) in, get game-ready `.glb` files out. The app sends them to [Meshy's API](https://docs.meshy.ai/en/api) with your own key, downloads each model as soon as it's ready, then scales it and sets the origin on your machine. Finished models can go on through texturing, remeshing, UV unwrapping, format conversion, rigging and animation, each step priced and confirmed first.
 
 ## Every Meshy endpoint it uses

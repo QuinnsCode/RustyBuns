@@ -2,6 +2,19 @@
 
 > **What it proves:** a first-person roadie sim on real numbers: you carry the gear in one piece at a time, at a pace set by its weight (a 40 kg cab is a shuffle), and set it down on the floor or stacked on another piece. Cables come out of the road case as rolls at their real weight: F at the case lifts a roll into your hands, F at a jack plugs its end and you keep the roll, Space winds up and bowls it (it pays out cable as it rolls, a heavy one stops sooner), and F picks it up where it stopped to carry the rest to its jack, where the spare stays coiled. A short power run is a 0.17 kg/m cord, 20 m and up a 1.1 kg/m feeder; what you carry and drag slows your walk, and your hands show it (a coil over the fingers, a fist round the cable, a plug at a lit jack). A cable across a walkway is a trip hazard until a ramp goes over it. Speakers first; the plan is in #4849 and `notes/game-ideas/3-studio-and-roadie.md`.
 
+## Play it
+
+**What it is:** Sound Guy Simulator: you are the roadie who carries the speakers and cables in and gets the show ready.
+
+**Play:** https://load-in.notryanquinn.workers.dev
+
+**How to play:** pick up the gear one piece at a time, set it up, and plug the cables in before the doors open.
+Heavy gear makes you slow. Start on *Crew* (or *Cozy* for no clock) with the dial under Play.
+
+**Controls:** Desktop: click the view, then WASD walk, mouse look, F pick up, put down and plug in, G let go, Q E turn, C crouch, Esc let go of the mouse. · Phone: left half of the screen walks, drag the right half to look, buttons bottom right.
+
+**Account:** not needed.
+
 Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deploy keep that name. The build order is #5029.
 
 **The cable feel test** (`feel.html`: `bun run dev`, then `/feel.html`): one room, the game's own sound board, amp rack, wedge and mic stand models (jacks where the models put them), the game's hands, and four rolls of cable at their real weight (mic 0.06, speaker 0.21, feeder 1.1 kg/m). Plug a roll's end in, bowl the roll and it pays out behind it: a 16.5 kg feeder dies in a few metres, a mic cable runs the room. Dragging laid cable slows you by what it weighs. The sim is `src/cables/roll.ts`; `bun apps/load-in/scripts/feel-journey.ts` plays the whole room through headless and fails if the wedge does not come up; `window.feel` plays it without a mouse (`bun run probe load-in /feel.html --js "feel.state()"`).
