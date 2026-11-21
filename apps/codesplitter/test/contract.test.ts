@@ -86,7 +86,7 @@ async function asker() {
 }
 const field = (v: unknown, k: string): unknown => isRecord(v) ? v[k] : undefined;
 const sh = async (cmd: string, cwd = root) => {
-  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe", env: process.env });
   const [code, err] = await Promise.all([p.exited, new Response(p.stderr).text()]);
   if (code) throw new Error(`${cmd}: ${err}`);
 };
