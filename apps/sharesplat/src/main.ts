@@ -138,7 +138,7 @@ async function show(opts: { url: string } | { fileBytes: ArrayBuffer; fileName: 
   m.quaternion.set(1, 0, 0, 0);
   scene.add(m);
   frame(m);
-  $("info").textContent = `${m.packedSplats?.numSplats?.toLocaleString() ?? "?"} splats`;
+  $("info").textContent = `${m.packedSplats?.numSplats?.toLocaleString() ?? "?"} points`;
   const name = "url" in opts ? opts.url : opts.fileName;
   const src = "url" in opts ? opts.url : `https://your-store-cdn.example/${name}`;
   $<HTMLTextAreaElement>("snippet").value =
@@ -162,7 +162,9 @@ function frame(m: SplatMesh) {
 
 const src = params.get("src");
 if (src) void show({ url: src });
-else if (params.get("demo") === "1") void show({ fileBytes: demoCarton(), fileName: "demo-carton.splat" });
+const example = () => show({ fileBytes: demoCarton(), fileName: "demo-carton.splat" });
+if (!src && params.get("demo") === "1") void example();
+$("example").addEventListener("click", () => void example());
 
 async function openFile(f: File | undefined) {
   if (f) await show({ fileBytes: await f.arrayBuffer(), fileName: f.name });
