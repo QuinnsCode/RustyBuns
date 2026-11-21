@@ -10,6 +10,8 @@
 // It also spots the GitHub miss from AGENTS.md (#2828): a head pushed minutes ago with no typecheck or apps run
 // attached, which an empty commit won't fix and a rebase + force-with-lease does. A run that is only queued (no runner
 // free yet) isn't in the PR's checks either, so before calling it a miss it asks Actions for runs on the head SHA (#4240).
+// And a stuck check (#5391): its run finished minutes ago but the check still says running, so the PR can't merge until
+// a new head starts a fresh run (`gh pr update-branch <n> --rebase`).
 import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 const text = (max: number) => opt(str(max, { min: 0 }));
@@ -38,9 +40,9 @@ export function outcomes(pr: Pr): Outcome[] {
 }
 
 /** `gh run list --commit <sha> --json` with RUN_FIELDS: the head's workflow runs, queued ones included. */
-export const Runs = arr(obj({ workflowName: str(200, { min: 0, dflt: "" }), status: str(40, { min: 0, dflt: "" }), conclusion: text(40) }), 200, { drop: true });
+export const Runs = arr(obj({ databaseId: opt(num(0, 1e15)), workflowName: str(200, { min: 0, dflt: "" }), status: str(40, { min: 0, dflt: "" }), conclusion: text(40), updatedAt: text(40) }), 200, { drop: true });
 export type Runs = Of<typeof Runs>;
-export const RUN_FIELDS = "workflowName,status,conclusion";
+export const RUN_FIELDS = "databaseId,workflowName,status,conclusion,updatedAt";
 const CI = /^(typecheck|apps)$/;
 
 /** Where the head's typecheck and apps runs stand on Actions: none at all, waiting for a runner, running, or done. */
@@ -51,12 +53,21 @@ export function headRuns(runs: Runs): "none" | "queued" | "running" | "done" {
   return ci.some((r) => r.status !== "completed") ? "queued" : "done";
 }
 
+/** A run can finish a few seconds before its last job's check does; past this many seconds the check is stuck. */
+export const STUCK_AFTER = 120;
+/** Checks that still say running though their Actions run completed STUCK_AFTER seconds ago (#5391): GitHub lost the job's end, and only a new head clears it. */
+export function stuck(pr: Pr, now = Date.now(), runs: Runs = []): Outcome[] {
+  const done = new Set(runs.filter((r) => r.status === "completed" && r.databaseId && r.updatedAt && (now - Date.parse(r.updatedAt)) / 1000 > STUCK_AFTER).map((r) => String(r.databaseId)));
+  return pr.state === "OPEN" ? outcomes(pr).filter((o) => o.outcome === "pending" && o.url && done.has(jobOf(o.url)?.run ?? "")) : [];
+}
+
 /** True once no check is still running. An open PR with no checks at all is not settled: they may not be attached yet. A run still queued or running on Actions keeps it unsettled. */
 export const settled = (pr: Pr, now = Date.now(), runs: Runs = []) => {
   if (pr.state !== "OPEN") return true;
   const stage = headRuns(runs);
   if (stage === "queued" || stage === "running") return false;
-  return (pr.statusCheckRollup.length > 0 && outcomes(pr).every((o) => o.outcome !== "pending")) || missedRun(pr, now, runs);
+  const jammed = new Set(stuck(pr, now, runs).map((o) => o.url));
+  return (pr.statusCheckRollup.length > 0 && outcomes(pr).every((o) => o.outcome !== "pending" || jammed.has(o.url))) || missedRun(pr, now, runs);
 };
 
 /** How long ago the head commit was made, in seconds. */
@@ -67,8 +78,8 @@ const unattached = (pr: Pr) => !pr.statusCheckRollup.some((c) => CI.test(c.workf
 export const MISS_AFTER = 120;
 export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = []) =>
   pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && unattached(pr) && headRuns(runs) === "none";
-/** Whether to ask Actions for the head's runs: the rollup has no typecheck or apps check yet. */
-export const needRuns = (pr: Pr) => pr.state === "OPEN" && unattached(pr);
+/** Whether to ask Actions for the head's runs: the rollup has no typecheck or apps check yet, or a check still runs (it may be stuck). */
+export const needRuns = (pr: Pr) => pr.state === "OPEN" && (unattached(pr) || outcomes(pr).some((o) => o.outcome === "pending"));
 
 const dur = (s?: number) => (s === undefined ? "" : s >= 60 ? ` ${Math.floor(s / 60)}m${s % 60}s` : ` ${s}s`);
 
@@ -81,10 +92,12 @@ export function summarize(pr: Pr, now = Date.now(), runs: Runs = []): string[] {
   if (queued.length) out.push(`  queued  ${queued.map((r) => r.workflowName).join(" | ")}  waiting for a runner, not a miss: don't push`);
   else if (!os.length && pr.mergeStateStatus === "DIRTY") out.push("  no runs: it conflicts with main, and GitHub runs no checks until it merges cleanly. Rebase onto origin/main (only your own commits) and git push --force-with-lease.");
   else if (!os.length) out.push(missedRun(pr, now, runs) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.` : "  no checks yet");
+  const jammed = stuck(pr, now, runs), jammedUrls = new Set(jammed.map((o) => o.url));
   for (const [kind, label] of [["pass", "pass"], ["skip", "skip"], ["other", "other"], ["pending", "running"]] as const) {
-    const xs = byKind(kind);
+    const xs = byKind(kind).filter((o) => kind !== "pending" || !jammedUrls.has(o.url));
     if (xs.length) out.push(`  ${label.padEnd(7)} ${xs.map((o) => o.name + (kind === "pass" ? dur(o.seconds) : "")).join(" | ")}`);
   }
+  if (jammed.length) out.push(`  STUCK   ${jammed.map((o) => o.name).join(" | ")}  its run finished but the check still says running, so the PR can't merge (#5391). A new head clears it: gh pr update-branch ${pr.number} --rebase`);
   for (const o of byKind("fail")) out.push(`  FAIL    ${o.name}${dur(o.seconds)}  ${o.url ?? ""}`.trimEnd());
   if (os.length && missedRun(pr, now, runs)) out.push("  no typecheck or apps run attached (#2828): rebase onto origin/main and git push --force-with-lease.");
   return out;
@@ -137,8 +150,8 @@ if (import.meta.main) {
   while (wait && !settled(pr, Date.now(), runs) && Date.now() < until) { await Bun.sleep(20_000); pr = await view(n); runs = await look(); }
   console.log(summarize(pr, Date.now(), runs).join("\n"));
   // GitHub hasn't started the checks: the test swarm (apps/test-swarm) can run them on our own Macs instead.
-  if (needRuns(pr) && process.env.SWARM_URL) console.log("  GitHub is slow: `bun run builder queue` from the PR's branch sends its suites to the test swarm");
+  if (pr.state === "OPEN" && unattached(pr) && process.env.SWARM_URL) console.log("  GitHub is slow: `bun run builder queue` from the PR's branch sends its suites to the test swarm");
   for (const o of outcomes(pr).filter((o) => o.outcome === "fail")) { const log = await failedLog(o.url); if (log.length) console.log(`--- ${o.name}\n${log.join("\n")}`); }
   if (wait && !settled(pr, Date.now(), runs)) console.log(`  still running after ${minutes} min`);
-  process.exit(outcomes(pr).some((o) => o.outcome === "fail") ? 1 : 0);
+  process.exit(outcomes(pr).some((o) => o.outcome === "fail") || stuck(pr, Date.now(), runs).length ? 1 : 0);
 }

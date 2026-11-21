@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MISS_AFTER, headRuns, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr, type Runs } from "./pr.ts";
+import { MISS_AFTER, STUCK_AFTER, headRuns, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr, type Runs } from "./pr.ts";
 
 const now = Date.parse("2026-11-01T10:00:00Z");
 const run = (name: string, conclusion: string | undefined, status = "COMPLETED", workflowName = "apps") =>
@@ -64,4 +64,18 @@ test("the failed log keeps the tail without the job, step and timestamp prefix, 
   const log = ["test x\tRun tests\t2026-11-01T09:20:32.1234567Z ##[group]Run bun test", "test x\tRun tests\t2026-11-01T09:20:32.1234567Z \x1b[31mexpect(received).toBe(expected)\x1b[0m", "test x\tRun tests\t2026-11-01T09:20:33.0000000Z ", "test x\tRun tests\t2026-11-01T09:20:33.0000000Z ##[endgroup]", "test x\tRun tests\t2026-11-01T09:20:34.0000000Z 1 fail", "test x\tRun tests\t2026-11-01T09:20:34.0000000Z Post job cleanup."].join("\n");
   expect(trimLog(log)).toEqual(["expect(received).toBe(expected)", "1 fail"]);
   expect(trimLog(Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n"), 3)).toEqual(["… 47 earlier lines", "line 47", "line 48", "line 49"]);
+});
+
+test("a check still running minutes after its run finished is stuck, and names the fix (#5391)", () => {
+  const p = pr({ number: 5338, statusCheckRollup: [run("typecheck", "SUCCESS", "COMPLETED", "typecheck"), run("apps", undefined, "IN_PROGRESS")] });
+  const finished = (secondsAgo: number): Runs => [{ databaseId: 41292692684, workflowName: "apps", status: "completed", conclusion: "success", updatedAt: new Date(now - secondsAgo * 1000).toISOString() }];
+  // Just finished: the check may still catch up, so keep waiting.
+  expect(settled(p, now, finished(10))).toBe(false);
+  expect(summarize(p, now, finished(10))).toContain("  running apps");
+  // Minutes later it is stuck: stop waiting and say how to clear it.
+  expect(settled(p, now, finished(STUCK_AFTER + 60))).toBe(true);
+  const lines = summarize(p, now, finished(STUCK_AFTER + 60));
+  expect(lines.some((l) => l.startsWith("  running"))).toBe(false);
+  expect(lines.at(-1)).toContain("STUCK   apps");
+  expect(lines.at(-1)).toContain("gh pr update-branch 5338 --rebase");
 });
