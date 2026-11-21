@@ -23,7 +23,9 @@ the numbers and can work out the max, p95 or the outlier in code.
   JSON scene tree. `toSVG({ interactive: true })` plus a 7 KiB client adds hover tooltips and legend toggles.
 - It thins big data the way matplotlib does: a 1,000,000-point line becomes the 142 points matplotlib draws.
 - Size (min + gzip): 179 KiB for the default entry with DejaVu Sans built in, 116 KiB for `mpl/core` with no font.
-- Not yet supported: pie, violin, stem, stairs, `subplot_mosaic`, general mathtext, constrained layout.
+- `ax.pie` landed on 2026-11-20 (ivarvong/mpl#85, 426 of 426 fixtures pixel-exact by then). Our Thanksgiving thank-you,
+  a pie of mpl's own chart types drawn with it: [mpl-pie/](mpl-pie/README.md).
+- Not yet supported: violin, stem, stairs, `subplot_mosaic`, general mathtext, constrained layout.
 - **Maturity:** version 0.1.0, ISC licence, 6 stars, about 76 commits, all from mid-November 2026. It isn't on npm:
   you install it from GitHub and its `prepare` script builds `dist/`. Bun is not one of its tested runtimes.
 

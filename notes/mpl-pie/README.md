@@ -1,0 +1,16 @@
+# A pie of mpl's chart types, drawn with mpl's pie
+
+[mpl](https://github.com/ivarvong/mpl) is a TypeScript rewrite of matplotlib. We asked for pie charts in time for
+Thanksgiving, and [#85](https://github.com/ivarvong/mpl/pull/85) added them. So here's a pie of the chart types in
+mpl's own code, drawn with its new `ax.pie`.
+
+![Chart types in mpl: plot 293, imshow 80, bar 47, scatter 36, fill_between 22, hist 16, errorbar 9, pie 8, barh 8, boxplot 6, step 2](pie.png)
+
+Each slice is how many of mpl's 426 pixel-exact reference fixtures (`fixtures/ref/*.json`) call that chart type.
+A fixture with a line and a bar counts once for each. Pie has 8 so far, all from #85, and its slice is pulled out.
+
+```sh
+bun notes/mpl-pie/pie.ts            # clones mpl at the pinned commit into a temp folder, counts, writes pie.png
+```
+
+mpl isn't on npm, so the script imports mpl's source from that clone. Nothing is added to our lockfile.
