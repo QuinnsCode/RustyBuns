@@ -8,8 +8,8 @@
 //   bun scripts/preflight.ts [--base origin/main] [--json]
 //
 // Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a card or an unsettled
-// clash in your files (so a hook can stop and ask), 0 otherwise. It only reports: nothing holds or reorders the merges,
-// so the PR body says "merge after #N" for each PR it names. It notes the HEAD it read in the worktree's git folder
+// clash in your files (so a hook can stop and ask), 0 otherwise. It prints a `Merge after #N` line for the PR body;
+// scripts/after.ts (after.yml) merges main into the branch once those land (#5344). It notes the HEAD it read in the worktree's git folder
 // (`rustybuns-preflight`), and .claude/hooks/guard.ts turns away `gh pr create` on a commit it hasn't read (#4956). Lock and generated files are listed apart:
 // they are expected to clash and are regenerated.
 
@@ -81,16 +81,17 @@ if (import.meta.main) {
     if (!v) console.log("no other open PR changes your files");
     else {
       const after = (f: FileRow) => f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : "";
-      console.log(`\nMervin's board, your branch merged after ${others.map((p) => `#${p.number}`).join(" ")} (write "merge after" them in the PR body: nothing orders it for you):`);
+      console.log(`\nMervin's board, your branch merged after ${others.map((p) => `#${p.number}`).join(" ")}:`);
       for (const s of v.skipped) console.log(`  skipped #${s.pr}: ${s.why}`);
       for (const f of v.cards) console.log(`  card    ${f.path}  ${f.why}${after(f)}`);
       for (const c of v.clashes) console.log(`  clash   ${c.kind} ${c.key} with ${c.prs.filter((n) => n !== ME).map((n) => `#${n}`).join(", ") || "main"}`);
       for (const f of v.look) console.log(`  differ  ${f.path}  ${f.why}${after(f)}`);
       for (const f of v.settles) console.log(`  mervin  ${f.path}  ${f.why}${after(f)}`);
       if (v.cards.length || v.clashes.length) console.log("\nA person must choose these: wait for those PRs to merge and rebase, or talk to their workers before opening yours.");
-      else if (v.settles.length || v.look.length) console.log("\nIt merges, with conflicts Mervin settles: open the PR, and rebase once they land.");
+      else if (v.settles.length || v.look.length) console.log("\nIt merges, with conflicts Mervin settles: open the PR with the Merge after line below.");
       else console.log("  every shared file merges clean");
     }
+    if (others.length) console.log(`\nPut this line in the PR body; scripts/after.ts merges main in once they land:\n  Merge after ${others.map((p) => `#${p.number}`).join(", ")}`);
   }
   const code = v && (v.cards.length || v.clashes.length) ? 1 : 0;
   const stamp = run$(["git", "rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight"]).trim();
