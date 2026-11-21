@@ -1,6 +1,7 @@
 // Options: motion, the film look, quality, and the three sound switches. Saved
 // locally with the other settings (see settings.ts).
 import { useEffect, useRef } from "react";
+import { DIFFICULTIES, ROUND_SECS, type Difficulty } from "../../sim/rules.ts";
 import { QUALITIES, systemPrefersReducedMotion, type Quality, type Settings } from "../settings.ts";
 import { Seg } from "./Menu.tsx";
 
@@ -35,8 +36,24 @@ export function OptionsPanel({ settings, onSettings }: { settings: Settings; onS
   );
 }
 
-/** The options as a dialog: focus moves in, Tab stays in, Escape closes, focus goes back. */
-export function OptionsDialog({ settings, onSettings, onClose }: { settings: Settings; onSettings: (s: Settings) => void; onClose: () => void }) {
+/** The next game's own picks, under Options on the menu: your name, the bots, players on this device and round length. */
+export function GamePanel({ settings, onSettings }: { settings: Settings; onSettings: (s: Settings) => void }) {
+  const set = (p: Partial<Settings>) => onSettings({ ...settings, ...p });
+  return (
+    <div className="col options">
+      <div className="row"><label htmlFor="o-name">Your name</label><input id="o-name" className="text" style={{ width: 200 }} maxLength={32} value={settings.name} placeholder="Tycoon" onChange={(e) => set({ name: e.target.value })} /></div>
+      <div className="row"><label id="o-bots">Bots</label><Seg<Difficulty> labelledBy="o-bots" value={settings.difficulty} options={DIFFICULTIES} onChange={(difficulty) => set({ difficulty })} /></div>
+      <div className="opt">
+        <div className="row"><label id="o-players">On this device</label><Seg<1 | 2> labelledBy="o-players" value={settings.players} options={[1, 2]} label={(n) => (n === 1 ? "1 player" : "2 players")} onChange={(players) => set({ players })} /></div>
+        <p className="note">For a home-network or online game.</p>
+      </div>
+      <div className="row"><label id="o-round">Round length</label><Seg<number> labelledBy="o-round" value={settings.secs} options={ROUND_SECS} label={(s) => `${s}s`} onChange={(secs) => set({ secs })} /></div>
+    </div>
+  );
+}
+
+/** The options as a dialog (with the next game's picks first when opened from the menu): focus moves in, Tab stays in, Escape closes, focus goes back. */
+export function OptionsDialog({ settings, onSettings, onClose, game }: { settings: Settings; onSettings: (s: Settings) => void; onClose: () => void; game?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
@@ -57,6 +74,7 @@ export function OptionsDialog({ settings, onSettings, onClose }: { settings: Set
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="options-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="card" ref={box}>
         <h2 id="options-title" className="title" style={{ fontSize: 28, marginBottom: 18 }}>Options</h2>
+        {game && <><GamePanel settings={settings} onSettings={onSettings} /><hr className="split" /></>}
         <OptionsPanel settings={settings} onSettings={onSettings} />
         <button className="btn go" style={{ width: "100%", marginTop: 18 }} onClick={onClose}>Done</button>
       </div>
