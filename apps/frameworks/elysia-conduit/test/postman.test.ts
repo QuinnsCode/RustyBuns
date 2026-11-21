@@ -16,7 +16,7 @@ let host: Bun.Subprocess | undefined;
 beforeAll(() => {
   const bin = process.env.CONDUIT_BIN;
   if (!bin) {
-    const build = Bun.spawnSync(["bun", "../../packages/cli/src/index.ts", "build", "desktop", "--dev"], { cwd: app, stdout: "pipe", stderr: "pipe" });
+    const build = Bun.spawnSync(["bun", "../../../packages/cli/src/index.ts", "build", "desktop", "--dev"], { cwd: app, stdout: "pipe", stderr: "pipe" });
     if (build.exitCode !== 0) throw new Error(`build desktop failed:\n${build.stdout}\n${build.stderr}`);
   }
   const env: Record<string, string | undefined> = { ...process.env, HOME: home, RB_NO_BROWSER: "1" };
