@@ -43,14 +43,14 @@ const base: Scenario = {
 const s = (about: string, serves: number[], over: Partial<Scenario>): Scenario => ({ ...base, about, serves, ...over });
 
 export const SCENARIOS: Record<string, Scenario> = {
-  "setup-first-run": s("Signed out: nothing connected, the three first-run steps show, Connect GitHub is on", [2513], {}),
-  "setup-no-client-id": s("The office has no GitHub client id: Connect GitHub is off and says why", [2513], { signIn: false }),
-  "setup-sign-in-code": s("A sign-in code is waiting; press 'I typed the code' on the stage and the account appears", [2513], { waiting: true }),
-  "setup-signed-in": s("Signed in as one account: green light, read-only badge, Test and Revoke work, the build Mac is up", [2513], { accounts: [{ login: "octo-demo", good: true }] }),
-  "setup-two-accounts": s("Two accounts side by side", [2513], { accounts: [{ login: "octo-demo", good: true }, { login: "second-demo", good: true }] }),
-  "setup-test-red": s("One account whose token GitHub stopped accepting: Test turns it red, Revoke removes it", [2513], { accounts: [{ login: "octo-demo", good: true }, { login: "stale-demo", good: false }] }),
-  "setup-builder-down": s("The build Mac does not answer: the card shows its one-line setup", [2513], { accounts: [{ login: "octo-demo", good: true }], builder: "down" }),
-  "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [2520, 2513], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
+  "setup-first-run": s("Signed out: nothing connected, the three first-run steps show, Connect GitHub is on", [111], {}),
+  "setup-no-client-id": s("The office has no GitHub client id: Connect GitHub is off and says why", [111], { signIn: false }),
+  "setup-sign-in-code": s("A sign-in code is waiting; press 'I typed the code' on the stage and the account appears", [111], { waiting: true }),
+  "setup-signed-in": s("Signed in as one account: green light, read-only badge, Test and Revoke work, the build Mac is up", [111], { accounts: [{ login: "octo-demo", good: true }] }),
+  "setup-two-accounts": s("Two accounts side by side", [111], { accounts: [{ login: "octo-demo", good: true }, { login: "second-demo", good: true }] }),
+  "setup-test-red": s("One account whose token GitHub stopped accepting: Test turns it red, Revoke removes it", [111], { accounts: [{ login: "octo-demo", good: true }, { login: "stale-demo", good: false }] }),
+  "setup-builder-down": s("The build Mac does not answer: the card shows its one-line setup", [111], { accounts: [{ login: "octo-demo", good: true }], builder: "down" }),
+  "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [2520, 111], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
   "writes-grants": s("The GitHub writes switches: the office on, one repo on and one off; flip each, then Ask again", [2520], { repos: [{ repo: "QuinnsCode/RustyBuns", on: true }, { repo: "QuinnsCode/other", on: false }] }),
   "box-first-run": s("The office in the box, first run: the shield opens the set-up page, the scroll the whole log, and the box reaching a host off its list waits on Deny / Always / Allow", [2568], { box: { log: 40, held: "pypi.org" } }),
   "wall-gitpath": s("gitpath with open PRs as cars between open and main; click a car to open its PR", [2425, 2430], { screens: ["gitpath"], mervin: { phase: "green" }, ester: { phase: "green" } }),

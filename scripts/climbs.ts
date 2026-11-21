@@ -24,6 +24,7 @@
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
 import { tidy, view } from "./issue.ts";
 import { help } from "./help.ts";
+import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), updatedAt: text(40) });
@@ -99,7 +100,7 @@ One round: shots BEFORE from main, the change the Next line names, shots NOW, th
 A judge's number runs about double the owner's (the owner halved every climb's score on 2026-11-05), so report the last score plus half the judge's gain (NOW minus BEFORE), never the judge's own number; a computed score (a formula, a scorecard) is reported at half too. Only a rate that is itself the goal (a win rate to 45%) goes in as measured.
 Comment on #${c.number}: first line \`Score: x/${c.scale} (target ${t})\`, then the shots, then \`Next: <the judge's top gap>\`. The PR is from main and says "Part of #${c.number}", never a closing word.
 Then hop the climb forward so it stays at the top of the issues: open a new issue with the same title for the next rounds ("rounds N+ (from #${c.number})") whose body carries this one's state, round table and next steps, updated; seed it with that Score/Next comment; comment "Moved up to #<new>" here and close this one.
-At or over the target: file one issue titled "MANUAL RUN: score #${c.number} yourself" with the \`manual run\` label, how to see it, and the judge's score; the owner's score decides if it closes. Three rounds with no gain: a comment starting \`Stalled:\` with the blocker. Then stop; the next round goes to the next free worker.`;
+At or over the target: file one issue in the private manual-run repo (\`gh issue create --repo ${MANUAL_REPO} --label "manual run"\`) titled "MANUAL RUN: score QuinnsCode/RustyBuns#${c.number} yourself" with how to see it, and the judge's score; the owner's score decides if it closes. Three rounds with no gain: a comment starting \`Stalled:\` with the blocker. Then stop; the next round goes to the next free worker.`;
 };
 
 async function gh(args: string[]): Promise<string> {

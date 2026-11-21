@@ -915,7 +915,7 @@ Each thing that only a person can judge is its own issue. `bun run manual` opens
 
 <details><summary>More</summary>
 
-A check that needs the owner (a sign-in, a live run, "does this feel right?") gets an issue titled `MANUAL RUN:` with the steps and a time. Agents check everything else first. `bun run manual` starts each app on a free port and opens the jump-to-state links that the issue needs. Yes comments and closes the issue, and No comments and leaves it open. `y` and `n` work on the keyboard.
+A check that needs the owner (a sign-in, a live run, "does this feel right?") gets an issue titled `MANUAL RUN:` with the steps and a time, in a private repo of its own, so the public issues stay the ones people file. Agents check everything else first. `bun run manual` starts each app on a free port and opens the jump-to-state links that the issue needs. Yes comments and closes the issue, and No comments and leaves it open. `y` and `n` work on the keyboard.
 
 </details>
 

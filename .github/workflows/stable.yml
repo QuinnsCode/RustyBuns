@@ -1,6 +1,6 @@
 # The stable ring (notes/RELEASE_RINGS.md step 7, #4494), Monday after deps-doctor (06:17 UTC): scripts/stable.ts picks
 # the newest commit whose daily run and the two dailies after it were green, writes release notes from the squash titles
-# since the last v* tag, and opens one MANUAL RUN taste issue for `bun run manual` (or moves last week's open one).
+# since the last v* tag, and opens one MANUAL RUN taste issue (in the private manual-run repo) for `bun run manual` (or moves last week's open one).
 # The owner pushes the v tag and approves npm (npm-publish.yml), as before. Until the daily ring (#4493) has three greens
 # in a row it logs that there's nothing to pick and stays green.
 name: stable
@@ -25,7 +25,9 @@ jobs:
       contents: read
       issues: write
     env:
-      GH_TOKEN: ${{ github.token }}
+      # The taste issue lives in the private manual-run repo, which github.token can't reach: MANUAL_GH_TOKEN (a
+      # fine-grained token, read on this repo and issues: write on that one) can. Without it the job prints the issue.
+      GH_TOKEN: ${{ secrets.MANUAL_GH_TOKEN || github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # the tags and the squash titles since the last one

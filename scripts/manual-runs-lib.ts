@@ -5,6 +5,9 @@
 import { arr, int, obj, or, rec, str, type Of } from "../packages/util/src/guard.ts";
 import { SCENARIOS } from "../apps/agent-office/demo/scenarios.ts";
 
+/** Where MANUAL RUN issues live: a private repo, so the public board only shows real issues from people. */
+export const MANUAL_REPO = "QuinnsCode/rustybuns-manual";
+
 export const Issue = obj({ number: int(1, 1e7), title: str(500), body: str(100_000, { min: 0 }), url: str(500), labels: or(arr(obj({ name: str(100) }), 50), []) });
 export type Issue = Of<typeof Issue>;
 export const Issues = arr(Issue, 500);
@@ -42,7 +45,7 @@ const office = (n: number): Link[] =>
 
 export const RUNS: Record<number, Run> = {
   // Taste roll-ups (one row each, every old issue's links, "(was #N)" in the label)
-  5436: { app: "mythic-masters", links: [
+  12: { app: "mythic-masters", links: [
     { label: "Cornered rally (was #3517)", path: clash("jackalope", "sasquatch", "stadium") },
     { label: "Flyers land (was #3625)", path: clash("mothman", "hodag", "stadium") },
     { label: "Fight HUD (was #3962)", path: "/?a=jackalope&b=hodag&skin=stadium&watch=1&hud=classic" },
@@ -62,7 +65,7 @@ export const RUNS: Record<number, Run> = {
     { label: "World, touch (was #2747)", path: "/?world=1", phone: true },
     { label: "World with a pad (was #2747, #3188)", path: "/?world=1" },
   ] },
-  5437: { app: "mythic-masters", links: [
+  11: { app: "mythic-masters", links: [
     { label: "Title and New journey (was #3005, #2974, #3116, #3749)", path: "/" },
     { label: "Title on a phone (was #3005)", path: "/", phone: true },
     { label: "Night, Gary and the lanterns (was #3780, #4487, #4474, #4461)", path: "/?world=1&a=jackalope" },
@@ -70,26 +73,26 @@ export const RUNS: Record<number, Run> = {
     ...["office", "institute", "lamplighters"].map((f) => ({ label: `${f}.1 (was #4309)`, path: `/?faction=${f}.1` })),
     ...[4, 8].flatMap((n) => ["office", "institute", "lamplighters"].map((f) => ({ label: `${f}.${n} (was #4318)`, path: `/?faction=${f}.${n}` }))),
   ] },
-  5438: { app: "mythic-masters", links: [
+  10: { app: "mythic-masters", links: [
     { label: "Team fight (was #4414)", path: "/?a=hodag&with=jackalope&b=mothman&skin=stadium" },
     { label: "Team fight on the phone (was #4414)", path: "/?a=hodag&with=jackalope&b=mothman&skin=stadium", phone: true },
     { label: "Two a side, watched (was #4414)", path: "/?a=hodag&with=jackalope&b=mothman&and=squonk&skin=stadium&watch=1" },
     { label: "Den room, first window (was #4431)", path: "/?world=1&room=TASTE1" },
     { label: "Den room, second window (was #4431)", path: "/?world=1&room=TASTE1" },
   ] },
-  5439: { app: "fmDaw", links: [
+  9: { app: "fmDaw", links: [
     { label: "Q Amp 3D stage, Q Drive (was #5172, #5068)", path: "/amp.html" },
     { label: "Gear room: split threads, pedal wall (was #5114, #5068)", path: "/studio.html" },
     { label: "The desk: Shape, takes, web plugin (was #4504, #4819, #4930, #5361)", path: "/" },
     { label: "Jam room feel (was #5147)", path: "/jam.html" },
   ] },
-  5440: { app: "fmDaw", links: [
+  8: { app: "fmDaw", links: [
     { label: "Sesh, first window (was #5376, #5264)", path: "/sesh/taste" },
     { label: "Sesh, second window (was #5376, #5264)", path: "/sesh/taste" },
     { label: "Jam room (was #5025)", path: "/jam.html" },
   ] },
-  5441: { app: "office", links: [...office(2430), ...office(2568), { label: "Box first run, phone (was #2568)", path: "/?scenario=box-first-run", phone: true }, { label: "GitHub writes (was #2961)", path: "/?scenario=writes-grants" }] },
-  5445: { app: "delayed", links: [...["snap", "rush", "warren", "chase"].map((name) => ({ label: `${name} (was #3215)`, path: `/?setup=${name}&level=3` })), { label: "warren's drop (was #3215)", path: "/?setup=warren&level=3&beat=128" }, { label: "snap on the phone (was #3215)", path: "/?setup=snap&level=3", phone: true }, { label: "Stab (was #2605)", path: dr("&stem=dub") }, { label: "Growl (was #2605)", path: dr("&stem=bass") }, { label: "Drums (was #2605)", path: dr("&stem=drums") }, { label: "Call and answer (was #2605)", path: dr("&beat=28") }, { label: "Everything (was #2605)", path: dr("") }] },
+  7: { app: "office", links: [...office(2430), ...office(2568), { label: "Box first run, phone (was #2568)", path: "/?scenario=box-first-run", phone: true }, { label: "GitHub writes (was #2961)", path: "/?scenario=writes-grants" }] },
+  3: { app: "delayed", links: [...["snap", "rush", "warren", "chase"].map((name) => ({ label: `${name} (was #3215)`, path: `/?setup=${name}&level=3` })), { label: "warren's drop (was #3215)", path: "/?setup=warren&level=3&beat=128" }, { label: "snap on the phone (was #3215)", path: "/?setup=snap&level=3", phone: true }, { label: "Stab (was #2605)", path: dr("&stem=dub") }, { label: "Growl (was #2605)", path: dr("&stem=bass") }, { label: "Drums (was #2605)", path: dr("&stem=drums") }, { label: "Call and answer (was #2605)", path: dr("&beat=28") }, { label: "Everything (was #2605)", path: dr("") }] },
   5096: { app: "loadIn", links: [{ label: "Cable feel room", path: "/feel.html" }, { label: "DJ booth, wired", path: "/?level=dj-booth&wired=1" }, { label: "Menu", path: "/" }, { label: "First gig", path: "/?level=first-gig" }, { label: "Feel room, phone", path: "/feel.html", phone: true }] },
   4889: { app: "loadIn", links: ["garage", "dive-bar", "bigger-bar"].map((l) => ({ label: l, path: `/?level=${l}` })) },
   4959: { app: "loadIn", links: [{ label: "Desert", path: "/?level=desert" }] },
@@ -105,7 +108,7 @@ export const RUNS: Record<number, Run> = {
   2261: { app: "twoFronts", links: ["desert", "city", "beach", "station"].map((w) => ({ label: w, path: battle(`world=${w}`) })) },
   1986: { app: "qcrm", links: [{ label: "Home", path: "/" }, { label: "Demo", path: "/demo" }, { label: "Contacts", path: "/app?scenario=populated" }, { label: "Webhooks", path: "/app?scenario=webhooks" }, { label: "Phone", path: "/app?scenario=populated", phone: true }] },
   2702: { app: "mythic-masters", links: [{ label: "Jackalope vs Jersey Devil", path: clash("jackalope", "jersey-devil", "stadium") }, { label: "Jersey Devil vs hodag", path: clash("jersey-devil", "hodag", "stadium") }, { label: "Jersey Devil vs hodag, volcano", path: clash("jersey-devil", "hodag", "volcano") }, { label: "Jersey Devil vs hodag, sky island", path: clash("jersey-devil", "hodag", "sky") }] },
-  2513: { app: "office", links: office(2513) },
+  111: { app: "office", links: office(111) },
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },
   4212: { app: "twoFronts", links: [{ label: "Title", path: "/" }, { label: "Title, phone", path: "/", phone: true }, { label: "Short war, Marines (then New campaign for the lobby)", path: "/?war=short&side=marines&vs=ai" }] },
@@ -114,7 +117,7 @@ export const RUNS: Record<number, Run> = {
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
-  2738: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
+  105: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
   3576: { app: "gitRecon", links: [{ label: "Title", path: "/" }, { label: "Loadout", path: "/?screen=loadout" }, { label: "Settings", path: "/?screen=settings" }, { label: "Won", path: "/?screen=won" }, { label: "Lost", path: "/?screen=lost" }, { label: "Title on a phone", path: "/", phone: true }, { label: "Won on a phone", path: "/?screen=won", phone: true }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
@@ -126,7 +129,7 @@ export const RUNS: Record<number, Run> = {
 export const PARKED: Record<number, string> = {
   609: "roll-up, not a task",
   2333: "needs full Xcode",
-  2307: "handled when it comes up",
+  114: "handled when it comes up",
   2330: "low priority",
   2348: "Delayed Reaction phone checks wait for its UI",
   2356: "Delayed Reaction phone checks wait for its UI",
@@ -164,6 +167,6 @@ export function answer(number: number, yes: boolean, note: string): string[][] {
   const said = note.trim() ? `\n\n${note.trim()}` : "";
   const n = String(number);
   return yes
-    ? [["gh", "issue", "comment", n, "--body", `Yes, checked in the manual-run window (\`bun run manual\`).${said}`], ["gh", "issue", "close", n]]
-    : [["gh", "issue", "comment", n, "--body", `No, from the manual-run window (\`bun run manual\`); left open.${said || "\n\n(no note)"}`]];
+    ? [["gh", "issue", "comment", n, "--repo", MANUAL_REPO, "--body", `Yes, checked in the manual-run window (\`bun run manual\`).${said}`], ["gh", "issue", "close", n, "--repo", MANUAL_REPO]]
+    : [["gh", "issue", "comment", n, "--repo", MANUAL_REPO, "--body", `No, from the manual-run window (\`bun run manual\`); left open.${said || "\n\n(no note)"}`]];
 }
