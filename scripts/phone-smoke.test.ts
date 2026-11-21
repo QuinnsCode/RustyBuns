@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchChrome, load, openTab } from "./chrome.ts";
+import { chromeStartMs, launchChrome, load, openTab } from "./chrome.ts";
 import { analyze, appStatus, board, mergeReports, pageAudit, shardOf, type Audit, type Control } from "./phone-smoke-lib.ts";
 
 const ctl = (label: string, o: Partial<Control> = {}): Control => ({ tag: "button", label, x: 10, y: 10, w: 100, h: 40, shown: true, obscured: false, ...o });
@@ -98,4 +98,4 @@ test("the audit calls a button covered when something sits on it, not when its l
     const covered = audit.controls.filter((c) => c.obscured).map((c) => c.label);
     expect(covered).toEqual(["Help"]);
   } finally { chrome.stop(); }
-}, 30_000); // a fresh Chrome on a CI runner takes several seconds to start
+}, chromeStartMs + 30_000); // past Chrome's own start-or-explain budget, so a stall on a cold CI runner says why (#4915)
