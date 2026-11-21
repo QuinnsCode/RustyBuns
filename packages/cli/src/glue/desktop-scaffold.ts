@@ -126,6 +126,26 @@ export function rustybuns(): Plugin {
   return out;
 }
 
+/**
+ * A client-only SPA's vite config with the boundary plugin first in `plugins` (#4815), so a page that imports a
+ * "use server" module gets the host proxy, not the module and its node:fs. `from` is the import path to
+ * .rustybuns/vite.ts from the config. The same text when it already loads it; null when there is no
+ * `defineConfig({` or `plugins: [` to put it in (init then prints the two lines to add).
+ */
+export function wireBoundaryPlugin(src: string, from: string): string | null {
+  if (/\.rustybuns\/vite(\.ts)?["']/.test(src)) return src;
+  const body = /plugins\s*:\s*\[/.test(src) ? src.replace(/plugins\s*:\s*\[/, (m) => `${m}rustybuns(), `)
+    : /defineConfig\(\s*\{/.test(src) ? src.replace(/defineConfig\(\s*\{/, (m) => `${m} plugins: [rustybuns()],`) : null;
+  if (body === null) return null;
+  const line = `import { rustybuns } from ${JSON.stringify(from)};\n`;
+  // After the last top-level import, so it reads with the others.
+  const imports = [...body.matchAll(/^import[^;]*?from\s*["'][^"']+["'];?[^\n]*\n/gm)];
+  const last = imports.at(-1);
+  if (!last) return line + body;
+  const at = last.index! + last[0].length;
+  return body.slice(0, at) + line + body.slice(at);
+}
+
 /** "--entry ./src/App.tsx#App": the part after # is a named export; without it, the default export. */
 export function entryName(entry: string): string { return entry.split("#")[1] || "App"; }
 

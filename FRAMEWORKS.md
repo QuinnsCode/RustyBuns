@@ -154,7 +154,7 @@ CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scrip
 
 ## Adding a framework
 
-1. Copy the nearest example: `apps/hono-example` for a plain Worker, `apps/nuxt-example` for a built Worker plus assets, `apps/svelte-spa-example` for a client-only SPA. A Vite SPA with `"use server"` modules also needs the boundary plugin in `vite.config.ts` and `rustybuns boundary` before its web build. `init` doesn't add them yet ([#4815](https://github.com/QuinnsCode/RustyBuns/issues/4815)): see [that README](apps/svelte-spa-example/README.md#the-two-hand-edits). Without them the page is blank.
+1. Copy the nearest example: `apps/hono-example` for a plain Worker, `apps/nuxt-example` for a built Worker plus assets, `apps/svelte-spa-example` for a client-only SPA. For a Vite SPA with `"use server"` modules, `init` adds the boundary plugin to `vite.config.ts` and `rustybuns boundary` before its web build ([that README](apps/svelte-spa-example/README.md#what-init-wires-in-for-the-action)).
 2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config.
 3. `test/desktop.test.ts` is one line: `test("...", () => counterJourney(join(import.meta.dir, "..")))`.
 4. A row in `scripts/ci-apps.ts` with `test: "bun test test"` and `boot: true`, so tier 1 and the journey run on every PR that touches it.

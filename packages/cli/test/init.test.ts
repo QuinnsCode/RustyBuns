@@ -404,6 +404,42 @@ test("init: a plain Vite SPA goes on the web as an assets-only Worker; one with 
   expect(k.read("rustybuns.config.ts")).not.toContain('"edge"');
 });
 
+test("init: a Vue SPA whose page imports a \"use server\" module gets the host proxy in its own build, no hand edits (#4815)", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "vspa", scripts: { dev: "vite", build: "vite build" }, dependencies: { vue: "^3" }, devDependencies: { vite: "^8", "@vitejs/plugin-vue": "^6" } }, null, 2),
+    "bun.lock": "",
+    "index.html": '<div id="app"></div><script type="module" src="/src/main.ts"></script>',
+    "vite.config.ts": 'import { defineConfig } from "vite";\nimport vue from "@vitejs/plugin-vue";\n\nexport default defineConfig({ plugins: [vue()] });\n',
+    "src/main.ts": 'import { increment } from "./actions/counter";\ndocument.body.onclick = () => increment();\n',
+    "src/actions/counter.ts": '"use server";\nimport { homedir } from "node:os";\nexport async function increment() { return homedir(); }\n',
+    // Just enough of vite and the Vue plugin for the config to load.
+    "node_modules/vite/package.json": '{"name":"vite","type":"module","main":"index.js"}',
+    "node_modules/vite/index.js": "export const defineConfig = (c) => c;\n",
+    "node_modules/@vitejs/plugin-vue/package.json": '{"name":"@vitejs/plugin-vue","type":"module","main":"index.js"}',
+    "node_modules/@vitejs/plugin-vue/index.js": 'export default () => ({ name: "vite:vue" });\n',
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  // The page's build, as vite runs it: the first plugin resolves the page's import of the action.
+  const probe = `const { default: c } = await import("./vite.config.ts");
+const real = process.cwd() + "/src/actions/counter.ts";
+const id = await c.plugins[0].resolveId.call({ resolve: async () => ({ id: real }) }, "./actions/counter", process.cwd() + "/src/main.ts", {});
+console.log(JSON.stringify({ names: c.plugins.map((x) => x.name), id: typeof id === "string" ? id.slice(process.cwd().length) : id, real }));`;
+  const look = () => { const x = Bun.spawnSync(["bun", "-e", probe], { cwd: p.dir }); expect(x.stderr.toString()).toBe(""); return JSON.parse(x.stdout.toString()); };
+  const seen = look();
+  expect(seen.names).toEqual(["rustybuns-boundary", "vite:vue"]);
+  expect(seen.id).toMatch(/^\/\.rustybuns\/actions\/.+\.ts$/);
+  expect(existsSync(join(p.dir, seen.id))).toBe(true);
+  // Every build that loads the config makes .rustybuns/vite.ts first.
+  const pkg = JSON.parse(p.read("package.json"));
+  expect(pkg.scripts.build).toBe("rustybuns boundary && vite build");
+  expect(p.read("rustybuns.config.ts")).toContain('"build": "bunx rustybuns boundary && bunx vite build --outDir dist/web --emptyOutDir"');
+  // init again (--force) doesn't add the plugin twice.
+  expect(p.run("init", "--force").code).toBe(0);
+  expect(look().names).toEqual(["rustybuns-boundary", "vite:vue"]);
+  expect(JSON.parse(p.read("package.json")).scripts.build).toBe("rustybuns boundary && vite build");
+});
+
 test("init: a repo whose app is a folder down names that folder instead of refusing blind", () => {
   // A self-hosted app: the Vite frontend and a plain Node API side by side, a root package.json for tooling.
   const p = project({ "package.json": JSON.stringify({ devDependencies: { "js-yaml": "^4" } }), "frontend/package.json": VITE, "frontend/src/main.tsx": "", "api/package.json": JSON.stringify({ scripts: { start: "node server.js" } }) });
