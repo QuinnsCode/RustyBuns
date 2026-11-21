@@ -1,0 +1,17 @@
+{
+  "test/achievements.test.ts": 123,
+  "test/bots.test.ts": 831,
+  "test/cinematic.test.ts": 59,
+  "test/client.test.ts": 382,
+  "test/contrast.test.ts": 38,
+  "test/eqosys.test.ts": 62,
+  "test/fluid.test.ts": 3422,
+  "test/input.test.ts": 33,
+  "test/lan.test.ts": 5631,
+  "test/match.test.ts": 120,
+  "test/room.test.ts": 181,
+  "test/sim-native.test.ts": 771,
+  "test/sim.test.ts": 113,
+  "test/wire.test.ts": 19,
+  "test/worker.test.ts": 2434
+}

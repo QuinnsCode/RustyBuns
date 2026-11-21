@@ -1,0 +1,9 @@
+{
+  "test/boxes.test.ts": 0,
+  "test/decimate.test.ts": 21,
+  "test/eqosys.test.ts": 9,
+  "test/lessons.test.ts": 4,
+  "test/rooms.test.ts": 66,
+  "test/round.test.ts": 3,
+  "test/score.test.ts": 4
+}

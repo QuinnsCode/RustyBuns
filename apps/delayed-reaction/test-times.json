@@ -1,0 +1,10 @@
+{
+  "test/dub.test.ts": 12,
+  "test/eqosys.test.ts": 14,
+  "test/hallway.test.ts": 4,
+  "test/runner.test.ts": 4,
+  "test/scenario.test.ts": 13,
+  "test/sim.test.ts": 26,
+  "test/stems.test.ts": 87,
+  "test/tutorial.test.ts": 31409
+}

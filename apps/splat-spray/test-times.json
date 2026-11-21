@@ -1,0 +1,15 @@
+{
+  "tests/alias.test.ts": 31,
+  "tests/captured.test.ts": 180,
+  "tests/eqosys.test.ts": 31,
+  "tests/first-room.test.ts": 50330,
+  "tests/gun.test.ts": 120,
+  "tests/match.test.ts": 287,
+  "tests/party.test.ts": 345,
+  "tests/reveal.test.ts": 41,
+  "tests/room.test.ts": 5982,
+  "tests/signups.test.ts": 13,
+  "tests/spray.test.ts": 26,
+  "tests/spy.test.ts": 18,
+  "tests/world.test.ts": 44784
+}
