@@ -395,6 +395,20 @@
         "wrangler": "4.156.0",
       },
     },
+    "apps/express-example": {
+      "name": "express-example",
+      "version": "0.1.0",
+      "dependencies": {
+        "express": "5.3.0",
+        "pg": "8.23.1",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "@electric-sql/pglite-socket": "^0.2.11",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+      },
+    },
     "apps/fm-daw": {
       "name": "fm-daw",
       "version": "0.0.1",
