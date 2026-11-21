@@ -708,6 +708,8 @@ const harness = {
   festFace: (stage: fest.StageKey, deg: number) => fest.face(world, stage, deg),
   /** Festival: build a stage's subs "omni" or "cardioid", standing by it. */
   festSubs: (stage: fest.StageKey, mode: "omni" | "cardioid") => fest.subs(world, stage, mode),
+  /** Festival: lift a stage's tops over the crowd (true) or bring them down, standing by it. */
+  festLift: (stage: fest.StageKey, on = true) => fest.lift(world, stage, on),
   /** Festival: a stage's master fader in dB, at its desk. */
   festFader: (stage: fest.StageKey, db: number) => fest.master(world, stage, db),
   /** Festival: put a load (tent-rack, open-lights, traders-2, ...) on "L1" | "L2" | "L3" or null, at the compound. */

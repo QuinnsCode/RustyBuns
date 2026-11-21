@@ -1,13 +1,14 @@
 // The local festival as a crew works it, in the real order: push each stage's amp rack 60 m from the compound to the
 // back of its stage, carry each desk out to its mix position, put every load on a phase and run each stage a feeder
 // thick enough, run the snakes, then aim. Facing each other with omni subs, each stage bleeds into the other's audience
-// and the subs boom at the fence; turned away from each other with cardioid subs, it passes. A rack left by the desk
+// and the subs boom at the fence; turned away from each other with cardioid subs, it passes at soundcheck, but with the crowd in the
+// tops at head height fire through every row, until they're lifted over the heads. A rack left by the desk
 // drives 40 m of speaker cable and loses level. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newWorld, push, pickUp, putDown, type World } from "../src/sim.ts";
 import { type Cables, newCables, walkWith } from "../src/cables/cables.ts";
 import { letIn } from "../src/crowd/crowd.ts";
-import { FENCE_LIMIT, FESTIVAL, COMPOUND, NEAR_DB, STAGE_KEYS, type StageKey, crowdSpot, face, feeder, festivalState, master, mixSpot, onStage, phase, rig, run, snake, subs } from "../src/venues/festival.ts";
+import { FENCE_LIMIT, FESTIVAL, COMPOUND, NEAR_DB, STAGE_KEYS, type StageKey, crowdSpot, face, feeder, festivalState, lift, master, mixSpot, onStage, phase, rig, run, show, snake, subs } from "../src/venues/festival.ts";
 
 setDefaultTimeout(60_000);
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
@@ -90,7 +91,7 @@ test("facing each other with omni subs, the stages bleed into each other and the
   expect(apart.houses!).toBeLessThan(facing.houses!);
 
   // Show time: 2,000 come in, half in front of each stage wherever it faces now. The stacks stand at head height, so
-  // each audience hears less of them through the bodies; that score is shown, and the show still pays on soundcheck's.
+  // each audience hears less of them through the bodies, and the show is scored as the crowd hears it.
   letIn(w, crowdSpot(w));
   const withCrowd = festivalState(w);
   expect(withCrowd.people.count).toBeGreaterThan(1900);
@@ -100,10 +101,26 @@ test("facing each other with omni subs, the stages bleed into each other and the
     expect(withCrowd.full.stages[STAGE_KEYS[k]!]!.covered).toBeLessThan(apart.stages[STAGE_KEYS[k]!]!.covered);
   }
   expect(withCrowd.full.score).toBeLessThan(withCrowd.score);
+  expect(show(w).sound).toBe(withCrowd.full.score);
+
+  // Lift the tops over the heads: the tent's stacks onto scaffold wings, the open stage's pairs flown from its roof.
+  for (const k of STAGE_KEYS) {
+    const s = onStage(k, rig(w).yaw[k], 0, 0);
+    go(w, c, s.x + 1, s.z + 1);
+    expect(lift(w, k, true)).toEqual({ ok: true });
+  }
+  expect(lift(w, "tent", true)).toMatchObject({ ok: false }); // standing at the open stage
+  const lifted = festivalState(w);
+  for (const k of STAGE_KEYS) {
+    expect(lifted.stages[k]!.lifted).toBe(true);
+    expect(lifted.full.stages[k]!.covered).toBeGreaterThan(withCrowd.full.stages[k]!.covered + 0.2);
+  }
+  expect(lifted.full.score).toBeGreaterThan(withCrowd.full.score + 10);
 
   // An hour of the show: the songs rise and fall, and the 15-minute LAeq at each desk stays inside the licence.
   run(w, 3600);
-  expect(festivalState(w)).toMatchObject({ licenceOk: true, curfewOk: true, pass: true });
+  expect(festivalState(w)).toMatchObject({ licenceOk: true, curfewOk: true, pass: true, full: { pass: true } });
+  expect(show(w).sound).toBe(festivalState(w).full.score);
 });
 
 test("a rack left by the desk drives 40 m of speaker cable and loses level", () => {
