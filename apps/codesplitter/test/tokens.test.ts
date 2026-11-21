@@ -134,7 +134,7 @@ describe("GET /api/openapi.json", () => {
       "create_mirror", "create_repo", "decide_dexter_trim", "delete_branch_file", "delete_mervin_learning", "delete_program", "delete_repo",
       "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land", "make_tag", "merge_branch", "merge_clean_branches",
       "push_branch_upstream", "push_tag_upstream", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token",
-      "revoke_invite", "run_cut", "set_check_settings", "set_city", "set_dexter", "set_mervin_learning", "set_private_lines", "set_protect_main",
+      "revoke_invite", "run_cut", "set_check_settings", "set_city", "set_deploy_settings", "set_dexter", "set_mervin_learning", "set_private_lines", "set_protect_main",
       "set_repo_visibility", "share_lines", "start_agent", "start_try", "stop_agents", "sync_mirror", "take_upstream", "turn_into_mirror", "unfollow",
       "unstamp_line", "update_check", "update_me", "withdraw_beam"]);
   });
