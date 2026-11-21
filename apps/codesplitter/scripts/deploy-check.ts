@@ -3,7 +3,7 @@
 // faked: clone, bun install, rustybuns deploy and the check all run, and the Worker stays up afterwards.
 //
 //   bun scripts/deploy-check.ts                          a throwaway one-Worker app, deployed twice (the second updates the same Worker)
-//   bun scripts/deploy-check.ts --app ../hono-example    a Rusty Buns app folder instead (its `workspace:` ranges become npm's versions)
+//   bun scripts/deploy-check.ts --app ../frameworks/hono-example    a Rusty Buns app folder instead (its `workspace:` ranges become npm's versions)
 //     --cli local        this checkout's @rustybuns packages (packed) and the pinned deploy set, in place of npm's: what a user
 //                        gets after the next release and `rustybuns add deploy`
 //     --try              Ship's Build and plan first (clone, install, init, infra, plan --offline), then the deploys below
