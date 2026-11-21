@@ -308,6 +308,16 @@ What would take someone else the longest to build:
 > They're off by default on Cloudflare.
 > Run it on a machine you trust and read the code before you point it at anything that matters.
 
+## Built, off for now: ask for it
+
+Some features are built and tested but switched off on the hosted site, because they bill by use.
+If you'd use one, say so: [theqntbr@gmail.com](mailto:theqntbr@gmail.com?subject=codeSplitter%3A%20switch%20on%20search%20by%20meaning).
+It's a maybe, not a promise.
+
+- **Search by meaning.** Ask for "add two numbers" and get `function sum(a, b)`, across every repo you can see, not just files with your words in them.
+  Each file's chunks go through a small Workers AI model into one Vectorize index (`src/search.ts`, `CODESPLITTER_VECTORS=1`); private lines never go in, and search keeps to what you may read.
+  Off, search reads the files themselves and matches words.
+
 ## Read more
 
 - [REFERENCE.md](REFERENCE.md): every feature in detail, every route, deploying the site, accounts, hosted agents and deploys, and where the code lives
