@@ -2,18 +2,19 @@
 //
 //   bun run office:sweep                         what it would free, GB per item
 //   bun run office:sweep -- --go                 free it
-//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, modules, worktrees)
+//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, playwright, modules, worktrees)
 //   bun run office:sweep -- --repo <dir> --keep <dir>
 //
 // Repos default to every ~/agent-office/<owner>/<repo> with an .agent-office folder. `--keep` adds checkouts whose
 // bun.lock the Bun cache must keep (your own clones elsewhere; a missed one only costs a download, nothing breaks).
-// `modules` deletes node_modules of worktrees no worker sits at (asks `office-workers list`, skips if the office is down).
+// `modules` deletes node_modules and git-ignored dist/target/.wrangler/tmp of worktrees no worker sits at (asks
+// `office-workers list`, skips if the office is down). `playwright` deletes browser builds no playwright-core names.
 // `worktrees` only lists: sending a worker home is the owner's call. ~/Downloads and anything else you made is never read.
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
-import { caches, duKb, gb, listTrees, pruneBunCache, sweepModules, sweepScratch } from "../live/sweep.ts";
+import { caches, duKb, gb, listTrees, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
 
 const args = process.argv.slice(2);
 const go = args.includes("--go");
@@ -75,13 +76,19 @@ if (want("caches")) {
   }
 }
 
+if (want("playwright")) {
+  const r = await prunePlaywright([...repos, ...many("--keep")], go);
+  total += r.bytes;
+  console.log(r.refused ? `Playwright builds: skipped, ${r.refused}` : `Playwright builds: ${r.paths.length} no playwright-core names (of ${r.locks} installs), ${verb} ${gb(r.bytes)}`);
+}
+
 if (want("modules")) {
   for (const repo of repos) {
     const live = await seatedTrees(repo);
-    if (!live) { console.log(`node_modules of empty desks in ${repo.replace(homedir(), "~")}: skipped, \`office-workers list\` didn't answer (is the office up?)`); continue; }
-    const r = await sweepModules(repo, live, go);
+    if (!live) { console.log(`node_modules and build output of empty desks in ${repo.replace(homedir(), "~")}: skipped, \`office-workers list\` didn't answer (is the office up?)`); continue; }
+    const r = await sweepBuilt(repo, live, go);
     total += r.bytes;
-    console.log(`node_modules of worktrees nobody sits at in ${repo.replace(homedir(), "~")}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)} (du counts APFS clones in full, so it frees less)`);
+    console.log(`node_modules and build output of worktrees nobody sits at in ${repo.replace(homedir(), "~")}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)} (du counts APFS clones in full, so it frees less)`);
   }
 }
 
