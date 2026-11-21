@@ -569,7 +569,7 @@ async function boot() {
   accountChip($("account"), { onSignIn: () => menu(), onSignOut: () => menu() });
   savedDial();
   mountDial($("dial-host"));
-  if (!asked) tourView = mountTour($("tour-host"), () => tour, (t) => { tour = t; saveTour(t); });
+  if (!asked) tourView = mountTour($("tour-host"), () => tour, (t) => { tour = t; saveTour(t); }, $("home-host"));
   clock = mountClock($("hud"));
   loadOut = mountStrike($("hud"));
   $("party").hidden = !canSignIn();
