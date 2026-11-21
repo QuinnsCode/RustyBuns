@@ -2,7 +2,7 @@
 
 Games, music makers and 3D tools you can run on your own computer. This page covers the ones made to play with; every app, frameworks and test fixtures included, is in the [README](README.md#see-it-work). Pick one, paste two lines into the terminal, and it opens in a window.
 
-(These live in `apps/`. They are not part of any published package: installing `@rustybuns/cli` never downloads them.)
+(These live in `apps/`; the framework samples, which prove `rustybuns init` reads each framework, sit apart in [`apps/frameworks/`](apps/frameworks/README.md). They are not part of any published package: installing `@rustybuns/cli` never downloads them.)
 
 ## Before your first app (do this once)
 
@@ -496,7 +496,7 @@ Open the address it prints. Everything lives in memory, so it starts empty each 
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
 | [splat-spray](apps/splat-spray/README.md) | A three.js SPA made a desktop app by a short config; online play is a Worker with a World Durable Object | Small |
-| [spa-example](apps/spa-example/README.md) | A test fixture, not an app: a slice of a real RWSDK game that `glue.test.ts` uses to check `init` and the boundary report | None (never built) |
+| [spa-example](apps/frameworks/spa-example/README.md) | A test fixture, not an app: a slice of a real RWSDK game that `glue.test.ts` uses to check `init` and the boundary report | None (never built) |
 | [example](apps/example/README.md) | Worker mode: a hand-written Worker with D1, KV and a Durable Object as a binary, plus a probe for the sample Rust crate | Small |
 | [TerraViz](apps/terraviz-demo/README.md) | A demonstration, not ours: The Zyra Project's Pages app (Apache-2.0, led by Eric Hackathorn), cloned and run with its code unchanged by `bun apps/terraviz-demo/run.ts`. It drove `rustybuns pages-functions` and several Pages fixes | Large (its own toolchain) |
 | [elysia-conduit](apps/frameworks/elysia-conduit/RUSTYBUNS.md) | A demonstration, not ours: bedstack's RealWorld backend (MIT, Elysia + Drizzle + postgres.js) with no source edits, as a desktop binary on PGlite that passes their Postman suite; what breaks on Workers is written down | Medium (PGlite adds about 17 MB) |
