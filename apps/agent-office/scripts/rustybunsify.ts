@@ -4,6 +4,7 @@
 //   bun scripts/rustybunsify.ts                  fetch the pinned release into ./office, swap node-pty for the Bun shim
 //   bun scripts/rustybunsify.ts compile          ...then build ./dist/agent-office-<os>-<arch>, one self-contained file
 //   bun scripts/rustybunsify.ts compile --all    ...for darwin-arm64, darwin-x64, linux-x64 and linux-arm64
+//   compile --aot                                ...plus dist/agent-office-<os>-<arch>-aot, Bun's experimental AOT (scripts/aot.ts)
 //   --check                                      type check our code (tsconfig.json) first; nothing is built on errors
 //   --only=skin,pages,live                       rebuild just those of ./office (office:dev); needs an up-to-date ./office
 //   --timings                                    print how long each stage took
@@ -30,6 +31,7 @@ import { slowCheckout } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
+import { aotName, requireAot } from "./aot.ts";
 
 const root = path.dirname(import.meta.dir);
 const office = path.join(root, "office");
@@ -41,6 +43,9 @@ if (!sha256) {
   throw new Error(`AGENT_OFFICE_TAG=${tag} needs AGENT_OFFICE_SHA256 too: ` +
     `gh release view ${tag} -R ${REPO} --json assets --jq '.assets[]|select(.name=="agent-office.tgz").digest'`);
 }
+const aot = process.argv[2] === "compile" && process.argv.includes("--aot");
+// before the check and the prepare, so a Bun without it fails in a second, not after the whole build
+if (aot) await requireAot();
 if (process.argv.includes("--check")) {
   const r = await $`bun check -p ${path.join(root, "tsconfig.json")} --no-pretty`.nothrow();
   if (r.exitCode !== 0) throw new Error("type errors; nothing was built. Drop --check to build anyway.");
@@ -588,6 +593,15 @@ if (helper === "workers") {
     await $`bun build --compile --minify-syntax --target=bun-${t} ${path.join(gen, "entry.js")} --outfile ${out}`.cwd(office).quiet();
     const mb = (Bun.file(out).size / 1e6).toFixed(0);
     console.log(`   ✓ dist/agent-office-${t}  ${mb} MB  ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  }
+  if (aot) {
+    // the same entry, ahead of time; only for this host (see aot.ts)
+    const out = aotName(path.join(root, "dist", `agent-office-${host}`));
+    rmSync(out, { force: true });
+    const t0 = performance.now();
+    await $`bun build --compile --aot --minify-syntax ${path.join(gen, "entry.js")} --outfile ${out}`.cwd(office).quiet();
+    const mb = (Bun.file(out).size / 1e6).toFixed(0);
+    console.log(`   ✓ dist/${path.basename(out)}  ${mb} MB  ${((performance.now() - t0) / 1000).toFixed(1)}s  (AOT, experimental)`);
   }
 }
 

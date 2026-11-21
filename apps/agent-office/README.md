@@ -24,6 +24,7 @@ bun run office:mama            # run the office; rebuild and swap it when bun, b
 bun run office:dev             # work on the office itself: watch the source, rebuild only what changed, restart only for server code
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
+bun run desktop:build -- --aot # + dist/agent-office-<os>-<arch>-aot, Bun's experimental AOT, once a Bun release ships it (#2216)
 bun run desktop:smoke          # start that binary on a temp floor, check /__rb/mem sees it and its pty host (CI does this on every Mac and Linux target)
 ```
 
