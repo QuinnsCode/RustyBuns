@@ -1,0 +1,22 @@
+{
+  "turns": [
+    {
+      "given": {
+        "a.js": "a\nb\nc\n"
+      },
+      "left": {
+        "a.js": "A\nB\nc\n"
+      },
+      "code": 0,
+      "out": "{\"type\":\"result\",\"result\":\"I uppercased the first two lines of `a.js`, so `a` and `b` are now `A` and `B`. Line 3 (`c`) is unchanged.\",\"session_id\":\"0a1b2c3d-0000-4000-8000-cassette0002\",\"usage\":{\"input_tokens\":6,\"output_tokens\":330,\"cache_creation_input_tokens\":2850,\"cache_read_input_tokens\":16499}}\n"
+    },
+    {
+      "given": {
+        "a.js": "human\nB\nc\n"
+      },
+      "left": {},
+      "code": 0,
+      "out": "{\"type\":\"result\",\"result\":\"I made no edits to `a.js`. Line 2 is already `B`, which is uppercase. Line 1 is `human`, which ryan changed from `A`. You told me to keep their changes, so I left it lowercase instead of turning it into `HUMAN`.\\n\\nIf you want line 1 uppercased anyway, tell me and I'll change it.\",\"session_id\":\"0a1b2c3d-0000-4000-8000-cassette0003\",\"usage\":{\"input_tokens\":4,\"output_tokens\":360,\"cache_creation_input_tokens\":2677,\"cache_read_input_tokens\":10170}}\n"
+    }
+  ]
+}

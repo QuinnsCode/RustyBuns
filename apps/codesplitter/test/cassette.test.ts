@@ -31,6 +31,35 @@ test("an agent run replayed from a cassette lands the recorded edit as the agent
   expect(doc.lines.map((l) => l.by)).toEqual(["agent-x", "ryan", "ryan", "ryan"]);
 });
 
+test("a recorded two-turn run: a person changes the line the agent was editing, and its second turn keeps their change", async () => {
+  const call = await boot();
+  opened.push(call);
+  const post = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
+  await post("/api/login", { name: "ryan" });
+  await post("/api/repos", { name: "r2", visibility: "public" });
+  await post("/api/repos/ryan/r2/collaborators", { name: "agent-x" });
+  await post("/api/repos/ryan/r2/files", { path: "a.js", content: "a\nb\nc" });
+  const read = async () => await (await call("ryan", "/api/repos/ryan/r2/do/file?path=a.js")).json() as Doc;
+
+  // Recorded with claude (test/fixtures/cassettes/conflict-rerun.json): it uppercased a and b; Ryan set line 1 as it worked.
+  const tape = cassette("conflict-rerun");
+  let turn = 0;
+  const r = await runAgent(call, {
+    user: "agent-x", owner: "ryan", repo: "r2", path: "a.js", harness: "claude", task: "uppercase the first two lines",
+    exec: async (cmd, cwd, signal, ear) => {
+      if (turn++ === 0) expect((await post("/api/repos/ryan/r2/do/ops?path=a.js", { ops: [{ kind: "set", line: "L1", base: (await read()).lines[0]!.rev, text: "human" }] })).status).toBe(200);
+      return tape(cmd, cwd, signal, ear);
+    },
+  });
+  expect([tape.turns(), r.runs]).toEqual([2, 2]);
+  expect(r.conflicts).toEqual([]);
+  if (process.env.CASSETTE !== "record") expect(r.spent).toBe(32_896);
+  // Its second turn saw Ryan's line and the B that landed, and left Ryan's line as he wrote it.
+  const doc = await read();
+  expect(text(doc)).toBe("human\nB\nc");
+  expect(doc.lines.map((l) => l.by)).toEqual(["ryan", "agent-x", "ryan"]);
+});
+
 test("a recording plays back what the CLI did, keeps none of its start-up lines, and stops when the file it was made on has changed", async () => {
   const work = (start: string) => { const d = mkdtempSync(join(scratch, "work-")); writeFileSync(join(d, "a.js"), start); return d; };
   // A stand-in for a signed-in CLI: it edits the file and answers as claude's stream does, start-up line first.
