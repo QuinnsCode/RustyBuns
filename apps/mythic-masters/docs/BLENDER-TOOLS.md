@@ -18,7 +18,7 @@ Run them from `apps/mythic-masters`. Everything they write to look at goes in `b
 | What | Command | Writes | Time |
 |---|---|---|---|
 | Build beasts (mesh, AO bake, decimate, rig) | `bun run beasts [id ...]` (`--render` is on) | `public/models/<id>.glb`, `<id>.rig.json`, `blender/out/<id>.png` | 1-5 s a beast warm, about 100 s for all 76 |
-| Rebuild one beast on save, hot-swap it in the gallery | `bun scripts/beasts.ts --watch <id>` (with `bun run dev` up) | the same | seconds per save |
+| Rebuild one beast on save, hot-swap it in the gallery | `bun scripts/beasts.ts --watch <id>` (with `bun run dev` up) | the same | seconds per save, in one warm Blender |
 | Silhouette test | `bun scripts/beasts.ts --silhouette <id>` | `blender/out/<id>.silhouette.png` | seconds |
 | Rig only (no Blender) | `bun scripts/beasts.ts --rig-only [id ...]` | `<id>.rig.json` | under 1 s |
 | Gallery close-ups, 4 x 4 per page | `bun scripts/beasts.ts --shots [page] --as before\|now` | `blender/out/shots/<label>/gallery-<n>.png` | headless Chrome |
@@ -42,7 +42,8 @@ What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) 
 ### In the browser (WebMCP and probe)
 
 - The gallery (`?gallery=<page>`) registers WebMCP tools in `src/gallery-agent.ts`: `beast_list`, `beast_focus`,
-  `beast_nudge` (dev only: `dev-beasts.ts` writes the sheet, rebuilds that one beast and hot-swaps it) and
+  `beast_nudge` (dev only: `dev-beasts.ts` writes the sheet, rebuilds that one beast in a warm Blender it keeps
+  open, `bun scripts/beasts.ts --serve`, and hot-swaps it) and
   `beast_silhouette`.
 - `bun run probe mythic-masters --js 'mythicMasters.gallery(0)'` reads the game's state with no tab to drive.
 
@@ -88,6 +89,9 @@ Add it to a run: `claude mcp add blender -- bun <repo>/apps/mythic-masters/scrip
 or `claude -p ... --mcp-config <file>` for one run. A Haiku worker on 2026-11-16 loaded the jackalope, counted its
 antler (328 triangles) and described a left view, all on Bob. The warm Blender also takes `build {script, args}`,
 a `.py` under its folder run as a fresh cold run would (`bun scripts/warm-blender.ts`); the MCP doesn't offer it.
+`bun scripts/beasts.ts --watch <id>` and `--serve` (one id a line on stdin, one `@@built {id, ok, log}` line
+back; the dev server's `beast_nudge` keeps one open) build through it (#3822). A failed build closes that Blender
+and the next build starts a fresh one.
 
 **What the spike measured (Bob, Blender 5.2.1, `-t 8`).**
 
@@ -141,6 +145,5 @@ Ours covers looking. If an agent needs a free hand in Blender, these are the ste
 
 ## What to build next (most value first)
 
-1. **`--watch` and `beast_nudge` on the warm Blender.** `warmBlender` is built and a warm build is byte for byte a
-   cold one, so the watch loop can keep one Blender and call `build` per save: about 0.8 s off each rebuild. (#3822)
-2. **`try_modifier` and `select_faces`** in the MCP, as above.
+1. **`try_modifier` and `select_faces`** in the MCP, as above. (`--watch` and `beast_nudge` on the warm Blender
+   are done, #3822.)
