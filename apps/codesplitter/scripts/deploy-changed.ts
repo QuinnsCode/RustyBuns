@@ -11,10 +11,11 @@
 // its rustybuns.config.ts; none, and it deploys twice instead), one at a time, and everything is torn down after.
 // It deploys to the Cloudflare account this Mac's wrangler is logged in to, about 3 to 5 min an example.
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { help } from "../../../scripts/help.ts";
+import { appDirs, appOf } from "../../../scripts/app-dirs.ts";
 
 /** Paths whose change can break any example's deploy, so a change there walks one example. */
 export const MACHINERY = [
@@ -29,7 +30,7 @@ export type Pick = { app: string; why: string };
 
 /** Which examples to walk: each one a changed file sits in, else (machinery changed) the rotation's pick for `day`. */
 export function pick(changed: string[], examples: string[], day: number): Pick[] {
-  const touched = examples.filter((e) => changed.some((f) => f.startsWith(`apps/${e}/`)));
+  const touched = examples.filter((e) => changed.some((f) => appOf(f) === e));
   if (touched.length) return touched.map((app) => ({ app, why: "its folder changed" }));
   const hit = changed.find((f) => MACHINERY.some((m) => f.startsWith(m)));
   if (!hit || !examples.length) return [];
@@ -51,15 +52,17 @@ if (import.meta.main) {
     return r.stdout.toString().split("\n").filter(Boolean);
   };
   const changed = [...new Set([...git("diff", "--name-only", `${a.base}...HEAD`), ...git("diff", "--name-only", "HEAD")])];
-  const examples = readdirSync(join(root, "apps")).filter((d) => d.endsWith("-example") && existsSync(join(root, "apps", d, "rustybuns.config.ts"))).sort();
+  // The framework samples: apps/frameworks/<name>, or an apps/<name>-example not moved there.
+  const dirs = new Map([...appDirs(root)].filter(([id, dir]) => (dir.startsWith("apps/frameworks/") || id.endsWith("-example")) && existsSync(join(root, dir, "rustybuns.config.ts"))));
+  const examples = [...dirs.keys()];
   const picks = pick(changed, examples, Math.floor(Date.now() / 86_400_000));
   if (!picks.length) { console.log(`nothing to walk: no example or deploy machinery changed since ${a.base}`); process.exit(0); }
   for (const p of picks) console.log(`${p.app}: ${p.why}`);
   if (a.list) process.exit(0);
   const failed: string[] = [];
   for (const { app } of picks) {
-    const drop = dropBinding(readFileSync(join(root, "apps", app, "rustybuns.config.ts"), "utf8"));
-    const cmd = ["bun", "scripts/deploy-check.ts", "--app", `../${app}`, "--cli", "local", "--try", "--preview", ...(drop ? ["--drop", drop] : [])];
+    const drop = dropBinding(readFileSync(join(root, dirs.get(app)!, "rustybuns.config.ts"), "utf8"));
+    const cmd = ["bun", "scripts/deploy-check.ts", "--app", `../../${dirs.get(app)!}`, "--cli", "local", "--try", "--preview", ...(drop ? ["--drop", drop] : [])];
     console.log(`\n== ${app}: ${cmd.join(" ")}`);
     const r = Bun.spawnSync(cmd, { cwd: join(root, "apps/codesplitter"), stdout: "inherit", stderr: "inherit" });
     if (!r.success) failed.push(app);

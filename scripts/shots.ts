@@ -9,6 +9,7 @@
 //   bun run shots mythic-masters --out /tmp/x  somewhere else
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { appDir } from "./app-dirs.ts";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 
 export const SIZES = { phone: { w: 390, h: 844, mobile: true }, tablet: { w: 820, h: 1180, mobile: true }, desk: { w: 1280, h: 800, mobile: false } } as const;
@@ -37,9 +38,9 @@ if (import.meta.main) {
   const argv = process.argv.slice(2), flag = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
   const app = argv.find((a) => !a.startsWith("-") && a !== flag("--only") && a !== flag("--out"));
   if (!app) { console.error("usage: bun run shots <app> [--only <name>] [--out <dir>]"); process.exit(2); }
-  const root = resolve(import.meta.dir, ".."), out = resolve(flag("--out") ?? join(root, "apps", app, "docs", `shots-${new Date().toISOString().slice(0, 10)}`));
+  const root = resolve(import.meta.dir, ".."), out = resolve(flag("--out") ?? join(root, appDir(app, root), "docs", `shots-${new Date().toISOString().slice(0, 10)}`));
   mkdirSync(out, { recursive: true });
-  const [chrome, vite] = await Promise.all([launchChrome(), startVite(join(root, "apps", app))]);
+  const [chrome, vite] = await Promise.all([launchChrome(), startVite(join(root, appDir(app, root)))]);
   try {
     // The scenes come from the page itself.
     const first = await openTab(chrome.cdp, { w: 1280, h: 800 });

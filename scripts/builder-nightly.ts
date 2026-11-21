@@ -14,6 +14,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { appDir } from "./app-dirs.ts";
 import { arr, bool, check, num, obj, or, raw, str, type Of } from "../packages/util/src/guard.ts";
 
 /** A GitHub matrix's rows, each still to be read (here desktop-drop's, in remote-ci ci-apps'): a row that isn't a job is skipped, not a failure. */
@@ -49,7 +50,7 @@ export function mine(matrix: unknown, only: string[] = []): Job[] {
 async function run(job: Job, root: string): Promise<Result> {
   const t0 = performance.now();
   const cmd = [job.prep, job.build].filter(Boolean).join(" && ");
-  const p = Bun.spawn(["sh", "-c", cmd], { cwd: path.join(root, "apps", job.app), stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd: path.join(root, appDir(job.app, root)), stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => p.kill(), 15 * 60_000);
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited;

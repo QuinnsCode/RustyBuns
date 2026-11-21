@@ -23,9 +23,11 @@ function readPkg(file: string): { name: string; version: string; private: boolea
     overrides: deps(p.get("overrides")),
   };
 }
-const pkgs = (dir: string) => readdirSync(join(repo, dir))
-  .map((d) => join(repo, dir, d, "package.json")).filter(existsSync)
-  .map((f) => ({ dir: f.split("/").at(-2) ?? f, ...readPkg(f) }));
+// apps/frameworks/ holds a level more: its samples' dir is "frameworks/<name>".
+const kids = (dir: string) => readdirSync(join(repo, dir)).flatMap((d) => dir === "apps" && d === "frameworks" ? readdirSync(join(repo, dir, d)).map((f) => `${d}/${f}`) : [d]);
+const pkgs = (dir: string) => kids(dir)
+  .map((d) => ({ d, f: join(repo, dir, d, "package.json") })).filter(({ f }) => existsSync(f))
+  .map(({ d, f }) => ({ dir: d, ...readPkg(f) }));
 
 const published = new Map(pkgs("packages").filter((p) => !p.private).map((p) => [p.name, p.version]));
 const apps = pkgs("apps");

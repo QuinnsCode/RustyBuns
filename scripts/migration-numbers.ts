@@ -6,6 +6,7 @@
 //   bun scripts/migration-numbers.ts     exit 1 on a clash not in KNOWN
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { appDirs } from "./app-dirs.ts";
 
 /** Pairs that shipped before this check. Applied in D1, so renaming them would run them twice. */
 export const KNOWN = new Set([
@@ -26,10 +27,9 @@ export function clashes(files: string[]): string[] {
 
 function dirs(root: string): string[] {
   const out: string[] = [];
-  for (const app of readdirSync(join(root, "apps"), { withFileTypes: true })) {
-    if (!app.isDirectory()) continue;
+  for (const dir of appDirs(root).values()) {
     for (const sub of ["migrations", "drizzle/migrations"]) {
-      try { readdirSync(join(root, "apps", app.name, sub)); out.push(`apps/${app.name}/${sub}`); } catch {}
+      try { readdirSync(join(root, dir, sub)); out.push(`${dir}/${sub}`); } catch {}
     }
   }
   return out;

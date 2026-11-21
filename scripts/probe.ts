@@ -19,6 +19,7 @@
 import { resolve } from "node:path";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 import { help } from "./help.ts";
+import { appDir } from "./app-dirs.ts";
 
 /** Each game's handle on `window`, the expression for its state, and the rest of what the handle does. */
 export const HANDLES: Record<string, { state: string; does: string }> = {
@@ -78,7 +79,7 @@ if (import.meta.main) {
   if (p.list) { console.log(listLines(p.app).join("\n")); process.exit(0); }
   if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
   const root = resolve(import.meta.dir, "..");
-  const server = p.url ? { url: p.url.replace(/\/?$/, "/"), stop: () => {} } : await startVite(resolve(root, "apps", p.app!));
+  const server = p.url ? { url: p.url.replace(/\/?$/, "/"), stop: () => {} } : await startVite(resolve(root, appDir(p.app!, root)));
   const chrome = await launchChrome();
   let code = 0;
   try {
