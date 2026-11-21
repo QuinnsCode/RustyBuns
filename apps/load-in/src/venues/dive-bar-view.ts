@@ -1,4 +1,4 @@
-// The dive bar on the page: the counter, the stage and the crowd area marked on the floor, the coverage heat map
+// The dive bar on the page: its dressing (dive-bar-dress.ts: brick, tiles, stools, taps, the door), the counter, the stage and the crowd area marked on the floor, the coverage heat map
 // (painted only when something moved, not every frame; mids and highs or the sub's bass), the aim keys and the score
 // card (touch.ts has the aim keys' touch pad). The card holds only the scores: each key is named in the centre prompt
 // when you look at what it works on (`aimHint`, `roomHint`). main.ts calls `barView`
@@ -9,6 +9,7 @@ import type { Band } from "@rustybuns/gear";
 import { CROWD, FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, aim, crowdState, heat, master, raise, rig, scores, show, type Score } from "./dive-bar.ts";
 import { crowdOf, letIn, move, type Mood } from "../crowd/crowd.ts";
 import { crowdView } from "../crowd/crowd-view.ts";
+import { diveBarDressing } from "./dive-bar-dress.ts";
 
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
 
@@ -80,6 +81,8 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
     mesh.position.set((z.x0 + z.x1) / 2, y + h / 2, (z.z0 + z.z1) / 2);
     g.add(mesh);
   };
+  const dressing = diveBarDressing(getWorld().level);
+  g.add(dressing.group);
   slab(ZONES.stage, 0, 0.012, mat(0x2a1f1a));
   slab(ZONES.counter, 0, 1.05, mat(0x4a2e1e));
   slab({ ...ZONES.counter, x1: ZONES.counter.x1 + 0.1 }, 1.05, 0.05, mat(0x6b4a2e));
@@ -161,7 +164,7 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
       view.update();
       return (opened = show(getWorld()));
     },
-    dispose() { people.dispose(); scene.remove(g); card.remove(); tex.dispose(); },
+    dispose() { people.dispose(); dressing.dispose(); scene.remove(g); card.remove(); tex.dispose(); },
   };
   return view;
 }

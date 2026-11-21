@@ -1,5 +1,5 @@
 // How a venue looks lit, and a light at your eyes. Each room gets the lights the real one has: a garage's two
-// fluorescent strips and a work light at the door, a bar's warm spots over the stage, a neon sign and the load-in work
+// fluorescent strips and a work light at the door, a bar's warm spots over the stage, neon words on its walls and the load-in work
 // light. A soft light rides with your eyes so whatever is in reach reads. Your hands are
 // src/hands/. View only: the sim never reads it.
 import * as THREE from "three";
@@ -22,7 +22,8 @@ export function readable(look: GearLook) {
   tune(look.rubber, 0x1e1e1e);
 }
 
-type Fixture = { kind: "strip" | "spot" | "neon" | "work"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number] };
+/** A neon's `word` is what its tubes spell; without one it is a plain looped tube. */
+type Fixture = { kind: "strip" | "spot" | "neon" | "work"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number]; word?: string };
 
 /** The fixtures in a room, from its size: where a real one would hang them. */
 export function fixtures(l: Level): Fixture[] {
@@ -47,10 +48,40 @@ export function fixtures(l: Level): Fixture[] {
     { kind: "spot", x: cx - 1.2, y: top, z: r.z0 + 2.6, color: 0xffc47a, power: 40, to: [cx - 0.6, 0, r.z0 + 1.2] },
     { kind: "spot", x: cx + 1.2, y: top, z: r.z0 + 2.6, color: 0xffb36a, power: 40, to: [cx + 0.6, 0, r.z0 + 1.2] },
     { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.6, color: 0xffd9a8, power: 9 },
-    { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.45, color: 0xff3fa4, power: 5 },
-    { kind: "neon", x: r.x0 + 0.03, y: 1.75, z: r.z0 + d * 0.7, color: 0x3fd8ff, power: 4 },
+    { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.45, color: 0xff3fa4, power: 5, word: "LIVE MUSIC" },
+    { kind: "neon", x: r.x0 + 0.03, y: 1.85, z: r.z0 + d * 0.7, color: 0x3fd8ff, power: 4, word: "Cold Beer" },
     work,
   ];
+}
+
+/** A neon word on a wall at `x` (facing into the room): the tubes drawn glowing on a canvas, on a dark backing board. */
+function neonWord(word: string, color: number, x: number, y: number, z: number): THREE.Group {
+  const g = new THREE.Group(), c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 256;
+  const ctx = c.getContext("2d")!, hex = `#${color.toString(16).padStart(6, "0")}`;
+  ctx.font = `italic bold 150px "Trebuchet MS", "Segoe Script", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  // Glow, then the tube, then its hot white core.
+  for (const [blur, width, style] of [[40, 16, hex], [14, 10, hex], [0, 3, "#ffffff"]] as const) {
+    ctx.shadowColor = hex;
+    ctx.shadowBlur = blur;
+    ctx.lineWidth = width;
+    ctx.strokeStyle = style;
+    ctx.strokeText(word, 512, 128, 960);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const w = 1.3, h = w / 4, turn = x > 0 ? -Math.PI / 2 : Math.PI / 2, out = x > 0 ? -1 : 1;
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.96, h * 0.8), new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.3 }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  board.position.set(x + out * 0.02, y, z);
+  sign.position.set(x + out * 0.035, y, z);
+  board.rotation.y = sign.rotation.y = turn;
+  g.add(board, sign);
+  return g;
 }
 
 /** The lights and the fixtures you see for a level, as one group to add and remove with the room. */
@@ -72,6 +103,11 @@ export function venueLights(l: Level): THREE.Group {
         p.position.set(f.x + dx, f.y - 0.12, f.z);
         g.add(p);
       }
+    } else if (f.kind === "neon" && f.word) {
+      g.add(neonWord(f.word, f.color, f.x, f.y, f.z));
+      const p = new THREE.PointLight(f.color, f.power, 5, 1.6);
+      p.position.set(f.x + (f.x > 0 ? -0.35 : 0.35), f.y, f.z);
+      g.add(p);
     } else if (f.kind === "neon") {
       // A sign of our own: a looped tube on a backing, washing the wall in its colour.
       const tube = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.018, 6, 28), glow(f.color));
