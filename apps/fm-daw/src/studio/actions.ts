@@ -42,6 +42,7 @@ export const ACTIONS: Action[] = [
   { key: "Space", does: "Stand up", icon: "armchair", where: "seat", strip: 9, short: "stand up" },
   { key: "Enter", does: "The groove and its click, for everyone", icon: "play", where: "desk", strip: 1, short: "groove" },
   { key: "C", does: "Hear the band a loop late, as it comes, or (the leader) at the desk", icon: "headphones", where: "desk", strip: 2, short: "how you hear it" },
+  { key: "R", does: "Rec: one loop of a plugged-in guitar or mic (yours, or the one you look at) as a take on its track", icon: "circle-dot", where: "desk" },
   { key: "H", does: "Raise your hand to play", icon: "hand", where: "desk" },
   { key: "N", does: "Mute the room, for you", icon: "volume-x", where: "desk" },
   { key: "B", does: "Mute who you look at, for you", icon: "volume-x", where: "desk" },
