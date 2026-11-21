@@ -138,7 +138,7 @@ export function lavaLamp(svg: string, colors: string[], loop: number, seed = 7):
   }
   const last = svg.lastIndexOf("/wedge\">");
   const after = svg.indexOf("</g>", last) + 4;
-  // Lamps go right after the last wedge, so every label and the legend draw over them. No width or height on the root:
+  // Lamps go right after the last wedge, so every label and leader line draws over them. No width or height on the root:
   // with only a viewBox the picture fills whatever it is opened in.
   return (svg.slice(0, after) + `\n<g data-lavalamp="">${lamps.join("\n")}</g>` + svg.slice(after))
     .replace(/<svg ([^>]*?)width="\d+" height="\d+" /, "<svg $1")

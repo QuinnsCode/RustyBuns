@@ -97,7 +97,7 @@ function chart({ dark = false, wedgesOnly = false, wedgeColors = colors } = {}) 
     "figure.subplot.left": 0.02,
     "figure.subplot.right": 0.6,
     // Text as glyph outlines: a browser without DejaVu Sans would swap in its own font.
-    ...(dark ? { "figure.facecolor": "none", "axes.facecolor": "none", "text.color": ink, "legend.labelcolor": ink, "svg.fonttype": "path" } : {}),
+    ...(dark ? { "figure.facecolor": "none", "axes.facecolor": "none", "text.color": ink, "svg.fonttype": "path" } : {}),
   };
   const [fig, ax] = subplots({ figsize: [12, 7], dpi: 120, rc: { ...rc, "figure.subplot.left": 0, "figure.subplot.right": 1, "figure.subplot.bottom": 0.01, "figure.subplot.top": 0.925 } });
   ax.pie(counts.map(([, n]) => n), {
