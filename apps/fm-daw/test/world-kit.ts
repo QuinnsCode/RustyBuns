@@ -50,3 +50,14 @@ export async function setup(env: WorldEnv = {}, room = "") {
   const leave = (ws: Sock) => { ws.close(1000); world.webSocketClose(ws); };
   return { ctx, store, world, join, leave };
 }
+
+/** The first message of type `t` the socket was sent, waited for: a hello hashes its key off the event, and one
+ *  short timer isn't always long enough on a slow runner (#5490). */
+export async function heard(ws: Sock, t: string) {
+  for (let i = 0; i < 1000; i++) {
+    const m = ws.sent.find((x) => x.t === t);
+    if (m) return m;
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  throw new Error(`the socket was never sent a "${t}"`);
+}
