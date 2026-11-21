@@ -198,7 +198,7 @@ pub const EXT_AUDIO_PORTS: &CStr = c"clap.audio-ports";
 // ---- opening a library ----
 
 #[cfg(unix)]
-mod dl {
+pub(crate) mod dl {
     use std::ffi::{c_char, c_int, c_void};
     extern "C" {
         fn dlopen(path: *const c_char, flags: c_int) -> *mut c_void;
@@ -212,7 +212,7 @@ mod dl {
 }
 
 #[cfg(windows)]
-mod dl {
+pub(crate) mod dl {
     use std::ffi::{c_char, c_void};
     extern "system" {
         fn LoadLibraryA(path: *const c_char) -> *mut c_void;
@@ -257,6 +257,9 @@ unsafe impl Send for Bundle {}
 unsafe impl Sync for Bundle {}
 
 impl Bundle {
+    /// Every plugin the bundle holds, as the track menu lists them.
+    pub fn plugins(&self) -> Vec<Descriptor> { (0..self.count().min(256)).filter_map(|i| self.describe(i)).collect() }
+
     /// Opens a `.clap` file or bundle: `Err` says why not, for the track menu.
     pub fn open(path: &str) -> Result<Arc<Bundle>, String> {
         let bin = CString::new(binary_of(path)).map_err(|_| "a path with a NUL in it".to_string())?;
@@ -356,13 +359,7 @@ unsafe extern "C" fn out_push(list: *const ClapOutputEvents, e: *const ClapEvent
     let h = std::ptr::read_unaligned(e);
     if h.space_id != 0 || h.kind != EVENT_PARAM_VALUE || (h.size as usize) < std::mem::size_of::<ClapEventParamValue>() { return true; }
     let ev = std::ptr::read_unaligned(e as *const ClapEventParamValue);
-    if !ev.value.is_finite() { return true; }
-    let changes = &mut *((*list).ctx as *mut Vec<(u32, f64)>);
-    match changes.iter().position(|c| c.0 == ev.param_id) {
-        Some(i) => changes[i].1 = ev.value,
-        None if changes.len() < MAX_CHANGES => changes.push((ev.param_id, ev.value)),
-        None => {}
-    }
+    keep_change(&mut *((*list).ctx as *mut Vec<(u32, f64)>), ev.param_id, ev.value);
     true
 }
 
@@ -564,13 +561,12 @@ pub fn json_str(s: &str, out: &mut String) {
     out.push('"');
 }
 
-fn json_num(v: f64, out: &mut String) { if v.is_finite() { out.push_str(&format!("{v}")); } else { out.push('0'); } }
+pub fn json_num(v: f64, out: &mut String) { if v.is_finite() { out.push_str(&format!("{v}")); } else { out.push('0'); } }
 
-/// The bundle's plugins: `[{"id","name","vendor","version","features":[..]}]`.
-pub fn describe_json(b: &Bundle) -> String {
+/// A bundle's plugins, CLAP or VST3: `[{"id","name","vendor","version","features":[..]}]`.
+pub fn describe_json(ds: &[Descriptor]) -> String {
     let mut s = String::from("[");
-    for i in 0..b.count().min(256) {
-        let Some(d) = b.describe(i) else { continue };
+    for d in ds.iter().take(256) {
         if s.len() > 1 { s.push(','); }
         s.push_str("{\"id\":"); json_str(&d.id, &mut s);
         s.push_str(",\"name\":"); json_str(&d.name, &mut s);
@@ -584,10 +580,10 @@ pub fn describe_json(b: &Bundle) -> String {
     s
 }
 
-/// The plugin's parameters: `[{"id","name","module","min","max","default","value","stepped"}]`.
-pub fn params_json(p: &Plugin) -> String {
+/// A plugin's parameters, CLAP or VST3: `[{"id","name","module","min","max","default","value","stepped"}]`.
+pub fn params_json(ps: &[Param]) -> String {
     let mut s = String::from("[");
-    for (k, q) in p.params().iter().enumerate() {
+    for (k, q) in ps.iter().enumerate() {
         if k > 0 { s.push(','); }
         s.push_str(&format!("{{\"id\":{},\"name\":", q.id)); json_str(&q.name, &mut s);
         s.push_str(",\"module\":"); json_str(&q.module, &mut s);
@@ -601,6 +597,31 @@ pub fn params_json(p: &Plugin) -> String {
     s
 }
 
+/// Parameter moves a plugin made itself (last value per parameter), as `[{"id","value"}]`. Kept until they fit
+/// `cap` bytes, so a caller whose buffer was short asks again.
+pub fn take_changes(changes: &mut Vec<(u32, f64)>, cap: usize) -> String {
+    let mut s = String::from("[");
+    for (k, (id, v)) in changes.iter().enumerate() {
+        if k > 0 { s.push(','); }
+        s.push_str(&format!("{{\"id\":{id},\"value\":"));
+        json_num(*v, &mut s);
+        s.push('}');
+    }
+    s.push(']');
+    if s.len() <= cap { changes.clear(); }
+    s
+}
+
+/// Keeps a plugin's own parameter move: the last value per parameter, up to [`MAX_CHANGES`].
+pub fn keep_change(changes: &mut Vec<(u32, f64)>, id: u32, value: f64) {
+    if !value.is_finite() { return; }
+    match changes.iter().position(|c| c.0 == id) {
+        Some(i) => changes[i].1 = value,
+        None if changes.len() < MAX_CHANGES => changes.push((id, value)),
+        None => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,11 +632,11 @@ mod tests {
     fn lists_the_tone_and_its_params() {
         let b = bundle();
         assert_eq!(b.count(), 1);
-        assert!(describe_json(&b).contains("\"name\":\"Test Tone\""));
+        assert!(describe_json(&b.plugins()).contains("\"name\":\"Test Tone\""));
         let p = Plugin::new(&b, 0, 48000.0).unwrap();
         let ps = p.params();
         assert_eq!(ps.iter().map(|q| q.name.as_str()).collect::<Vec<_>>(), ["Level", "Shape"]);
-        assert!(params_json(&p).starts_with("[{\"id\":0,\"name\":\"Level\""));
+        assert!(params_json(&p.params()).starts_with("[{\"id\":0,\"name\":\"Level\""));
     }
 
     #[test]

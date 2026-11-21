@@ -16,13 +16,18 @@
 //! track's insert inside the engine (`fm_track_eq_set`).
 //! `remote` plays someone else's sound on the beat it was stamped with (`fm_remote_*`).
 //! `circuit` is the circuit amp (packages/gear/src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
-//! `clap` hosts a player's own CLAP plugin on the desktop (`fm_clap_*`); the wasm build leaves it out.
+//! `clap` and `vst3` host a player's own CLAP or VST3 plugin on the desktop, both behind `hosted` (`fm_plugin_*`);
+//! the wasm build leaves them out.
 
 pub mod circuit;
 pub mod eq;
 pub mod remote;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod clap;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod hosted;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod vst3;
 
 use std::f64::consts::PI;
 
@@ -1025,16 +1030,16 @@ pub extern "C" fn fm_amp_misses(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref
 #[no_mangle]
 pub extern "C" fn fm_amp_iterations(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.iterations_per_step()) }
 
-// ---- a player's own CLAP plugins (desktop only) ----
+// ---- a player's own CLAP and VST3 plugins (desktop only) ----
 //
 // Text (a list, a parameter sheet, why something failed) is JSON or plain UTF-8 written into the caller's buffer:
 // each call returns the length it needs, so a buffer that was too small is grown and the call made again.
 
 #[cfg(not(target_arch = "wasm32"))]
-mod clap_ffi {
-    use super::clap::{describe_json, gui::Kind, params_json, Bundle, Plugin};
+mod plugin_ffi {
+    use super::clap::{describe_json, gui::Kind, params_json};
+    use super::hosted::{Bundle, Plugin};
     use std::cell::RefCell;
-    use std::sync::Arc;
 
     thread_local! { static ERROR: RefCell<String> = const { RefCell::new(String::new()) }; }
     fn fail<T>(why: String) -> *mut T { ERROR.with(|e| *e.borrow_mut() = why); std::ptr::null_mut() }
@@ -1044,70 +1049,70 @@ mod clap_ffi {
         s.len() as u32
     }
 
-    /// Why the last `fm_clap_open` or `fm_clap_new` on this thread returned null.
+    /// Why the last `fm_plugin_open` or `fm_plugin_new` on this thread returned null.
     /// # Safety
     /// `out` must point to `cap` bytes, or be null.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_error(out: *mut u8, cap: u32) -> u32 { ERROR.with(|e| give(&e.borrow(), out, cap)) }
+    pub unsafe extern "C" fn fm_plugin_error(out: *mut u8, cap: u32) -> u32 { ERROR.with(|e| give(&e.borrow(), out, cap)) }
 
-    /// Opens a `.clap` file (or macOS bundle folder); null on failure (`fm_clap_error` says why).
+    /// Opens a `.clap` or `.vst3` (a file, or a bundle folder); null on failure (`fm_plugin_error` says why).
     /// # Safety
     /// `path` must point to `len` bytes of UTF-8.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_open(path: *const u8, len: u32) -> *mut Arc<Bundle> {
+    pub unsafe extern "C" fn fm_plugin_open(path: *const u8, len: u32) -> *mut Bundle {
         if path.is_null() { return fail("no path".into()); }
         let Ok(p) = std::str::from_utf8(std::slice::from_raw_parts(path, len as usize)) else { return fail("a path that isn't UTF-8".into()) };
         match Bundle::open(p) { Ok(b) => Box::into_raw(Box::new(b)), Err(why) => fail(why) }
     }
 
     /// # Safety
-    /// `b` from `fm_clap_open`, not used after; plugins made from it keep the library loaded until they're freed.
+    /// `b` from `fm_plugin_open`, not used after; plugins made from it keep the library loaded until they're freed.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_close(b: *mut Arc<Bundle>) { if !b.is_null() { drop(Box::from_raw(b)); } }
+    pub unsafe extern "C" fn fm_plugin_close(b: *mut Bundle) { if !b.is_null() { drop(Box::from_raw(b)); } }
 
     /// The bundle's plugins as JSON (`clap::describe_json`).
     /// # Safety
-    /// `b` from `fm_clap_open`; `out` must point to `cap` bytes, or be null.
+    /// `b` from `fm_plugin_open`; `out` must point to `cap` bytes, or be null.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_list(b: *mut Arc<Bundle>, out: *mut u8, cap: u32) -> u32 {
-        b.as_ref().map_or(0, |b| give(&describe_json(b), out, cap))
+    pub unsafe extern "C" fn fm_plugin_list(b: *mut Bundle, out: *mut u8, cap: u32) -> u32 {
+        b.as_ref().map_or(0, |b| give(&describe_json(&b.plugins()), out, cap))
     }
 
-    /// Starts plugin `index` of the bundle at `sample_rate`; null on failure (`fm_clap_error` says why).
+    /// Starts plugin `index` of the bundle at `sample_rate`; null on failure (`fm_plugin_error` says why).
     /// # Safety
-    /// `b` from `fm_clap_open`.
+    /// `b` from `fm_plugin_open`.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_new(b: *mut Arc<Bundle>, index: u32, sample_rate: f64) -> *mut Plugin {
+    pub unsafe extern "C" fn fm_plugin_new(b: *mut Bundle, index: u32, sample_rate: f64) -> *mut Plugin {
         let Some(b) = b.as_ref() else { return fail("no bundle".into()) };
         if !(8000.0..=384000.0).contains(&sample_rate) { return fail(format!("{sample_rate} Hz isn't a sample rate")); }
-        match Plugin::new(b, index, sample_rate) { Ok(p) => Box::into_raw(Box::new(p)), Err(why) => fail(why) }
+        match b.make(index, sample_rate) { Ok(p) => Box::into_raw(Box::new(p)), Err(why) => fail(why) }
     }
 
     /// # Safety
-    /// `p` from `fm_clap_new`, not used after.
+    /// `p` from `fm_plugin_new`, not used after.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_free(p: *mut Plugin) { if !p.is_null() { drop(Box::from_raw(p)); } }
+    pub unsafe extern "C" fn fm_plugin_free(p: *mut Plugin) { if !p.is_null() { drop(Box::from_raw(p)); } }
 
     /// The plugin's parameters as JSON (`clap::params_json`).
     /// # Safety
-    /// `p` from `fm_clap_new`; `out` must point to `cap` bytes, or be null.
+    /// `p` from `fm_plugin_new`; `out` must point to `cap` bytes, or be null.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_params(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
-        p.as_ref().map_or(0, |p| give(&params_json(p), out, cap))
+    pub unsafe extern "C" fn fm_plugin_params(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
+        p.as_ref().map_or(0, |p| give(&params_json(&p.params()), out, cap))
     }
 
     #[no_mangle]
-    pub extern "C" fn fm_clap_set_param(p: *mut Plugin, id: u32, value: f64) { if let Some(p) = unsafe { p.as_mut() } { p.set_param(id, value) } }
+    pub extern "C" fn fm_plugin_set_param(p: *mut Plugin, id: u32, value: f64) { if let Some(p) = unsafe { p.as_mut() } { p.set_param(id, value) } }
     #[no_mangle]
-    pub extern "C" fn fm_clap_note_on(p: *mut Plugin, key: u32, velocity: f64, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_on(key, velocity, channel) } }
+    pub extern "C" fn fm_plugin_note_on(p: *mut Plugin, key: u32, velocity: f64, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_on(key, velocity, channel) } }
     #[no_mangle]
-    pub extern "C" fn fm_clap_note_off(p: *mut Plugin, key: u32, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_off(key, channel) } }
+    pub extern "C" fn fm_plugin_note_off(p: *mut Plugin, key: u32, channel: u32) { if let Some(p) = unsafe { p.as_mut() } { p.note_off(key, channel) } }
 
     /// Adds `frames` of the plugin's sound into `out` (interleaved stereo, like `fm_render`). 0 once it has failed.
     /// # Safety
-    /// `p` from `fm_clap_new`; `out` must point to `frames * 2` f32s.
+    /// `p` from `fm_plugin_new`; `out` must point to `frames * 2` f32s.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_render(p: *mut Plugin, out: *mut f32, frames: u32) -> u32 {
+    pub unsafe extern "C" fn fm_plugin_render(p: *mut Plugin, out: *mut f32, frames: u32) -> u32 {
         let Some(p) = p.as_mut() else { return 0 };
         if out.is_null() { return 0; }
         p.render(std::slice::from_raw_parts_mut(out, frames as usize * 2), frames as usize) as u32
@@ -1115,32 +1120,32 @@ mod clap_ffi {
 
     /// How the plugin's own editor opens here: 0 it has none (or none we can hold), 1 its own window, 2 inside ours.
     #[no_mangle]
-    pub extern "C" fn fm_clap_editor(p: *mut Plugin) -> u32 {
+    pub extern "C" fn fm_plugin_editor(p: *mut Plugin) -> u32 {
         match unsafe { p.as_ref() }.and_then(|p| p.editor_kind()) { None => 0, Some(Kind::Floating) => 1, Some(Kind::Window) => 2 }
     }
 
-    /// Opens the plugin's editor titled `title` (or brings it forward): 1, or 0 with `fm_clap_error` saying why. Main thread.
+    /// Opens the plugin's editor titled `title` (or brings it forward): 1, or 0 with `fm_plugin_error` saying why. Main thread.
     /// # Safety
-    /// `p` from `fm_clap_new`; `title` must point to `len` bytes of UTF-8, or be null.
+    /// `p` from `fm_plugin_new`; `title` must point to `len` bytes of UTF-8, or be null.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_open_editor(p: *mut Plugin, title: *const u8, len: u32) -> u32 {
+    pub unsafe extern "C" fn fm_plugin_open_editor(p: *mut Plugin, title: *const u8, len: u32) -> u32 {
         let Some(p) = p.as_mut() else { return 0 };
         let title = if title.is_null() { "" } else { std::str::from_utf8(std::slice::from_raw_parts(title, len as usize)).unwrap_or("") };
         match p.open_editor(title) { Ok(()) => 1, Err(why) => { fail::<u8>(why); 0 } }
     }
 
     #[no_mangle]
-    pub extern "C" fn fm_clap_close_editor(p: *mut Plugin) { if let Some(p) = unsafe { p.as_mut() } { p.close_editor() } }
+    pub extern "C" fn fm_plugin_close_editor(p: *mut Plugin) { if let Some(p) = unsafe { p.as_mut() } { p.close_editor() } }
 
     /// Runs the editor's window and what the plugin asked of the host; 1 while the editor is open. Main thread.
     #[no_mangle]
-    pub extern "C" fn fm_clap_pump(p: *mut Plugin) -> u32 { unsafe { p.as_mut() }.is_some_and(|p| p.pump()) as u32 }
+    pub extern "C" fn fm_plugin_pump(p: *mut Plugin) -> u32 { unsafe { p.as_mut() }.is_some_and(|p| p.pump()) as u32 }
 
     /// The parameter moves the plugin made itself since last asked, as JSON (`Plugin::take_changes`).
     /// # Safety
-    /// `p` from `fm_clap_new`; `out` must point to `cap` bytes, or be null.
+    /// `p` from `fm_plugin_new`; `out` must point to `cap` bytes, or be null.
     #[no_mangle]
-    pub unsafe extern "C" fn fm_clap_changes(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
+    pub unsafe extern "C" fn fm_plugin_changes(p: *mut Plugin, out: *mut u8, cap: u32) -> u32 {
         let Some(p) = p.as_mut() else { return 0 };
         give(&p.take_changes(if out.is_null() { 0 } else { cap as usize }), out, cap)
     }
