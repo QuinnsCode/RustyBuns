@@ -33,7 +33,7 @@ export function copyStarter(from: string, to: string, n: StarterNames): string[]
 export function withHandle(probe: string, n: StarterNames): string {
   const key = /^[a-z]+$/.test(n.id) ? n.id : JSON.stringify(n.id);
   if (probe.includes(`\n  ${key}: {`)) return probe;
-  const row = `  ${key}: { state: "${n.handle}.state()", does: "the round (phase, score, lives, stars), whether you're signed in to eqosys, and the Qollab party (code, members, room, seat); start(), aim(x) (steer the basket, 0..400). Made from the starter (bun run new-game)" },\n`;
+  const row = `  ${key}: { state: "${n.handle}.state()", does: "the round (phase, score, lives, stars), whether you're signed in to eqosys, and the Qollab party (code, members, room, seat); start(), aim(x) (steer the basket, 0..400). Made from the starter (bun run new-game). Also --cmd ${n.prefix}_how_to_play, _start, _state" },\n`;
   const at = probe.indexOf("\n};", probe.indexOf("export const HANDLES"));
   if (at < 0) throw new Error("no HANDLES table in scripts/probe.ts");
   return probe.slice(0, at + 1) + row + probe.slice(at + 1);

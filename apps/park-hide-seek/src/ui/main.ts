@@ -29,7 +29,7 @@ import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
 import "@fontsource/lacquer/latin-400.css";
 import "@fontsource/gloria-hallelujah/latin-400.css";
-import { addCommands } from "@rustybuns/util/commands";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { tutorial } from "@rustybuns/util/tutorial";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
@@ -284,7 +284,14 @@ Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase:
   /** Forget the tutorial was done in this browser, so the next Play runs it again. */
   forgetTutorial: coach.forget,
   poster: (t: Tod) => paintPoster(t) });
-addCommands([{ name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
+// The "?" panel's words, the Play button and the coach card's steps (their "On a phone" lines are the touch controls).
+const howTo = () => {
+  const at = (sel: string) => wordsOf(document.querySelector(`#about ${sel}`)), play = document.getElementById("play"), steps = coach.steps();
+  const phone = steps.flatMap((s) => { const m = s.say?.match(/On a phone, ([^.]*)\./); return m ? [`${s.title}: ${m[1]}.`] : []; });
+  return { goal: [at(".lede"), at("#about-rules"), at("#about-bigfoot")].filter(Boolean).join("\n"), desktop: at("dl.keys"), phone: phone.join(" "),
+    first: `Press ${play?.textContent?.trim()}: ${play?.title ?? ""} Then ${steps[0]?.title.toLowerCase()}: ${steps[0]?.say ?? ""}`, steps };
+};
+addCommands([howToPlay("phs", howTo), { name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
   inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: (a) => ({ link: jump(a) }) }]);
 mountPalette();
 
