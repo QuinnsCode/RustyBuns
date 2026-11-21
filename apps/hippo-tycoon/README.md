@@ -125,7 +125,7 @@ Deploying is yours to run: `bunx rustybuns plan` (creates nothing; it lists `[Bu
 
 | Menu | A round |
 |---|---|
-| ![The menu: Solo, Couch, Host and Join a LAN game, your name, bot difficulty and round length](docs/menu.png) | ![A round in progress: the net-worth HUD, 15 seconds left, drops on the pan](docs/round.png) |
+| ![The menu: a big Solo button, then Couch, Join LAN and Online, each with a short line saying what it is, and Options below](docs/menu.png) | ![A round in progress: the net-worth HUD, 15 seconds left, drops on the pan](docs/round.png) |
 
 | | Slide | Chomp | Bellow (ready) |
 |---|---|---|---|
