@@ -1400,12 +1400,14 @@ $("#openJournal").addEventListener("click", () => openJournal());
 let bindNote = "";
 /** Said over a bind tried with the Book full (#3031). */
 const FULL_NOTE = `The Book holds ${OWN_MAX}. Release one from the line-up page first.`;
+/** Said over a bind pressed while the foe is still too strong; the prompt drops it once the ink can hold (#5386). */
+const tooStrong = (mythic: boolean) => `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`;
 function tryBind() {
   if (inCoop()) { coopTry(); return; }
   if (!m || m.over || !trip || !journey || !bindable(trip) || trip.ink <= 0) return;
   const mythic = trip.kind === "mythic", f = m.f[1], chance = bindChance(f.hp / f.b.hp, mythic);
   if (!roomLeft(journey)) { bindNote = FULL_NOTE; return; }
-  if (chance <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`; return; }
+  if (chance <= 0) { bindNote = tooStrong(mythic); return; }
   trip.ink--;
   if (Math.random() < chance) { m.over = true; m.winner = 0; ended(m, true); return; }
   bindNote = trip.ink ? `It tore free. ${trip.ink} ink left.` : "It tore free, and the ink is spent.";
@@ -1418,7 +1420,7 @@ function coopTry() {
   if (!m || m.over || coop.ink <= 0 || coop.press) return;
   if (journey && !roomLeft(journey)) { bindNote = FULL_NOTE; return; }
   const f = bindFoe(m);
-  if (bindChance(f.hp / f.b.hp, false) <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(false) * 100)}%.`; return; }
+  if (bindChance(f.hp / f.b.hp, false) <= 0) { bindNote = tooStrong(false); return; }
   coop.ink--; coop.press = true; bindNote = "";
 }
 /** The tick just played had binds pressed (`pressed`, seats): the same dice on every page say whose ink held. */
@@ -1590,6 +1592,7 @@ function bindView(m: Match) {
   const ink = inkNow();
   if (ink === null) return null;
   const mythic = trip?.kind === "mythic", f = bindFoe(m), chance = bindChance(f.hp / f.b.hp, mythic);
+  if (chance > 0 && bindNote === tooStrong(mythic)) bindNote = ""; // worn down since: that note no longer holds
   const note = bindNote || (!ink ? "" : chance > 0 ? "Bind it now, before it drops" : `Wear it under ${Math.round(bindBelow(mythic) * 100)}%, then bind`);
   return { chance, ink, key: bindKey(), note };
 }
@@ -2396,6 +2399,8 @@ Object.assign(window, {
       state: () => journey, trip: tripState,
       begin,
       bind: tryBind,
+      /** The bind prompt the HUD shows in the current fight (odds, ink, key, note), or null. */
+      prompt: () => m && bindView(m),
       /** Sets the foe's health to `frac` of full in the current fight, to try a bind without fighting it down; `side` 0 wears yours, to lose a round. */
       wear: (frac: number, side: 0 | 1 = 1) => { if (m && !m.over) m.f[side].hp = m.f[side].b.hp * clamp(frac, 0.01, 1); },
       journal: (open: boolean) => openJournal(open), tab: (t: Tab) => { tab = t; openFolio = null; drawJournal(); },
