@@ -132,6 +132,8 @@ export interface Env {
    * Without it, such a level stays failed with Artifacts' reason.
    */
   LEVEL_CHUNKS?: R2Like;
+  /** Charts code-mode programs saved with save_chart, under `<day>/`, swept a week on (charts.ts). Without it, save_chart is a 409. */
+  CHARTS?: R2Like;
   /** The landing page's counts, cached for a minute so reads skip D1 (stats.ts). */
   STATS?: { get(key: string, type: "json"): Promise<unknown>; put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void> };
   /** Handles allowed to import levels when accounts are on (comma separated). */

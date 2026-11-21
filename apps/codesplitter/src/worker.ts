@@ -10,6 +10,7 @@ import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { programRoutes } from "./programs.ts";
+import { chartRoutes, serveChart, sweepCharts } from "./charts.ts";
 import { rankOf } from "./policy.ts";
 import { FileCommitted, FileTexts, fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -336,6 +337,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (known) return known;
   // GET /invite/:token  an invite link: the page for a browser, the steps as text for an agent (invites.ts)
   if (p[0] === "invite" && p[1] && !p[2] && req.method === "GET") return invitePage(req, env, p[1]);
+  // GET /charts/:day/:file?exp=&sig=  a saved chart, while its signed link is good (charts.ts)
+  if (p[0] === "charts") return (await serveChart(req, env, url)) ?? new Response("not found", { status: 404 });
   // GET /install.sh  the CLI in one line, fetched from /cli.js on this site (install.ts)
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
@@ -475,6 +478,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET/PUT/DELETE /api/me/programs[/:name]: saved code-mode programs (programs.ts)
   const programs = await programRoutes(req, env, p, user);
   if (programs) return programs;
+  // POST /api/charts: a chart a program drew, kept for a week behind a signed link (charts.ts)
+  const chart = await chartRoutes(req, env, p, user);
+  if (chart) return chart;
 
   // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
   const ranks = await featureRankRoutes(req, env, p, user);
@@ -1077,6 +1083,7 @@ const app = {
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
     ctx.waitUntil(sweepConflicts(env));
+    ctx.waitUntil(sweepCharts(env));
     // Dexter: today's and yesterday's rollup, then what is past its keep and each repo past its newest 5,000 runs (dexter.ts).
     ctx.waitUntil(import("./dexter.ts").then((d) => d.sweepDexter(env)));
     ctx.waitUntil(sweepOAuth(env));

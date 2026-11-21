@@ -31,6 +31,7 @@ export const ACTIONS: Action[] = [
   { key: "I", does: "Plug in your guitar (in the vocal booth, your mic)", icon: "guitar", where: "walk", strip: 2, short: "guitar" },
   { key: "Q", does: "Picture quality, high or low", icon: "monitor", where: "walk" },
   { key: "Tab", does: "The instrument's panel: patch, EQ, mixer strip, notes", icon: "sliders-horizontal", where: "seat", at: [...PLAYED, "drums"], strip: 1, short: "the instrument's panel" },
+  { key: "Tab", does: "The full mixer: a channel per track and per player, and the returns (sitting at the desk opens it too)", icon: "sliders-horizontal", where: "walk" },
   { key: "A to '", does: "Play notes; Shift plays louder", icon: "keyboard-music", where: "seat", at: PLAYED },
   { key: "A to L", does: "The drums, kick first", icon: "keyboard-music", where: "seat", at: ["drums"] },
   { key: "Z / X", does: "Octave down, up", icon: "arrow-up-down", where: "seat", at: PLAYED, strip: 2, short: "octave" },
@@ -41,6 +42,7 @@ export const ACTIONS: Action[] = [
   { key: "Space", does: "Stand up", icon: "armchair", where: "seat", strip: 9, short: "stand up" },
   { key: "Enter", does: "The groove and its click, for everyone", icon: "play", where: "desk", strip: 1, short: "groove" },
   { key: "C", does: "Hear the band a loop late, as it comes, or (the leader) at the desk", icon: "headphones", where: "desk", strip: 2, short: "how you hear it" },
+  { key: "R", does: "Rec: one loop of a plugged-in guitar or mic (yours, or the one you look at) as a take on its track", icon: "circle-dot", where: "desk" },
   { key: "H", does: "Raise your hand to play", icon: "hand", where: "desk" },
   { key: "N", does: "Mute the room, for you", icon: "volume-x", where: "desk" },
   { key: "B", does: "Mute who you look at, for you", icon: "volume-x", where: "desk" },
@@ -53,7 +55,6 @@ export const ACTIONS: Action[] = [
 /** Things you'd look for here that aren't built in the jam room yet: where they are today, and the issue. */
 export const NOT_YET: { what: string; today: string; issue: number }[] = [
   { what: "Pedals, amps and cables", today: "In the gear room for now (Gear room, top of the page)", issue: 5393 },
-  { what: "The full mixer", today: "Tab at an instrument has its one strip; the whole desk is on Desk (top of the page)", issue: 5394 },
 ];
 
 /** Where a seat puts you: nowhere (walking), at the desk, or at an instrument or seat. */

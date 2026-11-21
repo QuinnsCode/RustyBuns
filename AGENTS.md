@@ -69,10 +69,12 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
 - `bun run rings`: the release rings (notes/RELEASE_RINGS.md), one line each: the commit it sits on and its age, its last red, and how many PRs wait to climb into it. Ester's card shows the same.
-- `bun run bridge`: every app on one page (open and closed issues, last commit against last good release, Mac/Windows/Linux/
+- `bun run bridge`: every app on one page (open and closed issues, last commit against last good release, last deploy from this Mac against last merged and newest PR, Mac/Windows/Linux/
   Android/iOS/server/Cloudflare, bindings, hourly CI, whether its live page answers) and the owner's S to F tiers, dragged
   into `~/.rustybuns/tiers.json`. `--json` for the scan, `--html out.html` for a snapshot. An app in S or A is one the owner cares about most.
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
+- `bun run brief <app>`: an app's brief (what it is, its notes files, scripts, tests, port, probe handle) from its own files; no app lists them all (the `rustybuns-apps` skill).
+  A fact the next agent in that app needs goes in its README or a notes file there, where `brief` finds it.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
   `bun run outline --api <package or file>` (`packages/util`, `packages/util/src/eqosys.ts`): every export of its entry points as a one-line signature and doc line, no bodies. Read a shared library's API this way before opening it.
 - Reading code: the guard turns away `cat` and `sed -n` ranges over 150 lines on a code file over 200 lines. Use `bun run outline <file>` first, then `bun run outline <file> <name>`.

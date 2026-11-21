@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer; and, outside the catalog, a studio's stompbox (`stompbox`). Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -197,8 +197,8 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   if (m) geo.applyMatrix4(m);
-  geo.computeVertexNormals();
-  return { geo, slot };
+  // smooth round the turn (a cone's dish, a knob's skirt), creased where a ring folds sharply (a horn's lip)
+  return { geo: toCreasedNormals(geo, 0.6), slot };
 }
 
 /** A loudspeaker as it shows through a grille: the cone's dish, its rolled rubber surround, the dust cap and the
@@ -206,7 +206,8 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
 function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
   const roll = Math.min(deep, 0.01);
   return [
-    lathe("rubber", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
+      // the dish is coated paper with a satin sheen (it catches the light through the holes); the surround is rubber
+    lathe("knob", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
     lathe("rubber", [[0, r, r], [roll * 0.25, r * 1.04, r * 1.04], [roll * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
     lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: 16 }),
     lathe("knob", [[0, r * 1.12, r * 1.12], [roll * 0.1, r * 1.13, r * 1.13], [roll * 0.1, r * 1.2, r * 1.2], [-roll * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
@@ -455,16 +456,21 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   const shell = rounded("paint", { wf: w, wb, h: fh, d, r, e, y0 });
   // The grille fills the flat of the front, inside the rounded shell, seated in a dark cavity: the baffle 7 cm back,
   // the woofer's cone and the horn's flare reaching forward to just behind the sheet.
-  const mw = w - 2 * r - 0.008, mh = fh - 2 * e - 0.008, gw = mw + 0.004, gh = mh + 0.004, yc = y0 + fh / 2, cave = Math.min(0.08, d * 0.2);
+  // Under it, a band of the shell carries two bass port slots (a tall enough box only).
+  const mw = w - 2 * r - 0.008, fl = fh - 2 * e - 0.008, pb = fl > 0.3 ? Math.min(0.06, fl * 0.12) : 0, mh = fl - pb;
+  const gw = mw + 0.004, gh = mh + 0.004, yc = y0 + fh / 2 + pb / 2, cave = Math.min(0.08, d * 0.2);
+  const ph0 = pb - 0.02, ports: Well[] = pb ? [-1, 1].map((x) => ({ at: [x * mw * 0.22, yc - mh / 2 - pb / 2 - 0.002, d / 2], w: mw * 0.36, h: ph0, r: ph0 / 2 - 0.001, deep: 0.09, lip: 0.004, walls: "knob", floor: "knob" })) : [];
   const lean = Math.atan2((w - wb) / 2, d - 2 * r), side = (s: number): THREE.Vector3Tuple => [s * Math.cos(lean), 0, -Math.sin(lean)];
   // handles: a pocket in each side the fingers curl into, a pocket with a bridge across it on top, and the back's
   // amp plate (or a passive box's jack cup) sunk in a moulded recess, inside the flat of the back
   const rec = 0.02, lo = y0 + e + 0.008, hi = body - e - 0.008;
   const rw0 = Math.min(w * 0.62, wb - 2 * r - 0.016 - 0.03) + 0.03, rh0 = Math.min(powered ? h * 0.4 : h * 0.18, hi - lo - 0.03) + 0.03;
   const pw = rw0 - 0.03, ph = rh0 - 0.03, py = clamp(powered ? h * 0.32 : h * 0.3, lo + rh0 / 2, hi - rh0 / 2);
-  const grip = (s: number): [THREE.Vector3Tuple, Well[]] => [side(s), [{ at: [s * w * 0.43, y0 + fh * 0.62, -0.01], w: Math.min(d * 0.34, d - 2 * r - 0.04), h: 0.055, r: 0.022, deep: 0.04, lip: 0.006, draft: 0.004 }]];
+  // a scoop moulded deep into each side, high up where the box balances: a hand goes in to the knuckles
+  const sh = Math.min(0.1, fh * 0.18), sy = clamp(y0 + fh * 0.7, lo + sh / 2 + 0.01, hi - sh / 2 - 0.01);
+  const grip = (s: number): [THREE.Vector3Tuple, Well[]] => [side(s), [{ at: [s * w * 0.43, sy, -0.01], w: Math.min(d * 0.45, d - 2 * r - 0.05), h: sh, r: Math.min(0.03, sh / 2 - 0.004), deep: 0.065, lip: 0.012, draft: 0.008 }]];
   sunk(b, shell, [
-    [[0, 0, 1], [{ at: [0, yc, d / 2], w: mw, h: mh, r: 0.012, deep: cave, lip: 0.003, walls: "knob" }]],
+    [[0, 0, 1], [{ at: [0, yc, d / 2], w: mw, h: mh, r: 0.012, deep: cave, lip: 0.003, walls: "knob" }, ...ports]],
     grip(-1), grip(1),
     [[0, 1, 0], [{ at: [0, body, -d * 0.04], w: w * 0.42, h: d * 0.2, r: 0.02, deep: 0.035, lip: 0.006, draft: 0.003 }]],
     [[0, 0, -1], [{ at: [0, py, -d / 2], w: rw0, h: rh0, r: 0.014, deep: rec, lip: 0.005, draft: 0.002 }]],
@@ -477,7 +483,7 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   b.pieces.push(...horn(gw * 0.62, gh * 0.2, deep, at(yc + gh * 0.3)));
   grillePlate(b, new THREE.Matrix4().makeTranslation(gw / 2 - 0.045, yc - gh / 2 + 0.03, d / 2 - 0.003));
   grilleScrews(b, gw, gh, new THREE.Matrix4().makeTranslation(0, yc, d / 2 - 0.003));
-  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.065), (y0 + 0.002) / 2, z], 0.006));
+  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.07, w / 2], [-d / 2 + 0.07, wb / 2]]) b.pieces.push(block("rubber", [0.055, y0 + 0.003, 0.045], [x * (half - 0.07), (y0 + 0.003) / 2, z], 0.008));
   // the pole cup: a steel ring round a dark socket
   b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
   // the fly points: a threaded insert in a steel washer
@@ -827,6 +833,34 @@ function diBox(): Build {
   return b;
 }
 
+/** A stompbox `w` x `h` x `d`: a die-cast box with its edges rounded, rubber feet, a footswitch toward you (chrome on a
+ * nut), a status LED behind it, the instrument jack in on its right end and the out on its left. Its lid's back half is
+ * left clear for the knobs an app puts on (the app's circuit says how many). */
+function stomp([w, h, d]: THREE.Vector3Tuple): Build {
+  const b: Build = { pieces: [], marks: [] }, feet = 0.003, body = h - feet - 0.012;
+  b.pieces.push(box("paint", [w, body, d], [0, feet + body / 2, 0], { bevel: Math.min(0.006, w * 0.08) }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.007, feet, "y", [x * (w / 2 - 0.012), feet / 2, z * (d / 2 - 0.014)], 6));
+  const top = feet + body, sw = d / 2 - Math.min(0.045, d * 0.25);
+  b.pieces.push(disc("chrome", 0.009, 0.004, "y", [0, top + 0.002, sw], 12), disc("chrome", 0.0055, 0.008, "y", [0, top + 0.008, sw], 10));
+  b.pieces.push(disc("light", 0.0028, 0.003, "y", [0, top + 0.0015, sw - 0.03], 6));
+  jacks(b, ["in"], "right", [w / 2, feet + body * 0.55, -d * 0.2], [0, 0, 0], 0.009);
+  jacks(b, ["out"], "left", [-w / 2, feet + body * 0.55, -d * 0.2], [0, 0, 0], 0.009);
+  mark(b, "switch", [0, top + 0.012, sw]);
+  mark(b, "grab", [0, top, 0]);
+  return b;
+}
+
+/** A guitar pedal's box as it comes from the bench: about a 125B enclosure, w x h x d in metres. */
+export const STOMP_SIZE: THREE.Vector3Tuple = [0.066, 0.04, 0.122];
+
+/** A stompbox at `size` (w x h x d, metres; `STOMP_SIZE` unless asked), built as `gear` builds gear, its paint the
+ * pedal's colour: marks `jack:in` (right end), `jack:out` (left end), `switch` (the footswitch's top) and `grab`.
+ * Not Load In's catalog: a studio's pedals, loopers and splitters wear it. */
+export function stompbox(size: THREE.Vector3Tuple = STOMP_SIZE, { look = gearLook() }: { look?: GearLook } = {}): THREE.Group {
+  const s: THREE.Vector3Tuple = [size[0], size[1], size[2]];
+  return assemble("stompbox", built(`stompbox@${s.map((v) => v.toFixed(3)).join("x")}`, () => stomp(s)), look, { stomp: true, size: s });
+}
+
 /** The venue's back-bar cooler: a cabinet with two glass doors lit from inside, its plug at the back. */
 function barCooler(): Build {
   const [w, h, d] = GEAR_SIZES["bar-cooler"], b: Build = { pieces: [], marks: [] };
@@ -842,26 +876,57 @@ function barCooler(): Build {
 }
 
 /**
- * A hung line array box: a cabinet that tapers to the back (so the box below can splay down), a full-width grille
- * over two 10" drivers and a horn, steel rigging plates on both sides. The front plates carry the hinge pins the hang
- * turns on; the rear link bars hold the splay pins. The amp panel and its jacks are on the back.
+ * A hung line array box: a wedge seen from the side (the cabinet's top and bottom draw in toward the back, so the box
+ * below can splay down), its front split into three grille panels (a 10" woofer behind each outer one, the tall
+ * waveguide behind the middle), a pair of D-shaped hand-holds moulded into each side, and black steel rigging on both
+ * sides: a front bracket carrying the hinge pins the hang turns on and a pull handle, and a rear link bar drilled
+ * with the splay holes, a pin in one. The amp plate sits in a recess in the back.
  */
-function lineArray(): Build {
-  const [w, h, d] = GEAR_SIZES["line-array-10"], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = 0.045;
+function lineArray(id: "line-array-10" | "line-array-box"): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = h * 0.15, ch = 0.008;
   const front = d / 2 - 0.012, back = -d / 2 + 0.01;
-  b.pieces.push(prism("paint", [[front, 0.004], [front, h - 0.004], [back, h - taper], [back, taper]], inner));
-  b.pieces.push(box("grille", [inner - 0.02, h - 0.03, 0.012], [0, h / 2, d / 2 - 0.006], { bevel: 0.003 }));
+  const body = prism("paint", [[front, 0], [front, h], [back, h - taper], [back, taper]], inner, 0, ch);
+  // the front: three panels with a strip of the shell between them, each over its own dark cavity
+  const m = 0.014, cw = inner * 0.2, sw = (inner - 2 * ch - 2 * 0.012 - 2 * m - cw) / 2, gh = h - 2 * ch - 0.026, yc = h / 2, cave = 0.07, g = 0.008;
+  const xs = [-(cw / 2 + m + sw / 2), 0, cw / 2 + m + sw / 2], ws = [sw, cw, sw];
+  // the hand-holds: two half-round pockets, one over the other with a bar of shell between, mid-way along each side
+  const hz = (front + back) / 2 - d * 0.04, hw = Math.min(0.18, d * 0.34), hh = Math.min(0.06, h * 0.19), gap = 0.03;
+  const holds = (s: number): [THREE.Vector3Tuple, Well[]] => [[s, 0, 0], [-1, 1].map((k) => ({ at: [s * inner / 2, yc + k * (hh + gap) / 2, hz], w: hw, h: hh, r: hh / 2 - 0.001, deep: 0.05, lip: 0.006, draft: 0.004, walls: "knob", floor: "knob" }))];
+  // the back: the amp plate in a recess
+  const rec = 0.016, bh = h - 2 * taper, pw = inner * 0.42, ph = bh * 0.62, px = -inner * 0.18, py = h / 2;
+  sunk(b, body, [
+    [[0, 0, 1], xs.map((x, i) => ({ at: [x, yc, front], w: ws[i] + 0.004, h: gh + 0.004, r: 0.006, deep: cave, lip: 0.002, walls: "knob" }))],
+    holds(-1), holds(1),
+    [[0, 0, -1], [{ at: [px, py, back], w: pw + 0.03, h: ph + 0.03, r: 0.01, deep: rec, lip: 0.004, draft: 0.002 }]],
+  ]);
+  const gz = front - g - 0.002, deep = cave - g - 0.012;
+  xs.forEach((x, i) => {
+    b.pieces.push(...grilleSlab(ws[i], gh, g, yc, gz, 0.006, new THREE.Matrix4().makeTranslation(x, 0, 0)));
+    if (i !== 1) grilleScrews(b, ws[i], gh, new THREE.Matrix4().makeTranslation(x, yc, front - 0.001), 2);
+    const at = new THREE.Matrix4().makeTranslation(x, yc, gz - 0.004);
+    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at));
+    else b.pieces.push(...cone(Math.min(sw, gh) * 0.44, deep, at));
+  });
+  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, front));
+  // the rigging: black steel, a pin through each hole the hang uses
   const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04;
+  const pin = (x: number, y: number, z: number, s: number) => b.pieces.push(disc("chrome", 0.007, 0.026, "x", [x, y, z], 8), disc("knob", 0.01, 0.005, "x", [x + s * 0.0125, y, z], 8));
   for (const s of [-1, 1]) {
     const x = s * (w / 2 - 0.01);
-    b.pieces.push(box("metal", [0.02, h, 0.07], [x, h / 2, plateZ]));
-    b.pieces.push(box("metal", [0.02, h - 2 * taper, 0.05], [x, h / 2, linkZ]));
-    for (const y of pinY) b.pieces.push(disc("chrome", 0.009, 0.028, "x", [x, y, plateZ], 6), disc("chrome", 0.007, 0.026, "x", [x, h / 2 + (y - h / 2) * 0.6, linkZ], 6));
+    b.pieces.push(box("panel", [0.02, h - 0.004, 0.07], [x, h / 2, plateZ], { bevel: 0.003 }));
+    b.pieces.push(box("panel", [0.016, bh - 0.01, 0.05], [x, h / 2, linkZ], { bevel: 0.003 }));
+    for (const y of pinY) pin(x, y, plateZ, s);
+    // the splay holes down the link bar, the pin in the one this box hangs at
+    for (const k of [-1, 0]) b.pieces.push(disc("knob", 0.0045, 0.018, "x", [x, h / 2 + k * bh * 0.2, linkZ], 6));
+    pin(x, h / 2 + bh * 0.2, linkZ, s);
+    b.pieces.push(...handle("panel", [x + s * 0.01, h / 2, plateZ - 0.085], s > 0 ? "x" : "-x", 0.09, 0.022));
   }
-  const py = h * 0.5;
-  b.pieces.push(box("panel", [w * 0.34, h * 0.5, 0.01], [-w * 0.3, py, back - 0.004]));
-  b.pieces.push(disc("light", 0.004, 0.006, "z", [-w * 0.18, py + h * 0.17, back - 0.01], 4));
-  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [-w * 0.42, py - h * 0.06, back - 0.009], [w * 0.09, 0, 0]);
+  const bz = back + rec - 0.008;
+  plate(b, pw, ph, [px, py, bz + 0.004]);
+  for (let i = 0; i < 7; i++) b.pieces.push(box("metal", [0.003, ph * 0.36, 0.008], [px - pw * 0.34 + (i * pw * 0.68) / 6, py + ph * 0.22, bz - 0.004]));
+  b.pieces.push(disc("light", 0.0035, 0.004, "z", [px + pw * 0.34, py - ph * 0.12, bz - 0.002], 8));
+  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [px - pw * 0.32, py - ph * 0.22, bz], [pw * 0.22, 0, 0]);
+  backPrint(b, "RISK OF SHOCK DO NOT OPEN", [px, py - ph / 2 + 0.01, bz - 0.0005], Math.min(0.006, pw / 50));
   mark(b, "hinge-top", [0, pinY[1], plateZ], [1, 0, 0]);
   mark(b, "hinge-bottom", [0, pinY[0], plateZ], [1, 0, 0]);
   mark(b, "grab", [0, h, 0]);
@@ -1355,8 +1420,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "sand-dolly": sandDolly,
   "jerry-can-20l": fuelCan,
   "bar-cooler": barCooler,
-  "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
-  "line-array-10": lineArray,
+  "line-array-box": () => lineArray("line-array-box"),
+  "line-array-10": () => lineArray("line-array-10"),
   "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,

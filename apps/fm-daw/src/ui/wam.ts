@@ -22,13 +22,18 @@ const WamValues = rec(obj({ value: num(-1e300, 1e300) }), 4096);
 
 /** The part of a WAM's node this host uses (WamNode in @webaudiomodules/api). */
 export interface WamNode {
-  connect(to: AudioNode): unknown;
+  connect(to: AudioNode, output?: number, input?: number): unknown;
+  disconnect?(to?: AudioNode): unknown;
   getParameterInfo(): Promise<unknown>;
   getParameterValues(normalized: boolean): Promise<unknown>;
   setParameterValues(values: Record<string, { id: string; value: number; normalized: boolean }>): unknown;
-  scheduleEvents(...events: { type: "wam-midi"; time: number; data: { bytes: [number, number, number] } }[]): void;
+  scheduleEvents(...events: WamEvent[]): void;
   destroy(): void;
 }
+/** A note (MIDI bytes) or a slider move, at a time on the module's audio context. */
+export type WamEvent =
+  | { type: "wam-midi"; time: number; data: { bytes: [number, number, number] } }
+  | { type: "wam-automation"; time: number; data: { id: string; value: number; normalized: false } };
 /** A track's fader on a plugin's sound (a GainNode, the part used here). */
 export interface Fader { gain: { value: number; setTargetAtTime(v: number, at: number, timeConstant: number): unknown }; disconnect(): void }
 interface WamInstance { audioNode: WamNode; createGui?: () => Promise<unknown>; destroyGui?: (el: Element) => void }
@@ -69,23 +74,41 @@ export interface RackDeps {
   /** The audio context's time, in seconds. */
   now(): number;
   here: string;
-  /** Sets the context up as a WAM host once; answers the host's group id. */
+  /** Sets the page's context up as a WAM host (once per context); answers the host's group id. */
   host(): Promise<string>;
   load(url: string): Promise<unknown>;
   /** One of the module's plugins, made on the page's audio context in the host's group. */
   make(cls: WamClass, group: string): Promise<unknown>;
-  /** A fader at 0 between `node` and the engine's second input, where every web plugin's sound goes. */
-  fader(node: WamNode): Fader;
+  /**
+   * A fader at 0 between `node` and the engine's second input, where every web plugin's sound goes; `node` also goes,
+   * before the fader, to track `track`'s own tap, so the sesh can hear it (src/studio/plugin-line.ts).
+   */
+  fader(node: WamNode, track: number): Fader;
   /** Puts a plugin's own panel on the page under `title`; `closed` runs when the player shuts it. */
   show?(el: Element, title: string, closed: () => void): void;
   store?: Pick<Storage, "getItem" | "setItem">;
+  /** An audio context of its own, `frames` long at `sampleRate`, that renders as fast as it can: for a bounce. */
+  offline?(sampleRate: number, frames: number): OfflineRig;
 }
+
+/** An offline context set up to host one module and hand back what it played. */
+export interface OfflineRig {
+  /** Sets the context up as a WAM host; answers the host's group id. */
+  host(): Promise<string>;
+  make(cls: WamClass, group: string): Promise<unknown>;
+  /** `node` to the context's speakers. */
+  out(node: WamNode): void;
+  /** Renders it all: interleaved stereo, `frames` long. */
+  render(): Promise<Float32Array>;
+}
+
+/** How often a plugin's own panel, while open, says which knobs were turned in it. */
+const PANEL_POLL_MS = 400;
 
 interface Slot { node: WamNode; inst: WamInstance; gain: Fader; names: Map<number, string>; params: PluginParam[]; gui?: Element }
 
 export class WamRack {
   private slots = new Map<number, Slot>();
-  private group: Promise<string> | null = null;
   constructor(private d: RackDeps) {}
 
   /** This player says `site` may run plugins in this page, from now on. */
@@ -104,33 +127,75 @@ export class WamRack {
     if (!at) return { error: "that isn't a web address a plugin can load from (https only)" };
     if (at.site && !this.trusted(at.site)) return { error: `${plug.name} is a plugin from ${new URL(at.site).host}, and nobody here has said that site may run code in this page`, site: at.site };
     try {
-      const group = await (this.group ??= this.d.host());
-      const mod = await (BUILT_IN[at.url]?.load() ?? this.d.load(at.url));
-      const cls = has(mod, "default") ? mod.default : null;
-      if (!isClass(cls)) return { error: "that address isn't a Web Audio Module" };
-      const inst = await this.d.make(cls, group);
-      if (!isInstance(inst)) return { error: "that module didn't make a sound node" };
-      const node = inst.audioNode;
-      const infos = check(WamInfos, await node.getParameterInfo()) ?? {};
-      const now = check(WamValues, await node.getParameterValues(false)) ?? {};
-      const names = new Map<number, string>();
-      const params: PluginParam[] = Object.entries(infos).map(([name, q]) => {
-        const id = paramId(name);
-        names.set(id, name);
-        const value = plug.values.find((x) => x.id === id)?.v ?? now[name]?.value ?? q.defaultValue;
-        return { id, name: q.label || name, module: "", min: q.minValue, max: q.maxValue, default: q.defaultValue, value, stepped: q.type !== undefined && q.type !== "float" };
-      });
-      const gain = this.d.fader(node);
-      const slot: Slot = { node, inst, gain, names, params };
-      this.slots.set(t, slot);
-      for (const { id, v } of plug.values) this.set(slot, id, v);
+      const group = await this.d.host();
+      const cls = await this.module(at.url);
+      if (typeof cls === "string") return { error: cls };
+      const made = await this.made(cls, group, plug);
+      if (typeof made === "string") return { error: made };
+      const { inst, node, names, params } = made;
+      const gain = this.d.fader(node, t);
+      this.slots.set(t, { node, inst, gain, names, params });
       return { params: params.map((q) => ({ ...q })), editor: typeof inst.createGui === "function" && !!this.d.show };
     } catch (e) {
       return { error: `it wouldn't load (${e instanceof Error ? e.message : String(e)})` };
     }
   }
 
-  private set(s: Slot, id: number, v: number) {
+  /** The module's plugin class, or why the address isn't one. */
+  private async module(url: string): Promise<WamClass | string> {
+    const mod = await (BUILT_IN[url]?.load() ?? this.d.load(url));
+    const cls = has(mod, "default") ? mod.default : null;
+    return isClass(cls) ? cls : "that address isn't a Web Audio Module";
+  }
+
+  /** One of `cls`'s plugins with `plug`'s sliders set: its node and its sliders as the desk numbers them. */
+  private async made(cls: WamClass, group: string, plug: TrackPlugin, make = (c: WamClass, g: string) => this.d.make(c, g)) {
+    const inst = await make(cls, group);
+    if (!isInstance(inst)) return "that module didn't make a sound node";
+    const node = inst.audioNode;
+    const infos = check(WamInfos, await node.getParameterInfo()) ?? {};
+    const now = check(WamValues, await node.getParameterValues(false)) ?? {};
+    const names = new Map<number, string>();
+    const params: PluginParam[] = Object.entries(infos).map(([name, q]) => {
+      const id = paramId(name);
+      names.set(id, name);
+      const value = plug.values.find((x) => x.id === id)?.v ?? now[name]?.value ?? q.defaultValue;
+      return { id, name: q.label || name, module: "", min: q.minValue, max: q.maxValue, default: q.defaultValue, value, stepped: q.type !== undefined && q.type !== "float" };
+    });
+    for (const { id, v } of plug.values) this.set({ node, names }, id, v);
+    return { inst, node, names, params };
+  }
+
+  /**
+   * Track `t`'s sound for a bounce (#5360): a copy of `plug` of its own on an offline context, played `events` (each
+   * `at` its frame), `frames` long at `sampleRate`, interleaved stereo. Throws why it couldn't (the same site rule as
+   * playing: a site nobody said yes to isn't loaded).
+   */
+  async bounce(plug: TrackPlugin, events: PluginEvent[], sampleRate: number, frames: number): Promise<Float32Array> {
+    const at = siteOf(plug.path, this.d.here);
+    if (!at) throw new Error("that isn't a web address a plugin can load from");
+    if (at.site && !this.trusted(at.site)) throw new Error(`nobody here has said ${new URL(at.site).host} may run code in this page`);
+    if (!this.d.offline) throw new Error("this page can't render a web plugin offline");
+    const rig = this.d.offline(sampleRate, frames);
+    const group = await rig.host();
+    const cls = await this.module(at.url);
+    if (typeof cls === "string") throw new Error(cls);
+    const made = await this.made(cls, group, plug, rig.make);
+    if (typeof made === "string") throw new Error(made);
+    const { node, names } = made;
+    rig.out(node);
+    node.scheduleEvents(...events.flatMap((e): WamEvent[] => {
+      const time = (e.at ?? 0) / sampleRate;
+      if (e.t !== "set") return [{ type: "wam-midi", time, data: { bytes: e.t === "on" ? [0x90, e.key, Math.max(1, Math.round(e.vel * 127))] : [0x80, e.key, 0] } }];
+      const id = names.get(e.id);
+      return id === undefined ? [] : [{ type: "wam-automation", time, data: { id, value: e.v, normalized: false } }];
+    }));
+    // the module's port answers in order: once this comes back, the audio thread has every note above
+    await node.getParameterValues(false);
+    try { return await rig.render(); } finally { try { node.destroy(); } catch { /* gone either way */ } }
+  }
+
+  private set(s: Pick<Slot, "node" | "names">, id: number, v: number) {
     const name = s.names.get(id);
     if (name !== undefined) void s.node.setParameterValues({ [name]: { id: name, value: v, normalized: false } });
   }
@@ -152,14 +217,16 @@ export class WamRack {
     if (s) s.gain.gain.setTargetAtTime(g, this.d.now(), 0.01);
   }
 
-  /** Shows the plugin's own panel; false when it has none. `moved` gets the sliders turned in it once it's shut. */
+  /** Shows the plugin's own panel; false when it has none. `moved` gets the sliders turned in it as they're turned, and once more when it's shut. */
   async open(t: number, title: string, moved: (changes: ParamChange[]) => void): Promise<boolean> {
     const s = this.slots.get(t);
     if (!s?.inst.createGui || !this.d.show) return false;
     const el = s.gui ?? await s.inst.createGui().catch(() => null);
     if (!(el instanceof Element)) return false;
     s.gui = el;
-    this.d.show(el, title, () => { void this.moved(t).then(moved); });
+    const say = () => { void this.moved(t).then((c) => { if (c.length) moved(c); }); };
+    const poll = setInterval(() => { if (this.slots.get(t) === s) say(); else clearInterval(poll); }, PANEL_POLL_MS);
+    this.d.show(el, title, () => { clearInterval(poll); say(); });
     return true;
   }
 
@@ -206,14 +273,49 @@ export function showPanel(el: Element, title: string, closed: () => void) {
   box.show();
 }
 
-/** The page's rack: modules play into `bus` on `ctx`, the WAM SDK's host half loaded when the first one starts. */
-export function pageRack(ctx: AudioContext, bus: AudioNode): WamRack {
-  return new WamRack({
-    now: () => ctx.currentTime, here: location.href,
-    host: async () => (await (await import("@webaudiomodules/sdk")).initializeWamHost(ctx))[0],
-    load: (url) => import(/* @vite-ignore */ url),
+const hosts = new WeakMap<BaseAudioContext, Promise<string>>();
+/** `ctx` set up as a WAM host, once: the host's group id. */
+function wamHost(ctx: BaseAudioContext): Promise<string> {
+  let g = hosts.get(ctx);
+  if (!g) hosts.set(ctx, (g = import("@webaudiomodules/sdk").then((sdk) => sdk.initializeWamHost(ctx)).then((ids) => ids[0])));
+  return g;
+}
+
+/** A module rendered on an OfflineAudioContext of its own: the bounce's copy of a web plugin. */
+export function offlineRig(sampleRate: number, frames: number): OfflineRig {
+  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: Math.max(1, frames), sampleRate });
+  return {
+    host: () => wamHost(ctx),
     make: (cls, group) => cls.createInstance(group, ctx),
-    fader: (node) => { const g = new GainNode(ctx, { gain: 0 }); node.connect(g); g.connect(bus); return g; },
+    out: (node) => { node.connect(ctx.destination); },
+    async render() {
+      const b = await ctx.startRendering(), l = b.getChannelData(0), r = b.numberOfChannels > 1 ? b.getChannelData(1) : l;
+      const out = new Float32Array(2 * frames);
+      for (let f = 0; f < frames; f++) { out[2 * f] = l[f] ?? 0; out[2 * f + 1] = r[f] ?? 0; }
+      return out;
+    },
+  };
+}
+
+/**
+ * The page's rack: modules play into `bus` on `ctx`, each also into its track's channel of `taps` (one per track), the
+ * WAM SDK's host half loaded when the first one starts. Before the audio is on (`audio` null) it can only bounce.
+ */
+export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps: AudioNode } | null): WamRack {
+  const on = () => { const a = audio(); if (!a) throw new Error("the audio isn't on"); return a; };
+  return new WamRack({
+    now: () => audio()?.ctx.currentTime ?? 0, here: location.href,
+    host: async () => wamHost(on().ctx),
+    load: (url) => import(/* @vite-ignore */ url),
+    make: (cls, group) => cls.createInstance(group, on().ctx),
+    fader: (node, track) => {
+      const live = on(), g = new GainNode(live.ctx, { gain: 0 }), { taps } = live;
+      node.connect(g);
+      g.connect(live.bus);
+      node.connect(taps, 0, track);
+      return { gain: g.gain, disconnect: () => { g.disconnect(); try { node.disconnect?.(taps); } catch { /* already off it */ } } };
+    },
+    offline: offlineRig,
     show: showPanel,
     store: localStorage,
   });

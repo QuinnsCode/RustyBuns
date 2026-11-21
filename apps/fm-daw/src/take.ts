@@ -139,3 +139,34 @@ export class TakeCapture {
     return out;
   }
 }
+
+/**
+ * A page's takes' sound by id, and what each track's take on its audio thread is, so only changes go there.
+ * The sesh page and the jam room both keep one: chunks in from the sesh, takes recorded here, the project's tracks out.
+ */
+export class TakeShelf {
+  private sounds = new Map<string, Float32Array>();
+  private inbox = new TakeInbox();
+  /** Each track's take on the audio thread now, as "id@beat". */
+  private sent: (string | null)[] = [];
+  get(id: string) { return this.sounds.get(id); }
+  keep(id: string, pcm: Float32Array) { this.sounds.set(id, pcm); }
+  /** A chunk from the sesh: true once it finished a take. */
+  add(m: TakeBytes): boolean {
+    const pcm = this.inbox.add(m);
+    if (pcm) this.sounds.set(m.id, pcm);
+    return !!pcm;
+  }
+  /** A new audio thread knows no takes: the next sync sends them all. */
+  forget() { this.sent = []; }
+  /** Each track's take whose sound is here, to the audio thread where it changed. */
+  sync(p: { tracks: readonly { take?: TakeRef }[] }, send: (m: { t: "take"; track: number; pcm: Float32Array | null; beat: number }) => void) {
+    p.tracks.forEach((t, i) => {
+      const pcm = t.take ? this.sounds.get(t.take.id) : undefined;
+      const key = t.take && pcm ? `${t.take.id}@${t.take.beat}` : null;
+      if (key === (this.sent[i] ?? null)) return;
+      this.sent[i] = key;
+      send({ t: "take", track: i, pcm: pcm && key ? pcm : null, beat: t.take?.beat ?? 0 });
+    });
+  }
+}

@@ -128,7 +128,7 @@ friends who play different games still share one.
   per space (`src/space.ts`) holds its channels, their messages and who is online.
 - **Joining:** the owner hands out a twelve-letter invite (a party code's alphabet, twice as long: it is copied, never read out,
   and lets anyone in for good). One account or address may try 20 different invites, or party codes, a minute. Up to 500
-  members a space, 10 spaces a person owns.
+  members a space, 10 spaces a person owns. A studio's space seats the studio, up to 5,000 people (`STUDIO_MEMBERS`, #5320).
 - **Channels:** `#general` to start; the owner adds more (up to 20 text and voice together, lower-case, digits and
   dashes) and deletes any but `#general`.
 - **Voice channels:** carried by Qlave ([QLAVE.md](QLAVE.md)). A member asks the space for a one-use ticket and
@@ -149,6 +149,12 @@ friends who play different games still share one.
 - **Private channels:** a text channel those who run the space add as private (`privateChannel`) and let people into or out of
   (`allow`). Its tab, messages and history reach only those who run the space and the people let in; deleting it or an account
   takes it or them off the list.
+- **Files (#5320):** the paperclip (`postFile(space, channel, blob, name)`, `POST /q/space/<id>/file`) puts a file of up to 10 MB on
+  Qollab's R2 bucket (`FILES`, `qollab-files`) and posts it as a message whose text is its name and whose `file` names it; a space
+  keeps up to 1 GB, a person posts 10 a minute, a muted one none. `fetchFile` (`GET /q/space/<id>/file/<file id>`) hands it back to
+  a member who sees its channel, always as a download, keeping its type only for images, PDFs, plain text and common audio and video.
+  `unsay(channel, id)` deletes a message (its sender's own, or anyone's for those who run the space); deleting the message, its
+  channel, the space or the sender's account, or its page ageing out, takes the file off R2.
 - **Moderation:** the owner and admins mute (text and voice) and kick; anyone reports, which reaches them and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
 - **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a reply button on each that opens its thread, a channel search, a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.

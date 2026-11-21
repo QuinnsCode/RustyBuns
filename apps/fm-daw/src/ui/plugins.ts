@@ -37,12 +37,20 @@ const why = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace
  * plugin track from its notes, `frames` long at `sampleRate`, with a copy of the plugin of its own (the one playing
  * is left alone). `sound` is each track's, interleaved stereo, for `renderProject`; `missed` names the ones the
  * host couldn't play and why (no desktop host, a plugin that isn't on this computer): the bounce goes on without them.
+ * A web plugin track (#5360) is rendered in the page instead, on an offline context of its own (`web`, src/ui/wam.ts).
  */
-export async function bouncePlugins(p: Project, sampleRate: number, frames: number, host = { renderPlugin, startPlugin, stopPlugin }): Promise<{ sound: Map<number, Float32Array>; missed: string[] }> {
+export async function bouncePlugins(p: Project, sampleRate: number, frames: number, host = { renderPlugin, startPlugin, stopPlugin }, web: Pick<WamRack, "bounce"> | null = null): Promise<{ sound: Map<number, Float32Array>; missed: string[] }> {
   const sound = new Map<number, Float32Array>(), missed: string[] = [];
   for (const [t, events] of pluginScore(p, sampleRate, frames)) {
     const plug = p.tracks[t]?.plugin;
     if (!plug) continue;
+    if (plug.web) {
+      try {
+        if (!web) throw new Error("a web plugin plays in FM DAW's own page");
+        sound.set(t, await web.bounce(plug, events, sampleRate, frames));
+      } catch (e) { missed.push(`${plug.name} (${why(e)})`); }
+      continue;
+    }
     const slot = BOUNCE_SLOT + t;
     try {
       const started = check(StartReply, await host.startPlugin(slot, plug, sampleRate));

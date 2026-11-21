@@ -2,7 +2,9 @@
 // Starts the desk's audio, puts FM DAW's own Web Audio Module (Test Tone, src/wam/tone.ts) on the selected track and holds a key:
 // it must be heard at the output, and not with the key let go or the track muted. Then a plugin from another site:
 // it must stay silent and ask first, and load and play once the player says yes (the "other site" is this same server
-// under its other name, localhost against 127.0.0.1). Prints what it measured; exit 1 when any of that fails.
+// under its other name, localhost against 127.0.0.1; a built page serves no source, so a copy built here and served
+// beside it). Then a bounce of the track, and its sound on the sesh's live line. Prints what it measured; exit 1 when
+// any of that fails. A built page: build the app, `bunx vite preview --outDir dist/client`, then `--url` that.
 // Without --url it serves the app on its own dev server, which needs .rustybuns/vite.ts (`bunx rustybuns boundary`
 // here writes it).
 import { help } from "../../../scripts/help.ts";
@@ -11,6 +13,11 @@ import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.
 help(import.meta.path);
 const app = new URL("..", import.meta.url).pathname;
 const given = process.argv.includes("--url") ? process.argv[process.argv.indexOf("--url") + 1] : undefined;
+
+const server = given ? { url: given.replace(/\/$/, "") + "/", stop: () => {} } : await startVite(app);
+// the "other site" serves Test Tone: the dev server has its source; a built page has none, so a copy built here,
+// served from a server of its own on the page's other name (localhost against 127.0.0.1)
+const away = await otherSite(server.url);
 
 const JOURNEY = `(async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -34,7 +41,7 @@ const JOURNEY = `(async () => {
   key("keyup");
   const released = await peak();
   // the same module from "another site": this server under its other name
-  const other = (location.hostname === "localhost" ? location.origin.replace("localhost", "127.0.0.1") : location.origin.replace(location.hostname, "localhost")) + "/src/wam/tone.ts";
+  const other = ${JSON.stringify(away.url)};
   fmdaw.plays(T, { path: other, index: 0, name: "tone", web: true, values: [] });
   await ready(other);
   const asked = { site: plays().site, error: plays().error };
@@ -47,10 +54,18 @@ const JOURNEY = `(async () => {
   key("keydown");
   const heldOther = await peak();
   key("keyup");
-  return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther };
+  // the bounce: a copy of its own on an offline context, a key held for the first half of a second
+  const bounced = await fmdaw.bounce(T, 1);
+  // the sesh's live line, as going online turns it on: the track's own sound goes out
+  fmdaw.line(T, true);
+  key("keydown");
+  await wait(700);
+  const line = fmdaw.state().line[T] ?? 0;
+  key("keyup");
+  fmdaw.line(T, false);
+  return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line };
 })()`;
 
-const server = given ? { url: given.replace(/\/$/, "") + "/", stop: () => {} } : await startVite(app);
 // Chrome's stand-in speakers, as scripts/guitar-check.ts: real time with no sound card (#5278)
 const chrome = await launchChrome(["--disable-audio-output"]);
 let ok = false;
@@ -72,11 +87,26 @@ try {
     ["silent again once the key is up", r.released < 0.001],
     ["a plugin from another site asks first, and is silent", typeof r.asked.site === "string" && r.unasked < 0.001],
     ["after a yes it loads and plays", r.trusted && !r.after.error && r.heldOther > 0.02],
+    ["a bounce has it: heard with the key held, silent after", !r.bounced.error && r.bounced.held > 0.02 && r.bounced.after < 0.001],
+    ["the sesh's live line carries it", r.line > 0.01],
     ["no page errors", noise.length === 0],
   ];
   console.log(JSON.stringify(r));
   for (const [what, pass] of checks) console.log(`${pass ? "ok  " : "FAIL"} ${what}`);
   if (noise.length) console.log(noise.join("\n"));
   ok = checks.every(([, pass]) => pass);
-} finally { chrome.stop(); server.stop(); }
+} finally { chrome.stop(); server.stop(); away.stop(); }
 process.exit(ok ? 0 : 1);
+
+/** Test Tone at the page's other name: the dev server's own source, or (a built page) a copy built and served here. */
+async function otherSite(page: string): Promise<{ url: string; stop: () => void }> {
+  const u = new URL(page), name = u.hostname === "localhost" ? "127.0.0.1" : "localhost";
+  const src = new URL("src/wam/tone.ts", u);
+  if ((await fetch(src).catch(() => null))?.headers.get("content-type")?.includes("javascript")) { src.hostname = name; return { url: src.href, stop: () => {} }; }
+  const built = await Bun.build({ entrypoints: [app + "src/wam/tone.ts"], target: "browser", format: "esm" });
+  const out = built.outputs[0];
+  if (!built.success || !out) throw new Error(`Test Tone wouldn't build: ${built.logs.join("\n")}`);
+  const code = await out.text();
+  const srv = Bun.serve({ port: 0, hostname: name, fetch: () => new Response(code, { headers: { "content-type": "text/javascript", "access-control-allow-origin": "*" } }) });
+  return { url: `http://${name}:${srv.port}/tone.js`, stop: () => srv.stop(true) };
+}

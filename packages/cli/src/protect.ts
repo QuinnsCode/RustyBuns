@@ -73,7 +73,7 @@ export function destroyedNames(cfg: Cfg): string[] {
 export function protectReport(cfg: Cfg, sub: string): string {
   const kept = protectedNames(cfg), gone = destroyedNames(cfg), refs = refNames(cfg);
   if (!kept.length && !gone.length && !refs.length) return "";
-  const lines = ["protection (destroy):"];
+  const lines = [sub === "destroy" ? "protection (destroy):" : `protection, if you ever run destroy (this ${sub} isn't one: what it changes is in the plan below):`];
   for (const n of kept) lines.push(`  [KEPT]    ${n}: destroy leaves it, and its data, on the account`);
   const fixed = new Set(unprotectableNames(cfg));
   const why = (n: string) => fixed.has(n) ? " (protect can't keep this kind)"

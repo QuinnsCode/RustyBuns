@@ -6,7 +6,7 @@ import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
-import { makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
+import { FILE_MAX, makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { board, isBoard } from "./board.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
@@ -28,7 +28,7 @@ const tryCode = (req: Request, who: string, code: string) => {
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
@@ -103,7 +103,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one (with { studio }, the studio's own space, its owner or admin asks),
   // POST /q/space/join { invite } joins one, and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's:
-  // a token from any Q app opens it. A studio's space has no invite to hand out: its members are the studio's.
+  // a token from any Q app opens it. A studio's members are in its space with no invite; its invite lets someone outside the studio in as a guest.
   if (pathname === "/q/space" || pathname === "/q/space/join") {
     const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -113,12 +113,12 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.method === "GET" && pathname === "/q/space") {
       const { results } = await conf.DB.prepare(`SELECT s.id, s.name, s.invite, s.studio_id AS studio, ${ROLE_OF} AS role
         FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?1
-        LEFT JOIN space_members m ON s.studio_id IS NULL AND m.space_id = s.id AND m.user_id = ?1 WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
+        LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?1 WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
         .bind(t.who.id, t.who.id).all<{ id: string; name: string; invite: string; studio: string | null; role: string }>();
-      // `owner`: they run it (an owner or an admin). The invite is for those who run a person's own space; a studio's has none.
+      // `owner`: they run it (an owner or an admin). The invite is for those who run it; in a studio's space it brings in guests.
       const spaces = results.map((r): SpaceRow => {
         const runs = r.role === "owner" || r.role === "admin";
-        return r.studio ? { id: r.id, name: r.name, owner: runs, studio: r.studio } : { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}) };
+        return { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}), ...(r.studio ? { studio: r.studio } : {}) };
       });
       return json({ spaces }, 200, head);
     }
@@ -127,8 +127,11 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (pathname === "/q/space/join") {
       const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
       if (invite && !tryCode(req, t.who.id, invite)) return json({ error: "too many invites just now; wait a minute" }, 429, head);
-      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ? AND studio_id IS NULL").bind(invite).first<{ id: string; name: string }>();
+      const s = invite && await conf.DB.prepare("SELECT id, name, studio_id AS studio FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string; studio: string | null }>();
       if (!s) return json({ error: "no space has that invite" }, 404, head);
+      // One of the studio's own is in its space already: no guest row, which would outlast their seat in the studio.
+      if (s.studio && await conf.DB.prepare("SELECT 1 AS y FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(s.studio, t.who.id).first("y"))
+        return json({ id: s.id, name: s.name }, 200, head);
       if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
         return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
       await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
@@ -161,6 +164,29 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (!s) return json({ error: "not a space you're in" }, 404);
     const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
+  }
+
+  // A space's files (space.ts): POST /q/space/<id>/file?channel=&name= with the bytes as the body posts one in that channel as a
+  // message; GET /q/space/<id>/file/<file id> brings it back. The token as a bearer, from any Q app, like the socket.
+  const fileAt = /^\/q\/space\/([0-9a-f-]{36})\/file(?:\/([0-9a-f-]{36}))?$/.exec(pathname);
+  if (fileAt) {
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST", "access-control-expose-headers": "content-disposition" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== (fileAt[2] ? "GET" : "POST")) return json({ error: fileAt[2] ? "GET a file" : "POST a file" }, 405, head);
+    if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
+    const t = await tokenOf(req, conf, bearerOf(req), { home: true });
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (!fileAt[2] && Number(req.headers.get("content-length")) > FILE_MAX) return json({ error: `a file is up to ${FILE_MAX / 1024 / 1024} MB` }, 413, head);
+    const s = await seatIn(conf, fileAt[1]!, t.who.id);
+    if (!s) return json({ error: "not a space you're in" }, 404, head);
+    const u = new URL(req.url).searchParams;
+    const q = new URLSearchParams({ ...t.who, sid: fileAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}),
+      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
+    const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
+      fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
+    const out = new Headers(r.headers);
+    for (const [k, v] of Object.entries(head)) out.set(k, v);
+    return new Response(r.body, { status: r.status, headers: out });
   }
 
   // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.

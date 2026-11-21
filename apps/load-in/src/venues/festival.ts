@@ -64,6 +64,11 @@ export const VOLTS = 120;
 /** The tent's back wall and the stage set behind the system: mids and highs lose this much behind it, dB. */
 export const TENT_WALL = 8;
 export const PASS = 80;
+/** The tops lifted over the heads, metres to the bottom box: the dance stacks up on scaffold wings 3 m high, the open
+ * stage's pairs flown from the front of its roof truss. Each is pitched down at the middle of its audience. */
+export const LIFT: Record<StageKey, number> = { tent: 3, open: 6.5 };
+/** Where a lifted top aims: this far out from the stage, at ear height. */
+const AIM_F = 23;
 
 export type Leg = "L1" | "L2" | "L3";
 export const LEGS: readonly Leg[] = ["L1", "L2", "L3"];
@@ -88,6 +93,8 @@ export type Rig = {
   /** Which way each stage faces, radians (0 faces +z, north; positive turns toward +x). */
   yaw: Record<StageKey, number>;
   subs: Record<StageKey, SubMode>;
+  /** Whether each stage's tops are lifted over the crowd (`LIFT`): scaffold wings at the tent, flown at the open stage. */
+  lift: Record<StageKey, boolean>;
   /** The master fader, dB under full power. */
   master: Record<StageKey, number>;
   /** Each feed's phase at the compound's distro, or null (unplugged). */
@@ -107,7 +114,7 @@ export function rig(w: World): Rig {
   let r = rigs.get(w);
   if (!r) {
     r = {
-      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, master: { tent: -10, open: -9 },
+      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, lift: { tent: false, open: false }, master: { tent: -10, open: -9 },
       phase: Object.fromEntries(Object.keys(FEEDS).map((k) => [k, null])), feeder: { tent: 10, open: 10 },
       snake: { tent: false, open: false }, clock: 0, log: { tent: [], open: [] }, late: null,
     };
@@ -135,12 +142,19 @@ export const inAudience = (k: StageKey, yaw: number, x: number, z: number) => { 
 /** Where a stage's desk should go: 28 m out on its axis. */
 export const mixSpot = (k: StageKey, yaw: number) => onStage(k, yaw, 0, 28);
 const SIDE = 6, FRONT = 4;
+/** The bottom of a stage's tops: on the subs, on the scaffold wing, or flown. */
+const topsAt = (k: StageKey, lifted: boolean) => {
+  const sh = gear(STAGES[k].system === "dance" ? "horn-sub-21" : "arc-sub-18").size.h;
+  return STAGES[k].system === "dance" ? sh + (lifted ? LIFT.tent : 0) : lifted ? LIFT.open : sh + 1.1;
+};
+/** How far down a top at height `y` pitches to aim at the middle of its audience (radians, negative down); level on the ground. */
+const pitchFrom = (y: number, lifted: boolean) => (lifted ? -Math.atan2(y - FIELD.y, AIM_F - FRONT) : 0);
 
 /** A stage's boxes as items: each side's sub block on the ground (the third sub behind and turned round when it's
  * cardioid), and the stack (dance) or the pole pair (sculpted) on top. Hung: no one picks these up by hand. */
-export function stageItems(k: StageKey, yaw: number, mode: SubMode): Item[] {
+export function stageItems(k: StageKey, yaw: number, mode: SubMode, lifted = false): Item[] {
   const sys = STAGES[k].system, out: Item[] = [], subId = sys === "dance" ? "horn-sub-21" : "arc-sub-18";
-  const { w: sw, h: sh, d: sd } = gear(subId).size;
+  const { w: sw, d: sd } = gear(subId).size, base = topsAt(k, lifted);
   for (const side of [-1, 1] as const) {
     const n = side < 0 ? "l" : "r", at = (a: number, f: number) => onStage(k, yaw, side * SIDE + a, FRONT + f);
     const spots: [number, number, number][] = mode === "omni" ? [[-(sw + 0.05), 0, yaw], [0, 0, yaw], [sw + 0.05, 0, yaw]]
@@ -148,13 +162,13 @@ export function stageItems(k: StageKey, yaw: number, mode: SubMode): Item[] {
     spots.forEach(([a, f, rot], j) => { const p = at(a, f); out.push({ key: `${k}-sub-${n}${j + 1}`, gear: subId, x: p.x, y: 0, z: p.z, rot, hung: true }); });
     const p = at(0, 0);
     if (sys === "dance") {
-      out.push({ key: `${k}-midbass-${n}`, gear: "stack-mid-bass", x: p.x, y: sh, z: p.z, rot: yaw, hung: true });
-      out.push({ key: `${k}-midhigh-${n}`, gear: "stack-mid-high", x: p.x, y: sh + gear("stack-mid-bass").size.h, z: p.z, rot: yaw, hung: true });
+      out.push({ key: `${k}-midbass-${n}`, gear: "stack-mid-bass", x: p.x, y: base, z: p.z, rot: yaw, hung: true });
+      out.push({ key: `${k}-midhigh-${n}`, gear: "stack-mid-high", x: p.x, y: base + gear("stack-mid-bass").size.h, z: p.z, rot: yaw, hung: true });
     } else {
       // a pair on the pole, splayed 15 degrees either way of the side's axis
       for (const [j, splay] of [[1, -0.26], [2, 0.26]] as const) {
         const q = at((j === 1 ? -0.24 : 0.24), 0);
-        out.push({ key: `${k}-sculpt-${n}${j}`, gear: "sculpted-3way", x: q.x, y: sh + 1.1, z: q.z, rot: yaw + splay, hung: true });
+        out.push({ key: `${k}-sculpt-${n}${j}`, gear: "sculpted-3way", x: q.x, y: base, z: q.z, rot: yaw + splay, hung: true });
       }
     }
   }
@@ -191,7 +205,7 @@ const near = (w: World, x: number, z: number, reach = REACH * 3) => Math.hypot(w
 const stageNear = (w: World): StageKey | null => STAGE_KEYS.find((k) => near(w, STAGES[k].x, STAGES[k].z, 14)) ?? null;
 const relay = (w: World, k: StageKey) => {
   const r = rig(w), keep = w.items.filter((i) => !i.key.startsWith(`${k}-`) || i.key === `${k}-rack` || i.key === `${k}-desk`);
-  w.items = [...keep, ...stageItems(k, r.yaw[k], r.subs[k])];
+  w.items = [...keep, ...stageItems(k, r.yaw[k], r.subs[k], r.lift[k])];
 };
 
 /** Turn a stage to face `deg` (0 is north, 90 east), standing on or by it: the deck and the system turn together. */
@@ -205,6 +219,14 @@ export function face(w: World, k: StageKey, deg: number, anywhere = false): Answ
 export function subs(w: World, k: StageKey, mode: SubMode, anywhere = false): Answer {
   if (!anywhere && stageNear(w) !== k) return { ok: false, why: `stand by ${STAGES[k].name}'s subs to rebuild them` };
   rig(w).subs[k] = mode;
+  relay(w, k);
+  return { ok: true };
+}
+/** Lift a stage's tops over the crowd (or bring them down), standing by it: the tent's stacks go up onto scaffold
+ * wings, the open stage's pairs are flown from its roof. The subs stay on the ground. */
+export function lift(w: World, k: StageKey, on: boolean, anywhere = false): Answer {
+  if (!anywhere && stageNear(w) !== k) return { ok: false, why: `stand by ${STAGES[k].name} to ${STAGES[k].system === "dance" ? "put its stacks on the scaffold" : "fly its tops"}` };
+  rig(w).lift[k] = on;
   relay(w, k);
   return { ok: true };
 }
@@ -299,10 +321,11 @@ export function stageSources(w: World, k: StageKey, force = false): Source[] {
     out.push(...subBlock(subId, { x: p.x, y: sh / 2, z: p.z }, yaw, r.subs[k], gear(subId).speaker!.ratedWatts * gain));
     const box = (id: string, y: number, turn = 0, a = 0) => {
       const q = onStage(k, yaw, side * SIDE + a, FRONT);
-      out.push(source(id, { x: q.x, y, z: q.z }, { yaw: yaw + turn, watts: gear(id).speaker!.ratedWatts * gain }));
+      out.push(source(id, { x: q.x, y, z: q.z }, { yaw: yaw + turn, pitch: pitchFrom(y, r.lift[k]), watts: gear(id).speaker!.ratedWatts * gain }));
     };
-    if (sys === "dance") { box("stack-mid-bass", sh + 0.4); box("stack-mid-high", sh + 1.0); }
-    else { box("sculpted-3way", sh + 1.55, -0.26, -0.24); box("sculpted-3way", sh + 1.55, 0.26, 0.24); }
+    const base = topsAt(k, r.lift[k]);
+    if (sys === "dance") { box("stack-mid-bass", base + 0.4); box("stack-mid-high", base + 1.0); }
+    else { box("sculpted-3way", base + 0.45, -0.26, -0.24); box("sculpted-3way", base + 0.45, 0.26, 0.24); }
   }
   return out;
 }
@@ -489,13 +512,11 @@ export function crowdState(w: World, s = scores(w)) {
 }
 
 /**
- * Show time: the field as set at soundcheck, scaled by the crowd's mood (a late start costs it), and the pay. The score
- * with the crowd in is on the card and in the state but doesn't count yet: both systems stand on the ground at head
- * height, so the back of each audience hears them through every row, and the level has no way to lift the tops over
- * the heads (#5352).
+ * Show time: the field as the crowd hears it, scaled by its mood (a late start costs it), and the pay. Tops left at head
+ * height fire through every row of bodies; lifted (`lift`), they only graze the back.
  */
 export function show(w: World) {
-  const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  const s = scores(w).full, d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
   return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
 }
 export type Show = ReturnType<typeof show>;
@@ -505,7 +526,7 @@ export function festivalState(w: World, h?: Heat, full?: Heat) {
   const r = rig(w), both = scores(w, h, full), s = both.soundcheck;
   return {
     clock: clockAt(r.clock), curfew: clockAt(CURFEW_H * 3600),
-    stages: Object.fromEntries(STAGE_KEYS.map((k) => [k, { ...s.stages[k], facing: Math.round((r.yaw[k] * 180) / Math.PI), subs: r.subs[k], master: r.master[k], snake: r.snake[k], running: r1(runningLeq(r.log[k])) }])),
+    stages: Object.fromEntries(STAGE_KEYS.map((k) => [k, { ...s.stages[k], facing: Math.round((r.yaw[k] * 180) / Math.PI), subs: r.subs[k], lifted: r.lift[k], master: r.master[k], snake: r.snake[k], running: r1(runningLeq(r.log[k])) }])),
     fence: s.fence, fenceLimit: FENCE_LIMIT, houses: s.houses, houseLimit: HOUSE_LIMIT, mixLimit: MIX_LIMIT,
     phases: r.phase, power: s.power, powerOk: s.powerOk, licenceOk: s.licenceOk, curfewOk: s.curfewOk, score: s.score, pass: s.pass,
     full: { score: both.full.score, pass: both.full.pass, stages: Object.fromEntries(STAGE_KEYS.map((k) => [k, { covered: both.full.stages[k].covered, level: both.full.stages[k].level, bleedOk: both.full.stages[k].bleedOk }])) },

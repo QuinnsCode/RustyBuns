@@ -3,7 +3,7 @@
 // Look here before writing a toHex, a digest, an esc or a plural again.
 
 import { isRecord } from "@rustybuns/util/guard";
-export { b64, b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
+export { b64, b64url, digest, hex, hmacHex, hmacSigned, sha256 } from "@rustybuns/util/bytes";
 
 /** `s` safe inside HTML text and attribute values. */
 import { esc } from "@rustybuns/util";

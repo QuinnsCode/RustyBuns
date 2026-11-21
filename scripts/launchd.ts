@@ -37,13 +37,56 @@ export function install(job: Job): boolean {
   mkdirSync(path.dirname(file), { recursive: true });
   mkdirSync(path.dirname(job.log), { recursive: true });
   writeFileSync(file, plist(job));
-  Bun.spawnSync(["launchctl", "bootout", `gui/${uid()}/${job.label}`]);
-  return Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid()}`, file], { stderr: "inherit" }).exitCode === 0;
+  const service = `gui/${uid()}/${job.label}`;
+  Bun.spawnSync(["launchctl", "bootout", service]);
+  // bootout returns before launchd lets go of the job; a bootstrap then fails "5: Input/output error". Wait it out.
+  for (let i = 0; i < 20 && Bun.spawnSync(["launchctl", "print", service], { stdout: "ignore", stderr: "ignore" }).exitCode === 0; i++) Bun.sleepSync(250);
+  for (let i = 0; i < 5; i++) {
+    const r = Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid()}`, file], { stdout: "ignore", stderr: "pipe" });
+    if (r.exitCode === 0) return true;
+    if (i === 4) process.stderr.write(r.stderr);
+    Bun.sleepSync(500);
+  }
+  return false;
 }
 
 export function uninstall(label: string): void {
   Bun.spawnSync(["launchctl", "bootout", `gui/${uid()}/${label}`]);
   rmSync(plistOf(label), { force: true });
+}
+
+const git = (cwd: string, ...args: string[]) => {
+  const r = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  return { ok: r.exitCode === 0, out: r.stdout.toString().trim(), err: r.stderr.toString().trim() };
+};
+
+/** A job's own checkout: a detached, clean tree that only the job uses. Moves it to a fresh `origin/main` (and runs
+ *  `bun install --frozen-lockfile` when the lockfile moved). Says what it did: "moved" means the running script is
+ *  the old code, so run it again. A checkout on a branch or with changes is somebody's work and is left alone. */
+export function catchUp(repo: string): "moved" | "current" | "skipped" {
+  if (git(repo, "symbolic-ref", "-q", "HEAD").ok) return "skipped";
+  if (git(repo, "status", "--porcelain").out) return "skipped";
+  if (!git(repo, "fetch", "-q", "origin", "main").ok) return "skipped";
+  const head = git(repo, "rev-parse", "HEAD").out, main = git(repo, "rev-parse", "FETCH_HEAD").out;
+  if (head === main) return "current";
+  const lockMoved = git(repo, "diff", "--quiet", head, main, "--", "bun.lock").ok === false;
+  if (!git(repo, "checkout", "-q", "--detach", main).ok) return "skipped";
+  if (lockMoved) Bun.spawnSync(["bun", "install", "--frozen-lockfile"], { cwd: repo, stdout: "ignore", stderr: "inherit" });
+  return "moved";
+}
+
+/** The checkout a job runs from: a detached worktree at `home` on `origin/main`, made once and installed, whichever
+ *  checkout installs it (an office worktree is deleted when its worker goes home; the owner's own is on a branch with
+ *  their edits, which catchUp never moves). Throws when `home` has edits, since catchUp would never move it either. */
+export function jobCheckout(repo: string, home: string): string {
+  if (!git(home, "rev-parse", "--git-dir").ok) {
+    mkdirSync(path.dirname(home), { recursive: true });
+    git(repo, "fetch", "-q", "origin", "main");
+    const r = git(repo, "worktree", "add", "-q", "--detach", home, "FETCH_HEAD");
+    if (!r.ok) throw new Error(`git worktree add ${home}: ${r.err}`);
+    Bun.spawnSync(["bun", "install", "--frozen-lockfile"], { cwd: home, stdout: "ignore", stderr: "inherit" });
+  } else if (catchUp(home) === "skipped") throw new Error(`${home} has edits or is on a branch, so it can't follow origin/main: see git -C ${home} status`);
+  return home;
 }
 
 /** Hand a job's last step to a headless Claude: artifacts have no API, only Claude's own tools. Print mode leaves the

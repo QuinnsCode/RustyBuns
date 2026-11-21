@@ -29,7 +29,8 @@ import { GearHands } from "./gear-hands.ts";
 import { gearPlace } from "./gear-wall.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
-import { encodeTake } from "../take.ts";
+import { TakeShelf, encodeTake } from "../take.ts";
+import { Recorder } from "./take-rec.ts";
 import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
@@ -63,6 +64,7 @@ import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
+import { mountDesk } from "./desk-panel.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -347,6 +349,7 @@ async function startAudio() {
       // a slice of your guitar, stamped with the beat you played it on, to everyone hearing a loop late or at the desk
       if (m.t !== "sound" || m.track !== undefined || myGuitar === null) return;
       const pcm = encodeTake(m.pcm, m.rate);
+      if (recorder.wants(0, myGuitar)) recorder.add(0, myGuitar, m.beat, Float32Array.from(pcm, (v) => v / 32767));
       if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
       else live(Band.slice(myGuitar, m.beat, pcm, b64url));
     });
@@ -355,6 +358,7 @@ async function startAudio() {
     opusEncoder = opus?.encoder ?? null;
     if (opus) far.decodeWith(opus.decoder);
     out.send(loadMsg(project));
+    takes.forget(); syncTakes(project);
     deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
@@ -399,7 +403,7 @@ let lags = new Map<number, Lag>();
 /** I, or the room page's button: plug your guitar (the computer's audio input) in, or pull it out. */
 async function guitar() {
   if (myGuitar !== null) {
-    guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null }); deskSync();
+    guitars?.unplug(); myGuitar = null; live({ t: "guitar", track: null }); deskSync(); recorder.unplugged(0);
     out?.send({ t: "send", on: false, inLatency: 0 }); mySource?.disconnect(); mySource = null;
     opusOut?.close(); opusOut = null;
     return void say({ ok: false, why: `Your ${myInput} is out` });
@@ -460,7 +464,7 @@ function onLive(from: number, e: Live) {
   if (e.t === "wear") people();
   if (e.t === "guitar") {
     far.heard(from, e); deskSync();
-    if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); }
+    if (e.track === null) { plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.stopHearing(from); recorder.unplugged(from); }
     else { plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from); guitars?.ask(from); }
     return;
   }
@@ -477,6 +481,37 @@ const wall = () => performance.timeOrigin + performance.now();
 const band = new Band(() => ({ bpm: project.bpm, loopBeats: loopBeats(project) }), wall);
 /** Everyone else's guitars and plugin tracks, coming in as slices (src/studio/plugin-line.ts). */
 const far = new FarSound(band, (m) => out?.send(m));
+
+// ---- Rec (src/studio/take-rec.ts): one loop of a player's input as a take on a track, heard here as on the sesh page ----
+const takes = new TakeShelf();
+const syncTakes = (p: Project) => { if (out) takes.sync(p, (m) => out?.send(m)); };
+const recorder = new Recorder({
+  project: () => project,
+  beat: () => (band.synced ? band.beat() : null),
+  land(track, take, chunks, pcm) {
+    takes.keep(take.id, pcm);
+    for (const c of chunks) net?.take(c);
+    player.edit({ t: "take", track, take });
+  },
+  say: (why) => void say({ ok: false, why }),
+});
+far.tap = recorder;
+setInterval(() => recorder.tick(), 500);
+/**
+ * R, or the harness: record `peer`'s input (0 you; left out: yours if it's in, else whoever's you look at, else the
+ * first in), onto `pick` if you lead and name a track. R while recording lands what came in.
+ */
+function record(peer?: number, pick?: number) {
+  if (recorder.rec) return recorder.land();
+  if (!may(player).edit) return void say({ ok: false, why: "Rec puts a take in the sesh: the leader hasn't let you edit" });
+  if (pick !== undefined && !iLead()) return void say({ ok: false, why: "The leader picks the track a take goes on" });
+  const looked = facing(jam);
+  const who = peer ?? (myGuitar !== null ? 0 : looked !== null && plugged.has(looked) ? looked : plugged.keys().next().value);
+  const line = who === 0 ? myGuitar : who === undefined ? undefined : plugged.get(who);
+  if (who === undefined || line === undefined || line === null) return void say({ ok: false, why: "Nobody's input is in to record: I plugs yours in" });
+  const input = who === 0 ? myInput : mics.has(who) ? "mic" : "guitar";
+  recorder.start(who, line, who === 0 ? `your ${input}` : `${jam.others.get(who)?.name || "Someone"}'s ${input}`, pick);
+}
 /**
  * The sesh's desk beyond the tracks, as FM DAW's Mixer tab sets it (src/mixer.ts): the sound that comes here in slices
  * plays on its player's channel, and the aux 2 return plays what the sesh's gear room has cabled into it.
@@ -586,7 +621,7 @@ $("raise").addEventListener("click", () => raise());
 $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in your guitar" : `Unplug your ${myInput}`; }));
 function onGone(from: number) {
   mutes.peers.delete(from);
-  plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from);
+  plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
   far.gone(from); deskSync();
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
@@ -620,7 +655,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); }
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
@@ -669,6 +704,14 @@ lane = mountLane({
   audition: (track) => { const midi = project.tracks[track]?.root ?? 60; noteOn("lane", { track, midi }, 0.8); setTimeout(() => noteOff("lane"), 220); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); else if (phase === "play") lock(); },
 });
+// the full desk over the room (desk-panel.ts): the button, Tab standing, or sitting at the control room's desk
+const desk = mountDesk({
+  project: () => project, edit: player.edit, may: () => may(player), ready: () => phase === "play" && !!here,
+  players: () => heardPlayers().map((h) => ({ who: h.who, name: h.peer === 0 ? "You: guitar" : jam.others.get(h.peer)?.name || "Player" })),
+  atDesk: () => phase === "play" && spotOf(jam, jam.me.seat)?.kind === "desk",
+  cabled: (aux) => (aux === 2 ? auxGear(gearRoom.patch).label : ""),
+  onToggle: (open) => { if (open) { lane?.close(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
+});
 // ? or the menu: what you can do here (help.ts, from actions.ts), and the key strip by the hint
 const help = mountHelp({
   parent: $("hud").parentElement ?? document.body, hint: $("hint"), seat: () => spotOf(jam, jam.me.seat)?.kind ?? null,
@@ -702,7 +745,7 @@ if (here) net = connect({
     status = s;
   },
   onChat(m) { if (m.t === "chat") rights.me = m.you; },
-  onTakeBytes() {},
+  onTakeBytes(m) { if (takes.add(m)) syncTakes(project); },
   hello: () => ({ key: myKey(), name }),
   token,
 });
@@ -720,6 +763,7 @@ function sitOrStand() {
 canvas.addEventListener("mousedown", (e) => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
+  if (desk.isOpen()) return desk.close();
   if (!locked()) return lock();
   // at the gear wall a click is the gear's: right-click lets go of a cable
   if (e.button === 2 && !jam.me.seat) return void say(atWall.letGo());
@@ -742,10 +786,16 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
-  if (code === "Tab") return void (jam.me.seat && lane?.toggle());
+  if (code === "Tab") {
+    if (desk.isOpen()) return desk.close();
+    if (lane?.isOpen()) return lane.close();
+    if (jam.me.seat && lane?.open()) return;
+    return desk.open();
+  }
   if (code === "Space") return sitOrStand();
   if (code === "KeyH") return raise();
   if (code === "KeyI") return void guitar();
+  if (code === "KeyR") return record();
   if (code === "Enter") return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
   if (!jam.me.seat && code === "KeyF") return void say(atWall.click(jam));
@@ -774,7 +824,7 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
 });
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen() && !desk.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -1010,6 +1060,11 @@ const harness = {
   help: (open?: boolean) => { if (open !== undefined) (open ? help.open() : help.close()); return help.state(); },
   /** The lane (Tab, seated): open or closed (left out: as it is), on a tab; then its state. */
   lane: (open?: boolean, tab?: Tab) => { if (tab && TABS.includes(tab)) lane?.setTab(tab); if (open !== undefined) (open ? lane?.open() : lane?.close()); return lane?.state() ?? null; },
+  /** The mixer (Tab standing, its button, or sitting at the desk): open or closed (left out: as it is), then its state (open, readOnly, refused, desk: channels and returns). */
+  desk: (open?: boolean) => { if (open !== undefined) (open ? desk.open() : desk.close()); return desk.state(); },
+  /** A mixer channel's controls, an aux send (0 to 1), or a return's fader; then whether the sesh took it. */
+  channel: (id: string, ch: Parameters<typeof desk.channel>[1]) => desk.channel(id, ch),
+  send: (id: string, aux: number, v: number) => desk.send(id, aux, v),
   /** What shows played: each instrument's keys down (white and black indices) and how hard each drum rings, 0 to 1. */
   played: () => Object.fromEntries([...played].map(([id, p]) => [id, p.keys ? p.keys.down : p.kit?.rings()])),
   /** Play a note at your seat, as a key would (A, S, ... ; the kit's home row), for `ms` milliseconds. */
@@ -1033,6 +1088,10 @@ const harness = {
   guitar: async () => { await guitar(); return harness.guitars(); },
   /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
   guitars: () => ({ mine: myGuitar, input: myGuitar === null ? null : myInput, in: Object.fromEntries(plugged), mics: [...mics], calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
+  /** Rec (R): record a player's input (0 you) as a take, onto `pick` if you lead; again lands it. Then what Rec is doing. */
+  rec: (peer?: number, pick?: number) => { record(peer, pick); return harness.recording(); },
+  /** What Rec records now (null: nothing), and each track's take. */
+  recording: () => ({ rec: recorder.state(), takes: project.tracks.map((t) => t.take ?? null) }),
   /** The shared clock: whose it is, your offset to it and round trip (ms), how you hear the band, and the beat here. */
   clock: () => ({ ...band.clock.state(), beat: Math.round(band.beat() * 1000) / 1000, behindMs: band.behind(), waiting: band.waiting, transport }),
   /** How you hear the others: "loop" (a loop late), "now", or (the leader) "desk"; then the clock. */

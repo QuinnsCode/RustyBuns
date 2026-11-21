@@ -14,7 +14,8 @@ setDefaultTimeout(30_000);
 const CIRCUITS = join(import.meta.dir, "../circuits");
 async function kitOnDisk(kit: string): Promise<KitFiles> {
   const out: KitFiles = {};
-  for await (const p of new Glob("**/*").scan({ cwd: join(CIRCUITS, kit), onlyFiles: true })) out[p] = await Bun.file(join(CIRCUITS, kit, p)).text();
+  // Keys use `/` as the page's import.meta.glob does; Bun's scan gives `gerbers\top.gtl` on Windows.
+  for await (const p of new Glob("**/*").scan({ cwd: join(CIRCUITS, kit), onlyFiles: true })) out[p.replaceAll("\\", "/")] = await Bun.file(join(CIRCUITS, kit, p)).text();
   return out;
 }
 const text = (b: Uint8Array | undefined) => new TextDecoder().decode(b);

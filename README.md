@@ -10,15 +10,33 @@
   <a href="REFERENCE.md">Reference</a>
 </p>
 
-# 🥐 Rusty Buns - My Idea Engine for Agents and Humans alike
+# Rusty Buns: write the logic once, ship it everywhere
 
-**Rusty Buns is one dev dependency that gives you three ideas:**
+**Write your app's logic one time, in TypeScript. Keep it typed on the web, the desktop and the phone. Deploy it anywhere with Effect and Alchemy.**
 
-1. **TypeScript wide, Rust deep.** Write all of the app in TypeScript. Use Rust only for the one path that must be faster.
-2. **Buy into the simple primitives, and we move you across the web and the desktop.** An app has five small parts, and the same app runs on a laptop, on the edge and on a server.
-3. **The agentic idea engine.** One language, one config file, and a stack that boots on your computer. You and your agents can make an idea into an app quickly.
+It is my idea engine. When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
+
+1. **Logic once, typed end to end.** The page, the backend, the config and the deploy are one TypeScript program. One guard describes each message, and the server and every client import it. Rust is only for the one path that must be faster.
+2. **Five simple primitives, and we move you.** Each app is http, comms, storage, memory and identity. Write against those small shapes, and the same app runs on a laptop, on the edge, on a server and on a phone's home screen.
+3. **Deploy manywhere.** Each target is a typed Effect Layer in an Alchemy stack. To change where the app runs, change one line of config. The compiler finds what is missing before anything costs money.
 
 The code is yours. Rusty Buns does not change `src/`, and it is not in your bundle. To remove it, use `git rm`.
+
+### What Rusty Buns stands on
+
+These parts must work for Rusty Buns to work. All other parts are options.
+
+| Part | What it does here | Needed for |
+|---|---|---|
+| **TypeScript** | the one language for the page, the backend, the config and the deploy | everything |
+| **Bun 1.4+** | runs the backend, gives sqlite, compiles the one-file desktop binary, loads Rust through `bun:ffi` | everything |
+| **Vite** | builds the page, with any framework on top (React, RWSDK, TanStack Start, Solid) | everything |
+| **The Cloudflare shapes** | `fetch`, Durable Objects, D1, KV and R2: the five primitives. Each has a local twin on Bun and sqlite | every target |
+| **Effect** | the deploy is a set of typed Layers, and child processes, sockets and deploys clean up after a failure | deploying |
+| **Alchemy** | the infrastructure as TypeScript: `plan`, `deploy`, `drift` and `destroy` against its typed state | deploying |
+| **Chrome** | the desktop app's window | the desktop |
+
+**Options:** Rust (with a TypeScript twin), Cloudflare itself, Railway, Hetzner, Postgres, SwiftUI for a native iOS client.
 
 Install it and try it:
 
@@ -66,13 +84,13 @@ Start in TypeScript. Use Rust only where it gives a clear increase in speed. Mor
 
 **Cloudflare gave each part a small, standard shape.** You write your code for those shapes one time.
 
-**Rusty Buns gives each shape a local twin on Bun and sqlite.** Thus the same app runs in three places from one `rustybuns.config.ts`:
+**Rusty Buns gives each shape a local twin on Bun and sqlite.** Thus the same app runs in each of these places from one `rustybuns.config.ts`:
 
 - **The desktop.** One file for each OS, which a user double-clicks. The backend runs on a local Bun host, and the UI opens in Chrome. See [A one-file desktop app in real Chrome](#a-one-file-desktop-app-in-real-chrome).
 - **The edge.** A Cloudflare Worker with D1, KV, R2 and Durable Objects, deployed from the same list of bindings. See [One config, three targets](#one-config-three-targets).
 - **A server.** The same binary on a Railway or Hetzner box, with sqlite on a volume.
 
-**Mobile is not a target.** A phone app must feel like the phone, and thus we think that it is best as a native app in SwiftUI or Kotlin. You can still keep the backend on the edge and make the native app a thin client of it. See [A native iOS app as a thin client](#a-native-ios-app-as-a-thin-client).
+- **The phone.** The same page installs to the home screen and plays with no signal ([On the home screen](#on-the-home-screen-and-playable-with-no-signal)). When a screen must feel native, a SwiftUI app is a thin client of the same edge, and the logic stays in TypeScript ([A native iOS app as a thin client](#a-native-ios-app-as-a-thin-client)).
 
 Your code is the same on each target, and no Rusty Buns code is in your app. Thus Rusty Buns is a meta metaframework: a framework for frameworks. It does not replace Vite, React, RWSDK, TanStack Start, Elysia, Wasp or Solid. It works on top of them, and it is a Bun program. The preferred stack is **Vite, Bun, TypeScript, Rust, Alchemy and Effect**.
 
@@ -535,7 +553,7 @@ Rusty Buns generates the host, the wrangler config and the Alchemy stack from `r
 
 ### Rusty Buns is a joke name because you need neither
 
-The minimum is Vite, which builds the page, and Bun, which runs the backend. All other parts (Alchemy, Effect, Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
+To run the app, the minimum is Vite, which builds the page, and Bun, which runs the backend. To deploy it, add Effect and Alchemy. All other parts (Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
 
 <details><summary>More</summary>
 
@@ -873,6 +891,7 @@ The jobs that agents did by hand in many small steps (wait for CI, read an issue
 - `bun run pr <n>`: waits for a PR's checks and prints one line for each result, with the log tail of a failed step.
 - `bun run issue <n>`: an issue's brief, with the PRs that close it and the last comments.
 - `bun run probe <app>`: a game's state as JSON from headless Chrome, plus its errors, with no tabs or screenshots.
+- `bun run brief <app>`: an app's brief from its own files: what it is, its notes, scripts, tests, port and page handle.
 - `bun run outline <file> [name]`: a file's symbols with line ranges, or one symbol's source. `--api` shows a package's exports as one-line signatures.
 - Each script answers `--help` with its own top comment.
 
@@ -907,6 +926,18 @@ Tokens by model, code lines that landed for each percent of the plan, and the co
 <details><summary>More</summary>
 
 `apps/agent-office/ester/ledger.ts` reads the session transcripts and git. It counts tokens by kind and model, subagents too, PRs merged, the code that landed on `main` and what Mervin, Ester and Dexter handed back. The weekly page compares each week with the last, and shows if the repo is growing or getting smaller. A day runs 10am to 10am, and `ledger-daily.ts` refreshes both pages.
+
+</details>
+
+### Agent skills: one for building with Rusty Buns, one for each app
+
+`rustybuns skill add` puts a skill in your project that teaches your coding agent how to build with Rusty Buns.
+
+<details><summary>More</summary>
+
+The skill ships inside `@rustybuns/cli` (`skills/rustybuns/SKILL.md`). It covers the command loop (init, dev, plan, deploy, build), the five primitives, and the habits this repo's agents work by: check what comes in with a guard, one operation behind every door, import the shared helpers, effects at the edges, a TypeScript twin for any Rust, and tests of behaviour. `rustybuns skill` prints it. `rustybuns skill add` writes it to `.claude/skills/rustybuns/`, and `--dir .agents/skills` writes it for Codex. Run it again after an upgrade to bring it up to date.
+
+In this repo the same file loads as the `rustybuns` skill. The `rustybuns-apps` skill sends an agent to `bun run brief <app>`, which builds an app's brief from the app's own README, notes, scripts, tests, port and page handle. That way there is no skill file for each app that can go out of date.
 
 </details>
 

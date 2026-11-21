@@ -144,6 +144,7 @@
           <option value="recent">Latest commit</option>
           <option value="busy">Busiest 30 days</option>
           <option value="since">Most commits since release</option>
+          <option value="stale">Longest merged, not deployed</option>
           <option value="health">Worst health first</option>
         </select>
         <span id="groups"></span>
@@ -173,6 +174,9 @@ const ago = (iso) => {
   if (s < 86400 * 60) return `${Math.round(s / 86400)}d`;
   return `${Math.round(s / 86400 / 30)}mo`;
 };
+// How long a merge has waited for a deploy (ms): 0 when the last deploy came after the last merge, or there is no merge.
+const unshipped = (a) => { const m = a.commit ? new Date(a.commit.at).getTime() : 0; const d = a.deploy ? new Date(a.deploy.at).getTime() : 0; return m > d ? Date.now() - m : 0; };
+const prLink = (n) => `<a href="https://github.com/QuinnsCode/RustyBuns/pull/${n}" target="_blank" rel="noopener">#${n}</a>`;
 const tierOf = (id) => TIERS.find((t) => tiers[t].includes(id)) ?? null;
 // The same move as bridge-lib.ts's, for the snapshot (no server) and for showing a move before the server answers.
 function move(t, m) {
@@ -220,6 +224,7 @@ function sorted(apps) {
     recent: (a, b) => (b.commit?.at ?? "").localeCompare(a.commit?.at ?? ""),
     busy: (a, b) => b.commits30 - a.commits30,
     since: (a, b) => (b.since ?? -1) - (a.since ?? -1),
+    stale: (a, b) => unshipped(b) - unshipped(a),
     health: (a, b) => RANK[a.light] - RANK[b.light] || tierRank(a) - tierRank(b),
   }[by];
   return [...apps].sort((a, b) => key(a, b) || a.name.localeCompare(b.name));
@@ -276,6 +281,11 @@ function card(a) {
   const ci = a.ci.test ? `<span class="${a.ci.test === "success" ? "ok" : a.ci.test === "failure" ? "bad" : "warn"}">${a.ci.test.toUpperCase()}</span>${a.ci.smoke ? ` <span class="sub">smoke</span> <span class="${a.ci.smoke === "success" ? "ok" : "bad"}">${a.ci.smoke.toUpperCase()}</span>` : ""} <span class="sub">${ago(a.ci.at)} ago</span>` : `<span class="na">not in the hourly run</span>`;
   const live = a.live ? `<span class="${a.live.ok ? "ok" : "bad"}">${a.live.ok ? "UP" : "DOWN"}</span> <span class="sub">${a.live.status || "no answer"} · ${a.live.ms} ms</span>` : a.play ? `<span class="na">not checked</span>` : `<span class="na">no live page</span>`;
   const res = Object.entries(a.resources).map(([k, n]) => `<span>${esc(k.replace(/_/g, " ").replace("durable object", "DO").toUpperCase())}${n > 1 ? ` ×${n}` : ""}</span>`).join("");
+  // Last deploy against the last merged PR and the newest PR of any kind: amber when the merge hasn't gone out yet.
+  const dep = a.deploy ? `<span class="${unshipped(a) ? "warn" : ""}" title="${esc(a.deploy.stage)} ${esc(a.deploy.version)}">deployed ${ago(a.deploy.at)} ago</span>` : `<span class="na">no deploy here</span>`;
+  const merged = a.commit?.pr ? ` <span class="sub">· merged ${prLink(a.commit.pr)} ${ago(a.commit.at)}</span>` : "";
+  const latest = a.pr && a.pr.number !== a.commit?.pr ? ` <span class="sub" title="${esc(a.pr.title)}">· newest ${prLink(a.pr.number)} ${ago(a.pr.at)} ${esc(a.pr.state.toLowerCase())}</span>` : "";
+  const shipped = dep + merged + latest;
   const issuesUrl = `https://github.com/QuinnsCode/RustyBuns/issues?q=${encodeURIComponent(`is:issue is:open "${a.name}"`)}`;
   return `<article class="card">
     <div class="spine" style="background:var(--${t ?? "U"})" draggable="true" data-app="${esc(a.id)}" title="Drag into a tier">${t ?? "–"}<i class="dot ${a.light}" title="Health: ${a.light}"></i></div>
@@ -285,6 +295,7 @@ function card(a) {
       <dl class="stats">
         <dt>Issues</dt><dd class="wrap"><a href="${issuesUrl}" target="_blank" rel="noopener">${a.issues.open} open</a> <span class="sub">/ ${a.issues.closed} closed</span><span class="ibar" title="${closedPct}% closed"><i style="width:${closedPct}%"></i></span>${a.issues.manual ? ` <span class="warn" title="MANUAL RUN issues waiting on you">${a.issues.manual} manual</span>` : ""}${a.prs ? ` <span class="sub">· ${a.prs} PR${a.prs > 1 ? "s" : ""}</span>` : ""}</dd>
         <dt>Commit</dt><dd title="${esc(a.commit?.subject)}">${a.commit ? `${ago(a.commit.at)} ago <span class="sub">${esc(a.commit.sha)} · ${a.commits30} in 30d</span>` : `<span class="na">none</span>`}</dd>
+        <dt>Shipped</dt><dd class="wrap">${shipped}</dd>
         <dt>Release</dt><dd>${rel}</dd>
         <dt>Drift</dt><dd>${since}</dd>
         <dt>Hourly</dt><dd>${ci}</dd>

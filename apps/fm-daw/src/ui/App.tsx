@@ -33,7 +33,7 @@ import { AmpPanel } from "./AmpPanel.tsx";
 import { DeskPanel } from "./DeskPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { TakeInbox, encodeTake, newTakeId, toChunks } from "../take.ts";
+import { TakeShelf, encodeTake, newTakeId, toChunks } from "../take.ts";
 import { apply, audible, roomGain, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
@@ -148,6 +148,10 @@ export function App() {
   const ampMisses = useTick((t) => t.ampMisses);
   /** Plugin tracks: their plugins on the desktop host, their sound into the worklet (src/ui/plugins.ts). */
   const pump = useRef<PluginPump | null>(null);
+  /** The page's own plugins (src/ui/wam.ts): played on the audio once it's on, and bounced with or without it. */
+  const [webRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps }; }));
+  /** The loudest of the last slice each plugin track sent the sesh (the probe's `line`). */
+  const linePeaks = useRef(new Map<number, number>());
   const plugins = usePlugins(audio ? pump.current : null);
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
@@ -273,7 +277,10 @@ export function App() {
     else if (m.t === "eqPlayed") pushEqPlayed(m.doc);
     else if (m.t === "engine") { setEngine(m.kind); setEngineNote(m.error ?? null); }
     else if (m.t === "pluginAsk") pump.current?.ask(m);
-    else if (m.t === "sound" && m.track !== undefined) pluginOuts.current.get(m.track)?.slice(m.beat, m.pcm, m.rate);
+    else if (m.t === "sound" && m.track !== undefined) {
+      linePeaks.current.set(m.track, m.pcm.reduce((x, v) => Math.max(x, Math.abs(v)), 0));
+      pluginOuts.current.get(m.track)?.slice(m.beat, m.pcm, m.rate);
+    }
     else if (m.t === "taken") landTake(m.track, m.beat, m.pcm, m.rate);
     else if (m.t === "rec") {
       const { gridIdx, strength, inputQ } = live.current;
@@ -294,27 +301,16 @@ export function App() {
       else commit({ t: "auto", track: s.track, lanes: punchLane(proj.current.tracks[s.track].auto ?? [], s.i, s.pts) }, { group: "rec" });
   }
   // ---- takes: the input recorded onto a track. Its sound goes to the sesh in chunks, then the edit that places it ----
-  const takeSound = useRef(new Map<string, Float32Array>());
-  const inbox = useRef(new TakeInbox());
-  /** What each track's take in the worklet is ("id@beat"), so only changes are sent. */
-  const takesSent = useRef<(string | null)[]>([]);
+  const takes = useRef(new TakeShelf());
   const input = useRef<{ stream: MediaStream; node: MediaStreamAudioSourceNode } | null>(null);
-  function syncTakes(p: Project) {
-    p.tracks.forEach((t, i) => {
-      const pcm = t.take ? takeSound.current.get(t.take.id) : undefined;
-      const key = t.take && pcm ? `${t.take.id}@${t.take.beat}` : null;
-      if (key === (takesSent.current[i] ?? null)) return;
-      takesSent.current[i] = key;
-      send({ t: "take", track: i, pcm: key ? pcm! : null, beat: t.take?.beat ?? 0 });
-    });
-  }
+  const syncTakes = (p: Project) => takes.current.sync(p, send);
   function landTake(track: number, beat: number, pcm: Float32Array, rate: number) {
     if (!live.current.allowed.edit) return;
     const s16 = encodeTake(pcm, rate);
     if (!s16.length) return;
     const id = newTakeId();
     // everyone, this page included, hears the 16-bit copy the sesh keeps
-    takeSound.current.set(id, Float32Array.from(s16, (v) => v / 32767));
+    takes.current.keep(id, Float32Array.from(s16, (v) => v / 32767));
     for (const c of toChunks(id, s16)) net.current?.take(c);
     commit({ t: "take", track, take: { id, beat, frames: s16.length } }, { group: "rec" });
   }
@@ -373,11 +369,11 @@ export function App() {
         if (!plug) return;
         for (const c of changes) plug = withValue(plug, c.id, c.value);
         commit({ t: "plugin", track, plugin: plug }, { group: `plugEd:${track}` });
-      }, pageRack(a.ctx, a.webBus));
+      }, webRack);
       // others' guitars and plugin tracks come as Opus where this browser has WebCodecs, and yours go out that way
       const opus = await webOpus();
       if (opus) { far.decodeWith(opus.decoder); opusEncoder.current = opus.encoder; }
-      takesSent.current = [];
+      takes.current.forget();
       syncTakes(proj.current);
       setAudio(a);
     } catch (e) { setStartError((e as Error).message); }
@@ -402,6 +398,7 @@ export function App() {
     Object.assign(window, { fmdaw: {
       state: () => ({
         audio: audioRef.current?.ctx.state ?? null, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
+        line: Object.fromEntries(linePeaks.current),
         tracks: proj.current.tracks.map((tr, i) => {
           const s = pump.current?.state.get(i);
           return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], plays: tr.plugin ? { name: tr.plugin.name, path: tr.plugin.path, web: !!tr.plugin.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) } : "fm" };
@@ -411,6 +408,18 @@ export function App() {
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
       trust: (track: number) => pump.current?.trust(track, proj.current),
+      // the sesh's live line for one plugin track, as going online turns it on; `state().line` is what it last sent
+      line: (track: number, on: boolean) => { linePeaks.current.delete(track); send({ t: "pluginSend", track, on, web: !!proj.current.tracks[track]?.plugin?.web }); },
+      // a bounce of one web plugin track holding a key for half of `seconds`: the loudest it got, or why it couldn't
+      bounce: async (track: number, seconds: number) => {
+        const plug = proj.current.tracks[track]?.plugin, frames = Math.round(seconds * 48000);
+        if (!plug?.web) return { error: "not a web plugin track" };
+        try {
+          const pcm = await webRack.bounce(plug, [{ t: "on", key: 69, vel: 1, at: 0 }, { t: "off", key: 69, at: frames >> 1 }], 48000, frames);
+          const peak = (from: number, to: number) => pcm.subarray(from * 2, to * 2).reduce((x, v) => Math.max(x, Math.abs(v)), 0);
+          return { held: peak(0, frames >> 1), after: peak(frames - 4800, frames) };
+        } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
+      },
     } });
   });
 
@@ -427,7 +436,7 @@ export function App() {
     for (const [t, name] of want) {
       if (outs.has(t)) continue;
       outs.set(t, new PluginOut(t, name, live1, () => proj.current.bpm, opusEncoder.current));
-      send({ t: "pluginSend", track: t, on: true });
+      send({ t: "pluginSend", track: t, on: true, web: !!proj.current.tracks[t]?.plugin?.web });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plugins, online, audio]);
@@ -455,8 +464,7 @@ export function App() {
         setPatch(studio.current.patch);
       },
       onTakeBytes(m) {
-        const pcm = inbox.current.add(m);
-        if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
+        if (takes.current.add(m)) syncTakes(proj.current);
       },
       onRewound,
       onClock(m) { const r = band.onClock(m); if (r) n.clock(r); },
@@ -505,7 +513,7 @@ export function App() {
     if (!p) return;
     commit({ t: "replace", project: p }, { remote: true });
     void loadSoloTakes(p).then((got) => {
-      for (const [id, pcm] of got) takeSound.current.set(id, pcm);
+      for (const [id, pcm] of got) takes.current.keep(id, pcm);
       syncTakes(proj.current);
     });
   }
@@ -513,7 +521,7 @@ export function App() {
   function backToSesh() { undo.current = []; redo.current = []; setSolo(false); }
   useEffect(() => {
     if (!solo) return;
-    const timer = setTimeout(() => { saveMine("solo", project); void saveSoloTakes(project, (id) => takeSound.current.get(id)); }, 400);
+    const timer = setTimeout(() => { saveMine("solo", project); void saveSoloTakes(project, (id) => takes.current.get(id)); }, 400);
     return () => clearTimeout(timer);
   }, [solo, project]);
 
@@ -744,8 +752,8 @@ export function App() {
       }
       // a plugin track's sound comes from the desktop host, which has the plugin; one it can't play is named below
       const secs = loopSeconds(p, bounceLoops(p));
-      const { sound, missed } = await bouncePlugins(p, sr, bounceFrames(p, sr, secs));
-      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takeSound.current.get(id), (t) => sound.get(t), aux2.settings);
+      const { sound, missed } = await bouncePlugins(p, sr, bounceFrames(p, sr, secs), undefined, webRack);
+      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takes.current.get(id), (t) => sound.get(t), aux2.settings);
       e.free?.();
       const wav = encodeWav(pcm, sr);
       // Online, the sesh keeps its last bounce, so a DJ's decks can play it by the sesh's name.

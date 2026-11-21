@@ -14,6 +14,12 @@ export interface D1Statement {
 export type D1Result<T> = { results: T[]; meta: { changes: number; last_row_id: number } };
 /** The part of the D1 binding this app calls, and better-auth too (it wants `exec` and `batch`). */
 export interface D1 { prepare(sql: string): D1Statement; batch<T = unknown>(stmts: D1Statement[]): Promise<D1Result<T>[]>; exec(sql: string): Promise<unknown> }
+/** The part of an R2 bucket a space's files use (qollab/space.ts). */
+export interface Bucket {
+  put(key: string, value: ArrayBuffer, o?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream; size: number; httpMetadata?: { contentType?: string } } | null>;
+  delete(keys: string | string[]): Promise<void>;
+}
 /** A service binding to another Worker. */
 export interface Fetcher { fetch(req: Request | string, init?: RequestInit): Promise<Response> }
 
@@ -55,6 +61,8 @@ export interface Env {
   VAULT?: Vaults;
   /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
   SPACE?: Spaces;
+  /** The files posted in spaces' channels (space.ts), Qollab's R2 bucket. Unset, posting a file answers 503. */
+  FILES?: Bucket;
   /** eqosys's binding to Qollab's own Worker (apps/qollab): every Qollab path goes there. Unset (tests, the desktop), qollab/ runs in this Worker. */
   QOLLAB?: Fetcher;
   /** Qollab's binding back to eqosys: its public keys, so Qollab checks a token without holding a signing key for it (door.ts). */

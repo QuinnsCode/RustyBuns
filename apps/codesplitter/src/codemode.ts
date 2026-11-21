@@ -17,6 +17,7 @@
 import type { Tool, ToolArgs } from "./mcp-tools.ts";
 import { isRecord } from "@rustybuns/util/guard";
 import { runProgram, type Ran, type ToolAnswer, type WorkerLoaderLike } from "@rustybuns/util/codemode";
+import { MPL_JS } from "../vendor/mpl/mpl.ts";
 
 export type { Ran, ToolAnswer };
 
@@ -57,6 +58,7 @@ export const META: MetaTool[] = [
       + "The program is the body of an async function. Each tool is `await tools.<name>({...})`, with the arguments describe_tools gives; its JSON answer comes back parsed, and an error throws with its status first and then the JSON reply, whose tag names the failure (`409: {\"tag\":\"LinesChanged\",…}`, so catch it, read again and retry). console.log lines come back too. "
       + "`return` a small answer: a count, ids, a few lines, never a whole file. "
       + `At most ${MAX_CALLS} tool calls, ${RUN_MS / 1000} s, ${MAX_BACK.toLocaleString("en")} characters back; no network but the tools. Your token's scope applies. Tools marked risky (they ship code, change who can get in or see what, or can't be undone) aren't callable here: use call_tool, so the person is asked. `
+      + "To draw a chart, `mpl` is matplotlib's API in JavaScript (`const [fig, ax] = mpl.subplots({ figsize: [8, 4] }); ax.plot(xs, ys); ax.set_title('…')`), and save_chart({ body: { name, png } }) keeps the PNG (base64 of fig.toPNGSync()) or { svg: fig.toSVG() } for a week and answers { url, expires }: return the url, not the picture. "
       + "A program that worked can be kept: save_program({ name, body: { code, description } }), then execute { program: name, input } reruns it, and list_programs lists yours; write programs to take what varies (owner, repo, path) from `input`. "
       + `Example, with owner, repo and path as consts you set first:\n${EXAMPLE}`,
     inputSchema: obj({ code: { type: "string", description: "the body of an async function; use `return` for the answer" },
@@ -71,7 +73,8 @@ export const META: MetaTool[] = [
 
 /** What the server says to an agent in code mode, after the instructions that hold either way. */
 export const INSTRUCTIONS = " Tools are reached by code: search_tools finds one, describe_tools gives its arguments, and execute runs a JavaScript program that calls them (`await tools.read_file({...})`) and returns only what you need, so a file's lines and each step's answer stay out of your context. "
-  + "Write one program for a whole job (read, filter, claim, edit, release), not a call per step. call_tool is for the risky tools only.";
+  + "Write one program for a whole job (read, filter, claim, edit, release), not a call per step. call_tool is for the risky tools only. "
+  + "A program can draw a chart with `mpl` (matplotlib's names) and save_chart it, and gets back a signed link for a person to open; work out the numbers in the program, the picture is for people.";
 
 /** `name({ a, b?, body: { c, d? } })`: how to call a tool, without its schema. */
 export function signature(t: Tool): string {
@@ -163,6 +166,8 @@ export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], r
   // under Bun, where the local loader runs the program in-process, an object will do.
   return runProgram(loader, code, {
     binding: "CS", names: tools.map((t) => t.name), run: (name, json) => answer(tools, run, name, json), bridge: edge, input,
+    // mpl is 550 KiB to parse, so only a program that names it gets it.
+    ...(/(?<![\w$.])mpl(?![\w$])/.test(code) && { libs: { mpl: MPL_JS } }),
     maxCalls: MAX_CALLS, runMs: RUN_MS, cpuMs: CPU_MS, maxBack: MAX_BACK, maxCode: MAX_CODE,
     unknownMessage: (u) => `no tool ${u.join(", ")} for this token: search_tools lists them`,
   });

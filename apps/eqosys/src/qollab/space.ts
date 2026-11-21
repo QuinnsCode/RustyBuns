@@ -18,18 +18,25 @@
 // (mute, kick, deleting a channel or the space) goes to Qlave as an order, through an outbox the alarm retries.
 // A private channel (`private` in storage: its name to the ids let in) is seen only by those who run the space and the people
 // they let in: its tab, its messages and its history go to nobody else. A guest sees #general and the private channels they are let into.
+// Files (#5320): POST /file puts one on R2 (FILES) under `<space>/<channel>/<file id>`, up to FILE_MAX each and FILE_BYTES a space, and
+// posts a message carrying it (`file`); GET /file/<id> hands it to a member who sees its channel. `f:<file id>` says where it was posted,
+// so deleting the message, its channel, the space or the sender's account takes the file with it, and so does its page ageing out.
+//   /file?<as /socket>&channel=&name=&type=   POST the bytes: a message with the file, in that channel
+//   /file/<id>?<as /socket>                   GET the file back
 import { bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { SpaceRole, type SpaceInfo, type SpaceMsg, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, STUDIO_SAY_MAX, type Said } from "./chat.ts";
-import { addMember, removeMember, roleIn, type Made, type Role } from "../studios.ts";
+import { addMember, removeMember, roleIn, STUDIO_MEMBERS, type Made, type Role } from "../studios.ts";
 import { json, type Env } from "../env.ts";
 import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
+/** The biggest file one message carries, and every file a space keeps at once, in bytes; and how many files a person posts a minute. */
+export const FILE_MAX = 10 * 1024 * 1024, FILE_BYTES = 1024 ** 3, FILES_A_MINUTE = 10;
 /** The replies a thread keeps the numbers of, and how many come back with it (the parent is one more). */
 export const THREAD_MAX = 1000, THREAD_SHOWN = 99;
 /** The longest search, and how often a socket may search: SEARCH_RATE a second with a burst of SEARCH_BURST. */
@@ -55,10 +62,20 @@ const sees = (m: Member, ch: string, locked: Locked) => m.owner || (locked[ch] ?
 type Voice = { id: string; name: string };
 /** Who Qlave last said is in a voice channel, and when it said so (its clock). Kept under `roster:<channel id>`. */
 type Roster = { in: Of<typeof Present>; at: number };
+/** A file as the space keeps it, under `f:<id>`: the message it was posted with, who sent it, and its R2 key. */
+type Kept = { channel: string; msg: number; by: string; key: string; size: number };
+/** What a file is called, and its type, as the uploader's page says: no slashes or control characters, a plain `type/subtype`. */
+const fileName = (v: string | null) => v?.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 200) || "file";
+const fileType = (v: string | null) => {
+  const t = v?.split(";")[0]!.trim().toLowerCase();
+  return t && /^[\w.+-]{1,50}\/[\w.+-]{1,50}$/.test(t) ? t : "application/octet-stream";
+};
+/** The types a file is served back as; any other comes back as plain bytes, so nothing uploaded runs as a page on eqosys's origin. */
+const SAFE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain", "audio/mpeg", "audio/wav", "video/mp4"]);
 const RosterIn = obj({ channel: str(16, { min: 1 }), in: Present, at: int(0, 1e15) });
 
 const SpaceIn = obj({
-  t: oneOf(["say", "history", "thread", "search", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role"]),
+  t: oneOf(["say", "unsay", "history", "thread", "search", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role"]),
   channel: opt(CHANNEL), text: opt(str(STUDIO_SAY_MAX)), before: opt(int(1, 1e12)), id: opt(str(200, { min: 1 })), on: opt(bool()), voice: opt(bool()),
   private: opt(bool()), role: opt(oneOf(["admin", "member", "guest"])),
   reply: opt(int(1, 1e12)), of: opt(int(1, 1e12)), q: opt(str(SEARCH_MAX)),
@@ -83,14 +100,18 @@ export const SPACES_OF = `SELECT space_id AS id FROM space_members WHERE user_id
 
 /** A seat in a space, or null when they aren't in it. `runs`: channels, mute and kick are theirs (an owner or an admin, SpaceRole). */
 export type Seat = { name: string; studio: string | null; runs: boolean; role: SpaceRole };
-/** Someone's role in a space (bind their id as ?2): a studio's space maps the studio's roles (a maker is a member), any other space its owner and space_members rows. */
-export const ROLE_OF = `CASE WHEN s.studio_id IS NOT NULL THEN CASE sm.role WHEN 'maker' THEN 'member' ELSE sm.role END
+/**
+ * Someone's role in a space (bind their id as ?2): a studio's space maps the studio's roles (a maker is a member), and anyone else
+ * there with a space_members row is a guest, whatever the row says; any other space its owner and space_members rows.
+ */
+export const ROLE_OF = `CASE WHEN s.studio_id IS NOT NULL THEN CASE WHEN sm.role = 'maker' THEN 'member' WHEN sm.role IS NOT NULL THEN sm.role
+    WHEN m.user_id IS NOT NULL THEN 'guest' END
   WHEN s.owner = ?2 THEN 'owner' ELSE m.role END`;
-/** A studio's space seats the studio's members; any other space its space_members rows. */
+/** A studio's space seats the studio's members and its guests (space_members rows, joined by its invite); any other space its space_members rows. */
 export async function seatIn(conf: Pick<Env, "DB">, sid: string, userId: string): Promise<Seat | null> {
   const r = await conf.DB.prepare(`SELECT s.name, s.studio_id AS studio, ${ROLE_OF} AS role
     FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?2
-    LEFT JOIN space_members m ON s.studio_id IS NULL AND m.space_id = s.id AND m.user_id = ?2
+    LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?2
     WHERE s.id = ?1 AND (sm.user_id IS NOT NULL OR m.user_id IS NOT NULL)`)
     .bind(sid, userId).first<{ name: string; studio: string | null; role: string }>();
   const role = r && check(SpaceRole, r.role);
@@ -145,8 +166,13 @@ export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string,
   const before = await conf.DB.prepare(`SELECT u.id, m.role FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<{ id: string; role: Role }>();
   const r = await addMember(conf, studio, by, email, role);
-  const sid = r.ok && before && before.role !== role && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid && before) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: before.id })}`)).catch(() => null);
+  // A guest of the studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the
+  // studio later takes them out of the space too.
+  const guest = r.ok ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?)
+    AND user_id IN (SELECT id FROM "user" WHERE lower(email) = lower(?)) RETURNING user_id`).bind(studio, email.trim()).first<string>("user_id") : null;
+  const who = guest ?? (before && before.role !== role ? before.id : null);
+  const sid = r.ok && who && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who })}`)).catch(() => null);
   return r;
 }
 
@@ -159,6 +185,8 @@ export class Space {
   private sockets: Sockets<Member, SpaceOut>;
   private chat = new ChatGate();
   private searches = new ChatGate(SEARCH_RATE, SEARCH_BURST);
+  /** The times each person last posted a file, for FILES_A_MINUTE. */
+  private posted = new Map<string, number[]>();
 
   constructor(private ctx: SpaceCtx, private env: Env) {
     this.sockets = new Sockets<Member, SpaceOut>(ctx, { maxBytes: 4 * STUDIO_SAY_MAX + 500, rate: 5, burst: 10 });
@@ -185,11 +213,13 @@ export class Space {
     if (url.pathname === "/on") return json({ on: (await this.members()).length });
     if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
-    if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
+    const file = /^\/file(?:\/([0-9a-f-]{36}))?$/.exec(url.pathname);
+    if ((url.pathname !== "/socket" && !file) || !who) return json({ error: "not found" }, 404);
     await this.ctx.storage.put("sid", who.sid);
     await this.ctx.storage.put("name", who.space);
     if (who.studio) await this.ctx.storage.put("studio", who.studio);
     const owner = who.owner === "1", m: Member = { id: who.id, name: who.name, app: who.app, owner, role: who.role ?? (owner ? "owner" : "member") };
+    if (file) return file[1] ? this.fileOut(m, file[1]) : this.fileIn(m, req, url.searchParams);
     const { server, response } = this.sockets.upgrade(m);
     this.sockets.send(server, await this.info(m));
     this.online();
@@ -202,7 +232,8 @@ export class Space {
     if (!msg || !me) return;
     const channels = await this.channels(), locked = await this.locked();
     const ch = msg.channel ?? "general";
-    if (msg.t === "leave") return await this.studio() ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
+    // A guest in a studio's space leaves it like any space; the studio's own people leave it by leaving the studio.
+    if (msg.t === "leave") return await this.studio() && me.role !== "guest" ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
     if (msg.t === "history") return channels.includes(ch) && sees(me, ch, locked) ? this.sockets.send(ws, await this.history(ch, msg.before)) : undefined;
     if (msg.t === "thread") return channels.includes(ch) && sees(me, ch, locked) && msg.of ? this.sockets.send(ws, await this.thread(ch, msg.of)) : undefined;
@@ -228,6 +259,12 @@ export class Space {
       if (msg.reply && !to) return this.sockets.send(ws, { t: "refused", why: "that message is gone" });
       return this.say(ch, { from: { id: me.id, name: me.name }, text, at: Date.now() }, to && (to.reply ?? to.id));
     }
+    if (msg.t === "unsay") {
+      const m = channels.includes(ch) && sees(me, ch, locked) && msg.of ? await this.message(ch, msg.of) : undefined;
+      if (!m) return this.sockets.send(ws, { t: "refused", why: "that message is gone" });
+      if (m.from.id !== me.id && !me.owner) return this.sockets.send(ws, { t: "refused", why: "only its sender, the space's owner or an admin deletes a message" });
+      return this.unsay(ch, m);
+    }
     // The rest is for those who run it: its owner and admins.
     if (!me.owner) return this.sockets.send(ws, { t: "refused", why: "only the space's owner or an admin can do that" });
     const voices = await this.voices();
@@ -248,7 +285,7 @@ export class Space {
       const ids = msg.channel ? locked[msg.channel] : undefined;
       if (!ids || !msg.channel) return this.sockets.send(ws, { t: "refused", why: "that isn't a private channel" });
       const on = msg.on ?? true;
-      if (on && ids.length >= SPACE_MEMBERS) return;
+      if (on && ids.length >= (await this.studio() ? STUDIO_MEMBERS : SPACE_MEMBERS)) return;
       await this.ctx.storage.put("private", { ...locked, [msg.channel]: on ? [...new Set([...ids, id])] : ids.filter((x) => x !== id) } satisfies Locked);
       return this.announce();
     }
@@ -265,11 +302,11 @@ export class Space {
       const sid = await this.sid();
       return this.enqueue(voices.map((v): Order => ({ t: "mute", room: roomOf(sid, v.id), sub: id, on })));
     }
-    // kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space, out of the studio,
-    // by the studio's own rules (an admin can't take out an owner).
+    // kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space a guest goes the
+    // same way; one of the studio's own goes out of the studio, by the studio's own rules (an admin can't take out an owner).
     const studio = await this.studio();
     if (!studio && me.role !== "owner" && theirs === "admin") return this.sockets.send(ws, { t: "refused", why: "only the owner takes out an admin" });
-    if (!studio) return this.leave(id, "removed from the space");
+    if (!studio || theirs === "guest") return this.leave(id, "removed from the space");
     const r = await removeMember(this.env, studio, me.id, id);
     return r.ok ? this.out(id, "removed from the studio") : this.sockets.send(ws, { t: "refused", why: r.error });
   }
@@ -357,6 +394,7 @@ export class Space {
       await this.ctx.storage.put("private", locked);
       for (const pre of [`p:${channel}:`, `t:${channel}:`]) for (const k of (await this.ctx.storage.list({ prefix: pre })).keys()) await this.ctx.storage.delete(k);
       await this.ctx.storage.delete(`n:${channel}`);
+      await this.dropFiles((f) => f.channel === channel);
     }
     await this.announce();
     this.online();
@@ -382,7 +420,7 @@ export class Space {
   }
 
   /** A new message, the next number in its channel; a reply counts on the message it answers and joins its thread. */
-  private async say(channel: string, said: Said, reply?: number) {
+  private async say(channel: string, said: Said & Pick<Msg, "file">, reply?: number): Promise<Msg> {
     const n = (await this.ctx.storage.get<number>(`n:${channel}`) ?? 0) + 1, page = Math.ceil(n / PAGE);
     const m: Msg = { ...said, id: n, ...(reply ? { reply } : {}) };
     await this.ctx.storage.put(pageKey(channel, page), [...(await this.ctx.storage.get<Msg[]>(pageKey(channel, page)) ?? []), m]);
@@ -390,8 +428,11 @@ export class Space {
     if (n % PAGE === 1 && page > KEEP_PAGES) {
       // The oldest page goes, and the threads of the messages on it.
       const old = pageKey(channel, page - KEEP_PAGES);
-      for (const x of await this.ctx.storage.get<Msg[]>(old) ?? []) if (x.replies) await this.ctx.storage.delete(`t:${channel}:${x.id}`);
+      const gone = await this.ctx.storage.get<Msg[]>(old) ?? [];
+      for (const x of gone) if (x.replies) await this.ctx.storage.delete(`t:${channel}:${x.id}`);
       await this.ctx.storage.delete(old);
+      const ids = new Set(gone.filter((x) => x.file).map((x) => x.file!.id));
+      if (ids.size) await this.dropFiles((_, id) => ids.has(id));
     }
     if (reply) {
       const key = pageKey(channel, Math.ceil(reply / PAGE)), held = await this.ctx.storage.get<Msg[]>(key) ?? [];
@@ -400,6 +441,71 @@ export class Space {
     }
     const locked = await this.locked(), out: SpaceOut = { t: "said", channel, ...m };
     for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, locked)) this.sockets.send(sock, out); }
+    return m;
+  }
+
+  /** A message is deleted: out of its page and its thread, its file off R2, and everyone who sees the channel hears it went. */
+  private async unsay(channel: string, m: Msg) {
+    const key = pageKey(channel, Math.ceil(m.id / PAGE));
+    await this.ctx.storage.put(key, (await this.ctx.storage.get<Msg[]>(key) ?? []).filter((x) => x.id !== m.id));
+    if (m.reply) {
+      const top = pageKey(channel, Math.ceil(m.reply / PAGE)), held = await this.ctx.storage.get<Msg[]>(top) ?? [];
+      await this.ctx.storage.put(top, held.map((x) => x.id !== m.reply ? x : (({ replies: n, ...rest }) => n && n > 1 ? { ...rest, replies: n - 1 } : rest)(x)));
+      await this.ctx.storage.put(`t:${channel}:${m.reply}`, (await this.ctx.storage.get<number[]>(`t:${channel}:${m.reply}`) ?? []).filter((x) => x !== m.id));
+    }
+    if (m.replies) await this.ctx.storage.delete(`t:${channel}:${m.id}`);
+    if (m.file) await this.dropFiles((_, id) => id === m.file!.id);
+    const locked = await this.locked(), out: SpaceOut = { t: "unsaid", channel, id: m.id };
+    for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, locked)) this.sockets.send(sock, out); }
+  }
+
+  /** A member posts a file: checked against the channel, a mute, FILES_A_MINUTE, FILE_MAX and FILE_BYTES, put on R2, then said as a message. */
+  private async fileIn(me: Member, req: Request, q: URLSearchParams): Promise<Response> {
+    if (req.method !== "POST") return json({ error: "POST a file" }, 405);
+    const bucket = this.env.FILES;
+    if (!bucket) return json({ error: "no file sharing here" }, 503);
+    const ch = q.get("channel") ?? "general";
+    if (!(await this.channels()).includes(ch) || !sees(me, ch, await this.locked())) return json({ error: `no channel #${ch}` }, 404);
+    if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return json({ error: "you're muted here" }, 403);
+    const now = Date.now(), recent = (this.posted.get(me.id) ?? []).filter((t) => t > now - 60_000);
+    if (recent.length >= FILES_A_MINUTE) return json({ error: `up to ${FILES_A_MINUTE} files a minute; wait a little` }, 429);
+    const data = await req.arrayBuffer();
+    if (!data.byteLength) return json({ error: "that file is empty" }, 400);
+    if (data.byteLength > FILE_MAX) return json({ error: `a file is up to ${FILE_MAX / 1024 / 1024} MB` }, 413);
+    const used = await this.ctx.storage.get<number>("fileBytes") ?? 0;
+    if (used + data.byteLength > FILE_BYTES) return json({ error: `this space keeps up to ${FILE_BYTES / 1024 ** 3} GB of files: delete some first` }, 507);
+    this.posted.set(me.id, [...recent, now]);
+    const id = crypto.randomUUID(), name = fileName(q.get("name")), type = fileType(q.get("type")), key = `${await this.sid()}/${ch}/${id}`;
+    await bucket.put(key, data, { httpMetadata: { contentType: type } });
+    await this.ctx.storage.put("fileBytes", used + data.byteLength);
+    const m = await this.say(ch, { from: { id: me.id, name: me.name }, text: name, at: now, file: { id, name, size: data.byteLength, type } });
+    await this.ctx.storage.put(`f:${id}`, { channel: ch, msg: m.id, by: me.id, key, size: data.byteLength } satisfies Kept);
+    return json({ id, message: m.id });
+  }
+
+  /** A file back, to a member who sees the channel it was posted in. Always a download, and only SAFE_TYPES keep their type. */
+  private async fileOut(me: Member, id: string): Promise<Response> {
+    const f = await this.ctx.storage.get<Kept>(`f:${id}`);
+    if (!f || !(await this.channels()).includes(f.channel) || !sees(me, f.channel, await this.locked())) return json({ error: "no such file" }, 404);
+    const got = await this.env.FILES?.get(f.key);
+    const name = (await this.message(f.channel, f.msg))?.file?.name ?? "file";
+    if (!got) return json({ error: "no such file" }, 404);
+    const type = got.httpMetadata?.contentType ?? "";
+    return new Response(got.body, { headers: {
+      "content-type": SAFE_TYPES.has(type) ? type : "application/octet-stream", "content-length": String(got.size),
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+      "x-content-type-options": "nosniff", "content-security-policy": "sandbox", "cache-control": "private, no-store",
+    } });
+  }
+
+  /** The files `which` picks go: off R2, out of the space's count. */
+  private async dropFiles(which: (f: Kept, id: string) => boolean) {
+    const gone = [...await this.ctx.storage.list<Kept>({ prefix: "f:" })].map(([k, f]) => ({ k, id: k.slice(2), f })).filter((x) => which(x.f, x.id));
+    if (!gone.length) return;
+    for (let i = 0; i < gone.length; i += 1000) await this.env.FILES?.delete(gone.slice(i, i + 1000).map((x) => x.f.key));
+    for (const x of gone) await this.ctx.storage.delete(x.k);
+    const left = (await this.ctx.storage.get<number>("fileBytes") ?? 0) - gone.reduce((n, x) => n + x.f.size, 0);
+    await this.ctx.storage.put("fileBytes", Math.max(0, left));
   }
 
   /** A message and its newest THREAD_SHOWN replies, oldest first: each page they sit on is read once. */
@@ -482,6 +588,7 @@ export class Space {
     this.close((m) => m.id === id, 4001, "account deleted");
     for (const [k, page] of await this.ctx.storage.list<Msg[]>({ prefix: "p:" }))
       if (page.some((m) => m.from.id === id)) await this.ctx.storage.put(k, page.filter((m) => m.from.id !== id));
+    await this.dropFiles((f) => f.by === id);
     await this.ctx.storage.put("muted", (await this.ctx.storage.get<string[]>("muted") ?? []).filter((x) => x !== id));
     await this.ctx.storage.put("private", Object.fromEntries(Object.entries(await this.locked()).map(([c, ids]) => [c, ids.filter((x) => x !== id)])));
     return json({ ok: true });
@@ -498,6 +605,7 @@ export class Space {
   /** The space is gone: everyone is out, nothing is kept but the order that ends its voice rooms. */
   private async drop(): Promise<Response> {
     this.close(() => true, 4004, "the space was deleted");
+    await this.dropFiles(() => true);
     const sid = await this.sid(), iss = await this.iss(), outbox = await this.ctx.storage.get<unknown[]>("outbox") ?? [];
     for (const k of (await this.ctx.storage.list({})).keys()) await this.ctx.storage.delete(k);
     await this.ctx.storage.put("iss", iss);

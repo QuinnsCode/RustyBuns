@@ -3,19 +3,26 @@
 // Voice: the owner adds a voice channel, a member takes a one-use Qlave ticket and says they joined, and the owner's
 // mute, kick and delete reach a fake Qlave as orders (one that answers 503 at first, so the outbox has to retry).
 // Qlave's signed roster of who is in a room wins over what the page says.
+// Files: a member posts one as a message and the other downloads it; deleting the message, the channel or the account takes it off R2.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { durableObject, serve } from "@rustybuns/shell-bun";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { durableObject, r2, serve } from "@rustybuns/shell-bun";
 import { space, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, verify } from "@rustybuns/util/token";
 import { hmacHex, unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
-import { Space } from "../src/qollab/space.ts";
+import { FILE_MAX, Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
 
 const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
 conf.SPACE = durableObject(Space as never, conf) as never;
+const files = r2(mkdtempSync(join(tmpdir(), "space-files-")));
+conf.FILES = files;
+const keys = async () => (await files.list()).objects.map((o) => o.key);
 const shell = serve<unknown>({ hostname: "127.0.0.1", port: 0 });
 shell.mount({ fetch: async (req: Request) => (await handle(req, conf)) ?? new Response("no", { status: 404 }) } as never, {});
 // Qlave, as far as eqosys can tell: POST /eqosys with an admin token from eqosys's key, else 401. `down` answers 503 that many times first.
@@ -46,16 +53,18 @@ function member(token: string) {
   const heard: Record<string, string[]> = {}, refused: string[] = [];
   let channels: string[] = [], online: string[] = [], gone = "", history: SpaceMessage[] = [], more = false;
   let voice: { id: string; name: string }[] = [], tickets: { channel: string; url: string; ticket: string }[] = [];
+  const said: SpaceMessage[] = [], unsaid: number[] = [];
   const open = (id: string) => c.open(id, {
     space: (s) => { channels = s.channels; voice = s.voice; },
     online: (m) => (online = m.map((x) => x.voice ? `${x.name} in ${x.voice}` : x.name).sort()),
     ticket: (channel, url, ticket) => tickets.push({ channel, url, ticket }),
-    said: (ch, m) => (heard[ch] ??= []).push(`${m.from.name}: ${m.text}`),
+    said: (ch, m) => { said.push(m); (heard[ch] ??= []).push(`${m.from.name}: ${m.text}`); },
+    unsaid: (_, id) => unsaid.push(id),
     history: (_, m, mo) => { history = m; more = mo; },
     refused: (w) => refused.push(w),
     gone: (w) => (gone = w),
   });
-  return { c, open, heard, refused, channels: () => channels, voice: () => voice, tickets: () => tickets, online: () => online, gone: () => gone, history: () => history, more: () => more };
+  return { c, open, heard, refused, said, unsaid, channels: () => channels, voice: () => voice, tickets: () => tickets, online: () => online, gone: () => gone, history: () => history, more: () => more };
 }
 
 test("make, invite, talk, add a channel, read history, kick; a member from another app is in too", async () => {
@@ -115,6 +124,54 @@ test("make, invite, talk, add a channel, read history, kick; a member from anoth
   expect(fresh).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{12}$/);
   expect(fresh).not.toBe(made.invite);
   expect(await b.c.mine()).toEqual([]);
+  a.c.close();
+});
+
+test("files: a member posts one and another downloads it; the message, the channel and the account each take it with them", async () => {
+  const ada = await signUp("Ada5", "park-hide-seek", PARK), bo = await signUp("Bo5", "qcrm", QCRM), cy = await signUp("Cy5", "park-hide-seek", PARK);
+  const a = member(ada.token), b = member(bo.token);
+  const made = (await a.c.make("Studio files"))!;
+  await b.c.join(made.invite);
+  a.open(made.id); b.open(made.id);
+  await until(() => a.online().join() === "Ada5,Bo5");
+
+  const notes = new Blob(["take two is the keeper"], { type: "text/plain" });
+  const posted = await b.c.postFile(made.id, "general", notes, "mix/notes.txt");
+  if (!("id" in posted)) throw new Error(posted.error);
+  await until(() => a.said.some((m) => m.file));
+  const m = a.said.find((x) => x.file)!;
+  expect(m.file).toEqual({ id: posted.id, name: "mix notes.txt", size: notes.size, type: "text/plain" });
+  expect(await (await a.c.fetchFile(made.id, posted.id))!.text()).toBe("take two is the keeper");
+  // Someone who isn't in the space gets nothing, and a file past the cap or in a channel that isn't there isn't taken.
+  expect(await member(cy.token).c.fetchFile(made.id, posted.id)).toBeNull();
+  expect(await b.c.postFile(made.id, "general", new Blob([new Uint8Array(FILE_MAX + 1)]), "big.wav")).toEqual({ error: "a file is up to 10 MB" });
+  expect(await b.c.postFile(made.id, "nope", notes, "x.txt")).toEqual({ error: "no channel #nope" });
+
+  // Bo can't delete Ada's line; Ada runs the space, so she deletes Bo's file, and it is gone from R2 too.
+  a.c.say("general", "got it");
+  await until(() => b.heard.general?.includes("Ada5: got it"));
+  b.c.unsay("general", b.said.find((x) => x.text === "got it")!.id);
+  await until(() => b.refused.length === 1);
+  expect(await keys()).toHaveLength(1);
+  a.c.unsay("general", m.id);
+  await until(() => b.unsaid.includes(m.id));
+  expect(await a.c.fetchFile(made.id, posted.id)).toBeNull();
+  expect(await keys()).toEqual([]);
+
+  // A file in a channel goes with the channel.
+  a.c.channel("stems");
+  await until(() => b.channels().includes("stems"));
+  expect("id" in await b.c.postFile(made.id, "stems", notes, "a.txt")).toBe(true);
+  expect(await keys()).toHaveLength(1);
+  a.c.drop("stems");
+  await until(() => !b.channels().includes("stems"));
+  expect(await keys()).toEqual([]);
+
+  // And Bo's files go with Bo's account.
+  expect("id" in await b.c.postFile(made.id, "general", notes, "b.txt")).toBe(true);
+  expect(await keys()).toHaveLength(1);
+  expect(await (await call("/api/account/delete", { json: {}, bearer: bo.token, origin: QCRM })).res.json()).toEqual({ ok: true });
+  expect(await keys()).toEqual([]);
   a.c.close();
 });
 

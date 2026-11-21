@@ -43,6 +43,9 @@ export class PluginOut {
   }
 }
 
+/** Something that wants a player's slices whether or not this page plays them: Rec (src/studio/take-rec.ts). */
+export interface Tap { wants(peer: number, line: number): boolean; add(peer: number, line: number, b: number, pcm: Float32Array): void }
+
 /**
  * Everyone else's sound coming in, for one page: slices of guitars and plugin tracks through the Opus decoders (or as
  * PCM) to the Band, held for their beat. A plugin track is heard from one player only (the first to say it voices it,
@@ -55,11 +58,20 @@ export class FarSound {
   /** peer -> the track their guitar is plugged into. */
   private guitars = new Map<number, number>();
   private opus: OpusIn | null = null;
+  /** Rec, while it records someone: their slices are decoded for it even when this page hears them on the call. */
+  tap: Tap | null = null;
   constructor(private band: Band, private send: (m: ToWorklet) => void, private mine: (track: number) => boolean = () => false) {}
 
   /** Opus decoding, once this page knows it has WebCodecs (without it, only PCM slices are heard). */
   decodeWith(make: MakeDecoder) {
-    this.opus = new OpusIn(make, (peer, track, b, pcm) => { for (const m of this.band.sound(peer, track, b, pcm, this.isPlugin(peer, track))) this.send(m); });
+    this.opus = new OpusIn(make, (peer, track, b, pcm) => this.got(peer, track, b, pcm));
+  }
+
+  /** A slice of `peer`'s sound into `track`, whole: to Rec if it wants it, and to the Band if this page plays it. */
+  private got(peer: number, track: number, b: number, pcm: Float32Array) {
+    if (this.tap?.wants(peer, track)) this.tap.add(peer, track, b, pcm);
+    const plugin = this.isPlugin(peer, track);
+    if (this.band.hearsSlices(plugin)) for (const m of this.band.sound(peer, track, b, pcm, plugin)) this.send(m);
   }
 
   /** Whether `track`'s slices from `peer` are a plugin's (heard even listening as it comes). */
@@ -77,8 +89,8 @@ export class FarSound {
     if (e.t === "sound") {
       const plugin = this.isPlugin(from, e.track);
       if (plugin && (this.mine(e.track) || this.voicing(e.track)[0]?.peer !== from)) return true;
-      if (e.c === "opus") { if (this.band.hearsSlices(plugin)) this.opus?.hear(from, e); }
-      else for (const m of this.band.sound(from, e.track, e.b, decodeTake([e.data]), plugin)) this.send(m);
+      if (e.c === "opus") { if (this.band.hearsSlices(plugin) || this.tap?.wants(from, e.track)) this.opus?.hear(from, e); }
+      else this.got(from, e.track, e.b, decodeTake([e.data]));
       return true;
     }
     if (e.t === "guitar") {

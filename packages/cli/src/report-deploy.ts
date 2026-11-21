@@ -1,7 +1,22 @@
 // Telling eqosys what went out, for a studio's Ship door (apps/eqosys/src/deploys.ts): after a good `rustybuns deploy`, or by
 // `rustybuns report-deploy` after a plain `wrangler deploy`. A signed POST of { app, stage, version, at }, the HMAC key being
 // RB_DEPLOY_REPORT_KEY (eqosys's DEPLOY_REPORT_KEY). With no key it says so and does nothing; a refused report only warns,
-// since the deploy itself went out.
+// since the deploy itself went out. Every deploy is also written down on this Mac (logDeploy, key or no key) for the
+// bridge (scripts/bridge.ts), which shows each app's last deploy next to its last merged PR.
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
+
+/** Where this Mac keeps its deploys, one JSON line each: ~/.rustybuns/deploys.jsonl. */
+export const DEPLOY_LOG = join(homedir(), ".rustybuns", "deploys.jsonl");
+
+/** Write one deploy down, with the folder it went out from (the app's id in apps/). Never fails the deploy. */
+export function logDeploy(r: Report, file = DEPLOY_LOG, cwd = process.cwd()) {
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, JSON.stringify({ ...r, dir: basename(cwd) }) + "\n");
+  } catch { /* a read-only home: the deploy still went out */ }
+}
 
 /** @rustybuns/util/bytes's hmacHex, which eqosys checks against; the published CLI doesn't depend on @rustybuns/util, so its own copy. */
 async function hmacHex(secret: string, body: string) {

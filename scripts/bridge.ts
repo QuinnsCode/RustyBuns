@@ -1,7 +1,8 @@
 // The bridge: one screen for every app in the repo. Its issues (open and closed), its last commit
 // against its last good release, what it runs on (Mac, Windows, Linux, Android, iOS, a server,
 // Cloudflare), what it holds (D1, R2, Durable Objects...), its hourly CI and whether its live page
-// answers, and a tier from S to F that you drag it into. Everything but the tiers is read from the
+// answers, its last deploy (from ~/.rustybuns/deploys.jsonl, which `rustybuns deploy` writes) against its last
+// merged PR and its newest PR of any kind, and a tier from S to F that you drag it into. Everything but the tiers is read from the
 // repo and gh on each scan; the tiers live in ~/.rustybuns/tiers.json, so every checkout shares them.
 //
 //   bun run bridge                  open http://localhost:4796 (a free port if that one is taken)
@@ -15,7 +16,8 @@ import { readGroups, plays } from "./readme-apps.ts";
 import { help } from "./help.ts";
 import { arr, bool, int, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { portArg } from "../packages/util/src/ports.ts";
-import { Move, Tiers, emptyTiers, healthOf, issueMatcher, move, readConfig, type ConfigFacts, type Light } from "./bridge-lib.ts";
+import { Move, Tiers, emptyTiers, healthOf, issueMatcher, lastDeploys, move, prOf, readConfig, type ConfigFacts, type Deploy, type Light } from "./bridge-lib.ts";
+import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
 
 const root = join(import.meta.dir, "..");
 
@@ -23,8 +25,13 @@ export type Release = { tag: string; at: string; ok: boolean | null; url: string
 export type Row = ConfigFacts & {
   id: string; name: string; group: string; line: string; play: string | null;
   issues: { open: number; closed: number; manual: number; latest: { number: number; title: string } | null };
+  /** Open PRs touching it, and its newest PR of any state among the last 300. */
   prs: number;
-  commit: { sha: string; at: string; subject: string } | null;
+  pr: { number: number; title: string; state: string; at: string } | null;
+  /** The last commit to it on main; `pr` is the PR it was squash-merged from. */
+  commit: { sha: string; at: string; subject: string; pr: number | null } | null;
+  /** Its newest deploy from this Mac. */
+  deploy: Deploy | null;
   commits30: number;
   /** The newest release tag, and the newest one whose run went green (often the same). */
   release: Release | null; good: Release | null;
@@ -50,7 +57,7 @@ const parse = <T>(text: string | null, g: (v: unknown) => T, fallback: T): T => 
 };
 
 const GhIssues = arr(obj({ number: int(0, 1e12), title: str(500), state: str(20), labels: arr(obj({ name: str(100) }), 50) }), 20000);
-const GhPrs = arr(obj({ number: int(0, 1e12), files: arr(obj({ path: str(500) }), 5000, { drop: true }) }), 500);
+const GhPrs = arr(obj({ number: int(0, 1e12), title: str(500), state: str(20), createdAt: str(40), files: arr(obj({ path: str(500) }), 5000, { drop: true }) }), 500);
 const GhRuns = arr(obj({ headBranch: str(200), conclusion: str(40, { min: 0, dflt: "" }), status: str(40), url: str(500), createdAt: str(40) }), 1000);
 const GhJobs = obj({ jobs: arr(obj({ name: str(300), conclusion: str(40, { min: 0, dflt: "" }) }), 2000) });
 const GhReleases = arr(obj({ tagName: str(200), isDraft: bool() }), 500);
@@ -97,7 +104,7 @@ export async function scan(offline = false): Promise<Scan> {
   // gh, all at once while git runs.
   const gh = offline ? null : Promise.all([
     sh(["gh", "issue", "list", "--state", "all", "--limit", "10000", "--json", "number,title,state,labels"]),
-    sh(["gh", "pr", "list", "--state", "open", "--limit", "300", "--json", "number,files"]),
+    sh(["gh", "pr", "list", "--state", "all", "--limit", "300", "--json", "number,title,state,createdAt,files"]),
     sh(["gh", "run", "list", "--workflow", "desktop-hourly.yml", "--status", "completed", "--limit", "1", "--json", "databaseId,createdAt"]),
     // A release tag's run: desktop-drop for an app, npm-publish for the framework.
     sh(["gh", "run", "list", "--workflow", "desktop-drop.yml", "--event", "push", "--limit", "100", "--json", "headBranch,conclusion,status,url,createdAt"]),
@@ -146,11 +153,15 @@ export async function scan(offline = false): Promise<Scan> {
     } else t.closed++;
     tally.set(id, t);
   }
-  const prs = new Map<string, number>();
+  const prs = new Map<string, number>(), newest = new Map<string, Row["pr"]>();
   for (const p of parse(prsRaw, GhPrs, [])) {
     const touched = new Set(p.files.map((f) => (f.path.startsWith("packages/") ? "rustybuns" : f.path.startsWith("apps/") ? f.path.split("/")[1] : null)).filter((x): x is string => !!x));
-    for (const id of touched) prs.set(id, (prs.get(id) ?? 0) + 1);
+    for (const id of touched) {
+      if (p.state === "OPEN") prs.set(id, (prs.get(id) ?? 0) + 1);
+      if ((newest.get(id)?.number ?? -1) < p.number) newest.set(id, { number: p.number, title: p.title, state: p.state, at: p.createdAt });
+    }
   }
+  const deploys = lastDeploys((() => { try { return readFileSync(DEPLOY_LOG, "utf8"); } catch { return null; } })(), ids);
 
   const rows = await Promise.all(ids.map(async (id): Promise<Row> => {
     const dir = dirOf(id);
@@ -189,7 +200,9 @@ export async function scan(offline = false): Promise<Scan> {
       ...facts,
       issues: tally.get(id) ?? { open: 0, closed: 0, manual: 0, latest: null },
       prs: prs.get(id) ?? 0,
-      commit: sha ? { sha, at, subject } : null,
+      pr: newest.get(id) ?? null,
+      commit: sha ? { sha, at, subject, pr: prOf(subject) } : null,
+      deploy: deploys.get(id) ?? null,
       commits30: Number(count?.trim() ?? 0),
       release, good, since: Number.isFinite(since) ? since : null,
       ci, live,

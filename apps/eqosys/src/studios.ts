@@ -19,6 +19,8 @@ export const Kind = oneOf(KINDS), Role = oneOf(ROLES);
 export const STUDIO_NAME = str(60, { min: 1 });
 /** Studios a person may own. */
 export const OWNED = 3;
+/** The most people a studio has, and so its space (a person's own space stops at SPACE_MEMBERS, space.ts): a studio's whole team in one place. */
+export const STUDIO_MEMBERS = 5000;
 
 /** The super admin's studio: a fixed id, so making it twice is a no-op. */
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
@@ -97,6 +99,9 @@ export async function addMember(conf: Pick<Env, "DB">, studio: string, by: strin
   if (role === "owner" && mine !== "owner") return { ok: false, status: 403, error: "only an owner makes another owner" };
   const u = await conf.DB.prepare(`SELECT id FROM "user" WHERE lower(email) = lower(?)`).bind(email.trim()).first<string>("id");
   if (!u) return { ok: false, status: 404, error: "nobody has signed up with that email" };
+  // A new member counts against the cap; changing someone's role doesn't.
+  if (!await roleIn(conf, studio, u) && ((await conf.DB.prepare("SELECT COUNT(*) AS n FROM studio_members WHERE studio_id = ?").bind(studio).first<number>("n")) ?? 0) >= STUDIO_MEMBERS)
+    return { ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` };
   await conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role")
     .bind(studio, u, role, now).run();
   return { ok: true, id: studio };

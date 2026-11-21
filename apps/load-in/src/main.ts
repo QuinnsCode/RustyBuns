@@ -49,14 +49,14 @@ import { ringing } from "./crowd/crowd.ts";
 import { fillFromTour, spotOf } from "./crowd/spots.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
-import { eyeFill, readable, venueLights } from "./look.ts";
+import { eyeFill, fill, readable, shade, venueLights } from "./look.ts";
 import { CABLE_RADIUS, REST } from "@rustybuns/rig/hand";
 import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
-import { dress, faceLook, type Dressed } from "./faces.ts";
+import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
 import { idlePrompt, nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -108,13 +108,16 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d1420);
 scene.fog = new THREE.Fog(0x0d1420, 8, 22);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 150);
 camera.rotation.order = "YXZ";
 scene.add(camera);
-scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
+const sky = new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, fill(world.level));
+scene.add(sky);
 eyeFill(camera);
 const hands = handsView(scene, camera);
 // Hold Y to look at your arms (I is taken: the arena levels check a point with it).
@@ -182,7 +185,7 @@ let dj: DjBoothView | null = null;
 function modelOf(id: string, height?: number, key?: string): THREE.Object3D {
   if (cable.hasModel(id)) {
     const m = model(id, { look, height });
-    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined }));
+    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined, tape: tapeLabel(key, id) }));
     return m;
   }
   const { w, h, d } = gear(id).size, m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), look.paint);
@@ -247,6 +250,7 @@ function load(level: Level) {
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
   scene.remove(lights); lights = venueLights(world.level); scene.add(lights);
+  sky.intensity = fill(world.level);
   buildItems();
   // A crew is a room on one level: another level is another room with the same code.
   if (online) crewRoom(online.room);
@@ -490,7 +494,7 @@ function menu() {
   $("start").hidden = !crew.code || !!crew.room;
 }
 
-let last = performance.now();
+let last = performance.now(), shadeTick = 0;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -523,6 +527,8 @@ function frame(now: number) {
   band?.tick();
   ar?.tick();
   dj?.tick(dt);
+  // New meshes (gear, cables, the crowd) pick up shadows within a few frames of turning up.
+  if (++shadeTick % 20 === 0) shade(scene);
   draw();
   sound.update(heard());
   // The room rings on the speakers: long when it is empty, tighter as the crowd comes in; out of doors, not at all.
@@ -708,6 +714,8 @@ const harness = {
   festFace: (stage: fest.StageKey, deg: number) => fest.face(world, stage, deg),
   /** Festival: build a stage's subs "omni" or "cardioid", standing by it. */
   festSubs: (stage: fest.StageKey, mode: "omni" | "cardioid") => fest.subs(world, stage, mode),
+  /** Festival: lift a stage's tops over the crowd (true) or bring them down, standing by it. */
+  festLift: (stage: fest.StageKey, on = true) => fest.lift(world, stage, on),
   /** Festival: a stage's master fader in dB, at its desk. */
   festFader: (stage: fest.StageKey, db: number) => fest.master(world, stage, db),
   /** Festival: put a load (tent-rack, open-lights, traders-2, ...) on "L1" | "L2" | "L3" or null, at the compound. */
