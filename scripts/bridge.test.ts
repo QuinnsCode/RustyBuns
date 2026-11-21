@@ -1,8 +1,9 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { issueMatcher } from "./bridge-lib.ts";
+import { issueMatcher, lastDeploys, prOf } from "./bridge-lib.ts";
+import { logDeploy } from "../packages/cli/src/report-deploy.ts";
 import { serve } from "./bridge.ts";
 
 setDefaultTimeout(60_000);
@@ -65,4 +66,19 @@ test("issues land on the app their title names", () => {
     ["Webhook retries drop a delivery", ["qcrm"], "qcrm"],
   ];
   for (const [title, labels, want] of cases) expect([title, about(title, labels)]).toEqual([title, want]);
+});
+
+test("a deploy from an app's folder shows as that app's last deploy, beside the PR its last commit merged", () => {
+  const log = join(dir, "deploys.jsonl");
+  // `rustybuns deploy` in apps/fm-daw (config name "fm-groovebox"), twice; then a report-deploy by app id from anywhere.
+  logDeploy({ app: "fm-groovebox", stage: "production", version: "0.1.0+aaa", at: Date.parse("2026-11-01T10:00:00Z") }, log, "/repo/apps/fm-daw");
+  logDeploy({ app: "fm-groovebox", stage: "production", version: "0.1.0+bbb", at: Date.parse("2026-11-03T10:00:00Z") }, log, "/repo/apps/fm-daw");
+  logDeploy({ app: "qcrm", stage: "preview", version: "2.0.0", at: Date.parse("2026-11-02T10:00:00Z") }, log, "/somewhere/else");
+  writeFileSync(log, readFileSync(log, "utf8") + "not json\n");
+  const got = lastDeploys(readFileSync(log, "utf8"), ["fm-daw", "qcrm", "hippo-tycoon"]);
+  expect(got.get("fm-daw")).toEqual({ stage: "production", version: "0.1.0+bbb", at: "2026-11-03T10:00:00.000Z" });
+  expect(got.get("qcrm")?.stage).toBe("preview");
+  expect(got.has("hippo-tycoon")).toBe(false);
+  expect(prOf("Q Amp on a 3D stage (Closes #4570, part of #4904) (#5171)")).toBe(5171);
+  expect(prOf("Merge branch 'main'")).toBeNull();
 });

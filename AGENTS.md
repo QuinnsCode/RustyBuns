@@ -69,7 +69,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
 - `bun run rings`: the release rings (notes/RELEASE_RINGS.md), one line each: the commit it sits on and its age, its last red, and how many PRs wait to climb into it. Ester's card shows the same.
-- `bun run bridge`: every app on one page (open and closed issues, last commit against last good release, Mac/Windows/Linux/
+- `bun run bridge`: every app on one page (open and closed issues, last commit against last good release, last deploy from this Mac against last merged and newest PR, Mac/Windows/Linux/
   Android/iOS/server/Cloudflare, bindings, hourly CI, whether its live page answers) and the owner's S to F tiers, dragged
   into `~/.rustybuns/tiers.json`. `--json` for the scan, `--html out.html` for a snapshot. An app in S or A is one the owner cares about most.
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
