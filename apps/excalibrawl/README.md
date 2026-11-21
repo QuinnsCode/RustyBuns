@@ -59,6 +59,8 @@ A finished fight is `matches/<id>.json` in R2. The fight's log is the replay: ev
 
 Watching never calls a model. The Agent Office whiteboard slideshow is built on these three.
 
+The page plays a fight the moment it opens: the live one, or else the newest fight that drew on both sides, looped, with the countdown to the next hour above it. Before any fight is archived (a fresh deploy, local dev) it loops a sample fight, written by hand in the pen and labelled as a sample (`src/app/sample.ts`).
+
 ## What it costs
 
 Measured in the bake-off (below), from the usage each call reports, at list prices:

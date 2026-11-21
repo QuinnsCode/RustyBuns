@@ -78,6 +78,8 @@ Ask a script `--help` before reading its source: it prints the script's top comm
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
 - `bun run brief <app>`: an app's brief (what it is, its notes files, scripts, tests, port, probe handle) from its own files; no app lists them all (the `rustybuns-apps` skill).
   A fact the next agent in that app needs goes in its README or a notes file there, where `brief` finds it.
+  Asked "how do I use (or play) this?" about an app: answer from its README's `## Play it` / `## Use it` section, which
+  `brief` prints first (what it is, the link, how to play, controls, account), in its plain words, not from the build notes.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
   `bun run outline --api <package or file>` (`packages/util`, `packages/util/src/eqosys.ts`): every export of its entry points as a one-line signature and doc line, no bodies. Read a shared library's API this way before opening it.
 - Reading code: the guard turns away `cat` and `sed -n` ranges over 150 lines on a code file over 200 lines. Use `bun run outline <file>` first, then `bun run outline <file> <name>`.

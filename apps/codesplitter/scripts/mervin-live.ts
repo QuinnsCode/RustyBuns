@@ -24,7 +24,7 @@ import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
 const MANIFESTS = /^(package\.json|bun\.lock)$/;
-const appOf = (path: string) => path.match(/^apps\/([^/]+)\//)?.[1];
+const appOf = (path: string) => path.match(/^apps\/(?:frameworks\/)?([^/]+)\//)?.[1]; // the framework samples sit a level down
 const pkgOf = (path: string) => path.match(/^packages\/([^/]+)\//)?.[1];
 
 /** The apps a PR's files reach: its own app folders, every app for a root manifest or lockfile, and the apps that use a package it touches (`uses`: package folder to apps). */

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { handleReview } from "./api.ts";
+import { handleReview, humanCheckKey } from "./api.ts";
 import { Document } from "./app/Document.tsx";
 import { setCommonHeaders } from "./app/headers.ts";
 import { Home } from "./app/pages/Home.tsx";
@@ -16,5 +16,6 @@ export default defineApp([
   route("/api/review", {
     post: ({ request }) => handleReview(request, { ...env, BUDGET: budget }, (caches as unknown as { default: Cache }).default),
   }),
-  render(Document, [route("/", () => <Home siteKey={env.TURNSTILE_SITE_KEY ?? ""} />)]),
+  // The human check only shows where a review can go live; elsewhere (local dev) it would only fail and lock Judge me.
+  render(Document, [route("/", () => <Home siteKey={humanCheckKey({ ...env, BUDGET: budget })} />)]),
 ]);

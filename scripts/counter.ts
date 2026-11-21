@@ -1,4 +1,4 @@
-// The sample-app contract every apps/<framework>-example meets (FRAMEWORKS.md, "The sample app contract"),
+// The sample-app contract every apps/frameworks/<framework>-example meets (FRAMEWORKS.md, "The sample app contract"),
 // checked over plain HTTP so one journey covers them all:
 //
 //   1. no token: 403                          2. `/` shows `count: 0` on a fresh data dir

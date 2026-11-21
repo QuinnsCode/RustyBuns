@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { DIFFICULTIES, ROUND_SECS, type Difficulty } from "../../sim/rules.ts";
 import type { Settings } from "../settings.ts";
 import { About, ControlHint } from "./Help.tsx";
 import { Account } from "./Account.tsx";
@@ -35,18 +34,15 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra, note }: Men
           <ControlHint seats={[{ name: "You", ctls: ["kbAll", "touch", "pad0"] }]} />
         </About>
         <div className="col">
-          <button className="btn go" onClick={onSolo} autoFocus title="You against 3 bots">Solo</button>
-          <button className="btn" onClick={onCouch} title="2–4 players on one screen">Couch</button>
+          {/* The ways to play and nothing else: name, bots, players and round length wait under Options, as last picked. */}
+          <button className="btn go big" onClick={onSolo} autoFocus>Solo<small>You against 3 bots</small></button>
+          <button className="btn" onClick={onCouch}>Couch<small>2 to 4 players on one screen</small></button>
           {extra}
           <Account note={note} />
-          <div className="row"><label htmlFor="menu-name">Name</label><input id="menu-name" className="text" style={{ width: 200 }} maxLength={32} value={settings.name} placeholder="Tycoon" onChange={(e) => onSettings({ ...settings, name: e.target.value })} /></div>
-          <div className="row"><label id="menu-bots">Bots</label><Seg<Difficulty> labelledBy="menu-bots" value={settings.difficulty} options={DIFFICULTIES} onChange={(difficulty) => onSettings({ ...settings, difficulty })} /></div>
-          <div className="row"><label id="menu-players" title="Players on this machine, in a LAN or online game">Here</label><Seg<1 | 2> labelledBy="menu-players" value={settings.players} options={[1, 2]} label={(n) => (n === 1 ? "1 player" : "2 players")} onChange={(players) => onSettings({ ...settings, players })} /></div>
-          <div className="row"><label id="menu-round">Round</label><Seg<number> labelledBy="menu-round" value={settings.secs} options={ROUND_SECS} label={(s) => `${s}s`} onChange={(secs) => onSettings({ ...settings, secs })} /></div>
-          <button className="btn" onClick={() => setOptions(true)}>Options</button>
+          <button className="btn quiet" onClick={() => setOptions(true)}>Options</button>
         </div>
       </main>
-      {options && <OptionsDialog settings={settings} onSettings={onSettings} onClose={() => setOptions(false)} />}
+      {options && <OptionsDialog game settings={settings} onSettings={onSettings} onClose={() => setOptions(false)} />}
     </div>
   );
 }

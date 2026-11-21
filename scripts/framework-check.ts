@@ -1,4 +1,4 @@
-// The framework examples' check-up (#3341), every few days: for each apps/<framework>-example, one line per step.
+// The framework examples' check-up (#3341), every few days: for each apps/frameworks/<framework>-example, one line per step.
 //
 //   bun scripts/framework-check.ts [app ...] --binary      build the desktop binary, run the shared journey against it
 //   bun scripts/framework-check.ts [app ...] --shots       a 640x400 picture (16:10, so a bare page still reads at thumbnail size) of the running page as the README thumbnail
@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { help } from "./help.ts";
+import { appDir } from "./app-dirs.ts";
 import { counterJourney, start, stop } from "./counter.ts";
 
 // `spa`: the counter is a "use server" action. `page`: not on the counter contract (its own test is the journey),
@@ -100,7 +101,7 @@ if (import.meta.main) {
   let failed = 0;
   for (const app of apps.length ? apps : Object.keys(EXAMPLES)) {
     for (const s of picked) {
-      const line = await steps[s]!(app, join(root, "apps", app)).then((r) => `ok   ${r}`, (e: Error) => { failed++; return `FAIL ${e.message}`; });
+      const line = await steps[s]!(app, join(root, appDir(app, root))).then((r) => `ok   ${r}`, (e: Error) => { failed++; return `FAIL ${e.message}`; });
       console.log(`${app} ${s}: ${line}`);
     }
   }

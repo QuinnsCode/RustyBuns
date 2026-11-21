@@ -53,7 +53,7 @@ export function KeyField({ status, onSaved }: { status: Status; onSaved: (balanc
         </form>
       )}
       {msg && <p className={msg.ok ? "ok small" : "error small"} role="status">{msg.text}</p>}
-      <p className="muted small">Make one at <a href="https://www.meshy.ai/settings/api" target="_blank" rel="noreferrer">meshy.ai → Settings → API</a>. It's checked with a free balance call, stored on this computer only (readable by your user only), sent nowhere but api.meshy.ai, and never shown again, not even in part.</p>
+      <p className="muted small">Get a key at <a href="https://www.meshy.ai/settings/api" target="_blank" rel="noreferrer">meshy.ai, under Settings, then API</a>. It stays on this computer and is only ever sent to Meshy.</p>
     </div>
   );
 }

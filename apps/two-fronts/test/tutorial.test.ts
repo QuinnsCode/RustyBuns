@@ -8,6 +8,15 @@ setDefaultTimeout(120_000);
 
 type Coach = { learned: boolean; running: boolean; step: number; of: number; title: string | null };
 
+type Title = { covers: string[]; vsAi: boolean };
+// The title with the card up, as a player sees it: what the card lies over, and whether Vs AI is on the first screen.
+const TITLE = `(() => {
+  const box = (e) => e.getBoundingClientRect(), card = box(document.querySelector(".eq-coach"));
+  const over = (b) => b.width && b.height && b.left < card.right && card.left < b.right && b.top < card.bottom && card.top < b.bottom;
+  const under = [...document.querySelectorAll("#modal-body img, #modal-body h2, #modal-body h3, #modal-body label, #modal-body button")].filter((e) => over(box(e)));
+  return { covers: under.map((e) => e.textContent.trim().slice(0, 20) || e.tagName), vsAi: box(document.querySelector("[data-start=ai]")).bottom <= innerHeight };
+})()`;
+
 const PLAY = `(async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
@@ -37,11 +46,20 @@ test.skipIf(!chromePath())("a first visit teaches a side, a fleet, a unit placed
     expect(await coach(jumped)).toMatchObject({ running: false, learned: false });
     await jumped.close();
 
+    // On a phone the card lay over the title's art and name; it sits under them, and Vs AI is on the first screen.
+    for (const [w, h] of [[360, 780], [390, 844], [430, 932]] as const) {
+      const phone = await openTab(chrome.cdp, { w, h }, true, true);
+      await load(chrome.cdp, phone, vite.url, 2000);
+      expect({ w, ...(await phone.eval<Title>(TITLE)) }).toEqual({ w, covers: [], vsAi: true });
+      await phone.close();
+    }
+
     // A first visit's title: the coach asks for a side, and each step of the first turn moves it on.
     const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
     await load(chrome.cdp, tab, vite.url, 2000);
     expect(await coach(tab)).toMatchObject({ running: true, step: 0, of: 5, title: "Pick a side" });
     expect(await tab.eval<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
+    expect(await tab.eval<Title>(TITLE)).toEqual({ covers: [], vsAi: true });
     expect(await tab.eval<(string | null)[]>(PLAY)).toEqual(["Pick a side", "Choose your fleet", "Place a unit", "Deploy your fleet", "Call a play"]);
     const end = Date.now() + 5000;
     while (!(await coach(tab)).learned && Date.now() < end) await Bun.sleep(100);

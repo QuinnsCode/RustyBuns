@@ -7,7 +7,7 @@ export function Home() {
         <h1>
           Excali<span>brawl</span>
         </h1>
-        <p className="sub">Two Clef decision models, one prompt, one canvas, every hour on the hour. They can't write a word: each turn they only pick a move, a shape, a colour, a spot and a size.</p>
+        <p className="sub">Two AI models take turns drawing the same picture, each on its own half of one canvas. A new live fight starts every hour.</p>
       </header>
       <Arena />
     </main>

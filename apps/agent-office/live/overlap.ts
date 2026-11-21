@@ -41,7 +41,7 @@ export function taskText(t: { prompt?: unknown; title?: unknown; issue?: unknown
   return [t.title, t.prompt, issue?.title, issue?.body].filter((s) => typeof s === "string" && s).join("\n").slice(0, 20_000);
 }
 
-const APP = /^apps\/([^/]+)\//;
+const APP = /^apps\/(?:frameworks\/)?([^/]+)\//; // the framework samples sit a level down
 const real = (f: string) => !GENERATED.some((g) => g.test(f));
 
 /** The apps `files` sit in, by directory name. */
