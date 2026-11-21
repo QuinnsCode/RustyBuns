@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer; and, outside the catalog, a studio's stompbox (`stompbox`). Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -830,6 +830,34 @@ function diBox(): Build {
   jacks(b, ["xlr-out"], "front", [0, body * 0.5, d / 2 - 0.006], [0, 0, 0], 0.011);
   mark(b, "grab", [0, body, 0]);
   return b;
+}
+
+/** A stompbox `w` x `h` x `d`: a die-cast box with its edges rounded, rubber feet, a footswitch toward you (chrome on a
+ * nut), a status LED behind it, the instrument jack in on its right end and the out on its left. Its lid's back half is
+ * left clear for the knobs an app puts on (the app's circuit says how many). */
+function stomp([w, h, d]: THREE.Vector3Tuple): Build {
+  const b: Build = { pieces: [], marks: [] }, feet = 0.003, body = h - feet - 0.012;
+  b.pieces.push(box("paint", [w, body, d], [0, feet + body / 2, 0], { bevel: Math.min(0.006, w * 0.08) }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.007, feet, "y", [x * (w / 2 - 0.012), feet / 2, z * (d / 2 - 0.014)], 6));
+  const top = feet + body, sw = d / 2 - Math.min(0.045, d * 0.25);
+  b.pieces.push(disc("chrome", 0.009, 0.004, "y", [0, top + 0.002, sw], 12), disc("chrome", 0.0055, 0.008, "y", [0, top + 0.008, sw], 10));
+  b.pieces.push(disc("light", 0.0028, 0.003, "y", [0, top + 0.0015, sw - 0.03], 6));
+  jacks(b, ["in"], "right", [w / 2, feet + body * 0.55, -d * 0.2], [0, 0, 0], 0.009);
+  jacks(b, ["out"], "left", [-w / 2, feet + body * 0.55, -d * 0.2], [0, 0, 0], 0.009);
+  mark(b, "switch", [0, top + 0.012, sw]);
+  mark(b, "grab", [0, top, 0]);
+  return b;
+}
+
+/** A guitar pedal's box as it comes from the bench: about a 125B enclosure, w x h x d in metres. */
+export const STOMP_SIZE: THREE.Vector3Tuple = [0.066, 0.04, 0.122];
+
+/** A stompbox at `size` (w x h x d, metres; `STOMP_SIZE` unless asked), built as `gear` builds gear, its paint the
+ * pedal's colour: marks `jack:in` (right end), `jack:out` (left end), `switch` (the footswitch's top) and `grab`.
+ * Not Load In's catalog: a studio's pedals, loopers and splitters wear it. */
+export function stompbox(size: THREE.Vector3Tuple = STOMP_SIZE, { look = gearLook() }: { look?: GearLook } = {}): THREE.Group {
+  const s: THREE.Vector3Tuple = [size[0], size[1], size[2]];
+  return assemble("stompbox", built(`stompbox@${s.map((v) => v.toFixed(3)).join("x")}`, () => stomp(s)), look, { stomp: true, size: s });
 }
 
 /** The venue's back-bar cooler: a cabinet with two glass doors lit from inside, its plug at the back. */

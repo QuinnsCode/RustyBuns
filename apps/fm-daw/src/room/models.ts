@@ -1,8 +1,11 @@
-// Qollab Studio's gear room's gear in three.js, procedural: Q Amp's clear acrylic heads with tubes that glow with what each stage
-// does, a clear 2x12 cab with its cones, metal pedals with a Drive knob and a footswitch, a guitar on its stand,
-// and the wall rack. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom centre
-// at the origin, front +z), so a jack drawn here is where room.ts aims.
+// Qollab Studio's gear in three.js, for the gear room and every studio's gear wall. The amps, the cab, the pedals, Q Split,
+// Q Bucket and the guitar are the shared gear models (@rustybuns/models/gear, what Sound Guy Simulator rigs): the amp
+// head and the cab in Q Amp's clear acrylic, with tubes that glow with what each stage does and cones that push, and
+// each pedal a stompbox in its colour. The loop machines, a bench board's clear box, the desk, the wall rack and the
+// pedal wall are drawn here. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom
+// centre at the origin, front +z), and the jack rings and knob caps go where room.ts aims.
 import * as THREE from "three";
+import { gear, gearLook, type GearLook, stompbox } from "@rustybuns/models/gear";
 import type { Face, GearDef, Vec3 } from "./room.ts";
 import { PEDAL_WALL, RACK } from "./room.ts";
 
@@ -23,6 +26,26 @@ const edges = (geo: THREE.BufferGeometry, color = 0xcfe3f0) => new THREE.LineSeg
 const mat = (color: number, metal = 0.2, rough = 0.6) => new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
 const PEDAL_COLOR: Record<string, number> = { drive: 0x3a8f5c, fuzz: 0xc4612f, dist: 0xd8b13a, comp: 0x3b6fb3 };
 const MACHINE_COLOR: Record<string, number> = { tape: 0x8c6a45, spring: 0x45505c, bbd: 0x7d4d9e };
+
+/** A shared model stretched to `size` (its bounds to the box room.ts handles), bottom centre at the origin, with its
+ * `hide` slots' meshes left off (an amp's own knobs, where this amp puts its own). */
+function shared(model: THREE.Group, [w, h, d]: Vec3, hide: string[] = []): THREE.Group {
+  for (const c of [...model.children]) if (hide.some((slot) => c.name.endsWith(`-${slot}`))) model.remove(c);
+  const b = new THREE.Box3().setFromObject(model), s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  model.scale.set(w / s.x, h / s.y, d / s.z);
+  model.position.set(-c.x * model.scale.x, -b.min.y * model.scale.y, -c.z * model.scale.z);
+  const g = new THREE.Group();
+  g.add(model);
+  return g;
+}
+
+/** The shared look with Q Amp's clear acrylic for the shell and a see-through grille, so the tubes and cones show. */
+function clear(): GearLook {
+  const look = gearLook();
+  look.tolex = acrylic();
+  look.grille = new THREE.MeshStandardMaterial({ color: 0x2c2e31, metalness: 0.5, roughness: 0.6, transparent: true, opacity: 0.35, depthWrite: false });
+  return look;
+}
 
 function box(w: number, h: number, d: number, m: THREE.Material, y = h / 2) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -51,46 +74,35 @@ export function gearModel(g: GearDef): GearModel {
   const group = new THREE.Group(), [w, h, d] = g.size;
   const m: GearModel = { group, knobs: new Map(), jacks: new Map(), tubes: [], cones: [] };
   if (g.kind === "amp") {
-    const shell = new THREE.BoxGeometry(w, h, d);
-    const glass = new THREE.Mesh(shell, acrylic());
-    glass.position.y = h / 2;
-    const lines = edges(shell);
-    lines.position.y = h / 2;
-    group.add(glass, lines, box(w * 0.96, 0.012, d * 0.9, mat(0x2b2e33, 0.6, 0.4), 0.006));
-    const panel = box(w * 0.94, 0.07, 0.006, mat(0x1d1f23, 0.5, 0.5), 0.15);
-    panel.position.z = d / 2 - 0.006;
-    group.add(panel);
+    // the shared amp head (@rustybuns/models/gear) in Q Amp's clear shell, its own knobs left off for this amp's
+    group.add(shared(gear("amp-head", { look: clear() }), g.size, ["knob"]));
     for (let i = 0; i < 6; i++) {
       const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.07, 14), new THREE.MeshStandardMaterial({ color: 0x40301f, emissive: 0xff7a2e, emissiveIntensity: 0, transparent: true, opacity: 0.85 }));
-      tube.position.set(-w / 2 + 0.08 + i * 0.07, 0.05, -0.03);
+      tube.position.set(-w / 2 + 0.08 + i * 0.07, 0.14, -0.04);
       group.add(tube);
       m.tubes.push(tube);
     }
   } else if (g.kind === "cab") {
-    const shell = new THREE.BoxGeometry(w, h, d), glass = new THREE.Mesh(shell, acrylic()), lines = edges(shell);
-    glass.position.y = lines.position.y = h / 2;
-    group.add(glass, lines);
+    // the shared 4x12's cabinet cut to this cab's size, clear, behind a see-through grille: the cones push with the output
+    group.add(shared(gear("cab-4x12", { look: clear() }), g.size));
     for (const x of [-w / 4, w / 4]) {
       const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.08, 28, 1, true), mat(0x2a2a2c, 0, 0.9));
       cone.rotation.x = -Math.PI / 2;
       cone.position.set(x, h / 2, d / 2 - 0.08);
       group.add(cone);
       m.cones.push(cone);
-      const magnet = onFace(0.05, 0.05, "back", [x, h / 2, d / 2 - 0.16], mat(0x8a8f96, 0.8, 0.3));
-      group.add(magnet);
+      group.add(onFace(0.05, 0.05, "back", [x, h / 2, d / 2 - 0.16], mat(0x8a8f96, 0.8, 0.3)));
     }
   } else if (g.circuit === "bench") {
     // A board off the bench in the clear house box: acrylic over a green board, so you see what you drew.
     const shell = new THREE.BoxGeometry(w, h, d), glass = new THREE.Mesh(shell, acrylic()), lines = edges(shell);
     glass.position.y = lines.position.y = h / 2;
     group.add(glass, lines, box(w * 0.84, 0.0016, d * 0.8, mat(0x1f6b3a, 0.1, 0.7), 0.008));
-  } else if (g.kind === "pedal") {
-    group.add(box(w, h, d, mat(PEDAL_COLOR[g.circuit ?? ""] ?? 0x777777, 0.55, 0.35)));
-    group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, d / 2 - 0.05], mat(0xc9ccd1, 0.9, 0.2)));
-  } else if (g.kind === "split") {
-    // Q Split: a brushed box with a seam down the lid, side A's jacks and side B's on its face.
-    group.add(box(w, h, d, mat(0x9aa1ab, 0.8, 0.3)), box(0.004, 0.002, d * 0.9, mat(0x1d1f23, 0, 0.9), h));
-    group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, -0.05], mat(0x1d1f23, 0.5, 0.4)));
+  } else if (g.kind === "pedal" || g.kind === "split" || g.loop === "bbd") {
+    // the shared stompbox at this box's size: a pedal in its colour, Q Split brushed steel, Q Bucket a purple box
+    const look = gearLook();
+    look.paint = g.kind === "split" ? mat(0x9aa1ab, 0.8, 0.3) : g.loop === "bbd" ? mat(MACHINE_COLOR.bbd, 0.4, 0.45) : mat(PEDAL_COLOR[g.circuit ?? ""] ?? 0x777777, 0.55, 0.35);
+    group.add(stompbox(g.size, { look }));
   } else if (g.kind === "machine") {
     group.add(box(w, h, d, mat(MACHINE_COLOR[g.loop ?? "tape"], 0.4, 0.45)));
     if (g.loop === "tape") {
@@ -114,20 +126,8 @@ export function gearModel(g: GearDef): GearModel {
       group.add(slot, cap);
     }
   } else {
-    // The guitar on its stand: a body, a neck, a headstock, and the stand's legs.
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.045, 32), mat(0x7b1f24, 0.1, 0.35));
-    body.rotation.x = Math.PI / 2;
-    body.scale.set(1, 1, 1.25);
-    body.position.y = 0.3;
-    const neck = box(0.05, 0.5, 0.025, mat(0x8a5a32, 0, 0.7), 0.7);
-    const head = box(0.08, 0.14, 0.02, mat(0x1d1f23, 0.1, 0.5), 1.0 - 0.07);
-    group.add(body, neck, head);
-    for (const a of [0.6, 2.6, 4.6]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.3, 6), mat(0x222222, 0.7, 0.4));
-      leg.position.set(Math.sin(a) * 0.1, 0.12, Math.cos(a) * 0.1 - 0.04);
-      leg.rotation.set(Math.cos(a) * 0.5, 0, -Math.sin(a) * 0.5);
-      group.add(leg);
-    }
+    // the shared guitar, stood on its end
+    group.add(shared(gear("guitar"), g.size));
   }
   for (const j of g.jacks) {
     const ring = onFace(0.011, 0.014, j.face, j.at, new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25, emissive: 0xff6b4a, emissiveIntensity: 0 }));
