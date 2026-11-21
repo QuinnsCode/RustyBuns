@@ -56,7 +56,7 @@ import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
-import { dress, faceLook, type Dressed } from "./faces.ts";
+import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
 import { idlePrompt, nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -185,7 +185,7 @@ let dj: DjBoothView | null = null;
 function modelOf(id: string, height?: number, key?: string): THREE.Object3D {
   if (cable.hasModel(id)) {
     const m = model(id, { look, height });
-    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined }));
+    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined, tape: tapeLabel(key, id) }));
     return m;
   }
   const { w, h, d } = gear(id).size, m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), look.paint);
