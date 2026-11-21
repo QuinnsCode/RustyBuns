@@ -65,8 +65,8 @@ export const SURFACES = {
   plastic: { tile: 0.35, tint: 0x8e8e8e, roughness: 1, metalness: 0, color: true, normalScale: 0.5, wear: { chip: 0x6a6866, stipple: 1.0, scuff: 1, matte: 0.6 } },
   /** A line array box's shell: the black plastic in an even fine pebble coat, hardly scuffed (no blotches on the top). */
   coat: { dir: "plastic", tile: 0.35, tint: 0x7a7a7a, roughness: 1, metalness: 0, color: true, normalScale: 0.35, wear: { chip: 0x5a5856, stipple: 1.3, scuff: 0.15, matte: 0.7 } },
-  /** A line array box's side cheeks: a warm grey pebble-coat panel, set off against the black shell. */
-  cheek: { dir: "plastic", tile: 0.35, tint: 0xd8d6c8, roughness: 1, metalness: 0, color: true, normalScale: 0.6, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.2, matte: 0.75 } },
+  /** A line array box's side cheeks: an olive-grey pebble-coat panel (flat colour, no photo map), set off against the black shell. */
+  cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.2, matte: 0.75 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
