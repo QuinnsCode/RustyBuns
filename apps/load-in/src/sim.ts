@@ -5,8 +5,12 @@ import { clamp } from "@rustybuns/util";
 import { gear, type CableKind } from "@rustybuns/gear";
 import { feltKg } from "./assists.ts";
 
-/** Metres per second, empty-handed and standing. */
-export const WALK = 1.5;
+/** Metres per second, empty-handed and standing: a brisk walk, so getting across a big level isn't a chore. */
+export const WALK = 2.6;
+/** The pace heavy gear slows you toward: a sub or a generator still crawls, however brisk the walk. */
+const LADEN = 1.5;
+/** Your pace at share `f` of a free stride: about a walk with a mic in hand, the old crawl under a full load. */
+const pace = (f: number) => LADEN * f + (WALK - LADEN) * f ** 3;
 /** The most one person lifts; anything heavier needs a second pair of hands or wheels. */
 export const MAX_LIFT = 50;
 /** Gear this heavy goes quicker with a friend on the other end: two carry it at the pace of half its weight. */
@@ -118,13 +122,13 @@ export const partner = (w: World) => (w.held?.team ? w.crew.find((m) => m.holdin
 export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.held!.key) ?? null : null);
 
 /** How fast you walk carrying `kg` (as the dial feels it, so Cozy carries half): a 45 kg sub is a slow shuffle on Sim. */
-export const carrySpeed = (kg: number, crouch = false) => WALK * clamp(1 - feltKg(kg) / 55, 0.2, 1) * (crouch ? 0.5 : 1);
+export const carrySpeed = (kg: number, crouch = false) => pace(clamp(1 - feltKg(kg) / 55, 0.2, 1)) * (crouch ? 0.5 : 1);
 /** Gear on wheels (a generator, a sand cart): pushed along the ground, never lifted. */
 export const wheeled = (gearId: string) => !!gear(gearId).wheels;
 /** Sand slows every step to this share of the pace on a hard floor. */
 export const SAND = 0.7;
 /** How fast you push gear on wheels: a 90 kg generator is a crawl on Sim, and rolls light on Cozy. */
-export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
+export const pushSpeed = (kg: number) => pace(clamp(1 - feltKg(kg) / 120, 0.2, 1));
 
 /** A box's footprint as its four corners on the floor. */
 export function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {

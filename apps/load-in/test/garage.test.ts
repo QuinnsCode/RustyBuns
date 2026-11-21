@@ -41,3 +41,11 @@ test("carry the cab from the door to the amp, put it down, stack the head on it"
   expect(at("amp-head").y).toBeCloseTo(0.76, 2);
   expect(pickUp(w, "cab-4x12")).toEqual({ ok: false, why: "something is on the guitar speaker cabinet" });
 });
+
+test("a brisk walk empty-handed, near it with a mic, and still a crawl under a sub or a generator", () => {
+  // Metres per second on Sim: walking got faster (owner, 2026-11-20), heavy gear did not.
+  const paces: [string, number, number, number][] = [["empty", 0, 2.5, 2.7], ["a mic", 1, 2.3, 2.6], ["a 40 kg cab", 40, 0.35, 0.5], ["a 50 kg sub", 50, 0.25, 0.35]];
+  for (const [what, kg, lo, hi] of paces) {
+    expect({ what, ok: carrySpeed(kg) >= lo && carrySpeed(kg) <= hi }).toEqual({ what, ok: true });
+  }
+});

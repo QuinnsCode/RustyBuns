@@ -6,7 +6,7 @@
 // can sits by the generator: on the 15 litres it came with the wall goes quiet at 3 am. Then how the bins stand decides
 // the bass, and how high the mid-highs stand decides the back of a full floor. The same calls `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
+import { SAND, WALK, holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
 import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, desertState, heat, score, wrap } from "../src/venues/desert.ts";
@@ -58,7 +58,7 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
 
   // Sand: even empty-handed you walk slower than on a floor.
   walkWith(w, c, 0, 33);
-  expect(w.you.speed).toBeCloseTo(1.05, 2);
+  expect(w.you.speed).toBeCloseTo(WALK * SAND, 2);
 
   // The generator's small wheels dig in; the cart's balloon tyres roll, and the generator rides it, slowly.
   walkWith(w, c, 0, 32.8);
