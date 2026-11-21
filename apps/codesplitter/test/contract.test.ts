@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { codesplitter } from "../client.ts";
+import { review } from "../src/deploy-review.ts";
 import { local as boot } from "../src/local.ts";
 import { openapi } from "../src/openapi.ts";
+import type { Runner } from "../src/preview.ts";
 import { isRecord } from "@rustybuns/util/guard";
 
 // Contract tests (#5333): the running app held to src/openapi.ts. The journey calls operations by id through the
@@ -53,8 +55,8 @@ const OPERATIONS: Operation[] = Object.entries(spec.paths).flatMap(([path, metho
   return [{ id: o.operationId, method: method.toUpperCase(), path, body: content(o.requestBody), status, ok: content(o.responses[String(status)]) }];
 }));
 
-async function app() {
-  const call = await boot();
+async function app(extra: Record<string, unknown> = {}) {
+  const call = await boot(extra);
   opened.push(call);
   const post = (u: string, url: string, body: unknown) => call(u, url, { method: "POST", body: JSON.stringify(body) });
   for (const u of ["ana", "bo"]) expect((await post(u, "/api/login", { name: u })).status).toBeLessThan(300);
@@ -63,8 +65,8 @@ async function app() {
 
 /** A signed-in app and `ask`: operation `id` as `user` through the typed client, its body and answer checked against the
  * spec, each fault in `drift` and each operation called in `seen`. */
-async function asker() {
-  const call = await app();
+async function asker(extra: Record<string, unknown> = {}) {
+  const call = await app(extra);
   const drift: string[] = [], seen = new Set<string>();
   const ask = async (user: string, id: string, args: Record<string, unknown> = {}): Promise<unknown> => {
     const op = OPERATIONS.find((o) => o.id === id);
@@ -82,7 +84,7 @@ async function asker() {
     seen.add(id);
     return body;
   };
-  return { ask, drift, seen };
+  return { call, ask, drift, seen };
 }
 const field = (v: unknown, k: string): unknown => isRecord(v) ? v[k] : undefined;
 const sh = async (cmd: string, cwd = root) => {
@@ -174,6 +176,62 @@ test("a mirror's day, its checks and its deploy settings: every answer is the sh
 
   expect(drift).toEqual([]);
   expect(seen.size).toBe(29);
+});
+
+test("the routes that start work, on a stand-in machine: a deploy, its plan and teardown, checks queued, a dug fork turned into a mirror", async () => {
+  // The machine a deploy runs on: every command answers 0, git names the commit it was asked to ship, and rustybuns its URL.
+  const ran: string[] = [];
+  const runner: Runner = {
+    exec: async (cmd, _cwd, out) => {
+      const line = cmd.join(" ");
+      ran.push(line);
+      if (line.includes("rev-parse")) out(`${(await review(call.env, "ana", "lab")).tip}\n`);
+      if (line.includes("bun -e")) out(`RB ${JSON.stringify({ adopt: false, edge: true, box: false })}\n`);
+      if (line.includes("rustybuns deploy")) out('url: "https://lab.ana.workers.dev"\n');
+      return 0;
+    },
+    fetch: async () => ({ status: 200 }),
+  };
+  const { call, ask, drift, seen } = await asker({ GH_CLI: "off", PREVIEW_RUNNER: runner });
+  const at = { owner: "ana", repo: "lab" };
+  /** Ask `id` until `done` says its answer is the finished one. */
+  const until = async (id: string, done: (v: unknown) => boolean) => {
+    for (const end = performance.now() + 15_000; performance.now() < end; await Bun.sleep(20)) {
+      const v = await ask("ana", id, at);
+      if (done(v)) return v;
+    }
+    throw new Error(`${id} never finished`);
+  };
+  const settled = (n: number) => (v: unknown) => { const h = field(v, "history"); return Array.isArray(h) && h.length >= n && h.every((d) => field(d, "status") !== "running"); };
+
+  await ask("ana", "create_repo", { body: { name: "lab", visibility: "public" } });
+  await ask("ana", "add_file", { ...at, body: { path: "package.json", content: "{}" } });
+  await ask("ana", "commit_file", { ...at, path: "package.json", body: { message: "package.json" } });
+  await ask("ana", "set_deploy_settings", { ...at, body: { stage: "prod" } });
+  await ask("ana", "deploy", { ...at, body: {} });
+  await until("deploy_status", settled(1));
+  await ask("ana", "deploy_plan", at);
+  await until("deploy_plan_status", (v) => field(field(v, "run"), "done") === true);
+  await ask("ana", "deploy_destroy", { ...at, body: { stage: "prod" } });
+  await until("deploy_status", settled(2));
+  expect(ran.filter((l) => /rustybuns (deploy|plan|destroy)/.test(l)).map((l) => l.match(/rustybuns (\w+)/)![1])).toEqual(["deploy", "plan", "destroy"]);
+
+  await ask("ana", "run_checks", { ...at, body: { on: "desktop" } });
+  await ask("ana", "import_github_checks", { ...at, body: {} });
+
+  // A dug fork: a mirror that forgot it was one, as a dig on the desktop is.
+  const up = join(root, "dig.git"), work = mkdtempSync(join(root, "work-"));
+  await sh(`git init -q --bare ${up}`);
+  await sh(`git clone -q ${up} . 2>/dev/null; printf 'hello\\n' > README && git add -A && git commit -qm init && git push -q origin HEAD:main`, work);
+  await ask("ana", "create_mirror", { body: { url: `file://${up}`, name: "dig", visibility: "public" } });
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = NULL, expires_at = ? WHERE owner = 'ana' AND name = 'dig'").bind(Date.now() + 3600_000).run();
+  const dig = { owner: "ana", repo: "dig" };
+  expect(field(await ask("ana", "get_repo", dig), "mirrorable")).toBe(true);
+  const preview = await ask("ana", "mirror_turn_preview", dig);
+  await ask("ana", "turn_into_mirror", { ...dig, body: { ahead: field(preview, "ahead") } });
+
+  expect(drift).toEqual([]);
+  expect(seen.size).toBe(15);
 });
 
 test("every operation whose spec names a required field refuses a body without one", async () => {
