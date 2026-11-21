@@ -4,7 +4,8 @@
 //
 // 0 docs   1 one app's source   2 packages/, lockfile, shared config   3 build tooling, CI, Docker images
 // 4 secrets and deploys (a human gate)
-// A tier 3 change runs alone; tiers 0 and 1 may share a run (see `stackable`).
+// A tier 3 change runs alone; tiers 0 and 1 may share a run (see `stackable`). `testWaves` and `bisect` are how Mervin's
+// `--stack` uses that (#5476).
 export type Tier = 0 | 1 | 2 | 3 | 4;
 
 const RULES: [Tier, RegExp][] = [
@@ -24,6 +25,27 @@ export const classify = (files: string[]): Tier => files.reduce<Tier>((t, f) => 
 
 // Tiers 0 and 1 ride together; 2 is already everything; 3 and 4 never stack with anything.
 export const stackable = (tier: Tier) => tier <= 2;
+
+/** Mervin's test runs for a set of PRs: every stackable one shares the first run, and each tier 3 or 4 PR gets a run of its own, so a broken dev dep is blamed on the dep. */
+export function testWaves<T>(prs: T[], files: (pr: T) => string[]): T[][] {
+  const shared = prs.filter((p) => stackable(classify(files(p))));
+  return [...(shared.length ? [shared] : []), ...prs.filter((p) => !shared.includes(p)).map((p) => [p])];
+}
+
+/**
+ * Tests a batch once; when it is red, splits it in half and tests each half, down to the PRs that fail alone, so one bad PR
+ * doesn't fail the rest. A batch that is red though both halves pass breaks only together, and all of it comes back bad.
+ */
+export async function bisect<T>(batch: T[], green: (b: T[]) => Promise<boolean>): Promise<{ good: T[]; bad: T[]; runs: number }> {
+  if (!batch.length) return { good: [], bad: [], runs: 0 };
+  if (await green(batch)) return { good: batch, bad: [], runs: 1 };
+  if (batch.length === 1) return { good: [], bad: batch, runs: 1 };
+  const mid = Math.ceil(batch.length / 2);
+  const [a, b] = [await bisect(batch.slice(0, mid), green), await bisect(batch.slice(mid), green)];
+  const runs = 1 + a.runs + b.runs;
+  if (!a.bad.length && !b.bad.length) return { good: [], bad: batch, runs };
+  return { good: [...a.good, ...b.good], bad: [...a.bad, ...b.bad], runs };
+}
 
 const NAMES = ["docs", "one app", "shared code", "tooling", "secrets or deploys"] as const;
 

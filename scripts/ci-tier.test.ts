@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { classify, stackable, tierLine, tierOf } from "./ci-tier.ts";
+import { bisect, classify, stackable, testWaves, tierLine, tierOf } from "./ci-tier.ts";
 
 test("each file lands in its tier", () => {
   expect(tierOf("README.md")).toBe(0);
@@ -26,4 +26,13 @@ test("the builder's tier line says whether a diff may share a run", () => {
   expect(tierLine(["apps/borg/src/a.ts"])).toBe("tier 1 (one app): may share a test run");
   expect(tierLine(["scripts/ci-apps.ts"])).toBe("tier 3 (tooling): runs alone, never stacked");
   expect(tierLine(["apps/x/wrangler.jsonc"])).toBe("tier 4 (secrets or deploys): a person checks it before it merges");
+});
+
+test("a batch with a tooling PR runs in two waves, and a red batch of four bisects to the bad PR", async () => {
+  const files: Record<number, string[]> = { 1: ["README.md"], 2: ["apps/borg/src/a.ts"], 3: ["scripts/ci-apps.ts"], 4: ["apps/golf/src/b.ts"] };
+  expect(testWaves([1, 2, 3, 4], (n) => files[n]!)).toEqual([[1, 2, 4], [3]]);
+  const tried: number[][] = [];
+  const out = await bisect([1, 2, 3, 4], async (b) => (tried.push(b), !b.includes(3)));
+  expect(out).toEqual({ good: [1, 2, 4], bad: [3], runs: 5 });
+  expect(tried).toEqual([[1, 2, 3, 4], [1, 2], [3, 4], [3], [4]]);
 });
