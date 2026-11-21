@@ -37,8 +37,17 @@ export function install(job: Job): boolean {
   mkdirSync(path.dirname(file), { recursive: true });
   mkdirSync(path.dirname(job.log), { recursive: true });
   writeFileSync(file, plist(job));
-  Bun.spawnSync(["launchctl", "bootout", `gui/${uid()}/${job.label}`]);
-  return Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid()}`, file], { stderr: "inherit" }).exitCode === 0;
+  const service = `gui/${uid()}/${job.label}`;
+  Bun.spawnSync(["launchctl", "bootout", service]);
+  // bootout returns before launchd lets go of the job; a bootstrap then fails "5: Input/output error". Wait it out.
+  for (let i = 0; i < 20 && Bun.spawnSync(["launchctl", "print", service], { stdout: "ignore", stderr: "ignore" }).exitCode === 0; i++) Bun.sleepSync(250);
+  for (let i = 0; i < 5; i++) {
+    const r = Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid()}`, file], { stdout: "ignore", stderr: "pipe" });
+    if (r.exitCode === 0) return true;
+    if (i === 4) process.stderr.write(r.stderr);
+    Bun.sleepSync(500);
+  }
+  return false;
 }
 
 export function uninstall(label: string): void {
