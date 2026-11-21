@@ -59,8 +59,9 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     // Its five: the Book's own words on the page; the first press is the first card, right walks along, Enter picks.
     await until("the Book's five", () => shown("#starters .spoken"));
     expect(await text("#starters h1")).toContain("Book");
-    await Bun.sleep(800); // the page swings in
-    await press("ArrowRight");
+    // the page swings in, longer on a slow runner (#5388): a press before it lands moves nothing, so press until one
+    // lands; the one that does takes the first card, as a player's first press does
+    await until("a card focused", async () => { await press("ArrowRight"); return (await focused()) !== ""; });
     expect(await focused()).toBe("hodag");
     await press("Enter");
     await press("ArrowRight");
