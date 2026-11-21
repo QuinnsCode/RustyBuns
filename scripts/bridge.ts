@@ -18,6 +18,7 @@ import { arr, bool, int, obj, opt, str, type Of } from "../packages/util/src/gua
 import { portArg } from "../packages/util/src/ports.ts";
 import { Move, Tiers, emptyTiers, healthOf, issueMatcher, lastDeploys, move, prOf, readConfig, type ConfigFacts, type Deploy, type Light } from "./bridge-lib.ts";
 import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
+import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
 const root = join(import.meta.dir, "..");
 
@@ -110,6 +111,8 @@ export async function scan(offline = false): Promise<Scan> {
     sh(["gh", "run", "list", "--workflow", "desktop-drop.yml", "--event", "push", "--limit", "100", "--json", "headBranch,conclusion,status,url,createdAt"]),
     sh(["gh", "run", "list", "--workflow", "npm-publish.yml", "--event", "push", "--limit", "50", "--json", "headBranch,conclusion,status,url,createdAt"]),
     sh(["gh", "release", "list", "--limit", "200", "--json", "tagName,isDraft"]),
+    // MANUAL RUNs live in their own private repo, off the public board.
+    sh(["gh", "issue", "list", "--repo", MANUAL_REPO, "--state", "open", "--limit", "1000", "--json", "number,title,state,labels"]),
   ]);
 
   const tracked = (await sh(["git", "ls-files", "apps", "packages"])) ?? "";
@@ -127,7 +130,7 @@ export async function scan(offline = false): Promise<Scan> {
   const tags = ((await sh(["git", "tag", "--list", "--sort=-creatordate", "--format=%(refname:short)%09%(creatordate:iso-strict)"])) ?? "")
     .split("\n").filter((l) => /^(v\d|[\w-]+-v\d)/.test(l)).map((l) => { const [tag = "", at = ""] = l.split("\t"); return { tag, at, app: tag.startsWith("v") ? "rustybuns" : tag.replace(/-v\d.*$/, "") }; });
 
-  const [issuesRaw, prsRaw, hourlyRaw, dropRaw, npmRaw, releasesRaw] = gh ? await gh : [null, null, null, null, null, null];
+  const [issuesRaw, prsRaw, hourlyRaw, dropRaw, npmRaw, releasesRaw, manualRaw] = gh ? await gh : [null, null, null, null, null, null, null];
   const runs = [...parse(dropRaw, GhRuns, []), ...parse(npmRaw, GhRuns, [])];
   const published = new Set(parse(releasesRaw, GhReleases, []).filter((r) => !r.isDraft).map((r) => r.tagName));
   const runFor = (tag: string) => runs.find((r) => r.headBranch === tag);
@@ -151,6 +154,13 @@ export async function scan(offline = false): Promise<Scan> {
       if (i.labels.some((l) => l.name === "manual run")) t.manual++;
       if (!t.latest || i.number > t.latest.number) t.latest = { number: i.number, title: i.title };
     } else t.closed++;
+    tally.set(id, t);
+  }
+  for (const i of parse(manualRaw, GhIssues, [])) {
+    const id = about(i.title, i.labels.map((l) => l.name));
+    if (!id) continue;
+    const t = tally.get(id) ?? { open: 0, closed: 0, manual: 0, latest: null };
+    t.manual++;
     tally.set(id, t);
   }
   const prs = new Map<string, number>(), newest = new Map<string, Row["pr"]>();

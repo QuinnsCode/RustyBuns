@@ -7,11 +7,13 @@
 //   bun scripts/stable.ts <head sha>          pick, write notes, open or update the issue
 //   bun scripts/stable.ts <head sha> --dry    print the pick and the issue body; file nothing
 //
-// Needs GH_TOKEN, GITHUB_REPOSITORY (owner/name) and a full clone with tags (fetch-depth: 0), as in a workflow.
+// Needs GH_TOKEN (one that can also write issues in the private MANUAL_REPO), GITHUB_REPOSITORY (owner/name) and a full
+// clone with tags (fetch-depth: 0), as in a workflow.
 import { readFileSync } from "node:fs";
 import { obj, str } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 import { history, type Tested } from "./rings.ts";
+import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
 const green = (s?: string) => s === "SUCCESS" || s === "success";
 
@@ -99,15 +101,22 @@ if (import.meta.main) {
     console.log(`${title}\n\n${body}`);
     process.exit(0);
   }
-  const open = (await Bun.$`gh issue list --repo ${repo} --label ${"manual run"} --state open --search ${`"${TITLE}" in:title`} --json number -q .[0].number`.quiet().text()).trim();
+  // The taste issue goes to the private MANUAL_REPO. The workflow's own token can't see it (the MANUAL_GH_TOKEN
+  // secret can), so without that secret this prints the issue and stays green rather than filing it on the public board.
+  const list = await Bun.$`gh issue list --repo ${MANUAL_REPO} --label ${"manual run"} --state open --search ${`"${TITLE}" in:title`} --json number -q .[0].number`.quiet().nothrow();
+  if (list.exitCode !== 0) {
+    console.log(`::warning::Can't reach ${MANUAL_REPO} (is the MANUAL_GH_TOKEN secret set?), so the taste issue isn't filed. It would have been:\n\n${title}\n\n${body}`);
+    process.exit(0);
+  }
+  const open = list.text().trim();
   const file = `${process.env.RUNNER_TEMP ?? "."}/stable-body.md`;
   await Bun.write(file, body);
   if (open) {
-    await Bun.$`gh issue edit ${open} --repo ${repo} --title ${title} --body-file ${file}`.quiet();
-    await Bun.$`gh issue comment ${open} --repo ${repo} --body ${`Moved to this week's pick, ${sha.slice(0, 7)}.`}`.quiet();
-    console.log(`#${open} moved to ${sha.slice(0, 7)}`);
+    await Bun.$`gh issue edit ${open} --repo ${MANUAL_REPO} --title ${title} --body-file ${file}`.quiet();
+    await Bun.$`gh issue comment ${open} --repo ${MANUAL_REPO} --body ${`Moved to this week's pick, ${sha.slice(0, 7)}.`}`.quiet();
+    console.log(`${MANUAL_REPO}#${open} moved to ${sha.slice(0, 7)}`);
   } else {
-    await Bun.$`gh label create ${"manual run"} --repo ${repo} --color FBCA04`.quiet().nothrow();
-    console.log((await Bun.$`gh issue create --repo ${repo} --label ${"manual run"} --title ${title} --body-file ${file}`.quiet().text()).trim());
+    await Bun.$`gh label create ${"manual run"} --repo ${MANUAL_REPO} --color FBCA04`.quiet().nothrow();
+    console.log((await Bun.$`gh issue create --repo ${MANUAL_REPO} --label ${"manual run"} --title ${title} --body-file ${file}`.quiet().text()).trim());
   }
 }

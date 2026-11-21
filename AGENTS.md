@@ -167,7 +167,7 @@ The owner closes your worktree when you stop, to keep context small. So before y
 be left only in chat. A background-job notice or any other system event is never a reason to end a turn while a task
 is owed: carry on (`.claude/hooks/carry-on.ts` refuses that stop once). Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
 stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
-(anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
+(anything for the owner's hands is a `MANUAL RUN:` in the private manual-run repo, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
 stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
 "4 of 4, nothing left". The count is agent work only: a filed `MANUAL RUN:` or an issue waiting on the owner's
@@ -183,12 +183,16 @@ landing, or an issue.
 ## Manual runs: the owner's hands, in plain sight
 
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
-issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
-label, the steps and a rough time at the top. Never fold it as a line into another open issue (the old #609
+issue in the private manual-run repo, not on the public board (which is for real issues from people):
+`gh issue create --repo QuinnsCode/rustybuns-manual --label "manual run"` (`MANUAL_REPO` in
+`scripts/manual-runs-lib.ts`), title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the
+steps and a rough time at the top. Read and comment on one with `--repo` too, and link it as
+`QuinnsCode/rustybuns-manual#N`. Never fold it as a line into another open issue (the old #609
 roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link, outside
 the "N of M" count. Ask the owner to do it right then (AskUserQuestion) only when it takes under a minute or more work
 is blocked on it; otherwise it waits in `bun run manual`. A PR that touches a manual-run issue
-writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
+writes "Part of QuinnsCode/rustybuns-manual#N" or "Leaves ... open", never a closing word next to it (a closing word
+across repos would close it).
 
 The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the
 issue's jump-to-state links, and Yes (comment and close) or No (comment, stays open) answers it. When an

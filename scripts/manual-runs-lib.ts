@@ -5,6 +5,9 @@
 import { arr, int, obj, or, rec, str, type Of } from "../packages/util/src/guard.ts";
 import { SCENARIOS } from "../apps/agent-office/demo/scenarios.ts";
 
+/** Where MANUAL RUN issues live: a private repo, so the public board only shows real issues from people. */
+export const MANUAL_REPO = "QuinnsCode/rustybuns-manual";
+
 export const Issue = obj({ number: int(1, 1e7), title: str(500), body: str(100_000, { min: 0 }), url: str(500), labels: or(arr(obj({ name: str(100) }), 50), []) });
 export type Issue = Of<typeof Issue>;
 export const Issues = arr(Issue, 500);
@@ -164,6 +167,6 @@ export function answer(number: number, yes: boolean, note: string): string[][] {
   const said = note.trim() ? `\n\n${note.trim()}` : "";
   const n = String(number);
   return yes
-    ? [["gh", "issue", "comment", n, "--body", `Yes, checked in the manual-run window (\`bun run manual\`).${said}`], ["gh", "issue", "close", n]]
-    : [["gh", "issue", "comment", n, "--body", `No, from the manual-run window (\`bun run manual\`); left open.${said || "\n\n(no note)"}`]];
+    ? [["gh", "issue", "comment", n, "--repo", MANUAL_REPO, "--body", `Yes, checked in the manual-run window (\`bun run manual\`).${said}`], ["gh", "issue", "close", n, "--repo", MANUAL_REPO]]
+    : [["gh", "issue", "comment", n, "--repo", MANUAL_REPO, "--body", `No, from the manual-run window (\`bun run manual\`); left open.${said || "\n\n(no note)"}`]];
 }

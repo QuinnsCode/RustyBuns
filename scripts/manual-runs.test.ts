@@ -28,6 +28,8 @@ test("the owner gets loadable runs first with their jump links, answers yes and 
   const yes = await post("/api/answer", { number: 2486, yes: true, note: "feels good" }).then((r) => r.json());
   expect(yes.commands.map((c: string[]) => c.slice(0, 3).join(" "))).toEqual(["gh issue comment", "gh issue close"]);
   expect(yes.commands[0].at(-1)).toContain("feels good");
+  // Off the public board: every write goes to the private manual-run repo.
+  for (const c of yes.commands) expect(c.slice(c.indexOf("--repo"), c.indexOf("--repo") + 2)).toEqual(["--repo", "QuinnsCode/rustybuns-manual"]);
   const no = await post("/api/answer", { number: 2603, yes: false, note: "" }).then((r) => r.json());
   expect(no.commands.map((c: string[]) => c[2])).toEqual(["comment"]);
 

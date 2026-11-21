@@ -1,4 +1,4 @@
-// One window for the open MANUAL RUN issues: each card starts its app in the jump state the issue needs,
+// One window for the open MANUAL RUN issues (in the private MANUAL_REPO, not the public board): each card starts its app in the jump state the issue needs,
 // and Yes (comment and close) or No (comment, stays open) answers it with the owner's own gh.
 //
 //   bun run manual                 open http://localhost:4790 (a free port if that one is taken) and go down the queue (y / n on the keyboard)
@@ -12,7 +12,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Subprocess } from "bun";
 import { arr, bool, int, obj, oneOf, str } from "../packages/util/src/guard.ts";
-import { APPS, Issues, Tags, answer, cleanTags, queue, type AppId, type Issue } from "./manual-runs-lib.ts";
+import { APPS, MANUAL_REPO, Issues, Tags, answer, cleanTags, queue, type AppId, type Issue } from "./manual-runs-lib.ts";
 import { portArg } from "../packages/util/src/ports.ts";
 import { json } from "../packages/util/src/http.ts";
 
@@ -27,7 +27,7 @@ mkdirSync(logs, { recursive: true });
 async function readIssues(): Promise<Issue[]> {
   const file = value("--issues");
   if (file) return Issues(JSON.parse(await Bun.file(file).text()));
-  const p = Bun.spawn(["gh", "issue", "list", "--label", "manual run", "--state", "open", "--limit", "500", "--json", "number,title,body,url,labels"], { cwd: root, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["gh", "issue", "list", "--repo", MANUAL_REPO, "--label", "manual run", "--state", "open", "--limit", "500", "--json", "number,title,body,url,labels"], { cwd: root, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   if (code !== 0 || !out.trim()) throw new Error(`gh issue list failed: ${err.trim() || `exit ${code}, no output`}`);
   return Issues(JSON.parse(out));

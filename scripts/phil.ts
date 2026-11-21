@@ -10,6 +10,7 @@
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
 import { isClimb } from "./climbs.ts";
 import { help } from "./help.ts";
+import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
 /** Waiting on the owner: not a worker's to pick up. */
 export const WAITING = new Set([3031, 3279]);
@@ -37,7 +38,7 @@ export function heldBy(texts: string[]): Set<number> {
 /** What the worker who takes the pick is told. */
 export const baton = (r: Row) => `Mythic Masters issue #${r.number}: ${r.title}.
 Read AGENTS.md, then the issue with \`bun run issue ${r.number}\`. Finish it in one small PR from main: the fix, one test for the path a player walks, no source-text asserts.
-The PR says "Closes #${r.number}" when it is all done, "Part of #${r.number}" if anything is left; file each leftover as its own issue, and anything for the owner's hands as a MANUAL RUN: issue with the \`manual run\` label.
+The PR says "Closes #${r.number}" when it is all done, "Part of #${r.number}" if anything is left; file each leftover as its own issue, and anything for the owner's hands as a MANUAL RUN: issue in the private manual-run repo (\`gh issue create --repo ${MANUAL_REPO} --label "manual run"\`).
 If it is already done or can't be done, comment on #${r.number} with the evidence and stop. Report back with "N of M done", the PR link and every leftover's link.`;
 
 async function run(cmd: string[]): Promise<string> {
