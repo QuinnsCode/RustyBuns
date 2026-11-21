@@ -21,6 +21,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { arr, bool, nul, num, obj, opt, str } from "../packages/util/src/guard.ts";
+import { appDir, upFrom } from "./app-dirs.ts";
 import { help } from "./help.ts";
 import { main as builder, NOT_RUN } from "./remote-ci.ts";
 import { history, type Tested } from "./rings.ts";
@@ -76,8 +77,8 @@ export function jobsFor(failed: string[], apps: unknown, smoke: unknown): { jobs
     const sm = s && smokes.find((r) => r.app === s[1] && r.target === s[2] && r.runner.startsWith("macos") && r.target === "darwin-arm64");
     if (name === "suite") jobs.push({ label: name, dir: "apps/codesplitter", cmd: "bun test --parallel test" });
     else if (name === "packages") jobs.push({ label: name, dir: ".", cmd: "bun test packages" });
-    else if (row) jobs.push({ label: name, dir: `apps/${row.app}`, cmd: [row.prep, row.test, row.boot ? "bun ../../scripts/boot.ts" : ""].filter(Boolean).join(" && ") });
-    else if (sm) jobs.push({ label: name, dir: `apps/${sm.app}`, cmd: sm.smoke });
+    else if (row) jobs.push({ label: name, dir: appDir(row.app), cmd: [row.prep, row.test, row.boot ? `bun ${upFrom(appDir(row.app))}scripts/boot.ts` : ""].filter(Boolean).join(" && ") });
+    else if (sm) jobs.push({ label: name, dir: appDir(sm.app), cmd: sm.smoke });
     else cant.push(name);
   }
   return { jobs, cant };

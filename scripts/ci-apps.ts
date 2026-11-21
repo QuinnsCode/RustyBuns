@@ -13,7 +13,7 @@
 //
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
-  test?: string;        // run in apps/<name>
+  test?: string;        // run in the app's folder: apps/<name>, or apps/frameworks/<name> (scripts/app-dirs.ts)
   shards?: number;      // split test's files over this many jobs by their time (apps/<name>/test-times.json, scripts/test-times.ts)
   prep?: string;        // before test and build: cargo for native/ (cdylib or wasm)
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
@@ -28,6 +28,7 @@ type App = {
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
 import { check, num, rec } from "../packages/util/src/guard.ts";
+import { appDir, appOf, upFrom } from "./app-dirs.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -95,21 +96,24 @@ const RUNNERS = [
   { runner: "windows-11-arm", target: "windows-arm64" },
 ];
 // The Cargo workspace rust-cache keys on.
-const cargo = (app: string) => `apps/${app}/native`;
-const CLI = "bun ../../packages/cli/src/index.ts build desktop";
+const cargo = (app: string) => `${appDir(app)}/native`;
+// Commands run in the app's folder, one or two levels under apps/; `up` climbs back to the repo root.
+const up = (app: string) => upFrom(appDir(app));
+const cli = (app: string) => `bun ${up(app)}packages/cli/src/index.ts build desktop`;
+const where = (app: string) => ({ app, dir: appDir(app), up: up(app) });
 
 // Each binary is named for the app's folder, which is what the upload looks for, even when the
 // config's name differs (codesplitter keeps the name codesplitters for its state).
 const binFile = (app: string, t: string) => `dist/${app}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
 function buildCmd(app: string, a: App, targets: string[]) {
   if (a.build) return a.build;
-  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
+  return targets.map((t) => `${cli(app)}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
 }
 
 // `test` run as one `bun test ...` per shard, each over the files Ester's shard() gives it. A file's weight is its recorded
 // ms, or its size when it has none, so a new file still lands somewhere sensible.
 async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
-  const dir = `apps/${app}`;
+  const dir = appDir(app);
   const [root = "test"] = test.split(/\s+/).slice(-1);
   const times = check(rec(num(0, Infinity)), await Bun.file(`${dir}/test-times.json`).json().catch(() => null)) ?? {};
   const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: `${dir}/${root}` })].map((f) => `${root}/${f}`).sort();
@@ -164,7 +168,7 @@ if (cmd === "drop") {
   if (unknown.length) throw new Error(`unknown app(s): ${unknown.join(", ")}. Known: ${Object.keys(APPS).join(", ")}`);
   const include = names.flatMap((app) => {
     const a = APPS[app]!;
-    const base = { app, prep: a.prep ?? "", cargo: cargo(app) };
+    const base = { ...where(app), prep: a.prep ?? "", cargo: cargo(app) };
     if (a.perOs) return RUNNERS.map((r) => ({ ...base, ...r, test: a.test ?? "", build: buildCmd(app, a, [r.target]) }));
     // Pure TS (or wasm, same on every OS): one Linux job builds every target.
     return [{ ...base, runner: "ubuntu-latest", target: "all", test: "", build: buildCmd(app, a, RUNNERS.map((r) => r.target)) }];
@@ -181,10 +185,10 @@ if (cmd === "drop") {
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
-  const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
+  const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
-    const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
+    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
     if (!a.test || !a.shards) return [{ ...row, test: a.test ?? "", shard: "" }];
     // Boot runs once, with the first shard.
     return (await shardedTests(app, a.test, a.shards)).map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
@@ -201,9 +205,9 @@ if (cmd === "drop") {
   out("scripts", shared || deps || changed.some((f) => f.startsWith("scripts/")));
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
-    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
+    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ ...where(app), ...r, smoke: APPS[app]!.smoke })))
     .concat(Object.keys(APPS).filter((n) => APPS[n]!.bootOn).flatMap((app) =>
-      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
+      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ ...where(app), ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ${up(app)}scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
 } else if (import.meta.main) {
