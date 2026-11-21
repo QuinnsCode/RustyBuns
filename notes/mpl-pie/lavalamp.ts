@@ -63,8 +63,8 @@ export function lavaLamp(svg: string, colors: string[], loop: number, page: stri
   const defs: string[] = [];
   const lamps: string[] = [];
   // A periodic animation of one attribute: `values` over `dur` seconds, started part-way through so blobs are out of step.
-  const anim = (attr: string, values: number[], dur: number, ease = true) =>
-    `<animate attributeName="${attr}" dur="${dur}s" begin="-${f1(rand() * dur)}s" repeatCount="indefinite" values="${values.map(f1).join(";")}"` +
+  const anim = (attr: string, values: number[], dur: number, ease = true, begin = rand() * dur) =>
+    `<animate attributeName="${attr}" dur="${dur}s" begin="-${f1(begin)}s" repeatCount="indefinite" values="${values.map(f1).join(";")}"` +
     (ease ? ` calcMode="spline" keySplines="${Array(values.length - 1).fill(".45 0 .55 1").join(";")}"` : "") + "/>";
   for (const { i, d } of wedges) {
     const poly = polygon(d);
@@ -109,7 +109,8 @@ export function lavaLamp(svg: string, colors: string[], loop: number, page: stri
       const r = r0 * lerp(0.6, 1.15, rand());
       const s = spot(r * 5);
       if (!s) continue;
-      const dur = s.bot - s.top > 260 ? loop : loop / 2;
+      // Slow: one rise and sink per loop, however tall the slice.
+      const dur = loop;
       const top = s.top + r * lerp(0.6, 1.4, rand()), bot = s.bot + r * 0.4;
       const mid = (top + bot) / 2, sway = r * lerp(0.3, 0.9, rand());
       // Up, stretched tall while it climbs and squashed where it turns, then down again.
@@ -119,16 +120,22 @@ export function lavaLamp(svg: string, colors: string[], loop: number, page: stri
         anim("rx", [r * 1.15, r * 0.8, r * 1.1, r * 0.85, r * 1.15], dur) +
         anim("cx", [s.x, s.x + sway, s.x, s.x - sway, s.x], pick([loop, loop / 2])) + "</ellipse>");
     }
+    // The air bubbler: a few stones on the slice's floor, each sending up a steady stream of small bubbles that rise
+    // slowly, wobble, and swell a little as they climb. A stream's bubbles are evenly spaced in time, so it never gaps.
     const bubbles: string[] = [];
-    const nb = clamp(Math.round(area / 2200), 2, 16);
-    for (let b = 0; b < nb; b++) {
-      const s = spot(40);
+    const streams = clamp(Math.round(area / 9000), 1, 4);
+    for (let k = 0; k < streams; k++) {
+      const s = spot(60);
       if (!s) continue;
-      const r = lerp(1.2, 3.4, rand()), dur = pick([loop / 2, loop / 3, loop / 4, loop / 6]);
-      bubbles.push(`<circle cx="${f1(s.x)}" cy="${f1(s.bot)}" r="${f1(r)}">` +
-        anim("cy", [s.bot + r, s.top - r], dur, false) +
-        anim("cx", [s.x, s.x + 3, s.x, s.x - 3, s.x], dur, true) +
-        anim("opacity", [0, 0.9, 0.9, 0], dur, false) + "</circle>");
+      const per = 7, dur = pick([loop / 2, loop / 3]), wob = lerp(2, 4.5, rand());
+      for (let j = 0; j < per; j++) {
+        const r = lerp(1.9, 3.2, rand()), at = (j * dur) / per;
+        bubbles.push(`<circle cx="${f1(s.x)}" cy="${f1(s.bot)}" r="${f1(r)}">` +
+          anim("cy", [s.bot + r, s.top - r], dur, false, at) +
+          anim("cx", [s.x, s.x + wob, s.x - wob, s.x], dur / 2, true, at) +
+          anim("r", [r, r * 1.5], dur, false, at) +
+          anim("opacity", [0, 0.95, 0.95, 0], dur, false, at) + "</circle>");
+      }
     }
     const [fx, fy, fw, fh] = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad].map(f1);
     defs.push(`<filter id="lava-f${i}" filterUnits="userSpaceOnUse" x="${fx}" y="${fy}" width="${fw}" height="${fh}" color-interpolation-filters="sRGB">` +
@@ -136,7 +143,7 @@ export function lavaLamp(svg: string, colors: string[], loop: number, page: stri
     lamps.push(`<g clip-path="url(#lava-c${i})">` +
       `<rect x="${fx}" y="${fy}" width="${fw}" height="${fh}" fill="url(#lava-g${i})"/>` +
       (blobs.length ? `<g filter="url(#lava-f${i})" fill="url(#lava-w${i})">${blobs.join("")}</g>` : "") +
-      `<g fill="${waxHi}" fill-opacity=".25" stroke="${waxHi}" stroke-opacity=".8" stroke-width=".8">${bubbles.join("")}</g>` +
+      `<g fill="${waxHi}" fill-opacity=".3" stroke="#fffaf0" stroke-opacity=".9" stroke-width="1">${bubbles.join("")}</g>` +
       `</g><path d="${d}" fill="none" stroke="${page}" stroke-width="4"/>`);
   }
   const last = svg.indexOf(`artist/${wedges[wedges.length - 1].i}/wedge"`);

@@ -18,8 +18,8 @@ help(import.meta.path);
 const PIN = "689ebd4383c0f55b4219e73303f0b1dea6660bbf";
 /** The plotting calls in mpl's Axes API that draw a chart (docs/api.md), not lines or text laid on one. */
 const CHARTS = ["plot", "step", "errorbar", "hist", "boxplot", "pie", "bar", "barh", "fill_between", "imshow", "scatter"];
-/** One pumpkin hue for every slice, from the biggest (brightest) to the smallest (darkest). */
-const BRIGHT = "#ffae4f", DARK = "#4a220e";
+/** Cloudflare's oranges for every slice, from the biggest (its light orange) through its orange to a deep ember. */
+const BRIGHT = "#fbad41", MID = "#f6821f", DARK = "#a3400c";
 /** The page, the gaps between slices, and the light and quiet inks on it. */
 const PAGE = "#0d0f13", INK = "#f4efe6", QUIET = "#9a9ca3";
 
@@ -59,7 +59,10 @@ for (const face of ["regular", "medium", "semibold", "bold"]) {
 
 const mix = (a: string, b: string, t: number) => `#${[1, 3, 5].map((j) => Math.round(parseInt(a.slice(j, j + 2), 16) * (1 - t) + parseInt(b.slice(j, j + 2), 16) * t).toString(16).padStart(2, "0")).join("")}`;
 /** Brighter is bigger: counts are sorted, so slice i takes step i of the ramp. */
-const colors = counts.map((_, i) => mix(BRIGHT, DARK, Math.pow(i / (counts.length - 1), 0.85)));
+const colors = counts.map((_, i) => {
+  const t = i / (counts.length - 1);
+  return t < 0.4 ? mix(BRIGHT, MID, t / 0.4) : mix(MID, DARK, (t - 0.4) / 0.6);
+});
 
 /** Turned so the eight smaller slices sit around 3 o'clock, each label level with its slice down the right. */
 const START = 36.5;
@@ -102,8 +105,8 @@ function chart({ clear = false, wedgesOnly = false } = {}) {
   // As a mask the slices are white and the gaps black, read by brightness, so the sheen stays off the gaps and edges.
   ax.pie(values, { colors: wedgesOnly ? counts.map(() => "white") : colors, startangle: START, explode, labels: counts.map(() => ""), wedgeprops: { width: RING, edgecolor: wedgesOnly ? "black" : PAGE, linewidth: 4 } });
   // The donut is the star: centred and as tall as the page allows under the two-line greeting.
-  ax.set_xlim(-2.09, 2.09);
-  ax.set_ylim(-1.06, 1.38);
+  ax.set_xlim(-2.2, 2.2);
+  ax.set_ylim(-1.13, 1.44);
   if (wedgesOnly) return fig;
   for (const l of slices) {
     if (l.inside) {
