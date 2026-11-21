@@ -345,3 +345,20 @@ textarea:focus { border-color: var(--patina); outline: none; box-shadow: 0 0 0 2
 .picker > span { flex: none; width: 3.9rem; color: var(--dim); font-size: .75rem; }
 .picker select { flex: 1; min-width: 0; }
 .card-options .picker { margin: .5rem 0 .2rem; }
+
+/* The first screen's example (Sample.tsx): a drawing, an arrow, a model you can turn. */
+.sample { padding: 1.3rem 1.5rem; display: grid; gap: .8rem; }
+.sample .pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr); align-items: center; gap: .8rem; }
+.sample figure { margin: 0; display: grid; gap: .4rem; justify-items: center; text-align: center; }
+.sample figcaption { color: var(--dim); font-size: .85rem; }
+.sample img { width: 100%; max-width: 15rem; height: auto; border-radius: 4px; border: 1px solid var(--edge); }
+.sample .arrow { color: var(--dim); font-size: 1.4rem; }
+.sample .spinner { width: 100%; aspect-ratio: 4 / 3; border-radius: 4px; border: 1px solid var(--edge); background: radial-gradient(circle at 50% 40%, #3a2f27, #1d1814 75%); cursor: grab; touch-action: none; }
+.sample .spinner:active { cursor: grabbing; }
+.sample .spinner canvas { display: block; width: 100%; height: 100%; }
+@media (max-width: 560px) {
+  .setup { padding: 1.5rem 1rem; }
+  .sample { padding: 1rem; }
+  .sample .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: .6rem; }
+  .sample .arrow { display: none; }
+}
