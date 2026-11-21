@@ -1,6 +1,6 @@
 import { setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { counterJourney } from "../../../scripts/counter.ts";
+import { counterJourney } from "../../../../scripts/counter.ts";
 
 setDefaultTimeout(120_000);
 

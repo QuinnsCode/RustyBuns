@@ -66,14 +66,14 @@
     },
     {
       "name": "Elysia",
-      "app": "elysia-example",
+      "app": "frameworks/elysia-example",
       "pkg": "elysia",
       "version": "1.4.30",
       "latest": "1.4.30"
     },
     {
       "name": "RealWorld on Elysia",
-      "app": "elysia-conduit",
+      "app": "frameworks/elysia-conduit",
       "pkg": "elysia",
       "version": "1.4.30",
       "latest": "1.4.30"

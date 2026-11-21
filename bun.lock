@@ -245,7 +245,7 @@
         "vite": "^6.4.4",
       },
     },
-    "apps/elysia-conduit": {
+    "apps/frameworks/elysia-conduit": {
       "name": "conduit-backend",
       "version": "0.0.0",
       "dependencies": {
@@ -292,7 +292,7 @@
         "typescript": "5.9.3",
       },
     },
-    "apps/elysia-example": {
+    "apps/frameworks/elysia-example": {
       "name": "elysia-example",
       "version": "0.1.0",
       "dependencies": {
@@ -2978,7 +2978,7 @@
 
     "compress-commons": ["compress-commons@7.0.1", "", { "dependencies": { "crc-32": "^1.2.0", "crc32-stream": "^7.0.1", "is-stream": "^4.0.0", "normalize-path": "^3.0.0", "readable-stream": "^4.0.0" } }, "sha512-g0S8KAD8qf4+V//pr3BfB1aBnARLXNz2Gx+jmHU0LEriUuoQUOPOulVquHKTJ8+EAIIO7fhseNDr9wK5Q9FKBQ=="],
 
-    "conduit-backend": ["conduit-backend@workspace:apps/elysia-conduit"],
+    "conduit-backend": ["conduit-backend@workspace:apps/frameworks/elysia-conduit"],
 
     "confbox": ["confbox@0.3.1", "", {}, "sha512-cKUSoKa8YxFZZSmraVi7onONx3amu77ngK3kGpsYHDH7drPwCRkQE1RYMPlLRrMtnciRj274XNRxcHxnKmDSnA=="],
 
@@ -3110,7 +3110,7 @@
 
     "elysia": ["elysia@1.4.30", "", { "dependencies": { "cookie": "^1.1.1", "exact-mirror": "^0.2.7", "fast-decode-uri-component": "^1.0.1", "memoirist": "^0.4.0" }, "peerDependencies": { "@sinclair/typebox": ">= 0.34.0 < 1", "@types/bun": ">= 1.2.0", "file-type": ">= 20.0.0", "openapi-types": ">= 12.0.0", "typescript": ">= 5.0.0" }, "optionalPeers": ["@types/bun", "typescript"] }, "sha512-S2qqV0CbM4faB1hQQ5IYoeYnAUinjHlzRduxaBc4OoNqh0GjOc8k6tt3hv5ozWcG6Svr6hugw6JL4zNke4jwfA=="],
 
-    "elysia-example": ["elysia-example@workspace:apps/elysia-example"],
+    "elysia-example": ["elysia-example@workspace:apps/frameworks/elysia-example"],
 
     "emoji-regex": ["emoji-regex@8.0.0", "", {}, "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A=="],
 
