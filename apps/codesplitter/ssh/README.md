@@ -1,8 +1,10 @@
 # codeSplitter over ssh:// (spike)
 
 `git push`, `git ls-remote` and `git clone` over `ssh://` go through a Worker's inbound TCP `connect()` handler, a Durable
-Object and a container running `sshd`. It works locally under `wrangler dev`, from a cold container, in about 30 s
-(#5500). Background: [notes/INBOUND_TCP_GRPC.md](../../../notes/INBOUND_TCP_GRPC.md).
+Object and a container running `sshd`. The container keeps no repos: each connection is bridged to the repo's
+smart-HTTP remote (Artifacts) with the user's token, so a push over ssh lands where an HTTP push does (#5505). It works
+locally under `wrangler dev`, from a cold container, in about 30 s (#5500). Background:
+[notes/INBOUND_TCP_GRPC.md](../../../notes/INBOUND_TCP_GRPC.md).
 
 ```sh
 cd apps/codesplitter
@@ -12,15 +14,45 @@ bun ssh/try.ts --keep   # leave it up and try git by hand
 
 ```
 git -> tcp 127.0.0.1:8788 -> worker.ts connect() -> SshGate DO connect() -> container :2222 sshd -> git-serve.sh
+    -> lookup (remote + token) -> scratch bare repo <-> the repo's smart-HTTP remote
 ```
 
 | File | What it is |
 |---|---|
 | `worker.ts` | The Worker's `connect()` handler and the `SshGate` DO, which starts the container and joins the sockets |
-| `Dockerfile`, `entry.sh` | Alpine with `openssh-server` and `git`. One `git` user, key login only, and every login is forced through `git-serve.sh` |
-| `git-serve.sh` | Allows only `git-upload-pack` and `git-receive-pack` on `owner/repo`, which maps to `/srv/git/owner/repo.git`. A push makes a missing repo |
+| `Dockerfile`, `entry.sh` | Alpine with `openssh-server`, `git` and `curl`. One `git` user, key login only, and every login is forced through `git-serve.sh <user>` |
+| `git-serve.sh` | Allows only `git-upload-pack` and `git-receive-pack` on `owner/repo`, and bridges it to the repo's HTTP remote (below) |
 | `wrangler.jsonc` | The spike's own config, because codeSplitter's generated one can't carry `connect` yet |
-| `try.ts` | The proof: push, ls-remote, clone, a stranger's key refused, a bad path refused |
+| `try.ts` | The proof, against a stand-in codeSplitter on the Mac (the lookup, and `git http-backend` behind Bearer tokens): push, it landed in the HTTP remote, a second push, ls-remote, clone, the remote's refusal reaching the client, a repo the lookup refuses, a stranger's key, a bad path |
+
+## The bridge (#5505)
+
+`git-serve.sh <user>` asks `LOOKUP_URL` (with `GATE_SECRET` as a Bearer token) for `user`, `repo` and `mode` (`read` for a
+fetch, `write` for a push). The reply is two lines, the repo's smart-HTTP remote and a token for that user; an error
+status's body is the reason, which the client sees. Then it makes a scratch bare repo for this connection, fetches every
+ref of the remote into it, and runs `git-upload-pack` or `git-receive-pack` on it. The scratch repo goes when git is done.
+
+A push goes on to the HTTP remote from the scratch repo's `pre-receive` hook, while the client's objects are still in
+quarantine, one `git push` with each ref leased on its old value. So the client hears "ok" only once the HTTP push
+landed, and the HTTP side's refusals (a protected branch, a check) come back as `remote:` lines and fail the push.
+The token goes in the scratch repo's config (`http.extraHeader`), not argv or the URL.
+
+The container needs the internet for this (`enableInternet: true`), to reach the lookup and Artifacts.
+
+What it costs, from `try.ts` on an M-series Mac (local Docker, so the HTTP remote is next door):
+
+| Step | Time |
+|---|---|
+| push, cold container | ~3.2-4 s |
+| push, warm | ~1.0-1.5 s |
+| ls-remote | ~0.6-0.8 s |
+| clone over ssh | ~0.7 s |
+| the same clone straight over HTTP | ~0.1 s |
+
+Most of the ssh cost is the ssh handshake plus the mirror fetch. The fetch is the part that grows: every connection
+fetches the whole repo first, so a big repo pays its full size on each push and fetch. A true stream proxy (relay git's
+pkt-lines to the remote's `/git-upload-pack` and `/git-receive-pack`, as `git-remote-http`'s stateless RPC does) would
+fetch nothing up front. That is the next thing to try if repos get big.
 
 ## What the spike found
 
@@ -47,8 +79,8 @@ git -> tcp 127.0.0.1:8788 -> worker.ts connect() -> SshGate DO connect() -> cont
 
 - **Key auth:** match the client's key to a codeSplitter user. `sshd`'s `AuthorizedKeysCommand` asks codeSplitter
   over HTTP which user owns the offered key, so the container needs no key list baked in. The key store is still to be decided.
-- **Pushes into Artifacts:** `git-serve.sh` stops serving `/srv/git` and bridges to the repo's Artifacts remote over
-  smart HTTP with that user's token. Pushes then take the HTTP push path (checks, agents, feed).
+- **Pushes into Artifacts:** done in the gate (#5505, above). codeSplitter's Worker still has to answer the lookup
+  for real (access check, short Artifacts tokens, the after-push path): #5541.
 - **rustybuns:** carry a `connect` export and the `connect` port through `rustybuns dev` and deploy. Alchemy has no
   Spectrum resource, so the app is a `cf spectrum apps create` step or a small resource of our own.
 - **Live (owner):** a Pro zone, the Spectrum app on one port (22 is the nice one), and a priced run.

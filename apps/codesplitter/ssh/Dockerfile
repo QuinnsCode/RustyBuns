@@ -1,10 +1,10 @@
-# The git container behind codeSplitter's ssh spike (#5500): sshd on 2222, one `git` user whose every login runs
-# git-serve.sh, so all a key can do is fetch from or push to /srv/git/<owner>/<repo>.git.
+# The git container behind codeSplitter's ssh gate (#5500, #5505): sshd on 2222, one `git` user whose every login runs
+# git-serve.sh, which bridges the one repo it asks for to codeSplitter's smart-HTTP remote. It keeps no repos.
 FROM alpine:3.20
-RUN apk add --no-cache openssh-server git \
+RUN apk add --no-cache openssh-server git curl \
  && adduser -D -s /bin/sh git && passwd -u git \
  && ssh-keygen -A \
- && mkdir -p /home/git/.ssh /srv/git && chown -R git:git /home/git /srv/git
+ && mkdir -p /home/git/.ssh && chown -R git:git /home/git
 COPY entry.sh git-serve.sh /
 RUN chmod 755 /entry.sh /git-serve.sh
 EXPOSE 2222

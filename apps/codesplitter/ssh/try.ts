@@ -1,12 +1,14 @@
-// Prove git over ssh:// through a Worker's connect() handler, locally (#5500): `bun ssh/try.ts` from apps/codesplitter.
-// It makes a throwaway key, starts ssh/worker.ts under wrangler dev (Docker builds the sshd container the first time,
-// a minute or so), then pushes a commit to ssh://git@127.0.0.1:8788/spike/demo.git, lists its refs and clones it
-// back, each through Worker -> Durable Object -> container. It prints one line per step and exits 1 on the first
-// that fails. Needs Docker running. Nothing touches Cloudflare: wrangler dev runs it all on this Mac.
+// Prove git over ssh:// through a Worker's connect() handler, locally (#5500, #5505): `bun ssh/try.ts` from
+// apps/codesplitter. It makes a throwaway key, starts a stand-in for codeSplitter on this Mac (the remote lookup and a
+// smart-HTTP git remote that wants a Bearer token, like Artifacts), starts ssh/worker.ts under wrangler dev (Docker
+// builds the sshd container the first time, a minute or so), then pushes a commit to
+// ssh://git@127.0.0.1:8788/spike/demo.git, checks it landed in the HTTP remote, lists its refs and clones it back,
+// each through Worker -> Durable Object -> container -> HTTP remote. It prints one line per step, with its time, and
+// exits 1 if any failed. Needs Docker running. Nothing touches Cloudflare: wrangler dev runs it all on this Mac.
 //
 //   bun ssh/try.ts                  the run above
 //   bun ssh/try.ts --keep           leave wrangler dev up afterwards, and print the git line to try it by hand
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { help } from "../../../scripts/help.ts";
@@ -27,15 +29,86 @@ async function run(cmd: string[], cwd = tmp, sshCommand = ssh): Promise<string> 
   return out.trim();
 }
 
-function step(name: string, ok: boolean, note = ""): void {
-  console.log(`${ok ? "ok  " : "FAIL"} ${name}${note ? `: ${note}` : ""}`);
+/** Run a command that should fail; give back its stderr, or throw if it passed. */
+async function refused(cmd: string[], sshCommand = ssh, cwd = tmp): Promise<string> {
+  try {
+    await run(cmd, cwd, sshCommand);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  throw new Error(`${cmd.join(" ")} passed`);
 }
+
+let failed = false;
+let clock = performance.now();
+function step(name: string, ok: boolean, note = ""): void {
+  const ms = Math.round(performance.now() - clock);
+  console.log(`${ok ? "ok  " : "FAIL"} ${name} (${ms} ms)${note ? `: ${note}` : ""}`);
+  if (!ok) failed = true;
+  clock = performance.now();
+}
+
+// The stand-in for codeSplitter: the lookup git-serve.sh asks, and the repos' smart-HTTP remote. Tokens are per mode,
+// as Artifacts' are, and the remote turns down a push to `locked` the way codeSplitter turns down a protected branch.
+const GATE_SECRET = crypto.randomUUID();
+const READ = `read-${crypto.randomUUID()}`, WRITE = `write-${crypto.randomUUID()}`;
+const root = path.join(tmp, "artifacts");
+const remoteOf = (repo: string) => path.join(root, `${repo}.git`);
+mkdirSync(path.join(root, "spike"), { recursive: true });
+await run(["git", "init", "-q", "--bare", "-b", "main", remoteOf("spike/demo")]);
+writeFileSync(path.join(remoteOf("spike/demo"), "hooks", "pre-receive"),
+  `#!/bin/sh\nwhile read -r old new ref; do [ "$ref" = refs/heads/locked ] && { echo "locked is a protected branch: it changes through a merge" >&2; exit 1; }; done; exit 0\n`);
+chmodSync(path.join(remoteOf("spike/demo"), "hooks", "pre-receive"), 0o755);
+const backend = path.join((await run(["git", "--exec-path"])), "git-http-backend");
+
+const site = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch(req): Promise<Response> {
+    const u = new URL(req.url);
+    const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+    if (u.pathname === "/lookup") {
+      if (bearer !== GATE_SECRET) return new Response("not the gate\n", { status: 401 });
+      const [user, repo, mode] = ["user", "repo", "mode"].map((k) => u.searchParams.get(k) ?? "");
+      if (user !== "spike") return new Response("no such user\n", { status: 403 });
+      if (repo !== "spike/demo") return new Response("no such repo\n", { status: 404 });
+      return new Response(`http://host.docker.internal:${site.port}/git/${repo}.git\n${mode === "write" ? WRITE : READ}\n`);
+    }
+    const m = u.pathname.match(/^\/git(\/[^/]+\/[^/]+\.git)(\/.*)$/);
+    if (!m) return new Response("not found\n", { status: 404 });
+    const write = u.searchParams.get("service") === "git-receive-pack" || m[2] === "/git-receive-pack";
+    if (bearer !== WRITE && (write || bearer !== READ)) return new Response("bad token\n", { status: 401 });
+    // git http-backend as CGI: the request in env and stdin, headers then the body on stdout.
+    const cgi = Bun.spawn([backend], {
+      stdin: new Uint8Array(await req.arrayBuffer()),
+      stdout: "pipe",
+      stderr: "inherit",
+      env: {
+        GIT_PROJECT_ROOT: root, GIT_HTTP_EXPORT_ALL: "1", PATH_INFO: m[1] + m[2], QUERY_STRING: u.search.slice(1),
+        REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers.get("content-type") ?? "", REMOTE_USER: "spike", REMOTE_ADDR: "127.0.0.1",
+        HTTP_CONTENT_ENCODING: req.headers.get("content-encoding") ?? "", GIT_PROTOCOL: req.headers.get("git-protocol") ?? "",
+        PATH: process.env.PATH ?? "",
+      },
+    });
+    const out = new Uint8Array(await new Response(cgi.stdout).arrayBuffer());
+    const split = Buffer.from(out).indexOf("\r\n\r\n");
+    const headers = new Headers();
+    let status = 200;
+    for (const line of new TextDecoder().decode(out.subarray(0, split)).split("\r\n")) {
+      const [k, ...v] = line.split(": ");
+      if (k!.toLowerCase() === "status") status = Number.parseInt(v.join(": "), 10);
+      else if (k) headers.set(k, v.join(": "));
+    }
+    return new Response(out.subarray(split + 4), { status, headers });
+  },
+});
 
 await run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "codesplitter-ssh-spike", "-f", key]);
 const pub = (await Bun.file(`${key}.pub`).text()).trim();
 
+const vars = { AUTHORIZED_KEY: pub, AUTHORIZED_USER: "spike", LOOKUP_URL: `http://host.docker.internal:${site.port}/lookup`, GATE_SECRET };
 const dev = Bun.spawn(
-  ["bunx", "wrangler@4.156.0", "dev", "--ip", "127.0.0.1", "--port", "8797", "--var", `AUTHORIZED_KEY:${pub}`],
+  ["bunx", "wrangler@4.156.0", "dev", "--ip", "127.0.0.1", "--port", "8797", ...Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`])],
   { cwd: here, stdout: "pipe", stderr: "pipe" },
 );
 // Both of wrangler's streams are read to the end (a full pipe would stall it), and its "Ready on" line ends the wait.
@@ -52,50 +125,57 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<void> {
 void Promise.all([drain(dev.stdout), drain(dev.stderr)]).then(() => markReady(false));
 const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), 300_000));
 
-let failed = false;
 try {
   if (!(await Promise.race([ready, timeout]))) throw new Error(`wrangler dev never got ready:\n${log.slice(-2000)}`);
-  step("wrangler dev up", true, "tcp 8788 -> connect() -> SshGate -> sshd");
+  step("wrangler dev up", true, "tcp 8788 -> connect() -> SshGate -> sshd -> HTTP remote");
 
   const work = path.join(tmp, "work");
+  const commit = (m: string) => run(["git", "-c", "user.name=spike", "-c", "user.email=spike@example.invalid", "commit", "-q", "--allow-empty", "-m", m], work);
   await run(["git", "init", "-q", "-b", "main", work]);
-  await run(["git", "-c", "user.name=spike", "-c", "user.email=spike@example.invalid", "commit", "-q", "--allow-empty", "-m", "over ssh"], work);
-  const head = await run(["git", "rev-parse", "HEAD"], work);
+  await commit("over ssh");
+  let head = await run(["git", "rev-parse", "HEAD"], work);
 
+  // The first push reaches sshd cold, so the step after it is the fair time for one push.
   await run(["git", "push", "-q", url, "HEAD:main"], work);
-  step("git push", true, head.slice(0, 7));
+  step("git push (cold)", true, head.slice(0, 7));
+  const landed = async () => (await run(["git", "--git-dir", remoteOf("spike/demo"), "rev-parse", "main"])) === head;
+  step("it landed in the HTTP remote", await landed());
+
+  await commit("again");
+  head = await run(["git", "rev-parse", "HEAD"], work);
+  await run(["git", "push", "-q", url, "HEAD:main"], work);
+  step("git push (warm), onto the one before", await landed(), head.slice(0, 7));
 
   const refs = await run(["git", "ls-remote", url]);
   const listed = refs.includes(`${head}\trefs/heads/main`);
   step("git ls-remote", listed, listed ? "refs/heads/main is the pushed commit" : refs);
-  if (!listed) failed = true;
 
   const back = path.join(tmp, "back");
   await run(["git", "clone", "-q", url, back]);
-  const cloned = (await run(["git", "rev-parse", "HEAD"], back)) === head;
-  step("git clone", cloned);
-  if (!cloned) failed = true;
+  step("git clone over ssh", (await run(["git", "rev-parse", "HEAD"], back)) === head);
+
+  // The same clone straight from the HTTP remote, to see what the bridge costs on top.
+  const direct = path.join(tmp, "direct");
+  await run(["git", "-c", `http.extraHeader=Authorization: Bearer ${READ}`, "clone", "-q", `http://127.0.0.1:${site.port}/git/spike/demo.git`, direct]);
+  step("the same clone over HTTP, no bridge", (await run(["git", "rev-parse", "HEAD"], direct)) === head);
+
+  const lockedSays = await refused(["git", "push", url, "HEAD:locked"], ssh, work);
+  step("the HTTP remote's refusal reaches the client", lockedSays.includes("locked is a protected branch"), lockedSays.includes("protected") ? "" : lockedSays);
+  const noLock = await run(["git", "--git-dir", remoteOf("spike/demo"), "for-each-ref", "refs/heads/locked"]);
+  step("and nothing landed", noLock === "");
+
+  const missing = await refused(["git", "ls-remote", "ssh://git@127.0.0.1:8788/spike/nothing.git"]);
+  step("a repo the lookup refuses", missing.includes("no such repo"), missing.includes("no such repo") ? "" : missing);
 
   const stranger = path.join(tmp, "stranger");
   await run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", stranger]);
-  try {
-    await run(["git", "ls-remote", url], tmp, ssh.replace(key, stranger));
-    step("other key refused", false, "a key nobody let in got the refs");
-    failed = true;
-  } catch {
-    step("other key refused", true);
-  }
+  await refused(["git", "ls-remote", url], ssh.replace(key, stranger));
+  step("other key refused", true);
 
-  try {
-    await run(["git", "ls-remote", "ssh://git@127.0.0.1:8788/../etc"]);
-    step("bad path refused", false, "the container served it");
-    failed = true;
-  } catch {
-    step("bad path refused", true);
-  }
+  await refused(["git", "ls-remote", "ssh://git@127.0.0.1:8788/../etc"]);
+  step("bad path refused", true);
 } catch (e) {
   step("run", false, e instanceof Error ? e.message : String(e));
-  failed = true;
 }
 
 if (keep && !failed) {
@@ -105,6 +185,7 @@ if (keep && !failed) {
   dev.kill("SIGINT");
   await dev.exited;
 }
+site.stop(true);
 // wrangler dev leaves the containers it started (sshd and its proxy) running; only this spike's are named like this.
 const left = Bun.spawnSync(["docker", "ps", "-aq", "--filter", "name=workerd-codesplitter-ssh-spike-"]).stdout.toString().split("\n").filter(Boolean);
 if (left.length) Bun.spawnSync(["docker", "rm", "-f", ...left]);
