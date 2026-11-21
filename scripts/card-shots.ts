@@ -46,7 +46,7 @@ export const APPS: Record<string, AppShots> = {
   "git-recon": { shots: [{ name: "kitchen", path: "/", wait: 9000, click: "#levels > *" }] },
   qcrm: { shots: [{ name: "home", path: "/", wait: 2000 }, { name: "contacts", path: "/app?scenario=populated", wait: 3000 }, { name: "webhooks", path: "/app?scenario=webhooks", wait: 3000 }] },
   "load-in": { shots: [{ name: "dj-booth", path: "/?level=dj-booth&wired=1", wait: 5000, js: "loadIn.start()" }, { name: "first-gig", path: "/?level=first-gig", wait: 5000, js: "loadIn.start()" }, { name: "garage", path: "/?level=garage", wait: 5000, js: "loadIn.start()" }] },
-  "fm-daw": { shots: [{ name: "studio", path: "/studio.html", wait: 6000, click: "text:Walk in" }, { name: "groovebox", path: "/", wait: 4000, click: "text:Start audio", press: true }, { name: "amp", path: "/amp.html", wait: 6000, click: "text:Plug in", press: true }] },
+  "fm-daw": { shots: [{ name: "studio", path: "/studio.html", wait: 6000, click: "text:Walk in" }, { name: "groovebox", path: "/", wait: 4000, click: "text:Start", press: true }, { name: "amp", path: "/amp.html", wait: 6000, click: "text:Plug in", press: true }] },
   "motion-midi": { serve: { config: "vite.desktop.config.ts" }, shots: [{ name: "home", path: "/", wait: 4000 }] },
   // A finished brawl's replay from the live site: this machine has no fights, and the home page is a countdown between them.
   excalibrawl: { serve: { live: "https://excalibrawl.notryanquinn.workers.dev/" }, shots: [{ name: "brawl", path: "/brawls", wait: 8000, click: 'a[href^="/brawls/"]' }] },
