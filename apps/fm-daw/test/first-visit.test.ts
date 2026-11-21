@@ -2,6 +2,7 @@
 // sound on, a card says what to try first, and its Play the groove starts the groove playing. Once tried, a later
 // visit in that browser goes straight to the desk with no card.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
@@ -9,8 +10,14 @@ setDefaultTimeout(120_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 beforeAll(async () => {
+  const app = join(import.meta.dir, "..");
+  // the dev server's config imports .rustybuns/vite.ts, which `rustybuns boundary` writes (as `bun run build` does)
+  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
+    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
+    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
+  }
   // Chrome's stand-in speakers: real time with no sound card, as scripts/web-plugin-check.ts
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(join(import.meta.dir, ".."))]);
+  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
 });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
