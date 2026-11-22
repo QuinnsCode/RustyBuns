@@ -65,7 +65,7 @@ import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
 import { driftRepairQuestion, ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
-import { callDrain, drainFlags } from "./drain.ts";
+import { callDrain, drainFlags, oldCodeNote } from "./drain.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
@@ -1223,7 +1223,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
   if (profiled || sub === "destroy") console.log("\n" + mode);
   // A check of the live app right after this (a smoke run, a health probe) can still meet the old code (#3433).
-  if (sub === "deploy" && objects) console.log("\nbusy Durable Objects keep the old code until they go idle, up to 5 minutes; a check before then may still meet it");
+  if (sub === "deploy" && objects) console.log("\n" + oldCodeNote(cfg.worker?.codeUpdate));
   // A studio's Ship door on eqosys (report-deploy.ts): what went out, where and when. Off without RB_DEPLOY_REPORT_KEY.
   // It is also written down locally (logDeploy) for the bridge's Deploy line.
   if (sub === "deploy") console.log("\n" + (yield* step(async () => {

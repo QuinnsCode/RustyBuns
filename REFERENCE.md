@@ -86,8 +86,11 @@ routes, RPC or storage layout has to work with both (#3433). The same goes for a
 deploy (a smoke run, a health probe that reaches an object): it can still meet the old code, so retry it past the
 5 minutes before calling the deploy bad. `rustybuns deploy` says so after it ships an app with Durable Objects.
 codeSplitter's watchdog only checks `/api/health`, which reads the database and no object, so the window doesn't fool it.
-Cloudflare's `immediate` mode doesn't help yet: it also waits up to 5 minutes on busy objects
-([workers-sdk#16235](https://github.com/cloudflare/workers-sdk/issues/16235)).
+`worker.codeUpdate` changes the window (wrangler's `durable_objects.code_update_strategy`, Alchemy's
+`codeUpdateStrategy`): `{ maxDelay: 60 }` caps it at 60 seconds (0 to 86400), and `"immediate"` restarts busy objects
+on the new code at once, dropping their WebSockets and in-flight requests, so there is no mixed-version window to plan
+for. Left out, Cloudflare's 5-minute default holds. `immediate` waited 5 minutes too until Cloudflare's rollout finished
+on 2026-11-09 ([workers-sdk#16235](https://github.com/cloudflare/workers-sdk/issues/16235)).
 
 So a game keeps its session by (1) writing what must survive to storage as it goes, not at game end, and (2) having its
 page reconnect with the same identity. `resilientSocket` in `@rustybuns/shell-bun/client` does the second: it backs off,
