@@ -52,6 +52,28 @@ describe("ssh keys", () => {
     expect((await lookup(fp)).status).toBe(404);
   });
 
+  // The page's journey (#5545): the profile's SSH keys box adds a pasted .pub line, lists it, says why a second add
+  // can't, and removes it, each by the calls client.html's wireSshKeys makes; the audit log keeps both.
+  test("the SSH keys box: add one, see it, the 409 says why, remove it", async () => {
+    const { send } = await app();
+    const page = readFileSync(join(import.meta.dir, "../src/client.html"), "utf8");
+    expect(page).toContain('boxTop(true, "sshkeys"');
+    for (const c of ['api("/me/ssh-keys")', 'api("/me/ssh-keys", { key:', "api(`/me/ssh-keys/${b.dataset.unkey}`, undefined, \"DELETE\")"]) expect(page).toContain(c);
+
+    const { pub, fp } = keygen();
+    const added = await got(send("ada", "/api/me/ssh-keys", { key: `${pub}\n`, title: "work laptop" }), SshKeyRow, "add", (s) => s === 201);
+    expect(added).toMatchObject({ title: "work laptop", fingerprint: fp });
+    expect(await (await send("ada", "/api/me/ssh-keys", undefined, "GET")).json()).toEqual([added]);
+
+    const again = await send("ada", "/api/me/ssh-keys", { key: pub, title: "" });
+    expect([again.status, ((await again.json()) as { error: string }).error]).toEqual([409, "you have added that key already"]);
+
+    expect((await send("ada", `/api/me/ssh-keys/${added.id}`, undefined, "DELETE")).status).toBe(200);
+    expect(await (await send("ada", "/api/me/ssh-keys", undefined, "GET")).json()).toEqual([]);
+    const log = (await (await send("ada", "/api/tokens/audit", undefined, "GET")).json()) as { action: string }[];
+    expect(log.map((a) => a.action)).toEqual(expect.arrayContaining(["ssh_key.add", "ssh_key.remove"]));
+  });
+
   test("an API token can't add a key", async () => {
     const { send, call } = await app();
     const t = (await (await send("ada", "/api/tokens", { label: "agent", scope: "admin" })).json()) as { token: string };
