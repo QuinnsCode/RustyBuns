@@ -31,7 +31,7 @@ import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
 import { avatarRoute, savedAvatar } from "./avatar.ts";
-import { connectSso, dropSso, proveDomain, SSO_CALLBACK, ssoCookie, SsoForm, ssoStart } from "./sso.ts";
+import { connectSso, dropSso, proveDomain, SSO_CALLBACK, ssoCookie, SsoForm, ssoOnly, ssoRequired, ssoStart } from "./sso.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -339,6 +339,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "signin" || act === "signup") {
     if (await limited()) return back("slow");
     const email = field(form, "email").trim(), password = field(form, "password");
+    // Their company made its sign-in the only way in for this email (sso.ts ssoOnly): say so, rather than "wrong password".
+    if (await ssoRequired(conf, email)) return back("ssoonly");
     const auth = authFor(req, conf);
     const res = await (act === "signup"
       ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
@@ -438,6 +440,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (field(form, "off")) { const r = await dropSso(conf, studio, me.id); return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=studio"); }
     // "Check the record": the studio's TXT record on its domain (sso.ts proveDomain).
     if (field(form, "prove")) { const r = await proveDomain(conf, studio, me.id); return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 403 ? "studio" : "ssoproof"}`); }
+    // "Company sign-in only" for the proved domain (sso.ts ssoOnly), on or off.
+    if (field(form, "only")) { const r = await ssoOnly(conf, studio, me.id, field(form, "only") === "1"); return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 403 ? "studio" : "ssoonlyfirst"}`); }
     const f = check(SsoForm, { issuer: field(form, "issuer").trim(), clientId: field(form, "clientId").trim(), secret: field(form, "secret").trim() || undefined,
       domain: field(form, "domain").trim().toLowerCase(), role: field(form, "role") });
     if (!f) return see("/?tab=studio&e=ssoform");

@@ -135,7 +135,14 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         {c && <button className={btn()} type="submit" name="off" value="1" formNoValidate>Take it off</button>}
       </form>
       {/* Domain proof (sso.ts proveDomain): a proved domain links coworkers' existing accounts, and no other studio can claim it. */}
-      {c && (c.proved ? <p className="mut">{c.domain} is proved: coworkers who already have an account here are linked at their first company sign-in.</p> : (
+      {c && (c.proved ? (
+        <form method="post" action="/do/studio-sso" aria-label={`Who must use ${s.name}'s company sign-in`}>
+          <p className="mut">{c.domain} is proved: coworkers who already have an account here are linked at their first company sign-in.</p>
+          <p className="mut">{c.only ? `Company sign-in is the only way in for ${c.domain} emails.` : `${c.domain} emails may also sign in with a password or GitHub, Google or Apple.`}</p>
+          <input type="hidden" name="studio" value={s.id} />
+          <button className={btn()} type="submit" name="only" value={c.only ? "0" : "1"}>{c.only ? "Allow other sign-ins" : "Company sign-in only"}</button>
+        </form>
+      ) : (
         <form method="post" action="/do/studio-sso" aria-label={`Prove ${s.name} owns ${c.domain}`}>
           <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Until then, coworkers who already have an account here sign in the usual way.</p>
           <code>{proofOf(s.id)}</code>

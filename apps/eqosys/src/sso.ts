@@ -8,7 +8,8 @@
 // Their account is the one this provider made (an `account` row `sso:<studio>` holding the provider's `sub`). Until the studio
 // proves it owns the domain (a DNS TXT record, proveDomain), a company sign-in never takes over an account someone made another
 // way with the same email: that account signs in its usual way instead. Once proved, it links that account at its first company
-// sign-in. Public mail domains are refused either way.
+// sign-in. Public mail domains are refused either way. A proved domain's studio can also make company sign-in the only way in
+// for its emails (ssoOnly; auth.ts refuses any other sign-in for them).
 //
 // Each company sign-in renews the seat it gave (`studio_members.sso_at`); the daily sweep (lapseSeats) takes out seats not renewed
 // in SSO_SEAT_DAYS, so someone the company turned off leaves the studio and its space without waiting for their session to end.
@@ -79,7 +80,7 @@ export async function hasTxt(domain: string, value: string): Promise<boolean> {
 /**
  * Connects (or changes) a studio's company sign-in: its owner only. The provider must answer its discovery first. A domain
  * another studio claims is theirs, unless their claim is unproved and this studio's proof is up (proofOf): then a proved claim
- * replaces theirs. A changed domain must be proved again.
+ * replaces theirs. A changed domain must be proved again, and "company sign-in only" (ssoOnly) turned on again.
  */
 export async function connectSso(conf: Pick<Env, "DB" | "BETTER_AUTH_SECRET">, studio: string, by: string, f: SsoForm, now = Date.now()): Promise<Made> {
   if (await roleIn(conf, studio, by) !== "owner") return { ok: false, status: 403, error: "only a studio's owner connects its company sign-in" };
@@ -94,6 +95,7 @@ export async function connectSso(conf: Pick<Env, "DB" | "BETTER_AUTH_SECRET">, s
     conf.DB.prepare(`INSERT INTO studio_sso (studio_id, issuer, client_id, secret, domain, role, at, proved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (studio_id) DO UPDATE SET issuer = excluded.issuer, client_id = excluded.client_id, secret = coalesce(excluded.secret, studio_sso.secret),
       proved_at = CASE WHEN studio_sso.domain = excluded.domain THEN coalesce(excluded.proved_at, studio_sso.proved_at) ELSE excluded.proved_at END,
+      only_sso = CASE WHEN studio_sso.domain = excluded.domain THEN studio_sso.only_sso ELSE 0 END,
       domain = excluded.domain, role = excluded.role, at = excluded.at`).bind(studio, f.issuer, f.clientId, sealed, f.domain, f.role, now, proved ? now : null),
   ]);
   return { ok: true, id: studio };
@@ -108,6 +110,31 @@ export async function proveDomain(conf: Pick<Env, "DB">, studio: string, by: str
   await conf.DB.prepare("UPDATE studio_sso SET proved_at = ? WHERE studio_id = ?").bind(now, studio).run();
   return { ok: true, id: studio };
 }
+
+/**
+ * The owner makes company sign-in the only way in for the studio's proved domain (`on`), or not. Turned on, everyone with an
+ * email there is signed out, so their next sign-in is the company's. An owner on the domain must have signed in through it
+ * once first, or they would lock themselves out.
+ */
+export async function ssoOnly(conf: Pick<Env, "DB">, studio: string, by: string, on: boolean): Promise<Made> {
+  if (await roleIn(conf, studio, by) !== "owner") return { ok: false, status: 403, error: "only a studio's owner sets who must use company sign-in" };
+  const row = await conf.DB.prepare("SELECT domain, proved_at FROM studio_sso WHERE studio_id = ?").bind(studio).first<{ domain: string; proved_at: number | null }>();
+  if (!row?.proved_at) return { ok: false, status: 400, error: "prove the domain first" };
+  if (on) {
+    const mine = await conf.DB.prepare(`SELECT u.email, EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = u.id AND a."providerId" = ?) AS linked FROM "user" u WHERE u.id = ?`)
+      .bind(ssoProvider(studio), by).first<{ email: string; linked: number }>();
+    if (mine && domainOf(mine.email) === row.domain && !mine.linked) return { ok: false, status: 409, error: "sign in through your company once first" };
+  }
+  await conf.DB.batch([
+    conf.DB.prepare("UPDATE studio_sso SET only_sso = ? WHERE studio_id = ?").bind(on ? 1 : 0, studio),
+    ...(on ? [conf.DB.prepare(`DELETE FROM "session" WHERE "userId" IN (SELECT id FROM "user" WHERE lower(email) LIKE ?)`).bind(`%@${row.domain}`)] : []),
+  ]);
+  return { ok: true, id: studio };
+}
+
+/** Whether `email` may sign in only through its company: its domain is proved by a studio that made company sign-in the only way. */
+export const ssoRequired = async (conf: Pick<Env, "DB">, email: string) =>
+  !!await conf.DB.prepare("SELECT 1 AS y FROM studio_sso WHERE domain = ? AND proved_at IS NOT NULL AND only_sso = 1").bind(domainOf(email)).first("y");
 
 /**
  * The daily sweep: seats from company sign-in not renewed in SSO_SEAT_DAYS go (never an owner's), and `gone` closes each one's
