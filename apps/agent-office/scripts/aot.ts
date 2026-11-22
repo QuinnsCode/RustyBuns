@@ -2,8 +2,7 @@
 //
 // Bun's docs describe `bun compile` = `bun build --compile --aot`: the whole program as machine code, no JIT, and
 // they call it experimental. As of 2026-11-21 no stable Bun has it (1.4.3, 1.4.4 and 1.4.5 have no --aot; canary
-1.4.6-canary.1 does), so the
-// default build stays the JIT one and --aot builds a second binary, dist/agent-office-<os>-<arch>-aot, next to it.
+// 1.4.6-canary.1 does), so the default build stays the JIT one and --aot builds a second binary, dist/agent-office-<os>-<arch>-aot, next to it.
 // AOT only builds for the Mac or Linux it runs on, so --all still makes just the one AOT binary, for this host.
 // Compare them with ls -l, bun run desktop:smoke -- --aot, and the office's mem_stats.
 
