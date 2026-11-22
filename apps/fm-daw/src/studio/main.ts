@@ -13,9 +13,9 @@ import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
 import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
-import { eqosys } from "@rustybuns/util/eqosys";
+import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
-import { follow, fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
@@ -898,7 +898,63 @@ void eq.finishSignIn().then((back) => {
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
 
-function menu() { $("menu").hidden = phase === "play"; door(); people(); }
+// ---- inviting: your eqosys friends (the hub), each an Invite that lands in their eqosys notes, and the invites in yours
+const friendHub = hub({ url: () => eq.eqosysUrl(), token, app: APP });
+let hubView: HubView | null = null, hubAt = 0;
+/** Per friend id: "sending", "sent", or why it didn't go. Kept for this page, so a friend isn't asked twice by accident. */
+const asked = new Map<string, string>();
+async function refreshHub(force = false) {
+  if (!signedIn() || (!force && performance.now() - hubAt < 30_000 && hubAt)) return;
+  hubAt = performance.now();
+  hubView = await friendHub.state();
+  invites();
+}
+function invites() {
+  const box = $("friends-box"), list = $("friends");
+  box.hidden = !here || !signedIn() || !hubView;
+  const shareable = typeof navigator.share === "function";
+  $("share").hidden = !here || !shareable;
+  const add = $("friends-add");
+  if (add instanceof HTMLAnchorElement) add.href = friendHub.friendsPage();
+  list.replaceChildren();
+  const friends = friendOrder(hubView?.friends ?? [], APP);
+  $("friends-none").hidden = friends.length > 0;
+  for (const f of friends) {
+    const li = document.createElement("li"), who = document.createElement("span"), b = document.createElement("button");
+    who.textContent = f.name || "A friend";
+    if (f.here) { const m = document.createElement("small"); m.textContent = "In Qollab Studio"; who.append(" ", m); }
+    const st = asked.get(f.id);
+    b.type = "button"; b.className = "ghost";
+    b.textContent = st === "sent" ? "Sent" : st === "sending" ? "Sending" : st ? "Try again" : "Invite";
+    b.disabled = st === "sent" || st === "sending";
+    if (st && st !== "sent" && st !== "sending") b.title = st;
+    b.addEventListener("click", () => void inviteFriend(f.id));
+    li.append(who, b); list.append(li);
+  }
+  // the lobby: rooms friends asked you into
+  const mine = invitesIn(hubView?.notes ?? [], APP, location.origin);
+  $("invites-box").hidden = !!here || !mine.length;
+  const inv = $("invites");
+  inv.replaceChildren();
+  for (const i of mine.slice(0, 6)) {
+    const li = document.createElement("li"), a = document.createElement("a"), t = document.createElement("span"), m = document.createElement("small");
+    a.href = i.link; t.textContent = i.name || i.room; m.textContent = `From ${i.from}`;
+    a.append(t, m); li.append(a); inv.append(li);
+  }
+}
+async function inviteFriend(id: string) {
+  if (!here) return;
+  asked.set(id, "sending"); invites();
+  const why = await friendHub.notify(id, inviteNote(here.name, def.name), inviteLink(location.origin, here.room, here.studio, here.name));
+  asked.set(id, why ?? "sent"); invites();
+  if (why) flash = { text: why, until: performance.now() + 3000 };
+}
+$("share").addEventListener("click", () => {
+  if (!here) return;
+  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: inviteLink(location.origin, here.room, here.studio, here.name) }).catch(() => {});
+});
+
+function menu() { $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {
