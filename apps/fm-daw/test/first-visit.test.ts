@@ -4,12 +4,15 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(120_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
+// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
+const hasChrome = !!chromePath();
 beforeAll(async () => {
+  if (!hasChrome) return;
   const app = join(import.meta.dir, "..");
   // the dev server's config imports .rustybuns/vite.ts, which `rustybuns boundary` writes (as `bun run build` does)
   if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
@@ -21,7 +24,7 @@ beforeAll(async () => {
 });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
-test("Start, then Play the groove: two taps from landing to a playing groove, and the hint only once", async () => {
+test.skipIf(!hasChrome)("Start, then Play the groove: two taps from landing to a playing groove, and the hint only once", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, vite.url, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);

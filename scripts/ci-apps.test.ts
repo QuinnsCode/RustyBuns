@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dropSample, laneCommands, sharedCode } from "./ci-apps.ts";
+import { dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
 
 // A docs-only PR under packages/ used to run every app's suite (PR #5404: 4635 tests for a skill file).
 test("only code under packages/, the lockfile and the apps workflow fan out to every app", () => {
@@ -42,4 +42,13 @@ test("a pipeline PR's dry drop builds one app per build path, never a tests-only
   };
   expect(dropSample(apps)).toEqual(["plain", "custom", "native"]);
   expect(dropSample({ plain: {} })).toEqual(["plain"]);
+});
+
+// #5509: a lane checks out its own app, plus any app whose code it runs, and none of the other ~900 MB.
+// The first run of it went red where an app reached another by a relative path nobody listed (PR #5537).
+test("a test lane's sparse checkout is its app, its `with` apps and the apps its code reaches", () => {
+  expect(sparseDirs("two-fronts")).toBe("/apps/two-fronts/");
+  expect(sparseDirs("agent-office")).toBe("/apps/agent-office/\n/apps/excalibrawl/");
+  expect(sparseDirs("geoboxq-shopify")).toBe("/apps/geoboxq-shopify/\n/apps/geoboxq/"); // imports its worker
+  expect(sparseDirs("codesplitter")).toContain("/apps/hello-world/"); // the welcome tour digs the folder up
 });
