@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyStarter, withHandle } from "./new-game.ts";
+import { copyStarter, withCiRow, withHandle } from "./new-game.ts";
 import { starterNames } from "../apps/codesplitter/src/starter.ts";
 
 const root = join(import.meta.dir, "..");
@@ -32,4 +32,8 @@ test("the starter, copied as rocket-golf: its eqosys id, window handle, title an
   const probe = readFileSync(join(root, "scripts/probe.ts"), "utf8"), added = withHandle(probe, n);
   expect(added).toContain(`"rocket-golf": { state: "rocketGolf.state()"`);
   expect(withHandle(added, n)).toBe(added);
+
+  const ci = readFileSync(join(root, "scripts/ci-apps.ts"), "utf8"), withRow = withCiRow(ci, n);
+  expect(withRow).toContain('\n  "starter-game":      { test: "bun test test", drop: false },\n  "rocket-golf":       { test: "bun test test", drop: false },\n');
+  expect(withCiRow(withRow, n)).toBe(withRow);
 });
