@@ -28,7 +28,7 @@ const tryCode = (req: Request, who: string, code: string) => {
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?|\/export)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
@@ -162,7 +162,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     const s = await seatIn(conf, spaceAt[1]!, t.who.id);
     if (!s) return json({ error: "not a space you're in" }, 404);
-    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
+    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), ...(s.office ? { office: "1" } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
@@ -184,6 +184,25 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
     const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
       fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
+    const out = new Headers(r.headers);
+    for (const [k, v] of Object.entries(head)) out.set(k, v);
+    return new Response(r.body, { status: r.status, headers: out });
+  }
+
+  // A space's export (space.ts `export`, #5543): GET /q/space/<id>/export[?channel=] with the token as a bearer, for those who run it.
+  const exportAt = /^\/q\/space\/([0-9a-f-]{36})\/export$/.exec(pathname);
+  if (exportAt) {
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET", "access-control-expose-headers": "content-disposition" };
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
+    if (req.method !== "GET") return json({ error: "GET an export" }, 405, head);
+    if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
+    const t = await tokenOf(req, conf, bearerOf(req), { home: true });
+    if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    const s = await seatIn(conf, exportAt[1]!, t.who.id);
+    if (!s) return json({ error: "not a space you're in" }, 404, head);
+    const channel = new URL(req.url).searchParams.get("channel");
+    const q = new URLSearchParams({ ...t.who, sid: exportAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), ...(channel ? { channel } : {}) });
+    const r = await spaceOf(conf.SPACE, exportAt[1]!).fetch(new Request(`https://space/export?${q}`));
     const out = new Headers(r.headers);
     for (const [k, v] of Object.entries(head)) out.set(k, v);
     return new Response(r.body, { status: r.status, headers: out });
