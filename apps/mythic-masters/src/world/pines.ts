@@ -1,7 +1,7 @@
 // The Pine Barrens' own landmarks (region 1, the story bible's pine-barrens wants, #5622): Batsto Village by its
-// trail section (k=0), the steel fire tower on Apple Pie Hill (k=4), and the cranberry bogs in rows behind low dykes
-// and sluice gates (k=6); and along the trail, which the ground draws as a white sugar-sand road there, puddles the
-// colour of tea. Each sight is laid near its section's keeper stone on the flattest dry ground that keeps clear of the
+// trail section (k=0), Atsion Lake's cedar water ringed by white cedar (k=2), the steel fire tower on Apple Pie Hill
+// (k=4), and the cranberry bogs in rows behind low dykes and sluice gates (k=6); and along the trail, which the ground
+// draws as a white sugar-sand road there, two wheel ruts and puddles the colour of tea. Each sight is laid near its section's keeper stone on the flattest dry ground that keeps clear of the
 // trail, the stones and the region's other places (the tower takes the highest instead), the same every time.
 // No three.js and no DOM: pines-view.ts draws them, flora.ts keeps the trees out of their clearings, the tests walk to them.
 import { POIS } from "./poi.ts";
@@ -12,10 +12,10 @@ export const PINE_N = 1;
 /** Metres kept clear round a keeper's stone (poi.ts NO_STONE) and either side of the trail. */
 const STONE_GAP = 30, TRAIL_GAP = 8, PLACE_GAP = 14;
 
-export type PartKind = "mansion" | "tower" | "mill" | "gristmill" | "cottage" | "lake" | "bog" | "vines" | "dyke" | "sluice" | "firetower" | "shed";
+export type PartKind = "mansion" | "tower" | "mill" | "gristmill" | "cottage" | "lake" | "bog" | "vines" | "dyke" | "sluice" | "firetower" | "shed" | "beach" | "dock" | "cedar";
 /** One built thing: its centre, which way it faces (radians about y), and its footprint, metres (w along its own x). */
 export interface Part { kind: PartKind; x: number; z: number; yaw: number; w: number; d: number }
-export interface Sight { id: "batsto" | "fire-tower" | "bogs"; name: string; k: number; x: number; z: number; yaw: number; r: number; parts: Part[] }
+export interface Sight { id: "batsto" | "atsion" | "fire-tower" | "bogs"; name: string; k: number; x: number; z: number; yaw: number; r: number; parts: Part[] }
 
 const hash = (a: number, b: number) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
@@ -86,6 +86,21 @@ function batsto(): Sight | undefined {
   return { id: "batsto", name: "Batsto Village", k: 0, x: p.x, z: p.z, yaw, r: 46, parts: stand(p, yaw, parts) };
 }
 
+function atsion(): Sight | undefined {
+  const p = site(2, 50, false);
+  if (!p) return undefined;
+  const yaw = faceTrail(p);
+  // A tea-dark lake, a sand beach on the near shore with a dock out from it, and Atlantic white cedar standing dark and
+  // close all round the far shore, the way it grows in the wet ground along every Pine Barrens stream.
+  const parts: Omit<Part, "yaw">[] = [{ kind: "lake", x: 0, z: -6, w: 70, d: 52 }, { kind: "beach", x: 0, z: 22, w: 34, d: 7 }, { kind: "dock", x: 9, z: 14, w: 2.2, d: 14 }];
+  for (let i = 0; i < 26; i++) {
+    // round the shore from one end of the beach to the other the long way, two deep in places
+    const a = Math.PI * (0.62 + 1.76 * (i / 25)) + (hash(i, 41) - 0.5) * 0.08, back = 3 + 5 * hash(i, 42), wide = 1.3 + 0.6 * hash(i, 44);
+    parts.push({ kind: "cedar", x: Math.sin(a) * (35 + back), z: -6 + Math.cos(a) * (26 + back), w: wide, d: wide });
+  }
+  return { id: "atsion", name: "Atsion Lake", k: 2, x: p.x, z: p.z, yaw, r: 50, parts: stand(p, yaw, parts) };
+}
+
 function fireTower(): Sight | undefined {
   const p = site(4, 9, true);
   if (!p) return undefined;
@@ -108,8 +123,8 @@ function bogs(): Sight | undefined {
   return { id: "bogs", name: "Cranberry bogs", k: 6, x: p.x, z: p.z, yaw, r: 44, parts: stand(p, yaw, parts) };
 }
 
-/** The Pine Barrens' landmarks: Batsto, the fire tower, the bogs (any whose ground won't take it is left out). */
-export const SIGHTS: Sight[] = [batsto(), fireTower(), bogs()].filter((s): s is Sight => !!s);
+/** The Pine Barrens' landmarks: Batsto, Atsion Lake, the fire tower, the bogs (any whose ground won't take it is left out). */
+export const SIGHTS: Sight[] = [batsto(), atsion(), fireTower(), bogs()].filter((s): s is Sight => !!s);
 
 /** Inside one of the sights' clearings at (x, z)? Where no tree grows (flora.ts). */
 export function cleared(x: number, z: number) {
@@ -145,6 +160,26 @@ export const PUDDLES: Puddle[] = (() => {
       const side = hash(i, j * 13 + 5) < 0.5 ? -1 : 1, off = side * (0.9 + 0.5 * hash(j, i + 7)), x = a.x + ux * s - uz * off, z = a.z + uz * s + ux * off;
       if (ownerAt(x, z) !== PINE_N || !dry(WORLD, x, z, 0.5) || tr.stones.some((t) => Math.hypot(t.x - x, t.z - z) < 10)) continue;
       out.push({ x, z, r: 0.7 + 1.1 * hash(j + 3, i + 11), yaw: Math.atan2(ux, uz) });
+    }
+  }
+  return out;
+})();
+
+/** A stretch of wheel rut in the sand road: its middle, which way it runs, and how long it is (metres). */
+export interface Rut { x: number; z: number; yaw: number; len: number }
+/** Metres from the road's crown to each wheel rut, and the length of one stretch. */
+export const RUT_OFF = 1.15, RUT_LEN = 3;
+/** The two wheel ruts down the Pine Barrens' sand road, stretch by stretch, broken where a keeper's stone stands. */
+export const RUTS: Rut[] = (() => {
+  const tr = TRAILS.get(PINE_N), out: Rut[] = [];
+  if (!tr) return out;
+  for (let i = 0; i + 1 < tr.pts.length; i++) {
+    const a = tr.pts[i]!, b = tr.pts[i + 1]!, L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / (L || 1), uz = (b.z - a.z) / (L || 1);
+    for (let s = RUT_LEN / 2; s < L; s += RUT_LEN * 0.9) for (const side of [-1, 1]) {
+      // the ruts wander a little either side of true, as wheels do
+      const off = side * (RUT_OFF + 0.12 * Math.sin(s * 0.05 + i)), x = a.x + ux * s - uz * off, z = a.z + uz * s + ux * off;
+      if (ownerAt(x, z) !== PINE_N || !dry(WORLD, x, z, 0.5) || tr.stones.some((t) => Math.hypot(t.x - x, t.z - z) < 8)) continue;
+      out.push({ x, z, yaw: Math.atan2(ux, uz), len: RUT_LEN });
     }
   }
   return out;

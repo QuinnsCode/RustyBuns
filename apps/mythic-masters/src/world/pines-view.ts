@@ -1,17 +1,19 @@
 // The Pine Barrens' landmarks of pines.ts drawn: Batsto's stucco mansion and its tower, the ironstone gristmill, the
 // sawmill and a row of weathered cedar cottages by a tea-brown lake; the galvanised fire tower with its glass cab on
 // Apple Pie Hill; the cranberry bogs, flooded red or still in bronze vines, each behind a sandy dyke with a sluice
-// gate; and tea-coloured puddles in the sand road. Every part is one merged, vertex-coloured mesh built once (about
+// gate; Atsion Lake's cedar water with its beach, dock and ring of dark white cedars; and the sand road's two wheel
+// ruts and tea-coloured puddles. Every part is one merged, vertex-coloured mesh built once (about
 // thirty draw calls, only near one of them), stood on the drawn ground every half second while you are in range.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import { PUDDLES, SIGHTS, type Part, type PartKind } from "./pines.ts";
+import { PUDDLES, RUTS, SIGHTS, type Part, type PartKind } from "./pines.ts";
 
-const SEEN_R = 1500, TOWER_SEEN_R = 2600, PUDDLE_R = 240, PUDDLE_CAP = 96;
+const SEEN_R = 1500, TOWER_SEEN_R = 2600, PUDDLE_R = 240, PUDDLE_CAP = 96, RUT_R = 150, RUT_CAP = 260;
 const STUCCO = 0xf0e6cc, ROOF = 0x55585a, SHUTTER = 0x2f4a36, TRIM = 0xeeeae0, GLASS = 0x22282e, CEDAR = 0xb4a68e, CEDAR_DARK = 0x655243,
   SHINGLE = 0x4a4541, IRONSTONE = 0x8b5a3e, MORTAR = 0x9a7a62, TIN = 0x7c5c48, DOOR = 0x4a3626, BRICK = 0x8a4a3a, STEEL = 0x9aa1a6,
-  CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0x8c8460, PLANK = 0x5e4a36, TEA = 0x3a2414, LOGS = 0x7a5a3c;
+  CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0x8c8460, PLANK = 0x5e4a36, TEA = 0x7a4a1c, LOGS = 0x7a5a3c,
+  BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640];
 
 type G = THREE.BufferGeometry;
 /** A geometry painted one colour, non-indexed and without uvs, so any of them merge. */
@@ -105,8 +107,27 @@ function build(p: Part, seed: number): G[] {
       for (let i = 0; i < 9; i++) { const row = i < 4 ? 0 : i < 7 ? 1 : 2, x = -2 + (i - (row === 0 ? 0 : row === 1 ? 4 : 7)) * 0.75 + row * 0.37; out.push(paint(new THREE.CylinderGeometry(0.34, 0.36, 5 + rnd(), 8).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).translate(x + w / 2 + 2.5, 0.35 + row * 0.62, 0), LOGS)); }
       return out;
     }
+    case "beach": return [surface(w, d, seed, pickOf([BEACH, 0xdfd4ba, 0xf0e8d4, 0xd8cdb0]))];
+    // a plank pier on posts, its deck a little over the water
+    case "dock": {
+      const out: G[] = [box(w, 0.14, d, 0x8a7458, 0, 0.55, 0)];
+      for (let z = -d / 2 + 0.6; z < d / 2; z += 2.4) out.push(box(0.18, 1.6, 0.18, PLANK, -w / 2 + 0.15, -0.2, z), box(0.18, 1.6, 0.18, PLANK, w / 2 - 0.15, -0.2, z));
+      for (let z = -d / 2 + 0.3; z < d / 2; z += 0.5) out.push(box(w, 0.03, 0.04, 0x5a4a38, 0, 0.63, z));
+      return out;
+    }
+    // Atlantic white cedar: a straight grey-brown stem and a narrow dark column, not a spruce's cone: ragged clumps of
+    // spray nearly as wide at the top as low down, a bare stem showing under them, and a thin top
+    case "cedar": {
+      const rnd = mulberry32(seed), h = 8 + 5 * rnd(), out: G[] = [paint(new THREE.CylinderGeometry(0.08, 0.18, h * 0.95, 6).translate(0, h * 0.47, 0), CEDAR_BARK)];
+      for (let i = 0, n = 8; i < n; i++) {
+        const u = i / n, y = h * (0.42 + 0.5 * u), r = (w / 2) * (1 - u * 0.35) * (0.6 + 0.5 * rnd()), t = h * 0.13;
+        out.push(paint(new THREE.IcosahedronGeometry(1, 0).scale(r, t / 2, r).translate((rnd() - 0.5) * 0.5, y, (rnd() - 0.5) * 0.5), CEDAR_LEAF[Math.floor(rnd() * CEDAR_LEAF.length)]!));
+      }
+      out.push(paint(new THREE.ConeGeometry(w * 0.22, h * 0.14, 6).translate(0, h * 0.97, 0), CEDAR_LEAF[0]!));
+      return out;
+    }
     case "shed": return [box(w, 4, d, CEDAR, 0, 0.6, 0), gable(w, d, 1.2, TIN, 2.6, 0.3), box(0.9, 1.8, 0.08, DOOR, 0, 0.9, f)];
-    case "lake": return [surface(w, d, seed, pickOf([TEA, 0x41291a, 0x33200f, 0x4a3020]), true)];
+    case "lake": return [surface(w, d, seed, pickOf([TEA, 0x84521f, 0x6e4319, 0x8f5c26]), true)];
     case "bog": return [surface(w, d, seed, (r) => [0xa3192a, 0xb8262e, 0x8e1424, 0xc8333a, 0x7a1a22][Math.floor(r() * 5)]!)];
     // vines in rows along the bed: deep bronze and green, a little red where the berries are
     case "vines": return [surface(w, d, seed, (r, u) => (Math.floor(u * 8) % 2 ? [0x4e4a2a, 0x5a3e26, 0x46502c] : [0x5c2e22, 0x4a3a24, 0x6a2a26])[Math.floor(r() * 3)]!)];
@@ -149,12 +170,19 @@ function build(p: Part, seed: number): G[] {
 }
 
 /** How a part meets uneven ground: a building's foot sits at its lowest corner (its walls go on down), water and banks
- *  at the highest, so a flooded bed never shows ground through it and the lake never floats. */
-const HIGH: ReadonlySet<PartKind> = new Set(["bog", "vines", "dyke", "sluice"]);
+ *  at the highest, so a flooded bed never shows ground through it, and a lake just over its highest ground (never more than 0.6 m over its lowest, so it never floats). */
+const HIGH: ReadonlySet<PartKind> = new Set(["bog", "vines", "dyke", "sluice", "beach"]);
 
 export function pinesView(group: THREE.Group, groundY: (x: number, z: number) => number) {
   const solid = new THREE.MeshLambertMaterial({ vertexColors: true });
   const wet = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 70, specular: 0x55483a });
+  // A lake: tea-brown looking down into it, the pale sky across it the lower you look (a cheap Fresnel, no reflection pass)
+  const lake = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 90, specular: 0x6a5a48 });
+  lake.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <dithering_fragment>", `#include <dithering_fragment>
+      float fr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 6.0);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.70, 0.73, 0.76), fr * 0.3);`);
+  };
   const root = new THREE.Group();
   root.name = "pines";
   group.add(root);
@@ -162,18 +190,33 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
     const g = new THREE.Group();
     g.visible = false;
     root.add(g);
-    const parts = s.parts.map((p, pi) => {
+    const parts = s.parts.flatMap((p, pi) => {
+      if (p.kind === "cedar") return [];
       const geo = mergeGeometries(build(p, si * 101 + pi)) ?? new THREE.BufferGeometry();
-      const m = new THREE.Mesh(geo, p.kind === "lake" || p.kind === "bog" ? wet : solid);
+      const m = new THREE.Mesh(geo, p.kind === "lake" ? lake : p.kind === "bog" ? wet : solid);
       m.rotation.y = p.yaw; m.position.set(p.x, 0, p.z); m.matrixAutoUpdate = false; m.updateMatrix();
       g.add(m);
-      return { p, m };
+      return [{ p, m }];
     });
-    return { s, g, parts, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
+    // A sight's trees are one mesh (one draw call, not one a tree), stood round the sight's middle and laid as one on
+    // the lowest ground under them: a sight stands on flat ground, so none floats.
+    const cedars = s.parts.filter((p) => p.kind === "cedar");
+    const grove = cedars.length ? new THREE.Mesh(mergeGeometries(cedars.map((p) => mergeGeometries(build(p, si * 101 + s.parts.indexOf(p)))!.rotateY(p.yaw).translate(p.x - s.x, 0, p.z - s.z))) ?? new THREE.BufferGeometry(), solid) : null;
+    if (grove) { grove.position.set(s.x, 0, s.z); grove.matrixAutoUpdate = false; grove.updateMatrix(); g.add(grove); }
+    return { s, g, parts, grove, cedars, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
   });
   const disc = new THREE.CircleGeometry(1, 14).rotateX(-Math.PI / 2);
   const puddles = new THREE.InstancedMesh(disc, new THREE.MeshPhongMaterial({ color: 0x4a2c16, shininess: 90, specular: 0x6a5a48, polygonOffset: true, polygonOffsetFactor: -2 }), PUDDLE_CAP);
   puddles.count = 0; puddles.frustumCulled = false; root.add(puddles);
+  // the ruts: packed, a shade darker and warmer than the loose white sand of the crown and the shoulders, soft at the edges
+  const strip = new THREE.PlaneGeometry(0.5, 1, 2, 1).rotateX(-Math.PI / 2), edge = new Float32Array(strip.getAttribute("position").count * 3).fill(1);
+  for (let i = 0; i < edge.length / 3; i++) if (Math.abs(strip.getAttribute("position").getX(i)) > 0.1) edge.fill(0, i * 3, i * 3 + 3);
+  strip.setAttribute("color", new THREE.BufferAttribute(edge, 3));
+  const rutMat = new THREE.MeshLambertMaterial({ color: 0xc2b08c, vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+  // vertex colour is the alpha here: 1 down the middle of the rut, 0 at its edges
+  rutMat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "diffuseColor.a *= vColor.r;"); };
+  const ruts = new THREE.InstancedMesh(strip, rutMat, RUT_CAP);
+  ruts.count = 0; ruts.frustumCulled = false; root.add(ruts);
   const o = new THREE.Object3D();
   let wait = 0;
   /** Where a part stands: its footprint's corners and middle, read off the drawn ground. */
@@ -184,7 +227,7 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
       const lx = u * p.w, lz = v * p.d, y = groundY(p.x + lx * c + lz * s, p.z - lx * s + lz * c);
       lo = Math.min(lo, y); hi = Math.max(hi, y);
     }
-    return p.kind === "lake" ? lo + 0.25 : HIGH.has(p.kind) ? hi + (p.kind === "dyke" ? 0.45 : p.kind === "sluice" ? 0.3 : 0.12) : lo;
+    return p.kind === "lake" ? Math.min(Math.max(lo + 0.25, hi + 0.05), lo + 0.6) : HIGH.has(p.kind) ? hi + (p.kind === "dyke" ? 0.45 : p.kind === "sluice" ? 0.3 : 0.12) : lo;
   }
   return {
     /** Each frame: shows the sights in range of `me`, and lays them and the near puddles on the ground twice a second. */
@@ -202,16 +245,29 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
           if (p.kind === "bog" || p.kind === "vines") bed = y;
           if (m.position.y !== y) { m.position.y = y; m.updateMatrix(); }
         }
+        if (v.grove) {
+          const y = Math.min(...v.cedars.map((p) => groundY(p.x, p.z))) - 0.1;
+          if (v.grove.position.y !== y) { v.grove.position.y = y; v.grove.updateMatrix(); }
+        }
       }
       let n = 0;
       for (const q of PUDDLES) {
         if (n >= PUDDLE_CAP || Math.abs(q.x - me.x) > PUDDLE_R || Math.abs(q.z - me.z) > PUDDLE_R) continue;
-        o.position.set(q.x, groundY(q.x, q.z) + 0.05, q.z); o.rotation.set(0, q.yaw, 0); o.scale.set(q.r * 0.6, 1, q.r);
+        o.position.set(q.x, groundY(q.x, q.z) + 0.05, q.z); o.rotation.set(0, q.yaw, 0, "XYZ"); o.scale.set(q.r * 0.6, 1, q.r);
         o.updateMatrix(); puddles.setMatrixAt(n++, o.matrix);
       }
       puddles.count = n; puddles.instanceMatrix.needsUpdate = true;
+      n = 0;
+      for (const q of RUTS) {
+        if (n >= RUT_CAP || Math.abs(q.x - me.x) > RUT_R || Math.abs(q.z - me.z) > RUT_R) continue;
+        // tilted to the ground under its two ends, so a stretch on a slope lies on it instead of cutting in
+        const hx = Math.sin(q.yaw) * q.len / 2, hz = Math.cos(q.yaw) * q.len / 2, y0 = groundY(q.x - hx, q.z - hz), y1 = groundY(q.x + hx, q.z + hz);
+        o.position.set(q.x, (y0 + y1) / 2 + 0.05, q.z); o.rotation.set(-Math.atan2(y1 - y0, q.len), q.yaw, 0, "YXZ"); o.scale.set(1, 1, q.len);
+        o.updateMatrix(); ruts.setMatrixAt(n++, o.matrix);
+      }
+      ruts.count = n; ruts.instanceMatrix.needsUpdate = true;
     },
-    /** What is drawn: each sight shown or not, and the puddles laid. */
-    state: () => ({ sights: sights.map((v) => ({ id: v.s.id, x: v.s.x, z: v.s.z, shown: v.g.visible })), puddles: puddles.count }),
+    /** What is drawn: each sight shown or not, and the puddles and ruts laid. */
+    state: () => ({ sights: sights.map((v) => ({ id: v.s.id, x: v.s.x, z: v.s.z, shown: v.g.visible })), puddles: puddles.count, ruts: ruts.count }),
   };
 }

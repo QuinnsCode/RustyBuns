@@ -64,7 +64,9 @@ const SEA = 0x2f6a98, SAND = 0xc8b890, MUD = 0x6e5c42, DIRT = 0xa08a62, ROCK = 0
 const ROCK_Y = 55, SNOW_Y = 72; // game metres: bare rock above the one, snow above the other (the Andes, the Alps, the Himalaya)
 const PATH_W = 2.6;             // metres either side of a trail worn to dirt
 const SUGAR_W = 4.4;           // metres either side of the Pine Barrens' sand road
-const SUGAR = 0xdcd5c2;
+const SUGAR = 0xe8dfc8;
+/** The rivers' water, and the Pine Barrens' cedar water: tea-brown from the cedar swamps' tannins, dark and still. */
+const WATER = 0x2a7ac8, WATER_GLOW = 0x08203c, CEDAR_WATER = 0x6a3c18, CEDAR_GLOW = 0x1a0c04, ESTUARY = 0x3e4634;
 const PRECIP = 1600, CLOUDS = 40; // raindrops or flakes round the camera; clouds overhead
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
@@ -241,9 +243,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; next: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; build: Build; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null; heave: Uint8Array | null }
   const ripple = { value: 0 };
   const groundTex = loadGround();
-  /** The rivers' water: the sea's colour, a little clearer, with a slow ripple over it. */
+  /** The rivers' water: the sea's colour, a little clearer, with a slow ripple over it (cedar water in the Pine Barrens,
+   *  `cedarWater`). */
+  const waters: THREE.MeshStandardMaterial[] = [];
   function waterMaterial(under?: Patch, holeR = 0) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a7ac8, emissive: 0x08203c, roughness: 0.3, metalness: 0, transparent: true, opacity: 0.7, depthWrite: false });
+    const mat = new THREE.MeshStandardMaterial({ color: WATER, emissive: WATER_GLOW, roughness: 0.3, metalness: 0, transparent: true, opacity: 0.7, depthWrite: false });
+    waters.push(mat);
     if (under) cutHole(mat, under.centre, holeR);
     const was = mat.onBeforeCompile;
     mat.onBeforeCompile = (sh, r) => {
@@ -1015,6 +1020,19 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = (ranAt = performance.now()) + 3500; }
   const places = poiView(group, camera, drawnY, hooks.places, (p) => enterTown(p.id));
   const pines = pinesView(group, groundY);
+  // The rivers turn the colour of tea, and less clear, over a few seconds as you come into the Pine Barrens, and back as
+  // you leave; the inlets and the bay go a dark olive, where the cedar rivers run out into them.
+  const seaMat = sea.material, seaC = new THREE.Color(SEA), estC = new THREE.Color(ESTUARY), sc = new THREE.Color();
+  const waterC = new THREE.Color(WATER), glowC = new THREE.Color(WATER_GLOW), teaC = new THREE.Color(CEDAR_WATER), teaGlowC = new THREE.Color(CEDAR_GLOW), wc = new THREE.Color(), gc = new THREE.Color();
+  let tea = me.region === PINE_N ? 1 : 0, teaDrawn = -1;
+  function cedarWater(on: boolean, dt: number) {
+    tea = clamp(tea + (on ? dt : -dt) / 3, 0, 1);
+    if (Math.abs(tea - teaDrawn) < 0.01) return;
+    teaDrawn = tea;
+    wc.lerpColors(waterC, teaC, tea); gc.lerpColors(glowC, teaGlowC, tea);
+    for (const m of waters) { m.color.copy(wc); m.emissive.copy(gc); m.opacity = 0.7 + 0.2 * tea; }
+    seaMat.color.copy(sc.lerpColors(seaC, estC, tea));
+  }
 
   // --- towns (towns.ts): a sighting board's door walks you into the town's pocket, its own small scene: the gas station,
   // the diner and the motel office, where the board and the people are. The open world is put away while you are in;
@@ -1612,6 +1630,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       drawRoad(); drawTag(); nearPorts();
       for (const t of places.update(dt, me, open, shot !== null)) toast(t);
       pines.update(me, dt);
+      cedarWater(me.region === PINE_N, dt);
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {

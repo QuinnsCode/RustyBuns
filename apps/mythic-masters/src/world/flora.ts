@@ -59,6 +59,14 @@ export const TALL: ReadonlySet<Kind> = new Set(["pine", "aspen", "oak", "sequoia
 const SPIRE: ReadonlySet<Kind> = new Set(["pine", "sequoia", "snag", "white-cedar", "hemlock", "red-cedar", "tamarack", "eastern-redcedar", "norway-spruce", "golden-larch"]);
 /** Plants of the water's edge: like reeds, they grow there and nowhere else. */
 const WET: ReadonlySet<Kind> = new Set(["reed", "pitcher-plant", "skunk-cabbage", "cattail", "cypress-knees"]);
+/** Trees that grow only along the water, within STREAMSIDE metres of a river (elsewhere the biome's first tree stands). */
+const BANKS: ReadonlySet<Kind> = new Set(["white-cedar"]);
+const STREAMSIDE = 14;
+/** A river within STREAMSIDE metres of (x, z), looking four ways. */
+export const streamside = (waterAt: (x: number, z: number) => number, x: number, z: number) =>
+  [0, 1, 2, 3].some((i) => waterAt(x + Math.cos(i * Math.PI / 2) * STREAMSIDE, z + Math.sin(i * Math.PI / 2) * STREAMSIDE) > 0);
+/** Trees that grow crooked, leaning a little off true (the radians at most, each way). */
+const CROOKED: Partial<Record<Kind, number>> = { "pitch-pine": 0.13 };
 const CAP = 3200;      // instances a kind can show at once, near
 const FAR_CAP = 9000;  // far cards a kind can show at once
 const GRID = 5;        // metres between candidate spots, near
@@ -96,7 +104,7 @@ const CULL_MOVE = 2, CULL_TURN = Math.cos((1.5 * Math.PI) / 180), CULL_MARGIN = 
 export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
 export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
-  "pine-barrens": B(0.6, ["pitch-pine", 0.41, 8, 15], ["white-cedar", 0.1, 9, 16], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.04, 4, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
+  "pine-barrens": B(0.6, ["pitch-pine", 0.41, 5, 10], ["white-cedar", 0.1, 9, 15], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.04, 4, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
   forest: B(0.7, ["hemlock", 0.2, 12, 22], ["sugar-maple", 0.2, 12, 20], ["paper-birch", 0.12, 9, 16], ["rhododendron", 0.14, 2, 4], ["oak", 0.05, 8, 15], ["sword-fern", 0.12, 0.6, 1.2], ["stump", 0.02, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.05, 0.12, 0.35], ["log", 0.05, 3, 6]),
   rainforest: B(0.85, ["red-cedar", 0.26, 22, 40], ["bigleaf-maple", 0.14, 14, 22], ["sword-fern", 0.37, 0.8, 2], ["skunk-cabbage", 0.05, 0.5, 1], ["stump", 0.03, 0.5, 1], ["rock", 0.03, 0.6, 1.8], ["mushroom", 0.06, 0.15, 0.4], ["log", 0.06, 4, 9]),
   lake: B(0.5, ["white-pine", 0.22, 14, 26], ["tamarack", 0.12, 9, 15], ["red-osier", 0.16, 1.5, 2.6], ["cattail", 0.12, 1.6, 2.6], ["paper-birch", 0.08, 9, 15], ["flower", 0.12, 0.3, 0.6], ["rock", 0.1, 0.5, 1.6], ["reed", 0.06, 1.4, 2.4]),
@@ -117,7 +125,7 @@ export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
  * default CLUMP) how much it gathers into tussocks with bare ground between instead of an even carpet. `scrub`: the ground
  * is low leafy shrubs (huckleberry, low blueberry, scrub oak) in place of grass blades, each tuft a wide knee-high mound. */
 export const TURF: Record<Biome, { cover: number; colour: number; height: number; clump?: number; scrub?: boolean }> = {
-  "pine-barrens": { cover: 0.95, colour: 0x8a8a70, height: 0.6, clump: 0.6, scrub: true }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
+  "pine-barrens": { cover: 0.85, colour: 0x7c7442, height: 1.0, clump: 0.85, scrub: true }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
   lake: { cover: 0.7, colour: 0x7a9a48, height: 0.4 }, desert: { cover: 0.12, colour: 0xc0a868, height: 0.3, clump: 1 }, swamp: { cover: 0.75, colour: 0x6a8a3a, height: 0.6 },
   plains: { cover: 0.9, colour: 0x9ab050, height: 0.55 }, highlands: { cover: 0.6, colour: 0x8a9a50, height: 0.3 }, jungle: { cover: 0.5, colour: 0x4f8a3a, height: 0.6 },
   island: { cover: 0.5, colour: 0x8ab058, height: 0.35 }, mountains: { cover: 0.35, colour: 0x8a9460, height: 0.22, clump: 0.7 }, river: { cover: 0.8, colour: 0x80a850, height: 0.5 },
@@ -484,6 +492,8 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       // The water's edge grows reeds and nothing else; reeds grow nowhere else.
       const above = y - waterAt(x, z);
       if (WET.has(kind) ? above < -0.3 || above > WATER_EDGE : above < 0.3) continue;
+      // White cedar keeps to the stream banks; away from water its spot goes to the pines.
+      if (BANKS.has(kind) && !streamside(waterAt, x, z)) [kind, , lo, hi] = spec.kinds[0]!;
       // In a glade the trees stand back: a tree there is a flower or grass instead, twice as often.
       if (open && TALL.has(kind)) { if (hash(gx, gz, 13) > 0.5) continue; [kind, , lo, hi] = spec.kinds.find((k) => k[0] === "flower") ?? spec.kinds.find((k) => k[0] === "sage") ?? ["grass", 1, 0.4, 0.7]; }
       // Above the treeline, and on steep faces, only rock stands.
@@ -494,7 +504,8 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       const size = lo + (hi - lo) * hash(gx, gz, 5), girth = kind === "rock" ? 1.2 + hash(gx, gz, 7) : TALL.has(kind) ? 0.85 + 0.3 * hash(gx, gz, 7) : kind === "log" ? 0.6 : 1.1;
       o.position.set(x, y - (kind === "rock" ? size * 0.25 : 0.05), z);
       // A tree stands up; a rock, a log and a tuft lie with the ground.
-      if (TALL.has(kind) || kind === "mushroom") o.rotation.set(0, hash(gx, gz, 8) * Math.PI * 2, 0);
+      const lean = CROOKED[kind] ?? 0;
+      if (TALL.has(kind) || kind === "mushroom") o.rotation.set((hash(gx, gz, 10) - 0.5) * 2 * lean, hash(gx, gz, 8) * Math.PI * 2, (hash(gx, gz, 11) - 0.5) * 2 * lean);
       else o.rotation.set(Math.atan2(y - yAt(x, z + 2), 2) * 0.5, hash(gx, gz, 8) * Math.PI * 2, Math.atan2(yAt(x + 2, z) - y, 2) * 0.5);
       o.scale.set(size * girth, kind === "log" ? size * 0.5 : size, size * girth * (kind === "rock" ? 0.8 + 0.4 * hash(gx, gz, 9) : 1));
       o.updateMatrix();
@@ -553,8 +564,9 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
       if (!g) continue;
       const spec = FLORA[g.biome];
       if (glade(x, z) > GLADE || hash(gx, gz, 23) > spec.density * (0.25 + 0.95 * grove(x, z))) continue;
-      const [kind, , lo, hi] = draw(spec, hash(gx, gz, 24));
+      let [kind, , lo, hi] = draw(spec, hash(gx, gz, 24));
       if (!TALL.has(kind)) continue;
+      if (BANKS.has(kind) && !streamside(waterAt, x, z)) [kind, , lo, hi] = spec.kinds[0]!;
       const y = yAt(x, z);
       if (y - waterAt(x, z) < 0.3 || y > TREELINE || slopeAt(yAt, x, z, y, 6) > 0.6) continue;
       const mats = j.mats.get(kind), n = counts.get(kind) ?? 0;
