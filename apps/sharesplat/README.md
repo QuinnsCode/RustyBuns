@@ -11,9 +11,10 @@
 **Use:** https://sharesplat.notryanquinn.workers.dev (`?demo=1` shows a sample box spinning)
 
 **How to use:** pick a plan and take the photos it asks for, all the way round the product.
-Then drop in a 3D file to see it spin, and copy the code it gives you onto your product page.
+Then drop in a 3D file to see it spin, press the scissors to cut away the table and stray bits, and the cloud to put it
+online. Copy the code it gives you onto your product page, or add the ShareSplat block in your Shopify theme.
 
-**Account:** not needed. Your photos stay on your device.
+**Account:** not needed to take photos or view a model; your photos stay on your device. Putting a model online needs an eqosys sign-in.
 
 A seller (a Shopify store, a drop shipper, someone shipping through a CRM) photographs a product with a phone and gets back a 3D model that spins on the product page. This first cut is the two ends of that pipeline: **guided capture** and **the viewer and embed**. The middle (turning photos into a splat) is the next step, below.
 
@@ -30,21 +31,22 @@ So both plans are in the app. Six sides is the quick upsell; Orbit is the real t
 
 Hard cases for any method: shiny metal, glass, and plain white boxes (nothing for the photos to line up on). A patterned mat under the product fixes the last one.
 
-## What's in this cut
+## What's in it
 
 - **Take the photos.** Pick a plan (*Six sides*, or *All the way round*: 72 in rings); a dial shows every shot as a dot, the next one in orange. *Take a photo* opens the phone camera; *Add many* takes many photos (or a video) at once. It says when a ring is thin or there is a gap wider than 45° round the product (`src/shots.ts`), because a gap is a hole in the model.
 - **Your 3D view.** *See an example* loads the built-in carton. Drop a `.ply`, `.spz`, `.sog` or `.splat` (or `?src=<url>`) and it turns on a studio-white turntable, framed to fit whatever shape the page is. Rendered with [Spark](https://github.com/sparkjsdev/spark) on three.js.
-- **Put it on a product page.** `?embed=1&src=<url>` is just the spinning product; the app writes the `<iframe>` to paste into a Shopify product description.
+- **Clean it up** (the scissors). A raw capture is mostly table and background. `src/clean.ts` slices the splats into thin layers by height: the product is the run of dense layers whose footprint stays narrow, the table is the dense layer under it that is suddenly far wider, and floaters are too sparse to make a layer dense. Faint and huge splats (the trainer painting the background) go first. What is left is shown, and is what goes online. A capture that is already clean keeps every point.
+- **Put it online** (the cloud). Sign in with eqosys (a small window), and the page sends the cleaned model as an `.spz` to the Worker (`src/worker.ts`), which keeps it in R2 and answers with the product's one URL, `/p/<id>`: the spinning product alone. The id is the file's hash, so the same file is the same product. Each seller has up to 20 products online, 50 MB each (`src/api.ts`); `DELETE /api/splats/<id>` takes one down.
+- **Put it on a product page.** The app writes the `<iframe>` to paste into a Shopify product description, or use the theme block below.
+- **Shopify block** (`shopify/`). A theme app block, *ShareSplat 3D spin*, with one setting, the product link. Connect that setting to a product metafield in the theme editor and every product shows its own spin; a product with no link shows nothing, so the theme's own media stays. The app reads no store data and asks for no scopes. `shopify app deploy` from `shopify/` publishes it once `client_id` is filled in from the Partner dashboard.
 - `?demo=1` loads a built-in carton so the viewer can be seen without a capture.
 
-Photos stay in the page for now; nothing is uploaded.
+Photos stay in the page; only a model you put online is uploaded.
 
 ## Next
 
-1. **Train.** Send the photos (or a video) to a splat trainer and bring back the `.spz`: Brush on the [builder Mac](../../MAC_SETUP.md) to start, a hosted GPU later. Six-sides goes to an image-to-3D API instead.
-2. **Clean.** Cut the table and floaters out (the background is the bulk of a raw capture); [Splat desktop](../splat-desktop/README.md) has the editor.
-3. **Host.** Store the `.spz` and serve the embed from a Worker with R2, one URL per product.
-4. **Sell it.** A Shopify app block in place of the pasted iframe, and a GLB fallback for Shopify's native 3D and AR.
+1. **Train.** Send the photos (or a video) to a splat trainer and bring back the `.spz`: Brush on the [builder Mac](../../MAC_SETUP.md) to start, a hosted GPU later. Six-sides goes to an image-to-3D API instead. Pricing to settle before it goes hosted: GPU minutes per capture.
+2. **GLB fallback.** A mesh beside the splat for Shopify's native 3D and AR (splat-to-mesh, or the image-to-3D mesh from Six sides).
 
 ## Names
 
@@ -54,8 +56,10 @@ Checked 2026-11-03. `splatshare.com` is registered (2023, parked). `sharesplat.c
 
 ```
 cd apps/sharesplat
-bun run dev          # then open /?demo=1
-bun test ./test
+bun run dev          # then open /?demo=1 (the page; Put it online needs the Worker)
+bun test ./test      # clean.test.ts cuts a synthetic capture; host.test.ts walks the Worker with R2 on disk
 ```
 
-`bun run probe sharesplat "/?demo=1"` prints the page's state (`shareSplat.state()`).
+`bun run probe sharesplat "/?demo=1"` prints the page's state (`shareSplat.state()`: the capture, the splat count, what the clean-up cut, where it went online); `--js "shareSplat.clean()"` presses the scissors.
+
+Deploying: the bucket is made once (`bunx wrangler r2 bucket create sharesplat`), then `bun run deploy`.

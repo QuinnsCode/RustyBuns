@@ -1,14 +1,18 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import { PackedSplats, SparkRenderer, SplatMesh, writeSpz } from "@sparkjsdev/spark";
 import {
-  Aperture, Box, Camera, Code, createElement, Images, RefreshCw, Rotate3d, RotateCcw, SunMoon, Upload,
+  Aperture, Box, Camera, CloudUpload, Code, createElement, Images, RefreshCw, Rotate3d, RotateCcw, Scissors, SunMoon, Upload,
 } from "lucide";
+import { eqosys } from "@rustybuns/util/eqosys";
+import { check } from "@rustybuns/util/guard";
+import { APP, EQOSYS, Hosted, MAX_BYTES, Problem, SITE, iframeFor } from "./api.ts";
+import { clean } from "./clean.ts";
 import { demoCarton } from "./demo.ts";
 import { nextShot, plan, readiness, type PlanId, type Shot } from "./shots.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const ICONS = { box: Box, camera: Camera, aperture: Aperture, images: Images, "rotate-ccw": RotateCcw, "rotate-3d": Rotate3d, upload: Upload, "refresh-cw": RefreshCw, "sun-moon": SunMoon, code: Code };
+const ICONS = { box: Box, camera: Camera, aperture: Aperture, images: Images, "rotate-ccw": RotateCcw, "rotate-3d": Rotate3d, upload: Upload, "refresh-cw": RefreshCw, "sun-moon": SunMoon, code: Code, scissors: Scissors, "cloud-upload": CloudUpload };
 for (const el of document.querySelectorAll<HTMLElement>("[data-icon]")) {
   const Icon = ICONS[el.dataset.icon as keyof typeof ICONS];
   if (Icon) el.replaceWith(createElement(Icon));
@@ -112,6 +116,9 @@ controls.enableDamping = true;
 controls.autoRotate = true;
 controls.autoRotateSpeed = 2;
 let mesh: SplatMesh | null = null;
+/** What the last clean-up cut, and where the product went online: for the probe and the page. */
+let cleaned: { before: number; after: number; table: boolean } | null = null;
+let hosted: Hosted | null = null;
 
 function resize() {
   const { clientWidth: w, clientHeight: h } = canvas.parentElement!;
@@ -121,7 +128,9 @@ function resize() {
 }
 new ResizeObserver(resize).observe(canvas.parentElement!);
 
-async function show(opts: { url: string } | { fileBytes: ArrayBuffer; fileName: string }) {
+type Source = { url: string } | { fileBytes: ArrayBuffer; fileName: string } | { packedSplats: PackedSplats; fileName: string };
+
+async function show(opts: Source) {
   $("drop").hidden = true;
   $("info").textContent = "Loading…";
   if (mesh) { scene.remove(mesh); mesh.dispose(); }
@@ -139,10 +148,11 @@ async function show(opts: { url: string } | { fileBytes: ArrayBuffer; fileName: 
   scene.add(m);
   frame(m);
   $("info").textContent = `${m.packedSplats?.numSplats?.toLocaleString() ?? "?"} points`;
-  const name = "url" in opts ? opts.url : opts.fileName;
-  const src = "url" in opts ? opts.url : `https://your-store-cdn.example/${name}`;
-  $<HTMLTextAreaElement>("snippet").value =
-    `<iframe src="${location.origin}${location.pathname}?embed=1&src=${encodeURIComponent(src)}" style="width:100%;aspect-ratio:1;border:0" allow="fullscreen" loading="lazy"></iframe>`;
+  const src = "url" in opts ? new URL(opts.url, location.href).href : `https://your-store-cdn.example/${opts.fileName}`;
+  $<HTMLTextAreaElement>("snippet").value = iframeFor(`${location.origin}${location.pathname}?embed=1&src=${encodeURIComponent(src)}`);
+  hosted = null;
+  $("page").hidden = true;
+  $<HTMLButtonElement>("clean").disabled = $<HTMLButtonElement>("online").disabled = false;
 }
 
 /** Point the camera at the product's middle from far enough back that all of it fits. */
@@ -188,6 +198,57 @@ $("spin").addEventListener("click", () => {
 $("bg").addEventListener("click", () => { scene.background = scene.background === STUDIO ? DARK : STUDIO; });
 controls.addEventListener("start", () => { controls.autoRotate = false; $("spin").setAttribute("aria-pressed", "false"); });
 
+// ---- Clean and put online --------------------------------------------------------------------
+
+/** Cut the table and the floaters out of what is showing (clean.ts), and show what is left. */
+async function cleanUp() {
+  const ps = mesh?.packedSplats;
+  if (!ps) return;
+  const n = ps.numSplats;
+  const pos = new Float32Array(n * 3), opacity = new Float32Array(n), size = new Float32Array(n);
+  ps.forEachSplat((i, c, s, _q, o) => { pos.set([c.x, c.y, c.z], i * 3); opacity[i] = o; size[i] = Math.max(s.x, s.y, s.z); });
+  const r = clean({ pos, opacity, size });
+  if (r.kept === 0) { $("info").textContent = "Nothing looked like a product to keep."; return; }
+  const out = new PackedSplats({ maxSplats: r.kept });
+  ps.forEachSplat((i, c, s, q, o, col) => { if (r.keep[i]) out.pushSplat(c, s, q, o, col); });
+  await show({ packedSplats: out, fileName: "product.spz" });
+  cleaned = { before: n, after: r.kept, table: r.table !== null };
+  $("info").textContent = `${r.kept.toLocaleString()} of ${n.toLocaleString()} points kept${r.table !== null ? ", table cut away" : ""}.`;
+}
+
+const eq = eqosys({ app: APP, url: EQOSYS, from: [SITE], prefix: APP });
+const signedIn = () => { const l = eq.login(); return l && eq.fresh(l, 30_000) ? l : null; };
+
+/** Send what is showing to the Worker as an .spz; it answers with the product's one URL. Signs in first if need be. */
+async function putOnline() {
+  const ps = mesh?.packedSplats;
+  if (!ps) return;
+  // Straight from the click, or the browser blocks eqosys's sign-in window.
+  const login = signedIn() ?? (await eq.signInHere("online")).login;
+  if (!login) { $("info").textContent = "Sign in with eqosys to put it online."; return; }
+  const { fileBytes } = writeSpz(ps);
+  if (fileBytes.byteLength > MAX_BYTES) { $("info").textContent = "Too big to put online: clean it up first."; return; }
+  $("info").textContent = "Putting it online…";
+  const res = await fetch("/api/splats", { method: "POST", headers: { authorization: `Bearer ${login.token}` }, body: new Blob([new Uint8Array(fileBytes)]) }).catch(() => null);
+  const body: unknown = res ? await res.json().catch(() => null) : null;
+  const got = res?.ok ? check(Hosted, body) : null;
+  if (!got) {
+    const why = check(Problem, body)?.error ?? "the server didn't answer";
+    $("info").textContent = `Couldn't put it online: ${why}.`;
+    return;
+  }
+  hosted = got;
+  $<HTMLTextAreaElement>("snippet").value = iframeFor(got.page);
+  Object.assign($<HTMLAnchorElement>("page"), { href: got.page, textContent: got.page, hidden: false });
+  $("info").textContent = "Online. The code below puts it on a product page.";
+  $<HTMLDetailsElement>("embed").open = true;
+}
+
+$("clean").addEventListener("click", () => void cleanUp());
+$("online").addEventListener("click", () => void putOnline());
+// Back from a full-page trip to eqosys (where a sign-in window was blocked): the login is kept, so one more click sends it.
+void eq.finishSignIn();
+
 renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
@@ -196,6 +257,8 @@ renderer.setAnimationLoop(() => {
 // For agents and the probe tool: what the page holds, without a screenshot.
 Object.assign(window, {
   shareSplat: {
-    state: () => ({ plan: planId, ...readiness(shots, new Set(taken.keys())), splats: mesh?.packedSplats?.numSplats ?? 0, src: src ?? null }),
+    state: () => ({ plan: planId, ...readiness(shots, new Set(taken.keys())), splats: mesh?.packedSplats?.numSplats ?? 0, src: src ?? null, cleaned, hosted }),
+    /** The Clean up button, for a probe: cuts what is showing and answers the new state. */
+    clean: async () => { await cleanUp(); return cleaned; },
   },
 });

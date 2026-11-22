@@ -1,0 +1,16 @@
+# ShareSplat's Shopify app: only a theme block (extensions/sharesplat-block), no store data, so no scopes. For
+# `shopify app deploy` from this folder, by the owner (it needs the Partner account). `client_id` is the app's
+# public id from the Partner dashboard; fill it in once the app exists there.
+name = "ShareSplat"
+client_id = ""
+application_url = "https://sharesplat.notryanquinn.workers.dev"
+embedded = false
+
+[access_scopes]
+scopes = ""
+
+[auth]
+redirect_urls = ["https://sharesplat.notryanquinn.workers.dev"]
+
+# No webhooks: the app keeps nothing about shoppers or stores. A listing on the App Store adds the three privacy
+# webhooks (HMAC-checked, which needs the app secret on the Worker).

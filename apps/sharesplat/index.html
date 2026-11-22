@@ -47,11 +47,14 @@
         <div class="row">
           <button id="spin" type="button" class="btn icon" title="Turntable on/off" aria-pressed="true"><span data-icon="refresh-cw"></span></button>
           <button id="bg" type="button" class="btn icon" title="Studio white / dark"><span data-icon="sun-moon"></span></button>
+          <button id="clean" type="button" class="btn icon" title="Clean up: cut away the table and stray bits" disabled><span data-icon="scissors"></span></button>
+          <button id="online" type="button" class="btn icon" title="Put it online (sign in with eqosys)" disabled><span data-icon="cloud-upload"></span></button>
           <span id="info" class="status"></span>
         </div>
-        <details class="embed">
+        <details id="embed" class="embed">
           <summary><span data-icon="code"></span>Put it on a product page</summary>
-          <p>Host the splat file anywhere public, then paste this into the product description (Shopify: Show HTML).</p>
+          <p id="embed-how">Put it online (the cloud button), or host the splat file anywhere public, then paste this into the product description (Shopify: Show HTML).</p>
+          <p><a id="page" target="_blank" rel="noopener" hidden></a></p>
           <textarea id="snippet" readonly rows="3"></textarea>
         </details>
       </section>
