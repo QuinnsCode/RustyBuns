@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
+import { deckDemandOf, demandOf, menuLineOf, pageLineOf, reactionOf, settingsLineOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
 import { bind, clearSection, newJourney, owns, sections, TRAIL_REGIONS } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -19,6 +19,14 @@ describe("the book's demands", () => {
     const j = newJourney(["hodag", "squonk", "jackalope"])!;
     j.journal = ROSTER.filter((c) => !j.party.some((m) => m.id === c.id)).map((c) => ({ ...j.party[0]!, id: c.id }));
     expect(demandOf(j)).toBe(`Item ${ROSTER.length + 1}: nothing. Every cryptid is in my pages. For now.`);
+  });
+
+  test("under the title's menu it answers the word under the pen: a short line each, and New game reads your journey", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    const lines = (["continue", "new", "duel", "versus", "info"] as const).map((w) => menuLineOf(w, j));
+    expect(new Set(lines).size).toBe(lines.length);
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(60);
+    expect(new Set([menuLineOf("new", null), menuLineOf("new", j), menuLineOf("new", j, true)]).size).toBe(3);
   });
 
   test("the thumbprint lands on the page, somewhere new each time", () => {
