@@ -17,6 +17,7 @@ const ANGLE = 1024;
 const SPOT = 8;
 const REPEAT = 3; // a flags byte can't end in 0b11: the key bits only go to 2
 const ORDER = 12; // nor have 0b11 in its next two bits, so this marks an order ahead of the step's flags
+const MORE = 28;  // the same, so this marks a byte of more keys ahead of them: 1 cover, 2 a grenade
 const MAX_STEPS = Math.ceil(TIME_LIMIT / DT) + 1;
 
 const sign = (v: number) => Math.max(-1, Math.min(1, Math.round(v))) || 0;
@@ -90,7 +91,8 @@ function* reader<T>(log: string, read: (next: () => number, varint: () => number
 }
 
 // The ground battle. Flags: forward + 1 (2 bits), right + 1 (2 bits), fire, use, a strike, a turn.
-// A step with an order to the squad starts with ORDER, the order's index and its spot.
+// A step with an order to the squad starts with ORDER, the order's index and its spot. Then a step with the cover key
+// or a grenade has MORE and a byte of which, before its flags.
 // It keeps the rounded steps and writes the log when asked, so a rewind can cut the steps it took back.
 export function groundRecorder() {
   const taken: Input[] = [];
@@ -99,7 +101,7 @@ export function groundRecorder() {
       const k = Math.round(i.yaw * ANGLE), forward = sign(i.forward), right = sign(i.right);
       const strike = i.strike && { x: Math.round(i.strike.x * SPOT) / SPOT, z: Math.round(i.strike.z * SPOT) / SPOT };
       const order = i.order && { kind: i.order.kind, x: Math.round(i.order.x * SPOT) / SPOT, z: Math.round(i.order.z * SPOT) / SPOT };
-      const r: Input = { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike }), ...(order && { order }) };
+      const r: Input = { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike }), ...(order && { order }), ...(i.cover && { cover: true }), ...(i.nade && { nade: true }) };
       taken.push(r);
       return r;
     },
@@ -114,6 +116,7 @@ export function groundRecorder() {
         const k = Math.round(i.yaw * ANGLE);
         const rec = i.order ? [ORDER, ORDERS.indexOf(i.order.kind)] : [];
         if (i.order) { varint(rec, zigzag(Math.round(i.order.x * SPOT))); varint(rec, zigzag(Math.round(i.order.z * SPOT))); }
+        if (i.cover || i.nade) rec.push(MORE, (i.cover ? 1 : 0) | (i.nade ? 2 : 0));
         rec.push((i.forward + 1) | ((i.right + 1) << 2) | (i.fire ? 16 : 0) | (i.use ? 32 : 0) | (i.strike ? 64 : 0) | (k !== yaw ? 128 : 0));
         if (k !== yaw) varint(rec, zigzag(k - yaw));
         if (i.strike) { varint(rec, zigzag(Math.round(i.strike.x * SPOT))); varint(rec, zigzag(Math.round(i.strike.z * SPOT))); }
@@ -155,10 +158,16 @@ export function groundInputs(log: string): Generator<Input> {
       order = { kind, x: unzigzag(vint()) / SPOT, z: unzigzag(vint()) / SPOT };
       f = next();
     }
+    let more = 0;
+    if (f === MORE) {
+      more = next();
+      if (!more || more > 3) throw new Error("Not a key");
+      f = next();
+    }
     if ((f & 3) === 3 || (f & 12) === 12) throw new Error("Not a step");
     if (f & 128) yaw += unzigzag(vint());
     const strike = f & 64 ? { x: unzigzag(vint()) / SPOT, z: unzigzag(vint()) / SPOT } : undefined;
-    return { forward: (f & 3) - 1, right: ((f >> 2) & 3) - 1, yaw: yaw / ANGLE, fire: !!(f & 16), ...(f & 32 ? { use: true } : {}), ...(strike && { strike }), ...(order && { order }) };
+    return { forward: (f & 3) - 1, right: ((f >> 2) & 3) - 1, yaw: yaw / ANGLE, fire: !!(f & 16), ...(f & 32 ? { use: true } : {}), ...(strike && { strike }), ...(order && { order }), ...(more & 1 ? { cover: true } : {}), ...(more & 2 ? { nade: true } : {}) };
   });
 }
 

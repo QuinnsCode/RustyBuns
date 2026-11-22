@@ -27,7 +27,7 @@ import CHATTER_SCRIPT from "../../content/chatter.json";
 import { introOf, mossbackSting, prologueOf, rideOf } from "./cutscenes.ts";
 import { nextRide, playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
-import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, podNext, podsLeft, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, HEAVY, NADE_MAX, NADE_NAME, ducked, wallFor, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, podNext, podsLeft, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
 // The squad orders, by key, with their icons and what the HUD calls them.
 const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
@@ -280,6 +280,23 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     scene.add(g);
     return { g, gun };
   });
+  const crateMeshes = b.crates.map((c) => {
+    const g = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.6, 0.8), new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.8 }));
+    box.position.y = 0.3;
+    box.castShadow = true;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.1, 0.84), additive(0xff9a2e));
+    band.position.y = 0.42;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 24, 10, 1, true).translate(0, 12, 0), new THREE.MeshBasicMaterial({ color: 0xff9a2e, transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    g.add(box, band, beam);
+    g.position.set(c.x, ground(c.x, c.z), c.z);
+    scene.add(g);
+    return g;
+  });
+  // Grenades: one in the air on its arc, then on the ground ticking with a ring round it, red if it's the enemy's.
+  const nadeGeo = new THREE.SphereGeometry(0.22, 8, 6), nadeMat = new THREE.MeshStandardMaterial({ color: 0x23261c, emissive: 0xff5a14, emissiveIntensity: 0.6 });
+  const nadeMeshes: THREE.Mesh[] = [];
+  const foeNadeMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
   const jets: THREE.Group[] = [];
   // Fires: a tree struck by a blast burns for a while, some of them up where the huts are.
   type Fire = { x: number; z: number; y: number; life: number; seed: number; emit: number };
@@ -319,18 +336,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const launchFlare = (x: number, z: number, color = 0xffe2a0) => { if (flares.length < 3) flares.push({ x, z, age: 0, sway: Math.random() * 6, color }); };
   let nextFlare = 4, lastSurge = 0;
   const seenBig = new Set<number>();
-  let alarmT = 0;
+  let alarmT = 0, duckCam = 0;
   const smashPalette = WORLDS[spec.sector].debris;
 
   // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
-  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, order: OrderKind | null = null, rewind = false;
+  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, cover = false, nade = false, order: OrderKind | null = null, rewind = false;
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
     if (down) sfx.wake();
     if (down && k === settings.keys.mute && !e.repeat) sfx.toggle();
     if (down && k === settings.keys.strike) strike = true;
     if (down && k === settings.keys.use) use = true;
+    if (down && !e.repeat && k === settings.keys.cover) cover = true;
+    if (down && !e.repeat && k === settings.keys.grenade) nade = true;
     if (down && !e.repeat && opts.rewind && k === settings.keys.rewind) rewind = true;
     if (down && !e.repeat && ORDER_KEYS[k]) order = ORDER_KEYS[k]!;
     down ? keys.add(k) : keys.delete(k);
@@ -355,6 +374,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = settings.fireToggle ? (d ? !firing : firing) : d; } },
       { id: "strike", icon: "zap", label: "Orbital strike", on: (d) => { if (d) strike = true; } },
       { id: "use", icon: "car-front", label: "Vehicle or special", on: (d) => { if (d) use = true; } },
+      { id: "cover", icon: "shield", label: "Take cover", on: (d) => { if (d) cover = true; } },
+      { id: "nade", icon: "bomb", label: "Throw a grenade", on: (d) => { if (d) nade = true; } },
       ...(opts.rewind ? [{ id: "rewind", icon: "undo-2", label: "Rewind 3 s", on: (d: boolean) => { if (d) rewind = true; } }] : []),
       ...(["forward", "hold", "back", "focus"] as const).map((k) => ({ id: k, icon: ORDER_INFO[k].icon, label: `Squad: ${ORDER_INFO[k].name}`, row: true, on: (d: boolean) => { if (d) order = k; } })),
     ],
@@ -413,6 +434,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const cachesEl = feel.querySelector<HTMLElement>(".b-caches")!;
   cachesEl.innerHTML = b.caches.map(() => `<div class="b-cache">${icon("package", 14)}<b></b></div>`).join("");
   const cacheEls = [...cachesEl.children] as HTMLElement[];
+  cachesEl.insertAdjacentHTML("beforeend", b.crates.map(() => `<div class="b-cache nade">${icon("bomb", 14)}<b></b></div>`).join(""));
+  const crateEls = ([...cachesEl.children] as HTMLElement[]).slice(cacheEls.length);
   const segEls = [...feel.querySelectorAll<SVGPathElement>(".b-heat path")], heatLabel = feel.querySelector<HTMLElement>(".b-heat-label")!;
   const alarmEl = feel.querySelector<HTMLElement>(".b-alarm")!, hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
   const leaveEl = feel.querySelector<HTMLElement>(".b-leave")!, noteEl = feel.querySelector<HTMLElement>(".b-note")!, wayEl = feel.querySelector<HTMLElement>(".b-way")!;
@@ -476,6 +499,13 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     const o = b.order && b.time - b.order.at < ORDER_FOR ? b.order : null;
     return `<div class="b-orders">${ORDERS.map((k, i) => `<span class="ord${o?.kind === k ? " on" : ""}" title="${ORDER_INFO[k].name}${k === "forward" || k === "focus" ? ": where your gun points" : k === "back" ? ": towards home" : ": where they stand"}"><kbd>${i + 1}</kbd>${icon(ORDER_INFO[k].icon, 16)}${o?.kind === k ? `<i style="width:${Math.round((100 * (ORDER_FOR - (b.time - o.at))) / ORDER_FOR)}%"></i>` : ""}</span>`).join("")}</div>`;
   };
+  // In cover, or a low wall near enough to slide to: what the cover key does now.
+  const coverChip = (hero: Unit | null) => {
+    if (!hero || b.hero.inVehicle !== null) return "";
+    const k = keyName(settings.keys.cover);
+    if (b.hero.cover) return `<span class="stat cover on" title="Behind cover: shots from over the wall mostly miss, but a grenade or a rocket on your side still gets you. Fire to shoot over it; ${k} or walk away to leave.">${icon("shield", 15)}${ducked(b, hero) ? "Ducked" : "Up"}</span>`;
+    return wallFor(b, hero, yaw) ? `<span class="stat cover" title="A low wall in reach: ${k} to slide to it">${icon("shield", 15)}${touch ? "" : k}</span>` : "";
+  };
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
@@ -491,6 +521,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
         <span class="stat" title="Lives">${icon("heart", 15)}${b.hero.lives}</span>
         <span class="stat" title="Orbital strikes (Q)">${icon("zap", 15)}${b.strikesLeft[mine]}</span>
+        <span class="stat${b.hero.nades ? "" : " out"}" title="${NADE_NAME[spec.factions[mine]]}s (${keyName(settings.keys.grenade)}). Walk over an orange crate for more.">${icon("bomb", 15)}${b.hero.nades}</span>
+        ${coverChip(hero)}
         ${b.hero.arm ? `<span class="stat arm" title="Heavy weapon: fires till it's empty, never overheats">${icon("package", 15)}${HEAVY[b.hero.arm.kind].name[spec.factions[mine]]} · ${b.hero.arm.ammo}</span>` : ""}
         ${riding ? `<span class="stat" title="Driving a ${riding.kind} (E to get out)">${icon("car-front", 15)}</span>` : ""}
         ${sfx.muted ? `<span class="muted" title="Sound off (M)">${icon("volume-x", 15)}</span>` : ""}
@@ -499,7 +531,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       </div>
       <ul class="b-feed">${feedLines()}</ul>
       ${orderBar()}
-      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · ${keyName(settings.keys.forward)}${keyName(settings.keys.left)}${keyName(settings.keys.back)}${keyName(settings.keys.right)} move · mouse look · click fire · ${keyName(settings.keys.strike)} orbital strike · ${keyName(settings.keys.use)} vehicle · 1-4 squad orders · ${keyName(settings.keys.mute)} sound · ${opts.rewind ? `${keyName(settings.keys.rewind)} rewind 3 s · ` : ""} Esc to let go, then the gear for Controls<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · ${keyName(settings.keys.forward)}${keyName(settings.keys.left)}${keyName(settings.keys.back)}${keyName(settings.keys.right)} move · mouse look · click fire · ${keyName(settings.keys.strike)} orbital strike · ${keyName(settings.keys.use)} vehicle · ${keyName(settings.keys.cover)} cover · ${keyName(settings.keys.grenade)} grenade · 1-4 squad orders · ${keyName(settings.keys.mute)} sound · ${opts.rewind ? `${keyName(settings.keys.rewind)} rewind 3 s · ` : ""} Esc to let go, then the gear for Controls<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
@@ -537,11 +569,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         const input = rec.take({
           forward: Math.max(-1, Math.min(1, (keys.has(settings.keys.forward) ? 1 : 0) - (keys.has(settings.keys.back) ? 1 : 0) + stickF)),
           right: Math.max(-1, Math.min(1, (keys.has(settings.keys.right) ? 1 : 0) - (keys.has(settings.keys.left) ? 1 : 0) + stickR)),
-          yaw, fire: firing, use,
+          yaw, fire: firing, use, cover, nade,
           strike: strike ? aimPoint() ?? undefined : undefined,
           order: order ? { kind: order, ...gunPoint() } : undefined,
         });
-        strike = use = false;
+        strike = use = cover = nade = false;
         order = null;
         if (rw) rw.step(input); else step(b, input);
         acc -= DT;
@@ -561,6 +593,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         last.x = u.x; last.z = u.z;
         animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, statsOf(u).cool - u.cool), call: (now - ((m.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
         m.visible = !(u.kind === "hero" && b.hero.inVehicle !== null);
+        if (u.id === b.hero.id) {
+          const base = (m.userData.base as number | undefined) ?? (m.userData.base = m.scale.y), want = base * (ducked(b, u) ? 0.62 : b.hero.slide ? 0.8 : 1);
+          m.scale.y += (want - m.scale.y) * Math.min(1, dt * 14);
+        }
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
       posts.forEach((p, i) => {
@@ -574,7 +610,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         p.core.position.y = ground(post.x - 4, post.z - 4) + 2.6 + Math.sin(now / 400 + i) * 0.2;
         p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });
-      let nb = 0, lasers = 0;
+      let nb = 0, lasers = 0, nn = 0;
       const byId = new Map(b.units.map((u) => [u.id, u]));
       const tpts: number[] = [], tcols: number[] = [];
       let nt = 0;
@@ -627,9 +663,15 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           g.position.set(f.x + (f.tx - f.x) * u, ground(f.tx, f.tz) * u + fy * (1 - u) + Math.sin(u * Math.PI) * 12, f.z + (f.tz - f.z) * u);
           g.rotation.set(now / 80, now / 120, 0);
           nt++;
+        } else if (f.kind === "nade") {
+          const u = 1 - f.t / 0.8, m = pooled(nadeMeshes, nn++, () => new THREE.Mesh(nadeGeo, nadeMat));
+          m.position.set(f.x + (f.tx - f.x) * u, fy * (1 - u) + ground(f.tx, f.tz) * u + 1.4 * (1 - u) + Math.sin(u * Math.PI) * 5 + 0.2, f.z + (f.tz - f.z) * u);
         } else if (f.kind === "blast") { const m = pooled(blasts, nb++, () => new THREE.Mesh(blastGeo, blastMat)); m.position.set(f.x, 1 + fy, f.z); m.scale.setScalar((f.big ? STRIKE_RADIUS : 3) * (0.6 + f.t)); }
       }
       for (let i = nt; i < tossed.length; i++) tossed[i]!.visible = false;
+      // Grenades that have landed and are about to go.
+      for (const st of b.strikes) if (st.nade && st.t < 0.45) pooled(nadeMeshes, nn++, () => new THREE.Mesh(nadeGeo, nadeMat)).position.set(st.x, ground(st.x, st.z) + 0.22, st.z);
+      for (let i = nn; i < nadeMeshes.length; i++) nadeMeshes[i]!.visible = false;
       for (let i = nb; i < blasts.length; i++) blasts[i]!.visible = false;
       // Bolts fly; one that gets there leaves a spark, a bigger one if it hit something.
       let nbolt = 0;
@@ -681,12 +723,14 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       b.strikes.forEach((s, i) => {
         const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; });
         const gy = ground(s.x, s.z), r = (s.r ?? STRIKE_RADIUS) / STRIKE_RADIUS;
-        m.material = s.shell ? shellMat : markMat;
+        m.material = s.nade ? (s.side === heroSide ? shellMat : foeNadeMat) : s.shell ? shellMat : markMat;
         m.position.set(s.x, 0.15 + gy, s.z);
         m.scale.setScalar(r);
         const c = pooled(columns, i, () => new THREE.Mesh(colGeo, colMat));
         c.material = s.shell ? streakMat : colMat;
-        if (s.shell) { c.scale.set(0.25, 0.25, 0.25); c.position.set(s.x, gy + Math.max(0, s.t) * 45, s.z); }
+        c.visible = !s.nade;
+        if (s.nade) m.scale.setScalar(r * (1 + Math.sin(performance.now() / 70) * 0.06));
+        else if (s.shell) { c.scale.set(0.25, 0.25, 0.25); c.position.set(s.x, gy + Math.max(0, s.t) * 45, s.z); }
         else { const k = 1 + Math.max(0, 2.5 - s.t); c.scale.set(STRIKE_RADIUS * 0.3 * k * 0.5, 1, STRIKE_RADIUS * 0.3 * k * 0.5); c.position.set(s.x, gy, s.z); }
       });
       for (let i = b.strikes.length; i < marks.length; i++) { marks[i]!.visible = false; if (columns[i]) columns[i]!.visible = false; }
@@ -760,6 +804,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       for (const k of ORDERS) orderMarks[k].visible = od?.kind === k;
       if (od) { orderMarks[od.kind].position.set(od.x, ground(od.x, od.z) + 0.2, od.z); orderMarks[od.kind].scale.setScalar(1 + Math.sin(now / 150) * 0.08); }
       // The heavy weapons, while they're there to take.
+      b.crates.forEach((c, i) => { crateMeshes[i]!.visible = c.ready <= b.time; });
       b.caches.forEach((c, i) => { const m = cacheMeshes[i]!; m.g.visible = c.ready <= b.time; m.gun.rotation.y = now / 700; m.gun.position.y = 1.1 + Math.sin(now / 300 + i) * 0.12; });
       // A Mossback walks in: the screen goes red for a while.
       for (const u of b.units) if (u.role === "mossback" && !seenBig.has(u.id)) { seenBig.add(u.id); alarmT = 7; shake = Math.max(shake, 0.5); }
@@ -824,7 +869,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
       const at = body ?? { x: 0, z: heroSide === "attacker" ? b.spawn.attacker.z : b.spawn.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
-      const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
+      duckCam += ((hero && ducked(b, hero) && body === hero ? 1 : 0) - duckCam) * Math.min(1, dt * 8);
+      const floor = ground(at.x, at.z), up = high - duckCam * 1.3 + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
       camera.position.set(at.x - f.x * back * Math.cos(pitch) + -f.z * 1.2, up - Math.sin(pitch) * back, at.z - f.z * back * Math.cos(pitch) + f.x * 1.2);
       // Never under the floor behind you.
@@ -878,6 +924,13 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (!p) return;
         el.style.transform = `translate(${p.x}px, ${p.y}px)`;
         el.lastElementChild!.textContent = `${HEAVY[c.kind].name[spec.factions[heroSide]]} ${Math.round(d)} m`;
+      });
+      b.crates.forEach((c, i) => {
+        const el = crateEls[i]!, d = Math.hypot(at.x - c.x, at.z - c.z), p = c.ready <= b.time && d < 90 && b.hero.nades < NADE_MAX ? onScreen(c.x, ground(c.x, c.z) + 2, c.z) : null;
+        el.hidden = !p;
+        if (!p) return;
+        el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        el.lastElementChild!.textContent = `${Math.round(d)} m`;
       });
       // Comrades talk: now and then one near you says something, daft when it's quiet, worried when it isn't.
       const pals = b.units.filter((u) => u.side === heroSide && u.id !== b.hero.id && u.hp > 0 && (TROOPERS.includes(u.kind as Trooper) || !!u.role) && Math.hypot(u.x - at.x, u.z - at.z) < 30);

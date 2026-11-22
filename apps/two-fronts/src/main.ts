@@ -1055,7 +1055,8 @@ function voteIfOpen(then: () => void) {
   }) : null;
   const screen = voteScreen($("vote"), {
     title: "Next match",
-    text: "Everyone gets one vote for how the next ground battle is fought.",
+    text: "Everyone gets one vote for how the next ground battle is fought. Then it's back to the war: the next battle comes when a turn's attacks bring one.",
+    go: "Back to the war",
     seats,
     moved: sock ? (x, y) => sock.at(x, y) : undefined,
     cast(f, mode) {
@@ -1303,7 +1304,8 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
       title: asWooka ? (won ? "The hunt is over" : "Driven back into the ferns") : won ? "Still breathing" : "Hunted down",
       text: asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Thunder Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks.",
       seats: [{ faction: mine, who: "here" }, { faction: theirs, who: "ai", vote: votes[theirs] }],
-      leave: { label: "Back to the map", title: "No rematch" },
+      leave: { label: "Back to the map", title: "No rematch: back to the map" },
+      again: "Fight again:",
       cast(f, m) { votes[f] = m; screen.update(votes, tally(spec.id, votes)); },
       done(picked) { if (picked) skirmish(asWooka, picked, jump && { ...jump, mode: picked, near: 0, seed: Math.floor(Math.random() * 2 ** 31) }); },
     });
