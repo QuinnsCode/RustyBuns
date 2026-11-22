@@ -10,7 +10,7 @@
 //   bun run screens --shots          take every screen's pictures first (a few minutes), then open the editor
 //   bun run screens --shots --only eqosys   just the screens whose id has "eqosys"
 //   bun run screens --port 4800
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { screens, type Screen } from "../packages/cms/src/screens.ts";
@@ -26,14 +26,21 @@ interface Row extends Screen {
   js?: string;
   /** Not a Vite app: build it with this command in its folder, then serve this folder. */
   built?: { run: string[]; dir: string };
+  /** A file the dev server needs that only a one-time step writes, and what to run. */
+  needs?: { file: string; say: string };
 }
+
+/** New game, the intro cut short, then the Book's opening talk answered until its pick page shows. */
+const PICK = "document.getElementById('newGame').click(); await new Promise((r) => setTimeout(r, 2500)); mythicMasters.director.cut();"
+  + " for (let i = 0; i < 12 && document.getElementById('starters').hidden; i++) { await new Promise((r) => setTimeout(r, 1200));"
+  + " const t = mythicMasters.book.state(); const id = t?.replies?.[0]?.id ?? t?.choices?.[0]?.id; if (id) mythicMasters.book.answer(id); else mythicMasters.book.close(); }";
 
 export const SCREENS: Row[] = [
   { id: "eqosys-home", app: "eqosys", name: "eqosys: the front door", why: "A stranger follows a link to eqosys. What is this, and can I play something without an account? (The form beside it is screen 2; the game cards are eqosys's src/cards.json.)", file: own("eqosys"), keys: ["home"] },
   { id: "eqosys-login", app: "eqosys", name: "eqosys: make your account", why: "Sent here from a game's Sign in. Fill it and go back to the game.", file: own("eqosys"), keys: ["login"], path: "/login" },
   { id: "mythic-title", app: "mythic-masters", name: "Mythic Masters: the title page", why: "The first game most people open. The Book's cover: New game, Fight a friend, Versus.", file: own("mythic-masters", "landing.json"), keys: ["title"] },
   { id: "mythic-intro", app: "mythic-masters", name: "Mythic Masters: the abduction", why: "Straight after New game: the greys drop the Book on you. Lines with their moment in the scene.", file: own("mythic-masters", "intro.json"), path: "/?scene=abduction&t=8" },
-  { id: "mythic-pick", app: "mythic-masters", name: "Mythic Masters: the Book's five", why: "After the intro: the Book offers five cryptids and you take three.", file: own("mythic-masters", "landing.json"), keys: ["starters", "world"], js: "await mythicMasters.journey.begin(['hodag', 'squonk', 'jackalope']); null" },
+  { id: "mythic-pick", app: "mythic-masters", name: "Mythic Masters: the Book's five", why: "After the intro: the Book offers five cryptids and you take three.", file: own("mythic-masters", "landing.json"), keys: ["starters", "world"], js: PICK },
   { id: "park-hide-seek", app: "park-hide-seek", name: "Park Hide & Seek: the ticket", why: "Your name and PLAY. The model the other landings follow.", file: own("park-hide-seek") },
   { id: "two-fronts", app: "two-fronts", name: "Two Fronts: pick a side", why: "Pick a side, pick a war, play the AI. The how-to card sits under the title.", file: own("two-fronts") },
   { id: "alien-disc-golf", app: "alien-disc-golf", name: "Alien Disc Golf: tee off", why: "The globe, the course and Tee off, with today's wind.", file: own("alien-disc-golf") },
@@ -44,7 +51,7 @@ export const SCREENS: Row[] = [
   { id: "splat-spray", app: "splat-spray", name: "Super Spy Splat Shot: codename", why: "Type a codename, then Quick Play.", file: own("splat-spray") },
   { id: "load-in", app: "load-in", name: "Sound Guy Simulator: the gig poster", why: "Tonight's booking and a big PLAY; home base folds away under it.", file: own("load-in") },
   { id: "excalibrawl", app: "excalibrawl", name: "Excalibrawl: the arena", why: "A drawing fight plays at once, with the next live fight's countdown above it.", file: own("excalibrawl") },
-  { id: "fm-daw", app: "fm-daw", name: "FM Groovebox: the start card", why: "Turn the speakers down, then Play the groove.", file: own("fm-daw") },
+  { id: "fm-daw", app: "fm-daw", name: "FM Groovebox: the start card", why: "Turn the speakers down, then Play the groove.", file: own("fm-daw"), needs: { file: ".rustybuns/vite.ts", say: "Run bun run desktop:dev once in apps/fm-daw, then take the pictures" } },
   { id: "sharesplat", app: "sharesplat", name: "ShareSplat: shoot it", why: "A seller is about to photograph a product all the way round.", file: own("sharesplat") },
   { id: "qcrm", app: "qcrm", name: "qCRM: the front page", why: "The CRM your agents can use: Try the demo, Sign in, Take the tour.", file: own("qcrm") },
   { id: "codesplitter", app: "codesplitter", name: "codeSplitter: the front page", why: "Git, split apart. Sign in or let it show you around.", file: own("codesplitter", "landing.json"), built: { run: ["bun", "build.ts"], dir: "dist/client" } },
@@ -69,6 +76,7 @@ async function serveBuilt(cwd: string, b: NonNullable<Row["built"]>) {
 /** Both pictures of one screen, or why not. One dev server, one headless Chrome, a clean origin each time. */
 export async function shoot(s: Row, out: string): Promise<string | null> {
   const cwd = join(root, "apps", s.app);
+  if (s.needs && !existsSync(join(cwd, s.needs.file))) return s.needs.say;
   let chrome: Awaited<ReturnType<typeof launchChrome>> | undefined, server: { url: string; stop: () => void } | undefined;
   try {
     [chrome, server] = await Promise.all([launchChrome(), s.built ? serveBuilt(cwd, s.built) : startVite(cwd)]);

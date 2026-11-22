@@ -72,16 +72,20 @@ const rowsOf = (f: Field) => Math.min(24, Math.max(2, f.text.split("\n").length 
 
 export interface CmsOptions { dir: string; title: string }
 
+/** A key as words: `cornerSub` reads "corner sub", `play_again` "play again". */
+const words = (k: string | number | undefined) => String(k ?? "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase();
+
 export const sectionsOf = (fields: Field[], source?: Field[]) => {
-  // a section per top-level key, or per entry of a top-level list (a tour's stops: "tourTasks 3")
-  const groupOf = (p: Path) => (typeof p[1] === "number" ? `${p[0]} ${p[1] + 1}` : String(p[0] ?? ""));
+  // a section per top-level key, or per entry of a top-level list (a tour's stops: "tour tasks 3"); the plain lines at the
+  // top of a file share one section with no heading, so a flat file reads as one list of boxes
+  const groupOf = (p: Path) => (p.length === 1 ? "" : typeof p[1] === "number" ? `${words(p[0])} ${p[1] + 1}` : words(p[0]));
   const groups = new Map<string, { f: Field; was?: Field }[]>();
   fields.forEach((f, i) => {
     if (source && f.number) return; // numbers come from the source, so a translation has none to change
     groups.set(groupOf(f.path), [...(groups.get(groupOf(f.path)) ?? []), { f, was: source?.[i] }]);
   });
-  return [...groups].map(([g, fs]) => `<section><h2>${esc(g)}</h2>${fs.map(({ f, was }) => {
-    const label = f.path.slice(typeof f.path[1] === "number" ? 2 : 1).join(" / ") || g;
+  return [...groups].map(([g, fs]) => `<section>${g ? `<h2>${esc(g)}</h2>` : ""}${fs.map(({ f, was }) => {
+    const label = f.path.length === 1 ? words(f.path[0]) : f.path.slice(typeof f.path[1] === "number" ? 2 : 1).map(words).join(" / ") || g;
     const hint = was ? `<p class="hint src">${esc(was.text)}</p>` : f.list ? `<p class="hint">One per line.</p>` : "";
     return `<label for="${esc(nameOf(f.path))}">${esc(label)}</label>${hint}<textarea id="${esc(nameOf(f.path))}" name="${esc(nameOf(f.path))}" rows="${f.number ? 1 : rowsOf(was ?? f)}">${esc(f.text)}</textarea>`;
   }).join("")}</section>`).join("");
