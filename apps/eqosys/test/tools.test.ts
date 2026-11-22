@@ -36,8 +36,8 @@ test("a signed-in page and an app's token both call a tool; no sign-in is refuse
   expect(script.body.result).toMatchObject({ name: "Ada", via: "token for park-hide-seek" });
   expect(script.body.result.email).toBeUndefined();
 
-  const apps = (await run("eq_apps", { genre: "Sports & Skate" }, page(ada))).body.result.apps;
-  expect(apps.map((a: { id: string }) => a.id)).toEqual(APPS.filter((a) => a.genre === "Sports & Skate").map((a) => a.id));
+  const apps = (await run("eq_apps", { genre: "Games" }, page(ada))).body.result.apps;
+  expect(apps.map((a: { id: string }) => a.id)).toEqual(APPS.filter((a) => a.genre === "Games").map((a) => a.id));
   expect((await run("eq_apps", { q: "park" }, page(ada))).body.result.apps.find((a: { id: string }) => a.id === "park-hide-seek").mine).toEqual(["play"]);
   expect((await run("eq_apps", { genre: "Nonsense" }, page(ada))).status).toBe(400);
   expect((await run("eq_achievements", { app: "no-such-app" }, page(ada))).body.error).toContain("no app");
@@ -100,9 +100,9 @@ test("the page's commands are every listed tool, and a call goes to the server w
 test("eq_execute runs a program over the tools as the caller, answers only what it returns, and costs less than a call per fact", async () => {
   // The job: for each app, how many achievements this person has unlocked, keeping only the games with any. A program loops; one call each would not.
   const code = "const { apps } = await tools.eq_apps({}); const out = {}; for (const a of apps.filter((x) => x.genre === input.genre)) { const r = await tools.eq_achievements({ app: a.id }); out[a.id] = r.total; } console.log('done'); return out;";
-  const { status, body } = await run("eq_execute", { code, input: { genre: "Sports & Skate" } }, page(ada));
+  const { status, body } = await run("eq_execute", { code, input: { genre: "Games" } }, page(ada));
   expect(status).toBe(200);
-  const want = APPS.filter((a) => a.genre === "Sports & Skate");
+  const want = APPS.filter((a) => a.genre === "Games");
   const r = body.result as { ok: boolean; calls: number; result: Record<string, number>; log: string[] };
   expect(r).toMatchObject({ ok: true, calls: 1 + want.filter((a) => a.id in r.result).length, log: ["done"] });
   expect(Object.keys(r.result).sort()).toEqual(want.map((a) => a.id).filter((id) => id in r.result).sort());

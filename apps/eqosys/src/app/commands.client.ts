@@ -5,6 +5,7 @@
 import { addCommands, type Command, type Hints, type InputSchema } from "@rustybuns/util/commands";
 import { arr, bool, check, maybe, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
+import { mountFolds } from "./folds.client.ts";
 import { mountSpaces } from "./spaces.client.ts";
 
 type Fetch = (url: string, init?: { method?: string; credentials?: "same-origin"; headers?: Record<string, string>; body?: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -68,6 +69,7 @@ if (typeof document !== "undefined") {
   beaconOnce();
   mountPalette({ foot: "Every command here is an eqosys tool an agent in the browser can call too." });
   void startCommands();
+  mountFolds(document);
   // The /spaces page's panel (spaces.client.ts), and its handle for `bun run probe eqosys /spaces --js "__spaces.state()"`.
   const box = document.getElementById("spaces");
   if (box) void mountSpaces(box).then((p) => Object.assign(window, { __spaces: p }));
