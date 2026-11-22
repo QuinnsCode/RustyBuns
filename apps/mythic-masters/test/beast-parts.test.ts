@@ -23,10 +23,10 @@ for o in B.parts(sheet, sheet["nodes"]):
 print("PARTS" + json.dumps(out))
 `;
 
-async function build(parts: object[], nodes: object = { head: [0, 1, 0, 0.1] }): Promise<Record<string, number[][]>> {
+async function build(parts: object[], nodes: object = { head: [0, 1, 0, 0.1] }, extra: object = { eyes: false }): Promise<Record<string, number[][]>> {
   const dir = mkdtempSync(join(tmpdir(), "beast-parts-"));
   writeFileSync(join(dir, "parts.py"), PY);
-  const sheet = { palette: { eye: [0, 0, 0, 0.1, 0], fur: [0.3, 0.3, 0.3, 0.8, 0] }, nodes, parts };
+  const sheet = { palette: { eye: [0, 0, 0, 0.1, 0], fur: [0.3, 0.3, 0.3, 0.8, 0] }, material: "fur", nodes, parts, ...extra };
   const { out } = await runBlender({ script: join(dir, "parts.py"), args: [JSON.stringify(sheet)], cwd: APP });
   const line = out.split("\n").find((l) => l.startsWith("PARTS"));
   if (!line) throw new Error(`no parts printed:\n${out}`);
@@ -55,6 +55,20 @@ test.skipIf(!findBlender())("a slanted almond eye lifts its outer corner on both
   };
   expect(nearTip(got["ear1"]!)).toBeLessThan(nearTip(got["ear2"]!) / 2);
   expect(nearTip(got["ear1r"]!)).toBeCloseTo(nearTip(got["ear1"]!), 4);
+});
+
+test.skipIf(!findBlender())("an eye sits in a socket: a smaller ball set back, a lid round it and a brow above it", async () => {
+  const eye = { kind: "eye", at: "head", off: [0.08, 0, 0.05], r: 0.04, mirror: true, material: "eye" };
+  const got = await build([eye], undefined, {});
+  const centre = (vs: number[][]) => [0, 1, 2].map((k) => vs.reduce((s, v) => s + v[k]!, 0) / vs.length);
+  const ball = got["eye0"]!, c = centre(ball);
+  expect(Math.max(...ball.map((v) => Math.hypot(v[0]! - c[0]!, v[1]! - c[1]!, v[2]! - c[2]!)))).toBeCloseTo(0.04 * 0.72, 3);
+  // its front no further out along its gaze than the old ball's front
+  const g = [1, 0, 0.75].map((x) => x / 1.25);
+  expect(Math.max(...ball.map((v) => v[0]! * g[0]! + (v[1]! - 1) * g[1]! + v[2]! * g[2]!))).toBeLessThan(0.08 * g[0]! + 0.05 * g[2]! + 0.04);
+  expect(got["lid0"]).toBeDefined();
+  expect(got["lid1"]).toBeDefined(); // the mirrored eye's own
+  expect(Math.min(...got["brow0"]!.map((v) => v[1]!))).toBeGreaterThan(c[1]!); // over the eye
 });
 
 test.skipIf(!findBlender())("a leg whose gaskin slants back keeps every ring facing the same way, with no twist at the knee", async () => {
