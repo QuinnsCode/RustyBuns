@@ -23,6 +23,9 @@ test("Opus is set for a guitar: one channel at 128 kb/s, no silence suppression,
     expect(out.replace(/a=fmtp:111 .*\r\n/, "")).toBe(sdp.replace(/a=fmtp:111 .*\r\n/, ""));
   }
   expect(tuneOpus("v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n")).toBe("v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n");
+  // a DJ's set on the PA (src/studio/pa-line.ts): both channels, at twice the rate
+  const onAir = /a=fmtp:111 (.*)\r\n/.exec(tuneOpus(CHROME_OFFER, { stereo: true, bitrate: 256_000 }))?.[1].split(";") ?? [];
+  expect(onAir).toEqual(expect.arrayContaining(["stereo=1", "sprop-stereo=1", "maxaveragebitrate=256000", "usedtx=0"]));
 });
 
 test("the lag: half the round trip, the jitter buffer and the codec, and how playing together feels at it", () => {

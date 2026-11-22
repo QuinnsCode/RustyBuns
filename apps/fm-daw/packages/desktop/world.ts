@@ -480,7 +480,8 @@ export default class World {
   private onRtc(ws: RoomSocket, m: RtcClient) {
     const seat = this.sockets.who(ws);
     if (!seat?.peer || m.to === seat.peer) return;
-    if (m.line === "out" && !this.may(seat, "play")) return;
+    // sending sound (a guitar, a set on the PA) needs the play grant; asking to hear one never does
+    if ((m.line === "out" || m.line === "pa-out") && !this.may(seat, "play")) return;
     this.sockets.broadcast({ t: "rtc", from: seat.peer, line: m.line, s: m.s } satisfies RtcServer, ws, (a) => a.peer === m.to);
   }
 
