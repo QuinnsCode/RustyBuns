@@ -12,7 +12,7 @@ export const SIGN_IN_FROM: string[] = ["https://mythic-masters.notryanquinn.work
 
 /** A leaf's deckled edge, as a mask the size of the leaf: its outline pulled in a little and pushed about by slow noise. */
 const DECKLE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='d' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.05 .07' numOctaves='2' seed='7' result='n'/%3E%3CfeMorphology in='SourceGraphic' operator='erode' radius='4' result='e'/%3E%3CfeDisplacementMap in='e' in2='n' scale='14' xChannelSelector='R' yChannelSelector='G'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23d)'/%3E%3C/svg%3E") 0 0/100% 100% no-repeat`;
-const LEAF = ".eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach", leaf = (after: string) => LEAF.split(",").map((p) => p + after).join(",");
+const LEAF = ".eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in,.rb-report>.eq-btn", leaf = (after: string) => LEAF.split(",").map((p) => p + after).join(",");
 
 /**
  * The tome's look on every eqosys surface (account chip, achievement toast, report form, party lobby, spaces panel):
@@ -29,12 +29,12 @@ export const SKIN = {
     "--ui-font": "var(--f-book)", "--ui-font-head": "var(--f-title)", "--ui-shadow": "0 16px 32px -14px rgba(40, 20, 6, 0.75)",
     "--ui-top": "52px", // under the cog and the field chart, top right
   },
-  css: `.eq-chip.in,.rb-report>.eq-btn{background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}
+  css: `
 :where(${LEAF}){position:relative}
 ${LEAF}{isolation:isolate;border-color:transparent;background:none;box-shadow:none;padding:17px 19px;filter:drop-shadow(0 1px 0 #2814068c) drop-shadow(0 12px 12px #28140673)}
 ${leaf("::before")}{content:"";position:absolute;inset:0;z-index:-1;background:var(--wear),var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo));-webkit-mask:${DECKLE};mask:${DECKLE}}
 ${leaf("::after")}{content:"";position:absolute;inset:8px;z-index:-1;pointer-events:none;border:3px double var(--ink-line);border-radius:2px;background:radial-gradient(circle,var(--blood) 0 2.4px,transparent 3px) left -7px top -7px/11px 11px no-repeat,radial-gradient(circle,var(--blood) 0 2.4px,transparent 3px) right -7px top -7px/11px 11px no-repeat,radial-gradient(circle,var(--blood) 0 2.4px,transparent 3px) left -7px bottom -7px/11px 11px no-repeat,radial-gradient(circle,var(--blood) 0 2.4px,transparent 3px) right -7px bottom -7px/11px 11px no-repeat}
-.eq-toast{padding:15px 22px 15px 18px}
+.eq-toast{padding:15px 22px 15px 18px}.eq-chip.in{padding:9px 11px 9px 12px}.rb-report>.eq-btn{padding:6px 14px;min-height:44px}.eq-chip.in::after,.rb-report>.eq-btn::after{inset:4px;border-style:solid;border-width:1px;background:none}
 .eq-title::first-letter,.eq-toast div>b::first-letter,.rb-spaces h2::first-letter,.rb-lobby-who::first-letter,.eq-coach b::first-letter{color:var(--blood);font-family:var(--f-title);font-size:1.5em;line-height:.8}
 .eq-head,.rb-spaces-head{padding-bottom:7px;background:linear-gradient(90deg,transparent,var(--ink-faded) 10%,var(--ink-faded) 90%,transparent) bottom/100% 1px no-repeat}
 .eq-who{font-family:var(--f-hand);font-size:20px;font-weight:400}

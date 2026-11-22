@@ -12,23 +12,23 @@ let chrome: Awaited<ReturnType<typeof launchChrome>> | undefined;
 beforeAll(async () => { if (chromePath()) chrome = await launchChrome(); });
 afterAll(() => { chrome?.stop(); server.stop(true); });
 
-type Look = { bg: string; image: string; border: string; radius: string; font: string; edge: string; deckled: boolean };
+type Look = { bg: string; image: string; border: string; radius: string; font: string; edge: string; deckled: boolean; tilt: boolean };
 const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
   const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean; chip: boolean; stamp: boolean; lobby: boolean } }>(`(() => {
-    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); const under = getComputedStyle(document.querySelector(sel), "::before"); return { bg: s.backgroundColor, image: s.backgroundImage + under.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily, edge: s.boxShadow, deckled: under.maskImage !== "none" }; };
+    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); const under = getComputedStyle(document.querySelector(sel), "::before"); return { bg: s.backgroundColor, image: s.backgroundImage + under.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily, edge: s.boxShadow, deckled: under.maskImage !== "none", tilt: s.rotate !== "none" || s.transform !== "none" }; };
     return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
       // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
       fits: { select: document.querySelector(".rb-report select").offsetWidth === document.querySelector(".rb-report input").offsetWidth,
         members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right),
         // The chip is a tag the size of its name and button, lifted off the page like the panels, not a bar across the column.
-        chip: (() => { const c = document.querySelector(".eq-chip.in"); return c.offsetWidth < c.parentElement.parentElement.clientWidth / 2 && getComputedStyle(c).boxShadow !== "none"; })(),
+        chip: (() => { const c = document.querySelector(".eq-chip.in"); return c.offsetWidth < c.parentElement.parentElement.clientWidth / 2 && (getComputedStyle(c).boxShadow !== "none" || getComputedStyle(c).filter !== "none"); })(),
         // Beside the name the chip carries a mark of the game (Two Fronts' rank chevrons, Mythic's wax seal, Skate's deck sticker).
         stamp: getComputedStyle(document.querySelector(".eq-chip.in .eq-who"), "::before").backgroundImage !== "none",
         // The lobby reads "Party KRTZ: Ada (host), Grace ready" on one line, and Start, Copy link and Settings share the row under it.
-        lobby: (() => { const who = document.querySelector(".rb-lobby-who"), rows = new Set([...document.querySelectorAll(".rb-lobby > .eq-btn")].map((b) => { const r = b.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2); }));
+        lobby: (() => { const who = document.querySelector(".rb-lobby-who"), rows = new Set([...document.querySelectorAll(".rb-lobby > .eq-btn")].map((b) => b.offsetTop + b.offsetHeight / 2)); // layout rows, so a tilted sticker still counts as one row
           return who.getClientRects().length === 1 && who.offsetHeight < 2 * parseFloat(getComputedStyle(who).lineHeight) && rows.size === 1; })() } };
   })()`);
   await tab.close();
@@ -51,21 +51,25 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
 
 // #4148: a real game's skin points at its own stylesheet (var(--plate), var(--paper), var(--f-book)); over that stylesheet,
 // its paper or plate and its face reach every surface, under a texture where the game lays one (the colour is in the image).
-// Two Fronts' chip is the one exception it chose: a brass tag (#4210), so its "paper" there is the brass.
+// Two Fronts' chip is the one exception it chose: a brass tag (#4210), so its "paper" there is the brass. Skate's surfaces
+// are stickers, each printed in a colour of its own; only the spaces panel is the park's paper.
 test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces, and its page rules stay out", async () => {
   const games = [
     ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`, "rgb(216, 168, 63)"],
     ["mythic-masters", "rgb(232, 217, 181)", `"IM Fell English", Georgia, "Times New Roman", serif`],
     ["skate-tech-park", "rgb(251, 247, 240)", "system-ui, sans-serif"],
   ] as const;
-  for (const [game, plain, face, chip] of games as readonly (readonly [string, string, string, string?])[]) {
+  const prints: Record<string, Record<string, string>> = { "two-fronts": { chip: "rgb(216, 168, 63)" }, "skate-tech-park": { chip: "rgb(226, 87, 43)", toast: "rgb(255, 210, 63)", lobby: "rgb(127, 208, 234)", form: "rgb(255, 255, 255)" } };
+  for (const [game, plain, face] of games) {
     const got = await looks(`?game=${game}`);
     expect({ game, ...got.fits }).toEqual({ game, select: true, members: true, chip: true, stamp: true, lobby: true });
     for (const [name, l] of Object.entries(got.surfaces)) {
-      const paper = name === "chip" && chip ? chip : plain;
+      const paper = prints[game]?.[name] ?? plain;
       expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });
-      // Mythic's panels are loose leaves of the tome: the paper is cut to a deckled edge. Its chip stays a plain tag.
-      expect({ game, name, deckled: l.deckled }).toEqual({ game, name, deckled: game === "mythic-masters" && name !== "chip" });
+      // Mythic's panels and its chip are loose leaves of the tome: the paper is cut to a deckled edge.
+      expect({ game, name, deckled: l.deckled }).toEqual({ game, name, deckled: game === "mythic-masters" });
+      // Skate's are die-cut stickers on a deck: a white cut edge round the ink line, a halftone, each set at a tilt.
+      if (game === "skate-tech-park") expect({ name, cut: l.edge.startsWith("rgb(255, 255, 255) 0px 0px 0px 6px"), halftone: l.image.includes("radial-gradient"), tilt: l.tilt }).toEqual({ name, cut: true, halftone: true, tilt: true });
     }
   }
 });
