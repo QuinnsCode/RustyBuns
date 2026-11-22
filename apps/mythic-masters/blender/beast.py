@@ -1149,8 +1149,130 @@ def resolve(nodes, p):
     return Vector(nodes[p][:3]) if isinstance(p, str) else Vector(p)
 
 
+# --- eyes in sockets: smaller balls, sunk into the head, a lid round each and a brow over it ----------------
+# A sheet's eye is a ball on the skin, so a beast stared out of two popping marbles. Each eye (the eye-kind parts
+# in an eye-ish material that sit together: a white, its iris, pupil and glint) is shrunk about its biggest ball,
+# pushed back into the head along where it looks, ringed by a lid in the head's own flesh (heavier on top, so it
+# hoods the eye) and given an arched brow, unless the sheet already lays a ridge just above it. A sheet tunes it
+# with `eyes: {scale: 0.72, sink: 0.2, lids: true, brows: true, brow_mat}`, or turns it off with `eyes: false`.
+EYE_MATS = ("eye", "pupil", "glint", "white", "iris", "ring", "kohl")
+EYE_DEFAULTS = {"scale": 0.72, "sink": 0.2, "lids": True, "brows": True}
+
+
+def eye_gaze(c, r):
+    """Where an eye looks, as src/eyes.ts has it: forward (+x), turned out to its side; on the centreline ahead."""
+    side = 0 if abs(c.z) < r * 0.5 else math.copysign(1, c.z)
+    return Vector((1, 0, side * 0.75)).normalized(), side
+
+
+def head_mat(sheet, at):
+    """The flesh an eye sits in: the skull or blob at its node, else the body's."""
+    for p in sheet.get("parts", []):
+        if p["kind"] == "skull" and p["at"] == at and "material" in p:
+            return p["material"]
+    for b in sheet.get("blobs", []):
+        if b["at"] == at and "material" in b:
+            return b["material"]
+    return sheet.get("material", "hide")
+
+
+def lid(name, c, g, r, mat):
+    """A ring of flesh round an eye ball of radius `r` at `c` looking along `g`: thick and low over the top
+    (a hooded upper lid), thin under it, sitting just in front of the ball's middle."""
+    u = Vector((0, 1, 0)) - g * g.y
+    u.normalize()
+    v = g.cross(u)
+    centre, m, n = c + g * (r * 0.28), 14, 6
+    verts, faces = [], []
+    for i in range(m):
+        a = 2 * math.pi * i / m
+        d = u * math.cos(a) + v * math.sin(a)
+        top = 0.5 + 0.5 * math.cos(a)
+        p, minor = centre + d * (r * (1.0 - 0.14 * top)), r * (0.12 + 0.17 * top)
+        for j in range(n):
+            b = 2 * math.pi * j / n
+            verts.append(tuple(p + (d * math.cos(b) + g * math.sin(b)) * minor))
+    for i in range(m):
+        for j in range(n):
+            i1, j1 = (i + 1) % m, (j + 1) % n
+            faces.append((i * n + j, i1 * n + j, i1 * n + j1, i * n + j1))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    for f in me.polygons:
+        f.use_smooth = True
+    return obj(name, me, mat)
+
+
+def brow(name, c, g, side, r, mat):
+    """An arched brow over an eye ball of radius `r` at `c`: from the inner corner up and over to the outer,
+    the outer end a little lower (a soft, kind look, not a scowl)."""
+    u = Vector((0, 1, 0)) - g * g.y
+    u.normalize()
+    out = g.cross(u) * (side or 1)
+    length = r * 2.4
+    start = c + u * (r * 1.3) + g * (r * 0.42) - out * (length * 0.5)
+    return tube(name, start, (out + u * 0.32).normalized(), length, r * 0.3, 0, mat, curve=40, bend=-u,
+                flat=0.55, segments=6, profile=[(0, 0.45), (0.25, 1.0), (0.6, 0.9), (1, 0.3)], smooth=True)
+
+
+def eye_faces(sheet, nodes):
+    """Each eye-ish ball's new (centre, radius) by (part index, side), and the lids and brows to add."""
+    cfg = sheet.get("eyes", {})
+    if cfg is False:
+        return {}, []
+    cfg = {**EYE_DEFAULTS, **cfg}
+    items = []
+    for i, p in enumerate(sheet.get("parts", [])):
+        if p["kind"] != "eye" or not any(k in p.get("material", "").lower() for k in EYE_MATS):
+            continue
+        for side in ([1, -1] if p.get("mirror") else [1]):
+            k = mirrored(p["at"]) if side < 0 else p["at"]
+            c = Vector(nodes[k][:3]) + Vector((p["off"][0], p["off"][1], p["off"][2] * side))
+            size = max(p["r"]) if isinstance(p["r"], (list, tuple)) else p["r"]
+            items.append((i, side, p["at"], c, size))
+    eyes = []  # [anchor, members]
+    for it in sorted(items, key=lambda t: -t[4]):
+        home = next((e for e in eyes if e[0][1] == it[1] and e[0][2] == it[2] and (e[0][3] - it[3]).length <= e[0][4] * 1.6), None)
+        if home:
+            home[1].append(it)
+        else:
+            eyes.append([it, [it]])
+    ridges = []
+    for p in sheet.get("parts", []):
+        if p["kind"] == "ridge":
+            for side in ([1, -1] if p.get("mirror") else [1]):
+                k = mirrored(p["at"]) if side < 0 else p["at"]
+                o = p.get("off", (0, 0, 0))
+                ridges.append(Vector(nodes[k][:3]) + Vector((o[0], o[1], o[2] * side)))
+    scale, sink, adjust, extra = cfg["scale"], cfg["sink"], {}, []
+    for n, ((i, side, at, c, size), members) in enumerate(eyes):
+        g, gside = eye_gaze(c, size)
+        r = size * scale
+        # the smaller ball's front sits `sink` of the old radius behind the old front, so an eye already set deep
+        # in the head keeps showing, and one perched on the skin settles into it
+        c2 = c + g * (size - r - size * sink)
+        for (j, s, _, cm, _) in members:
+            adjust[(j, s)] = (c2 + (cm - c) * scale, scale)
+        flesh = head_mat(sheet, at)
+        if cfg["lids"]:
+            extra.append(lid(f"lid{n}", c2, g, r, flesh))
+        has_brow = any((q - c).length < size * 2.5 and q.y > c.y - size * 0.2 for q in ridges)
+        if cfg["brows"] and not has_brow:
+            pal = sheet.get("palette", {})
+            mat = cfg.get("brow_mat") or next((m for m in ("brow", "mane", "hair", "fur") if m in pal), flesh)
+            extra.append(brow(f"brow{n}", c2, g, gside, r, mat))
+    return adjust, extra
+
+
 def parts(sheet, nodes):
     out, blobs = [], sheet.get("blobs", [])
+    eye_adjust, eye_extra = eye_faces(sheet, nodes)
+    out += eye_extra
     webs = {}  # (web name, side) -> (first rib's part, [each rib's points root to tip])
     for i, p in enumerate(sheet.get("parts", [])):
         for side in ([1, -1] if p.get("mirror") else [1]):
@@ -1191,7 +1313,11 @@ def parts(sheet, nodes):
                 at = Vector(node(p["at"])) + Vector(s(p["off"]))
                 # a mirrored eye's turn is mirrored too: about x and y the other way, about z the same
                 rot = (p["rot"][0] * side, p["rot"][1] * side, p["rot"][2]) if "rot" in p else None
-                out.append(ball(name, at, p["r"], p["material"], rot))
+                r = p["r"]
+                if (i, side) in eye_adjust:  # an eye set back in its socket (eye_faces)
+                    at, k = eye_adjust[(i, side)]
+                    r = [x * k for x in r] if isinstance(r, (list, tuple)) else r * k
+                out.append(ball(name, at, r, p["material"], rot))
             elif p["kind"] == "membrane":
                 rim = pts = [node(q) for q in p["points"]]
                 if "scallop" in p:
