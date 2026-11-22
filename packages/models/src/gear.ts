@@ -908,13 +908,13 @@ function lineArray(id: "line-array-10" | "line-array-box"): Build {
   const body = prism("coat", [[front, 0], [front, h], [back, h - taper], [back, taper]], inner, 0, ch);
   // where the hang pins on (unchanged, so the flying frame still fits), and the rigging's steel round them
   const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04, bh = h - 2 * taper, yc = h / 2;
-  // the front: one dark cavity behind three flat grille panels, a thin seam between each
-  const span = inner - 2 * ch - 0.024, seam = 0.004, cw = inner * 0.2, sw = (span - cw - 2 * seam) / 2, gh = h - 2 * ch - 0.026, cave = 0.09, g = 0.008;
+  // the front: one dark cavity behind three grille panels, each its own slab with a rounded black edge, a dark seam between each
+  const span = inner - 2 * ch - 0.024, seam = 0.009, cw = inner * 0.2, sw = (span - cw - 2 * seam) / 2, gh = h - 2 * ch - 0.026, cave = 0.09, g = 0.008;
   const xs = [-(cw / 2 + seam + sw / 2), 0, cw / 2 + seam + sw / 2], ws = [sw, cw, sw];
   // the side cheeks: a paler pebble-coat panel from behind the front bracket to the rear link bar, two D hand-holds in
   // it, a half-moon over a bar of panel and a half-moon under it
   const tc = 0.0035, z0 = linkZ + 0.032, z1 = plateZ - 0.046, run = (z: number) => taper * (front - z) / (front - back), rim = 0.012;
-  const hz = (z0 + z1) / 2, hw = Math.min(0.16, (z1 - z0) * 0.45), hh = Math.min(0.07, h * 0.22), bar = 0.026, lip = 0.003;
+  const hz = (z0 + z1) / 2, hw = Math.min(0.19, (z1 - z0) * 0.5), hh = Math.min(0.085, h * 0.26), bar = 0.03, lip = 0.005;
   const ds = (s: number, k: number, deep: number, wells: Partial<Well>): Well[] => [1, -1].map((up) => ({
     at: [s * (inner / 2 + k), yc + (up * (hh + bar)) / 2, hz], w: hw - 2 * (k ? 0 : lip), h: hh - 2 * (k ? 0 : lip), r: 0.012, deep, d: up as 1 | -1, ...wells,
   }));
@@ -931,22 +931,17 @@ function lineArray(id: "line-array-10" | "line-array-box"): Build {
     const cheek = prism("cheek", [[z1, run(z1) + rim], [z1, h - run(z1) - rim], [z0, h - run(z0) - rim], [z0, run(z0) + rim]], tc, s * (inner / 2 + tc / 2), 0.0015);
     sunk(b, cheek, [[[s, 0, 0], ds(s, tc, tc, { lip, walls: "cheek", floor: null })]]);
   }
-  // a raised black steel frame round the cavity's mouth, standing a centimetre proud of the shell
-  const fw = 0.012, proud = 0.01, mw = span + 0.004, mh = gh + 0.004;
-  for (const k of [-1, 1]) {
-    b.pieces.push(box("panel", [mw + 2 * fw, fw, proud + 0.002], [0, yc + k * (mh + fw) / 2, front + proud / 2 - 0.001], { bevel: 0.003 }));
-    b.pieces.push(box("panel", [fw, mh, proud + 0.002], [k * (mw + fw) / 2, yc, front + proud / 2 - 0.001], { bevel: 0.003 }));
-  }
-  // the panels: black steel backed nearly solid, set back inside the frame, so the drivers well behind them are only a shadow
-  const gz = front - g - 0.012, sit = 0.03, deep = cave - (front - gz) - sit - 0.006;
+  // the panels: black steel backed nearly solid, each a slab standing a centimetre and a half proud of the shell, its
+  // edge rolled round so it shows from the side, the drivers well behind them only a shadow
+  const gz = front - g, sit = 0.03, deep = cave - sit - 0.006;
   xs.forEach((x, i) => {
-    const [sheet, edge] = grilleSlab(ws[i], gh, g, yc, gz, 0.004, new THREE.Matrix4().makeTranslation(x, 0, 0));
+    const [sheet, edge] = grilleSlab(ws[i], gh, 0.022, yc, gz, 0.008, new THREE.Matrix4().makeTranslation(x, 0, 0));
     b.pieces.push({ ...sheet, slot: "mesh" }, { ...edge, slot: "knob" });
     const at = new THREE.Matrix4().makeTranslation(x, yc, gz - sit);
     if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at, 10));
     else b.pieces.push(...cone(Math.min(sw, gh) * 0.42, deep, at, 10));
   });
-  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, gz + g));
+  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.045, yc - gh / 2 + 0.025, gz + 0.022));
   // the rigging, black steel: a pin through each hole the hang uses, each pin on a wire lanyard to an eye beside it
   const pin = (x: number, y: number, z: number, s: number, t: number) => {
     const head: THREE.Vector3Tuple = [x + s * 0.019, y, z], eye: THREE.Vector3Tuple = [x + s * 0.014, y + t * 0.055, z - 0.026];
@@ -957,15 +952,16 @@ function lineArray(id: "line-array-10" | "line-array-box"): Build {
   for (const s of [-1, 1]) {
     const x = s * (w / 2 - 0.012), rx = s * (w / 2 - 0.0115);
     // the front corner rail: a heavy U channel the full height, wrapped round onto the front beside the frame, its two
-    // flanges standing out past the web; the pins top and bottom, a cast grip on a bracket between them
+    // flanges standing out past the web; the pins top and bottom, a moulded handle housing between them: a deep
+    // back plate, two square arms and a fat vertical grip, the hand's gap behind it
     b.pieces.push(box("panel", [0.03, h - 0.002, 0.094], [s * (w / 2 - 0.015), h / 2, plateZ - 0.004], { bevel: 0.005 }));
     b.pieces.push(box("panel", [w / 2 - inner / 2 + 0.006, h - 0.002, 0.012], [s * (w / 2 + inner / 2 - 0.006) / 2, h / 2, front + 0.004], { bevel: 0.003 }));
     for (const k of [-1, 1]) b.pieces.push(box("panel", [0.012, h - 0.004, 0.011], [s * (w / 2 + 0.004), h / 2, plateZ + k * 0.04], { bevel: 0.003 }));
     pinY.forEach((y, i) => pin(x, y, plateZ, s, i ? -1 : 1));
-    const gx = s * (w / 2 - 0.002), out = s * 0.022, gy = 0.055;
-    b.pieces.push(box("panel", [0.008, 2 * gy + 0.03, 0.05], [gx, h / 2, plateZ], { bevel: 0.002 }));
-    for (const k of [-1, 1]) b.pieces.push(rod("knob", [gx, h / 2 + k * gy, plateZ], [gx + out, h / 2 + k * gy * 0.85, plateZ], 0.009, 6));
-    b.pieces.push(rod("knob", [gx + out, h / 2 - gy * 0.85 - 0.006, plateZ], [gx + out, h / 2 + gy * 0.85 + 0.006, plateZ], 0.011, 6));
+    const gx = s * (w / 2 - 0.004), gy = Math.min(0.062, h * 0.2), hd = 0.064;
+    b.pieces.push(box("panel", [0.014, 2 * gy + 0.05, hd + 0.008], [gx, h / 2, plateZ], { bevel: 0.004 }));
+    for (const k of [-1, 1]) b.pieces.push(box("knob", [0.03, 0.024, hd], [gx + s * 0.015, h / 2 + k * (gy + 0.002), plateZ], { bevel: 0.006 }));
+    b.pieces.push(box("knob", [0.017, 2 * gy + 0.026, hd - 0.012], [gx + s * 0.024, h / 2, plateZ], { bevel: 0.006 }));
     // the rear link bar: drilled down its length in two staggered rows of splay holes, the pin in the one this box hangs at
     b.pieces.push(box("panel", [0.021, bh - 0.004, 0.06], [rx, h / 2, linkZ], { bevel: 0.004 }));
     for (let i = 0; i < 6; i++) for (const k of [-1, 1]) {
