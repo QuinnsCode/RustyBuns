@@ -13,6 +13,7 @@
 // A studio's game starts experimental with `play` only: `member`, a native scheme and `featured` come only from APPS, in a PR.
 import { arr, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { APPS, GENRES, type QApp } from "./apps.ts";
+import { checksOf, check as machineCheck, type Checks } from "./checks.ts";
 import type { Env } from "./env.ts";
 import { roleIn } from "./studios.ts";
 
@@ -42,7 +43,7 @@ export const Draft = obj({
 });
 export type Draft = Of<typeof Draft>;
 
-type Row = { id: string; studio_id: string; studio: string; name: string; kind: "game" | "suite"; genre: string; origins: string; returns: string | null; erase: string | null; blurb: string; state: string; note: string; at: number; erased: number };
+type Row = { id: string; studio_id: string; studio: string; name: string; kind: "game" | "suite"; genre: string; origins: string; returns: string | null; erase: string | null; blurb: string; state: string; note: string; at: number; erased: number; checks: string | null };
 const urls = (s: string | null) => { if (!s) return undefined; try { return check(arr(str(500), 8, { drop: true }), JSON.parse(s)) ?? undefined; } catch { return undefined; } };
 
 const listingOf = (r: Row): Listing => ({
@@ -106,6 +107,21 @@ export async function listing(conf: Env, id: string): Promise<Listing | null> {
   return r ? listingOf(r) : null;
 }
 
+/** The super admin's review queue: every game in review, oldest first, each with the machine checks it got when it was sent (checks.ts). */
+export async function queue(conf: Env): Promise<(Listing & { checks?: Checks })[]> {
+  const { results } = await conf.DB.prepare(`${SELECT} WHERE l.state = 'in review' ORDER BY l.at`).all<Row>();
+  return results.map((r) => { const c = checksOf(r.checks); return { ...listingOf(r), ...(c ? { checks: c } : {}) }; });
+}
+
+/** Runs the machine checks on a game in review and keeps them on it: on the way in (`send`), and when the reviewer asks again. */
+export async function recheck(conf: Env, id: string, now = Date.now()): Promise<Checks | null> {
+  const l = await listing(conf, id);
+  if (!l || l.state !== "in review") return null;
+  const c = await machineCheck(conf, l, now);
+  await conf.DB.prepare("UPDATE listings SET checks = ? WHERE id = ?").bind(JSON.stringify(c), id).run();
+  return c;
+}
+
 /** Listings in these states, oldest change first (the review queue), or a studio's own in every state. */
 export async function listings(conf: Env, by: { states?: State[]; studio?: string }): Promise<Listing[]> {
   const where: string[] = [], binds: string[] = [];
@@ -150,12 +166,14 @@ async function move(conf: Env, id: string, to: State, note: string | null, now: 
   return { ok: true, listing: (await listing(conf, id))! };
 }
 
-/** A draft (or a refused game, fixed) goes to the review queue: its studio's owner or admin sends it. */
+/** A draft (or a refused game, fixed) goes to the review queue: its studio's owner or admin sends it. The machine checks run on the way in. */
 export async function send(conf: Env, who: string, id: string, now = Date.now()): Promise<Done> {
   const l = await listing(conf, id);
   if (!l || !(await owns(conf, l.studio.id, who))) return no(404, `no game "${id}" in a studio you run`);
   if (l.state !== "draft" && l.state !== "refused") return no(409, `"${id}" is ${l.state}: only a draft or a refused game is sent`);
-  return move(conf, id, "in review", "", now);
+  const done = await move(conf, id, "in review", "", now);
+  await recheck(conf, id, now);
+  return done;
 }
 
 /** The super admin's verdict on a game in review: listed, or refused with a note the studio reads. */
