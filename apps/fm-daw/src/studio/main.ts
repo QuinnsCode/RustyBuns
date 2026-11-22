@@ -58,7 +58,8 @@ import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface,
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
-import { GuitarLine } from "./guitar-line.ts";
+import { GuitarLine, askIce } from "./guitar-line.ts";
+import { PaLine } from "./pa-line.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
@@ -364,6 +365,8 @@ async function startAudio() {
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
+    pa = new PaLine(out.ctx, out.ctx.destination, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
+    for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
 /** Notes you hold now, by what holds them (a key, a MIDI note), so letting go turns off the right one. */
@@ -434,9 +437,28 @@ async function guitar() {
   if (input === "mic") return void say({ ok: false, why: "Your mic is in, straight to everyone. Headphones keep the band out of it. I pulls it out" });
   say({ ok: false, why: track >= 0 ? `Your guitar is in, through ${project.tracks[track].name}'s amp. I pulls it out` : "Your guitar is in, straight (no track has an amp). I pulls it out" });
 }
+// ---- the PA (src/studio/pa-line.ts): a set played to the whole room, yours out (the DJ decks' master), theirs in
+let pa: PaLine | null = null;
+/** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
+const paOn = new Map<number, string>();
+/** What you're playing to the room, or null. */
+let myPa: { stream: MediaStream; name: string } | null = null;
+/** Play `stream` to everyone in the room (null stops): needs the play grant, as a guitar does. */
+async function playToRoom(stream: MediaStream | null, name = ""): Promise<Answer> {
+  if (!stream) { pa?.stop(); myPa = null; live({ t: "pa", on: false }); return { ok: true }; }
+  if (!may(player).play) return say({ ok: false, why: "Listen only: the leader hasn't let you play. H raises your hand" });
+  await startAudio();
+  if (!pa) return say({ ok: false, why: "No sound here yet: M brings the speakers up" });
+  pa.start(stream);
+  myPa = { stream, name: name.slice(0, 120) };
+  live({ t: "pa", on: true, name: myPa.name });
+  return { ok: true };
+}
 let mySource: MediaStreamAudioSourceNode | null = null;
 /** Each guitar through its track's amp, at your mutes, where its player stands; you, where you are. */
 function hearGuitars() {
+  // a set on the PA follows your mutes and the leader's, as a guitar does
+  if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
   // each guitar's chain at its channel on the sesh's desk: its level, and its sends into the audio thread's aux buses
@@ -458,7 +480,7 @@ setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) =>
 // ---- the sesh ----
 let net: Net | null = null;
 const live = (e: Live) => net?.live(e);
-function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); }
+function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
 function onLive(from: number, e: Live) {
   hear(jam, from, e);
   if (e.t === "wear") people();
@@ -468,6 +490,7 @@ function onLive(from: number, e: Live) {
     else { plugged.set(from, e.track); if (e.mic) mics.add(from); else mics.delete(from); guitars?.ask(from); }
     return;
   }
+  if (e.t === "pa") { if (e.on) paOn.set(from, e.name ?? ""); else paOn.delete(from); pa?.heardSay(from, e.on, e.name); return; }
   if (e.t === "play" || e.t === "stop") return void playGroove(e.t === "play", false);
   // a far plugin's track: kept quiet here, its sound in slices
   if (e.t === "plugin") { far.heard(from, e); deskSync(); return; }
@@ -622,6 +645,7 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
+  paOn.delete(from); pa?.gone(from);
   far.gone(from); deskSync();
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
@@ -727,7 +751,7 @@ if (here) net = connect({
     atWall.onStudio(m);
     deskSync();
   },
-  onRtc: (m) => void guitars?.signal(m),
+  onRtc: (m) => void (m.line === "pa-out" || m.line === "pa-in" ? pa?.signal(m) : guitars?.signal(m)),
   onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
     // the room's maker seeds the sesh, in the studio its link names
@@ -1087,6 +1111,14 @@ const harness = {
   /** Plug your guitar in (the audio input) or pull it out, as I does; then where every guitar stands. */
   guitar: async () => { await guitar(); return harness.guitars(); },
   /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
+  /** The PA: on, a test tone (a 220 Hz hum) played to the whole room, as a DJ's set goes; off, stopped. With no argument, its state. */
+  pa: async (on?: boolean) => {
+    if (on === true && !myPa) {
+      await startAudio();
+      if (out) { const o = out.ctx.createOscillator(), d = out.ctx.createMediaStreamDestination(); o.frequency.value = 220; o.connect(d); o.start(); await playToRoom(d.stream, "Test tone"); }
+    } else if (on === false && myPa) await playToRoom(null);
+    return { mine: myPa?.name ?? null, on: Object.fromEntries(paOn), ...(pa?.state() ?? { playing: false, live: [], calls: [] }) };
+  },
   guitars: () => ({ mine: myGuitar, input: myGuitar === null ? null : myInput, in: Object.fromEntries(plugged), mics: [...mics], calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
   /** Rec (R): record a player's input (0 you) as a take, onto `pick` if you lead; again lands it. Then what Rec is doing. */
   rec: (peer?: number, pick?: number) => { record(peer, pick); return harness.recording(); },

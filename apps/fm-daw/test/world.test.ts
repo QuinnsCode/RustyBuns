@@ -987,6 +987,39 @@ test("a guitar call: its setup goes to the one person it names, and a listen-onl
   expect(maker.sent).toEqual([{ t: "rtc", from: G, line: "in", s: { k: "want" } }, { t: "live", from: G, e: { t: "guitar", track: null } }]);
 });
 
+test("a set on the PA: the DJ says so to everyone, each listener asks on its own line and gets the call; listen only, you can hear a set but not play one", async () => {
+  const { world, join } = await setup({}, "desert-set-room");
+  const dj = (await join({}, "a".repeat(32))).ws, fan = (await join({}, "b".repeat(32))).ws, other = (await join({}, "c".repeat(32))).ws;
+  world.webSocketMessage(dj, JSON.stringify({ t: "init", project }));
+  const all = [dj, fan, other], clear = () => { for (const s of all) s.sent = []; };
+  const say = (ws: Sock, m: unknown) => world.webSocketMessage(ws, JSON.stringify(m));
+  const peerOf = (ws: Sock) => { clear(); say(ws, { t: "live", e: { t: "cursor", x: 0, y: 0 } }); return all.find((o) => o !== ws)!.sent[0].from as number; };
+  const D = peerOf(dj), F = peerOf(fan);
+  const offer = { k: "sdp", type: "offer", sdp: "v=0\r\na=rtpmap:111 opus/48000/2\r\n" };
+
+  // the DJ goes on air: everyone hears it on the live line, with what's playing
+  clear();
+  say(dj, { t: "live", e: { t: "pa", on: true, name: "Night drive (124)" } });
+  expect([fan.sent, other.sent]).toEqual([[{ t: "live", from: D, e: { t: "pa", on: true, name: "Night drive (124)" } }], [{ t: "live", from: D, e: { t: "pa", on: true, name: "Night drive (124)" } }]]);
+  // a fan asks for it on the PA's line, and the DJ's offer comes back to that fan alone
+  clear();
+  say(fan, { t: "rtc", to: D, line: "pa-in", s: { k: "want" } });
+  say(dj, { t: "rtc", to: F, line: "pa-out", s: offer });
+  expect(dj.sent).toEqual([{ t: "rtc", from: F, line: "pa-in", s: { k: "want" } }]);
+  expect(fan.sent).toEqual([{ t: "rtc", from: D, line: "pa-out", s: offer }]);
+  expect(other.sent).toEqual([]);
+
+  // held: the fan may still ask to hear the set, but can't play one of their own; going off air always gets through
+  say(dj, { t: "floor", state: "held" });
+  await settle();
+  clear();
+  say(fan, { t: "rtc", to: D, line: "pa-in", s: { k: "want" } });
+  say(fan, { t: "rtc", to: D, line: "pa-out", s: offer });
+  say(fan, { t: "live", e: { t: "pa", on: true, name: "mine" } });
+  say(fan, { t: "live", e: { t: "pa", on: false } });
+  expect(dj.sent).toEqual([{ t: "rtc", from: F, line: "pa-in", s: { k: "want" } }, { t: "live", from: F, e: { t: "pa", on: false } }]);
+});
+
 test("jam room mixer: sit at the desk, pull a track's fader down and raise its aux 1 send, and the leader's page plays both; read only until she says yes", async () => {
   const { world, join } = await setup({}, "desk-mix-room");
   const tick = () => new Promise((r) => setTimeout(r, 5));

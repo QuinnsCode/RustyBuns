@@ -16,11 +16,15 @@ import { TrackAmp } from "./amp/track-amp.ts";
 import type { AmpSettings } from "./amp/messages.ts";
 import { DEFAULT_MIC } from "@rustybuns/gear/circuit";
 
-/** Which call a signal is about, from its sender's side: their own guitar going out, or someone's coming in. */
-export const LINES = ["out", "in"] as const;
+/**
+ * Which call a signal is about, from its sender's side: their own guitar going out, or someone's coming in; `pa-out`
+ * and `pa-in` the same for a set played to the room over the PA (src/studio/pa-line.ts).
+ */
+export const LINES = ["out", "in", "pa-out", "pa-in"] as const;
 export type Line = (typeof LINES)[number];
+const OTHER: Record<Line, Line> = { out: "in", in: "out", "pa-out": "pa-in", "pa-in": "pa-out" };
 /** The same call from the other end. */
-export const otherEnd = (l: Line): Line => (l === "out" ? "in" : "out");
+export const otherEnd = (l: Line): Line => OTHER[l];
 
 const tag = <T extends string>(t: T) => oneOf([t]);
 /** An SDP for one audio track runs 2 to 6 kB; this leaves room for a long candidate list. */
@@ -117,10 +121,11 @@ export const INSERT_OVERSAMPLE = 2;
  * Opus for a guitar, not a voice: one channel at 128 kb/s, no silence suppression (a held note's tail isn't
  * silence) and forward error correction on, in the offer's or answer's `fmtp` line for Opus.
  */
-export function tuneOpus(sdp: string): string {
+export function tuneOpus(sdp: string, o: { stereo?: boolean; bitrate?: number } = {}): string {
   const pt = /a=rtpmap:(\d+) opus\/48000/i.exec(sdp)?.[1];
   if (!pt) return sdp;
-  const want: Record<string, string> = { stereo: "0", "sprop-stereo": "0", maxaveragebitrate: "128000", useinbandfec: "1", usedtx: "0", cbr: "0" };
+  const st = o.stereo ? "1" : "0";
+  const want: Record<string, string> = { stereo: st, "sprop-stereo": st, maxaveragebitrate: String(o.bitrate ?? 128_000), useinbandfec: "1", usedtx: "0", cbr: "0" };
   const line = new RegExp(`^a=fmtp:${pt} (.*)$`, "m");
   const had = line.exec(sdp);
   const params = new Map((had?.[1] ?? "").split(";").map((x) => x.trim()).filter(Boolean).map((x) => { const [k, ...v] = x.split("="); return [k, v.join("=")] as [string, string]; }));
