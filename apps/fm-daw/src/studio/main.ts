@@ -65,6 +65,7 @@ import { mountHelp } from "./help.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
+import { mountDecks, type DecksPanel } from "../dj/panel.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -712,6 +713,22 @@ const desk = mountDesk({
   cabled: (aux) => (aux === 2 ? auxGear(gearRoom.patch).label : ""),
   onToggle: (open) => { if (open) { lane?.close(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
 });
+// the DJ decks (src/dj/): two decks and a mixer for music you load yourself, over the room. Its button, or J standing;
+// made the first time, on the room's own audio, so what you play comes out with everything else here
+let decks: DecksPanel | null = null;
+const decksBtn = document.createElement("button");
+decksBtn.id = "decks-open"; decksBtn.type = "button"; decksBtn.title = "The DJ decks: play your own music (J)"; decksBtn.setAttribute("aria-label", "Open the DJ decks");
+// lucide's disc-3 (ISC)
+decksBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M6 12c0-1.7.7-3.2 1.8-4.2"/><circle cx="12" cy="12" r="2"/><path d="M18 12c0 1.7-.7 3.2-1.8 4.2"/></svg><span>Decks</span>';
+document.body.append(decksBtn);
+async function openDecks() {
+  // the room's sound, when it comes up; if it doesn't (no audio thread here, a browser that refuses it), the decks
+  // still play, on an audio context of their own
+  await Promise.race([startAudio(), new Promise((r) => setTimeout(r, 1500))]);
+  decks ??= mountDecks({ ctx: out?.ctx ?? new AudioContext({ latencyHint: "interactive" }), onToggle: (open) => { if (open) { lane?.close(); desk.close(); releaseAll(); document.exitPointerLock?.(); } else if (phase === "play") lock(); } });
+  decks.open();
+}
+decksBtn.addEventListener("click", () => void openDecks());
 // ? or the menu: what you can do here (help.ts, from actions.ts), and the key strip by the hint
 const help = mountHelp({
   parent: $("hud").parentElement ?? document.body, hint: $("hint"), seat: () => spotOf(jam, jam.me.seat)?.kind ?? null,
@@ -794,6 +811,7 @@ function keyDown(code: string, shift = false) {
   }
   if (code === "Space") return sitOrStand();
   if (code === "KeyH") return raise();
+  if (code === "KeyJ" && !jam.me.seat) return void openDecks();
   if (code === "KeyI") return void guitar();
   if (code === "KeyR") return record();
   if (code === "Enter") return playGroove(!transport.playing);
@@ -814,6 +832,7 @@ function keyDown(code: string, shift = false) {
   }
 }
 document.addEventListener("keydown", (e) => {
+  if (decks?.isOpen()) return; // the decks have the keys (src/dj/panel.ts)
   if (e.code === "Space" || e.code === "Tab") e.preventDefault();
   keys.add(e.code);
   if (!e.repeat) keyDown(e.code, e.shiftKey);
@@ -824,7 +843,7 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
 });
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen() && !desk.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen() && !desk.isOpen() && !decks?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -898,7 +917,7 @@ void eq.finishSignIn().then((back) => {
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
 
-function menu() { $("menu").hidden = phase === "play"; door(); people(); }
+function menu() { decksBtn.hidden = phase !== "play"; $("menu").hidden = phase === "play"; door(); people(); }
 function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {

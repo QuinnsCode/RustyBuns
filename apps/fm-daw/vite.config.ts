@@ -16,6 +16,6 @@ export default defineConfig({
   optimizeDeps: { exclude: ["@webaudiomodules/sdk"] },
   server: { headers: isolation },
   preview: { headers: isolation },
-  // Six pages: the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).
-  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html"), remote: resolve(__dirname, "remote.html") } } },
+  // Seven pages (the decks on their own too, decks.html): the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).
+  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html"), remote: resolve(__dirname, "remote.html"), decks: resolve(__dirname, "decks.html") } } },
 });
