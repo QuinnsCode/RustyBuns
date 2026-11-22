@@ -39,6 +39,8 @@ import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS, fromAddress } from "../songs.ts";
 import { GRIDS, quantize, quantizeNote } from "../quantize.ts";
+import { clampView, fit, gridFor, snapView, windowNotes, zoomAbout, type View } from "./view.ts";
+import { Timeline, type ViewChange } from "./Timeline.tsx";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
 import { renderProject, loopSeconds, bounceFrames } from "../engine/offline.ts";
@@ -65,20 +67,9 @@ import "./app.css";
 import COPY from "../../content/first-screen.json";
 
 const UNDO_LIMIT = 100;
-const PAGE_BEATS = 8 * BEATS_PER_BAR;
 /** A song (past 32 bars) bounces once; a loop four times. */
 const bounceLoops = (p: Project) => (p.bars > 32 ? 1 : 4);
 
-function Pager(props: { page: number; pages: number; onPage(p: number): void }) {
-  const bar = props.page * 8 + 1;
-  return (
-    <div className="machine" aria-label="Page">
-      <button className="ghost" onClick={() => props.onPage(Math.max(props.page - 1, 0))} disabled={props.page === 0} title="Earlier 8 bars">‹</button>
-      <span className="silk">Bars {bar}–{bar + 7} of {props.pages * 8}</span>
-      <button className="ghost" onClick={() => props.onPage(Math.min(props.page + 1, props.pages - 1))} disabled={props.page === props.pages - 1} title="Later 8 bars">›</button>
-    </div>
-  );
-}
 const GROUP_MS = 800;
 const COUNT_IN = 4;
 
@@ -142,7 +133,17 @@ export function App() {
   const [view, setView] = useState<"pattern" | "shape" | "amp" | "desk" | "engines">("pattern");
   /** Which Shape the tab shows: the master's (null) or a track's own insert. */
   const [shapeOn, setShapeOn] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
+  /** What the drum grid and the roll show (view.ts): any stretch of the loop, as the user zoomed and scrolled it. */
+  const [timeView, setTimeView] = useState<View>({ from: 0, span: 8 * BEATS_PER_BAR });
+  const [editorPx, setEditorPx] = useState(800);
+  const [follow, setFollow] = useState(false);
+  /** The window the editors showed last render, for the probe handle. */
+  const viewRef = useRef<View>({ from: 0, span: 0 });
+  /** Every view change goes through here, so the view stays inside the loop. */
+  const changeView = (change: ViewChange) => setTimeView((prev) => {
+    const L = loopBeats(proj.current);
+    return clampView(change(clampView(prev, L), L), L);
+  });
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string; decks?: boolean; missed?: string[] }>({ busy: false });
@@ -415,6 +416,7 @@ export function App() {
     };
     Object.assign(window, { fmdaw: {
       state: () => ({
+        view: viewRef.current,
         audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
         line: Object.fromEntries(linePeaks.current),
         tracks: proj.current.tracks.map((tr, i) => {
@@ -423,6 +425,8 @@ export function App() {
         }),
       }),
       start: startAudio,
+      // the editors' view window, as the zoom and scroll set it (clamped to the loop)
+      view: (from: number, span: number) => changeView(() => ({ from, span })),
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
@@ -691,6 +695,9 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.code === "KeyZ") { e.preventDefault(); history(e.shiftKey ? "redo" : "undo"); return; }
       if (mod || e.altKey) return;
+      // the view: - zooms out, = zooms in, \ fits the loop
+      if (e.code === "Minus" || e.code === "Equal") { e.preventDefault(); const k = e.code === "Minus" ? 2 : 0.5; changeView((v, L) => zoomAbout(v, L, k, v.from + v.span / 2)); return; }
+      if (e.code === "Backslash") { e.preventDefault(); changeView((_, L) => fit(L)); return; }
       // Esc stops all sound; the sesh's maker also takes the floor
       if (e.code === "Escape") { if (live.current.floor?.host && live.current.floor.state === "free") net.current?.floor("held"); panic(); return; }
       if (!audioRef.current) return;
@@ -794,14 +801,14 @@ export function App() {
   const t = project.tracks[selected];
   const L = loopBeats(project);
   const grid = GRIDS[gridIdx];
-  // Long songs are edited 8 bars at a time: the grid and roll see a window of
-  // the timeline, and edits are mapped back into the whole thing.
-  const pages = Math.max(1, Math.ceil(L / PAGE_BEATS));
-  const pg = Math.min(page, pages - 1);
-  const win = { from: pg * PAGE_BEATS, span: Math.min(PAGE_BEATS, L - pg * PAGE_BEATS) };
-  const inWin = (n: Note) => n.s >= win.from && n.s < win.from + win.span;
-  const windowed = (tr: TrackDoc): TrackDoc => ({ ...tr, notes: tr.notes.filter(inWin).map((n) => ({ ...n, s: n.s - win.from })) });
-  const unwindow = (tr: TrackDoc, ns: Note[]) => [...tr.notes.filter((n) => !inWin(n)), ...ns.map((n) => ({ ...n, s: n.s + win.from }))];
+  // The grid and roll see a window of the loop (view.ts): the view as zoomed,
+  // widened to whole cells of a grid that thins as you zoom out. Edits map
+  // back into the whole track; notes outside the window are never touched.
+  const shownView = clampView(timeView, L);
+  const step = gridFor(shownView.span, editorPx, t.kind === "drum" ? 0.25 : grid.beats, L);
+  const win: View = snapView(shownView, step, L);
+  viewRef.current = win;
+  const windowed = (tr: TrackDoc) => windowNotes(tr.notes, win);
   const color = TRACK_COLORS[selected];
   const trackSound = <TrackSound track={t} choices={pluginChoices} onPlugin={(plugin) => commit({ t: "plugin", track: selected, plugin })} />;
 
@@ -977,15 +984,26 @@ export function App() {
                 </select>
               </label>
             </div>
-            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
-            <DrumGrid tracks={project.tracks.map(windowed)} colors={TRACK_COLORS} selected={selected} loopBeats={win.span} from={win.from}
-              onSelect={setSelected} onAudition={audition}
-              onNotes={(i, notes) => commit({ t: "notes", track: i, notes: unwindow(project.tracks[i], notes) })} />
+            <Timeline view={shownView} win={win} loop={L} beatsPerBar={BEATS_PER_BAR} tracks={project.tracks} colors={TRACK_COLORS}
+              follow={follow} onFollow={setFollow} onView={changeView} onPx={setEditorPx}>
+              {(() => {
+                const shown = project.tracks.map(windowed);
+                return <DrumGrid tracks={project.tracks.map((tr, i) => ({ ...tr, notes: shown[i].notes }))} colors={TRACK_COLORS} selected={selected}
+                  loopBeats={win.span} from={win.from} step={step}
+                  onSelect={setSelected} onAudition={audition}
+                  onNotes={(i, notes) => commit({ t: "notes", track: i, notes: shown[i].back(notes) })} />;
+              })()}
+            </Timeline>
           </>) : (<>
-            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
-            <PianoRoll key={selected} track={windowed(t)} color={color} loopBeats={win.span} from={win.from} grid={grid.beats}
-              onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: unwindow(t, notes) })}
-              onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />
+            <Timeline view={shownView} win={win} loop={L} beatsPerBar={BEATS_PER_BAR} tracks={project.tracks} colors={TRACK_COLORS}
+              follow={follow} onFollow={setFollow} onView={changeView} onPx={setEditorPx}>
+              {(() => {
+                const shown = windowed(t);
+                return <PianoRoll key={selected} track={{ ...t, notes: shown.notes }} color={color} loopBeats={win.span} from={win.from} grid={step}
+                  onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: shown.back(notes) })}
+                  onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />;
+              })()}
+            </Timeline>
           </>)}
 
           <Perform track={t} color={color} repeat={repeat} bend={bend} onRepeat={setRepeat} onBend={setBend}
