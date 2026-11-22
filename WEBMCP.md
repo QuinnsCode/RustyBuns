@@ -13,6 +13,7 @@ the numbers we can show and how to reproduce them. codeSplitter shows the same a
 |---|---|---|---|
 | Listing codeSplitter's MCP tools | 30,240 tokens (all 138) | 1,054 tokens (code mode's 4) | 29× less |
 | Clearing 20 TODOs in a 300-line file, listing included | 36,822 tokens, tool by tool | 1,220 tokens, one program | 30× less |
+| One eqosys browser task: achievements unlocked in each Sports & Skate game | ~6,830 tokens, 5 screenshots (764 as page text) | 205 tokens, one `eq_batch`; 93, one `eq_execute` | 33× / 73× less |
 | Share of a typical session's peak context (86k, the median here) taken by the tool list | 35% | 1.2% | |
 
 Across this repo's own agents, 2 to 27 October 2026: 1,687 sessions, 8.27B input tokens, 97.8% of
@@ -44,7 +45,7 @@ finding a button and taking another to check. Where we use it:
   `.cpuprofile` itself. See [Agent Office](apps/agent-office/README.md).
 - **Skate Tech Park.** Eight tools; `skate_line` rides a whole line of moves in one call, code mode for
   a game. See [its README](apps/skate-tech-park/README.md).
-- **eqosys.** Its functions (`src/tools.ts`) are WebMCP tools in every page, `POST /api/tools/<name>` for scripts and `scripts/eq.ts` for a shell; `eq_batch` runs up to 12 reads in one call and `pick`s the fields wanted; `eq_execute` is code mode (a program in a no-network Dynamic Worker over the read tools, only its return comes back; `bun test test/tools.test.ts` prints the token comparison). `GET /agents` is the guide. See [its README](apps/eqosys/README.md).
+- **eqosys.** Its functions (`src/tools.ts`) are WebMCP tools in every page, `POST /api/tools/<name>` for scripts and `scripts/eq.ts` for a shell; `eq_batch` runs up to 12 reads in one call and `pick`s the fields wanted; `eq_execute` is code mode (a program in a no-network Dynamic Worker over the read tools, only its return comes back; `bun test test/tools.test.ts` prints the token comparison, `test/agent-cost.test.tsx` the one against screenshots). `GET /agents` is the guide. See [its README](apps/eqosys/README.md).
 - **Games.** Two Fronts, Delayed Reaction, Park Hide & Seek and Mythic Masters' beast gallery, on
   `@rustybuns/util/commands` (below).
 - **Any Rusty Buns server.** `targets.box.webmcp: true` adds `mem_stats`, `take_cpu_profile` and
@@ -104,9 +105,13 @@ this capable is only worth it with limits they can't talk past:
   are counted as characters ÷ 4 on the exact JSON sent and received. Last run 27 October 2026.
 - Sessions and cache: every assistant turn's usage in this machine's transcripts
   ([method](notes/TOKEN_LEDGER.md#method)).
-- Screenshots: an estimate from the published image-token rate, not a measured run.
+- eqosys: `cd apps/eqosys && bun test test/agent-cost.test.tsx` prints one task four ways. The Trophies tab is loaded in
+  headless Chrome at 1280 × 800 and measured (2,795 px tall: the home page plus four screens, five screenshots). Its
+  `innerText` stands in for a read-the-page tool and covers that tab alone (it doesn't name genres, so a real run reads the
+  library too). `eq_batch` and `eq_execute` are real calls. Last run 21 November 2026.
+- Screenshots: the count is measured, the tokens per screenshot are the published image-token rate. No model did the task.
 
-Not shown yet: one browser task done side by side with screenshots and with WebMCP; the live walk of
-every codeSplitter view is still open
+Not shown yet: the same side by side for a codeSplitter task, and a model doing the task by screenshot (five is the fewest
+screens it takes, not what an agent clicking around spends); the live walk of every codeSplitter view is still open
 ([#1424](https://github.com/QuinnsCode/RustyBuns/issues/1424)). And in this repo the shell does most of
 code mode's job (locally it was called twice): code mode is for agents that reach codeSplitter over MCP.
