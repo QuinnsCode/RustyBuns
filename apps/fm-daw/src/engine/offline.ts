@@ -9,7 +9,7 @@ import { P } from "./params.ts";
 import { PluginRoute } from "./plugin-route.ts";
 import type { PluginEvent } from "../plugin-track.ts";
 import { audible, loopBeats, type Project } from "../project.ts";
-import { TakeDeck } from "../take.ts";
+import { TakeDeck, clipsOf, deckClips } from "../take.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 import { faderGain, RigReturn, UNITY } from "../mixer.ts";
@@ -41,7 +41,7 @@ export function pluginScore(p: Project, sampleRate: number, frames: number): Map
 }
 
 /**
- * The project as it plays, offline. `takes` gives a take's sound by id (the page keeps it): each track's take
+ * The project as it plays, offline. `takes` gives a take's sound by id (the page keeps it): each track's clips
  * is mixed in after the engine and before the master EQ (through its Amp insert when it has one, with the track's
  * synth tapped out of the engine after its Shape), as the audio thread does, so the bounce sounds like playback.
  * `plugins` gives a plugin track's sound as the host rendered it (interleaved stereo, `bounceFrames` long): it goes
@@ -59,7 +59,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   eq.set(played);
   eq.reset();
   const deck = new TakeDeck(p.tracks.length, sampleRate);
-  p.tracks.forEach((t, ti) => { if (t.take) deck.set(ti, takes?.(t.take.id) ?? null, t.take.beat); });
+  p.tracks.forEach((t, ti) => deck.set(ti, deckClips(clipsOf(t), (id) => takes?.(id))));
   const amps = new AmpInserts(p.tracks.length, sampleRate);
   p.tracks.forEach((t, ti) => { if (t.amp) amps.set(ti, t.amp); });
   const tapping = amps.any;

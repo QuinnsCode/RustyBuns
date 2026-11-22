@@ -12,7 +12,7 @@ import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/ut
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
 import { decodeClockClient, type ClockClient, type ClockServer } from "../../src/clock.ts";
-import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
+import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, soundIds, type TakeBytes } from "../../src/take.ts";
 import { BackupLadder, LadderGuard, MAX_SNAPS, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
 const SAVE_AFTER_MS = 500;
@@ -58,8 +58,6 @@ const snapKey = (minute: number) => `snap:${minute}`;
 // The ladder's takes come on top, so an old groove on it never stops a new recording.
 const MAX_STORED_TAKES = MAX_TAKES * 3;
 const takeKey = (id: string, i: number) => `take:${id}:${i}`;
-/** The take ids on a project's tracks. */
-const takeIds = (p: Project | null) => new Set((p?.tracks ?? []).flatMap((t) => (t.take ? [t.take.id] : [])));
 const TakeIndex = rec(int(1, MAX_CHUNKS), MAX_STORED_TAKES + MAX_SNAPS * MAX_TAKES);
 /** A whole take in the bucket, written once (a take never changes): its chunks in order. */
 const bucketTakeKey = (room: string, id: string) => `sesh/${room}/take/${id}.json`;
@@ -179,7 +177,7 @@ export default class World {
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
-    void this.sendTakes(takeIds(this.project), [server]);
+    void this.sendTakes(soundIds(this.project), [server]);
     // the boards first, so the patch's bench boxes are pedals by the time it comes
     for (const board of this.boards) this.sockets.send(server, { t: "studio-board", board } satisfies StudioServer);
     if (this.studioUsed()) this.sockets.send(server, this.studioAll(server));
@@ -233,7 +231,7 @@ export default class World {
       if (!p || this.project) return;
       this.project = p;
       this.save();
-      await this.restoreTakes(bucket, room, takeIds(p));
+      await this.restoreTakes(bucket, room, soundIds(p));
       if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
@@ -342,9 +340,10 @@ export default class World {
       return;
     }
     if (msg.t !== "op" || !this.project) return;
-    // a take goes on a track only once all of its sound is here
-    if (msg.op.t === "take" && msg.op.take && !this.takes[msg.op.take.id]) { this.sockets.send(ws, { t: "snapshot", project: this.project }); return; }
-    const had = takeIds(this.project);
+    // a take (or a clip of one) goes on a track only once all of its sound is here
+    const lands = msg.op.t === "take" ? (msg.op.take ? [msg.op.take] : []) : msg.op.t === "clips" ? msg.op.clips : [];
+    if (lands.some((c) => !this.takes[c.id])) { this.sockets.send(ws, { t: "snapshot", project: this.project }); return; }
+    const had = soundIds(this.project);
     const next = apply(this.project, msg.op);
     if (next === this.project) return;
     this.capture(this.project);
@@ -353,7 +352,7 @@ export default class World {
     // rebroadcast the sanitized result for replace, the op itself otherwise
     const op = msg.op.t === "replace" ? { t: "replace" as const, project: next } : msg.op;
     // an undo can bring back a take the others never heard: its sound goes before the edit
-    if (msg.op.t === "replace") void this.sendTakes(new Set([...takeIds(next)].filter((id) => !had.has(id))), this.sockets.open().filter((w) => w !== ws));
+    if (msg.op.t === "replace") void this.sendTakes(new Set([...soundIds(next)].filter((id) => !had.has(id))), this.sockets.open().filter((w) => w !== ws));
     this.broadcast({ t: "op", op }, ws);
   }
 
@@ -380,8 +379,8 @@ export default class World {
     const project = got === "now" ? this.project : got === null ? null : sanitize(await this.ctx.storage.get(snapKey(got)));
     const at = typeof got === "number" ? got * MINUTE : Math.max(0, now - ago * MINUTE);
     this.sockets.send(ws, { t: "rewound", ago, at, project });
-    const have = takeIds(this.project);
-    if (project) await this.sendTakes(new Set([...takeIds(project)].filter((id) => !have.has(id))), [ws]);
+    const have = soundIds(this.project);
+    if (project) await this.sendTakes(new Set([...soundIds(project)].filter((id) => !have.has(id))), [ws]);
   }
 
   /** A chunk of a take's sound: kept, and passed on so the others have it before the take lands on a track. */
@@ -445,13 +444,13 @@ export default class World {
   /** The take ids on every groove the ladder holds. */
   private async ladderTakeIds() {
     const ids = new Set<string>();
-    for (const at of this.ladder.snaps) for (const id of takeIds(sanitize(await this.ctx.storage.get(snapKey(at))))) ids.add(id);
+    for (const at of this.ladder.snaps) for (const id of soundIds(sanitize(await this.ctx.storage.get(snapKey(at))))) ids.add(id);
     return ids;
   }
 
   /** These takes less the ones on the groove's tracks. */
   private offTracks(ids: Set<string>) {
-    const on = takeIds(this.project);
+    const on = soundIds(this.project);
     return new Set([...ids].filter((id) => !on.has(id)));
   }
 
@@ -681,7 +680,7 @@ export default class World {
     // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
     if (lastOut) {
       this.ladderTakes = this.offTracks(await this.ladderTakeIds());
-      await this.dropTakes(new Set([...takeIds(this.project), ...this.ladderTakes]));
+      await this.dropTakes(new Set([...soundIds(this.project), ...this.ladderTakes]));
     }
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {

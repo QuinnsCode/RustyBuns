@@ -4,14 +4,14 @@
 // beside the groove and kept by the world under the id. No DOM, no Bun: the page,
 // the audio thread, the world and the tests all use it.
 import { b64url, unb64url } from "@rustybuns/util/bytes";
-import { Bad, int, num, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { Bad, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Samples a second a take is kept at: a guitar cab is done well below its 12 kHz top. */
 export const TAKE_RATE = 24000;
 /** The longest take: a loop's worth, up to this many seconds (16 bars at 120). */
 export const MAX_TAKE_SECONDS = 32;
 export const MAX_TAKE_FRAMES = TAKE_RATE * MAX_TAKE_SECONDS;
-/** Tracks in a sesh that may hold a take at once: each is up to 1.5 MB in the room's storage. */
+/** Takes' sounds a sesh may hold at once (clips cut from one count once): each is up to 1.5 MB in the room's storage. */
 export const MAX_TAKES = 4;
 /** Raw bytes in one chunk on the wire: about 128 KB as base64, under the socket's 256 KB message. */
 export const CHUNK_BYTES = 96 * 1024;
@@ -25,6 +25,42 @@ export const takeRef = (beats: number): Guard<TakeRef> => (v) => {
   if (t.beat >= beats) throw new Bad("a take past the loop's end");
   return t;
 };
+
+/**
+ * A clip: a window onto a take's sound. It starts sounding on `beat` with the sound's frame `from` and stops at
+ * frame `to` (frames at TAKE_RATE, floats; absent: the sound's start and end). `frames` is the whole sound's length.
+ * A take nobody cut is a clip with neither, so a TakeRef is one. Cutting one makes two that share its id: the
+ * sound is stored once.
+ */
+export interface Clip extends TakeRef { from?: number; to?: number }
+/** The shortest window a trim or a cut leaves: 10 ms. */
+export const MIN_CLIP_FRAMES = TAKE_RATE / 100;
+/** Clips one track holds at most (cuts of one sound or of several). */
+export const MAX_CLIPS = 32;
+/** The fade at a trimmed or cut edge, so it never clicks: 3 ms. A sound's own start and end play as recorded. */
+export const CLIP_FADE_FRAMES = Math.round(TAKE_RATE * 0.003);
+const CLIP_SHAPE = obj({ id: TAKE_ID, beat: num(0, Infinity), frames: int(1, MAX_TAKE_FRAMES), from: opt(num(0, MAX_TAKE_FRAMES)), to: opt(num(0, MAX_TAKE_FRAMES)) });
+/** A clip as the project names it: its window inside its sound and at least MIN_CLIP_FRAMES long (the loop fits it later). */
+export const ClipGuard: Guard<Clip> = (v) => {
+  const c = CLIP_SHAPE(v);
+  const from = c.from ?? 0, to = Math.min(c.to ?? c.frames, c.frames);
+  if (to - from < Math.min(MIN_CLIP_FRAMES, c.frames)) throw new Bad("a clip's window inside its sound");
+  return windowed(c, from, to);
+};
+/** `c` with its window at `from`..`to`, leaving out an edge that is the sound's own. */
+export function windowed(c: TakeRef, from: number, to: number): Clip {
+  const out: Clip = { id: c.id, beat: c.beat, frames: c.frames };
+  if (from > 0) out.from = from;
+  if (to < c.frames) out.to = to;
+  return out;
+}
+/** The window's frames in the sound. */
+export const spanOf = (c: Clip) => ({ from: c.from ?? 0, to: c.to ?? c.frames });
+/** A track's clips: `take` is the one-clip form (a whole sound nobody cut), `clips` every other. */
+export const clipsOf = (t: { take?: TakeRef; clips?: readonly Clip[] }): readonly Clip[] => t.clips ?? (t.take ? [t.take] : []);
+/** The take ids (sounds) a project's tracks play: MAX_TAKES counts these. */
+export const soundIds = (p: { tracks: readonly { take?: TakeRef; clips?: readonly Clip[] }[] } | null) =>
+  new Set((p?.tracks ?? []).flatMap((t) => clipsOf(t).map((c) => c.id)));
 
 /** One chunk of a take's sound: part `i` of `n`, base64url of little-endian 16-bit samples. */
 export interface TakeBytes { t: "takeBytes"; id: string; i: number; n: number; data: string }
@@ -79,16 +115,23 @@ export function decodeTake(chunks: string[]): Float32Array {
   return out;
 }
 
+/** A clip as the audio thread plays it: its sound in place of its id. */
+export interface DeckClip { pcm: Float32Array; beat: number; from?: number; to?: number }
+/** These clips with their sound, the ones whose sound isn't here left out (the live page and the bounce both). */
+export const deckClips = (clips: readonly Clip[], sound: (id: string) => Float32Array | undefined): DeckClip[] =>
+  clips.flatMap((c) => { const pcm = sound(c.id); return pcm ? [{ pcm, beat: c.beat, from: c.from, to: c.to }] : []; });
+
 /**
- * The takes playing on the audio thread, one slot per track. Each sounds from its beat
- * for as long as it lasts, wrapping round the loop end with the transport.
+ * The takes playing on the audio thread, a list of clips per track. Each clip sounds from its
+ * beat for its window, wrapping round the loop end with the transport, with a short fade at an
+ * edge a trim or a cut made.
  */
 export class TakeDeck {
-  private slots: ({ pcm: Float32Array; beat: number } | null)[];
-  constructor(tracks: number, private sr: number) { this.slots = Array.from({ length: tracks }, () => null); }
-  set(track: number, pcm: Float32Array | null, beat = 0) { if (track >= 0 && track < this.slots.length) this.slots[track] = pcm && pcm.length ? { pcm, beat } : null; }
-  get any() { return this.slots.some((s) => s); }
-  has(track: number) { return !!this.slots[track]; }
+  private slots: DeckClip[][];
+  constructor(tracks: number, private sr: number) { this.slots = Array.from({ length: tracks }, () => []); }
+  set(track: number, clips: readonly DeckClip[]) { if (track >= 0 && track < this.slots.length) this.slots[track] = clips.filter((c) => c.pcm.length); }
+  get any() { return this.slots.some((s) => s.length); }
+  has(track: number) { return !!this.slots[track]?.length; }
 
   /** Add `frames` of the takes into interleaved stereo `out`, the transport at `pos` beats when the block starts. */
   mix(out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number) {
@@ -101,14 +144,20 @@ export class TakeDeck {
   }
 
   private play(track: number, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
-    const s = this.slots[track];
-    if (!s) return;
-    const beatsPerFrame = bpm / 60 / this.sr, takePerBeat = (60 / bpm) * TAKE_RATE, { pcm } = s;
+    for (const c of this.slots[track] ?? []) this.clip(c, out, chans, frames, pos, bpm, loopBeats, gain);
+  }
+
+  private clip(c: DeckClip, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
+    const beatsPerFrame = bpm / 60 / this.sr, takePerBeat = (60 / bpm) * TAKE_RATE, { pcm } = c;
+    const from = c.from ?? 0, to = Math.min(c.to ?? pcm.length, pcm.length), fadeIn = from > 0, fadeOut = to < pcm.length;
     for (let f = 0; f < frames; f++) {
-      const since = (((pos + f * beatsPerFrame - s.beat) % loopBeats) + loopBeats) % loopBeats;
-      const x = since * takePerBeat, j = Math.floor(x);
-      if (j >= pcm.length) continue;
-      const a = pcm[j], v = (a + ((pcm[j + 1] ?? a) - a) * (x - j)) * gain;
+      const since = (((pos + f * beatsPerFrame - c.beat) % loopBeats) + loopBeats) % loopBeats;
+      const x = from + since * takePerBeat, j = Math.floor(x);
+      if (x >= to) continue;
+      const a = pcm[j];
+      let v = (a + ((pcm[j + 1] ?? a) - a) * (x - j)) * gain;
+      if (fadeIn && x - from < CLIP_FADE_FRAMES) v *= (x - from) / CLIP_FADE_FRAMES;
+      if (fadeOut && to - x < CLIP_FADE_FRAMES) v *= (to - x) / CLIP_FADE_FRAMES;
       out[f * chans] += v;
       if (chans === 2) out[f * 2 + 1] += v;
     }
@@ -147,8 +196,8 @@ export class TakeCapture {
 export class TakeShelf {
   private sounds = new Map<string, Float32Array>();
   private inbox = new TakeInbox();
-  /** Each track's take on the audio thread now, as "id@beat". */
-  private sent: (string | null)[] = [];
+  /** Each track's clips on the audio thread now, as "id@beat:from:to" joined. */
+  private sent: string[] = [];
   get(id: string) { return this.sounds.get(id); }
   keep(id: string, pcm: Float32Array) { this.sounds.set(id, pcm); }
   /** A chunk from the sesh: true once it finished a take. */
@@ -159,14 +208,14 @@ export class TakeShelf {
   }
   /** A new audio thread knows no takes: the next sync sends them all. */
   forget() { this.sent = []; }
-  /** Each track's take whose sound is here, to the audio thread where it changed. */
-  sync(p: { tracks: readonly { take?: TakeRef }[] }, send: (m: { t: "take"; track: number; pcm: Float32Array | null; beat: number }) => void) {
+  /** Each track's clips whose sound is here, to the audio thread where they changed. */
+  sync(p: { tracks: readonly { take?: TakeRef; clips?: readonly Clip[] }[] }, send: (m: { t: "take"; track: number; clips: DeckClip[] }) => void) {
     p.tracks.forEach((t, i) => {
-      const pcm = t.take ? this.sounds.get(t.take.id) : undefined;
-      const key = t.take && pcm ? `${t.take.id}@${t.take.beat}` : null;
-      if (key === (this.sent[i] ?? null)) return;
+      const here = clipsOf(t).filter((c) => this.sounds.has(c.id));
+      const key = here.map((c) => `${c.id}@${c.beat}:${c.from ?? 0}:${c.to ?? c.frames}`).join(" ");
+      if (key === (this.sent[i] ?? "")) return;
       this.sent[i] = key;
-      send({ t: "take", track: i, pcm: pcm && key ? pcm : null, beat: t.take?.beat ?? 0 });
+      send({ t: "take", track: i, clips: deckClips(here, (id) => this.sounds.get(id)) });
     });
   }
 }

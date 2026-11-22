@@ -2,6 +2,7 @@
 // to come back to after someone else has had a go at the sesh, and the solo project,
 // which is played apart from the sesh and never sent to it.
 import { sanitize, type Project } from "../project.ts";
+import { soundIds } from "../take.ts";
 
 export type Slot = "setup" | "solo";
 type Store = Pick<Storage, "getItem" | "setItem">;
@@ -35,7 +36,7 @@ function takesDb(): Promise<IDBDatabase> {
   }
   return opened;
 }
-const takeIdsOf = (p: Project) => p.tracks.flatMap((t) => (t.take ? [t.take.id] : []));
+const takeIdsOf = (p: Project) => [...soundIds(p)];
 
 /** Keep the sound of the solo project's takes, and let go of any no longer on a track. */
 export async function saveSoloTakes(p: Project, sound: (id: string) => Float32Array | undefined): Promise<void> {
