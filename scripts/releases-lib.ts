@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 // The releases page's rules (scripts/releases.ts): which dot a repo or app gets, and how merged PRs count per day and week.
 
 /** live: its prod link answers. error: the link is down or its last run failed. testing: being built, not released yet.
@@ -78,4 +80,16 @@ export function deployOf(id: string, script: string | null): { plan: boolean; cm
   if (id === "codesplitter") return { plan: false, cmd: "zsh scripts/release-codesplitters.sh" };
   if (!script) return null;
   return { plan: /rustybuns deploy|cli\/src\/index\.ts deploy/.test(script), cmd: "bun run deploy" };
+}
+
+/** Where a re-release would read this app's Alchemy state: its own `.alchemy/state` and the shared one in the repo's git
+ *  dir (packages/cli/src/state.ts). The walker deploys from its own checkout, and a checkout of another clone shares
+ *  another git dir: with no state in either, the plan makes everything new (FRESH) next to what's live. */
+export function stateDirs(cwd: string, sharedBase: string | null): string[] {
+  return [join(cwd, ".alchemy", "state"), ...(sharedBase ? [join(sharedBase, "state")] : [])];
+}
+
+/** True when any of `dirs` holds a stack's state. */
+export function hasState(dirs: string[]): boolean {
+  return dirs.some((d) => { try { return readdirSync(d).length > 0; } catch { return false; } });
 }

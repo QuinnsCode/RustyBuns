@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { appDot, busiest, deployOf, owed, pacific, repoDot, tally } from "./releases-lib.ts";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { appDot, busiest, deployOf, hasState, owed, pacific, repoDot, stateDirs, tally } from "./releases-lib.ts";
 
 test("each app gets the dot the owner reads it by", () => {
   const up = { ok: true }, down = { ok: false };
@@ -61,4 +64,13 @@ test("an app is owed a re-release when main moved it after its last deploy, or n
     { plan: false, cmd: "zsh scripts/release-codesplitters.sh" },
     { plan: true, cmd: "bun run deploy" }, { plan: true, cmd: "bun run deploy" }, { plan: false, cmd: "bun run deploy" }, null,
   ]);
+});
+
+test("the walker sees no state in a checkout of another clone, and won't plan a FRESH copy there", () => {
+  const app = mkdtempSync(join(tmpdir(), "rel-")), shared = mkdtempSync(join(tmpdir(), "rel-shared-"));
+  mkdirSync(join(shared, "state"));
+  expect(hasState(stateDirs(app, shared))).toBe(false); // the job checkout: its git dir has an empty state
+  mkdirSync(join(shared, "state", "eqosys", "live_ryanquinn"), { recursive: true });
+  expect(hasState(stateDirs(app, shared))).toBe(true);
+  expect(hasState(stateDirs(app, null))).toBe(false);    // outside git, only .alchemy/state counts
 });

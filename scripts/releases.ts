@@ -27,7 +27,8 @@ import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
 import { lastDeploys } from "./bridge-lib.ts";
 import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
-import { appDot, appOfPath, busiest, deployOf, owed, pacific, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { appDot, appOfPath, busiest, deployOf, hasState, owed, pacific, repoDot, stateDirs, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { sharedStateBase } from "../packages/cli/src/state.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
 const ARTIFACT = "https://claude.ai/artifact/EFQKb3WEiu7c5X9GURb8ch"; // QNTBR Releases (#5237)
@@ -233,6 +234,12 @@ function rerelease(d: Releases) {
       if (a !== "y") { skipped.push(r.name); continue; }
       const cwd = path.join(repo, folder), t0 = Date.now();
       if (deploy.plan) {
+        // No state here means a plan that makes a second copy of everything (FRESH), not an update (eqosys, 2026-11-21).
+        const dirs = stateDirs(cwd, sharedStateBase(cwd));
+        if (!hasState(dirs)) {
+          console.log(`  no deploy state for ${r.name} from this checkout (looked in ${dirs.join(", ")}). A plan here would make it all new beside what's live. Deploy it from the checkout it was last deployed from.`);
+          failed.push(`${r.name} (no state here)`); continue;
+        }
         if (!run(["bun", cli, "plan"], cwd)) { failed.push(`${r.name} (plan)`); continue; }
         if (ask("  read the plan: any delete or replace, say n. Deploy now? [y/N]") !== "y") { skipped.push(r.name); continue; }
       }
