@@ -888,6 +888,45 @@ test("codeUpdate: busy Durable Objects' code-update strategy, both ways through 
   expect([await ok({ maxDelay: 300 }), await ok("immediate"), await ok({ maxDelay: 90_000 }), await ok("deferred")]).toEqual([true, true, false, false]);
 });
 
+test("version, access, turnstile: a gradual rollout, Access in front, a widget made with the stack (#4801)", async () => {
+  const { decodeConfig } = await import("../src/config-schema.ts");
+  const { forStage } = await import("../src/config.ts");
+  const { Effect } = await import("effect");
+  const c = (worker: object, stages?: object) => ({
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], ...worker },
+    bindings: { MODE: { type: "var", value: "x" } }, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } }, ...(stages ? { stages } : {}),
+  }) as any;
+  const all = c({ version: { traffic: 10, alias: "canary" }, access: { emails: ["a@b.co"], emailDomains: ["b.co"] }, turnstile: { domains: ["g.example.com"], mode: "invisible" } },
+    { prod: { access: false, version: { traffic: 50 } } });
+  const stack = generateAlchemy(all);
+  expect(stack).toContain(`  version: {"traffic":10,"alias":"canary"},`);
+  expect(stack).toContain(`  access: {"policies":[{"decision":"allow","include":[{"email":"a@b.co"},{"emailDomain":"b.co"}]}]},`);
+  expect(stack).toContain(`export const Turnstile = Cloudflare.Turnstile.Widget("Turnstile", { domains: ["g.example.com"], mode: "invisible" });`);
+  expect(stack).toContain(`  const turnstile = yield* Turnstile;`);
+  expect(stack).toContain(`env: { TURNSTILE_SITE_KEY: turnstile.sitekey, TURNSTILE_SECRET_KEY: turnstile.secret, MODE: "x" },`);
+  // A stage turns Access off and ramps the rollout.
+  const prod = generateAlchemy(forStage(all, "prod"));
+  expect(prod).not.toContain("access:");
+  expect(prod).toContain(`  version: {"traffic":50},`);
+  const plain = generateAlchemy(c({}));
+  for (const s of ["version:", "access:", "Turnstile"]) expect(plain).not.toContain(s);
+  // The desktop host gets the always-pass test keys under the same names.
+  const ts = c({ turnstile: { domains: ["g.example.com"], siteKey: "SITE" } });
+  for (const desk of [desktopEntry(ts), spaEntry(ts)]) {
+    expect(desk).toContain(`SITE: "1x00000000000000000000AA",`);
+    expect(desk).toContain(`TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",`);
+  }
+  expect(JSON.parse(generateWrangler(ts).replace(/^\/\/.*\n/gm, "")).vars).toEqual({ MODE: "x", SITE: "1x00000000000000000000AA", TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA" });
+  for (const box of [desktopEntry(ts, "box"), spaEntry(ts, "box")]) expect(box).not.toContain("1x0000");
+  // A key's env name can't clash with a binding.
+  expect(() => generateAlchemy(c({ turnstile: { domains: ["g.example.com"], secret: "MODE" } }))).toThrow(/MODE/);
+  const ok = (w: object) => Effect.runPromise(decodeConfig(c(w)).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true })));
+  expect([
+    await ok({ version: { traffic: 0 } }), await ok({ version: { traffic: 101 } }), await ok({ version: { traffic: 10, alias: "Canary" } }),
+    await ok({ access: { emailDomains: ["b.co"] } }), await ok({ access: {} }), await ok({ turnstile: { domains: [] } }),
+  ]).toEqual([true, false, false, true, false, false]);
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates, shippingCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

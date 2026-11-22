@@ -10,7 +10,7 @@ import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
-import { hyperdriveUrlEnv, desktopServers, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
+import { hyperdriveUrlEnv, desktopServers, turnstileEnv, TURNSTILE_TEST_SITE_KEY, TURNSTILE_TEST_SECRET, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { stageAssets } from "./stage-assets.ts";
 import { Profiler } from "./profile.ts";
@@ -81,6 +81,12 @@ function appCheck(c: RustyBunsConfig, keep: boolean): string {
   if (!url) return "";
   return `appLaunchCheck(${JSON.stringify(c.name)}, typeof RB_VERSION === "string" ? RB_VERSION : undefined, ${JSON.stringify(url)})${keep ? ".then((n) => { appUpdate = n; })" : ""};\n`;
 }
+/** worker.turnstile on the desktop: Cloudflare's always-pass test keys, so siteverify takes any token. A box makes no widget. */
+const turnstileTestKeys = (c: RustyBunsConfig, box: boolean): [string, string][] => {
+  if (!c.worker?.turnstile || box) return [];
+  const t = turnstileEnv(c.worker.turnstile);
+  return [[t.siteKey, TURNSTILE_TEST_SITE_KEY], [t.secret, TURNSTILE_TEST_SECRET]];
+};
 const appImport = (c: RustyBunsConfig) => c.targets.desktop?.advisories ? ", appLaunchCheck" : "";
 
 /** Where desktop.server's bundles sit beside the host: the dev bundle's dir, the binary's $bunfs root. */
@@ -195,7 +201,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   const hasWorld = d.world !== false;
   const kvNames = Object.entries(bindings).filter(([, b]) => b.type === "kv").map(([n]) => n);
   const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
-  const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
+  const vars = [...Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]), ...turnstileTestKeys(c, h.box)];
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
   const pgs = Object.entries(bindings).flatMap(([n, b]) => b.type === "hyperdrive" ? [[n, b] as const] : []);
   // An app server reads Postgres from its URL variable (DATABASE_URL), as it would under Node: each
@@ -590,6 +596,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         break;
     }
   }
+  bind.push(...turnstileTestKeys(c, h.box).map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`));
   const crons = c.worker!.crons ?? [];
   const entry = builtEntry(c);
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");

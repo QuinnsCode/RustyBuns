@@ -107,11 +107,27 @@ const WorkerName = Str.check(Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-
 const AccountId = Str.check(Schema.isPattern(/^[0-9a-f]{32}$/, { expected: "a Cloudflare account id: 32 hex digits" }));
 const Route = Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str) });
 
+const WorkerVersion = Schema.Struct({
+  traffic: int(0, 100),
+  alias: opt(Str.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/, { expected: "an alias: lowercase letters, digits and dashes, starting with a letter" }))),
+  tag: opt(Str), message: opt(Str),
+});
+const WorkerAccess = Schema.Struct({
+  emails: opt(Strs), emailDomains: opt(Strs), sessionDuration: opt(Str), previews: opt(Bool),
+}).check(Schema.makeFilter((a) => (a.emails?.length || a.emailDomains?.length) ? undefined : "lets nobody in: give it emails or emailDomains"));
+const EnvName = Str.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/, { expected: "an env name" }));
+const WorkerTurnstile = Schema.Struct({
+  domains: Strs.check(Schema.isMinLength(1)),
+  mode: opt(Schema.Literals(["managed", "non-interactive", "invisible"])),
+  siteKey: opt(EnvName), secret: opt(EnvName),
+});
+
 // A stage's overrides. What they make is checked again as the whole config each stage deploys.
 const Stage = Schema.Struct({
   workerName: opt(WorkerName), accountId: opt(AccountId),
   domain: opt(Schema.Union([Str, Strs])), routes: opt(Schema.Array(Route)),
   workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs), bootstrap: opt(Bool),
+  access: opt(Schema.Union([WorkerAccess, Schema.Literal(false)])), version: opt(Schema.Union([WorkerVersion, Schema.Literal(false)])),
   bindings: opt(Schema.Record(Str, Schema.Union([Binding, Schema.Struct({
     value: opt(Str), databaseName: opt(Str), bucketName: opt(Str), queueName: opt(Str),
     indexName: opt(Str), protect: opt(Bool), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),
@@ -144,6 +160,7 @@ export const ConfigSchema = Schema.Struct({
       traces: opt(Schema.Struct({ enabled: opt(Bool), headSamplingRate: opt(Rate), persist: opt(Bool) })),
     })),
     redactQueryStrings: opt(Bool), sourceMaps: opt(Bool), protect: opt(Bool),
+    version: opt(WorkerVersion), access: opt(WorkerAccess), turnstile: opt(WorkerTurnstile),
   })),
   bindings: Schema.Record(Str, Binding),
   targets: Schema.Struct({
