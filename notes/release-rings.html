@@ -133,33 +133,34 @@ button svg { width: 16px; height: 16px; }
 <section>
   <header>
     <div class="eyebrow">The rings</div>
-    <h2>Each ring tests wider and slower</h2>
-    <p class="sub">A red commit never freezes <code>main</code>: Ester finds which PR broke it, and its worker fixes it, or Mervin reverts it after 60 minutes.</p>
+    <h2>Each ring runs more tests, less often</h2>
+    <p class="sub">If a change breaks something, work doesn't stop. Ester finds which PR did it. That PR's worker fixes it, or after an hour Mervin takes the change back out.</p>
   </header>
   <div class="cards">
     <div class="card"><div class="cap" style="background:var(--band0)"><b>Cave</b><span><svg><use href="#i-pr"/></svg>every PR</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg><code>typecheck</code>, touched apps' tests</li>
-        <li><svg><use href="#i-flask"/></svg>the feature's one journey</li>
-        <li class="gate"><svg><use href="#i-check"/></svg>green, then squash to <code>main</code></li>
+        <li><svg><use href="#i-flask"/></svg><span>The code has no type errors</span></li>
+        <li><svg><use href="#i-flask"/></svg><span>Tests pass for the apps it changed</span></li>
+        <li><svg><use href="#i-flask"/></svg><span>The new feature works end to end once</span></li>
+        <li class="gate"><svg><use href="#i-check"/></svg><span>All pass: it joins main</span></li>
       </ul></div>
-    <div class="card"><div class="cap" style="background:var(--band1)"><b>Tunnels</b><span><svg><use href="#i-clock"/></svg>hourly</span></div>
+    <div class="card"><div class="cap" style="background:var(--band1)"><b>Tunnels</b><span><svg><use href="#i-clock"/></svg>every hour</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg>every app's tests</li>
-        <li><svg><use href="#i-box"/></svg>desktop binary smoke</li>
-        <li class="gate"><svg><use href="#i-check"/></svg>3 green hours in a row</li>
+        <li><svg><use href="#i-flask"/></svg><span>Every app's tests run</span></li>
+        <li><svg><use href="#i-box"/></svg><span>The desktop app builds and opens</span></li>
+        <li class="gate"><svg><use href="#i-check"/></svg><span>Green 3 hours in a row: it moves out</span></li>
       </ul></div>
-    <div class="card"><div class="cap" style="background:var(--band2)"><b>Nightly market</b><span><svg><use href="#i-moon"/></svg>daily, 10:17</span></div>
+    <div class="card"><div class="cap" style="background:var(--band2)"><b>Nightly market</b><span><svg><use href="#i-moon"/></svg>every day</span></div>
       <ul>
-        <li><svg><use href="#i-cpu"/></svg>native builds on Bob</li>
-        <li><svg><use href="#i-phone"/></svg>phone smoke, web builds</li>
-        <li class="gate"><svg><use href="#i-check"/></svg>3 green days in a row</li>
+        <li><svg><use href="#i-cpu"/></svg><span>The Mac and iPhone apps build</span></li>
+        <li><svg><use href="#i-phone"/></svg><span>Apps open at phone sizes, websites build</span></li>
+        <li class="gate"><svg><use href="#i-check"/></svg><span>Green 3 days in a row: it moves out</span></li>
       </ul></div>
-    <div class="card light"><div class="cap" style="background:var(--band3)"><b>Town</b><span><svg><use href="#i-sun"/></svg>Monday</span></div>
+    <div class="card light"><div class="cap" style="background:var(--band3)"><b>Town</b><span><svg><use href="#i-sun"/></svg>every Monday</span></div>
       <ul>
-        <li><svg><use href="#i-eye"/></svg>your taste walk</li>
-        <li><svg><use href="#i-store"/></svg>npm and desktop release</li>
-        <li class="gate"><svg><use href="#i-user"/></svg>your OK, your <code>v</code> tag</li>
+        <li><svg><use href="#i-eye"/></svg><span>You try it and see if it feels right</span></li>
+        <li><svg><use href="#i-store"/></svg><span>It ships on npm and as a desktop download</span></li>
+        <li class="gate"><svg><use href="#i-user"/></svg><span>It ships when you say OK</span></li>
       </ul></div>
   </div>
 </section>
@@ -168,25 +169,25 @@ button svg { width: 16px; height: 16px; }
   <header>
     <div class="eyebrow">The lanes</div>
     <h2>Same checks, different wait</h2>
-    <p class="sub">Every lane runs every check. Only the waiting changes. A small, well-tested PR in one app waits less. You can always move a PR to a slower lane.</p>
+    <p class="sub">Every lane runs every test. Only the waiting changes. A small, well-tested change to one app waits less. You can always move a PR to a slower lane.</p>
   </header>
   <div class="cards three">
     <div class="card lane" style="--c:var(--muted)"><div class="cap"><b>Standby</b><span><svg><use href="#i-hourglass"/></svg>about a week</span></div>
       <ul>
-        <li><svg><use href="#i-clock"/></svg>3 hours, then 3 nights</li>
-        <li><svg><use href="#i-pr"/></svg>the default, and always for CI, deploy or secrets changes</li>
+        <li><svg><use href="#i-clock"/></svg><span>Waits 3 hours, then 3 days</span></li>
+        <li><svg><use href="#i-pr"/></svg><span>Most PRs go here, and every change to how we build, deploy or keep passwords</span></li>
       </ul></div>
     <div class="card lane" style="--c:var(--ok)"><div class="cap"><b>Fast lane</b><span><svg><use href="#i-gauge"/></svg>about 2 days</span></div>
       <ul>
-        <li><svg><use href="#i-clock"/></svg>1 hour, then 1 night</li>
-        <li><svg><use href="#i-pr"/></svg>one app, small, tests that fail on the old code</li>
-        <li><svg><use href="#i-undo"/></svg>one red drops it to standby</li>
+        <li><svg><use href="#i-clock"/></svg><span>Waits 1 hour, then 1 day</span></li>
+        <li><svg><use href="#i-pr"/></svg><span>For small changes to one app, with tests that would have caught the bug</span></li>
+        <li><svg><use href="#i-undo"/></svg><span>One failed test sends it back to standby</span></li>
       </ul></div>
     <div class="card lane" style="--c:var(--gold)"><div class="cap"><b>Express</b><span><svg><use href="#i-zap"/></svg>same day</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg>every sweep runs at once, then your OK</li>
-        <li><svg><use href="#i-shield"/></svg>only for security: an advisory on what we ship, or an attack on our build chain or host</li>
-        <li><svg><use href="#i-user"/></svg>only you put a PR here</li>
+        <li><svg><use href="#i-flask"/></svg><span>All the tests run at once, then you say OK</span></li>
+        <li><svg><use href="#i-shield"/></svg><span>Only for security holes, in our own code or in code we depend on</span></li>
+        <li><svg><use href="#i-user"/></svg><span>Only you can put a PR here</span></li>
       </ul></div>
   </div>
 </section>
