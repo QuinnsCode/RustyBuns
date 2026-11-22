@@ -26,7 +26,9 @@ async function open() {
   const mouse = (type: string, x: number, y: number, buttons = 2) =>
     tab.call("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "right", buttons });
   const key = (type: "keyDown" | "keyUp", k: string, code: string) => tab.call("Input.dispatchKeyEvent", { type, key: k, code });
-  await until("the menu", `!!window.splatSpray && !!document.getElementById("menu-solo")`, 60_000);
+  // The menu ships hidden in index.html and the game shows it only once its buttons are wired, after sign-in and the
+  // scenes list come back. The button alone is in the HTML from the start, and a click before then does nothing.
+  await until("the menu", `!!window.splatSpray && document.getElementById("menu")?.hidden === false`, 60_000);
   return { page, state, until, mouse, key, close: tab.close, noise: () => tab.noise.filter((n) => !n.startsWith("HTTP ")) };
 }
 
