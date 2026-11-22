@@ -2,14 +2,14 @@
 // and the assetlinks.json that lets Android open the TWA with no URL bar.
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { checkAssetLinks, PACKAGE_ID, twaManifest, withFingerprint } from "../scripts/twa.ts";
+import { checkAssetLinks, PACKAGE_ID, twaManifest, webManifest, withFingerprint } from "../scripts/twa.ts";
 
 const app = join(import.meta.dir, "..");
 const links = () => Bun.file(join(app, "public/.well-known/assetlinks.json")).json();
 const KEY = Array.from({ length: 32 }, (_, i) => i.toString(16).padStart(2, "0").toUpperCase()).join(":");
 
 test("Bubblewrap's config comes from the live manifest", async () => {
-  const web = await Bun.file(join(app, "public/manifest.webmanifest")).json();
+  const web = webManifest(await Bun.file(join(app, "public/manifest.webmanifest")).json());
   const twa = twaManifest(new URL("https://dice.example.dev/manifest.webmanifest"), web, 29_000_000);
   expect(twa).toMatchObject({
     packageId: PACKAGE_ID, host: "dice.example.dev", name: "Pocket Dice", launcherName: "Dice", startUrl: "/",

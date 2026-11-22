@@ -14,6 +14,7 @@
 // Android SDK; on its first run it offers to download both into ~/.bubblewrap.
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { arr, isRecord, obj, opt, str, type Of } from "@rustybuns/util/guard";
 
 /** The Play Store id. It can never change once the app is uploaded. */
 export const PACKAGE_ID = "dev.rustybuns.pocketdice";
@@ -24,14 +25,18 @@ const linksFile = join(app, "public/.well-known/assetlinks.json");
 const FINGERPRINT = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const RELATION = "delegate_permission/common.handle_all_urls";
 
-type Icon = { src: string; sizes?: string; purpose?: string };
-export type WebManifest = {
-  name?: string; short_name?: string; start_url?: string; scope?: string; display?: string; orientation?: string;
-  theme_color?: string; background_color?: string; icons?: Icon[];
-};
+const field = opt(str(500));
+const icons = arr(obj({ src: str(500, { min: 1 }), sizes: field, purpose: field }), 50, { drop: true });
+/** The web manifest fields the TWA takes; a bad icon is dropped, a bad field throws naming it. */
+export const webManifest = obj({
+  name: field, short_name: field, start_url: field, scope: field, display: field, orientation: field,
+  theme_color: field, background_color: field, icons: opt(icons),
+});
+export type WebManifest = Of<typeof webManifest>;
+type Icon = Of<typeof icons>[number];
 type AssetLink = { relation: string[]; target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] } };
 
-const isObject = (x: unknown): x is { [k: string]: unknown } => typeof x === "object" && x !== null && !Array.isArray(x);
+const isObject = isRecord;
 const strings = (x: unknown): x is string[] => Array.isArray(x) && x.every((s) => typeof s === "string");
 
 /** The biggest icon of a purpose, at least 512 square, as Bubblewrap picks it. */
@@ -130,7 +135,7 @@ async function writeManifest(site: URL) {
   const url = new URL("/manifest.webmanifest", site), res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   // Minutes since 1970 always goes up between builds, and stays far under the Play Store's 2,100,000,000 limit.
-  const twa = twaManifest(url, (await res.json()) as WebManifest, Math.floor(Date.now() / 60_000));
+  const twa = twaManifest(url, webManifest(await res.json()), Math.floor(Date.now() / 60_000));
   mkdirSync(build, { recursive: true });
   writeFileSync(join(build, "twa-manifest.json"), JSON.stringify(twa, null, 2) + "\n");
   console.log(`twa-manifest.json for ${twa.host} (${PACKAGE_ID}, version ${twa.appVersionCode})`);
