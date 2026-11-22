@@ -32,7 +32,7 @@ export class DeskFeed {
     const who = [...new Map(heard.map((h) => [h.who, { who: h.who, name: h.name }])).values()];
     const plays = deskPlays(p, who), aux2 = p.desk?.aux2;
     const msg: ToWorklet = {
-      t: "desk", aux2: { gear, fader: aux2?.fader ?? UNITY, mute: aux2?.mute ?? false },
+      t: "desk", aux2: { gear, fader: aux2?.fader ?? UNITY, mute: aux2?.mute ?? false, ...(aux2?.eq ? { eq: aux2.eq } : {}) }, ...(p.desk?.space?.eq ? { space: p.desk.space.eq } : {}),
       players: heard.flatMap((h) => { const channel = plays.players.find((c) => c.id === playerId(h.who)); return channel ? [{ peer: h.peer, channel }] : []; }),
     };
     const key = JSON.stringify(msg);
