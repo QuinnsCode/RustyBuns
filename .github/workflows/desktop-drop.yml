@@ -5,8 +5,9 @@
 # experimental and the stable before; older builds are deleted. Links are in each drop job's summary.
 # A stable tag also makes a public GitHub Release with the binaries: that's what the
 # README links. The R2 drops stay hidden, for beta testers.
-# A PR that changes this pipeline dry-runs every app, so a broken build shows before merge;
-# one that only edits some apps' rows in scripts/ci-apps.ts dry-runs just those.
+# A PR that changes this pipeline dry-runs one app per build path (dropSample in scripts/ci-apps.ts, #4136),
+# so a broken build shows before merge without ~70 jobs a push; one that only edits some apps' rows in
+# scripts/ci-apps.ts dry-runs just those. For every app, run it from the Actions tab with apps "all".
 #
 # Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
 # every target from one Linux job. The table lives in scripts/ci-apps.ts.
