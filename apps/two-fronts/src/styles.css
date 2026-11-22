@@ -539,7 +539,9 @@ body.space-2d #battle-view { cursor: crosshair; }
 .vote-pointer.marines { color: var(--marines); } .vote-pointer.wooka { color: var(--wooka); }
 .vote-pointer.marines .icon { fill: var(--marines); } .vote-pointer.wooka .icon { fill: var(--wooka); }
 .vote-pointer span { margin-top: 16px; background: rgb(0 0 0 / 0.6); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
-.vote-foot { display: flex; justify-content: flex-end; }
+.vote-foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.vote-leave[hidden] { display: none; }
+.vote-leave { cursor: none; }
 .vote-go { cursor: none; }
 .mode-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: #ffd27a; }
 .mode-line .small { color: inherit; opacity: 0.8; }
@@ -600,6 +602,11 @@ button.preset { white-space: normal; display: flex; flex-direction: column; gap:
 /* Heavy weapons out on the field: a marker over each, with its name and how far. */
 .b-cache { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px; margin: -10px 0 0 -10px; color: #6ad8ff; font-size: 11px; font-weight: 700; white-space: nowrap; filter: drop-shadow(0 1px 2px #000); }
 .b-cache[hidden] { display: none; }
+.b-cache.nade { color: #ff9a2e; }
+/* Grenades left (dim when there are none) and cover: lit when ducked behind a wall, a hint when one is in reach. */
+.b-hero .stat.out { opacity: 0.45; }
+.b-hero .stat.cover { color: #c9d1d9; }
+.b-hero .stat.cover.on { color: #6dff8a; font-weight: 700; }
 
 /* Speech bubbles over comrades and cutscene actors. */
 .bubbles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }

@@ -23,6 +23,10 @@ export interface VoteOptions {
   seats: VoteSeat[];
   picked?: MatchMode | null;
   leave?: { label: string; title: string }; // the button before the pick: "Later" unless said
+  // What the button does once a mode is picked: "Continue" unless said. With `again`, it reads "<again> <mode>" (a
+  // rematch), and the leave button stays beside it, so it is plain that you don't have to fight again.
+  go?: string;
+  again?: string;
   cast(f: Faction, mode: MatchMode): void; // a vote from this screen
   moved?(x: number, y: number): void;      // this screen's pointer, 0..1 across the cards
   done(picked: MatchMode | null): void;    // Continue once picked, or leave before
@@ -48,10 +52,10 @@ export function voteScreen(root: HTMLElement, o: VoteOptions): VoteScreen {
       <i class="medal" style="--m:${i}" aria-hidden="true"></i><b>${MODE_INFO[m].name}</b><small>${MODE_INFO[m].blurb}</small><span class="vote-dots"></span></button>`).join("")}
       ${seats.map((s) => `<i class="vote-pointer ${s.faction}" data-pointer="${s.faction}" hidden>${icon("mouse-pointer-2", 22)}<span>${FACTION_NAMES[s.faction]}</span></i>`).join("")}
     </div>
-    <div class="vote-foot"><button type="button" class="vote-go primary"></button></div>
+    <div class="vote-foot"><button type="button" class="vote-leave" hidden></button><button type="button" class="vote-go primary"></button></div>
   </div>`;
   root.hidden = false;
-  const cards = root.querySelector<HTMLElement>(".vote-cards")!, go = root.querySelector<HTMLButtonElement>(".vote-go")!;
+  const cards = root.querySelector<HTMLElement>(".vote-cards")!, go = root.querySelector<HTMLButtonElement>(".vote-go")!, leave = root.querySelector<HTMLButtonElement>(".vote-leave")!;
   const rel = (e: PointerEvent) => {
     const r = cards.getBoundingClientRect();
     return { x: (e.clientX - r.left) / Math.max(1, r.width), y: (e.clientY - r.top) / Math.max(1, r.height) };
@@ -74,7 +78,9 @@ export function voteScreen(root: HTMLElement, o: VoteOptions): VoteScreen {
     const me = up(), waiting = seats.filter((s) => !s.vote || !shown(s));
     root.querySelector(".vote-who")!.textContent = picked ? `Next match: ${MODE_INFO[picked].name}`
       : me ? `${FACTION_NAMES[me.faction]}, pick the next match` : `Waiting for the ${waiting.map((s) => FACTION_NAMES[s.faction]).join(" and ")}`;
-    go.textContent = picked ? "Continue" : o.leave?.label ?? "Later";
+    go.textContent = picked ? (o.again ? `${o.again} ${MODE_INFO[picked].name}` : o.go ?? "Continue") : o.leave?.label ?? "Later";
+    leave.hidden = !picked || !o.again;
+    leave.textContent = o.leave?.label ?? "Later";
     go.title = picked ? "" : o.leave?.title ?? "Back to the map. The vote stays open.";
   };
 
@@ -110,6 +116,7 @@ export function voteScreen(root: HTMLElement, o: VoteOptions): VoteScreen {
   root.onclick = (e) => {
     const t = (e.target as HTMLElement).closest<HTMLElement>("button");
     if (t === go) return finish();
+    if (t === leave) { close(); return o.done(null); }
     const m = t?.dataset.mode as MatchMode | undefined, me = up();
     if (!m || !me || pickedNow) return;
     me.vote = m;

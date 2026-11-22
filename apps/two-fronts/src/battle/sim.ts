@@ -48,10 +48,11 @@ export interface Unit {
   lx?: number; lz?: number;
   leapCd?: number;    // seconds till it can leap again
   hx?: number; hz?: number; // where the hero's last order sent it
+  nadeAt?: number;    // not before this does it lob another grenade over a wall at the hero
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 // An orbital strike or an artillery shell on its way down. A shell has its own radius and punch.
-export interface Strike { side: Side; x: number; z: number; t: number; r?: number; dmg?: number; shell?: boolean; by?: number }
+export interface Strike { side: Side; x: number; z: number; t: number; r?: number; dmg?: number; shell?: boolean; by?: number; nade?: boolean }
 // A gunship strafing run across the field, from x0, z0 to x1, z1 over dur seconds.
 export interface Pass { side: Side; x0: number; z0: number; x1: number; z1: number; age: number; dur: number; hurtAt: number }
 // The fall-back the radio has called: get to x, z before the window runs out.
@@ -74,10 +75,11 @@ export interface Beat {
 }
 // Shots, spears and hexes fly; blasts go off; gore is something coming apart, in its side's
 // colours (big: torn apart, or a vehicle going up); a toss is Warbur throwing a Wooka.
-export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss" | "smash"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
+export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss" | "smash" | "nade"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
-export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean; order?: { kind: OrderKind; x: number; z: number } }
+// cover: slide to the nearest low wall and duck behind it, or come out of cover; nade: throw a grenade where the gun points.
+export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean; order?: { kind: OrderKind; x: number; z: number }; cover?: boolean; nade?: boolean }
 
 // The hero's orders to the squad round them: push forward to where the gun points, hold where you
 // stand, fall back towards home, or pour fire on whatever is round where the gun points.
@@ -104,6 +106,28 @@ export const CACHE_BACK = 60;      // seconds before a taken cache is restocked
 const GRAB = 3;                    // metres from a cache to pick it up
 const MORTAR_R = 7, LANCE_W = 1.4;
 
+// Cover, the hero's way: press the cover key near a low wall and you slide up to it and duck. Ducked, shots from over
+// the wall hardly ever find you, and a blast on the far side mostly doesn't get over. A rocket or a grenade that lands
+// on your side of the wall gets you in full. Fire and you stand up to shoot over it, a moment at a time.
+export const SLIDE_REACH = 8;      // metres to a low wall to slide to it
+const SLIDE_SPEED = 15, SLIDE_FOR = 1;
+const HUG = 1.8;                   // further from the wall than this and you're out of cover
+const POP = 0.5;                   // seconds you stay up after a shot over the wall
+export const DUCKED_HIT = 0.08;    // the odds of a shot from over the wall still finding you, times the usual
+export const DUCKED_BLAST = 0.2;   // the share of a blast on the far side that gets over
+const CROUCH = 0.5;                // the speed you keep, shuffling along the wall
+// Who covers in one place for long gets something lobbed over the wall: an enemy near enough throws a grenade.
+const HID_FOR = 1.5, FOE_NADE_FAR = 30, FOE_NADE_EVERY = 9, FOE_NADE_R = 5, FOE_NADE_DMG = 70, FOE_NADE_FUSE = 1.6;
+// Grenades: the hero carries a few and throws them where the gun points (or a lob's length on), over low walls.
+// Crates of them lie out on the field; walk over one to fill up. The horde's are fire pots.
+export const NADE_MAX = 3, NADE_START = 2, NADE_R = 6, NADE_DMG = 130;
+const NADE_FUSE = 1.2, NADE_FAR = 28, NADE_LOB = 18, NADE_EVERY = 0.8, NADE_FLY = 0.8;
+export const NADE_NAME: Record<"marines" | "wooka", string> = { marines: "grenade", wooka: "fire pot" };
+export interface Crate { id: number; x: number; z: number; ready: number } // ready: when it's back after someone took it
+export const CRATE_BACK = 40;
+// Where the hero hides: the wall (its index in blocks) and the way out of it, towards the hero's side.
+export interface Hide { k: number; nx: number; nz: number }
+
 export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
@@ -127,7 +151,10 @@ export interface Battle {
   pods: PerSide<{ landed: number; cut: boolean }>; // tickets the drop pods brought down; cut: waved off, no post to land at
   // The hero: their blaster's heat (overheated: seconds till it fires again), how long they've
   // run straight ahead (past SPRINT_AFTER they sprint), and what they've killed.
-  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number; arm: { kind: Heavy; ammo: number } | null };
+  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number; arm: { kind: Heavy; ammo: number } | null;
+    // Cover and grenades: the wall they're ducked behind, the slide there, seconds stood up to shoot, how long
+    // they've hidden in one place, and the grenades they carry and when the next can go.
+    cover: Hide | null; slide: (Hide & { x: number; z: number; t: number }) | null; pop: number; hid: number; nades: number; nadeCd: number };
   fx: Fx[];
   events: string[]; // for the HUD feed, newest last
   eventAt: number[]; // when each was said, so lines that land on top of each other garble
@@ -148,6 +175,7 @@ export interface Battle {
   vip: number | null;        // escort: the attacker's champion, while they live
   order: Order | null;       // the hero's last order to their squad
   caches: Cache[];           // heavy weapons out on the field
+  crates: Crate[];           // grenades out on the field
   played: boolean;           // a human is at the controls (a step with input), not just the AI
   tough: PerSide<number>;    // how much of a hit each side feels: see settle
   bulkheads: Bulkhead[];     // the station's long walls across the deck, with the doorways in each
@@ -384,12 +412,12 @@ export function startBattle(spec: BattleSpec): Battle {
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
     pods: { attacker: { landed: 0, cut: false }, defender: { landed: 0, cut: false } },
-    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0, arm: null },
+    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0, arm: null, cover: null, slide: null, pop: 0, hid: 0, nades: NADE_START, nadeCd: 0 },
     over: null, seed: spec.seed >>> 0, nextId: 1,
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
     kills: { attacker: 0, defender: 0 }, champ: { attacker: false, defender: false }, screamAt: -99,
-    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null, order: null, caches: [], bulkheads: [], played: false, tough: { attacker: 1, defender: 1 },
+    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null, order: null, caches: [], crates: [], bulkheads: [], played: false, tough: { attacker: 1, defender: 1 },
   };
   // The turrets ring the keep; in a hold-out, every post.
   for (const gen of mode === "holdout" ? b.posts : [b.posts.at(-1)!]) for (let i = 0; i < spec.turrets; i++) {
@@ -401,10 +429,11 @@ export function startBattle(spec: BattleSpec): Battle {
   settle(b);
   // The woods: trees everywhere except on the posts, the spawns, the keep's ring and the scenery.
   caches(b);
+  crates(b);
   const w = WOODS[spec.sector], clear = [...b.posts, b.spawn.attacker, b.spawn.defender, ...b.caches], n = Math.round(w.n * Math.min(2, area(b)));
   for (let tries = 0; b.trees.length < n && tries < n * 20; tries++) {
     const t = { x: (rand(b) - 0.5) * b.half * 2, z: (rand(b) - 0.5) * b.half * 2, r: w.r[0] + rand(b) * (w.r[1] - w.r[0]) };
-    if (clear.some((c) => dist(c, t) < w.clear) || b.trees.some((o) => dist(o, t) < o.r + t.r + w.gap) || b.blocks.some((k) => gap(k, t) < t.r + 3)) continue;
+    if (clear.some((c) => dist(c, t) < w.clear) || b.trees.some((o) => dist(o, t) < o.r + t.r + w.gap) || b.blocks.some((k) => gap(k, t) < t.r + 3) || b.crates.some((c) => dist(c, t) < t.r + 3)) continue;
     b.trees.push(t);
   }
   spawnHero(b);
@@ -493,6 +522,7 @@ function scenery(b: Battle) {
     }
   };
   if (b.spec.sector !== "canyon" && b.spec.sector !== "spaceport") trenches();
+  barricades(b);
   switch (b.spec.sector) {
     case "shield":
       put(keep.x - 6, keep.z - 6, 7, 7, 9); // the generator's core
@@ -573,6 +603,19 @@ function scenery(b: Battle) {
   }
 }
 
+// Sandbag walls down the lane through the middle, where the fighting is and the random scenery keeps off: short
+// runs staggered left and right between the lines, so there is always a wall to slide to and a way past it.
+function barricades(b: Battle) {
+  const lim = b.half * 0.72, step = 24;
+  for (let z = -lim, row = 0; z <= lim; z += step, row++) for (const s of [-1, 1]) {
+    const w = 4 + rand(b) * 2.5, k: Block = { x: s * (5 + rand(b) * 8) + (row % 2 ? 4 : -4), z: z + (rand(b) - 0.5) * 8, w, d: 1.1, h: 1.15 };
+    if (rand(b) < 0.35) [k.w, k.d] = [k.d, k.w];
+    if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 3) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 14) || b.units.some((u) => gap(k, u) < 4)) continue;
+    if (b.blocks.some((o) => Math.abs(o.x - k.x) < (o.w + k.w) / 2 + 2 && Math.abs(o.z - k.z) < (o.d + k.d) / 2 + 2)) continue;
+    b.blocks.push(k);
+  }
+}
+
 // How far along the line from a to c it first hits a trunk, or a block at eye height or more,
 // as a fraction of the way (1 if nothing is in the way).
 export function blocked(b: Battle, a: { x: number; z: number }, c: { x: number; z: number }) {
@@ -613,7 +656,7 @@ export function inCover(b: Battle, from: Unit, t: Unit) {
 // Cover halves the odds of a hit from range. Nothing helps against a club at arm's length.
 export const hitChance = (b: Battle, u: Unit, t: Unit) => {
   const s = statsOf(u);
-  return clamp(s.aim - (dist(u, t) / s.range) * 0.35, 0.1, 0.95) * (!melee(u) && inCover(b, u, t) ? 0.5 : 1);
+  return clamp(s.aim - (dist(u, t) / s.range) * 0.35, 0.1, 0.95) * (!melee(u) && inCover(b, u, t) ? 0.5 : 1) * (!melee(u) && !flies(u) && shielded(b, t, u) ? DUCKED_HIT : 1);
 };
 
 function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number, role?: WookaRole): Unit {
@@ -805,7 +848,7 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
 // doesn't care, and neither do they.
 function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number, own = 0, from?: number) {
   b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25, big: r > 6, from });
-  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg, from, true);
+  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, (v.side === side ? dmg * own : dmg) * (shielded(b, v, { x, z }) ? DUCKED_BLAST : 1), from, true);
 }
 
 // A hit. A Mossback shrugs off light ones (a rifle, a blaster) for a quarter of the damage and
@@ -1057,6 +1100,109 @@ function caches(b: Battle) {
     let at = { x: x0, z: z0 };
     for (let i = 0; i < 20 && (b.blocks.some((k) => gap(k, at) < 4) || b.posts.some((p) => dist(p, at) < POST_RADIUS + 4)); i++) at = { x: at.x * 0.9, z: at.z + 6 };
     b.caches.push({ id: b.caches.length, kind, x: at.x, z: at.z, ready: 0 });
+  }
+}
+
+// Grenade crates: one on each flank of each half, and one either side of the middle, off the posts and the walls.
+function crates(b: Battle) {
+  const h = b.half, wide = b.spec.sector === "canyon" ? 0.25 : 0.45;
+  const spots: [number, number][] = [[-wide * h, 0.3 * h], [wide * h, 0.3 * h], [-wide * h, -0.3 * h], [wide * h, -0.3 * h], [0.1 * h, 0.08 * h], [-0.1 * h, -0.08 * h]];
+  for (const [x0, z0] of spots) {
+    let at = { x: x0, z: z0 };
+    for (let i = 0; i < 20 && (b.blocks.some((k) => gap(k, at) < 3) || b.posts.some((p) => dist(p, at) < POST_RADIUS + 3) || b.caches.some((c) => dist(c, at) < 6)); i++) at = { x: at.x * 0.9, z: at.z + 5 };
+    b.crates.push({ id: b.crates.length, x: at.x, z: at.z, ready: 0 });
+  }
+}
+
+// The low wall the hero would slide to: the nearest in reach, one ahead of them before one beside or behind.
+export function wallFor(b: Battle, u: Unit, yaw: number) {
+  if (flies(u)) return null;
+  const f = facing(yaw);
+  let best: Hide & { x: number; z: number } | null = null, score = Infinity;
+  b.blocks.forEach((k, i) => {
+    if (k.broken || k.h >= EYE) return;
+    const p = nearestOn(k, u), d = dist(p, u);
+    if (d > SLIDE_REACH) return;
+    const sc = d - ((p.x - u.x) * f.x + (p.z - u.z) * f.z > 0 ? 3 : 0);
+    if (sc >= score) return;
+    // The face the hero is on, and the spot on it just off the wall, as near as it gets to where they are.
+    const ox = u.x - k.x, oz = u.z - k.z, alongX = Math.abs(ox) / k.w < Math.abs(oz) / k.d;
+    const nx = alongX ? 0 : Math.sign(ox) || 1, nz = alongX ? Math.sign(oz) || 1 : 0, off = bodyOf(u) + 0.35;
+    const x = nx ? k.x + nx * (k.w / 2 + off) : clamp(u.x, k.x - k.w / 2 + 0.3, k.x + k.w / 2 - 0.3);
+    const z = nz ? k.z + nz * (k.d / 2 + off) : clamp(u.z, k.z - k.d / 2 + 0.3, k.z + k.d / 2 - 0.3);
+    score = sc; best = { k: i, nx, nz, x, z };
+  });
+  return best as (Hide & { x: number; z: number }) | null;
+}
+
+// Ducked: the hero, in cover and not stood up to shoot.
+export const ducked = (b: Battle, u: Unit) => u.id === b.hero.id && !!b.hero.cover && b.hero.pop <= 0 && b.hero.inVehicle === null;
+// Whether the hero's wall is between them and p: p on the wall's far side, and the line from p to them through it.
+export function shielded(b: Battle, u: Unit, p: { x: number; z: number }) {
+  if (!ducked(b, u)) return false;
+  const c = b.hero.cover!, k = b.blocks[c.k];
+  if (!k || k.broken) return false;
+  const wx = k.x + c.nx * (k.w / 2), wz = k.z + c.nz * (k.d / 2);
+  if ((p.x - wx) * c.nx + (p.z - wz) * c.nz >= 0) return false;
+  // Where the line from p to the hero crosses the wall's face, it has to be on the wall (with a little to spare at the ends).
+  const dn = (u.x - p.x) * c.nx + (u.z - p.z) * c.nz;
+  if (Math.abs(dn) < 1e-6) return false;
+  const s = ((wx - p.x) * c.nx + (wz - p.z) * c.nz) / dn, cx = p.x + (u.x - p.x) * s, cz = p.z + (u.z - p.z) * s;
+  return c.nx ? Math.abs(cz - k.z) <= k.d / 2 + 0.6 : Math.abs(cx - k.x) <= k.w / 2 + 0.6;
+}
+
+// The hero's cover key, slide and shuffle along the wall, run a step at a time.
+function heroCover(b: Battle, hero: Unit, input: Input, ride: Unit | null) {
+  const h = b.hero;
+  if (ride || flies(hero)) { h.cover = h.slide = null; return false; }
+  if (input.cover && !h.slide) {
+    if (h.cover) { h.cover = null; say(b, "Out of cover"); }
+    else {
+      const w = wallFor(b, hero, input.yaw);
+      if (w) h.slide = { ...w, t: SLIDE_FOR };
+      else say(b, "No low wall near enough to take cover");
+    }
+  }
+  if (h.cover && (b.blocks[h.cover.k]?.broken || gap(b.blocks[h.cover.k]!, hero) > HUG)) { h.cover = null; say(b, "Your cover is gone"); }
+  if (!h.slide) return false;
+  // Sliding in: fast and straight, whatever the stick says.
+  const d = dist(hero, h.slide), k = b.blocks[h.slide.k]!;
+  if (d > 0.4 && (h.slide.t -= DT) > 0 && !k.broken) {
+    move(b, hero, h.slide.x - hero.x, h.slide.z - hero.z, Math.min(SLIDE_SPEED, d / DT), false);
+    return true;
+  }
+  if (!k.broken && gap(k, hero) <= HUG) { h.cover = { k: h.slide.k, nx: h.slide.nx, nz: h.slide.nz }; h.hid = 0; }
+  h.slide = null;
+  return true;
+}
+
+// The hero throws a grenade where the gun points: at whoever is under the crosshair, or a lob's length on, over
+// any low wall. A trunk or a tall wall in the way stops it short.
+function throwNade(b: Battle, u: Unit, yaw: number) {
+  const t = aimTarget(b, u, yaw, NADE_FAR), d = t ? dist(u, t) : NADE_LOB, f = facing(yaw);
+  const end = { x: clamp(u.x + f.x * d, -b.half, b.half), z: clamp(u.z + f.z * d, -b.half, b.half) };
+  const k = Math.max(0.1, blocked(b, u, end) - 0.03), x = u.x + (end.x - u.x) * k, z = u.z + (end.z - u.z) * k;
+  lob(b, u, x, z, NADE_FUSE, NADE_R, NADE_DMG);
+}
+function lob(b: Battle, u: Unit, x: number, z: number, fuse: number, r: number, dmg: number) {
+  b.strikes.push({ side: u.side, x, z, t: fuse, r, dmg, shell: true, nade: true, by: u.id });
+  b.fx.push({ kind: "nade", x: u.x, z: u.z, tx: x, tz: z, t: NADE_FLY, side: u.side, from: u.id });
+}
+
+// Hide behind one wall too long and someone near enough lobs a grenade over it, near where you are: some land on your
+// side, and those get you. Get up and move, or throw first. Only ever at the hero, so it doesn't change the AI's war.
+function lobAtHero(b: Battle) {
+  const h = heroUnit(b);
+  if (!h || !b.hero.cover) { b.hero.hid = 0; return; }
+  if ((b.hero.hid += DT) < HID_FOR) return;
+  for (const u of b.units) {
+    if (u.side === h.side || u.hp <= 0 || hidden(b, u) || !(isTrooper(u.kind) || u.role === "chub" || u.role === "sticky")) continue;
+    const d = dist(u, h);
+    if (d > FOE_NADE_FAR || d < 6 || (u.nadeAt ?? 0) > b.time) continue;
+    u.nadeAt = b.time + FOE_NADE_EVERY + rand(b) * 6;
+    if (rand(b) > 0.35) continue;
+    lob(b, u, clamp(h.x + (rand(b) - 0.5) * 5, -b.half, b.half), clamp(h.z + (rand(b) - 0.5) * 5, -b.half, b.half), FOE_NADE_FUSE, FOE_NADE_R, FOE_NADE_DMG);
+    return;
   }
 }
 
@@ -1518,10 +1664,14 @@ export function step(b: Battle, input: Input | null) {
     const body = ride ?? hero, s = statsOf(body);
     const f = facing(input.yaw), r = { x: -f.z, z: f.x };
     const fwd = clamp(input.forward, -1, 1), rt = clamp(input.right, -1, 1);
+    // Sliding into cover takes the legs; ducked, you shuffle along the wall. Fire, and you stand up to shoot over it.
+    const sliding = heroCover(b, hero, input, ride);
+    if (b.hero.cover && input.fire) b.hero.pop = POP;
+    else b.hero.pop = Math.max(0, b.hero.pop - DT);
     // Run straight ahead without firing and you break into a sprint.
-    b.hero.run = !ride && fwd > 0 && !rt && !input.fire ? b.hero.run + DT : 0;
+    b.hero.run = !ride && !b.hero.cover && !sliding && fwd > 0 && !rt && !input.fire ? b.hero.run + DT : 0;
     const sprint = b.hero.run > SPRINT_AFTER ? SPRINT : 1;
-    move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * sprint * Math.min(1, hypot(fwd, rt)), false);
+    if (!sliding) move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * sprint * (b.hero.cover ? CROUCH : 1) * Math.min(1, hypot(fwd, rt)), false);
     body.yaw = input.yaw;
     body.cool -= DT;
     // The blaster heats as it fires and cools when it's quiet. Run it dry and it locks up.
@@ -1540,6 +1690,17 @@ export function step(b: Battle, input: Input | null) {
       b.hero.arm = { kind: c.kind, ammo: HEAVY[c.kind].ammo };
       say(b, `Picked up a ${HEAVY[c.kind].name[b.spec.factions[hero.side]]}: ${HEAVY[c.kind].ammo} shots`);
     }
+    // Walk over a crate of grenades to fill up; throw one where the gun points.
+    if (!ride && b.hero.nades < NADE_MAX) for (const c of b.crates) if (c.ready <= b.time && dist(c, hero) < GRAB) {
+      c.ready = b.time + CRATE_BACK;
+      b.hero.nades = NADE_MAX;
+      say(b, `Picked up ${NADE_NAME[b.spec.factions[hero.side]]}s: ${NADE_MAX}`);
+    }
+    b.hero.nadeCd = Math.max(0, b.hero.nadeCd - DT);
+    if (input.nade && !ride) {
+      if (b.hero.nades <= 0) say(b, `No ${NADE_NAME[b.spec.factions[hero.side]]}s left: find a crate`);
+      else if (b.hero.nadeCd <= 0) { b.hero.nades--; b.hero.nadeCd = NADE_EVERY; throwNade(b, hero, input.yaw); }
+    }
     if (input.order) command(b, hero, input.order.kind, input.order);
     if (input.strike) callStrike(b, hero.side, input.strike.x, input.strike.z);
     if (hero.toss !== undefined) hero.toss -= DT;
@@ -1557,7 +1718,7 @@ export function step(b: Battle, input: Input | null) {
       if (ride) { b.hero.inVehicle = null; hero.x = ride.x + 3; hero.z = ride.z; unstick(b, hero); say(b, `Out of the ${ride.kind}`); }
       else {
         const v = b.units.find((v) => isVehicle(v.kind) && v.side === hero.side && v.hp > 0 && dist(v, hero) < 7);
-        if (v) { b.hero.inVehicle = v.id; say(b, `In the ${v.kind}`); }
+        if (v) { b.hero.inVehicle = v.id; b.hero.cover = b.hero.slide = null; say(b, `In the ${v.kind}`); }
       }
     }
     if (ride && b.hero.inVehicle === ride.id) { hero.x = ride.x; hero.z = ride.z; }
@@ -1568,6 +1729,7 @@ export function step(b: Battle, input: Input | null) {
     think(b, u);
   }
   for (const s of sides) if (!(input && s === b.spec.hero)) aiStrike(b, s);
+  if (input) lobAtHero(b);
 
   // Strikes land.
   for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, st.r ?? STRIKE_RADIUS, st.dmg ?? 260, 0, st.by ?? (st.side === b.spec.hero && input && !st.shell ? b.hero.id ?? undefined : undefined));
@@ -1607,6 +1769,8 @@ export function step(b: Battle, input: Input | null) {
     if (u.id === b.hero.id) {
       b.hero.streak = 0;
       b.hero.arm = null;
+      b.hero.cover = b.hero.slide = null;
+      b.hero.nades = NADE_START;
       b.hero.lives--;
       b.hero.id = null;
       b.hero.respawn = 5;

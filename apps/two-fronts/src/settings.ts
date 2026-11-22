@@ -6,10 +6,11 @@ import { DEFAULTS as LOOK_DEFAULTS, type Settings as Look } from "@rustybuns/gam
 import { bool, check, maybe, num, obj, str } from "@rustybuns/util/guard";
 import { parseJson } from "@rustybuns/util/http";
 
-export type Action = "forward" | "back" | "left" | "right" | "strike" | "use" | "mute" | "rewind";
+export type Action = "forward" | "back" | "left" | "right" | "strike" | "use" | "cover" | "grenade" | "mute" | "rewind";
 export const ACTIONS: { id: Action; label: string }[] = [
   { id: "forward", label: "Move forward" }, { id: "back", label: "Move back" }, { id: "left", label: "Move left" }, { id: "right", label: "Move right" },
-  { id: "strike", label: "Orbital strike" }, { id: "use", label: "Vehicle or special" }, { id: "mute", label: "Sound on/off" },
+  { id: "strike", label: "Orbital strike" }, { id: "use", label: "Vehicle or special" },
+  { id: "cover", label: "Take cover" }, { id: "grenade", label: "Throw a grenade" }, { id: "mute", label: "Sound on/off" },
   { id: "rewind", label: "Rewind 3 s (practice)" },
 ];
 
@@ -23,7 +24,7 @@ export type Settings = {
 
 export const DEFAULTS: Settings = {
   invertX: false, fov: 65, fireToggle: false, leftHanded: false,
-  keys: { forward: "w", back: "s", left: "a", right: "d", strike: "q", use: "e", mute: "m", rewind: "r" },
+  keys: { forward: "w", back: "s", left: "a", right: "d", strike: "q", use: "e", cover: "c", grenade: "g", mute: "m", rewind: "r" },
 };
 export const SETTINGS_KEY = "two-fronts-controls";
 /** Keys the game keeps for itself (squad orders, letting go of the mouse). */
@@ -34,7 +35,7 @@ const k = DEFAULTS.keys;
 /** The saved settings: anything missing or wrong falls back to its default. */
 const SettingsSave = obj({
   invertX: bool(DEFAULTS.invertX), fov: (v: unknown) => maybe(num(50, 100))(v) ?? DEFAULTS.fov, fireToggle: bool(DEFAULTS.fireToggle), leftHanded: bool(DEFAULTS.leftHanded),
-  keys: (v: unknown) => check(obj({ forward: key(k.forward), back: key(k.back), left: key(k.left), right: key(k.right), strike: key(k.strike), use: key(k.use), mute: key(k.mute), rewind: key(k.rewind) }), v) ?? { ...k },
+  keys: (v: unknown) => check(obj({ forward: key(k.forward), back: key(k.back), left: key(k.left), right: key(k.right), strike: key(k.strike), use: key(k.use), cover: key(k.cover), grenade: key(k.grenade), mute: key(k.mute), rewind: key(k.rewind) }), v) ?? { ...k },
 });
 
 /** Settings from stored JSON: every field checked, anything missing, wrong or clashing falls back to its default. */
