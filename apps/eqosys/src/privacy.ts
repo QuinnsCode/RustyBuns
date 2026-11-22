@@ -63,6 +63,11 @@ export const HOLDERS: Holder<Subject>[] = [
     }),
   },
   {
+    id: "blocks", what: "The people you blocked, by their name, and when", why: "To leave their posts out of what you read", basis: "contract",
+    keep: "until you unblock them or delete your account",
+    export: ({ conf, me }) => rows(conf, 'SELECT u.name, b.at FROM blocks b JOIN "user" u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.at', me.id),
+  },
+  {
     id: "avatar", what: "Your character: the parts and colours you picked", why: "So you look the same in every Q app", basis: "contract", keep: UNTIL,
     export: ({ conf, me }) => rows(conf, "SELECT data, at FROM avatars WHERE user_id = ?", me.id),
   },

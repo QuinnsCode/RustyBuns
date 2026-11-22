@@ -254,6 +254,8 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
     ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"),
     // Their posts go with the reactions others pressed on them, then their own reactions.
     conf.DB.prepare("DELETE FROM reactions WHERE ref IN (SELECT 'post:' || id FROM posts WHERE user_id = ?)").bind(userId), gone("posts"), gone("reactions"),
+    // Who they blocked, and anyone's block on them.
+    gone("blocks"), gone("blocks", "blocked_id"),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"), gone("avatars"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
