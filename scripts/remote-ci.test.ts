@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
-import { battery, ciJobs, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, TYPECHECK, type Valve } from "./remote-ci.ts";
+import { battery, ciJobs, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -37,6 +37,17 @@ test("all adds typecheck.yml, the touched root suites and each app's boot check"
     ["typecheck", TYPECHECK], ["packages", "bun test packages"], ["scripts", "bun test ./scripts"],
     ["a", "bun test && bun ../../scripts/boot.ts"], ["b", "cargo x && bun ../../scripts/boot.ts"], ["c", "bun test"],
   ]);
+});
+
+// The trust dial's targeted run: only the tests the diff changed, per app; an app whose tests it didn't change runs whole.
+test("a targeted run folds an app's shards into its changed tests, and leaves an app with none whole", () => {
+  const apps = { include: [
+    { app: "a", test: "bun test ./test/x.test.ts", prep: "make", shard: "1/2" }, { app: "a", test: "bun test ./test/y.test.ts", prep: "make", shard: "2/2" },
+    { app: "c", test: "bun test", prep: "" },
+  ] };
+  const out = `apps=${JSON.stringify(apps)}\nany=true\n`;
+  const files = ["apps/a/src/m.ts", "apps/a/test/m.test.ts", "apps/c/src/n.ts", "README.md"];
+  expect(targetedJobs(out, files).map((j) => [j.label, j.dir, j.cmd])).toEqual([["a", "apps/a", "make && bun test './test/m.test.ts'"], ["c", "apps/c", "bun test"]]);
 });
 
 test("a pass is written down per commit, and reads as moved once the branch has a newer commit", async () => {
