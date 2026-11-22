@@ -17,7 +17,7 @@ export const SEAT_ROOM = 0.8;
 export const WALL_ROOM = 0.3;
 
 const SIDES = ["front", "back", "left", "right"] as const;
-const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch"] as const satisfies readonly SpotKind[];
+const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch", "dj"] as const satisfies readonly SpotKind[];
 const ID = str(32, { re: /^[a-z0-9][a-z0-9-]*$/ });
 const MAT = oneOf(MATERIAL_IDS);
 const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 2, { min: 2 })(v); return [x, z]; };
@@ -40,6 +40,13 @@ export const Studio: Guard<StudioDef> = obj({
     kind: oneOf(PROP_KINDS), at: XZ, yaw: num(-7, 7), w: num(0.02, 40), d: num(0.01, 50), h: num(0.01, 20), y: opt(num(0, 20)), color: COLOR, seed: opt(int(0, 2 ** 31)),
   }), MAX_PROPS)),
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+  outdoor: opt(obj({
+    stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
+    truss: obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) }),
+    generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+    festoon: opt((v): [number, number, number, number] => { const [a, b, c, d] = arr(num(-25, 25), 4, { min: 4 })(v); return [a, b, c, d]; }),
+    seed: int(0, 2 ** 31),
+  })),
 });
 
 /** Where this browser keeps the studio you built: /rooms.html writes it, /jam.html?studio=yours walks into it. */
@@ -100,6 +107,8 @@ const THINGS: Record<SpotKind, Pick<Spot, "label" | "thing" | "track">> = {
   desk: { label: "the desk", thing: { w: 2.4, d: 0.8, h: 0.85, ahead: 0.65, color: "#3a4a6b" } },
   booth: { label: "the mic", thing: { w: 0.3, d: 0.3, h: 1.6, ahead: 0.55, color: "#8a8f94" } },
   couch: { label: "the couch", thing: { w: 2, d: 0.8, h: 0.45, ahead: -0.15, color: "#6b4a2c" } },
+  // Load In's booth table (95 cm, 1.8 by 0.75 m): two media decks either side of a four-channel mixer
+  dj: { label: "the decks", thing: { w: 1.8, d: 0.75, h: 0.95, ahead: 0.55, color: "#141518" } },
 };
 export function newSpot(id: string, kind: SpotKind, at: [number, number]): Spot {
   const t = THINGS[kind];

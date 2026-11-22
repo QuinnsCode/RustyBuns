@@ -1,0 +1,57 @@
+{
+ "id": "marram",
+ "name": "Marram grass",
+ "biome": "coast",
+ "generator": "rosette",
+ "seed": 101,
+ "height": 1,
+ "budget": [
+  1800,
+  450
+ ],
+ "note": "The grass that holds the dunes together: stiff grey-green blades rolled tight against the salt wind, pale seed spikes above.",
+ "leaves": {
+  "shape": "grass",
+  "count": 54,
+  "length": 0.85,
+  "width": 0.018,
+  "arch": 0.35,
+  "rise": [
+   45,
+   85
+  ],
+  "fold": 0.3,
+  "segments": 4,
+  "colors": [
+   "#8a9a6a",
+   "#7a8a62",
+   "#9aa47a"
+  ],
+  "tip_colors": [
+   "#c8c094",
+   "#b8ae84"
+  ],
+  "crown": 0.08,
+  "lo": 0.4,
+  "inner_up": false
+ },
+ "stalks": [
+  {
+   "count": 6,
+   "height": 1.1,
+   "head": "plume",
+   "fingers": 1,
+   "spread": 0.15,
+   "colors": [
+    "#a0986a"
+   ],
+   "head_colors": [
+    "#d0c49a",
+    "#c8b88a"
+   ],
+   "head_size": 0.06,
+   "radius": 0.003
+  }
+ ],
+ "ao_reach": 0.3
+}

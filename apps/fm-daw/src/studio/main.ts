@@ -65,6 +65,8 @@ import { mountHelp } from "./help.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
+import { openAir } from "./open-air.ts";
+import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -116,10 +118,11 @@ function buildRoom() {
   floor.rotation.x = -Math.PI / 2;
   const ceil = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.ceiling, def.colors.ceiling));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
-  scene.add(floor, ceil);
+  // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
+  if (!def.outdoor) scene.add(floor, ceil);
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
-  for (const wall of [...outside.map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
+  for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
     const wallMat = surface(wallSurface(wall.material ?? "drywall"), wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
@@ -249,6 +252,20 @@ function thing(s: Spot): THREE.Group {
     const { synth, keys } = bassSynth(s);
     inFront.add(synth.group);
     played.set(s.id, { keys });
+  } else if (s.kind === "dj") {
+    // the DJ booth (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
+    // and a media deck either side, every front edge in one line toward the DJ (+z)
+    const top = t.h, look = gearLook();
+    box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
+    box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
+    for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
+    const front = t.d / 2 - 0.08;
+    const mixer = gearModel("mixer-dj", { look });
+    put(mixer, 0, top, front - 0.414 / 2);
+    for (const side of [-1, 1]) {
+      const deck = gearModel("deck-media", { look });
+      put(deck, side * (0.333 / 2 + 0.03 + 0.329 / 2), top, front - 0.453 / 2);
+    }
   } else if (s.kind === "desk") {
     // a mixing console: a steel body, a sloped work surface of channel strips (knobs with coloured caps, a fader
     // in a slot each), a lit meter bridge behind and a padded armrest in front, where the engineer sits (+z)
@@ -277,7 +294,7 @@ function thing(s: Spot): THREE.Group {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, t.d), m), 0, t.h / 2, 0);
     if (s.kind === "couch") put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.5, 0.2), m), 0, t.h + 0.25, t.d / 2 - 0.1);
   }
-  if (s.kind !== "couch" && s.kind !== "booth" && s.kind !== "drums") {
+  if (s.kind !== "couch" && s.kind !== "booth" && s.kind !== "drums" && s.kind !== "dj") {
     // the seat: a stool in black vinyl on a metal post, a foot ring and three feet
     at(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.16, 0.07, 24), surface("tolex", "#141414")), s.at[0], 0.46, s.at[1]);
     at(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.43, 10), metal), s.at[0], 0.215, s.at[1]);
@@ -292,7 +309,7 @@ function thing(s: Spot): THREE.Group {
 }
 useKit(gearKit(loadQuality()));
 buildRoom();
-const picture = dress(renderer, scene, camera, def, loadQuality());
+const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality()) : dress(renderer, scene, camera, def, loadQuality());
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
