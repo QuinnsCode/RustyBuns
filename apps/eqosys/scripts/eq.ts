@@ -1,6 +1,6 @@
 // eqosys's tools from a shell or a script: the same functions the page hands a browser agent over WebMCP.
 //   bun apps/eqosys/scripts/eq.ts                       list the tools (no sign-in)
-//   bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token <app token>
+//   bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Games"}' --token <app token>
 //   bun apps/eqosys/scripts/eq.ts eq_batch '{"calls":[{"tool":"eq_apps","pick":["apps.id"]}]}'
 // --url <origin> (default https://eqosys.qntbr.com); the token is what /api/exchange gave an app, or EQOSYS_TOKEN. Prints the answer as JSON.
 import { arr, obj, str } from "@rustybuns/util/guard";

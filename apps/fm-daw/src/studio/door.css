@@ -32,3 +32,13 @@
 .studio-card b { font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
 .studio-card small { color: var(--dim); font: 400 12px/1.35 "IBM Plex Sans", system-ui, sans-serif; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 480px) { .studios { grid-template-columns: repeat(2, 1fr); } }
+#invites { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+#invites a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--hot); border-radius: 10px; color: var(--ink); text-decoration: none; }
+#invites span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#invites small, #friends small { color: var(--dim); white-space: nowrap; }
+#friends { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+#friends li, #invites li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#invites a { flex: 1; min-width: 0; }
+#friends span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#friends-none a { color: var(--hot); }
+#friends button { flex: none; }

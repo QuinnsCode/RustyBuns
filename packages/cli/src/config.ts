@@ -516,26 +516,6 @@ export interface DesktopTarget {
   warm?: number;
 }
 
-/** The operating systems a Steam build ships, one depot each. */
-export type SteamOs = "windows-x64" | "darwin-arm64" | "linux-x64";
-
-/**
- * targets.steam: `rustybuns build steam` wraps the desktop host binary (targets.desktop) in an
- * Electron window with steamworks.js, one SteamPipe depot folder per OS, plus app_build.vdf.
- * No user Chrome is involved: the window is the Chromium Electron ships.
- *   steam: { appId: 480 }   // Spacewar, Valve's test app, until Steamworks gives yours
- */
-export interface SteamTarget {
-  /** The Steamworks App ID. */
-  appId: number;
-  /** Depot ID per OS. @default appId + 1 (windows), + 2 (darwin), + 3 (linux) */
-  depots?: Partial<Record<"windows" | "darwin" | "linux", number>>;
-  /** Window title and the macOS .app name. @default name */
-  title?: string;
-  /** Which depots to build. @default every SteamOs */
-  targets?: SteamOs[];
-}
-
 /**
  * targets.box: one server running the same Bun host the desktop build uses.
  *
@@ -816,8 +796,6 @@ export interface RustyBunsConfig {
     };
     box?: BoxTarget;
     desktop?: DesktopTarget;
-    /** Steam: the desktop host inside a bundled Chromium window (Electron), laid out as SteamPipe depots. */
-    steam?: SteamTarget;
   };
   /**
    * What changes per Alchemy stage, by stage name: `rustybuns deploy --stage staging`

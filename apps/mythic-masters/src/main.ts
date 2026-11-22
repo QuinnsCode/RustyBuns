@@ -50,7 +50,7 @@ import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, log
 import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, menuLineOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type MenuWord, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { menuDir, menuStep } from "./menu-nav.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
@@ -1065,10 +1065,10 @@ function showTitle() {
   world.hide(); m = null; startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
-  if (lead) $("#continue").innerHTML = `${icon("play")} ${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
-  $("#newGame").innerHTML = `${icon("moon")} ${esc(LANDING.title.newJourney)}`;
+  if (lead) $("#continue").innerHTML = `${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
+  $("#newGame").innerHTML = esc(LANDING.title.newJourney); // written words, no icons in front (#5120 round 116)
   $("#newGame").classList.toggle("go", !journey);
-  $("#duelBtn").innerHTML = `${icon("users")} ${esc(LANDING.title.duel)}`;
+  $("#duelBtn").innerHTML = esc(LANDING.title.duel);
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
@@ -1122,10 +1122,21 @@ function begin(picks: readonly string[]): boolean {
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
-  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
+  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = esc(LANDING.title.startOver); answerMenu($("#newGame")); return; }
   startOpening();
 });
 $("#duelBtn").addEventListener("click", () => versus.open());
+// The Book answers the title's menu (#5120 round 116): the line in the margin under the words is about the one under the
+// pen (a pad's or keyboard's focus) or the pointer, and goes back to its standing demand when neither is on a word.
+const MENU_WORDS: readonly MenuWord[] = ["continue", "new", "duel", "versus", "info"];
+function answerMenu(b: Element | null) {
+  const w = MENU_WORDS.find((k) => k === b?.closest("[data-says]")?.getAttribute("data-says"));
+  if (!w) { drawDemand(); return; }
+  $("#titleSays").innerHTML = hand(menuLineOf(w, journey, startingOver), true);
+}
+for (const ev of ["focusin", "pointerover"] as const) $("#title").addEventListener(ev, (e) => { if (e.target instanceof Element && e.target.closest("[data-says]")) answerMenu(e.target); });
+$("#title").addEventListener("pointerout", (e) => { if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("[data-says]"))) answerMenu(document.activeElement?.closest("#title [data-says]") ?? null); });
+$("#title").addEventListener("focusout", (e) => { if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("#title [data-says]"))) answerMenu(null); });
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
