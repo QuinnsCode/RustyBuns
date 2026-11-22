@@ -5,7 +5,7 @@
 // also adds and deletes channels, copies the invite, and mutes or kicks from a member's row. The party lobby's
 // sibling (./lobby.ts). Plain DOM with `rb-spaces*` classes in the page's eqosys skin (./skin.ts); the page places the
 // box and hands over its icons (lucide, say) so this package keeps no dependencies.
-import type { SpaceMember, SpaceMessage, SpaceRole, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
+import type { SpaceAudit, SpaceDm, SpaceMember, SpaceMessage, SpaceRole, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
 import { join as joinVoice, type Speaker, type VoiceHandle } from "./voice.ts";
 import { wearSkin } from "./skin.ts";
 import { el } from "./dom.ts";
@@ -15,7 +15,8 @@ export type VoiceCall = Omit<VoiceHandle, "call">;
 
 /** The icons the panel asks for, by lucide name. */
 export type SpaceIcon = "arrow-left" | "arrow-up" | "plus" | "log-in" | "send" | "copy" | "hash" | "mic-off" | "mic" | "user-x" | "flag" | "log-out"
-  | "volume-2" | "phone-off" | "trash-2" | "lock" | "user-plus" | "user-minus" | "shield" | "reply" | "search" | "paperclip" | "download";
+  | "volume-2" | "phone-off" | "trash-2" | "lock" | "user-plus" | "user-minus" | "shield" | "reply" | "search" | "paperclip" | "download"
+  | "message-circle" | "history" | "clock";
 
 export interface SpacesPanel {
   box: HTMLElement;
@@ -41,6 +42,10 @@ export interface SpacesState {
   role: SpaceRole | null; private: string[];
   /** The open thread (its first message, then the replies), or what a search found, as "Name: text"; null when neither is open. */
   thread: string[] | null; found: string[] | null;
+  /** Your direct messages, by the other person's name; the audit log when it is open ("by act who"); the days messages stay (0: the default). */
+  dms: string[]; audit: string[] | null; keep: number;
+  /** A business studio's space (office words), and the status lines online ("Ada: in the Q3 review"). */
+  office: boolean; statuses: string[];
 }
 
 /** The role the owner's button hands out next: member, then admin, then guest, then member again. */
@@ -60,7 +65,15 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   let voices: SpaceVoice[] = [], talkingIn: SpaceVoice | null = null, call: VoiceCall | null = null, speakers: Speaker[] = [], selfMuted = false;
   const msgs = new Map<string, SpaceMessage[]>(), more = new Map<string, boolean>(), muted = new Set<string>();
   // Over the channel's log: a thread (the message it is under, and what came back) or a search's matches.
-  let view: { kind: "thread"; id: number; messages: SpaceMessage[] } | { kind: "found"; q: string; messages: SpaceMessage[] } | null = null;
+  let view: { kind: "thread"; id: number; messages: SpaceMessage[] } | { kind: "found"; q: string; messages: SpaceMessage[] } | { kind: "audit"; entries: SpaceAudit[] } | null = null;
+  // Your direct messages (#5543), and the days the open space keeps messages (0: its newest 10,000 a channel).
+  let dms: SpaceDm[] = [], keepDays = 0, office = false;
+  /** A voice channel's word: a meeting in a business studio's space (VISION.md#the-words), a voice channel elsewhere. */
+  const room = () => office ? "meeting" : "voice channel";
+  /** A channel holding messages: a text channel or one of your direct messages. */
+  const holds = (c: string) => channels.includes(c) || dms.some((d) => d.channel === c);
+  /** How a channel reads: `#name`, or `@name` for a direct message. */
+  const label = (c: string) => { const d = dms.find((x) => x.channel === c); return d ? `@${d.name}` : `#${c}`; };
   wearSkin();
   box.classList.add("eq", "rb-spaces");
   for (const k of ["keydown", "keyup", "keypress"]) box.addEventListener(k, (e) => e.stopPropagation());
@@ -88,15 +101,15 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   }
   function enter(row: SpaceRow) {
     hangUp();
-    open = row; channel = "general"; channels = []; voices = []; online = []; owner = row.owner; note = ""; role = null; locked = []; allowed = new Map();
+    open = row; channel = "general"; channels = []; voices = []; online = []; owner = row.owner; note = ""; role = null; locked = []; allowed = new Map(); dms = []; keepDays = 0; office = false;
     msgs.clear(); more.clear(); view = null;
     sp.open(row.id, {
       space: (s) => {
         channels = s.channels; voices = s.voice; owner = s.owner; open = open && { ...open, name: s.name };
-        role = s.role ?? null; locked = s.private ?? []; allowed = new Map((s.allowed ?? []).map((a) => [a.channel, a.ids]));
+        role = s.role ?? null; locked = s.private ?? []; allowed = new Map((s.allowed ?? []).map((a) => [a.channel, a.ids])); dms = s.dms ?? []; keepDays = s.keep ?? 0; office = s.office ?? false;
         if (talkingIn && !voices.some((v) => v.id === talkingIn!.id)) hangUp();
-        if (!channels.includes(channel) && !voices.some((v) => v.id === channel)) channel = channels[0] ?? "general";
-        if (channels.includes(channel) && !msgs.has(channel)) sp.history(channel);
+        if (!holds(channel) && !voices.some((v) => v.id === channel)) channel = channels[0] ?? "general";
+        if (holds(channel) && !msgs.has(channel)) sp.history(channel);
         draw();
       },
       ticket: (ch, url, t) => void talk(ch, url, t),
@@ -112,13 +125,16 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
         const gone = (msgs.get(ch) ?? []).find((x) => x.id === id);
         const drop = (list: SpaceMessage[]) => list.filter((x) => x.id !== id).map((x) => x.id === gone?.reply && x.replies ? { ...x, replies: x.replies - 1 || undefined } : x);
         msgs.set(ch, drop(msgs.get(ch) ?? []));
-        if (ch === channel && view) view = { ...view, messages: drop(view.messages) } as typeof view;
+        if (ch === channel && view && view.kind !== "audit") view = { ...view, messages: drop(view.messages) } as typeof view;
         if (ch === channel) draw();
       },
       history: (ch, m, mo) => { add(ch, m); more.set(ch, mo); if (ch === channel) draw(); },
       thread: (ch, id, m) => { if (ch === channel && view?.kind === "thread" && view.id === id) { view = { ...view, messages: m }; draw(); } },
       found: (ch, q, m) => { if (ch === channel && view?.kind === "found" && view.q === q) { view = { ...view, messages: m }; draw(); } },
       refused: (why) => { note = why; draw(); },
+      note: (text) => { note = text; draw(); },
+      dm: (ch) => tab(ch),
+      audit: (entries) => { view = { kind: "audit", entries }; draw(); },
       reported: (r) => { note = `${r.by} reported ${r.name}`; draw(); },
       gone: (why) => { hangUp(); open = null; note = why; void list(); draw(); },
     });
@@ -137,7 +153,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       h.onGone((why) => {
         call = null; talkingIn = null; speakers = [];
         sp.inVoice();
-        note = why === "kicked" ? "You were taken out of voice." : why === "ended" ? "That voice channel ended." : "Voice lost its connection.";
+        note = why === "kicked" ? `You were taken out of the ${room()}.` : why === "ended" ? `That ${room()} ended.` : "Voice lost its connection.";
         draw();
       });
       sp.inVoice(ch);
@@ -169,7 +185,20 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   }
   const back = () => { hangUp(); sp.close(); open = null; note = ""; void list(); draw(); };
   const copy = (invite: string) => void navigator.clipboard?.writeText(invite).then(() => { note = `Invite ${invite} copied`; say?.(note); draw(); }, () => {});
-  const tab = (ch: string) => { channel = ch; view = null; if (channels.includes(ch) && !msgs.has(ch)) sp.history(ch); draw(); };
+  const tab = (ch: string) => { channel = ch; view = null; if (holds(ch) && !msgs.has(ch)) sp.history(ch); draw(); };
+  /** An audit line as words: "Ada kick Bo", "Ada keep 30", "Ada drop #random". */
+  const auditLine = (e: SpaceAudit) => {
+    const who = e.who ? online.find((m) => m.id === e.who)?.name ?? dms.find((d) => d.id === e.who)?.name ?? "someone" : "";
+    return [e.by.name || "the Studio tab", e.act, who, e.channel ? `#${e.channel}` : "", e.to ?? ""].filter(Boolean).join(" ");
+  };
+  /** Those who run it: the space's text channels as a JSON file. */
+  async function exportAll() {
+    const blob = open && await sp.exportSpace(open.id);
+    if (!blob) { note = "Couldn't export this space."; draw(); return; }
+    const a = el("a", { href: URL.createObjectURL(blob), download: `${open!.name}.json` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  }
   const voiceName = (id?: string) => voices.find((v) => v.id === id)?.name;
   const size = (n: number) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
   /** A file a message carries, saved through a link the page makes for it (the file needs the token, so no plain href). */
@@ -190,7 +219,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       const r = await sp.postFile(open.id, ch, f, f.name);
       note = "error" in r ? r.error : ""; draw();
     });
-    return el("span", { className: "rb-spaces-attach" }, pick, btn("paperclip", `Send a file to #${ch}`, () => pick.click()));
+    return el("span", { className: "rb-spaces-attach" }, pick, btn("paperclip", `Send a file to ${label(ch)}`, () => pick.click()));
   }
 
   function drawList() {
@@ -224,6 +253,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       btn("arrow-left", "All spaces", back),
       el("h2", {}, row.name),
       ...(owner && row.invite ? [btn("copy", `Copy invite ${row.invite}`, () => copy(row.invite!))] : []),
+      ...(owner ? [btn("history", "Audit log", () => sp.audit()), btn("download", "Export this space", () => void exportAll()),
+        line(keepDays ? `Keeps ${keepDays} days; 0 for the default` : "Keep messages for how many days?", 4, "clock", "Set how long messages stay", (v) => sp.keep(Math.max(0, Math.min(3650, Math.floor(Number(v)) || 0))))] : []),
       btn("log-out", "Leave this space", () => { sp.leave(); back(); }));
     const tabOf = (id: string, ...label: (Node | string)[]) => {
       const b = el("button", { type: "button", role: "tab", ariaSelected: String(id === channel), className: id === channel ? "eq-btn on" : "eq-btn" }, ...label);
@@ -232,12 +263,19 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     };
     const tabs = el("nav", { className: "rb-spaces-tabs", role: "tablist" },
       ...channels.map((ch) => locked.includes(ch) ? tabOf(ch, icon("lock"), ch) : tabOf(ch, `#${ch}`)),
-      ...voices.map((v) => tabOf(v.id, icon("volume-2"), v.name)));
+      ...voices.map((v) => tabOf(v.id, icon("volume-2"), v.name)),
+      ...dms.map((d) => tabOf(d.channel, icon("message-circle"), d.name)));
     const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-    if (owner) tabs.append(line("New channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line("Voice room", 24, "volume-2", "Add voice channel", (v) => sp.channel(slug(v), true)),
+    if (owner) tabs.append(line("New channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line(office ? "Meeting room" : "Voice room", 24, "volume-2", office ? "Add meeting room" : "Add voice channel", (v) => sp.channel(slug(v), true)),
       line("Private channel", 24, "lock", "Add private channel", (v) => sp.privateChannel(slug(v))));
-    const drop = owner && channel !== "general" ? btn("trash-2", `Delete ${voiceName(channel) ?? `#${channel}`}`, () => { sp.drop(channel); channel = "general"; draw(); }, false, "rb-spaces-drop") : "";
+    const drop = owner && channel !== "general" && channels.includes(channel) || owner && voices.some((v) => v.id === channel) ? btn("trash-2", `Delete ${voiceName(channel) ?? `#${channel}`}`, () => { sp.drop(channel); channel = "general"; draw(); }, false, "rb-spaces-drop") : "";
     const voice = voices.find((v) => v.id === channel);
+    if (view?.kind === "audit") {
+      const shutAudit = btn("arrow-left", "Back", () => { view = null; draw(); }, true, "rb-spaces-older");
+      const lines = view.entries.length ? el("ol", { className: "rb-spaces-log", ariaLabel: "Audit log" }, ...[...view.entries].reverse().map((e) => el("li", {}, el("small", {}, new Date(e.at).toLocaleString()), " ", auditLine(e))))
+        : el("p", { className: "rb-spaces-empty" }, "Nothing in the audit log yet.");
+      return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, shutAudit, lines), who()), noteEl()];
+    }
     if (voice) return [head, tabs, el("div", { className: "rb-spaces-body" }, drawVoice(voice), who()), drop, noteEl()];
     const shown = msgs.get(channel) ?? [], ch = channel;
     const openThread = (id: number) => { view = { kind: "thread", id, messages: [] }; sp.thread(ch, id); draw(); };
@@ -252,18 +290,18 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
           : [btn("reply", `Reply to ${m.from.name}`, () => openThread(m.reply ?? m.id), false, "rb-spaces-reply")]));
     };
     const log = (items: SpaceMessage[], inThread = false) => el("ol", { className: "rb-spaces-log", ariaLive: "polite" }, ...items.map((m) => said(m, inThread)));
-    const shut = btn("arrow-left", `Back to #${ch}`, () => { view = null; draw(); }, true, "rb-spaces-older");
+    const shut = btn("arrow-left", `Back to ${label(ch)}`, () => { view = null; draw(); }, true, "rb-spaces-older");
     if (view?.kind === "thread") {
       const typed = line("Reply in thread", 280, "send", "Reply", (v) => view?.kind === "thread" && sp.say(ch, v, view.id));
       return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, shut, log(view.messages, true)), who()), typed, noteEl()];
     }
-    const find = line(`Search #${ch}`, 100, "search", "Search", (q) => { view = { kind: "found", q, messages: [] }; sp.search(ch, q); draw(); });
+    const find = line(`Search ${label(ch)}`, 100, "search", "Search", (q) => { view = { kind: "found", q, messages: [] }; sp.search(ch, q); draw(); });
     if (view?.kind === "found") {
-      const none = view.messages.length ? "" : el("p", { className: "rb-spaces-empty", role: "status" }, `Nothing in #${ch} says "${view.q}".`);
+      const none = view.messages.length ? "" : el("p", { className: "rb-spaces-empty", role: "status" }, `Nothing in ${label(ch)} says "${view.q}".`);
       return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, shut, find, none, log(view.messages)), who()), noteEl()];
     }
     const older = more.get(ch) && shown[0] ? btn("arrow-up", "Load older", () => sp.history(ch, shown[0]!.id), true, "rb-spaces-older") : "";
-    const typed = line(`Message #${ch}`, 280, "send", "Send", (v) => sp.say(ch, v));
+    const typed = line(`Message ${label(ch)}`, 280, "send", "Send", (v) => sp.say(ch, v));
     typed.prepend(attach(ch));
     return [head, tabs, el("div", { className: "rb-spaces-body" }, el("div", { className: "rb-spaces-chat" }, find, older, log(shown)), who()), typed, drop, noteEl()];
   }
@@ -273,8 +311,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     if (talkingIn?.id !== v.id) {
       const there = online.filter((m) => m.voice === v.id).map((m) => el("li", {}, m.name));
       return el("div", { className: "rb-spaces-voice" },
-        there.length ? el("ul", { className: "rb-spaces-speakers" }, ...there) : el("p", { className: "rb-spaces-empty" }, "Nobody is talking here yet."),
-        btn("volume-2", `Join ${v.name}`, () => enterVoice(v), true, "rb-spaces-join"));
+        there.length ? el("ul", { className: "rb-spaces-speakers" }, ...there) : el("p", { className: "rb-spaces-empty" }, office ? "Nobody is in this meeting yet." : "Nobody is talking here yet."),
+        btn("volume-2", office ? `Join the ${v.name} meeting` : `Join ${v.name}`, () => enterVoice(v), true, "rb-spaces-join"));
     }
     if (!call) return el("div", { className: "rb-spaces-voice" }, el("p", { className: "rb-spaces-empty", role: "status" }, "Joining…"));
     return el("div", { className: "rb-spaces-voice" },
@@ -287,6 +325,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
 
   function who() {
     const me = name(), let_in = allowed.get(channel);
+    // Your own status line, set from the top of the online list.
+    const mine = line(online.find((m) => m.name === me)?.status ? "Change your status" : "Set a status", 80, "send", "Set your status", (v) => sp.status(v === "-" ? "" : v));
     // In a private channel, those who run the space let people in or keep them out; the owner of a person's own space hands out roles.
     const gate = (m: SpaceMember) => !let_in || m.role === "owner" || m.role === "admin" ? []
       : let_in.includes(m.id) ? [btn("user-minus", `Keep ${m.name} out of ${channel}`, () => sp.allow(channel, m.id, false))]
@@ -294,10 +334,11 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     const ranks = (m: SpaceMember) => role !== "owner" || open?.studio || !m.role || m.role === "owner" ? []
       : [btn("shield", `Make ${m.name} ${ROLE_WORD[NEXT_ROLE[m.role]]}`, () => sp.role(m.id, NEXT_ROLE[m.role as keyof typeof NEXT_ROLE]))];
     const tag = (m: SpaceMember) => m.role && m.role !== "member" ? [el("small", { className: "rb-spaces-role" }, m.role)] : [];
-    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, ...online.map((m) => el("li", {}, m.name, ...tag(m), ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(m.name === me ? [] : owner
+    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, el("li", { className: "rb-spaces-mine" }, mine), ...online.map((m) => el("li", {}, m.name, ...tag(m), ...(m.status ? [el("small", { className: "rb-spaces-status" }, m.status)] : []), ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(m.name === me ? [] : owner
       ? [btn(muted.has(m.id) ? "mic" : "mic-off", muted.has(m.id) ? `Unmute ${m.name}` : `Mute ${m.name}`, () => { const on = !muted.has(m.id); if (on) muted.add(m.id); else muted.delete(m.id); sp.mute(m.id, on); draw(); }),
-        btn("user-x", `Kick ${m.name}`, () => sp.kick(m.id)), ...gate(m), ...ranks(m)]
-      : [btn("flag", `Report ${m.name}`, () => { sp.report(m.id); note = `Reported ${m.name}`; draw(); })]))));
+        btn("user-x", `Kick ${m.name}`, () => sp.kick(m.id)), btn("user-x", `Remove ${m.name} from every space you run`, () => sp.kick(m.id, true), false, "rb-spaces-everywhere"),
+        btn("message-circle", `Message ${m.name}`, () => sp.dm(m.id)), ...gate(m), ...ranks(m)]
+      : [btn("message-circle", `Message ${m.name}`, () => sp.dm(m.id)), btn("flag", `Report ${m.name}`, () => { sp.report(m.id); note = `Reported ${m.name}`; draw(); })]))));
   }
 
   function draw() {
@@ -323,6 +364,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       role, private: locked,
       thread: view?.kind === "thread" ? view.messages.map((m) => `${m.from.name}: ${m.text}`) : null,
       found: view?.kind === "found" ? view.messages.map((m) => `${m.from.name}: ${m.text}`) : null,
+      office, statuses: online.filter((m) => m.status).map((m) => `${m.name}: ${m.status}`),
+      dms: dms.map((d) => d.name), audit: view?.kind === "audit" ? view.entries.map(auditLine) : null, keep: keepDays,
     }),
     close: () => { hangUp(); sp.close(); box.hidden = true; },
   };

@@ -155,6 +155,18 @@ friends who play different games still share one.
   a member who sees its channel, always as a download, keeping its type only for images, PDFs, plain text and common audio and video.
   `unsay(channel, id)` deletes a message (its sender's own, or anyone's for those who run the space); deleting the message, its
   channel, the space or the sender's account, or its page ageing out, takes the file off R2.
+- **Direct messages (#5543):** `dm(id)` opens (or finds) a channel of two, `dm-<id>`, with another member; it comes back to the
+  `dm` handler and sits in the space's `dms`. Only its two people see it, those who run the space neither, and it leaves the export.
+  Say, history, search and files take it like any channel. It goes, messages and files too, when either of them leaves, is kicked,
+  leaves the studio or deletes their account. Up to 5,000 a space.
+- **Status lines:** `status(text)` puts up to 80 characters under your name in everyone's online list; empty clears it.
+- **Admin and legal (#5543):** those who run a space set how long messages stay (`keep(days)`, 1 to 3,650; 0 goes back to a
+  channel's newest 10,000); the object's alarm takes older ones out once a day, threads and files too. `exportSpace(id, channel?)`
+  (`GET /q/space/<id>/export`) hands them every text channel, or one, as JSON. `audit()` reads the log of role changes, kicks,
+  channel deletes, retention changes and exports (the newest 1,000), Studio tab removals and role changes included.
+  `kick(id, true)` takes someone out of every space they are in that the kicker runs too, each by its own rules (`removeEverywhere`).
+- **Office words:** a business studio's space says so (`office` in its info), and the panel says "meeting" for its voice
+  channels (VISION.md#the-words).
 - **Moderation:** the owner and admins mute (text and voice) and kick; anyone reports, which reaches them and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
 - **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a reply button on each that opens its thread, a channel search, a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.

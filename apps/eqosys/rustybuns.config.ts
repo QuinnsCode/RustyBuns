@@ -15,6 +15,8 @@ export default defineConfig({
     compatibilityDate: "2026-09-01",
     compatibilityFlags: ["nodejs_compat"],
     build: "bun run build",
+    // Daily: seats from company sign-in that weren't renewed in 30 days lapse (src/sso.ts lapseSeats, #5543).
+    crons: ["17 4 * * *"],
   },
   bindings: {
     DB: { type: "d1", databaseName: "eqosys-db", protect: true, migrationsDir: "migrations" },

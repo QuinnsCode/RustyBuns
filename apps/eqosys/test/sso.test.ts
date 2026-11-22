@@ -4,6 +4,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
 import { studiosOf } from "../src/studios.ts";
+import { DOH, lapseSeats, proofOf, SSO_SEAT_DAYS } from "../src/sso.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -20,9 +21,15 @@ const s256 = async (v: string) => b64url(new Uint8Array(await crypto.subtle.dige
 type Person = { sub: string; email: string; name?: string; claims?: Record<string, unknown> };
 const codes = new Map<string, { who: Person; nonce: string; challenge: string; redirect: string }>();
 
+/** The TXT records each domain has, as DNS over HTTPS answers them (sso.ts hasTxt). */
+const txt = new Map<string, string[]>();
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const req = new Request(input, init);
+  if (req.url.startsWith(DOH)) {
+    const name = new URL(req.url).searchParams.get("name") ?? "";
+    return Response.json({ Status: 0, Answer: (txt.get(name) ?? []).map((v) => ({ name, type: 16, TTL: 300, data: `"${v}"` })) });
+  }
   if (!req.url.startsWith(ISSUER)) return realFetch(req);
   const path = new URL(req.url).pathname;
   if (path === "/.well-known/openid-configuration")
@@ -68,7 +75,7 @@ test("an owner connects the provider; a coworker signs in through it and lands i
   // The secret is sealed in D1, never kept as it came; the Studio tab only says there is one.
   const kept = await conf.DB.prepare("SELECT secret FROM studio_sso WHERE studio_id = ?").bind(acme!.id).first<string>("secret");
   expect(kept).not.toContain(SECRET);
-  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso).toEqual({ issuer: ISSUER, clientId: CLIENT, domain: "acme.dev", role: "maker", secret: true });
+  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso).toEqual({ issuer: ISSUER, clientId: CLIENT, domain: "acme.dev", role: "maker", secret: true, proved: false });
   // Saving again with the secret left blank keeps it.
   await connect(ada.cookie, { secret: "", role: "admin" });
   await connect(ada.cookie, { secret: "" });
@@ -122,4 +129,49 @@ test("only the owner connects it, and never for public mail or a domain another 
   await call("/do/studio-make", { form: { name: "Other", kind: "team" }, cookie: ivy.cookie });
   const [other] = await studiosOf(conf, (await userOf("ivy@other.dev"))!);
   expect((await call("/do/studio-sso", { cookie: ivy.cookie, form: { studio: other!.id, issuer: ISSUER, clientId: CLIENT, domain: "acme.dev", role: "maker" } })).to).toBe("/?tab=studio&e=ssoclash");
+});
+
+test("a proved domain links an account made another way, and outranks another studio's unproved claim", async () => {
+  // Jo signed up with a password; Acme proves acme.dev with its TXT record, and Jo's company sign-in now links that account.
+  await call("/do/signup", { form: { name: "Jo", email: "jo@acme.dev", password: PASSWORD } });
+  const jo = (await userOf("jo@acme.dev"))!;
+  expect((await call("/do/studio-sso", { cookie: ada.cookie, form: { studio: acme!.id, prove: "1" } })).to).toBe("/?tab=studio&e=ssoproof");
+  txt.set("acme.dev", ["v=spf1 -all", proofOf(acme!.id)]);
+  expect((await call("/do/studio-sso", { cookie: ada.cookie, form: { studio: acme!.id, prove: "1" } })).to).toBe("/?tab=studio");
+  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso?.proved).toBe(true);
+  const { back } = await company("jo@acme.dev", { sub: "okta|jo", email: "jo@acme.dev" });
+  expect(back!.to).toBe("/?tab=studio");
+  expect(await userOf("jo@acme.dev")).toBe(jo);
+  expect((await studiosOf(conf, jo)).map((x) => x.name)).toEqual(["Acme"]);
+
+  // Kim's studio claimed kim.dev first, unproved; Lee's studio publishes its proof and takes the domain over.
+  const kim = await call("/do/signup", { form: { name: "Kim", email: "kim@kim.dev", password: PASSWORD } });
+  await call("/do/studio-make", { form: { name: "Kim Co", kind: "business" }, cookie: kim.cookie });
+  const [kimCo] = await studiosOf(conf, (await userOf("kim@kim.dev"))!);
+  const lee = await call("/do/signup", { form: { name: "Lee", email: "lee@lee.dev", password: PASSWORD } });
+  await call("/do/studio-make", { form: { name: "Lee Co", kind: "business" }, cookie: lee.cookie });
+  const [leeCo] = await studiosOf(conf, (await userOf("lee@lee.dev"))!);
+  const claim = (cookie: string, studio: string) => call("/do/studio-sso", { cookie, form: { studio, issuer: ISSUER, clientId: CLIENT, secret: SECRET, domain: "kim.dev", role: "maker" } });
+  expect((await claim(kim.cookie, kimCo!.id)).to).toBe("/?tab=studio");
+  expect((await claim(lee.cookie, leeCo!.id)).to).toBe("/?tab=studio&e=ssoclash");
+  txt.set("kim.dev", [proofOf(leeCo!.id)]);
+  expect((await claim(lee.cookie, leeCo!.id)).to).toBe("/?tab=studio");
+  expect((await studiosOf(conf, (await userOf("kim@kim.dev"))!))[0]!.sso).toBeUndefined();
+  // Now proved, Kim's studio can't take it back.
+  txt.set("kim.dev", [proofOf(kimCo!.id)]);
+  expect((await claim(kim.cookie, kimCo!.id)).to).toBe("/?tab=studio&e=ssoclash");
+});
+
+test("a seat from company sign-in lapses without another one; a seat the owner handed out doesn't", async () => {
+  const { back } = await company("max@acme.dev", { sub: "okta|max", email: "max@acme.dev" });
+  const max = (await userOf("max@acme.dev"))!;
+  expect((await studiosOf(conf, max)).map((x) => x.name)).toEqual(["Acme"]);
+  const gone: string[] = [];
+  const later = Date.now() + (SSO_SEAT_DAYS + 1) * 86_400_000;
+  expect(await lapseSeats(conf, async (_, user) => gone.push(user), later)).toBeGreaterThan(0);
+  expect(gone).toContain(max);
+  expect(await studiosOf(conf, max)).toEqual([]);
+  // The company's sign-in was Max's only way in, so Max is signed out too; Ada, the owner, stays.
+  expect((await call("/do/continue", { cookie: back!.cookie, form: {} })).to).not.toBe("/");
+  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!)).map((x) => x.name)).toEqual(["Acme"]);
 });

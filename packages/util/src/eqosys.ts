@@ -593,10 +593,19 @@ export const SPACE_ROLES = ["owner", "admin", "member", "guest"] as const;
 export type SpaceRole = (typeof SPACE_ROLES)[number];
 export const SpaceRole = oneOf(SPACE_ROLES);
 /** Someone online in a space, their role, and the voice channel their page is in. */
-export const SpaceMember = obj({ id: str(200), name: str(200), role: opt(SpaceRole), voice: opt(str(24)) });
+export const SpaceMember = obj({ id: str(200), name: str(200), role: opt(SpaceRole), voice: opt(str(24)), status: opt(str(80)) });
 export type SpaceMember = Of<typeof SpaceMember>;
 /** Who is let into a private channel (to those who run the space). */
 export const SpaceAllowed = obj({ channel: str(24), ids: arr(str(200), 1000) });
+/** A direct message you are in: its channel (`dm-…`, used like any other) and the other person. Nobody else sees it, those who run the space neither. */
+export const SpaceDm = obj({ channel: str(24), id: str(200), name: str(200) });
+export type SpaceDm = Of<typeof SpaceDm>;
+/** A line of a space's audit log, for those who run it: a role change, a kick (`everywhere`: from every space they run), a channel deleted, the retention set, an export. */
+export const SpaceAudit = obj({
+  at: int(0, 1e15), act: oneOf(["role", "kick", "everywhere", "drop", "keep", "export"]), by: obj({ id: str(200), name: opt(str(200)) }),
+  who: opt(str(200)), channel: opt(str(24)), to: opt(str(20)),
+});
+export type SpaceAudit = Of<typeof SpaceAudit>;
 /**
  * What a space tells one member about itself: its name, the channels they can see (`private` the ones of those only some see),
  * its voice channels, whether they run it and their role, and the longest message it takes. Those who run it also hear who is let
@@ -605,6 +614,9 @@ export const SpaceAllowed = obj({ channel: str(24), ids: arr(str(200), 1000) });
 export const SpaceInfo = obj({
   name: str(60), channels: arr(str(24), 100), voice: arr(SpaceVoice, 100), owner: bool(), max: opt(int(1, 100_000)),
   role: opt(SpaceRole), private: opt(arr(str(24), 100)), allowed: opt(arr(SpaceAllowed, 100)),
+  dms: opt(arr(SpaceDm, 5000)), keep: opt(int(1, 3650)),
+  /** A business studio's space: pages say "meeting" for a voice channel and show status lines (eqosys VISION.md#the-words). */
+  office: opt(bool()),
 });
 export type SpaceInfo = Of<typeof SpaceInfo>;
 /**
@@ -622,8 +634,11 @@ export const SpaceMsg: Guard<
   | { t: "refused"; why: string }
   | { t: "reported"; by: string; id: string; name: string }
   | { t: "ticket"; channel: string; url: string; ticket: string }
+  | { t: "dm"; channel: string; id: string }
+  | { t: "audit"; entries: SpaceAudit[] }
+  | { t: "note"; text: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["space", "online", "said", "unsaid", "history", "thread", "found", "refused", "reported", "ticket"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["space", "online", "said", "unsaid", "history", "thread", "found", "refused", "reported", "ticket", "dm", "audit", "note"]) }), v)?.t;
   const ch = str(24);
   if (t === "space") return { t, ...SpaceInfo(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
@@ -635,6 +650,9 @@ export const SpaceMsg: Guard<
   if (t === "found") return { t, ...obj({ channel: ch, q: str(100), messages: arr(SpaceMessage, 100) })(v) };
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
   if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
+  if (t === "dm") return { t, ...obj({ channel: ch, id: str(200) })(v) };
+  if (t === "audit") return { t, ...obj({ entries: arr(SpaceAudit, 1000) })(v) };
+  if (t === "note") return { t, text: obj({ text: str(500) })(v).text };
   throw new Error("not a space message");
 };
 export type SpaceMsg = Of<typeof SpaceMsg>;
@@ -661,6 +679,12 @@ export interface SpaceHandlers {
   reported?: (r: { by: string; id: string; name: string }) => void;
   /** The ticket `talk` asked for: hand `url` and `ticket` to `join` in @rustybuns/util/voice. */
   ticket?: (channel: string, url: string, ticket: string) => void;
+  /** The direct message with `id` that `dm` asked for: its channel, now in the space's `dms`. */
+  dm?: (channel: string, id: string) => void;
+  /** The audit log `audit` asked for, oldest first. */
+  audit?: (entries: SpaceAudit[]) => void;
+  /** Something done, worth a line on the page (who "remove everywhere" took out). */
+  note?: (text: string) => void;
   /** The socket is gone for good: removed, the space deleted, or it never opened. */
   gone?: (why: string) => void;
 }
@@ -671,7 +695,7 @@ export interface SpaceHandlers {
  * owner and admins `channel`, `privateChannel`, `allow`, `mute` and `kick`, and the owner `role`. `leave()` takes you out of the space; `close()` only hangs up.
  */
 export function space({ url, token }: PartyConfig) {
-  type Out = { t: string; channel?: string; text?: string; reply?: number; of?: number; q?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole };
+  type Out = { t: string; channel?: string; text?: string; reply?: number; of?: number; q?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole; everywhere?: boolean; days?: number };
   let link: Link<Out> | null = null;
   const authed = (method: string, body?: unknown): RequestInit | null => {
     const t = token();
@@ -718,6 +742,9 @@ export function space({ url, token }: PartyConfig) {
           else if (m.t === "found") on.found?.(m.channel, m.q, m.messages);
           else if (m.t === "reported") on.reported?.(m);
           else if (m.t === "ticket") on.ticket?.(m.channel, m.url, m.ticket);
+          else if (m.t === "dm") on.dm?.(m.channel, m.id);
+          else if (m.t === "audit") on.audit?.(m.entries);
+          else if (m.t === "note") on.note?.(m.text);
           else on.refused?.(m.why);
         },
         onClose: (e) => {
@@ -767,7 +794,22 @@ export function space({ url, token }: PartyConfig) {
     /** Tell the space this page joined a voice channel on Qlave, or left (no channel). */
     inVoice: (channel?: string) => send({ t: "voice", ...(channel ? { channel } : {}) }),
     mute: (id: string, on = true) => send({ t: "mute", id, on }),
-    kick: (id: string) => send({ t: "kick", id }),
+    /** Take someone out; with `everywhere`, out of every other space they are in that you run too. */
+    kick: (id: string, everywhere = false) => send({ t: "kick", id, ...(everywhere ? { everywhere } : {}) }),
+    /** A direct message with member `id`, opened or found: its channel comes back to `dm`. Say, history and search take it like any channel. */
+    dm: (id: string) => send({ t: "dm", id }),
+    /** Your status line beside your name in the online list (up to 80 characters); empty clears it. */
+    status: (text: string) => send({ t: "status", text }),
+    /** Those who run it: keep messages `days` days (0: a channel's newest 10,000, as before). */
+    keep: (days: number) => send({ t: "keep", days }),
+    /** Those who run it: the audit log comes back to `audit`. */
+    audit: () => send({ t: "audit" }),
+    /** Those who run it: a channel, or every text channel, as JSON (direct messages stay out). Null when refused. */
+    async exportSpace(spaceId: string, channel?: string): Promise<Blob | null> {
+      const t = token();
+      const r = t ? await fetch(`${url()}/q/space/${encodeURIComponent(spaceId)}/export${channel ? `?${new URLSearchParams({ channel })}` : ""}`, { headers: { authorization: `Bearer ${t}` } }).catch(() => null) : null;
+      return r?.ok ? r.blob() : null;
+    },
     report: (id: string) => send({ t: "report", id }),
     leave: () => { send({ t: "leave" }); },
     close: () => { link?.close(); link = null; },

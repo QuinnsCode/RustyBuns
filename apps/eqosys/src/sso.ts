@@ -5,9 +5,13 @@
 // where the code is traded for an ID token and that token is checked: its signature against the provider's JWKS, its issuer,
 // audience, expiry, nonce, a verified email, and the email's domain.
 //
-// Their account is the one this provider made (an `account` row `sso:<studio>` holding the provider's `sub`). A company
-// sign-in never takes over an account someone made another way with the same email: an owner names the domain, nobody proves
-// it, so that account signs in its usual way instead. Public mail domains are refused for the same reason.
+// Their account is the one this provider made (an `account` row `sso:<studio>` holding the provider's `sub`). Until the studio
+// proves it owns the domain (a DNS TXT record, proveDomain), a company sign-in never takes over an account someone made another
+// way with the same email: that account signs in its usual way instead. Once proved, it links that account at its first company
+// sign-in. Public mail domains are refused either way.
+//
+// Each company sign-in renews the seat it gave (`studio_members.sso_at`); the daily sweep (lapseSeats) takes out seats not renewed
+// in SSO_SEAT_DAYS, so someone the company turned off leaves the studio and its space without waiting for their session to end.
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { createAuthEndpoint } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
@@ -26,6 +30,12 @@ export const SSO_CALLBACK = "/api/auth/sso/callback";
 export const SSO_COOKIE = "eqosys.sso";
 /** How long a sign-in may sit at the provider. */
 export const SSO_MINUTES = 10;
+/** How long a seat from company sign-in lasts without another company sign-in. */
+export const SSO_SEAT_DAYS = 30;
+/** Where a domain's TXT records are read: DNS over HTTPS, JSON. */
+export const DOH = "https://cloudflare-dns.com/dns-query";
+/** The TXT record that proves `studio` owns its company sign-in domain: put on the domain itself. */
+export const proofOf = (studio: string) => `eqosys-verify=${studio}`;
 
 const Https = str(500, { re: /^https:\/\/[^\s/?#]+(\/[^\s?#]*)?$/ });
 /** A company's mail domain: lower case, at least one dot. */
@@ -58,18 +68,59 @@ export async function discover(issuer: string, now = Date.now()): Promise<Discov
 }
 const ringOf = (url: string) => { let r = rings.get(url); if (!r) { r = new JwksKeyring(url); rings.set(url, r); } return r; };
 
-/** Connects (or changes) a studio's company sign-in: its owner only. The provider must answer its discovery first. */
+/** Whether `domain` has the TXT record `value`, read through DNS over HTTPS. A resolver that doesn't answer is a no. */
+export async function hasTxt(domain: string, value: string): Promise<boolean> {
+  const res = await fetch(`${DOH}?${new URLSearchParams({ name: domain, type: "TXT" })}`, { headers: { accept: "application/dns-json" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const body = res?.ok ? check(obj({ Answer: opt(arr(obj({ type: num(0, 65535), data: str(5000) }), 100)) }), await res.json().catch(() => null)) : null;
+  // A TXT answer's data is its strings, each quoted, long ones split in pieces of 255.
+  return (body?.Answer ?? []).some((a) => a.type === 16 && a.data.replace(/"\s*"/g, "").replace(/^"|"$/g, "") === value);
+}
+
+/**
+ * Connects (or changes) a studio's company sign-in: its owner only. The provider must answer its discovery first. A domain
+ * another studio claims is theirs, unless their claim is unproved and this studio's proof is up (proofOf): then a proved claim
+ * replaces theirs. A changed domain must be proved again.
+ */
 export async function connectSso(conf: Pick<Env, "DB" | "BETTER_AUTH_SECRET">, studio: string, by: string, f: SsoForm, now = Date.now()): Promise<Made> {
   if (await roleIn(conf, studio, by) !== "owner") return { ok: false, status: 403, error: "only a studio's owner connects its company sign-in" };
   if (publicMail(f.domain)) return { ok: false, status: 400, error: `${f.domain} is public mail: use the company's own domain` };
-  const other = await conf.DB.prepare("SELECT studio_id FROM studio_sso WHERE domain = ? AND studio_id <> ?").bind(f.domain, studio).first<string>("studio_id");
-  if (other) return { ok: false, status: 409, error: `another studio signs in ${f.domain}` };
+  const other = await conf.DB.prepare("SELECT studio_id, proved_at FROM studio_sso WHERE domain = ? AND studio_id <> ?").bind(f.domain, studio).first<{ studio_id: string; proved_at: number | null }>();
+  const proved = other && !other.proved_at && await hasTxt(f.domain, proofOf(studio));
+  if (other && !proved) return { ok: false, status: 409, error: other.proved_at ? `another studio proved it owns ${f.domain}` : `another studio signs in ${f.domain}: publish ${proofOf(studio)} as a TXT record on it to claim it` };
   if (!await discover(f.issuer, now)) return { ok: false, status: 400, error: "that issuer has no OpenID configuration we can read" };
   const sealed = f.secret ? await symmetricEncrypt({ key: conf.BETTER_AUTH_SECRET ?? "", data: f.secret }) : null;
-  await conf.DB.prepare(`INSERT INTO studio_sso (studio_id, issuer, client_id, secret, domain, role, at) VALUES (?, ?, ?, ?, ?, ?, ?)
+  await conf.DB.batch([
+    ...(other ? [conf.DB.prepare("DELETE FROM studio_sso WHERE studio_id = ?").bind(other.studio_id)] : []),
+    conf.DB.prepare(`INSERT INTO studio_sso (studio_id, issuer, client_id, secret, domain, role, at, proved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (studio_id) DO UPDATE SET issuer = excluded.issuer, client_id = excluded.client_id, secret = coalesce(excluded.secret, studio_sso.secret),
-      domain = excluded.domain, role = excluded.role, at = excluded.at`).bind(studio, f.issuer, f.clientId, sealed, f.domain, f.role, now).run();
+      proved_at = CASE WHEN studio_sso.domain = excluded.domain THEN coalesce(excluded.proved_at, studio_sso.proved_at) ELSE excluded.proved_at END,
+      domain = excluded.domain, role = excluded.role, at = excluded.at`).bind(studio, f.issuer, f.clientId, sealed, f.domain, f.role, now, proved ? now : null),
+  ]);
   return { ok: true, id: studio };
+}
+
+/** The owner checks the studio's TXT record (proofOf) on its company sign-in domain: found, the domain is proved. */
+export async function proveDomain(conf: Pick<Env, "DB">, studio: string, by: string, now = Date.now()): Promise<Made> {
+  if (await roleIn(conf, studio, by) !== "owner") return { ok: false, status: 403, error: "only a studio's owner proves its domain" };
+  const domain = await conf.DB.prepare("SELECT domain FROM studio_sso WHERE studio_id = ?").bind(studio).first<string>("domain");
+  if (!domain) return { ok: false, status: 404, error: "connect company sign-in first" };
+  if (!await hasTxt(domain, proofOf(studio))) return { ok: false, status: 400, error: `no TXT record ${proofOf(studio)} on ${domain} yet` };
+  await conf.DB.prepare("UPDATE studio_sso SET proved_at = ? WHERE studio_id = ?").bind(now, studio).run();
+  return { ok: true, id: studio };
+}
+
+/**
+ * The daily sweep: seats from company sign-in not renewed in SSO_SEAT_DAYS go (never an owner's), and `gone` closes each one's
+ * sockets in the studio's space. Someone whose only way in was that company's sign-in is signed out of eqosys too.
+ */
+export async function lapseSeats(conf: Pick<Env, "DB">, gone: (studio: string, user: string) => Promise<unknown>, now = Date.now()): Promise<number> {
+  const { results } = await conf.DB.prepare(`DELETE FROM studio_members WHERE sso_at IS NOT NULL AND sso_at < ? AND role <> 'owner' RETURNING studio_id, user_id`)
+    .bind(now - SSO_SEAT_DAYS * 86_400_000).all<{ studio_id: string; user_id: string }>();
+  for (const r of results) {
+    await conf.DB.prepare(`DELETE FROM "session" WHERE "userId" = ?1 AND NOT EXISTS (SELECT 1 FROM "account" WHERE "userId" = ?1 AND "providerId" NOT LIKE 'sso:%')`).bind(r.user_id).run();
+    await gone(r.studio_id, r.user_id).catch(() => null);
+  }
+  return results.length;
 }
 
 /** Takes a studio's company sign-in off (its owner): nobody new comes in that way; who is in stays. */
@@ -79,7 +130,7 @@ export async function dropSso(conf: Pick<Env, "DB">, studio: string, by: string)
   return { ok: true, id: studio };
 }
 
-type Row = { studio_id: string; issuer: string; client_id: string; secret: string | null; domain: string; role: Role };
+type Row = { studio_id: string; issuer: string; client_id: string; secret: string | null; domain: string; role: Role; proved_at: number | null };
 
 const domainOf = (email: string) => email.trim().toLowerCase().split("@")[1] ?? "";
 const random = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -112,7 +163,8 @@ const yes: Guard<boolean> = (v) => v === true || v === "true";
 const IdClaims = obj({ iss: str(500), aud: audience, azp: opt(str(300)), sub: str(255, { min: 1 }), exp: num(0, 1e11), iat: num(0, 1e11), nonce: str(200),
   email: str(320, { min: 3 }), email_verified: opt(yes), xms_edov: opt(yes), name: opt(nul(str(200))) });
 
-export type SsoWho = { studio: string; role: Role; sub: string; email: string; name: string; ask: string | null };
+/** `proved`: the studio proved it owns the domain, so an account with this email made another way is linked, not refused. */
+export type SsoWho = { studio: string; role: Role; sub: string; email: string; name: string; ask: string | null; proved: boolean };
 export type SsoGot = { ok: true; who: SsoWho } | { ok: false; error: string };
 
 /**
@@ -136,12 +188,16 @@ export async function ssoFinish(conf: Env, q: { code?: string | null; state?: st
   if (!c || c.iss !== d.issuer || !c.aud.includes(row.client_id) || (c.aud.length > 1 && c.azp !== row.client_id) || c.exp <= at || c.iat > at + 300 || c.nonce !== st.nonce) return { ok: false, error: "sso" };
   if (!c.email_verified && !c.xms_edov) return { ok: false, error: "ssomail" };
   if (domainOf(c.email) !== row.domain) return { ok: false, error: "ssodomain" };
-  return { ok: true, who: { studio: row.studio_id, role: row.role, sub: c.sub, email: c.email.trim().toLowerCase(), name: c.name?.trim() ?? "", ask: st.ask } };
+  return { ok: true, who: { studio: row.studio_id, role: row.role, sub: c.sub, email: c.email.trim().toLowerCase(), name: c.name?.trim() ?? "", ask: st.ask, proved: !!row.proved_at } };
 }
 
-/** Puts them in the studio with its sign-in's role; someone already in keeps the role they have (an owner made them admin, say). */
+/**
+ * Puts them in the studio with its sign-in's role; someone already in keeps the role they have (an owner made them admin, say).
+ * A seat this sign-in gave is renewed (`sso_at`, lapseSeats); one an owner handed out by email stays theirs for good.
+ */
 export const joinStudio = (conf: Pick<Env, "DB">, w: SsoWho, userId: string, now = Date.now()) =>
-  conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING").bind(w.studio, userId, w.role, now).run();
+  conf.DB.prepare(`INSERT INTO studio_members (studio_id, user_id, role, at, sso_at) VALUES (?1, ?2, ?3, ?4, ?4)
+    ON CONFLICT (studio_id, user_id) DO UPDATE SET sso_at = ?4 WHERE studio_members.sso_at IS NOT NULL`).bind(w.studio, userId, w.role, now).run();
 
 /** A cookie holding `state` for the callback, or clearing it. */
 export const ssoCookie = (secure: boolean, state: string, age = SSO_MINUTES * 60) =>
@@ -168,8 +224,13 @@ export const ssoPlugin = (conf: Env, mark: (ask: string) => Promise<{ name: stri
       const owned = await conf.DB.prepare(`SELECT "userId" AS id FROM "account" WHERE "providerId" = ? AND "accountId" = ?`).bind(provider, w.sub).first<string>("id");
       let userId = owned;
       if (!userId) {
-        // Someone with this email who signed up another way keeps their account: the company can't take it over.
-        if (await ctx.context.internalAdapter.findUserByEmail(w.email)) throw ctx.redirect(login("ssotaken", w.ask));
+        // Someone with this email who signed up another way keeps their account: the company can't take it over, unless the studio
+        // proved it owns the domain, and then the company's sign-in is linked to it.
+        const had = await ctx.context.internalAdapter.findUserByEmail(w.email);
+        if (had && !w.proved) throw ctx.redirect(login("ssotaken", w.ask));
+        if (had) { await ctx.context.internalAdapter.linkAccount({ userId: had.user.id, providerId: provider, accountId: w.sub }); userId = had.user.id; }
+      }
+      if (!userId) {
         const made = await ctx.context.internalAdapter.createOAuthUser({ email: w.email, name: w.name, emailVerified: true }, { providerId: provider, accountId: w.sub });
         userId = made.user.id;
       }

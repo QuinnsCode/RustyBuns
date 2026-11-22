@@ -31,6 +31,12 @@ Pages and pitches use the left column; docs keep the code's names (`Hub`, `Party
 | Seat | Your place in a room, kept if you drop and come back. | slot, player index | Qollab |
 | Space | A group that lasts between games, with channels. | server, guild | Qollab |
 | Room code | The six letters you read out to a friend. | party code | Qollab |
+| Meeting | A voice channel in a business studio's space: "Join the standup meeting". | party, voice room | Qollab, in a business studio |
+| Status | The line under your name in a space's online list ("in the Q3 review"), set by you. | playing X | Qollab |
+| Direct message | A channel of two in a space, seen by nobody else (those who run the space neither). | DM channel | Qollab |
+
+A business studio's pages carry no game-only screens: its Studio tab has no "New game" starter, and its space says
+"meeting" where a game's says "voice channel" (`office` in the space's info, from the studio's kind).
 
 ## The three layers
 
