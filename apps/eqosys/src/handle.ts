@@ -7,7 +7,7 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { HOME, ourApp, playOf, returnTo, type QApp } from "./apps.ts";
+import { GENRES, HOME, ourApp, playOf, returnTo, type Genre, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
@@ -393,6 +393,13 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const out = see(r && "error" in r ? `/?tab=friends&e=${/most/.test(r.error) ? "full" : "nolink"}` : game?.url ?? "/?tab=friends");
     out.headers.append("set-cookie", addCookie(req, "", 0));
     return out;
+  }
+  // The home's rows folded shut (folds.client.ts posts every folded row on each toggle): kept on the person's hub. No page to go to.
+  if (act === "fold") {
+    if (!conf.HUB) return new Response(null, { status: 204 });
+    const rows = form.getAll("row").filter((r): r is Genre => (GENRES as readonly unknown[]).includes(r));
+    const r = await hubAsk(conf.HUB, atHome(me), { op: "fold", rows: [...new Set(rows)] });
+    return "error" in r ? json({ error: r.error }, 400) : new Response(null, { status: 204 });
   }
   if (act === "befriend" || act === "accept" || act === "drop" || act === "clear" || act === "relink") {
     if (!conf.HUB) return see("/?tab=friends&e=nohub");

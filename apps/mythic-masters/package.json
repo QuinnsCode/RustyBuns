@@ -9,6 +9,7 @@
     "test": "bun test test",
     "tune": "bun scripts/tune.ts",
     "levels": "bun scripts/levels.ts",
+    "story": "bun scripts/story.ts",
     "rules": "bun scripts/rules.ts",
     "beasts": "bun scripts/beasts.ts --render",
     "flora": "bun scripts/flora.ts",

@@ -29,6 +29,10 @@
           <p class="row"><button id="look" type="button" class="ghost">New look</button><button id="sign-out" type="button" class="ghost">Sign out</button></p>
         </div>
       </div>
+      <div id="invites-box" hidden>
+        <h2>Invites for you</h2>
+        <ul id="invites"></ul>
+      </div>
       <h2>Make a room</h2>
       <div id="room-studio" class="studios" aria-label="Studio"></div>
       <form id="make" class="row">
@@ -41,6 +45,14 @@
     <div id="door-room" hidden>
       <h2 id="room-title"></h2>
       <p><strong id="room-studio-name"></strong> <span id="room-about"></span></p>
+      <p class="row"><button id="play" type="button" class="go">Walk in</button><a id="lobby" href="/jam.html" class="ghost">Lobby</a></p>
+      <h2>Invite people</h2>
+      <p class="keys">Anyone with the link walks into this room. Friends on eqosys get it in their notes.</p>
+      <p class="row"><button id="invite" type="button" class="ghost">Copy invite link</button><button id="share" type="button" class="ghost" hidden>Share</button></p>
+      <div id="friends-box" hidden>
+        <ul id="friends"></ul>
+        <p id="friends-none" class="keys" hidden>No eqosys friends yet. <a id="friends-add" target="_blank" rel="noopener">Add friends on eqosys</a>, or send the link.</p>
+      </div>
       <p>Walk up to an instrument and sit, and your keys play its track in the sesh, so everyone in the room hears it.</p>
       <p class="keys">WASD walk, mouse look. Space or click sits you at the spot in front of you, and again stands you up. Seated, A to &#39; are notes (Z / X octave), or play a MIDI keyboard. V switches the camera. Esc lets go of the mouse.</p>
       <p class="keys">A guitar into your computer's audio input: I plugs it in (sitting at the bass, into its amp; else the first track with an amp), and everyone hears it through that amp, where you stand. In the vocal booth, I plugs in your mic instead: your voice, straight to everyone (headphones keep the band out of it).</p>
@@ -53,7 +65,6 @@
       <p class="row"><button id="mute-room" type="button" class="ghost">Mute the room</button></p>
       <ul id="people"></ul>
       <p id="people-none" class="keys">Nobody else yet. Your mutes are for you alone; the leader can mute someone for everyone.</p>
-      <p class="row"><button id="play" type="button" class="go">Walk in</button><button id="invite" type="button" class="ghost">Copy invite link</button><a id="lobby" href="/jam.html" class="ghost">Lobby</a></p>
     </div>
   </section>
 </main>

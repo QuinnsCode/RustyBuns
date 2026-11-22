@@ -23,7 +23,7 @@ export async function standing(conf: Env, sub: string, app: string, iat: number)
  * eqosys's own pages as an app (`aud: "eqosys"`, HOME_LIFE seconds, from /api/home-token): its one origin is eqosys's own.
  * Not in APPS, so it has no tile, sign-in or handoff; only the doors that pass `{ home: true }` (the spaces) take its token.
  */
-export const homeApp = (req: Request, conf: Env): QApp => ({ id: HOME, name: "eqosys", kind: "suite", origins: [issuer(req, conf)], starts: [], genre: "Work & Tools" });
+export const homeApp = (req: Request, conf: Env): QApp => ({ id: HOME, name: "eqosys", kind: "suite", origins: [issuer(req, conf)], starts: [], genre: "Productivity" });
 export const HOME_LIFE = 10 * 60;
 
 /** A token's app and who it names, or null when it isn't one eqosys signed for a known app, or it outlived its account or a sign-out (`standing`). */

@@ -68,7 +68,7 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   const shelf = async (who: string) => ((await run("eq_apps", {}, { cookie: who })).result.apps as { id: string; studio?: string }[]).find((a) => a.id === "rocket-golf");
 
   const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, { cookie: maya })).result.id;
-  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: [GAME], blurb: "Golf, with rockets." };
+  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME], blurb: "Golf, with rockets." };
   expect((await run("eq_listing_save", draft, { cookie: sam })).status).toBe(403);
   expect((await run("eq_listing_save", { ...draft, id: "park-hide-seek" }, { cookie: maya })).status).toBe(409);
   expect((await run("eq_listing_save", draft, { cookie: maya })).result.listing).toMatchObject({ state: "draft", maturity: "experimental", starts: ["play"] });
@@ -94,7 +94,7 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect(studios[0].apps).toEqual([expect.objectContaining({ id: "rocket-golf", state: "refused", note: expect.stringContaining("erase URL") })]);
   // Fixed and sent again from the Studio tab's form: what it shows for the game, with the erase URL filled in.
   const form = { ...await formIn(studios, "Change Rocket Golf"), erase: `${GAME}/erase` };
-  expect(form).toMatchObject({ studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: GAME, returns: "" });
+  expect(form).toMatchObject({ studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: GAME, returns: "" });
   expect((await call("/do/listing-save", { form, cookie: sam })).to).toBe("/?tab=studio&e=gameowner");
   expect((await call("/do/listing-save", { form: { ...form, origins: "http://rocket-golf.example" }, cookie: maya })).to).toBe("/?tab=studio&e=game");
   expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
@@ -134,7 +134,7 @@ test("the machine checks say what is wrong: a dead origin, a missing file, no si
   const [boss, maya] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com")];
   const run = async (name: string, args: unknown, cookie: string) => (await (await call(`/api/tools/${name}`, { json: args, cookie })).res.json() as { result?: any; error?: string });
   const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, maya)).result.id;
-  await run("eq_listing_save", { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: [GAME, "https://www.rocket-golf.example"] }, maya);
+  await run("eq_listing_save", { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME, "https://www.rocket-golf.example"] }, maya);
   await run("eq_listing_send", { id: "rocket-golf" }, maya);
   const [queued] = (await run("eq_listing_review", {}, boss)).result.queue;
   const by = Object.fromEntries(queued.checks.list.map((c: { name: string }) => [c.name, c]));
