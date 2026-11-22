@@ -11,7 +11,8 @@ origin, Y up, at the spec's `height` in metres; the game scales them to the size
 Generators:
   tree     stems (one is a tree, several a shrub) that branch level by level, with leaves, needle tufts, flat sprays,
            lumpy clumps, compound leaves, berries, flowers, hanging moss and a buttressed, fluted foot
-  rosette  blades from one crown: strap, lance, oval, agave, fan (palmetto), pinnate (fern), tube (pitcher), with
+  rosette  blades from one crown (on a ringed, leaning `trunk` for a palm or a ti plant, with `nuts` under it):
+           strap, lance, oval, agave, fan (palmetto), pinnate (fern), tube (pitcher), with
            flower stalks: cone (coneflower), cattail, spathe (skunk cabbage), plume (bluestem), cup (pitcher flower)
   cactus   barrel (ribbed, spined, fruit on top) or pads (prickly pear, pad on pad, fruit on the rims)
   knees    a cluster of cypress knees
@@ -667,6 +668,30 @@ def rosette(spec, g, rng, lo):
     shape = L.get("shape", "lance")
     rise = L.get("rise", [30, 70])
     crown = L.get("crown", 0.02) * H
+    # a crown up on a trunk (a palm, a ti plant): a leaning, curving, ringed stem, the rosette on its top
+    top = Vector((0, 0, 0))
+    tr = spec.get("trunk")
+    if tr:
+        segs = tr.get("segments", 10) if not lo else max(3, tr.get("segments", 10) // 2)
+        lean = tr.get("lean", 0.12) * (0.6 + 0.8 * rng.random())
+        az0 = rng.random() * math.tau
+        d0 = Vector((math.cos(az0) * lean, math.sin(az0) * lean, 1)).normalized()
+        pts = grow_path(Vector((0, 0, 0)), d0, H * tr.get("height", 0.8), segs, rng, rise=tr.get("rise", 0.2), wobble=tr.get("wobble", 0.05))
+        r0 = tr.get("radius", 0.015 * H)
+        radii = [r0 * (1 - tr.get("taper", 0.3) * i / segs) for i in range(segs + 1)]
+        paint = bark_colour(spec, rng, H)
+        rings_k = tr.get("rings", 0.0)
+        # the scars of fallen fronds ring the stem: a darker band every so often
+        ring = (lambda u, a, at, off: mix(paint(u, a, at, off), (0.03, 0.025, 0.02), 0.5 if (u * tr.get("ring_count", 30)) % 1 < rings_k else 0)) if rings_k else paint
+        tube(g, pts, radii, max(3, round(tr.get("sides", 8) * (0.6 if lo else 1))), ring, flare=(lambda i, a: 1 + tr.get("flare", 0.3) * max(0, 1 - i / 2)) if tr.get("flare") else None)
+        top = pts[-1]
+        nuts = spec.get("nuts")
+        if nuts and not lo:
+            ncols = [hexc(c) for c in nuts.get("colors", ["#5a6a2a"])]
+            for k in range(nuts.get("count", 6)):
+                a = k * GOLDEN
+                at = top + Vector((math.cos(a) * r0 * 1.3, math.sin(a) * r0 * 1.3, -r0 * (0.5 + rng.random())))
+                blob(g, at, H * nuts.get("size", 0.02) * (0.85 + 0.3 * rng.random()), jitter(pick(rng, ncols), rng), rng, subdiv=1, lump=0.15)
     for i in range(n):
         az = i * GOLDEN + rng.random() * 0.3
         u = i / max(1, n - 1)
@@ -675,7 +700,7 @@ def rosette(spec, g, rng, lo):
         d = Vector((math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)))
         length = H * L.get("length", 0.8) * (0.7 + 0.3 * rng.random()) * (1 - 0.3 * u if L.get("inner_up", True) else 1)
         width = length * L.get("width", 0.15)
-        base = Vector((math.cos(az) * crown, math.sin(az) * crown, L.get("lift", 0.0) * H))
+        base = top + Vector((math.cos(az) * crown, math.sin(az) * crown, L.get("lift", 0.0) * H))
         c = jitter(pick(rng, cols), rng, 0.012, 0.06, 0.12)
         tc = jitter(pick(rng, tips), rng, 0.01, 0.05, 0.08) if tips else c
         segs = L.get("segments", 5) if not lo else max(2, L.get("segments", 5) // 2)

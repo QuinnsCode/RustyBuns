@@ -1,0 +1,86 @@
+{
+ "id": "norway-spruce",
+ "name": "Norway spruce",
+ "biome": "mountains",
+ "generator": "tree",
+ "seed": 11,
+ "height": 28,
+ "budget": [
+  9000,
+  1900
+ ],
+ "note": "The dark spire of every mountain slope from the Alps to the far north: limbs that sag then turn up at the tips, side shoots hanging from them in curtains, and a narrow pointed top.",
+ "trunk": {
+  "radius": 0.4,
+  "lean": 0.02,
+  "wobble": 0.08,
+  "taper": 0.97,
+  "segments": 16,
+  "sides": 10,
+  "flare": 0.3
+ },
+ "bark": {
+  "colors": [
+   "#6a4a3a",
+   "#3a2a22"
+  ],
+  "pattern": "plates",
+  "plates": 0.12
+ },
+ "levels": [
+  {
+   "count": 34,
+   "start": 0.12,
+   "end": 0.995,
+   "angle": 84,
+   "absolute": 0.3,
+   "shape": "conical",
+   "droop": 0.3,
+   "rise": 0.55,
+   "wobble": 0.15,
+   "segments": 6,
+   "radius": 0.32,
+   "sides": 5
+  },
+  {
+   "count": 5,
+   "start": 0.2,
+   "end": 1,
+   "angle": 70,
+   "length": 0.3,
+   "droop": 0.55,
+   "wobble": 0.2,
+   "segments": 3,
+   "radius": 0.4,
+   "sides": 3,
+   "lo": 0.45
+  }
+ ],
+ "foliage": [
+  {
+   "type": "spray",
+   "colors": [
+    "#1e3626",
+    "#223c2a",
+    "#284230"
+   ],
+   "tip_colors": [
+    "#3e5e3c",
+    "#46663e"
+   ],
+   "size": 0.045,
+   "per": 3,
+   "start": 0.2,
+   "end": 1,
+   "pairs": 6,
+   "hang": 0.5,
+   "arch": 0.25,
+   "lo": 0.5,
+   "lo_size": 1.4,
+   "core": 0.5,
+   "core_dark": 0.45,
+   "core_at": 0.7
+  }
+ ],
+ "ao_reach": 0.2
+}

@@ -1,0 +1,88 @@
+{
+ "id": "golden-larch",
+ "name": "European larch",
+ "biome": "mountains",
+ "generator": "tree",
+ "seed": 23,
+ "height": 22,
+ "budget": [
+  7000,
+  1600
+ ],
+ "note": "The one conifer that turns: a light, open spire of upswept limbs with drooping twigs, its soft needle tufts gone gold and amber, bright among the dark spruce.",
+ "trunk": {
+  "radius": 0.3,
+  "lean": 0.04,
+  "wobble": 0.14,
+  "taper": 0.96,
+  "segments": 14,
+  "sides": 9,
+  "flare": 0.22
+ },
+ "bark": {
+  "colors": [
+   "#7a5444",
+   "#4a3024"
+  ],
+  "pattern": "plates",
+  "plates": 0.15
+ },
+ "levels": [
+  {
+   "count": 22,
+   "start": 0.2,
+   "end": 0.99,
+   "angle": 70,
+   "absolute": 0.2,
+   "shape": "conical",
+   "droop": 0.1,
+   "rise": 0.4,
+   "wobble": 0.3,
+   "segments": 5,
+   "radius": 0.33,
+   "sides": 5
+  },
+  {
+   "count": 6,
+   "start": 0.25,
+   "end": 1,
+   "angle": 60,
+   "length": 0.34,
+   "droop": 0.6,
+   "wobble": 0.3,
+   "segments": 3,
+   "radius": 0.4,
+   "sides": 3,
+   "lo": 0.5
+  }
+ ],
+ "foliage": [
+  {
+   "type": "tuft",
+   "colors": [
+    "#c47e1e",
+    "#d08a24",
+    "#b06a1a",
+    "#d89a2a"
+   ],
+   "tip_colors": [
+    "#e8b040",
+    "#f0c050"
+   ],
+   "size": 0.034,
+   "per": 4,
+   "start": 0.15,
+   "end": 1,
+   "needles": 9,
+   "brush": 0.3,
+   "splay": 1.15,
+   "up": 0.25,
+   "lo": 0.5,
+   "lo_size": 1.5,
+   "core": 0,
+   "core_dark": 0.15,
+   "knot": 0
+  }
+ ],
+ "ao_reach": 0.25
+}

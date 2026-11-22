@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import coarse from "../src/world/coarse.json";
 import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { FLORA, KINDS, TURF } from "../src/world/flora.ts";
+import { FLORA, GROWN, KINDS, LATER, TURF } from "../src/world/flora.ts";
+import { existsSync } from "node:fs";
 import { bare, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather, wind } from "../src/world/nature.ts";
 import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
 import { POIS } from "../src/world/poi.ts";
@@ -90,4 +91,14 @@ describe("what grows", () => {
       expect(TURF[g.biome].cover).toBeGreaterThan(0);
     }
   });
+});
+
+test("every plant grown in Blender has its spec and its model, and grows in its own biome; the later ones are some of them", () => {
+  const where = Object.fromEntries(Object.entries(FLORA).map(([b, f]) => [b, f.kinds.map((k) => k[0])]));
+  const rows = GROWN.map((id) => {
+    const spec = JSON.parse(readFileSync(`${import.meta.dir}/../flora/${id}.json`, "utf8")) as { biome: string };
+    return { id, model: existsSync(`${import.meta.dir}/../public/models/flora/${id}.glb`), planted: (where[spec.biome] ?? []).includes(id) };
+  });
+  expect(rows).toEqual(GROWN.map((id) => ({ id, model: true, planted: true })));
+  expect(LATER.every((id) => GROWN.includes(id))).toBe(true);
 });

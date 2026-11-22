@@ -1,0 +1,86 @@
+{
+ "id": "hibiscus",
+ "name": "Red hibiscus",
+ "biome": "island",
+ "generator": "tree",
+ "seed": 71,
+ "height": 2.6,
+ "budget": [
+  4000,
+  900
+ ],
+ "note": "A rounded shrub of glossy dark leaves by every island door, studded with wide scarlet flowers.",
+ "trunk": {
+  "stems": 6,
+  "spread": 0.3,
+  "splay": 0.5,
+  "radius": 0.03,
+  "taper": 0.8,
+  "segments": 5,
+  "sides": 5,
+  "wobble": 0.35,
+  "length": 0.85
+ },
+ "bark": {
+  "colors": [
+   "#6a5a4a",
+   "#4a3e32"
+  ]
+ },
+ "levels": [
+  {
+   "count": 4,
+   "start": 0.4,
+   "end": 1,
+   "angle": 45,
+   "length": 0.45,
+   "rise": 0.2,
+   "wobble": 0.4,
+   "segments": 3,
+   "radius": 0.6,
+   "sides": 4
+  }
+ ],
+ "foliage": [
+  {
+   "type": "leaves",
+   "colors": [
+    "#2a5a26",
+    "#306028",
+    "#285424"
+   ],
+   "tip_colors": [
+    "#4a7a34"
+   ],
+   "size": 0.075,
+   "per": 10,
+   "start": 0.4,
+   "end": 1,
+   "width": 0.6,
+   "spread": 1,
+   "outward": 0.8,
+   "lo": 0.4,
+   "lo_size": 1.6,
+   "core": 0.75,
+   "core_dark": 0.3
+  },
+  {
+   "type": "truss",
+   "colors": [
+    "#d8202a",
+    "#e02e2e",
+    "#c41a26"
+   ],
+   "tip_colors": [
+    "#f06a6a"
+   ],
+   "size": 0.08,
+   "per": 2,
+   "start": 0.7,
+   "end": 1,
+   "share": 0.9,
+   "petals": 8
+  }
+ ],
+ "ao_reach": 0.35
+}
