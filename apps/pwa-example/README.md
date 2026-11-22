@@ -27,7 +27,21 @@ bun run deploy       # to Cloudflare (workers.dev gives the HTTPS that installin
 2. Tap **Install app** (on the page, or in Chrome's menu). Chrome builds a WebAPK: a real app in the launcher and the app drawer, opening full screen with no address bar.
 3. Turn on airplane mode and open it. It still rolls.
 
-That is an Android app with no Play Store step. Putting it in the Play Store is one more wrapper, a Trusted Web Activity (TWA): [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) reads the live manifest and builds a signed `.aab`, and the site serves `/.well-known/assetlinks.json` with that signing key's fingerprint so Android trusts the app to show the page full screen. That part is not built yet.
+That is an Android app with no Play Store step. Putting it in the Play Store is one more wrapper, a Trusted Web Activity (TWA): [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) reads the live manifest and builds a signed `.aab`, and the site serves `/.well-known/assetlinks.json` with that signing key's fingerprint so Android trusts the app to show the page full screen.
+
+## Put it in the Play Store
+
+`scripts/twa.ts` does the wrapper. The app is `dev.rustybuns.pocketdice` (`PACKAGE_ID`), and that id can never change after the first upload. The upload key never goes in the repo: it is three Password items in 1Password (`.env.schema` lists them), and varlock resolves them.
+
+```
+bun run twa manifest --url https://<host>                     # Bubblewrap's twa-manifest.json from the live manifest, no key needed
+bunx varlock run -- bun run twa build --url https://<host>    # the signed twa-build/app-release-bundle.aab
+bunx varlock run -- bun run twa fingerprint                   # the upload key's SHA-256 into public/.well-known/assetlinks.json
+bun run twa fingerprint --add AA:BB:...                       # Play App Signing's key too (Play Console > App integrity)
+bun run twa check --url https://<host>                        # the deployed assetlinks.json parses and names the package and a key
+```
+
+Bubblewrap (pinned, run with `bunx`) needs a JDK and the Android SDK. On its first run it offers to download both into `~/.bubblewrap`. Each build's version code is the number of minutes since 1970, so it always goes up. Until a fingerprint is added, `assetlinks.json` names the package with an empty key list: valid, but the app would open with a URL bar, and `twa check` says so.
 
 ## How it fits together
 

@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { launchChrome, load, openTab, type Chrome, type Tab } from "../../../scripts/chrome.ts";
 import { tsRoller, wasmRoller } from "../src/roller.ts";
+import { checkAssetLinks } from "../scripts/twa.ts";
 
 setDefaultTimeout(180_000);
 const app = join(import.meta.dir, "..");
@@ -55,6 +56,9 @@ test("installs, works offline, and opens a shared roll with no network", async (
 
   const r = await tab.eval<State["last"]>("pocketDice.roll(42)");
   expect(r?.dice).toEqual(tsRoller.roll(42, 2, 6));
+
+  // The build ships the Play Store app's asset links (a missing file would come back as the page, not JSON).
+  expect(checkAssetLinks(await (await fetch(`${url}.well-known/assetlinks.json`)).json(), false)).toEqual([]);
 
   server.stop(true);
   await load(chrome.cdp, tab, `${url}?seed=7&n=3&d=20`, 500);

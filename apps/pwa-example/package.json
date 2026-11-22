@@ -10,6 +10,7 @@
     "test": "bun test test",
     "wasm": "bun scripts/wasm.ts",
     "icons": "bun scripts/icons.ts",
+    "twa": "bun scripts/twa.ts",
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
