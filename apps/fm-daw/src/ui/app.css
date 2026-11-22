@@ -339,3 +339,26 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 /* a web plugin's own panel (src/ui/wam.ts): a small window over the desk */
 .plugin-window { position: fixed; inset: 10vh auto auto 50%; translate: -50% 0; z-index: 40; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; margin: 0; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); color: inherit; box-shadow: 0 12px 40px #0008; }
 .plugin-window > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--edge); }
+
+/* the add menu: record audio, record MIDI, import audio, import MIDI, on the selected track */
+.add-menu { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.icon-btn { display: inline-grid; place-items: center; width: 34px; height: 32px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: transparent; color: inherit; }
+.icon-btn:hover:not(:disabled) { background: var(--raised); }
+.icon-btn:disabled { opacity: .45; }
+.icon-btn.stop { color: #fff; background: var(--hot); border-color: var(--hot); }
+.icon-btn.tiny { width: 22px; height: 22px; border: 0; }
+.icon-btn.tiny svg { width: 14px; height: 14px; }
+.rec-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 46ch; padding: 0 8px; height: 32px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--hot) 16%, var(--panel)); font: 600 .9rem var(--silk); letter-spacing: .04em; }
+.rec-text { overflow: hidden; text-overflow: ellipsis; }
+.rec-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--hot); animation: pulse 1s steps(2) infinite; }
+.input-chip { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 2px 0 8px; border: 1px dashed var(--edge); border-radius: 16px; white-space: nowrap; font: 600 .8rem var(--silk); }
+.input-chip > svg { width: 14px; height: 14px; }
+.track.drop { outline: 2px dashed var(--warn); outline-offset: 1px; }
+.midi-land { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); }
+.midi-land h2 { margin: 0; font: 700 1rem var(--silk); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.midi-land p { margin: 0; }
+.midi-land .field-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.midi-land select { max-width: 100%; }
+@media (max-width: 760px) { .rec-status { max-width: 60vw; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }

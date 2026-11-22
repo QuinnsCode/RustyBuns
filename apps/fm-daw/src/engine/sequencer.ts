@@ -78,6 +78,8 @@ export class Sequencer {
   private notes: Note[][] = Array.from({ length: TRACKS }, () => []);
   private warped: Float64Array[] = Array.from({ length: TRACKS }, () => new Float64Array(0));
   private audible = new Uint8Array(TRACKS).fill(1);
+  /** Tracks with no instrument: their notes run (and record) but reach no voice. */
+  private voiceless = new Uint8Array(TRACKS);
   private lanes: AutoLane[][] = Array.from({ length: TRACKS }, () => []);
   /** Shape's lanes: each change goes to onEq, which the worklet and the bounce turn into the EQ they play. */
   private eqLanes: AutoLane[] = [];
@@ -187,6 +189,14 @@ export class Sequencer {
       this.engine.setMute(t, !mask[t]);
     }
   }
+  /** No instrument on these tracks: what they hold now lets go, and their notes from here on sound nowhere. */
+  setVoiceless(mask: boolean[]) {
+    for (let t = 0; t < TRACKS; t++) {
+      const on = mask[t] ? 1 : 0;
+      if (on && !this.voiceless[t]) this.letGo(t);
+      this.voiceless[t] = on;
+    }
+  }
   private rewarp(t: number) {
     const ns = this.notes[t];
     const w = new Float64Array(ns.length);
@@ -229,7 +239,7 @@ export class Sequencer {
     if (track < 0 || track >= TRACKS || midi < 0 || midi > 127) return;
     const id = LIVE_ID + track * 128 + midi;
     this.engine.noteOff(track, id);
-    this.engine.noteOn(track, id, midi, vel);
+    if (!this.voiceless[track]) this.engine.noteOn(track, id, midi, vel);
     if (rec && this.recording && this.playing) {
       const k = track * 128 + midi;
       this.recStart[k] = this.wrap(this.pos - this.latency * (this.bpm / 60));
@@ -254,6 +264,16 @@ export class Sequencer {
   private releaseHeld() {
     for (let i = 0; i < this.heldCount; i++) this.engine.noteOff(this.heldTrack[i], this.heldId[i]);
     this.heldCount = 0;
+  }
+
+  /** Track `t`'s sequenced notes that are sounding let go now. */
+  private letGo(t: number) {
+    let k = 0;
+    for (let i = 0; i < this.heldCount; i++) {
+      if (this.heldTrack[i] === t) { this.engine.noteOff(t, this.heldId[i]); continue; }
+      this.heldTrack[k] = this.heldTrack[i]; this.heldId[k] = this.heldId[i]; this.heldLeft[k] = this.heldLeft[i]; k++;
+    }
+    this.heldCount = k;
   }
 
   private hold(track: number, id: number, frames: number) {
@@ -355,6 +375,7 @@ export class Sequencer {
   }
 
   private fire(t: number, n: Note, bpf: number) {
+    if (this.voiceless[t]) return;
     const id = this.nextId;
     this.nextId = this.nextId >= LIVE_ID - 1 ? 1 : this.nextId + 1;
     this.engine.noteOn(t, id, n.m, n.v);

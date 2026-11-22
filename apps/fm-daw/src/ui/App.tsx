@@ -17,6 +17,8 @@ import { PluginPump, bouncePlugins, effectChoices, pluginChoices, usePlugins, ty
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
 import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
+import { AddMenu, MidiLand } from "./AddMenu.tsx";
+import { useImports } from "./import.ts";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
 import { pageRack } from "./wam.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
@@ -33,8 +35,8 @@ import { AmpPanel } from "./AmpPanel.tsx";
 import { DeskPanel } from "./DeskPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { TakeShelf, encodeTake, newTakeId, toChunks } from "../take.ts";
-import { apply, audible, roomGain, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
+import { TAKE_RATE, TakeShelf, encodeTake, newTakeId, toChunks } from "../take.ts";
+import { apply, audible, voiceless, roomGain, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS, fromAddress } from "../songs.ts";
@@ -99,6 +101,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "plugin": return { t: "plugin", track: op.track, on: !!next.tracks[op.track].plugin };
     // the worklet hears of an effect once it runs (src/ui/plugins.ts): the track stays dry until then
     case "insert": return { t: "audible", mask: audible(next) };
+    case "voiceless": return { t: "voiceless", mask: voiceless(next) };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -148,6 +151,8 @@ export function App() {
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string; decks?: boolean; missed?: string[] }>({ busy: false });
   /** The track the input records onto while recording, or null with the input off. */
   const [armed, setArmed] = useState<number | null>(null);
+  const armedRef = useRef<number | null>(null);
+  armedRef.current = armed;
   const [inputNote, setInputNote] = useState<string | null>(null);
   /** The input heard through the armed track's amp; off whenever the input comes on. */
   const [monitor, setMonitor] = useState(false);
@@ -291,7 +296,11 @@ export function App() {
       linePeaks.current.set(m.track, m.pcm.reduce((x, v) => Math.max(x, Math.abs(v)), 0));
       pluginOuts.current.get(m.track)?.slice(m.beat, m.pcm, m.rate);
     }
-    else if (m.t === "taken") landTake(m.track, m.beat, m.pcm, m.rate);
+    else if (m.t === "taken") {
+      landTake(m.track, m.beat, m.pcm, m.rate);
+      // Record audio takes one pass: the transport plays on, the recording stops
+      if (live.current.recording) { stopRec(); imports.say(`Recorded a pass of audio onto ${proj.current.tracks[m.track]?.name ?? "the track"}.`); }
+    }
     else if (m.t === "rec") {
       const { gridIdx, strength, inputQ } = live.current;
       const L = loopBeats(proj.current);
@@ -328,30 +337,42 @@ export function App() {
     const got: MediaTrackSettings & { latency?: number } = input.current?.stream.getAudioTracks()[0]?.getSettings() ?? {};
     return (got.latency ?? 0) + a.ctx.baseLatency;
   };
-  async function toggleInput() {
-    const a = audioRef.current;
-    if (!a) return;
-    setInputNote(null);
+  /** The input closed: nothing records audio onto a track or is heard through its amp. */
+  function closeInput() {
     if (input.current) {
       input.current.node.disconnect();
       for (const tr of input.current.stream.getTracks()) tr.stop();
       input.current = null;
-      setArmed(null);
-      setMonitor(false);
-      a.send({ t: "arm", track: -1, inLatency: 0 });
-      return;
     }
-    try {
-      // a guitar or the desk's out, as it is: no echo cancelling, gating or levelling
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      const node = a.ctx.createMediaStreamSource(stream);
-      node.connect(a.node);
-      input.current = { stream, node };
-      const track = live.current.selected;
-      a.send({ t: "arm", track, inLatency: inLatency(a) });
-      setMonitor(false);
-      setArmed(track);
-    } catch (e) { setInputNote(`No input: ${(e as Error).message}`); }
+    setArmed(null);
+    setMonitor(false);
+    audioRef.current?.send({ t: "arm", track: -1, inLatency: 0 });
+  }
+  /** The input open and armed on `track`; the mic is asked for once and kept open. False, and said why, when it can't be. */
+  async function openInput(track: number): Promise<boolean> {
+    const a = audioRef.current;
+    if (!a) return false;
+    setInputNote(null);
+    if (!input.current) {
+      try {
+        // a guitar or the desk's out, as it is: no echo cancelling, gating or levelling
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        const node = a.ctx.createMediaStreamSource(stream);
+        node.connect(a.node);
+        input.current = { stream, node };
+      } catch (e) {
+        const why = e instanceof DOMException ? e.name : "";
+        setInputNote(why === "NotAllowedError" || why === "SecurityError"
+          ? "The microphone was refused, so there is nothing to record. Allow it for this page (the icon by the address), then press Record audio again."
+          : why === "NotFoundError" ? "No microphone or input was found. Plug one in, then press Record audio again."
+          : `No input: ${e instanceof Error ? e.message : String(e)}`);
+        return false;
+      }
+    }
+    a.send({ t: "arm", track, inLatency: inLatency(a) });
+    setMonitor(false);
+    setArmed(track);
+    return true;
   }
   // the armed track follows the one you pick
   useEffect(() => {
@@ -417,9 +438,10 @@ export function App() {
       state: () => ({
         audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
         line: Object.fromEntries(linePeaks.current),
+        bars: proj.current.bars, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
         tracks: proj.current.tracks.map((tr, i) => {
           const shown = (p: TrackPlugin, s: PluginShown | undefined) => ({ name: p.name, path: p.path, web: !!p.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) });
-          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], plays: tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
+          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], notes: tr.notes.length, take: tr.take ? { beat: tr.take.beat, seconds: tr.take.frames / TAKE_RATE } : null, plays: tr.voiceless ? "none" : tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
         }),
       }),
       start: startAudio,
@@ -666,13 +688,31 @@ export function App() {
   function play() { send({ t: "play", countIn: 0 }); live1({ t: "play" }); }
   function stopHere() { send({ t: "stop" }); setRecording(false); send({ t: "rec", on: false }); flushTake(); }
   function stop() { stopHere(); live1({ t: "stop" }); }
-  function toggleRecord() {
-    const { recording, transportOn, countIn } = live.current;
-    if (recording) { setRecording(false); send({ t: "rec", on: false }); flushTake(); return; }
+  function startRec() {
+    const { transportOn, countIn } = live.current;
     setRecording(true);
     send({ t: "rec", on: true });
     if (!transportOn) send({ t: "play", countIn: countIn ? COUNT_IN : 0 });
   }
+  function stopRec() { setRecording(false); send({ t: "rec", on: false }); flushTake(); }
+  /** R and the Rec button: audio onto the track the input is open on, else the notes you play. */
+  function toggleRecord() { if (live.current.recording) stopRec(); else startRec(); }
+  /** Record audio: the input on the selected track, then the count-in and one pass, in one press. */
+  async function recordAudio() {
+    if (live.current.recording) return stopRec();
+    imports.say(null);
+    if (await openInput(live.current.selected)) startRec();
+  }
+  /** Record MIDI: the notes played onto the selected track, and no audio (the input closes). */
+  function recordMidi() {
+    if (live.current.recording) return stopRec();
+    imports.say(null);
+    if (input.current || armed !== null) closeInput();
+    startRec();
+  }
+
+  // ---- imports (src/ui/import.ts): a sound file as a take, a MIDI file's notes; from the add menu or dropped on a track ----
+  const imports = useImports({ project: () => proj.current, mayEdit: () => live.current.allowed.edit, commit, landTake, select: setSelected });
   function panic() { releaseAll(); stop(); setRepeatState(0); send({ t: "panic" }); midiOut.current?.panic(); }
 
   async function chooseEngine(kind: "ts" | "rust") {
@@ -803,7 +843,10 @@ export function App() {
   const windowed = (tr: TrackDoc): TrackDoc => ({ ...tr, notes: tr.notes.filter(inWin).map((n) => ({ ...n, s: n.s - win.from })) });
   const unwindow = (tr: TrackDoc, ns: Note[]) => [...tr.notes.filter((n) => !inWin(n)), ...ns.map((n) => ({ ...n, s: n.s + win.from }))];
   const color = TRACK_COLORS[selected];
-  const trackSound = <TrackSound track={t} choices={pluginChoices} onPlugin={(plugin) => commit({ t: "plugin", track: selected, plugin })} />;
+  // a voice or a plugin, or no instrument: one undo step either way
+  const trackSound = <TrackSound track={t} choices={pluginChoices}
+    onPlugin={(plugin) => { const group = `sound:${performance.now()}`; if (t.voiceless) commit({ t: "voiceless", track: selected, on: false }, { group }); commit({ t: "plugin", track: selected, plugin }, { group }); }}
+    onNone={() => { const group = `sound:${performance.now()}`; if (t.plugin) commit({ t: "plugin", track: selected, plugin: null }, { group }); commit({ t: "voiceless", track: selected, on: true }, { group }); }} />;
 
   return (
     <div className="app">
@@ -885,13 +928,14 @@ export function App() {
       </header>
       {engineNote && <p className="note-bar" role="status">{engineNote}</p>}
       {inputNote && <p className="note-bar" role="status">{inputNote}</p>}
+      {imports.note && <p className="note-bar" role="status">{imports.note} <button className="ghost tiny" onClick={() => imports.say(null)} aria-label="Dismiss" title="Dismiss">✕</button></p>}
 
       <div className="body">
         <nav className="tracks" aria-label="Tracks">
           {project.tracks.map((tr, i) => (
-            <div key={i} className={i === selected ? "track sel" : "track"} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties}>
+            <div key={i} className={`track${i === selected ? " sel" : ""}${imports.dropOn === i ? " drop" : ""}`} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties} {...imports.dropProps(i, win.from)}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind">{tr.plugin ? "plugin" : tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind" title={tr.voiceless ? "No instrument: its notes go out, silent here" : undefined}>{tr.voiceless ? "midi" : tr.plugin ? "plugin" : tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
@@ -919,16 +963,18 @@ export function App() {
             <label className="check" title="Quantize notes as they're recorded"><input type="checkbox" checked={inputQ} onChange={(e) => setInputQ(e.currentTarget.checked)} /> Quantize input</label>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: quantize(t.notes, grid.beats, strength, L) })}>Quantize {t.name}</button>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: [] })}>Clear {t.name}</button>
-            <button className={armed !== null ? "ghost on" : "ghost"} onClick={toggleInput} disabled={!audio} aria-pressed={armed !== null}
-              title="Record the audio input (a guitar, the desk's out) onto this track: Rec takes one pass of the loop">
-              {armed !== null ? `Input on ${project.tracks[armed].name}` : "Input"}
-            </button>
+            <AddMenu track={t.name} ready={!!audio} counting={counting} input={armed !== null ? project.tracks[armed].name : null}
+              rec={recording ? (armed !== null ? { kind: "audio", track: project.tracks[armed].name } : { kind: "midi", track: t.name }) : null}
+              onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} onStop={stopRec} onInputOff={closeInput}
+              onFile={(kind, f) => { void imports.importFile(kind, f, selected, win.from); }} />
             {t.take && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
             <span className="spacer" />
             <button className="ghost" onClick={() => history("undo")} title="Undo (⌘Z)">Undo</button>
             <button className="ghost" onClick={() => history("redo")} title="Redo (⇧⌘Z)">Redo</button>
           </div>
 
+          {imports.ask && <MidiLand song={imports.ask.song} file={imports.ask.file} project={project} track={imports.ask.track} at={imports.ask.at}
+            onLand={(plan) => { if (imports.ask) imports.land(plan, imports.ask.song.bpm, imports.ask.file); }} onCancel={imports.cancel} />}
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
           ) : view === "desk" ? (

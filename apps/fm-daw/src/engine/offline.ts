@@ -8,7 +8,7 @@ import { LinearEq, linearLatency } from "./linear.ts";
 import { P } from "./params.ts";
 import { PluginRoute } from "./plugin-route.ts";
 import type { PluginEvent } from "../plugin-track.ts";
-import { audible, loopBeats, type Project } from "../project.ts";
+import { audible, loopBeats, voiceless, type Project } from "../project.ts";
 import { TakeDeck } from "../take.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { AmpSettings } from "../amp/messages.ts";
@@ -34,7 +34,7 @@ export function pluginScore(p: Project, sampleRate: number, frames: number): Map
   if (!route.any) return score;
   renderPattern(route.wrap(NOTHING), sampleRate, frames / sampleRate, (seq) => {
     p.tracks.forEach((t, ti) => { seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); });
-    seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(hears);
+    seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(hears); seq.setVoiceless(voiceless(p));
   });
   p.tracks.forEach((_, ti) => { if (route.has(ti)) score.set(ti, route.score(ti)); });
   return score;
@@ -86,7 +86,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, amps.has(ti)); });
     // each track's Shape plays from the first sample, not fading in
     if (p.tracks.some((t) => t.eq)) { p.tracks.forEach((t, ti) => { if (t.eq) sendTrackEq(engine, ti, t.eq, []); }); engine.panic(); }
-    seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p));
+    seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p)); seq.setVoiceless(voiceless(p));
     engine.setMaster(masterGain);
     seq.setEqAuto(p.eqAuto ?? []);
     seq.onEq = (i, v) => { const d = withEqLane(played, i, v); if (d !== played) { played = d; eq.set(d); } };
