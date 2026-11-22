@@ -1,0 +1,57 @@
+{
+ "id": "harakeke",
+ "name": "Flax",
+ "biome": "coast",
+ "generator": "rosette",
+ "seed": 97,
+ "height": 2.2,
+ "budget": [
+  2400,
+  600
+ ],
+ "note": "A fan of stiff sword leaves from one root, edged red, with tall dark stalks of rust-red flowers above: woven into baskets and cloth, planted at the edge of every shore.",
+ "leaves": {
+  "shape": "strap",
+  "count": 26,
+  "length": 0.85,
+  "width": 0.06,
+  "arch": 0.25,
+  "rise": [
+   45,
+   85
+  ],
+  "fold": 0.35,
+  "segments": 4,
+  "colors": [
+   "#3a5a2e",
+   "#40602e",
+   "#4a5a2a"
+  ],
+  "tip_colors": [
+   "#6a3a2a",
+   "#5a4a2a"
+  ],
+  "crown": 0.04,
+  "lo": 0.45,
+  "inner_up": true
+ },
+ "stalks": [
+  {
+   "count": 4,
+   "height": 1,
+   "head": "plume",
+   "fingers": 4,
+   "spread": 0.12,
+   "colors": [
+    "#3a2420"
+   ],
+   "head_colors": [
+    "#8a2a1a",
+    "#7a2418"
+   ],
+   "head_size": 0.05,
+   "radius": 0.008
+  }
+ ],
+ "ao_reach": 0.3
+}

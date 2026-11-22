@@ -1,0 +1,67 @@
+{
+ "id": "coconut-palm",
+ "name": "Coconut palm",
+ "biome": "island",
+ "generator": "rosette",
+ "seed": 61,
+ "height": 14,
+ "budget": [
+  5000,
+  1100
+ ],
+ "note": "A slender ringed trunk leaning and curving toward the sea, a crown of long feathered fronds arching out and down, green nuts clustered under it.",
+ "trunk": {
+  "height": 0.86,
+  "lean": 0.35,
+  "rise": 0.55,
+  "wobble": 0.08,
+  "radius": 0.17,
+  "taper": 0.35,
+  "segments": 12,
+  "sides": 9,
+  "flare": 0.5,
+  "rings": 0.35,
+  "ring_count": 40
+ },
+ "bark": {
+  "colors": [
+   "#8a7a64",
+   "#5a4c3e"
+  ],
+  "pattern": "fibrous"
+ },
+ "leaves": {
+  "shape": "pinnate",
+  "count": 16,
+  "length": 0.36,
+  "pairs": 22,
+  "leaflet": 0.2,
+  "arch": 0.85,
+  "rise": [
+   -15,
+   50
+  ],
+  "colors": [
+   "#4a7a2a",
+   "#52822e",
+   "#5a8a34"
+  ],
+  "tip_colors": [
+   "#8a9a4a",
+   "#9aa050"
+  ],
+  "crown": 0.005,
+  "lo": 0.5,
+  "inner_up": true
+ },
+ "nuts": {
+  "count": 7,
+  "size": 0.018,
+  "colors": [
+   "#5a6a22",
+   "#6a7a2a",
+   "#7a6a2a"
+  ]
+ },
+ "ao_reach": 0.3
+}

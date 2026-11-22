@@ -1,0 +1,85 @@
+{
+ "id": "gorse",
+ "name": "Gorse",
+ "biome": "coast",
+ "generator": "tree",
+ "seed": 89,
+ "height": 1.6,
+ "budget": [
+  3500,
+  800
+ ],
+ "note": "Spiny dark-green mounds over the cliff tops and moors, blazing coconut-scented yellow in flower.",
+ "trunk": {
+  "stems": 10,
+  "spread": 0.35,
+  "splay": 0.7,
+  "radius": 0.018,
+  "taper": 0.8,
+  "segments": 5,
+  "sides": 4,
+  "wobble": 0.4,
+  "length": 0.9
+ },
+ "bark": {
+  "colors": [
+   "#5a4a3a",
+   "#3a3028"
+  ]
+ },
+ "levels": [
+  {
+   "count": 4,
+   "start": 0.35,
+   "end": 1,
+   "angle": 40,
+   "length": 0.45,
+   "rise": 0.25,
+   "wobble": 0.4,
+   "segments": 3,
+   "radius": 0.6,
+   "sides": 3,
+   "min_radius": 0
+  }
+ ],
+ "foliage": [
+  {
+   "type": "tuft",
+   "colors": [
+    "#2a4026",
+    "#30462a",
+    "#26381e"
+   ],
+   "tip_colors": [
+    "#4a5a30"
+   ],
+   "size": 0.07,
+   "per": 3,
+   "start": 0.3,
+   "end": 1,
+   "needles": 10,
+   "splay": 1.2,
+   "brush": 0.4,
+   "knot": 0,
+   "lo": 0.4,
+   "lo_size": 1.5,
+   "core": 0.8,
+   "core_dark": 0.35
+  },
+  {
+   "type": "berries",
+   "colors": [
+    "#f0c020",
+    "#f8d030",
+    "#e8b018"
+   ],
+   "size": 0.03,
+   "per": 2,
+   "start": 0.6,
+   "end": 1,
+   "cluster": 5,
+   "share": 0.85
+  }
+ ],
+ "ao_reach": 0.4
+}

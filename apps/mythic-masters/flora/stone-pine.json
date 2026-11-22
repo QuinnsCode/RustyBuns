@@ -1,0 +1,92 @@
+{
+ "id": "stone-pine",
+ "name": "Stone pine",
+ "biome": "coast",
+ "generator": "tree",
+ "seed": 83,
+ "height": 16,
+ "budget": [
+  9000,
+  1800
+ ],
+ "note": "The umbrella pine of the sea cliffs: a tall bare, leaning trunk of orange plated bark, forking high into a broad flat-topped dome of needles.",
+ "trunk": {
+  "radius": 0.38,
+  "lean": 0.12,
+  "wobble": 0.2,
+  "kink": 0.06,
+  "taper": 0.85,
+  "segments": 12,
+  "sides": 11,
+  "flare": 0.25
+ },
+ "bark": {
+  "colors": [
+   "#a0603a",
+   "#4a3024"
+  ],
+  "pattern": "plates",
+  "plates": 0.18
+ },
+ "levels": [
+  {
+   "count": 8,
+   "start": 0.6,
+   "end": 0.9,
+   "angle": 72,
+   "length": 0.55,
+   "shape": "spreading",
+   "droop": 0.02,
+   "rise": 0.05,
+   "wobble": 0.35,
+   "kink": 0.2,
+   "segments": 5,
+   "radius": 0.55,
+   "sides": 6
+  },
+  {
+   "count": 8,
+   "start": 0.3,
+   "end": 1,
+   "angle": 70,
+   "length": 0.5,
+   "droop": 0.05,
+   "rise": 0.05,
+   "wobble": 0.35,
+   "segments": 3,
+   "radius": 0.55,
+   "sides": 4,
+   "lo": 0.6
+  }
+ ],
+ "foliage": [
+  {
+   "type": "tuft",
+   "colors": [
+    "#2e4a26",
+    "#34502a",
+    "#3a562e"
+   ],
+   "tip_colors": [
+    "#5a7040"
+   ],
+   "size": 0.065,
+   "per": 5,
+   "start": 0.5,
+   "end": 1,
+   "needles": 18,
+   "bundle": 2,
+   "splay": 0.8,
+   "reach": 1,
+   "brush": 0.55,
+   "up": 1.6,
+   "knot": 0,
+   "lo": 0.4,
+   "lo_size": 1.3,
+   "core": 0.9,
+   "core_dark": 0.35,
+   "core_squash": 0.35
+  }
+ ],
+ "ao_reach": 0.25
+}
