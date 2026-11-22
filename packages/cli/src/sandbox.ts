@@ -7,10 +7,11 @@
 //
 // With --sandbox or RB_SANDBOX=1, on macOS: a Seatbelt profile (sandbox-exec) that lets it do
 // anything except read or write the places credentials live (~/.ssh, ~/.aws, ~/.alchemy, gh,
-// wrangler, keychains...) and the project's .env, .dev.vars and .alchemy/. Opt-in, because a host
+// wrangler, keychains...) and the project's .env, .dev.vars and .alchemy/. On Linux: bubblewrap (bwrap)
+// with the same list covered by empty mounts (#897). Opt-in, because a host
 // that pushes over SSH with your keys (codeSplitter's mirrors) needs ~/.ssh. Elsewhere it says so
 // and runs without one.
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 
@@ -111,21 +112,46 @@ function repoRoot(dir: string): string | undefined {
   }
 }
 
-/** A Seatbelt profile: everything allowed but the credential paths. */
-export function seatbeltProfile(cwd: string, home = homedir()): string {
+/** The credential paths a jailed host is kept out of: HOME_SECRETS, and PROJECT_SECRETS in cwd and its repo root. */
+export function deniedPaths(cwd: string, home = homedir()): string[] {
   const roots = [...new Set([cwd, repoRoot(cwd)].filter((d): d is string => !!d).map(real))];
-  const paths = [...HOME_SECRETS.map((p) => join(real(home), p)), ...roots.flatMap((r) => PROJECT_SECRETS.map((p) => join(r, p)))];
-  return `(version 1)\n(allow default)\n(deny file-read* file-write*\n${paths.map((p) => `  (subpath ${q(p)})`).join("\n")})\n`;
+  return [...HOME_SECRETS.map((p) => join(real(home), p)), ...roots.flatMap((r) => PROJECT_SECRETS.map((p) => join(r, p)))];
 }
 
-let seatbelt: boolean | undefined;
-/** sandbox-exec is there and works here (it can't nest inside another Seatbelt sandbox). */
-function seatbeltWorks(): boolean {
-  if (seatbelt === undefined) {
-    seatbelt = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec")
-      && Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+/** A Seatbelt profile: everything allowed but the credential paths. */
+export function seatbeltProfile(cwd: string, home = homedir()): string {
+  return `(version 1)\n(allow default)\n(deny file-read* file-write*\n${deniedPaths(cwd, home).map((p) => `  (subpath ${q(p)})`).join("\n")})\n`;
+}
+
+/** Linux (#897): bubblewrap args that leave the whole system as it is (`--dev-bind / /`, network and all)
+ *  but cover each credential path that exists: a folder with an empty tmpfs, a file with /dev/null, read
+ *  only. A path that isn't there is skipped, since bwrap would make the mount point on the real disk; so
+ *  unlike Seatbelt a host can create one (a new ~/.aws) — it just can't see the keys that were already there. */
+export function bwrapArgs(cwd: string, home = homedir(), kind: (p: string) => "dir" | "file" | undefined = pathKind): string[] {
+  const out = ["--dev-bind", "/", "/", "--die-with-parent"];
+  for (const p of deniedPaths(cwd, home)) {
+    const k = kind(p);
+    if (k === "dir") out.push("--tmpfs", p);
+    else if (k === "file") out.push("--ro-bind", "/dev/null", p);
   }
-  return seatbelt;
+  return out;
+}
+
+function pathKind(p: string): "dir" | "file" | undefined {
+  try { return statSync(p).isDirectory() ? "dir" : "file"; } catch { return undefined; }
+}
+
+let jail: "seatbelt" | "bwrap" | null | undefined;
+/** Which jail works here: sandbox-exec on macOS (it can't nest inside another Seatbelt sandbox), bwrap on
+ *  Linux (it needs unprivileged user namespaces, which some distros and containers turn off). */
+function jailHere(): "seatbelt" | "bwrap" | null {
+  if (jail === undefined) {
+    const ok = (cmd: string[]) => { try { return Bun.spawnSync(cmd, { stdout: "ignore", stderr: "ignore" }).exitCode === 0; } catch { return false; } };
+    const bwrap = process.platform === "linux" ? Bun.which("bwrap") : null;
+    jail = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") && ok(["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"]) ? "seatbelt"
+      : bwrap && ok([bwrap, "--dev-bind", "/", "/", "true"]) ? "bwrap" : null;
+  }
+  return jail;
 }
 
 /** Was the sandbox asked for: --sandbox in the host args, or RB_SANDBOX=1. Strips the flag. */
@@ -133,13 +159,19 @@ export function wantsSandbox(args: string[], env: Record<string, string | undefi
   return { on: args.includes("--sandbox") || env.RB_SANDBOX === "1", args: args.filter((a) => a !== "--sandbox") };
 }
 
-/** The command that runs `script` (a built host) with `args`: Bun's locks on, in Seatbelt when asked. */
+/** The command that runs `script` (a built host) with `args`: Bun's locks on, jailed when asked. */
 export function hostCommand(script: string, args: string[] = [], opts: { sandbox?: boolean; cwd?: string } = {}): string[] {
   const cmd = ["bun", ...HOST_FLAGS, script, ...args];
   if (!opts.sandbox) return cmd;
-  if (!seatbeltWorks()) {
-    console.error(`[rustybuns] --sandbox: no Seatbelt here (${process.platform === "darwin" ? "already inside a sandbox?" : "macOS only for now"}); the host runs without it`);
-    return cmd;
+  const cwd = opts.cwd ?? process.cwd();
+  switch (jailHere()) {
+    case "seatbelt": return ["/usr/bin/sandbox-exec", "-p", seatbeltProfile(cwd), ...cmd];
+    case "bwrap": return [Bun.which("bwrap")!, ...bwrapArgs(cwd), "--", ...cmd];
+    default: {
+      const why = process.platform === "darwin" ? "no Seatbelt here (already inside a sandbox?)"
+        : process.platform === "linux" ? "no working bwrap here (install bubblewrap; it needs unprivileged user namespaces)" : `no sandbox on ${process.platform}`;
+      console.error(`[rustybuns] --sandbox: ${why}; the host runs without it`);
+      return cmd;
+    }
   }
-  return ["/usr/bin/sandbox-exec", "-p", seatbeltProfile(opts.cwd ?? process.cwd()), ...cmd];
 }

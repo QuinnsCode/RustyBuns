@@ -1511,7 +1511,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
             [--watch]        rebuild (--dev) on save and restart the host; a failed build
                              keeps the old one up, and the window reloads itself
             [--agent]        open no window (RB_NO_BROWSER): print the open URL once, for an agent's browser
-            [--sandbox]      macOS: run it under Seatbelt, kept out of ~/.ssh, ~/.aws, gh,
+            [--sandbox]      jail it (macOS Seatbelt, Linux bwrap), kept out of ~/.ssh, ~/.aws, gh,
                              wrangler, keychains and the project's .env (or RB_SANDBOX=1).
                              Always: no .env load, no auto-install, no credential env vars
   build box [--target T]     the same host for the box: Hetzner gets a linux binary + node

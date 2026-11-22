@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEnv, emptyHome, withLocalBins, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+import { buildEnv, emptyHome, withLocalBins, HOST_FLAGS, hostCommand, hostEnv, bwrapArgs, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
 
 test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", () => {
   const env = buildEnv({
@@ -95,4 +95,25 @@ test("withLocalBins: the app's node_modules/.bin, nearest first, ahead of PATH",
   mkdirSync(join(app, "node_modules/.bin"), { recursive: true });
   const { PATH } = withLocalBins({ PATH: "/usr/bin" }, app);
   expect(PATH.split(":").slice(0, 3)).toEqual([join(app, "node_modules/.bin"), join(root, "node_modules/.bin"), "/usr/bin"]);
+});
+
+test("bwrap args cover the credential paths that exist: folders with a tmpfs, files with /dev/null (#897)", () => {
+  const kinds: Record<string, "dir" | "file"> = { "/home/me/.ssh": "dir", "/home/me/.netrc": "file", "/home/me/.config/gh": "dir" };
+  const a = bwrapArgs("/nowhere/app", "/home/me", (p) => kinds[p]);
+  expect(a.slice(0, 4)).toEqual(["--dev-bind", "/", "/", "--die-with-parent"]);
+  expect(a.slice(4)).toEqual(["--tmpfs", "/home/me/.ssh", "--ro-bind", "/dev/null", "/home/me/.netrc", "--tmpfs", "/home/me/.config/gh"]);
+});
+
+test.if(process.platform === "linux")("under bwrap a host can't read a denied file or folder but can read its own (#897)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sb-"));
+  try {
+    writeFileSync(join(dir, ".env"), "SECRET=1");
+    mkdirSync(join(dir, ".alchemy"));
+    writeFileSync(join(dir, ".alchemy/state.json"), "{}");
+    writeFileSync(join(dir, "ok.txt"), "fine");
+    const cmd = hostCommand("-e", [`const f = require("fs"); console.log(JSON.stringify(f.readFileSync(".env", "utf8")), f.readdirSync(".alchemy").length, f.readFileSync("ok.txt", "utf8"))`], { sandbox: true, cwd: dir });
+    if (!cmd[0]!.endsWith("bwrap")) return; // no working bwrap here: nothing to check
+    const r = Bun.spawnSync(cmd, { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    expect(r.stdout.toString().trim()).toBe('"" 0 fine');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
