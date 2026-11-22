@@ -1,6 +1,7 @@
 // A new game from the starter (#4053): `bun run new-game rocket-golf [--title "Rocket Golf"]`.
 // Copies apps/starter-game to apps/<id> under the new names (its eqosys id, its `window.<handle>` harness, its title) and
-// adds its row to HANDLES in scripts/probe.ts, so `bun run probe <id>` asks the game from the first run. Then: `bun install`,
+// adds its row to HANDLES in scripts/probe.ts, so `bun run probe <id>` asks the game from the first run, and to APPS in
+// scripts/ci-apps.ts, so CI runs its tests. Then: `bun install`,
 // `cd apps/<id> && bun run dev`. The same starter as a codeSplitter repo of your own is the "New game" button on the eqosys
 // Studio page (POST /api/github/starter). What's left by hand, the eqosys listing and the sign-in site, is in the new README.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -39,6 +40,17 @@ export function withHandle(probe: string, n: StarterNames): string {
   return probe.slice(0, at + 1) + row + probe.slice(at + 1);
 }
 
+/** ci-apps.ts's source with the new game's APPS row added after starter-game's (unchanged when it has one), so CI runs its tests (#4881). */
+export function withCiRow(ci: string, n: StarterNames): string {
+  const key = JSON.stringify(n.id);
+  if (ci.includes(`\n  ${key}:`)) return ci;
+  const at = ci.indexOf('\n  "starter-game":');
+  if (at < 0) throw new Error("no starter-game row in APPS in scripts/ci-apps.ts");
+  const after = ci.indexOf("\n", at + 1);
+  const row = `  ${(key + ":").padEnd(20)} { test: "bun test test", drop: false },\n`;
+  return ci.slice(0, after + 1) + row + ci.slice(after + 1);
+}
+
 if (import.meta.main) {
   help(import.meta.path);
   const argv = process.argv.slice(2), id = argv.find((a) => !a.startsWith("--")) ?? "";
@@ -50,5 +62,7 @@ if (import.meta.main) {
   const files = copyStarter(join(root, STARTER.folder), to, n);
   const probe = join(root, "scripts/probe.ts");
   writeFileSync(probe, withHandle(readFileSync(probe, "utf8"), n));
-  console.log(`apps/${n.id}: ${files.length} files, window.${n.handle}.state() in HANDLES.\nNext: bun install, then cd apps/${n.id} && bun run dev. Its README says how to list it on eqosys.`);
+  const ci = join(root, "scripts/ci-apps.ts");
+  writeFileSync(ci, withCiRow(readFileSync(ci, "utf8"), n));
+  console.log(`apps/${n.id}: ${files.length} files, window.${n.handle}.state() in HANDLES, its tests in ci-apps.ts.\nNext: bun install, then cd apps/${n.id} && bun run dev. Its README says how to list it on eqosys.`);
 }
