@@ -8,7 +8,7 @@
 
 /** Whether a `bun build --help` text offers --aot. */
 export function hasAot(help: string): boolean {
-  return /^\s*--aot\b/m.test(help);
+  return /^\s*--aot(?![\w-])/m.test(help);
 }
 
 /** The AOT binary's name for a JIT binary's name. */
