@@ -50,13 +50,13 @@ export const SCENARIOS: Record<string, Scenario> = {
   "setup-two-accounts": s("Two accounts side by side", [111], { accounts: [{ login: "octo-demo", good: true }, { login: "second-demo", good: true }] }),
   "setup-test-red": s("One account whose token GitHub stopped accepting: Test turns it red, Revoke removes it", [111], { accounts: [{ login: "octo-demo", good: true }, { login: "stale-demo", good: false }] }),
   "setup-builder-down": s("The build Mac does not answer: the card shows its one-line setup", [111], { accounts: [{ login: "octo-demo", good: true }], builder: "down" }),
-  "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [2520, 111], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
-  "writes-grants": s("The GitHub writes switches: the office on, one repo on and one off; flip each, then Ask again", [2520], { repos: [{ repo: "QuinnsCode/RustyBuns", on: true }, { repo: "QuinnsCode/other", on: false }] }),
-  "box-first-run": s("The office in the box, first run: the shield opens the set-up page, the scroll the whole log, and the box reaching a host off its list waits on Deny / Always / Allow", [2568], { box: { log: 40, held: "pypi.org" } }),
-  "wall-gitpath": s("gitpath with open PRs as cars between open and main; click a car to open its PR", [2425, 2430], { screens: ["gitpath"], mervin: { phase: "green" }, ester: { phase: "green" } }),
-  "wall-mervin": s("Mervin finished: conflicts avoided, file tiles, his running tally top right", [2430], { screens: ["gitpath", "mervin", "ester"], keep: true, mervin: { phase: "green" }, ester: { phase: "idle" } }),
-  "wall-ester-running": s("Ester mid-run: the clock ticks and the PR blocks pulse (it finishes green after about two minutes)", [2425], { screens: ["gitpath", "mervin", "ester"], mervin: { phase: "green" }, ester: { phase: "running", age: 45 } }),
-  "wall-ester-red": s("Ester ran PR by PR and #103 broke: the Cheap fix: Haiku button queues a task (shown on the stage)", [2430], { screens: ["gitpath", "mervin", "ester"], each: true, keep: true, mervin: { phase: "green" }, ester: { phase: "red" }, esterEnds: "red" }),
+  "writes-ask-pending": s("Gizmo's git push is held on an Allow / Deny / Always card; Always lets the next push through and lists the grant", [111], { ask: { who: "Gizmo", command: "git push origin office/gizmo-221a" }, workers: crew("asking", "working", "idle") }),
+  "writes-grants": s("The GitHub writes switches: the office on, one repo on and one off; flip each, then Ask again", [7], { repos: [{ repo: "QuinnsCode/RustyBuns", on: true }, { repo: "QuinnsCode/other", on: false }] }),
+  "box-first-run": s("The office in the box, first run: the shield opens the set-up page, the scroll the whole log, and the box reaching a host off its list waits on Deny / Always / Allow", [7], { box: { log: 40, held: "pypi.org" } }),
+  "wall-gitpath": s("gitpath with open PRs as cars between open and main; click a car to open its PR", [7], { screens: ["gitpath"], mervin: { phase: "green" }, ester: { phase: "green" } }),
+  "wall-mervin": s("Mervin finished: conflicts avoided, file tiles, his running tally top right", [7], { screens: ["gitpath", "mervin", "ester"], keep: true, mervin: { phase: "green" }, ester: { phase: "idle" } }),
+  "wall-ester-running": s("Ester mid-run: the clock ticks and the PR blocks pulse (it finishes green after about two minutes)", [], { screens: ["gitpath", "mervin", "ester"], mervin: { phase: "green" }, ester: { phase: "running", age: 45 } }),
+  "wall-ester-red": s("Ester ran PR by PR and #103 broke: the Cheap fix: Haiku button queues a task (shown on the stage)", [7], { screens: ["gitpath", "mervin", "ester"], each: true, keep: true, mervin: { phase: "green" }, ester: { phase: "red" }, esterEnds: "red" }),
 };
 
 export const names = () => Object.keys(SCENARIOS);
