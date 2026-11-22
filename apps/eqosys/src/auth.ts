@@ -3,7 +3,7 @@
 import { betterAuth } from "better-auth";
 import { symmetricDecrypt } from "better-auth/crypto";
 import type { Env } from "./env.ts";
-import { ssoPlugin } from "./sso.ts";
+import { ssoPlugin, ssoRequired } from "./sso.ts";
 
 /** The social mark cookie for an ask carried as a query (sso.ts): handle.ts is loaded when it's asked for, as it imports this file. */
 const markFor = async (conf: Env, query: string) => {
@@ -66,7 +66,16 @@ const make = (conf: Env, origin: string) => betterAuth({
   advanced: { cookiePrefix: "eqosys" },
   // Company sign-in through a studio's own provider (sso.ts): its callback is a Better Auth endpoint, so its session is one of these.
   plugins: [ssoPlugin(conf, (ask) => markFor(conf, ask))],
-  databaseHooks: { user: { create: { before: async (user) => ({ data: { ...user, name: user.name?.trim() || nameFor(user.email) } }) } } },
+  // A studio that made company sign-in the only way in for its proved domain (sso.ts ssoOnly): any other way to make an account
+  // or a session with an email there is refused, the company's own callback aside.
+  databaseHooks: {
+    user: { create: { before: async (user, ctx) => (ctx?.path !== "/sso/callback" && await ssoRequired(conf, user.email) ? false : { data: { ...user, name: user.name?.trim() || nameFor(user.email) } }) } },
+    session: { create: { before: async (session, ctx) => {
+      if (ctx?.path === "/sso/callback") return;
+      const email = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(session.userId).first<string>("email");
+      return email && await ssoRequired(conf, email) ? false : undefined;
+    } } },
+  },
   socialProviders: {
     ...(conf.GITHUB_CLIENT_ID && conf.GITHUB_CLIENT_SECRET ? { github: { clientId: conf.GITHUB_CLIENT_ID, clientSecret: conf.GITHUB_CLIENT_SECRET } } : {}),
     ...(conf.GOOGLE_CLIENT_ID && conf.GOOGLE_CLIENT_SECRET ? { google: { clientId: conf.GOOGLE_CLIENT_ID, clientSecret: conf.GOOGLE_CLIENT_SECRET } } : {}),

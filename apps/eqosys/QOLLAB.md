@@ -165,6 +165,10 @@ friends who play different games still share one.
   (`GET /q/space/<id>/export`) hands them every text channel, or one, as JSON. `audit()` reads the log of role changes, kicks,
   channel deletes, retention changes and exports (the newest 1,000), Studio tab removals and role changes included.
   `kick(id, true)` takes someone out of every space they are in that the kicker runs too, each by its own rules (`removeEverywhere`).
+- **Company sign-in only (#5543):** once a studio proved its company sign-in domain, its owner can make company sign-in the only
+  way in for that domain's emails (Studio tab, `sso.ts ssoOnly`). Turning it on signs everyone on the domain out; a password,
+  GitHub, Google or Apple sign-in or sign-up with such an email is then refused. An owner on the domain must have signed in
+  through the company once first, so they can't lock themselves out. Changing the domain turns it off.
 - **Office words:** a business studio's space says so (`office` in its info), and the panel says "meeting" for its voice
   channels (VISION.md#the-words).
 - **Moderation:** the owner and admins mute (text and voice) and kick; anyone reports, which reaches them and files a row through the game-report path.

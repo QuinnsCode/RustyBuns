@@ -1,15 +1,16 @@
 // Qollab for teams (#5543), the way a small office uses a space: two coworkers talk in a direct message nobody else sees (those
 // who run the space neither), someone sets a status line, a business studio's space says "meeting", and whoever runs it reads
 // the audit log, sets how long messages stay, exports the channels, and takes someone out of every space they run at once.
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space, type SpaceAudit, type SpaceInfo, type SpaceMember } from "@rustybuns/util/eqosys";
 import { newKey } from "@rustybuns/util/token";
 import { handle } from "../src/handle.ts";
-import { Space } from "../src/qollab/space.ts";
+import { Space, spaceOf } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(30_000);
+const DAY = 86_400_000;
 
 const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
 conf.SPACE = durableObject(Space as never, conf) as never;
@@ -123,4 +124,31 @@ test("a business studio's space speaks office words; a team studio's doesn't", a
     expect(g.info()!.office).toBe(office);
   }
   g.c.close();
+});
+
+test("with a retention set, the daily alarm takes out messages older than it, clock moved forward", async () => {
+  const hal = await signUp("Hal");
+  const h = member(hal.token), pages: string[][] = [];
+  const made = (await h.c.make("Keeps"))!;
+  h.c.open(made.id, { space: () => {}, history: (_, ms) => pages.push(ms.map((m) => m.text)) });
+  h.c.keep(30);
+  h.c.say("general", "old news");
+  h.c.history("general");
+  await until(() => pages.at(-1)?.includes("old news"));
+  const space = spaceOf(conf.SPACE!, made.id) as unknown as { alarm(): Promise<void> };
+  try {
+    // A day on, the alarm runs, but nothing is 30 days old yet.
+    setSystemTime(new Date(Date.now() + DAY));
+    await space.alarm();
+    h.c.history("general");
+    await until(() => pages.length === 2);
+    expect(pages[1]).toEqual(["old news"]);
+    // 31 days on, the day's prune takes "old news" out; what is said then stays.
+    setSystemTime(new Date(Date.now() + 30 * DAY));
+    h.c.say("general", "fresh");
+    await space.alarm();
+    h.c.history("general");
+    await until(() => pages.length === 3);
+    expect(pages[2]).toEqual(["fresh"]);
+  } finally { setSystemTime(); h.c.close(); }
 });
