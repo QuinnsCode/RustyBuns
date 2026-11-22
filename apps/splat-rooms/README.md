@@ -65,6 +65,12 @@ Both shots are seed 7 from the desktop app's room browser, taken headless: start
 - **Numbers** (2026-11-04, M1 Pro, CPU, 128 samples, seed 7): 620k to 700k splats and 10 to 11.5 MB a room, 26 to 37 s in all (the bake itself about 20 s), with 30 to 44 labelled objects. The round planner plans 20 of 20 rounds in every theme, with 10 to 13 different targets. Cycles on Metal hangs for 20+ minutes compiling kernels on this Mac, so `--device` defaults to CPU. Models, textures and skies are fetched once into `~/.cache/splat-rooms`.
 - **Not as good as a scan yet:** no reflections (the bake is diffuse only, and glass bakes as opaque, so a clock's hands behind its glass go dark and drop), and flat discs make soft edges. A short training pass seeded from these splats would close more of the gap.
 
+## A scan as a level (spike, #3269)
+
+`bun scripts/scan-level.ts <scene> [--out dir] [--no-structure]` takes a scene folder and cuts every huntable object (`rooms/extract.ts`: each splat goes to the smallest box holding it) into its own compressed PLY, runs 20 seeded rounds through the planner, then does both again with the boxes made rough on purpose, as a vision model's guesses might be. It calls no model, so it costs nothing.
+
+Numbers (2026-11-21, M1 Pro, all 16 local scenes): decode 0.5 s, cut 0.1 to 24 s (it grows with splats times boxes; 4,332 labels was the slow one), cut pieces about 16 bytes a splat (182 objects of one room, 4.4 MB). The planner planned 20 of 20 rounds in every scene, with and without `structure.json`. Rough boxes matter for the cut, not the planner: boxes off by 5 cm / 10% keep a median overlap of 0.5 to 0.8 with the true cut; off by 15 cm / 25% it falls to 0 to 0.6, and the planner still plans 20 of 20, so it can't catch bad labels.
+
 ## Run
 
 ```

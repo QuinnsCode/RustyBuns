@@ -31,9 +31,11 @@ export function readPly(bytes: Uint8Array): RawSplats | null {
   const body = end + "end_header\n".length;
   const vertOff = body + chunks * 18 * 4;
   if (bytes.length < vertOff + n * 16) return null;
-  const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  const cd = new Float32Array(buf, body, chunks * 18);
-  const vd = new Uint32Array(buf, vertOff, n * 4);
+  // copied from the end of the header on, because a header whose length isn't a multiple of 4 leaves the
+  // tables unaligned in the file, and typed arrays can't start there
+  const buf = bytes.slice(body, vertOff + n * 16).buffer;
+  const cd = new Float32Array(buf, 0, chunks * 18);
+  const vd = new Uint32Array(buf, vertOff - body, n * 4);
   const out: RawSplats = {
     count: n, pos: new Float32Array(n * 3), scale: new Float32Array(n * 3), quat: new Float32Array(n * 4),
     color: new Float32Array(n * 3), opacity: new Float32Array(n),
