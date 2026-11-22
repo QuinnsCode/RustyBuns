@@ -108,7 +108,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
 }
 
 /** What the page's web plugins play into, once the audio is on. */
-const pageAudio = (a: AudioOut | null): PageAudio | null => a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, fxIn: a.fxIn, webOut: a.webOut, returns: a.returns, route: (t, on) => a.routeWeb(t, on) };
+const pageAudio = (a: AudioOut | null): PageAudio | null => a && { ctx: a.ctx, taps: a.webTaps, fxIn: a.fxIn, webIn: a.webIn, fxOut: a.fxOut, web: (t, g) => a.web(t, g), route: (t, on) => a.routeWeb(t, on) };
 
 export function App() {
   // `?song=wobble-lab` opens that song solo, so a jump link never overwrites the sesh's groove
@@ -424,6 +424,7 @@ export function App() {
   }
 
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
+  const sideMeters = useRef<{ a: AudioOut; l: AnalyserNode; r: AnalyserNode } | null>(null);
   // played some other way (Space, the transport's Play, the room): the first-try card has done its job
   useEffect(() => { if (transportOn && audio && !tried) markTried(); }, [transportOn]);
   // each plugin track's plugin, started, stopped and its sliders sent on as the groove changes
@@ -432,19 +433,32 @@ export function App() {
   useEffect(() => { audio?.send({ t: "master", gain: dbToGain(masterDb) * roomGain(project) }); }, [audio, masterDb, project.master]);
 
   // Ask the desk instead of screenshotting it (scripts/probe.ts): what plays each track, and how loud it is. `peak` is
-  // the engine's own meter (FM voices); `out` is what leaves for the speakers, plugins and amps too, over the last 170 ms.
+  // the engine's own meter (FM voices); `out` is what leaves for the speakers, plugins and amps too, over the last 170 ms;
+  // `sides`, the same of each side (made on the first ask).
   useEffect(() => {
-    const out = () => {
-      const an = audioRef.current?.analyser;
-      if (!an) return 0;
+    const loudest = (an: AnalyserNode) => {
       const buf = new Float32Array(an.fftSize);
       an.getFloatTimeDomainData(buf);
       return buf.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
     };
+    const out = () => { const an = audioRef.current?.analyser; return an ? loudest(an) : 0; };
+    const sides = () => {
+      const a = audioRef.current;
+      if (!a) return { l: 0, r: 0 };
+      if (sideMeters.current?.a !== a) {
+        const split = new ChannelSplitterNode(a.ctx, { numberOfOutputs: 2 }), mk = () => new AnalyserNode(a.ctx, { fftSize: 8192 });
+        const l = mk(), r = mk();
+        a.node.connect(split);
+        split.connect(l, 0);
+        split.connect(r, 1);
+        sideMeters.current = { a, l, r };
+      }
+      return { l: loudest(sideMeters.current.l), r: loudest(sideMeters.current.r) };
+    };
     Object.assign(window, { fmdaw: {
       state: () => ({
         view: viewRef.current,
-        audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(),
+        audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(), sides: sides(),
         line: Object.fromEntries(linePeaks.current),
         bars: proj.current.bars, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
         tracks: proj.current.tracks.map((tr, i) => {
@@ -458,6 +472,7 @@ export function App() {
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      pan: (track: number, v: number) => commit({ t: "param", track, i: P.PAN, v }),
       // audio onto a track at a beat, as a recording lands (the clip lane then shows it)
       land: (track: number, beat: number, pcm: Float32Array, rate: number) => landTake(track, beat, pcm, rate),
       trust: (track: number) => { pump.current?.trust(track, proj.current); fxPump.current?.trust(track, proj.current); },
