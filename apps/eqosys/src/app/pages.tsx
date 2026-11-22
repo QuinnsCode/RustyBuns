@@ -575,7 +575,7 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
         {GENRES.map((g) => {
           const list = sorted(apps.filter((a) => a.genre === g));
           return list.length ? (
-            <details key={g} className="cat" open aria-label={g}>
+            <details key={g} className="cat" open={!hub?.folded?.includes(g)} data-row={g} aria-label={g}>
               <summary><h2><Icon d={ROW_ICONS[g]} />{g}<em>{list.length}</em></h2><Icon d={CHEVRON} /></summary>
               <div className="shelf">{list.map((a) => <Tile key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>
             </details>
