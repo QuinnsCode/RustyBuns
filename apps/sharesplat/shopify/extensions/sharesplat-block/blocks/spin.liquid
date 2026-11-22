@@ -1,0 +1,31 @@
+{% comment %}
+  The ShareSplat app block: a product's 3D spin in place of a pasted <iframe>. Its "Product link" setting is the
+  link ShareSplat gives when a product goes online (https://sharesplat.../p/<id>, or the id alone). Connect the
+  setting to a product metafield in the theme editor (the database icon beside it) and every product shows its own
+  spin; a product whose metafield is empty shows nothing, so the theme's own media (and Shopify's 3D model, if the
+  product has one) stays as it is.
+{% endcomment %}
+{%- assign link = block.settings.product | strip -%}
+{%- assign id = link | split: '/' | last | split: '?' | first -%}
+{%- if id != blank and id.size == 20 -%}
+  <div class="sharesplat-block" {{ block.shopify_attributes }}>
+    <iframe src="{{ block.settings.host | escape }}/p/{{ id | escape }}" title="{{ product.title | escape }} in 3D"
+      style="width:100%;aspect-ratio:{{ block.settings.shape }};border:0;border-radius:{{ block.settings.radius }}px"
+      allow="fullscreen" loading="lazy"></iframe>
+  </div>
+{%- endif -%}
+{% schema %}
+{
+  "name": "ShareSplat 3D spin",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "text", "id": "product", "label": "Product link", "info": "The link ShareSplat gave when it put the product online. Connect it to a product metafield so each product shows its own." },
+    { "type": "select", "id": "shape", "label": "Shape", "default": "1", "options": [
+      { "value": "1", "label": "Square" }, { "value": "4/3", "label": "Wide" }, { "value": "3/4", "label": "Tall" }
+    ] },
+    { "type": "range", "id": "radius", "label": "Corner rounding", "min": 0, "max": 24, "step": 2, "unit": "px", "default": 8 },
+    { "type": "text", "id": "host", "label": "ShareSplat address", "info": "Leave as it is.", "default": "https://sharesplat.notryanquinn.workers.dev" }
+  ]
+}
+{% endschema %}

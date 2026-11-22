@@ -1,6 +1,14 @@
-// ShareSplat on the edge: the built page as static assets, no Worker code yet. `bun run deploy` ships it.
+// ShareSplat on the edge: the built page as static assets, and the Worker (src/worker.ts) for the product routes
+// only, with each product's .spz in R2. `bun run deploy` ships it; the bucket is made once with
+// `bunx wrangler r2 bucket create sharesplat`.
 {
   "name": "sharesplat",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-09-01",
-  "assets": { "directory": "dist/ui" }
+  "assets": {
+    "directory": "dist/ui",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/s/*", "/p/*"]
+  },
+  "r2_buckets": [{ "binding": "SPLATS", "bucket_name": "sharesplat" }]
 }

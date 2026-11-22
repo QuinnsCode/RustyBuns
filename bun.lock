@@ -927,6 +927,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
         "@sparkjsdev/spark": "2.2.0",
         "lucide": "1.55.0",
         "three": "^0.180.0",
