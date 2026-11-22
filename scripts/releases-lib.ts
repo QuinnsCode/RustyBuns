@@ -64,3 +64,18 @@ export function pacific(iso: string): string {
   }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
   return `${parts.hour}:${parts.minute}${(parts.dayPeriod ?? "").toLowerCase()} ${parts.timeZoneName} ${parts.month}-${parts.day}-${parts.year}`;
 }
+
+/** An app to deploy again: it has a prod link of its own (not the framework's npm page), and main changed it after its
+ *  last deploy from this Mac, or no deploy of it is written down (~/.rustybuns/deploys.jsonl started 2026-11-20). */
+export function owed(a: { id: string; link: string | null; dot: Dot; pushed: string | null; deployed: string | null }): boolean {
+  if (a.id === "rustybuns" || !a.link || a.dot === "code" || !a.pushed) return false;
+  return !a.deployed || Date.parse(a.pushed) > Date.parse(a.deployed);
+}
+
+/** How an app goes out again, run from its folder: codeSplitter has its own release script (it keeps the hosted flags on);
+ *  a `rustybuns deploy` app needs its plan first; a plain `wrangler deploy` app just runs its deploy script. */
+export function deployOf(id: string, script: string | null): { plan: boolean; cmd: string } | null {
+  if (id === "codesplitter") return { plan: false, cmd: "zsh scripts/release-codesplitters.sh" };
+  if (!script) return null;
+  return { plan: /rustybuns deploy|cli\/src\/index\.ts deploy/.test(script), cmd: "bun run deploy" };
+}

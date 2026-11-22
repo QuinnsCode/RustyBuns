@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appDot, busiest, pacific, repoDot, tally } from "./releases-lib.ts";
+import { appDot, busiest, deployOf, owed, pacific, repoDot, tally } from "./releases-lib.ts";
 
 test("each app gets the dot the owner reads it by", () => {
   const up = { ok: true }, down = { ok: false };
@@ -39,4 +39,26 @@ test("PRs count today and this week, busiest first", () => {
 
 test("last push reads in Pacific time, PST or PDT by the date", () => {
   expect([pacific("2026-12-14T00:56:00Z"), pacific("2026-07-04T21:05:00Z")]).toEqual(["4:56pm PST Dec-13-2026", "2:05pm PDT Jul-04-2026"]);
+});
+
+test("an app is owed a re-release when main moved it after its last deploy, or no deploy is logged", () => {
+  const base = { id: "two-fronts", link: "https://x.dev", dot: "live" as const, pushed: "2026-11-21T10:00:00Z", deployed: "2026-11-21T09:00:00Z" };
+  expect([
+    owed(base),                                           // merged after the deploy
+    owed({ ...base, deployed: "2026-11-21T11:00:00Z" }),  // deployed since
+    owed({ ...base, deployed: null }),                    // never logged
+    owed({ ...base, link: null }),                        // nothing live to update
+    owed({ ...base, id: "rustybuns", link: "https://www.npmjs.com/package/rustybuns" }), // npm goes out by a v tag
+  ]).toEqual([true, false, true, false, false]);
+  const cli = "bun ../../packages/cli/src/" + "index.ts";
+  expect([
+    deployOf("codesplitter", "anything"),
+    deployOf("two-fronts", "bunx rustybuns deploy"),
+    deployOf("eqosys", `${cli} deploy`),
+    deployOf("git-recon", `vite build && bunx wrangler deploy && ${cli} report-deploy --app git-recon`),
+    deployOf("qollab", null),
+  ]).toEqual([
+    { plan: false, cmd: "zsh scripts/release-codesplitters.sh" },
+    { plan: true, cmd: "bun run deploy" }, { plan: true, cmd: "bun run deploy" }, { plan: false, cmd: "bun run deploy" }, null,
+  ]);
 });
