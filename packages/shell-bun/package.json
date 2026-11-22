@@ -42,7 +42,7 @@
   ],
   "dependencies": {
     "@rustybuns/ports": "workspace:*",
-    "effect": "^4.0.5"
+    "effect": "^4.1.4"
   },
   "peerDependencies": {
     "react": "*",

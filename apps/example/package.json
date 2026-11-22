@@ -11,21 +11,21 @@
     "@rustybuns/shell-bun": "^0.1.12"
   },
   "devDependencies": {
-    "@alchemy.run/cloudflare": "2.0.0-beta.84",
-    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-    "@alchemy.run/hetzner": "2.0.0-beta.84",
-    "@alchemy.run/neon": "2.0.0-beta.84",
-    "@alchemy.run/railway": "2.0.0-beta.84",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
-    "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5"
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.87",
+    "@alchemy.run/hetzner": "2.0.0-beta.87",
+    "@alchemy.run/neon": "2.0.0-beta.87",
+    "@alchemy.run/railway": "2.0.0-beta.87",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "4.1.4"
   },
   "overrides": {
-    "effect": "4.0.5",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
-    "@effect/vitest": "4.0.5"
+    "effect": "4.1.4",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
+    "@effect/platform-node-shared": "4.1.4",
+    "@effect/vitest": "4.1.4"
   }
 }

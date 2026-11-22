@@ -7,6 +7,15 @@
 // Off unless --drain-url is given. It never fails a deploy that could go out: an app that doesn't answer is said so and skipped.
 
 import { check, int, obj, type Of } from "@rustybuns/shell-bun/guard";
+import type { RustyBunsConfig } from "./config.ts";
+
+/** What `deploy` says after shipping Durable Objects: how long a check may still meet the old code (worker.codeUpdate). */
+export function oldCodeNote(codeUpdate: NonNullable<RustyBunsConfig["worker"]>["codeUpdate"]): string {
+  if (codeUpdate === "immediate") return "busy Durable Objects were restarted onto the new code at once (worker.codeUpdate), dropping their sockets";
+  const s = codeUpdate?.maxDelay ?? 300;
+  const wait = s >= 60 && s % 60 === 0 ? `${s / 60} minute${s === 60 ? "" : "s"}` : `${s} seconds`;
+  return `busy Durable Objects keep the old code until they go idle, up to ${wait}; a check before then may still meet it`;
+}
 
 /** Seconds of warning before the deploy goes live, when --drain-seconds isn't given. Small on purpose: the owner decides. */
 export const DEFAULT_GRACE_S = 30;
