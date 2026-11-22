@@ -339,6 +339,18 @@ How the apps use it:
 
 </details>
 
+### Test your app's journeys against a running copy
+
+`rustybuns test` runs your journey tests against the app on the local emulators, or against a throwaway stage it deploys and destroys.
+
+<details><summary>More</summary>
+
+`rustybuns test` starts `rustybuns dev` on the local emulators, waits until the app answers, and then runs your journey tests against it. These are the test files with "journey" in the path, such as `test/journey/*.test.ts`, or the filters you name. The tests read the app's address from `RUSTYBUNS_TEST_URL`. This run is free and touches no account.
+
+`rustybuns test --stage` deploys a throwaway stage (`test_$USER`, or `--stage=NAME`) instead, runs the same tests against it, and then destroys it, even when a test fails or you press Ctrl-C. It shows the price first and asks before the deploy (`--yes` in a script). It refuses a REAL stage. `--keep` leaves the stage up, and `--url URL` tests an app that is already running. [apps/example/test/journey](apps/example/test/journey/home.test.ts) has an example.
+
+</details>
+
 ### Smoke test an app without laying a finger on it (help test it out more and report back!)
 
 `rustybuns smoke [dir]` copies your app to a temporary folder, then installs it, builds it and starts it on the local twins. It tells you if the home page answered. It deploys nothing and changes nothing in your folder.

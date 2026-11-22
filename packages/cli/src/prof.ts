@@ -15,9 +15,14 @@ export const PROF_SECRET = "RB_PROF_SECRET";
 
 /** The box's URL from `<state>/<app>/<stage>/Service.json`, or null before a deploy. */
 export function boxUrl(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "state">, stage: string): string | null {
+  return stateUrl(projectDir, cfg, stage, "Service");
+}
+
+/** A resource's URL from `<state>/<app>/<stage>/<id>.json` ("Worker" or "Service"), or null before a deploy. */
+export function stateUrl(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "state">, stage: string, id: string): string | null {
   const shared = cfg.state === "project" ? null : sharedStateBase(projectDir);
   const dir = shared ? join(shared, "state") : join(projectDir, ".alchemy", "state");
-  const file = join(dir, cfg.name, stage, "Service.json");
+  const file = join(dir, cfg.name, stage, `${id}.json`);
   if (!existsSync(file)) return null;
   const url = JSON.parse(readFileSync(file, "utf8"))?.attr?.url;
   return typeof url === "string" && url ? url.replace(/\/$/, "") : null;

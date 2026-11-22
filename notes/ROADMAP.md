@@ -39,7 +39,7 @@ not engineering.
 3. Restructure `gen/` around the matrix above; Fly and Railway become columns, not copies. Railway is a box column (`provider: "railway"`), deployed live with hippo-tycoon.
 4. R2 -> directory adapter; `pipeline` binding type (pass-through on edge, stdout elsewhere).
 5. `rustybuns add worker <name>` / `add rust <name> --front|--back`: typed worker RPC over SAB, TS body by default, WASM or cdylib drop-in.
-6. `rustybuns test`: E2E gate (desktop binary, local workerd via Alchemy's test harness, preview stage) run by `deploy`.
+6. `rustybuns test`: E2E gate. Local workerd (`rustybuns dev`) and a throwaway stage are done (#4799), with the harness's steps run by the CLI because Alchemy beta.87 no longer ships `alchemy/Test`. Still to do: the desktop binary, the per-PR preview stages (#2238), and running it from `deploy`.
 7. Desktop updater: version manifest, signed download, swap on next launch; protocol-version handshake guidance.
 8. `rustybuns package`: .app/.dmg, .msi, AppImage; signing + notarization; CI matrix for Rust cdylibs.
 9. Example app: Three.js scene, n-body in a worker over SAB, Rust/WASM drop-in, networked through the world. Deploys to every column.
