@@ -52,6 +52,27 @@ export const GITHUB_EVENT: Record<Event, string> = {
   commit: "push", "branch.opened": "create", "branch.merged": "pull_request", "deploy.finished": "deployment_status", check_run: "check_run",
 };
 
+interface Login { login: string }
+/** What each event says, before `repository` and `sender` are added: one type per payload, so every emit is checked. */
+export interface Payloads {
+  commit: {
+    ref: string; before: string; after: string; created: boolean; pusher: { name: string };
+    head_commit: { id: string; message: string; timestamp: string; author: { name: string; username: string }; added: string[]; modified: string[]; removed: string[] };
+  };
+  "branch.opened": { ref: string; ref_type: "branch"; master_branch: string };
+  "branch.merged": {
+    action: "closed"; files: string[];
+    pull_request: { merged: true; merged_at: string; merged_by: Login; user: Login; head: { ref: string }; base: { ref: string } };
+  };
+  "deploy.finished": {
+    deployment: { id: string; sha: string | null; environment: string; task: string; creator: Login };
+    deployment_status: { state: "success" | "failure"; environment: string; environment_url: string | null; description: string | null };
+  };
+  check_run: { action: "created" | "completed"; check_run: object };
+}
+/** An event, who did it and what it says, kept together so narrowing the event narrows its payload. */
+type Emitted = { [E in Event]: [event: E, sender: string, data: Payloads[E]] }[Event];
+
 /** A message on the queue: try `id` again, as its try number `n + 1`. */
 export interface HookMessage { id: string; n: number }
 
@@ -160,10 +181,11 @@ async function attempt(env: Env, d: Delivery, url: string, secret: string, githu
  * `data` the way GitHub would send it: the fields receivers built for GitHub read
  * that the native payload leaves out. A commit is the one commit of its push.
  */
-function githubShaped(event: Event, data: Record<string, any>, repository: Record<string, unknown>): Record<string, unknown> {
+function githubShaped(emitted: Emitted, repository: object): object {
+  const [event, , data] = emitted;
   if (event === "commit") {
-    const head = data.head_commit && { ...data.head_commit, tree_id: null, distinct: true, committer: data.head_commit.author };
-    return { ...data, deleted: false, forced: false, base_ref: null, compare: null, commits: head ? [head] : [], head_commit: head ?? null };
+    const head = { ...data.head_commit, tree_id: null, distinct: true, committer: data.head_commit.author };
+    return { ...data, deleted: false, forced: false, base_ref: null, compare: null, commits: [head], head_commit: head };
   }
   if (event === "branch.opened") return { ...data, pusher_type: "user", description: null };
   if (event === "branch.merged") {
@@ -174,11 +196,12 @@ function githubShaped(event: Event, data: Record<string, any>, repository: Recor
 }
 
 /** Something happened in owner/repo: log a delivery to every hook that wants it, and queue their first tries. */
-export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>) {
+export async function emit(env: Env, owner: string, repo: string, ...emitted: Emitted) {
+  const [event, sender, data] = emitted;
   try {
     const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat, owner_only FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ id: string; url: string; secret: string; events: string; github_compat: number; owner_only: number }>();
     // An owner_only hook hears the owner's own work, not a crew member's or an agent's (a CI that builds it runs with the owner's secrets).
-    const theirs = sender !== owner || sender.startsWith("agent-") || String(data.ref ?? "").startsWith("agent-run-");
+    const theirs = sender !== owner || sender.startsWith("agent-") || ("ref" in data && data.ref.startsWith("agent-run-"));
     const hooks = results.filter((h) => h.events.split(",").includes(event) && !(h.owner_only && theirs));
     if (!hooks.length) return;
     const r = await repoRow(env, owner, repo, "visibility, artifact_remote");
@@ -186,7 +209,7 @@ export async function emit(env: Env, owner: string, repo: string, event: Event, 
     const payload = JSON.stringify({ ...data, repository, sender: { login: sender } });
     // GitHub's receivers fetch the sha from `clone_url`: our git remote (a private repo's wants a token).
     const ghRepo = { ...repository, master_branch: "main", clone_url: (r?.artifact_remote as string | null) ?? null, git_url: (r?.artifact_remote as string | null) ?? null };
-    const ghPayload = hooks.some((h) => h.github_compat) ? JSON.stringify({ ...githubShaped(event, data, ghRepo), repository: ghRepo, sender: { login: sender } }) : "";
+    const ghPayload = hooks.some((h) => h.github_compat) ? JSON.stringify({ ...githubShaped(emitted, ghRepo), repository: ghRepo, sender: { login: sender } }) : "";
     const now = Date.now();
     const ids = hooks.map(() => crypto.randomUUID());
     await env.DB.batch(hooks.map((hook, i) => env.DB.prepare("INSERT INTO webhook_deliveries (id, hook, owner, repo, event, payload, status, next_at, at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")

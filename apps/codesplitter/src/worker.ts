@@ -971,8 +971,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         // The owner's own commit ships, when they turned that on (deploy.ts). A commit of nothing new made no git commit: nothing to tell.
         if (git && !("error" in git) && (git.commits.length || git.deployCommit)) {
           await emit(env, owner, repo, "commit", user!, {
-            ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
-            head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
+            ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user! },
+            head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user!, username: user! }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
           });
           // The owner's commit of a file only they edited since its last commit: a hosted deploy may run it (deploy-review.ts).
           // A token (a prompt-injected agent may hold one) is not the owner reading it, so its commits wait for an approval.
