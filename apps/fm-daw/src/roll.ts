@@ -24,9 +24,12 @@ export function drawNote(a: number, b: number, m: number, snap: number | null, s
   return { s: tidy(s), l: tidy(fit(hi - s, MIN_LEN, Math.max(span - s, MIN_LEN))), m: fit(Math.round(m), 0, 127), v };
 }
 
-/** The note `beats` later and `semis` higher; with snap its start lands on the grid. It keeps its length. */
+/**
+ * The note `beats` later and `semis` higher; with snap its start lands on the grid. It keeps its length. A note
+ * that starts before the window (a negative start, in a zoomed view) may stay that far back, no further.
+ */
 export function moveNote(n: Note, beats: number, semis: number, snap: number | null, span: number): Note {
-  return { ...n, s: fit(snapBeat(n.s + beats, snap), 0, Math.max(tidy(span - MIN_LEN), 0)), m: fit(Math.round(n.m + semis), 0, 127) };
+  return { ...n, s: fit(snapBeat(n.s + beats, snap), Math.min(n.s, 0), Math.max(tidy(span - MIN_LEN), 0)), m: fit(Math.round(n.m + semis), 0, 127) };
 }
 
 /** The note ending on beat `end` (its start stays). */

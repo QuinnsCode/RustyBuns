@@ -33,6 +33,10 @@ test("move keeps the length; free it lands anywhere, on the grid it lands on a l
   expect(moveNote(n(1.133, 0.5), 0.2, 0, 0.25, 8)).toEqual(n(1.25, 0.5));
   expect(moveNote(n(1, 0.5), -5, -200, null, 8)).toEqual(n(0, 0.5, 0));
   expect(moveNote(n(1, 0.5), 50, 0, null, 8).s).toBeLessThan(8);
+  // a note that starts before a zoomed window keeps its place when only its pitch moves, and stretches from there
+  expect(moveNote(n(-0.75, 2), 0, 1, null, 4)).toEqual(n(-0.75, 2, 61));
+  expect(moveNote(n(-0.75, 2), 0.5, 0, null, 4)).toEqual(n(-0.25, 2));
+  expect(stretchEnd(n(-0.75, 2), 1.5, null)).toEqual(n(-0.75, 2.25));
 });
 
 test("stretching either end leaves the other where it was", () => {
