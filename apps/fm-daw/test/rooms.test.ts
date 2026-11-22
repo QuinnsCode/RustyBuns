@@ -83,6 +83,8 @@ test("every room can be built, loads in /jam.html, and rings as it says", () => 
     "live-room": ["tight", "booth", "dead"], "scoring-hall": ["big", "desk", "warm"], basement: ["warm", "drums", "dead"],
     "stone-room": ["huge", "vocal", "huge"], barn: ["live", "vocal", "dead"], "desk-concert": ["tight", "vocal", "tight"], "orchestra-room": ["big", "piano", "big"], "console-room": ["tight", "vocal", "tight"],
     "sound-stage": ["tight", "vocal", "tight"],
+    // out on the sand under open sky only the ground throws anything back: short and dry
+    "desert-rave": ["tight", "dj", "tight"],
   };
   for (const r of ROOM_LIST) {
     expect({ id: r.id, problems: problems(r), loads: check(Studio, r) !== null }).toEqual({ id: r.id, problems: [], loads: true });
@@ -119,7 +121,7 @@ function walkUpTo(j: Jam, id: string) {
 
 test("the new studios: walk in at the door, round the furniture to every seat, sit and play", () => {
   const groove = demoProject();
-  for (const id of ["desk-concert", "orchestra-room", "console-room", "sound-stage"]) {
+  for (const id of ["desk-concert", "orchestra-room", "console-room", "sound-stage", "desert-rave"]) {
     const room = ROOMS[id], j = newJam(room);
     for (const s of room.spots) {
       expect({ id, seat: s.id, reached: walkUpTo(j, s.id) }).toEqual({ id, seat: s.id, reached: true });
@@ -128,11 +130,12 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
       // at an instrument, a key plays its track
       if (s.kind === "keys" || s.kind === "bass" || s.kind === "drums") expect(keyNote(j, groove, "KeyA")).not.toBeNull();
       // up on the sound stage's band riser, your eyes ride half a metre higher than at the floor mix desk
+      if (id === "desert-rave" && s.kind !== "couch") expect({ seat: s.id, up: cameraPose(j).at[1] > 1.8 }).toEqual({ seat: s.id, up: true }); // on the stage
       if (id === "sound-stage") expect({ seat: s.id, eye: Math.round((cameraPose(j).at[1] - 1.35) * 10) / 10 + 0 }).toEqual({ seat: s.id, eye: ({ desk: 0, couch: 0.3 } as Record<string, number>)[s.id] ?? 0.5 });
       stand(j);
     }
     // the dressing builds, and its lamps and screens glow for the look to light
     const glows = (room.props ?? []).map((p) => prop(p)).flatMap((g) => g.children).filter((o) => o.userData.glow);
-    expect({ id, glows: glows.length > 0 }).toEqual({ id, glows: true });
+    if (!room.outdoor) expect({ id, glows: glows.length > 0 }).toEqual({ id, glows: true }); // out of doors the rig is the light (open-air.ts)
   }
 });

@@ -65,6 +65,8 @@ export interface Env {
   FILES?: Bucket;
   /** eqosys's binding to Qollab's own Worker (apps/qollab): every Qollab path goes there. Unset (tests, the desktop), qollab/ runs in this Worker. */
   QOLLAB?: Fetcher;
+  /** The outside web for a studio game's review checks (checks.ts). Unset, the global fetch; tests set it so no check leaves the machine. */
+  OUTBOUND?: Fetcher;
   /** Qollab's binding back to eqosys: its public keys, so Qollab checks a token without holding a signing key for it (door.ts). */
   EQOSYS?: Fetcher;
   /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */

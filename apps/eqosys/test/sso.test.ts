@@ -3,6 +3,7 @@
 // token endpoint answer from a local RS256 key, and its "sign-in page" is the test handing back a code.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
+import { authFor } from "../src/auth.ts";
 import { studiosOf } from "../src/studios.ts";
 import { DOH, lapseSeats, proofOf, SSO_SEAT_DAYS } from "../src/sso.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
@@ -75,7 +76,7 @@ test("an owner connects the provider; a coworker signs in through it and lands i
   // The secret is sealed in D1, never kept as it came; the Studio tab only says there is one.
   const kept = await conf.DB.prepare("SELECT secret FROM studio_sso WHERE studio_id = ?").bind(acme!.id).first<string>("secret");
   expect(kept).not.toContain(SECRET);
-  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso).toEqual({ issuer: ISSUER, clientId: CLIENT, domain: "acme.dev", role: "maker", secret: true, proved: false });
+  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso).toEqual({ issuer: ISSUER, clientId: CLIENT, domain: "acme.dev", role: "maker", secret: true, proved: false, only: false });
   // Saving again with the secret left blank keeps it.
   await connect(ada.cookie, { secret: "", role: "admin" });
   await connect(ada.cookie, { secret: "" });
@@ -160,6 +161,31 @@ test("a proved domain links an account made another way, and outranks another st
   // Now proved, Kim's studio can't take it back.
   txt.set("kim.dev", [proofOf(kimCo!.id)]);
   expect((await claim(kim.cookie, kimCo!.id)).to).toBe("/?tab=studio&e=ssoclash");
+});
+
+test("a proved domain's studio makes company sign-in the only way in for its emails", async () => {
+  const only = (cookie: string, on: "1" | "0") => call("/do/studio-sso", { cookie, form: { studio: acme!.id, only: on } });
+  // Ada, the owner, is on acme.dev with a password only: turning it on now would lock her out.
+  expect((await only(ada.cookie, "1")).to).toBe("/?tab=studio&e=ssoonlyfirst");
+  const adaCo = (await company("ada@acme.dev", { sub: "okta|ada", email: "ada@acme.dev" })).back!;
+  expect((await only(adaCo.cookie, "1")).to).toBe("/?tab=studio");
+  expect((await studiosOf(conf, (await userOf("ada@acme.dev"))!))[0]!.sso?.only).toBe(true);
+  // Everyone on acme.dev was signed out; a password sign-in or sign-up there is refused, and the company's own works.
+  expect((await call("/do/continue", { cookie: adaCo.cookie, form: {} })).to).not.toBe("/");
+  expect((await call("/do/signin", { form: { email: "jo@acme.dev", password: PASSWORD } })).to).toBe("/login?e=ssoonly");
+  expect((await call("/do/signup", { form: { name: "Nan", email: "nan@acme.dev", password: PASSWORD } })).to).toBe("/login?e=ssoonly");
+  expect(await userOf("nan@acme.dev")).toBeNull();
+  // The Better Auth hooks hold too, for a way in that skips the form (GitHub, Google, Apple).
+  const auth = authFor(new Request("http://localhost/"), conf);
+  expect(await auth.api.signInEmail({ body: { email: "jo@acme.dev", password: PASSWORD } }).then(() => "in", () => "refused")).toBe("refused");
+  expect(await auth.api.signUpEmail({ body: { name: "Nan", email: "nan@acme.dev", password: PASSWORD } }).then(() => "in", () => "refused")).toBe("refused");
+  const jo = (await company("jo@acme.dev", { sub: "okta|jo", email: "jo@acme.dev" })).back!;
+  expect([jo.to, jo.cookie.includes("session_token=")]).toEqual(["/?tab=studio", true]);
+  // Another domain is untouched; turned off, a password works again.
+  expect((await call("/do/signin", { form: { email: "kim@kim.dev", password: PASSWORD } })).to).not.toContain("e=");
+  const back = (await company("ada@acme.dev", { sub: "okta|ada", email: "ada@acme.dev" })).back!;
+  expect((await only(back.cookie, "0")).to).toBe("/?tab=studio");
+  expect((await call("/do/signin", { form: { email: "jo@acme.dev", password: PASSWORD } })).to).not.toContain("e=");
 });
 
 test("a seat from company sign-in lapses without another one; a seat the owner handed out doesn't", async () => {

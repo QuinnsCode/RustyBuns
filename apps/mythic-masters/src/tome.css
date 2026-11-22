@@ -125,7 +125,6 @@
 .title.select .plate .frontis { display: flex; margin: 0; }
 .title .plate .frontis .engraving { width: min(190px, 52vw); height: auto; aspect-ratio: 120 / 64; }
 .title .plate-caption { font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); margin: 0 0 14px; letter-spacing: 0.02em; }
-.title .verso .demand { max-width: 30ch; }
 @media (min-width: 960px) {
   .title .verso { order: -1; } /* the frontispiece faces the title page */
   /* the book fits the window and each leaf scrolls on its own when its words run longer than the page, so nothing
@@ -1467,3 +1466,31 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .title .page .menu button:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
 .paper button.info, .select button.info { border: 0; border-radius: 0; color: var(--ink-b);
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30' fill='none' stroke='%235e4630' stroke-linecap='round'%3E%3Cpath stroke-width='1.6' d='M16.5 2.6C23.5 3 27.6 8.6 27.3 15.4C27 22.2 22 27.4 15 27.3C8 27.2 2.8 22 2.8 14.8C2.8 8 8 2.9 14.6 2.7Q18 2.6 20.2 3.9'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+
+/* --- round 116 (#5120): the Book's voice is the menu's. Its line sits in the margin under the words and answers the
+ * one under the pen (menuLineOf); the words carry no icons; the (?) is a footnote written in the margin, a dagger and
+ * a few words, not a ring. The world's buttons stay off the open compendium, the ribbons are deeper silk with brighter
+ * thread, and versus's ribbon beasts are engravings printed on the leaf, not photographs tipped in with corners */
+.title .page p#titleSays.demand { max-width: 30ch; min-height: 3.5em; margin: 16px auto 2px; text-align: center; font-size: 22px; transform: rotate(-1deg); }
+.title .page p#titleSays.demand .ask { text-decoration-thickness: 1.2px; }
+.title .page p#titleSays.demand .sig { font-size: 17px; }
+.title .page p#titleSays.demand .ledger { display: none; }
+.title .page .menu button svg { display: none; }
+.paper button.info, .select button.info { width: auto !important; height: auto; min-height: 44px; padding: 0 10px !important; border: 0 !important; border-radius: 0; background: none !important; opacity: 1;
+  font-family: var(--f-book); font-style: italic; font-weight: 400; font-size: 16px; letter-spacing: 0.01em; color: var(--ink-faded); text-shadow: none; vertical-align: middle; }
+.paper button.info svg, .select button.info svg { display: none; }
+.paper button.info::after, .select button.info::after { content: "\2020\2009" attr(aria-label); text-decoration: underline dotted 1px; text-underline-offset: 4px; }
+.paper button.info:is(:hover, :focus-visible), .select button.info:is(:hover, :focus-visible) { color: var(--blood); }
+body:has(#journal:not([hidden])) #worldHud { visibility: hidden; }
+.r-lineup { --rb: linear-gradient(#a3281a, #6e140b); } .r-bestiary { --rb: linear-gradient(#2f5527, #183416); }
+.r-regions { --rb: linear-gradient(#7c4f0c, #4c2f05); } .r-factions { --rb: linear-gradient(#2a4266, #16243b); }
+.paper .ribbon { color: #fff3d6; font-size: 19px; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.75), 0 0 6px rgba(0, 0, 0, 0.35); }
+.paper .ribbon svg { stroke: #fff3d6; }
+.select.book button.tile.ribbon-tile { background: none !important; border: 0 !important; box-shadow: none !important; transform: none !important; padding: 0 0 4px; }
+.select.book button.tile.ribbon-tile::before, .select.book button.tile.ribbon-tile::after { content: none; }
+.select.book button.tile.ribbon-tile .pic { height: 92px; -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 62%, transparent 100%); }
+.select.book button.tile.ribbon-tile > b { justify-self: center; padding: 0 8px 4px; }
+.select.book button.tile.ribbon-tile.on > b { color: var(--blood);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2' d='M3 8Q30 3 60 6T97 4'/%3E%3Cpath stroke-width='1' d='M12 10Q45 7 80 9'/%3E%3C/svg%3E") center bottom / 100% 9px no-repeat; }
+.select.book button.tile.ribbon-tile:is(:hover, :focus-visible) .pic { filter: grayscale(1) contrast(2.3) sepia(1) saturate(1.9) brightness(0.8); }
+@media (min-width: 960px) { .title .leaf .page.verso { justify-content: safe center; } .title .verso .plate { width: min(380px, 88%); margin: 0; } } /* the demand left the plate's leaf: the plate stands in the middle of it */

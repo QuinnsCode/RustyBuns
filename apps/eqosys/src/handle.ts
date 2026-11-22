@@ -7,7 +7,7 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { HOME, ourApp, playOf, returnTo, type QApp } from "./apps.ts";
+import { GENRES, HOME, ourApp, playOf, returnTo, type Genre, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
@@ -31,7 +31,7 @@ import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
 import { avatarRoute, savedAvatar } from "./avatar.ts";
-import { connectSso, dropSso, proveDomain, SSO_CALLBACK, ssoCookie, SsoForm, ssoStart } from "./sso.ts";
+import { connectSso, dropSso, proveDomain, SSO_CALLBACK, ssoCookie, SsoForm, ssoOnly, ssoRequired, ssoStart } from "./sso.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -339,6 +339,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "signin" || act === "signup") {
     if (await limited()) return back("slow");
     const email = field(form, "email").trim(), password = field(form, "password");
+    // Their company made its sign-in the only way in for this email (sso.ts ssoOnly): say so, rather than "wrong password".
+    if (await ssoRequired(conf, email)) return back("ssoonly");
     const auth = authFor(req, conf);
     const res = await (act === "signup"
       ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
@@ -392,6 +394,13 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     out.headers.append("set-cookie", addCookie(req, "", 0));
     return out;
   }
+  // The home's rows folded shut (folds.client.ts posts every folded row on each toggle): kept on the person's hub. No page to go to.
+  if (act === "fold") {
+    if (!conf.HUB) return new Response(null, { status: 204 });
+    const rows = form.getAll("row").filter((r): r is Genre => (GENRES as readonly unknown[]).includes(r));
+    const r = await hubAsk(conf.HUB, atHome(me), { op: "fold", rows: [...new Set(rows)] });
+    return "error" in r ? json({ error: r.error }, 400) : new Response(null, { status: 204 });
+  }
   if (act === "befriend" || act === "accept" || act === "drop" || act === "clear" || act === "relink") {
     if (!conf.HUB) return see("/?tab=friends&e=nohub");
     const email = field(form, "email").trim(), id = field(form, "id");
@@ -438,6 +447,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (field(form, "off")) { const r = await dropSso(conf, studio, me.id); return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=studio"); }
     // "Check the record": the studio's TXT record on its domain (sso.ts proveDomain).
     if (field(form, "prove")) { const r = await proveDomain(conf, studio, me.id); return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 403 ? "studio" : "ssoproof"}`); }
+    // "Company sign-in only" for the proved domain (sso.ts ssoOnly), on or off.
+    if (field(form, "only")) { const r = await ssoOnly(conf, studio, me.id, field(form, "only") === "1"); return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 403 ? "studio" : "ssoonlyfirst"}`); }
     const f = check(SsoForm, { issuer: field(form, "issuer").trim(), clientId: field(form, "clientId").trim(), secret: field(form, "secret").trim() || undefined,
       domain: field(form, "domain").trim().toLowerCase(), role: field(form, "role") });
     if (!f) return see("/?tab=studio&e=ssoform");

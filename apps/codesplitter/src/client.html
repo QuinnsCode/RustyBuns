@@ -1482,12 +1482,34 @@ async function wireTokens(made, open = !!made) {
     await api(`/oauth/grants/${b.dataset.signout}`, undefined, "DELETE"); toast("App signed out"); wireTokens(undefined, true);
   }));
 }
+// Your SSH keys for git over ssh:// (GET|POST /api/me/ssh-keys, DELETE /api/me/ssh-keys/:id; src/ssh-keys.ts, #5545).
+// Adding one is this page's alone: an API token can't (a key outlives any token). The 409s say what to do already.
+async function wireSshKeys(open = false) {
+  const el = $("#sshkeys .body");
+  if (!el) return;
+  const list = await api("/me/ssh-keys").catch(() => []);
+  el.innerHTML = `<div class="list">${list.map((k) => `<div class="row" style="flex-wrap:nowrap"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(k.type)} · ${esc(k.fingerprint)} · added ${new Date(k.added_at).toLocaleDateString()}">${icon("key-round")} ${esc(k.title || k.type)} <span class="muted">· ${esc(k.fingerprint.slice(7, 15))}… · ${ago(k.added_at)}</span></span>
+      <button class="btn ghost" data-unkey="${esc(k.id)}" title="remove ${esc(k.title || "this key")}" aria-label="Remove ${esc(k.title || "this key")}">${icon("trash-2")}</button></div>`).join("") || '<span class="muted" style="font-size:12px">No keys yet. Add one to push and pull over ssh://.</span>'}</div>
+    <form id="newsshkey" style="display:grid;gap:6px;margin:8px 0 4px"><textarea name="key" rows="3" required placeholder="ssh-ed25519 AAAA... you@laptop" aria-label="Public key: the line of your .pub file" spellcheck="false" style="font-size:12px"></textarea>
+      <div class="row" style="flex-wrap:nowrap"><input name="title" placeholder="name (optional)" aria-label="Name: the key's comment if blank" title="the key's comment if blank" maxlength="100" style="flex:1;min-width:0"><button class="btn primary" title="Add the key">${icon("plus")}Add</button></div>
+      <span class="muted" style="font-size:12px">Paste the <b>.pub</b> file, never the private key. <code>cat ~/.ssh/id_ed25519.pub</code></span></form>`;
+  icons();
+  if (open) $("#newsshkey").elements.key.focus({ preventScroll: true });
+  $("#newsshkey").addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = e.target;
+    try { const k = await api("/me/ssh-keys", { key: f.elements.key.value.trim(), title: f.elements.title.value.trim() }); toast(`Key added: ${k.title || k.type}`); wireSshKeys(); }
+    catch (err) { if (err.failure?.status === 409 || err.failure?.status === 400) toast(err.message, 6000); else failed(err, "add an SSH key"); }
+  });
+  el.querySelectorAll("[data-unkey]").forEach((b) => b.addEventListener("click", async () => {
+    try { await api(`/me/ssh-keys/${b.dataset.unkey}`, undefined, "DELETE"); toast("Key removed"); wireSshKeys(); } catch (err) { failed(err, "remove an SSH key"); }
+  }));
+}
 // The security audit log (GET /api/tokens/audit, /api/repos/:o/:r/audit; src/audit.ts): who did what, signed in how, from where.
 const AUDIT_SAID = {
   "token.create": "made API token", "token.revoke": "revoked API token", "ci_token.create": "made CI token", "ci_token.revoke": "revoked CI token",
   "crew.add": "added to the crew", "crew.remove": "took out of the crew", "invite.create": "invited", "invite.revoke": "revoked invite", "invite.claim": "came in by invite",
   "repo.visibility": "made it", "repo.delete": "deleted the repo", "hook.create": "added webhook", "hook.delete": "deleted webhook",
-  "deploy_key.set": "set deploy key", "deploy_key.delete": "removed deploy key",
+  "deploy_key.set": "set deploy key", "deploy_key.delete": "removed deploy key", "ssh_key.add": "added SSH key", "ssh_key.remove": "removed SSH key",
 };
 async function wireAudit(el, path, showRepo) {
   const rows = await api(path).catch(() => null);
@@ -4053,6 +4075,7 @@ const views = {
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b>`)}<div class="links" style="font-size:12px;padding:8px 12px 0"><a class="muted" href="/reference">the API</a> · <a class="muted" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></details>` : ""}
+        ${mine && !agent ? `${boxTop(true, "sshkeys", `${icon("terminal")}<b>SSH keys</b><span class="muted">git over ssh://</span>`)}<div class="body"><span class="muted">…</span></div></details>` : ""}
         ${page ? `<div class="box stage-x"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-unstage" title="Back to the small page (Esc)" aria-label="Back to the small page" style="margin-left:auto">${icon("minimize-2")}</button></div></div><div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-stage" title="Full page" aria-label="Full page" style="margin-left:auto">${icon("maximize-2")}</button></div><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
         ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b>${page ? "" : `<button type="button" class="btn" id="pg-make" title="Make my page: start with the starter world, a tower per public repo" aria-label="Make my page">${icon("wand-sparkles")}</button>`}<button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
         ${agent ? "" : sec("collections", `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
@@ -4107,7 +4130,7 @@ const views = {
     });
     wireDig();
     // The side column folds box by box, like the code page's panels; this browser keeps which are open.
-    foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : null);
+    foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : open === "ssh-keys" ? "sshkeys" : null);
     const saveTop8 = async (list) => { try { await api("/me", { top8: list }, "PUT"); route(); } catch (e) { toast(e.message); } };
     $("#addfriend")?.addEventListener("submit", (e) => { e.preventDefault(); const w = e.target.who.value.trim().replace(/^@/, ""); if (w) saveTop8([...(user.top8 ?? []), w]); });
     for (const b of document.querySelectorAll("#top8 [data-drop]")) b.addEventListener("click", () => saveTop8((user.top8 ?? []).filter((f) => f !== b.dataset.drop)));
@@ -4120,12 +4143,13 @@ const views = {
         if (open !== "tokens") return;
         $("#newtoken")?.scrollIntoView({ block: "center" }); $("#newtoken")?.elements.label.focus({ preventScroll: true });
       });
+      if (!agent) wireSshKeys(open === "ssh-keys").then(() => { if (open === "ssh-keys") $("#sshkeys")?.scrollIntoView({ block: "center" }); });
       wireData(); wireTruth();
     }
     icons();
   },
-  // #/me: your own page, where signing in lands (or home, signed out). #/me/tokens opens its Tokens and apps.
-  me(open) { if (!me()) return views.home(); location.replace(`#/u/${me()}${open === "tokens" ? "/tokens" : ""}`); },
+  // #/me: your own page, where signing in lands (or home, signed out). #/me/tokens opens its Tokens and apps, #/me/ssh-keys its SSH keys.
+  me(open) { if (!me()) return views.home(); location.replace(`#/u/${me()}${open === "tokens" || open === "ssh-keys" ? `/${open}` : ""}`); },
 
   /** The header every repo page shares: name, visibility, and its main actions. */
   repoHead(owner, repo, r) {

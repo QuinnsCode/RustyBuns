@@ -2,7 +2,7 @@
 // RWSDK's Vite plugin (which reads wrangler.jsonc for local bindings) agrees
 // with what Alchemy deploys. Never hand-edit; edit the config.
 
-import { workerName, type DoMigration, type QueueConsumer, type RustyBunsConfig } from "../config.ts";
+import { TURNSTILE_TEST_SECRET, TURNSTILE_TEST_SITE_KEY, turnstileEnv, workerName, type DoMigration, type QueueConsumer, type RustyBunsConfig } from "../config.ts";
 import { parseWrangler } from "../wrangler.ts";
 
 /**
@@ -159,6 +159,8 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   const moved = Object.values(c.bindings ?? {}).flatMap((b) => b.type === "durable_object" && b.app ? [b.className] : []);
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations, c.worker.flaggedClasses, moved);
   if (migrations.length) w["migrations"] = migrations;
+  // worker.turnstile in local dev: Cloudflare's always-pass test keys. The deployed widget's keys come from the stack.
+  if (c.worker?.turnstile) { const t = turnstileEnv(c.worker.turnstile); vars[t.siteKey] = TURNSTILE_TEST_SITE_KEY; vars[t.secret] = TURNSTILE_TEST_SECRET; }
   if (Object.keys(vars).length) w["vars"] = vars;
   if (c.worker.cpuMs) w["limits"] = { cpu_ms: c.worker.cpuMs };
   if (c.worker.placement) w["placement"] = c.worker.placement;

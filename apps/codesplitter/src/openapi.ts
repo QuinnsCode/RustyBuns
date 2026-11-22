@@ -16,11 +16,19 @@
 /** What an OAuth app may ask for (oauth.ts). */
 export const OAUTH_SCOPES = { read: "read what you can read", write: "read, and change what you can change" } as const;
 
-type Schema = Record<string, unknown>;
-const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
-const str = (description?: string): Schema => ({ type: "string", ...(description && { description }) });
-const int = (description?: string): Schema => ({ type: "integer", ...(description && { description }) });
-const bool = (description?: string): Schema => ({ type: "boolean", ...(description && { description }) });
+/** The JSON Schema keywords this spec uses. qCRM's openapi.ts declares the same one: each file loads on its own for its docs, so neither imports it. */
+interface Schema {
+  type?: string | string[]; description?: string; title?: string; $ref?: string; format?: string;
+  properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean | Schema;
+  items?: Schema; maxItems?: number; enum?: (string | null)[]; const?: string; default?: string | number | boolean;
+  oneOf?: Schema[]; allOf?: Schema[];
+}
+/** A schema with no `required` list of its own, so a query parameter can carry `required: true` instead. */
+type Leaf = Omit<Schema, "required">;
+const ref = (name: string): Leaf => ({ $ref: `#/components/schemas/${name}` });
+const str = (description?: string): Leaf => ({ type: "string", ...(description && { description }) });
+const int = (description?: string): Leaf => ({ type: "integer", ...(description && { description }) });
+const bool = (description?: string): Leaf => ({ type: "boolean", ...(description && { description }) });
 const arr = (items: Schema): Schema => ({ type: "array", items });
 const obj = (properties: Record<string, Schema>, required: string[] = [], description?: string): Schema =>
   ({ type: "object", properties, ...(required.length && { required }), ...(description && { description }) });
@@ -29,7 +37,7 @@ const loose = (description: string): Schema => ({ type: "object", additionalProp
 
 interface Op {
   id: string; summary: string; tag: string; description?: string;
-  query?: Record<string, Schema & { required?: boolean }>;
+  query?: Record<string, Leaf & { required?: boolean }>;
   body?: Schema; ok?: Schema; status?: number;
   /** Needs no token: public reads answer anyone. */
   open?: true;
@@ -1061,27 +1069,23 @@ const err = (description: string) => ({ description, content: { "application/jso
 
 /** The spec, with this origin as its server. */
 export function openapi(origin: string) {
-  const paths: Record<string, Record<string, unknown>> = {};
-  for (const [path, methods] of Object.entries(OPS)) {
-    paths[path] = {};
-    for (const [method, o] of Object.entries(methods)) {
-      paths[path][method] = {
-        operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
-        parameters: params(path, o.query),
-        ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
-        // Public reads answer without a token too; a token still sees what its owner may.
-        security: [...(o.open ? [{}] : []), { token: [] }, { oauth: [method === "get" ? "read" : "write"] }],
-        "x-codesplitter-scope": method === "get" ? "read" : "write",
-        ...(o.risky && { "x-codesplitter-risky": true }),
-        ...(o.id in OP_ERRORS && { "x-codesplitter-errors": OP_ERRORS[o.id as OpWithErrors].map((tag) => ({ tag, status: ERRORS[tag][0], description: ERRORS[tag][1] })) }),
-        responses: {
-          [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
-          400: err("bad input"), 401: err("no token, or it's expired or revoked"), 403: err("not yours to do, or the token is read-only"),
-          404: err("not found, or private and not yours"), 409: err("conflicts, or it already exists"), 429: err("over a rate limit: retry after the retry-after header"),
-        },
-      };
-    }
-  }
+  const paths = Object.fromEntries(Object.entries(OPS).map(([path, methods]) => [path, Object.fromEntries(
+    Object.entries(methods).map(([method, o]) => [method, {
+      operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
+      parameters: params(path, o.query),
+      ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
+      // Public reads answer without a token too; a token still sees what its owner may.
+      security: [...(o.open ? [{}] : []), { token: [] }, { oauth: [method === "get" ? "read" : "write"] }],
+      "x-codesplitter-scope": method === "get" ? "read" : "write",
+      ...(o.risky && { "x-codesplitter-risky": true }),
+      ...(o.id in OP_ERRORS && { "x-codesplitter-errors": OP_ERRORS[o.id as OpWithErrors].map((tag) => ({ tag, status: ERRORS[tag][0], description: ERRORS[tag][1] })) }),
+      responses: {
+        [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
+        400: err("bad input"), 401: err("no token, or it's expired or revoked"), 403: err("not yours to do, or the token is read-only"),
+        404: err("not found, or private and not yours"), 409: err("conflicts, or it already exists"), 429: err("over a rate limit: retry after the retry-after header"),
+      },
+    }]),
+  )]));
   return {
     openapi: "3.1.0",
     info: {

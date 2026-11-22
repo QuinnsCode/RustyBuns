@@ -62,13 +62,16 @@
             <h1 data-copy="title.name"></h1>
             <p class="plain" data-copy="title.subtitle"></p>
             <div class="menu">
-              <button id="continue" class="go"></button>
-              <button id="newGame"></button>
-              <button id="duelBtn"></button>
-              <button id="versus" data-copy="title.versus"></button>
+              <button id="continue" class="go" data-says="continue"></button>
+              <button id="newGame" data-says="new"></button>
+              <button id="duelBtn" data-says="duel"></button>
+              <button id="versus" data-copy="title.versus" data-says="versus"></button>
             </div>
+            <!-- the Book's voice is the menu's (#5120 round 116): its standing demand in the margin under the words, and
+                 a line about whichever word the pen or pointer is on (menuLineOf in src/demand.ts) -->
+            <p id="titleSays" class="demand" data-demand aria-live="polite"></p>
             <div id="account" class="account"></div>
-            <button class="info" popovertarget="aboutTitle" title="What is this?" aria-label="What is this?"></button>
+            <button class="info" popovertarget="aboutTitle" title="What is this?" aria-label="What is this?" data-says="info"></button>
             <div id="aboutTitle" class="about" popover>
               <p class="tag" data-copy="title.tagline"></p>
               <p class="plate-caption" data-copy="title.plateCaption"></p>
@@ -77,7 +80,6 @@
           </div>
           <div class="page verso">
             <figure class="plate" aria-hidden="true"><div id="titleFrontis" class="frontis"></div><span id="titleRing" class="ring"></span></figure>
-            <p class="demand" data-demand></p>
           </div>
         </div>
       </div>

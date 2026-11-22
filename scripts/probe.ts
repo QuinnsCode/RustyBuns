@@ -15,7 +15,7 @@
 //
 // --size WxH (default 1280x720), --mobile (phone size, touch, 2x), --settle <ms> (default 3000) to wait before the
 // expression, --url <http://...> to use a server already running instead of starting one, --shot <file.png>.
-// The expression is the body of an async function: `await` works, and its last expression is the answer.
+// The expression is the body of an async function: `await` and statements work, and its last expression (or a `return`) is the answer.
 import { resolve } from "node:path";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 import { help } from "./help.ts";
@@ -66,6 +66,24 @@ export function parse(argv: string[]): Probe {
   return p;
 }
 
+/** `js` as the body of an async function: statements run in order and the last one, when it is an expression,
+ *  is returned. Splits at the last `;` outside strings, comments and brackets. */
+export function asyncBody(js: string): string {
+  let depth = 0, cut = -1;
+  for (let i = 0; i < js.length; i++) {
+    const c = js[i]!;
+    if (c === "'" || c === '"' || c === "`") { for (i++; i < js.length && js[i] !== c; i++) if (js[i] === "\\") i++; }
+    else if (c === "/" && js[i + 1] === "/") { while (i < js.length && js[i] !== "\n") i++; }
+    else if (c === "/" && js[i + 1] === "*") { i = js.indexOf("*/", i + 2); if (i < 0) break; i++; }
+    else if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth--;
+    else if (c === ";" && depth === 0 && js.slice(i + 1).trim()) cut = i;
+  }
+  const head = cut < 0 ? "" : js.slice(0, cut + 1), tail = js.slice(cut + 1).trim().replace(/;$/, "");
+  if (!tail || /^(return|const|let|var|if|for|while|do|switch|try|throw|function|class|async\s+function)\b|^[{}]/.test(tail)) return js;
+  return `${head}\nreturn (${tail}\n);`;
+}
+
 export const MAX_OUT = 4000;
 /** The answer as JSON, cut at MAX_OUT characters with a note; `undefined` says so. */
 export const show = (v: unknown) => { const s = v === undefined ? "undefined" : JSON.stringify(v, null, 1); return s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n… ${s.length - MAX_OUT} more characters: ask for less` : s; };
@@ -87,7 +105,7 @@ if (import.meta.main) {
     const tab = await openTab(chrome.cdp, p.size, p.mobile);
     await load(chrome.cdp, tab, new URL(p.path, server.url).href, p.settle);
     if (p.js) {
-      try { console.log(show(await tab.eval(`(async () => { ${p.js.includes("return ") ? p.js : `return (${p.js})`} })()`))); }
+      try { console.log(show(await tab.eval(`(async () => {\n${asyncBody(p.js)}\n})()`))); }
       catch (e) { console.log(`error: ${(e as Error).message.split("\n")[0]}`); code = 1; }
     }
     if (p.shot) {

@@ -13,6 +13,23 @@ import type { Studio } from "../src/studios.ts";
 setDefaultTimeout(30_000);
 const GAME = "https://rocket-golf.example";
 
+/** The outside web the review checks see (checks.ts): `site` answers by URL, anything else is no answer. */
+const web = (site: Record<string, () => Response>) => ({
+  fetch: async (url: string | Request) => {
+    const u = typeof url === "string" ? url : url.url, r = site[u];
+    if (!r) throw new TypeError("fetch failed");
+    const res = r();
+    Object.defineProperty(res, "url", { value: u });
+    return res;
+  },
+});
+/** Rocket Golf as the starter makes it: a page, its bundle with the harness on window, and its stylesheet. */
+const ROCKET: Record<string, () => Response> = {
+  [`${GAME}/`]: () => new Response('<!doctype html><link rel="stylesheet" href="/assets/main.css"><script type="module" src="/assets/main.js"></script>', { headers: { "content-type": "text/html; charset=utf-8" } }),
+  [`${GAME}/assets/main.js`]: () => new Response("const h={state:()=>({})};window.rocketGolf=h;"),
+  [`${GAME}/assets/main.css`]: () => new Response("body{margin:0}"),
+};
+
 /** The Studio tab as this person sees it, and what one of its forms posts as it stands: each field's name and value. */
 async function formIn(studios: Studio[], label: string) {
   const html = renderToStaticMarkup(createElement(Studios, { studios, unlocks: new Map() }));
@@ -31,7 +48,7 @@ async function formIn(studios: Studio[], label: string) {
 }
 
 test("a studio's game: a draft for its studio, reviewed, listed for everyone, then pulled", async () => {
-  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET) });
   const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
   const [boss, maya, sam] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com"), await signUp("Sam", "sam@example.com")];
   const run = async (name: string, args: unknown, who: { cookie?: string; bearer?: string }) => {
@@ -51,7 +68,7 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   const shelf = async (who: string) => ((await run("eq_apps", {}, { cookie: who })).result.apps as { id: string; studio?: string }[]).find((a) => a.id === "rocket-golf");
 
   const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, { cookie: maya })).result.id;
-  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: [GAME], blurb: "Golf, with rockets." };
+  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME], blurb: "Golf, with rockets." };
   expect((await run("eq_listing_save", draft, { cookie: sam })).status).toBe(403);
   expect((await run("eq_listing_save", { ...draft, id: "park-hide-seek" }, { cookie: maya })).status).toBe(409);
   expect((await run("eq_listing_save", draft, { cookie: maya })).result.listing).toMatchObject({ state: "draft", maturity: "experimental", starts: ["play"] });
@@ -65,14 +82,19 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   // Sent, refused with a note, fixed and sent again, then listed.
   expect((await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya })).result.listing.state).toBe("in review");
   expect((await run("eq_listing_review", {}, { cookie: maya })).status).toBe(403);
-  expect((await run("eq_listing_review", {}, { cookie: boss })).result.queue.map((l: { id: string }) => l.id)).toEqual(["rocket-golf"]);
+  // The queue shows what a machine checked on the way in: Maya signed in from the real site above, and its bundle has the harness.
+  const [queued] = (await run("eq_listing_review", {}, { cookie: boss })).result.queue;
+  expect(queued.id).toBe("rocket-golf");
+  expect(queued.checks.list.map((c: { name: string; ok: boolean }) => [c.name, c.ok])).toEqual([["https", true], ["loads", true], ["signin", true], ["state", true]]);
+  expect(queued.checks.list[3].says).toContain(`bun run probe --url ${GAME}/ --js "rocketGolf.state()"`);
+  expect((await run("eq_apps", {}, { cookie: maya })).result.apps.find((a: { id: string }) => a.id === "rocket-golf")?.checks).toBeUndefined();
   expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "refuse" }, { cookie: boss })).status).toBe(400);
   await run("eq_listing_review", { id: "rocket-golf", verdict: "refuse", note: "Add an erase URL: it keeps scores per account." }, { cookie: boss });
   const studios = (await run("eq_studios", {}, { cookie: maya })).result.studios;
   expect(studios[0].apps).toEqual([expect.objectContaining({ id: "rocket-golf", state: "refused", note: expect.stringContaining("erase URL") })]);
   // Fixed and sent again from the Studio tab's form: what it shows for the game, with the erase URL filled in.
   const form = { ...await formIn(studios, "Change Rocket Golf"), erase: `${GAME}/erase` };
-  expect(form).toMatchObject({ studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: GAME, returns: "" });
+  expect(form).toMatchObject({ studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: GAME, returns: "" });
   expect((await call("/do/listing-save", { form, cookie: sam })).to).toBe("/?tab=studio&e=gameowner");
   expect((await call("/do/listing-save", { form: { ...form, origins: "http://rocket-golf.example" }, cookie: maya })).to).toBe("/?tab=studio&e=game");
   expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
@@ -104,4 +126,23 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect((await run("eq_whoami", {}, { bearer: mine.token! })).status).toBe(401);
   expect(await shelf(sam)).toBeUndefined();
   expect((await signIn("maya@example.com")).to).toBe("/login?e=app");
+});
+
+test("the machine checks say what is wrong: a dead origin, a missing file, no sign-in yet, no harness", async () => {
+  const { call } = await boot({ OUTBOUND: web({ [`${GAME}/`]: ROCKET[`${GAME}/`]!, [`${GAME}/assets/main.css`]: ROCKET[`${GAME}/assets/main.css`]! }) });
+  const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
+  const [boss, maya] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com")];
+  const run = async (name: string, args: unknown, cookie: string) => (await (await call(`/api/tools/${name}`, { json: args, cookie })).res.json() as { result?: any; error?: string });
+  const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, maya)).result.id;
+  await run("eq_listing_save", { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME, "https://www.rocket-golf.example"] }, maya);
+  await run("eq_listing_send", { id: "rocket-golf" }, maya);
+  const [queued] = (await run("eq_listing_review", {}, boss)).result.queue;
+  const by = Object.fromEntries(queued.checks.list.map((c: { name: string }) => [c.name, c]));
+  expect(by.https).toMatchObject({ ok: false, says: "https://www.rocket-golf.example: no answer" });
+  expect(by.loads).toMatchObject({ ok: false, says: `${GAME}/assets/main.js: no answer` });
+  expect(by.signin).toMatchObject({ ok: false, says: expect.stringContaining("nobody in the studio") });
+  expect(by.state).toMatchObject({ ok: false, says: expect.stringContaining("no window.rocketGolf") });
+  // Asked again after a fix: the checks run again and the queue keeps the new ones.
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "check" }, boss)).result.checks.list).toHaveLength(4);
+  expect((await run("eq_listing_review", { id: "park-hide-seek", verdict: "check" }, boss)).error).toContain("no game");
 });

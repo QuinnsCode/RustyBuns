@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { APPS, GENRES, ourApp, playOf, type QApp } from "../apps.ts";
+import { APPS, GENRES, ourApp, playOf, type Genre, type QApp } from "../apps.ts";
 import { isListing } from "../listings.ts";
 import type { Me, Way } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
@@ -55,6 +55,8 @@ export const MESSAGES: Record<string, string> = {
   ssotaken: "An account with that email was made another way. Sign in with it as usual.",
   ssoform: "Check the company sign-in: an https issuer that answers OpenID discovery, a client id, and the company's own mail domain (not public mail).",
   ssoclash: "Another studio already signs in that domain. If it's your company's, add the TXT record shown under Company sign-in to it, then save again.",
+  ssoonly: "Your company signs that email in here. Use Sign in through your company.",
+  ssoonlyfirst: "Sign in through your company once yourself first, so you aren't locked out.",
   ssoproof: "That TXT record isn't on the domain yet. DNS can take a few minutes; check again after.",
 };
 
@@ -210,10 +212,10 @@ const HOME_CSS = `
 .home .tally svg{width:.75rem;height:.75rem}
 /* The big one: the featured game you played last, its screenshot beside its words. */
 .home .feature{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
-.home .feature .shot{aspect-ratio:auto;min-height:18rem}
-.home .feature .cap{display:grid;align-content:center;gap:.7rem;padding:1.6rem 1.8rem}
-.home .feature b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2.4rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
-.home .feature .blurb{font-size:1.05rem;line-height:1.45;opacity:.85;text-wrap:pretty}
+.home .feature .shot{aspect-ratio:auto;min-height:12rem}
+.home .feature .cap{display:grid;align-content:center;gap:.5rem;padding:1.1rem 1.4rem}
+.home .feature b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.9rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+.home .feature .blurb{font-size:.95rem;line-height:1.4;opacity:.85;text-wrap:pretty}
 .home .feature .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;color:var(--mut);font-size:.82rem}
 /* Pick up where you left off: the last few you played, a small picture and a Play button each. */
 .home .recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.8rem}
@@ -222,12 +224,21 @@ const HOME_CSS = `
 .home .recent span.w{display:grid;min-width:0;flex:1}.home .recent b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .recent small{color:var(--mut);font-size:.78rem;white-space:nowrap}
 /* A shelf: a genre's games as screenshot tiles, as many across as the width holds. */
-.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.9rem}
+.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.7rem;padding-top:.6rem}
+/* A row folds shut on its header: icon, name, count, and a chevron that turns. */
+.home .cat{min-width:0}
+.home .shelves{gap:.4rem}
+.home .cat summary{display:flex;align-items:center;gap:.5rem;cursor:pointer;list-style:none;min-height:2.75rem;padding:0 .4rem;border-radius:12px;color:var(--mut)}
+.home .cat summary::-webkit-details-marker{display:none}
+.home .cat summary:hover{background:color-mix(in oklab,var(--ink) 5%,transparent)}
+.home .cat summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.home .cat summary h2{flex:1;display:flex;align-items:center;gap:.5rem;margin:0}.home .cat summary h2 svg{width:1rem;height:1rem;flex:none;color:var(--acc)}
+.home .cat summary>svg{width:1.1rem;height:1.1rem;flex:none;transition:transform .2s}.home .cat:not([open]) summary>svg{transform:rotate(-90deg)}
 .home .game{display:grid;transition:transform .18s,box-shadow .18s,border-color .18s}
 .home .game:active,.home .recent .glass:active{transform:scale(.97)}
-.home .game .cap{display:grid;gap:.25rem;padding:.75rem .9rem .85rem}
+.home .game .cap{display:grid;gap:.2rem;padding:.5rem .7rem .6rem}
 .home .game .name{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
-.home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
+.home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.98rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
 .home .game small{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;white-space:nowrap;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
 .home .game:focus-within{border-color:color-mix(in oklab,var(--acc) 60%,transparent)}
 @media(hover:hover){.home .game:hover{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
@@ -257,7 +268,7 @@ const HOME_CSS = `
 .home .rail li span{display:grid;min-width:0}.home .rail li b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .rail li small{color:var(--mut);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .rail>a{font-size:.85rem}
-@media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art{transition:none}}
+@media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art,.home .cat summary>svg{transition:none}}
 .home .tabs{display:flex;gap:.25rem;flex-wrap:wrap;padding:.35rem;border-radius:18px;background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:inset 0 1px 0 var(--edge)}
 .home .tabs a{position:relative;display:inline-flex;align-items:center;gap:.6rem;min-height:2.75rem;padding:.4rem .9rem;border-radius:13px;color:var(--mut);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
@@ -530,12 +541,21 @@ function SidePanel({ hub, side }: { hub: HubState | null; side: Side | null }) {
   );
 }
 
-/** Home: the featured game you played last up top, the ones you played last, then a shelf a genre (yours first, most recent first), friends beside. */
+// lucide: gamepad-2, wrench, briefcase, chevron-down. One a row, so each row reads at a glance.
+const ROW_ICONS: Record<Genre, string[]> = {
+  Games: ["M6 11h4", "M8 9v4", "M15 12h.01", "M18 10h.01", "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"],
+  Productivity: ["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"],
+  Business: ["M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16", "M4 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"],
+};
+const CHEVRON = ["m6 9 6 6 6-6"];
+
+/** Home: codeSplitter up top, the ones you opened last, then a row a category (Games, Productivity, Business), each one folding shut,
+ * yours first (most recent first), then the featured ones, then the rest in catalogue order; friends beside. */
 function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Member | undefined; unlocks: Unlocks; hub: HubState | null; side: Side | null }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const recent = (a: QApp) => used.get(a.id)?.last_at ?? -1;
-  const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a));
-  const top = sorted(apps.filter((a) => a.featured))[0] ?? apps[0]!;
+  const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a) || +!!b.featured - +!!a.featured);
+  const top = apps.find((a) => a.hero) ?? sorted(apps.filter((a) => a.featured))[0] ?? apps[0]!;
   const last = sorted(apps.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
   return (
     <div className="lib">
@@ -555,10 +575,10 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
         {GENRES.map((g) => {
           const list = sorted(apps.filter((a) => a.genre === g));
           return list.length ? (
-            <section key={g} aria-label={g}>
-              <h2>{g}<em>{list.length}</em></h2>
+            <details key={g} className="cat" open={!hub?.folded?.includes(g)} data-row={g} aria-label={g}>
+              <summary><h2><Icon d={ROW_ICONS[g]} />{g}<em>{list.length}</em></h2><Icon d={CHEVRON} /></summary>
               <div className="shelf">{list.map((a) => <Tile key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>
-            </section>
+            </details>
           ) : null;
         })}
       </div>

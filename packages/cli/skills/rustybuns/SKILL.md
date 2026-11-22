@@ -20,6 +20,7 @@ desktop binary, a Cloudflare Worker and a Linux box. Your `src/` stays yours: Ru
 | Price and check | `rustybuns plan` | Always before `deploy`. `deploy` refuses without a plan for this exact config. |
 | Ship | `rustybuns deploy` | Cloudflare, plus a Hetzner or Railway box if the config has one. |
 | Desktop file | `rustybuns build desktop` | One file in `dist/`. `--dev` to bundle without compiling. |
+| Journey tests | `rustybuns test` | Against `dev` on the local emulators; `--stage` deploys a throwaway stage, then destroys it. |
 | Does it run? | `rustybuns smoke [dir]` | Installs, inits, builds and boots a throwaway copy. |
 | Stuck | `rustybuns triage` | Starts your agent with this machine's facts. |
 

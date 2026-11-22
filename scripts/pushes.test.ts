@@ -21,7 +21,9 @@ const repos: Record<string, { archived?: boolean; runs: Run[]; commits: string[]
 const commit = (at: string, i: number) => ({ sha: `abc${i}def0123`, commit: { message: `change ${i}\n\nbody`, committer: { date: at } } });
 const gh: Gh = async (args) => {
   const path = args.at(-1) ?? "";
-  if (args[0] === "repo") return JSON.stringify(Object.keys(repos).map((n) => ({ nameWithOwner: n, pushedAt: hoursAgo(1) })));
+  // one stamp for all: a clock tick between them would reorder the newest-first catalog
+  const pushedAt = hoursAgo(1);
+  if (args[0] === "repo") return JSON.stringify(Object.keys(repos).map((n) => ({ nameWithOwner: n, pushedAt })));
   if (path === "user/orgs") return "[]";
   const m = path.match(/^repos\/([^/]+\/[^/?]+)(?:\/(commits\/main|commits|actions\/runs))?/);
   const r = m && repos[m[1] ?? ""];

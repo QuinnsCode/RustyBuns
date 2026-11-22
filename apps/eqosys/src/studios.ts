@@ -34,7 +34,7 @@ export interface ShelfApp {
 }
 export interface StudioPerson { name: string; email: string; role: Role }
 /** A studio's company sign-in (sso.ts) as the Studio tab shows it: never the secret, only whether one is sealed. */
-export interface SsoShown { issuer: string; clientId: string; domain: string; role: Role; secret: boolean; proved: boolean }
+export interface SsoShown { issuer: string; clientId: string; domain: string; role: Role; secret: boolean; proved: boolean; only: boolean }
 /** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it; `sso` its company sign-in, shown to its owner. */
 export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; apps: ShelfApp[]; sso?: SsoShown }
 
@@ -62,13 +62,13 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
     conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${marks}) ORDER BY app`).bind(...ids).all<{ app: string; studio_id: string; repo: string | null }>(),
     conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
-    conf.DB.prepare(`SELECT studio_id, issuer, client_id, secret IS NOT NULL AS sealed, domain, role, proved_at IS NOT NULL AS proved FROM studio_sso WHERE studio_id IN (${marks})`).bind(...ids)
-      .all<{ studio_id: string; issuer: string; client_id: string; sealed: number; domain: string; role: Role; proved: number }>(),
+    conf.DB.prepare(`SELECT studio_id, issuer, client_id, secret IS NOT NULL AS sealed, domain, role, proved_at IS NOT NULL AS proved, only_sso AS only FROM studio_sso WHERE studio_id IN (${marks})`).bind(...ids)
+      .all<{ studio_id: string; issuer: string; client_id: string; sealed: number; domain: string; role: Role; proved: number; only: number }>(),
   ]);
   const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
   const ssoShown = (s: { id: string; role: Role }) => {
     const r = s.role === "owner" ? sso.find((x) => x.studio_id === s.id) : undefined;
-    return r ? { sso: { issuer: r.issuer, clientId: r.client_id, domain: r.domain, role: r.role, secret: !!r.sealed, proved: !!r.proved } } : {};
+    return r ? { sso: { issuer: r.issuer, clientId: r.client_id, domain: r.domain, role: r.role, secret: !!r.sealed, proved: !!r.proved, only: !!r.only } } : {};
   };
   return Promise.all(mine.map(async (s) => ({ ...s, ...ssoShown(s),
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),

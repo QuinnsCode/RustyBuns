@@ -1,0 +1,57 @@
+{
+ "id": "ti-plant",
+ "name": "Ti plant",
+ "biome": "island",
+ "generator": "rosette",
+ "seed": 73,
+ "height": 2.4,
+ "budget": [
+  2400,
+  600
+ ],
+ "note": "Thin canes topped with a burst of broad strap leaves, deep red going to purple and green: planted round every island home and shrine.",
+ "trunk": {
+  "height": 0.55,
+  "lean": 0.12,
+  "rise": 0.3,
+  "wobble": 0.1,
+  "radius": 0.03,
+  "taper": 0.2,
+  "segments": 6,
+  "sides": 5,
+  "rings": 0.3,
+  "ring_count": 16
+ },
+ "bark": {
+  "colors": [
+   "#6a5a4a",
+   "#4a4036"
+  ]
+ },
+ "leaves": {
+  "shape": "strap",
+  "count": 26,
+  "length": 0.42,
+  "width": 0.16,
+  "arch": 0.45,
+  "rise": [
+   5,
+   75
+  ],
+  "fold": 0.2,
+  "segments": 4,
+  "colors": [
+   "#7a1a2a",
+   "#8a2032",
+   "#5a1a3a",
+   "#4a6a2a"
+  ],
+  "tip_colors": [
+   "#c03a4a",
+   "#a02a3a"
+  ],
+  "crown": 0.005,
+  "lo": 0.5
+ },
+ "ao_reach": 0.3
+}

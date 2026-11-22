@@ -9,20 +9,28 @@
 
 import { VERSION } from "./env.ts";
 
-type Schema = Record<string, unknown>;
-const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
-const str = (description?: string): Schema => ({ type: "string", ...(description && { description }) });
-const int = (description?: string): Schema => ({ type: "integer", ...(description && { description }) });
-const bool = (description?: string): Schema => ({ type: "boolean", ...(description && { description }) });
+/** The JSON Schema keywords this spec uses. codeSplitter's openapi.ts declares the same one: each file loads on its own for its docs, so neither imports it. */
+interface Schema {
+  type?: string | string[]; description?: string; title?: string; $ref?: string; format?: string;
+  properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean | Schema;
+  items?: Schema; maxItems?: number; enum?: (string | null)[]; const?: string; default?: string | number | boolean;
+  oneOf?: Schema[]; allOf?: Schema[];
+}
+/** A schema with no `required` list of its own, so a query parameter can carry `required: true` instead. */
+type Leaf = Omit<Schema, "required">;
+const ref = (name: string): Leaf => ({ $ref: `#/components/schemas/${name}` });
+const str = (description?: string): Leaf => ({ type: "string", ...(description && { description }) });
+const int = (description?: string): Leaf => ({ type: "integer", ...(description && { description }) });
+const bool = (description?: string): Leaf => ({ type: "boolean", ...(description && { description }) });
 const arr = (items: Schema): Schema => ({ type: "array", items });
 const obj = (properties: Record<string, Schema>, required: string[] = [], description?: string): Schema =>
   ({ type: "object", properties, ...(required.length && { required }), ...(description && { description }) });
 const loose = (description: string): Schema => ({ type: "object", additionalProperties: true, description });
-const en = (values: readonly string[], description?: string): Schema => ({ type: "string", enum: [...values], ...(description && { description }) });
+const en = (values: readonly string[], description?: string): Leaf => ({ type: "string", enum: [...values], ...(description && { description }) });
 
 interface Op {
   id: string; summary: string; tag: string; description?: string;
-  query?: Record<string, Schema & { required?: boolean }>;
+  query?: Record<string, Leaf & { required?: boolean }>;
   body?: Schema; ok?: Schema; status?: number;
   /** Needs no sign-in. */
   open?: true;
@@ -46,7 +54,7 @@ function crud(entity: string, one: string, fields: Schema, filters: Record<strin
   return {
     [`${org}/${entity}`]: {
       get: { id: `list_${entity}`, summary: `List ${entity}, newest change first`, tag: Row, role: "seasonal", query: { ...page, ...filters }, ok: obj({ items: arr(ref(Row)), total: { type: "integer", description: "rows matching the search and filters, across all pages" }, next: { type: ["string", "null"], description: "cursor for the next page" } }) },
-      post: { id: `create_${one}`, summary: `Add a ${one}`, tag: Row, role: one === "activity" ? "seasonal" : "employee", body: obj((fields as { properties: Record<string, Schema> }).properties, required), ok: ref(Row), status: 201 },
+      post: { id: `create_${one}`, summary: `Add a ${one}`, tag: Row, role: one === "activity" ? "seasonal" : "employee", body: obj(fields.properties ?? {}, required), ok: ref(Row), status: 201 },
     },
     ...(entity === "contacts" || entity === "companies" ? { [`${org}/${entity}/import`]: {
       post: { id: `import_${entity}`, summary: `Import ${entity} from a CSV, skipping ones already there`, tag: Row, role: "employee", status: 201,
@@ -171,10 +179,10 @@ const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str() }, ["error"]),
   Org: obj({ id: str("org_…: carries nothing about its owner"), name: str(), owner_user_id: str(), created_at: int(), plan: str("free or demo"), role: ROLE }),
   Member: obj({ user_id: str(), name: str(), role: ROLE, created_at: int() }),
-  Contact: obj({ ...stamps, ...(CONTACT.properties as Record<string, Schema>) }),
-  Company: obj({ ...stamps, ...(COMPANY.properties as Record<string, Schema>) }),
-  Deal: obj({ ...stamps, ...(DEAL.properties as Record<string, Schema>) }),
-  Activity: obj({ ...stamps, ...(ACTIVITY_BODY.properties as Record<string, Schema>), actor_user_id: str() }),
+  Contact: obj({ ...stamps, ...CONTACT.properties }),
+  Company: obj({ ...stamps, ...COMPANY.properties }),
+  Deal: obj({ ...stamps, ...DEAL.properties }),
+  Activity: obj({ ...stamps, ...ACTIVITY_BODY.properties, actor_user_id: str() }),
   Change: obj({ seq: int(), entity: str(), id: str(), op: en(["upsert", "delete", "seed"]), actor_user_id: { type: ["string", "null"] }, at: int(), data: loose("the row after the write; for a delete {id, deleted_at}; for a seed the counts") }),
   Webhook: obj({ id: str(), url: str(), events: arr(str()), secret: str("when made only"), created_at: int(), disabled: bool(), format: str("json, slack or discord") }),
   Delivery: obj({ id: str(), event: str(), status: en(["pending", "ok", "dead"]), attempts: int(), next_at: { type: ["integer", "null"] }, last_code: { type: ["integer", "null"] }, created_at: int() }),
@@ -195,26 +203,22 @@ const err = (description: string) => ({ description, content: { "application/jso
 
 /** The spec, with this origin as its server. */
 export function openapi(origin: string) {
-  const paths: Record<string, Record<string, unknown>> = {};
-  for (const [path, methods] of Object.entries(OPS)) {
-    paths[path] = {};
-    for (const [method, o] of Object.entries(methods)) {
-      paths[path][method] = {
-        operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
-        parameters: params(path, o.query),
-        ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
-        security: o.open ? [{}] : o.cookieOnly ? [{ cookie: [] }] : [{ key: [] }, { cookie: [] }],
-        ...(o.role && { "x-qcrm-role": o.role }),
-        ...(o.risky && { "x-qcrm-risky": true }),
-        ...(o.cookieOnly && { "x-qcrm-cookie-only": true }),
-        responses: {
-          [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
-          400: err("bad input"), 401: err("signed out, or a bad key"), 403: err("your role can't do this"),
-          404: err("not found, or an org you aren't in"), 409: err("it already exists"), 429: err("over a rate limit"), 503: err("accounts are off"),
-        },
-      };
-    }
-  }
+  const paths = Object.fromEntries(Object.entries(OPS).map(([path, methods]) => [path, Object.fromEntries(
+    Object.entries(methods).map(([method, o]) => [method, {
+      operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
+      parameters: params(path, o.query),
+      ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
+      security: o.open ? [{}] : o.cookieOnly ? [{ cookie: [] }] : [{ key: [] }, { cookie: [] }],
+      ...(o.role && { "x-qcrm-role": o.role }),
+      ...(o.risky && { "x-qcrm-risky": true }),
+      ...(o.cookieOnly && { "x-qcrm-cookie-only": true }),
+      responses: {
+        [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
+        400: err("bad input"), 401: err("signed out, or a bad key"), 403: err("your role can't do this"),
+        404: err("not found, or an org you aren't in"), 409: err("it already exists"), 429: err("over a rate limit"), 503: err("accounts are off"),
+      },
+    }]),
+  )]));
   return {
     openapi: "3.1.0",
     info: {

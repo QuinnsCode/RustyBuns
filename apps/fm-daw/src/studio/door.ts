@@ -6,6 +6,7 @@ import { seshName } from "../sesh.ts";
 import { ROOMS, ROOM_LIST, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import type { StudioDef } from "./room.ts";
+import type { HubFriend, HubNote } from "@rustybuns/util/eqosys";
 
 /** A studio as the pickers show it: its id, name, a line on what it is, and the room itself (for its shot). */
 export interface Studio { id: string; name: string; about: string; def: StudioDef }
@@ -75,4 +76,35 @@ export function loadRecent(): Recent[] {
 }
 export function saveRecent(list: Recent[]) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* private window: this visit only */ }
+}
+
+/** What an invite says in a friend's eqosys notes (it carries the room's link beside it): 280 characters at most. */
+export function inviteNote(room: string, studio: string): string {
+  return `Come jam with me in ${room ? `"${room}"` : "my room"}${studio ? `, in ${studio}` : ""}.`.slice(0, 280);
+}
+
+/** An invite a friend sent you through eqosys: who, when, and the room's link on this site. */
+export interface Invite { from: string; at: number; room: string; name: string; link: string }
+/**
+ * The invites in your eqosys notes: the notes this app sent with a room's link, newest first, one per room. The link is
+ * rebuilt on `origin` from the room it names, so a note never sends you anywhere but a room here.
+ */
+export function invitesIn(notes: readonly HubNote[], app: string, origin: string): Invite[] {
+  const out: Invite[] = [], seen = new Set<string>();
+  for (const n of [...notes].sort((a, b) => b.at - a.at)) {
+    if (n.app !== app || !n.link) continue;
+    let u: URL;
+    try { u = new URL(n.link); } catch { continue; }
+    const r = u.pathname === "/jam.html" ? fromLink(u.search) : null;
+    if (!r || seen.has(r.room)) continue;
+    seen.add(r.room);
+    out.push({ from: n.from.name || "A friend", at: n.at, room: r.room, name: r.name, link: inviteLink(origin, r.room, r.studio, r.name) });
+  }
+  return out;
+}
+
+/** Your eqosys friends to invite: the ones with this app open now first (`here`), then the rest, each by name. */
+export function friendOrder(friends: readonly HubFriend[], app: string): (HubFriend & { here: boolean })[] {
+  return friends.map((f) => ({ ...f, here: f.presence.some((p) => p.app === app) }))
+    .sort((a, b) => Number(b.here) - Number(a.here) || (a.name || a.id).localeCompare(b.name || b.id));
 }

@@ -30,13 +30,16 @@
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
 // No builder (unset, or not serving): `run` runs its command here; a base-ref run names the
 // suites GitHub CI will run and exits 0, so you push and let `bun run pr <n>` wait for them.
+// The trust dial (`dial` in ci-tier.ts, #5477): a base-ref run's pass or fail is written down per agent and tier in
+// ~/.rustybuns/trust.jsonl (BUILDER_TRUST). Five clean tier 0 or 1 runs in a row in two weeks, and that agent's next run is
+// only the test files its diff changed in each app; a failure puts it back on the whole suite. `all` is always whole.
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
 import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
-import { tierLine } from "./ci-tier.ts";
+import { classify, dial, readVerdicts, recordVerdict, tierLine, type Tier } from "./ci-tier.ts";
 
 /** A row of ci-apps' matrix: one without an app, test and prep isn't a job. */
 const line = str(Infinity, { min: 0 });
@@ -241,7 +244,26 @@ export function ciJobs(out: string, all = false): RemoteJob[] {
 }
 
 // The suites the branch touched, as apps.yml would run them (`all`: everything both checks run).
-const touched = async (base: string, cwd: string, all = false) => ciJobs(await Bun.$`bun scripts/ci-apps.ts test ${base}`.cwd(cwd).text(), all);
+const touched = async (base: string, cwd: string, all = false) => ciJobs(await matrix(base, cwd), all);
+const matrix = (base: string, cwd: string) => Bun.$`bun scripts/ci-apps.ts test ${base}`.cwd(cwd).text();
+
+/**
+ * The trust dial's targeted run: each touched app runs only the test files the diff changed in it, its shards folded into
+ * one job. An app whose tests the diff didn't touch keeps its whole suite.
+ */
+export function targetedJobs(out: string, files: string[]): RemoteJob[] {
+  const whole = ciJobs(out);
+  const seen = new Set<string>();
+  return parseJobs(out).flatMap((j) => {
+    const dir = appDir(j.app);
+    const tests = files.filter((f) => f.startsWith(`${dir}/`) && /\.test\.[cm]?[jt]sx?$/.test(f)).map((f) => `./${relative(dir, f)}`);
+    const label = j.shard ? `${j.app}:${j.shard}` : j.app;
+    if (!tests.length) return whole.filter((r) => r.label === label);
+    if (seen.has(dir)) return [];
+    seen.add(dir);
+    return [{ label: j.app, dir, cmd: [j.prep, `bun test ${tests.map(q).join(" ")}`].filter(Boolean).join(" && ") }];
+  });
+}
 
 // What `all` passed, one JSON line per commit, on this Mac beside the valve: the list to merge from when GitHub is back.
 export const Pass = obj({ sha: str(64, { re: /^[0-9a-f]{40,64}$/ }), branch: str(200), base: str(200), at: num(0, 1e15), jobs: arr(str(200), 500) });
@@ -404,20 +426,25 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
     return fallback(argv, cwd, "BUILDER_HOST is not set, so there is no builder (scripts/builder-setup.sh sets one up)");
   }
   const b = builder(host);
+  const branch = (await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(cwd).quiet().nothrow().text()).trim();
+  // Who, for the builder's menu bar and the trust dial: the worker (office/<name>), or the worktree's folder on a detached HEAD.
+  const who = process.env.BUILDER_WHO || (branch && branch !== "HEAD" ? branch.replace(/^office\//, "") : basename(cwd));
+  let tier: Tier | undefined;
   let jobs: { label: string; dir: string; cmd: string }[];
   if (argv[0] === "run") {
     jobs = [{ label: argv[1]!, dir: argv[1]!, cmd: argv.slice(2).map(q).join(" ") }];
   } else {
     const files = (await Bun.$`git diff --name-only ${argv[0]!}...HEAD`.cwd(cwd).quiet().nothrow().text()).split("\n").filter(Boolean);
     console.log(tierLine(files));
-    jobs = await touched(argv[0]!, cwd, all);
+    const out = await matrix(argv[0]!, cwd);
+    tier = classify(files);
+    const d = all ? undefined : dial(await readVerdicts(), who, tier);
+    if (d) console.log(d.why);
+    jobs = d?.targeted ? targetedJobs(out, files) : ciJobs(out, all);
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }
 
   const poll = Number(process.env.BUILDER_POLL_MS ?? 30_000);
-  const branch = (await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(cwd).quiet().nothrow().text()).trim();
-  // Who, for the builder's menu bar: the worker (office/<name>), or the worktree's folder on a detached HEAD.
-  const who = process.env.BUILDER_WHO || (branch && branch !== "HEAD" ? branch.replace(/^office\//, "") : basename(cwd));
   const rec: RunRecord = { who, started: Date.now(),
     cmd: argv[0] === "run" ? `${argv[1]}: ${argv.slice(2).join(" ")}` : `suites: ${jobs.map((j) => j.label).join(", ")}` };
   for (;;) {
@@ -461,6 +488,8 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
       const codes: number[] = [];
       const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code; codes.push(c); return c; });
       if (codes.includes(LOST)) return (code = LOST);
+      // every base-ref run, targeted or whole, is what the dial learns from; a one-off `run` isn't the branch's test
+      if (tier !== undefined && !at) await recordVerdict({ who, tier, passed: !worst, at: Date.now() }).catch(() => {});
       console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
       if (all && !worst) {
         // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.

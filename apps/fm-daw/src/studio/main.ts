@@ -13,9 +13,9 @@ import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
 import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
-import { eqosys } from "@rustybuns/util/eqosys";
+import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
-import { follow, fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
@@ -65,6 +65,8 @@ import { mountHelp } from "./help.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
+import { openAir } from "./open-air.ts";
+import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -116,10 +118,11 @@ function buildRoom() {
   floor.rotation.x = -Math.PI / 2;
   const ceil = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.ceiling, def.colors.ceiling));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
-  scene.add(floor, ceil);
+  // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
+  if (!def.outdoor) scene.add(floor, ceil);
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
-  for (const wall of [...outside.map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
+  for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
     const wallMat = surface(wallSurface(wall.material ?? "drywall"), wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
@@ -249,6 +252,20 @@ function thing(s: Spot): THREE.Group {
     const { synth, keys } = bassSynth(s);
     inFront.add(synth.group);
     played.set(s.id, { keys });
+  } else if (s.kind === "dj") {
+    // the DJ booth (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
+    // and a media deck either side, every front edge in one line toward the DJ (+z)
+    const top = t.h, look = gearLook();
+    box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
+    box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
+    for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
+    const front = t.d / 2 - 0.08;
+    const mixer = gearModel("mixer-dj", { look });
+    put(mixer, 0, top, front - 0.414 / 2);
+    for (const side of [-1, 1]) {
+      const deck = gearModel("deck-media", { look });
+      put(deck, side * (0.333 / 2 + 0.03 + 0.329 / 2), top, front - 0.453 / 2);
+    }
   } else if (s.kind === "desk") {
     // a mixing console: a steel body, a sloped work surface of channel strips (knobs with coloured caps, a fader
     // in a slot each), a lit meter bridge behind and a padded armrest in front, where the engineer sits (+z)
@@ -277,7 +294,7 @@ function thing(s: Spot): THREE.Group {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, t.d), m), 0, t.h / 2, 0);
     if (s.kind === "couch") put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.5, 0.2), m), 0, t.h + 0.25, t.d / 2 - 0.1);
   }
-  if (s.kind !== "couch" && s.kind !== "booth" && s.kind !== "drums") {
+  if (s.kind !== "couch" && s.kind !== "booth" && s.kind !== "drums" && s.kind !== "dj") {
     // the seat: a stool in black vinyl on a metal post, a foot ring and three feet
     at(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.16, 0.07, 24), surface("tolex", "#141414")), s.at[0], 0.46, s.at[1]);
     at(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.43, 10), metal), s.at[0], 0.215, s.at[1]);
@@ -292,7 +309,7 @@ function thing(s: Spot): THREE.Group {
 }
 useKit(gearKit(loadQuality()));
 buildRoom();
-const picture = dress(renderer, scene, camera, def, loadQuality());
+const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality()) : dress(renderer, scene, camera, def, loadQuality());
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
@@ -898,7 +915,63 @@ void eq.finishSignIn().then((back) => {
   if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
 });
 
-function menu() { $("menu").hidden = phase === "play"; door(); people(); }
+// ---- inviting: your eqosys friends (the hub), each an Invite that lands in their eqosys notes, and the invites in yours
+const friendHub = hub({ url: () => eq.eqosysUrl(), token, app: APP });
+let hubView: HubView | null = null, hubAt = 0;
+/** Per friend id: "sending", "sent", or why it didn't go. Kept for this page, so a friend isn't asked twice by accident. */
+const asked = new Map<string, string>();
+async function refreshHub(force = false) {
+  if (!signedIn() || (!force && performance.now() - hubAt < 30_000 && hubAt)) return;
+  hubAt = performance.now();
+  hubView = await friendHub.state();
+  invites();
+}
+function invites() {
+  const box = $("friends-box"), list = $("friends");
+  box.hidden = !here || !signedIn() || !hubView;
+  const shareable = typeof navigator.share === "function";
+  $("share").hidden = !here || !shareable;
+  const add = $("friends-add");
+  if (add instanceof HTMLAnchorElement) add.href = friendHub.friendsPage();
+  list.replaceChildren();
+  const friends = friendOrder(hubView?.friends ?? [], APP);
+  $("friends-none").hidden = friends.length > 0;
+  for (const f of friends) {
+    const li = document.createElement("li"), who = document.createElement("span"), b = document.createElement("button");
+    who.textContent = f.name || "A friend";
+    if (f.here) { const m = document.createElement("small"); m.textContent = "In Qollab Studio"; who.append(" ", m); }
+    const st = asked.get(f.id);
+    b.type = "button"; b.className = "ghost";
+    b.textContent = st === "sent" ? "Sent" : st === "sending" ? "Sending" : st ? "Try again" : "Invite";
+    b.disabled = st === "sent" || st === "sending";
+    if (st && st !== "sent" && st !== "sending") b.title = st;
+    b.addEventListener("click", () => void inviteFriend(f.id));
+    li.append(who, b); list.append(li);
+  }
+  // the lobby: rooms friends asked you into
+  const mine = invitesIn(hubView?.notes ?? [], APP, location.origin);
+  $("invites-box").hidden = !!here || !mine.length;
+  const inv = $("invites");
+  inv.replaceChildren();
+  for (const i of mine.slice(0, 6)) {
+    const li = document.createElement("li"), a = document.createElement("a"), t = document.createElement("span"), m = document.createElement("small");
+    a.href = i.link; t.textContent = i.name || i.room; m.textContent = `From ${i.from}`;
+    a.append(t, m); li.append(a); inv.append(li);
+  }
+}
+async function inviteFriend(id: string) {
+  if (!here) return;
+  asked.set(id, "sending"); invites();
+  const why = await friendHub.notify(id, inviteNote(here.name, def.name), inviteLink(location.origin, here.room, here.studio, here.name));
+  asked.set(id, why ?? "sent"); invites();
+  if (why) flash = { text: why, until: performance.now() + 3000 };
+}
+$("share").addEventListener("click", () => {
+  if (!here) return;
+  void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: inviteLink(location.origin, here.room, here.studio, here.name) }).catch(() => {});
+});
+
+function menu() { $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {

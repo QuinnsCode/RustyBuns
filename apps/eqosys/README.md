@@ -81,7 +81,7 @@ second per isolate, one upsert per caller; days past 30 are swept. To count anot
 
 - **WebMCP** in any page: `app/commands.client.ts` adds the server's list as commands (`@rustybuns/util/commands`), so a browser agent calls them as the signed-in person (no token) instead of screenshotting, and a person finds the same ones in the Cmd/Ctrl+K palette.
 - **HTTP**: `GET /api/tools` lists them with schemas; `POST /api/tools/<name>` runs one (session cookie, or an app's token as a bearer).
-- **CLI**: `bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Sports & Skate"}' --token ...`.
+- **CLI**: `bun apps/eqosys/scripts/eq.ts eq_apps '{"genre":"Games"}' --token ...`.
 
 `eq_batch` is the token saver: up to 12 read-only calls in one round trip, each with `pick` (dotted field paths) so only the wanted fields come back.
 `eq_execute` is code mode: the agent sends a JavaScript program (`await tools.eq_apps({})`, loops, filters) that runs in a Dynamic Worker with no network (`LOADER` binding, `src/codemode.ts`), calling the read-only tools as the person asking, and only what it returns comes back (50 calls, 10 s, 20k characters). The program Worker reaches the tools through the `EQBridge` entrypoint in `worker.tsx`. A test measures it: a per-app loop costs ~88 tokens as a program against ~874 calling each tool by hand.

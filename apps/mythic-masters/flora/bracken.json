@@ -1,0 +1,39 @@
+{
+ "id": "bracken",
+ "name": "Bracken",
+ "biome": "highlands",
+ "generator": "rosette",
+ "seed": 113,
+ "height": 1.2,
+ "budget": [
+  3000,
+  650
+ ],
+ "note": "Waist-high fronds on bare stalks, spread flat like hands over the hillsides, green in summer and rust-brown by autumn.",
+ "leaves": {
+  "shape": "pinnate",
+  "count": 10,
+  "length": 1,
+  "pairs": 12,
+  "leaflet": 0.2,
+  "arch": 0.7,
+  "rise": [
+   35,
+   70
+  ],
+  "colors": [
+   "#5a7a2a",
+   "#7a6a2a",
+   "#9a5a24",
+   "#6a7a2e"
+  ],
+  "tip_colors": [
+   "#a86a2a",
+   "#8a8a3a"
+  ],
+  "crown": 0.12,
+  "lo": 0.5,
+  "inner_up": false
+ },
+ "ao_reach": 0.35
+}
