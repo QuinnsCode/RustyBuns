@@ -177,21 +177,23 @@ function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<s
 // allows: the menu on the left, then your games (one big, the ones you played last, a shelf of screenshot tiles a genre), then
 // which friends are on. Its words come from cards.json (cards.ts); the pictures are the apps' screenshots (public/cards).
 const HOME_CSS = `
-.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start;
+.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem;align-items:start;
  --tile:color-mix(in oklab,rgba(255,255,255,.9) var(--flipp),rgba(16,20,34,.88))}
 .home a,.home button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-.home .menu{display:grid;gap:.6rem;min-width:0}
-.home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
-.home .top .brand{margin:0;justify-content:space-between}
-.home .top .brand span{display:flex;align-items:center;gap:.5rem}
-.home .avatar{display:grid;place-items:center;width:2.4rem;height:2.4rem;border-radius:50%;background:var(--acc);color:var(--onacc);font:500 1.05rem Lexend,system-ui,sans-serif;text-transform:uppercase;text-decoration:none}
-.home .top h1{font-size:2.4rem}
-.home .body{display:grid;gap:1rem;min-width:0}
-.home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:1rem .4rem 0;color:var(--ink);opacity:.8;
+/* One slim bar: the brand, a short greeting and your avatar in one pill, the tabs in a row beside it, stuck to the top
+   (clear of the sky switch on the right). Every tab is still one tap away. */
+.home .menu{position:sticky;top:max(.6rem,env(safe-area-inset-top));z-index:4;display:flex;align-items:center;gap:.5rem;min-width:0;margin-right:7.6rem}
+.home .top{flex:none;display:flex;align-items:center;gap:.9rem;padding:.35rem .4rem .35rem 1rem;border-radius:18px;animation:none}
+.home .top .brand{margin:0;text-decoration:none}
+.home .top h1{font-size:.95rem;font-weight:500;letter-spacing:0;color:var(--mut);white-space:nowrap}
+.home .avatar{display:grid;place-items:center;flex:none;width:2.4rem;height:2.4rem;border-radius:50%;background:var(--acc);color:var(--onacc);font:500 1.05rem Lexend,system-ui,sans-serif;text-transform:uppercase;text-decoration:none}
+.home .body{display:grid;gap:.75rem;min-width:0}
+.home>.bad{margin:0;background:color-mix(in oklab,var(--bad) 9%,var(--tile))}
+.home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:.5rem .4rem -.2rem;color:var(--ink);opacity:.8;
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .rowhead{display:flex;align-items:center;justify-content:space-between;gap:1rem}.home .rowhead h2{margin:1rem .4rem 0}
+.home .rowhead{display:flex;align-items:center;justify-content:space-between;gap:1rem}.home .rowhead h2{margin:.5rem .4rem 0}
 .home .badge-m{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;border:1px solid var(--rim);background:var(--field);color:var(--mut);flex:none}
 .home .badge-m svg{width:.95rem;height:.95rem}.home .badge-m.beta{color:var(--acc)}.home .badge-m.experimental{color:color-mix(in oklab,#d9822b var(--flipp),#ffc27a)}
 .home .glass{position:relative;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);background:var(--paper);border:1px solid var(--rim);
@@ -212,34 +214,34 @@ const HOME_CSS = `
 .home .tally svg{width:.75rem;height:.75rem}
 /* The big one: the featured game you played last, its screenshot beside its words. */
 .home .feature{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
-.home .feature .shot{aspect-ratio:auto;min-height:18rem}
-.home .feature .cap{display:grid;align-content:center;gap:.7rem;padding:1.6rem 1.8rem}
-.home .feature b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2.4rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
-.home .feature .blurb{font-size:1.05rem;line-height:1.45;opacity:.85;text-wrap:pretty}
+.home .feature .shot{aspect-ratio:auto;min-height:13rem}
+.home .feature .cap{display:grid;align-content:center;gap:.55rem;padding:1.1rem 1.4rem}
+.home .feature b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+.home .feature .blurb{font-size:.98rem;line-height:1.45;opacity:.85;text-wrap:pretty}
 .home .feature .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;color:var(--mut);font-size:.82rem}
 /* Pick up where you left off: the last few you played, a small picture and a Play button each. */
-.home .recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.8rem}
-.home .recent .glass{display:flex;align-items:center;gap:.8rem;padding:.6rem .8rem .6rem .6rem}
-.home .recent .shot{width:5.5rem;flex:none;border-radius:12px}
+.home .recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.6rem}
+.home .recent .glass{display:flex;align-items:center;gap:.7rem;padding:.45rem .6rem .45rem .45rem;border-radius:16px}
+.home .recent .shot{width:4.5rem;flex:none;border-radius:12px}
 .home .recent span.w{display:grid;min-width:0;flex:1}.home .recent b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .recent small{color:var(--mut);font-size:.78rem;white-space:nowrap}
 /* A shelf: a genre's games as screenshot tiles, as many across as the width holds. */
-.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.9rem}
+.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(12rem,1fr));gap:.7rem}
 .home .game{display:grid;transition:transform .18s,box-shadow .18s,border-color .18s}
 .home .game:active,.home .recent .glass:active{transform:scale(.97)}
-.home .game .cap{display:grid;gap:.25rem;padding:.75rem .9rem .85rem}
+.home .game .cap{display:grid;gap:.2rem;padding:.55rem .75rem .65rem}
 .home .game .name{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
-.home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
+.home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
 .home .game small{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;white-space:nowrap;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
 .home .game:focus-within{border-color:color-mix(in oklab,var(--acc) 60%,transparent)}
 @media(hover:hover){.home .game:hover{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
  .home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}}
 /* Your party, friends and spaces: a column on the right when it's wide, a row you swipe under your games when it isn't. */
-.home .lib{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"main" "side" "shelves";gap:1rem;min-width:0}
-.home .lib>.main,.home .lib>.shelves{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}.home .lib>.main{grid-area:main}.home .lib>.shelves{grid-area:shelves}
+.home .lib{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"main" "side" "shelves";gap:.75rem;min-width:0}
+.home .lib>.main,.home .lib>.shelves{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem;min-width:0}.home .lib>.main{grid-area:main}.home .lib>.shelves{grid-area:shelves}
 .home .side{grid-area:side;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(15rem,1fr);gap:.8rem;align-items:start;min-width:0;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x mandatory}
 .home .side::-webkit-scrollbar{display:none}.home .side>*{scroll-snap-align:start}
-.home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;min-width:0}
+.home .rail{display:grid;gap:.3rem;padding:.8rem .95rem;align-content:start;min-width:0}
 .home .rail h2{margin:0 0 .3rem;display:flex;align-items:center;gap:.45rem}.home .rail h2 svg{width:1.05rem;height:1.05rem;flex:none;color:var(--mut)}
 .home .party{border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
 .home .party .code{font:600 1.35rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em}
@@ -252,7 +254,7 @@ const HOME_CSS = `
 .home .rail .spaces a:hover{background:var(--field)}.home .rail .spaces svg{width:.95rem;height:.95rem;flex:none;color:var(--mut)}
 .home .rail .spaces b{flex:1}.home .rail .spaces small.on{color:#3fb871}
 .home .rail ul{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
-.home .rail li{display:flex;align-items:center;gap:.7rem;padding:.4rem 0;min-width:0}
+.home .rail li{display:flex;align-items:center;gap:.6rem;padding:.25rem 0;min-width:0}
 .home .rail li i{position:relative;flex:none;display:grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--field);border:1px solid var(--rim);font:500 .9rem Lexend,system-ui,sans-serif;font-style:normal;text-transform:uppercase}
 .home .rail li i:after{content:"";position:absolute;right:-2px;bottom:-2px;width:.65rem;height:.65rem;border-radius:50%;background:var(--mut);border:2px solid var(--paper)}
 .home .rail li.on i:after{background:#3fb871}
@@ -260,20 +262,22 @@ const HOME_CSS = `
 .home .rail li small{color:var(--mut);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .rail>a{font-size:.85rem}
 @media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art{transition:none}}
-.home .tabs{display:flex;gap:.25rem;flex-wrap:wrap;padding:.35rem;border-radius:18px;background:var(--paper);border:1px solid var(--rim);
+.home .tabs{display:flex;gap:.15rem;flex:1;min-width:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:.3rem;border-radius:18px;background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:inset 0 1px 0 var(--edge)}
-.home .tabs a{position:relative;display:inline-flex;align-items:center;gap:.6rem;min-height:2.75rem;padding:.4rem .9rem;border-radius:13px;color:var(--mut);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
+.home .tabs::-webkit-scrollbar{display:none}
+.home .tabs a{position:relative;flex:none;display:inline-flex;align-items:center;gap:.5rem;min-height:2.5rem;padding:.3rem .8rem;white-space:nowrap;border-radius:13px;color:var(--mut);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
 .home .tabs a svg{width:1.2rem;height:1.2rem;flex:none}
 .home .tabs a:hover{color:var(--ink)}.home .tabs a:active{background:color-mix(in oklab,var(--ink) 8%,transparent)}
 .home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 20%,transparent)}.home .tabs a[aria-current] svg{color:var(--acc)}
 .home .tabs em{font-style:normal;font-size:.72rem;font-weight:600;min-width:1.2rem;padding:.05rem .35rem;border-radius:999px;background:#e5484d;color:#fff;text-align:center}
-/* Wide: the menu becomes a column on the left that stays put, and the friends a column on the right. */
-@media(min-width:68rem){.home{grid-template-columns:15rem minmax(0,1fr)}
- .home .menu{position:sticky;top:1.5rem}.home .top{padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
- .home .tabs{flex-direction:column}.home .tabs em{margin-left:auto}}
+/* Not wide: the greeting goes first, then the tabs' words (icons alone, the word on hover). */
+@media(max-width:84rem){.home .top h1{display:none}}
+@media(min-width:40.01rem) and (max-width:62rem){.home .tabs a{padding:.3rem .65rem}.home .tabs a>span{display:none}.home .tabs em{position:absolute;top:.05rem;right:.05rem}}
+@media(min-width:40.01rem) and (max-width:84rem){.home .tabs.many a{padding:.3rem .65rem}.home .tabs.many a>span{display:none}.home .tabs.many em{position:absolute;top:.05rem;right:.05rem}}
+/* Wide: the friends a column on the right, stuck under the bar. */
 @media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem;grid-template-areas:"main side" "shelves side"}
- .home .side{grid-row:1/span 2;grid-auto-flow:row;grid-auto-columns:auto;align-content:start;align-self:start;overflow:visible;position:sticky;top:4.5rem;margin-top:3rem}}
-@media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:16/9;min-height:0}.home .feature .cap{padding:1.1rem 1.2rem 1.3rem}.home .feature b{font-size:1.9rem}}
+ .home .side{grid-row:1/span 2;grid-auto-flow:row;grid-auto-columns:auto;align-content:start;align-self:start;overflow:visible;position:sticky;top:4.2rem}}
+@media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:2/1;min-height:0}.home .feature .cap{padding:.9rem 1.1rem 1rem;gap:.45rem}.home .feature b{font-size:1.6rem}}
 .home .trophies{display:grid;gap:.6rem}
 .home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
 .home .trophies meter{width:100%;height:.4rem;margin:-.3rem 0 .8rem}
@@ -330,8 +334,8 @@ const HOME_CSS = `
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
 /* A phone: the tabs are a bar along the bottom under your thumb, a big Play, and each shelf a row you swipe. */
-@media(max-width:40rem){.home{padding-top:2.6rem;padding-bottom:calc(5rem + env(safe-area-inset-bottom))}
- .home .top{padding:1.1rem 1.2rem 1.2rem;gap:.7rem}.home .top h1{font-size:1.75rem}
+@media(max-width:40rem){.home{padding-bottom:calc(4.6rem + env(safe-area-inset-bottom))}
+ .home .menu{top:auto;position:static}.home .top{flex:1;justify-content:space-between}
  .home .tabs{position:fixed;z-index:6;left:0;right:0;bottom:0;flex-wrap:nowrap;gap:0;overflow-x:auto;scrollbar-width:none;border-radius:0;border-width:1px 0 0;
   padding:.3rem max(.3rem,env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) max(.3rem,env(safe-area-inset-left))}
  .home .tabs::-webkit-scrollbar{display:none}
@@ -339,9 +343,9 @@ const HOME_CSS = `
  .home .tabs a svg{width:1.45rem;height:1.45rem}
  .home .tabs a[aria-current]{background:none}
  .home .tabs em{position:absolute;top:.15rem;left:calc(50% + .3rem)}
- .home .feature .play{display:flex;justify-content:center;min-height:3.2rem;font-size:1.1rem}
+ .home .feature .play{display:flex;justify-content:center;min-height:2.75rem;font-size:1rem}
  .home .side{grid-auto-columns:85%;margin:0 -1rem;padding:0 1rem;scroll-padding:0 1rem}
- .home .shelves .shelf{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:11rem;gap:.7rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;
+ .home .shelves .shelf{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:10rem;gap:.7rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;
   scroll-snap-type:x mandatory;margin:0 -1rem;padding:.1rem 1rem .4rem;scroll-padding:0 1rem}
  .home .shelves .shelf::-webkit-scrollbar{display:none}.home .shelves .shelf>*{scroll-snap-align:start}
  .home .game b{font-size:1rem}}
@@ -706,14 +710,15 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
         {/* The nav sits outside the glass pane: a blurred parent would pin a phone's fixed tab bar to itself instead of the screen. */}
         <div className="menu">
           <section className="pane top">
-            <div className="brand"><span><i /><b>{NAME}</b></span><a className="avatar" href="/?tab=account" title={me.name || me.email} aria-label="Me">{(me.name || me.email).slice(0, 1)}</a></div>
+            <a className="brand" href="/" aria-label={`${NAME} home`}><i /><b>{NAME}</b></a>
             <h1>{greeting(t0)}</h1>
-            {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
+            <a className="avatar" href="/?tab=account" title={me.name || me.email} aria-label="Me">{(me.name || me.email).slice(0, 1)}</a>
           </section>
-          <nav className="tabs" aria-label="eqosys">
-            {tabs.map(([k, label, d]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}><Icon d={[...d]} /><span>{label}</span>{k === "friends" && asked > 0 && <em aria-label={`${asked} asking`}>{asked}</em>}</a>)}
+          <nav className={tabs.length > 5 ? "tabs many" : "tabs"} aria-label="eqosys">
+            {tabs.map(([k, label, d]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} title={label} aria-current={k === tab ? "page" : undefined}><Icon d={[...d]} /><span>{label}</span>{k === "friends" && asked > 0 && <em aria-label={`${asked} asking`}>{asked}</em>}</a>)}
           </nav>
         </div>
+        {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
 
         <div className="body">
         {tab === "library" && <Library apps={apps} mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
