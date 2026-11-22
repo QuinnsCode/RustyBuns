@@ -33,7 +33,8 @@ import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { sparring, STATS, type Stat } from "./spar.ts";
-import { BELIEVERS, CAMPS, campers, campOf, visit as visitCamp } from "./believers.ts";
+import { BELIEVERS, CAMPS, campers, campOf, carrying, conventionHints, visit as visitCamp } from "./believers.ts";
+import { TRAILS } from "./world/trail.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -954,21 +955,23 @@ factionEl.addEventListener("click", (e) => {
 });
 
 // --- the believers (src/believers.ts): a crowd of friendly conspiracy folk at each region's first campfire ----------
-let camp: { who: string; said: string[] } | null = null;
+let camp: { who: string; said: string[]; list?: string[] } | null = null;
 const campEl = Object.assign(document.createElement("div"), { id: "campVisit", className: "booktalk" });
 campEl.hidden = true;
 document.body.append(campEl);
 function drawCamp() {
   campEl.hidden = !camp;
   campEl.innerHTML = !camp ? ""
-    : `<div class="note paper" role="dialog" aria-label="${esc(camp.who)}"><h2>${esc(camp.who)}</h2>${camp.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}<div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(BELIEVERS.goOn)}</button></div></div>`;
+    : `<div class="note paper" role="dialog" aria-label="${esc(camp.who)}"><h2>${esc(camp.who)}</h2>${camp.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}${camp.list?.length ? `<ul class="marks">${camp.list.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}<div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(BELIEVERS.goOn)}</button></div></div>`;
 }
 /** Sit at a believers' camp (fire id): who they are the first time, their line for the keepers you've beaten in their
  * region and a hint, saved as seen. False when it is not a camp or there is no journey. */
 function sitAtCamp(id: string): boolean {
   const g = CAMPS.get(id);
   if (!journey || !g) return false;
-  camp = { who: g.name, said: visitCamp(journey, g).said }; saveJourney(); keys.clear(); drawCamp();
+  const v = visitCamp(journey, g);
+  camp = { who: v.convention ? BELIEVERS.convention.title : g.name, said: v.said, ...(v.convention && { list: conventionHints(journey).map((h) => h.line) }) }; saveJourney(); keys.clear(); drawCamp();
+  figuresAt = -1e9; // the convention's marks go on the map at once
   return true;
 }
 campEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { camp = null; drawCamp(); } });
@@ -997,6 +1000,8 @@ function stepRivals(now: number) {
     world.pins([
       ...waits.flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ ...at, colour: COAT_CSS[w.faction], quest: true }] : []; }),
       ...figures.filter((f) => f.post).map((f) => ({ x: f.x, z: f.z, colour: COAT_CSS[f.faction], dim: f.resting })),
+      // after the convention, every believer's hint at once: a gold ring on the stone of the section they point at
+      ...conventionHints(j).flatMap((h) => { const at = TRAILS.get(h.n)?.stones[h.k]; return at ? [{ x: at.x, z: at.z, colour: "#d4a73a", hint: true }] : []; }),
     ]);
   }
   rivals.update(figures, now / 1000, p);
@@ -1215,6 +1220,8 @@ function drawJournal(edit = true) {
         <button data-act="call" data-e="${e}" title="${!fire ? "Only at a lit campfire" : j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up"${fire ? "" : " disabled"}>${icon("arrow-left-right")}</button>
         ${letGo("journal", e, fire)}</li>`; }).join("")}</ul>`
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
+      // the letter you carry between the believers' fires (believers.ts `carrying`)
+      + (carrying(j) ? `<h2 class="of-you">In your pack</h2><p class="spoken">${esc(carrying(j)!)}</p>` : "")
       // the Book's ledger on you, every note it has kept, newest first, in its own hand
       + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
       + `<i class="vignette rest" aria-hidden="true">${emblem("cauldron")}</i>`);
@@ -2467,7 +2474,7 @@ Object.assign(window, {
     /** The believers (src/believers.ts): `state()` each group, its camp's fire id and what it last saw (sections cleared,
      * undefined before you meet them) and the visit open now; `sit(id)` sits you at group id's camp as if you walked up. */
     believers: {
-      state: () => ({ groups: BELIEVERS.groups.map((g) => ({ id: g.id, n: g.n, name: g.name, camp: campOf(g.id) ?? null, seen: journey?.believers?.[g.id] ?? null })), open: camp }),
+      state: () => ({ groups: BELIEVERS.groups.map((g) => ({ id: g.id, n: g.n, name: g.name, camp: campOf(g.id) ?? null, seen: journey?.believers?.[g.id] ?? null })), letters: journey?.letters ?? 0, carrying: carrying(journey), hints: journey ? conventionHints(journey).map((h) => h.line) : [], open: camp }),
       sit: (id: string) => { const fire = campOf(id); return !!fire && sitAtCamp(fire) && camp; },
       close: () => { camp = null; drawCamp(); },
     },
