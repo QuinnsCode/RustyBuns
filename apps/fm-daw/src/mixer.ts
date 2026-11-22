@@ -6,8 +6,8 @@
 // one on buffers.
 import { applySettings, LINE_SCALE, type Live } from "./amp/live.ts";
 import type { AmpSettings } from "./amp/messages.ts";
-import { flatEq, TsEq } from "./engine/eq.ts";
-import { AUXES, audible, callStrip, faderGain, MAX_CHANNELS, newChannel, playerId, RETURNS, UNITY, type Channel, type Desk } from "./desk.ts";
+import { flatEq, TsEq, type EqDoc } from "./engine/eq.ts";
+import { AUXES, audible, callStrip, faderGain, MAX_CHANNELS, newChannel, playerId, RETURNS, shapeAt, shapeOf, UNITY, withShape, type Channel, type Desk, type ShapeAt } from "./desk.ts";
 import { P } from "./engine/params.ts";
 import { Space } from "./engine/space.ts";
 import type { Op, Project } from "./project.ts";
@@ -49,7 +49,7 @@ export function seshDesk(p: Project, players: readonly Player[] = []): Desk {
   const aux2 = p.desk?.aux2 ?? RETURNS[1];
   return {
     channels: [...p.tracks.map((_, ti) => trackChannel(p, ti)), ...players.map((pl) => playerChannel(p, pl))].slice(0, MAX_CHANNELS),
-    returns: [{ ...RETURNS[0], fader: levelFader(p.space) }, { ...RETURNS[1], fader: aux2.fader, mute: aux2.mute }],
+    returns: [{ ...RETURNS[0], fader: levelFader(p.space), ...shapeOf(p.desk?.space?.eq) }, { ...RETURNS[1], fader: aux2.fader, mute: aux2.mute, ...shapeOf(aux2.eq) }],
   };
 }
 
@@ -75,10 +75,20 @@ export function deskOps(p: Project, next: Desk): Op[] {
   }
   const space = next.returns.find((r) => r.fx === "space");
   if (space && moved(space.fader, levelFader(p.space))) ops.push({ t: "global", space: faderLevel(space.fader) });
+  const sameEq = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  if (space && !sameEq(shapeOf(space.eq).eq, p.desk?.space?.eq)) ops.push({ t: "desk", space: shapeOf(space.eq) });
   const aux2 = next.returns.find((r) => r.aux === 2), had = p.desk?.aux2 ?? RETURNS[1];
-  if (aux2 && (moved(aux2.fader, had.fader) || aux2.mute !== had.mute)) ops.push({ t: "desk", aux2: { fader: aux2.fader, mute: aux2.mute } });
+  if (aux2 && (moved(aux2.fader, had.fader) || aux2.mute !== had.mute || !sameEq(shapeOf(aux2.eq).eq, had.eq))) ops.push({ t: "desk", aux2: { fader: aux2.fader, mute: aux2.mute, ...shapeOf(aux2.eq) } });
   return ops;
 }
+
+/** The ops that set one Shape on the sesh's desk (a track's, a player's, a return's or the master's) to `eq`. */
+export function shapeOps(p: Project, players: readonly Player[], at: ShapeAt, eq: EqDoc): Op[] {
+  if ("master" in at) return [{ t: "eq", bands: eq }];
+  return deskOps(p, withShape(seshDesk(p, players), at, eq));
+}
+/** That Shape as it is on the sesh's desk. */
+export const seshShape = (p: Project, players: readonly Player[], at: ShapeAt): EqDoc => shapeAt(seshDesk(p, players), at, p.eq);
 
 /**
  * What the audio thread plays of the sesh's desk: which tracks, and each of these players' channels with every
@@ -95,13 +105,25 @@ export function deskPlays(p: Project, players: readonly Player[]): { mask: boole
  * with an amp (the amp insert plays it down that track's strip), else its player's own. `players` is everyone with a
  * channel, so a solo anywhere on the desk counts. A guitar with no channel yet plays as it comes.
  */
-export function callStrips(p: Project, players: readonly Player[], calls: readonly { who: string | undefined; track: number }[]): { level: number; sends: number[] }[] {
+export function callStrips(p: Project, players: readonly Player[], calls: readonly { who: string | undefined; track: number }[]): { level: number; sends: number[]; eq?: EqDoc }[] {
   const d = seshDesk(p, players), on = audible(d);
   return calls.map((call) => {
     const id = call.track >= 0 && p.tracks[call.track]?.amp ? trackId(call.track) : call.who ? playerId(call.who) : "";
     const i = d.channels.findIndex((c) => c.id === id);
     return i < 0 ? { level: 1, sends: [] } : callStrip(d.channels[i], on[i]);
   });
+}
+
+/**
+ * A return's Shape as it plays: `was` set to `eq`, or, the first time, a new one that plays it from its first sample
+ * (no fade in), as the bounce does (src/engine/offline.ts). The same steps live and offline, so the same samples.
+ */
+export function shapeStage(was: TsEq | null, eq: EqDoc, sampleRate: number): TsEq {
+  if (was) { was.set(eq); return was; }
+  const ts = new TsEq(sampleRate);
+  ts.set(eq);
+  ts.reset();
+  return ts;
 }
 
 /** An effect on a return: its aux bus in (mono), the wet signal out (stereo, interleaved, written over). */
@@ -141,13 +163,15 @@ export class RigReturn implements ReturnFx {
 /**
  * The desk at work. Each channel: its source (mono) times its gain, through its Shape, times its fader, panned
  * (equal power) into the mix; each send takes the channel after its fader into that aux bus. Mute and solo stop a
- * channel and its sends. Each return runs its effect on its bus and comes back into the mix on its own fader.
+ * channel and its sends. Each return runs its effect on its bus, through its own Shape, and comes back into the mix on its own fader.
  * No allocation in `process` once the buffers have grown to the block size.
  */
 export class Mixer {
   private desk: Desk = { channels: [], returns: [] };
   private readonly eqs = new Map<string, TsEq>();
   private readonly fx: (ReturnFx | null)[] = Array.from({ length: AUXES }, () => null);
+  /** Each return's Shape, on what its effect hands back; null while flat. */
+  private readonly retEqs: (TsEq | null)[] = Array.from({ length: AUXES }, () => null);
   private strip = new Float32Array(256);
   private bus = Array.from({ length: AUXES }, () => new Float32Array(128));
   private wet = new Float32Array(256);
@@ -156,11 +180,15 @@ export class Mixer {
   set(desk: Desk) {
     this.desk = desk;
     for (const c of desk.channels) {
-      let eq = this.eqs.get(c.id);
-      if (!eq) { eq = new TsEq(this.sampleRate); this.eqs.set(c.id, eq); }
-      eq.set(c.eq);
+      // a new channel plays its Shape from its first sample; a change on one already playing glides
+      this.eqs.set(c.id, shapeStage(this.eqs.get(c.id) ?? null, c.eq, this.sampleRate));
     }
     for (const id of this.eqs.keys()) if (!desk.channels.some((c) => c.id === id)) this.eqs.delete(id);
+    for (let a = 1; a <= AUXES; a++) {
+      const eq = desk.returns.find((r) => r.aux === a)?.eq;
+      if (!eq) { this.retEqs[a - 1] = null; continue; }
+      this.retEqs[a - 1] = shapeStage(this.retEqs[a - 1], eq, this.sampleRate);
+    }
   }
 
   /** The effect on aux `aux` (1-based), or null for none (the return is silent). */
@@ -196,6 +224,7 @@ export class Mixer {
       const fx = this.fx[r.aux - 1];
       if (!fx || r.mute) continue;
       fx.process(this.bus[r.aux - 1], this.wet, frames);
+      this.retEqs[r.aux - 1]?.process(this.wet, frames);
       const f = faderGain(r.fader);
       for (let i = 0; i < frames * 2; i++) out[i] += this.wet[i] * f;
     }

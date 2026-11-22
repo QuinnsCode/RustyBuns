@@ -76,8 +76,8 @@ export type Op =
   | { t: "insert"; track: number; insert: TrackPlugin | null }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
-  /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, or the aux 2 return's fader and mute. */
-  | { t: "desk"; player?: Channel; aux2?: SeshDesk["aux2"] }
+  /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, the aux 2 return's fader, mute and Shape, or the Space return's Shape. */
+  | { t: "desk"; player?: Channel; aux2?: SeshDesk["aux2"]; space?: SeshDesk["space"] }
   /** The leader moves the sesh to this studio (a room id, or "yours": each person's own built one). */
   | { t: "studio"; id: string }
   | { t: "replace"; project: Project };
@@ -241,7 +241,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
   obj({ t: tag("insert"), track: TRACK, insert: nul(TrackPlugin) }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
-  obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2) }),
+  obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
