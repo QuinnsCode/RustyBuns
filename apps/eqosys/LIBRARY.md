@@ -42,9 +42,12 @@ rides in URLs, `aud` and labels, so it has no `/`.)
 - **Draft.** A studio's owner or admin fills it in: name, genre, origins (https only), returns, card text and a shot.
   It starts `experimental` with `play`. A draft already signs in, but only the studio's own members: the maker
   tests the real sign-in, friends and parties from their real site before anyone else can see it.
-- **In review.** Sent from the Studio page's Ship door. eqosys checks what a machine can: each origin answers over
-  https, the page loads with no errors, it signs in through eqosys, and its `window.<game>.state()` answers (the
-  harness the template ships, the same check `bun run probe` makes on ours). Then a person looks: it plays, its name
+- **In review.** Sent from the Studio page's Ship door. eqosys checks what a machine can (`src/checks.ts`) and keeps
+  the answers on the listing, in `eq_listing_review`'s queue (`verdict: "check"` runs them again): each origin
+  answers over https; the page is HTML and every script and stylesheet it names answers; someone in the studio has
+  signed in to it through eqosys; and its `window.<game>` harness (the template's, named as `bun run new-game` names
+  it) is in its scripts. A Worker runs no page, so an error thrown while it runs and what `state()` answers are the
+  reviewer's `bun run probe --url <origin> --js "<game>.state()"`, the line the check hands over. Then a person looks: it plays, its name
   and card don't pass it off as someone else's game, nothing the house rules keep out (the same as codeSplitter's:
   no weapons, sexual or political content), and an `erase` URL if it keeps data per account.
 - **Listed.** The tile shows in its genre's row with the studio's name on it, its origins join the CORS set, and

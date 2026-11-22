@@ -5,7 +5,7 @@
 import { arr, bool, Bad, check, int, isRecord, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
-import { appOf, appsOf, Draft, isListing, listings, pull, review, save, send, type Done } from "./listings.ts";
+import { appOf, appsOf, Draft, isListing, pull, queue, recheck, review, save, send, type Done } from "./listings.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
@@ -170,18 +170,19 @@ export const TOOLS: Tool[] = [
     run: async (c, a) => { onPage(c); return { listing: done(await save(c.conf, c.who.id, a)) }; },
   }),
   tool(obj({ id: str(40) }), {
-    name: "eq_listing_send", title: "Send a game to review", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
-    description: "A studio's owner or admin sends its draft (or a refused game, fixed) to the review queue. Answers { listing }.",
+    name: "eq_listing_send", title: "Send a game to review", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+    description: "A studio's owner or admin sends its draft (or a refused game, fixed) to the review queue. On the way in eqosys checks what a machine can (its origins over https, its page and files, a sign-in from the studio, its window harness) for the reviewer. Answers { listing }.",
     input: { id: { type: "string" } }, required: ["id"],
     run: async (c, a) => { onPage(c); return { listing: done(await send(c.conf, c.who.id, a.id)) }; },
   }),
-  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse"])), note: str(500, { min: 0, dflt: "" }) }), {
-    name: "eq_listing_review", title: "Review studios' games (admin)", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }, admin: true,
-    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first). With `id` and `verdict`: `list` puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why. Answers { queue } or { listing }.",
-    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse"] }, note: { type: "string" } },
+  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse", "check"])), note: str(500, { min: 0, dflt: "" }) }), {
+    name: "eq_listing_review", title: "Review studios' games (admin)", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true }, admin: true,
+    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first), each with `checks`: what a machine checked when it was sent (https: its origins answer; loads: its page and the files it names answer; signin: someone in its studio signed in through eqosys; state: its window.<handle> harness is in its scripts, with the `bun run probe` line that asks it live). With `id` and `verdict`: `list` puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why, `check` runs the checks again. Answers { queue }, { checks } or { listing }.",
+    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse", "check"] }, note: { type: "string" } },
     run: async (c, a) => {
-      if (!a.id) return { queue: await listings(c.conf, { states: ["in review"] }) };
-      if (!a.verdict) throw new Refused("say `verdict`: list or refuse");
+      if (!a.id) return { queue: await queue(c.conf) };
+      if (!a.verdict) throw new Refused("say `verdict`: list, refuse or check");
+      if (a.verdict === "check") { const checks = await recheck(c.conf, a.id); if (!checks) throw new Refused(`no game "${a.id}" in review`, 404); return { checks }; }
       return { listing: done(await review(c.conf, a.id, a.verdict, a.note)) };
     },
   }),
