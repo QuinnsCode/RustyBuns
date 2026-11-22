@@ -14,6 +14,47 @@ export interface AiGateway {
   spendCap?: { cents: number; window: string };
 }
 
+/** worker.version: a gradual rollout, Alchemy's Worker `version` without `parent`. */
+export interface WorkerVersion {
+  /** Percent of requests (0 to 100) the new version gets; 0 uploads it without deploying it. */
+  traffic: number;
+  /** A stable preview URL for the new version: lowercase letters, digits and dashes, starting with a letter. */
+  alias?: string;
+  /** A machine-readable label on the version, such as a commit SHA. */
+  tag?: string;
+  /** A human-readable note on the version. */
+  message?: string;
+}
+
+/** worker.access: who gets past Cloudflare Access. At least one email or domain. */
+export interface WorkerAccess {
+  /** These exact addresses get in. */
+  emails?: string[];
+  /** Every address under these domains gets in (`"example.com"`). */
+  emailDomains?: string[];
+  /** How long a sign-in lasts (`"24h"`). Cloudflare's default when left out. */
+  sessionDuration?: string;
+  /** Gate the version preview URLs too. @default true */
+  previews?: boolean;
+}
+
+/** worker.turnstile: the widget the stack makes, and the env names its keys land in. */
+export interface WorkerTurnstile {
+  /** The hostnames the widget runs on (`"example.com"`). */
+  domains: string[];
+  /** @default "managed" */
+  mode?: "managed" | "non-interactive" | "invisible";
+  /** @default "TURNSTILE_SITE_KEY" */
+  siteKey?: string;
+  /** @default "TURNSTILE_SECRET_KEY" */
+  secret?: string;
+}
+/** Cloudflare's always-pass Turnstile test keys (developers.cloudflare.com/turnstile/troubleshooting/testing/), for local hosts. */
+export const TURNSTILE_TEST_SITE_KEY = "1x00000000000000000000AA";
+export const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
+/** The env names worker.turnstile's sitekey and secret land in. */
+export const turnstileEnv = (t: WorkerTurnstile) => ({ siteKey: t.siteKey ?? "TURNSTILE_SITE_KEY", secret: t.secret ?? "TURNSTILE_SECRET_KEY" });
+
 export type Binding =
   | {
       type: "d1";
@@ -666,6 +707,33 @@ export interface RustyBunsConfig {
      */
     codeUpdate?: "immediate" | { maxDelay: number };
     /**
+     * A gradual rollout (Alchemy's Worker `version`): each deploy's new version takes `traffic`
+     * percent (0 to 100) and the live version keeps the rest, instead of a 100% cutover. Deploy
+     * again without it (or at 100) to finish. `alias` gives the new version a stable preview URL
+     * (`<alias>-<worker>.<subdomain>.workers.dev`); `tag` and `message` label it in the dashboard.
+     * A deploy that adds, renames or deletes a Durable Object class can't ride a rollout: Alchemy
+     * refuses it, so ship that one at 100% first. Both versions reach the same Durable Objects
+     * while it runs, so, as with codeUpdate, their routes, RPC and storage must work with both.
+     * Override it per stage. The desktop and box hosts ignore it.
+     */
+    version?: WorkerVersion;
+    /**
+     * Cloudflare Access in front of the whole Worker (Alchemy's Worker `access`): its domain,
+     * routes, workers.dev URL and preview URLs. A visitor signs in with a one-time PIN (or the
+     * account's identity provider) and gets in when their email is listed or under a listed
+     * domain. Typical use: gate a preview stage (`stages.preview.access`), or an admin-only app.
+     * The policy is the owner's: a change to a live app's Access is a MANUAL RUN. The desktop and
+     * box hosts ignore it.
+     */
+    access?: WorkerAccess;
+    /**
+     * A Turnstile widget made with the stack, instead of by hand in the dashboard. Its sitekey
+     * lands in env as `siteKey` (default TURNSTILE_SITE_KEY) and its secret as `secret` (default
+     * TURNSTILE_SECRET_KEY), for the page and for siteverify. The desktop host gets Cloudflare's
+     * always-pass test keys under the same names; the box target doesn't make the widget.
+     */
+    turnstile?: WorkerTurnstile;
+    /**
      * Workers Logs and traces (wrangler's `observability`). `{ enabled: true }` keeps every
      * invocation's logs; a `headSamplingRate` below 1 keeps that share of requests. The
      * desktop and box hosts ignore it.
@@ -834,6 +902,10 @@ export interface Stage {
   previewUrls?: boolean;
   /** worker.crons; `[]` has none. */
   crons?: string[];
+  /** worker.access in this stage; `false` turns it off (Access on a preview stage only, say). */
+  access?: WorkerAccess | false;
+  /** worker.version in this stage; `false` turns it off. */
+  version?: WorkerVersion | false;
   /**
    * A stage two apps bind each other in (eqosys and qollab): neither can go first while the other has no state in it.
    * With this on, a binding into an app (`app`) not yet deployed in this stage is left out, with a line saying so;
@@ -871,5 +943,11 @@ export function forStage(c: RustyBunsConfig, stage: string): RustyBunsConfig {
   }
   let worker = base.worker;
   if (worker && s.crons !== undefined) { const { crons: _, ...w } = worker; worker = s.crons.length ? { ...w, crons: s.crons } : w; }
+  for (const k of ["access", "version"] as const) {
+    const o = s[k];
+    if (!worker || o === undefined) continue;
+    const { [k]: _, ...w } = worker;
+    worker = o === false ? w : { ...w, [k]: o };
+  }
   return { ...base, ...(worker ? { worker } : {}), bindings, targets: { ...base.targets, ...(edge ? { edge } : {}) } };
 }

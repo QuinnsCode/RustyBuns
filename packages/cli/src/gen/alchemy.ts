@@ -4,7 +4,7 @@
 // Cloudflare.InferEnv. The generated file is readable and committable; the
 // eject path is "keep this file, delete the config".
 
-import { hyperdriveUrlEnv, workerName, type AiGateway, type Binding, type RustyBunsConfig } from "../config.ts";
+import { hyperdriveUrlEnv, turnstileEnv, workerName, type AiGateway, type WorkerAccess, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults, type BoxGuest } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
 import { isProtected, workerKept } from "../protect.ts";
@@ -28,6 +28,12 @@ function gatewayProps(g: AiGateway): string {
     ...(g.spendCap ? { spendLimits: { enabled: true, rules: [{ limit: g.spendCap.cents, limitType: "cost", window: g.spendCap.window }] } } : {}),
   };
   return JSON.stringify(props);
+}
+
+/** worker.access as a dedicated Access application on the Worker: one allow policy for the listed emails and domains. */
+function accessProps(a: WorkerAccess) {
+  const include = [...(a.emails ?? []).map((email) => ({ email })), ...(a.emailDomains ?? []).map((emailDomain) => ({ emailDomain }))];
+  return { policies: [{ decision: "allow", include }], ...(a.sessionDuration ? { sessionDuration: a.sessionDuration } : {}), ...(a.previews === false ? { previews: false } : {}) };
 }
 
 /** `adopt`: name D1 and R2 as the config does, so existing ones are found by name. */
@@ -256,6 +262,14 @@ export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] 
     // Another app's Worker, by its stack (same stage): yielded inside the Worker's Effect for its script name and service bindings.
     const others = otherApps(bindings);
     for (const app of others) lines.push(`export const ${appRef(app)} = Cloudflare.Worker.ref("Worker", { stack: ${JSON.stringify(app)} });`);
+    // worker.turnstile: the widget, made before the Worker; its sitekey and secret ride in env.
+    const ts = w.turnstile;
+    if (ts) {
+      const { siteKey, secret } = turnstileEnv(ts);
+      for (const n of [siteKey, secret]) if (bindings[n]) throw new Error(`worker.turnstile puts ${n} in env, and a binding has that name too. Drop the binding, or name the key another way (worker.turnstile.${n === siteKey ? "siteKey" : "secret"}).`);
+      lines.push(`export const Turnstile = Cloudflare.Turnstile.Widget("Turnstile", { domains: ${JSON.stringify(ts.domains)}, mode: ${JSON.stringify(ts.mode ?? "managed")} });`);
+      envEntries.push(`${siteKey}: turnstile.sitekey`, `${secret}: turnstile.secret`);
+    }
     for (const [name, b] of Object.entries(bindings)) {
       const decl = resource(name, b, adopt), r = decl && isProtected(b) && !(b.type === "d1" && b.app) ? keep(decl) : decl;
       // A consumer-only queue exists in the stack but not in env.
@@ -304,6 +318,9 @@ export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] 
     if (w.cpuMs) wb.push(`  limits: { cpuMs: ${w.cpuMs} },`);
     if (w.placement) wb.push(`  placement: ${JSON.stringify(w.placement)},  // Smart Placement: run near D1 and the Durable Objects`);
     if (w.codeUpdate) wb.push(`  codeUpdateStrategy: ${JSON.stringify(w.codeUpdate === "immediate" ? { mode: "immediate" } : { mode: "deferred", maxDelay: `${w.codeUpdate.maxDelay} seconds` })},  // worker.codeUpdate: busy Durable Objects`);
+    // worker.version: a gradual rollout. Alchemy refuses one that changes Durable Object classes.
+    if (w.version) wb.push(`  version: ${JSON.stringify(w.version)},  // worker.version: gradual rollout`);
+    if (w.access) wb.push(`  access: ${JSON.stringify(accessProps(w.access))},  // worker.access: Cloudflare Access in front`);
     if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
     if (w.observability || w.redactQueryStrings) wb.push(`  observability: ${JSON.stringify(observability(w))},`);
     const domain = c.targets.edge?.domain;
@@ -319,7 +336,8 @@ export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] 
     if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(workerName(c))} is taken over, not duplicated.`);
     // worker.protect, or protect on a class it hosts: destroy leaves the Worker, its classes and their storage.
     const policies = [adopt ? "Alchemy.AdoptPolicy.adopt(true)" : "", workerKept(c) ? "Alchemy.RemovalPolicy.retain()" : ""].filter(Boolean);
-    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, policies.length ? `.pipe(${policies.join(", ")})` : "", others.map((a) => [a, appRef(a)] as const)));
+    const deps = [...others.map((a) => [a, appRef(a)] as const), ...(ts ? [["turnstile", "Turnstile"] as const] : [])];
+    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, policies.length ? `.pipe(${policies.join(", ")})` : "", deps));
     lines.push(``);
     lines.push(`/** The typed env the Worker AND the desktop shell compile against. */`);
     lines.push(`export type WorkerEnv = Cloudflare.InferEnv<typeof Worker>;`);
