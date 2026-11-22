@@ -101,6 +101,17 @@ export function stepKind(step: string): "checkout" | "setup" | "install" | "test
   return "other";
 }
 
+/** A job's minutes by kind. GitHub's job API leaves out a step whose name is very long, and a test lane's step is named
+ * after its whole file list, so the time no listed step covers is counted too: test in a test job, other elsewhere.
+ * Without it every lane past the first read as 0% test and the checkout share came out high (#4136). */
+export function splitOf(j: { name: string; started_at?: string; completed_at?: string; steps: { name: string; started_at?: string; completed_at?: string }[] }): Record<"checkout" | "setup" | "install" | "test" | "other", number> {
+  const k = { checkout: 0, setup: 0, install: 0, test: 0, other: 0 };
+  for (const s of j.steps) k[stepKind(s.name)] += span(s.started_at, s.completed_at);
+  const gap = span(j.started_at, j.completed_at) - sum(Object.values(k));
+  if (gap > 0) k[/^test /.test(j.name) ? "test" : "other"] += gap;
+  return k;
+}
+
 /** The app a job tests, from its name: "test two-fronts 2/4" is two-fronts; the plain jobs map to the folder they test. */
 export function appOf(job: string): string | undefined {
   const m = job.match(/^(?:test|containers) (\S+)/);
@@ -289,7 +300,7 @@ function perJob(rows: Row[], say: (s: string) => void) {
   for (const { run, jobs } of rows) for (const j of jobs.filter((j) => ran(j) && j.completed_at)) {
     const e = by.get(j.name) ?? { runs: new Set(), d: [], k: { checkout: 0, setup: 0, install: 0, test: 0, other: 0 } };
     e.runs.add(run.id); e.d.push(span(j.started_at, j.completed_at));
-    for (const s of j.steps) e.k[stepKind(s.name)]! += span(s.started_at, s.completed_at);
+    for (const [kind, min] of Object.entries(splitOf(j))) e.k[kind]! += min;
     by.set(j.name, e);
   }
   const list = [...by].map(([n, e]) => ({ n, ...e, total: sum(e.d) })).sort((a, b) => b.total - a.total);
@@ -383,7 +394,7 @@ async function failures(rows: Row[], using: Map<string, Set<string>>, logs: bool
 async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: Fail[], using: Map<string, Set<string>>, days: number, say: (s: string) => void) {
   say("## 4. What to cut, with numbers\n");
   const total = sum(rows.flatMap((r) => r.jobs.filter(ran).map((j) => span(j.started_at, j.completed_at))));
-  const kind = (j: Job, k: string) => sum(j.steps.filter((s) => stepKind(s.name) === k).map((s) => span(s.started_at, s.completed_at)));
+  const kind = (j: Job, k: keyof ReturnType<typeof splitOf>) => splitOf(j)[k];
   const done = rows.flatMap((r) => r.jobs.filter((j) => ran(j) && j.completed_at));
   const deep = /^(plan|scripts|containers-plan|containers .*)$/;
   const coDeep = done.filter((j) => deep.test(j.name)).map((j) => kind(j, "checkout")), coShallow = done.filter((j) => !deep.test(j.name)).map((j) => kind(j, "checkout"));

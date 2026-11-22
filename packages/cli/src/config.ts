@@ -636,6 +636,16 @@ export interface RustyBunsConfig {
      */
     placement?: { mode: "smart" };
     /**
+     * How a deploy reaches Durable Objects that are busy (wrangler's
+     * `durable_objects.code_update_strategy`). Left out, Cloudflare's default holds: a busy
+     * object keeps its old code until it goes idle, at most 300 seconds. `{ maxDelay: 60 }`
+     * caps that wait (0 to 86400 seconds); `"immediate"` restarts busy objects on the new code
+     * at once, dropping their WebSockets and in-flight requests. While an object waits, the new
+     * Worker can call it on the old code, so a change to its routes, RPC or storage layout has
+     * to work with both. The desktop and box hosts ignore it.
+     */
+    codeUpdate?: "immediate" | { maxDelay: number };
+    /**
      * Workers Logs and traces (wrangler's `observability`). `{ enabled: true }` keeps every
      * invocation's logs; a `headSamplingRate` below 1 keeps that share of requests. The
      * desktop and box hosts ignore it.

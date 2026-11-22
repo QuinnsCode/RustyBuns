@@ -17,7 +17,10 @@ export interface WranglerJson {
   d1_databases?: { binding: string; database_name: string; database_id?: string; migrations_dir?: string }[];
   kv_namespaces?: { binding: string; id?: string }[];
   r2_buckets?: { binding: string; bucket_name: string }[];
-  durable_objects?: { bindings?: { name: string; class_name: string; script_name?: string }[] };
+  durable_objects?: {
+    bindings?: { name: string; class_name: string; script_name?: string }[];
+    code_update_strategy?: { mode?: "immediate" | "deferred"; max_delay?: number };
+  };
   migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
   triggers?: { crons?: string[] };
@@ -141,6 +144,12 @@ function edgeRoutes(w: WranglerJson) {
   };
 }
 
+/** `durable_objects.code_update_strategy` as `worker.codeUpdate`; a deferred one with no max_delay is Cloudflare's default, so nothing. */
+function codeUpdate(s: NonNullable<WranglerJson["durable_objects"]>["code_update_strategy"]): { codeUpdate?: "immediate" | { maxDelay: number } } {
+  if (s?.mode === "immediate") return { codeUpdate: "immediate" };
+  return s?.max_delay !== undefined ? { codeUpdate: { maxDelay: s.max_delay } } : {};
+}
+
 /** A binding key from a queue or class name: `jobs-dlq` -> `JOBS_DLQ`, `MyBox` -> `MY_BOX`. */
 const bindingKey = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase() || "BINDING";
 /** `key`, or `key_2`, `key_3`... when bindings already has it. */
@@ -238,6 +247,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
       ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
       ...(w.limits?.cpu_ms ? { cpuMs: w.limits.cpu_ms } : {}),
       ...(w.placement?.mode === "smart" ? { placement: { mode: "smart" as const } } : {}),
+      ...codeUpdate(w.durable_objects?.code_update_strategy),
       ...(o ? { observability: {
         ...camel({ enabled: o.enabled ?? !!(o.logs?.enabled || o.traces?.enabled), head_sampling_rate: o.head_sampling_rate }),
         ...(o.logs ? { logs: camel({ enabled: o.logs.enabled ?? true, ...pick(o.logs, ["invocation_logs", "head_sampling_rate", "persist"]) }) } : {}),

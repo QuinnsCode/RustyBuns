@@ -85,7 +85,7 @@ So the build output is the shape the desktop already mounts. `init` still reads 
 
 [Rat Stack](https://github.com/joelhooks/rat-stack) is a pnpm monorepo on Effect 4, XState, Alchemy 2 and varlock: the stack Rusty Buns prefers. Its web app (`apps/web`) is a Vite app, so `init` reads it as `vite`, and `fit` names it "Rat Stack (Vite)".
 
-It already pins its own Alchemy and Effect (2.0.0-beta.87 and 4.1.4 in Nov 2026, newer than ours). So when an app lists both `alchemy` and `effect` at exact versions on the same majors as the pinned set (any app on this toolchain, not only Rat Stack), `rustybuns add deploy`:
+It already pins its own Alchemy and Effect (2.0.0-beta.87 and 4.1.4 in Nov 2026, the same as ours since #3436). So when an app lists both `alchemy` and `effect` at exact versions on the same majors as the pinned set (any app on this toolchain, not only Rat Stack), `rustybuns add deploy`:
 
 - keeps those versions and writes no `overrides` (the pinned set would downgrade them);
 - installs only the deploy packages the app lacks, at its own Alchemy and Effect versions (`--dry-run` shows the list, or "nothing to install");

@@ -1,6 +1,6 @@
 // The deploy gives eqosys.qntbr.com its exact route `<domain>/*` (#4006). On the owner's zones that
 // route was already there from a hand-made or old wrangler setup, and Cloudflare's 409 stopped the
-// deploy. Alchemy's route step (patched in patches/@alchemy.run%2Fcloudflare@2.0.0-beta.84.patch)
+// deploy. Alchemy's route step (patched in patches/@alchemy.run%2Fcloudflare@2.0.0-beta.87.patch)
 // now adopts a route that runs this Worker or none, and names the Worker otherwise.
 import { describe, expect, test } from "bun:test";
 import { attachWorkerRoute, type WorkerRouteApi } from "@alchemy.run/cloudflare/Workers";

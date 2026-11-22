@@ -153,7 +153,9 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (analytics.length) w["analytics_engine_datasets"] = analytics;
   if (loaders.length) w["worker_loaders"] = loaders;
   if (services.length) w["services"] = services;
-  if (dos.length) w["durable_objects"] = { bindings: dos };
+  const codeUpdate = c.worker.codeUpdate;
+  const strategy = codeUpdate && (codeUpdate === "immediate" ? { mode: "immediate" } : { mode: "deferred", max_delay: codeUpdate.maxDelay });
+  if (dos.length || strategy) w["durable_objects"] = { ...(dos.length ? { bindings: dos } : {}), ...(strategy ? { code_update_strategy: strategy } : {}) };
   const moved = Object.values(c.bindings ?? {}).flatMap((b) => b.type === "durable_object" && b.app ? [b.className] : []);
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations, c.worker.flaggedClasses, moved);
   if (migrations.length) w["migrations"] = migrations;

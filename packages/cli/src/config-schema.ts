@@ -137,6 +137,7 @@ export const ConfigSchema = Schema.Struct({
     crons: opt(Strs), cronPriority: opt(Priority),
     cpuMs: opt(int(10, 300_000)),
     placement: opt(Schema.Struct({ mode: Schema.Literal("smart") })),
+    codeUpdate: opt(Schema.Union([Schema.Literal("immediate"), Schema.Struct({ maxDelay: int(0, 86_400) })])),
     observability: opt(Schema.Struct({
       enabled: Bool, headSamplingRate: opt(Rate),
       logs: opt(Schema.Struct({ enabled: Bool, invocationLogs: opt(Bool), headSamplingRate: opt(Rate), persist: opt(Bool) })),
