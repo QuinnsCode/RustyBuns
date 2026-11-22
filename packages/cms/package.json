@@ -19,7 +19,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./locale": "./src/locale.ts"
+    "./locale": "./src/locale.ts",
+    "./screens": "./src/screens.ts"
   },
   "scripts": {
     "test": "bun test test"

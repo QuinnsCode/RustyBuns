@@ -9,6 +9,7 @@ import { LiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from
 import { scenesAt } from "../engine/match.ts";
 import { sceneSvg } from "../engine/svg.ts";
 import { SAMPLE_ID, pickFight, sampleFight } from "./sample.ts";
+import COPY from "../../content/first-screen.json";
 
 // A replay takes about REPLAY_MS whatever its length (never under MIN_TURN_MS a turn), then holds the
 // finished picture for HOLD_MS and starts again.
@@ -56,9 +57,9 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null, ne
 
   const idle = () => {
     if (!next) return;
-    if (match) { next.textContent = "Live now: this fight is happening as you watch."; return; }
+    if (match) { next.textContent = COPY.liveNow; return; }
     const at = Math.ceil(Date.now() / 3_600_000) * 3_600_000;
-    next.textContent = `Next live fight in ${clock(at - Date.now())}${replay?.m.id === SAMPLE_ID ? ". Until then, a sample fight." : ""}`;
+    next.textContent = `${COPY.nextFight.replace("{clock}", clock(at - Date.now()))}${replay?.m.id === SAMPLE_ID ? COPY.untilThen : ""}`;
   };
 
   const play = (m: Replay, label: string) => {
@@ -86,7 +87,7 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null, ne
       .filter((s) => s.shapes.some((n) => n > 0))
       .slice(0, 48)
       .map((s) => `<li><button data-id="${esc(s.id)}"><strong>${esc(s.prompt)}</strong><span>${new Date(s.startedAt).toLocaleString()} · ${s.fighters.map((f) => esc(f.name)).join(" vs ")}</span></button></li>`)
-      .join("") || `<li class="none">None yet. Each live fight lands here when it ends.</li>`;
+      .join("") || `<li class="none">${esc(COPY.noneYet)}</li>`;
     const best = pickFight(index);
     if (!match && (!replay || replay.m.id === SAMPLE_ID) && best) await playReplay(best.id, "last fight").catch(() => {});
   };

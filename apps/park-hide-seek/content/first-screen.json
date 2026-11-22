@@ -1,0 +1,21 @@
+{
+  "corner": "National Parks",
+  "cornerSub": "All 63 of them",
+  "tagline": "Hide out in the parks after dark",
+  "permit": "Good in all 63 parks",
+  "permitKind": "Backcountry permit",
+  "nameLabel": "Your name",
+  "namePlaceholder": "Camper",
+  "play": "Play",
+  "playHint": "Straight into a game. AI fills the empty spots.",
+  "custom": "Custom",
+  "signIn": "Sign in",
+  "friends": "Friends",
+  "hostLan": "Host LAN",
+  "joinLan": "Join LAN",
+  "survey": "Survey",
+  "stub": "Camper's stub",
+  "stubMore": " · A Rusty Buns example",
+  "stamp": "Admit one",
+  "howTo": "The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes."
+}

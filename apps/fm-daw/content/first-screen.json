@@ -1,0 +1,12 @@
+{
+  "heading": "Make a beat",
+  "pitch": "A drum machine and synths in your browser: play a groove, change it, and play along.",
+  "speakersBold": "Turn your speakers down a bit first.",
+  "speakers": "It starts quiet and never gets painfully loud. Esc stops all sound.",
+  "start": "Start",
+  "tryBold": "Try this first:",
+  "try": "hear the groove that's already here.",
+  "playGroove": "▶ Play the groove",
+  "then": "Then tap the squares in the grid to change it.",
+  "keys": "Space plays and stops, and the letter keys play notes."
+}

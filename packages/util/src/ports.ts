@@ -15,6 +15,8 @@ export const PORTS = {
   cmsTerraviz: 4703,
   cmsCodesplitter: 4704,
   cmsMythic: 4705,
+  // `bun run screens`: the first 20 screens across the apps, each with its picture (scripts/screens.ts)
+  screens: 4706,
   terravizDemo: 4730,
   // codeSplitter
   mervinWatch: 4177,

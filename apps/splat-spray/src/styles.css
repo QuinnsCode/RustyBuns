@@ -157,7 +157,7 @@ body.retro #view { image-rendering: pixelated; }
 /* The menu is a file: a file number, a poster logo. */
 .file-no { font-family: var(--type); color: var(--paint); font-size: .8rem; letter-spacing: .18em; text-transform: uppercase; }
 .panel h2.logo { font-size: 3rem; line-height: .9; letter-spacing: .04em; }
-.panel h2.logo span { display: block; color: var(--paint); }
+.panel h2.logo span + span { display: block; color: var(--paint); }
 .panel { border: 1px solid rgba(224,176,74,.25); border-radius: 6px; }
 .panel button { font-family: var(--title); font-size: 1.2rem; letter-spacing: .08em; text-transform: uppercase; padding: .4rem .8rem .25rem; }
 

@@ -27,6 +27,7 @@
     "./bytes": "./src/bytes.ts",
     "./codemode": "./src/codemode.ts",
     "./commands": "./src/commands.ts",
+    "./copy": "./src/copy.ts",
     "./dexter": "./src/dexter.ts",
     "./director": "./src/director.ts",
     "./dom": "./src/dom.ts",

@@ -7,6 +7,14 @@ import { messageOf } from "./pages.tsx";
 import { contactHref } from "@rustybuns/util/report";
 import { ourApp, playOf, type QApp } from "../apps.ts";
 import { cardOf } from "../cards.ts";
+import COPY from "../../content/first-screen.json";
+
+const H = COPY.home, L = COPY.login;
+/** A line with its {app}, {friend} or {provider} filled in, in bold. */
+const fill = (line: string, vars: Record<string, string | undefined>) =>
+  line.split(/\{(\w+)\}/).map((part, i) => (i % 2 ? <b key={i}>{vars[part] ?? ""}</b> : part));
+/** The same as plain text, for a button. */
+const plain = (line: string, vars: Record<string, string | undefined>) => line.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? "");
 
 /** The games a stranger's first visit shows: ones that play in a browser with no account, in plain words. */
 export const WELCOME = ["park-hide-seek", "skate-tech-park", "alien-disc-golf", "two-fronts"]
@@ -63,13 +71,13 @@ body:has(.sky) main{display:grid;align-content:center}
 const Welcome = () => (
   <section className="pane what" aria-label="What eqosys is">
     <Brand />
-    <h1>One account for every Q game.</h1>
-    <p className="lead">Keep your games, friends and saves in one place. Play first: these games need no account.</p>
-    <h2>Play now</h2>
+    <h1>{H.heading}</h1>
+    <p className="lead">{H.lead}</p>
+    <h2>{H.playNow}</h2>
     <div className="games">{WELCOME.map((a) => { const c = cardOf(a.id, a.name); return (
       <a key={a.id} href={playOf(a)!}><img src={`/cards/${a.id}.jpg`} alt="" width={640} height={360} decoding="async" draggable={false} /><b>{c.name}</b><span>{c.blurb}</span></a>
     ); })}</div>
-    <a className={`${btn(true)} go`} href="#join">Make your account</a>
+    <a className={`${btn(true)} go`} href="#join">{H.makeAccount}</a>
   </section>
 );
 
@@ -100,7 +108,7 @@ const Social = ({ ask, social }: { ask: Ask | null; social: string[] }) => (
   <div className="social">
     {social.map((p) => (
       <form key={p} method="post" action="/do/social"><Carry ask={ask} /><input type="hidden" name="provider" value={p} />
-        <button className={p === "apple" ? `${btn(true)} apple` : btn()} type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>Continue with {MARKS[p]?.name ?? p}</button></form>
+        <button className={p === "apple" ? `${btn(true)} apple` : btn()} type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={MARKS[p]?.d} /></svg>{plain(L.continueWith, { provider: MARKS[p]?.name ?? p })}</button></form>
     ))}
   </div>
 );
@@ -119,53 +127,53 @@ export function Login({ ask, me, social, appleTop, error, t0, friend, opens = "i
           {me ? (
             <>
               <h1>{hello}</h1>
-              <p className="lead">{app ? <>You're signed in. Go on to <b>{app}</b>.</> : "You're signed in."}</p>
+              <p className="lead">{app ? fill(L.signedInFor, { app }) : L.signedIn}</p>
               {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
               <div className="me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email}</span></div></div>
-              <form method="post" action="/do/continue"><Carry ask={ask} /><button className={btn(true)} type="submit">{app ? `Continue to ${app}` : "Go to my apps"}</button></form>
-              <form className="again" method="post" action="/do/logout"><Carry ask={ask} /><button type="submit">Not you? Sign out</button></form>
+              <form method="post" action="/do/continue"><Carry ask={ask} /><button className={btn(true)} type="submit">{app ? plain(L.continueTo, { app }) : L.myApps}</button></form>
+              <form className="again" method="post" action="/do/logout"><Carry ask={ask} /><button type="submit">{L.notYou}</button></form>
             </>
           ) : (
             <>
               <div className="sw"><input type="radio" name="tab" id="t-in" defaultChecked={opens === "in"} /><input type="radio" name="tab" id="t-new" defaultChecked={opens === "new"} /></div>
               <div className="f-in">
                 <h1>{hello}</h1>
-                <p className="lead">{app ? <>Sign in to go on to <b>{app}</b>.</> : friend ? <>Sign in to be friends with <b>{friend}</b>.</> : "One account for every Q app."}</p>
+                <p className="lead">{app ? fill(L.signInFor, { app }) : friend ? fill(L.signInFriend, { friend }) : L.oneAccount}</p>
               </div>
               <div className="f-new">
-                <h1>Make your account.</h1>
-                <p className="lead">{app ? <>One account for every Q app, starting with <b>{app}</b>.</> : friend ? <><b>{friend}</b> invited you. One account for every Q app, and your friends in all of them.</> : "One account for every Q app."}</p>
+                <h1>{L.makeHeading}</h1>
+                <p className="lead">{app ? fill(L.makeFor, { app }) : friend ? fill(L.makeFriend, { friend }) : L.oneAccount}</p>
               </div>
               {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
-              {top && <><Social ask={ask} social={social} /><div className="or">or with email</div></>}
+              {top && <><Social ask={ask} social={social} /><div className="or">{L.orEmail}</div></>}
               <form className="f-in" method="post" action="/do/signin">
                 <Carry ask={ask} />
-                <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
-                <Field label="Password" name="password" type="password" autoComplete="current-password" placeholder="••••••••••" required />
-                <button className={btn(true)} type="submit">Sign in</button>
+                <Field label={L.email} name="email" type="email" autoComplete="username" placeholder={L.emailPlaceholder} required />
+                <Field label={L.password} name="password" type="password" autoComplete="current-password" placeholder="••••••••••" required />
+                <button className={btn(true)} type="submit">{L.signIn}</button>
               </form>
               <form className="f-new" method="post" action="/do/signup">
                 <Carry ask={ask} />
-                <Field label="Name people see" name="name" autoComplete="nickname" placeholder="what friends call you" />
-                <Field label="Email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
-                <Field label="Password, 10+ characters" name="password" type="password" autoComplete="new-password" placeholder="••••••••••" minLength={10} required />
-                <button className={btn(true)} type="submit">Make my account</button>
+                <Field label={L.name} name="name" autoComplete="nickname" placeholder={L.namePlaceholder} />
+                <Field label={L.email} name="email" type="email" autoComplete="username" placeholder={L.emailPlaceholder} required />
+                <Field label={L.newPassword} name="password" type="password" autoComplete="new-password" placeholder="••••••••••" minLength={10} required />
+                <button className={btn(true)} type="submit">{L.makeMine}</button>
               </form>
-              {!top && social.length > 0 && <><div className="or">or</div><Social ask={ask} social={social} /></>}
-              <details className="work"><summary>Sign in through your company</summary>
+              {!top && social.length > 0 && <><div className="or">{L.or}</div><Social ask={ask} social={social} /></>}
+              <details className="work"><summary>{L.company}</summary>
                 <form method="post" action="/do/sso">
                   <Carry ask={ask} />
-                  <Field label="Work email" name="email" type="email" autoComplete="username" placeholder="you@company.com" required />
-                  <button className={btn()} type="submit">Continue with my company</button>
+                  <Field label={L.workEmail} name="email" type="email" autoComplete="username" placeholder={L.workPlaceholder} required />
+                  <button className={btn()} type="submit">{L.continueCompany}</button>
                 </form></details>
               <p className="flip">
-                <span className="to-new">New here? <label htmlFor="t-new">Make an account</label></span>
-                <span className="to-in">Already have one? <label htmlFor="t-in">Sign in</label></span>
+                <span className="to-new">{L.newHere} <label htmlFor="t-new">{L.makeAnAccount}</label></span>
+                <span className="to-in">{L.haveOne} <label htmlFor="t-in">{L.signInLink}</label></span>
               </p>
             </>
           )}
         </section>
-        <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."} <a href="/privacy">Privacy</a> · <a href={contactHref("Trouble signing in to eqosys")}>Help</a></p>
+        <p className="foot">{app ? plain(L.backTo, { app }) : L.foot} <a href="/privacy">{L.privacy}</a> · <a href={contactHref("Trouble signing in to eqosys")}>{L.help}</a></p>
       </div>
   );
   return <Glass t0={t0} css={CSS}>{welcome ? <div className="hello"><Welcome />{form}</div> : form}</Glass>;

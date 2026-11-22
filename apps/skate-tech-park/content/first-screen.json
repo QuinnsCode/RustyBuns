@@ -1,0 +1,25 @@
+{
+  "name": "SKATE TECH PARK",
+  "skipTap": "Tap to skip",
+  "skipKey": "Any key or click to skip",
+  "single": "Single",
+  "singleBlurb": "Just you and the park.",
+  "multi": "Multi",
+  "multiBlurb": "Skate with friends in a room.",
+  "soon": "Soon",
+  "back": "Back",
+  "roomCode": "Room code",
+  "join": "Join",
+  "codeRule": "4 to 8 letters or numbers",
+  "plays": {
+    "single": [
+      { "id": "free", "label": "Free skate", "blurb": "Any park, no clock. Land what you like." },
+      { "id": "chase", "label": "Run from the bear", "blurb": "Something big wants you off the board. Keep moving." }
+    ],
+    "multi": [
+      { "id": "free", "label": "Free skate", "blurb": "Up to four riders in one park." },
+      { "id": "race", "label": "Race", "blurb": "First through the finish, with a trick to land inside a ring on the way." },
+      { "id": "skate", "label": "S.K.A.T.E.", "blurb": "Set a trick, the next rider has to land it. Miss and take a letter." }
+    ]
+  }
+}

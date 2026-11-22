@@ -32,20 +32,20 @@
       <p id="mode-tip" class="mode-tip" role="status"></p>
     </div>
     <section id="menu" class="panel" hidden>
-      <p class="file-no">File SS-01 &middot; Eyes only</p>
-      <h2 class="logo">Super Spy <span>Splat Shot</span></h2>
-      <p class="dim">The intel is hidden in one thing in a pitch-dark room. Light it up with your scanner, pick the right thing, and beat the other agents to it.</p>
-      <div class="row"><label>Codename <input id="menu-name" maxlength="24" autocomplete="nickname" placeholder="Agent" /></label><span id="menu-account"></span></div>
-      <button id="menu-quick" type="button" class="primary">Quick play</button>
-      <button id="menu-friends" type="button">With friends</button>
+      <p class="file-no" data-copy="fileNo"></p>
+      <h2 class="logo"><span data-copy="logo"></span> <span data-copy="logoUnder"></span></h2>
+      <p class="dim" data-copy="pitch"></p>
+      <div class="row"><label><span data-copy="codename"></span> <input id="menu-name" maxlength="24" autocomplete="nickname" data-copy-placeholder="codenamePlaceholder" /></label><span id="menu-account"></span></div>
+      <button id="menu-quick" type="button" class="primary" data-copy="quickPlay"></button>
+      <button id="menu-friends" type="button" data-copy="withFriends"></button>
       <div id="menu-party" hidden></div>
       <div class="row">
-        <input id="menu-code" maxlength="8" placeholder="Room code" aria-label="Room code" autocapitalize="characters" />
-        <button id="menu-join" type="button">Join</button>
-        <button id="menu-make" type="button">New room</button>
+        <input id="menu-code" maxlength="8" data-copy-placeholder="roomCode" data-copy-aria-label="roomCode" autocapitalize="characters" />
+        <button id="menu-join" type="button" data-copy="join"></button>
+        <button id="menu-make" type="button" data-copy="newRoom"></button>
       </div>
       <div id="menu-rooms" class="row" hidden></div>
-      <button id="menu-solo" type="button">Solo training</button>
+      <button id="menu-solo" type="button" data-copy="solo"></button>
       <p id="menu-msg" class="dim" role="status"></p>
     </section>
     <section id="lobby" class="panel" hidden></section>

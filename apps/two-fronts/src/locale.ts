@@ -3,13 +3,14 @@
 // its lines at setup and never asks per tick. `bun run cms` adds a language; nothing here changes when one lands.
 import { localizeContent } from "../../../packages/cms/src/locale.ts";
 import chatter from "../content/chatter.json";
+import firstScreen from "../content/first-screen.json";
 import cutscenes from "../content/cutscenes.json";
 import dialogStories from "../content/dialogStories.json";
 import places from "../content/places.json";
 import radio from "../content/radio.json";
 
 export const LANG = localizeContent(
-  { chatter, cutscenes, dialogStories, places, radio },
+  { chatter, cutscenes, dialogStories, firstScreen, places, radio },
   import.meta.glob("../content/*/*.json", { eager: true, import: "default" }),
   [new URLSearchParams(location.search).get("lang"), ...navigator.languages],
 );

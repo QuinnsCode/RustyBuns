@@ -3,6 +3,7 @@ import type { Settings } from "../settings.ts";
 import { About, ControlHint } from "./Help.tsx";
 import { Account } from "./Account.tsx";
 import { OptionsDialog } from "./Options.tsx";
+import COPY from "../../../content/first-screen.json";
 
 /** A row of toggle buttons; screen readers hear it as a named group of pressed/unpressed buttons. */
 export function Seg<T extends string | number | boolean>({ value, options, onChange, label, labelledBy, name }: { value: T; options: readonly T[]; onChange: (v: T) => void; label?: (v: T) => string; labelledBy?: string; name?: string }) {
@@ -28,18 +29,18 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra, note }: Men
   return (
     <div className="menu">
       <main className="card" aria-labelledby="menu-title">
-        <h1 className="title" id="menu-title">HIPPO TYCOON</h1>
+        <h1 className="title" id="menu-title">{COPY.title}</h1>
         <About id="menu-about">
-          <p className="tag">Four angry oil barons. One geyser. Eat the money.</p>
+          <p className="tag">{COPY.tag}</p>
           <ControlHint seats={[{ name: "You", ctls: ["kbAll", "touch", "pad0"] }]} />
         </About>
         <div className="col">
           {/* The ways to play and nothing else: name, bots, players and round length wait under Options, as last picked. */}
-          <button className="btn go big" onClick={onSolo} autoFocus>Solo<small>You against 3 bots</small></button>
-          <button className="btn" onClick={onCouch}>Couch<small>2 to 4 players on one screen</small></button>
+          <button className="btn go big" onClick={onSolo} autoFocus>{COPY.solo}<small>{COPY.soloSub}</small></button>
+          <button className="btn" onClick={onCouch}>{COPY.couch}<small>{COPY.couchSub}</small></button>
           {extra}
           <Account note={note} />
-          <button className="btn quiet" onClick={() => setOptions(true)}>Options</button>
+          <button className="btn quiet" onClick={() => setOptions(true)}>{COPY.options}</button>
         </div>
       </main>
       {options && <OptionsDialog game settings={settings} onSettings={onSettings} onClose={() => setOptions(false)} />}

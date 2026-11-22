@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { watch } from "./viewer.ts";
+import COPY from "../../content/first-screen.json";
 
 // React renders the empty boxes once; viewer.ts paints inside them from then on.
 export function Arena() {
@@ -13,7 +14,7 @@ export function Arena() {
     <>
       <p ref={next} className="next" />
       <section ref={arena} className="arena" aria-live="polite" />
-      <h2>Past fights</h2>
+      <h2>{COPY.pastFights}</h2>
       <ol ref={replays} className="replays" />
     </>
   );

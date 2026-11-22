@@ -25,27 +25,27 @@
     </div>
     <section id="menu">
       <div class="flyer">
-        <p class="kicker">Live sound, real cables, all ages</p>
-        <h1 id="title" class="flyer-title"><span>Sound Guy</span> <span>Simulator</span></h1>
-        <p class="blurb">You're the roadie: carry the gear in, wire it up, make the show sound good.</p>
+        <p class="kicker" data-copy="kicker"></p>
+        <h1 id="title" class="flyer-title"><span data-copy="titleTop"></span> <span data-copy="titleBottom"></span></h1>
+        <p class="blurb" data-copy="blurb"></p>
         <div class="ticket-row">
-          <button id="play" class="stub" type="button"><small aria-hidden="true">Admit one</small>Play</button>
+          <button id="play" class="stub" type="button"><small aria-hidden="true" data-copy="stub"></small><span data-copy="play"></span></button>
           <div id="dial-host"></div>
         </div>
         <div id="tour-host"></div>
         <div id="ink-host"></div>
         <div class="side">
           <div id="home-host"></div>
-          <p class="keys paper tape-r"><b>How to work</b>WASD walk, mouse look, F pick up or put down, Q / E turn it, Y look at your arms, P switch on what you look at, M speakers up or down, C crouch, Esc lets go of the mouse.</p>
+          <p class="keys paper tape-r"><b data-copy="howToWork"></b><span data-copy="keys"></span></p>
         </div>
         <div class="flyer-foot">
           <div id="account"></div>
           <div id="party" class="paper tape" hidden>
-            <button id="make" type="button">Make a party</button>
-            <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
+            <button id="make" type="button" data-copy="makeParty"></button>
+            <form id="join"><input id="joincode" data-copy-placeholder="partyCode" maxlength="12" data-copy-aria-label="partyCode"><button data-copy="join"></button></form>
             <p id="code" class="num"></p>
             <p id="crew"></p>
-            <button id="start" hidden>Start</button>
+            <button id="start" hidden data-copy="start"></button>
           </div>
           <p id="note"></p>
         </div>
