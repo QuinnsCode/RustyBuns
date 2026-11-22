@@ -9,10 +9,13 @@ import { $ } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { aotName } from "./aot.ts";
 
 const root = path.dirname(import.meta.dir);
-const bin = path.join(root, "dist", `agent-office-${process.platform}-${process.arch}`);
-if (!existsSync(bin)) throw new Error(`no ${path.relative(root, bin)}: bun run desktop:build first`);
+// --aot checks the ahead-of-time build instead (desktop:build -- --aot, #2216)
+const jit = path.join(root, "dist", `agent-office-${process.platform}-${process.arch}`);
+const bin = process.argv.includes("--aot") ? aotName(jit) : jit;
+if (!existsSync(bin)) throw new Error(`no ${path.relative(root, bin)}: bun run desktop:build${bin === jit ? "" : " -- --aot"} first`);
 
 const tmp = mkdtempSync(path.join(tmpdir(), "rb-smoke-"));
 const floor = path.join(tmp, "floor");
