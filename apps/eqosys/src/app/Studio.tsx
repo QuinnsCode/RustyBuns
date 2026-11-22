@@ -8,7 +8,7 @@ import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
 import type { Draft, State } from "../listings.ts";
 import { GENRES, ourApp } from "../apps.ts";
 import { btn } from "./Glass.tsx";
-import { SSO_CALLBACK } from "../sso.ts";
+import { proofOf, SSO_CALLBACK } from "../sso.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -133,7 +133,16 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         <select name="role" defaultValue={c?.role ?? "maker"} aria-label="Their role">{ROLES.filter((r) => r !== "owner").map((r) => <option key={r} value={r}>{ROLE_WORD[r]}</option>)}</select>
         <button className={btn(true)} type="submit">{c ? "Save" : "Connect"}</button>
         {c && <button className={btn()} type="submit" name="off" value="1" formNoValidate>Take it off</button>}
-      </form></details>
+      </form>
+      {/* Domain proof (sso.ts proveDomain): a proved domain links coworkers' existing accounts, and no other studio can claim it. */}
+      {c && (c.proved ? <p className="mut">{c.domain} is proved: coworkers who already have an account here are linked at their first company sign-in.</p> : (
+        <form method="post" action="/do/studio-sso" aria-label={`Prove ${s.name} owns ${c.domain}`}>
+          <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Until then, coworkers who already have an account here sign in the usual way.</p>
+          <code>{proofOf(s.id)}</code>
+          <input type="hidden" name="studio" value={s.id} />
+          <button className={btn()} type="submit" name="prove" value="1">Check the record</button>
+        </form>))}
+    </details>
   );
 }
 
@@ -161,7 +170,7 @@ export function Studios({ studios, unlocks, origin = "" }: { studios: Shelf[]; u
             ))}
           </div>
           {runs(s) && <details className="add"><summary className="pill">Add a game</summary><GameForm studio={s.id} /></details>}
-          {runs(s) && <details className="add"><summary className="pill">New game</summary>
+          {runs(s) && s.kind !== "business" && <details className="add"><summary className="pill">New game</summary>
             <form method="get" action={`${CODESPLITTER}/`} aria-label="A new game from the starter" title="Opens codeSplitter: a repo of yours with the engine, an eqosys sign-in, a Qollab party and a state() harness">
               <input name="starter" placeholder="its id, like rocket-golf" pattern="[a-z0-9]+(-[a-z0-9]+)*" minLength={3} maxLength={40} required />
               <input name="title" placeholder="its name" maxLength={60} />

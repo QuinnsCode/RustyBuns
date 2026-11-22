@@ -50,6 +50,7 @@ import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
 import { achieve, achievements, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
+import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { learn, realRide, steps as coachSteps, unlearned } from "./coach.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import { mountSpaces } from "./net/spaces.ts";
@@ -333,6 +334,15 @@ $("reset").addEventListener("click", () => { reset(); (document.activeElement as
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 // An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
 // The same tools are the Cmd/Ctrl+K palette's commands for a person.
+// How to play, for an agent: the page's own description, the "?" controls tip, the touch buttons and the coach card's steps.
+addCommands([howToPlay("skate", () => {
+  const steps = coach.steps(), holds = [...document.querySelectorAll(".touch [aria-label]")].map((b) => b.getAttribute("aria-label")).filter(Boolean);
+  return {
+    goal: document.querySelector<HTMLMetaElement>("meta[name=description]")?.content ?? "", desktop: wordsOf($("tip")),
+    phone: `The thumb stick steers and pushes; flick the other half of the screen for tricks.${holds.length ? ` Hold buttons: ${holds.join(", ")}.` : ""}`,
+    first: `Pick a park. Then ${steps[0]?.title.toLowerCase()}: ${steps[0]?.say ?? ""}`, steps,
+  };
+})]);
 mountPalette();
 const driver = new Driver();
 const isSpotName = (n: string): n is (typeof SPOTS)[number] => SPOTS.some((k) => k === n);

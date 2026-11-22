@@ -129,7 +129,7 @@
       {
         "app": "sharesplat",
         "name": "ShareSplat",
-        "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable splat viewer has a Shopify embed that you paste in."
+        "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable viewer cuts away the table and stray bits, then hosts the model at one link per product (R2, eqosys sign-in) for a Shopify theme block or a pasted embed."
       },
       {
         "app": "geoboxq-shopify",
@@ -307,7 +307,7 @@
         "app": "elysia-conduit",
         "name": "Elysia RealWorld",
         "line": "The RealWorld backend of bedstack (Elysia, Drizzle, postgres.js) with no source edits. It is a desktop binary on PGlite that passes their Postman suite. The doc lists the five ways that it breaks on Workers.",
-        "doc": "apps/elysia-conduit/RUSTYBUNS.md"
+        "doc": "apps/frameworks/elysia-conduit/RUSTYBUNS.md"
       },
       {
         "app": "tanstack-start-example",

@@ -22,6 +22,8 @@ import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 import { pageCsp, spacesConnect } from "./csp.ts";
+import { lapseSeats } from "./sso.ts";
+import { spaceOf } from "./qollab/space.ts";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
 // origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
@@ -158,5 +160,14 @@ export default {
     const res = await (app.fetch as (r: Request, e: unknown, c: Ctx) => Promise<Response>)(req, env, ctx);
     ctx.waitUntil(Promise.resolve(tally(e(req), req, res.status, (p) => ctx.waitUntil(p))).catch(() => undefined));
     return res;
+  },
+  // The daily Cron Trigger (rustybuns.config.ts): company sign-in seats not renewed lapse, and each one's sockets in the
+  // studio's space close (space.ts /gone), so someone the company turned off is out of every channel.
+  async scheduled(_c: unknown, _env: unknown, ctx: Ctx) {
+    const conf = e();
+    ctx.waitUntil(lapseSeats(conf, async (studio, user) => {
+      const sid = conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+      if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: user })}`));
+    }));
   },
 };

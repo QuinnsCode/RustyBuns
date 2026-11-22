@@ -326,7 +326,7 @@ Clone, `bun install`, `rustybuns deploy` and the check went green in 20 s.
 A second Deploy updated the same Worker from the kept Alchemy state, then `--destroy` took it down.
 Run `bun run desktop` and then `bun scripts/deploy-check.ts --url … --cookie …` with `CLOUDFLARE_ACCOUNT_ID` set (see the script's header).
 
-**The whole journey with a real app** (2026-11-03): `bun scripts/deploy-check.ts --app ../hono-example --cli local --try --preview --drop COUNTER` pushes an example app in as a repo, then runs Ship's Build and plan, a preview (up on `preview-<id>`, answered, destroyed in 25 s), a real deploy, a commit that drops the KV binding (the redeploy is refused: it would delete the data), and a destroy. 52 s, nothing left on the account.
+**The whole journey with a real app** (2026-11-03): `bun scripts/deploy-check.ts --app ../frameworks/hono-example --cli local --try --preview --drop COUNTER` pushes an example app in as a repo, then runs Ship's Build and plan, a preview (up on `preview-<id>`, answered, destroyed in 25 s), a real deploy, a commit that drops the KV binding (the redeploy is refused: it would delete the data), and a destroy. 52 s, nothing left on the account.
 Since #3354 the commit that drops the binding is planned against the stage first (`POST .../deploy/plan`: main cloned, the stage's kept Alchemy state put back, `rustybuns plan --stage X`), and the plan lists `COUNTER delete`, `Worker update`, `Worker/COUNTER unbind` before anyone presses Deploy; the redeploy is armed for that plan's commit (`{plan: id}`, 409 once main moves) and still refused by the guard; the stage then comes down through Deploy settings' **Tear down** (`POST .../deploy/destroy {stage}`, asked twice, a stage marked Real only once its name is typed). 61 s.
 In Ship, Preview sits between Plan and Stage, with the live URL while the preview is up.
 The same journey on more examples (2026-11-05): elysia-example (3 min) and react-router-example (4.5 min, SSR with KV) go green end to end, and svelte-spa-example (built assets, no bindings) goes green through preview and two deploys to the same Worker.
@@ -715,6 +715,7 @@ There are 53 promises today (`test/trust-promises.ts` reads them). Run on 2026-1
 | `DELETE /api/repos/:o/:r/stamps` | Your stamp on that line. | | `test/stamps.test.ts`: "a stamp goes on a line, an agent's too, and follows it by id through edits" |
 | `DELETE /api/me/programs/:name` | The saved program, by its owner only. | | `test/codemode.test.ts`: "an agent saves a program, reruns it by name with new input, and sees only its own" |
 | `DELETE /api/follows/:id` | The follow, by the follower only. | | `test/follows.test.ts`: "unfollow is the follower's alone" |
+| `DELETE /api/me/ssh-keys/:id` | The SSH key, by its owner only: the ssh gate's next login with it is refused, since the gate keeps no key list. | Its audit row, with the fingerprint. | `test/ssh-keys.test.ts`: "a key added is found by its fingerprint as whose it is, until it's removed" |
 | `rustybuns deploy --hosted --destroy` | The site's own Worker and the stored key. | The API token, to delete in the dashboard. | By hand: it's the owner's command against the live account. |
 
 **Not yet.** Open, each an issue labelled `security`:

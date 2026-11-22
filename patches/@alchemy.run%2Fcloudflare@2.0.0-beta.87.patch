@@ -1,0 +1,289 @@
+diff --git a/lib/Workers/WorkerProvider.d.ts b/lib/Workers/WorkerProvider.d.ts
+index b251f6b4d732c1693966fd4e9ecfa033378c8a13..4556f6cdc79d7f97fd2f1ec4a51f6a590584e5de 100644
+--- a/lib/Workers/WorkerProvider.d.ts
++++ b/lib/Workers/WorkerProvider.d.ts
+@@ -333,6 +333,22 @@ export declare const shouldObserveWorkerDomains: (olds: Pick<WorkerProps, "domai
+  * @internal exported for unit testing.
+  */
+ export declare const shouldObserveWorkerRoutes: (olds: Pick<WorkerProps, "routes"> | undefined, output: Pick<Worker["Attributes"], "routes"> | undefined) => boolean;
++/** The Cloudflare calls {@link attachWorkerRoute} makes; a test hands it a fake. */
++export interface WorkerRouteApi {
++    listRoutes: typeof workers.listRoutes;
++    createRoute: typeof workers.createRoute;
++    updateRoute: typeof workers.updateRoute;
++}
++/** Attach `route` to `scriptName`, adopting a same-pattern route that runs this Worker or none. `R` is what `api` needs (the Cloudflare client by default). */
++export declare const attachWorkerRoute: <R = unknown>(route: {
++    pattern: string;
++    zoneId: string;
++}, scriptName: string, api?: WorkerRouteApi) => Effect.Effect<{
++    id: string;
++    pattern: string;
++    zoneId: string;
++    url: string;
++}, unknown, R>;
+ /**
+  * Order observed zone routes the way state records them. `listRoutes`
+  * returns routes in Cloudflare's order while `reconcile` records them in
+diff --git a/lib/Workers/WorkerProvider.js b/lib/Workers/WorkerProvider.js
+index 453afee33445366ac3e126cf0b03111e23405a7d..6fbafa1a1f81a9277b6ab8505883210fdb367790 100644
+--- a/lib/Workers/WorkerProvider.js
++++ b/lib/Workers/WorkerProvider.js
+@@ -782,6 +782,43 @@ export const shouldObserveWorkerDomains = (olds, output) => olds?.domain !== und
+  */
+ export const shouldObserveWorkerRoutes = (olds, output) => olds?.routes !== undefined || (output?.routes?.length ?? 0) > 0;
+ const routeKey = (route) => `${route.zoneId}:${route.pattern}`;
++const scriptRegistryRace = {
++  while: (error) => error._tag === "RouteScriptNotFound",
++  schedule: Schedule.max([Schedule.exponential(200), Schedule.recurs(15)])
++};
++export const attachWorkerRoute = (route, scriptName, api = workers) => {
++  const listZone = api.listRoutes({ zoneId: route.zoneId }).pipe(Effect.map((response) => response.result ?? []), Effect.orElseSucceed(() => []));
++  const claim = Effect.fn(function* (zoneRoutes) {
++    const found = zoneRoutes.find((candidate) => candidate.pattern === route.pattern);
++    if (!found?.id)
++      return;
++    if (found.script && found.script !== scriptName) {
++      return yield* Effect.die(new Error(`Cannot attach route '${route.pattern}' to Worker '${scriptName}': ` + `it already runs Worker '${found.script}'. To move it, edit the route in the ` + `zone's Workers Routes in the Cloudflare dashboard and pick '${scriptName}' ` + `(or delete it), then deploy again.`));
++    }
++    if (!found.script) {
++      yield* api.updateRoute({ zoneId: route.zoneId, routeId: found.id, pattern: route.pattern, script: scriptName }).pipe(Effect.retry(scriptRegistryRace));
++    }
++    return { id: found.id, pattern: route.pattern, zoneId: route.zoneId, url: routePatternUrl(route.pattern) };
++  });
++  const reclaim = (originalError) => Effect.gen(function* () {
++    const found = yield* claim(yield* listZone);
++    if (!found)
++      return yield* Effect.fail(originalError);
++    return found;
++  });
++  return Effect.gen(function* () {
++    const claimed = yield* claim(yield* listZone);
++    if (claimed)
++      return claimed;
++    return yield* api.createRoute({ zoneId: route.zoneId, pattern: route.pattern, script: scriptName }).pipe(Effect.retry(scriptRegistryRace), Effect.map((created) => ({
++      id: created.id,
++      pattern: created.pattern,
++      zoneId: route.zoneId,
++      url: routePatternUrl(created.pattern)
++    })), Effect.catchTag("InvalidRoute", reclaim), Effect.catchTag("Conflict", reclaim));
++  });
++};
++
+ /**
+  * Order observed zone routes the way state records them. `listRoutes`
+  * returns routes in Cloudflare's order while `reconcile` records them in
+@@ -1485,47 +1522,11 @@ export const LiveWorkerProvider = () => Provider.effect(Worker, Effect.gen(funct
+             .pipe(Effect.catchTag("RouteNotFound", () => Effect.void)), { concurrency: "unbounded" });
+         if (desired.length === 0)
+             return [];
+-        const attachRoute = Effect.fn(function* (route) {
++        const attachRoute = (route) => {
+             const existing = liveByKey.get(routeKey(route));
+-            if (existing)
+-                return existing;
+-            const zoneRoutes = yield* workers.listRoutes({ zoneId: route.zoneId }).pipe(Effect.map((response) => response.result ?? []), Effect.orElseSucceed(() => []));
+-            const otherOwner = zoneRoutes.find((candidate) => candidate.pattern === route.pattern &&
+-                candidate.script &&
+-                candidate.script !== scriptName);
+-            if (otherOwner) {
+-                return yield* Effect.die(new Error(`Cannot attach route '${route.pattern}' to Worker '${scriptName}': ` +
+-                    `it is already attached to Worker '${otherOwner.script}'. ` +
+-                    `Remove it from that Worker first, or pick a different pattern.`));
+-            }
+-            // A duplicate-pattern failure means another actor (or a crashed
+-            // previous reconcile) created the route between our observation
+-            // and now — re-list and converge if it points at this script.
+-            const created = yield* workers
+-                .createRoute({ zoneId: route.zoneId, pattern: route.pattern, script: scriptName })
+-                .pipe(
+-            // Same eventual-consistency window as `putDomain`: creating
+-            // a route right after `putScript` can race Cloudflare's
+-            // script registry, which rejects with code 10019 ("Cannot
+-            // configure a route for a Worker which does not exist") —
+-            // typed as `RouteScriptNotFound` via the createRoute patch.
+-            Effect.retry({
+-                while: (error) => error._tag === "RouteScriptNotFound",
+-                schedule: Schedule.max([Schedule.exponential(200), Schedule.recurs(15)]),
+-            }), Effect.catchTag("InvalidRoute", (originalError) => Effect.gen(function* () {
+-                const match = yield* workers.listRoutes({ zoneId: route.zoneId }).pipe(Effect.map((response) => (response.result ?? []).find((candidate) => candidate.pattern === route.pattern && candidate.script === scriptName)), Effect.orElseSucceed(() => undefined));
+-                if (!match?.id) {
+-                    return yield* originalError;
+-                }
+-                return { id: match.id, pattern: match.pattern };
+-            })));
+-            return {
+-                id: created.id,
+-                pattern: created.pattern,
+-                zoneId: route.zoneId,
+-                url: routePatternUrl(created.pattern),
+-            };
+-        });
++            return existing ? Effect.succeed(existing) : attachWorkerRoute(route, scriptName);
++        };
++
+         return yield* Effect.forEach(desired, attachRoute, { concurrency: "unbounded" });
+     });
+     const createAlchemyWorkerTags = (id) => [
+diff --git a/src/Workers/WorkerProvider.ts b/src/Workers/WorkerProvider.ts
+index 18a92644355ec950b557d8f9bbecd0c61e19d78c..85cf408e15fe88f9e6b294e3d7aa7b16010ac4c4 100644
+--- a/src/Workers/WorkerProvider.ts
++++ b/src/Workers/WorkerProvider.ts
+@@ -1046,6 +1046,83 @@ export const shouldObserveWorkerRoutes = (
+ ): boolean => olds?.routes !== undefined || (output?.routes?.length ?? 0) > 0;
+ 
+ const routeKey = (route: { pattern: string; zoneId: string }) => `${route.zoneId}:${route.pattern}`;
++/** The Cloudflare calls {@link attachWorkerRoute} makes; a test hands it a fake. */
++export interface WorkerRouteApi {
++  listRoutes: typeof workers.listRoutes;
++  createRoute: typeof workers.createRoute;
++  updateRoute: typeof workers.updateRoute;
++}
++
++// Same eventual-consistency window as `putDomain`: creating or pointing a
++// route right after `putScript` can race Cloudflare's script registry, which
++// rejects with code 10019 ("Cannot configure a route for a Worker which does
++// not exist") — typed as `RouteScriptNotFound` via the createRoute patch.
++const scriptRegistryRace = {
++  while: (error: { _tag: string }) => error._tag === "RouteScriptNotFound",
++  schedule: Schedule.max([Schedule.exponential(200), Schedule.recurs(15)]),
++};
++
++/**
++ * Attach `route` to `scriptName` when it is not attached yet. A route on the
++ * same pattern that already exists (made by hand, by an old wrangler deploy,
++ * or by a crashed reconcile) is adopted when it runs this Worker or no Worker,
++ * and fails naming the Worker it runs otherwise. A 409 `Conflict` (or the
++ * older 7003 `InvalidRoute`) on create means the route appeared since the
++ * listing, or the listing failed quietly: re-list and claim it the same way.
++ */
++export const attachWorkerRoute = (
++  route: { pattern: string; zoneId: string },
++  scriptName: string,
++  api: WorkerRouteApi = workers,
++) => {
++  const listZone = api.listRoutes({ zoneId: route.zoneId }).pipe(
++    Effect.map((response) => response.result ?? []),
++    Effect.orElseSucceed(() => [] as workers.RoutesListResultList),
++  );
++  const claim = Effect.fn(function* (zoneRoutes: workers.RoutesListResultList) {
++    const found = zoneRoutes.find((candidate) => candidate.pattern === route.pattern);
++    if (!found?.id) return undefined;
++    if (found.script && found.script !== scriptName) {
++      return yield* Effect.die(
++        new Error(
++          `Cannot attach route '${route.pattern}' to Worker '${scriptName}': ` +
++            `it already runs Worker '${found.script}'. To move it, edit the route in the ` +
++            `zone's Workers Routes in the Cloudflare dashboard and pick '${scriptName}' ` +
++            `(or delete it), then deploy again.`,
++        ),
++      );
++    }
++    if (!found.script) {
++      yield* api
++        .updateRoute({ zoneId: route.zoneId, routeId: found.id, pattern: route.pattern, script: scriptName })
++        .pipe(Effect.retry(scriptRegistryRace));
++    }
++    return { id: found.id, pattern: route.pattern, zoneId: route.zoneId, url: routePatternUrl(route.pattern) };
++  });
++  const reclaim = <E>(originalError: E) =>
++    Effect.gen(function* () {
++      const found = yield* claim(yield* listZone);
++      if (!found) return yield* Effect.fail(originalError);
++      return found;
++    });
++  return Effect.gen(function* () {
++    const claimed = yield* claim(yield* listZone);
++    if (claimed) return claimed;
++    return yield* api.createRoute({ zoneId: route.zoneId, pattern: route.pattern, script: scriptName }).pipe(
++      Effect.retry(scriptRegistryRace),
++      Effect.map((created) => ({
++        id: created.id,
++        pattern: created.pattern,
++        zoneId: route.zoneId,
++        url: routePatternUrl(created.pattern),
++      })),
++      Effect.catchTag("InvalidRoute", reclaim),
++      Effect.catchTag("Conflict", reclaim),
++    );
++  });
++};
++
++
+ 
+ /**
+  * Order observed zone routes the way state records them. `listRoutes`
+@@ -2023,70 +2100,10 @@ export const LiveWorkerProvider = () =>
+ 
+           if (desired.length === 0) return [];
+ 
+-          const attachRoute = Effect.fn(function* (route: NormalizedWorkerRoute) {
++          const attachRoute = (route: NormalizedWorkerRoute) => {
+             const existing = liveByKey.get(routeKey(route));
+-            if (existing) return existing;
+-
+-            const zoneRoutes = yield* workers.listRoutes({ zoneId: route.zoneId }).pipe(
+-              Effect.map((response) => response.result ?? []),
+-              Effect.orElseSucceed(() => []),
+-            );
+-            const otherOwner = zoneRoutes.find(
+-              (candidate) =>
+-                candidate.pattern === route.pattern &&
+-                candidate.script &&
+-                candidate.script !== scriptName,
+-            );
+-            if (otherOwner) {
+-              return yield* Effect.die(
+-                new Error(
+-                  `Cannot attach route '${route.pattern}' to Worker '${scriptName}': ` +
+-                    `it is already attached to Worker '${otherOwner.script}'. ` +
+-                    `Remove it from that Worker first, or pick a different pattern.`,
+-                ),
+-              );
+-            }
+-
+-            // A duplicate-pattern failure means another actor (or a crashed
+-            // previous reconcile) created the route between our observation
+-            // and now — re-list and converge if it points at this script.
+-            const created = yield* workers
+-              .createRoute({ zoneId: route.zoneId, pattern: route.pattern, script: scriptName })
+-              .pipe(
+-                // Same eventual-consistency window as `putDomain`: creating
+-                // a route right after `putScript` can race Cloudflare's
+-                // script registry, which rejects with code 10019 ("Cannot
+-                // configure a route for a Worker which does not exist") —
+-                // typed as `RouteScriptNotFound` via the createRoute patch.
+-                Effect.retry({
+-                  while: (error) => error._tag === "RouteScriptNotFound",
+-                  schedule: Schedule.max([Schedule.exponential(200), Schedule.recurs(15)]),
+-                }),
+-                Effect.catchTag("InvalidRoute", (originalError) =>
+-                  Effect.gen(function* () {
+-                    const match = yield* workers.listRoutes({ zoneId: route.zoneId }).pipe(
+-                      Effect.map((response) =>
+-                        (response.result ?? []).find(
+-                          (candidate) =>
+-                            candidate.pattern === route.pattern && candidate.script === scriptName,
+-                        ),
+-                      ),
+-                      Effect.orElseSucceed(() => undefined),
+-                    );
+-                    if (!match?.id) {
+-                      return yield* originalError;
+-                    }
+-                    return { id: match.id, pattern: match.pattern };
+-                  }),
+-                ),
+-              );
+-            return {
+-              id: created.id,
+-              pattern: created.pattern,
+-              zoneId: route.zoneId,
+-              url: routePatternUrl(created.pattern),
+-            };
+-          });
++            return existing ? Effect.succeed(existing) : attachWorkerRoute(route, scriptName);
++          };
+ 
+           return yield* Effect.forEach(desired, attachRoute, { concurrency: "unbounded" });
+         });

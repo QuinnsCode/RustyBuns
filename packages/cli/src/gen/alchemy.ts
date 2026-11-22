@@ -1,5 +1,5 @@
 // RustyBunsConfig -> .rustybuns/alchemy.run.ts
-// Targets alchemy 2.0.0-beta.84 (Infrastructure-as-Effects). Async Worker
+// Targets alchemy 2.0.0-beta.87 (Infrastructure-as-Effects). Async Worker
 // form: no Effect in the app bundle; bindings declared via `env`, typed via
 // Cloudflare.InferEnv. The generated file is readable and committable; the
 // eject path is "keep this file, delete the config".
@@ -303,6 +303,7 @@ export function generateAlchemy(c: RustyBunsConfig, guests: readonly BoxGuest[] 
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);
     if (w.cpuMs) wb.push(`  limits: { cpuMs: ${w.cpuMs} },`);
     if (w.placement) wb.push(`  placement: ${JSON.stringify(w.placement)},  // Smart Placement: run near D1 and the Durable Objects`);
+    if (w.codeUpdate) wb.push(`  codeUpdateStrategy: ${JSON.stringify(w.codeUpdate === "immediate" ? { mode: "immediate" } : { mode: "deferred", maxDelay: `${w.codeUpdate.maxDelay} seconds` })},  // worker.codeUpdate: busy Durable Objects`);
     if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
     if (w.observability || w.redactQueryStrings) wb.push(`  observability: ${JSON.stringify(observability(w))},`);
     const domain = c.targets.edge?.domain;

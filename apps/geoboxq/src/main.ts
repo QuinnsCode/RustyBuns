@@ -22,6 +22,7 @@ const ICON = {
   play: icon('<path d="m6 3 14 9-14 9z"/>'),
   pause: icon('<path d="M14 4h4v16h-4zM6 4h4v16H6z"/>'),
   repeat: icon('<path d="m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"/>'),
+  arrowDown: icon('<path d="M12 5v14M19 12l-7 7-7-7"/>'),
   sparkles: icon('<path d="M9.94 14.06 9 17l-.94-2.94L5 13l3.06-.94L9 9l.94 3.06L13 13zM19 3v4M21 5h-4M19 17v4M21 19h-4"/>'),
 };
 
@@ -48,7 +49,8 @@ const app = document.getElementById("app")!;
 app.innerHTML = `
   <div class="account" id="account"></div>
   <h1>${ICON.package} GeoBoxQ</h1>
-  <p class="lede">Will it fit in the box? Including a box in a box in a box.</p>
+  <p class="lede">Add your shipping boxes and your products, and it tells you which box they all fit in, even with a box packed inside a box.</p>
+  <a class="verdict" id="verdict" href="#answer" aria-live="polite"></a>
   <section id="boxes"></section>
   <section id="items"></section>
   <section class="options" id="options"></section>
@@ -73,7 +75,7 @@ function list(id: "boxes" | "items") {
   const rows = state[id];
   $(id).innerHTML = `
     <h2>${items ? "Products" : "Shipping boxes"}</h2>
-    <p class="hint">${items ? "Outside size. Tick the checkbox on anything that opens and can carry other things." : "Inside size, what actually fits."} In ${state.unit}. Any number works: type one and watch it become a line, a square, a box.</p>
+    <p class="hint">${items ? "Each product's outside size and how many. Tick the box on anything that opens and can hold other things." : "Each box's inside size: the room you have."} Sizes in ${state.unit === "in" ? "inches" : "centimetres"}.</p>
     ${rows.map((r, i) => `
       <div class="entry" data-i="${i}">
         <div class="row ${items ? "item" : ""}">
@@ -137,20 +139,22 @@ function baxterPanel() {
 let ticket = 0;
 async function answer() {
   const mine = ++ticket;
-  const el = $("answer");
+  const el = $("answer"), top = $("verdict");
   const input = toInput(state);
   baxterPanel();
-  if (!input.boxes.length) { el.innerHTML = `<p class="msg">Add a shipping box with a size.</p>`; return; }
-  if (!input.items.length) { el.innerHTML = `<p class="msg">Add a product with a size.</p>`; return; }
+  const say = (html: string) => { el.innerHTML = html; top.innerHTML = html; };
+  if (!input.boxes.length) { say(`<p class="msg">Add a shipping box with a size.</p>`); return; }
+  if (!input.items.length) { say(`<p class="msg">Add a product with a size.</p>`); return; }
   let sol: Solution;
   try { sol = await solve(input.boxes, input.items, input.pad); }
-  catch (e) { if (mine === ticket) el.innerHTML = `<p class="err">${esc((e as Error).message)}</p>`; return; }
+  catch (e) { if (mine === ticket) say(`<p class="err">${esc((e as Error).message)}</p>`); return; }
   if (mine !== ticket) return;
   const v = verdict(sol);
   const names = usableBoxes(state);
   const head = v.kind === "fits"
     ? `<div class="answer yes">${ICON.check} Fits in ${esc(v.box)}</div><div class="meter" title="${Math.round(v.fill * 100)}% of the box"><i style="width:${Math.min(100, Math.round(v.fill * 100))}%"></i></div>`
     : v.kind === "none" ? `<div class="answer no">${ICON.x} Doesn't fit in any box</div>` : `<p class="msg">${v.why}</p>`;
+  top.innerHTML = `${head}${v.kind === "fits" ? `<span class="dim">${Math.round(v.fill * 100)}% full. See how it packs ${ICON.arrowDown}</span>` : ""}`;
   const pieces = group(sol.pieces);
   stopPlayer();
   scene = v.kind === "fits" ? { box: names[sol.best!]!, parts: parts(sol.packed) } : null;

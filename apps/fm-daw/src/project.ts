@@ -38,6 +38,8 @@ export interface TrackDoc {
   amp?: TrackAmp;
   /** A hosted CLAP plugin plays this track's notes instead of its FM voice (src/plugin-track.ts); absent for FM. */
   plugin?: TrackPlugin;
+  /** A web plugin the track's FM sound goes through on its way to the mix (a Web Audio Module effect, src/ui/wam.ts); absent for none. */
+  insert?: TrackPlugin;
   mute: boolean;
   solo: boolean;
 }
@@ -70,6 +72,8 @@ export type Op =
   | { t: "amp"; track: number; amp: TrackAmp | null }
   /** A plugin playing a track (with the sliders moved), or null to give it its FM voice back. */
   | { t: "plugin"; track: number; plugin: TrackPlugin | null }
+  /** An effect on a track's sound (with its sliders moved), or null to take it off. */
+  | { t: "insert"; track: number; insert: TrackPlugin | null }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, or the aux 2 return's fader and mute. */
@@ -214,9 +218,9 @@ function fitTakes(tracks: TrackDoc[], beats?: number): TrackDoc[] {
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  const { eq, take, amp, plugin, ...rest } = t;
-  return withTrackEq({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats), ...(take ? { take } : {}) }, sanitizeEq(eq));
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), insert: maybe(TrackPlugin), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, take, amp, plugin, insert, ...rest } = t;
+  return withTrackEq({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), ...(insert ? { insert } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats), ...(take ? { take } : {}) }, sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -235,6 +239,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("take"), track: TRACK, take: nul(takeRef(MAX_BARS * BEATS_PER_BAR)) }),
   obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
+  obj({ t: tag("insert"), track: TRACK, insert: nul(TrackPlugin) }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2) }),
   obj({ t: tag("studio"), id: STUDIO_ID }),
@@ -410,10 +415,12 @@ export function apply(p: Project, op: Op): Project {
       return withTrack(p, op.track, (t) => { const { amp: _, ...rest } = t; return op.amp ? { ...rest, amp: op.amp } : rest; });
     case "plugin":
       return withTrack(p, op.track, (t) => { const { plugin: _, ...rest } = t; return op.plugin ? { ...rest, plugin: op.plugin } : rest; });
+    case "insert":
+      return withTrack(p, op.track, (t) => { const { insert: _, ...rest } = t; return op.insert ? { ...rest, insert: op.insert } : rest; });
     case "instrument": {
       const { inst } = op;
       const was = (p.instruments ?? []).filter((x) => x.id !== inst.id && x.track !== inst.track);
-      const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}), ...(t.amp ? { amp: t.amp } : {}) }));
+      const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}), ...(t.amp ? { amp: t.amp } : {}), ...(t.insert ? { insert: t.insert } : {}) }));
       // the oldest goes when the room is full
       return { ...next, ...madeOf([...was, inst].slice(-MAX_MADE)) };
     }

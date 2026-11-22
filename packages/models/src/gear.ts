@@ -86,11 +86,12 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
- * sculpted array's moulded composite), badge (the dance stack's maker plate), ink (the white print on a control face). */
+ * sculpted array's moulded composite), badge (the dance stack's maker plate), ink (the white print on a control face); and a hung line array box's own:
+ * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -100,6 +101,7 @@ export function gearLook(): GearLook {
     panel: std(0x3a3c40, 0.6, 0.3), lid: std(0xf2c230, 0.6), tolex: std(0x161514, 0.9), body: std(0x8f1f1f, 0.3, 0.1),
     chrome: std(0xd8dade, 0.15, 1), knob: std(0x0c0c0c, 0.5), light: new THREE.MeshBasicMaterial({ color: 0x45e06a }),
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45), ink: std(0xe4e2dc, 0.7),
+    mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
   };
 }
 
@@ -202,31 +204,46 @@ function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg =
 }
 
 /** A loudspeaker as it shows through a grille: the cone's dish, its rolled rubber surround, the dust cap and the
- * basket's rim, `r` the cone's radius, its rim at z = 0 and its throat `deep` behind. `m` places it. */
-function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
+ * basket's rim, `r` the cone's radius, its rim at z = 0 and its throat `deep` behind. `m` places it; `seg` fewer
+ * for one only a shadow behind a solid grille. */
+function cone(r: number, deep: number, m: THREE.Matrix4, seg = 24): Piece[] {
   const roll = Math.min(deep, 0.01);
   return [
       // the dish is coated paper with a satin sheen (it catches the light through the holes); the surround is rubber
-    lathe("knob", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
-    lathe("rubber", [[0, r, r], [roll * 0.25, r * 1.04, r * 1.04], [roll * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
-    lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: 16 }),
-    lathe("knob", [[0, r * 1.12, r * 1.12], [roll * 0.1, r * 1.13, r * 1.13], [roll * 0.1, r * 1.2, r * 1.2], [-roll * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
+    lathe("knob", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg }),
+    lathe("rubber", [[0, r, r], [roll * 0.25, r * 1.04, r * 1.04], [roll * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg }),
+    lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: Math.round(seg * 0.67) }),
+    lathe("knob", [[0, r * 1.12, r * 1.12], [roll * 0.1, r * 1.13, r * 1.13], [roll * 0.1, r * 1.2, r * 1.2], [-roll * 0.2, r * 1.2, r * 1.2]], { m, seg }),
   ];
 }
 
 /** A constant-directivity horn's mouth: a squared-off flare from a small throat, `w` by `h` at the mouth. */
-function horn(w: number, h: number, deep: number, m: THREE.Matrix4): Piece[] {
+function horn(w: number, h: number, deep: number, m: THREE.Matrix4, seg = 24): Piece[] {
   return [
-    lathe("knob", [[-deep, 0.014, 0.014], [-deep * 0.6, w * 0.16, h * 0.2], [-deep * 0.2, w * 0.38, h * 0.42], [0, w / 2, h / 2]], { p: 4, seg: 24, m }),
-    lathe("knob", [[0, w / 2, h / 2], [Math.min(deep, 0.01) * 0.15, w / 2 + 0.008, h / 2 + 0.008], [0, w / 2 + 0.014, h / 2 + 0.014]], { p: 4, seg: 24, m }),
+    lathe("knob", [[-deep, 0.014, 0.014], [-deep * 0.6, w * 0.16, h * 0.2], [-deep * 0.2, w * 0.38, h * 0.42], [0, w / 2, h / 2]], { p: 4, seg, m }),
+    lathe("knob", [[0, w / 2, h / 2], [Math.min(deep, 0.01) * 0.15, w / 2 + 0.008, h / 2 + 0.008], [0, w / 2 + 0.014, h / 2 + 0.014]], { p: 4, seg, m }),
   ];
 }
 
 /** A well sunk into a face: centred on the face at `at`, `w` by `h` at the face (`w` along the face's u: across x on a
  * face looking front, back, up or down, along z on a side), its corners rounded `r`. Its rim rolls in `lip` at 45
  * degrees, then its walls run `deep` into the box, drawing in `draft` on each side as a moulding's walls do; `walls`
- * and `floor` are their slots (the cabinet's own unless given). */
-type Well = { at: THREE.Vector3Tuple; w: number; h: number; r: number; deep: number; lip?: number; draft?: number; walls?: GearSlot; floor?: GearSlot | null };
+ * and `floor` are their slots (the cabinet's own unless given). `d` makes it a D instead (a hand-hold's half-moon): flat
+ * along its bottom edge and domed up (+1, along v) or flat along its top and domed down (-1). */
+type Well = { at: THREE.Vector3Tuple; w: number; h: number; r: number; deep: number; lip?: number; draft?: number; walls?: GearSlot; floor?: GearSlot | null; d?: 1 | -1 };
+
+/** A D's outline, counter-clockwise in (u, v), `w` by `h` round (cu, cv): a half ellipse on a flat edge, its two
+ * corners rounded `r`, the flat at the bottom for `up` +1 and at the top for -1; the same count of points whatever its size. */
+function dShape(cu: number, cv: number, w: number, h: number, r: number, up: 1 | -1, per = 12): THREE.Vector2[] {
+  const a = w / 2, base = cv - (up * h) / 2, rr = Math.max(Math.min(r, h / 3, a / 3), 1e-4), t0 = Math.asin(rr / h), pts: THREE.Vector2[] = [];
+  // the dome from the right end of the flat over to the left, stopping `r` short of the flat, then the flat's two
+  // ends pulled in, so each corner is a short round, not a point
+  for (let j = 0; j <= per; j++) { const t = t0 + ((Math.PI - 2 * t0) * j) / per; pts.push(new THREE.Vector2(cu + a * Math.cos(t), base + up * h * Math.sin(t))); }
+  const end = a * Math.cos(t0) - rr * 0.7;
+  pts.push(new THREE.Vector2(cu - end, base), new THREE.Vector2(cu + end, base));
+  // mirrored in v, that ran clockwise
+  return up > 0 ? pts : pts.reverse();
+}
 
 /** A face's own frame: u and v across it, n out of it (u = x on a front, back, top or bottom face). */
 function faceFrame(out: THREE.Vector3Tuple) {
@@ -291,7 +308,9 @@ function sink(piece: Piece, out: THREE.Vector3Tuple, wells: Well[]): Piece[] {
       pos.push(...(flip ? [x, z, y] : [x, y, z]).flatMap((q) => q.toArray()));
     }
   };
-  const mouths = wells.map((w) => roundRect(w.at[0] * u.x + w.at[1] * u.y + w.at[2] * u.z, w.at[0] * v.x + w.at[1] * v.y + w.at[2] * v.z, w.w, w.h, w.r));
+  const centres = wells.map((w) => [w.at[0] * u.x + w.at[1] * u.y + w.at[2] * u.z, w.at[0] * v.x + w.at[1] * v.y + w.at[2] * v.z] as const);
+  const outline2 = (w: Well, [cu, cv]: readonly [number, number], k: number) => w.d ? dShape(cu, cv, w.w - 2 * k, w.h - 2 * k, Math.max(w.r - k, 0.002), w.d) : roundRect(cu, cv, w.w - 2 * k, w.h - 2 * k, k ? Math.max(w.r - k, 0.002) : w.r);
+  const mouths = wells.map((w, i) => outline2(w, centres[i], 0));
   // a mouth has to lie on the flat (past it, the cut would tear the rounds)
   const inside = (q: THREE.Vector2) => outline.every((o, i) => { const e = outline[(i + 1) % outline.length]; return (e.x - o.x) * (q.y - o.y) - (e.y - o.y) * (q.x - o.x) >= -1e-7; });
   if (!mouths.every((m) => m.every(inside))) throw new Error("sink: a well's mouth runs off the flat of its face");
@@ -304,10 +323,11 @@ function sink(piece: Piece, out: THREE.Vector3Tuple, wells: Well[]): Piece[] {
   geo.setAttribute("position", new THREE.Float32BufferAttribute([...keep, ...face], 3));
   const pieces: Piece[] = [{ geo: toCreasedNormals(geo, 0.6), slot: piece.slot }];
   wells.forEach((w, i) => {
-    const [cu, cv] = [mouths[i].reduce((s, q) => s + q.x, 0) / mouths[i].length, mouths[i].reduce((s, q) => s + q.y, 0) / mouths[i].length];
+    const [cu, cv] = centres[i];
     const lip = Math.min(w.lip ?? 0.004, w.w / 4, w.h / 4), dr = Math.min(w.draft ?? 0, w.w / 4 - lip, w.h / 4 - lip);
-    const ring = (k: number) => roundRect(cu, cv, w.w - 2 * k, w.h - 2 * k, Math.max(w.r - k, 0.002));
-    const rings: [THREE.Vector2[], number][] = [[mouths[i], 0], [ring(lip), lip], [ring(lip + dr), w.deep]];
+    const ring = (k: number) => outline2(w, centres[i], k);
+    // (a well with no lip goes straight down: no flat band at the mouth)
+    const rings: [THREE.Vector2[], number][] = lip > 0 ? [[mouths[i], 0], [ring(lip), lip], [ring(lip + dr), w.deep]] : [[mouths[i], 0], [ring(dr), w.deep]];
     const walls: number[] = [], centre = (d: number) => at3(new THREE.Vector2(cu, cv), d);
     for (let r = 0; r + 1 < rings.length; r++) {
       const [ra, da] = rings[r], [rb, db] = rings[r + 1];
@@ -885,41 +905,75 @@ function barCooler(): Build {
 function lineArray(id: "line-array-10" | "line-array-box"): Build {
   const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = h * 0.15, ch = 0.008;
   const front = d / 2 - 0.012, back = -d / 2 + 0.01;
-  const body = prism("paint", [[front, 0], [front, h], [back, h - taper], [back, taper]], inner, 0, ch);
-  // the front: three panels with a strip of the shell between them, each over its own dark cavity
-  const m = 0.014, cw = inner * 0.2, sw = (inner - 2 * ch - 2 * 0.012 - 2 * m - cw) / 2, gh = h - 2 * ch - 0.026, yc = h / 2, cave = 0.07, g = 0.008;
-  const xs = [-(cw / 2 + m + sw / 2), 0, cw / 2 + m + sw / 2], ws = [sw, cw, sw];
-  // the hand-holds: two half-round pockets, one over the other with a bar of shell between, mid-way along each side
-  const hz = (front + back) / 2 - d * 0.04, hw = Math.min(0.18, d * 0.34), hh = Math.min(0.06, h * 0.19), gap = 0.03;
-  const holds = (s: number): [THREE.Vector3Tuple, Well[]] => [[s, 0, 0], [-1, 1].map((k) => ({ at: [s * inner / 2, yc + k * (hh + gap) / 2, hz], w: hw, h: hh, r: hh / 2 - 0.001, deep: 0.05, lip: 0.006, draft: 0.004, walls: "knob", floor: "knob" }))];
+  const body = prism("coat", [[front, 0], [front, h], [back, h - taper], [back, taper]], inner, 0, ch);
+  // where the hang pins on (unchanged, so the flying frame still fits), and the rigging's steel round them
+  const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04, bh = h - 2 * taper, yc = h / 2;
+  // the front: one dark cavity behind three flat grille panels, a thin seam between each
+  const span = inner - 2 * ch - 0.024, seam = 0.004, cw = inner * 0.2, sw = (span - cw - 2 * seam) / 2, gh = h - 2 * ch - 0.026, cave = 0.09, g = 0.008;
+  const xs = [-(cw / 2 + seam + sw / 2), 0, cw / 2 + seam + sw / 2], ws = [sw, cw, sw];
+  // the side cheeks: a paler pebble-coat panel from behind the front bracket to the rear link bar, two D hand-holds in
+  // it, a half-moon over a bar of panel and a half-moon under it
+  const tc = 0.0035, z0 = linkZ + 0.032, z1 = plateZ - 0.046, run = (z: number) => taper * (front - z) / (front - back), rim = 0.012;
+  const hz = (z0 + z1) / 2, hw = Math.min(0.16, (z1 - z0) * 0.45), hh = Math.min(0.07, h * 0.22), bar = 0.026, lip = 0.003;
+  const ds = (s: number, k: number, deep: number, wells: Partial<Well>): Well[] => [1, -1].map((up) => ({
+    at: [s * (inner / 2 + k), yc + (up * (hh + bar)) / 2, hz], w: hw - 2 * (k ? 0 : lip), h: hh - 2 * (k ? 0 : lip), r: 0.012, deep, d: up as 1 | -1, ...wells,
+  }));
   // the back: the amp plate in a recess
-  const rec = 0.016, bh = h - 2 * taper, pw = inner * 0.42, ph = bh * 0.62, px = -inner * 0.18, py = h / 2;
+  const rec = 0.016, pw = inner * 0.42, ph = bh * 0.62, px = -inner * 0.18, py = h / 2;
   sunk(b, body, [
-    [[0, 0, 1], xs.map((x, i) => ({ at: [x, yc, front], w: ws[i] + 0.004, h: gh + 0.004, r: 0.006, deep: cave, lip: 0.002, walls: "knob" }))],
-    holds(-1), holds(1),
+    [[0, 0, 1], [{ at: [0, yc, front], w: span + 0.004, h: gh + 0.004, r: 0.006, deep: cave, lip: 0.002, walls: "rubber", floor: "rubber" }]],
+    // through the shell under each cheek's pockets, the pocket's walls running on in
+    [[-1, 0, 0], ds(-1, 0, 0.05, { lip: 0, draft: 0.004, walls: "knob", floor: "knob" })],
+    [[1, 0, 0], ds(1, 0, 0.05, { lip: 0, draft: 0.004, walls: "knob", floor: "knob" })],
     [[0, 0, -1], [{ at: [px, py, back], w: pw + 0.03, h: ph + 0.03, r: 0.01, deep: rec, lip: 0.004, draft: 0.002 }]],
   ]);
-  const gz = front - g - 0.002, deep = cave - g - 0.012;
-  xs.forEach((x, i) => {
-    b.pieces.push(...grilleSlab(ws[i], gh, g, yc, gz, 0.006, new THREE.Matrix4().makeTranslation(x, 0, 0)));
-    if (i !== 1) grilleScrews(b, ws[i], gh, new THREE.Matrix4().makeTranslation(x, yc, front - 0.001), 2);
-    const at = new THREE.Matrix4().makeTranslation(x, yc, gz - 0.004);
-    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at));
-    else b.pieces.push(...cone(Math.min(sw, gh) * 0.44, deep, at));
-  });
-  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, front));
-  // the rigging: black steel, a pin through each hole the hang uses
-  const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04;
-  const pin = (x: number, y: number, z: number, s: number) => b.pieces.push(disc("chrome", 0.007, 0.026, "x", [x, y, z], 8), disc("knob", 0.01, 0.005, "x", [x + s * 0.0125, y, z], 8));
   for (const s of [-1, 1]) {
-    const x = s * (w / 2 - 0.01);
-    b.pieces.push(box("panel", [0.02, h - 0.004, 0.07], [x, h / 2, plateZ], { bevel: 0.003 }));
-    b.pieces.push(box("panel", [0.016, bh - 0.01, 0.05], [x, h / 2, linkZ], { bevel: 0.003 }));
-    for (const y of pinY) pin(x, y, plateZ, s);
-    // the splay holes down the link bar, the pin in the one this box hangs at
-    for (const k of [-1, 0]) b.pieces.push(disc("knob", 0.0045, 0.018, "x", [x, h / 2 + k * bh * 0.2, linkZ], 6));
-    pin(x, h / 2 + bh * 0.2, linkZ, s);
-    b.pieces.push(...handle("panel", [x + s * 0.01, h / 2, plateZ - 0.085], s > 0 ? "x" : "-x", 0.09, 0.022));
+    const cheek = prism("cheek", [[z1, run(z1) + rim], [z1, h - run(z1) - rim], [z0, h - run(z0) - rim], [z0, run(z0) + rim]], tc, s * (inner / 2 + tc / 2), 0.0015);
+    sunk(b, cheek, [[[s, 0, 0], ds(s, tc, tc, { lip, walls: "cheek", floor: null })]]);
+  }
+  // a raised black steel frame round the cavity's mouth, standing a centimetre proud of the shell
+  const fw = 0.012, proud = 0.01, mw = span + 0.004, mh = gh + 0.004;
+  for (const k of [-1, 1]) {
+    b.pieces.push(box("panel", [mw + 2 * fw, fw, proud + 0.002], [0, yc + k * (mh + fw) / 2, front + proud / 2 - 0.001], { bevel: 0.003 }));
+    b.pieces.push(box("panel", [fw, mh, proud + 0.002], [k * (mw + fw) / 2, yc, front + proud / 2 - 0.001], { bevel: 0.003 }));
+  }
+  // the panels: black steel backed nearly solid, set back inside the frame, so the drivers well behind them are only a shadow
+  const gz = front - g - 0.012, sit = 0.03, deep = cave - (front - gz) - sit - 0.006;
+  xs.forEach((x, i) => {
+    const [sheet, edge] = grilleSlab(ws[i], gh, g, yc, gz, 0.004, new THREE.Matrix4().makeTranslation(x, 0, 0));
+    b.pieces.push({ ...sheet, slot: "mesh" }, { ...edge, slot: "knob" });
+    const at = new THREE.Matrix4().makeTranslation(x, yc, gz - sit);
+    if (i === 1) b.pieces.push(...horn(cw * 0.7, gh * 0.86, deep, at, 10));
+    else b.pieces.push(...cone(Math.min(sw, gh) * 0.42, deep, at, 10));
+  });
+  grillePlate(b, new THREE.Matrix4().makeTranslation(xs[2] + sw / 2 - 0.04, yc - gh / 2 + 0.02, gz + g));
+  // the rigging, black steel: a pin through each hole the hang uses, each pin on a wire lanyard to an eye beside it
+  const pin = (x: number, y: number, z: number, s: number, t: number) => {
+    const head: THREE.Vector3Tuple = [x + s * 0.019, y, z], eye: THREE.Vector3Tuple = [x + s * 0.014, y + t * 0.055, z - 0.026];
+    b.pieces.push(disc("chrome", 0.0075, 0.032, "x", [x, y, z], 8), disc("knob", 0.012, 0.007, "x", head, 8), disc("chrome", 0.0045, 0.005, "x", eye, 6));
+    const sag: THREE.Vector3Tuple = [x + s * 0.02, (y + eye[1]) / 2 - 0.012, (z + eye[2]) / 2 + 0.004];
+    b.pieces.push(rod("metal", head, sag, 0.0012, 3), rod("metal", sag, eye, 0.0012, 3));
+  };
+  for (const s of [-1, 1]) {
+    const x = s * (w / 2 - 0.012), rx = s * (w / 2 - 0.0115);
+    // the front corner rail: a heavy U channel the full height, wrapped round onto the front beside the frame, its two
+    // flanges standing out past the web; the pins top and bottom, a cast grip on a bracket between them
+    b.pieces.push(box("panel", [0.03, h - 0.002, 0.094], [s * (w / 2 - 0.015), h / 2, plateZ - 0.004], { bevel: 0.005 }));
+    b.pieces.push(box("panel", [w / 2 - inner / 2 + 0.006, h - 0.002, 0.012], [s * (w / 2 + inner / 2 - 0.006) / 2, h / 2, front + 0.004], { bevel: 0.003 }));
+    for (const k of [-1, 1]) b.pieces.push(box("panel", [0.012, h - 0.004, 0.011], [s * (w / 2 + 0.004), h / 2, plateZ + k * 0.04], { bevel: 0.003 }));
+    pinY.forEach((y, i) => pin(x, y, plateZ, s, i ? -1 : 1));
+    const gx = s * (w / 2 - 0.002), out = s * 0.022, gy = 0.055;
+    b.pieces.push(box("panel", [0.008, 2 * gy + 0.03, 0.05], [gx, h / 2, plateZ], { bevel: 0.002 }));
+    for (const k of [-1, 1]) b.pieces.push(rod("knob", [gx, h / 2 + k * gy, plateZ], [gx + out, h / 2 + k * gy * 0.85, plateZ], 0.009, 6));
+    b.pieces.push(rod("knob", [gx + out, h / 2 - gy * 0.85 - 0.006, plateZ], [gx + out, h / 2 + gy * 0.85 + 0.006, plateZ], 0.011, 6));
+    // the rear link bar: drilled down its length in two staggered rows of splay holes, the pin in the one this box hangs at
+    b.pieces.push(box("panel", [0.021, bh - 0.004, 0.06], [rx, h / 2, linkZ], { bevel: 0.004 }));
+    for (let i = 0; i < 6; i++) for (const k of [-1, 1]) {
+      const y = h / 2 + (i / 5 - 0.5) * bh * 0.82 + (k > 0 ? bh * 0.04 : 0);
+      if (k > 0 && i === 5) continue;
+      b.pieces.push(disc("knob", 0.004, 0.0225, "x", [rx, y, linkZ + k * 0.017], 6));
+    }
+    pin(rx, h / 2 + bh * 0.2, linkZ, s, -1);
   }
   const bz = back + rec - 0.008;
   plate(b, pw, ph, [px, py, bz + 0.004]);

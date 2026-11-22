@@ -12,7 +12,7 @@
 //                                              plus a job per bootOn target: desktop-hourly.yml, not PRs
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
-//                                              (all of them if the pipeline itself changed)
+//                                              (one app per build path if the pipeline itself changed: dropSample)
 //
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
@@ -168,6 +168,18 @@ export function reachedApps(app: string, root = join(import.meta.dir, "..")): st
 export const sparseDirs = (app: string, root?: string) =>
   [...new Set([app, ...(APPS[app]!.with ?? []), ...reachedApps(app, root)])].map((n) => `/${appDir(n, root)}/`).join("\n");
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
+// A PR that changes the drop pipeline (drop.ts, scripts/mac/, the workflow, this file's machinery) dry-runs one app per
+// build path, not every app: every app was up to about 70 jobs a push, 26 of them macOS drop jobs, and in the week to
+// 2026-11-21 that was two thirds of the runner time of apps.yml and typecheck.yml put together (notes/CI_STALL_2026-11-21.md, #4136).
+// The paths: the default cross-compile from Linux, a row with its own build command, and a Rust cdylib on one runner
+// per OS. The cost: an app-specific build break from a pipeline change shows at its next real drop, or in a dry run of
+// "all" from the Actions tab, which a pipeline PR should still get before it merges.
+export function dropSample(apps: Record<string, App>): string[] {
+  const dropping = Object.keys(apps).filter((n) => apps[n]!.drop !== false);
+  const paths = [(a: App) => !a.perOs && !a.build, (a: App) => !a.perOs && !!a.build, (a: App) => !!a.perOs];
+  return paths.map((is) => dropping.find((n) => is(apps[n]!))).filter((n): n is string => !!n);
+}
+
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
 
@@ -200,7 +212,7 @@ if (cmd === "drop") {
     if (!base) throw new Error("drop pr needs a base ref");
     const pipeline = (await changedFiles(base)).some((f) => /^(scripts\/drop\.ts$|scripts\/mac\/|\.github\/workflows\/desktop-drop\.yml$)/.test(f));
     const rows = pipeline ? "all" : await rowChanges(base);
-    names = rows === "all" ? Object.keys(APPS) : [...rows];
+    names = rows === "all" ? dropSample(APPS) : [...rows];
   } else names = arg === "all" || !arg ? Object.keys(APPS) : arg.split(/[\s,]+/).filter(Boolean);
   names = names.filter((n) => APPS[n]?.drop !== false);
   const unknown = names.filter((n) => !APPS[n]);

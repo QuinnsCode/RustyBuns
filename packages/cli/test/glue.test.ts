@@ -12,7 +12,7 @@ import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports, 
 
 // Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
-const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
+const root = new URL("../../../apps/frameworks/spa-example", import.meta.url).pathname;
 
 test("infer: framework, pm, deps, vite aliases from the repo itself", () => {
   const i = infer(root);
@@ -208,19 +208,19 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
 
 test("add deploy: pinned install command and overrides per package manager", async () => {
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.84 @alchemy\.run\/cloudflare@2\.0\.0-beta\.84 .*@alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.84 effect@4\.0\.5 /);
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.87 @alchemy\.run\/cloudflare@2\.0\.0-beta\.87 .*@alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.87 effect@4\.1\.4 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
-  expect(installCommand("npm", false)).toMatch(/^npm i -D -E alchemy@2\.0\.0-beta\.84 /);
+  expect(installCommand("npm", false)).toMatch(/^npm i -D -E alchemy@2\.0\.0-beta\.87 /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
   expect(p.pkg.pnpm.overrides["@types/three"]).toBe("0.185.4");
-  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.5");
-  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.5");
+  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.1.4");
+  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.1.4");
 });
 
 test("add deploy: an override whose range covers the pin is left alone", async () => {
   const { applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  for (const [have, want] of [["^4.0.5", "^4.0.5"], [undefined, "4.0.5"], ["^3.0.0", "4.0.5"]] as const) {
+  for (const [have, want] of [["^4.1.4", "^4.1.4"], [undefined, "4.1.4"], ["^3.0.0", "4.1.4"]] as const) {
     const pkg = applyOverrides({ overrides: have ? { effect: have } : {} }, "bun").pkg;
     expect([have, pkg.overrides.effect]).toEqual([have, want]);
   }
@@ -848,6 +848,33 @@ test("placement: Smart Placement on the edge, both ways through wrangler.jsonc",
   expect(generateAlchemy({ ...c, worker: { ...c.worker, placement: undefined } })).not.toContain("placement");
   expect(wranglerToConfig({ name: "g", placement: { mode: "smart" } }).worker!.placement).toEqual({ mode: "smart" });
   expect(wranglerToConfig({ name: "g" }).worker!.placement).toBeUndefined();
+});
+
+test("codeUpdate: busy Durable Objects' code-update strategy, both ways through wrangler.jsonc", async () => {
+  const { decodeConfig } = await import("../src/config-schema.ts");
+  const { Effect } = await import("effect");
+  const c = (codeUpdate: unknown) => ({
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], codeUpdate },
+    bindings: { ROOM: { type: "durable_object", className: "Room" } }, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  }) as any;
+  const rows: ["immediate" | { maxDelay: number } | undefined, { mode: "immediate" | "deferred"; max_delay?: number } | undefined, string | undefined][] = [
+    [{ maxDelay: 60 }, { mode: "deferred", max_delay: 60 }, `{"mode":"deferred","maxDelay":"60 seconds"}`],
+    ["immediate", { mode: "immediate" }, `{"mode":"immediate"}`],
+    [undefined, undefined, undefined],
+  ];
+  for (const [codeUpdate, wrangler, alchemy] of rows) {
+    const out = JSON.parse(generateWrangler(c(codeUpdate)).replace(/^\/\/.*\n/gm, ""));
+    expect(out.durable_objects.bindings[0].class_name).toBe("Room");
+    expect(out.durable_objects.code_update_strategy).toEqual(wrangler);
+    const stack = generateAlchemy(c(codeUpdate));
+    if (alchemy) expect(stack).toContain(`  codeUpdateStrategy: ${alchemy},`);
+    else expect(stack).not.toContain("codeUpdateStrategy");
+    expect(wranglerToConfig({ name: "g", durable_objects: { code_update_strategy: wrangler } }).worker!.codeUpdate).toEqual(codeUpdate);
+  }
+  // Cloudflare's own default, written out, reads back as nothing set.
+  expect(wranglerToConfig({ name: "g", durable_objects: { code_update_strategy: { mode: "deferred" } } }).worker!.codeUpdate).toBeUndefined();
+  const ok = (v: unknown) => Effect.runPromise(decodeConfig(c(v)).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true })));
+  expect([await ok({ maxDelay: 300 }), await ok("immediate"), await ok({ maxDelay: 90_000 }), await ok("deferred")]).toEqual([true, true, false, false]);
 });
 
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {

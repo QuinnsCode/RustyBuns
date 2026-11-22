@@ -12,6 +12,7 @@
 //   repo.visibility / repo.delete
 //   hook.create / hook.delete              a webhook (hooks.ts)
 //   deploy_key.set / deploy_key.delete     a hosted deploy's key (deploy-keys.ts)
+//   ssh_key.add / ssh_key.remove           an SSH key for git over ssh:// (ssh-keys.ts)
 //   git.push                               a push to the repo's git from outside the app (push-events.ts)
 //
 //   GET /api/repos/:o/:r/audit   the repo's last 100 (owner only), on its settings

@@ -52,3 +52,5 @@ body.embedded .top, body.embedded .capture, body.embedded .view > :not(.stage) {
 body.embedded main { display: block; padding: 0; max-width: none; }
 body.embedded .view { border: 0; padding: 0; border-radius: 0; background: none; }
 body.embedded .stage { aspect-ratio: auto; height: 100vh; border: 0; border-radius: 0; }
+.drop button.link { background: none; border: 0; padding: 0; font: inherit; }
+.capture .hint { color: var(--muted); margin: 0; }

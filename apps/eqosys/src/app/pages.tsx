@@ -54,7 +54,8 @@ export const MESSAGES: Record<string, string> = {
   ssodomain: "Your company signed you in with an email off its domain, so it can't sign you in here.",
   ssotaken: "An account with that email was made another way. Sign in with it as usual.",
   ssoform: "Check the company sign-in: an https issuer that answers OpenID discovery, a client id, and the company's own mail domain (not public mail).",
-  ssoclash: "Another studio already signs in that domain.",
+  ssoclash: "Another studio already signs in that domain. If it's your company's, add the TXT record shown under Company sign-in to it, then save again.",
+  ssoproof: "That TXT record isn't on the domain yet. DNS can take a few minutes; check again after.",
 };
 
 const nameOf = (id: string) => cardOf(id, ourApp(id)?.name ?? id).name;

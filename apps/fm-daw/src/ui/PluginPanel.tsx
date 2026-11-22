@@ -1,6 +1,7 @@
 // A track's sound picked off the track menu: its own FM voice, a CLAP plugin on this computer (#5265), or a Web Audio
 // Module played in the page (#4899): one FM DAW carries, or one from a link. On a plugin track the plugin's parameters
-// are the sliders, MIDI learn works on them, and a plugin that stops says so here.
+// are the sliders, MIDI learn works on them, and a plugin that stops says so here. An FM track's Insert (#5359) puts a
+// web effect on its sound, picked the same way.
 import { useEffect, useState } from "react";
 import type { TrackDoc } from "../project.ts";
 import { ownCopy, type PluginChoice, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
@@ -12,11 +13,20 @@ import { siteOf } from "./wam.ts";
 
 const STEPS = 1000;
 
-/** The track menu: FM, or one of the plugins found. The current plugin stays listed even when this computer hasn't got it. */
-export function TrackSound(props: { track: TrackDoc; choices: () => Promise<PluginChoice[]>; onPlugin(p: TrackPlugin | null): void }) {
+const SLOTS = {
+  plugin: { label: "Plays", none: "FM synth", link: "A web plugin from a link…", aria: "What plays this track" },
+  insert: { label: "Insert", none: "None", link: "A web effect from a link…", aria: "The effect on this track's sound" },
+};
+
+/**
+ * The track menu: FM, or one of the plugins found. The current plugin stays listed even when this computer hasn't got
+ * it. With `slot` "insert", the track's Insert: no effect, or one of the effects.
+ */
+export function TrackSound(props: { track: TrackDoc; choices: () => Promise<PluginChoice[]>; onPlugin(p: TrackPlugin | null): void; slot?: "plugin" | "insert" }) {
+  const words = SLOTS[props.slot ?? "plugin"];
   const [list, setList] = useState<PluginChoice[] | null>(null);
   useEffect(() => { let on = true; void props.choices().then((l) => { if (on) setList(l); }); return () => { on = false; }; }, [props.choices]);
-  const cur = props.track.plugin;
+  const cur = props.slot === "insert" ? props.track.insert : props.track.plugin;
   const [link, setLink] = useState<string | null>(null);
   const key = (c: { path: string; index: number; web?: boolean }) => `${c.web ? "w" : ""}${c.index}:${c.path}`;
   // a friend's groove names the plugin in their folder: this computer's own copy is the one picked in the menu
@@ -39,18 +49,18 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
     </form>
   );
   return (
-    <label className="field inline"><span className="silk">Plays</span>
-      <select value={cur ? key(mine ?? cur) : ""} aria-label="What plays this track"
+    <label className="field inline"><span className="silk">{words.label}</span>
+      <select value={cur ? key(mine ?? cur) : ""} aria-label={words.aria}
         onChange={(e) => {
           if (e.currentTarget.value === "link") return setLink("");
           const c = all.find((x) => key(x) === e.currentTarget.value);
           props.onPlugin(c ? { path: c.path, index: c.index, ...(c.id ? { id: c.id } : {}), name: c.name, ...(c.web ? { web: true } : {}), values: [] } : null);
         }}>
-        <option value="">FM synth</option>
+        <option value="">{words.none}</option>
         {all.length > 0 && <optgroup label="Plugins">
           {all.map((c) => <option key={key(c)} value={key(c)}>{c.name}{c.vendor ? ` · ${c.vendor}` : ""}</option>)}
         </optgroup>}
-        <option value="link">A web plugin from a link…</option>
+        <option value="link">{words.link}</option>
       </select>
     </label>
   );
@@ -85,6 +95,33 @@ export function PluginPanel(props: { track: TrackDoc; color: string; shown: Plug
           <Slider label="Level" index={P.GAIN} value={props.track.params[P.GAIN]} onChange={(v) => props.onParam(P.GAIN, v)} />
         </fieldset>
       </div>
+    </section>
+  );
+}
+
+/** An FM track's effect: its sliders, and how it's doing (the track plays dry until it runs). */
+export function InsertPanel(props: { track: TrackDoc; color: string; shown: PluginShown | undefined; onValue(id: number, v: number): void; onEditor(): Promise<string | null>; onTrust(): void }) {
+  const s = props.shown, fx = props.track.insert;
+  const [editorNote, setEditorNote] = useState<string | null>(null);
+  if (!fx) return null;
+  return (
+    <section className="patch" style={{ "--track": props.color } as React.CSSProperties} aria-label={`${props.track.name} insert`}>
+      <header className="patch-head">
+        <h2>Insert <span className="dim">· {fx.name}</span></h2>
+        {s?.editor && !s.error && <div className="patch-actions">
+          <button className="ghost" title="Open the effect's own window" onClick={() => { void props.onEditor().then(setEditorNote); }}>Editor</button>
+        </div>}
+      </header>
+      {editorNote && <p className="note-bar" role="status">{editorNote}</p>}
+      {s?.site ? <p className="note-bar" role="alert">{s.error}. A plugin is code: it can do anything this page can, as you. Say yes only for a site you know. The track plays dry until then.{" "}
+          <button className="ghost" onClick={props.onTrust}>Let {new URL(s.site).host} run plugins here</button></p>
+        : s?.error ? <p className="note-bar" role="alert">{s.error}. The track plays dry.</p>
+        : s?.starting || !s ? <p className="dim">Starting {fx.name}…</p>
+        : s.params.length === 0 ? <p className="dim">{fx.name} has no sliders.</p> : null}
+      {!!s?.params.length && <div className="voice"><fieldset className="op">
+        <legend><span className="silk">{fx.name}</span></legend>
+        {s.params.map((q) => <PluginSlider key={q.id} param={q} onChange={(v) => props.onValue(q.id, v)} />)}
+      </fieldset></div>}
     </section>
   );
 }

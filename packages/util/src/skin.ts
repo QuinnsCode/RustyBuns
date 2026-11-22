@@ -84,6 +84,7 @@ const BASE = `
 .rb-spaces-log .rb-spaces-reply:hover,.rb-spaces-log .rb-spaces-reply:focus-visible{opacity:1}
 .rb-spaces-online{min-width:110px;max-width:45%;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
 .rb-spaces-online li{justify-content:space-between;flex-wrap:wrap}
+.rb-spaces-status{flex-basis:100%;color:var(--ui-mut,inherit);opacity:.8;font-size:12px}.rb-spaces-mine input{width:100%;min-width:0}
 .rb-spaces-older{align-self:center}.rb-spaces-note,.rb-spaces-empty{margin:0;font-size:13px;color:var(--ui-dim)}.rb-spaces-note{color:var(--ui-accent)}
 .rb-spaces-voice{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;min-height:80px}
 .rb-spaces-speakers{display:flex;flex-wrap:wrap;gap:6px}

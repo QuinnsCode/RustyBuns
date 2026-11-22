@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { callDrain, drainFlags } from "../src/drain.ts";
+import { callDrain, drainFlags, oldCodeNote } from "../src/drain.ts";
 
 test("--drain-url turns the warning on, with a 30 s grace unless --drain-seconds says otherwise", () => {
   expect(drainFlags(["--yes"])).toEqual({ url: undefined, seconds: 30, rest: ["--yes"] });
@@ -20,4 +20,9 @@ test("callDrain sends the secret and the grace, and answers null rather than fai
   expect(await callDrain("https://x.dev", "s", { in: 1 }, (async () => { throw new Error("down"); }) as unknown as typeof fetch)).toBeNull();
   // an app whose route answers something else (its own JSON) didn't drain anything
   expect(await callDrain("https://x.dev", "s", { in: 1 }, (async () => Response.json({ ok: true })) as unknown as typeof fetch)).toBeNull();
+});
+
+test("after a deploy, the old-code window follows worker.codeUpdate", () => {
+  expect([undefined, { maxDelay: 60 }, { maxDelay: 90 }].map((c) => oldCodeNote(c).match(/up to ([^;]+);/)?.[1])).toEqual(["5 minutes", "1 minute", "90 seconds"]);
+  expect(oldCodeNote("immediate")).toContain("at once");
 });

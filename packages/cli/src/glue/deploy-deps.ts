@@ -7,25 +7,25 @@ import { maybe, obj, opt, rec, str } from "@rustybuns/shell-bun/guard";
 // every package here is pinned exactly and (on pnpm) forced via overrides.
 // Bump this table when Alchemy bumps its peers.
 export const DEPLOY_DEPS: Record<string, string> = {
-  "alchemy": "2.0.0-beta.84",
+  "alchemy": "2.0.0-beta.87",
   // Providers are their own packages since beta.84; the generated stack imports whichever its config uses.
-  "@alchemy.run/cloudflare": "2.0.0-beta.84",
-  "@alchemy.run/hetzner": "2.0.0-beta.84",
-  "@alchemy.run/railway": "2.0.0-beta.84",
-  "@alchemy.run/neon": "2.0.0-beta.84",
+  "@alchemy.run/cloudflare": "2.0.0-beta.87",
+  "@alchemy.run/hetzner": "2.0.0-beta.87",
+  "@alchemy.run/railway": "2.0.0-beta.87",
+  "@alchemy.run/neon": "2.0.0-beta.87",
   // Alchemy's optional peer, loaded by the Railway provider even for a plain Service.
-  "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
-  "effect": "4.0.5",
-  "@effect/platform-bun": "4.0.5",
-  "@effect/platform-node": "4.0.5",
+  "@alchemy.run/frontend-frameworks": "2.0.0-beta.87",
+  "effect": "4.1.4",
+  "@effect/platform-bun": "4.1.4",
+  "@effect/platform-node": "4.1.4",
 };
 /** Transitive @effect/* packages that must match `effect` exactly. */
 export const DEPLOY_OVERRIDES: Record<string, string> = {
-  "effect": "4.0.5",
-  "@effect/platform-bun": "4.0.5",
-  "@effect/platform-node": "4.0.5",
-  "@effect/platform-node-shared": "4.0.5",
-  "@effect/vitest": "4.0.5",
+  "effect": "4.1.4",
+  "@effect/platform-bun": "4.1.4",
+  "@effect/platform-node": "4.1.4",
+  "@effect/platform-node-shared": "4.1.4",
+  "@effect/vitest": "4.1.4",
 };
 
 /** A package.json's dependencies and devDependencies, as name -> version. */
@@ -86,7 +86,7 @@ export function applyOverrides(pkg: any, pm: string): { pkg: any; changed: boole
   const before = JSON.stringify(target[key] ?? {});
   // npm overrides nest (a package can hold its own map), so the values stay unknown: only our pins are strings.
   const next: Record<string, unknown> = { ...(target[key] ?? {}) };
-  // A range that already covers the pin stays: narrowing a monorepo root's "^4.0.5" to "4.0.5" would downgrade every app (#3803).
+  // A range that already covers the pin stays: narrowing a monorepo root's "^4.1.4" to "4.1.4" would downgrade every app (#3803).
   for (const [name, pin] of Object.entries(DEPLOY_OVERRIDES)) {
     const have = next[name];
     if (typeof have !== "string" || !Bun.semver.satisfies(pin, have)) next[name] = pin;

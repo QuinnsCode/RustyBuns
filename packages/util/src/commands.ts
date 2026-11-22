@@ -161,3 +161,46 @@ export function askArgs(c: Pick<Command, "inputSchema">, line: string): { [arg: 
   const type = prop && Reflect.get(prop, "type");
   return { [key]: type === "number" || type === "integer" ? Number(line) : line };
 }
+
+/** One step of a game's how-to: a tutorial step's words (tutorial.ts `steps()`), or one the game writes. */
+export interface HowToStep { title: string; say?: string; keys?: string[] }
+
+/**
+ * What `<prefix>_how_to_play` answers: the goal, the controls on a computer and on a phone, and the first thing to
+ * do, in the words the page already shows a person (its "?" panel, its coach card). `steps` is the tutorial's
+ * walk-through where the game has one.
+ */
+export interface HowTo { goal: string; desktop: string; phone: string; first: string; steps?: HowToStep[] }
+
+/**
+ * A read-only `<prefix>_how_to_play` command: an agent's first call on a game it has never seen. `read` runs at each
+ * call, so it reads the page's words as they are now (a rebound key, a panel filled in late) rather than a copy.
+ */
+export const howToPlay = (prefix: string, read: () => HowTo): Command => ({
+  name: `${prefix}_how_to_play`, title: "How to play", group: "Help",
+  description: "How to play this game, in the words the page shows a person: the goal, the controls on a computer and on a phone, and the first thing to do (plus the tutorial's steps, when it has one). Read this first.",
+  annotations: { readOnlyHint: true }, execute: () => read(),
+});
+
+const tidy = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+const SKIP = /^(SCRIPT|STYLE|BUTTON|svg|CANVAS)$/;
+const BLOCK = /^(P|DIV|DL|DT|DD|UL|OL|LI|H[1-6]|SECTION|ASIDE|HEADER|FOOTER|FIGURE|FIGCAPTION|TABLE|TR)$/;
+
+/**
+ * An element's words as plain text: a line per paragraph, heading or list item, and a `<dt>`/`<dd>` pair as
+ * "key: what it does". Reads hidden ones too (a closed popover), so a "?" panel answers without opening it. "" for none.
+ */
+export function wordsOf(el: Element | null | undefined): string {
+  if (!el) return "";
+  const lines: string[] = [];
+  const walk = (e: Element) => {
+    const kids = [...e.children].filter((c) => !SKIP.test(c.tagName));
+    if (!kids.some((c) => BLOCK.test(c.tagName))) { const t = tidy(e.textContent); if (t) lines.push(t); return; }
+    for (const c of kids) {
+      if (c.tagName === "DT") lines.push(`${tidy(c.textContent)}: ${tidy(c.nextElementSibling?.tagName === "DD" ? c.nextElementSibling.textContent : "")}`);
+      else if (c.tagName !== "DD") walk(c);
+    }
+  };
+  walk(el);
+  return lines.join("\n");
+}

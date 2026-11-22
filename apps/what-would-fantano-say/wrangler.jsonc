@@ -15,6 +15,11 @@
   "ai": {
     "binding": "AI"
   },
+  "kv_namespaces": [
+    {
+      "binding": "REVIEWS"
+    }
+  ],
   "ratelimits": [
     {
       "name": "REVIEW_LIMIT",

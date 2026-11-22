@@ -1,0 +1,39 @@
+{
+  "name": "astro-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "deploy": "astro build && wrangler deploy",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "14.4.3",
+    "astro": "7.4.7"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.87",
+    "@alchemy.run/hetzner": "2.0.0-beta.87",
+    "@alchemy.run/neon": "2.0.0-beta.87",
+    "@alchemy.run/railway": "2.0.0-beta.87",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "4.1.4",
+    "wrangler": "4.156.0"
+  },
+  "overrides": {
+    "effect": "4.1.4",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
+    "@effect/platform-node-shared": "4.1.4",
+    "@effect/vitest": "4.1.4"
+  }
+}
