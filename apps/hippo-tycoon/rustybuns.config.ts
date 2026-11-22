@@ -28,9 +28,6 @@ export default defineConfig({
       // Guests must speak the same wire protocol (a browser page cannot know the host's build string).
       guests: { max: 3, version: LAN_VERSION },
     },
-    // rustybuns build steam: this desktop host in an Electron window, one depot per OS (#2877).
-    // 480 is Valve's Spacewar test app until Steamworks gives Hippo Tycoon its own (#2885).
-    steam: { appId: 480, title: "Hippo Tycoon" },
   },
   source: { dir: "src", aliases: {} },
 });

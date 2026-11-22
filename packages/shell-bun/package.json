@@ -32,7 +32,6 @@
     "./priority": "./src/priority.ts",
     "./profsummary": "./src/profsummary.ts",
     "./shims": "./src/shims.ts",
-    "./steam": "./src/steam.ts",
     "./usage": "./src/usage.ts",
     "./webmcp": "./src/webmcp.ts",
     "./workerd-global": "./src/workerd-global.ts"

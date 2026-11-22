@@ -1,5 +1,5 @@
 // One browser task, done the four ways an agent can, with what each costs in tokens: the numbers WEBMCP.md quotes for eqosys.
-// The task: "how many achievements have I unlocked, of how many, in each Sports & Skate game?"
+// The task: "how many achievements have I unlocked, of how many, in each game?"
 // Tokens are characters / 4 on the exact text sent and received (codeSplitter's yardstick); a screenshot is width × height / 750
 // on Claude, and the number of them is the Trophies tab's real height in Chrome at 1280 × 800, one screen per 800 px plus the
 // home page the agent starts on.
@@ -18,7 +18,7 @@ import { ACHIEVEMENTS } from "../src/achievements.ts";
 import { asks, boot, PARK, PASSWORD } from "./kit.ts";
 
 setDefaultTimeout(60_000);
-const W = 1280, H = 800, GENRE = "Sports & Skate";
+const W = 1280, H = 800, GENRE = "Games";
 const tokens = (x: unknown) => Math.ceil((typeof x === "string" ? x : JSON.stringify(x)).length / 4);
 const want = APPS.filter((a) => a.genre === GENRE && ACHIEVEMENTS[a.id]).map((a) => a.id).sort();
 
