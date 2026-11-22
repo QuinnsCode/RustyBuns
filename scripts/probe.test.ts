@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { HANDLES, MAX_OUT, listLines, parse, show } from "./probe.ts";
+import { HANDLES, MAX_OUT, asyncBody, listLines, parse, show } from "./probe.ts";
 
 test("the app, path and flags parse, and a game's default expression is its state", () => {
   expect(parse(["mythic-masters", "?a=hodag&b=squonk"])).toMatchObject({ app: "mythic-masters", path: "/?a=hodag&b=squonk", js: HANDLES["mythic-masters"]!.state, size: { w: 1280, h: 720 }, mobile: false, settle: 3000 });
@@ -18,4 +18,14 @@ test("a long answer is cut with a note, and the list names every handle", () => 
   expect(big.length).toBeLessThan(MAX_OUT + 80);
   expect(big).toContain("more characters: ask for less");
   expect(listLines().join("\n")).toContain("mythic-masters: mythicMasters.state()");
+});
+
+test("--js is an async function body: statements run and the last expression is the answer (#5560)", async () => {
+  const run = (js: string) => new Function(`return (async () => {\n${asyncBody(js)}\n})()`)() as Promise<unknown>;
+  expect(await run("1 + 1")).toBe(2);
+  expect(await run("const c = await Promise.resolve(3); const d = 'a;b'; ({ c, d })")).toEqual({ c: 3, d: "a;b" });
+  expect(await run("globalThis.__c = await Promise.resolve(4); await new Promise(r => setTimeout(r, 1)); ({ c: globalThis.__c });")).toEqual({ c: 4 });
+  expect(await run("(async () => { const x = 5; return x })()")).toBe(5);
+  expect(await run("const x = 6; return x")).toBe(6);
+  expect(await run("[1, 2].map(n => { const m = n * 2; return m }) // doubled")).toEqual([2, 4]);
 });
