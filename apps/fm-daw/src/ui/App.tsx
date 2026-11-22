@@ -987,7 +987,7 @@ export function App() {
               onNotes={(i, notes) => commit({ t: "notes", track: i, notes: unwindow(project.tracks[i], notes) })} />
           </>) : (<>
             {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
-            <PianoRoll key={selected} track={windowed(t)} color={color} loopBeats={win.span} from={win.from} grid={Math.min(grid.beats, 0.25)}
+            <PianoRoll key={selected} track={windowed(t)} color={color} loopBeats={win.span} from={win.from} grid={grid.beats}
               onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: unwindow(t, notes) })}
               onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />
           </>)}
