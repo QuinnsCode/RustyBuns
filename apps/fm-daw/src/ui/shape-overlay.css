@@ -1,0 +1,36 @@
+/* Shape over the gear and jam rooms (shape-overlay.tsx): FM DAW's colours and the few controls Shape uses, kept
+   inside the dialog so the room's own look is left alone. Shape's own rules are shape.css. */
+.shape-overlay {
+  --bg: #141518; --panel: #1d1f23; --raised: #262930; --edge: #33373f; --ink: #eceef1; --dim: #9aa1ab;
+  --hot: #ff4d3d; --ok: #4fd18b; --warn: #ffb000; --cell: #2b2f37;
+  --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: system-ui, sans-serif;
+  --mono: ui-monospace, monospace;
+  color-scheme: dark;
+  position: fixed; z-index: 60; left: 50%; top: 50%; translate: -50% -50%;
+  width: min(960px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
+  color: var(--ink); font: 14px/1.45 var(--body); box-shadow: 0 16px 48px #000a; border-radius: 6px;
+}
+.shape-overlay *, .shape-overlay *::before, .shape-overlay *::after { box-sizing: border-box; }
+.shape-overlay button, .shape-overlay input, .shape-overlay select { font: inherit; color: inherit; }
+.shape-overlay button { cursor: pointer; }
+.shape-overlay button:disabled { opacity: .45; cursor: default; }
+.shape-overlay .silk { display: block; font: 600 .78rem/1.1 var(--silk); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shape-overlay .dim { color: var(--dim); }
+.shape-overlay .spacer { flex: 1; }
+.shape-overlay .field { display: grid; gap: 4px; }
+.shape-overlay .field.inline { display: flex; align-items: center; gap: 8px; }
+.shape-overlay .check { display: flex; align-items: center; gap: 6px; font: 600 .85rem var(--silk); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.shape-overlay .check input { accent-color: var(--ink); }
+.shape-overlay .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; }
+.shape-overlay .seg button { padding: 6px 12px; border: 0; background: var(--raised); font: 600 .9rem var(--silk); letter-spacing: .04em; }
+.shape-overlay .seg button + button { border-left: 1px solid var(--edge); }
+.shape-overlay .seg button.on { background: var(--ink); color: var(--panel); }
+.shape-overlay .ghost { padding: 6px 12px; border: 1px solid var(--edge); border-radius: 4px; background: transparent; font: 600 .9rem var(--silk); letter-spacing: .04em; }
+.shape-overlay .ghost:hover:not(:disabled) { background: var(--raised); }
+.shape-overlay .learn-map { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; font: 500 .72rem var(--mono); }
+.shape-overlay-head { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 220px; }
+.shape-overlay-note { font-size: .75rem; white-space: nowrap; }
+.shape-overlay-close { margin-left: auto; padding: 4px 6px; display: inline-grid; place-items: center; }
+.shape-overlay-ro .shape-plot, .shape-overlay-ro .shape-band, .shape-overlay-ro .shape-dots { pointer-events: none; opacity: .7; }
+@media (max-width: 520px) { .shape-overlay { top: auto; bottom: 0; translate: -50% 0; width: 100vw; max-height: 85dvh; border-radius: 6px 6px 0 0; } .shape-overlay-note { display: none; } }
