@@ -1,0 +1,175 @@
+<title>Testing Our Agents</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* One column, read top to bottom: the question, the one idea, the rings applied to agents, what is built.
+   Palette: the release rings' cave-to-town bands, moss for built, lantern gold for new. */
+:root {
+  --bg: #f2f3ef; --panel: #ffffff; --ink: #1c2220; --muted: #5a6560; --line: #d5dad4;
+  --accent: #c25e12;
+  --band0: #2c2940; --band1: #42564d; --band2: #8c6a37; --band3: #e4dfcf;
+  --label-dark: #f3efe2; --label-light: #2a2a22;
+  --ok: #2fa65a; --bad: #d93b41; --gold: #b98500; --code: #e6e8e3;
+  --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111413; --panel: #191d1b; --ink: #e5eae6; --muted: #98a39d; --line: #2a312d;
+  --accent: #f0883e;
+  --band0: #08070f; --band1: #1a2622; --band2: #46321a; --band3: #36332a;
+  --label-dark: #efe9d8; --label-light: #efe9d8;
+  --ok: #46c46f; --bad: #f2555a; --gold: #f5c033; --code: #222825; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111413; --panel: #191d1b; --ink: #e5eae6; --muted: #98a39d; --line: #2a312d;
+  --accent: #f0883e;
+  --band0: #08070f; --band1: #1a2622; --band2: #46321a; --band3: #36332a;
+  --label-dark: #efe9d8; --label-light: #efe9d8;
+  --ok: #46c46f; --bad: #f2555a; --gold: #f5c033; --code: #222825; color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--body); margin: 0; }
+.wrap { max-width: 900px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 56px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.2rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 1.6rem; font-weight: 800; }
+p { margin: 0; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+.eyebrow { font: 600 0.72rem/1 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+.sub { color: var(--muted); max-width: 64ch; margin-top: 10px; }
+section > header { margin-bottom: 20px; }
+.sym { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* The question */
+.ask { border-left: 3px solid var(--line); padding: 4px 0 4px 16px; color: var(--muted); max-width: 62ch; margin-top: 20px; font-size: 0.98rem; }
+.ask p + p { margin-top: 8px; }
+.answer { margin-top: 20px; font-size: 1.15rem; max-width: 60ch; }
+
+/* The one idea: what the agent was given, what it left, what it said */
+.split { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+.box { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.box.checked { border-color: var(--ok); }
+.box .lab { display: flex; gap: 8px; align-items: center; font: 600 0.9rem var(--display); }
+.box .lab svg { width: 16px; height: 16px; flex: none; }
+.box.checked .lab svg { color: var(--ok); }
+.box.skipped .lab svg { color: var(--muted); }
+.box pre { margin: 0; font: 0.85rem/1.5 var(--mono); background: var(--code); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; }
+.box .said { font-style: italic; color: var(--muted); font-size: 0.92rem; }
+.box small { color: var(--muted); font-size: 0.85rem; }
+
+/* The rings, for agents */
+.rings { display: grid; gap: 10px; }
+.ring { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+@media (max-width: 640px) { .ring { grid-template-columns: 1fr; } }
+.ring .cap { padding: 14px 16px; color: var(--label-dark); display: grid; gap: 2px; align-content: center; }
+.ring.light .cap { color: var(--label-light); }
+.ring .cap b { font: 800 1.1rem var(--display); }
+.ring .cap span { font: 500 0.78rem var(--mono); opacity: 0.85; }
+.ring .what { padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.ring .what b { font-weight: 600; }
+.ring .what p { color: var(--muted); font-size: 0.93rem; }
+.ring .tag { align-self: center; margin: 0 16px; font: 600 0.78rem var(--body); padding: 3px 10px; border-radius: 999px; border: 1.5px solid currentColor; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; justify-self: start; }
+@media (max-width: 640px) { .ring .tag { margin: 0 16px 14px; } }
+.tag svg { width: 13px; height: 13px; }
+.tag.built { color: var(--ok); } .tag.new { color: var(--gold); }
+
+/* What we have, what is missing */
+.status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .status { grid-template-columns: 1fr; } }
+.st { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel); display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 0.93rem; }
+.st svg { width: 18px; height: 18px; margin-top: 3px; }
+.st.done svg { color: var(--ok); } .st.open svg { color: var(--gold); }
+.st small { display: block; color: var(--muted); }
+.note { color: var(--muted); font-size: 0.93rem; max-width: 64ch; margin-top: 16px; }
+</style>
+
+<svg class="sym" aria-hidden="true">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/></symbol>
+    <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+    <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+<section>
+  <div class="eyebrow">Agent tests &middot; with the release rings</div>
+  <h1>Testing Our Agents</h1>
+  <div class="ask">
+    <p>The question: how do you test an agent when the model answers a little differently every time?</p>
+    <p>Recording real model calls and playing them back still breaks. Fake answers need their own checks, and those go stale. It seems you can't win.</p>
+  </div>
+  <p class="answer">Our answer: every PR plays back a recording, so it's fast, free and the same every run. Each night, the real model runs the same tests again. If the model's behaviour changes, we find out the next morning, not from a user.</p>
+</section>
+
+<section>
+  <header>
+    <div class="eyebrow">The one idea</div>
+    <h2>Check what the agent did, not what it said</h2>
+    <p class="sub">The model's words change from run to run. The work it leaves behind should not. So our tests check the files the agent changed and ignore its wording. This is our real <code>use-let</code> test.</p>
+  </header>
+  <div class="split">
+    <div class="box skipped"><div class="lab"><svg><use href="#i-file"/></svg>What it was given</div>
+<pre>var x = 1
+function f() {
+  return x
+}</pre>
+      <small>Task: use let</small></div>
+    <div class="box checked"><div class="lab"><svg><use href="#i-check"/></svg>What it left: tested</div>
+<pre>let x = 1
+function f() {
+  return x
+}</pre>
+      <small>The test checks this file exactly.</small></div>
+    <div class="box skipped"><div class="lab"><svg><use href="#i-msg"/></svg>What it said: not tested</div>
+      <p class="said">"Changed <code>var x</code> to <code>let x</code> in a.js."</p>
+      <small>Tomorrow it may say this differently. The test still passes.</small></div>
+  </div>
+</section>
+
+<section>
+  <header>
+    <div class="eyebrow">The rings, for agents</div>
+    <h2>Recordings up close, the real model further out</h2>
+    <p class="sub">The same rings as the release rings page, with one new job in the nightly ring.</p>
+  </header>
+  <div class="rings">
+    <div class="ring"><div class="cap" style="background:var(--band0)"><b>Cave</b><span>every PR</span></div>
+      <div class="what"><b>Play back the recording</b><p>No model, no login, no cost. If the agent is now handed different files than the recording was made with, the test stops and says to record again, so an old recording can't pass by accident.</p></div>
+      <span class="tag built"><svg><use href="#i-check"/></svg>Built</span></div>
+    <div class="ring"><div class="cap" style="background:var(--band1)"><b>Tunnels</b><span>every hour</span></div>
+      <div class="what"><b>Play back every recording</b><p>Every app's tests run, recordings included. Still no model calls.</p></div>
+      <span class="tag built"><svg><use href="#i-check"/></svg>Built</span></div>
+    <div class="ring"><div class="cap" style="background:var(--band2)"><b>Nightly market</b><span>every day</span></div>
+      <div class="what"><b>Ask the real model again</b><p>Run each recorded test against the real model. If the files still come out right, save the new recording. If they don't, open an issue with what changed. That is how we catch the model changing under us.</p></div>
+      <span class="tag new"><svg><use href="#i-sparkle"/></svg>New</span></div>
+    <div class="ring light"><div class="cap" style="background:var(--band3)"><b>Town</b><span>every Monday</span></div>
+      <div class="what"><b>You read a few real runs</b><p>Part of your taste walk: open a few of the week's agent runs and see if the choices make sense. Some questions only a person can answer.</p></div>
+      <span class="tag new"><svg><use href="#i-sparkle"/></svg>New</span></div>
+  </div>
+</section>
+
+<section>
+  <header>
+    <div class="eyebrow">Where it stands</div>
+    <h2>What we have, what is missing</h2>
+  </header>
+  <div class="status">
+    <div class="st done"><svg><use href="#i-check"/></svg><span>Record and play back model calls<small><code>apps/codesplitter/test/cassette.ts</code>, #5333</small></span></div>
+    <div class="st done"><svg><use href="#i-check"/></svg><span>A fake Claude for the parts around the model<small>sessions, resume, messages mid-run: <code>fake-claude.ts</code></small></span></div>
+    <div class="st done"><svg><use href="#i-check"/></svg><span>Old recordings fail loudly<small>they stop when the files they were made with change</small></span></div>
+    <div class="st open"><svg><use href="#i-circle"/></svg><span>Only 2 recordings, only in codeSplitter<small>the office, Mervin, Ester and the game agents have none</small></span></div>
+    <div class="st open"><svg><use href="#i-circle"/></svg><span>Nothing asks the real model on a schedule<small>re-recording is by hand: <code>CASSETTE=record bun test</code></small></span></div>
+    <div class="st open"><svg><use href="#i-circle"/></svg><span>Nothing grades the agent's choices<small>the climb judges score about 2 points high, so they only show direction</small></span></div>
+  </div>
+  <p class="note">Cost of the nightly run: today's 2 recordings used about 20,000 tokens in all, most of them cached. That cost grows with each recording we add, so the nightly job should have a token cap and use the cheapest model that passes. It also needs the Claude CLI signed in wherever it runs.</p>
+</section>
+
+</div>

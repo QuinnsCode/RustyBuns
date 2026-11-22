@@ -4,6 +4,9 @@ The picture (the rings, four ring cards, three lane cards, where it stands):
 https://claude.ai/artifact/CLz7Z7hkcQYPVvg11PAsD2, built from [release-rings.html](release-rings.html). Publish that file
 to the same URL to update it.
 
+How the rings test our agents (recordings on every PR, the real model each night):
+https://claude.ai/artifact/1kQXq2dzf3avURzdTGZ5rG, built from [agent-testing.html](agent-testing.html).
+
 The rings are circles around a cave. Code is born in the tinkers' cave (PR and `main`), leaks out to the tunnels
 (hourly), then the nightly market (daily), then the town (stable, everyone). Each ring has its own sweep, wider and
 slower the further out.
