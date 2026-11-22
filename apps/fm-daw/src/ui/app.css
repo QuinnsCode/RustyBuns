@@ -107,10 +107,10 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 /* drum grid */
 .machine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; }
 .grid-wrap { display: grid; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; overflow-x: auto; }
-.drum-row { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: center; min-width: 640px; }
+.drum-row { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: center; min-width: 0; }
 .row-name { text-align: left; padding: 4px 8px; border: 0; border-left: 3px solid var(--track); background: transparent; font: 600 .95rem var(--silk); letter-spacing: .03em; }
 .drum-row.sel .row-name { background: color-mix(in srgb, var(--track) 20%, transparent); }
-.steps { position: relative; display: grid; gap: 3px; }
+.steps { position: relative; display: grid; gap: 3px; min-width: 0; }
 .step { height: 30px; border: 0; border-radius: 3px; background: var(--cell); padding: 0; }
 .step.beat { background: var(--cell-beat); }
 .step:nth-child(16n + 1) { margin-left: 0; }
@@ -119,13 +119,28 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .step.off-grid { background: repeating-linear-gradient(135deg, var(--track) 0 4px, color-mix(in srgb, var(--track) 55%, var(--cell)) 4px 8px); }
 .playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); pointer-events: none; box-shadow: 0 0 6px var(--ink); }
 
+/* the view window over the editors (Timeline.tsx) */
+.timeline { display: grid; gap: 4px; min-width: 0; }
+.tl-bar { display: flex; align-items: center; gap: 8px; }
+.overview { position: relative; flex: 1; min-width: 0; height: 28px; background: var(--cell); border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; touch-action: none; cursor: pointer; user-select: none; }
+.overview canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .7; pointer-events: none; }
+.ov-box { position: absolute; top: 0; bottom: 0; min-width: 6px; box-sizing: border-box; border: 2px solid var(--ink); border-radius: 3px; background: color-mix(in srgb, var(--ink) 12%, transparent); cursor: grab; }
+.ov-box::before, .ov-box::after { content: ""; position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--ink); cursor: ew-resize; }
+.ov-box::before { left: 1px; } .ov-box::after { right: 1px; }
+.tl-tools { display: flex; gap: 4px; flex: none; }
+.ghost.icon { display: grid; place-items: center; width: 32px; height: 28px; padding: 0; }
+.ghost.icon:disabled { opacity: .4; }
+.tl-ruler { position: relative; height: 16px; overflow: hidden; border-bottom: 1px solid var(--edge); font: 500 .66rem/16px var(--mono); color: var(--dim); }
+.tl-ruler .mark { position: absolute; top: 0; padding-left: 3px; border-left: 1px solid color-mix(in srgb, var(--edge) 70%, transparent); white-space: nowrap; }
+.tl-ruler .mark.major { color: var(--ink); border-left-color: var(--dim); }
+
 /* piano roll */
 .roll { display: grid; grid-template-columns: 44px 1fr; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: 8px; }
 .roll-keys { display: grid; grid-template-rows: auto repeat(25, 14px) auto; }
 .rk { font: 500 .62rem/14px var(--mono); color: var(--dim); padding-right: 6px; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--edge) 50%, transparent); }
 .rk.black { background: color-mix(in srgb, var(--bg) 60%, transparent); }
 .roll-area {
-  position: relative; margin: 18px 0; height: calc(25 * 14px); cursor: crosshair; touch-action: none;
+  position: relative; margin: 18px 0; height: calc(25 * 14px); cursor: crosshair; touch-action: none; overflow: hidden;
   background:
     repeating-linear-gradient(90deg, var(--edge) 0 1px, transparent 1px calc(100% / var(--cols) * var(--beat))),
     repeating-linear-gradient(90deg, color-mix(in srgb, var(--edge) 40%, transparent) 0 1px, transparent 1px calc(100% / var(--cols)));
