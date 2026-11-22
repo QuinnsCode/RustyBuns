@@ -603,24 +603,24 @@
           "kind": "place",
           "what": "Batsto Village: the ironmaster's mansion, the sawmill, the gristmill and the workers' cottages along the lake, built of local stone and cedar.",
           "at": "section:1:0",
-          "status": "idea"
+          "status": "built"
         },
         {
           "kind": "place",
           "what": "Apple Pie Hill's steel fire tower with a cab on top, the only high point for miles, the Batona Trail passing its foot.",
           "at": "section:1:4",
-          "status": "idea"
+          "status": "built"
         },
         {
           "kind": "place",
           "what": "Sugar-sand roads: white, soft and deep-rutted, with the pines close on both sides and puddles the colour of tea.",
-          "status": "idea"
+          "status": "built"
         },
         {
           "kind": "place",
           "what": "Cranberry bogs in rows behind low dykes and sluice gates, flooded red at harvest.",
           "at": "section:1:6",
-          "status": "idea"
+          "status": "built"
         },
         {
           "kind": "life",
@@ -634,12 +634,22 @@
         },
         {
           "kind": "weather",
-          "what": "Summer thunderstorms that roll in at dusk; spring smoke from controlled burns lying low in the pines.",
+          "what": "Summer thunderstorms that roll in at dusk.",
+          "status": "built"
+        },
+        {
+          "kind": "weather",
+          "what": "Spring smoke from controlled burns lying low in the pines.",
           "status": "idea"
         },
         {
           "kind": "sound",
-          "what": "Whip-poor-wills calling at dusk, the tree frog's nasal 'quonk', wind in pitch pine needles, sand squeaking underfoot.",
+          "what": "Whip-poor-wills calling at dusk, the tree frog's nasal quonk, thunder over the pines.",
+          "status": "built"
+        },
+        {
+          "kind": "sound",
+          "what": "Wind in pitch pine needles, sand squeaking underfoot.",
           "status": "idea"
         },
         {
@@ -656,6 +666,11 @@
         {
           "kind": "craft",
           "what": "Cedar shingles, wood-fired glass, cranberry scoops, a diner on the highway with a neon sign that hums.",
+          "status": "idea"
+        },
+        {
+          "kind": "place",
+          "what": "Deep ruts in the sugar-sand roads, bright white where the wheels wore through.",
           "status": "idea"
         }
       ]

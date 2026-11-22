@@ -23,8 +23,8 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S2 | every playable region's world names all 7 senses (place, life, weather, sound, people, history, craft) | 100% | 1.00 |
 | S3 | written beats tied to another arc (40% is full marks) | 100% | 1.00 |
 | S4 | written beats the game plays (built) | 20% | 0.20 |
-| S5 | world wants the game has (built) | 10% | 0.10 |
-| | **total** | | **3.30 of 5** |
+| S5 | world wants the game has (built) | 16% | 0.16 |
+| | **total** | | **3.36 of 5** |
 
 ## Where the game disagrees with itself
 
@@ -92,14 +92,17 @@ Region 1, from level 2.
 
 **world**
 
-- [ ] place: Batsto Village: the ironmaster's mansion, the sawmill, the gristmill and the workers' cottages along the lake, built of local stone and cedar.
-- [ ] place: Apple Pie Hill's steel fire tower with a cab on top, the only high point for miles, the Batona Trail passing its foot.
-- [ ] place: Sugar-sand roads: white, soft and deep-rutted, with the pines close on both sides and puddles the colour of tea.
-- [ ] place: Cranberry bogs in rows behind low dykes and sluice gates, flooded red at harvest.
+- [x] place: Batsto Village: the ironmaster's mansion, the sawmill, the gristmill and the workers' cottages along the lake, built of local stone and cedar.
+- [x] place: Apple Pie Hill's steel fire tower with a cab on top, the only high point for miles, the Batona Trail passing its foot.
+- [x] place: Sugar-sand roads: white, soft and deep-rutted, with the pines close on both sides and puddles the colour of tea.
+- [x] place: Cranberry bogs in rows behind low dykes and sluice gates, flooded red at harvest.
+- [ ] place: Deep ruts in the sugar-sand roads, bright white where the wheels wore through.
 - [ ] life: Pitch pines with fire-blackened bark and new tufts growing straight from the trunk, scrub oak under them, Atlantic white cedar in the wet ground.
 - [ ] life: The Pine Barrens tree frog (green with a lavender stripe), northern pine snakes, deer, turkey vultures over the plains.
-- [ ] weather: Summer thunderstorms that roll in at dusk; spring smoke from controlled burns lying low in the pines.
-- [ ] sound: Whip-poor-wills calling at dusk, the tree frog's nasal 'quonk', wind in pitch pine needles, sand squeaking underfoot.
+- [x] weather: Summer thunderstorms that roll in at dusk.
+- [ ] weather: Spring smoke from controlled burns lying low in the pines.
+- [x] sound: Whip-poor-wills calling at dusk, the tree frog's nasal quonk, thunder over the pines.
+- [ ] sound: Wind in pitch pine needles, sand squeaking underfoot.
 - [x] people: Pineys: old families who cut cedar, pick berries and know every sand road by name; the Hatters of Ong's Hat at the first fire.
 - [ ] history: Bog iron, glass works and charcoal pits of the 1700s and 1800s; cannonballs for the Revolution cast at Batsto.
 - [ ] craft: Cedar shingles, wood-fired glass, cranberry scoops, a diner on the highway with a neon sign that hums.
