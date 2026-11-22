@@ -207,8 +207,11 @@ describe("GET /api/openapi.json", () => {
   });
 });
 
-test("a write token can't turn protect-main off: protect is a repo setting, admin scope like collaborators and hooks", () => {
-  expect(adminRoute(["api", "repos", "o", "r", "protect"], "PUT")).toBe(true);
-  expect(adminRoute(["api", "repos", "o", "r", "protect"], "GET")).toBe(false);
-  expect(adminRoute(["api", "repos", "o", "r", "branches"], "POST")).toBe(false);
+test("a write token edits code but doesn't manage the repo: protect-main, a fresh start and a preview deploy are admin scope", () => {
+  const table: [string[], string, boolean][] = [
+    [["protect"], "PUT", true], [["protect"], "GET", false], [["branches"], "POST", false],
+    [["fresh"], "POST", true], [["fresh"], "DELETE", true], [["fresh"], "GET", false],
+    [["preview"], "POST", true], [["preview"], "GET", false],
+  ];
+  for (const [rest, method, admin] of table) expect([rest[0], method, adminRoute(["api", "repos", "o", "r", ...rest], method)]).toEqual([rest[0], method, admin]);
 });

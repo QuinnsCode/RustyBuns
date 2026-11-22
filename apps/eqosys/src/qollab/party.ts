@@ -34,6 +34,8 @@ const DOOR = {
   full: { code: 4407, why: "This party is full." },
   uninvited: { code: 4410, why: "Only the host can invite people to this party: ask them for a fresh link." },
 } as const;
+/** The header on a socket the door let in: the Worker remembers that seat (party_seats), and no other knock's. */
+export const SEATED = "x-eqosys-seated";
 /** A member the host took out: closed with this, free to come back unless blocked too. */
 const CLOSE_KICKED = 4406;
 /** Everyone, when the host shortened the party past its age. */
@@ -166,7 +168,8 @@ export class Party {
     for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) if (!apart(who.id, m.from.id)) this.sockets.send(server, { t: "say", ...m });
     // Someone who arrives after the start is handed the same room.
     if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who, url.searchParams.get("code") ?? ""));
-    return response;
+    const seated: ResponseInit & { webSocket: unknown } = { status: 101, webSocket: Reflect.get(response, "webSocket"), headers: { [SEATED]: "1" } };
+    return new Response(null, seated);
   }
 
   async webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {

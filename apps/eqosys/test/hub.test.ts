@@ -69,6 +69,8 @@ test("friends across apps: ask, accept, see who is on and where, nudge into a ga
   // A link off his app's site, or a nudge to someone who isn't a friend, goes nowhere.
   b.say({ op: "notify", id: ada.id, text: "free prize", link: "https://evil.example/" });
   expect((await op(bo.token, { op: "notify", id: "someone-else", text: "hi" })).status).toBe(400);
+  // Nor does Ada's link into her game's native app: a note links to the app's pages, never its URL scheme.
+  expect((await op(ada.token, { op: "notify", id: bo.id, text: "join me", link: "com.quinnscode.parkhideseek:/party/BCDFGH" })).status).toBe(400);
   await until(() => b.got.some((m) => m.t === "error"));
   expect(a.state()!.notes.filter((n) => n.kind === "app")).toHaveLength(1);
 

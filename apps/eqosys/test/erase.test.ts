@@ -72,3 +72,12 @@ test("deleting an account that signed in with Apple tells Apple to forget it", a
   expect(revoked).toEqual([{ client_id: "com.quinnscode.eqosys", client_secret: "apple-secret-jwt", token: "apple-refresh", token_type_hint: "refresh_token" }]);
   expect(await apple.conf.DB.prepare(`SELECT 1 FROM "account" WHERE "userId" = ?`).bind(cy.user.id).first()).toBeNull();
 });
+
+test("Better Auth's own email change and self-delete are off: deleting goes through eqosys's sweep", async () => {
+  const a = await asks("park-hide-seek", PARK);
+  const up = await call("/do/signup", { form: { ...a.form, name: "Di", email: "di@example.com", password: PASSWORD } });
+  expect(up.cookie).toContain("eqosys.session_token=");
+  for (const [path, json] of [["/api/auth/change-email", { newEmail: "someone@example.com" }], ["/api/auth/delete-user", { password: PASSWORD }]] as const)
+    expect((await call(path, { json, cookie: up.cookie })).res.ok).toBe(false);
+  expect(await (await call("/api/auth/get-session", { cookie: up.cookie })).res.json()).toMatchObject({ user: { email: "di@example.com" } });
+});
