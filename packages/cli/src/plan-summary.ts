@@ -14,7 +14,8 @@ export interface PlanRow { id: string; action: PlanAction }
 export function readPlanRows(log: string): PlanRow[] {
   const rows: PlanRow[] = [];
   for (const line of stripVTControlCharacters(log).split("\n")) {
-    const m = /^\[([^\]/]+)\] (\w+)\b/.exec(line.trim());
+    // Alchemy beta.87 starts each plain line `[00:01:08.172] INFO: `; take that off before reading the row.
+    const m = /^\[([^\]/]+)\] (\w+)\b/.exec(line.trim().replace(/^\[\d{2}:\d{2}:\d{2}\.\d{3}\] [A-Z]+(?: \(#\d+\))?: ?/, ""));
     const action = ACTIONS.find((a) => a === m?.[2]);
     if (m && action && !rows.some((r) => r.id === m[1])) rows.push({ id: m[1]!, action });
   }

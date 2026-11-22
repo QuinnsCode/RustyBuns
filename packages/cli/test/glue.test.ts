@@ -5,6 +5,7 @@ import { loadCloudflareConfig } from "../src/cloudflare-config.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyze, plan } from "../src/glue/boundary.ts";
+import { sourceLayout } from "../src/glue/source.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { buildOutdir, generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
@@ -34,6 +35,16 @@ test("boundary: tiers, action exports, leak via server import, stub names", () =
   const p = plan(modules);
   expect(p.actions[0]!.exports).toEqual(["listFriends", "addFriend"]);
   expect(p.stubNames["@/db"]).toEqual(["visits"]);
+});
+
+test("boundary: an app checked out under a .rustybuns folder (the releases job's) still finds its actions", () => {
+  const app = join(mkdtempSync(join(tmpdir(), "rb-")), ".rustybuns", "releases", "rustybuns", "apps", "x");
+  mkdirSync(join(app, "src", "actions"), { recursive: true });
+  mkdirSync(join(app, ".rustybuns"), { recursive: true });
+  writeFileSync(join(app, "src", "actions", "files.ts"), `"use server";\nexport async function save() {}\n`);
+  writeFileSync(join(app, ".rustybuns", "vite.ts"), `"use server";\nexport const generated = 1;\n`);
+  const { modules } = analyze({ root: app, srcDir: ".", ignore: sourceLayout(app).ignore });
+  expect(modules.map((m) => [m.file, m.tier])).toEqual([["src/actions/files.ts", "action"]]);
 });
 
 test("wrangler round trip keeps every binding and generates both files", async () => {

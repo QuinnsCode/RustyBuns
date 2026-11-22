@@ -54,8 +54,8 @@ export function parseAuthToken(out: string): string | null {
 export interface Row { line: string; id: string; binding: string | null; action: string }
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
-/** Effect's logger, which Alchemy prints its plan through, starts each line `[00:01:08.172] INFO (#1): `. */
-const LOG = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\] [A-Z]+ \(#\d+\): ?/;
+/** Alchemy's plain log starts each plan line `[00:01:08.172] INFO: ` (beta.87), or `[00:01:08.172] INFO (#1): ` (Effect's logger, before). */
+const LOG = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\] [A-Z]+(?: \(#\d+\))?: ?/;
 const ROW = /^\[([^\]]+)\] (create|update|adopted|replace|delete|orphaned|noop|unbind|run|drop)\b/;
 
 /** Alchemy's plan (LoggingCli formatPlanLines): `[ID] action`, `[ID/binding] action`, and a `Plan:` summary. */
