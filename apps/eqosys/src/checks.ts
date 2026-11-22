@@ -8,13 +8,17 @@
 //
 // A Worker runs no page, so an error thrown while the page runs and what `state()` answers are not seen here: the `state` check's
 // words carry the `bun run probe` line that asks it in headless Chrome. Each check is ok, or not with why, in a short line.
+import { arr, bool, check as read, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
 import type { Env } from "./env.ts";
 import type { Listing } from "./listings.ts";
 
-export type CheckName = "https" | "loads" | "signin" | "state";
-export interface Check { name: CheckName; ok: boolean; says: string }
-/** The checks a game got when it was last sent (or checked again), and when. */
-export interface Checks { at: number; list: Check[] }
+export const NAMES = ["https", "loads", "signin", "state"] as const;
+export type CheckName = (typeof NAMES)[number];
+const Check = obj({ name: oneOf(NAMES), ok: bool(), says: str(4000, { min: 0 }) });
+export type Check = Of<typeof Check>;
+/** The checks a game got when it was last sent (or checked again), and when: what the listing keeps, read back through this guard. */
+const Checks = obj({ at: num(0, Number.MAX_SAFE_INTEGER), list: arr(Check, NAMES.length) });
+export type Checks = Of<typeof Checks>;
 
 type Get = (url: string) => Promise<Response>;
 /** How long one fetch gets. */
@@ -91,8 +95,5 @@ export async function check(conf: Env, l: Listing, now = Date.now()): Promise<Ch
 /** A listing's kept checks, or none. */
 export function checksOf(json: string | null | undefined): Checks | undefined {
   if (!json) return undefined;
-  try {
-    const c = JSON.parse(json) as Checks;
-    return typeof c?.at === "number" && Array.isArray(c.list) ? c : undefined;
-  } catch { return undefined; }
+  try { return read(Checks, JSON.parse(json)) ?? undefined; } catch { return undefined; }
 }
