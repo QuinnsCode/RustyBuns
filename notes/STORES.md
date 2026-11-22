@@ -44,17 +44,6 @@ All of them draw the same state.
 - **Calendar:** after the $100 Steam Direct fee there's a 30-day wait before release, the store page must show
   "Coming Soon" for at least 2 weeks, and both the page and the build get reviewed.
 
-- **How it builds (#2877):** `targets.steam: { appId }` in `rustybuns.config.ts`, then `rustybuns build steam`.
-  That wraps the desktop host binary in Electron 45 with steamworks.js 0.4 (both pinned by hash), one depot
-  folder per OS in `dist/steam/depots/`, and writes `dist/steam/app_build.vdf`. The game calls
-  `steam()` from `@rustybuns/shell-bun/steam` (achievements, rich presence, the overlay's invite list);
-  off Steam it's a no-op twin. On a Deck the window is full screen and text fields open Steam's
-  floating keyboard. `steam-drop.yml` builds on three runners and runs `steamcmd` in `drops`; a
-  `-beta.N` tag sets `beta` live, a stable tag only uploads.
-- **Why Electron, not Electrobun:** steamworks.js is built and tested on Electron (its overlay helper
-  is Electron-only), and Electron ships the same Chromium on all three OSes. Electrobun's bundled CEF
-  is young on Windows and Linux. The real-machine checks (frame time, overlay, Deck) are a manual run.
-
 Agent Office isn't headed for either store.
 
 ## Versions and releases

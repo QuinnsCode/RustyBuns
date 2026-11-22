@@ -315,7 +315,27 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 }
 
 /* Shape: the master EQ */
-/* Shape's own look is src/ui/shape.css, which Shape.tsx brings wherever it opens */
+.shape { display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; min-width: 0; }
+.shape-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.shape-bar .check { padding: 0; }
+.shape-hint { font-size: .78rem; }
+.shape-plot { position: relative; min-width: 0; background: var(--bg); border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; }
+.shape-plot canvas { display: block; cursor: crosshair; touch-action: none; outline: none; }
+.shape-plot canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--warn); }
+.shape-listen { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); font: 600 .75rem var(--mono); color: var(--ink); background: var(--panel); padding: 2px 8px; border-radius: 999px; white-space: nowrap; pointer-events: none; }
+.shape-readout { position: absolute; top: 6px; right: 8px; font: 500 .75rem var(--mono); color: var(--dim); pointer-events: none; }
+.shape-empty { position: absolute; inset: 0 0 auto; top: 30%; display: grid; place-items: center; font: 600 1rem var(--silk); letter-spacing: .04em; pointer-events: none; }
+.shape-band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 10px; border-left: 3px solid var(--track); background: var(--raised); border-radius: 4px; }
+.shape-band .check { padding: 0; }
+.shape-band input[type="number"] { width: 72px; padding: 4px 6px; background: var(--panel); border: 1px solid var(--edge); border-radius: 4px; font: 500 .9rem var(--mono); }
+.shape-band input:disabled { opacity: .4; }
+.shape-kinds button { padding: 4px 8px; display: grid; place-items: center; }
+.shape-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--track); color: #111; font: 700 .8rem var(--silk); }
+.shape-dots { display: flex; flex-wrap: wrap; gap: 6px; }
+.shape-dots:empty { display: none; }
+.shape-dots button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border: 1px solid var(--edge); border-radius: 12px; background: var(--raised); font: 500 .75rem var(--mono); }
+.shape-dots button.on { border-color: var(--track); box-shadow: 0 0 0 1px var(--track); }
+@media (max-width: 640px) { .shape-hint { display: none; } }
 .people-wrap { position: relative; display: inline-flex; }
 .people-wrap > .ghost { display: inline-flex; align-items: center; gap: 4px; }
 .people-n { font-size: .75rem; }
@@ -342,26 +362,10 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .desk-row { display: flex; gap: 6px; }
 .desk-toggle { flex: 1; background: var(--cell); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 0; font: 600 14px var(--silk); cursor: pointer; }
 .desk-toggle.on { background: var(--hot); color: var(--bg); border-color: var(--hot); }
-/* a strip's Shape button (src/room/desk.ts): its curve as the face, the full editor on a click */
-.desk-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.desk-head h3 { flex: 1; min-width: 0; }
-.desk-shape { flex: 0 0 auto; display: inline-grid; place-items: center; width: 52px; height: 26px; padding: 0; background: var(--cell); border: 1px solid var(--edge); border-radius: 6px; cursor: pointer; }
-.desk-shape svg { width: 44px; height: 18px; overflow: visible; }
-.desk-shape path { fill: none; stroke: var(--dim); stroke-width: 1.5; stroke-linejoin: round; }
-.desk-shape path.desk-shape-zero { stroke: var(--edge); stroke-width: 1; }
-.desk-shape.on path:not(.desk-shape-zero) { stroke: var(--hot); }
-.desk-shape:hover, .desk-shape:focus-visible { border-color: var(--hot); }
-.desk-knob input:disabled { opacity: .4; }
-.desk-strip.desk-master { border-color: var(--ink); }
 
 /* a web plugin's own panel (src/ui/wam.ts): a small window over the desk */
 .plugin-window { position: fixed; inset: 10vh auto auto 50%; translate: -50% 0; z-index: 40; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; margin: 0; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); color: inherit; box-shadow: 0 12px 40px #0008; }
 .plugin-window > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--edge); }
-.desk-shape-head { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
-.desk-shape-head .silk { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.desk-shape-head > .dim { font-size: .75rem; white-space: nowrap; }
-.desk-shape-head .ghost { margin-left: auto; padding: 4px 6px; display: inline-grid; place-items: center; }
-@media (max-width: 520px) { .desk-shape-head > .dim { display: none; } }
 
 /* the add menu: record audio, record MIDI, import audio, import MIDI, on the selected track */
 .add-menu { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }

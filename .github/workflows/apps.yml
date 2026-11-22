@@ -84,11 +84,17 @@ jobs:
   # in the `apps` check below: the test files the PR adds or edits run once more on the base's source, and the job
   # summary names the ones that pass there anyway and the changed lines they never ran (scripts/test-bites.ts, #4154).
   # A PR with no test file changed stops after the diff; otherwise it installs only the workspaces those tests sit in.
+  # Then scripts/lane.ts scores the PR from those facts and labels it lane:fast or lane:standby, with a one-line
+  # reason in one comment it keeps up to date (release rings, #5429): rings.ts pick soaks a fast PR 1 hourly, not 3.
   bites:
     if: github.event_name == 'pull_request'
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -100,7 +106,12 @@ jobs:
           if [ -z "$files" ]; then echo "No test file changed." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
           filters=$(echo "$files" | grep -oE '^(apps|packages)/[^/]+' | sort -u | sed 's|^|--filter ./|' | tr '\n' ' ')
           bun install --frozen-lockfile --filter rustybuns $filters
-          { echo '### Do the new tests bite?'; echo '```'; bun scripts/test-bites.ts --base "$BASE" --lines 2>&1; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY" || true
+          { echo '### Do the new tests bite?'; echo '```'; bun scripts/test-bites.ts --base "$BASE" --lines --facts "$RUNNER_TEMP/bites.json" 2>&1; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: lane
+        if: always()
+        env: { BASE: "${{ github.event.pull_request.base.sha }}", PR: "${{ github.event.pull_request.number }}", GH_TOKEN: "${{ github.token }}" }
+        run: |
+          { echo '### Release-rings lane'; bun scripts/lane.ts --base "$BASE" --facts "$RUNNER_TEMP/bites.json" --pr "$PR"; } | tee -a "$GITHUB_STEP_SUMMARY"
 
   test:
     needs: plan

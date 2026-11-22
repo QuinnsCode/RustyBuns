@@ -91,8 +91,7 @@ async function main() {
   if (canvases.has("ester")) new WebSocket(`ws://${location.host}/__stage/ws`); // screens/index.ts keeps the last socket for Ester's fix button
 
   const draw = () => {
-    const serves = s.serves.length ? ` Stands in for ${s.serves.map((n) => `#${n}`).join(", ")}.` : "";
-    about.textContent = `${s.about}.${serves} Open Ester's skull at the bottom left for her log.`;
+    about.textContent = `${s.about}. Stands in for ${s.serves.map((n) => `#${n}`).join(", ")}. Open Ester's skull at the bottom left for her log.`;
     workers.replaceChildren(...s.workers.map((w) => { const e = el("div", { className: "demo-worker" }, el("span", { className: "dot" }), el("b", {}, w.name), `${w.state}: ${w.task}`); e.dataset.state = w.state; return e; }));
     typed.hidden = !s.waiting;
     log.replaceChildren(...[...s.log, ...s.queued.map((q) => `queued: ${q}`)].map((l) => el("li", {}, l)));

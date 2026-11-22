@@ -15,7 +15,7 @@ import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
-import { Mixer, RigReturn, shapeStage } from "../mixer.ts";
+import { Mixer, RigReturn } from "../mixer.ts";
 import type { FromWorklet, ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
 
@@ -87,8 +87,6 @@ class FmProcessor extends AudioWorkletProcessor {
   private deskFed = false;
   private deskOut = new Float32Array(256);
   private rig: RigReturn | null = null;
-  /** The Space return's Shape, on what goes into Space (so Space's limiter stays last); null while flat. */
-  private spaceEq: TsEq | null = null;
   private send2 = new Float32Array(256);
   /**
    * What the players heard as they come send to the auxes. Their guitars play on calls outside this thread (the jam
@@ -263,8 +261,7 @@ class FmProcessor extends AudioWorkletProcessor {
 
   /** The players' channels and the aux 2 return as the page worked them out; a new rig only when gear is first cabled in. */
   private setDesk(m: Extract<ToWorklet, { t: "desk" }>) {
-    this.desk.set({ channels: m.players.map((p) => p.channel), returns: [{ aux: 2, name: "Aux 2", fx: "cabled", fader: m.aux2.fader, mute: m.aux2.mute, ...(m.aux2.eq ? { eq: m.aux2.eq } : {}) }] });
-    this.spaceEq = m.space ? shapeStage(this.spaceEq, m.space, sampleRate) : null;
+    this.desk.set({ channels: m.players.map((p) => p.channel), returns: [{ aux: 2, name: "Aux 2", fx: "cabled", fader: m.aux2.fader, mute: m.aux2.mute }] });
     this.deskOf.clear();
     for (const p of m.players) this.deskOf.set(p.peer, p.channel.id);
     for (const id of this.deskIn.keys()) if (!m.players.some((p) => p.channel.id === id)) this.deskIn.delete(id);
@@ -468,7 +465,6 @@ class FmProcessor extends AudioWorkletProcessor {
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
-      this.spaceEq?.process(this.send, frames);
       this.squash.process(this.buf, frames);
       this.space.process(this.buf, this.send, frames);
     } catch (e) {

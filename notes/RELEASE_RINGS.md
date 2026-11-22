@@ -59,5 +59,11 @@ its app's last 30 days) puts it in the fast lane (60 or more and no CI, deploy o
 night, then the OK; a red drops it to standby) or standby (the full soak). Express stays owner-only, for a security
 advisory, a hijacked package or Action in the build chain, or a host incident. A red sweep keeps it in express.
 
+Built (fast and standby): `scripts/lane.ts` scores a PR and, in apps.yml's `bites` job, labels it `lane:fast` or
+`lane:standby` with one comment giving the reason (test-bites writes its counts with `--facts`). The "last 30 days" part
+counts reverts on main touching the PR's apps. `rings.ts pick daily` takes a newer commit after 1 green hourly when it
+and every commit above the 3-green pick are `lane:fast`; a red in between holds them all to the normal soak. `bun run
+rings` ends with each lane's open PR count. The 1 green night before stable waits for the stable ring itself.
+
 Open: whether daily auto-deploys previews, and whether
 "Ringo" (moves pointers, writes notes) is its own helper or a job inside Ester.

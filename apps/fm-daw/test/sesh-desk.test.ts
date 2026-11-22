@@ -7,8 +7,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { b64url } from "@rustybuns/util/bytes";
 import { BLOCK, SR, processor, run, useWorklet } from "./worklet-kit.ts";
-import { callStrips, deskOps, playerId, seshDesk, shapeOps, trackId, withChannel, withReturn, withSend, withShape, type Desk } from "../src/mixer.ts";
-import { flatEq, type EqDoc } from "../src/engine/eq.ts";
+import { callStrips, deskOps, playerId, seshDesk, trackId, withChannel, withReturn, withSend, type Desk } from "../src/mixer.ts";
 import { auxGear, lead, newRoom, plug } from "../src/room/room.ts";
 import { applyStudio, decodeStudioClient, emptyStudio, patchOps } from "../src/studio.ts";
 import { apply, decodeOp, decodeServer, sanitize, type Live, type Project } from "../src/project.ts";
@@ -171,71 +170,4 @@ test("a track's send to aux 2 comes back through the cabled gear in the bounce",
   expect(wet).toBeGreaterThan(0.002);
   expect(back(mix(sent, (d) => withReturn(d, 2, { fader: 1 })))).toBeGreaterThan(wet * 1.3);      // the return up: more of it
   expect(back(mix(sent, (d) => withReturn(d, 2, { mute: true })))).toBe(0);
-});
-
-// ---- Shape on every channel (#5578): the returns' own Shapes, a player's, and old projects as they were ----
-
-/** A lowCut that takes everything under 2 kHz away, steeply. */
-const CUT = [{ kind: "lowCut", f: 2000, g: 0, q: Math.SQRT1_2, slope: 48, on: true }, null, null, null, null, null, null, null] satisfies EqDoc;
-
-test("a return's Shape changes what comes back, on the page and in the bounce, the same samples", async () => {
-  const patch = gearRoom(), p0 = quiet(), clap = p0.tracks.findIndex((t) => t.name === "Clap");
-  const one: Project = { ...p0, space: 0.8, tracks: p0.tracks.map((t, i) => (i === clap ? { ...t, notes: [{ s: 0, l: 0.25, m: t.root, v: 1 }] } : t)) };
-  const sent = mix(one, (d) => withSend(withSend(d, trackId(clap), 1, 1), trackId(clap), 2, 1));
-  const gear = auxGear(patch).settings;
-  const left = (x: Float32Array) => x.filter((_, i) => i % 2 === 0);
-  const bounce = (p: Project) => left(renderProject(new TsEngine(SR), p, SR, 1.5, 1, undefined, undefined, gear));
-  /** The page playing it from the top: the same groove, the desk as DeskFeed sends it. */
-  const live = async (p: Project) => {
-    const { p: proc, say } = processor();
-    say(loadMsg(p));
-    say({ t: "master", gain: 1 });
-    new DeskFeed(say).sync(p, [], gear);
-    say({ t: "play", countIn: 0 });
-    return run(proc, 1.5);
-  };
-  const diff = (a: Float32Array, b: Float32Array) => a.reduce((m, x, i) => Math.max(m, Math.abs(x - (b[i] ?? 0))), 0);
-
-  for (const at of [{ aux: 1 }, { aux: 2 }] as const) {
-    const shaped = shapeOps(sent, [], at, CUT).reduce((q, e) => apply(q, decodeOp(JSON.parse(JSON.stringify(e)))!), sent);
-    expect(seshDesk(shaped).returns[at.aux - 1].eq).toEqual(CUT);
-    expect(at.aux === 1 ? shaped.desk?.space : shaped.desk?.aux2.eq).toBeTruthy();
-    expect(sanitize(JSON.parse(JSON.stringify(shaped)))).toEqual(shaped);    // saved with the groove
-    const was = bounce(sent), now = bounce(shaped);
-    expect(diff(was, now)).toBeGreaterThan(0.002);                          // the Shape is heard in the bounce
-    const heard = await live(shaped);
-    expect(diff(heard, await live(sent))).toBeGreaterThan(0.002);           // and on the page
-    expect(diff(heard, now)).toBeLessThan(1e-6);                            // the same samples
-    // flat again: the desk keeps nothing for it, and it plays as it did
-    const flat = shapeOps(shaped, [], at, flatEq()).reduce((q, e) => apply(q, e), shaped);
-    expect(flat.desk).toEqual(sent.desk);
-    expect(diff(bounce(flat), was)).toBe(0);
-  }
-});
-
-test("a player's channel Shape is applied, on the desk's audio thread and on a call", async () => {
-  const patch = gearRoom(), p0 = quiet(), id = playerId(WHO);
-  const dry = await page(p0, patch);
-  const shaped = mix(p0, (d) => withShape(d, { channel: id }, CUT));
-  expect(shaped.desk?.players[0]).toMatchObject({ id, eq: CUT });
-  expect((await page(shaped, patch)).peak).toBeLessThan(dry.peak * 0.1);   // a 220 Hz note under a 2 kHz cut: nearly gone
-  // a guitar heard as it comes on a call runs its channel's Shape too
-  expect(callStrips(shaped, PLAYERS, [{ who: WHO, track: -1 }])[0].eq).toEqual(CUT);
-  expect(callStrips(p0, PLAYERS, [{ who: WHO, track: -1 }])[0].eq).toBeUndefined();
-});
-
-test("old projects sanitize to the same JSON: no Shape on a return until one is set", () => {
-  // a groove saved before returns had a Shape, with a player's channel and the aux 2 return moved
-  const p0 = sanitize(demoProject())!, ch = { ...seshDesk(p0, PLAYERS).channels.at(-1)!, sends: [0.5, 0] };
-  const old = { ...p0, desk: { players: [ch], aux2: { fader: 0.6, mute: true } } };
-  for (const p of [p0, old]) {
-    const again = sanitize(JSON.parse(JSON.stringify(p)));
-    expect(again).toEqual(p);
-    expect(JSON.stringify(again?.desk)).toBe(JSON.stringify(p.desk));
-  }
-  expect(seshDesk(old).returns.map((r) => Object.keys(r))).toEqual([["aux", "name", "fx", "fader", "mute"], ["aux", "name", "fx", "fader", "mute"]]);
-  // a flat Shape on a return is no Shape: it reads as if it were never there
-  const flatOnes = { ...p0, desk: { players: [], aux2: { fader: 0.75, mute: false, eq: flatEq() }, space: { eq: flatEq() } } };
-  expect(sanitize(JSON.parse(JSON.stringify(flatOnes)))?.desk).toBeUndefined();
-  expect(seshDesk(p0).returns.every((r) => r.eq === undefined)).toBe(true);
 });

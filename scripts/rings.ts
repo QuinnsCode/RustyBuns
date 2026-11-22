@@ -3,7 +3,8 @@
 //
 //   bun run rings                                            one line per ring: its commit and age ("no ref" while it
 //                                                            sits at its newest green, #4495), its last red, and the
-//                                                            PRs waiting to climb into it. Ester's card shows the same.
+//                                                            PRs waiting to climb into it, then how many open PRs are
+//                                                            in each lane (#5429). Ester's card shows the same.
 //   bun scripts/rings.ts gate <ring> <sha>                   prints run=true|false: false when <sha> already has a
 //                                                            ring/<ring> status (main hasn't moved since the last run)
 //   bun scripts/rings.ts status <ring> <sha> <state> <url>   writes the ring/<ring> status (success or failure) on <sha>;
@@ -20,8 +21,10 @@
 //                                                            current one (or before --from) into apps/<app>/dist/ring-<sha7>/
 //   bun scripts/rings.ts pick daily <sha>                    prints sha=<pick> and run=true|false: the newest commit at
 //                                                            or under <sha> with 3 green hourlies in a row (its own and
-//                                                            the next two); run=false when none has soaked yet or the
-//                                                            pick already has a ring/daily status
+//                                                            the next two), or a newer one when it and every commit
+//                                                            above that are lane:fast PRs with 1 green in a row
+//                                                            (scripts/lane.ts, #5429); run=false when none has soaked
+//                                                            yet or the pick already has a ring/daily status
 //   bun scripts/rings.ts previews <base> <sha>               prints previews=<json list>: the web apps phone smoke opens
 //                                                            whose vite build changed between the two (every one when <base> is empty or
 //                                                            packages/ or the lockfile moved)
@@ -37,7 +40,7 @@ import { appDir, appDirs, appOf } from "./app-dirs.ts";
 import { WEB_APPS } from "./phone-smoke-lib.ts";
 
 /** A commit on main, newest first, with its ring status (undefined when the ring never ran it). */
-export type Tested = { sha: string; state?: string };
+export type Tested = { sha: string; state?: string; fast?: boolean };
 
 /** The rings, lowest first: each one climbs from the one below it (hourly from `main`). */
 export const RINGS = ["hourly", "daily", "stable"] as const;
@@ -125,8 +128,9 @@ export function rangeLine(repo: string, history: Tested[]): string {
     + `https://github.com/${repo}/compare/${green}...${head}`;
 }
 
-/** What each ring soaks on before it picks a commit: the ring under it and how many green runs in a row. */
-export const SOAK: Record<string, { on: string; runs: number }> = { daily: { on: "hourly", runs: 3 } };
+/** What each ring soaks on before it picks a commit: the ring under it and how many green runs in a row, for a standby
+ *  PR (`runs`) and a lane:fast one (`fast`, #5429). */
+export const SOAK: Record<string, { on: string; runs: number; fast: number }> = { daily: { on: "hourly", runs: 3, fast: 1 } };
 
 /** The newest commit with `runs` green runs in a row: its own and the next newer tested ones. Untested commits are skipped
  *  (the hourly only runs when main moved, so a squash commit can share a run with the ones above it); a red or pending
@@ -139,6 +143,34 @@ export function soaked(history: Tested[], runs: number): string | undefined {
     if (streak === runs) return c.sha;
   }
   return undefined;
+}
+
+/** The pick with lanes (#5429): the standby pick (`runs` green in a row), or a newer tested commit with `fast` green in a
+ *  row when it and every commit between it and the standby pick are lane:fast. A picked commit carries every one under it,
+ *  so one standby commit above the standby pick holds them all; a red run in between breaks the streak, and a fast PR
+ *  under a red waits the normal soak like the rest ("drops into standby at that ring"). */
+export function soakedLanes(history: Tested[], runs: number, fast: number): string | undefined {
+  const standby = soaked(history, runs);
+  const stop = standby ? history.findIndex((c) => c.sha === standby) : history.length;
+  const streaks: number[] = [];
+  let streak = 0;
+  for (const c of history) {
+    if (c.state) streak = /^success$/i.test(c.state) ? streak + 1 : 0;
+    streaks.push(streak);
+  }
+  for (let i = 0; i < stop; i++) {
+    const c = history[i]!;
+    if (!c.state || streaks[i]! < fast) continue;
+    if (history.slice(i, stop).every((x, j) => x.fast && streaks[i + j]! >= fast)) return c.sha;
+  }
+  return standby;
+}
+
+/** How many open PRs are in each lane: lane:fast, lane:standby, express (the owner's), and not scored yet. */
+export function laneLine(open: { labels: string[] }[]): string {
+  const n = (l: string) => open.filter((p) => p.labels.includes(l)).length;
+  const unscored = open.filter((p) => !p.labels.some((l) => l === "lane:fast" || l === "lane:standby" || l === "express")).length;
+  return `lanes   fast ${n("lane:fast")}  standby ${n("lane:standby")}  express ${n("express")}  unscored ${unscored}  (open PRs)`;
 }
 
 /** The apps to preview-build: the web apps phone smoke opens (`apps`) whose folder changed and whose `build` is a vite
@@ -159,6 +191,7 @@ const Reply = obj({
           nodes: arr(obj({
             oid: str(64),
             status: nul(obj({ contexts: arr(obj({ context: str(200), state: str(20) }), 200) })),
+            associatedPullRequests: opt(obj({ nodes: arr(obj({ labels: obj({ nodes: arr(obj({ name: str(100) }), 30) }) }), 1) })),
           }), 100),
         })),
       })),
@@ -169,7 +202,7 @@ const Reply = obj({
 /** The last `n` commits on <sha>'s first-parent line, newest first, with their ring/<ring> state, 100 per GraphQL call. */
 export async function history(repo: string, ring: string, sha: string, n = 100): Promise<Tested[]> {
   const [owner, name] = repo.split("/");
-  const q = `query($o:String!,$n:String!,$s:GitObjectID!,$k:Int!,$c:String){repository(owner:$o,name:$n){object(oid:$s){... on Commit{history(first:$k,after:$c){pageInfo{hasNextPage endCursor} nodes{oid status{contexts{context state}}}}}}}}`;
+  const q = `query($o:String!,$n:String!,$s:GitObjectID!,$k:Int!,$c:String){repository(owner:$o,name:$n){object(oid:$s){... on Commit{history(first:$k,after:$c){pageInfo{hasNextPage endCursor} nodes{oid status{contexts{context state}} associatedPullRequests(first:1){nodes{labels(first:30){nodes{name}}}}}}}}}}`;
   const out: Tested[] = [];
   let cursor: string | null = null;
   while (out.length < n) {
@@ -177,7 +210,10 @@ export async function history(repo: string, ring: string, sha: string, n = 100):
     const after: string[] = cursor ? ["-f", `c=${cursor}`] : [];
     const text: string = await Bun.$`gh api graphql -f query=${q} -f o=${owner!} -f n=${name!} -f s=${sha} -F k=${k} ${after}`.quiet().text();
     const page = Reply(JSON.parse(text)).data.repository.object?.history;
-    for (const c of page?.nodes ?? []) out.push({ sha: c.oid, state: c.status?.contexts.find((x) => x.context === `ring/${ring}`)?.state });
+    for (const c of page?.nodes ?? []) {
+      const fast = c.associatedPullRequests?.nodes[0]?.labels.nodes.some((l) => l.name === "lane:fast") ?? false;
+      out.push({ sha: c.oid, state: c.status?.contexts.find((x) => x.context === `ring/${ring}`)?.state, fast });
+    }
     if (!page?.pageInfo.hasNextPage || !page.pageInfo.endCursor) break;
     cursor = page.pageInfo.endCursor;
   }
@@ -197,14 +233,15 @@ const Board = obj({
         })),
       })),
       refs: opt(nul(obj({ nodes: arr(obj({ name: str(100), target: obj({ oid: str(64) }) }), 20) }))),
+      pullRequests: opt(obj({ nodes: arr(obj({ labels: obj({ nodes: arr(obj({ name: str(100) }), 30) }) }), 100) })),
     }),
   }),
 });
 
 /** For `bun run rings`: main's last 100 commits, newest first, with every ring's status on them, and the ring refs, in one GraphQL call. */
-async function board(repo: string): Promise<{ commits: Commit[]; refs: Record<string, string> }> {
+async function board(repo: string): Promise<{ commits: Commit[]; refs: Record<string, string>; open: { labels: string[] }[] }> {
   const [owner, name] = repo.split("/");
-  const q = `query($o:String!,$n:String!){repository(owner:$o,name:$n){object(expression:"main"){... on Commit{history(first:100){nodes{oid committedDate status{contexts{context state createdAt}}}}}} refs(refPrefix:"refs/ring/",first:20){nodes{name target{oid}}}}}`;
+  const q = `query($o:String!,$n:String!){repository(owner:$o,name:$n){object(expression:"main"){... on Commit{history(first:100){nodes{oid committedDate status{contexts{context state createdAt}}}}}} refs(refPrefix:"refs/ring/",first:20){nodes{name target{oid}}} pullRequests(states:OPEN,first:100,orderBy:{field:CREATED_AT,direction:DESC}){nodes{labels(first:30){nodes{name}}}}}}`;
   const reply = Board(JSON.parse(await Bun.$`gh api graphql -f query=${q} -f o=${owner!} -f n=${name!}`.quiet().text())).data.repository;
   return {
     commits: (reply.object?.history?.nodes ?? []).map((c) => ({
@@ -212,6 +249,7 @@ async function board(repo: string): Promise<{ commits: Commit[]; refs: Record<st
       rings: Object.fromEntries((c.status?.contexts ?? []).filter((x) => x.context.startsWith("ring/")).map((x) => [x.context.slice(5), { state: x.state, at: x.createdAt }])),
     })),
     refs: Object.fromEntries((reply.refs?.nodes ?? []).map((r) => [r.name, r.target.oid])),
+    open: (reply.pullRequests?.nodes ?? []).map((p) => ({ labels: p.labels.nodes.map((l) => l.name) })),
   };
 }
 
@@ -256,8 +294,8 @@ if (import.meta.main) {
   help(import.meta.path);
   if (!process.argv[2]) {
     const repo = process.env.GITHUB_REPOSITORY ?? (await Bun.$`gh repo view --json nameWithOwner -q .nameWithOwner`.quiet().text()).trim();
-    const { commits: line, refs } = await board(repo);
-    console.log(ringLines(line, refs, Date.now()).join("\n"));
+    const { commits: line, refs, open } = await board(repo);
+    console.log([...ringLines(line, refs, Date.now()), laneLine(open)].join("\n"));
     process.exit(0);
   }
   if (process.argv[2] === "rollback") {
@@ -330,13 +368,15 @@ if (import.meta.main) {
   } else if (cmd === "pick") {
     const soak = SOAK[ring];
     if (!soak) throw new Error(`ring ${ring} doesn't pick: it has no soak (${Object.keys(SOAK).join(", ")} do)`);
-    const pick = soaked(await history(repo, soak.on, sha), soak.runs);
+    const soakHistory = await history(repo, soak.on, sha);
+    const pick = soakedLanes(soakHistory, soak.runs, soak.fast);
+    const fastPick = !!pick && pick !== soaked(soakHistory, soak.runs);
     const [done] = pick ? await history(repo, ring, pick, 1) : [];
     console.log(`sha=${pick ?? ""}`);
     console.log(`run=${!!pick && !done?.state}`);
     if (!pick) console.error(`no commit under ${sha.slice(0, 7)} has ${soak.runs} green ${soak.on} runs in a row yet`);
     else if (done?.state) console.error(`${pick.slice(0, 7)} already has ring/${ring} ${done.state.toLowerCase()}: nothing new has soaked`);
-    else console.error(`picked ${pick.slice(0, 7)}: ${soak.runs} green ${soak.on} runs in a row`);
+    else console.error(fastPick ? `picked ${pick.slice(0, 7)}: lane:fast, ${soak.fast} green ${soak.on} run${soak.fast === 1 ? "" : "s"} in a row` : `picked ${pick.slice(0, 7)}: ${soak.runs} green ${soak.on} runs in a row`);
   } else if (cmd === "range") {
     console.log(rangeLine(repo, await history(repo, ring, sha)));
   } else {

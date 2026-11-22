@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { expressByOwner, previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, type Commit, type LabelEvent, type Tested } from "./rings.ts";
+import { expressByOwner, previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, soakedLanes, laneLine, type Commit, type LabelEvent, type Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
 const [a, b, c, d] = ["a", "b", "c", "d"].map(sha) as [string, string, string, string];
@@ -95,4 +95,23 @@ test.each<[string, LabelEvent[], string[], boolean]>([
   ["another label from the owner", [{ event: "labeled", label: "bug", actor: "QuinnsCode" }, labeled("drive-by")], ["bug", "express"], false],
 ])("expressByOwner: %s", (_, events, labels, want) => {
   expect(expressByOwner(events, labels, "quinnscode")).toBe(want);
+});
+
+const ok = "SUCCESS";
+test.each<[string, Tested[], string | undefined]>([
+  // newest first: c has 3 greens in a row (its own, b's, a's), so standby picks c
+  ["fast PRs on top go after 1 green", [{ sha: a, state: ok, fast: true }, { sha: b, state: ok, fast: true }, { sha: c, state: ok }, { sha: d, state: ok }, { sha: e, state: ok }], a],
+  ["a standby PR above holds the fast one back", [{ sha: a, state: ok, fast: true }, { sha: b, state: ok }, { sha: c, state: ok }], c],
+  ["the fast pick takes the newest all-fast run", [{ sha: a, state: ok }, { sha: b, state: ok, fast: true }, { sha: c, fast: true }, { sha: d, state: ok, fast: true }, { sha: e, state: ok }, { sha: f, state: ok }], b],
+  ["an untested standby commit under it blocks it", [{ sha: a, state: ok, fast: true }, { sha: b }, { sha: c, state: ok }, { sha: d, state: ok }], d],
+  ["a red under a fast PR drops it to standby", [{ sha: a, state: ok, fast: true }, { sha: b, state: "FAILURE", fast: true }, { sha: c, state: ok }], undefined],
+  ["nothing soaked and no fast PR", [{ sha: a, state: ok }], undefined],
+  ["all fast with no standby pick in view", [{ sha: a, state: ok, fast: true }, { sha: b, fast: true }], a],
+])("soakedLanes: %s", (_, history, want) => {
+  expect(soakedLanes(history, 3, 1)).toBe(want);
+});
+
+test("laneLine counts each lane's open PRs", () => {
+  expect(laneLine([{ labels: ["lane:fast"] }, { labels: ["lane:standby", "bug"] }, { labels: ["express", "lane:fast"] }, { labels: [] }]))
+    .toBe("lanes   fast 2  standby 1  express 1  unscored 1  (open PRs)");
 });

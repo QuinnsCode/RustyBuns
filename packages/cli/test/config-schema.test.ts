@@ -29,7 +29,7 @@ const problems = (c: unknown) =>
 test("names each field, every problem at once", async () => {
   expect(await problems(ok)).toEqual([]);
   expect(await problems({ ...ok, bindings: { KV: { type: "kvv" }, DB: { type: "d1" } }, state: "shard" })).toEqual([
-    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, service, artifacts, images, send_email, ratelimit, vectorize, ai, browser, container, queue, workflow, analytics_engine, worker_loader, hyperdrive, var, secret`,
+    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, service, artifacts, images, send_email, ratelimit, vectorize, ai, container, queue, workflow, analytics_engine, worker_loader, hyperdrive, var, secret`,
     "bindings.DB.databaseName: missing",
     `state: expected "shared" | "project", got "shard"`,
   ]);
