@@ -1280,6 +1280,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const x = pin.x * k, y = pin.z * k, r = pin.quest ? 3.2 : 1.8;
       ctx.fillStyle = pin.colour; ctx.globalAlpha = pin.dim ? 0.5 : 1;
       ctx.beginPath();
+      if (pin.hint) { ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.strokeStyle = pin.colour; ctx.lineWidth = 1.4; ctx.stroke(); ctx.strokeStyle = "#1a1612"; ctx.lineWidth = 0.4; continue; }
       if (pin.quest) { ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.75, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.75, y); ctx.closePath(); }
       else ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
@@ -1684,6 +1685,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 }
 /** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
 /** A mark on the map: where, in what colour, a quest step's (bigger) or a post's, dimmed while it rests. */
-export interface MapPin { x: number; z: number; colour: string; quest?: boolean; dim?: boolean }
+export interface MapPin { x: number; z: number; colour: string; quest?: boolean; dim?: boolean; /** a believer's hint after the convention: a ring */ hint?: boolean }
 export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number; colour: number }
 export type WorldView = ReturnType<typeof worldView>;
