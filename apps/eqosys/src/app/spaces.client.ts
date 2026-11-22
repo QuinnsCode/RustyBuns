@@ -1,7 +1,7 @@
 // The /spaces page's panel: the same spacesPanel a game mounts (@rustybuns/util/spaces), against this eqosys, with a token
 // for eqosys's own pages (GET /api/home-token, door.ts homeApp) asked again before it runs out. Mounted by the page's one
 // module script (commands.client.ts) when the page has a #spaces box; the CSP lets no other script in.
-import { createElement, ArrowLeft, ArrowUp, Copy, Flag, Hash, LogIn, LogOut, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2, Reply, Search, Paperclip, Download } from "lucide";
+import { createElement, ArrowLeft, ArrowUp, Copy, Flag, Hash, LogIn, LogOut, Mic, MicOff, PhoneOff, Plus, Send, Trash2, Lock, UserPlus, UserMinus, Shield, UserX, Volume2, Reply, Search, Paperclip, Download, MessageCircle, History, Clock } from "lucide";
 import { space } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
 import { num, obj, str } from "@rustybuns/util/guard";
@@ -9,7 +9,7 @@ import { spacesPanel, type SpaceIcon } from "@rustybuns/util/spaces";
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {
   "arrow-left": ArrowLeft, "arrow-up": ArrowUp, plus: Plus, "log-in": LogIn, send: Send, copy: Copy, hash: Hash,
-  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield, reply: Reply, search: Search, paperclip: Paperclip, download: Download,
+  "mic-off": MicOff, mic: Mic, "user-x": UserX, flag: Flag, "log-out": LogOut, "volume-2": Volume2, "phone-off": PhoneOff, "trash-2": Trash2, lock: Lock, "user-plus": UserPlus, "user-minus": UserMinus, shield: Shield, reply: Reply, search: Search, paperclip: Paperclip, download: Download, "message-circle": MessageCircle, history: History, clock: Clock,
 };
 const HomeToken = obj({ token: str(4000, { min: 1 }), name: str(200), life: num(30, 86_400) });
 

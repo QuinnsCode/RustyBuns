@@ -94,5 +94,10 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://eqosys.qntbr.com"
+  },
+  "triggers": {
+    "crons": [
+      "17 4 * * *"
+    ]
   }
 }

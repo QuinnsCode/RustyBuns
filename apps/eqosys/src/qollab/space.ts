@@ -24,7 +24,7 @@
 //   /file?<as /socket>&channel=&name=&type=   POST the bytes: a message with the file, in that channel
 //   /file/<id>?<as /socket>                   GET the file back
 import { bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
-import { SpaceRole, type SpaceInfo, type SpaceMsg, type SpaceMessage } from "@rustybuns/util/eqosys";
+import { SpaceRole, type SpaceAudit, type SpaceInfo, type SpaceMsg, type SpaceMessage } from "@rustybuns/util/eqosys";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, STUDIO_SAY_MAX, type Said } from "./chat.ts";
@@ -35,6 +35,11 @@ import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
+/** The direct messages a space keeps at once, and the entries its audit log keeps (the newest). */
+export const DMS = 5000, AUDIT_MAX = 1000;
+/** The longest a space may say it keeps messages, in days (`keep`); unset, a channel keeps its last KEEP_PAGES pages. */
+export const KEEP_DAYS_MAX = 3650;
+const DAY = 86_400_000;
 /** The biggest file one message carries, and every file a space keeps at once, in bytes; and how many files a person posts a minute. */
 export const FILE_MAX = 10 * 1024 * 1024, FILE_BYTES = 1024 ** 3, FILES_A_MINUTE = 10;
 /** The replies a thread keeps the numbers of, and how many come back with it (the parent is one more). */
@@ -51,19 +56,32 @@ export const SPACE_NAME = str(60, { min: 1 });
 
 /** A message as a channel keeps it: its number in the channel, and who said what when. */
 type Msg = SpaceMessage;
-const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), sid: str(64, { min: 1 }), space: str(60), owner: opt(oneOf(["1"])), role: opt(SpaceRole), studio: opt(str(64)), iss: opt(str(300)) });
-/** `voice` is the voice channel their page says it is in. */
-type Member = { id: string; name: string; app: string; owner: boolean; role: SpaceRole; voice?: string };
+const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), sid: str(64, { min: 1 }), space: str(60), owner: opt(oneOf(["1"])), role: opt(SpaceRole), studio: opt(str(64)), iss: opt(str(300)), office: opt(oneOf(["1"])) });
+/** `voice` is the voice channel their page says it is in; `status` the line they set ("in the Q3 review", "back at 2"). */
+type Member = { id: string; name: string; app: string; owner: boolean; role: SpaceRole; voice?: string; status?: string };
+/** The longest status line. */
+export const STATUS_MAX = 80;
 /** The private channels, each with the ids of the people let in (those who run the space always are). */
 type Locked = Record<string, string[]>;
-/** Whether `m` sees channel `ch`: those who run the space see every one, a private one is for the people let in, a guest has #general. */
-const sees = (m: Member, ch: string, locked: Locked) => m.owner || (locked[ch] ? locked[ch].includes(m.id) : m.role !== "guest" || ch === "general");
+/** A direct message (#5543 part 1): a channel of two, `dm-<id>`, kept under `dms`; `names` as they were when it opened. */
+type Dm = { ids: [string, string]; names: [string, string] };
+type Dms = Record<string, Dm>;
+/** What decides who sees a channel: the private channels and the direct messages. */
+type Rules = { locked: Locked; dms: Dms };
+/**
+ * Whether `m` sees channel `ch`: a direct message is for its two people only (not even those who run the space); otherwise those
+ * who run the space see every one, a private one is for the people let in, a guest has #general.
+ */
+const sees = (m: Member, ch: string, r: Rules) => r.dms[ch] ? r.dms[ch].ids.includes(m.id)
+  : m.owner || (r.locked[ch] ? r.locked[ch].includes(m.id) : m.role !== "guest" || ch === "general");
 /** A voice channel: its fixed-length id (Qlave's room is `space:<space>:<id>`) and the name the owner gave it. */
 type Voice = { id: string; name: string };
 /** Who Qlave last said is in a voice channel, and when it said so (its clock). Kept under `roster:<channel id>`. */
 type Roster = { in: Of<typeof Present>; at: number };
 /** A file as the space keeps it, under `f:<id>`: the message it was posted with, who sent it, and its R2 key. */
 type Kept = { channel: string; msg: number; by: string; key: string; size: number };
+/** A line of the audit log (SpaceAudit in @rustybuns/util/eqosys): who did what to whom, and when. */
+type Audit = SpaceAudit;
 /** What a file is called, and its type, as the uploader's page says: no slashes or control characters, a plain `type/subtype`. */
 const fileName = (v: string | null) => v?.replace(/[\u0000-\u001f\u007f/\\]+/g, " ").trim().slice(0, 200) || "file";
 const fileType = (v: string | null) => {
@@ -75,9 +93,9 @@ const SAFE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"
 const RosterIn = obj({ channel: str(16, { min: 1 }), in: Present, at: int(0, 1e15) });
 
 const SpaceIn = obj({
-  t: oneOf(["say", "unsay", "history", "thread", "search", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role"]),
+  t: oneOf(["say", "unsay", "history", "thread", "search", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave", "allow", "role", "dm", "keep", "audit", "status"]),
   channel: opt(CHANNEL), text: opt(str(STUDIO_SAY_MAX)), before: opt(int(1, 1e12)), id: opt(str(200, { min: 1 })), on: opt(bool()), voice: opt(bool()),
-  private: opt(bool()), role: opt(oneOf(["admin", "member", "guest"])),
+  private: opt(bool()), role: opt(oneOf(["admin", "member", "guest"])), everywhere: opt(bool()), days: opt(int(0, KEEP_DAYS_MAX)),
   reply: opt(int(1, 1e12)), of: opt(int(1, 1e12)), q: opt(str(SEARCH_MAX)),
 });
 /** What a space says to a member: the page's guard is SpaceMsg in @rustybuns/util/eqosys. */
@@ -99,7 +117,8 @@ export const SPACES_OF = `SELECT space_id AS id FROM space_members WHERE user_id
   UNION SELECT s.id FROM spaces s JOIN studio_members sm ON sm.studio_id = s.studio_id WHERE sm.user_id = ?1`;
 
 /** A seat in a space, or null when they aren't in it. `runs`: channels, mute and kick are theirs (an owner or an admin, SpaceRole). */
-export type Seat = { name: string; studio: string | null; runs: boolean; role: SpaceRole };
+/** `office`: a business studio's space, which speaks office words (meetings, status lines; VISION.md#the-words). */
+export type Seat = { name: string; studio: string | null; runs: boolean; role: SpaceRole; office: boolean };
 /**
  * Someone's role in a space (bind their id as ?2): a studio's space maps the studio's roles (a maker is a member), and anyone else
  * there with a space_members row is a guest, whatever the row says; any other space its owner and space_members rows.
@@ -109,13 +128,13 @@ export const ROLE_OF = `CASE WHEN s.studio_id IS NOT NULL THEN CASE WHEN sm.role
   WHEN s.owner = ?2 THEN 'owner' ELSE m.role END`;
 /** A studio's space seats the studio's members and its guests (space_members rows, joined by its invite); any other space its space_members rows. */
 export async function seatIn(conf: Pick<Env, "DB">, sid: string, userId: string): Promise<Seat | null> {
-  const r = await conf.DB.prepare(`SELECT s.name, s.studio_id AS studio, ${ROLE_OF} AS role
-    FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?2
+  const r = await conf.DB.prepare(`SELECT s.name, s.studio_id AS studio, ${ROLE_OF} AS role, st.kind = 'business' AS office
+    FROM spaces s LEFT JOIN studios st ON st.id = s.studio_id LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?2
     LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?2
     WHERE s.id = ?1 AND (sm.user_id IS NOT NULL OR m.user_id IS NOT NULL)`)
-    .bind(sid, userId).first<{ name: string; studio: string | null; role: string }>();
+    .bind(sid, userId).first<{ name: string; studio: string | null; role: string; office: number | null }>();
   const role = r && check(SpaceRole, r.role);
-  return r && role ? { name: r.name, studio: r.studio, runs: role === "owner" || role === "admin", role } : null;
+  return r && role ? { name: r.name, studio: r.studio, runs: role === "owner" || role === "admin", role, office: !!r.office } : null;
 }
 
 export type MadeSpace = { ok: true; id: string; invite?: string } | { ok: false; status: number; error: string };
@@ -153,8 +172,28 @@ export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: stri
   if (!who) return { ok: false, status: 404, error: "nobody in that studio has that email" };
   const r = await removeMember(conf, studio, by, who);
   const sid = r.ok && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who })}`)).catch(() => null);
+  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who, by })}`)).catch(() => null);
   return r;
+}
+
+/**
+ * "Remove someone everywhere" (#5543 part 2): `id` comes out of every space they sit in that `by` runs (owns, is an admin of, or
+ * runs the studio of), but `skip` (the one asked from, already done). Each space takes them out by its own rules (a studio's
+ * own people go out of the studio), so a space whose rules say no counts as refused.
+ */
+export async function removeEverywhere(conf: Pick<Env, "DB" | "SPACE">, by: { id: string; name: string }, id: string, skip = ""): Promise<{ done: number; refused: number }> {
+  if (!conf.SPACE) return { done: 0, refused: 0 };
+  const theirs = new Set((await conf.DB.prepare(SPACES_OF).bind(id).all<{ id: string }>()).results.map((r) => r.id));
+  const mine = (await conf.DB.prepare(SPACES_OF).bind(by.id).all<{ id: string }>()).results.map((r) => r.id).filter((s) => s !== skip && theirs.has(s));
+  let done = 0, refused = 0;
+  for (const sid of mine) {
+    // A space nobody has opened yet doesn't know its own id or studio, so they go with the order.
+    const studio = await conf.DB.prepare("SELECT studio_id FROM spaces WHERE id = ?").bind(sid).first<string | null>("studio_id");
+    const q = new URLSearchParams({ by: by.id, name: by.name, id, sid, ...(studio ? { studio } : {}) });
+    const r = await spaceOf(conf.SPACE, sid).fetch(new Request(`https://space/kick?${q}`)).catch(() => null);
+    if (r?.ok) done++; else if (r?.status !== 403) refused++;
+  }
+  return { done, refused };
 }
 
 /**
@@ -172,7 +211,7 @@ export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string,
     AND user_id IN (SELECT id FROM "user" WHERE lower(email) = lower(?)) RETURNING user_id`).bind(studio, email.trim()).first<string>("user_id") : null;
   const who = guest ?? (before && before.role !== role ? before.id : null);
   const sid = r.ok && who && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who })}`)).catch(() => null);
+  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who, by, to: guest ? "member" : role })}`)).catch(() => null);
   return r;
 }
 
@@ -205,21 +244,44 @@ export class Space {
       return json({ ok: true });
     }
     // Out of the studio that owns this space (studioLeft): their sockets close and Qlave drops them from its voice channels.
-    if (url.pathname === "/gone") { await this.out(url.searchParams.get("id") ?? "", "removed from the studio"); return json({ ok: true }); }
+    // `by` (who took them out, on the Studio tab) goes in the audit log; a seat that lapsed (lapseSeats) has none.
+    if (url.pathname === "/gone") {
+      const id = url.searchParams.get("id") ?? "", by = url.searchParams.get("by");
+      if (id) await this.log({ act: "kick", by: by ? { id: by } : { id: "", name: "company sign-in" }, who: id });
+      await this.out(id, "removed from the studio");
+      return json({ ok: true });
+    }
     // Their role in the studio changed (studioAdd): their sockets close, and the page's reconnect reads the new role at the door.
-    if (url.pathname === "/role") { const id = url.searchParams.get("id"); if (id) this.close((m) => m.id === id, ROLE_CHANGED, "your role in the studio changed"); return json({ ok: true }); }
+    if (url.pathname === "/role") {
+      const id = url.searchParams.get("id"), by = url.searchParams.get("by");
+      if (id && by) await this.log({ act: "role", by: { id: by }, who: id, to: url.searchParams.get("to") ?? "" });
+      if (id) this.close((m) => m.id === id, ROLE_CHANGED, "your role in the studio changed");
+      return json({ ok: true });
+    }
+    // "Remove someone everywhere" (removeEverywhere): `by` runs this space too (D1 says so here, not the caller), so they come out of it by its rules.
+    if (url.pathname === "/kick") {
+      const sid = url.searchParams.get("sid"), studio = url.searchParams.get("studio");
+      if (sid) await this.ctx.storage.put("sid", sid);
+      if (studio) await this.ctx.storage.put("studio", studio);
+      const by = url.searchParams.get("by") ?? "", id = url.searchParams.get("id") ?? "", seat = by && id && by !== id ? await seatIn(this.env, await this.sid(), by) : null;
+      if (!seat?.runs) return json({ ok: false, error: "you don't run that space" }, 403);
+      const why = await this.kick({ id: by, name: url.searchParams.get("name") ?? "", app: "", owner: true, role: seat.role }, id, true);
+      return json(why ? { ok: false, error: why } : { ok: true }, why ? 409 : 200);
+    }
     if (url.pathname === "/mine") return this.mine(url.searchParams.get("id") ?? "");
     // How many people are in it now (two tabs are one), for the eqosys home's list of your spaces.
     if (url.pathname === "/on") return json({ on: (await this.members()).length });
     if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
     const file = /^\/file(?:\/([0-9a-f-]{36}))?$/.exec(url.pathname);
-    if ((url.pathname !== "/socket" && !file) || !who) return json({ error: "not found" }, 404);
+    if ((url.pathname !== "/socket" && url.pathname !== "/export" && !file) || !who) return json({ error: "not found" }, 404);
     await this.ctx.storage.put("sid", who.sid);
     await this.ctx.storage.put("name", who.space);
     if (who.studio) await this.ctx.storage.put("studio", who.studio);
+    if (who.office) await this.ctx.storage.put("office", true); else await this.ctx.storage.delete("office");
     const owner = who.owner === "1", m: Member = { id: who.id, name: who.name, app: who.app, owner, role: who.role ?? (owner ? "owner" : "member") };
     if (file) return file[1] ? this.fileOut(m, file[1]) : this.fileIn(m, req, url.searchParams);
+    if (url.pathname === "/export") return this.export(m, url.searchParams.get("channel"));
     const { server, response } = this.sockets.upgrade(m);
     this.sockets.send(server, await this.info(m));
     this.online();
@@ -230,15 +292,23 @@ export class Space {
     const frame = this.sockets.frame(ws, raw), me = this.sockets.who(ws);
     const msg = frame && check(SpaceIn, frame.value);
     if (!msg || !me) return;
-    const channels = await this.channels(), locked = await this.locked();
+    // `kept`: the text channels; `channels` those and the direct messages, which every check below may read or write in.
+    const kept = await this.channels(), rules = await this.rules(), locked = rules.locked, channels = [...kept, ...Object.keys(rules.dms)];
     const ch = msg.channel ?? "general";
+    if (msg.t === "dm") return this.dm(ws, me, msg.id ?? "", rules.dms);
+    if (msg.t === "status") {
+      // A status line beside their name in the online list, kept on this socket (each page sets its own); empty clears it.
+      const { status: _, ...rest } = me, line = (msg.text ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, STATUS_MAX);
+      this.sockets.attach(ws, { ...rest, ...(line ? { status: line } : {}) });
+      return this.online();
+    }
     // A guest in a studio's space leaves it like any space; the studio's own people leave it by leaving the studio.
     if (msg.t === "leave") return await this.studio() && me.role !== "guest" ? this.sockets.send(ws, { t: "refused", why: "a studio's space follows the studio: leave the studio to leave it" }) : this.leave(me.id);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
-    if (msg.t === "history") return channels.includes(ch) && sees(me, ch, locked) ? this.sockets.send(ws, await this.history(ch, msg.before)) : undefined;
-    if (msg.t === "thread") return channels.includes(ch) && sees(me, ch, locked) && msg.of ? this.sockets.send(ws, await this.thread(ch, msg.of)) : undefined;
+    if (msg.t === "history") return channels.includes(ch) && sees(me, ch, rules) ? this.sockets.send(ws, await this.history(ch, msg.before)) : undefined;
+    if (msg.t === "thread") return channels.includes(ch) && sees(me, ch, rules) && msg.of ? this.sockets.send(ws, await this.thread(ch, msg.of)) : undefined;
     if (msg.t === "search") {
-      if (!channels.includes(ch) || !sees(me, ch, locked) || !msg.q?.trim()) return;
+      if (!channels.includes(ch) || !sees(me, ch, rules) || !msg.q?.trim()) return;
       const q = this.searches.line(ws, msg.q, Date.now(), SEARCH_MAX);
       return q ? this.sockets.send(ws, await this.search(ch, q)) : this.sockets.send(ws, { t: "refused", why: "Searching too fast. Try again in a few seconds." });
     }
@@ -251,7 +321,7 @@ export class Space {
       return this.online();
     }
     if (msg.t === "say") {
-      if (!channels.includes(ch) || !sees(me, ch, locked)) return this.sockets.send(ws, { t: "refused", why: `no channel #${ch}` });
+      if (!channels.includes(ch) || !sees(me, ch, rules)) return this.sockets.send(ws, { t: "refused", why: `no channel #${ch}` });
       const text = this.chat.line(ws, msg.text ?? "", Date.now(), await this.studio() ? STUDIO_SAY_MAX : SAY_MAX);
       if (!text || (await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return;
       // A reply to a reply joins the thread it is in: threads are one deep.
@@ -260,7 +330,7 @@ export class Space {
       return this.say(ch, { from: { id: me.id, name: me.name }, text, at: Date.now() }, to && (to.reply ?? to.id));
     }
     if (msg.t === "unsay") {
-      const m = channels.includes(ch) && sees(me, ch, locked) && msg.of ? await this.message(ch, msg.of) : undefined;
+      const m = channels.includes(ch) && sees(me, ch, rules) && msg.of ? await this.message(ch, msg.of) : undefined;
       if (!m) return this.sockets.send(ws, { t: "refused", why: "that message is gone" });
       if (m.from.id !== me.id && !me.owner) return this.sockets.send(ws, { t: "refused", why: "only its sender, the space's owner or an admin deletes a message" });
       return this.unsay(ch, m);
@@ -270,15 +340,18 @@ export class Space {
     const voices = await this.voices();
     if (msg.t === "channel") {
       if (!msg.channel || (msg.voice ? voices.some((v) => v.name === msg.channel) : channels.includes(msg.channel))) return;
-      if (channels.length + voices.length >= CHANNELS) return this.sockets.send(ws, { t: "refused", why: `a space has up to ${CHANNELS} channels` });
+      if (msg.channel.startsWith("dm-")) return this.sockets.send(ws, { t: "refused", why: "dm- is kept for direct messages" });
+      if (kept.length + voices.length >= CHANNELS) return this.sockets.send(ws, { t: "refused", why: `a space has up to ${CHANNELS} channels` });
       if (msg.voice) await this.ctx.storage.put("voice", [...voices, { id: `v${crypto.randomUUID().slice(0, 8)}`, name: msg.channel }]);
       else {
         if (msg.private) await this.ctx.storage.put("private", { ...locked, [msg.channel]: [] } satisfies Locked);
-        await this.ctx.storage.put("channels", [...channels, msg.channel]);
+        await this.ctx.storage.put("channels", [...kept, msg.channel]);
       }
       return this.announce();
     }
-    if (msg.t === "drop") return this.dropChannel(ws, msg.channel ?? "");
+    if (msg.t === "drop") return this.dropChannel(ws, me, msg.channel ?? "");
+    if (msg.t === "keep") return this.keep(me, msg.days ?? 0);
+    if (msg.t === "audit") return this.sockets.send(ws, { t: "audit", entries: await this.ctx.storage.get<Audit[]>("audit") ?? [] });
     const id = msg.id ?? "";
     if (!id || id === me.id) return;
     if (msg.t === "allow") {
@@ -290,11 +363,10 @@ export class Space {
       return this.announce();
     }
     if (msg.t === "role") return this.setRole(ws, me, id, msg.role ?? "member");
-    // An admin acts on members and guests; only an owner on another admin (or, in a studio, by the studio's own rules).
-    const theirs = await this.roleOf(id);
-    if (me.role !== "owner" && (theirs === "owner" || theirs === "admin") && msg.t === "mute")
-      return this.sockets.send(ws, { t: "refused", why: "only an owner mutes an owner or an admin" });
     if (msg.t === "mute") {
+      // An admin mutes members and guests; only an owner mutes another admin.
+      const theirs = await this.roleOf(id);
+      if (me.role !== "owner" && (theirs === "owner" || theirs === "admin")) return this.sockets.send(ws, { t: "refused", why: "only an owner mutes an owner or an admin" });
       const muted = new Set(await this.ctx.storage.get<string[]>("muted") ?? []), on = msg.on ?? true;
       if (on) muted.add(id); else muted.delete(id);
       await this.ctx.storage.put("muted", [...muted]);
@@ -302,13 +374,32 @@ export class Space {
       const sid = await this.sid();
       return this.enqueue(voices.map((v): Order => ({ t: "mute", room: roomOf(sid, v.id), sub: id, on })));
     }
-    // kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space a guest goes the
-    // same way; one of the studio's own goes out of the studio, by the studio's own rules (an admin can't take out an owner).
-    const studio = await this.studio();
-    if (!studio && me.role !== "owner" && theirs === "admin") return this.sockets.send(ws, { t: "refused", why: "only the owner takes out an admin" });
-    if (!studio || theirs === "guest") return this.leave(id, "removed from the space");
-    const r = await removeMember(this.env, studio, me.id, id);
-    return r.ok ? this.out(id, "removed from the studio") : this.sockets.send(ws, { t: "refused", why: r.error });
+    const why = await this.kick(me, id);
+    if (why) return this.sockets.send(ws, { t: "refused", why });
+    // "Remove everywhere": out of every other space they sit in that `me` runs too (removeEverywhere), each by its own rules.
+    if (msg.everywhere) {
+      const r = await removeEverywhere(this.env, { id: me.id, name: me.name }, id, await this.sid());
+      this.sockets.send(ws, { t: "note", text: `Removed from ${r.done + 1} space${r.done ? "s" : ""}${r.refused ? `; ${r.refused} said no` : ""}.` });
+    }
+  }
+
+  /**
+   * kick: out of the space's members (D1) and off every socket now; an invite brings them back. In a studio's space a guest goes the
+   * same way; one of the studio's own goes out of the studio, by the studio's own rules (an admin can't take out an owner). The
+   * reason it refused, or null once they are out. It goes in the audit log, `everywhere` when it came from removeEverywhere.
+   */
+  private async kick(me: Member, id: string, everywhere = false): Promise<string | null> {
+    const theirs = await this.roleOf(id), studio = await this.studio();
+    if (!theirs) return "they aren't in that space";
+    if (!studio && me.role !== "owner" && (theirs === "admin" || theirs === "owner")) return "only the owner takes out an admin";
+    if (!studio || theirs === "guest") await this.leave(id, "removed from the space");
+    else {
+      const r = await removeMember(this.env, studio, me.id, id);
+      if (!r.ok) return r.error;
+      await this.out(id, "removed from the studio");
+    }
+    await this.log({ act: everywhere ? "everywhere" : "kick", by: { id: me.id, name: me.name }, who: id });
+    return null;
   }
 
   webSocketClose(ws: RoomSocket) { this.online(ws); }
@@ -317,6 +408,99 @@ export class Space {
   private async channels(): Promise<string[]> { return await this.ctx.storage.get<string[]>("channels") ?? ["general"]; }
   private async voices(): Promise<Voice[]> { return await this.ctx.storage.get<Voice[]>("voice") ?? []; }
   private async locked(): Promise<Locked> { return await this.ctx.storage.get<Locked>("private") ?? {}; }
+  private async dms(): Promise<Dms> { return await this.ctx.storage.get<Dms>("dms") ?? {}; }
+  private async rules(): Promise<Rules> { return { locked: await this.locked(), dms: await this.dms() }; }
+  /** The text channels and the direct messages: every channel that holds messages. */
+  private async all(): Promise<string[]> { return [...await this.channels(), ...Object.keys(await this.dms())]; }
+
+  /**
+   * A direct message with `id`, opened (or found, if the two have one): both must sit in the space. It is a channel of two,
+   * `dm-<id>`, that only they see; both their pages hear the space again with it in `dms`, and the asker's opens on it.
+   */
+  private async dm(ws: RoomSocket, me: Member, id: string, dms: Dms) {
+    if (!id || id === me.id) return;
+    const had = Object.entries(dms).find(([, d]) => d.ids.includes(me.id) && d.ids.includes(id));
+    if (had) return this.sockets.send(ws, { t: "dm", channel: had[0], id });
+    if (!await this.roleOf(id)) return this.sockets.send(ws, { t: "refused", why: "they aren't in this space" });
+    if (Object.keys(dms).length >= DMS) return this.sockets.send(ws, { t: "refused", why: "this space holds as many direct messages as it can" });
+    const online = (await this.members()).find((m) => m.id === id);
+    const name = online?.name ?? (await this.env.DB.prepare(`SELECT name FROM "user" WHERE id = ?`).bind(id).first<string>("name")) ?? "";
+    const channel = `dm-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
+    await this.ctx.storage.put("dms", { ...dms, [channel]: { ids: [me.id, id], names: [me.name, name] } } satisfies Dms);
+    await this.tell([me.id, id]);
+    this.sockets.send(ws, { t: "dm", channel, id });
+  }
+
+  /** Every direct message `id` is in goes, with its messages and files: they are out of the space, or their account is gone. */
+  private async dropDms(id: string) {
+    const dms = await this.dms(), gone = Object.keys(dms).filter((c) => dms[c]!.ids.includes(id));
+    if (!gone.length) return;
+    const others = gone.flatMap((c) => dms[c]!.ids);
+    for (const c of gone) { await this.wipe(c); delete dms[c]; }
+    await this.ctx.storage.put("dms", dms);
+    await this.tell(others);
+  }
+
+  /** A channel's messages, threads, count and files go (its name stays wherever the caller keeps it). */
+  private async wipe(channel: string) {
+    for (const pre of [`p:${channel}:`, `t:${channel}:`]) for (const k of (await this.ctx.storage.list({ prefix: pre })).keys()) await this.ctx.storage.delete(k);
+    await this.ctx.storage.delete(`n:${channel}`);
+    await this.dropFiles((f) => f.channel === channel);
+  }
+
+  /** The pages of these people hear the space again (a direct message came or went). */
+  private async tell(ids: string[]) {
+    for (const sock of this.sockets.open()) { const m = this.sockets.who(sock); if (m && ids.includes(m.id)) this.sockets.send(sock, await this.info(m)); }
+  }
+
+  /** A line in the audit log (role changes, kicks, channel deletes, retention), the newest AUDIT_MAX kept. */
+  private async log(e: Omit<Audit, "at">) {
+    const had = await this.ctx.storage.get<Audit[]>("audit") ?? [];
+    await this.ctx.storage.put("audit", [...had, { at: Date.now(), ...e }].slice(-AUDIT_MAX));
+  }
+
+  /**
+   * Those who run it set how long messages stay, in days (0: until a channel's last KEEP_PAGES pages are full, as before). The
+   * alarm takes older ones out each day (prune), direct messages too.
+   */
+  private async keep(me: Member, days: number) {
+    if (days) { await this.ctx.storage.put("keepDays", days); await this.ctx.storage.delete("prunedAt"); await this.ctx.storage.setAlarm(Date.now()); }
+    else await this.ctx.storage.delete("keepDays");
+    await this.log({ act: "keep", by: { id: me.id, name: me.name }, to: String(days) });
+    await this.announce();
+  }
+
+  /** Messages older than the space keeps go: out of their pages, with their threads and files. Pages left empty go too. */
+  private async prune(now = Date.now()) {
+    const days = await this.ctx.storage.get<number>("keepDays");
+    if (!days) return;
+    const cut = now - days * DAY, files = new Set<string>();
+    for (const [k, page] of await this.ctx.storage.list<Msg[]>({ prefix: "p:" })) {
+      const old = page.filter((m) => m.at < cut);
+      if (!old.length) continue;
+      const channel = k.slice(2, k.lastIndexOf(":"));
+      for (const m of old) { if (m.replies) await this.ctx.storage.delete(`t:${channel}:${m.id}`); if (m.file) files.add(m.file.id); }
+      const left = page.filter((m) => m.at >= cut);
+      if (left.length) await this.ctx.storage.put(k, left); else await this.ctx.storage.delete(k);
+    }
+    if (files.size) await this.dropFiles((_, id) => files.has(id));
+  }
+
+  /**
+   * A channel, or every text channel, as JSON, for those who run the space (a legal hold, a move). Direct messages stay out:
+   * nobody but their two people reads them. Messages carry their files' names, not the bytes.
+   */
+  private async export(me: Member, channel: string | null): Promise<Response> {
+    if (!me.owner) return json({ error: "only the space's owner or an admin exports it" }, 403);
+    const text = await this.channels();
+    if (channel && !text.includes(channel)) return json({ error: `no channel #${channel}` }, 404);
+    const out: Record<string, Msg[]> = {};
+    for (const ch of channel ? [channel] : text) out[ch] = [...(await this.ctx.storage.list<Msg[]>({ prefix: `p:${ch}:` })).values()].flat();
+    await this.log({ act: "export", by: { id: me.id, name: me.name }, ...(channel ? { channel } : {}) });
+    return new Response(JSON.stringify({ space: await this.ctx.storage.get<string>("name") ?? "", at: Date.now(), channels: out }), { headers: {
+      "content-type": "application/json", "content-disposition": `attachment; filename="space-export.json"`, "cache-control": "private, no-store",
+    } });
+  }
 
   /** Someone's role here as D1 has it (they may be offline), or null when they aren't in it. */
   private async roleOf(id: string): Promise<SpaceRole | null> {
@@ -334,6 +518,7 @@ export class Space {
     const set = await this.env.DB.prepare("UPDATE space_members SET role = ? WHERE space_id = (SELECT id FROM spaces WHERE id = ? AND owner != ?) AND user_id = ? RETURNING user_id")
       .bind(role, sid, id, id).first<string>("user_id");
     if (!set) return this.sockets.send(ws, { t: "refused", why: "no such member" });
+    await this.log({ act: "role", by: { id: me.id, name: me.name }, who: id, to: role });
     this.close((m) => m.id === id, ROLE_CHANGED, "your role in the space changed");
   }
   /** The studio that owns this space, if one does. */
@@ -346,12 +531,14 @@ export class Space {
 
   /** What one member is told of the space: only the channels they see, and (to those who run it) who is let into each private one. */
   private async info(m: Member): Promise<{ t: "space" } & SpaceInfo> {
-    const locked = await this.locked(), channels = (await this.channels()).filter((c) => sees(m, c, locked));
-    const shut = channels.filter((c) => locked[c]);
+    const rules = await this.rules(), locked = rules.locked, channels = (await this.channels()).filter((c) => sees(m, c, rules));
+    const shut = channels.filter((c) => locked[c]), keep = await this.ctx.storage.get<number>("keepDays");
+    const dms = Object.entries(rules.dms).flatMap(([channel, d]) => { const i = d.ids.indexOf(m.id); return i < 0 ? [] : [{ channel, id: d.ids[1 - i]!, name: d.names[1 - i]! }]; });
     return {
       t: "space", name: await this.ctx.storage.get<string>("name") ?? "", channels, voice: m.role === "guest" ? [] : await this.voices(), owner: m.owner, role: m.role,
       max: await this.studio() ? STUDIO_SAY_MAX : SAY_MAX, ...(shut.length ? { private: shut } : {}),
       ...(m.owner && shut.length ? { allowed: shut.map((c) => ({ channel: c, ids: locked[c]! })) } : {}),
+      ...(dms.length ? { dms } : {}), ...(keep ? { keep } : {}), ...(await this.ctx.storage.get<boolean>("office") ? { office: true } : {}),
     };
   }
 
@@ -376,7 +563,7 @@ export class Space {
   }
 
   /** The owner deletes a channel: a text one's messages go (never #general's), a voice one's room ends on Qlave. */
-  private async dropChannel(ws: RoomSocket, channel: string) {
+  private async dropChannel(ws: RoomSocket, me: Member, channel: string) {
     const voices = await this.voices(), v = voices.find((x) => x.id === channel);
     if (v) {
       await this.ctx.storage.put("voice", voices.filter((x) => x !== v));
@@ -392,10 +579,9 @@ export class Space {
       await this.ctx.storage.put("channels", channels.filter((c) => c !== channel));
       const { [channel]: _, ...locked } = await this.locked();
       await this.ctx.storage.put("private", locked);
-      for (const pre of [`p:${channel}:`, `t:${channel}:`]) for (const k of (await this.ctx.storage.list({ prefix: pre })).keys()) await this.ctx.storage.delete(k);
-      await this.ctx.storage.delete(`n:${channel}`);
-      await this.dropFiles((f) => f.channel === channel);
+      await this.wipe(channel);
     }
+    await this.log({ act: "drop", by: { id: me.id, name: me.name }, channel: v?.name ?? channel });
     await this.announce();
     this.online();
   }
@@ -410,8 +596,11 @@ export class Space {
   /** Send what is waiting (qlave.ts `flush`), and wake again when something is left to retry. */
   async alarm() {
     await flush(this.ctx.storage, this.env);
-    const next = await this.ctx.storage.get<number>("outboxAt");
-    if (next) await this.ctx.storage.setAlarm(next);
+    // With a retention set, old messages go once a day (prune); the outbox may need it sooner.
+    const now = Date.now(), days = await this.ctx.storage.get<number>("keepDays");
+    if (days && (await this.ctx.storage.get<number>("prunedAt") ?? 0) <= now - DAY + 60_000) { await this.prune(now); await this.ctx.storage.put("prunedAt", now); }
+    const next = Math.min(await this.ctx.storage.get<number>("outboxAt") ?? Infinity, days ? (await this.ctx.storage.get<number>("prunedAt") ?? now) + DAY : Infinity);
+    if (next < Infinity) await this.ctx.storage.setAlarm(next);
   }
 
   /** A kept message of a channel by its number, or undefined when it never was or its page has gone. */
@@ -439,8 +628,8 @@ export class Space {
       await this.ctx.storage.put(key, held.map((x) => x.id === reply ? { ...x, replies: (x.replies ?? 0) + 1 } : x));
       await this.ctx.storage.put(`t:${channel}:${reply}`, [...(await this.ctx.storage.get<number[]>(`t:${channel}:${reply}`) ?? []), n].slice(-THREAD_MAX));
     }
-    const locked = await this.locked(), out: SpaceOut = { t: "said", channel, ...m };
-    for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, locked)) this.sockets.send(sock, out); }
+    const rules = await this.rules(), out: SpaceOut = { t: "said", channel, ...m };
+    for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, rules)) this.sockets.send(sock, out); }
     return m;
   }
 
@@ -455,8 +644,8 @@ export class Space {
     }
     if (m.replies) await this.ctx.storage.delete(`t:${channel}:${m.id}`);
     if (m.file) await this.dropFiles((_, id) => id === m.file!.id);
-    const locked = await this.locked(), out: SpaceOut = { t: "unsaid", channel, id: m.id };
-    for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, locked)) this.sockets.send(sock, out); }
+    const rules = await this.rules(), out: SpaceOut = { t: "unsaid", channel, id: m.id };
+    for (const sock of this.sockets.open()) { const who = this.sockets.who(sock); if (who && sees(who, channel, rules)) this.sockets.send(sock, out); }
   }
 
   /** A member posts a file: checked against the channel, a mute, FILES_A_MINUTE, FILE_MAX and FILE_BYTES, put on R2, then said as a message. */
@@ -465,7 +654,7 @@ export class Space {
     const bucket = this.env.FILES;
     if (!bucket) return json({ error: "no file sharing here" }, 503);
     const ch = q.get("channel") ?? "general";
-    if (!(await this.channels()).includes(ch) || !sees(me, ch, await this.locked())) return json({ error: `no channel #${ch}` }, 404);
+    if (!(await this.all()).includes(ch) || !sees(me, ch, await this.rules())) return json({ error: `no channel #${ch}` }, 404);
     if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id)) return json({ error: "you're muted here" }, 403);
     const now = Date.now(), recent = (this.posted.get(me.id) ?? []).filter((t) => t > now - 60_000);
     if (recent.length >= FILES_A_MINUTE) return json({ error: `up to ${FILES_A_MINUTE} files a minute; wait a little` }, 429);
@@ -486,7 +675,7 @@ export class Space {
   /** A file back, to a member who sees the channel it was posted in. Always a download, and only SAFE_TYPES keep their type. */
   private async fileOut(me: Member, id: string): Promise<Response> {
     const f = await this.ctx.storage.get<Kept>(`f:${id}`);
-    if (!f || !(await this.channels()).includes(f.channel) || !sees(me, f.channel, await this.locked())) return json({ error: "no such file" }, 404);
+    if (!f || !(await this.all()).includes(f.channel) || !sees(me, f.channel, await this.rules())) return json({ error: "no such file" }, 404);
     const got = await this.env.FILES?.get(f.key);
     const name = (await this.message(f.channel, f.msg))?.file?.name ?? "file";
     if (!got) return json({ error: "no such file" }, 404);
@@ -549,12 +738,14 @@ export class Space {
     if (out && why !== "left the space") await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintInvite(), sid).run();
     // The owner can't leave their own space, so nothing goes to Qlave for them.
     if (out) await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
+    if (out) await this.dropDms(id);
   }
 
   /** Someone is no longer seated here (D1 already says so): their sockets close, whoever they were, and Qlave drops them from every voice channel. */
   private async out(id: string, why: string) {
     if (!id) return;
     this.close((m) => m.id === id, 4003, why);
+    await this.dropDms(id);
     const sid = await this.sid();
     await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
   }
@@ -589,6 +780,7 @@ export class Space {
     for (const [k, page] of await this.ctx.storage.list<Msg[]>({ prefix: "p:" }))
       if (page.some((m) => m.from.id === id)) await this.ctx.storage.put(k, page.filter((m) => m.from.id !== id));
     await this.dropFiles((f) => f.by === id);
+    await this.dropDms(id);
     await this.ctx.storage.put("muted", (await this.ctx.storage.get<string[]>("muted") ?? []).filter((x) => x !== id));
     await this.ctx.storage.put("private", Object.fromEntries(Object.entries(await this.locked()).map(([c, ids]) => [c, ids.filter((x) => x !== id)])));
     return json({ ok: true });
@@ -636,13 +828,14 @@ export class Space {
       told.add(channel);
       for (const p of r.in) heard.set(p.sub, channel);
     }
-    const seen = new Map<string, { id: string; name: string; role: SpaceRole; voice?: string }>();
+    const seen = new Map<string, { id: string; name: string; role: SpaceRole; voice?: string; status?: string }>();
     for (const ws of this.sockets.open()) {
       const m = ws === gone ? null : this.sockets.who(ws);
       if (!m) continue;
       const said = m.voice && !told.has(m.voice) ? m.voice : undefined;
       const voice = heard.get(m.id) ?? said ?? seen.get(m.id)?.voice;
-      seen.set(m.id, { id: m.id, name: m.name, role: m.role, ...(voice ? { voice } : {}) });
+      const status = m.status ?? seen.get(m.id)?.status;
+      seen.set(m.id, { id: m.id, name: m.name, role: m.role, ...(voice ? { voice } : {}), ...(status ? { status } : {}) });
     }
     return [...seen.values()];
   }
