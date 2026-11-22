@@ -2,7 +2,7 @@
 // No key, no sign-in. Docs: https://bsky.network/docs/jetstream/
 import { check, obj, opt, raw, str } from "@rustybuns/util/guard";
 
-export const JETSTREAM = "wss://jetstream.us-east.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents";
+const JETSTREAM = "wss://jetstream.us-east.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents";
 
 /** The subscribe URL for these accounts and collections (none: all), commits only, picking up after `cursor`. */
 export function streamUrl(o: { dids?: string[]; collections?: string[]; cursor?: number }): string {

@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "bun scripts/typecheck.ts",
     "docs": "bun scripts/docs.ts",
-    "knip": "knip --include exports,types,files --workspace apps/cron-swanson",
+    "knip": "knip --include exports,types,files --workspace apps/cron-swanson --workspace apps/at-lens",
     "site": "bun scripts/site.ts",
     "test": "bun test",
     "builder": "bun scripts/remote-ci.ts",

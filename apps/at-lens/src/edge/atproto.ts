@@ -22,7 +22,7 @@ export const isHandle = (s: string) => s.length <= 253 && HANDLE.test(s) && !NO_
 
 // atproto uses two DID methods: did:plc (the PLC directory) and did:web (a host's own did.json, hostname only).
 const PLC = /^did:plc:[a-z2-7]{24}$/;
-export const isDid = (s: string) => PLC.test(s) || (s.startsWith("did:web:") && isHandle(s.slice(8)));
+const isDid = (s: string) => PLC.test(s) || (s.startsWith("did:web:") && isHandle(s.slice(8)));
 
 /** "@Alice.example.com", "alice.example.com" or "did:plc:..." as what to look up, or null. */
 export function parseQuery(q: string): { did: string } | { handle: string } | null {
@@ -62,7 +62,7 @@ async function getJson(f: Fetcher, url: string, accept = "application/json"): Pr
 const Doh = obj({ Answer: opt(arr(obj({ type: raw, data: str(2000) }), 50, { drop: true })) });
 
 /** The DID in `_atproto.<handle>`'s TXT records (Cloudflare's DNS over HTTPS), or null when there isn't exactly one. */
-export async function didFromDns(handle: string, f: Fetcher): Promise<string | null> {
+async function didFromDns(handle: string, f: Fetcher): Promise<string | null> {
   const doh = check(Doh, await getJson(f, `https://cloudflare-dns.com/dns-query?name=_atproto.${handle}&type=TXT`, "application/dns-json").catch(() => null));
   const dids = new Set<string>();
   for (const a of doh?.Answer ?? []) {
@@ -75,7 +75,7 @@ export async function didFromDns(handle: string, f: Fetcher): Promise<string | n
 }
 
 /** The DID at `https://<handle>/.well-known/atproto-did`, or null. */
-export async function didFromWellKnown(handle: string, f: Fetcher): Promise<string | null> {
+async function didFromWellKnown(handle: string, f: Fetcher): Promise<string | null> {
   try {
     const res = await f(`https://${handle}/.well-known/atproto-did`, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: "follow" });
     if (!res.ok) return null;
@@ -97,26 +97,26 @@ const DidDoc = obj({
   alsoKnownAs: opt(arr(str(2048), 20, { drop: true })),
   service: opt(arr(obj({ id: str(2048), type: str(200), serviceEndpoint: raw }), 20, { drop: true })),
 });
-export type DidDoc = Of<typeof DidDoc>;
+type DidDoc = Of<typeof DidDoc>;
 
 /** Where a DID's document lives. */
-export const didDocUrl = (did: string) => did.startsWith("did:web:") ? `https://${did.slice(8)}/.well-known/did.json` : `https://plc.directory/${did}`;
+const didDocUrl = (did: string) => did.startsWith("did:web:") ? `https://${did.slice(8)}/.well-known/did.json` : `https://plc.directory/${did}`;
 
-export async function resolveDid(did: string, f: Fetcher): Promise<DidDoc> {
+async function resolveDid(did: string, f: Fetcher): Promise<DidDoc> {
   const doc = check(DidDoc, await getJson(f, didDocUrl(did)));
   if (!doc || doc.id !== did) throw new Error(`${didDocUrl(did)} is not ${did}'s DID document`);
   return doc;
 }
 
 /** The handle a DID document claims (its first at:// alias), lower-cased, or null. */
-export function claimedHandle(doc: DidDoc): string | null {
+function claimedHandle(doc: DidDoc): string | null {
   const aka = doc.alsoKnownAs?.find((a) => a.startsWith("at://"));
   const h = aka?.slice(5).toLowerCase();
   return h && isHandle(h) ? h : null;
 }
 
 /** The data server a DID document names (#atproto_pds, an https URL), or null. */
-export function pdsOf(doc: DidDoc): string | null {
+function pdsOf(doc: DidDoc): string | null {
   const s = doc.service?.find((x) => (x.id === "#atproto_pds" || x.id === `${doc.id}#atproto_pds`) && x.type === "AtprotoPersonalDataServer");
   if (typeof s?.serviceEndpoint !== "string") return null;
   try {
@@ -160,7 +160,7 @@ export async function lookup(q: string, f: Fetcher): Promise<Lookup> {
 
 // A collection is an NSID: reversed domain plus a name, like app.bsky.feed.post.
 const NSID = /^[a-zA-Z]([a-zA-Z0-9-]{0,62})?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,62})?)+(\.[a-zA-Z][a-zA-Z0-9]{0,62})$/;
-export const isNsid = (s: string) => s.length <= 317 && NSID.test(s);
+const isNsid = (s: string) => s.length <= 317 && NSID.test(s);
 
 const Records = obj({ records: arr(obj({ uri: str(8192), cid: str(200), value: raw }), 100, { drop: true }), cursor: opt(str(200)) });
 export type Records = Of<typeof Records>;
