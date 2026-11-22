@@ -23,7 +23,7 @@ export type ToWorklet =
    * The sesh's desk beyond its tracks (src/mixer.ts `deskPlays`): each player's channel by their live-line number, every
    * solo worked out, and the aux 2 return: its fader, its mute and the gear cabled into it (null: nothing whole, silent).
    */
-  | { t: "desk"; players: { peer: number; channel: Channel }[]; aux2: { gear: AmpSettings | null; fader: number; mute: boolean } }
+  | { t: "desk"; players: { peer: number; channel: Channel }[]; aux2: { gear: AmpSettings | null; fader: number; mute: boolean; eq?: EqDoc }; space?: EqDoc }
   /** Shape, the master EQ: every slot at once (it is small), and its automation. */
   | { t: "eq"; bands: EqDoc; lanes: Lane[] }
   /** A track's Shape, its EQ insert before the sum (not automated). */

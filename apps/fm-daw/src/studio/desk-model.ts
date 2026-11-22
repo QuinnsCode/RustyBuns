@@ -4,7 +4,8 @@
 // desk-panel.ts draws it with the gear room's strips (src/room/desk.ts); a test drives it as is.
 import type { Op, Project } from "../project.ts";
 import type { Can } from "../grants.ts";
-import { deskOps, seshDesk, withChannel, withReturn, withSend, type Channel, type Desk, type Player } from "../mixer.ts";
+import { deskOps, seshDesk, seshShape, shapeOps, withChannel, withReturn, withSend, type Channel, type Desk, type Player, type ShapeAt } from "../mixer.ts";
+import type { EqDoc } from "../engine/eq.ts";
 import { laneOp } from "./lane-model.ts";
 
 /** What the desk needs from the room: the project, who has a strip, a way to send an op, your grants, and whether you sit at the desk. */
@@ -21,6 +22,8 @@ export interface DeskHost {
   ready?(): boolean;
   /** What is cabled into aux `aux`'s return, in words ("" for nothing). */
   cabled?(aux: number): string;
+  /** The audio's sample rate, for the Shape editor's curve (left out: 48 kHz). */
+  sampleRate?(): number;
   /** The desk opened or closed (the room lets go of the mouse while it's open, and takes it back after). */
   onToggle?(open: boolean): void;
 }
@@ -40,8 +43,10 @@ export function deskModel(host: DeskHost) {
     changed();
   };
   /** Take the desk to `next`: its ops over the sesh, all of them or (one refused) none. */
-  const set = (next: Desk): boolean => {
-    const ops = deskOps(host.project(), next), may = host.may();
+  const set = (next: Desk): boolean => send(deskOps(host.project(), next));
+  /** Some ops over the sesh: all of them or (one refused) none. */
+  const send = (ops: Op[]): boolean => {
+    const may = host.may();
     const no = ops.map((op) => laneOp(op, may)).find((x) => !x.ok);
     refused = no && !no.ok ? no.why : null;
     if (!refused) for (const op of ops) host.edit(op);
@@ -54,6 +59,9 @@ export function deskModel(host: DeskHost) {
     version: () => version,
     desk,
     set,
+    /** One Shape on the desk (a channel's, a return's or the master's) as it is, and set to `eq`. */
+    shapeDoc: (at: ShapeAt) => seshShape(host.project(), host.players(), at),
+    shape: (at: ShapeAt, eq: EqDoc) => send(shapeOps(host.project(), host.players(), at, eq)),
     open: () => setOpen(true),
     close: () => setOpen(false),
     toggle: () => setOpen(!open),

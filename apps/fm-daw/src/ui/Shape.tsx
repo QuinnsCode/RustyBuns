@@ -19,6 +19,7 @@ import {
 import { TRACK_COLORS } from "./colors.ts";
 import { useEqPlayed } from "./store.ts";
 import type { Lane } from "../project.ts";
+import "./shape.css";
 
 /** dB at the top and bottom of the curve. */
 const RANGE = 24;

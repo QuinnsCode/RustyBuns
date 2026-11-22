@@ -35,6 +35,17 @@ main { position: fixed; inset: 0; }
 .desk-row { display: flex; gap: 6px; }
 .desk-toggle { flex: 1; background: #2b2e33; color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 5px 0; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
 .desk-toggle.on { background: var(--hot); color: #1d1f23; border-color: var(--hot); }
+/* a strip's Shape button (src/room/desk.ts): its curve as the face, the full editor on a click */
+.desk-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.desk-head h3 { flex: 1; min-width: 0; }
+.desk-shape { flex: 0 0 auto; display: inline-grid; place-items: center; width: 52px; height: 26px; padding: 0; background: #2b2e33; border: 1px solid #3a3e45; border-radius: 6px; cursor: pointer; }
+.desk-shape svg { width: 44px; height: 18px; overflow: visible; }
+.desk-shape path { fill: none; stroke: var(--dim); stroke-width: 1.5; stroke-linejoin: round; }
+.desk-shape path.desk-shape-zero { stroke: #3a3e45; stroke-width: 1; }
+.desk-shape.on path:not(.desk-shape-zero) { stroke: var(--hot); }
+.desk-shape:hover, .desk-shape:focus-visible { border-color: var(--hot); }
+.desk-knob input:disabled { opacity: .4; }
+.desk-strip.desk-master { border-color: var(--ink); }
 /* the jam room's mixer (src/studio/desk-panel.ts): the same desk over the room, and the button that opens it */
 #desk-open { position: fixed; left: 16px; bottom: 64px; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; font: 600 15px "Barlow Condensed", sans-serif; cursor: pointer; }
 #desk-open[hidden] { display: none; }
