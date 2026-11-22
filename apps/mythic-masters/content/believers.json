@@ -1,5 +1,13 @@
 {
   "goOn": "Go on",
+  "convention": {
+    "title": "The first convention",
+    "said": [
+      "Hats, capes, mirrors, goggles, waders, antlers, beans and earmuffs, round one big fire.",
+      "Nobody agrees on anything all night. Then, at once, they all agree on you.",
+      "Each group marks your map with what they know. Every region at once."
+    ]
+  },
   "groups": [
     {
       "id": "hatters",
@@ -10,6 +18,8 @@
       "hint": "Their leader taps the corkboard. Red string runs from a photo of the {creature} to a pin marked {section}. \"Signal's strongest there. Wear the hat.\"",
       "lair": "Every string on the corkboard ends at one pin: {section}. \"That is where the {creature} transmits from. Nobody comes back from there with their hat on straight.\"",
       "allHeld": "\"The corkboard's all crossed out. You did that. We're going to need a bigger corkboard.\"",
+      "letter": "Their leader presses a letter wrapped in tin foil into your hands. \"For the Porchlight Vigil, down in the hollows. Foil, so the mothmen can't read it. Don't open it. We'd know.\"",
+      "carry": "A letter in tin foil, for the Porchlight Vigil. Don't open it. They'd know.",
       "visits": [
         { "cleared": 0, "first": "\"Rest your feet. Foil's on the house.\"", "again": "\"Still got your hat? Good. Keep it shiny side out.\"" },
         { "cleared": 3, "first": "\"Three keepers down out there. We added a layer of foil to celebrate. Two layers, for safety.\"", "again": "\"The signal's weaker this week. We think it's you.\"" },
@@ -27,6 +37,8 @@
       "hint": "A woman in the end chair watches the moths circle the bulb. \"They're spelling {section}. And a shape. The {creature}, I'd say. Or a lamp. No, the {creature}.\"",
       "lair": "Every moth on the bulb lands at once, in one shape. \"{section},\" she says. \"The {creature}. They've never all agreed before.\"",
       "allHeld": "\"The moths are just flying round in circles now. That's what moths do when there's nothing left to warn about.\"",
+      "letter": "She reads the Hatters' letter by the bulb, writes back, and seals it with a moth wing. \"For the Backwards Lodge, up north. They'll read it the wrong way round. That's fine.\"",
+      "carry": "A letter sealed with a moth wing, for the Backwards Lodge.",
       "visits": [
         { "cleared": 0, "first": "\"Pull up a rocker. Sunglasses are optional. The cape is not.\"", "again": "\"Sit. The bulb's warm and the moths are chatty tonight.\"" },
         { "cleared": 3, "first": "\"Someone down the hollow turned their porch light on for you. That's how it starts.\"", "again": "\"The moths spelled your name today. Spelt it wrong, but it was you.\"" },
@@ -44,6 +56,8 @@
       "hint": "An old logger tilts his mirror until it catches the trail. \"Look there. Behind you, in the glass. That's {section}, and the {creature} is in it.\"",
       "lair": "Every mirror in the lodge turns the same way on its own. \"{section},\" the logger says, not turning round. \"The {creature}. It's been behind us for a hundred years.\"",
       "allHeld": "\"Nothing in the mirrors now but us. Strange. We'd got used to the company.\"",
+      "letter": "They read the Vigil's letter in their mirrors and answer in mirror writing. \"For the Frog Watch. Hold it up to a lamp on their landing. Or a mirror. We're not fussy.\"",
+      "carry": "A letter in mirror writing, for the Frog Watch. Read it by a lamp.",
       "visits": [
         { "cleared": 0, "first": "\"Sit on the bench. Facing the wall. You'll get used to it.\"", "again": "\"Welcome back. Or goodbye. We can never tell which way you're going.\"" },
         { "cleared": 3, "first": "\"Three keepers. One of us turned round at supper and looked at the door. First time in years.\"", "again": "\"Stove's lit. It's behind you.\"" },
@@ -61,6 +75,8 @@
       "hint": "They pull a plaster cast off the shelf and point its toes at the map. \"This one walked towards {section}. The {creature}. Probably. It's a bit blurry.\"",
       "lair": "The biggest cast on the shelf has a label in shaky pen: {section}. \"The {creature},\" they whisper. \"Even the cast came out blurry.\"",
       "allHeld": "\"Every cast is labelled now. You cleared the forest so well we can nearly see it.\"",
+      "letter": "They add their best photograph. It shows nothing at all. \"That's our best one. For the Antler Choir, in the desert. Hold it at arm's length.\"",
+      "carry": "A photograph of nothing, for the Antler Choir. Their best one.",
       "visits": [
         { "cleared": 0, "first": "\"Sit on the crate. Don't take a photo of us. You'll ruin it.\"", "again": "\"Back again? You look slightly out of focus. Good sign.\"" },
         { "cleared": 3, "first": "\"Three keepers. Our photos this week are a touch less blurry. We are worried and delighted.\"", "again": "\"Coffee's on. It's blurry too. That's just the steam.\"" },
@@ -78,6 +94,8 @@
       "hint": "Out on the water a light blinks twice. They all go quiet. \"That came back from {section}. Short, short, long. That's the {creature}, that is. It's got manners.\"",
       "lair": "Every torch in the ring flickers at once and points the same way. \"{section},\" someone says. \"The {creature}. It's been flashing back all week, louder every night.\"",
       "allHeld": "\"Nobody flashes back now. We still wave. It's only polite.\"",
+      "letter": "The letter is damp from the marsh. They dry it by their torches and tuck a pressed frog inside. Rubber. \"For the Blurry Society, out on the coast. They'll want proof.\"",
+      "carry": "A dried letter with a rubber frog in it, for the Blurry Society.",
       "visits": [
         { "cleared": 0, "first": "\"Take a bucket. Waders are spare in the crate. You'll want them, it gets damp.\"", "again": "\"Torch working? Give it a flash. There. Lovely.\"" },
         { "cleared": 3, "first": "\"Three keepers. Someone on the far shore started flashing back at us, and it was a person. We were thrilled anyway.\"", "again": "\"Kettle's on the camp stove. Mind your waders near it, they melt.\"" },
@@ -95,6 +113,8 @@
       "hint": "They stop mid-song. From far off, a voice finishes the line, a little flat. \"That came from {section}. The {creature}, I'd bet my hat. Never could hold a note.\"",
       "lair": "They start a slow one, and the whole desert sings it back from one place: {section}. \"The {creature},\" the leader says, hat off. \"Best voice out here. Worst manners.\"",
       "allHeld": "\"Nothing sings back now but the wind. The wind's tone deaf. We miss the harmony.\"",
+      "letter": "The Choir can't write, so they sing the answer, twice, until you have it. \"Carry the tune to the Thirteen Counters, down in the bayou. Don't hum it wrong.\"",
+      "carry": "A tune in your head, for the Thirteen Counters. Don't hum it wrong.",
       "visits": [
         { "cleared": 0, "first": "\"Sit and hum along. Doesn't matter what. They like enthusiasm.\"", "again": "\"Back for the second verse? There's always a second verse.\"" },
         { "cleared": 3, "first": "\"Three keepers. We wrote you a song. It's mostly about your boots, we couldn't think what rhymes with your name.\"", "again": "\"Coffee's in the pot. Harmonica's on the rock if you fancy.\"" },
@@ -112,6 +132,8 @@
       "hint": "An old man brings back a saucer of beans from the bank and frowns at them. \"These came from out by {section}. Somebody counted them twelve times over. That'll be the {creature}.\"",
       "lair": "Every jar on the jetty has been tipped out and counted, one by one, in a long line pointing at {section}. \"The {creature},\" they whisper. \"It got to twelve. Again.\"",
       "allHeld": "\"Nobody's counting our beans now. We count them ourselves, at night, for the company.\"",
+      "letter": "You sing them the Choir's tune. They count its notes, nod, and hand you a jar of beans, counted. \"For the Howl-Back Club, in the Ozarks. Every bean. Don't spill it.\"",
+      "carry": "A jar of counted beans, for the Howl-Back Club. Don't spill it.",
       "visits": [
         { "cleared": 0, "first": "\"Sit. Count your beans. All thirteen? Good. Now you're safe.\"", "again": "\"Back again? Count them. Go on. It's the rule.\"" },
         { "cleared": 3, "first": "\"Three keepers. We put out a fourteenth bean for you. It's not for anything. It's just a gift.\"", "again": "\"Gumbo's on. It has beans in it. Thirteen. We counted.\"" },
@@ -129,6 +151,8 @@
       "hint": "They all howl into their cups at once. A long, sad howl answers. \"That came from {section}. The {creature}. It sounds better already, doesn't it?\"",
       "lair": "One howl answers every cup on the ridge, from one place: {section}. \"The {creature},\" says the leader, taking off her earmuffs. \"It's never howled that loud. It knows somebody's coming.\"",
       "allHeld": "\"Nothing howls back now. We howl anyway, a little, to the hills. Habit.\"",
+      "letter": "You set the jar of beans down by the fire. Behind you, headlights come up the ridge road: the Hatters, the Vigil, the Lodge, the Frog Watch, the Blurry Society, the Choir and the Counters. All of them, at one fire.",
+      "carry": "The convention's minutes. Every camp told you where to look. It's on your map.",
       "visits": [
         { "cleared": 0, "first": "\"Take a cup. Take a breath. Owwooo. Lovely. You're a natural.\"", "again": "\"Back for a howl? Earmuffs on, cup up.\"" },
         { "cleared": 3, "first": "\"Three keepers. The hills sound friendlier this week. Less howling, more singing.\"", "again": "\"Cocoa's in the flask. Sip, then howl. Not the other way round.\"" },

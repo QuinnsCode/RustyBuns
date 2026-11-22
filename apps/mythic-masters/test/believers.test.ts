@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bind, clearSection, loadJourney, newJourney, SECTIONS, sections } from "../src/journey.ts";
 import { arrive, fireSpot, lightFire, poiById } from "../src/world/poi.ts";
-import { BELIEVERS, campers, campOf, CAMPS, Lines, visit } from "../src/believers.ts";
+import { BELIEVERS, campers, campOf, CAMPS, carrying, conventionHints, Lines, ROAD, visit } from "../src/believers.ts";
 import { WORLD } from "../src/world/trail.ts";
 import { dry } from "../src/world/world.ts";
 import { REGIONS } from "../src/regions.ts";
@@ -79,6 +79,32 @@ describe("the believers at each region's first campfire", () => {
     expect(hint).toContain(hollows.at(-1)!.name);
     bind(j, hollows.at(-1)!.keeper, 20);
     expect(visit(j, g).said.at(-1)).toBe(g.allHeld);
+  });
+
+  test("letters between the fires: each camp along the road hands you one for the next, and the last holds the convention", () => {
+    const j = newJourney(["squonk", "hodag", "jackalope"])!, group = (id: string) => BELIEVERS.groups.find((g) => g.id === id)!;
+    // out of turn, a camp has nothing for you
+    expect(visit(j, group("porchlight")).letter).toBe(false);
+    expect(carrying(j)).toBeNull();
+    for (const [i, id] of ROAD.entries()) {
+      const g = group(id), v = visit(j, g);
+      expect([v.letter, v.convention]).toEqual([true, i === ROAD.length - 1]);
+      expect(v.said).toContain(g.letter);
+      if (v.convention) expect(v.said.slice(-BELIEVERS.convention.said.length)).toEqual(BELIEVERS.convention.said);
+      expect(carrying(j)).toBe(g.carry);
+      // once per camp: sitting again hands you nothing new
+      expect(visit(j, g).letter).toBe(false);
+      // the save keeps the letter (an old save without one loads too)
+      expect(loadJourney(JSON.stringify(j))?.letters).toBe(i + 1);
+      if (i < ROAD.length - 1) expect(conventionHints(j)).toEqual([]);
+    }
+    // the convention: every group's hint at once, each on a stone of its own region's trail, and in the scene's words
+    const hints = conventionHints(j), last = visit(j, group("howlback"));
+    expect(hints.map((h) => h.g.id).sort()).toEqual([...ROAD].sort());
+    for (const h of hints) expect(h.k).toBeWithin(0, SECTIONS);
+    const { letters: _, ...old } = j;
+    expect(loadJourney(JSON.stringify(old))?.letters).toBeUndefined();
+    expect(last.said).not.toContain(BELIEVERS.convention.said[0]);
   });
 
   test("a lines file the cms broke fails at load, not as a silent camp", () => {

@@ -12,7 +12,7 @@
 //
 // A studio's game starts experimental with `play` only: `member`, a native scheme and `featured` come only from APPS, in a PR.
 import { arr, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
-import { APPS, GENRES, type QApp } from "./apps.ts";
+import { APPS, GENRES, genreOf, type QApp } from "./apps.ts";
 import { checksOf, check as machineCheck, type Checks } from "./checks.ts";
 import type { Env } from "./env.ts";
 import { roleIn } from "./studios.ts";
@@ -47,7 +47,7 @@ type Row = { id: string; studio_id: string; studio: string; name: string; kind: 
 const urls = (s: string | null) => { if (!s) return undefined; try { return check(arr(str(500), 8, { drop: true }), JSON.parse(s)) ?? undefined; } catch { return undefined; } };
 
 const listingOf = (r: Row): Listing => ({
-  id: r.id, name: r.name, kind: r.kind, genre: check(oneOf(GENRES), r.genre) ?? "Action & Adventure",
+  id: r.id, name: r.name, kind: r.kind, genre: genreOf(r.genre) ?? "Games",
   origins: urls(r.origins) ?? [], ...(r.returns ? { returns: urls(r.returns) ?? [] } : {}), ...(r.erase ? { erase: r.erase } : {}),
   starts: ["play"], maturity: "experimental", ...(r.blurb ? { blurb: r.blurb } : {}),
   studio: { id: r.studio_id, name: r.studio }, state: check(oneOf(STATES), r.state) ?? "draft", note: r.note,

@@ -1,0 +1,80 @@
+{
+ "id": "heather",
+ "name": "Heather",
+ "biome": "highlands",
+ "generator": "tree",
+ "seed": 109,
+ "height": 0.55,
+ "budget": [
+  2600,
+  600
+ ],
+ "note": "Knee-high wiry mounds carpeting the moor, dark green most of the year and washed purple-pink in late summer.",
+ "trunk": {
+  "stems": 12,
+  "spread": 0.45,
+  "splay": 0.9,
+  "radius": 0.008,
+  "taper": 0.8,
+  "segments": 4,
+  "sides": 3,
+  "wobble": 0.45,
+  "length": 0.95
+ },
+ "bark": {
+  "colors": [
+   "#4a3a30",
+   "#2e2620"
+  ]
+ },
+ "levels": [
+  {
+   "count": 4,
+   "start": 0.3,
+   "end": 1,
+   "angle": 40,
+   "length": 0.45,
+   "rise": 0.3,
+   "wobble": 0.45,
+   "segments": 2,
+   "radius": 0.6,
+   "sides": 3,
+   "min_radius": 0
+  }
+ ],
+ "foliage": [
+  {
+   "type": "clump",
+   "colors": [
+    "#3a4a2a",
+    "#40502c",
+    "#364426"
+   ],
+   "size": 0.12,
+   "per": 2,
+   "start": 0.5,
+   "end": 1,
+   "lump": 0.5,
+   "squash": 0.7,
+   "lo": 0.5
+  },
+  {
+   "type": "clump",
+   "colors": [
+    "#9a4a8a",
+    "#a85a98",
+    "#8a3e7e",
+    "#b86aa6"
+   ],
+   "size": 0.09,
+   "per": 2,
+   "start": 0.75,
+   "end": 1,
+   "lump": 0.6,
+   "squash": 0.6,
+   "share": 0.8,
+   "lo": 0.5
+  }
+ ],
+ "ao_reach": 0.45
+}

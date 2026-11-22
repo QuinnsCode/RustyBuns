@@ -205,6 +205,9 @@ export const Journey = obj({
   /** The believers at each region's first campfire (src/believers.ts), by group id: how many of their region's
    * sections you had cleared when you last sat with them. Missing until you meet them. */
   believers: opt(rec(int(0, SECTIONS), 64)),
+  /** Letters between the fires (believers.ts `ROAD`): how many camps along the road have read the last one and handed
+   * you the next; 8 once the Howl-Back Club held the convention. Missing until the Hatters give you the first. */
+  letters: opt(int(0, 8)),
   /** The cryptids you let go, where and at what level: the wild ones there answer to them (src/released.ts). */
   released: opt(arr(Released, 200, { drop: true })),
 });

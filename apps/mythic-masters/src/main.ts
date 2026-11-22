@@ -33,7 +33,8 @@ import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { sparring, STATS, type Stat } from "./spar.ts";
-import { BELIEVERS, CAMPS, campers, campOf, visit as visitCamp } from "./believers.ts";
+import { BELIEVERS, CAMPS, campers, campOf, carrying, conventionHints, visit as visitCamp } from "./believers.ts";
+import { TRAILS } from "./world/trail.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -49,7 +50,7 @@ import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, log
 import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, menuLineOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type MenuWord, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { menuDir, menuStep } from "./menu-nav.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
@@ -954,21 +955,23 @@ factionEl.addEventListener("click", (e) => {
 });
 
 // --- the believers (src/believers.ts): a crowd of friendly conspiracy folk at each region's first campfire ----------
-let camp: { who: string; said: string[] } | null = null;
+let camp: { who: string; said: string[]; list?: string[] } | null = null;
 const campEl = Object.assign(document.createElement("div"), { id: "campVisit", className: "booktalk" });
 campEl.hidden = true;
 document.body.append(campEl);
 function drawCamp() {
   campEl.hidden = !camp;
   campEl.innerHTML = !camp ? ""
-    : `<div class="note paper" role="dialog" aria-label="${esc(camp.who)}"><h2>${esc(camp.who)}</h2>${camp.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}<div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(BELIEVERS.goOn)}</button></div></div>`;
+    : `<div class="note paper" role="dialog" aria-label="${esc(camp.who)}"><h2>${esc(camp.who)}</h2>${camp.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}${camp.list?.length ? `<ul class="marks">${camp.list.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}<div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(BELIEVERS.goOn)}</button></div></div>`;
 }
 /** Sit at a believers' camp (fire id): who they are the first time, their line for the keepers you've beaten in their
  * region and a hint, saved as seen. False when it is not a camp or there is no journey. */
 function sitAtCamp(id: string): boolean {
   const g = CAMPS.get(id);
   if (!journey || !g) return false;
-  camp = { who: g.name, said: visitCamp(journey, g).said }; saveJourney(); keys.clear(); drawCamp();
+  const v = visitCamp(journey, g);
+  camp = { who: v.convention ? BELIEVERS.convention.title : g.name, said: v.said, ...(v.convention && { list: conventionHints(journey).map((h) => h.line) }) }; saveJourney(); keys.clear(); drawCamp();
+  figuresAt = -1e9; // the convention's marks go on the map at once
   return true;
 }
 campEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { camp = null; drawCamp(); } });
@@ -997,6 +1000,8 @@ function stepRivals(now: number) {
     world.pins([
       ...waits.flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ ...at, colour: COAT_CSS[w.faction], quest: true }] : []; }),
       ...figures.filter((f) => f.post).map((f) => ({ x: f.x, z: f.z, colour: COAT_CSS[f.faction], dim: f.resting })),
+      // after the convention, every believer's hint at once: a gold ring on the stone of the section they point at
+      ...conventionHints(j).flatMap((h) => { const at = TRAILS.get(h.n)?.stones[h.k]; return at ? [{ x: at.x, z: at.z, colour: "#d4a73a", hint: true }] : []; }),
     ]);
   }
   rivals.update(figures, now / 1000, p);
@@ -1060,10 +1065,10 @@ function showTitle() {
   world.hide(); m = null; startingOver = false;
   const lead = journey?.party[0];
   $("#continue").hidden = !journey;
-  if (lead) $("#continue").innerHTML = `${icon("play")} ${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
-  $("#newGame").innerHTML = `${icon("moon")} ${esc(LANDING.title.newJourney)}`;
+  if (lead) $("#continue").innerHTML = `${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
+  $("#newGame").innerHTML = esc(LANDING.title.newJourney); // written words, no icons in front (#5120 round 116)
   $("#newGame").classList.toggle("go", !journey);
-  $("#duelBtn").innerHTML = `${icon("users")} ${esc(LANDING.title.duel)}`;
+  $("#duelBtn").innerHTML = esc(LANDING.title.duel);
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
@@ -1117,10 +1122,21 @@ function begin(picks: readonly string[]): boolean {
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
-  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
+  if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = esc(LANDING.title.startOver); answerMenu($("#newGame")); return; }
   startOpening();
 });
 $("#duelBtn").addEventListener("click", () => versus.open());
+// The Book answers the title's menu (#5120 round 116): the line in the margin under the words is about the one under the
+// pen (a pad's or keyboard's focus) or the pointer, and goes back to its standing demand when neither is on a word.
+const MENU_WORDS: readonly MenuWord[] = ["continue", "new", "duel", "versus", "info"];
+function answerMenu(b: Element | null) {
+  const w = MENU_WORDS.find((k) => k === b?.closest("[data-says]")?.getAttribute("data-says"));
+  if (!w) { drawDemand(); return; }
+  $("#titleSays").innerHTML = hand(menuLineOf(w, journey, startingOver), true);
+}
+for (const ev of ["focusin", "pointerover"] as const) $("#title").addEventListener(ev, (e) => { if (e.target instanceof Element && e.target.closest("[data-says]")) answerMenu(e.target); });
+$("#title").addEventListener("pointerout", (e) => { if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("[data-says]"))) answerMenu(document.activeElement?.closest("#title [data-says]") ?? null); });
+$("#title").addEventListener("focusout", (e) => { if (!(e.relatedTarget instanceof Element && e.relatedTarget.closest("#title [data-says]"))) answerMenu(null); });
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
@@ -1204,6 +1220,8 @@ function drawJournal(edit = true) {
         <button data-act="call" data-e="${e}" title="${!fire ? "Only at a lit campfire" : j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up"${fire ? "" : " disabled"}>${icon("arrow-left-right")}</button>
         ${letGo("journal", e, fire)}</li>`; }).join("")}</ul>`
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
+      // the letter you carry between the believers' fires (believers.ts `carrying`)
+      + (carrying(j) ? `<h2 class="of-you">In your pack</h2><p class="spoken">${esc(carrying(j)!)}</p>` : "")
       // the Book's ledger on you, every note it has kept, newest first, in its own hand
       + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
       + `<i class="vignette rest" aria-hidden="true">${emblem("cauldron")}</i>`);
@@ -2383,7 +2401,7 @@ Object.assign(window, {
     /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
     quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; if (id !== undefined && m) hud(m); return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `ferry()` takes the boat to the Yule Isle or back (`state().isle` on the island: where you stand, its slip and landing fire; `state().ports` the piers) and `standIsle(x, z)` on it, `teleport(x, z)` onto open ground or a port town's pier (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `ferry()` takes the boat to the Yule Isle or back (`state().isle` on the island: where you stand, its slip and landing fire; `state().ports` the piers) and `standIsle(x, z)` on it, `teleport(x, z)` onto open ground or a port town's pier, `face(x, z)` to turn the camera toward a spot (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {
       state: () => online && { room: online.room, status: online.status, where: online.where(), fights: fights.map((f) => ({ ...f })), lair: trip?.foe.hunt && m ? { den: `hunt:${trip.foe.hunt}`, hp: m.f[1].hp / m.f[1].b.hp, friends: Object.fromEntries(lairHurt.get(`hunt:${trip.foe.hunt}`) ?? []) } : null },
@@ -2392,7 +2410,7 @@ Object.assign(window, {
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
       seen: () => world.seen(),
     },
-    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel, enterTown: world.enterTown, standInside: world.standInside, leaveTown: world.leaveTown, ferry: world.ferry, standIsle: world.standIsle },
+    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, face: world.face, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel, enterTown: world.enterTown, standInside: world.standInside, leaveTown: world.leaveTown, ferry: world.ferry, standIsle: world.standIsle },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
@@ -2456,7 +2474,7 @@ Object.assign(window, {
     /** The believers (src/believers.ts): `state()` each group, its camp's fire id and what it last saw (sections cleared,
      * undefined before you meet them) and the visit open now; `sit(id)` sits you at group id's camp as if you walked up. */
     believers: {
-      state: () => ({ groups: BELIEVERS.groups.map((g) => ({ id: g.id, n: g.n, name: g.name, camp: campOf(g.id) ?? null, seen: journey?.believers?.[g.id] ?? null })), open: camp }),
+      state: () => ({ groups: BELIEVERS.groups.map((g) => ({ id: g.id, n: g.n, name: g.name, camp: campOf(g.id) ?? null, seen: journey?.believers?.[g.id] ?? null })), letters: journey?.letters ?? 0, carrying: carrying(journey), hints: journey ? conventionHints(journey).map((h) => h.line) : [], open: camp }),
       sit: (id: string) => { const fire = campOf(id); return !!fire && sitAtCamp(fire) && camp; },
       close: () => { camp = null; drawCamp(); },
     },

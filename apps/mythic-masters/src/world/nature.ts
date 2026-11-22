@@ -19,7 +19,7 @@ function smooth1(t: number, s: number) {
 }
 
 // --- the day --------------------------------------------------------------------------------------------------------
-import { hourAt } from "./day.ts";
+import { DAY, hourAt } from "./day.ts";
 export { DAY, DAWN_HOUR, hourAt } from "./day.ts";
 export type RGB = [number, number, number];
 export interface Light {
@@ -80,7 +80,10 @@ export function weather(t: number, biome: Biome, hour = hourAt(t)): Weather {
   const fall = clamp((front - (1 - wet * 0.55)) / 0.25, 0, 1);
   const cold = COLD.has(biome) ? 1 : 0;
   const dawn = clamp(1 - Math.abs(hour - 6.5) / 2.5, 0, 1);
-  return { rain: fall * (1 - cold), snow: fall * cold, mist: MISTY.has(biome) ? dawn * 0.8 : dawn * 0.2 };
+  // The Pine Barrens' summer storms roll in at dusk: on about two days in five a downpour builds from six, peaks at half
+  // past seven and is gone by nine, whatever the slow fronts are doing.
+  const storm = biome === "pine-barrens" && hash(Math.floor(t / DAY), 0, 93) < 0.4 ? clamp(1.6 - Math.abs(hour - 19.5) / 0.95, 0, 1) : 0;
+  return { rain: Math.max(fall, storm) * (1 - cold), snow: fall * cold, mist: MISTY.has(biome) ? dawn * 0.8 : dawn * 0.2 };
 }
 
 // --- wild food --------------------------------------------------------------------------------------------------------

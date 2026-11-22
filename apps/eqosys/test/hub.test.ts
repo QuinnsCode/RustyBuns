@@ -151,3 +151,12 @@ test("signed out everywhere (Apple's consent-revoked), the hub tabs that person'
   });
   expect(knock.status).toBe(401);
 });
+
+test("the home's folded rows live on the person's hub: saved, read back on the next state, cleared when none are folded", async () => {
+  const cy = await signUp("Fen", "qcrm", QCRM);
+  expect((await op(cy.token, { op: "fold", rows: ["Games", "Business", "Games"] })).status).toBe(200);
+  expect((await op(cy.token, { op: "state" })).body.folded).toEqual(["Games", "Business"]);
+  expect((await op(cy.token, { op: "fold", rows: ["Nope"] })).status).toBe(400);
+  await op(cy.token, { op: "fold", rows: [] });
+  expect((await op(cy.token, { op: "state" })).body.folded).toBeUndefined();
+});

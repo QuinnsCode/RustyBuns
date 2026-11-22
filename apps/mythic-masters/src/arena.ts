@@ -270,11 +270,12 @@ function dressing(skin: Skin, R: number): THREE.Group {
     }), floorOf(skin), 140, 4.5));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; ground.receiveShadow = true; g.add(ground);
   }
-  void import("./world/flora.ts").then(async ({ scenery, grown, grownMaterial, FLORA, TALL }) => {
-    const [plain, more] = await Promise.all([scenery(), grown()]);
-    if (!plain.size && !more.size) return;
+  void import("./world/flora.ts").then(async ({ scenery, grown, grownMaterial, isGrown, FLORA, TALL }) => {
     const spec: Plant[] = floating ? [["rock", 0.75, 6, 13], ["snag", 0.25, 5, 9]]
       : skin.biome ? FLORA[skin.biome].kinds : skin.props === "rocks" ? [["rock", 0.7, 1, 4], ["sage", 0.3, 0.4, 1]] : FLORA["pine-barrens"].kinds;
+    // only this arena's own grown plants
+    const [plain, more] = await Promise.all([scenery(), grown(spec.map((k) => k[0]).filter(isGrown))]);
+    if (!plain.size && !more.size) return;
     const total = spec.reduce((a, k) => a + k[1], 0), rnd = mulberry32(17), o = new THREE.Object3D();
     const rockTint = floating ? new THREE.Color(skin.prop).multiplyScalar(2.6) : skin.props === "rocks" ? new THREE.Color(0xffffff).lerp(new THREE.Color(skin.prop), 0.55) : new THREE.Color(0xffffff);
     const placed = new Map<Kind, THREE.Matrix4[]>();

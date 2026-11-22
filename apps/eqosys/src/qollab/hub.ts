@@ -13,7 +13,7 @@
 // (hibernating sockets, no alarms). A status change costs one request per friend; nothing runs while people idle.
 import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { onSite } from "../apps.ts";
+import { GENRES, onSite } from "../apps.ts";
 import { appOf } from "../listings.ts";
 import { b64url, json, loopbackOn, sha256, type D1 } from "../env.ts";
 import { coworkersOf } from "../studios.ts";
@@ -32,7 +32,9 @@ export type Presence = Of<typeof Presence>;
 
 /** What a page or server may ask its own hub. */
 export const Op = obj({
-  op: oneOf(["state", "befriend", "accept", "drop", "notify", "clear", "status", "relink"]),
+  op: oneOf(["state", "befriend", "accept", "drop", "notify", "clear", "status", "relink", "fold"]),
+  /** `fold`: the home's rows this person folded shut (all of them, each time), so every device draws them the same. */
+  rows: opt(arr(oneOf(GENRES), GENRES.length)),
   id: opt(Id), email: opt(str(320)), text: opt(str(280)), link: opt(str(2000)), doing: opt(str(80, { min: 0 })),
 });
 export type Op = Of<typeof Op>;
@@ -67,7 +69,7 @@ export type Note = Of<typeof Note>;
  */
 const Coworker = obj({ id: Id, name: Name, presence: arr(Presence, MAX_SOCKETS) });
 export type Coworker = Of<typeof Coworker>;
-export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), coworkers: opt(arr(Coworker, MAX_FRIENDS)), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000), link: opt(str(300)) });
+export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), coworkers: opt(arr(Coworker, MAX_FRIENDS)), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000), link: opt(str(300)), folded: opt(arr(oneOf(GENRES), GENRES.length)) });
 export type HubState = Of<typeof HubState>;
 export type HubOut = { t: "state" } & HubState | { t: "error"; error: string };
 const Err = obj({ error: str(500) });
@@ -292,6 +294,12 @@ export class Hub {
         await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
         return null;
       }
+      // The home's folded rows: saved, not pushed, as no other tab draws them live.
+      case "fold": {
+        const rows = [...new Set(op.rows ?? [])];
+        if (rows.length) await s.put("folded", rows); else await s.delete("folded");
+        return null;
+      }
       case "clear": {
         await this.forget([...(await s.list({ prefix: "n:" })).keys()]);
         return done();
@@ -454,7 +462,7 @@ export class Hub {
   }
 
   async state(): Promise<HubState> {
-    const s = this.ctx.storage, me = await s.get<Person>("me");
+    const s = this.ctx.storage, me = await s.get<Person>("me"), folded = await s.get<HubState["folded"]>("folded");
     // The friend link's key is made the first time its owner looks.
     let key = await s.get<string>("link");
     if (me && !key) await s.put("link", key = mintLink());
@@ -469,6 +477,7 @@ export class Hub {
       incoming: await vals<Asked>("in:"), outgoing: (await vals<Out>("out:")).map(({ id, name, at }) => ({ id, name, at })),
       notes: (await vals<Note>("n:")).reverse(),
       ...(me && key ? { link: `${encodeURIComponent(me.id)}/${key}` } : {}),
+      ...(folded?.length ? { folded } : {}),
     };
   }
 

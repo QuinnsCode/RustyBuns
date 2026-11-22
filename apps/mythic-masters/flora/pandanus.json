@@ -1,0 +1,90 @@
+{
+ "id": "pandanus",
+ "name": "Screw pine",
+ "biome": "island",
+ "generator": "tree",
+ "seed": 67,
+ "height": 7,
+ "budget": [
+  5000,
+  1100
+ ],
+ "note": "The beach's odd one: a forked trunk propped on stilt roots, each branch ending in a spiral tuft of long, sword-shaped, drooping leaves.",
+ "trunk": {
+  "stems": 3,
+  "spread": 0.25,
+  "splay": 0.35,
+  "radius": 0.13,
+  "taper": 0.5,
+  "segments": 8,
+  "sides": 7,
+  "wobble": 0.25,
+  "kink": 0.15,
+  "length": 0.75
+ },
+ "bark": {
+  "colors": [
+   "#8a7a6a",
+   "#5a4e44"
+  ],
+  "pattern": "fibrous"
+ },
+ "levels": [
+  {
+   "count": 4,
+   "start": 0.55,
+   "end": 1,
+   "angle": 45,
+   "length": 0.45,
+   "rise": 0.25,
+   "wobble": 0.3,
+   "segments": 3,
+   "radius": 0.6,
+   "sides": 5
+  },
+  {
+   "count": 3,
+   "start": 0.5,
+   "end": 1,
+   "angle": 40,
+   "length": 0.45,
+   "rise": 0.25,
+   "wobble": 0.3,
+   "segments": 2,
+   "radius": 0.6,
+   "sides": 4,
+   "lo": 0.6
+  }
+ ],
+ "foliage": [
+  {
+   "type": "tuft",
+   "colors": [
+    "#3e6a2e",
+    "#467232",
+    "#4e7a36"
+   ],
+   "tip_colors": [
+    "#8a9a50"
+   ],
+   "size": 0.2,
+   "per": 1,
+   "start": 1,
+   "end": 1,
+   "needles": 26,
+   "bundle": 1,
+   "splay": 1.4,
+   "reach": 0.45,
+   "brush": 0.15,
+   "up": 0.15,
+   "needle_width": 0.07,
+   "knot": 0.15,
+   "lo": 1,
+   "lo_size": 1.2,
+   "lo_needles": 9,
+   "core": 0.35,
+   "core_dark": 0.3
+  }
+ ],
+ "ao_reach": 0.3
+}

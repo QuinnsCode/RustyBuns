@@ -21,6 +21,12 @@ export class AudioOut {
   readonly webTaps: ChannelMergerNode;
   /** Each track's FM sound bound for a web effect (src/ui/wam.ts), a channel a track: the engine's second output. */
   readonly inserts: ChannelSplitterNode;
+  /** What each track's web effect hears: its channel of `inserts`, and a page plugin's sound when the track has one (#5551). */
+  readonly fxIn: GainNode[];
+  /** Each page plugin's sound after its fader, on its way to `webBus`, or into its track's effect while it has one. */
+  readonly webOut: GainNode[];
+  /** The web effects' sound coming back, two channels a track (2t, 2t + 1): the engine's fifth input pans and sends it. */
+  readonly returns: ChannelMergerNode;
   private constructor(ctx: AudioContext, node: AudioWorkletNode) {
     this.ctx = ctx; this.node = node;
     this.analyser = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
@@ -31,14 +37,26 @@ export class AudioOut {
     this.webTaps.connect(node, 0, 3);
     this.inserts = new ChannelSplitterNode(ctx, { numberOfOutputs: TRACKS });
     node.connect(this.inserts, 1);
+    this.fxIn = Array.from({ length: TRACKS }, (_, t) => { const g = new GainNode(ctx); this.inserts.connect(g, t); return g; });
+    this.webOut = Array.from({ length: TRACKS }, () => { const g = new GainNode(ctx); g.connect(this.webBus); return g; });
+    this.returns = new ChannelMergerNode(ctx, { numberOfInputs: 2 * TRACKS });
+    this.returns.connect(node, 0, 4);
+  }
+
+  /** Track `t`'s page plugin into its web effect (`on`), or straight to the mix. */
+  routeWeb(t: number, on: boolean) {
+    const g = this.webOut[t];
+    if (!g) return;
+    try { g.disconnect(); } catch { /* not connected yet */ }
+    g.connect(on ? this.fxIn[t]! : this.webBus);
   }
 
   static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
-    // inputs: yours (a guitar or mic), the page's own plugins, the aux sends of guitars heard on calls (CALL_SENDS), and
-    // the page's plugins one track a channel. Outputs: the mix, and each track's sound for its web effect, a channel each
-    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 4, numberOfOutputs: 2, outputChannelCount: [2, TRACKS] });
+    // inputs: yours (a guitar or mic), the page's own plugins, the aux sends of guitars heard on calls (CALL_SENDS), the
+    // page's plugins one track a channel, and the web effects' returns (two channels a track). Outputs: the mix, and each track's sound for its web effect, a channel each
+    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 5, numberOfOutputs: 2, outputChannelCount: [2, TRACKS] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
     node.connect(ctx.destination);
     await ctx.resume();

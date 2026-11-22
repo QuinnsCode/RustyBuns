@@ -29,6 +29,7 @@
     "./synth": "./src/synth.ts",
     "./monosynth": "./src/monosynth.ts",
     "./drums": "./src/drums.ts",
+    "./flora": "./src/flora.ts",
     "./character": "./src/character.ts"
   },
   "dependencies": {

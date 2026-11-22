@@ -33,6 +33,10 @@ export const MATERIALS = {
   panel: { name: "Fabric-wrapped absorber", color: "#303237", a: [0.35, 0.85, 1, 1, 0.98, 0.95] },
   // wooden slats with gaps over an absorber: soaks up the mids, scatters the highs off the slats
   slats: { name: "Wood slat diffuser", color: "#6a4a30", a: [0.3, 0.55, 0.6, 0.5, 0.4, 0.35] },
+  // dry, loose sand: soft to the highs, and it swallows more as the wavelength shortens
+  sand: { name: "Desert sand", color: "#b8946a", a: [0.15, 0.35, 0.4, 0.5, 0.55, 0.8] },
+  // nothing there at all: sound going up or out into the night never comes back
+  sky: { name: "Open sky", color: "#10142a", a: [1, 1, 1, 1, 1, 1] },
 } as const satisfies Record<string, { name: string; color: string; a: readonly number[] }>;
 export type Material = keyof typeof MATERIALS;
 export const MATERIAL_IDS = Object.keys(MATERIALS) as Material[];

@@ -4,14 +4,14 @@
 // The page's steps are its own functions (door.ts, account.ts, the eqosys client, the jam's live line), run against the
 // Worker's /ws and a real World on a fake platform; eqosys is a stand-in serving its JWKS, the exchange and /me/avatar.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eqosys } from "@rustybuns/util/eqosys";
+import { eqosys, hub, type HubNote } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import World from "../packages/desktop/world.ts";
 import worker from "../src/worker.ts";
 import { APP, eqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
-import { follow, fromLink, inviteLink, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
+import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
 import { demoProject } from "../src/presets.ts";
 import { decodeServer } from "../src/project.ts";
 import { body, hear, newJam, walkTo } from "../src/studio/jam.ts";
@@ -40,8 +40,25 @@ const fake = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
     if (!who) return new Response("sign in", { status: 401 });
     return Response.json({ avatar: people[who]!.look, saved: true });
   }
+  if (u.pathname === "/api/hub") {
+    // the hub, standing in: Ada and Bo are friends, Cy is Ada's too; a note goes only to a friend
+    const who = tokens.get(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
+    if (!who) return Response.json({ error: "sign in" }, { status: 401 });
+    const me = people[who]!, op = await req.json() as { op: string; id?: string; text?: string; link?: string };
+    const mine = friendsOf[me.id] ?? [];
+    if (op.op === "notify") {
+      if (!op.id || !mine.includes(op.id)) return Response.json({ error: "only a friend can be notified" }, { status: 400 });
+      (notes[op.id] ??= []).push({ key: `n${++noteN}`, at: noteN, kind: "note", from: { id: me.id, name: me.name }, app: APP, text: op.text, link: op.link });
+    }
+    const friends = mine.map((id) => ({ id, name: names[id] ?? "", presence: id === "u_bo" ? [{ app: APP, doing: "" }] : [] }));
+    return Response.json({ friends, notes: notes[me.id] ?? [] });
+  }
   return new Response("", { status: 404 });
 } });
+const names: Record<string, string> = { u_ada: "Ada", u_bo: "Bo", u_cy: "Cy" };
+const friendsOf: Record<string, string[]> = { u_ada: ["u_cy", "u_bo"], u_bo: ["u_ada"] };
+const notes: Record<string, HubNote[]> = {};
+let noteN = 0;
 EQ = `http://127.0.0.1:${fake.port}`;
 afterAll(() => fake.stop(true));
 
@@ -204,4 +221,30 @@ test("the leader moves the room to the console room, everyone walks into it, and
   C.ws.sent = [];
   await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
   expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.studio)).toEqual(["console-room"]);
+});
+
+test("Ada invites Bo from her room through eqosys: it lands in his notes, and his lobby lists it as a link into her room", async () => {
+  const ada = browser(), bo = browser();
+  const a = await signIn(ada, "eq_ada"), b = await signIn(bo, "eq_bo");
+  const id = roomId("Desert set", mulberry32(4));
+  const link = inviteLink(SITE, id, LIVE_ROOM.id, "Desert set");
+  const hubOf = (t: string) => hub({ url: () => EQ, token: () => t, app: APP });
+
+  // her friends, the one in Qollab Studio now first
+  const view = (await hubOf(a.login.token).state())!;
+  expect(friendOrder(view.friends, APP).map((f) => [f.name, f.here])).toEqual([["Bo", true], ["Cy", false]]);
+  expect(await hubOf(a.login.token).notify("u_bo", inviteNote("Desert set", LIVE_ROOM.name), link)).toBeNull();
+  // someone who isn't her friend can't be sent one
+  expect(await hubOf(a.login.token).notify("u_zed", inviteNote("Desert set", LIVE_ROOM.name), link)).toBe("only a friend can be notified");
+
+  // Bo's lobby: one invite per room, newest first, rebuilt as a link on this site
+  const older = inviteLink(SITE, "old-room-abcd", LIVE_ROOM.id, "Old");
+  notes.u_bo!.unshift({ key: "n0", at: 0, kind: "note", from: { id: "u_ada", name: "Ada" }, app: APP, text: "hi", link: older },
+    { key: "nx", at: 0, kind: "note", from: { id: "u_ada", name: "Ada" }, app: "another-app", text: "hi", link });
+  const got = invitesIn((await hubOf(b.login.token).state())!.notes, APP, SITE);
+  expect(got.map((i) => [i.from, i.name, i.room])).toEqual([["Ada", "Desert set", id], ["Ada", "Old", "old-room-abcd"]]);
+  bo.address = got[0]!.link; use(bo);
+  expect(fromLink(location.search)).toEqual({ room: id, studio: LIVE_ROOM.id, name: "Desert set" });
+  const B = await walkIn(b.login.token, "d".repeat(32));
+  expect(B.status).not.toBe(401);
 });
