@@ -46,8 +46,8 @@ beforeAll(async () => {
 afterAll(() => { if (browser) { view?.close(); server?.stop(true); rmSync(scratch, { recursive: true, force: true }); } });
 
 const ev = (js: string) => view.evaluate(js);
-async function until(js: string, what: string) {
-  for (let i = 0; i < 100; i++) { if (await ev(js)) return; await Bun.sleep(100); }
+async function until(js: string, what: string, ms = 10_000) {
+  for (let i = 0; i < ms / 100; i++) { if (await ev(js)) return; await Bun.sleep(100); }
   throw new Error(`never saw ${what}`);
 }
 
@@ -57,8 +57,10 @@ test.skipIf(!browser)("the demos list links to the page, and its station animati
   await until(`location.pathname === "/git-problems.html"`, "the page");
   expect(await ev(`document.title`)).toBe("We got git problems with agent swarm");
   expect(await ev(`document.querySelector("h1").textContent`)).toBe("We got git problems with agent swarm");
-  // the station is playing its story: the caption names the first scene, and the dots are on the stage
-  await until(`document.querySelector(".sw-cap b")?.textContent === ${JSON.stringify(SCENES[0].title)}`, "the first scene's caption");
+  // the station is playing its story: the caption names the first scene, and the dots are on the stage. The caption
+  // lands only after the module loads, the stage comes into view, a frame runs and a 260 ms fade ends, so a loaded
+  // CI runner gets 30 s here (10 s timed out once, #3944)
+  await until(`document.querySelector(".sw-cap b")?.textContent === ${JSON.stringify(SCENES[0].title)}`, "the first scene's caption", 30_000);
   // the week replay is one click away
   expect(await ev(`document.querySelector("#open-week").getAttribute("href")`)).toBe("/swarm-watch.html");
 });
