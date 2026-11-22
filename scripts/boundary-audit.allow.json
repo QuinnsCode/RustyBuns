@@ -1,8 +1,6 @@
 {
   "apps/codesplitter/src/env.ts": 3,
-  "apps/codesplitter/src/hooks.ts": 2,
   "apps/codesplitter/src/identity.ts": 1,
-  "apps/codesplitter/src/local.ts": 1,
   "apps/codesplitter/src/openapi.ts": 2,
   "apps/qcrm/src/app/tour-steps.ts": 1,
   "apps/qcrm/src/auth.ts": 1,

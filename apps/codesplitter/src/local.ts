@@ -6,13 +6,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Guard } from "@rustybuns/util/guard";
+import type { Env } from "./env.ts";
 import worker, { AgentThread, FileDurableObject, OfficeFloor, GameRoom, RepoSearch, UserSettings } from "./worker.ts";
 
 // Each queue here is consumed at once, not through the host scheduler: that one is the process's, and holds its slots for
 // the CPU budget and for every other instance's deliveries, so in a busy test process a dig waited past a test's timeout (#1446).
 const now = { run: (_priority: unknown, fn: (job?: any) => unknown) => Promise.resolve(fn()) } as any;
 
-export async function local(extra: Record<string, unknown> = {}) {
+/** `extra` is any of the env's own vars and bindings; `OFFICE: true` asks for an office floor and `LOADER: true` for the Worker Loader. */
+export async function local(extra: Partial<Omit<Env, "OFFICE" | "LOADER">> & { OFFICE?: true; LOADER?: true } = {}) {
   installCloudflareGlobals();
   // The tests claim check runs themselves, so the desktop's own runner stays off unless asked for.
   const env: any = { DB: d1(":memory:"), CHECKS_RUNNER: "off", ...extra };
