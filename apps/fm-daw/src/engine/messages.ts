@@ -6,13 +6,16 @@ import type { TrackAmp } from "../amp/track-amp.ts";
 import type { PluginEvent } from "../plugin-track.ts";
 import type { Channel } from "../desk.ts";
 import type { AmpSettings } from "../amp/messages.ts";
+import type { DeckClip } from "../take.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[]; plugins: boolean[] }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[]; plugins: boolean[]; voiceless: boolean[] }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "audible"; mask: boolean[] }
+  /** Tracks with no instrument: their notes reach no voice (src/project.ts `voiceless`). */
+  | { t: "voiceless"; mask: boolean[] }
   | { t: "tempo"; bpm: number; swing: number; loopBeats: number }
   | { t: "space"; amount: number }
   | { t: "squash"; amount: number }
@@ -59,8 +62,8 @@ export type ToWorklet =
   /** A Perform move of yours, sent beside the bend, repeat or param that makes the sound: recorded as automation while recording. */
   | { t: "move"; track: number; i: number; v: number; was: number }
   | { t: "engine"; kind: "ts" | "rust"; bytes?: ArrayBuffer }
-  /** A track's take to play (16-bit sound decoded, at TAKE_RATE), or null for none. */
-  | { t: "take"; track: number; pcm: Float32Array | null; beat: number }
+  /** A track's clips to play (each its 16-bit sound decoded, at TAKE_RATE, and its window); none for no take. */
+  | { t: "take"; track: number; clips: DeckClip[] }
   /** Record the input onto this track while recording (-1: no track). `inLatency`: seconds the input arrives late. */
   | { t: "arm"; track: number; inLatency: number }
   /** The shared clock (src/clock.ts): sound at context time `ctx` is heard on `beat`; null runs free again. */

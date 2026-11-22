@@ -3,7 +3,9 @@ import { formatPlanSummary, readPlanRows } from "../src/plan-summary.ts";
 
 // Alchemy's plain plan log (LoggingCli's formatPlanLines): a coloured `[id]` tag, then the action; bindings as `[id/sid]`.
 const tag = (id: string) => `\x1b[38;2;80;160;255m[${id}]\x1b[0m`;
-const log = (rows: [string, string][]) => ["\x1b[1mPlan:\x1b[0m 1 to update", ...rows.map(([id, a]) => `${tag(id)} ${a}`), `${tag("Worker/BACKUP")} noop`].join("\n");
+// Each line carries the plain log's `[time] INFO: ` prefix, as Alchemy beta.87 prints it.
+const log = (rows: [string, string][]) => ["\x1b[1mPlan:\x1b[0m 1 to update", ...rows.map(([id, a]) => `${tag(id)} ${a}`), `${tag("Worker/BACKUP")} noop`]
+  .map((l) => `\x1b[90m[00:01:08.172]\x1b[0m INFO: ${l}`).join("\n");
 const types = { BACKUP: "R2.Bucket", Worker: "Worker", Build: "Command.Build" };
 
 test.each([

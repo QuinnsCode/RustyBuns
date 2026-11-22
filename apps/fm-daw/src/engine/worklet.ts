@@ -141,6 +141,7 @@ class FmProcessor extends AudioWorkletProcessor {
         m.auto.forEach((a, t) => s.setAuto(t, a));
         s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats);
         this.setAudible(m.audible);
+        s.setVoiceless(m.voiceless);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         this.squash.setAmount(m.squash);
         this.setEq(m.eq, m.eqAuto);
@@ -160,6 +161,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "notes": s.setNotes(m.track, m.notes); break;
       case "auto": s.setAuto(m.track, m.lanes); break;
       case "audible": this.setAudible(m.mask); break;
+      case "voiceless": s.setVoiceless(m.mask); break;
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;
@@ -171,7 +173,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "play": s.play(m.countIn); break;
       case "stop": this.endTake(); s.stop(); this.engine.allOff(); this.plugins.allOff(); break;
       case "rec": s.recording = m.on; this.endTake(); this.passes = 0; if (!m.on) s.untouch(); break;
-      case "take": this.deck.set(m.track, m.pcm, m.beat); break;
+      case "take": this.deck.set(m.track, m.clips); break;
       case "amp": this.setAmp(m.track, m.amp); break;
       case "monitor": this.monitor = m.on; break;
       case "arm": this.endTake(); this.passes = 0; this.monitor = false; this.armed = m.track; this.inLatency = m.inLatency; break;

@@ -6,7 +6,7 @@ import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./eng
 import { TrackAmp } from "./amp/track-amp.ts";
 import { DeskEdit, emptySeshDesk, plainSeshDesk, SeshDesk, withDeskEdit, type Channel } from "./desk.ts";
 import { TrackPlugin } from "./plugin-track.ts";
-import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
+import { ClipGuard, MAX_CLIPS, MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeBytesGuard, clipsOf, soundIds, spanOf, takeRef, windowed, type Clip, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
@@ -34,10 +34,17 @@ export interface TrackDoc {
   eq?: EqDoc;
   /** Audio recorded onto this track (src/take.ts): its sound travels apart from the project, under the id. */
   take?: TakeRef;
+  /**
+   * The track's audio once someone cut or trimmed it: clips, each a window onto a take's sound (src/take.ts).
+   * A track has `take` (one whole sound) or `clips`, never both: clipsOf() reads either, withClips() writes the right one.
+   */
+  clips?: Clip[];
   /** An Amp insert (src/amp/insert.ts): the take and the live input through a Q Amp head; absent when off. */
   amp?: TrackAmp;
   /** A hosted CLAP plugin plays this track's notes instead of its FM voice (src/plugin-track.ts); absent for FM. */
   plugin?: TrackPlugin;
+  /** No instrument: the notes stay, show, record and go out (MIDI out, the live line) but make no sound here; absent for a voice. */
+  voiceless?: true;
   /** A web plugin the track's FM sound goes through on its way to the mix (a Web Audio Module effect, src/ui/wam.ts); absent for none. */
   insert?: TrackPlugin;
   mute: boolean;
@@ -68,12 +75,16 @@ export type Op =
   | { t: "eqPhase"; linear: boolean }
   /** A recorded take onto a track (its chunks went first), or null to take it off. */
   | { t: "take"; track: number; take: TakeRef | null }
+  /** A track's clips as they now are, after a cut, trim, slip, move or delete (cutClip and the rest below). */
+  | { t: "clips"; track: number; clips: Clip[] }
   /** An Amp on a track, at these knobs, or null to take it off. */
   | { t: "amp"; track: number; amp: TrackAmp | null }
   /** A plugin playing a track (with the sliders moved), or null to give it its FM voice back. */
   | { t: "plugin"; track: number; plugin: TrackPlugin | null }
   /** An effect on a track's sound (with its sliders moved), or null to take it off. */
   | { t: "insert"; track: number; insert: TrackPlugin | null }
+  /** No instrument on a track (its notes kept, unheard here), or its sound back. */
+  | { t: "voiceless"; track: number; on: boolean }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, the aux 2 return's fader, mute and Shape, or the Space return's Shape. */
@@ -205,22 +216,88 @@ function madeOf(list: Instrument[]): { instruments?: Instrument[] } {
   return kept.length ? { instruments: kept } : {};
 }
 
-/** A take only on a beat inside the loop, and no more than MAX_TAKES of them, first tracks first. */
+/** Clips only on a beat inside the loop, MAX_CLIPS a track, and no more than MAX_TAKES sounds, first tracks first. */
 function fitTakes(tracks: TrackDoc[], beats?: number): TrackDoc[] {
-  let n = 0;
+  const sounds = new Set<string>();
   return tracks.map((t) => {
-    if (!t.take) return t;
-    if ((beats === undefined || t.take.beat < beats) && ++n <= MAX_TAKES) return t;
-    const { take: _, ...rest } = t;
-    return rest;
+    const was = clipsOf(t);
+    if (!was.length) return t;
+    const kept = was.filter((c) => (beats === undefined || c.beat < beats) && (sounds.has(c.id) || sounds.size < MAX_TAKES)).slice(0, MAX_CLIPS);
+    for (const c of kept) sounds.add(c.id);
+    return kept.length === was.length ? t : withClips(t, kept);
   });
 }
 
+/** The track holding these clips, in the form a track nobody cut always had: one whole sound is `take`. */
+export function withClips(t: TrackDoc, clips: readonly Clip[]): TrackDoc {
+  const { take: _, clips: __, ...rest } = t;
+  if (!clips.length) return rest;
+  const [c] = clips;
+  if (clips.length === 1 && c.from === undefined && c.to === undefined) return { ...rest, take: { id: c.id, beat: c.beat, frames: c.frames } };
+  return { ...rest, clips: [...clips].sort((a, b) => a.beat - b.beat) };
+}
+
+// Clip edits: pure, on a track's clips, beats as the caller gives them (snap first for a grid). Each hands back the
+// new list, which goes in a "clips" op; the sound never changes, only which part of it plays where.
+const framesPerBeat = (bpm: number) => (60 / bpm) * TAKE_RATE;
+/** The beat a clip stops sounding on, at this tempo. */
+export function clipEnd(c: Clip, bpm: number): number { const { from, to } = spanOf(c); return c.beat + (to - from) / framesPerBeat(bpm); }
+const replaced = (clips: readonly Clip[], i: number, by: Clip[]) => [...clips.slice(0, i), ...by, ...clips.slice(i + 1)];
+
+/** Cut the clip under `beat` in two there (both share its sound); unchanged when no clip is, or a piece would be too short. */
+export function cutClip(clips: readonly Clip[], beat: number, bpm: number): readonly Clip[] {
+  if (clips.length >= MAX_CLIPS) return clips;
+  const i = clips.findIndex((c) => c.beat < beat && beat < clipEnd(c, bpm));
+  if (i < 0) return clips;
+  const c = clips[i], { from, to } = spanOf(c), at = from + (beat - c.beat) * framesPerBeat(bpm);
+  if (at - from < MIN_CLIP_FRAMES || to - at < MIN_CLIP_FRAMES) return clips;
+  return replaced(clips, i, [windowed(c, from, at), { ...windowed(c, at, to), beat }]);
+}
+
+/**
+ * Move clip `i`'s start or end edge to `beat`. The sound stays where it is in time: only the window
+ * moves, so a trimmed start begins later in the sound and later in the loop. Kept inside the sound and
+ * at least MIN_CLIP_FRAMES long.
+ */
+export function trimClip(clips: readonly Clip[], i: number, edge: "start" | "end", beat: number, bpm: number): readonly Clip[] {
+  const c = clips[i];
+  if (!c) return clips;
+  const { from, to } = spanOf(c), fpb = framesPerBeat(bpm);
+  if (edge === "end") return replaced(clips, i, [windowed(c, from, Math.max(from + MIN_CLIP_FRAMES, Math.min(c.frames, from + (beat - c.beat) * fpb)))]);
+  // the sound's frame 0 sits at c.beat - from / fpb, and can't start before the loop does
+  const lo = Math.max(0, from - c.beat * fpb);
+  const at = Math.max(lo, Math.min(to - MIN_CLIP_FRAMES, from + (beat - c.beat) * fpb));
+  return replaced(clips, i, [{ ...windowed(c, at, to), beat: c.beat + (at - from) / fpb }]);
+}
+
+/**
+ * Slip clip `i`'s sound `by` beats (later when positive) under a window that stays put: what lines a drum's
+ * transient up with the beat. Stops where the window would leave the sound.
+ */
+export function slipClip(clips: readonly Clip[], i: number, by: number, bpm: number): readonly Clip[] {
+  const c = clips[i];
+  if (!c) return clips;
+  const { from, to } = spanOf(c), d = Math.max(-from, Math.min(c.frames - to, -by * framesPerBeat(bpm)));
+  return replaced(clips, i, [windowed(c, from + d, to + d)]);
+}
+
+/** Clip `i` to start on `beat` (not before the loop's start), sound and window as they were. */
+export function moveClip(clips: readonly Clip[], i: number, beat: number): readonly Clip[] {
+  const c = clips[i];
+  return c ? replaced(clips, i, [{ ...c, beat: Math.max(0, beat) }]) : clips;
+}
+
+/** Clip `i` off the track (its sound goes once no clip plays it). */
+export const deleteClip = (clips: readonly Clip[], i: number): readonly Clip[] => (clips[i] ? replaced(clips, i, []) : clips);
+
+/** voiceless only when on, so a track with a voice reads as it did before tracks could have none. */
+const voicelessOf = (on: boolean): { voiceless?: true } => (on ? { voiceless: true } : {});
+
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), insert: maybe(TrackPlugin), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  const { eq, take, amp, plugin, insert, ...rest } = t;
-  return withTrackEq({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), ...(insert ? { insert } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats), ...(take ? { take } : {}) }, sanitizeEq(eq));
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), clips: maybe(arr(ClipGuard, MAX_CLIPS, { drop: true })), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), insert: maybe(TrackPlugin), voiceless: bool(false), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, take, clips, amp, plugin, insert, voiceless, ...rest } = t;
+  return withTrackEq(withClips({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), ...voicelessOf(voiceless), ...(insert ? { insert } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) }, (clips?.length ? clips : take ? [take] : []).filter((c) => c.beat < beats)), sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -237,9 +314,11 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("take"), track: TRACK, take: nul(takeRef(MAX_BARS * BEATS_PER_BAR)) }),
+  obj({ t: tag("clips"), track: TRACK, clips: arr(ClipGuard, MAX_CLIPS) }),
   obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
   obj({ t: tag("insert"), track: TRACK, insert: nul(TrackPlugin) }),
+  obj({ t: tag("voiceless"), track: TRACK, on: bool() }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID }),
@@ -406,10 +485,15 @@ export function apply(p: Project, op: Op): Project {
       const { eqLinear: _, ...rest } = p;
       return { ...rest, ...linearOf(op.linear) };
     }
-    case "take": {
-      if (op.take && op.take.beat >= loopBeats(p)) return p;
-      if (op.take && p.tracks.filter((t, i) => t.take && i !== op.track).length >= MAX_TAKES) return p;
-      return withTrack(p, op.track, (t) => { const { take: _, ...rest } = t; return op.take ? { ...rest, take: op.take } : rest; });
+    case "take":
+    case "clips": {
+      // a take lands as the track's one clip (or takes them all off); a sesh holds MAX_TAKES sounds at most
+      const clips = op.t === "clips" ? op.clips : op.take ? [op.take] : [];
+      if (clips.length > MAX_CLIPS || clips.some((c) => c.beat >= loopBeats(p))) return p;
+      const others = soundIds({ tracks: p.tracks.filter((_, i) => i !== op.track) });
+      for (const c of clips) others.add(c.id);
+      if (others.size > MAX_TAKES) return p;
+      return withTrack(p, op.track, (t) => withClips(t, clips));
     }
     case "amp":
       return withTrack(p, op.track, (t) => { const { amp: _, ...rest } = t; return op.amp ? { ...rest, amp: op.amp } : rest; });
@@ -417,6 +501,9 @@ export function apply(p: Project, op: Op): Project {
       return withTrack(p, op.track, (t) => { const { plugin: _, ...rest } = t; return op.plugin ? { ...rest, plugin: op.plugin } : rest; });
     case "insert":
       return withTrack(p, op.track, (t) => { const { insert: _, ...rest } = t; return op.insert ? { ...rest, insert: op.insert } : rest; });
+    case "voiceless":
+      if (!!p.tracks[op.track]?.voiceless === op.on) return p;
+      return withTrack(p, op.track, (t) => { const { voiceless: _, ...rest } = t; return { ...rest, ...voicelessOf(op.on) }; });
     case "instrument": {
       const { inst } = op;
       const was = (p.instruments ?? []).filter((x) => x.id !== inst.id && x.track !== inst.track);
@@ -453,3 +540,6 @@ export function audible(p: Project): boolean[] {
   const anySolo = p.tracks.some((t) => t.solo);
   return p.tracks.map((t) => (anySolo ? t.solo : !t.mute));
 }
+
+/** Which tracks have no instrument: the sequencer plays their notes to nothing (their take still sounds). */
+export const voiceless = (p: Project): boolean[] => p.tracks.map((t) => !!t.voiceless);

@@ -6,6 +6,7 @@ import { NPARAMS, P, clampParam } from "../engine/params.ts";
 import { KIT, patch } from "../presets.ts";
 import { SOUNDS } from "../sounds.ts";
 import type { Op, Project } from "../project.ts";
+import { clipsOf } from "../take.ts";
 import { VOICES, type Instrument } from "./made.ts";
 import { solids } from "./jam.ts";
 import { thingBox, type Spot, type StudioDef } from "./room.ts";
@@ -75,7 +76,7 @@ export function freeTrack(p: Project, def: StudioDef): number {
     const want = s.track.toLowerCase(), named = p.tracks.findIndex((t) => t.name.toLowerCase().includes(want));
     if (named >= 0) used.add(named);
   }
-  for (let i = p.tracks.length - 1; i >= 0; i--) if (p.tracks[i].kind === "synth" && !p.tracks[i].notes.length && !p.tracks[i].take && !used.has(i)) return i;
+  for (let i = p.tracks.length - 1; i >= 0; i--) if (p.tracks[i].kind === "synth" && !p.tracks[i].notes.length && !clipsOf(p.tracks[i]).length && !used.has(i)) return i;
   return p.instruments?.[0]?.track ?? -1;
 }
 

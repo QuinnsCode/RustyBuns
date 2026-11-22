@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 // The releases page's rules (scripts/releases.ts): which dot a repo or app gets, and how merged PRs count per day and week.
 
 /** live: its prod link answers. error: the link is down or its last run failed. testing: being built, not released yet.
@@ -63,4 +65,31 @@ export function pacific(iso: string): string {
     timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", hour12: true, month: "short", day: "2-digit", year: "numeric", timeZoneName: "short",
   }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
   return `${parts.hour}:${parts.minute}${(parts.dayPeriod ?? "").toLowerCase()} ${parts.timeZoneName} ${parts.month}-${parts.day}-${parts.year}`;
+}
+
+/** An app to deploy again: it has a prod link of its own (not the framework's npm page), and main changed it after its
+ *  last deploy from this Mac, or no deploy of it is written down (~/.rustybuns/deploys.jsonl started 2026-11-20). */
+export function owed(a: { id: string; link: string | null; dot: Dot; pushed: string | null; deployed: string | null }): boolean {
+  if (a.id === "rustybuns" || !a.link || a.dot === "code" || !a.pushed) return false;
+  return !a.deployed || Date.parse(a.pushed) > Date.parse(a.deployed);
+}
+
+/** How an app goes out again, run from its folder: codeSplitter has its own release script (it keeps the hosted flags on);
+ *  a `rustybuns deploy` app needs its plan first; a plain `wrangler deploy` app just runs its deploy script. */
+export function deployOf(id: string, script: string | null): { plan: boolean; cmd: string } | null {
+  if (id === "codesplitter") return { plan: false, cmd: "zsh scripts/release-codesplitters.sh" };
+  if (!script) return null;
+  return { plan: /rustybuns deploy|cli\/src\/index\.ts deploy/.test(script), cmd: "bun run deploy" };
+}
+
+/** Where a re-release would read this app's Alchemy state: its own `.alchemy/state` and the shared one in the repo's git
+ *  dir (packages/cli/src/state.ts). The walker deploys from its own checkout, and a checkout of another clone shares
+ *  another git dir: with no state in either, the plan makes everything new (FRESH) next to what's live. */
+export function stateDirs(cwd: string, sharedBase: string | null): string[] {
+  return [join(cwd, ".alchemy", "state"), ...(sharedBase ? [join(sharedBase, "state")] : [])];
+}
+
+/** True when any of `dirs` holds a stack's state. */
+export function hasState(dirs: string[]): boolean {
+  return dirs.some((d) => { try { return readdirSync(d).length > 0; } catch { return false; } });
 }
