@@ -102,6 +102,19 @@ export function settingsLineOf(o: { paused: boolean; quillMuted: boolean }): str
   return "Move the keys where you like. The accounts stay where they are.";
 }
 
+/** A word on the title page's menu, or its note (#5120 round 116). */
+export type MenuWord = "continue" | "new" | "duel" | "versus" | "info";
+
+/** What the Book says in the margin under the title's menu about the word under your pen: one short line per choice.
+ * `burning` is the second press of New game on a journey, when it asks you to burn the old one. */
+export function menuLineOf(w: MenuWord, j: Journey | null, burning = false): string {
+  if (w === "continue") return "Back. The ledger kept your place. Interest too.";
+  if (w === "new") return !j ? "Sign here. Three cryptids up front, the rest on account." : burning ? "Burn it, then. I keep copies." : "A fresh ledger? The old one is still open.";
+  if (w === "duel") return "You and a friend, one table. I keep score.";
+  if (w === "versus") return "Practice bouts. Off the books. I look away.";
+  return "Read the small print. Everyone should. Nobody does.";
+}
+
 /** A compendium chapter the Book writes its own line over (#4166): the line-up, the bestiary, the regions, the factions. */
 export type Chapter = "lineup" | "bestiary" | "regions" | "factions";
 
