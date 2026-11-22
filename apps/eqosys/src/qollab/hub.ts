@@ -281,12 +281,14 @@ export class Hub {
         return done();
       }
       case "notify": {
-        // Only to a friend, and only words and a link on the app's own origin.
+        // Only to a friend, and only words and a link to a page on the app's own origin: never its native app's URL scheme,
+        // which would open that app on whatever path a friend chose.
         const friend = op.id ? await s.get<Friend>(`f:${op.id}`) : undefined;
         if (!friend) return "only a friend can be notified";
         if (!op.text) return "say something";
         const app = await appOf(this.env, who.app);
-        if (op.link && (!app || !onSite(app, op.link, loopbackOn(this.env)))) return "a link must be on the app's own site";
+        const at = op.link && app ? onSite(app, op.link, loopbackOn(this.env)) : null;
+        if (op.link && (!at || !/^https?:$/.test(at.protocol))) return "a link must be a page on the app's own site";
         await this.send(friend, { from: me, kind: "note", app: who.app, text: op.text, ...(op.link ? { link: op.link } : {}) });
         return null;
       }

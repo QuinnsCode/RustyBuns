@@ -54,7 +54,13 @@ const make = (conf: Env, origin: string) => betterAuth({
   // A token kept before this stays readable and is replaced, encrypted, at that person's next sign-in.
   // One account, several ways in: someone signed in adds GitHub, Google or Apple from the Account tab (/do/link), whatever
   // email that provider knows them by, since they proved both. A sign-in never merges two accounts by itself.
-  account: { encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: true } },
+  // A provider's sign-in joins an account of the same email only once that account's email was proved here (an unproved
+  // sign-up at someone's address can't catch their GitHub). Better Auth's default today, set so an upgrade can't change it.
+  account: { encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: true, requireLocalEmailVerified: true } },
+  // Better Auth's own email change and self-delete stay off (its defaults, set so an upgrade can't turn them on): an email
+  // changed there skips eqosys's checks, and a delete there skips deleteAccount's sweep of friends, parties, saves and apps.
+  // Deleting is /delete (type the email) or POST /api/account/delete from an app.
+  user: { changeEmail: { enabled: false }, deleteUser: { enabled: false } },
   // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
   // and would ride along to eqosys.qntbr.com beside ours.
   advanced: { cookiePrefix: "eqosys" },

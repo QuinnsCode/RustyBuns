@@ -7,7 +7,8 @@
 //   - It acts as its owner, and counts against their rate limits like the page does.
 //   - read tokens make GET requests only; write tokens edit code, branches and checks;
 //     admin tokens also manage the repo itself (adminRoute below): delete, visibility, crew,
-//     invites, CI tokens, webhooks, deploy keys and check settings. OAuth grants are never admin.
+//     invites, CI tokens, webhooks, deploy keys, check settings, fresh starts and preview deploys.
+//     OAuth grants are never admin.
 //   - A token can be held to one repo (`repo` on POST /api/tokens), as an invite's is.
 //   - It always expires: 1 to 365 days, 30 by default. Expired or revoked, it's a 401,
 //     never a quiet fall back to signed out.
@@ -48,11 +49,18 @@ const COOKIE_ONLY = new Set(["admin", "auth", "login", "logout", "handle", "toke
 /** Whether a request signed in with an API or OAuth token. The gates that stand for a person reading the code (approve, accept, build_ok) refuse these. */
 export const byToken = (req: Request) => { const v = via.get(req); return v === "token" || v === "oauth" || queuedByToken.has(req); };
 
-/** Whether a route manages a repo rather than its code: a write token is refused it, an admin one isn't. */
+/**
+ * Whether a route manages a repo rather than its code: a write token is refused it, an admin one isn't. A fresh start
+ * (moving the repo to new git, or deleting the git it left) and a preview deploy (main's code run with the owner's
+ * keys, on the owner's bill) are the repo's, not its code's. The owner-only routes an MCP tool calls (take_upstream,
+ * delete_tag, start_try, deploy) stay open to a write token: OAuth grants are never admin, and those tools are risky,
+ * so the person is asked first.
+ */
 export const adminRoute = (p: string[], method: string) => {
   if (p[1] !== "repos" || !p[2] || !p[3] || method === "GET" || method === "HEAD") return false;
   const k = p[4];
-  return !k || k === "collaborators" || k === "hooks" || k === "invites" || k === "protect" || (k === "deploy" && p[5] === "key") || (k === "checks" && (p[5] === "tokens" || p[5] === "settings"));
+  return !k || k === "collaborators" || k === "hooks" || k === "invites" || k === "protect" || k === "fresh" || k === "preview"
+    || (k === "deploy" && p[5] === "key") || (k === "checks" && (p[5] === "tokens" || p[5] === "settings"));
 };
 
 /** The bearer token a request carries, or null when it carries none. */
@@ -84,7 +92,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   if (p.at(-1) === "ws") return cantDo("API tokens don't open live sockets: use the HTTP routes");
   if (t.repo && !heldTo(t.repo, p, req.method, new URL(req.url).searchParams.get("repo"))) return cantDo(`this API token is for ${t.repo} only`);
   if (t.scope === "read" && req.method !== "GET" && req.method !== "HEAD") return cantDo("this API token is read-only", "write");
-  if (t.scope !== "admin" && adminRoute(p, req.method)) return cantDo("this API token can't manage the repo itself (delete, visibility, crew, invites, CI tokens, webhooks, deploy keys, check settings): make an admin token on your profile page, or sign in on the site", "admin");
+  if (t.scope !== "admin" && adminRoute(p, req.method)) return cantDo("this API token can't manage the repo itself (delete, visibility, crew, invites, CI tokens, webhooks, deploy keys, check settings, fresh starts, previews): make an admin token on your profile page, or sign in on the site", "admin");
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!t.last_used_at || now - t.last_used_at > 60_000) await env.DB.prepare("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now, t.id).run();
   return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo, oauth: !!t.oauth };

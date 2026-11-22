@@ -522,3 +522,22 @@ Each with a test that fails without the fix.
 - The games live on workers.dev, which no zone rule reaches, so their protection is what their code does (the table above).
   eqosys, qCRM, GeoBoxQ and artstewengine are on the qntbr.com zone, where one free rate limiting rule and a billing alert are the
   owner's to add: MANUAL RUN https://github.com/QuinnsCode/RustyBuns/issues/4691.
+
+## Round 16, November 21: the last of #3725's list
+
+A hand review of #3725's remaining code-only notes, source only. Nothing was deployed.
+
+### Fixed in this round
+
+Each with a test that fails without the fix, but the Better Auth defaults (below).
+
+- **A refused party knock left a seat row** (low, eqosys). `/q/party/<code>` wrote `party_seats` before the party answered, so a wrong code or a door refusal (friends only, blocked, full) still filed a seat. The party now marks a socket its door let in (`SEATED` in `party.ts`), and only that writes the seat (`party.test.ts`).
+- **A friend's note could link into a native app** (low, eqosys). `notify` checked the link with `onSite`, which takes a native app's URL scheme as well as its web origin, so a friend could send `com.quinnscode.parkhideseek:/…` on any path they chose. A note links to an `http(s)` page on the app's own origin only (`hub.test.ts`).
+- **Write tokens reached a fresh start and a preview deploy** (low, codeSplitter). `adminRoute` now counts `fresh` (moving the repo to new git, or deleting the git it left) and `preview` (main's code run with the owner's keys, on the owner's bill) as managing the repo (`tokens.test.ts`). The owner-only routes an MCP tool calls (`take_upstream`, `delete_tag`, `start_try`, `deploy`) stay open to a write token on purpose: OAuth grants are never admin, and each tool is `risky`, so the person is asked.
+- **Better Auth's account defaults set explicitly** (hardening, eqosys). `user.changeEmail` and `user.deleteUser` are off and `accountLinking.requireLocalEmailVerified` is on, as Better Auth 1.7 defaults them, so an upgrade can't change them: an email changed or an account deleted there would skip eqosys's own checks and `deleteAccount`'s sweep. The test pins it, and passes on the old code too (`erase.test.ts`).
+
+Round 13 fixed the report notes, round 15 the knock gate, and the iOS kit's socket token is in a subprotocol now (#3726, closed).
+
+### Still open
+
+- In #5590, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, and `/api/account/delete` on an app's token (an owner's call). MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.

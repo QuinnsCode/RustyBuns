@@ -220,14 +220,22 @@ test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute 
   expect((await knock([...codes][0]!, ada, PARK)).status).toBe(101);
 });
 
-test("guessing codes: past 20 different ones a minute the door says wait; a code already tried, the player's own party included, still answers", async () => {
+test("guessing codes: past 20 different ones a minute the door says wait; a code already tried, the player's own party included, still answers; only a knock let in leaves a seat", async () => {
   const eve = await signUp("Eve", "park-hide-seek", PARK);
   // From an address of its own: the mint test above spent this file's default one.
   const made = await fetch(`http://127.0.0.1:${shell.port}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${eve}`, "cf-connecting-ip": "203.0.113.9" } });
   const { code } = (await made.json()) as { code: string };
   expect((await knock(code, eve, PARK)).status).toBe(101);
-  for (let i = 0; i < 19; i++) expect((await knock(`ZZ${String(i).padStart(4, "0")}`, eve, PARK)).status).toBe(404);
-  expect((await knock("ZZ0019", eve, PARK)).status).toBe(429);
+  // Fay's friends-only party lets Eve's knock in only to close it.
+  const fay = await signUp("Fay", "park-hide-seek", PARK);
+  const shut = await fetch(`http://127.0.0.1:${shell.port}/q/party`, { method: "POST", headers: { authorization: `Bearer ${fay}`, "cf-connecting-ip": "203.0.113.10" } });
+  expect((await knock((await shut.json() as { code: string }).code, eve, PARK)).status).toBe(101);
+  for (let i = 0; i < 18; i++) expect((await knock(`ZZ${String(i).padStart(4, "0")}`, eve, PARK)).status).toBe(404);
+  expect((await knock("ZZ0018", eve, PARK)).status).toBe(429);
   expect((await knock("ZZ0000", eve, PARK)).status).toBe(404);
   expect((await knock(code, eve, PARK)).status).toBe(101);
+  // Neither the refusal nor the wrong codes wrote a seat: Eve sat in her own party alone.
+  const eveId = (await conf.DB.prepare("SELECT id FROM \"user\" WHERE name = 'Eve'").first<string>("id"))!;
+  const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(eveId).all<{ code: string }>();
+  expect(seats.results.map((r) => r.code)).toEqual([code]);
 });
