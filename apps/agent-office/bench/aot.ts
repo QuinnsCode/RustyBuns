@@ -10,7 +10,12 @@ import { $ } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { arr, check, nul, num, obj } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
 import { aotName } from "../scripts/aot.ts";
+
+/** The part of GET /__rb/mem this reads: the floor's pty host pid, once it's up. */
+const Mem = obj({ ptyHosts: arr(obj({ mem: nul(obj({ pid: num(1, 1e9) })) }), 100) });
 
 const SETTLE_S = 20;
 const runs = Number(process.argv[2] ?? 3);
@@ -49,8 +54,8 @@ async function once(bin: string): Promise<Run> {
     const login = await fetch(`${base}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
     const cookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
     await until(async () => {
-      const mem = await (await fetch(`${base}/__rb/mem`, { headers: { cookie } })).json() as { ptyHosts: { mem: { pid: number } | null }[] };
-      ptyPid = mem.ptyHosts[0]?.mem?.pid ?? 0;
+      const mem = check(Mem, parseJson(await (await fetch(`${base}/__rb/mem`, { headers: { cookie } })).text()));
+      ptyPid = mem?.ptyHosts[0]?.mem?.pid ?? 0;
       return ptyPid > 0;
     });
     await Bun.sleep(SETTLE_S * 1000);
