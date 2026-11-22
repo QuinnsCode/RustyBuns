@@ -79,8 +79,8 @@ export function checkStory(json: unknown): Report {
   const where = new Map<string, Where>();
   for (const b of beats) {
     const w = resolve(b.at);
-    if (!w) { problems.push(`beat ${b.id}: "${b.at}" names nothing in the game`); continue; }
-    where.set(b.id, w);
+    if (!w) problems.push(`beat ${b.id}: "${b.at}" names nothing in the game`);
+    else where.set(b.id, w);
     for (const n of b.needs ?? []) if (!byId.has(n)) problems.push(`beat ${b.id}: needs "${n}", no such beat`);
     for (const f of b.fights ?? []) {
       if (sacredIds.has(f)) problems.push(`beat ${b.id}: ${f} is held sacred, never a fighter`);
