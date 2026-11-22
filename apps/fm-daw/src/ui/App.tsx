@@ -35,7 +35,8 @@ import { AmpPanel } from "./AmpPanel.tsx";
 import { DeskPanel } from "./DeskPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
-import { TAKE_RATE, TakeShelf, encodeTake, newTakeId, toChunks } from "../take.ts";
+import { TAKE_RATE, TakeShelf, clipsOf, encodeTake, newTakeId, toChunks } from "../take.ts";
+import { ClipLane } from "./ClipLane.tsx";
 import { apply, audible, voiceless, roomGain, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
@@ -83,7 +84,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "auto": return { t: "auto", track: op.track, lanes: next.tracks[op.track].auto ?? [] };
     case "track": return { t: "audible", mask: audible(next) };
     // the take's sound itself goes by syncTakes once it's here
-    case "take": return { t: "audible", mask: audible(next) };
+    case "take": case "clips": return { t: "audible", mask: audible(next) };
     case "eq": if (op.track !== undefined) return { t: "trackEq", track: op.track, bands: next.tracks[op.track].eq ?? flatEq() };
     // falls through: the master
     case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
@@ -224,7 +225,8 @@ export function App() {
     if (next === prev) return;
     if (!opts.remote) {
       const now = performance.now();
-      const grouped = opts.group && lastGroup.current.key === opts.group && now - lastGroup.current.at < GROUP_MS;
+      // a "drag:" group is one pointer's drag (ClipLane): one undo step however long it pauses
+      const grouped = opts.group && lastGroup.current.key === opts.group && (now - lastGroup.current.at < GROUP_MS || opts.group.startsWith("drag:"));
       if (!grouped) { undo.current.push(prev); if (undo.current.length > UNDO_LIMIT) undo.current.shift(); }
       lastGroup.current = { key: opts.group ?? "", at: now };
       redo.current = [];
@@ -443,7 +445,7 @@ export function App() {
         bars: proj.current.bars, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
         tracks: proj.current.tracks.map((tr, i) => {
           const shown = (p: TrackPlugin, s: PluginShown | undefined) => ({ name: p.name, path: p.path, web: !!p.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) });
-          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], notes: tr.notes.length, take: tr.take ? { beat: tr.take.beat, seconds: tr.take.frames / TAKE_RATE } : null, plays: tr.voiceless ? "none" : tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
+          return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], notes: tr.notes.length, take: clipsOf(tr)[0] ? { beat: clipsOf(tr)[0].beat, seconds: clipsOf(tr)[0].frames / TAKE_RATE } : null, clips: clipsOf(tr), plays: tr.voiceless ? "none" : tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
         }),
       }),
       start: startAudio,
@@ -452,6 +454,8 @@ export function App() {
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      // audio onto a track at a beat, as a recording lands (the clip lane then shows it)
+      land: (track: number, beat: number, pcm: Float32Array, rate: number) => landTake(track, beat, pcm, rate),
       trust: (track: number) => { pump.current?.trust(track, proj.current); fxPump.current?.trust(track, proj.current); },
       // the sesh's live line for one plugin track, as going online turns it on; `state().line` is what it last sent
       line: (track: number, on: boolean) => { linePeaks.current.delete(track); send({ t: "pluginSend", track, on, web: !!proj.current.tracks[track]?.plugin?.web }); },
@@ -850,6 +854,11 @@ export function App() {
   viewRef.current = win;
   const windowed = (tr: TrackDoc) => windowNotes(tr.notes, win);
   const color = TRACK_COLORS[selected];
+  // the selected track's audio, inside the Timeline under its editor so the ruler, zoom and playhead line up with it
+  const clipLane = clipsOf(t).length > 0 && (
+    <ClipLane key={selected} clips={clipsOf(t)} sound={(id) => takes.current.get(id)} bpm={project.bpm} loopBeats={L} from={win.from} span={win.span}
+      grid={grid.beats} color={color} onClips={(clips, group) => commit({ t: "clips", track: selected, clips }, group ? { group } : {})} />
+  );
   // a voice or a plugin, or no instrument: one undo step either way
   const trackSound = <TrackSound track={t} choices={pluginChoices}
     onPlugin={(plugin) => { const group = `sound:${performance.now()}`; if (t.voiceless) commit({ t: "voiceless", track: selected, on: false }, { group }); commit({ t: "plugin", track: selected, plugin }, { group }); }}
@@ -942,7 +951,7 @@ export function App() {
           {project.tracks.map((tr, i) => (
             <div key={i} className={`track${i === selected ? " sel" : ""}${imports.dropOn === i ? " drop" : ""}`} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties} {...imports.dropProps(i, win.from)}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind" title={tr.voiceless ? "No instrument: its notes go out, silent here" : undefined}>{tr.voiceless ? "midi" : tr.plugin ? "plugin" : tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{clipsOf(tr).length > 0 && <TakeMark />}<span className="kind" title={tr.voiceless ? "No instrument: its notes go out, silent here" : undefined}>{tr.voiceless ? "midi" : tr.plugin ? "plugin" : tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
@@ -974,7 +983,7 @@ export function App() {
               rec={recording ? (armed !== null ? { kind: "audio", track: project.tracks[armed].name } : { kind: "midi", track: t.name }) : null}
               onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} onStop={stopRec} onInputOff={closeInput}
               onFile={(kind, f) => { void imports.importFile(kind, f, selected, win.from); }} />
-            {t.take && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
+            {clipsOf(t).length > 0 && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
             <span className="spacer" />
             <button className="ghost" onClick={() => history("undo")} title="Undo (⌘Z)">Undo</button>
             <button className="ghost" onClick={() => history("redo")} title="Redo (⇧⌘Z)">Redo</button>
@@ -1039,6 +1048,7 @@ export function App() {
                   onSelect={setSelected} onAudition={audition}
                   onNotes={(i, notes) => commit({ t: "notes", track: i, notes: shown[i].back(notes) })} />;
               })()}
+              {clipLane}
             </Timeline>
           </>) : (<>
             <Timeline view={shownView} win={win} loop={L} beatsPerBar={BEATS_PER_BAR} tracks={project.tracks} colors={TRACK_COLORS}
@@ -1049,6 +1059,7 @@ export function App() {
                   onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: shown.back(notes) })}
                   onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />;
               })()}
+              {clipLane}
             </Timeline>
           </>)}
 

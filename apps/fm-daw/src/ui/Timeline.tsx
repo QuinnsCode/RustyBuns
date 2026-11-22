@@ -4,7 +4,7 @@
 // the editor (ctrl/cmd + wheel or a trackpad pinch zooms about the pointer,
 // a sideways or shift wheel scrolls, two fingers pinch and pan). The window
 // math is view.ts; the editors only get the window App works out from it.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { clamp01 } from "@rustybuns/util";
 import type { TrackDoc } from "../project.ts";
 import { useTick } from "./store.ts";
@@ -128,7 +128,7 @@ export function Timeline(props: {
   const marks = rulerMarks(props.win, inset.width, props.beatsPerBar);
   const whole = props.view.span >= props.loop - 1e-9;
   return (
-    <div className="timeline" ref={root}>
+    <div className="timeline" ref={root} style={{ "--tl-left": `${inset.left}px`, "--tl-width": inset.width ? `${inset.width}px` : "auto" } as CSSProperties}>
       <div className="tl-bar">
         <Overview view={props.view} loop={props.loop} tracks={props.tracks} colors={props.colors} onView={props.onView} />
         <div className="tl-tools">

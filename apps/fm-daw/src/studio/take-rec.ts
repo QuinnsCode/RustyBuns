@@ -3,7 +3,7 @@
 // already goes out as slices stamped with the beat it was played on (src/studio/opus.ts), so a take is those
 // slices laid end to end from the bar Rec starts on: where each lands is its stamp, not when it got here, so a
 // friend across an ocean lands on the beat like your own. No DOM: the page feeds it and the tests drive it.
-import { MAX_TAKE_FRAMES, MAX_TAKES, TAKE_RATE, encodeTake, newTakeId, toChunks, type TakeBytes, type TakeRef } from "../take.ts";
+import { MAX_TAKE_FRAMES, MAX_TAKES, TAKE_RATE, clipsOf, encodeTake, newTakeId, soundIds, toChunks, type TakeBytes, type TakeRef } from "../take.ts";
 import { BEATS_PER_BAR, loopBeats, type Project } from "../project.ts";
 import type { Tap } from "./plugin-line.ts";
 
@@ -12,9 +12,9 @@ import type { Tap } from "./plugin-line.ts";
  * (a mic from the booth, or a guitar with no amp: straight in, -1) the first track with no take. A string says why none.
  */
 export function takeTrack(p: Project, plugged: number, pick?: number): number | string {
-  const track = pick ?? (plugged >= 0 ? plugged : p.tracks.findIndex((t) => !t.take));
+  const track = pick ?? (plugged >= 0 ? plugged : p.tracks.findIndex((t) => !clipsOf(t).length));
   if (!p.tracks[track]) return pick === undefined ? "Every track has a take: take one off in the sesh first" : "No such track";
-  if (!p.tracks[track].take && p.tracks.filter((t) => t.take).length >= MAX_TAKES) return `The sesh holds ${MAX_TAKES} takes at most`;
+  if (soundIds({ tracks: p.tracks.filter((_, i) => i !== track) }).size >= MAX_TAKES) return `The sesh holds ${MAX_TAKES} takes at most`;
   return track;
 }
 

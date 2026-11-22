@@ -389,3 +389,13 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .midi-land select { max-width: 100%; }
 @media (max-width: 760px) { .rec-status { max-width: 60vw; } }
 @media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+
+/* the selected track's clips (src/ui/ClipLane.tsx), inside the Timeline: the lane sits under the editor's own
+   area (Timeline sets --tl-left and --tl-width to it, as for the ruler) and its tools in the gutter beside it */
+.clip-lane { position: relative; min-width: 0; padding: 6px 0; border-top: 1px solid var(--edge); }
+.clip-tools { position: absolute; left: 0; top: 6px; bottom: 6px; width: var(--tl-left, 40px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; }
+.clip-tools .icon { display: grid; place-items: center; width: 32px; height: 26px; padding: 0; }
+.clip-tools .icon.on { color: var(--track); border-color: var(--track); }
+.clip-box { position: relative; min-width: 0; margin-left: var(--tl-left, 40px); width: var(--tl-width, auto); border-radius: 4px; background: var(--cell); }
+.clip-box canvas { display: block; touch-action: pan-y; outline: none; border-radius: 4px; }
+.clip-box canvas:focus-visible { box-shadow: inset 0 0 0 1px var(--track); }

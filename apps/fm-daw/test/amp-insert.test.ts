@@ -62,7 +62,7 @@ test("a guitar through a track's amp: muted until Monitor, bounded and converged
   expect(peak(take.pcm)).toBeCloseTo(peak(Float32Array.from({ length: 2 * SR }, (_, i) => pluck(i / SR))), 2);
 
   // the take plays back through the amp, and is dry again with the amp taken off
-  say({ t: "take", track: 3, pcm: take.pcm, beat: 0 });
+  say({ t: "take", track: 3, clips: [{ pcm: take.pcm, beat: 0 }] });
   say({ t: "play", countIn: 0 });
   const amped = await run(p, 1);
   say({ t: "amp", track: 3, amp: null });

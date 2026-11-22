@@ -171,7 +171,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "play": s.play(m.countIn); break;
       case "stop": this.endTake(); s.stop(); this.engine.allOff(); this.plugins.allOff(); break;
       case "rec": s.recording = m.on; this.endTake(); this.passes = 0; if (!m.on) s.untouch(); break;
-      case "take": this.deck.set(m.track, m.pcm, m.beat); break;
+      case "take": this.deck.set(m.track, m.clips); break;
       case "amp": this.setAmp(m.track, m.amp); break;
       case "monitor": this.monitor = m.on; break;
       case "arm": this.endTake(); this.passes = 0; this.monitor = false; this.armed = m.track; this.inLatency = m.inLatency; break;

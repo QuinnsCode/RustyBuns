@@ -2,7 +2,7 @@
 // `useImports` lands them, from the add menu or a drop on a track row. A picked or dropped file is untrusted: its
 // size is bounded before it is read, and only a take's worth is kept.
 import { useEffect, useRef, useState } from "react";
-import { MAX_TAKE_SECONDS, MAX_TAKES, TAKE_RATE } from "../take.ts";
+import { MAX_TAKE_SECONDS, MAX_TAKES, TAKE_RATE, soundIds } from "../take.ts";
 import { barsFor, landMidi, MAX_MIDI_BYTES, readMidi, type MidiPlan, type MidiSong } from "../midi-file.ts";
 import { BEATS_PER_BAR, loopBeats, type Op, type Project } from "../project.ts";
 
@@ -89,7 +89,7 @@ export function useImports(desk: ImportDesk) {
     const at = from >= 0 && from < loopBeats(p) ? from : 0;
     try {
       if (kind === "audio") {
-        if (p.tracks.filter((t, i) => t.take && i !== track).length >= MAX_TAKES)
+        if (soundIds({ tracks: p.tracks.filter((_, i) => i !== track) }).size >= MAX_TAKES)
           return say(`${MAX_TAKES} tracks already hold audio, the most a sesh keeps. Clear the take on one of them, then import again.`);
         say(`Reading ${file.name}…`);
         const got = await decodeAudio(file);

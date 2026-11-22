@@ -29,7 +29,7 @@ import { GearHands } from "./gear-hands.ts";
 import { gearPlace } from "./gear-wall.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
-import { TakeShelf, encodeTake } from "../take.ts";
+import { TakeShelf, clipsOf, encodeTake } from "../take.ts";
 import { Recorder } from "./take-rec.ts";
 import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
@@ -1091,7 +1091,7 @@ const harness = {
   /** Rec (R): record a player's input (0 you) as a take, onto `pick` if you lead; again lands it. Then what Rec is doing. */
   rec: (peer?: number, pick?: number) => { record(peer, pick); return harness.recording(); },
   /** What Rec records now (null: nothing), and each track's take. */
-  recording: () => ({ rec: recorder.state(), takes: project.tracks.map((t) => t.take ?? null) }),
+  recording: () => ({ rec: recorder.state(), takes: project.tracks.map((t) => clipsOf(t)[0] ?? null) }),
   /** The shared clock: whose it is, your offset to it and round trip (ms), how you hear the band, and the beat here. */
   clock: () => ({ ...band.clock.state(), beat: Math.round(band.beat() * 1000) / 1000, behindMs: band.behind(), waiting: band.waiting, transport }),
   /** How you hear the others: "loop" (a loop late), "now", or (the leader) "desk"; then the clock. */
