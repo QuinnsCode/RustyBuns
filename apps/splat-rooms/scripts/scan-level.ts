@@ -11,8 +11,9 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mulberry32 } from "@rustybuns/util";
+import { isRecord } from "@rustybuns/util/guard";
 import { readPly } from "../../splat-spray/src/levels/ply.ts";
-import type { SceneDetail, SceneObject } from "../src/actions/scenes.ts";
+import type { Corner, SceneDetail, SceneObject } from "../src/actions/scenes.ts";
 import { candidates } from "../src/game/round.ts";
 import { cutObjects, iou, roughen, roundCheck, toRows, type Rough } from "../rooms/extract.ts";
 import { packPly } from "../rooms/pack.ts";
@@ -29,10 +30,17 @@ if (!existsSync(plyPath)) { console.error(`${plyPath}: missing`); process.exit(1
 const t0 = performance.now();
 const raw = readPly(new Uint8Array(readFileSync(plyPath)));
 if (!raw) { console.error(`${plyPath}: not a compressed PLY`); process.exit(1); }
-const objects = JSON.parse(readFileSync(join(folder, "labels.json"), "utf8")) as SceneObject[];
+const isCorner = (v: unknown): v is Corner => isRecord(v) && [v.x, v.y, v.z].every((n) => typeof n === "number");
+const isObject = (v: unknown): v is SceneObject => isRecord(v) && typeof v.ins_id === "string" && typeof v.label === "string" &&
+  (v.bounding_box === undefined || (Array.isArray(v.bounding_box) && v.bounding_box.every(isCorner)));
+const isStructure = (v: unknown): v is NonNullable<SceneDetail["structure"]> => isRecord(v) &&
+  (v.rooms === undefined || Array.isArray(v.rooms)) && (v.walls === undefined || Array.isArray(v.walls));
+const parsed: unknown = JSON.parse(readFileSync(join(folder, "labels.json"), "utf8"));
+if (!Array.isArray(parsed)) { console.error(`${folder}/labels.json: not a list`); process.exit(1); }
+const objects = parsed.filter(isObject);
 const structPath = join(folder, "structure.json");
-const structure = !args.includes("--no-structure") && existsSync(structPath)
-  ? JSON.parse(readFileSync(structPath, "utf8")) as SceneDetail["structure"] : null;
+const structRaw: unknown = !args.includes("--no-structure") && existsSync(structPath) ? JSON.parse(readFileSync(structPath, "utf8")) : null;
+const structure = isStructure(structRaw) ? structRaw : null;
 const decodeMs = performance.now() - t0;
 
 const truth = candidates(objects);
