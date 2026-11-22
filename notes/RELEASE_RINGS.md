@@ -1,6 +1,6 @@
 # Release rings (proposal)
 
-The picture (five points beside the rings: PRs, rings and the week simulator, the straight-through score, three lanes side by side, security express):
+The picture (the rings, four ring cards, three lane cards, where it stands):
 https://claude.ai/artifact/CLz7Z7hkcQYPVvg11PAsD2, built from [release-rings.html](release-rings.html). Publish that file
 to the same URL to update it.
 

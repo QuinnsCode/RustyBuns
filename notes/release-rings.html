@@ -2,14 +2,14 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one column. The rings map opens the page, then two flow charts (lanes, express), then the week simulator.
-   Palette: cave dark at the middle, daylight at the edge; moss for green, lantern gold for the express lane. */
+/* One column: the rings, the four rings as cards, the three lanes as cards, where it stands.
+   Palette: cave dark at the middle, daylight at the edge; moss for green, lantern gold for express. */
 :root {
   --bg: #f2f3ef; --panel: #ffffff; --ink: #1c2220; --muted: #5a6560; --line: #d5dad4;
   --accent: #c25e12;
   --band0: #2c2940; --band1: #42564d; --band2: #8c6a37; --band3: #e4dfcf;
   --label-dark: #f3efe2; --label-light: #2a2a22; --sweep: #fff1b8;
-  --ok: #2fa65a; --ok-soft: #d6f0dc; --bad: #d93b41; --bad-soft: #fde2e2; --gold: #e0a400; --idle: #e6e8e3;
+  --ok: #2fa65a; --bad: #d93b41; --gold: #e0a400; --idle: #e6e8e3;
   --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
   --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -19,22 +19,21 @@
   --accent: #f0883e;
   --band0: #08070f; --band1: #1a2622; --band2: #46321a; --band3: #36332a;
   --label-dark: #efe9d8; --label-light: #efe9d8; --sweep: #ffe58a;
-  --ok: #46c46f; --ok-soft: #173822; --bad: #f2555a; --bad-soft: #3d1719; --gold: #f5c033; --idle: #222825; color-scheme: dark } }
+  --ok: #46c46f; --bad: #f2555a; --gold: #f5c033; --idle: #222825; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #111413; --panel: #191d1b; --ink: #e5eae6; --muted: #98a39d; --line: #2a312d;
   --accent: #f0883e;
   --band0: #08070f; --band1: #1a2622; --band2: #46321a; --band3: #36332a;
   --label-dark: #efe9d8; --label-light: #efe9d8; --sweep: #ffe58a;
-  --ok: #46c46f; --ok-soft: #173822; --bad: #f2555a; --bad-soft: #3d1719; --gold: #f5c033; --idle: #222825; color-scheme: dark }
+  --ok: #46c46f; --bad: #f2555a; --gold: #f5c033; --idle: #222825; color-scheme: dark }
 
-body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); margin: 0; }
 .wrap { max-width: 1000px; margin: 0 auto; padding-block: 36px 80px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 64px; }
-h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.1; }
+  display: grid; gap: 56px; }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.1; }
 h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); font-weight: 800; letter-spacing: -0.02em; }
 h2 { font-size: 1.7rem; font-weight: 800; }
-h3 { font-size: 1.05rem; font-weight: 600; }
 p { margin: 0; }
 code { font-family: var(--mono); font-size: 0.85em; background: var(--idle); padding: 1px 5px; border-radius: 4px; }
 a { color: var(--accent); }
@@ -42,6 +41,7 @@ a { color: var(--accent); }
 .lede { font-size: 1.1rem; color: var(--muted); max-width: 60ch; margin-top: 12px; }
 .sub { color: var(--muted); max-width: 64ch; margin-top: 8px; }
 section > header { margin-bottom: 20px; }
+svg.i { width: 16px; height: 16px; flex: none; }
 
 /* Hero: the rings */
 .hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: center; }
@@ -49,74 +49,32 @@ section > header { margin-bottom: 20px; }
 .ringbox { position: relative; width: 100%; max-width: 620px; aspect-ratio: 1; justify-self: center; }
 .ringbox canvas { width: 100%; height: 100%; display: block; }
 .ringctl { position: absolute; right: 0; bottom: 0; }
-.key { display: grid; gap: 10px; }
-.key-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.key-row i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); }
-.key-row b { font: 600 0.95rem var(--display); display: block; }
-.key-row small { color: var(--muted); font-size: 0.82rem; }
-.key-row .n { font: 500 1.1rem var(--mono); font-variant-numeric: tabular-nums; min-width: 2.5ch; text-align: right; }
-.dots { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
+.dots { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--muted); margin-top: 16px; }
 .dots span { display: inline-flex; gap: 6px; align-items: center; }
 .dots i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 button { font: 500 0.85rem var(--body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 8px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 button:hover { border-color: var(--accent); }
-button:focus-visible, .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button svg { width: 16px; height: 16px; }
 
-/* Sweeps per layer */
-.sweeps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 860px) { .sweeps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 460px) { .sweeps { grid-template-columns: 1fr; } }
-.layer { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; min-width: 0; display: grid; grid-template-rows: auto 1fr; }
-.layer .cap { padding: 14px 16px 12px; color: var(--label-dark); display: grid; gap: 2px; }
-.layer.l3 .cap { color: var(--label-light); }
-.layer .cap b { font: 800 1.15rem var(--display); }
-.layer .cap span { font: 500 0.78rem var(--mono); opacity: 0.85; display: flex; gap: 6px; align-items: center; }
-.layer .cap svg { width: 14px; height: 14px; }
-.layer ul { list-style: none; margin: 0; padding: 12px 16px 16px; display: grid; gap: 8px; font-size: 0.88rem; }
-.layer li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; }
-.layer li svg { width: 16px; height: 16px; margin-top: 3px; color: var(--muted); }
-.layer .gate { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; color: var(--muted); }
-.layer .gate svg { color: var(--ok); }
-
-/* Diagrams */
-.diagram { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px; overflow-x: auto; }
-.diagram svg { display: block; width: 100%; min-width: 760px; height: auto; }
-.d-line { stroke: var(--line); stroke-width: 3; fill: none; }
-.d-main { stroke: var(--ink); stroke-width: 4; fill: none; stroke-linecap: round; }
-.d-ok { stroke: var(--ok); stroke-width: 3; fill: none; }
-.d-gold { stroke: var(--gold); stroke-width: 3.5; fill: none; }
-.d-bad { stroke: var(--bad); stroke-width: 2.5; fill: none; stroke-dasharray: 6 5; }
-.d-node { fill: var(--panel); stroke: var(--line); stroke-width: 2; }
-.d-node.ok { stroke: var(--ok); } .d-node.gold { stroke: var(--gold); } .d-node.bad { stroke: var(--bad); } .d-node.ink { stroke: var(--ink); }
-.d-fill-ok { fill: var(--ok); } .d-fill-gold { fill: var(--gold); } .d-fill-bad { fill: var(--bad); } .d-fill-ink { fill: var(--ink); } .d-fill-panel { fill: var(--panel); }
-.d-ico { color: var(--ink); } .d-ico.ok { color: var(--ok); } .d-ico.gold { color: var(--gold); } .d-ico.bad { color: var(--bad); } .d-ico.mut { color: var(--muted); }
-.d-t { fill: var(--muted); font: 500 13px var(--body); }
-.d-tb { fill: var(--ink); font: 600 14px var(--display); }
-.d-band0 { fill: var(--band0); } .d-band1 { fill: var(--band1); } .d-band2 { fill: var(--band2); } .d-band3 { fill: var(--band3); stroke: var(--line); }
-.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.82rem; color: var(--muted); margin-top: 10px; }
-.legend span { display: inline-flex; gap: 6px; align-items: center; }
-.legend svg { width: 26px; height: 10px; }
-
-/* Week simulator */
-.sim { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; }
-.sim-head { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
-.sim-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); }
-.sim-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
-.btns { display: flex; gap: 8px; flex-wrap: wrap; }
-.grid-scroll { overflow-x: auto; }
-.week { display: grid; grid-template-columns: 52px repeat(24, minmax(14px, 1fr)) 120px; gap: 3px; min-width: 620px; align-items: center; font-size: 0.75rem; }
-.week .day { font: 500 0.78rem var(--mono); color: var(--muted); }
-.week .hr { font: 0.62rem var(--mono); color: var(--muted); text-align: center; }
-.cell { height: 18px; border-radius: 3px; border: 0; padding: 0; background: var(--ok-soft); cursor: pointer; position: relative; }
-.cell.idle { background: var(--idle); }
-.cell.bad { background: var(--bad); }
-.cell.daily { background: var(--band2); }
-.cell.stable { background: var(--gold); box-shadow: inset 0 0 0 2px var(--ink); }
-.cell.daily10::after { content: ""; position: absolute; left: -2px; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: 0.45; }
-.week .out { font: 0.75rem var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.week .out b { color: var(--ink); font-weight: 500; }
-.verdict { font-size: 0.95rem; border-left: 3px solid var(--gold); padding: 4px 0 4px 12px; }
+/* Cards: four rings, three lanes */
+.cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.cards.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 860px) { .cards, .cards.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .cards, .cards.three { grid-template-columns: 1fr; } }
+.card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; min-width: 0; display: grid; grid-template-rows: auto 1fr; }
+.card .cap { padding: 14px 16px 12px; color: var(--label-dark); display: grid; gap: 2px; }
+.card.light .cap { color: var(--label-light); }
+.card .cap b { font: 800 1.15rem var(--display); }
+.card .cap span { font: 500 0.78rem var(--mono); opacity: 0.85; display: flex; gap: 6px; align-items: center; }
+.card .cap svg { width: 14px; height: 14px; }
+.card ul { list-style: none; margin: 0; padding: 12px 16px 16px; display: grid; gap: 8px; font-size: 0.88rem; align-content: start; }
+.card li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; }
+.card li svg { width: 16px; height: 16px; margin-top: 3px; color: var(--muted); }
+.card .gate { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; color: var(--muted); }
+.card .gate svg { color: var(--ok); }
+.lane .cap { color: var(--ink); border-bottom: 3px solid var(--c); }
+.lane .cap svg { color: var(--c); }
 
 /* Status */
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
@@ -125,66 +83,15 @@ button svg { width: 16px; height: 16px; }
 .st.done svg { color: var(--ok); } .st.open svg { color: var(--gold); } .st.owner svg { color: var(--accent); }
 .st small { display: block; color: var(--muted); }
 .sym { position: absolute; width: 0; height: 0; overflow: hidden; }
-
-/* The five points beside the rings */
-.points { list-style: none; counter-reset: pt; margin: 22px 0 0; padding: 0; display: grid; gap: 8px; }
-.points li { counter-increment: pt; }
-.points a { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); text-decoration: none; }
-.points a::before { content: counter(pt); grid-row: span 2; width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--bg); font: 700 0.85rem/26px var(--display); text-align: center; }
-.points a:hover { border-color: var(--accent); }
-.points a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.points b { font: 600 0.98rem var(--display); }
-.points small { color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
-section[id] { scroll-margin-top: 16px; }
-
-/* The straight-through score */
-.score { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 16px; }
-.presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--muted); }
-.score-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; align-items: start; }
-@media (max-width: 720px) { .score-body { grid-template-columns: 1fr; } }
-.factors { display: grid; gap: 14px; }
-.factor { border: 0; margin: 0; padding: 0; min-width: 0; }
-.factor legend { font: 600 0.88rem var(--display); margin-bottom: 6px; padding: 0; }
-.opts { display: flex; flex-wrap: wrap; gap: 6px; }
-.opts label { position: relative; }
-.opts input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.opts span { display: inline-block; font-size: 0.84rem; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
-.opts input:checked + span { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.opts input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-.result { display: grid; gap: 10px; justify-items: center; text-align: center; padding: 8px; }
-.meter { position: relative; width: 150px; height: 150px; }
-.meter svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.m-bg { fill: none; stroke: var(--idle); stroke-width: 12; }
-.m-fg { fill: none; stroke: var(--ok); stroke-width: 12; stroke-linecap: round; stroke-dasharray: 314.16; transition: stroke-dashoffset 0.3s, stroke 0.3s; }
-.m-n { position: absolute; inset: 0; display: grid; place-content: center; }
-.m-n b { font: 800 2.6rem/1 var(--display); font-variant-numeric: tabular-nums; }
-.m-n small { color: var(--muted); font-size: 0.78rem; }
-.lane-chip { font: 700 1.05rem var(--display); padding: 4px 14px; border-radius: 999px; border: 2px solid currentColor; }
-.lane-chip.standby { color: var(--ink); } .lane-chip.fast { color: var(--ok); } .lane-chip.express { color: var(--gold); }
-.result p { font-size: 0.86rem; color: var(--muted); margin: 0; }
-
-/* Lanes */
-.lanebox svg { min-width: 720px; }
-.ln-std { stroke: var(--muted); stroke-width: 3; fill: none; stroke-linejoin: round; opacity: 0.55; }
-.ln-fast { stroke: var(--ok); stroke-width: 3; fill: none; stroke-linejoin: round; opacity: 0.6; }
-.ln-x { stroke: var(--gold); stroke-width: 3.5; fill: none; opacity: 0.8; }
-.lgate { fill: var(--idle); }
-.lgate.hit { fill: var(--sweep); opacity: 0.5; }
-.legend button { margin-left: auto; }
-
-/* Text-only point */
-.prose { display: grid; gap: 14px; max-width: 70ch; }
-
 </style>
 
 <!-- Icon set: lucide-style strokes, drawn in currentColor so they follow the theme. -->
 <svg class="sym" aria-hidden="true">
   <defs>
     <symbol id="i-pr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v12"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/></symbol>
-    <symbol id="i-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
-    <symbol id="i-merge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
     <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
-    <symbol id="i-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12 18.5 5.5"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14M5 2h14"/><path d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22"/><path d="M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></symbol>
     <symbol id="i-store" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 4.5 4h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M10 20v-5h4v5"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
@@ -192,14 +99,13 @@ section[id] { scroll-margin-top: 16px; }
     <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
-    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
     <symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6L4.5 19a1 1 0 0 0 .9 1.5h13.2a1 1 0 0 0 .9-1.5L14 9V3"/><path d="M7 15h10"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
-    <symbol id="i-hammer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 12-8.4 8.4a2.1 2.1 0 1 1-3-3L12 9"/><path d="m17.6 15 4.4-4.4"/><path d="M20.9 11.7 19.6 10.4a3 3 0 0 1-.9-2.2v-.9L16 4.6A5.6 5.6 0 0 0 12 3H9l.9.8A6.2 6.2 0 0 1 12 8.4V10l2 2h2.5l2.3 1.9"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></symbol>
     <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
     <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></symbol>
   </defs>
@@ -209,202 +115,79 @@ section[id] { scroll-margin-top: 16px; }
 
 <section class="hero">
   <div class="ringbox">
-    <canvas id="rings" role="img" aria-label="Four rings around a cave. Releases are born in the cave, a sweep circles each ring, and a release that passes its ring's sweeps moves out one ring, to the town at the edge. Gold releases take the express lane straight out. Red ones go back to the cave."></canvas>
+    <canvas id="rings" role="img" aria-label="Four rings around a cave. Releases are born in the cave, a sweep circles each ring, and a release that stays green moves out one ring, to the town at the edge. Gold releases take the express lane straight out. Red ones go back to the cave."></canvas>
     <div class="ringctl"><button id="ring-pause" type="button" aria-pressed="false"><svg><use href="#i-pause"/></svg><span>Pause</span></button></div>
   </div>
   <div>
-    <div class="eyebrow">Release rings &middot; how we ship now</div>
+    <div class="eyebrow">Release rings &middot; how we ship</div>
     <h1>Out of the cave</h1>
-    <p class="lede">Agents open hundreds of PRs a week (468 in RustyBuns last week). One PR, then every test, then ship it all no longer fits. Five ideas replace it.</p>
-    <ol class="points">
-      <li><a href="#p1"><b>One PR, one dot on main</b><small>Each PR proves its own feature and squashes back. A red dot is fixed forward or reverted; main never freezes.</small></a></li>
-      <li><a href="#p2"><b>Rings test wider and slower</b><small>Hourly, nightly and Monday sweeps check what a PR can't, and a commit moves out only after it stays green.</small></a></li>
-      <li><a href="#p3"><b>Each PR says how straight through it is</b><small>A score from what it touches, how well its tests prove it, and how big it is.</small></a></li>
-      <li><a href="#p4"><b>Three lanes, side by side</b><small>Standby, fast lane and express pass the same checks. Only the wait differs.</small></a></li>
-      <li><a href="#p5"><b>Security goes express</b><small>A hit on our supply chain ships the same day, every check still run, with your OK.</small></a></li>
-    </ol>
+    <p class="lede">A PR proves its own feature and lands on <code>main</code>. Then slower, wider sweeps check it, one ring at a time. A commit moves out a ring only after it stays green. You tag what reaches town.</p>
+    <div class="dots">
+      <span><i style="background:var(--ok)"></i>a commit</span>
+      <span><i style="background:var(--gold)"></i>express</span>
+      <span><i style="background:var(--bad)"></i>went red, back to the cave</span>
+    </div>
   </div>
 </section>
 
-<section id="p1">
+<section>
   <header>
-    <div class="eyebrow">1 &middot; PRs</div>
-    <h2>One PR, one dot on main</h2>
-    <p class="sub">Every worker branches off <code>main</code> and comes back as one squashed commit, after its PR has proved its own feature: typecheck, the touched apps' tests and one journey. So each dot on <code>main</code> is one whole PR, and "which PR broke it" is a short walk. A red dot never freezes <code>main</code>: Ester finds it, its worker fixes forward, or Mervin reverts it after 60 minutes.</p>
+    <div class="eyebrow">The rings</div>
+    <h2>Each ring tests wider and slower</h2>
+    <p class="sub">A red commit never freezes <code>main</code>: Ester finds which PR broke it, and its worker fixes it, or Mervin reverts it after 60 minutes.</p>
   </header>
-  <div class="diagram">
-    <svg viewBox="0 0 1000 400" role="img" aria-label="Trunk diagram. Main runs left to right into the rings. A feature branch leaves main, gets PR checks, and squashes back as one dot. An express branch does the same and its dot jumps straight to the rings. A red dot on main gets an Ester bisect and a fix-forward PR, or a Mervin revert after 60 minutes.">
-      <!-- main -->
-      <path class="d-main" d="M30 290 H880"/>
-      <path class="d-fill-ink" d="M880 282 l14 8 -14 8z"/>
-      <!-- rings target -->
-      <circle class="d-band3" cx="945" cy="290" r="44"/><circle class="d-band2" cx="945" cy="290" r="33"/><circle class="d-band1" cx="945" cy="290" r="22"/><circle class="d-band0" cx="945" cy="290" r="11"/>
-      <text class="d-t" x="945" y="355" text-anchor="middle">rings</text>
-      <text class="d-tb" x="30" y="322">main</text>
-
-      <!-- feature lane -->
-      <path class="d-ok" d="M80 290 C80 230 110 200 150 200 H300 C340 200 360 230 360 290"/>
-      <circle class="d-fill-ok" cx="80" cy="290" r="5"/>
-      <circle class="d-node ok" cx="160" cy="200" r="6"/><circle class="d-node ok" cx="195" cy="200" r="6"/><circle class="d-node ok" cx="230" cy="200" r="6"/>
-      <g transform="translate(250 150)">
-        <rect class="d-node ok" x="0" y="0" width="92" height="32" rx="16"/>
-        <use href="#i-flask" class="d-ico ok" x="8" y="6" width="20" height="20"/><use href="#i-flask" class="d-ico ok" x="28" y="6" width="20" height="20"/><use href="#i-flask" class="d-ico ok" x="48" y="6" width="20" height="20"/><use href="#i-check" class="d-ico ok" x="68" y="6" width="20" height="20"/>
-      </g>
-      <circle class="d-node ink" cx="360" cy="290" r="13"/><use href="#i-merge" class="d-ico" x="350" y="280" width="20" height="20"/>
-      <text class="d-tb" x="150" y="186">feature</text>
-
-      <!-- express lane -->
-      <path class="d-gold" d="M400 290 C400 200 430 120 470 120 H560 C600 120 620 220 620 290"/>
-      <circle class="d-fill-gold" cx="400" cy="290" r="5"/>
-      <circle class="d-node gold" cx="480" cy="120" r="6"/><circle class="d-node gold" cx="515" cy="120" r="6"/>
-      <g transform="translate(530 70)"><rect class="d-node gold" x="0" y="0" width="60" height="32" rx="16"/><use href="#i-zap" class="d-ico gold" x="8" y="6" width="20" height="20"/><use href="#i-flask" class="d-ico gold" x="32" y="6" width="20" height="20"/></g>
-      <circle class="d-node ink" cx="620" cy="290" r="13"/><use href="#i-merge" class="d-ico" x="610" y="280" width="20" height="20"/>
-      <path class="d-gold" stroke-dasharray="2 7" stroke-linecap="round" d="M630 280 C700 40 880 40 935 246"/>
-      <use href="#i-zap" class="d-ico gold" x="770" y="38" width="26" height="26"/>
-      <text class="d-tb" x="470" y="106">express</text>
-
-      <!-- red dot, fix forward, revert -->
-      <circle class="d-fill-bad" cx="700" cy="290" r="9"/>
-      <path class="d-bad" d="M700 280 V236"/>
-      <circle class="d-node bad" cx="700" cy="216" r="18"/><use href="#i-search" class="d-ico bad" x="689" y="205" width="22" height="22"/>
-      <text class="d-t" x="700" y="186" text-anchor="middle">Ester</text>
-      <path class="d-ok" d="M718 216 C760 216 790 240 800 290"/>
-      <circle class="d-node ink" cx="800" cy="290" r="13"/><use href="#i-merge" class="d-ico ok" x="790" y="280" width="20" height="20"/>
-      <text class="d-t" x="770" y="200">fix forward</text>
-      <path class="d-bad" d="M700 300 C700 350 740 365 780 365 H830"/>
-      <circle class="d-node bad" cx="852" cy="365" r="18"/><use href="#i-undo" class="d-ico bad" x="841" y="354" width="22" height="22"/>
-      <use href="#i-clock" class="d-ico mut" x="752" y="373" width="18" height="18"/><text class="d-t" x="774" y="387">60 min</text>
-      <text class="d-t" x="852" y="400" text-anchor="middle" dy="-4">Mervin</text>
-      <path class="d-bad" d="M870 355 C885 340 885 320 880 300"/>
-    </svg>
-  </div>
-  <div class="legend">
-    <span><svg viewBox="0 0 26 10"><path class="d-main" d="M1 5h24"/></svg>main</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-ok" d="M1 5h24"/></svg>feature PR</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-gold" d="M1 5h24"/></svg>express PR</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-bad" d="M1 5h24"/></svg>red</span>
-  </div>
-</section>
-
-<section id="p2">
-  <header>
-    <div class="eyebrow">2 &middot; Rings</div>
-    <h2>Rings test wider and slower</h2>
-    <p class="sub">A PR can't run everything, so the rings do. The further out, the slower and broader the sweep. A commit moves out when it has stayed green through enough sweeps of its own ring. Below, click an hour to break it and see what each 10:17 nightly picks and what Monday lets into town.</p>
-  </header>
-  <div class="sweeps">
-    <div class="layer"><div class="cap" style="background:var(--band0)"><b>Cave</b><span><svg><use href="#i-pr"/></svg>every push</span></div>
+  <div class="cards">
+    <div class="card"><div class="cap" style="background:var(--band0)"><b>Cave</b><span><svg><use href="#i-pr"/></svg>every PR</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg><code>typecheck</code> repo-wide</li>
-        <li><svg><use href="#i-flask"/></svg>tests of touched apps</li>
+        <li><svg><use href="#i-flask"/></svg><code>typecheck</code>, touched apps' tests</li>
         <li><svg><use href="#i-flask"/></svg>the feature's one journey</li>
-        <li><svg><use href="#i-flask"/></svg>boundary audit, docs check</li>
-        <li class="gate"><svg><use href="#i-check"/></svg>1 green run, Mervin squashes</li>
+        <li class="gate"><svg><use href="#i-check"/></svg>green, then squash to <code>main</code></li>
       </ul></div>
-    <div class="layer"><div class="cap" style="background:var(--band1)"><b>Tunnels</b><span><svg><use href="#i-clock"/></svg>:00, if main moved</span></div>
+    <div class="card"><div class="cap" style="background:var(--band1)"><b>Tunnels</b><span><svg><use href="#i-clock"/></svg>hourly</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg>every app's suite</li>
-        <li><svg><use href="#i-flask"/></svg><code>bun test packages</code></li>
+        <li><svg><use href="#i-flask"/></svg>every app's tests</li>
         <li><svg><use href="#i-box"/></svg>desktop binary smoke</li>
-        <li><svg><use href="#i-flask"/></svg>codeSplitter whole suite</li>
         <li class="gate"><svg><use href="#i-check"/></svg>3 green hours in a row</li>
       </ul></div>
-    <div class="layer"><div class="cap" style="background:var(--band2)"><b>Nightly market</b><span><svg><use href="#i-moon"/></svg>10:17 daily</span></div>
+    <div class="card"><div class="cap" style="background:var(--band2)"><b>Nightly market</b><span><svg><use href="#i-moon"/></svg>daily, 10:17</span></div>
       <ul>
         <li><svg><use href="#i-cpu"/></svg>native builds on Bob</li>
-        <li><svg><use href="#i-phone"/></svg>phone smoke, every size</li>
-        <li><svg><use href="#i-box"/></svg>web builds of changed apps</li>
-        <li><svg><use href="#i-flask"/></svg>manual-run pre-checks</li>
-        <li class="gate"><svg><use href="#i-check"/></svg>3 green days running</li>
+        <li><svg><use href="#i-phone"/></svg>phone smoke, web builds</li>
+        <li class="gate"><svg><use href="#i-check"/></svg>3 green days in a row</li>
       </ul></div>
-    <div class="layer l3"><div class="cap" style="background:var(--band3)"><b>Town</b><span><svg><use href="#i-sun"/></svg>Monday</span></div>
+    <div class="card light"><div class="cap" style="background:var(--band3)"><b>Town</b><span><svg><use href="#i-sun"/></svg>Monday</span></div>
       <ul>
-        <li><svg><use href="#i-flask"/></svg>deps-doctor, framework trials</li>
         <li><svg><use href="#i-eye"/></svg>your taste walk</li>
-        <li><svg><use href="#i-store"/></svg>npm, desktop drop</li>
-        <li><svg><use href="#i-pr"/></svg>notes from squash titles</li>
+        <li><svg><use href="#i-store"/></svg>npm and desktop release</li>
         <li class="gate"><svg><use href="#i-user"/></svg>your OK, your <code>v</code> tag</li>
       </ul></div>
   </div>
-  <div class="sim">
-    <div class="sim-head">
-      <div class="sim-legend">
-        <span><i style="background:var(--ok-soft)"></i>green</span>
-        <span><i style="background:var(--bad)"></i>red</span>
-        <span><i style="background:var(--idle)"></i>no commits</span>
-        <span><i style="background:var(--band2)"></i>to market</span>
-        <span><i style="background:var(--gold)"></i>to town</span>
-      </div>
-      <div class="btns">
-        <button id="b-calm" type="button">Calm week</button>
-        <button id="b-rough" type="button">Rough Wednesday</button>
-        <button id="b-flaky" type="button">Flaky all week</button>
-      </div>
-    </div>
-    <div class="grid-scroll"><div class="week" id="week" role="grid" aria-label="Hourly sweeps, seven days by 24 hours"></div></div>
-    <div class="verdict" id="verdict"></div>
-  </div>
 </section>
 
-<section id="p3">
+<section>
   <header>
-    <div class="eyebrow">3 &middot; The straight-through score</div>
-    <h2>Each PR says how straight through it is</h2>
-    <p class="sub">Not every PR deserves the same wait. A menu typo in one game and a rewrite of the deploy CLI are different risks. Each PR gets a score from facts we can already measure (<code>preflight</code>, <code>test-bites --lines</code>, the files it touches, its app's last 30 days), and the score picks its lane. You can always move a PR to a slower lane. Only you put one in express.</p>
+    <div class="eyebrow">The lanes</div>
+    <h2>Same checks, different wait</h2>
+    <p class="sub">Every lane runs every check. Only the waiting changes. A small, well-tested PR in one app waits less. You can always move a PR to a slower lane.</p>
   </header>
-  <div class="score">
-    <div class="presets" role="group" aria-label="Example PRs">
-      <span>Try:</span>
-      <button type="button" data-preset="typo">Menu typo in one game</button>
-      <button type="button" data-preset="feature">New feature in one game</button>
-      <button type="button" data-preset="cli">Deploy CLI refactor</button>
-      <button type="button" data-preset="cve">Web server advisory</button>
-      <button type="button" data-preset="host">Host token leak</button>
-    </div>
-    <div class="score-body">
-      <div class="factors" id="factors"></div>
-      <div class="result" aria-live="polite">
-        <div class="meter"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="m-bg" cx="60" cy="60" r="50"/><circle class="m-fg" id="m-fg" cx="60" cy="60" r="50"/></svg><div class="m-n"><b id="s-n">0</b><small>of 100</small></div></div>
-        <div class="lane-chip" id="s-lane"></div>
-        <code id="s-tag"></code>
-        <p id="s-why"></p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="p4">
-  <header>
-    <div class="eyebrow">4 &middot; Lanes</div>
-    <h2>Three lanes, side by side</h2>
-    <p class="sub">Like the lines at a theme park ride: everyone rides the same ride and walks through the same gates. Standby snakes through every soak. The fast lane waits one hour and one night. Express walks straight through, with every sweep run on the spot. No lane skips a check; only the waiting changes. A red in the fast lane drops it into standby.</p>
-  </header>
-  <div class="diagram lanebox">
-    <svg id="lanes" viewBox="0 0 1000 430" role="img" aria-label="Three parallel lanes run left to right through the same five gates: PR checks, hourly sweep, nightly sweep, your OK, and town. The express lane is a straight line. The fast lane has one bend between each gate. The standby lane snakes through three bends between each gate. Dots move along each lane; express dots reach town first.">
-      <g id="lane-gates"></g>
-      <g id="lane-paths"></g>
-      <g id="lane-dots"></g>
-    </svg>
-  </div>
-  <div class="legend">
-    <span><svg viewBox="0 0 26 10"><path class="d-gold" d="M1 5h24"/></svg>express</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-ok" d="M1 5h24"/></svg>fast lane</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-main" d="M1 5h24" style="stroke-width:2.5"/></svg>standby</span>
-    <span><svg viewBox="0 0 26 10"><path class="d-bad" d="M1 5h24"/></svg>red: drop to standby</span>
-    <button id="lane-pause" type="button" aria-pressed="false"><svg><use href="#i-pause"/></svg><span>Pause</span></button>
-  </div>
-</section>
-
-<section id="p5">
-  <header>
-    <div class="eyebrow">5 &middot; Security</div>
-    <h2>Security goes express</h2>
-    <p class="sub">The slow lanes exist to catch our own mistakes. They are the wrong tool when the danger comes from outside and every hour of soak is an hour exposed.</p>
-  </header>
-  <div class="prose">
-    <p><b>What sends a PR to express.</b> A published advisory on something we ship, like a web server, a parser or an auth library. A package, GitHub Action or coding tool in our build chain turning out to be hijacked. A host we deploy to leaking tokens, so we rotate and redeploy. When one of these hits us, waiting is the risk.</p>
-    <p><b>What express still does.</b> Every sweep runs: the PR checks, the hourly suite and the nightly builds, all at once instead of on the clock. You still give the OK. A red sweep doesn't drop a security fix into standby. It stays in express, and the next fix forward goes first.</p>
-    <p><b>What happens after.</b> The commit then soaks in the normal rings like any other, so anything the rush missed turns up the next hour. A dependency bump for an advisory also gets <code>deps-doctor</code> on the spot, not on Monday.</p>
+  <div class="cards three">
+    <div class="card lane" style="--c:var(--muted)"><div class="cap"><b>Standby</b><span><svg><use href="#i-hourglass"/></svg>about a week</span></div>
+      <ul>
+        <li><svg><use href="#i-clock"/></svg>3 hours, then 3 nights</li>
+        <li><svg><use href="#i-pr"/></svg>the default, and always for CI, deploy or secrets changes</li>
+      </ul></div>
+    <div class="card lane" style="--c:var(--ok)"><div class="cap"><b>Fast lane</b><span><svg><use href="#i-gauge"/></svg>about 2 days</span></div>
+      <ul>
+        <li><svg><use href="#i-clock"/></svg>1 hour, then 1 night</li>
+        <li><svg><use href="#i-pr"/></svg>one app, small, tests that fail on the old code</li>
+        <li><svg><use href="#i-undo"/></svg>one red drops it to standby</li>
+      </ul></div>
+    <div class="card lane" style="--c:var(--gold)"><div class="cap"><b>Express</b><span><svg><use href="#i-zap"/></svg>same day</span></div>
+      <ul>
+        <li><svg><use href="#i-flask"/></svg>every sweep runs at once, then your OK</li>
+        <li><svg><use href="#i-shield"/></svg>only for security: an advisory on what we ship, or an attack on our build chain or host</li>
+        <li><svg><use href="#i-user"/></svg>only you put a PR here</li>
+      </ul></div>
   </div>
 </section>
 
@@ -418,22 +201,20 @@ section[id] { scroll-margin-top: 16px; }
     <div class="st done"><svg><use href="#i-check"/></svg><span><code>bun run rings</code><small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4490">#4490</a></small></span></div>
     <div class="st done"><svg><use href="#i-check"/></svg><span>Nightly market at 10:17<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4493">#4493</a></small></span></div>
     <div class="st done"><svg><use href="#i-check"/></svg><span>Town on Monday<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4494">#4494</a></small></span></div>
+    <div class="st done"><svg><use href="#i-zap"/></svg><span>Express lane<small><a href="https://github.com/QuinnsCode/RustyBuns/pull/4756">#4756</a></small></span></div>
     <div class="st open"><svg><use href="#i-search"/></svg><span>Ester bisects, Mervin reverts<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4491">#4491</a></small></span></div>
     <div class="st open"><svg><use href="#i-flask"/></svg><span>All-apps sweep leaves the PR<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4492">#4492</a></small></span></div>
-    <div class="st done"><svg><use href="#i-zap"/></svg><span>Express lane<small><a href="https://github.com/QuinnsCode/RustyBuns/pull/4756">#4756</a></small></span></div>
-    <div class="st open"><svg><use href="#i-flask"/></svg><span>Straight-through score picks the lane<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/5429">#5429</a></small></span></div>
+    <div class="st open"><svg><use href="#i-gauge"/></svg><span>The PR's size and tests pick its lane<small><a href="https://github.com/QuinnsCode/RustyBuns/issues/5429">#5429</a></small></span></div>
     <div class="st owner"><svg><use href="#i-user"/></svg><span>Let rings move <code>refs/ring/*</code><small><a href="https://github.com/QuinnsCode/RustyBuns/issues/4495">MANUAL RUN #4495</a></small></span></div>
   </div>
 </section>
 
-
 </div>
-
 
 <script>
 // The rings: releases born in the cave climb out one ring at a time. Each ring has a sweep turning at its own pace;
 // a release passes when the sweep crosses it green, and moves out after NEED passes. Express releases run each sweep
-// on the spot; a red one drops back into the normal lane at that ring.
+// on the spot.
 (() => {
   const cv = document.getElementById("rings"), ctx = cv.getContext("2d");
   const EDGE = [0, 0.22, 0.47, 0.72, 0.985];
@@ -442,27 +223,27 @@ section[id] { scroll-margin-top: 16px; }
   const FAIL = [0.1, 0.06, 0.04, 0];
   const NAMES = [["Cave", "PR"], ["Tunnels", "hourly"], ["Nightly market", "daily"], ["Town", "stable"]];
   const TAU = Math.PI * 2;
-  let C = {}, dots = [], pulses = [], t = 0, reds = 0, nextNormal = 0, nextExpress = 3, last = 0, paused = false;
+  let C = {}, dots = [], pulses = [], t = 0, nextNormal = 0, nextExpress = 3, last = 0, paused = false;
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const readColors = () => { for (const k of ["band0", "band1", "band2", "band3", "label-dark", "label-light", "sweep", "ok", "bad", "gold", "ink", "bg"]) C[k] = css("--" + k); };
+  const readColors = () => { for (const k of ["band0", "band1", "band2", "band3", "label-dark", "label-light", "sweep", "ok", "bad", "gold"]) C[k] = css("--" + k); };
   readColors();
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { readColors(); draw(); });
   new MutationObserver(() => { readColors(); draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-  let rand = ((s) => () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296))(42);
+  const rand = ((s) => () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296))(42);
   const inBand = (b) => EDGE[b] + (EDGE[b + 1] - EDGE[b]) * (0.2 + rand() * 0.6);
   const sweepU = (b) => (t / PERIOD[b]) * TAU;
 
   function spawn(express) {
-    const a = rand() * TAU, r = inBand(0) * (express ? 0.6 : 1);
-    dots.push({ band: 0, a, r, tr: r, pass: 0, k: null, kind: express ? "x" : "ok", age: 0, wait: express ? 0.7 : 0 });
+    const r = inBand(0) * (express ? 0.6 : 1);
+    dots.push({ band: 0, a: rand() * TAU, r, tr: r, pass: 0, k: null, kind: express ? "x" : "ok", age: 0, wait: express ? 0.7 : 0 });
   }
   function promote(d) {
     d.band++; d.pass = 0; d.k = null; d.tr = inBand(d.band); d.a += (rand() - 0.5) * 0.3; d.age = 0;
     if (d.kind === "x") d.wait = d.band < 3 ? 0.7 : 0;
     if (d.band === 3) pulses.push({ a: d.a, r: d.tr, life: 1, color: "gold" });
   }
-  function fail(d) { d.kind = "bad"; d.tr = 0; reds++; pulses.push({ a: d.a, r: d.r, life: 1, color: "bad" }); }
+  function fail(d) { d.kind = "bad"; d.tr = 0; pulses.push({ a: d.a, r: d.r, life: 1, color: "bad" }); }
 
   function step(dt) {
     t += dt;
@@ -476,11 +257,7 @@ section[id] { scroll-margin-top: 16px; }
       if (d.kind === "x") {
         if (Math.abs(d.r - d.tr) > 0.02) continue;
         d.wait -= dt;
-        if (d.wait <= 0) {
-          pulses.push({ a: d.a, r: d.r, life: 1, color: "sweep" });
-          if (d.band > 0 && rand() < 0.25) { d.kind = "ok"; pulses.push({ a: d.a, r: d.r, life: 1, color: "bad" }); }
-          else promote(d);
-        }
+        if (d.wait <= 0) { pulses.push({ a: d.a, r: d.r, life: 1, color: "sweep" }); promote(d); }
         continue;
       }
       const k = Math.floor((sweepU(d.band) - d.a) / TAU);
@@ -550,228 +327,20 @@ section[id] { scroll-margin-top: 16px; }
     }
     ctx.globalAlpha = 1;
   }
-  const nEls = [0, 1, 2, 3].map((i) => document.getElementById("n" + i)), redEl = document.getElementById("nred");
-  let countAt = 0;
-  function counts() {
-    const n = [0, 0, 0, 0];
-    for (const d of dots) if (d.kind !== "bad") n[d.band]++;
-    n.forEach((v, i) => { if (nEls[i]) nEls[i].textContent = v; });
-    if (redEl) redEl.textContent = reds;
-  }
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-    if (!paused) { step(dt); draw(); if (now - countAt > 300) { counts(); countAt = now; } }
+    if (!paused) { step(dt); draw(); }
     requestAnimationFrame(frame);
   }
   size();
   addEventListener("resize", () => { size(); draw(); });
   for (let i = 0; i < 900; i++) step(1 / 30); // open on a busy cave, not an empty one
-  draw(); counts();
+  draw();
   const btn = document.getElementById("ring-pause");
   const setPaused = (p) => { paused = p; btn.setAttribute("aria-pressed", String(p)); btn.innerHTML = `<svg><use href="#i-${p ? "play" : "pause"}"/></svg><span>${p ? "Play" : "Pause"}</span>`; };
   btn.addEventListener("click", () => setPaused(!paused));
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) setPaused(true);
   document.fonts?.ready.then(draw);
-  requestAnimationFrame(frame);
-})();
-
-// The week simulator: which commit each 10:17 market picks (3 green hourlies in a row) and which Monday lets into town.
-(() => {
-  const DAYS = ["Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Mon"];
-  const DAILY_AT = 10, NEED_HOURS = 3, NEED_DAYS = 3;
-  let state = [];
-  const rng = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  function base(seed) {
-    const r = rng(seed);
-    return DAYS.map((_, d) => Array.from({ length: 24 }, (_, h) => {
-      const night = h < 7 || h > 22, weekend = d === 4 || d === 5;
-      return r() < (night ? 0.55 : weekend ? 0.4 : 0.08) ? "idle" : "ok";
-    }));
-  }
-  const presets = {
-    calm: () => base(7),
-    rough: () => { const s = base(7); for (let h = 9; h <= 17; h++) if (h !== 12) s[1][h] = "bad"; return s; },
-    flaky: () => { const s = base(11); const r = rng(5); s.forEach((day) => day.forEach((v, h) => { if (v === "ok" && r() < 0.16) day[h] = "bad"; })); return s; },
-  };
-  function analyse() {
-    const runs = [];
-    state.forEach((day, d) => day.forEach((v, h) => { if (v !== "idle") runs.push({ d, h, v }); }));
-    const soakedAt = (i) => { for (let k = i; k < i + NEED_HOURS; k++) if (!runs[k] || runs[k].v !== "ok") return null; return runs[i + NEED_HOURS - 1]; };
-    const dailies = DAYS.map((_, d) => {
-      let pick = null;
-      runs.forEach((run, i) => { const done = soakedAt(i); if (done && (done.d < d || (done.d === d && done.h < DAILY_AT))) pick = run; });
-      return pick;
-    });
-    const mon = DAYS.length - 1;
-    let stable = null;
-    for (let d = 0; d <= mon - (NEED_DAYS - 1); d++) {
-      const p = dailies[d]; if (!p) continue;
-      const until = d + NEED_DAYS - 1;
-      const after = runs.filter((r) => (r.d > p.d || (r.d === p.d && r.h > p.h)) && (r.d < until || (r.d === until && r.h < DAILY_AT)));
-      if (after.every((r) => r.v === "ok")) stable = { ...p, day: d };
-    }
-    return { dailies, stable, reds: runs.filter((r) => r.v === "bad").length };
-  }
-  const el = document.getElementById("week");
-  const hh = (h) => String(h).padStart(2, "0");
-  function render() {
-    const { dailies, stable, reds } = analyse();
-    el.innerHTML = "";
-    el.append(document.createElement("div"));
-    for (let h = 0; h < 24; h++) { const t = document.createElement("div"); t.className = "hr"; t.textContent = h % 3 === 0 ? hh(h) : ""; el.append(t); }
-    const hd = document.createElement("div"); hd.className = "hr"; hd.style.textAlign = "left"; hd.textContent = "market picks"; el.append(hd);
-    const isPick = (d, h) => dailies.some((p) => p && p.d === d && p.h === h);
-    DAYS.forEach((name, d) => {
-      const lab = document.createElement("div"); lab.className = "day"; lab.textContent = name; el.append(lab);
-      for (let h = 0; h < 24; h++) {
-        const b = document.createElement("button"); b.type = "button"; b.className = "cell";
-        const v = state[d][h];
-        if (v === "idle") b.classList.add("idle"); else if (v === "bad") b.classList.add("bad");
-        if (stable && stable.d === d && stable.h === h) b.classList.add("stable"); else if (v === "ok" && isPick(d, h)) b.classList.add("daily");
-        if (h === DAILY_AT) b.classList.add("daily10");
-        b.setAttribute("aria-label", `${name} ${hh(h)}:00 ${v === "idle" ? "no run" : v === "ok" ? "green" : "red"}`);
-        b.addEventListener("click", () => { state[d][h] = v === "bad" ? "ok" : "bad"; render(); });
-        el.append(b);
-      }
-      const out = document.createElement("div"); out.className = "out";
-      const p = dailies[d];
-      out.innerHTML = p ? `<b>${DAYS[p.d]} ${hh(p.h)}:00</b>` + (p.d === d - 1 || p.d === d ? "" : " (held)") : "nothing yet";
-      el.append(out);
-    });
-    const v = document.getElementById("verdict");
-    v.innerHTML = stable
-      ? `Monday lets the <b>${DAYS[stable.day]}</b> market pick (commit from ${DAYS[stable.d]} ${hh(stable.h)}:00) into town. ${reds ? reds + " red hour" + (reds === 1 ? "" : "s") + " this week, none on its path." : "No red hours at all."} You walk it, then push the tag.`
-      : `No market pick stayed green ${NEED_DAYS} days running, so <b>the town gets nothing new</b> this week. Last week's release stays out. The cave kept taking PRs the whole time.`;
-  }
-  const load = (name) => { state = presets[name](); render(); };
-  for (const k of ["calm", "rough", "flaky"]) document.getElementById("b-" + k).addEventListener("click", () => load(k));
-  load("rough");
-})();
-
-// The straight-through score: each factor adds or takes points, the total picks the lane. "Why now" overrides it:
-// an advisory or an attack goes express, which only the owner can set. CI, deploy and secrets wiring never rides fast.
-(() => {
-  const F = [
-    { k: "touch", t: "What it touches", o: [["one", "One app", 30], ["few", "A few apps", 15], ["shared", "Shared packages or the lockfile", 0], ["wiring", "CI, deploy or secrets wiring", -25]] },
-    { k: "bites", t: "Its tests fail on the old code", o: [["yes", "Yes", 25], ["no", "No", 0]] },
-    { k: "lines", t: "Changed lines its tests run", o: [["most", "Most", 15], ["some", "Some", 5], ["few", "Few", 0]] },
-    { k: "size", t: "Size", o: [["s", "Under 100 lines", 15], ["m", "100 to 500", 5], ["l", "Over 500", -10]] },
-    { k: "record", t: "Its app's last 30 days", o: [["calm", "Rarely red", 15], ["flaky", "Often red", -10]] },
-    { k: "why", t: "Why now", o: [["none", "No rush", 0], ["advisory", "Advisory on a dependency we ship", 0], ["attack", "Attack on our build chain or host", 0]] },
-  ];
-  const P = {
-    typo: { touch: "one", bites: "no", lines: "few", size: "s", record: "calm", why: "none" },
-    feature: { touch: "one", bites: "yes", lines: "most", size: "m", record: "flaky", why: "none" },
-    cli: { touch: "wiring", bites: "yes", lines: "some", size: "l", record: "calm", why: "none" },
-    cve: { touch: "shared", bites: "yes", lines: "most", size: "s", record: "calm", why: "advisory" },
-    host: { touch: "wiring", bites: "no", lines: "few", size: "s", record: "calm", why: "attack" },
-  };
-  const FAST = 60;
-  let st = { ...P.typo };
-  const box = document.getElementById("factors");
-  box.innerHTML = F.map((f) => `<fieldset class="factor"><legend>${f.t}</legend><div class="opts">${f.o.map(([v, l, pts]) =>
-    `<label><input type="radio" name="f-${f.k}" value="${v}"><span>${l}${f.k === "why" ? "" : ` <small>${pts > 0 ? "+" : ""}${pts}</small>`}</span></label>`).join("")}</div></fieldset>`).join("");
-  box.addEventListener("change", (e) => { const i = e.target; if (i.name) { st[i.name.slice(2)] = i.value; render(); } });
-  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => { st = { ...P[b.dataset.preset] }; render(); }));
-  function render() {
-    for (const f of F) for (const i of box.querySelectorAll(`input[name="f-${f.k}"]`)) i.checked = i.value === st[f.k];
-    const n = Math.max(0, Math.min(100, F.reduce((s, f) => s + (f.o.find((o) => o[0] === st[f.k])?.[2] ?? 0), 0)));
-    const lane = st.why !== "none" ? "express" : n >= FAST && st.touch !== "wiring" ? "fast" : "standby";
-    const name = { express: "Express", fast: "Fast lane", standby: "Standby" }[lane];
-    document.getElementById("s-n").textContent = n;
-    const fg = document.getElementById("m-fg");
-    fg.style.strokeDashoffset = String(314.16 * (1 - n / 100));
-    fg.style.stroke = `var(--${lane === "express" ? "gold" : lane === "fast" ? "ok" : "muted"})`;
-    const chip = document.getElementById("s-lane"); chip.className = `lane-chip ${lane}`; chip.textContent = name;
-    document.getElementById("s-tag").textContent = `lane:${lane}`;
-    document.getElementById("s-why").textContent =
-      lane === "express" ? `Every sweep runs now, then your OK. ${n < 50 ? "A score this low means the sweeps carry more weight: watch them." : "Contained, so it should go straight through."}`
-      : st.touch === "wiring" ? "CI, deploy and secrets wiring always waits in standby: when it breaks, everything breaks."
-      : lane === "fast" ? "Contained and proven: one hour, one night, then your OK."
-      : `Soaks 3 hours and 3 nights. Tests that fail on the old code, or a smaller PR, would raise it past ${FAST}.`;
-  }
-  render();
-})();
-
-// The lanes: three paths through the same five gates. Bends are soaks (standby 3 hours and 3 nights, fast 1 and 1,
-// express none). Dots walk each path; a fast-lane dot that goes red at a sweep drops into standby there.
-(() => {
-  const svg = document.getElementById("lanes"); if (!svg) return;
-  const NS = "http://www.w3.org/2000/svg";
-  const GX = [210, 400, 600, 790, 930], GN = ["PR checks", "hourly", "nightly", "your OK", "town"];
-  const L = [
-    { id: "x", y: 82, loops: [0, 0, 0, 0], amp: 0, cls: "ln-x", name: "Express", when: "same day", speed: 150, every: 5.5, color: "gold", soak: ["now", "now"] },
-    { id: "fast", y: 180, loops: [0, 1, 1, 0], amp: 46, cls: "ln-fast", name: "Fast lane", when: "about 2 days", speed: 70, every: 1.7, color: "ok", soak: ["1 hour", "1 night"] },
-    { id: "std", y: 288, loops: [0, 3, 3, 0], amp: 72, cls: "ln-std", name: "Standby", when: "about a week", speed: 70, every: 0.9, color: "muted", soak: ["3 hours", "3 nights"] },
-  ];
-  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent?.append(e); return e; };
-  const gates = svg.querySelector("#lane-gates"), paths = svg.querySelector("#lane-paths"), dotsG = svg.querySelector("#lane-dots");
-  const gateEls = GX.map((x, i) => {
-    const g = el("rect", { class: "lgate", x: x - 7, y: 52, width: 14, height: 326, rx: 7 }, gates);
-    el("text", { class: "d-tb", x, y: 38, "text-anchor": "middle" }, gates).textContent = GN[i];
-    return g;
-  });
-  for (const l of L) {
-    let d = `M150 ${l.y}`;
-    for (let s = 0; s < 4; s++) {
-      const a = GX[s], b = GX[s + 1], n = l.loops[s];
-      if (!n) continue;
-      const m = 26, w = (b - a - 2 * m) / n;
-      for (let k = 0; k < n; k++) {
-        const x0 = a + m + k * w;
-        d += ` L${x0 + w * 0.15} ${l.y} L${x0 + w * 0.15} ${l.y + l.amp} L${x0 + w * 0.85} ${l.y + l.amp} L${x0 + w * 0.85} ${l.y}`;
-      }
-      el("text", { class: "d-t", x: (a + b) / 2, y: l.y + l.amp + 22, "text-anchor": "middle" }, paths).textContent = l.soak[s - 1];
-    }
-    if (l.id === "x") { el("text", { class: "d-t", x: (GX[1] + GX[2]) / 2, y: l.y - 10, "text-anchor": "middle" }, paths).textContent = "every sweep now"; }
-    d += ` L950 ${l.y}`;
-    l.path = el("path", { class: l.cls, d }, paths);
-    l.len = l.path.getTotalLength();
-    el("text", { class: "d-tb", x: 18, y: l.y - 4 }, paths).textContent = l.name;
-    el("text", { class: "d-t", x: 18, y: l.y + 14 }, paths).textContent = l.when;
-    // where along the path each x is first reached on the lane's own row (for a dot dropping in from above)
-    l.at = (x) => { for (let s = 0; s <= l.len; s += 4) { const p = l.path.getPointAtLength(s); if (p.x >= x && Math.abs(p.y - l.y) < 1) return s; } return l.len; };
-  }
-  const std = L[2];
-  let dots = [], t = 0, last = 0, paused = false, rand = ((s) => () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296))(9);
-  const next = L.map((l) => l.every * rand());
-  function spawn(l) { dots.push({ l, s: 0, x: 150, y: l.y, e: el("circle", { r: l.id === "x" ? 7 : 5, fill: `var(--${l.color === "muted" ? "ink" : l.color})` }, dotsG) }); }
-  function flash(i) { const g = gateEls[i]; g.classList.add("hit"); setTimeout(() => g.classList.remove("hit"), 220); }
-  function step(dt) {
-    t += dt;
-    L.forEach((l, i) => { if (t >= next[i]) { spawn(l); next[i] = t + l.every * (0.7 + rand() * 0.6); } });
-    for (const d of dots) {
-      if (d.drop) {
-        d.drop.k += dt / 0.7;
-        d.y = d.drop.y0 + (std.y - d.drop.y0) * Math.min(1, d.drop.k);
-        if (d.drop.k >= 1) { d.l = std; d.s = std.at(d.x); d.drop = null; d.e.setAttribute("fill", "var(--ink)"); }
-      } else {
-        const px = d.x;
-        d.s += d.l.speed * dt;
-        if (d.s >= d.l.len) { d.dead = true; continue; }
-        const p = d.l.path.getPointAtLength(d.s); d.x = p.x; d.y = p.y;
-        GX.forEach((gx, i) => {
-          if (px < gx && d.x >= gx) {
-            flash(i);
-            if (d.l.id === "fast" && (i === 1 || i === 2) && rand() < 0.14) { d.drop = { y0: d.y, k: 0 }; d.e.setAttribute("fill", "var(--bad)"); }
-          }
-        });
-      }
-      d.e.setAttribute("cx", d.x.toFixed(1)); d.e.setAttribute("cy", d.y.toFixed(1));
-    }
-    for (const d of dots) if (d.dead) d.e.remove();
-    dots = dots.filter((d) => !d.dead);
-  }
-  function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-    if (!paused) step(dt);
-    requestAnimationFrame(frame);
-  }
-  for (let i = 0; i < 600; i++) step(1 / 30); // open with every lane busy
-  const btn = document.getElementById("lane-pause");
-  const setPaused = (p) => { paused = p; btn.setAttribute("aria-pressed", String(p)); btn.innerHTML = `<svg><use href="#i-${p ? "play" : "pause"}"/></svg><span>${p ? "Play" : "Pause"}</span>`; };
-  btn.addEventListener("click", () => setPaused(!paused));
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) setPaused(true);
   requestAnimationFrame(frame);
 })();
 </script>
