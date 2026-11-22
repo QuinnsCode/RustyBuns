@@ -1,0 +1,13 @@
+{
+  "title": "Starter Game",
+  "goal": "Catch the falling stars in your basket. Miss three and the round is over.",
+  "computer": "Computer: move the mouse, or press the arrow keys.",
+  "phone": "Phone: slide your finger left and right.",
+  "play": "Play",
+  "again": "Again",
+  "score": "Score {score}",
+  "makeParty": "Make a party",
+  "partyCode": "party code",
+  "join": "Join",
+  "start": "Start"
+}

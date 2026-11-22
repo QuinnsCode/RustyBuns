@@ -19,6 +19,7 @@ import { sampleWind } from "./grib2.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton, THEME } from "./account.ts";
 import { about, icon, info } from "./icons.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
+import COPY from "../content/first-screen.json";
 import { loadWind, type Wind } from "./wind-load.ts";
 import { check, maybe, num, obj, oneOf } from "@rustybuns/util/guard";
 
@@ -92,11 +93,11 @@ const coach = tutorial({
   prefix: "adg",
   account: { achieve, achievements },
   steps: [
-    { title: "Where are we?", say: "Name the country the glowing cone is in for a stroke back, or skip the guess.", done: () => phase !== "guess" && phase !== "loading" },
-    { title: "Turn the aim", keys: ["←", "→"], say: "Or the Aim slider, or click the planet. The dashed line is the throw in still air.", done: () => strokes > 0 || heading !== aimFrom.heading },
-    { title: "Set the power", keys: ["↑", "↓"], say: "Or the Power slider: the km is how far it carries before the wind.", done: () => strokes > 0 || power !== aimFrom.power },
-    { title: "Throw", keys: ["Space"], say: "L lofts it into the jet stream: longer, and blown far harder.", done: () => strokes > 0 },
-    { title: "Watch the wind bend it", say: `Where it lands is your next throw. Get within ${BASKET_KM} km of the basket to hole out.`, done: () => strokes > 0 && phase !== "flying" },
+    { ...COPY.coach[0]!, done: () => phase !== "guess" && phase !== "loading" },
+    { ...COPY.coach[1]!, keys: ["←", "→"], done: () => strokes > 0 || heading !== aimFrom.heading },
+    { ...COPY.coach[2]!, keys: ["↑", "↓"], done: () => strokes > 0 || power !== aimFrom.power },
+    { ...COPY.coach[3]!, keys: ["Space"], done: () => strokes > 0 },
+    { ...COPY.coach[4]!, say: COPY.coach[4]!.say.replace("{km}", String(BASKET_KM)), done: () => strokes > 0 && phase !== "flying" },
   ],
 });
 
@@ -153,12 +154,12 @@ function drawSplash() {
   const km = course.holes.reduce((t, h) => t + h.km, 0);
   const route = routeMap(course.holes.map((h) => ({ n: h.n, path: arc(h.tee, h.basket, 24).map((p) => [p.lon, p.lat]) })), countries().flatMap((c) => c.outer));
   splash.innerHTML = `<div class="splash-mark"><i class="sweep"></i>${orbitMark()}</div>
-    <h1 class="logotype">Alien Disc Golf</h1>
-    <p class="tagline">Planet Earth</p>
+    <h1 class="logotype">${esc(COPY.name)}</h1>
+    <p class="tagline">${esc(COPY.tagline)}</p>
     <figure class="route-card">${route}<figcaption><span>Course #${seed}</span><span>9 holes · par ${coursePar(course)} · ${fmt(km)} km</span></figcaption></figure>
     <div class="splash-go">${phase === "loading"
-      ? `<p class="scanning" role="status"><i></i>Scanning the planet: fetching NOAA's wind</p>`
-      : `<button type="button" id="tee-off" class="primary">${icon("disc")} Tee off</button><p class="dim" title="${esc(wind.label)}"><span class="keys"><kbd>Space</kbd> · </span>${wind.source === "noaa" ? "Today's real wind, from NOAA's forecast" : "Practice wind: the real wind didn't load"}</p>`}</div>`;
+      ? `<p class="scanning" role="status"><i></i>${esc(COPY.scanning)}</p>`
+      : `<button type="button" id="tee-off" class="primary">${icon("disc")} ${esc(COPY.teeOff)}</button><p class="dim" title="${esc(wind.label)}"><span class="keys"><kbd>Space</kbd> · </span>${esc(wind.source === "noaa" ? COPY.realWind : COPY.practiceWind)}</p>`}</div>`;
   splash.querySelector("#tee-off")?.addEventListener("click", teeOff);
   (splash.querySelector("#tee-off") as HTMLButtonElement | null)?.focus({ preventScroll: true });
 }

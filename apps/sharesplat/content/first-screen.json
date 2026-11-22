@@ -1,0 +1,18 @@
+{
+  "brand": "ShareSplat",
+  "tag": "Walk round a product taking photos with your phone, and get a 3D view shoppers can spin on your shop page.",
+  "takePhotos": "Take the photos",
+  "hint": "Pick how many, then tap Take a photo. The dial shows where to stand for each one.",
+  "six": "Six sides",
+  "sixSub": "6 photos, about a minute: front, back, both sides, top, bottom. Quick, but the shape is a guess.",
+  "round": "All the way round",
+  "roundSub": "72 photos in rings, about 10 minutes. Slower, but it looks just like the real thing.",
+  "takePhoto": "Take a photo",
+  "addMany": "Add many",
+  "yourView": "Your 3D view",
+  "haveScan": "Have a 3D scan already? Drop it here, or",
+  "pickOne": "pick one",
+  "orExample": ". Or",
+  "example": "see an example",
+  "end": "."
+}

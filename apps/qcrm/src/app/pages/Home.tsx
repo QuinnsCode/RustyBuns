@@ -3,6 +3,7 @@ import { Icon } from "../icons.tsx";
 import { Footer } from "../Footer.tsx";
 import { Nav } from "../Nav.tsx";
 import { Wave } from "../Wave.tsx";
+import COPY from "../../../content/first-screen.json";
 
 // What a CRM usually doesn't offer, and this one does. Each card names one thing qCRM has that the usual suspects charge extra for or lack.
 const EDGE = [
@@ -26,20 +27,20 @@ export function Home() {
           <Wave />
           <div className="copy">
             <span className="tag">{TAG}</span>
-            <h1>The CRM your agents can use.</h1>
-            <p>Contacts, companies, deals and activities for a real place of business. MCP in, a Rust engine for the heavy lifting, sync across the office, signed webhooks out, and every row yours to export or delete. Light on the bill, warm on the eyes.</p>
+            <h1>{COPY.heading}</h1>
+            <p>{COPY.pitch}</p>
             <div className="cta">
-              <a className="btn primary" href="/demo" id="cta-demo"><Icon name="flask-conical" /> Try the demo</a>
-              <a className="btn ghost" href="/app"><Icon name="log-out" /> Sign in</a>
-              <button className="btn ghost" type="button" data-tour-start><Icon name="waves" /> Take the tour</button>
+              <a className="btn primary" href="/demo" id="cta-demo"><Icon name="flask-conical" /> {COPY.demo}</a>
+              <a className="btn ghost" href="/app"><Icon name="log-out" /> {COPY.signIn}</a>
+              <button className="btn ghost" type="button" data-tour-start><Icon name="waves" /> {COPY.tour}</button>
             </div>
           </div>
         </section>
 
         <section className="block" id="edge">
-          <span className="tag">What you get</span>
-          <h2>What the usual suspects charge extra for, or can't do.</h2>
-          <p className="lead">qCRM runs on Cloudflare Workers and D1 with a SQLite twin for the desktop. One Worker, one database, one price that stays small.</p>
+          <span className="tag">{COPY.edgeTag}</span>
+          <h2>{COPY.edgeHeading}</h2>
+          <p className="lead">{COPY.edgeLead}</p>
           <div className="grid">
             {EDGE.map((f) => (
               <article className="card" key={f.title}>

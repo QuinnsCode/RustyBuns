@@ -5,6 +5,7 @@ import { H, W, newWorld, start, step, type World } from "./game.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 import { addCommands, howToPlay } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
+import copy from "../content/first-screen.json";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage"), ctx = canvas.getContext("2d")!;
@@ -26,8 +27,8 @@ function play() { start(world); aim = W / 2; menu(); }
 
 function menu() {
   $("menu").hidden = world.phase === "play";
-  $("title").textContent = world.phase === "over" ? `Score ${world.score}` : "Starter Game";
-  $("play").textContent = world.phase === "over" ? "Again" : "Play";
+  $("title").textContent = world.phase === "over" ? copy.score.replace("{score}", String(world.score)) : copy.title;
+  $("play").textContent = world.phase === "over" ? copy.again : copy.play;
   $("crew").textContent = crew.members.map((m) => `${m.name}${m.host ? " (host)" : ""}`).join(", ");
   $("code").textContent = crew.code ? `Party ${crew.code}${crew.room ? `, seat ${crew.seat + 1}` : ""}` : "";
   $("note").textContent = crew.note;

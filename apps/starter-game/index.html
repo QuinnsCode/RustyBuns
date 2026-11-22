@@ -10,17 +10,17 @@
   <main>
     <canvas id="stage" aria-label="Starter Game"></canvas>
     <section id="menu">
-      <h1 id="title">Starter Game</h1>
-      <p id="goal">Catch the falling stars in your basket. Miss three and the round is over.</p>
-      <p id="how"><span id="desktop">Computer: move the mouse, or press the arrow keys.</span> <span id="phone">Phone: slide your finger left and right.</span></p>
-      <button id="play">Play</button>
+      <h1 id="title" data-copy="title"></h1>
+      <p id="goal" data-copy="goal"></p>
+      <p id="how"><span id="desktop" data-copy="computer"></span> <span id="phone" data-copy="phone"></span></p>
+      <button id="play" data-copy="play"></button>
       <div id="account"></div>
       <div id="party" hidden>
-        <button id="make">Make a party</button>
-        <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
+        <button id="make" data-copy="makeParty"></button>
+        <form id="join"><input id="joincode" data-copy-placeholder="partyCode" maxlength="12" data-copy-aria-label="partyCode"><button data-copy="join"></button></form>
         <p id="code"></p>
         <p id="crew"></p>
-        <button id="start" hidden>Start</button>
+        <button id="start" hidden data-copy="start"></button>
       </div>
       <p id="note"></p>
     </section>

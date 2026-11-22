@@ -320,6 +320,10 @@ These apps use it:
 
 To add a game, move its lines into a `content/` folder, import them, and add a `cms` script like theirs.
 
+**The first 20 screens.** `bun run screens` opens one local page with the first 20 screens a new person is likely to see across the apps: eqosys's front door and sign-in, then each game's first screen, then the tools. Each screen shows its picture on a computer and on a phone beside a box for every line on it. Save writes that app's `content/first-screen.json` (or the file it already keeps its words in), and **Take new pictures** starts the app headless and looks again. `bun run screens --shots` takes every picture first. The list is `SCREENS` in `scripts/screens.ts`.
+
+In an `index.html`, an empty element names its line, `<button data-copy="play"></button>` (`data-copy-placeholder="..."` for an attribute), and `firstScreen()` from `@rustybuns/util/copy` in `vite.config.ts` writes the words in as the page is served or built. A page whose script writes its words imports the JSON.
+
 **Translations.** **Add a language** on the editor's front page makes `content/<lang>/` (`es`, `pt-BR`). Each file gets a translate page that shows the original line below each box. A translation keeps the source's shape and numbers. A blank line shows the original text, and thus a language that is not complete still works.
 
 In code:

@@ -1,0 +1,10 @@
+{
+  "heading": "The CRM your agents can use.",
+  "pitch": "Contacts, companies, deals and activities for a real place of business. MCP in, a Rust engine for the heavy lifting, sync across the office, signed webhooks out, and every row yours to export or delete. Light on the bill, warm on the eyes.",
+  "demo": "Try the demo",
+  "signIn": "Sign in",
+  "tour": "Take the tour",
+  "edgeTag": "What you get",
+  "edgeHeading": "What the usual suspects charge extra for, or can't do.",
+  "edgeLead": "qCRM runs on Cloudflare Workers and D1 with a SQLite twin for the desktop. One Worker, one database, one price that stays small."
+}

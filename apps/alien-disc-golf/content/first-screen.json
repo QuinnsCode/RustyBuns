@@ -1,0 +1,15 @@
+{
+  "name": "Alien Disc Golf",
+  "tagline": "Planet Earth",
+  "scanning": "Scanning the planet: fetching NOAA's wind",
+  "teeOff": "Tee off",
+  "realWind": "Today's real wind, from NOAA's forecast",
+  "practiceWind": "Practice wind: the real wind didn't load",
+  "coach": [
+    { "title": "Where are we?", "say": "Name the country the glowing cone is in for a stroke back, or skip the guess." },
+    { "title": "Turn the aim", "say": "Or the Aim slider, or click the planet. The dashed line is the throw in still air." },
+    { "title": "Set the power", "say": "Or the Power slider: the km is how far it carries before the wind." },
+    { "title": "Throw", "say": "L lofts it into the jet stream: longer, and blown far harder." },
+    { "title": "Watch the wind bend it", "say": "Where it lands is your next throw. Get within {km} km of the basket to hole out." }
+  ]
+}

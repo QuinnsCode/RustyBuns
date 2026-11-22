@@ -6,6 +6,7 @@ import "./front.css";
 import { boardSvg, logoSvg } from "./logo.ts";
 import { accountChip } from "../eqosys.ts";
 import { joinAddress, launch, type Party, type Play, PLAYS } from "./menu.ts";
+import COPY from "../../content/first-screen.json";
 
 const ICONS = { route: Route, paw: PawPrint, flag: Flag, letters: Type };
 const icon = (node: Parameters<typeof createElement>[0], size = 20) => createElement(node, { width: size, height: size });
@@ -34,11 +35,11 @@ export function mountFront(note = ""): void {
   const stage = el("div", "stage");
   stage.innerHTML = `${logoSvg("intro")}<div class="mist m1"></div><div class="mist m2"></div>`;
   const title = el("div", "title");
-  const words = el("h1", "words", "SKATE TECH PARK");
+  const words = el("h1", "words", COPY.name);
   const roller = el("div", "rolls");
   roller.innerHTML = boardSvg();
   title.append(words, roller);
-  const hint = el("p", "skip", matchMedia("(pointer: coarse)").matches ? "Tap to skip" : "Any key or click to skip");
+  const hint = el("p", "skip", matchMedia("(pointer: coarse)").matches ? COPY.skipTap : COPY.skipKey);
   root.append(el("div", "rays"), stage, title, hint);
 
   const view = () => {
@@ -71,7 +72,7 @@ function menuScreen(note: string): HTMLElement {
   const screen = el("div", "screen");
   const head = el("header", "head");
   head.innerHTML = logoSvg("menu");
-  head.append(el("h1", "wordmark", "SKATE TECH PARK"));
+  head.append(el("h1", "wordmark", COPY.name));
   const body = el("div", "choices");
   screen.append(head, body, accountChip(el("div", "account"), { note, onSignOut: () => location.reload(), onSignIn: () => {} })); // eqosys beside the title; the chip redraws itself
 
@@ -82,7 +83,7 @@ function menuScreen(note: string): HTMLElement {
     const text = el("span", "text");
     b.title = blurb; // the blurb is a tooltip: the card says only its name
     text.append(el("strong", "", label));
-    if (soon) text.append(el("small", "", "Soon"));
+    if (soon) text.append(el("small", "", COPY.soon));
     b.append(icon(glyph, 26), text);
     b.addEventListener("click", go);
     return b;
@@ -91,8 +92,8 @@ function menuScreen(note: string): HTMLElement {
   const plays = (party: Party) => {
     const back = el("button", "back");
     back.type = "button";
-    back.title = "Back";
-    back.setAttribute("aria-label", "Back");
+    back.title = COPY.back;
+    back.setAttribute("aria-label", COPY.back);
     back.append(icon(ArrowLeft, 18));
     back.addEventListener("click", start);
     const list = (PLAYS[party] as Play[]).map((p) => card(p.label, p.blurb, ICONS[p.icon], () => { location.search = launch(p); }, p.soon));
@@ -102,16 +103,16 @@ function menuScreen(note: string): HTMLElement {
   };
   const joinRow = () => {
     const row = el("form", "join");
-    const code = Object.assign(el("input"), { placeholder: "Room code", maxLength: 8, autocomplete: "off", spellcheck: false });
-    const go = el("button", "", "Join");
+    const code = Object.assign(el("input"), { placeholder: COPY.roomCode, maxLength: 8, autocomplete: "off", spellcheck: false });
+    const go = el("button", "", COPY.join);
     go.type = "submit";
     row.append(code, go);
-    row.addEventListener("submit", (e) => { e.preventDefault(); const to = joinAddress(code.value); if (to) location.search = to; else code.setCustomValidity("4 to 8 letters or numbers"), code.reportValidity(); });
+    row.addEventListener("submit", (e) => { e.preventDefault(); const to = joinAddress(code.value); if (to) location.search = to; else code.setCustomValidity(COPY.codeRule), code.reportValidity(); });
     code.addEventListener("input", () => code.setCustomValidity(""));
     return row;
   };
   function start() {
-    show(card("Single", "Just you and the park.", User, () => plays("single")), card("Multi", "Skate with friends in a room.", Users, () => plays("multi")));
+    show(card(COPY.single, COPY.singleBlurb, User, () => plays("single")), card(COPY.multi, COPY.multiBlurb, Users, () => plays("multi")));
   }
   start();
   return screen;

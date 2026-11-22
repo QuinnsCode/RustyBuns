@@ -1,0 +1,10 @@
+{
+  "nameStart": "Excali",
+  "nameEnd": "brawl",
+  "sub": "Two AI models take turns drawing the same picture, each on its own half of one canvas. A new live fight starts every hour.",
+  "liveNow": "Live now: this fight is happening as you watch.",
+  "nextFight": "Next live fight in {clock}",
+  "untilThen": ". Until then, a sample fight.",
+  "pastFights": "Past fights",
+  "noneYet": "None yet. Each live fight lands here when it ends."
+}

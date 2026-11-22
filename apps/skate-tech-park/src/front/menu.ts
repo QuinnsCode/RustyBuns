@@ -1,7 +1,8 @@
 // The front door: what the title screen offers and which address each choice opens. Pure data, no DOM,
 // so a test can walk the whole tree. A choice never names a level: the park picker comes next and carries
-// these parameters across (see `carry`).
+// these parameters across (see `carry`). The words are content/first-screen.json's (`bun run screens`).
 import { newRoomCode, roomCode } from "../net/client.ts";
+import COPY from "../../content/first-screen.json";
 
 export type Party = "single" | "multi";
 export type Play = {
@@ -15,15 +16,22 @@ export type Play = {
   soon?: boolean;
 };
 
+/** A play's label and blurb, by its id. */
+const words = (party: Party, id: string) => {
+  const w = COPY.plays[party].find((p) => p.id === id);
+  if (!w) throw new Error(`content/first-screen.json has no ${party} play "${id}"`);
+  return { label: w.label, blurb: w.blurb };
+};
+
 export const PLAYS: Record<Party, Play[]> = {
   single: [
-    { id: "free", label: "Free skate", blurb: "Any park, no clock. Land what you like.", icon: "route", query: { mode: "free" } },
-    { id: "chase", label: "Run from the bear", blurb: "Something big wants you off the board. Keep moving.", icon: "paw", query: { mode: "chase", chase: "bear" } },
+    { id: "free", ...words("single", "free"), icon: "route", query: { mode: "free" } },
+    { id: "chase", ...words("single", "chase"), icon: "paw", query: { mode: "chase", chase: "bear" } },
   ],
   multi: [
-    { id: "free", label: "Free skate", blurb: "Up to four riders in one park.", icon: "route", query: { mode: "free", room: "new" } },
-    { id: "race", label: "Race", blurb: "First through the finish, with a trick to land inside a ring on the way.", icon: "flag", query: { mode: "race", room: "new" }, soon: true },
-    { id: "skate", label: "S.K.A.T.E.", blurb: "Set a trick, the next rider has to land it. Miss and take a letter.", icon: "letters", query: { mode: "skate", room: "new" }, soon: true },
+    { id: "free", ...words("multi", "free"), icon: "route", query: { mode: "free", room: "new" } },
+    { id: "race", ...words("multi", "race"), icon: "flag", query: { mode: "race", room: "new" }, soon: true },
+    { id: "skate", ...words("multi", "skate"), icon: "letters", query: { mode: "skate", room: "new" }, soon: true },
   ],
 };
 

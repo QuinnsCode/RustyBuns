@@ -35,6 +35,7 @@ import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, rep
 import { invitedBy, signInToJoin } from "@rustybuns/util/lobby";
 import { joinParty, mountSpaces, openParty, partyIn } from "./friends.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
+import COPY from "../content/first-screen.json";
 import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
 import { howMany, steps, tile, unit, unitName, vs, type Unit } from "./ui/call.ts";
 import { isRecord } from "@rustybuns/util/guard";
@@ -62,11 +63,12 @@ const coach = tutorial({
   prefix: "tf",
   account: { achieve, achievements },
   steps: [
-    { title: "Pick a side", say: "Thunder Marines or the Wooka, then the war, then Vs AI.", done: () => did.side },
-    { title: "Choose your fleet", say: "A preset, or your own mix of ships and armies.", done: () => did.fleet },
-    { title: "Place a unit", say: "Pick one of your worlds on the map, then + on its ships or an army.", done: () => did.place },
-    { title: "Deploy your fleet", say: "Deploy fleet, at the foot of the panel, once it stands where you want it.", done: () => did.ready },
-    { title: "Call a play", say: "Step on to the Armada: where from, where to, how many, then Confirm.", done: () => did.call },
+    // the words are content/first-screen.json's coach, in this order
+    { ...COPY.coach[0]!, done: () => did.side },
+    { ...COPY.coach[1]!, done: () => did.fleet },
+    { ...COPY.coach[2]!, done: () => did.place },
+    { ...COPY.coach[3]!, done: () => did.ready },
+    { ...COPY.coach[4]!, done: () => did.call },
   ],
 });
 let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }, "short", undefined, true) };
@@ -770,29 +772,29 @@ function confirmCall(kind: string) {
 /** The title's and lobby's hero plate, baked by scripts/plates.ts (public/plates, #3565): the insignia set in a bulkhead plate. */
 const HERO = "/plates/hero.webp";
 const SIDES: { id: Faction; pitch: string }[] = [
-  { id: "marines", pitch: "Armoured and precise: walkers, gunships and orbital strikes. Win the sky, then land." },
-  { id: "wooka", pitch: "A furry horde that knows every fern: outnumber them, hide in the jungle, spring traps." },
+  { id: "marines", pitch: COPY.marines },
+  { id: "wooka", pitch: COPY.wooka },
 ];
 function chooseGame(first = false) {
   if (first) $("modal").classList.add("fresh");
   showModal(`<header class="crest${first ? " title" : ""}"><img class="hero" src="${HERO}" alt="Thunder Marines insignia on a bulkhead plate" width="960" height="300" />
       <h2>${first ? "Two Fronts<small>Thunderwooka Saga</small>" : "New campaign"}</h2>
-      <p class="readout">Fleet command <i></i> Doren approach <i></i> Channel 07</p></header>
+      <p class="readout">${COPY.readout.map(esc).join(" <i></i> ")}</p></header>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
-    <h3>Choose your side ${info("about-sides", "The sides and the wars")}</h3>
+    <h3>${esc(COPY.chooseSide)} ${info("about-sides", COPY.aboutSides)}</h3>
     ${about("about-sides", `<dl class="keys">${SIDES.map((s) => `<dt>${FACTION_NAMES[s.id]}</dt><dd>${s.pitch}</dd>`).join("")}
       ${Object.values(GALAXIES).map((g) => `<dt>${g.name}</dt><dd>${esc(g.blurb)}</dd>`).join("")}</dl>
-      <p>The short war is an evening, the full campaign several.</p>`)}
+      <p>${esc(COPY.warLength)}</p>`)}
     <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}" title="${esc(s.pitch)}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
       <b>${FACTION_NAMES[s.id]}</b></label>`).join("")}</div>
-    <h3>Choose the war</h3>
+    <h3>${esc(COPY.chooseWar)}</h3>
     <div class="choices">${Object.values(GALAXIES).map((g, i) =>
       `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small title="${g.systems.length} systems">${icon("orbit", 12)}${g.systems.length}</small></label>`).join("")}</div>
     <div class="choices starts">
-      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Vs AI</button>
-      <button type="button" data-start="hotseat" title="Two players taking turns at this screen">${icon("users", 15)} Hotseat</button>
-      <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
-      ${canSignIn() ? `<button type="button" data-start="friends" title="${login() ? "Open a party your eqosys friends join, then start the war together" : "Sign in with eqosys to play your friends"}">${icon("user-plus", 15)} With friends</button>` : ""}
+      <button type="button" data-start="ai" class="primary" title="${esc(COPY.vsAiHint)}">${icon("bot", 15)} ${esc(COPY.vsAi)}</button>
+      <button type="button" data-start="hotseat" title="${esc(COPY.hotseatHint)}">${icon("users", 15)} ${esc(COPY.hotseat)}</button>
+      <button type="button" data-start="online" title="${esc(COPY.onlineHint)}">${icon("link", 15)} ${esc(COPY.online)}</button>
+      ${canSignIn() ? `<button type="button" data-start="friends" title="${esc(login() ? COPY.friendsHint : COPY.friendsSignIn)}">${icon("user-plus", 15)} ${esc(COPY.friends)}</button>` : ""}
     </div>
     <div id="my-wars" hidden></div>
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);

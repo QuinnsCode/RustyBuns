@@ -1,0 +1,25 @@
+{
+  "readout": ["Fleet command", "Doren approach", "Channel 07"],
+  "chooseSide": "Choose your side",
+  "aboutSides": "The sides and the wars",
+  "marines": "Armoured and precise: walkers, gunships and orbital strikes. Win the sky, then land.",
+  "wooka": "A furry horde that knows every fern: outnumber them, hide in the jungle, spring traps.",
+  "warLength": "The short war is an evening, the full campaign several.",
+  "chooseWar": "Choose the war",
+  "vsAi": "Vs AI",
+  "vsAiHint": "Your side against the AI",
+  "hotseat": "Hotseat",
+  "hotseatHint": "Two players taking turns at this screen",
+  "online": "Online",
+  "onlineHint": "Two players, a turn at a time, each from their own link",
+  "friends": "With friends",
+  "friendsHint": "Open a party your eqosys friends join, then start the war together",
+  "friendsSignIn": "Sign in with eqosys to play your friends",
+  "coach": [
+    { "title": "Pick a side", "say": "Thunder Marines or the Wooka, then the war, then Vs AI." },
+    { "title": "Choose your fleet", "say": "A preset, or your own mix of ships and armies." },
+    { "title": "Place a unit", "say": "Pick one of your worlds on the map, then + on its ships or an army." },
+    { "title": "Deploy your fleet", "say": "Deploy fleet, at the foot of the panel, once it stands where you want it." },
+    { "title": "Call a play", "say": "Step on to the Armada: where from, where to, how many, then Confirm." }
+  ]
+}

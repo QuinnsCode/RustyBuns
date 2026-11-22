@@ -43,7 +43,7 @@ export function applyForm(json: unknown, form: ReadonlyMap<string, string>, path
   return Object.fromEntries(Object.entries(json).map(([k, v]) => [k, LOCKED.has(k) ? v : applyForm(v, form, [...path, k])]));
 }
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const CSS = `:root{--bg:#fff;--fg:#0a0a0a;--muted:#6b6b6b;--border:#e6e6e6;--border-2:#cfcfcf;--paper:#fcfbf8;--accent:#e8590c;--sans:"Geist",ui-sans-serif,system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
 @media(prefers-color-scheme:dark){:root{--bg:#0e0e0e;--fg:#f2f2f2;--muted:#a0a0a0;--border:#2a2a2a;--border-2:#3d3d3d;--paper:#151515}}
@@ -64,15 +64,15 @@ button:hover{background:var(--bg)}.ok{color:var(--accent);font-weight:600}ul.fil
 .hint.src{color:var(--fg);opacity:.7;border-left:3px solid var(--border-2);padding-left:8px;white-space:pre-wrap}
 input{font:14px var(--sans);color:var(--fg);background:var(--bg);border:1px solid var(--border-2);border-radius:6px;padding:7px 10px}`;
 
-const page = (title: string, body: string) => new Response(
-  `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${CSS}</style><div class="wrap">${body}</div>`,
+export const page = (title: string, body: string, css = "") => new Response(
+  `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${CSS}${css}</style><div class="wrap">${body}</div>`,
   { headers: { "content-type": "text/html; charset=utf-8" } });
 
 const rowsOf = (f: Field) => Math.min(24, Math.max(2, f.text.split("\n").length + (f.list ? 1 : Math.floor(f.text.length / 80))));
 
 export interface CmsOptions { dir: string; title: string }
 
-const sectionsOf = (fields: Field[], source?: Field[]) => {
+export const sectionsOf = (fields: Field[], source?: Field[]) => {
   // a section per top-level key, or per entry of a top-level list (a tour's stops: "tourTasks 3")
   const groupOf = (p: Path) => (typeof p[1] === "number" ? `${p[0]} ${p[1] + 1}` : String(p[0] ?? ""));
   const groups = new Map<string, { f: Field; was?: Field }[]>();
@@ -87,7 +87,7 @@ const sectionsOf = (fields: Field[], source?: Field[]) => {
   }).join("")}</section>`).join("");
 };
 
-async function writeJson(dir: string, name: string, json: unknown) {
+export async function writeJson(dir: string, name: string, json: unknown) {
   await mkdir(dir, { recursive: true });
   const tmp = join(dir, `.${name}.tmp`);
   await writeFile(tmp, `${JSON.stringify(json, null, 2)}\n`);

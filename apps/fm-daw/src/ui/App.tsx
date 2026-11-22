@@ -62,6 +62,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./app.css";
+import COPY from "../../content/first-screen.json";
 
 const UNDO_LIMIT = 100;
 const PAGE_BEATS = 8 * BEATS_PER_BAR;
@@ -1056,19 +1057,19 @@ export function App() {
       )}
       {audio && !tried && (
         <div className="first-try" role="status">
-          <p><strong>Try this first:</strong> hear the groove that's already here.</p>
-          <button className="play big" onClick={() => { play(); markTried(); }}>▶ Play the groove</button>
-          <p className="dim">Then tap the squares in the grid to change it.<span className="keys-hint"> <kbd>Space</kbd> plays and stops, and the letter keys play notes.</span></p>
+          <p><strong>{COPY.tryBold}</strong> {COPY.try}</p>
+          <button className="play big" onClick={() => { play(); markTried(); }}>{COPY.playGroove}</button>
+          <p className="dim">{COPY.then}<span className="keys-hint"> {COPY.keys}</span></p>
           <button className="ghost close" onClick={markTried} aria-label="Close" title="Close">×</button>
         </div>
       )}
       {!audio && (netStatus.state !== "full" || solo) && (
         <div className="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
           <div className="gate-card">
-            <h2 id="gate-title">Make a beat</h2>
-            <p>A drum machine and synths in your browser: play a groove, change it, and play along.</p>
-            <p><strong>Turn your speakers down a bit first.</strong> It starts quiet and never gets painfully loud. <kbd>Esc</kbd> stops all sound.</p>
-            <button className="play big" onClick={startAudio} autoFocus>Start</button>
+            <h2 id="gate-title">{COPY.heading}</h2>
+            <p>{COPY.pitch}</p>
+            <p><strong>{COPY.speakersBold}</strong> {COPY.speakers}</p>
+            <button className="play big" onClick={startAudio} autoFocus>{COPY.start}</button>
             {startError && <p className="err">{startError}</p>}
           </div>
         </div>

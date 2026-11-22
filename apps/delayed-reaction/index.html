@@ -28,25 +28,25 @@
       <header class="station">
         <div class="display">
           <button class="info" popovertarget="about" title="How to play" aria-label="How to play"></button>
-          <h1>Delayed Reaction</h1>
-          <p class="pitch">Hear a note, then tap its pad when it echoes back a bar later.</p>
+          <h1 data-copy="title"></h1>
+          <p class="pitch" data-copy="pitch"></p>
           <div id="result"></div>
           <div class="tuner" id="tuner"></div>
-          <p class="tuned" id="tuned" aria-live="polite">Tuning…</p>
+          <p class="tuned" id="tuned" aria-live="polite" data-copy="tuning"></p>
         </div>
         <div class="knobs" id="knobs"></div>
       </header>
-      <button id="play" class="play">Play</button>
-      <h2 class="engrave">Presets</h2>
+      <button id="play" class="play" data-copy="play"></button>
+      <h2 class="engrave" data-copy="presets"></h2>
       <div id="levels"></div>
-      <h2 class="engrave">Tapes</h2>
+      <h2 class="engrave" data-copy="tapes"></h2>
       <div id="tracks"></div>
       <div id="account"></div>
     </div>
   </div>
   <div id="about" class="about" popover>
-    <p class="blurb">A neon tunnel. A ring calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long ones.</p>
-    <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
+    <p class="blurb"><span data-copy="howToBefore"></span> <b id="delay-words" data-copy="howToDelay"></b><span data-copy="howToAfter"></span></p>
+    <p class="hint" data-copy="pads"></p>
   </div>
   <div id="controls-host"></div>
   <script type="module" src="/src/main.ts"></script>
