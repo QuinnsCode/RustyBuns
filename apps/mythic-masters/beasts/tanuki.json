@@ -6,6 +6,7 @@
   "feet": 2,
   "budget": 5600,
   "root": "belly",
+  "eyes": {"scale": 0.85, "sink": 0},
   "material": "fur",
   "belly": "cream",
   "belly_turn": -0.1,
