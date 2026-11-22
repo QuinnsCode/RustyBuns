@@ -240,7 +240,7 @@
           "title": "A letter in foil",
           "text": "The Hatters of Ong's Hat give you a letter wrapped in tin foil for the Porchlight Vigil, 'so the mothmen can't read it'.",
           "at": "believers:hatters",
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-porchlight",
@@ -250,7 +250,7 @@
           "needs": [
             "letter-hatters"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-backwards",
@@ -260,7 +260,7 @@
           "needs": [
             "letter-porchlight"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-frogwatch",
@@ -270,7 +270,7 @@
           "needs": [
             "letter-backwards"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-blurry",
@@ -280,7 +280,7 @@
           "needs": [
             "letter-frogwatch"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-antlers",
@@ -290,7 +290,7 @@
           "needs": [
             "letter-blurry"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "letter-counters",
@@ -300,7 +300,7 @@
           "needs": [
             "letter-antlers"
           ],
-          "status": "idea"
+          "status": "built"
         },
         {
           "id": "convention",
@@ -311,7 +311,7 @@
             "letter-counters"
           ],
           "opens": "every believer's hint at once, on the big map",
-          "status": "idea"
+          "status": "built"
         }
       ]
     },

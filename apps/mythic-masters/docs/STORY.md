@@ -22,9 +22,9 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S1 | every playable region has 1 main, 2 sub, 3 side, 1 unlock | 100% | 1.00 |
 | S2 | every playable region's world names all 7 senses (place, life, weather, sound, people, history, craft) | 100% | 1.00 |
 | S3 | written beats tied to another arc (40% is full marks) | 100% | 1.00 |
-| S4 | written beats the game plays (built) | 4% | 0.04 |
+| S4 | written beats the game plays (built) | 20% | 0.20 |
 | S5 | world wants the game has (built) | 10% | 0.10 |
-| | **total** | | **3.14 of 5** |
+| | **total** | | **3.30 of 5** |
 
 ## Where the game disagrees with itself
 
@@ -48,7 +48,7 @@ Read from the game, not the JSON: each is an issue to fix in the game.
 | The Book wakes | main | 11 | 1 | The Book's ledger, region by region. Each mythic you bring it is a name it already knew, and each region shows a little more of why something is waking the cryptids. What the Book is stays the owner's to write; these beats only point at it. |
 | Gary's documentary | sub | 5 | 0 | Gary narrates the found tapes, always one region ahead of you and always just missing the shot. His tapes get stranger and closer, until you meet him at Fouke, where the old drive-in still shows a monster film. |
 | The last bearer | sub | 3 | 0 | The rust thumbprint on every page belongs to someone. Their trail runs through lumber camps, a ghost town and a bayou: a hat, a field guide, a pirogue. Who they were is the owner's to write. |
-| Letters between the fires | sub | 8 | 0 | The eight believer groups write to each other but never meet. Carry their letters camp to camp along the road and, at the end, they hold their first convention at the Howl-Back Club's ridge. Each letter makes the next camp trust you sooner. |
+| Letters between the fires | sub | 8 | 8 | The eight believer groups write to each other but never meet. Carry their letters camp to camp along the road and, at the end, they hold their first convention at the Howl-Back Club's ridge. Each letter makes the next camp trust you sooner. |
 | Evenings in the east | side | 6 | 0 | One place, one evening each: a fire tower, a flooded bog, a logging train, a feud, a county fair, a portage. |
 | Evenings in the west | side | 6 | 0 | A fallen giant, a missing reel, an island with no cars, a wolf count, a cave of bats, a crater survey. |
 | Evenings in the south | side | 4 | 0 | A faith healer, a smugglers' bay, a diamond field, a storm chase. |
@@ -68,7 +68,7 @@ Region 1, from level 2.
 
 **sub**
 
-- **A letter in foil** (The Hatters of Ong's Hat; idea). The Hatters of Ong's Hat give you a letter wrapped in tin foil for the Porchlight Vigil, 'so the mothmen can't read it'.
+- **A letter in foil** (The Hatters of Ong's Hat; built). The Hatters of Ong's Hat give you a letter wrapped in tin foil for the Porchlight Vigil, 'so the mothmen can't read it'.
 - **Gary and the cedar water** (Pine Barrens: Mullica River, level 2; idea). The first Gary tape: cedar water, tannins, 'the water just moved'. Nobody knows who Gary is; the Lamplighters have heard of a man with a camera.
 - **First Lamp** (Lamplighters: First Lamp, level 3; built, from the game). Wren Ashby stopped me at a path light in Wharton Forest and asked why I carry the Book.
 - **Form 9-C** (the Office: Form 9-C, level 4; built, from the game). The Office stopped you under the fire tower on Apple Pie Hill and opened a file.
@@ -118,7 +118,7 @@ Region 2, from level 10.
 
 **sub**
 
-- **A moth-wing seal** (The Porchlight Vigil; idea). The Porchlight Vigil reads the letter by porch light and writes back, sealed with a moth wing, to the Backwards Lodge. *After: A letter in foil.*
+- **A moth-wing seal** (The Porchlight Vigil; built). The Porchlight Vigil reads the letter by porch light and writes back, sealed with a moth wing, to the Backwards Lodge. *After: A letter in foil.*
 - **Quiet Zone** (the Office: Quiet Zone, level 13; built, from the game). At Green Bank the Office ordered the Book switched off, and Agent Quist asked about the mothman. *After: Form 9-C.*
 - **Hold the shot** (Appalachian hollows: New River Gorge, level 13; idea). Gary at the New River Gorge bridge: something on the far cliff waves. If you go to that cliff, his tripod marks are still in the moss and there is a dropped lens cap with a name scratched on it. *After: Gary and the cedar water.*
 - **Dead Drop** (Lamplighters: Dead Drop, level 14; built, from the game). Pip asked me to carry a paper message past the Office cordon on the Tug Fork. *After: First Lamp.*
@@ -164,7 +164,7 @@ Region 3, from level 18.
 
 **sub**
 
-- **Written backwards** (The Backwards Lodge; idea). The Backwards Lodge answers in mirror writing. Hold it to your lamp at the Frog Watch's landing to read it. *After: A moth-wing seal.*
+- **Written backwards** (The Backwards Lodge; built). The Backwards Lodge answers in mirror writing. Hold it to your lamp at the Frog Watch's landing to read it. *After: A moth-wing seal.*
 - **The Wooden One** (the Office: The Wooden One, level 18; built, from the game). At Rhinelander, Agent Pell guarded a crate that holds the wired wooden hodag of the 1896 fair. *After: Quiet Zone.*
 - **Tall Tales** (Lamplighters: Tall Tales, level 19; built, from the game). Old Dutch asked me at the logging camp to leave the hidebehind alone. *After: Dead Drop.*
 - **The camp ledger** (Great North Woods: Logging camp, level 19; idea, owner writes). The logging camp's 1908 ledger has one man paid in cryptids: hodag, squonk, agropelter, the Book's own starters, with the same thumbprint by his mark. *After: The hat in the pine, Tall Tales.*
@@ -210,7 +210,7 @@ Region 5, from level 34.
 
 **sub**
 
-- **A wet letter** (The Frog Watch; idea). The Frog Watch dry the letter by their torches and add a pressed frog (rubber) for the Blurry Society. *After: Written backwards.*
+- **A wet letter** (The Frog Watch; built). The Frog Watch dry the letter by their torches and add a pressed frog (rubber) for the Blurry Society. *After: Written backwards.*
 - **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 34; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot, Night Boat.*
 - **No Cars** (the Office: No Cars, level 37; built, from the game). On Mackinac Island Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
 - **The Long Study** (the Institute: The Long Study, level 37; built, from the game). Toby Reyes asked for one specimen out of the cold room on Isle Royale. *After: Ash Layer.*
@@ -255,7 +255,7 @@ Region 4, from level 26.
 
 **sub**
 
-- **A blurry photograph** (The Blurry Society; idea). The Blurry Society send their best photograph, which shows nothing at all, to the Antler Choir. *After: A wet letter.*
+- **A blurry photograph** (The Blurry Society; built). The Blurry Society send their best photograph, which shows nothing at all, to the Antler Choir. *After: A wet letter.*
 - **Ash Layer** (the Institute: Ash Layer, level 28; built, from the game). Ms. Carrow counted deliverables at Mount St. Helens: twelve needed, nine held. *After: Field Guide.*
 - **The Frames** (the Office: The Frames, level 30; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
 - **The Road Shut** (Lamplighters: The Road Shut, level 30; built, from the game). Wren Ashby shut the road at Redwood Creek and asked me for a promise about the giant. *After: Tall Tales.*
@@ -298,7 +298,7 @@ Region 6, from level 42.
 
 **sub**
 
-- **A sung letter** (The Antler Choir; idea). The Antler Choir can't write; they sing the answer, and you carry the tune to the Thirteen Counters. *After: A blurry photograph.*
+- **A sung letter** (The Antler Choir; built). The Antler Choir can't write; they sing the answer, and you carry the tune to the Thirteen Counters. *After: A blurry photograph.*
 - **Annex 9** (the Office: Annex 9, level 42; built, from the game). You stood inside Annex 9, the Office store at Roswell, and the cordon showed you out. *After: No Cars.*
 - **Annex Raid** (Lamplighters: Annex Raid, level 43; built, from the game). Wren Ashby led a night raid on Annex 9 from the dunes at White Sands. *After: Night Boat.*
 - **Footprints at White Sands** (Southwest desert: White Sands, level 43; idea). At White Sands the gypsum keeps tracks for days. Gary's boot prints walk beside something with three toes, then the boot prints run. *After: The tripod at Niagara.*
@@ -341,7 +341,7 @@ Region 7, from level 50.
 
 **sub**
 
-- **Thirteen beans** (The Thirteen Counters; idea). The Thirteen Counters send a jar of beans, counted. Don't spill it on the way to the Ozarks. *After: A sung letter.*
+- **Thirteen beans** (The Thirteen Counters; built). The Thirteen Counters send a jar of beans, counted. Don't spill it on the way to the Ozarks. *After: A sung letter.*
 - **Jurisdiction** (the Office: Jurisdiction, level 52; built, from the game). In Barataria the Office chased Lamplighter boats in a pirogue and asked you where they go. *After: Annex 9.*
 - **Smugglers' Bay** (Lamplighters: Smugglers' Bay, level 52; built, from the game). Old Dutch and I held the bay at Barataria against an Office boat. *After: Annex Raid.*
 - **Grant Review** (the Institute: Grant Review, level 53; built, from the game). At Okeechobee the grant review needed a tagged rougarou, and Toby Reyes was the lure. *After: Field Strength.*
@@ -383,7 +383,7 @@ Region 8, from level 58.
 
 **sub**
 
-- **The first convention** (The Howl-Back Club; idea). All eight groups at the Howl-Back Club's ridge, one big fire, hats, capes, mirrors, goggles, waders, antlers, beans and earmuffs. They tell you where a cryptid you don't hold yet roams, in every region at once. *Opens: every believer's hint at once, on the big map.* *After: Thirteen beans.*
+- **The first convention** (The Howl-Back Club; built). All eight groups at the Howl-Back Club's ridge, one big fire, hats, capes, mirrors, goggles, waders, antlers, beans and earmuffs. They tell you where a cryptid you don't hold yet roams, in every region at once. *Opens: every believer's hint at once, on the big map.* *After: Thirteen beans.*
 - **The Long Haul** (Lamplighters: The Long Haul, level 61; built, from the game). Wren Ashby and the four who walk with her met me at Old Dutch's truck on Route 66. *After: Smugglers' Bay.*
 - **Two Forms** (the Office: Two Forms, level 62; built, from the game). In Texarkana, Section Chief Brandt came in person with two forms and Asset 0. *After: Jurisdiction.*
 - **Final Report** (the Institute: Final Report, level 62; built, from the game). On the plains Dr. Vale ran her last test: the Book on the scale. *After: Grant Review.*
