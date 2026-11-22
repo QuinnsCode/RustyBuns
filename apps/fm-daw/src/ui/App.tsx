@@ -12,7 +12,7 @@ import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
 import { startMidiOut, type MidiOut } from "./midi-out.ts";
 import { onCc } from "./learn.ts";
-import { PluginPump, bouncePlugins, effectChoices, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
+import { PluginPump, bounceInserts, bouncePlugins, effectChoices, pluginChoices, usePlugins, type PluginShown } from "./plugins.ts";
 
 /** A plugin track this page's own plugin is playing (started, not failed). */
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
@@ -20,7 +20,7 @@ import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
 import { AddMenu, MidiLand } from "./AddMenu.tsx";
 import { useImports } from "./import.ts";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
-import { pageRack } from "./wam.ts";
+import { pageRack, type PageAudio } from "./wam.ts";
 import { loadMine, loadSoloTakes, saveMine, saveSoloTakes } from "./mine.ts";
 import { lastTick, pushEqPlayed, pushTick, useTick } from "./store.ts";
 import { TRACK_COLORS } from "./colors.ts";
@@ -46,7 +46,7 @@ import { clampView, fit, gridFor, snapView, windowNotes, zoomAbout, type View } 
 import { Timeline, type ViewChange } from "./Timeline.tsx";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
-import { renderProject, loopSeconds, bounceFrames } from "../engine/offline.ts";
+import { renderProject, loopSeconds, bounceFrames, type BounceInserts } from "../engine/offline.ts";
 import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
@@ -106,6 +106,9 @@ function opMsg(op: Op, next: Project): ToWorklet {
   }
 }
 
+/** What the page's web plugins play into, once the audio is on. */
+const pageAudio = (a: AudioOut | null): PageAudio | null => a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, fxIn: a.fxIn, webOut: a.webOut, returns: a.returns, route: (t, on) => a.routeWeb(t, on) };
+
 export function App() {
   // `?song=wobble-lab` opens that song solo, so a jump link never overwrites the sesh's groove
   const [asked] = useState(() => fromAddress(location.search));
@@ -162,9 +165,9 @@ export function App() {
   /** Plugin tracks: their plugins on the desktop host, their sound into the worklet (src/ui/plugins.ts). */
   const pump = useRef<PluginPump | null>(null);
   /** The page's own plugins (src/ui/wam.ts): played on the audio once it's on, and bounced with or without it. */
-  const [webRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, inserts: a.inserts }; }));
+  const [webRack] = useState(() => pageRack(() => pageAudio(audioRef.current)));
   /** Each FM track's Insert (#5359): a web effect on its sound, its own rack and pump beside the instruments'. */
-  const [fxRack] = useState(() => pageRack(() => { const a = audioRef.current; return a && { ctx: a.ctx, bus: a.webBus, taps: a.webTaps, inserts: a.inserts }; }, "effect"));
+  const [fxRack] = useState(() => pageRack(() => pageAudio(audioRef.current), "effect"));
   const fxPump = useRef<PluginPump | null>(null);
   /** The loudest of the last slice each plugin track sent the sesh (the probe's `line`). */
   const linePeaks = useRef(new Map<number, number>());
@@ -468,6 +471,15 @@ export function App() {
           const peak = (from: number, to: number) => pcm.subarray(from * 2, to * 2).reduce((x, v) => Math.max(x, Math.abs(v)), 0);
           return { held: peak(0, frames >> 1), after: peak(frames - 4800, frames) };
         } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
+      },
+      // the whole bounce of one track alone holding a note for `seconds` (no Space, no Squash): each side's level
+      // over the note, and what it left out (#5551: the Insert's effect is in it)
+      mix: async (track: number, seconds: number) => {
+        const p0 = proj.current, beats = (seconds * p0.bpm) / 60;
+        const p: Project = { ...p0, space: 0, squash: 0, eqLinear: false, tracks: p0.tracks.map((tr, i) => ({ ...tr, solo: i === track, mute: false, auto: [], ...(i === track ? { notes: [{ s: 0, l: beats, m: 60, v: 1 }] } : {}) })) };
+        const sr = 48000, { pcm, missed } = await mixdown(p, sr, seconds), from = Math.round(sr * seconds * 0.25), to = Math.round(sr * seconds * 0.75);
+        const rms = (side: number) => { let e = 0; for (let f = from; f < to; f++) e += pcm[2 * f + side] ** 2; return Math.sqrt(e / Math.max(1, to - from)); };
+        return { l: rms(0), r: rms(1), missed };
       },
     } });
   });
@@ -810,21 +822,29 @@ export function App() {
   }, [audio]);
 
   // ---- bounce ----
+  /** `p` rendered `secs` long at `sr`, as a bounce plays it: interleaved stereo, and what it had to leave out. */
+  async function mixdown(p: Project, sr: number, secs: number): Promise<{ pcm: Float32Array; missed: string[] }> {
+    const bytes = engine === "rust" ? await fetchWasm() : null;
+    const make = async (): Promise<FmEngine> => (bytes ? new WasmEngine(await instantiateFm(bytes.slice(0)), sr) : new TsEngine(sr));
+    const render = async (fx?: BounceInserts) => {
+      const e = await make();
+      try { return renderProject(e, p, sr, secs, dbToGain(-6), (id) => takes.current.get(id), (t) => sound.get(t), aux2.settings, fx); } finally { e.free?.(); }
+    };
+    // a plugin track's sound comes from the desktop host, which has the plugin; one it can't play is named below
+    const frames = bounceFrames(p, sr, secs);
+    const { sound, missed } = await bouncePlugins(p, sr, frames, undefined, webRack, fxRack);
+    // an FM track's web effect (#5551): its sound rendered first, then through a copy of the effect, then the mix with it
+    const tap = new Map<number, Float32Array>();
+    const ins = await bounceInserts(p, sr, frames, async () => { await render({ tap }); return tap; }, fxRack);
+    return { pcm: await render({ back: (t) => ins.back.get(t) }), missed: [...missed, ...ins.missed] };
+  }
+
   async function doBounce() {
     setBounce({ busy: true });
     await new Promise((r) => setTimeout(r, 30));
     try {
       const p = proj.current, sr = 48000;
-      let e: FmEngine = new TsEngine(sr);
-      if (engine === "rust") {
-        const bytes = await fetchWasm();
-        if (bytes) e = new WasmEngine(await instantiateFm(bytes), sr);
-      }
-      // a plugin track's sound comes from the desktop host, which has the plugin; one it can't play is named below
-      const secs = loopSeconds(p, bounceLoops(p));
-      const { sound, missed } = await bouncePlugins(p, sr, bounceFrames(p, sr, secs), undefined, webRack);
-      const pcm = renderProject(e, p, sr, secs, dbToGain(-6), (id) => takes.current.get(id), (t) => sound.get(t), aux2.settings);
-      e.free?.();
+      const { pcm, missed } = await mixdown(p, sr, loopSeconds(p, bounceLoops(p)));
       const wav = encodeWav(pcm, sr);
       // Online, the sesh keeps its last bounce, so a DJ's decks can play it by the sesh's name.
       if (!solo && netStatus.state === "online") void shareBounce(wav, p.bpm).then((ok) => ok && setBounce((b) => ({ ...b, decks: true })));
@@ -854,6 +874,14 @@ export function App() {
   viewRef.current = win;
   const windowed = (tr: TrackDoc) => windowNotes(tr.notes, win);
   const color = TRACK_COLORS[selected];
+  // a track's Insert: an FM track's, or a web plugin track's (#5551), the effect's pick and then its sliders
+  const insertPick = <TrackSound slot="insert" track={t} choices={effectChoices} onPlugin={(insert) => commit({ t: "insert", track: selected, insert })} />;
+  const insertPanel = (
+    <InsertPanel track={t} color={color} shown={effects.get(selected)}
+      onValue={(id, v) => { if (t.insert) commit({ t: "insert", track: selected, insert: withValue(t.insert, id, v) }, { group: `fx:${selected}:${id}` }); }}
+      onEditor={() => fxPump.current?.openEditor(selected, `${t.name} · ${t.insert?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
+      onTrust={() => fxPump.current?.trust(selected, proj.current)} />
+  );
   // the selected track's audio, inside the Timeline under its editor so the ruler, zoom and playhead line up with it
   const clipLane = clipsOf(t).length > 0 && (
     <ClipLane key={selected} clips={clipsOf(t)} sound={(id) => takes.current.get(id)} bpm={project.bpm} loopBeats={L} from={win.from} span={win.span}
@@ -1068,22 +1096,20 @@ export function App() {
             onPad={(i, v) => { move(selected, i, v, t.params[i]); commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` }); }}
             onLanes={(lanes) => commit({ t: "auto", track: selected, lanes })} />
 
-          {t.plugin ? (
-            <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={trackSound}
+          {t.plugin ? (<>
+            <PluginPanel track={t} color={color} shown={plugins.get(selected)} head={t.plugin.web ? <>{trackSound}{insertPick}</> : trackSound}
               onValue={(id, v) => { if (t.plugin) commit({ t: "plugin", track: selected, plugin: withValue(t.plugin, id, v) }, { group: `plug:${selected}:${id}` }); }}
               onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
               onEditor={() => pump.current?.openEditor(selected, `${t.name} · ${t.plugin?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
               onTrust={() => pump.current?.trust(selected, proj.current)} />
-          ) : <><PatchEditor track={t} color={color} head={<>{trackSound}<TrackSound slot="insert" track={t} choices={effectChoices} onPlugin={(insert) => commit({ t: "insert", track: selected, insert })} /></>}
+            {t.plugin.web && insertPanel}</>
+          ) : <><PatchEditor track={t} color={color} head={<>{trackSound}{insertPick}</>}
             onSound={(s) => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: loadSound(x.params, s) } : x)) } })}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
             onRandom={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: randomPatch(x.kind, x.params) } : x)) } })}
             onReset={() => commit({ t: "replace", project: { ...project, tracks: project.tracks.map((x, i) => (i === selected ? { ...x, params: KIT[i].params.slice() } : x)) } })}
             onAudition={() => audition(selected)} />
-            <InsertPanel track={t} color={color} shown={effects.get(selected)}
-              onValue={(id, v) => { if (t.insert) commit({ t: "insert", track: selected, insert: withValue(t.insert, id, v) }, { group: `fx:${selected}:${id}` }); }}
-              onEditor={() => fxPump.current?.openEditor(selected, `${t.name} · ${t.insert?.name ?? ""}`) ?? Promise.resolve("start the sound first")}
-              onTrust={() => fxPump.current?.trust(selected, proj.current)} /></>}
+            {insertPanel}</>}
         </main>
       </div>
 

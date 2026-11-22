@@ -5,7 +5,7 @@ import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TsEq, flatEq, withEqLane, type EqStage } from "./eq.ts";
 import { LinearEq, linearLatency } from "./linear.ts";
-import { P } from "./params.ts";
+import { P, TRACKS } from "./params.ts";
 import { PluginRoute } from "./plugin-route.ts";
 import type { PluginEvent } from "../plugin-track.ts";
 import { audible, loopBeats, voiceless, type Project } from "../project.ts";
@@ -13,6 +13,18 @@ import { TakeDeck, clipsOf, deckClips } from "../take.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 import { faderGain, RigReturn, UNITY } from "../mixer.ts";
+import { InsertReturns, sides } from "./insert-return.ts";
+
+/**
+ * A bounce's web effects (#5551), in two passes. `tap`: each FM track with an Insert (no amp) is tapped out of the
+ * mix and its sound kept here, mono, `bounceFrames` long (filled in by renderProject), for its effect to play
+ * offline. `back`: what an effect played (interleaved stereo, as long), mixed in down the track's PAN and SEND; a
+ * track with none stays in the engine's sum, dry.
+ */
+export interface BounceInserts { tap?: Map<number, Float32Array>; back?: (track: number) => Float32Array | undefined }
+
+/** The FM tracks a bounce puts through their Insert: an effect and no amp (an amp has the track first) or plugin. */
+export const insertedTracks = (p: Project) => p.tracks.flatMap((t, i) => (t.insert && !t.amp && !t.plugin && i < TRACKS ? [i] : []));
 
 /** Frames a bounce of `seconds` renders: linear phase holds the mix back, so that much more, dropped off the front. */
 export const bounceFrames = (p: Project, sampleRate: number, seconds: number) => Math.round(seconds * sampleRate) + (p.eqLinear ? linearLatency(sampleRate) : 0);
@@ -49,7 +61,7 @@ export function pluginScore(p: Project, sampleRate: number, frames: number): Map
  * `aux2`: the gear cabled into the desk's aux 2 return (the sesh's gear room patch); the tracks' sends to it come
  * back on the return's fader. The players' channels are live sound, so a bounce has none of them.
  */
-export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined, plugins?: (track: number) => Float32Array | undefined, aux2?: AmpSettings | null): Float32Array {
+export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined, plugins?: (track: number) => Float32Array | undefined, aux2?: AmpSettings | null, fx?: BounceInserts): Float32Array {
   const frames = Math.round(seconds * sampleRate);
   const eq: EqStage = p.eqLinear ? new LinearEq(sampleRate) : new TsEq(sampleRate);
   // linear phase holds the mix back: render that much more and drop it off the front, so beat one is at 0
@@ -62,7 +74,14 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   p.tracks.forEach((t, ti) => deck.set(ti, deckClips(clipsOf(t), (id) => takes?.(id))));
   const amps = new AmpInserts(p.tracks.length, sampleRate);
   p.tracks.forEach((t, ti) => { if (t.amp) amps.set(ti, t.amp); });
-  const tapping = amps.any;
+  // the tracks through a web effect: tapped out for it, or its return mixed in where the tap was
+  const fxTap = fx?.tap, rets = new Map<number, [Float32Array, Float32Array]>();
+  for (const t of insertedTracks(p)) {
+    if (fxTap) fxTap.set(t, new Float32Array(frames + late));
+    else { const b = fx?.back?.(t); if (b) rets.set(t, sides(b)); }
+  }
+  const tapped = (t: number) => amps.has(t) || fxTap?.has(t) || rets.has(t);
+  const tapping = amps.any || !!fxTap?.size || rets.size > 0, returns = new InsertReturns();
   const hears = audible(p), beats = loopBeats(p);
   const ret = p.desk?.aux2 ?? { fader: UNITY, mute: false };
   const rig = aux2 && !ret.mute && p.tracks.some((t) => t.params[P.SEND2] > 0) ? new RigReturn(sampleRate, aux2) : null;
@@ -83,7 +102,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   const strip = { gain: (t: number) => (hears[t] ? param(t, P.GAIN) * masterGain : 0), pan: (t: number) => param(t, P.PAN), send: (t: number) => param(t, P.SEND) };
   let at = 0;
   const all = renderPattern(route.any ? route.wrap(engine, (t, i, v) => { const row = now[t]; if (row) row[i] = v; }) : engine, sampleRate, (frames + late) / sampleRate, (seq) => {
-    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, amps.has(ti)); });
+    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); engine.setTap(ti, tapped(ti)); });
     // each track's Shape plays from the first sample, not fading in
     if (p.tracks.some((t) => t.eq)) { p.tracks.forEach((t, ti) => { if (t.eq) sendTrackEq(engine, ti, t.eq, []); }); engine.panic(); }
     seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p)); seq.setVoiceless(voiceless(p));
@@ -98,6 +117,9 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
       for (let f = 0; f < n * 2; f++) block[f] += wet[f] * back;
     }
     if (route.any) route.mix(block, n, strip, send.subarray(at * 2, (at + n) * 2));
+    // the tap is (L+R)/√2 as an amp hears it; to an effect (L+R)/2, so a centred track comes back as loud (as live)
+    if (taps) fxTap?.forEach((mono, t) => { for (let f = 0; f < n; f++) mono[at + f] = taps[f * TRACKS + t] * Math.SQRT1_2; });
+    rets.forEach(([l, r], t) => returns.mix(t, l, r, at, block, n, { gain: () => masterGain, pan: (tr) => param(tr, P.PAN), send: (tr) => param(tr, P.SEND) }, send.subarray(at * 2, (at + n) * 2)));
     at += n;
     eq.process(block, n);
   }, tapping, send2);

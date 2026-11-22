@@ -11,6 +11,7 @@ import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS, P } from "./params.ts";
 import { PluginRoute } from "./plugin-route.ts";
+import { InsertReturns } from "./insert-return.ts";
 import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
@@ -120,6 +121,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private hush = new Float32Array(128);
   /** Tracks whose sound goes out to a web effect on the second output (an amp on the track has it first). */
   private inserts = new Set<number>();
+  /** What comes back from those effects (the fifth input, two channels a track): panned and sent here, under the master. */
+  private returns = new InsertReturns();
+  private returnStrip = { gain: () => this.master, pan: (t: number) => this.strip.pan(t), send: (t: number) => this.strip.send(t) };
 
   constructor() {
     super();
@@ -153,7 +157,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.engine.setParam(m.track, m.i, m.v);
         break;
       case "plugin": this.plugins.set(m.track, m.on); break;
-      case "insert": if (m.on) this.inserts.add(m.track); else this.inserts.delete(m.track); this.engine.setTap(m.track, this.tapped(m.track)); break;
+      case "insert": if (m.on) this.inserts.add(m.track); else { this.inserts.delete(m.track); this.returns.drop(m.track); } this.engine.setTap(m.track, this.tapped(m.track)); break;
       case "pluginParam": this.plugins.param(m.track, m.id, m.v); break;
       case "pluginBlock": this.plugins.push(m.track, m.pcm, m.ok); break;
       case "notes": s.setNotes(m.track, m.notes); break;
@@ -401,6 +405,16 @@ class FmProcessor extends AudioWorkletProcessor {
     }
   }
 
+  /** Each web effect's return (the fifth input: a track's left on channel 2t, right on 2t + 1) down its PAN and SEND. */
+  private mixInserts(back: Float32Array[] | undefined, frames: number) {
+    if (!back?.length) return;
+    for (const t of this.inserts) {
+      const l = back[2 * t], r = back[2 * t + 1] ?? l;
+      if (!l || !r || this.amps.has(t)) continue;
+      this.returns.mix(t, l, r, 0, this.buf, frames, this.returnStrip, this.send);
+    }
+  }
+
   private setLatency() { this.seq.latency = this.outLatency + (this.eq.latency ?? 0) / sampleRate; }
 
   private async swap(m: Extract<ToWorklet, { t: "engine" }>) {
@@ -459,7 +473,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       this.mixWeb(inputs[1], frames);
-      if (this.inserts.size) this.sendInserts(outputs[1], this.taps, frames);
+      if (this.inserts.size) { this.sendInserts(outputs[1], this.taps, frames); this.mixInserts(inputs[4], frames); }
       if (this.webOut.size) this.sendWeb(inputs[3], frames, abs0, bpf);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
