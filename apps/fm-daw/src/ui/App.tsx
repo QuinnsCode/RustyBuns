@@ -33,7 +33,6 @@ import { Bench } from "./Bench.tsx";
 import { Shape } from "./Shape.tsx";
 import { AmpPanel } from "./AmpPanel.tsx";
 import { DeskPanel } from "./DeskPanel.tsx";
-import { seshDesk, seshShape, shapeName, shapeOps, type ShapeAt } from "../mixer.ts";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { TAKE_RATE, TakeShelf, clipsOf, encodeTake, newTakeId, toChunks } from "../take.ts";
@@ -136,8 +135,8 @@ export function App() {
   const [outPorts, setOutPorts] = useState<{ ports: string[]; picked: string | null }>({ ports: [], picked: null });
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "shape" | "amp" | "desk" | "engines">("pattern");
-  /** Which Shape the tab shows: "master", or a channel on the desk by id (`track-1`, `player-<who>`, `aux-1`). */
-  const [shapeOn, setShapeOn] = useState("master");
+  /** Which Shape the tab shows: the master's (null) or a track's own insert. */
+  const [shapeOn, setShapeOn] = useState<number | null>(null);
   /** What the drum grid and the roll show (view.ts): any stretch of the loop, as the user zoomed and scrolled it. */
   const [timeView, setTimeView] = useState<View>({ from: 0, span: 8 * BEATS_PER_BAR });
   const [editorPx, setEditorPx] = useState(800);
@@ -995,8 +994,7 @@ export function App() {
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
           ) : view === "desk" ? (
-            <DeskPanel project={project} players={deskPlayers} cabled={aux2.label} onOps={(ops, group) => { for (const o of ops) commit(o, { group: group ?? "desk" }); }}
-              sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null} />
+            <DeskPanel project={project} players={deskPlayers} cabled={aux2.label} onOps={(ops) => { for (const o of ops) commit(o, { group: "desk" }); }} />
           ) : view === "amp" ? (
             <AmpPanel name={t.name} amp={t.amp} onChange={(amp, group) => commit({ t: "amp", track: selected, amp }, group ? { group } : {})}
               armed={armed === selected} monitor={monitor && armed === selected}
@@ -1004,25 +1002,17 @@ export function App() {
               roundTripMs={audio && armed !== null ? (inLatency(audio) + (audio.ctx.outputLatency || 0)) * 1000 : null}
               misses={ampMisses} />
           ) : view === "shape" ? (() => {
-            // every Shape on the desk: the master's (it listens and automates), each track's, each player's, each return's
-            const desk = seshDesk(project, deskPlayers);
-            const ats: { key: string; at: ShapeAt }[] = [
-              { key: "master", at: { master: true } },
-              ...desk.channels.map((c) => ({ key: c.id, at: { channel: c.id } })),
-              ...desk.returns.map((r) => ({ key: `aux-${r.aux}`, at: { aux: r.aux } })),
-            ];
-            const on = ats.find((x) => x.key === shapeOn) ?? ats[0];
-            const doc = seshShape(project, deskPlayers, on.at);
+            // the master's Shape listens and automates; a track's is a plain insert for now
             const head = (
               <label className="field inline"><span className="silk">Shape on</span>
-                <select value={on.key} onChange={(e) => setShapeOn(e.currentTarget.value)} aria-label="Which Shape to edit">
-                  {ats.map((x) => <option key={x.key} value={x.key}>{shapeName(desk, x.at)}{x.key !== "master" && seshShape(project, deskPlayers, x.at).some(Boolean) ? " ·" : ""}</option>)}
+                <select value={shapeOn ?? -1} onChange={(e) => { const v = Number(e.currentTarget.value); setShapeOn(v < 0 ? null : v); }} aria-label="Which Shape to edit">
+                  <option value={-1}>Master</option>
+                  {project.tracks.map((tr, i) => <option key={i} value={i}>{tr.name}{tr.eq ? " ·" : ""}</option>)}
                 </select>
-                {on.key !== "master" && <span className="dim" title="Only the master's sound reaches the page on its own; a channel's spectrum isn't drawn">curve only</span>}
               </label>
             );
             const sr = audio?.ctx.sampleRate ?? 48000, an = audio?.analyser ?? null;
-            return on.key === "master" ? (
+            return shapeOn === null ? (
               <Shape key="master" head={head} doc={project.eq} sampleRate={sr} analyser={an}
                 onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
                 onListen={(band) => audio?.send({ t: "eqListen", band })}
@@ -1030,8 +1020,8 @@ export function App() {
                 onMove={(i, v, was) => move(MASTER, i, v, was)} followsPlay
                 linear={!!project.eqLinear} onLinear={(linear) => commit({ t: "eqPhase", linear })} />
             ) : (
-              <Shape key={on.key} head={head} doc={doc} sampleRate={sr} analyser={null}
-                onChange={(bands, group) => { for (const o of shapeOps(proj.current, deskPlayers, on.at, bands)) commit(o, group ? { group } : {}); }} />
+              <Shape key={`track:${shapeOn}`} head={head} doc={project.tracks[shapeOn].eq ?? flatEq()} sampleRate={sr} analyser={an}
+                onChange={(bands, group) => commit({ t: "eq", bands, track: shapeOn }, group ? { group } : {})} />
             );
           })() : t.kind === "drum" ? (<>
             <div className="machine" aria-label="Drum machine">

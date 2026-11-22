@@ -18,6 +18,8 @@
 //   bun scripts/test-bites.ts --base <ref>    against another ref
 //   bun scripts/test-bites.ts --lines         and the changed lines they never ran
 //   bun scripts/test-bites.ts --mutate 10     and which of 10 flipped changed lines no test notices
+//   bun scripts/test-bites.ts --lines --facts f.json   and the counts as JSON for scripts/lane.ts (#5429):
+//                                             { tests, failOnBase, changed, unrun } (unrun counts a never-loaded file whole)
 import { $ } from "bun";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -156,7 +158,7 @@ export function addedLines(diff: string): Map<string, number[]> {
 }
 
 /** The lines each changed source file (not a test) adds since the merge-base with `base`, by file. */
-async function changedSource(repo: string, base: string): Promise<Map<string, number[]>> {
+export async function changedSource(repo: string, base: string): Promise<Map<string, number[]>> {
   const diff = await $`git diff -U0 --no-color --diff-filter=AM ${await fork(repo, base)} -- ${"*.ts"} ${"*.tsx"} ${":!*.test.ts"} ${":!*.test.tsx"}`.cwd(repo).text();
   return addedLines(diff);
 }
@@ -212,17 +214,27 @@ if (import.meta.main) {
   const base = at > 0 ? process.argv[at + 1] ?? "origin/main" : "origin/main";
   const repo = (await $`git rev-parse --show-toplevel`.text()).trim();
   const files = await changedTests(repo, base);
+  const f = process.argv.indexOf("--facts");
+  const factsAt = f > 0 ? process.argv[f + 1] : undefined;
   if (!files.length) {
+    if (factsAt) await Bun.write(factsAt, JSON.stringify({ tests: 0, failOnBase: 0, changed: 0, unrun: 0 }));
     console.log(`no *.test.ts added or edited since ${base}`);
     process.exit(0);
   }
   const passing = await passesOnBase(repo, base, files);
   for (const f of passing) console.log(`${f}: passes on ${base} too, proves nothing`);
   console.log(`${files.length - passing.length} of ${files.length} test files fail on ${base}`);
+  let unrun: Map<string, number[] | "unloaded"> | undefined;
   if (process.argv.includes("--lines")) {
-    const unrun = await unrunLines(repo, base, files);
+    unrun = await unrunLines(repo, base, files);
     console.log(unrun.size ? "changed lines these tests never ran:" : "these tests ran every changed source line");
     for (const [file, lines] of unrun) console.log(`  ${file}: ${lines === "unloaded" ? "never loaded" : ranges(lines)}`);
+  }
+  if (factsAt) {
+    const added = await changedSource(repo, base);
+    const missed = [...(unrun ?? added)].reduce((n, [file, lines]) => n + (lines === "unloaded" ? added.get(file)?.length ?? 0 : lines.length), 0);
+    const changed = [...added.values()].reduce((n, l) => n + l.length, 0);
+    await Bun.write(factsAt, JSON.stringify({ tests: files.length, failOnBase: files.length - passing.length, changed, unrun: missed }));
   }
   const m = process.argv.indexOf("--mutate");
   if (m > 0) {

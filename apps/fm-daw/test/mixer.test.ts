@@ -3,9 +3,7 @@
 // return's fader (and the channel's mute stopping its sends too). Then the sesh's desk on FM DAW's page: a track's
 // channel is the track, so its send into Space comes back on the Space return's fader in the bounce.
 import { expect, test } from "bun:test";
-import { deskFor, deskOps, Mixer, Return, RigReturn, seshDesk, SpaceReturn, trackId, UNITY, withChannel, withReturn, withSend, withShape, type Desk } from "../src/mixer.ts";
-import { flatEq, type EqDoc } from "../src/engine/eq.ts";
-import { knobTurns, shapeThumbPath, withShapeBand } from "../src/room/desk.ts";
+import { deskFor, deskOps, Mixer, RigReturn, seshDesk, SpaceReturn, trackId, UNITY, withChannel, withReturn, withSend, type Desk } from "../src/mixer.ts";
 import { lead, listen, newRoom, plug } from "../src/room/room.ts";
 import { TsEngine } from "../src/engine/engine.ts";
 import { renderProject } from "../src/engine/offline.ts";
@@ -89,36 +87,4 @@ test("on the sesh's desk, a track's send to the Space return comes back on its f
   const down = desk(sent, (d) => withChannel(d, trackId(0), { fader: UNITY - 0.25 })); // -12 dB on its fader
   expect(bounce(down).peak).toBeLessThan(wet.peak * 0.4);
   expect(seshDesk(down).channels[0].fader).toBeCloseTo(UNITY - 0.25);
-});
-
-test("a return's own Shape plays on what its effect hands back, and the strip knobs keep a band moved in the full editor", () => {
-  const note = new Float32Array(128 * 300);
-  for (let i = 0; i < 4800; i++) note[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR) * (1 - i / 4800);
-  const tail = (d: Desk) => {
-    const m = new Mixer(SR);
-    m.setReturn(1, new SpaceReturn(SR));
-    m.set(d);
-    const block = 128, buf = new Float32Array(block * 2), ins = new Map<string, Float32Array>();
-    let most = 0;
-    for (let at = 0; at < note.length; at += block) {
-      ins.set("you", note.subarray(at, at + block));
-      m.process(ins, buf, block);
-      if (at >= 9600) for (const x of buf) most = Math.max(most, Math.abs(x));
-    }
-    return most;
-  };
-  const sent = withSend(deskFor([{ id: "you", name: "You", source: "player" }]), "you", 1, 1);
-  const cut: EqDoc = [{ kind: "highCut", f: 200, g: 0, q: Math.SQRT1_2, slope: 48, on: true }, null, null, null, null, null, null, null];
-  const wet = tail(sent), shaped = withShape(sent, { aux: 1 }, cut);
-  expect(shaped.returns[0].eq).toEqual(cut);
-  expect(tail(shaped)).toBeLessThan(wet * 0.5);              // the Space tail under a 200 Hz high cut: mostly gone
-  expect(withShape(shaped, { aux: 1 }, flatEq()).returns[0].eq).toBeUndefined(); // flat is no Shape at all
-  expect(Return(JSON.parse(JSON.stringify(shaped.returns[0])))).toEqual(shaped.returns[0]);
-
-  // the three knobs are the first three bands: turning one keeps a frequency set in the full editor
-  const moved: EqDoc = [{ kind: "lowShelf", f: 90, g: 3, q: 0.9, slope: 12, on: true }, { kind: "notch", f: 3000, g: 0, q: 4, slope: 12, on: true }, null, null, null, null, null, null];
-  expect(withShapeBand(moved, 0, -4)[0]).toEqual({ kind: "lowShelf", f: 90, g: -4, q: 0.9, slope: 12, on: true });
-  expect(knobTurns(moved, 0)).toBe(true);
-  expect(knobTurns(moved, 1)).toBe(false);                   // a notch in the mid's slot is the editor's: the knob stands still
-  expect(shapeThumbPath(flatEq()).split(/[ML]/).filter(Boolean).every((pt) => pt.trim().endsWith(" 9.0"))).toBe(true); // flat: a straight line through the middle
 });

@@ -152,12 +152,6 @@ export const ConfigSchema = Schema.Struct({
       accountId: opt(AccountId), workersDev: opt(Bool), previewUrls: opt(Bool) })),
     box: opt(BoxTarget),
     desktop: opt(DesktopTarget),
-    steam: opt(Schema.Struct({
-      appId: int(1, 4_294_967_295),
-      depots: opt(Schema.Struct({ windows: opt(int(1, 4_294_967_295)), darwin: opt(int(1, 4_294_967_295)), linux: opt(int(1, 4_294_967_295)) })),
-      title: opt(Str),
-      targets: opt(Schema.Array(Schema.Literals(["windows-x64", "darwin-arm64", "linux-x64"])).check(Schema.isMinLength(1))),
-    })),
   }),
   stages: opt(Schema.Record(Str, Stage)),
   state: opt(Schema.Literals(["shared", "project"])),

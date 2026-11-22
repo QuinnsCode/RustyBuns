@@ -20,8 +20,7 @@ import { defaultAvatar } from "@rustybuns/util/avatar";
 import workletUrl from "../amp/worklet.ts?worker&url";
 import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
-import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, seshShape, shapeAt, shapeName, shapeOps, withChannel, withReturn, withSend, withShape, type Player, type ShapeAt, type Source } from "../mixer.ts";
-import { closeShape, openShape, refreshShape } from "../ui/shape-overlay.tsx";
+import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, withChannel, withReturn, withSend, type Player, type Source } from "../mixer.ts";
 import { apply, decodeServer, type Live, type Project } from "../project.ts";
 import { connect, roomName, type Net } from "../ui/net.ts";
 import { localMe, myKey, savedLook } from "../ui/me.ts";
@@ -305,29 +304,13 @@ function deskSound(h: Heard) {
 /** The desk view, drawn again when the desk or what is cabled into its returns changes. */
 function deskView(h: Heard) {
   $("desk").hidden = phase !== "desk";
-  if (phase !== "desk") { closeShape(); return; }
+  if (phase !== "desk") return;
   const desk = shownDesk();
   const cabled = desk.returns.map((r) => { const x = h.returns.find((y) => y.aux === r.aux); return x?.whole ? x.chain.slice(1, -1).map(nameOfId).join(" > ") : x?.problems[0] ?? ""; });
-  const key = JSON.stringify([desk, cabled, inSesh()?.project.eq]);
+  const key = JSON.stringify([desk, cabled]);
   if (key === drawn) return;
   drawn = key;
-  const s = inSesh();
-  drawDesk($("desk-strips"), desk, cabled, setDesk, { spaceMute: !s, shape: openDeskShape, ...(s ? { master: s.project.eq } : {}) });
-  refreshShape();
-}
-/** A strip's full Shape editor, over the desk: in a sesh its moves are the sesh's ops (the master's too), else this browser's desk. */
-function openDeskShape(at: ShapeAt) {
-  openShape({
-    title: shapeName(shownDesk(), at),
-    sampleRate: ctx?.sampleRate ?? 48000,
-    doc: () => { const s = inSesh(); return s ? seshShape(s.project, s.players, at) : shapeAt(ownDesk, at); },
-    onChange: (eq) => {
-      const s = inSesh();
-      if (!s) { setDesk(withShape(ownDesk, at, eq)); return; }
-      drawn = "";
-      for (const edit of shapeOps(s.project, s.players, at, eq)) { project = apply(project ?? s.project, edit); net?.send(edit); }
-    },
-  });
+  drawDesk($("desk-strips"), desk, cabled, setDesk, { spaceMute: !inSesh() });
 }
 const nameOfId = (id: string) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; };
 function openDesk(open: boolean) {

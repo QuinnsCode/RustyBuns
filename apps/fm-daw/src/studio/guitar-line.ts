@@ -7,8 +7,6 @@
 // channel on that desk from here: `desk` sets its level (gain, fader, mute, solo), and `sendsTo` taps it after that
 // level into the audio thread's aux buses, where Space and the aux 2 return play what the channel sends them.
 import ampWorkletUrl from "../amp/worklet.ts?worker&url";
-import shapeWorkletUrl from "./shape-worklet.ts?worker&url";
-import type { EqDoc } from "../engine/eq.ts";
 import type { AmpSettings, ToAmp } from "../amp/messages.ts";
 import { getJson } from "@rustybuns/util/http";
 import { check, num, obj, oneOf } from "@rustybuns/util/guard";
@@ -26,9 +24,9 @@ const BITRATE = 128_000;
  * One guitar's sound here: its dry input, the amp, its level (your mute times its channel on the desk), its aux sends
  * taken after that level, and where it stands (yours isn't placed).
  */
-interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; shape: AudioWorkletNode; gain: GainNode; sends: GainNode[]; pan: PannerNode | null; settings: string; asked: AmpSettings | null; level: number; strip: Strip; tag: HTMLAudioElement | null; tap: MediaStreamAudioDestinationNode | null }
-/** A channel as a call plays it (src/desk.ts `callStrip`): its level, each aux send 0 to 1, and its Shape (left out: flat). */
-export interface Strip { level: number; sends: number[]; eq?: EqDoc }
+interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; gain: GainNode; sends: GainNode[]; pan: PannerNode | null; settings: string; asked: AmpSettings | null; level: number; strip: Strip; tag: HTMLAudioElement | null; tap: MediaStreamAudioDestinationNode | null }
+/** A channel as a call plays it (src/desk.ts `callStrip`): its level, and each aux send 0 to 1. */
+export interface Strip { level: number; sends: number[] }
 const PLAIN: Strip = { level: 1, sends: [] };
 /** The part of an amp's meter (src/amp/messages.ts FromAmp) the budget reads: its share of the audio thread. */
 const Meter = obj({ t: oneOf(["meter"]), load: num(0, Infinity) });
@@ -57,7 +55,7 @@ export class GuitarLine {
   private strips = new Map<Who, Strip>();
   /** `to` is where every guitar ends up: the speakers, or a meter in a test. `servers` says which servers a call may use. */
   constructor(private ctx: AudioContext, private send: (to: number, line: Line, s: Signal) => void, private to: AudioNode = ctx.destination, private servers: () => Promise<IceReply> = askIce) {
-    this.ready = Promise.all([ctx.audioWorklet.addModule(ampWorkletUrl), ctx.audioWorklet.addModule(shapeWorkletUrl)]).then(() => {});
+    this.ready = ctx.audioWorklet.addModule(ampWorkletUrl);
     void this.iceServers();
   }
 
@@ -84,13 +82,12 @@ export class GuitarLine {
   /** `who`'s channel on the desk: how loud its chain plays, and what it sends to each aux. */
   desk(who: Who, strip: Strip) {
     const was = this.strips.get(who);
-    if (was && was.level === strip.level && was.sends.join() === strip.sends.join() && JSON.stringify(was.eq) === JSON.stringify(strip.eq)) return;
+    if (was && was.level === strip.level && was.sends.join() === strip.sends.join()) return;
     this.strips.set(who, strip);
     const c = this.chains.get(who);
     if (c) this.play(c, strip);
   }
   private play(c: Chain, strip: Strip) {
-    if (JSON.stringify(c.strip.eq) !== JSON.stringify(strip.eq) || c.strip === PLAIN) c.shape.port.postMessage(strip.eq ?? []);
     c.strip = strip;
     c.gain.gain.setTargetAtTime(c.level * strip.level, this.ctx.currentTime, 0.02);
     c.sends.forEach((s, i) => s.gain.setTargetAtTime(strip.sends[i] ?? 0, this.ctx.currentTime, 0.02));
@@ -298,9 +295,7 @@ export class GuitarLine {
     const gain = new GainNode(ctx, { gain: 1 });
     const pan = who === "me" ? null : new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1.5, rolloffFactor: 0.7 });
     amp.port.onmessage = (e: MessageEvent<unknown>) => this.metered(who, e.data);
-    // the channel's Shape after the amp, as the desk's audio thread runs it on a player's channel (shape-worklet.ts)
-    const shape = new AudioWorkletNode(ctx, "q-shape", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
-    amp.connect(shape).connect(gain);
+    amp.connect(gain);
     (pan ? gain.connect(pan) : gain).connect(this.to);
     // each aux send: the guitar after its level, as one channel, into that aux's bus on the desk's audio thread
     const buses = this.buses, sends = buses ? Array.from({ length: buses.numberOfInputs }, (_, i) => {
@@ -313,7 +308,7 @@ export class GuitarLine {
     if (who !== "me") { tag = new Audio(); tag.muted = true; tag.srcObject = stream; void tag.play().catch(() => {}); }
     const src = ctx.createMediaStreamSource(stream);
     src.connect(amp);
-    const c: Chain = { src, amp, shape, gain, sends, pan, settings: "", asked: null, level: 1, strip: PLAIN, tag, tap: null };
+    const c: Chain = { src, amp, gain, sends, pan, settings: "", asked: null, level: 1, strip: PLAIN, tag, tap: null };
     this.chains.set(who, c);
     this.play(c, this.strips.get(who) ?? PLAIN);
   }
@@ -325,7 +320,7 @@ export class GuitarLine {
     this.loads.delete(who);
     c.amp.port.onmessage = null;
     for (const t of c.tap?.stream.getTracks() ?? []) t.stop();
-    c.src?.disconnect(); c.amp.disconnect(); c.shape.disconnect(); c.gain.disconnect(); c.pan?.disconnect();
+    c.src?.disconnect(); c.amp.disconnect(); c.gain.disconnect(); c.pan?.disconnect();
     for (const s of c.sends) s.disconnect();
     if (c.tag) c.tag.srcObject = null;
   }
