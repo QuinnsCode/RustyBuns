@@ -3,12 +3,15 @@
 // it must be heard at the output, and not with the key let go or the track muted. Then a plugin from another site:
 // it must stay silent and ask first, and load and play once the player says yes (the "other site" is this same server
 // under its other name, localhost against 127.0.0.1; a built page serves no source, so a copy built here and served
-// beside it). Then a bounce of the track, and its sound on the sesh's live line. Prints what it measured; exit 1 when
+// beside it). Then a bounce of the track, and its sound on the sesh's live line. Then the track back on its FM voice
+// with an effect in its Insert (#5359, FM DAW's own Gain): as loud as dry at Gain 1, half at 0.5, dry again once it's
+// off, and an instrument isn't taken as an effect. Prints what it measured; exit 1 when
 // any of that fails. A built page: build the app, `bunx vite preview --outDir dist/client`, then `--url` that.
 // Without --url it serves the app on its own dev server, which needs .rustybuns/vite.ts (`bunx rustybuns boundary`
 // here writes it).
 import { help } from "../../../scripts/help.ts";
 import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { paramId } from "../src/ui/wam.ts";
 
 help(import.meta.path);
 const app = new URL("..", import.meta.url).pathname;
@@ -63,7 +66,32 @@ const JOURNEY = `(async () => {
   const line = fmdaw.state().line[T] ?? 0;
   key("keyup");
   fmdaw.line(T, false);
-  return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line };
+  // an effect on an FM track's sound: out of the engine, through the module, back in. Keys (the 7 key picks it)
+  // holds a note as long as the key is down, where a drum has died away before the meter reads it
+  fmdaw.plays(T, null);
+  await until(() => plays() === "fm");
+  for (const type of ["keydown", "keyup"]) window.dispatchEvent(new KeyboardEvent(type, { code: "Digit7", bubbles: true }));
+  await until(() => fmdaw.state().selected === 6);
+  const K = fmdaw.state().selected;
+  const fx = () => fmdaw.state().tracks[K].insert;
+  const hold = async () => { key("keydown"); const p = await peak(); key("keyup"); await wait(600); return p; };
+  const dry = await hold();
+  const gain = (values) => ({ path: "builtin:gain", index: 0, name: "Gain (web)", web: true, values });
+  fmdaw.insert(K, gain([]));
+  const fxOn = await wait(300).then(() => until(() => fx()?.starting === false));
+  const fxError = fx()?.error ?? null, fxSliders = fx()?.sliders ?? [];
+  const whole = await hold();
+  fmdaw.insert(K, gain([{ id: ${paramId("gain")}, v: 0.5 }]));
+  await wait(200);
+  const half = await hold();
+  fmdaw.insert(K, { path: "builtin:tone", index: 0, name: "Test Tone (web)", web: true, values: [] });
+  await wait(300).then(() => until(() => fx()?.starting === false));
+  const refused = fx()?.error ?? null, refusedHeld = await hold();
+  fmdaw.insert(K, null);
+  await wait(200);
+  const back = await hold();
+  const insert = { track: K, fxOn, fxError, fxSliders, dry, whole, half, refused, refusedHeld, back };
+  return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line, insert };
 })()`;
 
 // Chrome's stand-in speakers, as scripts/guitar-check.ts: real time with no sound card (#5278)
@@ -89,6 +117,12 @@ try {
     ["after a yes it loads and plays", r.trusted && !r.after.error && r.heldOther > 0.02],
     ["a bounce has it: heard with the key held, silent after", !r.bounced.error && r.bounced.held > 0.02 && r.bounced.after < 0.001],
     ["the sesh's live line carries it", r.line > 0.01],
+    ["the FM track sounds dry", r.insert.dry > 0.005],
+    ["Gain starts in the Insert, with its Gain slider", r.insert.fxOn && !r.insert.fxError && r.insert.fxSliders.some((s: { name: string }) => s.name === "Gain")],
+    ["through Gain at 1 it is as loud as dry (not lost, not doubled)", near(r.insert.whole / r.insert.dry, 1, 0.15)],
+    ["Gain at 0.5 halves it", near(r.insert.half / r.insert.whole, 0.5, 0.1)],
+    ["an instrument in the Insert is refused, and the track plays dry", typeof r.insert.refused === "string" && near(r.insert.refusedHeld / r.insert.dry, 1, 0.15)],
+    ["with the Insert off it is dry again", near(r.insert.back / r.insert.dry, 1, 0.15)],
     ["no page errors", noise.length === 0],
   ];
   console.log(JSON.stringify(r));
@@ -97,6 +131,8 @@ try {
   ok = checks.every(([, pass]) => pass);
 } finally { chrome.stop(); server.stop(); away.stop(); }
 process.exit(ok ? 0 : 1);
+
+function near(x: number, want: number, by: number) { return Number.isFinite(x) && Math.abs(x - want) <= by; }
 
 /** Test Tone at the page's other name: the dev server's own source, or (a built page) a copy built and served here. */
 async function otherSite(page: string): Promise<{ url: string; stop: () => void }> {

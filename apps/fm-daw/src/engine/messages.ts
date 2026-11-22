@@ -29,6 +29,11 @@ export type ToWorklet =
   | { t: "amp"; track: number; amp: TrackAmp | null }
   /** A hosted plugin plays this track (src/engine/plugin-route.ts), or its FM voice again. */
   | { t: "plugin"; track: number; on: boolean }
+  /**
+   * A web effect runs on this track (src/ui/wam.ts): its FM sound leaves the sum for the worklet's second output, a
+   * channel a track, and comes back through the effect on the page's plugin bus. Off: the sound stays in the sum.
+   */
+  | { t: "insert"; track: number; on: boolean }
   /** A plugin slider moved: on to the host in order with the notes. */
   | { t: "pluginParam"; track: number; id: number; v: number }
   /** A block of a plugin track's sound from the host, interleaved stereo at the context's rate; `ok` false: it failed. */

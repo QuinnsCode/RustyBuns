@@ -1,7 +1,9 @@
 // The browser's own plugin host (#4899): a Web Audio Module (the WAM 2 API, webaudiomodules.com) plays a plugin track
 // in the page, where the desktop's CLAP host can't reach. The module is a node in the page's audio graph: the track's
 // notes reach it as MIDI, and its sound goes through the track's fader into the engine's second input, so it gets the
-// master's Shape, Squash and meters like every other track.
+// master's Shape, Squash and meters like every other track. A WAM can also be an effect on a track (#5359): the
+// track's FM sound leaves the worklet on a channel of its own, goes through the module, and comes back on the same
+// input as the instruments' sound (a render quantum late, the delay a loop through the audio thread costs).
 //
 // A plugin is code. One from another site runs in this page with everything the page can do, and a groove is shared:
 // a friend's track can name any address. So a module from another site loads only after this player says its site
@@ -9,11 +11,14 @@
 import { check, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 import type { ParamChange, PluginChoice, PluginEvent, PluginParam, TrackPlugin } from "../plugin-track.ts";
 
-/** The modules FM DAW carries itself: no site to trust, and there with no network. */
-export const BUILT_IN: Record<string, { name: string; load: () => Promise<unknown> }> = {
+/** The modules FM DAW carries itself: no site to trust, and there with no network. `effect`: one for a track's Insert. */
+export const BUILT_IN: Record<string, { name: string; effect?: boolean; load: () => Promise<unknown> }> = {
   "builtin:tone": { name: "Test Tone (web)", load: () => import("../wam/tone.ts") },
+  "builtin:gain": { name: "Gain (web)", effect: true, load: () => import("../wam/gain.ts") },
 };
-export const WEB_CHOICES: PluginChoice[] = Object.entries(BUILT_IN).map(([path, b]) => ({ path, index: 0, name: b.name, vendor: "FM DAW", web: true }));
+const builtIns = (effect: boolean): PluginChoice[] => Object.entries(BUILT_IN).filter(([, b]) => !!b.effect === effect).map(([path, b]) => ({ path, index: 0, name: b.name, vendor: "FM DAW", web: true }));
+/** The instruments for a track's Plays menu, and the effects for its Insert menu. */
+export const WEB_CHOICES = builtIns(false), WEB_EFFECTS = builtIns(true);
 
 /** A slider as a WAM describes it (WamParameterInfo, the fields a desk shows). */
 const WamInfo = obj({ label: opt(str(500, { min: 0 })), type: opt(str(40)), defaultValue: num(-1e300, 1e300), minValue: num(-1e300, 1e300), maxValue: num(-1e300, 1e300) });
@@ -36,7 +41,7 @@ export type WamEvent =
   | { type: "wam-automation"; time: number; data: { id: string; value: number; normalized: false } };
 /** A track's fader on a plugin's sound (a GainNode, the part used here). */
 export interface Fader { gain: { value: number; setTargetAtTime(v: number, at: number, timeConstant: number): unknown }; disconnect(): void }
-interface WamInstance { audioNode: WamNode; createGui?: () => Promise<unknown>; destroyGui?: (el: Element) => void }
+interface WamInstance { audioNode: WamNode; descriptor?: unknown; createGui?: () => Promise<unknown>; destroyGui?: (el: Element) => void }
 export interface WamClass { createInstance(groupId: string, ctx: unknown): Promise<unknown> }
 
 const has = <K extends string>(v: unknown, ...keys: K[]): v is { [P in K]: unknown } => (typeof v === "object" || typeof v === "function") && v !== null && keys.every((k) => k in v);
@@ -84,6 +89,8 @@ export interface RackDeps {
    * before the fader, to track `track`'s own tap, so the sesh can hear it (src/studio/plugin-line.ts).
    */
   fader(node: WamNode, track: number): Fader;
+  /** An effect rack's: `node` between track `track`'s own sound out of the engine and the engine's second input. */
+  insert?(node: WamNode, track: number): Fader;
   /** Puts a plugin's own panel on the page under `title`; `closed` runs when the player shuts it. */
   show?(el: Element, title: string, closed: () => void): void;
   store?: Pick<Storage, "getItem" | "setItem">;
@@ -107,9 +114,18 @@ const PANEL_POLL_MS = 400;
 
 interface Slot { node: WamNode; inst: WamInstance; gain: Fader; names: Map<number, string>; params: PluginParam[]; gui?: Element }
 
+/** What a module's descriptor says it is: an instrument (plays notes), an effect (sound in, sound out), or it doesn't say. */
+const Descriptor = obj({ isInstrument: opt(raw), hasAudioInput: opt(raw) });
+function kindOf(inst: WamInstance): "instrument" | "effect" | null {
+  const d = check(Descriptor, inst.descriptor);
+  if (d?.isInstrument === true) return "instrument";
+  return d?.isInstrument === false && d.hasAudioInput === true ? "effect" : null;
+}
+
 export class WamRack {
   private slots = new Map<number, Slot>();
-  constructor(private d: RackDeps) {}
+  /** `kind`: what this rack holds, a track's instrument (Plays) or the effect on its sound (Insert). */
+  constructor(private d: RackDeps, private kind: "instrument" | "effect" = "instrument") {}
 
   /** This player says `site` may run plugins in this page, from now on. */
   trust(site: string) {
@@ -133,7 +149,13 @@ export class WamRack {
       const made = await this.made(cls, group, plug);
       if (typeof made === "string") return { error: made };
       const { inst, node, names, params } = made;
-      const gain = this.d.fader(node, t);
+      const is = kindOf(inst);
+      if (is && is !== this.kind) {
+        try { node.destroy(); } catch { /* gone either way */ }
+        return { error: is === "instrument" ? `${plug.name} is an instrument: it plays notes, so it goes under Plays` : `${plug.name} is an effect: it goes in a track's Insert` };
+      }
+      const gain = this.kind === "effect" ? this.d.insert?.(node, t) : this.d.fader(node, t);
+      if (!gain) { try { node.destroy(); } catch { /* gone either way */ } return { error: "this page can't put an effect on a track" }; }
       this.slots.set(t, { node, inst, gain, names, params });
       return { params: params.map((q) => ({ ...q })), editor: typeof inst.createGui === "function" && !!this.d.show };
     } catch (e) {
@@ -209,6 +231,14 @@ export class WamRack {
       if (e.t === "set") this.set(s, e.id, e.v);
       else s.node.scheduleEvents({ type: "wam-midi", time, data: { bytes: e.t === "on" ? [0x90, e.key, Math.max(1, Math.round(e.vel * 127))] : [0x80, e.key, 0] } });
     }
+  }
+
+  /** Slider `id` moved on the desk: straight to the module (an effect has no notes for it to ride along with). */
+  param(t: number, id: number, v: number) {
+    const s = this.slots.get(t);
+    if (!s) return;
+    this.set(s, id, v);
+    this.known(t, id, v);
   }
 
   /** The track's fader (0 when it's muted), moved without a click. */
@@ -300,8 +330,9 @@ export function offlineRig(sampleRate: number, frames: number): OfflineRig {
 /**
  * The page's rack: modules play into `bus` on `ctx`, each also into its track's channel of `taps` (one per track), the
  * WAM SDK's host half loaded when the first one starts. Before the audio is on (`audio` null) it can only bounce.
+ * An `effect` rack's modules each take their track's channel of `inserts` (the engine's second output) instead.
  */
-export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps: AudioNode } | null): WamRack {
+export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps: AudioNode; inserts: AudioNode } | null, kind: "instrument" | "effect" = "instrument"): WamRack {
   const on = () => { const a = audio(); if (!a) throw new Error("the audio isn't on"); return a; };
   return new WamRack({
     now: () => audio()?.ctx.currentTime ?? 0, here: location.href,
@@ -315,8 +346,19 @@ export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps:
       node.connect(taps, 0, track);
       return { gain: g.gain, disconnect: () => { g.disconnect(); try { node.disconnect?.(taps); } catch { /* already off it */ } } };
     },
+    insert: (node, track) => {
+      if (!(node instanceof AudioNode)) throw new Error("that module's node isn't on this page's audio");
+      const live = on(), g = new GainNode(live.ctx, { gain: 1 });
+      // out of the engine and back into it is a loop, and the audio graph only plays a loop with a delay in it: one render quantum
+      const d = new DelayNode(live.ctx, { delayTime: 0, maxDelayTime: 0.01 });
+      live.inserts.connect(d, track);
+      d.connect(node);
+      node.connect(g);
+      g.connect(live.bus);
+      return { gain: g.gain, disconnect: () => { d.disconnect(); g.disconnect(); } };
+    },
     offline: offlineRig,
     show: showPanel,
     store: localStorage,
-  });
+  }, kind);
 }
