@@ -7,7 +7,7 @@
 //   3. cross-origin isolated (COOP same-origin, COEP require-corp or credentialless), so SharedArrayBuffer works
 //
 // The host is code you may not have read, so it runs the way `run desktop --sandbox` does: no .env,
-// no auto-install, no credential env vars, and on macOS under Seatbelt (RB_SANDBOX=0 turns that off).
+// no auto-install, no credential env vars, and under Seatbelt (macOS) or bwrap (Linux) (RB_SANDBOX=0 turns that off).
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
