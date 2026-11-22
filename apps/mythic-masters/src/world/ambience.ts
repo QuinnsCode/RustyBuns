@@ -9,11 +9,13 @@ export interface Ambient { wind: number; rain: number; night: number; birds: num
   /** How many shrieks there have been: each new one plays once. */
   shrieks: number;
   /** Your heartbeat, 0 (none) to 1 (pounding), and how close the nearest night one is: night.ts darkSounds. */
-  heart: number; near: number }
+  heart: number; near: number;
+  /** In the Pine Barrens (0 or 1), and the hour: its whip-poor-wills call at dusk and before dawn, its tree frogs quonk after dark, and thunder rolls in its storms. */
+  pines?: number; hour?: number }
 
 export function ambience(loudness: () => number) {
   let ctx: AudioContext | null = null, out: GainNode | null = null, windG: GainNode | null = null, rainG: GainNode | null = null, cricketG: GainNode | null = null, waterG: GainNode | null = null, rumbleG: GainNode | null = null, windF: BiquadFilterNode | null = null;
-  let nextChirp = 0, nextBeat = 0, heard: number | null = null;
+  let nextChirp = 0, nextBeat = 0, nextWhip = 4, nextFrog = 2, nextThunder = 6, heard: number | null = null;
 
   /** A loop of noise through a filter into a gain at 0. */
   function bed(c: AudioContext, into: GainNode, type: BiquadFilterType, freq: number, q: number, brown: boolean) {
@@ -54,6 +56,36 @@ export function ambience(loudness: () => number) {
     for (let i = 0; i < len; i++) { const u = i / len, beat = 0.5 + 0.5 * Math.sin(u * 9 * Math.PI * 2); d[i] = (Math.random() * 2 - 1) * beat * (1 - u) ** 1.5; }
     const src = new AudioBufferSourceNode(c, { buffer: buf }), g = new GainNode(c, { gain: vol * 0.35 });
     src.connect(new BiquadFilterNode(c, { type: "bandpass", frequency: 700, Q: 1.2 })).connect(g).connect(out!);
+    src.start(t);
+  }
+
+  /** A whip-poor-will: its name, three whistled notes, the last the strongest and rising, then falling. */
+  function whip(c: AudioContext, vol: number) {
+    const t = c.currentTime, k = 0.9 + Math.random() * 0.2;
+    for (const [at, f0, f1, f2, len, g0] of [[0, 1300, 1700, 1600, 0.09, 0.6], [0.13, 1250, 1100, 1150, 0.12, 0.5], [0.3, 1350, 2300, 1700, 0.24, 1]] as const) {
+      const o = new OscillatorNode(c, { type: "sine", frequency: f0 * k }), g = new GainNode(c, { gain: 0 }), s = t + at;
+      o.frequency.setValueAtTime(f0 * k, s); o.frequency.linearRampToValueAtTime(f1 * k, s + len * 0.6); o.frequency.linearRampToValueAtTime(f2 * k, s + len);
+      g.gain.setValueAtTime(0, s); g.gain.linearRampToValueAtTime(vol * 0.045 * g0, s + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, s + len + 0.03);
+      o.connect(g).connect(out!); o.start(s); o.stop(s + len + 0.05);
+    }
+  }
+  /** The Pine Barrens tree frog: a nasal, honking quonk, two to five in a run. */
+  function frog(c: AudioContext, vol: number) {
+    const t = c.currentTime, n = 2 + Math.floor(Math.random() * 4), f = 520 + Math.random() * 140;
+    for (let i = 0; i < n; i++) {
+      const s = t + i * (0.32 + Math.random() * 0.08), o = new OscillatorNode(c, { type: "sawtooth", frequency: f }), nose = new BiquadFilterNode(c, { type: "bandpass", frequency: 1400, Q: 4 }), g = new GainNode(c, { gain: 0 });
+      o.frequency.setValueAtTime(f, s); o.frequency.linearRampToValueAtTime(f * 0.92, s + 0.12);
+      g.gain.setValueAtTime(0, s); g.gain.linearRampToValueAtTime(vol * 0.05, s + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.13);
+      o.connect(nose).connect(g).connect(out!); o.start(s); o.stop(s + 0.15);
+    }
+  }
+  /** Thunder: a crack, then a long low roll. */
+  function thunder(c: AudioContext, vol: number, near: number) {
+    const t = c.currentTime + (1 - near) * 2.5, len = Math.floor(c.sampleRate * 5), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+    let v = 0;
+    for (let i = 0; i < len; i++) { const u = i / len, r = Math.random() * 2 - 1; v = (v + 0.03 * r) / 1.03; d[i] = v * 6 * (u < 0.02 ? u / 0.02 : (1 - u) ** 1.6) * (0.7 + 0.3 * Math.sin(u * 23)); }
+    const src = new AudioBufferSourceNode(c, { buffer: buf }), g = new GainNode(c, { gain: vol * (0.25 + 0.35 * near) });
+    src.connect(new BiquadFilterNode(c, { type: "lowpass", frequency: 180 + 500 * near })).connect(g).connect(out!);
     src.start(t);
   }
 
@@ -109,6 +141,12 @@ export function ambience(loudness: () => number) {
       nextBeat -= dt;
       if (a.heart > 0 && nextBeat <= 0) { beat(c, vol * (0.15 + 0.35 * a.heart)); nextBeat = 60 / (60 + 80 * a.heart); }
       if (cried) shriek(c, vol);
+      // the Pine Barrens: whip-poor-wills from dusk into the dark and again before dawn, tree frogs after dark, thunder in a storm
+      const pb = a.pines ?? 0, h = a.hour ?? 12, dusk = (h >= 19 && h < 23) || (h >= 3.5 && h < 5.5);
+      nextWhip -= dt; nextFrog -= dt; nextThunder -= dt;
+      if (pb > 0 && dusk && a.rain < 0.5 && nextWhip <= 0) { whip(c, vol); nextWhip = 0.9 + Math.random() * 0.5 + (Math.random() < 0.15 ? 6 + Math.random() * 8 : 0); }
+      if (pb > 0 && a.night > 0.3 && a.near < 0.5 && nextFrog <= 0) { frog(c, vol * (0.5 + a.water)); nextFrog = 2.5 + Math.random() * 6; }
+      if (pb > 0 && a.rain > 0.55 && nextThunder <= 0) { thunder(c, vol, Math.random()); nextThunder = 9 + Math.random() * 20; }
     },
   };
 }

@@ -31,6 +31,8 @@ import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt
 import { buildTown } from "./town-view.ts";
 import { caveMouth, lairOf, POCKETS } from "../pockets.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
+import { pinesView } from "./pines-view.ts";
+import { cleared, inBuilding, PINE_N } from "./pines.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
 import { BAND, bandAt, WORLD, newTrek, onTrailDen, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
@@ -61,6 +63,8 @@ const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, MUD = 0x6e5c42, DIRT = 0xa08a62, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const ROCK_Y = 55, SNOW_Y = 72; // game metres: bare rock above the one, snow above the other (the Andes, the Alps, the Himalaya)
 const PATH_W = 2.6;             // metres either side of a trail worn to dirt
+const SUGAR_W = 4.4;           // metres either side of the Pine Barrens' sand road
+const SUGAR = 0xdcd5c2;
 const PRECIP = 1600, CLOUDS = 40; // raindrops or flakes round the camera; clouds overhead
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
@@ -398,7 +402,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     }
     return best;
   }
-  const rockC = new THREE.Color(ROCK), snowC = new THREE.Color(SNOW), sandC = new THREE.Color(SAND), mudC = new THREE.Color(MUD), dirtC = new THREE.Color(DIRT), vc = new THREE.Color(), turfC = new THREE.Color();
+  const rockC = new THREE.Color(ROCK), snowC = new THREE.Color(SNOW), sandC = new THREE.Color(SAND), mudC = new THREE.Color(MUD), dirtC = new THREE.Color(DIRT), sugarC = new THREE.Color(SUGAR), vc = new THREE.Color(), turfC = new THREE.Color();
   /** Lays patch p's vertices on `yFn` and colours them: the land's colour, greener where its grass grows and sand at the
    * sea, mud along a river, the trail worn to dirt, hollows a shade darker and knolls lighter, steep faces turning to
    * rock (in bands, like strata), the high ground to snow, and a little grain so no two vertices match. Its water
@@ -433,7 +437,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       if (g && y > 0.3 && y < TREELINE + 6) { cover.grass = Math.min(1, 0.8 * grassCover(g.biome, x, z)); vc.lerp(turfC.setHex(TURF[g.biome].colour).multiplyScalar(0.8), 0.55 * grassCover(g.biome, x, z)); }
       if (y < 1.5) { const a = clamp((1.5 - y) / 1.5, 0, 1); cover.sand = Math.min(1, a * 0.95); vc.lerp(sandC, a * 0.7); }
       if (river > 0 && y - wl < 1.2) { const a = clamp((1.2 - (y - wl)) / 1.2, 0, 1); cover.mud = Math.min(1, a * 0.95); vc.lerp(mudC, a * 0.75); }
-      if (g && p.sp <= FINE) { const d = trailDist(g.n, x, z); if (d < PATH_W) { const a = clamp((PATH_W - d) / 1.4, 0, 1); cover.path = Math.min(1, a); vc.lerp(dirtC, a * 0.8); } }
+      // In the Pine Barrens the trail is a sugar-sand road: white, soft and wider, the pines close on both sides (pines.ts).
+      if (g && p.sp <= FINE) {
+        const sugar = g.n === PINE_N, half = sugar ? SUGAR_W : PATH_W, d = trailDist(g.n, x, z);
+        if (d < half) { const a = clamp((half - d) / 1.4, 0, 1); if (sugar) { cover.sand = Math.max(cover.sand, a); cover.path = a * 0.35; vc.lerp(sugarC, a * 0.9); } else { cover.path = Math.min(1, a); vc.lerp(dirtC, a * 0.8); } }
+      }
       if (y > 0.3) {
         const rock = clamp((slope - 0.45) / 0.5, 0, 1) + clamp((y - ROCK_Y + 6) / 12, 0, 1);
         if (rock > 0) { cover.rock = Math.min(1, rock); vc.lerp(rockC, Math.min(1, rock)).multiplyScalar(1 - 0.14 * Math.min(1, rock) * Math.sin(y * 1.9 + x * 0.013 + z * 0.007)); }
@@ -471,7 +479,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const plants = flora(() => { floraDirty = farDirty = true; });
   const litter = litterOf();
   /** Open ground whose piece has fully risen, where things may grow: not on a town's lot. */
-  const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 && !onLot(x, z) ? g : undefined; };
+  const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 && !onLot(x, z) && !(g.n === PINE_N && (cleared(x, z) || trailDist(PINE_N, x, z) < SUGAR_W - 1.2)) ? g : undefined; };
   /** Plants only grow on a piece that has fully risen. */
   function regrow() {
     scatterFlora(plants, near.at.x, near.at.z, HOLE - 10, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), w, waterLevel);
@@ -1006,6 +1014,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   let toastUntil = 0, ranAt = 0, mapAt = 0, mapStale = false;
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = (ranAt = performance.now()) + 3500; }
   const places = poiView(group, camera, drawnY, hooks.places, (p) => enterTown(p.id));
+  const pines = pinesView(group, groundY);
 
   // --- towns (towns.ts): a sighting board's door walks you into the town's pocket, its own small scene: the gas station,
   // the diner and the motel office, where the board and the people are. The open world is put away while you are in;
@@ -1506,7 +1515,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         }
         gait = p.gait; speed = p.v * Math.min(1, Math.hypot(mx, mz));
         const v = p.v * dt;
-        for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared, inWalls, onPier)) say(e);
+        for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared, (x, z) => inWalls(x, z) || inBuilding(x, z), onPier)) say(e);
         look();
         const last = crumbs[0];
         if (!last || Math.hypot(last.x - me.x, last.z - me.z) > 0.8) { crumbs.unshift({ x: me.x, z: me.z, yaw: facing }); crumbs.length = Math.min(crumbs.length, 40); }
@@ -1601,6 +1610,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       camera.updateMatrixWorld();
       drawRoad(); drawTag(); nearPorts();
       for (const t of places.update(dt, me, open, shot !== null)) toast(t);
+      pines.update(me, dt);
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
     beat(n: number) {
@@ -1637,6 +1647,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     standIsle(x: number, z: number) { if (!isle || !isleGround(isle.w, isle.slip, x, z)) return false; isle.at = { x, z }; snap = true; return true; },
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
     teleport(x: number, z: number) { const pier = ports.find((p) => onDock(p.slip, x, z)), g = regionAt(x, z) ?? (pier && REGIONS[pier.p.land.port - 1]); if (!g || !openRegions(beaten).has(g.n)) return false; dropTown(); leaveIsle(); me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
+    /** Turns the camera to look from where you stand toward (x, z): shots of a landmark. */
+    face(x: number, z: number) { yaw = Math.atan2(x - me.x, me.z - z); snap = true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
     reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); life.reset(); dayOff = 0; travel(1); refresh(); },
     /** Shows or hides one drawn layer, for an agent telling them apart: "near", "mid", "far" (the ground patches), "nearWater", "midWater", "land", "plants", "precip", "clouds", "sky". */
@@ -1665,7 +1677,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */
     peace(on: boolean) { peace = on; },
     /** What is round you, for the soundscape (src/world/ambience.ts). */
-    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, shrieks, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1), ...darkNow() }),
+    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, shrieks, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1), pines: me.region === PINE_N ? 1 : 0, hour: L.hour, ...darkNow() }),
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
@@ -1675,7 +1687,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, litter: litter.pieces, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, boss: tonight.boss, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, sounds: darkNow(), gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to, lantern: +lantern(gary.out ?? -1).toFixed(2) } },
-        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
+        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), pines: pines.state(), hunts: places.hunts(g.n),
         town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) },
         sailing, ports: ports.map((p) => ({ id: p.p.id, x: p.slip.x, z: p.slip.z, d: +Math.hypot(me.x - p.slip.x, me.z - p.slip.z).toFixed(1) })),
         isle: isle && { id: isle.port.p.id, x: +isle.at.x.toFixed(1), z: +isle.at.z.toFixed(1), y: +isleY(isle, isle.at.x, isle.at.z).toFixed(2), slip: { x: +isle.slip.x.toFixed(1), z: +isle.slip.z.toFixed(1) }, fire: isle.slip.fire, toSlip: +Math.hypot(isle.at.x - isle.slip.x, isle.at.z - isle.slip.z).toFixed(1), places: islePlaces(isle.port.p).map((p) => ({ id: p.id, kind: p.kind, name: p.name, x: +p.x.toFixed(1), z: +p.z.toFixed(1), done: marked(hooks.places?.log() ?? null, p) })) } };
