@@ -13,7 +13,10 @@
 //                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off). It runs from its
 //                                     own detached checkout at ~/.rustybuns/releases/rustybuns, made on the first install,
 //                                     and each --publish there first moves it to origin/main
-import { mkdirSync, writeFileSync } from "node:fs";
+//   bun run releases --rerelease      the page's "To re-release" list (live apps main moved since their last deploy from
+//                                     this Mac): one at a time, asks, plans a rustybuns deploy, asks again, deploys. Run
+//                                     it from that job checkout (it follows main); the hourly --publish waits meanwhile
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { help } from "./help.ts";
@@ -22,7 +25,9 @@ import { catchUp, headless, install, jobCheckout, uninstall } from "./launchd.ts
 import { esc } from "../packages/util/src/index.ts";
 import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
-import { appDot, appOfPath, busiest, pacific, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { lastDeploys } from "./bridge-lib.ts";
+import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
+import { appDot, appOfPath, busiest, deployOf, owed, pacific, repoDot, tally, type Counts, type Dot } from "./releases-lib.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
 const ARTIFACT = "https://claude.ai/artifact/EFQKb3WEiu7c5X9GURb8ch"; // QNTBR Releases (#5237)
@@ -31,7 +36,10 @@ const dir = path.join(homedir(), ".rustybuns", "releases");
 const file = path.join(dir, "releases.html");
 const repo = path.resolve(import.meta.dir, "..");
 
-export type Row = Counts & { name: string; dot: Dot; why: string; link: string | null; code: string; pushed: string | null };
+/** `deployed` is its newest deploy from this Mac (~/.rustybuns/deploys.jsonl); `owed` means main moved it since, and
+ *  `deploy` is how it goes out again (`dir` is its folder). Repos other than RustyBuns have none of these. */
+export type Row = Counts & { name: string; dot: Dot; why: string; link: string | null; code: string; pushed: string | null;
+  id: string | null; dir: string | null; deployed: string | null; owed: boolean; deploy: { plan: boolean; cmd: string } | null };
 export type Releases = { at: string; repos: Row[]; apps: Row[] };
 
 async function gh<T>(args: string[], g: (v: unknown) => T, fallback: T): Promise<T> {
@@ -45,6 +53,12 @@ const Repos = arr(obj({ name: str(200), url: str(500), homepageUrl: opt(str(500,
 const Found = arr(obj({ repository: obj({ name: str(200) }), closedAt: str(40) }), 1000);
 const Merged = arr(obj({ mergedAt: str(40), files: arr(obj({ path: str(500) }), 5000, { drop: true }) }), 1000);
 const Runs = arr(obj({ conclusion: str(40, { min: 0, dflt: "" }), status: str(40) }), 5);
+
+const Pkg = obj({ scripts: opt(obj({ deploy: opt(str(2000)) })) });
+/** An app's own `deploy` script from its package.json, or null. */
+function deployScript(folder: string): string | null {
+  try { return Pkg(JSON.parse(readFileSync(path.join(repo, folder, "package.json"), "utf8"))).scripts?.deploy ?? null; } catch { return null; }
+}
 
 const say: Record<Dot, string> = { live: "Live", error: "Error", testing: "Testing, not released", code: "Code example only" };
 const linkOf = (u: string | null | undefined) => !u || /github\.com/.test(u) ? null : /^https?:\/\//.test(u) ? u : `https://${u}`;
@@ -64,7 +78,9 @@ export async function releases(now = new Date()): Promise<Releases> {
     const why = dot === "error" ? (a.live && !a.live.ok ? `prod link answered ${a.live.status || "nothing"}` : a.release?.ok === false ? `release ${a.release.tag} failed` : "hourly tests failed")
       : dot === "live" ? (a.good && !a.play ? `released ${a.good.tag}` : "prod link answers") : dot === "code" ? say.code : a.play ? "prod link not checked" : "no prod deploy yet";
     const link = a.id === "rustybuns" ? "https://www.npmjs.com/package/rustybuns" : a.play;
-    return { name: a.name, dot, why, link, pushed: a.commit?.at ?? null, code: `https://github.com/${OWNER}/${HOME}/tree/main/${a.id === "rustybuns" ? "packages" : appDir(a.id)}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }) };
+    const folder = a.id === "rustybuns" ? "packages" : appDir(a.id), pushed = a.commit?.at ?? null, deployed = a.deploy?.at ?? null;
+    return { name: a.name, dot, why, link, pushed, code: `https://github.com/${OWNER}/${HOME}/tree/main/${folder}`, ...(perApp.get(a.id) ?? { today: 0, week: 0 }),
+      id: a.id, dir: folder, deployed, owed: owed({ id: a.id, link, dot, pushed, deployed }), deploy: deployOf(a.id, deployScript(folder)) };
   });
 
   const perRepo = tally(found.map((f) => ({ mergedAt: f.closedAt, repo: f.repository.name })), (p) => [p.repo], now);
@@ -86,20 +102,32 @@ export async function releases(now = new Date()): Promise<Releases> {
     const dot = repoDot({ archived: r.isArchived, link, live, lastRun, daysQuiet });
     const why = r.isArchived ? "archived" : dot === "error" ? (live && !live.ok ? `prod link answered ${live.status || "nothing"}` : "last run on main failed")
       : dot === "live" ? "prod link answers" : dot === "testing" ? `pushed ${Math.floor(daysQuiet)}d ago, no prod link` : "no prod link, quiet";
-    return { name: r.name, dot, why, link, pushed: r.pushedAt, code: r.url, ...counts };
+    return { name: r.name, dot, why, link, pushed: r.pushedAt, code: r.url, ...counts, id: null, dir: null, deployed: null, owed: false, deploy: null };
   }));
   return { at: now.toISOString(), repos: busiest(rows), apps: busiest(apps) };
 }
 
 // ---- the page -----------------------------------------------------------------------------------
 
-function table(rows: Row[], id: string) {
+const at = (iso: string | null, none = "never") => iso ? esc(pacific(iso)) : `<span class="none">${none}</span>`;
+
+function table(rows: Row[], id: string, deploys = false) {
   const tr = (r: Row) => `<tr class="d-${r.dot}">
     <td class="who"><span class="dot" title="${esc(say[r.dot])}: ${esc(r.why)}"></span><a href="${esc(r.code)}">${esc(r.name)}</a><small>${esc(r.why)}</small></td>
     <td class="n${r.today ? "" : " zero"}">${r.today}</td><td class="n${r.week ? "" : " zero"}">${r.week}</td>
-    <td class="when">${r.pushed ? esc(pacific(r.pushed)) : `<span class="none">never</span>`}</td>
+    <td class="when">${at(r.pushed)}</td>
+    ${deploys ? `<td class="when${r.owed ? " owed" : ""}">${r.link && r.id !== "rustybuns" ? at(r.deployed, "not logged") : `<span class="none">-</span>`}</td>` : ""}
     <td class="prod">${r.link ? `<a href="${esc(r.link)}">${esc(r.link.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a>` : `<span class="none">none</span>`}</td></tr>`;
-  return `<div class="scroll"><table id="${id}"><thead><tr><th>Status</th><th class="n">PRs today</th><th class="n">PRs this week</th><th>Last push</th><th>Prod link</th></tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
+  return `<div class="scroll"><table id="${id}"><thead><tr><th>Status</th><th class="n">PRs today</th><th class="n">PRs this week</th><th>Last push</th>${deploys ? "<th>Last deploy</th>" : ""}<th>Prod link</th></tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
+}
+
+/** The live apps main has moved since their last deploy, each with the line that ships it again from its folder. */
+function owedList(rows: Row[]) {
+  const owe = rows.filter((r) => r.owed);
+  if (!owe.length) return `<p class="clear">Every live app is deployed up to main.</p>`;
+  const li = (r: Row) => `<li><b>${esc(r.name)}</b><span class="when">merged ${at(r.pushed)} · deployed ${at(r.deployed, "not logged")}</span>
+    <code>${r.deploy ? `cd ${esc(r.dir ?? "")} &amp;&amp; ${r.deploy.plan ? "bunx rustybuns plan &amp;&amp; " : ""}${esc(r.deploy.cmd)}` : "no deploy script"}</code></li>`;
+  return `<p class="how">Run <code>bun ~/.rustybuns/releases/rustybuns/scripts/releases.ts --rerelease</code> to walk them one at a time, plan first.</p><ol class="owed">${owe.map(li).join("")}</ol>`;
 }
 
 export function page(d: Releases) {
@@ -145,25 +173,78 @@ tr:last-child td { border-bottom: 0; }
 .when { white-space: nowrap; font: 13px var(--mono); color: var(--muted); }
 .prod a { color: var(--link); font: 13px var(--mono); word-break: break-all; }
 .none { color: var(--code); font: 13px var(--mono); }
+td.owed { color: var(--testing); }
+td.owed .none { color: var(--testing); }
+ol.owed { margin: 0; padding: 0; list-style: none; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; counter-reset: n; }
+ol.owed li { background: var(--panel); padding: 10px 14px; display: grid; grid-template-columns: 28px 1fr; column-gap: 8px; row-gap: 2px; counter-increment: n; }
+ol.owed li::before { content: counter(n); grid-row: span 3; font: 500 16px var(--mono); color: var(--muted); }
+ol.owed b { font-weight: 700; }
+ol.owed .when { color: var(--muted); }
+code { font: 12px var(--mono); color: var(--fg); background: color-mix(in srgb, var(--line) 60%, transparent); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; justify-self: start; }
+.how, .clear { margin: 0; color: var(--muted); font: 13px var(--mono); }
 a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 2px; }
 </style>
 <main>
   <header><h1>Releases</h1><p>Every app in RustyBuns, then every repo. Busiest first. Scanned ${esc(when)}; "today" starts at midnight.</p></header>
-  <section><h2><b>Apps in RustyBuns</b> ${d.apps.length}</h2><div class="legend">${legend(d.apps)}</div>${table(d.apps, "apps")}</section>
+  <section><h2><b>To re-release</b> ${d.apps.filter((r) => r.owed).length} live apps behind main</h2>${owedList(d.apps)}</section>
+  <section><h2><b>Apps in RustyBuns</b> ${d.apps.length}</h2><div class="legend">${legend(d.apps)}</div>${table(d.apps, "apps", true)}</section>
   <section><h2><b>Repos</b> ${d.repos.length} on QuinnsCode</h2><div class="legend">${legend(d.repos)}</div>${table(d.repos, "repos")}</section>
 </main>`;
 }
 
 // ---- the schedule ------------------------------------------------------------------------------
 
-const prompt = () => `Refresh one of my Artifacts from a file on disk. Do only this, then reply in one line.
+const publishPrompt = () => `Refresh one of my Artifacts from a file on disk. Do only this, then reply in one line.
 Releases page ${ARTIFACT}: Artifact read it, then Artifact publish with url ${ARTIFACT} and file_path ${file}.
 Change nothing else. Reply: "releases published" or what failed.`;
 
-const publish = () => headless(prompt(), "Artifact ToolSearch", repo, dir);
+const publish = () => headless(publishPrompt(), "Artifact ToolSearch", repo, dir);
 
 const job = (from: string) => ({ label: LABEL, script: path.join(from, "scripts", "releases.ts"), args: ["--publish"], cwd: from,
   log: path.join(dir, "releases.log"), when: Array.from({ length: 16 }, (_, i) => ({ Hour: 7 + i, Minute: 17 })) });
+
+// ---- re-release --------------------------------------------------------------------------------
+
+/** Held while --rerelease runs, so the hourly --publish doesn't move this checkout under a deploy. */
+const lock = path.join(dir, "rerelease.lock");
+const held = () => { try { process.kill(Number(readFileSync(lock, "utf8")), 0); return true; } catch { return false; } };
+const run = (cmd: string[], cwd: string) => Bun.spawnSync(cmd, { cwd, stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exitCode === 0;
+const ask = (q: string) => (globalThis.prompt(q) ?? "").trim().toLowerCase();
+
+/** Walk the owed apps busiest first: ask, plan (for a rustybuns deploy), ask again, deploy. The CLI's own guards still
+ *  hold (behind main, deletes, its y/N). A deploy that doesn't write itself down gets a report-deploy, so the page
+ *  shows it next hour. */
+function rerelease(d: Releases) {
+  const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: repo }).stdout.toString().trim();
+  const main = Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: repo }).stdout.toString().trim();
+  if (!head || head !== main) { console.log(`${repo} is not on origin/main; run it from ~/.rustybuns/releases/rustybuns, which follows main.`); return 1; }
+  const cli = path.join(repo, "packages", "cli", "src", "index.ts");
+  const owe = d.apps.filter((r) => r.owed && r.deploy && r.dir && r.id);
+  const done: string[] = [], skipped: string[] = [], failed: string[] = [];
+  console.log(`${owe.length} live apps behind main. y deploys, s skips, q stops.`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(lock, String(process.pid));
+  try {
+    for (const [i, r] of owe.entries()) {
+      const { id, dir: folder, deploy } = r as Row & { id: string; dir: string; deploy: { plan: boolean; cmd: string } };
+      console.log(`\n[${i + 1}/${owe.length}] ${r.name}: merged ${pacific(r.pushed ?? "")}, deployed ${r.deployed ? pacific(r.deployed) : "not logged"}`);
+      const a = ask(`  ${deploy.plan ? "plan it" : `run ${deploy.cmd}`}? [y/s/q]`);
+      if (a === "q") break;
+      if (a !== "y") { skipped.push(r.name); continue; }
+      const cwd = path.join(repo, folder), t0 = Date.now();
+      if (deploy.plan) {
+        if (!run(["bun", cli, "plan"], cwd)) { failed.push(`${r.name} (plan)`); continue; }
+        if (ask("  read the plan: any delete or replace, say n. Deploy now? [y/N]") !== "y") { skipped.push(r.name); continue; }
+      }
+      if (!run(["sh", "-c", deploy.cmd], cwd)) { failed.push(r.name); continue; }
+      const log = (() => { try { return readFileSync(DEPLOY_LOG, "utf8"); } catch { return null; } })();
+      if (!(Date.parse(lastDeploys(log, [id]).get(id)?.at ?? "") >= t0)) run(["bun", cli, "report-deploy", "--app", id], cwd);
+      done.push(r.name);
+    }
+  } finally { rmSync(lock, { force: true }); }
+  console.log(`\ndeployed ${done.length}: ${done.join(", ") || "none"}\nskipped ${skipped.length}: ${skipped.join(", ") || "none"}\nfailed ${failed.length}: ${failed.join(", ") || "none"}`);
+  return failed.length ? 1 : 0;
+}
 
 if (import.meta.main) {
   help(import.meta.path);
@@ -174,13 +255,16 @@ if (import.meta.main) {
     process.exit();
   }
   if (args.includes("--uninstall")) { uninstall(LABEL); console.log("uninstalled"); process.exit(); }
-  const publishing = args.includes("--publish");
+  const publishing = args.includes("--publish"), walking = args.includes("--rerelease");
+  if (publishing && held()) { console.log("a --rerelease is deploying from this checkout; skipping this hour"); process.exit(); }
+  if (walking && held()) { console.log(`another --rerelease is running (${lock})`); process.exit(1); }
   // The job's checkout stays wherever it was installed; catch it up so page changes and new apps reach the job (#5428).
-  if (publishing && !process.env.RELEASES_CAUGHT_UP && catchUp(repo) === "moved") {
-    const again = Bun.spawnSync([process.execPath, import.meta.path, ...args], { cwd: repo, stdout: "inherit", stderr: "inherit", env: { ...process.env, RELEASES_CAUGHT_UP: "1" } });
+  if ((publishing || walking) && !process.env.RELEASES_CAUGHT_UP && catchUp(repo) === "moved") {
+    const again = Bun.spawnSync([process.execPath, import.meta.path, ...args], { cwd: repo, stdin: "inherit", stdout: "inherit", stderr: "inherit", env: { ...process.env, RELEASES_CAUGHT_UP: "1" } });
     process.exit(again.exitCode ?? 1);
   }
   const d = await releases();
+  if (walking) process.exit(rerelease(d));
   const out = publishing ? file : args.includes("--html") ? args[args.indexOf("--html") + 1] : undefined;
   if (args.includes("--json")) console.log(JSON.stringify(d, null, 2));
   else if (out) {
