@@ -7,13 +7,14 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { isRecord } from "./guard.ts";
-import { esc } from "./index.ts";
+// It imports nothing from @rustybuns/util: a desktop build loads vite.config.ts under Node, which only strips types,
+// and guard.ts (through index.ts) holds a class Node can't run that way. So the escape is written out here.
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The string at a dotted path in the copy, or an error naming the path and the file. */
 function lineOf(copy: unknown, path: string, file: string): string {
   let at: unknown = copy;
-  for (const k of path.split(".")) at = isRecord(at) ? at[k] : undefined;
+  for (const k of path.split(".")) at = at !== null && typeof at === "object" && !Array.isArray(at) ? Reflect.get(at, k) : undefined;
   if (typeof at !== "string") throw new Error(`${file} has no line "${path}" (index.html asks for it with data-copy)`);
   return at;
 }
