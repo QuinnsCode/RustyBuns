@@ -53,9 +53,11 @@ export function decimatePly(bytes: Uint8Array<ArrayBuffer>, budget: number): Uin
   const shBytes = sh ? sh.props.length : 0;
   const chunkOff = h.body, vertOff = chunkOff + chunk.count * CHUNK_PROPS.length * 4, shOff = vertOff + n * 16;
   if (bytes.length < shOff + n * shBytes) return bytes;
-  const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length);
-  const cd = new Float32Array(buf, chunkOff, chunk.count * CHUNK_PROPS.length);
-  const vd = new Uint32Array(buf, vertOff, n * 4);
+  // copied from the end of the header on: a header whose length isn't a multiple of 4 leaves the tables
+  // unaligned in the file, and typed arrays can't start there
+  const buf = bytes.slice(chunkOff, shOff).buffer;
+  const cd = new Float32Array(buf, 0, chunk.count * CHUNK_PROPS.length);
+  const vd = new Uint32Array(buf, vertOff - chunkOff, n * 4);
 
   // Decode what re-chunking needs: position, log scale, colour, opacity.
   const pos = new Float32Array(n * 3), scl = new Float32Array(n * 3), col = new Float32Array(n * 3);
@@ -82,7 +84,7 @@ export function decimatePly(bytes: Uint8Array<ArrayBuffer>, budget: number): Uin
 
   const m = keep.length, chunks = Math.ceil(m / CHUNK);
   const outCd = new Float32Array(chunks * 18), outVd = new Uint32Array(m * 4), outSh = new Uint8Array(m * shBytes);
-  const src = new Uint8Array(buf);
+  const src = bytes;
   for (let c = 0; c < chunks; c++) {
     const from = c * CHUNK, to = Math.min(m, from + CHUNK), o = c * 18;
     for (let a = 0; a < 18; a++) outCd[o + a] = a % 6 < 3 ? Infinity : -Infinity;
