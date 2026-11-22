@@ -12,6 +12,17 @@
         "src/**/*.ts",
         "test/**/*.ts"
       ]
+    },
+    "apps/at-lens": {
+      "entry": [
+        "index.html",
+        "src/edge/worker.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+      ]
     }
   }
 }
