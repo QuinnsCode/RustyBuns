@@ -187,7 +187,10 @@ export async function removeEverywhere(conf: Pick<Env, "DB" | "SPACE">, by: { id
   const mine = (await conf.DB.prepare(SPACES_OF).bind(by.id).all<{ id: string }>()).results.map((r) => r.id).filter((s) => s !== skip && theirs.has(s));
   let done = 0, refused = 0;
   for (const sid of mine) {
-    const r = await spaceOf(conf.SPACE, sid).fetch(new Request(`https://space/kick?${new URLSearchParams({ by: by.id, name: by.name, id })}`)).catch(() => null);
+    // A space nobody has opened yet doesn't know its own id or studio, so they go with the order.
+    const studio = await conf.DB.prepare("SELECT studio_id FROM spaces WHERE id = ?").bind(sid).first<string | null>("studio_id");
+    const q = new URLSearchParams({ by: by.id, name: by.name, id, sid, ...(studio ? { studio } : {}) });
+    const r = await spaceOf(conf.SPACE, sid).fetch(new Request(`https://space/kick?${q}`)).catch(() => null);
     if (r?.ok) done++; else if (r?.status !== 403) refused++;
   }
   return { done, refused };
@@ -257,6 +260,9 @@ export class Space {
     }
     // "Remove someone everywhere" (removeEverywhere): `by` runs this space too (D1 says so here, not the caller), so they come out of it by its rules.
     if (url.pathname === "/kick") {
+      const sid = url.searchParams.get("sid"), studio = url.searchParams.get("studio");
+      if (sid) await this.ctx.storage.put("sid", sid);
+      if (studio) await this.ctx.storage.put("studio", studio);
       const by = url.searchParams.get("by") ?? "", id = url.searchParams.get("id") ?? "", seat = by && id && by !== id ? await seatIn(this.env, await this.sid(), by) : null;
       if (!seat?.runs) return json({ ok: false, error: "you don't run that space" }, 403);
       const why = await this.kick({ id: by, name: url.searchParams.get("name") ?? "", app: "", owner: true, role: seat.role }, id, true);
