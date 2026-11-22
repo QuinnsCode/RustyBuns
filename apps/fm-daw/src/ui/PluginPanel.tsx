@@ -1,5 +1,5 @@
 // A track's sound picked off the track menu: its own FM voice, a CLAP plugin on this computer (#5265), or a Web Audio
-// Module played in the page (#4899): one FM DAW carries, or one from a link. On a plugin track the plugin's parameters
+// Module played in the page (#4899): one FM DAW carries, or one from a link; or no instrument at all (the notes kept, unheard). On a plugin track the plugin's parameters
 // are the sliders, MIDI learn works on them, and a plugin that stops says so here. An FM track's Insert (#5359) puts a
 // web effect on its sound, picked the same way.
 import { useEffect, useState } from "react";
@@ -22,7 +22,7 @@ const SLOTS = {
  * The track menu: FM, or one of the plugins found. The current plugin stays listed even when this computer hasn't got
  * it. With `slot` "insert", the track's Insert: no effect, or one of the effects.
  */
-export function TrackSound(props: { track: TrackDoc; choices: () => Promise<PluginChoice[]>; onPlugin(p: TrackPlugin | null): void; slot?: "plugin" | "insert" }) {
+export function TrackSound(props: { track: TrackDoc; choices: () => Promise<PluginChoice[]>; onPlugin(p: TrackPlugin | null): void; slot?: "plugin" | "insert"; onNone?(): void }) {
   const words = SLOTS[props.slot ?? "plugin"];
   const [list, setList] = useState<PluginChoice[] | null>(null);
   useEffect(() => { let on = true; void props.choices().then((l) => { if (on) setList(l); }); return () => { on = false; }; }, [props.choices]);
@@ -50,13 +50,15 @@ export function TrackSound(props: { track: TrackDoc; choices: () => Promise<Plug
   );
   return (
     <label className="field inline"><span className="silk">{words.label}</span>
-      <select value={cur ? key(mine ?? cur) : ""} aria-label={words.aria}
+      <select value={props.onNone && props.track.voiceless ? "none" : cur ? key(mine ?? cur) : ""} aria-label={words.aria}
         onChange={(e) => {
           if (e.currentTarget.value === "link") return setLink("");
+          if (e.currentTarget.value === "none") return props.onNone?.();
           const c = all.find((x) => key(x) === e.currentTarget.value);
           props.onPlugin(c ? { path: c.path, index: c.index, ...(c.id ? { id: c.id } : {}), name: c.name, ...(c.web ? { web: true } : {}), values: [] } : null);
         }}>
         <option value="">{words.none}</option>
+        {props.onNone && <option value="none" title="The notes stay on the track and go to MIDI out and the sesh, but make no sound here">No instrument</option>}
         {all.length > 0 && <optgroup label="Plugins">
           {all.map((c) => <option key={key(c)} value={key(c)}>{c.name}{c.vendor ? ` · ${c.vendor}` : ""}</option>)}
         </optgroup>}

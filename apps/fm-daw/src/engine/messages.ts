@@ -8,11 +8,13 @@ import type { Channel } from "../desk.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[]; plugins: boolean[] }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean; amps: (TrackAmp | null)[]; plugins: boolean[]; voiceless: boolean[] }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "audible"; mask: boolean[] }
+  /** Tracks with no instrument: their notes reach no voice (src/project.ts `voiceless`). */
+  | { t: "voiceless"; mask: boolean[] }
   | { t: "tempo"; bpm: number; swing: number; loopBeats: number }
   | { t: "space"; amount: number }
   | { t: "squash"; amount: number }
