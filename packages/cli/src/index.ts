@@ -65,11 +65,12 @@ import { logDeploy, reportDeploy, versionHere } from "./report-deploy.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
-import { driftRepairQuestion, ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
+import { driftRepairQuestion, ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion, realReasons } from "./environment.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { callDrain, drainFlags, oldCodeNote } from "./drain.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
-import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
+import { runTests, testFlags } from "./test-run.ts";
+import { PROF_SECRET, boxUrl, stateUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
@@ -1348,7 +1349,62 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "skill", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
+/** `rustybuns test`: journey tests on the local emulators, or a throwaway stage made and destroyed around them (test-run.ts). */
+async function testCommand(args: string[]) {
+  const flags = testFlags(args);
+  const self = [process.execPath, fileURLToPath(import.meta.url)];
+  // Ctrl-C reaches the children too; this process stays up so the stage (or dev) is torn down first.
+  const onInt = () => console.error("\nstopping: tearing down what this run made first");
+  process.on("SIGINT", onInt);
+  try {
+    process.exitCode = await runTests(flags, {
+      log: (l) => console.log(l),
+      cli: (a) => Bun.spawn([...self, ...a], { stdio: ["inherit", "inherit", "inherit"] }).exited,
+      start: (a) => {
+        const p = Bun.spawn([...self, ...a], { stdio: ["ignore", "pipe", "pipe"] });
+        let out = "";
+        const read = async (s: ReadableStream<Uint8Array>) => { const dec = new TextDecoder(); for await (const c of s) out += dec.decode(c, { stream: true }); };
+        void read(p.stdout); void read(p.stderr);
+        return {
+          exited: p.exited,
+          output: () => out,
+          stop: async () => {
+            if (p.exitCode !== null) return;
+            p.kill("SIGTERM");
+            if (await Promise.race([p.exited.then(() => true), Bun.sleep(15_000).then(() => false)])) return;
+            p.kill("SIGKILL");
+            await p.exited;
+          },
+        };
+      },
+      bunTest: (filters, env) => Bun.spawn([process.execPath, "test", ...filters], { stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, ...env } }).exited,
+      stageUrl: (stage) => {
+        const cfg = loadedFor;
+        if (!cfg) return null;
+        return (edgeOn(cfg) && cfg.worker ? stateUrl(process.cwd(), cfg, stage, "Worker") : null) ?? boxUrl(process.cwd(), cfg, stage);
+      },
+      priced: async (stage, yes) => {
+        const cfg = loadedFor = await loadConfig(stage);
+        if (!cfg.worker && !cfg.targets.box) return "desktop-only app: no edge or box stack to put on a stage";
+        const real = realReasons(cfg, stage);
+        if (real.length) return `stage ${stage} is REAL (${real.join("; ")}), and a test stage is destroyed afterwards. Pick another --stage=NAME.`;
+        checkSpend(cfg);
+        console.log(`a throwaway stage creates real resources for the length of the run:\n${costReport(cfg)}\n`);
+        if (yes) return null;
+        if (!process.stdin.isTTY || !process.stdout.isTTY) return "no terminal to ask: pass --yes to deploy the throwaway stage";
+        const { createInterface } = await import("node:readline/promises");
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const a = await rl.question(`deploy stage ${stage}, test it, then destroy it? [y/N] `);
+          return /^y(es)?$/i.test(a.trim()) ? null : "not deployed (answered no)";
+        } finally { rl.close(); }
+      },
+    });
+  } finally { process.off("SIGINT", onInt); }
+}
+let loadedFor: RustyBunsConfig | null = null;
+
+const COMMANDS = ["test", "init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "skill", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1458,6 +1514,7 @@ try {
       break;
     }
     case "containers": await containersCommand(rest); break;
+    case "test": await testCommand(rest); break;
     case "smoke": {
       // Does this app run on Rusty Buns? A throwaway copy, installed, initialised, built and booted on the local twins.
       const dir = rest.find((a) => !a.startsWith("--")) ?? ".";
@@ -1578,6 +1635,11 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
+  test [FILTER…]             journey tests (paths with "journey", or FILTER) against \`dev\` on the
+                             local emulators: free, nothing on any account. Tests read RUSTYBUNS_TEST_URL
+       [--stage[=NAME]]      against a throwaway stage (test_$USER) instead: priced and asked first
+                             (--yes in a script), destroyed afterwards even when a test fails (--keep not)
+       [--url URL]           against an app that already runs
   dev                        alchemy dev: workerd + local simulators for the edge column
                              plan, deploy and dev build the Worker without the deploy's logins;
          [--sandbox]         with an empty HOME too, package caches kept (or RB_SANDBOX=1)
