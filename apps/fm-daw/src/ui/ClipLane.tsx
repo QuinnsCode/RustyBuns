@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TAKE_RATE, spanOf, type Clip } from "../take.ts";
 import { clipEnd, cutClip, deleteClip, moveClip, slipClip, trimClip } from "../project.ts";
+import { Playhead } from "./Playhead.tsx";
 
 const HEIGHT = 88;
 /** How near an edge (px) a press grabs it: a finger needs more room than a mouse. */
@@ -112,8 +113,7 @@ export function ClipLane(props: {
 
   return (
     <div className="clip-lane" style={{ "--track": props.color } as React.CSSProperties}>
-      <div className="clip-tools">
-        <span className="silk">Clips</span>
+      <div className="clip-tools" role="toolbar" aria-label="Clips">
         <button className={tool === "cut" ? "ghost icon on" : "ghost icon"} aria-pressed={tool === "cut"} onClick={() => setTool(tool === "cut" ? "edit" : "cut")}
           title="Cut: click a clip to split it on the grid (or press C over the lane)" aria-label="Cut"><Icon d={SCISSORS} /></button>
         <button className={tool === "slip" ? "ghost icon on" : "ghost icon"} aria-pressed={tool === "slip"} onClick={() => setTool(tool === "slip" ? "edit" : "slip")}
@@ -124,6 +124,7 @@ export function ClipLane(props: {
         <canvas ref={canvas} tabIndex={0} aria-label="Clips: drag an edge to trim, the middle to move, Alt-drag to slip the sound, C to cut at the pointer"
           onPointerDown={down} onPointerMove={move} onPointerUp={() => { grab.current = null; }} onPointerCancel={() => { grab.current = null; }}
           onPointerLeave={() => { if (!grab.current) hover.current = null; }} onKeyDown={key} />
+        <Playhead loopBeats={span} from={from} />
       </div>
     </div>
   );

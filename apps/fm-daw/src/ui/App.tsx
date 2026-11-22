@@ -814,6 +814,11 @@ export function App() {
   viewRef.current = win;
   const windowed = (tr: TrackDoc) => windowNotes(tr.notes, win);
   const color = TRACK_COLORS[selected];
+  // the selected track's audio, inside the Timeline under its editor so the ruler, zoom and playhead line up with it
+  const clipLane = clipsOf(t).length > 0 && (
+    <ClipLane key={selected} clips={clipsOf(t)} sound={(id) => takes.current.get(id)} bpm={project.bpm} loopBeats={L} from={win.from} span={win.span}
+      grid={grid.beats} color={color} onClips={(clips, group) => commit({ t: "clips", track: selected, clips }, group ? { group } : {})} />
+  );
   const trackSound = <TrackSound track={t} choices={pluginChoices} onPlugin={(plugin) => commit({ t: "plugin", track: selected, plugin })} />;
 
   return (
@@ -997,6 +1002,7 @@ export function App() {
                   onSelect={setSelected} onAudition={audition}
                   onNotes={(i, notes) => commit({ t: "notes", track: i, notes: shown[i].back(notes) })} />;
               })()}
+              {clipLane}
             </Timeline>
           </>) : (<>
             <Timeline view={shownView} win={win} loop={L} beatsPerBar={BEATS_PER_BAR} tracks={project.tracks} colors={TRACK_COLORS}
@@ -1007,12 +1013,9 @@ export function App() {
                   onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: shown.back(notes) })}
                   onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />;
               })()}
+              {clipLane}
             </Timeline>
           </>)}
-          {view === "pattern" && clipsOf(t).length > 0 && (
-            <ClipLane key={selected} clips={clipsOf(t)} sound={(id) => takes.current.get(id)} bpm={project.bpm} loopBeats={L} from={win.from} span={win.span}
-              grid={grid.beats} color={color} onClips={(clips, group) => commit({ t: "clips", track: selected, clips }, group ? { group } : {})} />
-          )}
 
           <Perform track={t} color={color} repeat={repeat} bend={bend} onRepeat={setRepeat} onBend={setBend}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
