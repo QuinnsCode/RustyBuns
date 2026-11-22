@@ -42,11 +42,14 @@ export const DEFAULT_SERVER_ONLY: RegExp[] = [
 
 const EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs"];
 
-function walk(dir: string, ignore: RegExp[], out: string[] = []): string[] {
+/** Every source file under `dir`. The ignore rules see the path from `root` (`/src/x.ts`), not the absolute one: an app that
+ *  lives under a `.rustybuns` or `scripts` folder of its own (the releases job checkout, ~/.rustybuns/releases) still scans. */
+function walk(dir: string, ignore: RegExp[], root: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
-    if (ignore.some((r) => r.test(p))) continue;
-    if (statSync(p).isDirectory()) walk(p, ignore, out);
+    const rel = "/" + relative(root, p).replace(/\\/g, "/");
+    if (ignore.some((r) => r.test(rel))) continue;
+    if (statSync(p).isDirectory()) walk(p, ignore, root, out);
     else if (EXTS.includes(extname(p))) out.push(p);
   }
   return out;
@@ -94,7 +97,7 @@ export function analyze(opts: BoundaryOptions = {}) {
   const ignore = opts.ignore ?? [/node_modules/, /\.test\.[tj]sx?$/, /\/scripts\//, /\.d\.ts$/];
   if (!existsSync(srcDir)) return { modules: [] as ModuleInfo[], byFile: new Map<string, ModuleInfo>() };
 
-  const files = walk(srcDir, ignore);
+  const files = walk(srcDir, ignore, root);
   const byFile = new Map<string, ModuleInfo>();
 
   const resolveLocal = (from: string, spec: string): string | null => {

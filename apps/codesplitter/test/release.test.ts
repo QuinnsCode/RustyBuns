@@ -8,7 +8,7 @@ import { answer, checkPlan, deployLine, parseAuthToken, release, Stop, type IO, 
 const plain: Mode = { checksNew: false };
 const plan = (...lines: string[]) => lines.join("\n");
 /** As `rustybuns plan` really prints it: Alchemy logs the plan through Effect, a prefix on every line; the CLI's own warnings are plain. */
-const logged = (...lines: string[]) => lines.map((l) => l.startsWith("warning: ") || !l ? l : `[00:01:08.172] INFO (#1): ${l}`).join("\n");
+const logged = (...lines: string[]) => lines.map((l) => l.startsWith("warning: ") || !l ? l : `[00:01:08.172] INFO: ${l}`).join("\n");
 
 // What a normal release prints: an update to the Worker, everything else noop.
 const UPDATE = "building the worker: bun run build.ts\n" + logged("Plan: 1 to update", "[AGENT_SANDBOX] noop", "[DB] noop", "[Worker] update", "[Worker/DB] noop");
