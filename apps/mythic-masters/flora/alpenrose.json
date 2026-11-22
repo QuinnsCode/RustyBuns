@@ -1,0 +1,90 @@
+{
+ "id": "alpenrose",
+ "name": "Alpenrose",
+ "biome": "mountains",
+ "generator": "tree",
+ "seed": 13,
+ "height": 1.1,
+ "budget": [
+  3200,
+  700
+ ],
+ "note": "Low mats of dark glossy leaves on the high pastures, rust-brown beneath, covered in early summer with clusters of small crimson-pink bells.",
+ "trunk": {
+  "stems": 12,
+  "spread": 0.4,
+  "splay": 1,
+  "radius": 0.018,
+  "taper": 0.8,
+  "segments": 5,
+  "sides": 4,
+  "wobble": 0.45,
+  "kink": 0.2,
+  "rise": 0.3,
+  "length": 0.95
+ },
+ "bark": {
+  "colors": [
+   "#5a4a40",
+   "#3a2e28"
+  ]
+ },
+ "levels": [
+  {
+   "count": 5,
+   "start": 0.4,
+   "end": 1,
+   "angle": 45,
+   "length": 0.45,
+   "rise": 0.3,
+   "wobble": 0.4,
+   "segments": 3,
+   "radius": 0.6,
+   "sides": 3,
+   "min_radius": 0
+  }
+ ],
+ "foliage": [
+  {
+   "type": "leaves",
+   "colors": [
+    "#2a4a2a",
+    "#30502e",
+    "#284628"
+   ],
+   "tip_colors": [
+    "#4a5a30"
+   ],
+   "size": 0.09,
+   "per": 8,
+   "start": 0.5,
+   "end": 1,
+   "width": 0.42,
+   "spread": 0.8,
+   "outward": 0.8,
+   "hang": 0.15,
+   "lo": 0.4,
+   "lo_size": 1.6,
+   "core": 0.9,
+   "core_dark": 0.3
+  },
+  {
+   "type": "truss",
+   "colors": [
+    "#d0304a",
+    "#c42848",
+    "#e0506a"
+   ],
+   "tip_colors": [
+    "#f080a0"
+   ],
+   "size": 0.065,
+   "per": 1,
+   "start": 1,
+   "end": 1,
+   "share": 0.85,
+   "petals": 12
+  }
+ ],
+ "ao_reach": 0.4
+}

@@ -129,6 +129,20 @@ const rough = (blotches: number, dots: number): Paint => (g, n, rnd, base) => {
   blotch(g, n, rnd, blotches, 0.035);
   speckle(g, n, rnd, dots, 0.1, 1.3);
 };
+/** Sand the wind has combed: soft ripples running across the tile, light on one face and shaded on the other, and grains. */
+const ripples: Paint = (g, n, rnd, base) => {
+  g.fillStyle = css(base); g.fillRect(0, 0, n, n);
+  blotch(g, n, rnd, 30, 0.05);
+  const bands = 12, wave = n / bands;
+  for (let k = 0; k < bands; k++) for (const [dy, shade, a] of [[0, 0.72, 0.5], [wave * 0.22, 1.18, 0.35]] as const) {
+    g.strokeStyle = css(base, shade); g.globalAlpha = a; g.lineWidth = wave * 0.22;
+    g.beginPath();
+    for (let x = 0; x <= n; x += 8) { const y = k * wave + dy + Math.sin((x / n) * Math.PI * 4 + k) * wave * 0.3; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  speckle(g, n, rnd, 60000, 0.14, 1.1);
+};
 /** Folds hanging straight down: light and shade across the tile, in bands. */
 const folds: Paint = (g, n, rnd, base) => {
   for (let x = 0; x < n; x++) { const s = 0.75 + 0.25 * Math.sin((x / n) * Math.PI * 2 * 6) + 0.05 * Math.sin(x * 0.3); g.fillStyle = css(base, s); g.fillRect(x, 0, 1, n); }
@@ -172,6 +186,7 @@ const LOOKS: Record<string, { paint: Paint; metres: number; rough: number; metal
   ceilingTile: { paint: tiles(4, 0.7, 7), metres: 2.4, rough: 0.95, bump: 1.4 },
   fabric: { paint: rough(20, 50000), metres: 0.6, rough: 0.95, bump: 0.8 },
   grille: { paint: grille, metres: 0.25, rough: 0.9, bump: 0.6, n: 256 },
+  sand: { paint: ripples, metres: 3, rough: 1, bump: 1.6 },
 };
 const painted = new Map<string, Painted>();
 function paint(name: string, base: THREE.Color): Painted | null {

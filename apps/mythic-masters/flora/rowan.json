@@ -1,0 +1,95 @@
+{
+ "id": "rowan",
+ "name": "Rowan",
+ "biome": "highlands",
+ "generator": "tree",
+ "seed": 127,
+ "height": 8,
+ "budget": [
+  6000,
+  1300
+ ],
+ "note": "The witch's tree planted by every croft door: slim and grey-barked, feathery leaves, and heavy clusters of scarlet berries.",
+ "trunk": {
+  "radius": 0.14,
+  "lean": 0.06,
+  "wobble": 0.25,
+  "kink": 0.08,
+  "taper": 0.85,
+  "segments": 10,
+  "sides": 8,
+  "flare": 0.15
+ },
+ "bark": {
+  "colors": [
+   "#8a8478",
+   "#5a544a"
+  ]
+ },
+ "levels": [
+  {
+   "count": 8,
+   "start": 0.35,
+   "end": 0.95,
+   "angle": 45,
+   "length": 0.38,
+   "shape": "ovoid",
+   "droop": 0.05,
+   "rise": 0.25,
+   "wobble": 0.4,
+   "segments": 4,
+   "radius": 0.5,
+   "sides": 5
+  },
+  {
+   "count": 4,
+   "start": 0.35,
+   "end": 1,
+   "angle": 40,
+   "length": 0.4,
+   "rise": 0.2,
+   "wobble": 0.35,
+   "segments": 3,
+   "radius": 0.55,
+   "sides": 4,
+   "lo": 0.6
+  }
+ ],
+ "foliage": [
+  {
+   "type": "compound",
+   "colors": [
+    "#4a7a2e",
+    "#527e32",
+    "#5a8236"
+   ],
+   "tip_colors": [
+    "#7a9a40"
+   ],
+   "size": 0.07,
+   "per": 5,
+   "start": 0.5,
+   "end": 1,
+   "pairs": 6,
+   "arch": 0.35,
+   "lo": 0.4,
+   "core": 0.6,
+   "core_dark": 0.3
+  },
+  {
+   "type": "berries",
+   "colors": [
+    "#d02a1a",
+    "#e03a1e",
+    "#c42018"
+   ],
+   "size": 0.03,
+   "per": 1,
+   "start": 0.8,
+   "end": 1,
+   "cluster": 7,
+   "share": 0.65
+  }
+ ],
+ "ao_reach": 0.3
+}

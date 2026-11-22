@@ -30,7 +30,7 @@ import sceneryUrl from "../../../skate-tech-park/public/models/scenery-mid.glb?u
 /** The scenery set's kinds, then the ones made here. */
 const SCENERY = ["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag", "sage", "bush", "fern", "flower", "stump", "rock"] as const;
 const MADE = ["grass", "mushroom", "log", "reed", "boulder"] as const;
-/** The native plants grown in Blender, four a playable biome: public/models/flora/<id>.glb from flora/<id>.json. */
+/** The native plants grown in Blender, four a biome (the mountains, islands, coasts and highlands since 2026-11-22): public/models/flora/<id>.glb from flora/<id>.json. */
 export const GROWN = [
   "pitch-pine", "white-cedar", "blueberry", "pitcher-plant", // Pine Barrens
   "hemlock", "sugar-maple", "paper-birch", "rhododendron", // the eastern forests
@@ -39,15 +39,24 @@ export const GROWN = [
   "prickly-pear", "barrel-cactus", "ocotillo", "agave", // the Southwest desert
   "bald-cypress", "live-oak", "palmetto", "cypress-knees", // the bayou
   "eastern-redcedar", "sumac", "coneflower", "bluestem", // the Ozarks and the plains
+  "norway-spruce", "golden-larch", "mountain-pine", "alpenrose", // the mountains, the Alps to the Himalaya
+  "coconut-palm", "pandanus", "hibiscus", "ti-plant", // the islands
+  "stone-pine", "gorse", "harakeke", "marram", // the coasts
+  "scots-pine", "rowan", "heather", "bracken", // the highlands
 ] as const;
 export const KINDS = [...SCENERY, ...MADE, ...GROWN] as const;
 export type Grown = (typeof GROWN)[number];
-const isGrown = (k: Kind): k is Grown => (GROWN as readonly string[]).includes(k);
+export const isGrown = (k: Kind): k is Grown => (GROWN as readonly string[]).includes(k);
+/** The plants of the regions still to open (the mountains, islands, coasts and highlands): fetched once the world stands,
+ * so the first walkable frame waits only for the plants it can show. */
+export const LATER: readonly Grown[] = ["norway-spruce", "golden-larch", "mountain-pine", "alpenrose", "coconut-palm", "pandanus", "hibiscus", "ti-plant", "stone-pine", "gorse", "harakeke", "marram", "scots-pine", "rowan", "heather", "bracken"];
+const FIRST: readonly Grown[] = GROWN.filter((k) => !LATER.includes(k));
 export type Kind = (typeof KINDS)[number];
 export const TALL: ReadonlySet<Kind> = new Set(["pine", "aspen", "oak", "sequoia", "palm", "joshua", "saguaro", "snag", "pitch-pine", "white-cedar", "hemlock",
-  "sugar-maple", "paper-birch", "red-cedar", "bigleaf-maple", "white-pine", "tamarack", "bald-cypress", "live-oak", "eastern-redcedar"]);
+  "sugar-maple", "paper-birch", "red-cedar", "bigleaf-maple", "white-pine", "tamarack", "bald-cypress", "live-oak", "eastern-redcedar",
+  "norway-spruce", "golden-larch", "coconut-palm", "pandanus", "stone-pine", "scots-pine", "rowan"]);
 /** Trees whose far card is a spire (the rest are round). */
-const SPIRE: ReadonlySet<Kind> = new Set(["pine", "sequoia", "snag", "white-cedar", "hemlock", "red-cedar", "tamarack", "eastern-redcedar"]);
+const SPIRE: ReadonlySet<Kind> = new Set(["pine", "sequoia", "snag", "white-cedar", "hemlock", "red-cedar", "tamarack", "eastern-redcedar", "norway-spruce", "golden-larch"]);
 /** Plants of the water's edge: like reeds, they grow there and nowhere else. */
 const WET: ReadonlySet<Kind> = new Set(["reed", "pitcher-plant", "skunk-cabbage", "cattail", "cypress-knees"]);
 const CAP = 3200;      // instances a kind can show at once, near
@@ -94,12 +103,12 @@ export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
   desert: B(0.22, ["prickly-pear", 0.18, 0.8, 1.6], ["barrel-cactus", 0.08, 0.6, 1.3], ["ocotillo", 0.07, 3, 5.5], ["agave", 0.14, 0.6, 1.2], ["saguaro", 0.06, 4, 9], ["joshua", 0.06, 3, 6], ["sage", 0.2, 0.5, 1.1], ["rock", 0.15, 0.4, 2.2], ["snag", 0.02, 2, 4], ["boulder", 0.03, 2.5, 6]),
   swamp: B(0.65, ["bald-cypress", 0.22, 14, 24], ["live-oak", 0.07, 9, 14], ["palmetto", 0.22, 1, 2], ["cypress-knees", 0.06, 0.4, 0.9], ["snag", 0.08, 5, 10], ["sword-fern", 0.1, 0.8, 1.6], ["flower", 0.04, 0.3, 0.6], ["reed", 0.12, 1.6, 2.6], ["mushroom", 0.02, 0.15, 0.4], ["log", 0.04, 3, 6]),
   plains: B(0.3, ["eastern-redcedar", 0.1, 5, 11], ["sumac", 0.1, 2, 4], ["coneflower", 0.26, 0.6, 1.1], ["bluestem", 0.22, 1.1, 2], ["flower", 0.12, 0.3, 0.6], ["sage", 0.1, 0.4, 0.9], ["sugar-maple", 0.04, 8, 14], ["rock", 0.06, 0.4, 1.2]),
-  highlands: B(0.4, ["rock", 0.32, 0.5, 2.5], ["sage", 0.25, 0.4, 0.9], ["pine", 0.15, 6, 12], ["flower", 0.14, 0.3, 0.5], ["snag", 0.09, 3, 6], ["boulder", 0.05, 2.5, 7]),
+  highlands: B(0.45, ["scots-pine", 0.14, 10, 20], ["rowan", 0.06, 5, 9], ["heather", 0.3, 0.3, 0.6], ["bracken", 0.14, 0.7, 1.3], ["rock", 0.21, 0.5, 2.5], ["flower", 0.06, 0.3, 0.5], ["snag", 0.04, 3, 6], ["boulder", 0.05, 2.5, 7]),
   jungle: B(0.85, ["palm", 0.33, 7, 14], ["fern", 0.28, 1, 2.2], ["bush", 0.18, 1, 2], ["sequoia", 0.1, 18, 30], ["flower", 0.05, 0.3, 0.7], ["mushroom", 0.03, 0.15, 0.4], ["log", 0.03, 3, 7]),
-  island: B(0.45, ["palm", 0.38, 6, 12], ["bush", 0.18, 0.8, 1.5], ["flower", 0.18, 0.3, 0.6], ["rock", 0.16, 0.5, 1.8], ["reed", 0.1, 1.2, 2]),
-  mountains: B(0.45, ["pine", 0.3, 6, 14], ["rock", 0.36, 0.6, 3], ["snag", 0.14, 3, 7], ["sage", 0.13, 0.3, 0.7], ["boulder", 0.07, 3, 9]),
+  island: B(0.5, ["coconut-palm", 0.28, 7, 14], ["pandanus", 0.12, 3, 7], ["hibiscus", 0.14, 1.2, 2.6], ["ti-plant", 0.1, 1.2, 2.4], ["bush", 0.08, 0.8, 1.5], ["flower", 0.12, 0.3, 0.6], ["rock", 0.1, 0.5, 1.8], ["reed", 0.06, 1.2, 2]),
+  mountains: B(0.5, ["norway-spruce", 0.22, 14, 28], ["golden-larch", 0.08, 10, 20], ["mountain-pine", 0.1, 1.2, 2.4], ["alpenrose", 0.08, 0.5, 1], ["pine", 0.05, 6, 14], ["rock", 0.29, 0.6, 3], ["snag", 0.06, 3, 7], ["sage", 0.06, 0.3, 0.7], ["boulder", 0.06, 3, 9]),
   river: B(0.55, ["oak", 0.22, 7, 13], ["bush", 0.22, 0.8, 1.6], ["fern", 0.16, 0.6, 1.2], ["flower", 0.16, 0.3, 0.6], ["palm", 0.08, 6, 10], ["reed", 0.16, 1.4, 2.4]),
-  coast: B(0.45, ["pine", 0.22, 6, 13], ["rock", 0.3, 0.6, 2.4], ["bush", 0.2, 0.8, 1.5], ["sage", 0.14, 0.4, 0.8], ["reed", 0.1, 1, 1.8], ["boulder", 0.04, 2, 6]),
+  coast: B(0.45, ["stone-pine", 0.15, 8, 16], ["pine", 0.07, 6, 13], ["gorse", 0.16, 0.8, 1.6], ["harakeke", 0.1, 1.2, 2.2], ["marram", 0.15, 0.6, 1.1], ["rock", 0.22, 0.6, 2.4], ["reed", 0.05, 1, 1.8], ["sage", 0.06, 0.4, 0.8], ["boulder", 0.04, 2, 6]),
   savanna: B(0.3, ["oak", 0.12, 5, 9], ["sage", 0.4, 0.5, 1], ["rock", 0.2, 0.5, 1.6], ["joshua", 0.08, 3, 5], ["flower", 0.2, 0.3, 0.5]),
   tundra: B(0.22, ["rock", 0.46, 0.4, 1.8], ["sage", 0.3, 0.2, 0.5], ["flower", 0.19, 0.15, 0.35], ["boulder", 0.05, 2, 5]),
   steppe: B(0.28, ["sage", 0.5, 0.3, 0.8], ["flower", 0.3, 0.2, 0.5], ["rock", 0.2, 0.4, 1.4]),
@@ -193,28 +202,35 @@ export function scenery(): Promise<Map<Kind, THREE.BufferGeometry>> {
 
 /** The grown plants: near and far geometry a kind, stood on its foot at 1 m tall (both by the near model's height),
  * with their own normals and baked colours. Loaded once, shared by the open world and the arenas. */
-let grownP: Promise<Map<Kind, { near: THREE.BufferGeometry; far: THREE.BufferGeometry }>> | null = null;
-export function grown(): Promise<Map<Kind, { near: THREE.BufferGeometry; far: THREE.BufferGeometry }>> {
-  return grownP ??= (async () => {
-    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), out = new Map<Kind, { near: THREE.BufferGeometry; far: THREE.BufferGeometry }>();
-    await Promise.all(GROWN.map(async (id) => {
-      const gltf = await loader.loadAsync(`/models/flora/${id}.glb`).catch(() => null);
-      if (!gltf) return;
-      const byName = new Map<string, THREE.BufferGeometry>();
-      gltf.scene.updateMatrixWorld(true);
-      gltf.scene.traverse((o) => { if (o instanceof THREE.Mesh) byName.set(o.name, o.geometry.clone().applyMatrix4(o.matrixWorld)); });
-      const near = byName.get(id), far = byName.get(`${id}-lo`) ?? near;
-      if (!near || !far) return;
-      near.computeBoundingBox();
-      const bb = near.boundingBox!, h = Math.max(0.01, bb.max.y - bb.min.y);
-      for (const g of new Set([near, far])) {
-        for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "color" && k !== "normal") g.deleteAttribute(k);
-        g.translate(0, -bb.min.y, 0).scale(1 / h, 1 / h, 1 / h);
-      }
-      out.set(id, { near, far });
-    }));
-    return out;
-  })();
+type GrownGeo = { near: THREE.BufferGeometry; far: THREE.BufferGeometry };
+const grownOne = new Map<Grown, Promise<GrownGeo | null>>();
+/** `ids` (the ones the world shows from the start, by default), each loaded once and kept. */
+export async function grown(ids: readonly Grown[] = FIRST): Promise<Map<Kind, GrownGeo>> {
+  const out = new Map<Kind, GrownGeo>();
+  await Promise.all(ids.map(async (id) => {
+    let p = grownOne.get(id);
+    if (!p) { p = loadGrown(id); grownOne.set(id, p); }
+    const g = await p;
+    if (g) out.set(id, g);
+  }));
+  return out;
+}
+const gltfLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+async function loadGrown(id: Grown): Promise<GrownGeo | null> {
+  const gltf = await gltfLoader.loadAsync(`/models/flora/${id}.glb`).catch(() => null);
+  if (!gltf) return null;
+  const byName = new Map<string, THREE.BufferGeometry>();
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((o) => { if (o instanceof THREE.Mesh) byName.set(o.name, o.geometry.clone().applyMatrix4(o.matrixWorld)); });
+  const near = byName.get(id), far = byName.get(`${id}-lo`) ?? near;
+  if (!near || !far) return null;
+  near.computeBoundingBox();
+  const bb = near.boundingBox!, h = Math.max(0.01, bb.max.y - bb.min.y);
+  for (const g of new Set([near, far])) {
+    for (const k of Object.keys(g.attributes)) if (k !== "position" && k !== "color" && k !== "normal") g.deleteAttribute(k);
+    g.translate(0, -bb.min.y, 0).scale(1 / h, 1 / h, 1 / h);
+  }
+  return { near, far };
 }
 
 /** A plain material for a grown plant standing still (the arenas): its baked colours, both sides of every leaf, and
@@ -397,16 +413,11 @@ export function flora(loaded: () => void): Flora {
     sc.onBeforeRender = (...a) => { was(...a); if (a[2] instanceof THREE.PerspectiveCamera) cullPlants(f, a[2]); };
     hooked = true;
   };
-  void Promise.all([scenery(), grown()]).then(([plain, more]) => {
-    const kinds = new Map(plain);
-    for (const [k, g] of made()) kinds.set(k, g);
-    for (const [k, g] of more) kinds.set(k, g.near);
-    for (const [kind, geo] of kinds) {
+  const add = (kind: Kind, geo: THREE.BufferGeometry, far: THREE.BufferGeometry | undefined) => {
       const smooth = isGrown(kind), mat = plantMaterial(f.you, time, gust, SWAY[kind] ?? 0.02, smooth || kind === "grass" || kind === "reed", undefined, smooth);
       const m = new THREE.InstancedMesh(geo, mat, CAP);
       m.count = 0; m.frustumCulled = false; m.visible = false;
       f.meshes.set(kind, m); f.group.add(m); f.culled.set(m, new Culled(m));
-      const far = more.get(kind)?.far;
       if (far) {
         const l = new THREE.InstancedMesh(far, mat, CAP);
         l.count = 0; l.frustumCulled = false; l.visible = false;
@@ -417,11 +428,18 @@ export function flora(loaded: () => void): Flora {
         c.count = 0; c.frustumCulled = false;
         f.cards.set(kind, c); f.group.add(c); f.culled.set(c, new Culled(c));
       }
-    }
+  };
+  void Promise.all([scenery(), grown()]).then(([plain, more]) => {
+    const kinds = new Map(plain);
+    for (const [k, g] of made()) kinds.set(k, g);
+    for (const [k, g] of more) kinds.set(k, g.near);
+    for (const [kind, geo] of kinds) add(kind, geo, more.get(kind)?.far);
     const scrubMat = plantMaterial(f.you, time, gust, 0.03, true);
     f.turf = [new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), TURF_CAP), new THREE.InstancedMesh(scrub(SCRUB_LEAVES[0]), scrubMat, TURF_CAP), new THREE.InstancedMesh(scrub(SCRUB_LEAVES[1]), scrubMat, TURF_CAP)];
     for (const m of f.turf) { m.count = 0; m.frustumCulled = false; f.group.add(m); }
     loaded();
+    // then the plants of the regions still to open, planted from the next time the patches are picked
+    void grown(LATER).then((later) => { for (const [kind, g] of later) add(kind, g.near, g.far); stale = true; });
   });
   return f;
 }
@@ -551,10 +569,11 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
   }
   f.far = 0;
   for (const [kind, m] of f.cards) {
-    const n = counts.get(kind) ?? 0;
-    m.instanceMatrix.array.set(j.mats.get(kind)!.subarray(0, n * 16));
+    const n = counts.get(kind) ?? 0, mats = j.mats.get(kind), cols = j.cols.get(kind);
+    if (!mats || !cols) continue; // a kind that came in after this job began: the next one has it
+    m.instanceMatrix.array.set(mats.subarray(0, n * 16));
     if (!m.instanceColor) m.setColorAt(0, turfC);
-    m.instanceColor!.array.set(j.cols.get(kind)!.subarray(0, n * 3));
+    m.instanceColor!.array.set(cols.subarray(0, n * 3));
     f.culled.get(m)?.keep(n); f.far += n;
   }
   f.farJob = null;
