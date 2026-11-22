@@ -66,6 +66,28 @@ test("recording places a held key at the loop position, minus latency", () => {
   expect(got[0].l).toBeCloseTo(0.5, 1);
 });
 
+test("No instrument: a track's notes and keys reach no voice, yet still record; the other tracks play on", () => {
+  const { e, log } = spy();
+  const s = new Sequencer(e, 1000);
+  s.bpm = 60; s.setLoopBeats(1); s.recording = true;
+  s.setNotes(0, [{ s: 0, l: 0.5, m: 60, v: 1 }]);
+  s.setNotes(1, [{ s: 0, l: 0.5, m: 48, v: 1 }]);
+  s.setVoiceless([true]);
+  const got: number[] = [];
+  s.onRecord = (r) => got.push(r.note.m);
+  s.play();
+  s.liveOn(0, 72, 0.8);
+  run(s, 0.3);
+  s.liveOff(0, 72);
+  run(s, 1);
+  expect(log.filter((x) => x.startsWith("on 0"))).toEqual([]);
+  expect(log.filter((x) => x.startsWith("on 1")).length).toBe(2);
+  expect(got).toEqual([72]);
+  s.setVoiceless([false]);
+  run(s, 1);
+  expect(log.filter((x) => x.startsWith("on 0")).length).toBe(1);
+});
+
 test("stop releases every sequenced note", () => {
   const { e, log } = spy();
   const s = new Sequencer(e, 1000);

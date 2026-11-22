@@ -43,6 +43,8 @@ export interface TrackDoc {
   amp?: TrackAmp;
   /** A hosted CLAP plugin plays this track's notes instead of its FM voice (src/plugin-track.ts); absent for FM. */
   plugin?: TrackPlugin;
+  /** No instrument: the notes stay, show, record and go out (MIDI out, the live line) but make no sound here; absent for a voice. */
+  voiceless?: true;
   /** A web plugin the track's FM sound goes through on its way to the mix (a Web Audio Module effect, src/ui/wam.ts); absent for none. */
   insert?: TrackPlugin;
   mute: boolean;
@@ -81,6 +83,8 @@ export type Op =
   | { t: "plugin"; track: number; plugin: TrackPlugin | null }
   /** An effect on a track's sound (with its sliders moved), or null to take it off. */
   | { t: "insert"; track: number; insert: TrackPlugin | null }
+  /** No instrument on a track (its notes kept, unheard here), or its sound back. */
+  | { t: "voiceless"; track: number; on: boolean }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   /** The desk beyond its tracks (src/desk.ts): a player's channel as it now is, or the aux 2 return's fader and mute. */
@@ -286,11 +290,14 @@ export function moveClip(clips: readonly Clip[], i: number, beat: number): reado
 /** Clip `i` off the track (its sound goes once no clip plays it). */
 export const deleteClip = (clips: readonly Clip[], i: number): readonly Clip[] => (clips[i] ? replaced(clips, i, []) : clips);
 
+/** voiceless only when on, so a track with a voice reads as it did before tracks could have none. */
+const voicelessOf = (on: boolean): { voiceless?: true } => (on ? { voiceless: true } : {});
+
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), clips: maybe(arr(ClipGuard, MAX_CLIPS, { drop: true })), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), insert: maybe(TrackPlugin), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  const { eq, take, clips, amp, plugin, insert, ...rest } = t;
-  return withTrackEq(withClips({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), ...(insert ? { insert } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) }, (clips?.length ? clips : take ? [take] : []).filter((c) => c.beat < beats)), sanitizeEq(eq));
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), clips: maybe(arr(ClipGuard, MAX_CLIPS, { drop: true })), amp: maybe(TrackAmp), plugin: maybe(TrackPlugin), insert: maybe(TrackPlugin), voiceless: bool(false), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, take, clips, amp, plugin, insert, voiceless, ...rest } = t;
+  return withTrackEq(withClips({ ...rest, ...(amp ? { amp } : {}), ...(plugin ? { plugin } : {}), ...voicelessOf(voiceless), ...(insert ? { insert } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) }, (clips?.length ? clips : take ? [take] : []).filter((c) => c.beat < beats)), sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -311,6 +318,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
   obj({ t: tag("plugin"), track: TRACK, plugin: nul(TrackPlugin) }),
   obj({ t: tag("insert"), track: TRACK, insert: nul(TrackPlugin) }),
+  obj({ t: tag("voiceless"), track: TRACK, on: bool() }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2) }),
   obj({ t: tag("studio"), id: STUDIO_ID }),
@@ -493,6 +501,9 @@ export function apply(p: Project, op: Op): Project {
       return withTrack(p, op.track, (t) => { const { plugin: _, ...rest } = t; return op.plugin ? { ...rest, plugin: op.plugin } : rest; });
     case "insert":
       return withTrack(p, op.track, (t) => { const { insert: _, ...rest } = t; return op.insert ? { ...rest, insert: op.insert } : rest; });
+    case "voiceless":
+      if (!!p.tracks[op.track]?.voiceless === op.on) return p;
+      return withTrack(p, op.track, (t) => { const { voiceless: _, ...rest } = t; return { ...rest, ...voicelessOf(op.on) }; });
     case "instrument": {
       const { inst } = op;
       const was = (p.instruments ?? []).filter((x) => x.id !== inst.id && x.track !== inst.track);
@@ -529,3 +540,6 @@ export function audible(p: Project): boolean[] {
   const anySolo = p.tracks.some((t) => t.solo);
   return p.tracks.map((t) => (anySolo ? t.solo : !t.mute));
 }
+
+/** Which tracks have no instrument: the sequencer plays their notes to nothing (their take still sounds). */
+export const voiceless = (p: Project): boolean[] => p.tracks.map((t) => !!t.voiceless);

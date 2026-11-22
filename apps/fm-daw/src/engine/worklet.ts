@@ -139,6 +139,7 @@ class FmProcessor extends AudioWorkletProcessor {
         m.auto.forEach((a, t) => s.setAuto(t, a));
         s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats);
         this.setAudible(m.audible);
+        s.setVoiceless(m.voiceless);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         this.squash.setAmount(m.squash);
         this.setEq(m.eq, m.eqAuto);
@@ -158,6 +159,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "notes": s.setNotes(m.track, m.notes); break;
       case "auto": s.setAuto(m.track, m.lanes); break;
       case "audible": this.setAudible(m.mask); break;
+      case "voiceless": s.setVoiceless(m.mask); break;
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;

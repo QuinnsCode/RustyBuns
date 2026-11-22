@@ -5,7 +5,8 @@ import { MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeInbox, TakeShelf, clipsOf, e
 import { SR, posted, processor, run, useWorklet } from "./worklet-kit.ts";
 import { TsEngine } from "../src/engine/engine.ts";
 import { renderProject } from "../src/engine/offline.ts";
-import { apply, clipEnd, cutClip, decodeOp, deleteClip, moveClip, sanitize, slipClip, trimClip } from "../src/project.ts";
+import { apply, clipEnd, cutClip, decodeOp, deleteClip, moveClip, sanitize, slipClip, trimClip, type Project } from "../src/project.ts";
+import { demoProject } from "../src/presets.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
 useWorklet();
@@ -182,4 +183,18 @@ test("a clip plays only inside its window, live and in the bounce alike: slipped
   let most = 0;
   for (let i = 0; i < live.length; i++) most = Math.max(most, Math.abs(live[i] - bounced[i]));
   expect(most).toBeLessThan(1e-4);
+});
+
+test("No instrument in the bounce: the track's notes make no sound, its take still plays", () => {
+  const demo = demoProject();
+  const bounce = (q: Project) => renderProject(new TsEngine(SR), q, SR, 2, 1);
+  const loud = (x: Float32Array) => Math.sqrt(x.reduce((n, v) => n + v * v, 0) / x.length);
+  expect(loud(bounce(demo))).toBeGreaterThan(0.01);
+  expect(loud(bounce({ ...demo, tracks: demo.tracks.map((t) => ({ ...t, voiceless: true as const })) }))).toBeLessThan(1e-4);
+  const s16 = encodeTake(Float32Array.from({ length: 2 * SR }, (_, i) => burst(i / SR)), SR);
+  const sound = Float32Array.from(s16, (v) => v / 32767);
+  const one = sanitize({ v: 1, bpm: 120, bars: 1, tracks: Array.from({ length: TRACKS }, (_, i) => ({ params: [], notes: [], ...(i === 2 ? { voiceless: true, take: { id: "abcdefgh", beat: 1, frames: s16.length } } : {}) })) });
+  if (!one) throw new Error("bad project");
+  const out = renderProject(new TsEngine(SR), one, SR, 2, 1, (id) => (id === "abcdefgh" ? sound : undefined)).filter((_, i) => i % 2 === 0);
+  expect(rms(out, 1.05, 1.45)).toBeGreaterThan(0.3);
 });
