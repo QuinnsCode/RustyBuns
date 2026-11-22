@@ -5,7 +5,8 @@
 // under its other name, localhost against 127.0.0.1; a built page serves no source, so a copy built here and served
 // beside it). Then a bounce of the track, and its sound on the sesh's live line. Then the track back on its FM voice
 // with an effect in its Insert (#5359, FM DAW's own Gain): as loud as dry at Gain 1, half at 0.5, dry again once it's
-// off, and an instrument isn't taken as an effect. Prints what it measured; exit 1 when
+// off, and an instrument isn't taken as an effect. Then the bounce with the effect in it (#5551: half at 0.5), and
+// a web plugin track (Test Tone) with Gain in its Insert, heard and bounced at half. Prints what it measured; exit 1 when
 // any of that fails. A built page: build the app, `bunx vite preview --outDir dist/client`, then `--url` that.
 // Without --url it serves the app on its own dev server, which needs .rustybuns/vite.ts (`bunx rustybuns boundary`
 // here writes it).
@@ -90,7 +91,31 @@ const JOURNEY = `(async () => {
   fmdaw.insert(K, null);
   await wait(200);
   const back = await hold();
-  const insert = { track: K, fxOn, fxError, fxSliders, dry, whole, half, refused, refusedHeld, back };
+  // the bounce has the effect in it (#5551): the track alone holding a note, dry, through Gain at 1, then at 0.5
+  const fxReady = () => wait(300).then(() => until(() => fx()?.starting === false));
+  const bDry = await fmdaw.mix(K, 2);
+  fmdaw.insert(K, gain([]));
+  await fxReady();
+  const bWhole = await fmdaw.mix(K, 2);
+  fmdaw.insert(K, gain([{ id: ${paramId("gain")}, v: 0.5 }]));
+  await wait(200);
+  const bHalf = await fmdaw.mix(K, 2);
+  fmdaw.insert(K, null);
+  await wait(200);
+  // a web plugin track has an Insert too: Test Tone through Gain at 0.5, heard and bounced at half
+  fmdaw.plays(K, { path: "builtin:tone", index: 0, name: "Test Tone (web)", web: true, values: [] });
+  await wait(300).then(() => until(() => fmdaw.state().tracks[K].plays.path === "builtin:tone" && fmdaw.state().tracks[K].plays.starting === false));
+  const pDry = await hold(), pbDry = await fmdaw.mix(K, 2);
+  fmdaw.insert(K, gain([{ id: ${paramId("gain")}, v: 0.5 }]));
+  const pOn = await fxReady();
+  const pFxError = fx()?.error ?? null, pHalf = await hold(), pbHalf = await fmdaw.mix(K, 2);
+  fmdaw.insert(K, null);
+  await wait(200);
+  const pBack = await hold();
+  fmdaw.plays(K, null);
+  const bounce = { dry: bDry, whole: bWhole, half: bHalf };
+  const plugin = { on: pOn, error: pFxError, dry: pDry, half: pHalf, back: pBack, bDry: pbDry, bHalf: pbHalf };
+  const insert = { track: K, fxOn, fxError, fxSliders, dry, whole, half, refused, refusedHeld, back, bounce, plugin };
   return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line, insert };
 })()`;
 
@@ -123,6 +148,13 @@ try {
     ["Gain at 0.5 halves it", near(r.insert.half / r.insert.whole, 0.5, 0.1)],
     ["an instrument in the Insert is refused, and the track plays dry", typeof r.insert.refused === "string" && near(r.insert.refusedHeld / r.insert.dry, 1, 0.15)],
     ["with the Insert off it is dry again", near(r.insert.back / r.insert.dry, 1, 0.15)],
+    ["a bounce leaves nothing out", [r.insert.bounce.dry, r.insert.bounce.whole, r.insert.bounce.half].every((b: { missed: string[] }) => b.missed.length === 0)],
+    ["a bounce through Gain at 1 is as loud as dry", r.insert.bounce.dry.l > 0.002 && near(r.insert.bounce.whole.l / r.insert.bounce.dry.l, 1, 0.1)],
+    ["Gain at 0.5 in a bounce halves it", near(r.insert.bounce.half.l / r.insert.bounce.whole.l, 0.5, 0.05)],
+    ["a web plugin track's Insert starts", r.insert.plugin.on && !r.insert.plugin.error],
+    ["a web plugin track through Gain at 0.5 is heard at half", r.insert.plugin.dry > 0.02 && near(r.insert.plugin.half / r.insert.plugin.dry, 0.5, 0.1)],
+    ["and with its Insert off, dry again", near(r.insert.plugin.back / r.insert.plugin.dry, 1, 0.15)],
+    ["its bounce is at half too", r.insert.plugin.bHalf.missed.length === 0 && r.insert.plugin.bDry.l > 0.002 && near(r.insert.plugin.bHalf.l / r.insert.plugin.bDry.l, 0.5, 0.05)],
     ["no page errors", noise.length === 0],
   ];
   console.log(JSON.stringify(r));

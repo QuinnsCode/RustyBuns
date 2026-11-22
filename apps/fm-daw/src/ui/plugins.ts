@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
 import { check } from "@rustybuns/util/guard";
 import { findPlugins, openPluginEditor, renderPlugin, startPlugin, stopPlugin } from "../actions/plugins.ts";
 import { BOUNCE_SLOT, BlockReply, EditorReply, MAX_PLUGIN_FRAMES, PluginChoices, StartReply, type ParamChange, type PluginChoice, type PluginEvent, type PluginParam, type TrackPlugin } from "../plugin-track.ts";
-import { pluginScore } from "../engine/offline.ts";
+import { insertedTracks, pluginScore } from "../engine/offline.ts";
 import type { Project } from "../project.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { P } from "../engine/params.ts";
@@ -40,9 +40,11 @@ const why = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace
  * plugin track from its notes, `frames` long at `sampleRate`, with a copy of the plugin of its own (the one playing
  * is left alone). `sound` is each track's, interleaved stereo, for `renderProject`; `missed` names the ones the
  * host couldn't play and why (no desktop host, a plugin that isn't on this computer): the bounce goes on without them.
- * A web plugin track (#5360) is rendered in the page instead, on an offline context of its own (`web`, src/ui/wam.ts).
+ * A web plugin track (#5360) is rendered in the page instead, on an offline context of its own (`web`, src/ui/wam.ts),
+ * and then through its Insert's effect (`fx`, #5551) when it has one, before its strip: an effect that won't play
+ * is named in `missed`, and the track goes on dry.
  */
-export async function bouncePlugins(p: Project, sampleRate: number, frames: number, host = { renderPlugin, startPlugin, stopPlugin }, web: Pick<WamRack, "bounce"> | null = null): Promise<{ sound: Map<number, Float32Array>; missed: string[] }> {
+export async function bouncePlugins(p: Project, sampleRate: number, frames: number, host = { renderPlugin, startPlugin, stopPlugin }, web: Pick<WamRack, "bounce"> | null = null, fx: Pick<WamRack, "bounceEffect"> | null = null): Promise<{ sound: Map<number, Float32Array>; missed: string[] }> {
   const sound = new Map<number, Float32Array>(), missed: string[] = [];
   for (const [t, events] of pluginScore(p, sampleRate, frames)) {
     const plug = p.tracks[t]?.plugin;
@@ -51,7 +53,14 @@ export async function bouncePlugins(p: Project, sampleRate: number, frames: numb
       try {
         if (!web) throw new Error("a web plugin plays in FM DAW's own page");
         sound.set(t, await web.bounce(plug, events, sampleRate, frames));
-      } catch (e) { missed.push(`${plug.name} (${why(e)})`); }
+      } catch (e) { missed.push(`${plug.name} (${why(e)})`); continue; }
+      const ins = p.tracks[t]?.insert, dry = sound.get(t);
+      if (ins && dry) {
+        try {
+          if (!fx) throw new Error("a web effect plays in FM DAW's own page");
+          sound.set(t, await fx.bounceEffect(ins, dry, sampleRate, frames));
+        } catch (e) { missed.push(`${ins.name} (${why(e)})`); }
+      }
       continue;
     }
     const slot = BOUNCE_SLOT + t;
@@ -77,6 +86,29 @@ export async function bouncePlugins(p: Project, sampleRate: number, frames: numb
   return { sound, missed };
 }
 
+/**
+ * The FM tracks' web effects for a bounce (#5551): `tap` renders each inserted track's sound (renderProject's
+ * first pass, `BounceInserts.tap`), and each goes through a copy of its effect on an offline context of its own.
+ * `back` is what each played, interleaved stereo, for the second pass; `missed` names an effect that wouldn't, whose
+ * track goes into the bounce dry.
+ */
+export async function bounceInserts(p: Project, sampleRate: number, frames: number, tap: () => Promise<Map<number, Float32Array>>, fx: Pick<WamRack, "bounceEffect"> | null): Promise<{ back: Map<number, Float32Array>; missed: string[] }> {
+  const back = new Map<number, Float32Array>(), missed: string[] = [], tracks = insertedTracks(p);
+  if (!tracks.length) return { back, missed };
+  const taps = await tap();
+  for (const t of tracks) {
+    const ins = p.tracks[t]?.insert, mono = taps.get(t);
+    if (!ins || !mono) continue;
+    try {
+      if (!fx) throw new Error("a web effect plays in FM DAW's own page");
+      const pcm = new Float32Array(2 * frames);
+      for (let f = 0; f < frames; f++) pcm[2 * f] = pcm[2 * f + 1] = mono[f] ?? 0;
+      back.set(t, await fx.bounceEffect(ins, pcm, sampleRate, frames));
+    } catch (e) { missed.push(`${ins.name} (${why(e)})`); }
+  }
+  return { back, missed };
+}
+
 export class PluginPump {
   private running = new Map<number, { key: string; web: boolean; values: Map<number, number>; chain: Promise<unknown> }>();
   private shown = new Map<number, PluginShown>();
@@ -90,12 +122,12 @@ export class PluginPump {
     /** The page's own host for Web Audio Modules (src/ui/wam.ts); without one a web plugin says it can't play here. */
     private web: WamRack | null = null,
     /**
-     * What it runs: each track's `plugin` (what plays it), or its `insert` (#5359, a web effect on its FM sound, told
+     * What it runs: each track's `plugin` (what plays it), or its `insert` (#5359, a web effect on its FM sound or a web plugin's (#5551), told
      * to the worklet once it runs so the track stays dry until then).
      */
     private slot: "plugin" | "insert" = "plugin") {}
 
-  private pick(tr: Project["tracks"][number]) { return this.slot === "insert" ? (tr.plugin ? undefined : tr.insert) : tr.plugin; }
+  private pick(tr: Project["tracks"][number]) { return this.slot === "insert" ? (tr.plugin && !tr.plugin.web ? undefined : tr.insert) : tr.plugin; }
   private on(t: number, on: boolean) { this.send(this.slot === "insert" ? { t: "insert", track: t, on } : { t: "plugin", track: t, on }); }
 
   /** Opens track `t`'s plugin's own window; a string says why it couldn't. */

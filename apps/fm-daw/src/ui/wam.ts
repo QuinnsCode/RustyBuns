@@ -105,6 +105,8 @@ export interface OfflineRig {
   make(cls: WamClass, group: string): Promise<unknown>;
   /** `node` to the context's speakers. */
   out(node: WamNode): void;
+  /** `pcm` (interleaved stereo) played into `node` from the start: an effect's input. */
+  feed(node: WamNode, pcm: Float32Array): void;
   /** Renders it all: interleaved stereo, `frames` long. */
   render(): Promise<Float32Array>;
 }
@@ -193,7 +195,24 @@ export class WamRack {
    * `at` its frame), `frames` long at `sampleRate`, interleaved stereo. Throws why it couldn't (the same site rule as
    * playing: a site nobody said yes to isn't loaded).
    */
-  async bounce(plug: TrackPlugin, events: PluginEvent[], sampleRate: number, frames: number): Promise<Float32Array> {
+  bounce(plug: TrackPlugin, events: PluginEvent[], sampleRate: number, frames: number): Promise<Float32Array> {
+    return this.offline(plug, sampleRate, frames, (node, names) => node.scheduleEvents(...events.flatMap((e): WamEvent[] => {
+      const time = (e.at ?? 0) / sampleRate;
+      if (e.t !== "set") return [{ type: "wam-midi", time, data: { bytes: e.t === "on" ? [0x90, e.key, Math.max(1, Math.round(e.vel * 127))] : [0x80, e.key, 0] } }];
+      const id = names.get(e.id);
+      return id === undefined ? [] : [{ type: "wam-automation", time, data: { id, value: e.v, normalized: false } }];
+    })));
+  }
+
+  /**
+   * `pcm` (interleaved stereo, `frames` long) through a copy of effect `plug` of its own on an offline context, for a
+   * bounce (#5551): what it played, interleaved stereo. Throws why it couldn't, as `bounce` does.
+   */
+  bounceEffect(plug: TrackPlugin, pcm: Float32Array, sampleRate: number, frames: number): Promise<Float32Array> {
+    return this.offline(plug, sampleRate, frames, (node, _names, rig) => rig.feed(node, pcm));
+  }
+
+  private async offline(plug: TrackPlugin, sampleRate: number, frames: number, play: (node: WamNode, names: Map<number, string>, rig: OfflineRig) => void): Promise<Float32Array> {
     const at = siteOf(plug.path, this.d.here);
     if (!at) throw new Error("that isn't a web address a plugin can load from");
     if (at.site && !this.trusted(at.site)) throw new Error(`nobody here has said ${new URL(at.site).host} may run code in this page`);
@@ -204,14 +223,11 @@ export class WamRack {
     if (typeof cls === "string") throw new Error(cls);
     const made = await this.made(cls, group, plug, rig.make);
     if (typeof made === "string") throw new Error(made);
-    const { node, names } = made;
+    const { node, names, inst } = made;
+    const is = kindOf(inst);
+    if (is && is !== this.kind) { try { node.destroy(); } catch { /* gone either way */ } throw new Error(is === "instrument" ? "an instrument isn't an effect" : "an effect doesn't play notes"); }
     rig.out(node);
-    node.scheduleEvents(...events.flatMap((e): WamEvent[] => {
-      const time = (e.at ?? 0) / sampleRate;
-      if (e.t !== "set") return [{ type: "wam-midi", time, data: { bytes: e.t === "on" ? [0x90, e.key, Math.max(1, Math.round(e.vel * 127))] : [0x80, e.key, 0] } }];
-      const id = names.get(e.id);
-      return id === undefined ? [] : [{ type: "wam-automation", time, data: { id, value: e.v, normalized: false } }];
-    }));
+    play(node, names, rig);
     // the module's port answers in order: once this comes back, the audio thread has every note above
     await node.getParameterValues(false);
     try { return await rig.render(); } finally { try { node.destroy(); } catch { /* gone either way */ } }
@@ -311,6 +327,9 @@ function wamHost(ctx: BaseAudioContext): Promise<string> {
   return g;
 }
 
+/** What the page's rack plays into: src/ui/audio.ts's AudioOut, as the page hands it over. */
+export interface PageAudio { ctx: AudioContext; bus: AudioNode; taps: AudioNode; fxIn: AudioNode[]; webOut: AudioNode[]; returns: AudioNode; route(t: number, on: boolean): void }
+
 /** A module rendered on an OfflineAudioContext of its own: the bounce's copy of a web plugin. */
 export function offlineRig(sampleRate: number, frames: number): OfflineRig {
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: Math.max(1, frames), sampleRate });
@@ -318,6 +337,14 @@ export function offlineRig(sampleRate: number, frames: number): OfflineRig {
     host: () => wamHost(ctx),
     make: (cls, group) => cls.createInstance(group, ctx),
     out: (node) => { node.connect(ctx.destination); },
+    feed(node, pcm) {
+      if (!(node instanceof AudioNode)) throw new Error("that module's node isn't on the bounce's audio");
+      const n = Math.max(1, pcm.length >> 1), b = ctx.createBuffer(2, n, sampleRate), l = b.getChannelData(0), r = b.getChannelData(1);
+      for (let f = 0; f < n; f++) { l[f] = pcm[2 * f] ?? 0; r[f] = pcm[2 * f + 1] ?? 0; }
+      const src = new AudioBufferSourceNode(ctx, { buffer: b });
+      src.connect(node);
+      src.start(0);
+    },
     async render() {
       const b = await ctx.startRendering(), l = b.getChannelData(0), r = b.numberOfChannels > 1 ? b.getChannelData(1) : l;
       const out = new Float32Array(2 * frames);
@@ -330,9 +357,11 @@ export function offlineRig(sampleRate: number, frames: number): OfflineRig {
 /**
  * The page's rack: modules play into `bus` on `ctx`, each also into its track's channel of `taps` (one per track), the
  * WAM SDK's host half loaded when the first one starts. Before the audio is on (`audio` null) it can only bounce.
- * An `effect` rack's modules each take their track's channel of `inserts` (the engine's second output) instead.
+ * A module's fader plays into its track's `webOut`, which goes on to `bus` (or into the track's effect: `route`).
+ * An `effect` rack's modules each take their track's `fxIn` (its channel of the engine's second output, and its page
+ * plugin while it has an effect) instead, and play back into the engine on `returns`, two channels a track (#5551).
  */
-export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps: AudioNode; inserts: AudioNode } | null, kind: "instrument" | "effect" = "instrument"): WamRack {
+export function pageRack(audio: () => PageAudio | null, kind: "instrument" | "effect" = "instrument"): WamRack {
   const on = () => { const a = audio(); if (!a) throw new Error("the audio isn't on"); return a; };
   return new WamRack({
     now: () => audio()?.ctx.currentTime ?? 0, here: location.href,
@@ -342,20 +371,27 @@ export function pageRack(audio: () => { ctx: AudioContext; bus: AudioNode; taps:
     fader: (node, track) => {
       const live = on(), g = new GainNode(live.ctx, { gain: 0 }), { taps } = live;
       node.connect(g);
-      g.connect(live.bus);
+      g.connect(live.webOut[track] ?? live.bus);
       node.connect(taps, 0, track);
       return { gain: g.gain, disconnect: () => { g.disconnect(); try { node.disconnect?.(taps); } catch { /* already off it */ } } };
     },
     insert: (node, track) => {
       if (!(node instanceof AudioNode)) throw new Error("that module's node isn't on this page's audio");
-      const live = on(), g = new GainNode(live.ctx, { gain: 1 });
+      const live = on(), fxIn = live.fxIn[track];
+      if (!fxIn) throw new Error("no such track");
+      // a mono effect comes back on both sides; a stereo one as it is
+      const g = new GainNode(live.ctx, { gain: 1, channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" });
+      const split = new ChannelSplitterNode(live.ctx, { numberOfOutputs: 2 });
       // out of the engine and back into it is a loop, and the audio graph only plays a loop with a delay in it: one render quantum
       const d = new DelayNode(live.ctx, { delayTime: 0, maxDelayTime: 0.01 });
-      live.inserts.connect(d, track);
+      fxIn.connect(d);
       d.connect(node);
       node.connect(g);
-      g.connect(live.bus);
-      return { gain: g.gain, disconnect: () => { d.disconnect(); g.disconnect(); } };
+      g.connect(split);
+      split.connect(live.returns, 0, 2 * track);
+      split.connect(live.returns, 1, 2 * track + 1);
+      live.route(track, true);
+      return { gain: g.gain, disconnect: () => { live.route(track, false); try { fxIn.disconnect(d); } catch { /* already off it */ } d.disconnect(); g.disconnect(); split.disconnect(); } };
     },
     offline: offlineRig,
     show: showPanel,

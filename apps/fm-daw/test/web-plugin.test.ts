@@ -165,7 +165,7 @@ test("a bounce renders a web plugin track on an offline context of its own, and 
     make: () => { throw new Error("a bounce doesn't use the page's audio"); }, fader: () => { throw new Error("nor its faders"); },
     // the offline context plays the note it was told: 0.3 on both sides from its frame on
     offline: (_sr, frames) => ({
-      host: async () => "offline", make: (cls, g) => cls.createInstance(g, null), out() {},
+      host: async () => "offline", make: (cls, g) => cls.createInstance(g, null), out() {}, feed() {},
       async render() {
         rendered++;
         const on = told.find((e) => e.type === "wam-midi"), pcm = new Float32Array(2 * frames);
