@@ -1,0 +1,51 @@
+/* The mixer's face (mixer-panel.ts): a dark brushed face, four channel strips and the master, the twin filters at the bottom left and right, the crossfader between them. Labels never wrap. */
+.mx { background: linear-gradient(#1a1b1f, #111215); border: 1px solid #2a2d33; border-radius: 12px; padding: 10px; display: grid; gap: 10px; align-content: start; min-width: 0; box-shadow: inset 0 1px 0 #2c2f35; }
+.mx-strips { display: grid; grid-template-columns: repeat(4, minmax(64px, 1fr)) minmax(68px, 1.1fr); gap: 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.mx-strip { display: grid; gap: 4px; justify-items: center; align-content: start; padding: 6px 2px; border-radius: 8px; background: #16171b; border: 1px solid #23262b; min-width: 64px; }
+.mx-strip.far { opacity: 0.35; pointer-events: none; }
+.mx-masterstrip { background: #1b1c21; }
+.mx-num { font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: #f1efe9; white-space: nowrap; }
+.mx-num small { margin-left: 3px; font-size: 11px; color: #9aa0aa; }
+.mx-sub { font: 600 10px "Barlow Condensed", sans-serif; letter-spacing: 0.1em; color: #6b707a; margin-top: 4px; }
+/* a knob: the cap turns, its white line points at the value */
+.mx-knob { display: grid; justify-items: center; gap: 1px; }
+.mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: #9aa0aa; white-space: nowrap; }
+.mx-dial { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #2b2e34, #0c0d10 70%); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; }
+.mx-dial:focus-visible { box-shadow: 0 0 0 2px #ff6b4a; }
+.mx-s .mx-dial { width: 26px; height: 26px; }
+.mx-l .mx-dial { width: 56px; height: 56px; }
+.mx-cap { width: 74%; height: 74%; border-radius: 50%; position: relative; box-shadow: inset 0 -3px 4px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.6); }
+.mx-cap b { position: absolute; left: calc(50% - 1px); top: 2px; width: 2px; height: 38%; border-radius: 1px; background: #111; }
+.mx-pair { display: flex; gap: 2px; }
+/* the small push buttons: assigns, cue, filter types */
+#dj .mx button { min-height: 24px; min-width: 22px; padding: 0 4px; border-radius: 5px; font-size: 12px; gap: 3px; }
+#dj .mx button.on { background: #ff6b4a; border-color: #ff6b4a; color: #15171b; }
+.mx-assign { display: flex; gap: 2px; align-items: center; }
+.mx-assign span { font: 600 10px "Barlow Condensed", sans-serif; color: #6b707a; }
+#dj .mx-x button { padding: 0 2px; min-width: 16px; font-size: 10px; }
+#dj .mx-cue.on { background: #ffd23c; border-color: #ffd23c; color: #111; }
+/* the long-throw faders and the LED meters */
+.mx-faderrow { display: flex; gap: 4px; align-items: stretch; height: 150px; }
+.mx-fader { writing-mode: vertical-lr; direction: rtl; height: 150px; width: 26px; margin: 0; accent-color: #f1efe9; }
+.mx-meter { width: 7px; background: #0a0b0d; border-radius: 2px; position: relative; overflow: hidden; height: 150px; }
+.mx-meter i { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, #3ddc84 0 65%, #ffd23c 65% 85%, #ff4a4a 85%); }
+.mx-meter::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0 5px, #0a0b0d 5px 7px); }
+.mx-lr { display: flex; gap: 4px; }
+.mx-tall { height: 110px; }
+/* the bottom row: filter 1, the crossfader, filter 2 */
+.mx-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 0.9fr) minmax(0, 1fr); gap: 8px; align-items: start; }
+.mx-filter { display: grid; gap: 6px; background: #16171b; border: 1px solid #23262b; border-radius: 10px; padding: 6px; min-width: 0; }
+.mx-fhead { display: flex; gap: 3px; flex-wrap: wrap; }
+.mx-fon span { font-size: 12px; }
+.mx-curve { width: 100%; height: 44px; background: #0d0e11; border-radius: 6px; display: block; }
+.mx-fknobs, .mx-lfo { display: flex; gap: 8px; align-items: center; justify-content: center; }
+#dj .mx-lfo button { font-size: 11px; }
+.mx-xmid { display: grid; gap: 8px; align-content: center; min-height: 100%; }
+.mx-xrow { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; font: 600 15px "Barlow Condensed", sans-serif; color: #9aa0aa; }
+.mx-xfade { width: 100%; accent-color: #f1efe9; }
+.mx-opts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+@media (max-width: 560px) {
+  .mx-strips { grid-template-columns: repeat(5, 64px); }
+  .mx-bottom { grid-template-columns: 1fr 1fr; }
+  .mx-xmid { grid-column: 1 / -1; order: 3; }
+}
