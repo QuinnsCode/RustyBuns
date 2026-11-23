@@ -55,6 +55,14 @@ quarantine, one `git push` with each ref leased on its old value. So the client 
 landed, and the HTTP side's refusals (a protected branch, a check) come back as `remote:` lines and fail the push.
 The token goes in the scratch repo's config (`http.extraHeader`), not argv or the URL.
 
+codeSplitter's Worker answers it at `GET /api/ssh/remote` (`src/ssh-remote.ts`), behind its `SSH_GATE_SECRET` (the
+gate's `GATE_SECRET`, a varlock secret; the route is a 404 without it). Tokens last 10 minutes. `read` takes read access, as
+the API does (a private repo you can't see is "not found"), and the crew get the crew remote once there is one. `write` is
+what the app can land as it lands the desktop's Push back: the owner's, on the desktop's own git, with no private lines.
+The push is heard there as it lands (`hearPushes` in `src/mirror.ts`) and comes into the open files as the owner's edits.
+Cloudflare Artifacts doesn't tell the Worker of a push made outside it, so a cloud repo turns pushes away with the
+reason until #5699 lands. `test/ssh-remote.test.ts` walks it without Docker.
+
 The container needs the internet for this (`enableInternet: true`), to reach the lookup and Artifacts.
 
 What it costs, from `try.ts` on an M-series Mac (local Docker, so the HTTP remote is next door):
@@ -96,8 +104,8 @@ fetch nothing up front. That is the next thing to try if repos get big.
 ## Next steps (each its own issue)
 
 - **Key auth:** done (#5504, above). The site still needs a page to paste a key into: #5545.
-- **Pushes into Artifacts:** done in the gate (#5505, above). codeSplitter's Worker still has to answer the lookup
-  for real (access check, short Artifacts tokens, the after-push path): #5541.
+- **Pushes into Artifacts:** done in the gate (#5505) and the Worker's lookup (#5541, above). A push over ssh to a
+  cloud repo, which Artifacts doesn't tell the Worker of: #5699.
 - **rustybuns:** carry a `connect` export and the `connect` port through `rustybuns dev` and deploy. Alchemy has no
   Spectrum resource, so the app is a `cf spectrum apps create` step or a small resource of our own.
 - **Live (owner):** a Pro zone, the Spectrum app on one port (22 is the nice one), and a priced run.

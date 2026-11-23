@@ -8,8 +8,10 @@
 // Writes <app dir>/test-times.json (scripts/app-dirs.ts): { "test/foo.test.ts": ms }. A file's time is its tests' own times added up, or the
 // wall time from its header to the next one when that is longer (a slow beforeAll, a browser launch), since bun runs
 // files one after another. Files that no longer exist are dropped; one missing from the record is weighed by its size.
+// A group job ("test borg+qcrm", #5564) gives each of its apps its own part of the log (scripts/ci-group.ts).
 import { appDir } from "./app-dirs.ts";
 import { APPS } from "./ci-apps.ts";
+import { section } from "./ci-group.ts";
 import { testFiles } from "./ci-test-count.ts";
 import { help } from "./help.ts";
 import { arr, check, int, obj, str } from "../packages/util/src/guard.ts";
@@ -51,24 +53,30 @@ if (import.meta.main) {
   for (const a of want) if (!APPS[a]?.test) throw new Error(`no tests for app "${a}"`);
   const repo = (await Bun.$`gh repo view --json nameWithOwner -q .nameWithOwner`.text()).trim();
   const list = check(Runs, await Bun.$`gh run list --workflow apps.yml --limit ${runs} --json databaseId`.json()) ?? [];
-  const found = new Map<string, number[]>();
+  const found = new Map<string, { id: number; group: boolean }[]>();
   for (const { databaseId } of list) {
     if (found.size === want.size) break;
     const jobs = check(Jobs, await Bun.$`gh api ${`repos/${repo}/actions/runs/${databaseId}/jobs?per_page=100`}`.quiet().nothrow().json().catch(() => null))?.jobs ?? [];
-    const byApp = new Map<string, { ids: number[]; green: boolean; of: number }>();
+    const byApp = new Map<string, { ids: { id: number; group: boolean }[]; green: boolean; of: number }>();
     for (const j of jobs) {
       const m = j.name.match(/^test (\S+)(?: (\d+)\/(\d+))?$/);
-      if (!m || !want.has(m[1]!) || found.has(m[1]!)) continue;
-      const g = byApp.get(m[1]!) ?? { ids: [], green: true, of: Number(m[3] ?? 1) };
-      g.ids.push(j.id);
-      g.green &&= j.conclusion === "success";
-      byApp.set(m[1]!, g);
+      const apps = m?.[1]!.split("+") ?? [];
+      for (const app of apps) {
+        if (!want.has(app) || found.has(app)) continue;
+        const g = byApp.get(app) ?? { ids: [], green: true, of: Number(m![3] ?? 1) };
+        g.ids.push({ id: j.id, group: apps.length > 1 });
+        g.green &&= j.conclusion === "success";
+        byApp.set(app, g);
+      }
     }
     for (const [app, g] of byApp) if (g.green && g.ids.length === g.of) found.set(app, g.ids);
   }
   for (const [app, ids] of found) {
     const times: Record<string, number> = {};
-    for (const id of ids) Object.assign(times, timesFromLog(await Bun.$`gh api --allow-escape-sequences ${`repos/${repo}/actions/jobs/${id}/logs`}`.quiet().text()));
+    for (const { id, group } of ids) {
+      const log = await Bun.$`gh api --allow-escape-sequences ${`repos/${repo}/actions/jobs/${id}/logs`}`.quiet().text();
+      Object.assign(times, timesFromLog(group ? section(log, appDir(app)) : log));
+    }
     const live = new Set(testFiles(APPS[app]!.test!, appDir(app)));
     const kept = Object.fromEntries(Object.entries(times).filter(([f]) => live.has(f)).sort(([a], [b]) => a.localeCompare(b)));
     if (!Object.keys(kept).length) continue;

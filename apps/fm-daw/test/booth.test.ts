@@ -34,7 +34,8 @@ test("a track's key is read from its sound, and named on the DJ's wheel", () => 
 
 const deck = (o: Partial<DeckState> = {}): DeckState => ({
   name: "Night Drive", playing: false, pos: 0, length: 300, rate: 1, pitch: 0, range: 8, bpm: 124, grid: { bpm: 124, offset: 0.2 },
-  key: { tonic: 9, minor: true, name: "Am", camelot: "8A" }, cue: 0.2, hot: [null, null, null, null], loop: null, synced: false, ...o,
+  key: { tonic: 9, minor: true, name: "Am", camelot: "8A" }, cue: 0.2, hot: [null, null, null, null], loop: null, synced: false,
+  keylock: false, ramp: { start: 0, brake: 0 }, loopIn: null, adjust: null, speed: 0, ...o,
 });
 /** A live event from the page, through the World's guard, and out to everyone else. */
 function overTheLine(e: DeckSay | DeckPress) {

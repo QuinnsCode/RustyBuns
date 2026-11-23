@@ -151,9 +151,9 @@ jobs:
       - if: matrix.prep
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with: { workspaces: "${{ matrix.cargo }}" }
-      # Only the root (TypeScript, bun's types) and this app's workspace with what it depends on, not the whole repo's
+      # Only the root (TypeScript, bun's types) and this job's app workspaces (one, or a group's six) with what they depend on, not the whole repo's
       # 3 GB: ~3 s instead of ~15. An app whose tests import another app's code lists it as a "workspace:*" devDependency.
-      - run: bun install --frozen-lockfile --filter rustybuns --filter "./${{ matrix.dir }}"
+      - run: bun install --frozen-lockfile --filter rustybuns ${{ matrix.filters }}
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}

@@ -1,10 +1,12 @@
-// The decks' mixer, laid out like the four-channel analog club mixer with twin filters (mixer-panel.ts draws it).
+// The Qone mixer, the QDJ decks' four-channel analog-style club mixer with twin filters (mixer-panel.ts draws it).
 // Four stereo channels, each: a trim, a four-band EQ (high and low cut to a full kill, the two mids cut deep, every
 // band boosts +6 dB), two post-fader aux sends, a filter assign (filter 1, filter 2 or off), a headphone cue, a meter,
 // the channel fader and a crossfader assign (X, Y or off). Two filters, one each side: on/off, high-pass, band-pass and
 // low-pass that can be pressed together (high + low is a notch, all three a flat line with a moving phase), a sweep
-// from 20 Hz to 20 kHz, a resonance from mild to wild, and a tempo-synced LFO (depth, beats per sweep, tap tempo)
-// that swings the sweep. Then the crossfader and its curve, the master and its stereo meters, the booth level (what
+// from 20 Hz to 20 kHz, a resonance from mild to wild, and an LFO each (LFO 1 on filter 1, LFO 2 on filter 2) that
+// swings the sweep: depth, beats per round, five shapes, and its tempo from a deck (locked to that deck's beat grid,
+// so a round starts on a downbeat) or tapped. Each filter's output is soft-clipped as an analog filter's is, so a wild
+// resonance sings instead of slamming the limiter. Then the crossfader and its curve, the master and its stereo meters, the booth level (what
 // your own speakers play, apart from the master the room's PA hears), the headphone cue/master blend and level, and
 // split cue (one output: the headphones in the left ear, the master in the right). A limiter keeps the master clean.
 // The arithmetic is plain functions at the top, so it can be checked without a browser.
@@ -19,6 +21,12 @@ export type ChannelKnob = "trim" | Band | "send1" | "send2" | "fader";
 export type XAssign = "x" | "y" | "off";
 export type FilterType = "hp" | "bp" | "lp";
 export type Curve = "smooth" | "cut";
+/** The LFO's shapes: a sine, a triangle, a square (it jumps between two sweeps), a ramp up and a ramp down. */
+export const LFO_SHAPES = ["sine", "tri", "square", "up", "down"] as const;
+export type LfoShape = (typeof LFO_SHAPES)[number];
+/** Where an LFO's tempo comes from: deck A's or B's beat grid (locked to its downbeats), or the TAP button. */
+export const LFO_FOLLOW = ["a", "b", "tap"] as const;
+export type LfoFollow = (typeof LFO_FOLLOW)[number];
 
 /** The four bands, top to bottom: shelves at the ends, bells in the middle. */
 export const BANDS: Record<Band, { type: "highshelf" | "peaking" | "lowshelf"; hz: number; q: number }> = {
@@ -49,10 +57,47 @@ export const resQ = (knob: number) => 0.6 * Math.pow(30, Math.min(1, Math.max(0,
 export const LFO_OCTAVES = 3;
 /** The LFO's beats per sweep, the choices on its switch. */
 export const LFO_BEATS = [0.5, 1, 2, 4, 8, 16] as const;
-/** The LFO's swing in cents at `t` seconds: a sine, one round every `beats` beats at `bpm`, `depth` 0 to 1. */
-export function lfoCents(t: number, bpm: number, beats: number, depth: number): number {
-  return Math.min(1, Math.max(0, depth)) * LFO_OCTAVES * 1200 * Math.sin((2 * Math.PI * t * bpm) / (60 * beats));
+/** The shape at `phase` (rounds; 0 is the downbeat), -1 to 1. */
+export function lfoValue(shape: LfoShape, phase: number): number {
+  const p = phase - Math.floor(phase);
+  switch (shape) {
+    case "sine": return Math.sin(2 * Math.PI * p);
+    case "tri": return p < 0.25 ? 4 * p : p < 0.75 ? 2 - 4 * p : 4 * p - 4;
+    case "square": return p < 0.5 ? 1 : -1;
+    case "up": return 2 * p - 1;
+    case "down": return 1 - 2 * p;
+  }
 }
+/** The LFO's swing in cents at `t` seconds: one round every `beats` beats at `bpm`, `depth` 0 to 1. */
+export function lfoCents(t: number, bpm: number, beats: number, depth: number, shape: LfoShape = "sine"): number {
+  return Math.min(1, Math.max(0, depth)) * LFO_OCTAVES * 1200 * lfoValue(shape, (t * bpm) / (60 * beats));
+}
+/** Harmonics in an LFO's wave (a sharp edge rounded off by the Lanczos sigma, so a square doesn't ring). */
+export const LFO_HARMONICS = 24;
+/**
+ * The shape as a PeriodicWave's cosine and sine terms, started `phase` rounds in (so a new oscillator picks up where
+ * the beat is): b_k sin(2πk(t + φ)) = b_k sin(2πkφ) cos(2πkt) + b_k cos(2πkφ) sin(2πkt).
+ */
+export function lfoTerms(shape: LfoShape, phase: number): { real: Float32Array; imag: Float32Array } {
+  const n = shape === "sine" ? 2 : LFO_HARMONICS + 1, real = new Float32Array(n), imag = new Float32Array(n);
+  for (let k = 1; k < n; k++) {
+    const odd = k % 2 === 1, sigma = shape === "sine" ? 1 : Math.sin((Math.PI * k) / n) / ((Math.PI * k) / n);
+    const b = shape === "sine" ? 1
+      : shape === "tri" ? (odd ? (8 / (Math.PI * Math.PI * k * k)) * (((k - 1) / 2) % 2 ? -1 : 1) : 0)
+      : shape === "square" ? (odd ? 4 / (Math.PI * k) : 0)
+      : shape === "up" ? -2 / (Math.PI * k) : 2 / (Math.PI * k);
+    real[k] = b * sigma * Math.sin(2 * Math.PI * k * phase);
+    imag[k] = b * sigma * Math.cos(2 * Math.PI * k * phase);
+  }
+  return { real, imag };
+}
+/** The filter's analog-style output stage: straight up to 0.8 of full scale, then a soft knee that never passes 1. */
+export function softClip(x: number): number {
+  const a = Math.abs(x);
+  return a <= 0.8 ? x : Math.sign(x) * (0.8 + 0.2 * Math.tanh((a - 0.8) / 0.2));
+}
+/** The level into a filter at resonance `res` (0 to 1), dB: a wild peak is taken down a little before the clip. */
+export const resTrimDb = (res: number) => -6 * Math.min(1, Math.max(0, res));
 /** The LFO's rate in Hz. */
 export const lfoHz = (bpm: number, beats: number) => bpm / 60 / beats;
 
@@ -95,7 +140,10 @@ export const boothGain = (v: number) => faderGain(v) / faderGain(0.8);
 const qParam = (t: FilterType, q: number) => t === "bp" ? q : 20 * Math.log10(q);
 
 export interface ChannelState { trim: number; high: number; hiMid: number; loMid: number; low: number; send1: number; send2: number; fader: number; filter: 0 | 1 | 2; cue: boolean; xf: XAssign }
-export interface FilterState { on: boolean; types: FilterType[]; freq: number; res: number; depth: number; beats: number; bpm: number }
+export interface FilterState { on: boolean; types: FilterType[]; freq: number; res: number; depth: number; beats: number; bpm: number; shape: LfoShape; follow: LfoFollow }
+/** A deck's tempo for an LFO to follow: its BPM now, and its beat count at an audio time (null: not running steady). */
+export interface Follow { bpm: number; beatAt(t: number): number | null }
+type Lfo = { osc: OscillatorNode | null; t0: number; ph0: number; hz: number; shape: LfoShape };
 export interface MixerState {
   channels: ChannelState[]; filters: [FilterState, FilterState];
   xfader: number; curve: Curve; master: number; booth: number; phones: number; cueBlend: number; split: boolean;
@@ -107,18 +155,24 @@ class FilterUnit {
   readonly out: GainNode;
   readonly f: Record<FilterType, BiquadFilterNode>;
   readonly on: Record<FilterType, GainNode>;
+  private readonly sum: GainNode;
   constructor(ctx: AudioContext, lfo: AudioNode) {
-    this.in = ctx.createGain(); this.out = ctx.createGain();
+    this.in = ctx.createGain(); this.out = ctx.createGain(); this.sum = ctx.createGain();
+    // the shaper reads -1 to 1, so the sum goes in at a quarter and comes back at four times: it clips at 0.8 of full
+    const shaper = new WaveShaperNode(ctx, { curve: Float32Array.from({ length: 4097 }, (_, i) => softClip(((i - 2048) / 2048) * 4) / 4), oversample: "2x" });
+    const down = new GainNode(ctx, { gain: 0.25 }), up = new GainNode(ctx, { gain: 4 });
+    this.sum.connect(down).connect(shaper).connect(up).connect(this.out);
     const mk = (t: FilterType) => new BiquadFilterNode(ctx, { type: t === "hp" ? "highpass" : t === "bp" ? "bandpass" : "lowpass", frequency: 1000 });
     this.f = { hp: mk("hp"), bp: mk("bp"), lp: mk("lp") };
     this.on = { hp: ctx.createGain(), bp: ctx.createGain(), lp: ctx.createGain() };
     for (const t of ["hp", "bp", "lp"] as const) {
-      this.in.connect(this.f[t]).connect(this.on[t]).connect(this.out);
+      this.in.connect(this.f[t]).connect(this.on[t]).connect(this.sum);
       lfo.connect(this.f[t].detune);
     }
   }
   apply(s: FilterState, t: number) {
     const hz = sweepHz(s.freq), q = resQ(s.res);
+    this.in.gain.setTargetAtTime(dbGain(resTrimDb(s.res)), t, 0.01);
     for (const k of ["hp", "bp", "lp"] as const) {
       this.f[k].frequency.setTargetAtTime(hz, t, 0.01);
       this.f[k].Q.setTargetAtTime(qParam(k, q), t, 0.01);
@@ -202,8 +256,11 @@ export class Mixer {
   phones = 0.8;
   cueBlend = 0;
   split = false;
-  private readonly lfo: [OscillatorNode, OscillatorNode];
+  /** Each LFO's oscillator and how it was started: at `t0`, `ph0` rounds in, at `hz`, in `shape` (to know its phase now). */
+  private readonly lfo: [Lfo, Lfo];
   private readonly lfoDepth: [GainNode, GainNode];
+  /** The decks' tempos for the LFOs (engine.ts sets it): side 0 is A, 1 is B. */
+  follow: (side: 0 | 1) => Follow | null = () => null;
   private readonly taps: [number[], number[]] = [[], []];
   private readonly masterGain: GainNode;
   private readonly meters: [AnalyserNode, AnalyserNode];
@@ -215,11 +272,11 @@ export class Mixer {
   private readonly buf = new Float32Array(512);
 
   constructor(readonly ctx: AudioContext, speakers: AudioNode = ctx.destination) {
-    const filter = (): FilterState => ({ on: false, types: ["lp"], freq: 0.6, res: 0.3, depth: 0, beats: 4, bpm: 120 });
-    this.filters = [filter(), { ...filter(), types: ["hp"], freq: 0.3 }];
-    this.lfo = [ctx.createOscillator(), ctx.createOscillator()];
+    const filter = (): FilterState => ({ on: false, types: ["lp"], freq: 0.6, res: 0.3, depth: 0, beats: 4, bpm: 120, shape: "sine", follow: "a" });
+    this.filters = [filter(), { ...filter(), types: ["hp"], freq: 0.3, follow: "b" }];
+    const idle = (): Lfo => ({ osc: null, t0: 0, ph0: 0, hz: 0, shape: "sine" });
+    this.lfo = [idle(), idle()];
     this.lfoDepth = [ctx.createGain(), ctx.createGain()];
-    for (const i of [0, 1] as const) { this.lfo[i].connect(this.lfoDepth[i]); this.lfo[i].start(); }
     const bus = ctx.createGain(), cueBus = ctx.createGain();
     this.sends = [ctx.createGain(), ctx.createGain()];
     this.channels = Array.from({ length: CHANNELS }, () => new Strip(ctx, bus, cueBus, this.sends, this.lfoDepth));
@@ -275,6 +332,8 @@ export class Mixer {
     if (to.depth !== undefined) f.depth = Math.min(1, Math.max(0, to.depth));
     if (to.beats !== undefined && to.beats > 0) f.beats = to.beats;
     if (to.bpm !== undefined) f.bpm = Math.min(200, Math.max(40, to.bpm));
+    if (to.shape && LFO_SHAPES.includes(to.shape)) f.shape = to.shape;
+    if (to.follow && LFO_FOLLOW.includes(to.follow)) f.follow = to.follow;
     this.apply();
   }
   /** A type button: pressed in or out (at least one stays in). */
@@ -288,23 +347,48 @@ export class Mixer {
     taps.push(ms);
     if (taps.length > 8) taps.shift();
     const bpm = tapBpm(taps);
-    if (bpm) this.filter(n, { bpm });
+    if (bpm) this.filter(n, { bpm, follow: "tap" });
   }
 
   private apply() {
     const t = this.ctx.currentTime, set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.008);
     for (const c of this.channels) c.apply(this.ctx, this.filters, this.xfader, this.curve);
-    for (const i of [0, 1] as const) {
-      const f = this.filters[i];
-      set(this.lfo[i].frequency, lfoHz(f.bpm, f.beats));
-      set(this.lfoDepth[i].gain, f.depth * LFO_OCTAVES * 1200);
-    }
+    for (const i of [0, 1] as const) set(this.lfoDepth[i].gain, this.filters[i].depth * LFO_OCTAVES * 1200);
+    this.tick();
     set(this.masterGain.gain, faderGain(this.master) * 1.25);
     set(this.boothGain.gain, boothGain(this.booth));
     set(this.toSpeakers.gain, this.split ? 0 : 1);
     set(this.splitOut.gain, this.split ? 1 : 0);
     set(this.cueMix[0].gain, 1 - this.cueBlend); set(this.cueMix[1].gain, this.cueBlend);
     set(this.phonesGain.gain, faderGain(this.phones) / faderGain(0.8));
+  }
+
+  /** LFO `n`'s tempo now: its deck's (when that has a beat grid) or the tapped one. */
+  lfoBpm(n: 0 | 1): number {
+    const f = this.filters[n], d = f.follow === "tap" ? null : this.follow(f.follow === "a" ? 0 : 1);
+    return d?.bpm || f.bpm;
+  }
+  /** Where LFO `n` is in its round now (0 to 1). */
+  lfoPhase(n: 0 | 1): number { const o = this.lfo[n], p = o.ph0 + o.hz * (this.ctx.currentTime - o.t0); return p - Math.floor(p); }
+  /**
+   * Each frame (and on every change): keep each LFO on its tempo and, following a deck that plays, on its beat (a round
+   * starts on a downbeat). An oscillator can't be moved, so one that has drifted is replaced by one started in step.
+   */
+  tick() {
+    const t = this.ctx.currentTime + 0.01;
+    for (const n of [0, 1] as const) {
+      const f = this.filters[n], o = this.lfo[n], hz = lfoHz(this.lfoBpm(n), f.beats);
+      const deck = f.follow === "tap" ? null : this.follow(f.follow === "a" ? 0 : 1), beat = deck?.beatAt(t) ?? null;
+      const now = o.osc ? o.ph0 + o.hz * (t - o.t0) : 0;
+      const want = beat === null ? now : beat / f.beats;
+      const off = Math.abs((((want - now) % 1) + 1.5) % 1 - 0.5);
+      if (o.osc && o.shape === f.shape && Math.abs(o.hz - hz) < 1e-5 && off < 0.01) continue;
+      const ph = want - Math.floor(want), { real, imag } = lfoTerms(f.shape, ph);
+      const osc = new OscillatorNode(this.ctx, { frequency: hz, periodicWave: new PeriodicWave(this.ctx, { real, imag, disableNormalization: true }) });
+      osc.connect(this.lfoDepth[n]); osc.start(t);
+      if (o.osc) { const old = o.osc; old.onended = () => old.disconnect(); old.stop(t); }
+      this.lfo[n] = { osc, t0: t, ph0: ph, hz, shape: f.shape };
+    }
   }
 
   /** How loud channel `ch` is now, 0 to 1 (after its EQ and filter, before its fader). */
