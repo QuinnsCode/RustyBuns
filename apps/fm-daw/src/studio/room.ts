@@ -75,6 +75,8 @@ export interface Outdoor {
   generator?: { at: [number, number]; yaw: number };
   /** The carved wooden lantern poles round the dance floor: the corners of the line they stand on (x0, z0, x1, z1). */
   lanternPoles?: [number, number, number, number];
+  /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */
+  lanterns?: [number, number, number][];
   seed: number;
 }
 

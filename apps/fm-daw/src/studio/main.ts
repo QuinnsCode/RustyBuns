@@ -76,6 +76,7 @@ import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
 import { openAir, paStack } from "./open-air.ts";
+import { LanternsHere } from "./lanterns.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
@@ -605,6 +606,7 @@ function record(peer?: number, pick?: number) {
  */
 const deskFeed = new DeskFeed((m) => out?.send(m));
 const atWall = new GearHands(def, (op) => net?.studio(op));
+const lit = new LanternsHere(def, (m) => net?.lantern(m), scene);
 /** The sesh's gear room as the World keeps it, kept in step by the wall's hands: what the desk reads (aux 2) and shows. */
 const gearRoom = { get patch() { return atWall.room.studio.patch; } };
 /**
@@ -911,6 +913,7 @@ if (here) net = connect({
     atWall.onStudio(m);
     deskSync();
   },
+  onLanterns: (m) => lit.heard(m),
   onRtc: (m) => void (m.line === "pa-out" || m.line === "pa-in" ? pa?.signal(m) : guitars?.signal(m)),
   onClock(m) { const r = band.onClock(m); if (r) net?.clock(r); },
   onSnapshot(p) {
@@ -953,6 +956,7 @@ canvas.addEventListener("mousedown", (e) => {
   // at the gear wall a click is the gear's: right-click lets go of a cable
   if (e.button === 2 && !jam.me.seat) return void say(atWall.letGo());
   if (atWall.wants(jam)) return void say(atWall.click(jam));
+  if (lit.wants(jam)) return void say(lit.use(jam));
   sitOrStand();
 });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -984,6 +988,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyR") return record();
   if (code === "Enter") return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
+  if (code === "KeyF" && !atWall.wants(jam) && lit.wants(jam)) return void say(lit.use(jam));
   if (!jam.me.seat && code === "KeyF") return void say(atWall.click(jam));
   if (!jam.me.seat && code === "KeyG") return void say(atWall.letGo());
   if (!jam.me.seat && (code === "KeyQ" || code === "KeyE") && atWall.turn(code === "KeyQ" ? -1 : 1)) return;
@@ -1175,7 +1180,7 @@ function hint(): string {
     return `At ${s.label}. Space stands up, V camera`;
   }
   const near = nearSpot(jam), gear = atWall.hint(jam);
-  return gear || (near ? `Space or click: sit at ${near.label}` : "");
+  return gear || lit.hint(jam) || (near ? `Space or click: sit at ${near.label}` : "");
 }
 
 /** The notes sounding at a spot, as `track:midi`: whoever sits there holds them. */
@@ -1255,6 +1260,7 @@ function frame(now: number) {
   }
   showPlayed(dt, t);
   boothGear.frame(deckView, t);
+  lit.frame(jam, camera.position, t);
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
@@ -1278,7 +1284,11 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
-    gear: atWall.state(jam) }),
+    gear: atWall.state(jam), lanterns: lit.state(jam) }),
+  /** F or a click on the lanterns: take the nearest (or lantern `i`) within reach, or set yours down in front of you. */
+  lantern: (i?: number) => lit.use(jam, i),
+  /** A lanterns message as the World sends it ({ t: "lanterns", lanterns: { room, moved }, you }), to see one carried with no World. */
+  lanternsSay: (m: unknown) => lit.say(m),
   /** At the gear wall: look straight at a box, or one of its jacks or knobs by name (from where you stand). */
   gearLook: (id: string, part?: string) => atWall.lookAt(jam, id, part),
   /** A click (F) at the gear wall: set down, plug, unplug, take a cable, pick up. */
