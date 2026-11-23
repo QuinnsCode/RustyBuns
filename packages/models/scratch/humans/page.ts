@@ -24,7 +24,7 @@ scene.add(key);
 const floor = new THREE.Mesh(new THREE.CircleGeometry(10, 48), new THREE.MeshStandardMaterial({ color: "#cfc8bc", roughness: 1 }));
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-type View = "row" | "close" | "one" | "side";
+type View = "row" | "close" | "one" | "side" | "face";
 let turn = 0, view: View = "row", move: Move = { speed: 0 }, frozen: number | null = null, names: (BuildName | Build)[] = BUILD_NAMES, plain = false, paint: Palette = {};
 let extra: Partial<Outfit> = {};
 let figures: Human[] = [];
@@ -33,7 +33,7 @@ function palette(i: number): Palette {
   if (plain) return Object.fromEntries(["skin", "top", "topDark", "bottom", "bottomDark", "boot", "bootDark", "sole", "hair", "lips", "brow"].map((s) => [s, "#b9b2a8"]));
   const top = TOPS[i % TOPS.length]!, dark = (c: string, f: number) => `#${new THREE.Color(c).multiplyScalar(f).getHexString()}`;
   const skin = SKINS[(i * 2 + 1) % SKINS.length]!, hair = HAIR[(i * 5 + 1) % HAIR.length]!;
-  return { skin, lips: `#${new THREE.Color(skin).lerp(new THREE.Color("#a03a3a"), 0.35).multiplyScalar(0.9).getHexString()}`, top, topDark: dark(top, 0.7), hair, brow: dark(hair, 0.8),
+  return { skin, lips: `#${new THREE.Color(skin).lerp(new THREE.Color("#9a3030"), 0.5).multiplyScalar(0.9).getHexString()}`, top, topDark: dark(top, 0.7), hair, brow: dark(hair, 0.8),
     hat: TOPS[(i + 5) % TOPS.length]!, hatDark: dark(TOPS[(i + 5) % TOPS.length]!, 0.7), pack: TOPS[(i + 3) % TOPS.length]!, packDark: dark(TOPS[(i + 3) % TOPS.length]!, 0.6) };
 }
 function build() {
@@ -51,6 +51,7 @@ function aim() {
   for (const f of figures) f.root.rotation.y = THREE.MathUtils.degToRad(turn);
   const n = figures.length;
   if (view === "close") { camera.position.set(0, 1.62, 1.0 + n * 0.62); camera.lookAt(0, 1.55, 0); }
+  else if (view === "face") { const h = (figures[0]?.height ?? 1.75) - 0.12; camera.position.set(0, h, 0.55 + n * 0.42); camera.lookAt(0, h, 0); }
   else if (view === "one") { camera.position.set(0, 1.0, 5.2); camera.lookAt(0, 0.92, 0); }
   else if (view === "side") { camera.position.set(9, 1.0, 0); camera.lookAt(0, 0.9, 0); }
   else { camera.position.set(0, 1.0, 2.4 + n * 1.05); camera.lookAt(0, 0.92, 0); }

@@ -50,7 +50,7 @@ function colors(ranger: boolean, look: Look): Palette {
   const hat = ranger ? "#8a6a3e" : SHIRTS[(look.shirt + 5) % SHIRTS.length]!, pack = SHIRTS[(look.shirt + 3) % SHIRTS.length]!;
   const boot = ranger ? "#2c2018" : "#5a3b24";
   return {
-    skin, lips: mix(skin, "#8a2f2f", 0.3), hair, brow: shade(hair, 0.8), iris: "#1b1712", eyeWhite: "#f1ede4",
+    skin, lips: mix(skin, "#8a2f2f", 0.45), hair, brow: shade(hair, 0.8), iris: "#1b1712", eyeWhite: "#f1ede4",
     top, topDark: shade(top, 0.66), trim: ranger ? "#d8ff3a" : "#f2efe6", bottom, bottomDark: shade(bottom, 0.75),
     boot, bootDark: shade(boot, 0.7), sole: "#1d1611", hat, hatDark: shade(hat, 0.7), band: "#3b2a1a",
     pack, packDark: shade(pack, 0.6), strap: shade(pack, 0.45), roll: "#5a6b3a", belt: "#3b2a1a", kit: "#1e2226", metal: "#c9a646", glow: "#fff8e0",
