@@ -54,6 +54,7 @@ import { isMuted, leaders, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
+import { tapestry } from "./tapestry.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
@@ -255,12 +256,34 @@ function thing(s: Spot): THREE.Group {
     inFront.add(synth.group);
     played.set(s.id, { keys });
   } else if (s.kind === "dj") {
-    // the DJ booth (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
+    // the decks (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
     // and a media deck either side, every front edge in one line toward the DJ (+z)
-    const top = t.h, look = gearLook();
-    box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
-    box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
-    for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
+    const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearLook();
+    if (def.outdoor) {
+      // out of doors (Desert Gathering) there's no booth: a board on three sawhorses, a sandbag on each one's shelf so
+      // the wind and the bass don't walk it, and a tapestry over the board, hanging down the side the crowd sees
+      const pine = surface("ply", "#b08a5a"), sack = surface("fabric", "#9a8a68"), board = t.h - 0.03, back = board - 0.045, shelf = 0.28;
+      box(t.w, 0.03, t.d, surface("ply", "#8a6a44"), 0, t.h - 0.015, 0);
+      const bag = new THREE.SphereGeometry(1, 14, 10);
+      [-t.w * 0.38, 0, t.w * 0.38].forEach((x, i) => {
+        box(0.09, 0.09, t.d - 0.04, pine, x, back, 0);
+        // four legs splayed out sideways, a rail joining each pair low down and a plank across the rails
+        const out = (y: number) => 0.03 + 0.23 * (1 - y / (back - 0.04));
+        for (const z of [-1, 1]) for (const k of [-1, 1]) tube(0.024, v(x + k * out(back - 0.04), back - 0.04, z * (t.d / 2 - 0.1)), v(x + k * out(0), 0, z * (t.d / 2 - 0.05)), pine);
+        for (const k of [-1, 1]) box(0.02, 0.07, t.d - 0.14, pine, x + k * out(shelf), shelf, 0);
+        box(out(shelf) * 2 + 0.04, 0.02, 0.32, pine, x, shelf + 0.045, 0);
+        const lie = (w: number, d: number, y: number, yaw: number) => { const b = put(new THREE.Mesh(bag, sack), x, y, 0); b.scale.set(w, 0.07, d); b.rotation.y = yaw; };
+        lie(0.2, 0.15, shelf + 0.125, 0.1 * (i - 1));
+        if (i === 1) lie(0.14, 0.19, shelf + 0.25, 0.3);
+      });
+      const drop = 0.55, weave = new THREE.MeshStandardMaterial({ map: tapestry(t.w, drop, def.outdoor.seed), roughness: 0.95, side: THREE.DoubleSide });
+      box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0);
+      put(new THREE.Mesh(new THREE.PlaneGeometry(t.w + 0.02, drop), weave), 0, t.h - drop / 2, -t.d / 2 - 0.012).rotation.y = Math.PI;
+    } else {
+      box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
+      box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
+      for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
+    }
     const front = t.d / 2 - 0.08;
     const mixer = gearModel("mixer-dj", { look });
     put(mixer, 0, top, front - 0.414 / 2);

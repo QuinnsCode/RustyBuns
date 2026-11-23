@@ -1,4 +1,4 @@
-// The desert night party as a crew does it: over the sand from the truck (every step slower), the generator up on the
+// Desert Gathering as a crew does it: over the sand from the truck (every step slower), the generator up on the
 // sand cart because its own wheels dig in, four horn dance stacks (too heavy for anyone to lift) pushed down on their
 // sand dollies and stood in a line, the amp racks, the distro and the mixer beside the wall, the long feed from the
 // generator, and the wall patched. The fader is set for the floor full at the peak of the night, so the empty desert

@@ -44,7 +44,7 @@ export const Studio: Guard<StudioDef> = obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
     truss: obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) }),
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
-    festoon: opt((v): [number, number, number, number] => { const [a, b, c, d] = arr(num(-25, 25), 4, { min: 4 })(v); return [a, b, c, d]; }),
+    lanternPoles: opt((v): [number, number, number, number] => { const [a, b, c, d] = arr(num(-25, 25), 4, { min: 4 })(v); return [a, b, c, d]; }),
     seed: int(0, 2 ** 31),
   })),
 });
