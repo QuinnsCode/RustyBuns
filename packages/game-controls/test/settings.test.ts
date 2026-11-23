@@ -13,6 +13,11 @@ test("old saves keep working and new fields clamp", () => {
   expect(s).toMatchObject({ lookX: 2, brightness: 1.5, music: 0, tilt: 15, muted: ["steps"], musicOn: false, sfxOn: true, touchX: 1 });
 });
 
+test("the Rendering row (Bloom) saves as a flag and a wrong type reads as its default", () => {
+  expect(parseSettings({ more: { bloom: false } }).more).toEqual({ bloom: false });
+  expect(parseSettings({ more: { bloom: "off" } }).more).toEqual({});
+});
+
 test("volumeOf is silent when the group or the piece is off", () => {
   const s = { ...DEFAULTS, sfx: 0.5, muted: ["steps"] };
   expect([volumeOf(s, "sfx"), volumeOf(s, "sfx", "steps"), volumeOf({ ...s, musicOn: false }, "music")]).toEqual([0.5, 0, 0]);

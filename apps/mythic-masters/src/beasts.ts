@@ -134,6 +134,9 @@ const STYLE: Record<Archetype, { amp: number; crouch: number; twist: number; sto
  * swings off its pose, in radians: a tank's arms are heavy and slow, a skirmisher's quick. */
 const LIMB_SOFT: Record<Archetype, number> = { tank: 0.5, bruiser: 0.45, flyer: 0.6, skirmisher: 0.35 };
 const LIMB_SWING = 0.55;
+/** A flyer's arms in flight: the way they sweep to in the body's own frame (back, down, out), how much of the way
+ * (0 to 1), and how far past LIMB_SWING (radians) the sweep may turn the shoulder. */
+const FLY_TUCK = { back: -1, down: -0.45, out: 0.2, amount: 0.8, reach: 0.9 } as const;
 
 /** The limbs that hang from the body: tips that aren't a foot, a wing or the head (the tail is one: its tip rides a
  * goal, and its own bones swing on top), each with the top of the bones it owns alone (up from the tip until a bone a
@@ -349,6 +352,14 @@ interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from:
   /** The ankle (the joint the foot's own bone turns on), and the rest foot from the toe back to it; -1 for a leg with no knee above it. */
   ankle: number; heel: THREE.Vector3 }
 
+/** The hit's twist spring: stiffness (a swing of about 0.6 s), damping ratio, and the kick a full blow gives it (it peaks
+ * near 0.55 of a turn unit about 0.12 s on, swings about 0.2 the other way by 0.45 s, and is under 0.05 by 0.9 s). */
+const TURN = { k: 110, damp: 0.28, kick: 8 } as const;
+/** The gait: how high the hips rise over the standing leg mid-step (of the height), how far the body rolls onto it
+ * (radians), and how far the hips may drop to keep the planted feet down. */
+const GAIT = { bob: 0.03, roll: 0.05, sink: 0.06 } as const;
+/** Giving ground off the other body: the most (in the body's own radii) and how fast it eases (per second). */
+const GIVE = { most: 1.2, rate: 10 } as const;
 const SWING = 0.14;      // seconds a step takes at a walk; a sprint's steps are quicker
 const STEP = 0.22;       // how far (as a fraction of the model's height) a foot is left behind before it steps
 const LIFT = 0.12;       // how high a stepping foot lifts, as a fraction of the model's height
@@ -390,6 +401,15 @@ export class Puppet {
   private tailSet = false;
   /** The limbs that hang (an upright beast's arms, a fin, a second tail): the top bone of each, the tip it swings. */
   private readonly limbs: { top: number; tip: number }[];
+  /** Per hanging limb: +1 or -1 for an arm (its side), 0 for a limb that isn't one. Flying, the arms sweep back. */
+  private readonly armSide: number[];
+  /** How far the arms are swept back for flight, 0 to 1, eased in and out (#5185 round 11). */
+  private tuck = 0;
+  /** How far (m) the whole body has given ground off the other to keep its front out of it (#5185 round 13), eased. */
+  private give = 0;
+  /** How far the hips are let down so the planted legs reach the ground (#5185 round 12), eased. */
+  private sink = 0;
+  private readonly trail = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly sec: Secondary;
   /** The loose cards and spikes' springs, one a bone (loose.ts); null when no part is loose or the skin is merged. */
@@ -436,6 +456,10 @@ export class Puppet {
   private recoilV = 0;
   private recoilK = 0;
   private recoilSide = 1;
+  /** The recoil's twist (#5185 round 10): kicked on the blow, it swings the body away from it, rings back past square
+   * and settles inside a second, rather than riding the recoil's slow hold and staying turned. */
+  private turn = 0;
+  private turnV = 0;
   private hits = 0;
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
@@ -566,6 +590,9 @@ export class Puppet {
     this.front = Math.max(...sheet.tips.map((t) => this.ik.worldPosition(t)[0]));
     this.tail = tail === null ? null : { tip: tail, rest: new THREE.Vector3(...this.ik.worldPosition(tail)), lag: new THREE.Vector3() };
     this.limbs = hangingLimbs(rig, sheet, head);
+    // an arm: a limb hung from the upper body (over a third of the height up; the rigs put the root joint at the chest on
+    // some flyers), off the centreline (a second tail or a fin hangs from lower down or the middle)
+    this.armSide = this.limbs.map((l) => rig.joints[l.top * 3 + 1]! > 0.35 * sheet.height && Math.abs(rig.joints[l.top * 3 + 2]!) > 0.02 * sheet.height ? Math.sign(rig.joints[l.top * 3 + 2]!) : 0);
     this.sec = new Secondary(archetype, head.length, rig.parents.length, this.limbs.length);
     for (const t of [...head, ...(tail === null ? [] : [tail])]) this.ik.setPinned(t, true);
     this.feet = sheet.feet.map((tip) => {
@@ -712,6 +739,16 @@ export class Puppet {
     const run = grounded ? Math.min(1, speed / Math.max(1, f.b.topSpeed)) : 0;
     pitch -= run * 0.1;
     if (grounded && !pose && f.state === "free") roll += Math.sin(tick * 0.031) * 0.018 * (1 - run);
+    // the gait (#5185 round 12): the body rises over the standing leg while the other swings and drops as it lands, and
+    // rolls onto the standing side, from the feet's own steps (last frame's) rather than a free sine
+    let gait = 0, sway = 0;
+    if (grounded) for (const ft of this.feet) if (ft.t < 1) {
+      const lift = Math.sin(ft.t * Math.PI);
+      gait = Math.max(gait, lift);
+      sway -= Math.sign(ft.home.z - this.rest.z) * lift;
+    }
+    const pace = Math.min(1, speed / 3);
+    roll += Math.max(-1, Math.min(1, sway)) * GAIT.roll * pace * (0.4 + 0.6 * this.upright);
     if (stunK) roll += Math.sin(tick * 1.7) * 0.07 * stunK;
     // landing: the harder the fall, the deeper the squash, springing back up
     if (grounded && !this.landed) this.squash = Math.min(1, Math.max(0, -this.vy) / 9);
@@ -748,6 +785,15 @@ export class Puppet {
       }
       this.recoilSide = side;
       this.recoilK = Math.max(this.recoilK, 0.45 + 0.55 * Math.min(1, (f.stun - this.prevStun) / 22));
+      this.turnV = side * TURN.kick * (0.45 + 0.55 * Math.min(1, (f.stun - this.prevStun) / 22));
+    }
+    {
+      // the twist rings on its own spring, light enough to swing back past square once before it settles
+      const tdt = Math.min(dt, 1 / 30) / 4;
+      for (let i = 0; i < 4; i++) {
+        this.turnV += (-TURN.k * this.turn - 2 * TURN.damp * Math.sqrt(TURN.k) * this.turnV) * tdt;
+        this.turn += this.turnV * tdt;
+      }
     }
     // held while the stun lasts (half gone in about 0.3 s), let go faster once the body is free
     this.recoilK *= Math.exp(-(f.state === "stun" ? 2.2 : 6) * dt);
@@ -798,7 +844,7 @@ export class Puppet {
     // the recoil rides on top, raw: the chest thrown back, the body twisted away from the blow and tipped onto the far
     // legs (an upright body further: a four-legged one keeps its feet under it)
     const rc = this.recoil, rs = this.recoilSide * rc;
-    this.pivot.rotation.set(roll + rs * 0.16 * this.upright, twist + rs * (0.1 + 0.3 * this.upright),
+    this.pivot.rotation.set(roll + rs * 0.16 * this.upright, twist + this.turn * (0.1 + 0.3 * this.upright),
       this.lean - curl * 0.32 + rebound * 0.8 + this.snap * 0.25 + rc * (0.2 + 0.2 * this.upright) - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     // a real meet: the sim lands a melee blow up to a metre short of the other body, so the striker's whole body slides
@@ -811,6 +857,10 @@ export class Puppet {
       if (d > 0.01 && gap > 0 && gap < 1.5) g.position.add(this.tmp.set(dx / d, 0, dz / d).multiplyScalar(gap * pose.k));
     }
     if (this.kb > 0.001) g.position.addScaledVector(this.kbDir, this.kb);
+    if (this.give > 0 && look) {
+      const dx = f.pos.x - look.x, dz = f.pos.z - look.z, d = Math.hypot(dx, dz);
+      if (d > 0.01) g.position.add(this.tmp.set(dx / d, 0, dz / d).multiplyScalar(this.give));
+    }
     if (off) g.position.lerpVectors(this.hang, g.position, offE).y += Math.sin(offE * Math.PI) * 0.25 * f.b.height;
     // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
     const floor = this.ground ?? 0, up = f.pos.y - floor;
@@ -927,7 +977,7 @@ export class Puppet {
       wb.y = y;
     }
     // the body breathes, and bobs with each stride; a strike shifts it, the coil pulls it back and down
-    const bob = grounded ? Math.abs(Math.sin(tick * (0.22 + run * 0.12))) * 0.035 * h * Math.min(1, speed / 3) : 0;
+    const bob = grounded ? gait * GAIT.bob * h * pace : 0;
     // follow-through: the strike snaps out past its pose and settles back onto it
     const kt = forward || thrust ? k : 0, kdt = Math.min(dt, 1 / 30);
     this.ksV += (400 * (kt - this.ks) - 2 * 0.35 * 20 * this.ksV) * kdt;
@@ -950,7 +1000,23 @@ export class Puppet {
       } else this.blocked = false;
     }
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
-    const ry = bodyY + bob + heave + (rear * 0.12 - lunge * 0.06 - dip - this.recoil * 0.07 * this.upright + bounce + arch) * h;
+    let ry = bodyY + bob + heave + (rear * 0.12 - lunge * 0.06 - dip - this.recoil * 0.07 * this.upright + bounce + arch) * h;
+    // the standing feet stay down: the hips sit no higher than every planted leg reaches (a bob or a sway that lifted them
+    // off it stood the body on a lifted foot, or on none), lowered by up to GAIT.sink of the height for it
+    if (grounded && !hanging && !rear) {
+      let cap = Infinity;
+      for (const ft of this.feet) {
+        if (ft.t < 1) continue;
+        const goal = this.ik.goalPosition(ft.tip);
+        if (!goal) continue;
+        const dx = goal[0] - (ft.hip.x + rx), dz = goal[2] - ft.hip.z, r = ft.reach * 0.96, flat = dx * dx + dz * dz;
+        if (flat < r * r) cap = Math.min(cap, goal[1] + Math.sqrt(r * r - flat) - ft.hip.y);
+      }
+      // eased, so a foot leaving the ground doesn't pop the hips back up in one frame
+      const want = ry > cap ? Math.min(ry - cap, GAIT.sink * h) : 0;
+      this.sink += (want - this.sink) * (1 - Math.exp(-(want > this.sink ? 30 : 12) * dt));
+      ry -= this.sink;
+    } else this.sink = 0;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
     // a foot goal the leg can't reach (the hips lunged away, rose, or dropped) comes up off the floor to the leg's
     // full stretch instead of folding the leg in half chasing it
@@ -1034,14 +1100,29 @@ export class Puppet {
     // still and walking, a heavily damped solve keeps a many-headed beast's tips from shivering; an attack's fast
     // swing needs the light one to reach its goals (packages/rig ik.ts DAMP)
     this.ik.solve(this.ikIterations, pose ? DAMP.strike : DAMP.settle);
+    // how far the posed body reaches into the other's (its radius about where it stands), along the line between them:
+    // standing close and coiling, a long body's snout and shoulders went into the other (#5185 round 13), so the whole
+    // body gives ground by that much (eased, from next frame). Held while a strike is live, so a blow still lands on the hide.
+    const ux = look ? look.x - g.position.x : 0, uz = look ? look.z - g.position.z : 0, ud = Math.hypot(ux, uz);
+    const meet = !!look && grounded && !hanging && !off && ud > 0.01 && ud < (foeRadius ?? this.radius) + 2 * this.radius;
+    let into = -Infinity;
     for (let j = 0; j < this.bones.length; j++) {
       this.m.fromArray(this.ik.matrixWorld(j) as number[]);
+      if (meet) {
+        this.tmp.setFromMatrixPosition(this.m).applyMatrix4(this.inner.matrixWorld);
+        into = Math.max(into, ((this.tmp.x - g.position.x) * ux + (this.tmp.z - g.position.z) * uz) / ud - (ud - (foeRadius ?? this.radius)));
+      }
       const p = this.ik.parents[j]!;
       if (p >= 0) this.m.premultiply(this.pm.fromArray(this.ik.matrixWorld(p) as number[]).invert());
       this.m.decompose(this.bones[j]!.position, this.bones[j]!.quaternion, this.bones[j]!.scale);
     }
+    // through a move it only gives more (a coil that leaves room doesn't step back in before the strike)
+    const giveTo = !meet ? 0 : pose && pose.k > 0 ? this.give : Math.min(GIVE.most * this.radius, Math.max(pose ? this.give : 0, this.give + into));
+    this.give += (giveTo - this.give) * (1 - Math.exp(-GIVE.rate * dt));
+    if (this.give < 1e-4) this.give = 0;
     if (this.anklesHeld) this.levelFeet();
     this.flexWings(grounded);
+    this.tuck += ((f.flying && !hanging ? 1 : 0) - this.tuck) * (1 - Math.exp(-5 * dt));
     this.swingLimbs(dt);
     this.sec.settle();
     this.swayLoose(dt);
@@ -1070,7 +1151,11 @@ export class Puppet {
       // the arm and where it trails to, as directions in the model's own space (its scale is uniform)
       to.set(tip.x + sf.x, tip.y + sf.y, tip.z + sf.z).sub(top).transformDirection(this.inv);
       tip.sub(top).transformDirection(this.inv);
-      const angle = Math.min(LIMB_SWING, tip.angleTo(to));
+      // flying, an arm sweeps back along the flank (down and back in the body's own frame, a little out from it),
+      // so it trails the lean instead of hanging straight down under a chest-down body
+      const side = this.armSide[i]!, tk = side ? this.tuck * FLY_TUCK.amount : 0;
+      if (tk > 0.001) to.lerp(this.trail.set(FLY_TUCK.back, FLY_TUCK.down, side * FLY_TUCK.out).normalize(), tk).normalize();
+      const angle = Math.min(LIMB_SWING + tk * FLY_TUCK.reach, tip.angleTo(to));
       if (angle < 1e-4) return;
       // turn about the axis between them, seen from inside the top bone
       top.crossVectors(tip, to).normalize();

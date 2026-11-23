@@ -816,8 +816,9 @@ body > .gc-dialog .gc-tabs { justify-content: flex-start; }
 body > .gc-dialog .gc-tab { flex: 0 0 auto; min-width: 0; opacity: 0.72;
   background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.12) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), var(--rb, linear-gradient(#8f2418, #6a150d)); }
 body > .gc-dialog .gc-tab[aria-selected=true] { opacity: 1; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), var(--rb, linear-gradient(#8f2418, #6a150d)); }
-body > .gc-dialog .gc-tab:not(.gc-prof):nth-child(2) { --rb: linear-gradient(#45603a, #2c4024); }
-body > .gc-dialog .gc-tab:not(.gc-prof):nth-child(3) { --rb: linear-gradient(#9a7228, #6b4d16); }
+body > .gc-dialog .gc-tab[data-tab=display] { --rb: linear-gradient(#34477a, #1f2b52); }
+body > .gc-dialog .gc-tab[data-tab=audio] { --rb: linear-gradient(#45603a, #2c4024); }
+body > .gc-dialog .gc-tab[data-tab=account] { --rb: linear-gradient(#9a7228, #6b4d16); }
 body > .gc-dialog .gc-tab.gc-prof { font-size: 16px; padding: 5px 12px 12px; --rb: linear-gradient(#5e4630, #3d2a1a); opacity: 0.9; } /* its icon still reads on the brown */
 body > .gc-dialog .gc-card .gc-tab.gc-prof[aria-pressed=true] { padding-bottom: 16px; color: #f6e8cb; opacity: 1; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.25), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.1) 70%, rgba(0, 0, 0, 0.28)), linear-gradient(#8f2418, #6a150d); }
 body > .gc-dialog .gc-profiles { display: flex; gap: 8px; justify-content: flex-start; }
@@ -991,7 +992,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   body > .gc-dialog::before, .result::before { grid-column: 1; grid-row: 1; display: grid; align-content: start; justify-content: center; padding: 316px 15% 0; text-align: center; white-space: pre-line;
     font-family: var(--f-hand); font-size: 23px; line-height: 1.25; color: var(--blood); text-shadow: 0.4px 0.4px 0 rgba(77, 15, 9, 0.35);
     background: url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); -webkit-mask-box-image: url("/paper/deckle.png") 48 / 30px 0 30px 30px round; }
-  body > .gc-dialog::before { background: var(--verso-hands, none), url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); content: "Tell me how you hold me,\A and I will learn your hands.\A \A \2014\00a0the Book\A \A \A Red for the hands,\A green for the ear,\A gold for your name."; }
+  body > .gc-dialog::before { background: var(--verso-hands, none), url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); content: "Tell me how you hold me,\A and I will learn your hands.\A \A \2014\00a0the Book\A \A \A Red for the hands,\A blue for the eye,\A green for the ear,\A gold for your name."; }
   .result::before { background: var(--verso-rest, none), url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); content: "What is written here rests here,\A and comes when it is called.\A \A \2014\00a0inside the cover"; color: var(--moss); font-family: var(--f-book); font-style: italic; font-size: 19px; text-shadow: none; }
   .result[data-verso]::before { content: attr(data-verso); } /* a win with nothing bound: the line on the facing leaf says so */
   body > .gc-dialog::after, .result::after { content: ""; grid-column: 1 / 3; grid-row: 1; z-index: -1; margin: -24px -27px -28px; border-radius: 9px 12px 12px 9px; pointer-events: none;
@@ -1501,3 +1502,32 @@ body:has(#journal:not([hidden])) #worldHud { visibility: hidden; }
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2' d='M3 8Q30 3 60 6T97 4'/%3E%3Cpath stroke-width='1' d='M12 10Q45 7 80 9'/%3E%3C/svg%3E") center bottom / 100% 9px no-repeat; }
 .select.book button.tile.ribbon-tile:is(:hover, :focus-visible) .pic { filter: grayscale(1) contrast(2.3) sepia(1) saturate(1.9) brightness(0.8); }
 @media (min-width: 960px) { .title .leaf .page.verso { justify-content: safe center; } .title .verso .plate { width: min(380px, 88%); margin: 0; } } /* the demand left the plate's leaf: the plate stands in the middle of it */
+
+/* --- Settings > Display --------------------------------------------------------------------------------------------
+ * The quality picker reads like the layout presets: four words in the Book's hand, the chosen one inked in blood, and
+ * the note under it in the faded italic the Book uses for asides. */
+body > .gc-dialog .gc-choice { padding: 4px 0 8px; border-bottom: 1px dashed var(--ink-line); }
+body > .gc-dialog .gc-seg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+body > .gc-dialog .gc-seg .gc-key { min-height: 40px; white-space: nowrap; }
+body > .gc-dialog .gc-hint { font-family: var(--f-book); font-style: italic; font-size: 15px; color: var(--ink-faded); opacity: 1; }
+/* a phone: four ribbons in one row (Display made it four), and a row's words get the room to sit on one line */
+@media (max-width: 480px) {
+  body > .gc-dialog .gc-tabs { gap: 4px; }
+  body > .gc-dialog .gc-tab:not(.gc-prof) { font-size: 15px; padding: 6px 7px 13px; }
+  body > .gc-dialog .gc-tab:not(.gc-prof)[aria-selected=true] { padding-bottom: 17px; }
+  body > .gc-dialog .gc-card label { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) 3.2em; }
+  body > .gc-dialog .gc-seg .gc-key { font-size: 16px; padding: 0 2px; }
+}
+/* Reduce motion (Settings), body.still: the same stills as the OS setting's rules above and in styles.css. The page
+ * turns and the ink soak are JS (page.ts), which main.ts answers through matchMedia. */
+body.still .title .plate .ring :is(.briar, .buds), body.still .title .plate .ring::before, body.still :is(.journal, .title) .tome::after,
+body.still .chart .route, body.still .chart .glow, body.still .chart .mist, body.still .chart mask circle, body.still .haze i, body.still .haze::before, body.still .haze::after,
+body.still .result .note .seal, body.still .miasma i, body.still .select.book .picks > div, body.still .select.book .circle,
+body.still .select.book .inking :is(.circle, .tcard, .card, .margin), body.still .booktalk.first-open .tome, body.still .booktalk.first-open .tome > .cover,
+body.still .world-hud .arrive, body.still .world-hud .dread, body.still .cine .speed, body.still .cine .file, body.still .cine .file .stamp,
+body.still .cine .caption.muffled span, body.still .cine .grain, body.still .cine .title-card { animation: none; }
+body.still .ink, body.still .cine .pov :is(.beam, .grey .body, .grey .head) { animation: none !important; }
+body.still .ink { -webkit-mask-image: none; mask-image: none; }
+body.still .wet, body.still .booktalk.first-open .tome > .cover { display: none; }
+body.still .miasma .mote { opacity: 0.5; }
+body.still #hud.bind-ready .bind { animation: none; filter: brightness(1.3) drop-shadow(0 0 8px #7dffb0); }
