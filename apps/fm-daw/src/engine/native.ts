@@ -2,7 +2,7 @@
 // platform (or Cloudflare), and callers use TsEngine.
 import { FFIType, ptr } from "bun:ffi";
 import { loadNative } from "@rustybuns/native";
-import type { FmEngine } from "./engine.ts";
+import { tapCode, type FmEngine } from "./engine.ts";
 import { TRACKS } from "./params.ts";
 
 export const fmSymbols = {
@@ -50,7 +50,7 @@ export async function createNativeEngine(sampleRate: number): Promise<FmEngine |
     panic: () => l.fm_panic(h),
     click: (a) => l.fm_click(h, a ? 1 : 0),
     setTrackBand: (t, i, k, f, g, q, sl, on) => l.fm_track_eq_set(h, t >>> 0, i >>> 0, k >>> 0, f, g, q, sl, on ? 1 : 0),
-    setTap: (t, on) => l.fm_set_tap(h, t >>> 0, on ? 1 : 0),
+    setTap: (t, on) => l.fm_set_tap(h, t >>> 0, tapCode(on)),
     render: (out, frames, send, taps, send2) => l.fm_render(h, ptr(out), send ? ptr(send) : null, taps ? ptr(taps) : null, send2 ? ptr(send2) : null,
       Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity, send2 ? send2.length >> 1 : Infinity)),
     meter: (out) => l.fm_meter(h, ptr(out)),

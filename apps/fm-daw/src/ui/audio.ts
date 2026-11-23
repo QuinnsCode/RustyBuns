@@ -3,6 +3,7 @@
 import workletUrl from "../engine/worklet.ts?worker&url";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { TRACKS } from "../engine/params.ts";
+import type { ShapeAt } from "../desk.ts";
 
 export const START_DB = -12;
 export const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20));
@@ -15,6 +16,8 @@ export class AudioOut {
   readonly node: AudioWorkletNode;
   /** What leaves the speakers, for Shape's spectrum. */
   readonly analyser: AnalyserNode;
+  /** The one channel whose Shape is open (`listen`), copied out of the mix as it plays: the engine's third output, for that Shape's spectrum. */
+  readonly heard: AnalyserNode;
   /** Each page plugin's own sound, before its fader, on its track's channel: the engine's fourth input, sent to the sesh (src/studio/plugin-line.ts). */
   readonly webTaps: ChannelMergerNode;
   /** Each track's FM sound bound for a web effect (src/ui/wam.ts), a channel a track: the engine's second output. */
@@ -37,6 +40,8 @@ export class AudioOut {
     this.ctx = ctx; this.node = node;
     this.analyser = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
     node.connect(this.analyser);
+    this.heard = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
+    node.connect(this.heard, 2);
     this.webTaps = new ChannelMergerNode(ctx, { numberOfInputs: TRACKS });
     this.webTaps.connect(node, 0, 3);
     this.inserts = new ChannelSplitterNode(ctx, { numberOfOutputs: TRACKS });
@@ -89,8 +94,9 @@ export class AudioOut {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
     // inputs: yours (a guitar or mic), nothing (it was the page's own plugins, which come back on the returns now), the aux sends of guitars heard on calls (CALL_SENDS), the
-    // page's plugins one track a channel, and the page's returns (two channels a track: web effects and page plugins). Outputs: the mix, and each track's sound for its web effect, a channel each
-    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 5, numberOfOutputs: 2, outputChannelCount: [2, TRACKS] });
+    // page's plugins one track a channel, and the page's returns (two channels a track: web effects and page plugins). Outputs: the mix, each track's sound for its web effect, a channel each,
+    // and the channel being listened to (mono), for its Shape's spectrum
+    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 5, numberOfOutputs: 3, outputChannelCount: [2, TRACKS, 1] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
     node.connect(ctx.destination);
     await ctx.resume();
@@ -101,6 +107,13 @@ export class AudioOut {
   }
 
   send(m: ToWorklet, transfer: Transferable[] = []) { this.node.port.postMessage(m, transfer); }
+
+  /** The analyser for a Shape's spectrum: the mix's for the master's, else `heard`, now copying that channel (null: none). */
+  listen(at: ShapeAt | null): AnalyserNode {
+    const master = !at || "master" in at;
+    this.send({ t: "listen", at: master ? null : at });
+    return master ? this.analyser : this.heard;
+  }
 
   async useEngine(kind: "ts" | "rust") {
     if (kind === "ts") return this.send({ t: "engine", kind });

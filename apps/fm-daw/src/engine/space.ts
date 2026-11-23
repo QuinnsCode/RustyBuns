@@ -92,11 +92,11 @@ export class Space {
   /**
    * Adds the wet signal from `send` into `buf`, in place, both interleaved stereo. `shape` (the Space return's Shape)
    * works on the wet signal alone, before the limiter, so FM DAW's page, the bounce and the gear room's desk all hear it
-   * in the same place.
+   * in the same place. With `heard`, the wet signal after the Shape goes there too, in mono, for its spectrum.
    */
-  process(buf: Float32Array, send: Float32Array, frames: number, shape?: WetShape | null) {
+  process(buf: Float32Array, send: Float32Array, frames: number, shape?: WetShape | null, heard?: Float32Array) {
     const n = Math.min(frames, buf.length >> 1, send.length >> 1);
-    if (this.amount === 0 && this.amountNow < 1e-4) { this.amountNow = 0; return; }
+    if (this.amount === 0 && this.amountNow < 1e-4) { this.amountNow = 0; heard?.fill(0, 0, n); return; }
     if (this.wet.length < n * 2) this.wet = new Float32Array(n * 2);
     const w = this.wet;
     for (let f = 0; f < n; f++) {
@@ -150,6 +150,7 @@ export class Space {
       w[f * 2] = wl2; w[f * 2 + 1] = wr2;
     }
     shape?.process(w, n);
+    if (heard) for (let f = 0; f < n; f++) heard[f] = (w[f * 2] + w[f * 2 + 1]) * 0.5;
     for (let f = 0; f < n; f++) {
       const l = buf[f * 2], r = buf[f * 2 + 1];
       let ol = l + w[f * 2], or = r + w[f * 2 + 1];

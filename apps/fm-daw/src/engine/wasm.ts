@@ -1,6 +1,6 @@
 // The Rust engine compiled to WebAssembly, behind the same FmEngine interface
 // as TsEngine. Runs inside the AudioWorklet (live) and on the main thread (bench).
-import type { FmEngine } from "./engine.ts";
+import { tapCode, type FmEngine, type Tap } from "./engine.ts";
 import { TRACKS } from "./params.ts";
 import type { RemoteLine } from "./remote.ts";
 import { sendEq, sendListen, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
@@ -95,7 +95,7 @@ export class WasmEngine implements FmEngine {
   panic() { this.x.fm_panic(this.h); }
   click(accent: boolean) { this.x.fm_click(this.h, accent ? 1 : 0); }
   setTrackBand(t: number, i: number, k: number, f: number, g: number, q: number, sl: number, on: boolean) { this.x.fm_track_eq_set(this.h, t >>> 0, i >>> 0, k >>> 0, f, g, q, sl, on ? 1 : 0); }
-  setTap(t: number, on: boolean) { this.x.fm_set_tap(this.h, t >>> 0, on ? 1 : 0); }
+  setTap(t: number, on: Tap) { this.x.fm_set_tap(this.h, t >>> 0, tapCode(on)); }
   render(out: Float32Array, frames: number, send?: Float32Array, taps?: Float32Array, send2?: Float32Array) {
     const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity, taps ? (taps.length / TRACKS) | 0 : Infinity, send2 ? send2.length >> 1 : Infinity);
     for (let at = 0; at < n; at += CHUNK) {
