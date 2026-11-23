@@ -26,6 +26,10 @@ const CERAMIC: Record<string, Source> = {
   "10n C0G cap0805": { maker: "Samsung", mpn: "CL21C103JBFNNNE", what: "10 nF C0G 50 V 0805" },
   "1u X7R 25 V cap1206": { maker: "Samsung", mpn: "CL31B105KAHNNNE", what: "1 µF X7R 25 V 1206" },
   "10u X7R 25 V cap1206": { maker: "Samsung", mpn: "CL31B106KAHNNNE", what: "10 µF X7R 25 V 1206" },
+  "2.2u X7R 25 V cap1206": { maker: "Samsung", mpn: "CL31B225KAHNNNE", what: "2.2 µF X7R 25 V 1206" },
+  "470p C0G cap0805": { maker: "Samsung", mpn: "CL21C471JBANNNC", what: "470 pF C0G 50 V 0805" },
+  "2.2n C0G cap0805": { maker: "Samsung", mpn: "CL21C222JBANNNC", what: "2.2 nF C0G 50 V 0805" },
+  "4.7n C0G cap0805": { maker: "Samsung", mpn: "CL21C472JBANNNC", what: "4.7 nF C0G 50 V 0805" },
 };
 
 /** Chips, transistors, diodes and the hand-soldered parts, by what the board names them. */
@@ -46,6 +50,14 @@ const NAMED: [RegExp, Source][] = [
   [/^HCPL0601$/, { maker: "Broadcom", mpn: "HCPL-0601-500E", what: "optocoupler for MIDI in, SOIC-8" }],
   [/^ATTINY1614$/, { maker: "Microchip", mpn: "ATTINY1614-SSNR", what: "microcontroller, SOIC-14" }],
   [/^MCP4822$/, { maker: "Microchip", mpn: "MCP4822-E/SN", what: "dual 12-bit DAC, SOIC-8" }],
+  // Q Brigade's chip was picked for stock (#5747): Coolaudio's V3208D is the bucket brigade sellers carry, and the
+  // SA571DR2G the one SA571 onsemi still makes. The DIP-8 goes in a socket, so a chip can be swapped.
+  [/^V3208D$/, { maker: "Coolaudio", mpn: "V3208D", what: "2048-stage bucket-brigade delay, DIP-8 (with an 8-pin socket)" }],
+  [/^SA571$/, { maker: "onsemi", mpn: "SA571DR2G", what: "dual compander, SOIC-16 wide" }],
+  [/^CD4046$/, { maker: "Texas Instruments", mpn: "CD4046BM96", what: "PLL (its VCO), SOIC-16" }],
+  [/^CD4013$/, { maker: "Texas Instruments", mpn: "CD4013BM96", what: "dual D flip-flop, SOIC-14" }],
+  [/^CD4049UB$/, { maker: "Texas Instruments", mpn: "CD4049UBM96", what: "hex inverting buffer, SOIC-16" }],
+  [/^LM78L09$/, { maker: "Texas Instruments", mpn: "LM78L09ACMX/NOPB", what: "9 V regulator, SOIC-8" }],
   [/^(MIDI in|UPDI):/, { maker: "Würth", mpn: "61300311121", what: "1×3 pin header 2.54 mm" }],
   [/^PJ398SM$/, { maker: "Thonk", mpn: "PJ398SM", what: "3.5 mm mono jack (Thonkiconn), through-hole" }],
   [/^2x5 shrouded header$/, { maker: "Würth", mpn: "61201021621", what: "2×5 shrouded header 2.54 mm, Eurorack power" }],
@@ -69,8 +81,12 @@ export function sourceOf(r: BomRow): Source | null {
     const extra = r.Comment && r.Comment !== r.Value ? ` ${r.Comment}` : "";
     return CERAMIC[`${r.Value}${extra} ${fp}`] ?? null;
   }
-  const trim = /^3362P (\d)k trimmer$/.exec(r.Comment);
-  if (trim) return { maker: "Bourns", mpn: `3362P-1-${trim[1]}02LF`, what: `${trim[1]} k trimmer` };
+  const trim = /^3362P (\d+)k trimmer$/.exec(r.Comment);
+  if (trim) {
+    // Bourns' code is two figures and how many noughts follow: 2k is 202, 100k is 104.
+    const ohms = String(Number(trim[1]) * 1000);
+    return { maker: "Bourns", mpn: `3362P-1-${ohms.slice(0, 2)}${ohms.length - 2}LF`, what: `${trim[1]} k trimmer` };
+  }
   const pot = POT.exec(r.Comment);
   if (pot) {
     const [, v, taper] = pot;

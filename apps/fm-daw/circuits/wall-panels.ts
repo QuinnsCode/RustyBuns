@@ -131,6 +131,15 @@ export const PANELS: Panel[] = [
       jack("J3", "vel", "Vel", "out", -6.5, -38), jack("J4", "clock", "Clock", "out", 6.5, -38),
     ],
   },
+  {
+    id: "bbd", name: "Q Brigade", what: "delay (bucket brigade)", hp: 12,
+    knobs: [
+      knob("RV1", "time", "Time", -12, 34, 0.4, "rlog"), knob("RV2", "repeats", "Repeats", 12, 34, 0.35),
+      knob("RV3", "mod", "Mod", -12, 12, 0.15), knob("RV4", "rate", "Rate", 12, 12, 0.4, "rlog"),
+      knob("RV5", "mix", "Mix", 0, -10, 0.5),
+    ],
+    jacks: [jack("J1", "in", "In", "in", -16, -36), jack("J2", "cv", "Time CV", "in", 0, -36), jack("J3", "out", "Out", "out", 16, -36)],
+  },
 ];
 
 /** A Eurorack panel's holes, mm from its top left corner: jacks 6 mm, pots 7 mm, and the 3.2 mm rail screws. */

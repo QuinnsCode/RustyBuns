@@ -29,6 +29,6 @@ test("every module's panel drills clean and its parts fit its board", () => {
       expect([p.id, at.part, Math.abs(at.x) + b.x <= bw && at.y - b.down >= -bh && at.y + b.up <= bh]).toEqual([p.id, at.part, true]);
     }
   }
-  // The set fits one 84 HP row of the case with room to spare.
-  expect(PANELS.reduce((n, p) => n + p.hp, 0)).toBeLessThanOrEqual(84);
+  // The set fits the case's two 84 HP rows, the starter system filling the lower one before the upper.
+  expect(PANELS.reduce((n, p) => n + p.hp, 0)).toBeLessThanOrEqual(2 * 84);
 });
