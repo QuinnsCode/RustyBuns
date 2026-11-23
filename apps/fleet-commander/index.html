@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fleet Commander</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Cinzel:wght@600;800&display=swap">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <main>
+    <canvas id="stage" aria-label="Fleet Commander: the battle"></canvas>
+    <div id="hud" hidden>
+      <header id="top">
+        <span id="clock" class="num" title="Battle time and the limit"></span>
+        <div id="focus" title="Focus: your read on the battle. It fills with time and kills.">
+          <div class="bar"><i id="focus-fill"></i></div>
+          <button id="foresight" type="button" class="power"></button>
+          <button id="trance" type="button" class="power"></button>
+        </div>
+        <div id="view-btns">
+          <button id="look" type="button" class="icon" title="Cinema or holo table (L)" aria-label="Cinema or holo table"></button>
+          <button id="pause" type="button" class="icon" title="Pause (P)" aria-label="Pause"></button>
+          <button id="speed" type="button" class="icon num" title="Battle speed (.)" aria-label="Battle speed">1x</button>
+          <button id="quit" type="button" class="icon" title="Leave the battle" aria-label="Leave the battle"></button>
+        </div>
+      </header>
+      <div id="intent" hidden></div>
+      <div id="banner" role="status" aria-live="polite"></div>
+      <aside id="roster" aria-label="Your fleet"></aside>
+      <aside id="comms" aria-label="Comms"></aside>
+      <footer id="deck">
+        <div id="plays" aria-label="Plays"></div>
+        <div id="orders" aria-label="Orders for the selection"></div>
+      </footer>
+      <div id="tip" hidden></div>
+    </div>
+
+    <section id="menu">
+      <h1 data-copy="title"></h1>
+      <p class="kicker" data-copy="kicker"></p>
+      <p id="goal" data-copy="goal"></p>
+      <div class="modes">
+        <button id="play" type="button" class="primary"><b data-copy="play"></b><small data-copy="playSub"></small></button>
+        <button id="campaign" type="button"><b data-copy="campaign"></b><small data-copy="campaignSub"></small></button>
+        <button id="armada" type="button"><b data-copy="armada"></b><small data-copy="armadaSub"></small></button>
+      </div>
+      <p id="how"><span id="desktop" data-copy="computer"></span> <span id="phone" data-copy="phone"></span></p>
+      <div id="account"></div>
+      <p id="note"></p>
+    </section>
+
+    <section id="sector" hidden>
+      <header><h2>The sector</h2><span id="sector-stats" class="num"></span><button id="sector-quit" type="button" class="icon" title="Back to the menu" aria-label="Back to the menu"></button></header>
+      <svg id="sector-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-label="The sector map"></svg>
+      <div id="sector-side">
+        <div id="sector-here"></div>
+        <ul id="sector-log"></ul>
+      </div>
+    </section>
+
+    <section id="report" hidden>
+      <h2 id="report-title"></h2>
+      <p id="report-why"></p>
+      <dl id="report-stats"></dl>
+      <div class="modes"><button id="again" type="button" class="primary"></button><button id="to-menu" type="button">Menu</button></div>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
