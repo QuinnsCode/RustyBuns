@@ -43,8 +43,10 @@ import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, type Heard, type Room, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { GearScene } from "./gear-scene.ts";
+import { lounge } from "./lounge.ts";
+import { loadQuality } from "../studio/look.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -221,24 +223,10 @@ if (!(canvas instanceof HTMLCanvasElement)) throw new Error("#stage is not a can
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x15171b);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.03, 40);
 camera.rotation.order = "YXZ";
-scene.add(new THREE.HemisphereLight(0xe6e2da, 0x2a2420, 0.9));
-const lamp = new THREE.PointLight(0xffe6c4, 14, 10, 1.4);
-lamp.position.set(0, WALL_H - 0.2, 0);
-scene.add(lamp);
-{
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2, HALF_D * 2), new THREE.MeshStandardMaterial({ color: 0x6b5340, roughness: 0.85 }));
-  floor.rotation.x = -Math.PI / 2;
-  const wall = new THREE.MeshStandardMaterial({ color: 0x3b3f46, roughness: 0.95, side: THREE.BackSide });
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(HALF_W * 2, WALL_H, HALF_D * 2), wall);
-  walls.position.y = WALL_H / 2 - 0.02; // its floor face just under the floor, so they never fight
-  const rug = new THREE.Mesh(new THREE.CircleGeometry(1.3, 40), new THREE.MeshStandardMaterial({ color: 0x5a2a2e, roughness: 1 }));
-  rug.rotation.x = -Math.PI / 2;
-  rug.position.set(0.2, 0.003, 0.2);
-  scene.add(floor, walls, rug);
-}
+// the warehouse lounge round the gear corner (lounge.ts): its shell, light, racking and the Poly Haven furniture
+const bay = lounge(renderer, scene, loadQuality());
 // the rack, the pedal wall and the gear on them, in this room's own frame (the gear wall in a studio draws the same)
 const gear = new GearScene();
 scene.add(gear.group);
@@ -545,7 +533,7 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me, drawn: [...people.keys()] } : null, returns: listen(room.studio.patch).returns }),
+  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), lounge: bay.state(), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me, drawn: [...people.keys()] } : null, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
   /** The open sheet's tab: "schematic", "pcb", "parts", "files" or "band" (the tolerance band). */

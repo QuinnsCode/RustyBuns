@@ -9,6 +9,24 @@ import { gear, gearLook, type GearLook, stompbox } from "@rustybuns/models/gear"
 import type { Face, GearDef, Vec3 } from "./room.ts";
 import { PEDAL_WALL, RACK } from "./room.ts";
 import { CASE } from "./frame.ts";
+import { surface } from "../studio/look.ts";
+
+/** Hardboard pegboard: a brown face with a hole every inch, as a map with its holes dark (none without a DOM). */
+function pegboard(): THREE.Texture | null {
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  g.fillStyle = "#a9875f"; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? "60,40,20" : "200,170,130"},0.08)`; g.fillRect(Math.random() * 128, Math.random() * 128, 2, 1); }
+  g.fillStyle = "#1c140d";
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.beginPath(); g.arc(16 + x * 32, 16 + y * 32, 4.5, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 
 export interface GearModel {
   group: THREE.Group;
@@ -196,10 +214,17 @@ export function gearModel(g: GearDef): GearModel {
 /** The pedal wall: a pegboard on the left wall with a ledge at each of PEDAL_WALL's heights. */
 export function pedalWallModel(): THREE.Group {
   const g = new THREE.Group(), d = PEDAL_WALL.x1 - PEDAL_WALL.x0, len = PEDAL_WALL.z1 - PEDAL_WALL.z0, top = PEDAL_WALL.shelves[PEDAL_WALL.shelves.length - 1];
-  const tall = top + 0.3 - 0.7, board = box(0.02, tall, len + 0.1, mat(0xb08a5e, 0, 0.85), 0.7 + tall / 2);
+  const tall = top + 0.3 - 0.7, map = pegboard();
+  // a hole every 2.54 cm: four to a copy of the map
+  map?.repeat.set(((len + 0.1) / 0.1016), tall / 0.1016);
+  const board = box(0.012, tall, len + 0.1, new THREE.MeshStandardMaterial({ color: 0xffffff, map, roughness: 0.85 }), 0.7 + tall / 2);
   board.position.x = -d / 2 + 0.01;
   g.add(board);
-  for (const y of PEDAL_WALL.shelves) g.add(box(d, 0.025, len, mat(0x30343a, 0.7, 0.4), y - 0.0125));
+  // a steel frame round the board, on two legs down to the floor
+  const steel = surface("steel", "#3d4247");
+  for (const z of [-(len + 0.1) / 2, (len + 0.1) / 2]) { const leg = box(0.04, top + 0.3, 0.04, steel); leg.position.set(-d / 2 + 0.02, 0, z); g.add(leg); }
+  for (const y of [0.7, top + 0.3]) { const rail = box(0.04, 0.04, len + 0.14, steel, y); rail.position.x = -d / 2 + 0.02; g.add(rail); }
+  for (const y of PEDAL_WALL.shelves) g.add(box(d, 0.025, len, surface("metal", "#9da2a8"), y - 0.0125));
   g.position.set((PEDAL_WALL.x0 + PEDAL_WALL.x1) / 2, 0, (PEDAL_WALL.z0 + PEDAL_WALL.z1) / 2);
   return g;
 }
@@ -233,13 +258,15 @@ export function caseModel(): THREE.Group {
 
 /** The wall rack: two uprights and a shelf at each of RACK's heights. */
 export function rackModel(): THREE.Group {
-  const g = new THREE.Group(), w = RACK.x1 - RACK.x0, d = RACK.z1 - RACK.z0, wood = mat(0x5b4632, 0, 0.8), steel = mat(0x30343a, 0.7, 0.4);
+  const g = new THREE.Group(), w = RACK.x1 - RACK.x0, d = RACK.z1 - RACK.z0, wood = surface("wood", "#6a4f36"), steel = surface("steel", "#2e3236");
   for (const y of RACK.shelves) g.add(box(w, 0.03, d, wood, y - 0.015));
-  for (const x of [-w / 2, w / 2]) {
+  // four angle-iron posts, braced across the back
+  for (const x of [-w / 2, w / 2]) for (const z of [-d / 2 + 0.02, d / 2 - 0.02]) {
     const post = box(0.04, RACK.shelves[RACK.shelves.length - 1] + 0.5, 0.04, steel);
-    post.position.x = x;
+    post.position.set(x, 0, z);
     g.add(post);
   }
+  for (const y of RACK.shelves) for (const z of [-d / 2 + 0.02, d / 2 - 0.02]) { const lip = box(w, 0.04, 0.03, steel, y - 0.05); lip.position.z = z; g.add(lip); }
   g.position.set((RACK.x0 + RACK.x1) / 2, 0, (RACK.z0 + RACK.z1) / 2);
   return g;
 }

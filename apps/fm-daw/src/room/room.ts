@@ -7,7 +7,8 @@
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
-import { CASE, GEAR_ROOM, HALF_D, HALF_W, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./frame.ts";
+import { CASE, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./frame.ts";
+import { BAY, BAY_SOLIDS } from "./lounge-plan.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { Avatar } from "@rustybuns/util/avatar";
 import { bench, type BenchPedal } from "../circuit/bench.ts";
@@ -263,7 +264,7 @@ export interface Room {
   bodies: Map<number, Body>;
   /** How everyone in the sesh looks and is called, the jam room's people too (the desk names their strips). */
   looks: Map<number, { avatar: Avatar; name: string }>;
-  /** Where a box can be set down (the gear room's walls when left out). */
+  /** Where a box can be set down and you can walk: the gear room page's warehouse bay (lounge-plan.ts) when left out. */
   bounds?: Bounds;
 }
 /** Where someone else stands and which way they face. */
@@ -404,11 +405,16 @@ function solids(r: Room): Rect[] {
     const g = gearOf(p);
     return g ? [{ cx: p.at[0], cz: p.at[2], hw: g.size[0] / 2, hd: g.size[2] / 2, turn: p.turn }] : [];
   });
-  return [...shelvingRects(), ...gear];
+  return [...shelvingRects(), ...(r.bounds ? [] : BAY_SOLIDS), ...gear];
 }
 
-/** Push you out of the walls, the rack and the gear standing on the floor. */
-const collide = (r: Room) => pushOut(r.you, solids(r), HALF_W, HALF_D, RADIUS);
+/** Push you out of the walls, the rack, the bay's furniture and the gear standing on the floor. */
+function collide(r: Room) {
+  const b = r.bounds ?? BAY;
+  pushOut(r.you, solids(r), Infinity, Infinity, RADIUS);
+  r.you.x = Math.max(b.x0 + RADIUS, Math.min(b.x1 - RADIUS, r.you.x));
+  r.you.z = Math.max(b.z0 + RADIUS, Math.min(b.z1 - RADIUS, r.you.z));
+}
 
 /** One tick: turn and walk by the input. */
 export function step(r: Room, dt: number, i: Input) {
@@ -508,7 +514,7 @@ function caseSlot(r: Room, id: string, g: GearDef, x: number, y: number, z: numb
 export function landingPose(r: Room): { at: Vec3; turn: number; on: string } | null {
   const id = heldId(r), p = id ? item(r, id) : undefined;
   if (!id || !p) return null;
-  const pose = holdPose(r, p), b = r.bounds ?? GEAR_ROOM, g = gearOf(p);
+  const pose = holdPose(r, p), b = r.bounds ?? BAY, g = gearOf(p);
   const slot = g?.kind === "module" ? caseSlot(r, id, g, pose.at[0], pose.at[1], pose.at[2]) : null;
   if (slot) return { at: slot, turn: 0, on: "the sound wall" };
   const x = Math.max(b.x0 + 0.2, Math.min(b.x1 - 0.2, pose.at[0]));
@@ -537,9 +543,9 @@ export function benchIn(r: Room, pedal: BenchPedal, spot?: { x: number; z: numbe
   const g = benchGear(pedal);
   let n = 1;
   while (item(r, `bench-${n}`)) n++;
-  const id = `bench-${n}`, f = lookDir({ ...r.you, pitch: 0 });
-  const x = Math.max(-HALF_W + 0.2, Math.min(HALF_W - 0.2, spot?.x ?? r.you.x + f[0] * 0.8));
-  const z = Math.max(-HALF_D + 0.2, Math.min(HALF_D - 0.2, spot?.z ?? r.you.z + f[2] * 0.8));
+  const id = `bench-${n}`, f = lookDir({ ...r.you, pitch: 0 }), b = r.bounds ?? BAY;
+  const x = Math.max(b.x0 + 0.2, Math.min(b.x1 - 0.2, spot?.x ?? r.you.x + f[0] * 0.8));
+  const z = Math.max(b.z0 + 0.2, Math.min(b.z1 - 0.2, spot?.z ?? r.you.z + f[2] * 0.8));
   const turn = ((r.you.yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   if (!act(r, { t: "bring", id, gear: g.id, at: [x, 0, z], turn })) return no("the room is full");
   act(r, { t: "put", at: [x, landing(r, id, x, z, 0), z], turn });
