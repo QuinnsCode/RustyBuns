@@ -85,6 +85,29 @@ export function pidsIn(dir: string, procs = processes(), self = process.pid): nu
   return procs.filter((p) => !keep.has(p.pid) && inside(p.cwd, dirs)).map((p) => p.pid);
 }
 
+// #5657: the office exited 300 ms after a shutdown, even part way through a send-home, and the folder it was deleting
+// stayed half there. Each send-home is held here, and the office waits for them (up to `HOME_WAIT_MS`) before it exits.
+const goingHome = new Set<Promise<unknown>>();
+
+/** Holds a send-home until it settles, so `homeSettled` can wait for it. Returns `p`. */
+export function trackHome<T>(p: Promise<T>): Promise<T> {
+  goingHome.add(p);
+  void p.then(() => goingHome.delete(p), () => goingHome.delete(p));
+  return p;
+}
+
+/** As long as a `git worktree remove` may take (scripts/checkout.ts). */
+export const HOME_WAIT_MS = 5 * 60_000;
+
+/** Waits for every send-home under way, up to `capMs`, saying first how many (`say`). Resolves with that count. */
+export async function homeSettled(capMs = HOME_WAIT_MS, say?: (n: number) => void): Promise<number> {
+  const n = goingHome.size;
+  if (!n) return 0;
+  say?.(n);
+  await Promise.race([Promise.allSettled([...goingHome]), Bun.sleep(capMs)]);
+  return n;
+}
+
 /** Send-home's hook: end everything running in a worker's worktree. Never throws; resolves with the count. */
 export async function endIn(dir: string): Promise<number> {
   try { return await end(pidsIn(dir)); } catch { return 0; }
