@@ -13,7 +13,7 @@ import { sameToken, ticket } from "./live.ts";
 const MAX_BODY = 64 * 1024;
 
 /** Who may use the page: the one eqosys account with this email (CRON_SWANSON_OWNER), its token checked by `checker` (a TokenChecker). */
-export interface Owner { email: string; checker: { check(token: string): Promise<Claims | null> } }
+interface Owner { email: string; checker: { check(token: string): Promise<Claims | null> } }
 
 export interface Options {
   /** The bearer for machine callers (CRON_SWANSON_TOKEN), and the secret the relay's tickets are signed with. */
