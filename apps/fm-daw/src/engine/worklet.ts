@@ -88,7 +88,7 @@ class FmProcessor extends AudioWorkletProcessor {
   private deskFed = false;
   private deskOut = new Float32Array(256);
   private rig: RigReturn | null = null;
-  /** The Space return's Shape, on what goes into Space (so Space's limiter stays last); null while flat. */
+  /** The Space return's Shape, on Space's wet signal before its limiter (as the gear room's desk plays it); null while flat. */
   private spaceEq: TsEq | null = null;
   private send2 = new Float32Array(256);
   /**
@@ -479,9 +479,8 @@ class FmProcessor extends AudioWorkletProcessor {
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
-      this.spaceEq?.process(this.send, frames);
       this.squash.process(this.buf, frames);
-      this.space.process(this.buf, this.send, frames);
+      this.space.process(this.buf, this.send, frames, this.spaceEq);
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);
