@@ -24,7 +24,7 @@ import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
 import wallWorkletUrl from "./wall-worklet.ts?worker&url";
 import type { FromWall, ToWall } from "./wall-worklet.ts";
-import { PANELS } from "../../circuits/wall-panels.ts";
+import { PANELS, type Panel } from "../../circuits/wall-panels.ts";
 import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, seshShape, shapeAt, shapeName, shapeOps, withChannel, withReturn, withSend, withShape, type Player, type ShapeAt, type Source } from "../mixer.ts";
 import { closeShape, openShape, refreshShape } from "../ui/shape-overlay.tsx";
 import { apply, decodeServer, type Live, type Project } from "../project.ts";
@@ -44,7 +44,7 @@ import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, type Heard, type Room, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, type Heard, type Room, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, moduleAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { GearScene } from "./gear-scene.ts";
 import { lounge } from "./lounge.ts";
 import { loadQuality } from "../studio/look.ts";
@@ -476,16 +476,20 @@ document.addEventListener("pointerlockchange", () => { if (!locked() && phase ==
 
 function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; $("modules").hidden = phase !== "modules"; if (phase !== "sheet") sheet.el.hidden = true; }
 
-// ---- a pedal's build sheet (../kit/sheet.ts): B, or the pad's Y, on a pedal on the wall or in your hand ----
+// ---- a build sheet (../kit/sheet.ts): B, or the pad's Y, on a pedal on the wall, a module in the case, or either in your hand ----
 const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
 $("stage").after(sheet.el);
 function openSheet(p: PedalDef) {
   phase = "sheet"; menu(); document.exitPointerLock?.();
   return sheet.open(p, savedSwaps(p.id), savedDrive(p.id));
 }
+function openModuleSheet(m: Panel) {
+  phase = "sheet"; menu(); document.exitPointerLock?.();
+  return sheet.openModule(m);
+}
 function openSheetHere() {
-  const p = pedalAt(room);
-  if (p) void openSheet(p); else say(no("Look at a pedal, or hold one, for its build sheet"));
+  const p = pedalAt(room), m = p ? null : moduleAt(room);
+  if (p) void openSheet(p); else if (m) void openModuleSheet(m); else say(no("Look at a pedal or a sound wall module, or hold one, for its build sheet"));
 }
 function play() { phase = "play"; menu(); lock(); }
 
@@ -572,8 +576,12 @@ const harness = {
   state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), lounge: bay.state(), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk: shownDesk(), sesh: sesh ? { room: sesh, joined: !!project, me: room.me, drawn: [...people.keys()] } : null, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
-  /** The open sheet's tab: "schematic", "pcb", "parts", "files" or "band" (the tolerance band). */
-  sheetTab: (tab: "schematic" | "pcb" | "parts" | "files" | "band") => sheet.show(tab),
+  /** A sound wall module's build sheet open, by kind (vco, vcf, ...), as B on it opens it; null for no such module. */
+  moduleSheet: async (kind: string) => { const m = PANELS.find((x) => x.id === kind); return m ? (await openModuleSheet(m), sheet.state()) : null; },
+  /** B where you stand: the sheet of the pedal or module you look at or hold, once it has loaded; null when there is none. */
+  sheetHere: async () => { const p = pedalAt(room), m = p ? null : moduleAt(room); if (p) await openSheet(p); else if (m) await openModuleSheet(m); else return null; return sheet.state(); },
+  /** The open sheet's tab: "schematic", "pcb", "panel" (a module's front panel), "parts", "files" or "band" (a pedal's tolerance band). */
+  sheetTab: (tab: "schematic" | "pcb" | "panel" | "parts" | "files" | "band") => sheet.show(tab),
   /** The open sheet's tolerance band, run (a few seconds) and returned: dB per frequency for the sim and the builds. */
   sheetBand: () => sheet.bandOf(),
   /** The open sheet's Download button: the zip's file name and size. */
@@ -631,7 +639,7 @@ window.qstudio = harness;
 
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["B", "A pedal's build sheet"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["N", "A new sound wall module"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["B", "A pedal's or module's build sheet"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["N", "A new sound wall module"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });

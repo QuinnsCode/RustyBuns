@@ -3,7 +3,7 @@
 // (`bun scripts/boards.ts`), with the parts that bend the signal glowing with it.
 // The diode pairs and capacitors are sockets, the way kit builders socket parts
 // to try them: click one, pick another part, and hear it while you play.
-import { CAP_STEPS, CLIPPERS, capValue, farads, sockets, type BoardId, type Socket, type Swaps } from "../circuit/circuits.ts";
+import { BOARDS, CAP_STEPS, CLIPPERS, capValue, farads, sockets, type BoardId, type Socket, type Swaps } from "../circuit/circuits.ts";
 import "./board.css";
 import { h } from "./dom.ts";
 import { icon } from "./icons.ts";
@@ -11,13 +11,15 @@ import { icon } from "./icons.ts";
 // The SVGs come with the page only once someone opens the board view.
 const SVGS = import.meta.glob<string>("../../circuits/*.svg", { query: "?raw", import: "default" });
 /** A board's schematic or PCB drawing as SVG text, loaded when first asked for ("" if it has none). */
-export const svgOf = (board: BoardId, side: Side): Promise<string> => SVGS[`../../circuits/${board}.${side}.svg`]?.() ?? Promise.resolve("");
+export const svgOf = (board: string, side: Side): Promise<string> => SVGS[`../../circuits/${board}.${side}.svg`]?.() ?? Promise.resolve("");
 
 export type Side = "schematic" | "pcb";
 const SIDES: { id: Side; label: string; icon: string }[] = [
   { id: "schematic", label: "Schematic", icon: "workflow" },
   { id: "pcb", label: "Circuit board", icon: "circuit-board" },
 ];
+
+const isBoard = (b: string): b is BoardId => Object.hasOwn(BOARDS, b);
 
 /** What a socket holds now, in a word. */
 export function holding(s: Socket, swaps: Swaps): string {
@@ -50,12 +52,14 @@ export class BoardView {
   private readonly tabs: HTMLButtonElement[];
   private readonly reset: HTMLButtonElement;
   private side: Side = "schematic";
-  private board: BoardId | null = null;
+  /** A pedal's board, or a sound wall module's kit (`wall-vco`), whose drawings come in `show`'s options. */
+  private board: string | null = null;
   private swaps: Swaps | null = null;
   private sockets: Socket[] = [];
   private drawn = "";
   private readOnly = false;
   private pcb: (() => Promise<string>) | null = null;
+  private schematic: (() => Promise<string>) | null = null;
 
   /** `onSwap(socket, choice)`: a choice of null puts the stock part back; socket null resets the whole board. */
   constructor(private readonly onSwap: (socket: string | null, choice: string | null) => void) {
@@ -78,14 +82,14 @@ export class BoardView {
 
   /**
    * Show `board`. With `swaps`, its sockets take clicks; null shows it read-only. `o.readOnly` shows the swaps
-   * without taking clicks, `o.pcb` draws another PCB (a kit's fab board) in place of the board's own.
+   * without taking clicks, `o.pcb` and `o.schematic` draw another PCB or schematic (a kit's own) in place of the board's.
    */
-  show(board: BoardId, title: string, swaps: Swaps | null, o: { readOnly?: boolean; hint?: string; pcb?: () => Promise<string> } = {}): void {
+  show(board: string, title: string, swaps: Swaps | null, o: { readOnly?: boolean; hint?: string; pcb?: () => Promise<string>; schematic?: () => Promise<string> } = {}): void {
     this.title.textContent = title;
     this.swaps = swaps;
     this.readOnly = !!o.readOnly;
-    if (o.pcb !== this.pcb || board !== this.board) { this.pcb = o.pcb ?? null; this.drawn = ""; }
-    this.sockets = swaps ? sockets(board) : [];
+    if (o.pcb !== this.pcb || o.schematic !== this.schematic || board !== this.board) { this.pcb = o.pcb ?? null; this.schematic = o.schematic ?? null; this.drawn = ""; }
+    this.sockets = swaps && isBoard(board) ? sockets(board) : [];
     const changed = swaps ? this.sockets.filter((s) => swaps[s.id] !== undefined).length : 0;
     this.hint.textContent = swaps ? (changed ? `your version · ${changed} part${changed > 1 ? "s" : ""} swapped` : "click a diode or capacitor to swap it") : "set by the amp · switch a pedal on to swap parts";
     if (o.hint) this.hint.textContent = o.hint;
@@ -99,7 +103,7 @@ export class BoardView {
   blank(title: string, why: string): void {
     this.title.textContent = title;
     this.hint.textContent = why;
-    this.board = null; this.swaps = null; this.sockets = []; this.drawn = ""; this.pcb = null;
+    this.board = null; this.swaps = null; this.sockets = []; this.drawn = ""; this.pcb = null; this.schematic = null;
     this.reset.hidden = true;
     this.menu.hidden = true;
     this.art.replaceChildren();
@@ -127,7 +131,8 @@ export class BoardView {
     this.tabs.forEach((b, i) => b.setAttribute("aria-pressed", String(SIDES[i].id === this.side)));
     const key = `${board}.${this.side}`;
     if (key !== this.drawn) {
-      const svg = await (this.side === "pcb" && this.pcb ? this.pcb() : svgOf(board, this.side));
+      const own = this.side === "pcb" ? this.pcb : this.schematic;
+      const svg = await (own ? own() : svgOf(board, this.side));
       if (board !== this.board || `${board}.${this.side}` !== key) return; // moved on while it loaded
       this.art.innerHTML = svg; // our own file, from circuits/
       this.art.dataset.side = this.side;

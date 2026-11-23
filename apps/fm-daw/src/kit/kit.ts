@@ -1,8 +1,10 @@
-// A pedal's build kit: what `scripts/pcb.ts` writes to `circuits/<kit>/` (Gerbers, `bom.csv`, `pnp.csv`, `pcb.svg`,
+// A pedal's or a sound wall module's build kit: what `scripts/pcb.ts` writes to `circuits/<kit>/` (Gerbers, `bom.csv`, `pnp.csv`, `pcb.svg`,
 // `drill.svg`), read into a parts list with the player's part swaps in it, a short build sheet in plain words, and
 // one zip of the lot. No DOM and no Vite here: the page (sheet.ts) and the tests hand in the kit's files as text.
 import { check, obj, str, type Of } from "@rustybuns/util/guard";
 import { CLIPPERS, capValue, CAP_STEPS, farads, sockets, type BoardId, type Swaps } from "../circuit/circuits.ts";
+import type { Panel } from "../../circuits/wall-panels.ts";
+import { sourceOf } from "./parts.ts";
 import { zip } from "./zip.ts";
 
 /** The files a kit folder holds, by their path in it: `bom.csv`, `pnp.csv`, `pcb.svg`, `drill.svg`, `gerbers/<layer>`. */
@@ -57,20 +59,24 @@ export function readBom(text: string): BomRow[] {
   });
 }
 
-/** One part on the board: what to buy for it, and whether it sits in a socket. */
-export interface Part { ref: string; part: string; value: string; footprint: string; socketed: boolean; swapped: boolean }
+/** One part on the board: what to buy for it (its maker and part number, "" when parts.ts doesn't know it), and whether it sits in a socket. */
+export interface Part { ref: string; part: string; value: string; footprint: string; socketed: boolean; swapped: boolean; maker: string; mpn: string }
 
 /** What each clipper choice is as a part you can buy. */
 const DIODE: Record<keyof typeof CLIPPERS, string> = { silicon: "1N4148", germanium: "1N34A", led: "3 mm red LED", mosfet: "BS170 wired as a diode", none: "none: leave the socket empty" };
 
-const kindOf = (ref: string, footprint: string): string => {
-  const p = ref.replace(/\d+$/, "");
+const kindOf = (ref: string, footprint: string, comment: string): string => {
+  const p = ref.replace(/\d.*$/, "");
   if (p === "R") return "Resistor";
   if (p === "RV") return "Pot";
-  if (p === "C") return footprint.startsWith("electrolytic") ? "Electrolytic capacitor" : "Film capacitor";
-  if (p === "D") return "Diode";
+  if (p === "RT") return "Trimmer";
+  // A module's decoupling caps are C<chip>P and C<chip>N (CU1P), its supply ones CP1 and CP2.
+  if (p.startsWith("C")) return footprint.startsWith("electrolytic") ? "Electrolytic capacitor" : footprint.startsWith("cap") ? "Ceramic capacitor" : "Film capacitor";
+  if (p.startsWith("D")) return "Diode";
   if (p === "LED") return "LED";
-  if (p === "U") return "Op-amp";
+  if (p === "Q") return "Transistor";
+  if (p === "U") return /^(TL0|LM13700)/.test(comment) ? "Op-amp" : "Chip";
+  if (p === "JP") return "Power header";
   if (p === "J") return "Wire pads";
   return "Part";
 };
@@ -84,7 +90,8 @@ export function partsOf(rows: BomRow[], board: BoardId | undefined, swaps: Swaps
   return rows.map((r) => {
     const s = socks.find((x) => x.parts.includes(r.Designator));
     const choice = s ? swaps[s.id] : undefined;
-    let value = r.Value || r.Comment, swapped = false;
+    // A resistor's or capacitor's Comment, when it isn't the value, is how good it must be ("0.1%", "C0G").
+    let value = r.Value && r.Comment && r.Comment !== r.Value ? `${r.Value} ${r.Comment}` : r.Value || r.Comment, swapped = false;
     if (s?.kind === "clipper") {
       const c = choice !== undefined && Object.hasOwn(CLIPPERS, choice) ? (choice as keyof typeof CLIPPERS) : "silicon";
       value = DIODE[c]; swapped = c !== "silicon";
@@ -92,17 +99,20 @@ export function partsOf(rows: BomRow[], board: BoardId | undefined, swaps: Swaps
       value = farads(capValue(s.farads, Number(choice))).replace("F", ""); swapped = true;
     }
     // A pot or an op-amp names itself in Comment ("TL071", "16mm 500k B"); a jack's pads say what goes on them.
-    const part = r.Designator.startsWith("J") ? (r.Comment || "Wire pads") : kindOf(r.Designator, r.Footprint);
-    if (r.Designator.startsWith("J") || r.Designator.startsWith("U") || r.Designator.startsWith("RV") || r.Designator.startsWith("LED")) value = r.Comment || value;
-    // Socket holes are sized for machined-pin strips (`_id1.1mm`, `SOCKET` in circuits/q-drive.tsx); an op-amp sits in a DIP socket.
-    return { ref: r.Designator, part, value, footprint: r.Footprint, socketed: swapped || r.Footprint.includes("_id1.1mm") || r.Designator.startsWith("U"), swapped };
+    const jack = /^J\d/.test(r.Designator), part = jack ? (r.Comment || "Wire pads") : kindOf(r.Designator, r.Footprint, r.Comment);
+    if (/^(J|U|RV|RT|LED|Q)/.test(r.Designator)) value = r.Comment || value;
+    // Socket holes are sized for machined-pin strips (`_id1.1mm`, `SOCKET` in circuits/q-drive.tsx); a DIP op-amp sits in a socket.
+    const socketed = swapped || r.Footprint.includes("_id1.1mm") || (r.Designator.startsWith("U") && r.Footprint.startsWith("dip"));
+    // A swapped part is the player's pick, so the stock part's number isn't it.
+    const src = swapped ? null : sourceOf(r);
+    return { ref: r.Designator, part, value, footprint: r.Footprint.trim(), socketed, swapped, maker: src?.maker ?? "", mpn: src?.mpn ?? "" };
   });
 }
 
 /** One line of the parts table: the same part and value, counted, with the places it goes. */
-export interface BomLine { part: string; value: string; count: number; footprint: string; refs: string[]; socketed: boolean; swapped: boolean }
+export interface BomLine { part: string; value: string; count: number; footprint: string; refs: string[]; socketed: boolean; swapped: boolean; maker: string; mpn: string }
 
-const ORDER = ["Resistor", "Film capacitor", "Electrolytic capacitor", "Diode", "LED", "Op-amp", "Pot"];
+const ORDER = ["Resistor", "Ceramic capacitor", "Film capacitor", "Electrolytic capacitor", "Diode", "LED", "Transistor", "Op-amp", "Chip", "Trimmer", "Power header", "Pot"];
 const rank = (p: string) => { const i = ORDER.indexOf(p); return i < 0 ? ORDER.length : i; };
 
 /** The parts as a shopping list, grouped by part, value and footprint, in solder order. */
@@ -112,16 +122,29 @@ export function bomLines(parts: Part[]): BomLine[] {
     const key = [p.part, p.value, p.footprint, p.socketed, p.swapped].join("|");
     const l = lines.get(key);
     if (l) { l.count++; l.refs.push(p.ref); }
-    else lines.set(key, { part: p.part, value: p.value, count: 1, footprint: p.footprint, refs: [p.ref], socketed: p.socketed, swapped: p.swapped });
+    else lines.set(key, { part: p.part, value: p.value, count: 1, footprint: p.footprint, refs: [p.ref], socketed: p.socketed, swapped: p.swapped, maker: p.maker, mpn: p.mpn });
   }
   return [...lines.values()].sort((a, b) => rank(a.part) - rank(b.part));
 }
 
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-/** The parts as `bom.csv` for the zip: one row per place on the board, with a Socketed column. */
+const csv = (rows: string[][]) => rows.map((r) => r.map(q).join(",")).join("\r\n") + "\r\n";
+/** The parts as `bom.csv` for the zip: one row per place on the board, with a Socketed column and what to order. */
 export const bomCsv = (parts: Part[]): string =>
-  [["Designator", "Part", "Value", "Footprint", "Socketed"], ...parts.map((p) => [p.ref, p.part, p.value, p.footprint, p.socketed ? (p.swapped ? "yes, your swap" : "yes") : ""])]
-    .map((r) => r.map(q).join(",")).join("\r\n") + "\r\n";
+  csv([["Designator", "Part", "Value", "Footprint", "Socketed", "Manufacturer", "MPN"], ...parts.map((p) => [p.ref, p.part, p.value, p.footprint, p.socketed ? (p.swapped ? "yes, your swap" : "yes") : "", p.maker, p.mpn])]);
+/**
+ * The cart: one row per part number with how many to buy, the shape a shop's BOM upload takes (LCSC, Mouser and
+ * DigiKey match on MPN). A part with no number is still a row, its MPN empty, so nothing on the board is missed.
+ */
+export const orderCsv = (lines: BomLine[]): string => {
+  const rows = new Map<string, { qty: number; maker: string; mpn: string; what: string; refs: string[] }>();
+  for (const l of lines) {
+    const key = l.mpn || `${l.part}|${l.value}|${l.footprint}`, r = rows.get(key);
+    if (r) { r.qty += l.count; r.refs.push(...l.refs); }
+    else rows.set(key, { qty: l.count, maker: l.maker, mpn: l.mpn, what: [l.part, l.value, l.footprint].filter(Boolean).join(" "), refs: [...l.refs] });
+  }
+  return csv([["Qty", "Manufacturer", "MPN", "Description", "Designators"], ...[...rows.values()].map((r) => [String(r.qty), r.maker, r.mpn, r.what, r.refs.join(" ")])]);
+};
 
 // ---- the build sheet ----
 
@@ -165,6 +188,35 @@ export function buildSheet(name: string, blurb: string, lines: BomLine[]): strin
   return out.join("\n") + "\n";
 }
 
+/** A sound wall module's build sheet in plain words: what is in the zip, its parts, and how it goes together. */
+export function moduleSheet(p: Panel, lines: BomLine[]): string {
+  return [
+    `${p.name}: build sheet`,
+    "",
+    `A ${p.what} for a Eurorack case, ${p.hp} HP: ${p.jacks.length} jacks, ${p.knobs.length} knobs.`,
+    "",
+    "What is in this zip",
+    "- gerbers/: the module's board. Send this folder, zipped, to a board house. Its small parts are surface mount: ask for assembly with bom.csv and pnp.csv.",
+    "- panel/gerbers/: the front panel, a board of its own. Order it as 1.6 mm FR4, black mask, white silkscreen, no copper needed.",
+    "- order.csv: every part with its maker and part number, one row per part to buy. Upload it to a shop's BOM tool to fill a cart.",
+    "- bom.csv: every place on the board. pnp.csv: where each sits. pcb.svg, panel/pcb.svg and schematic.svg: to check against.",
+    "- drill.svg: the panel's holes, if you would rather drill an aluminium blank.",
+    "",
+    "Parts",
+    ...lines.map((l) => `- ${l.count} x ${l.part}${l.value ? ` ${l.value}` : ""} (${l.refs.join(", ")})${l.mpn ? `: ${l.maker} ${l.mpn}` : ""}`),
+    "",
+    "Put it together",
+    "1. With an assembled board, the surface-mount parts are on. Without, solder them first, chips and smallest parts first.",
+    "2. Solder the power header on the back, its key the way the board's outline shows. Mark the -12V end.",
+    "3. Push the jacks and pots through the front of the board but do not solder them yet.",
+    "4. Fit the panel over their shafts and screw the nuts on finger tight, so every part sits square. Then solder them from the back.",
+    "",
+    "Before you power it",
+    "- Look for solder bridges between the chips' pins. Check each transistor and diode against the board.",
+    "- The ribbon's red stripe goes to -12V on both the module and the case. A Schottky on each rail saves it if it is ever the wrong way round.",
+  ].join("\n") + "\n";
+}
+
 /** What a build sheet shows for one pedal: its kit (or that it has none yet), parts with the player's swaps, layers. */
 export interface Sheet { pedal: string; name: string; kit: string; made: boolean; parts: Part[]; lines: BomLine[]; layers: string[]; text: string }
 
@@ -174,12 +226,24 @@ export function sheetOf(pedal: { id: string; name: string; blurb: string; board?
   return { pedal: pedal.id, name: pedal.name, kit: kitId(pedal.name), made, parts, lines, layers: gerbers(kit), text: buildSheet(pedal.name, pedal.blurb, lines) };
 }
 
+/** A sound wall module's kit folder: `circuits/wall-<id>/`, as scripts/pcb.ts writes it. */
+export const moduleKit = (p: Panel): string => `wall-${p.id}`;
+/** A sound wall module's sheet from its kit folder's files: its parts, its board's layers and its panel's. */
+export function moduleSheetOf(p: Panel, kit: KitFiles): Sheet {
+  const made = isKit(kit), parts = made ? partsOf(readBom(kit["bom.csv"]!), undefined) : [], lines = bomLines(parts);
+  const panel = Object.keys(kit).filter((f) => f.startsWith("panel/gerbers/")).map((f) => f.slice(6)).sort();
+  return { pedal: p.id, name: p.name, kit: moduleKit(p), made, parts, lines, layers: [...gerbers(kit), ...panel.map((l) => `panel/${l}`)], text: moduleSheet(p, lines) };
+}
+
 /** Everything that goes in the zip, by path inside it. Without a whole kit, only the drawings and the sheet. */
 export function kitZip(kit: KitFiles, sheet: string, schematic: string, parts: Part[]): Uint8Array<ArrayBuffer> {
   const files: Record<string, string> = {};
   for (const g of gerbers(kit)) files[`gerbers/${g}`] = kit[`gerbers/${g}`]!;
   files["bom.csv"] = bomCsv(parts);
+  files["order.csv"] = orderCsv(bomLines(parts));
   for (const n of ["pnp.csv", "drill.svg", "pcb.svg"]) if (kit[n] !== undefined) files[n] = kit[n];
+  // A module's front panel is a board of its own: its Gerbers and drawing.
+  for (const [n, t] of Object.entries(kit)) if (n.startsWith("panel/")) files[n] = t;
   if (schematic) files["schematic.svg"] = schematic;
   files["build-sheet.txt"] = sheet;
   return zip(files);
