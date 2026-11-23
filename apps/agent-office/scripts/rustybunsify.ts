@@ -150,9 +150,16 @@ async function prepare(tag: string) {
   // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone, and the
   // node_modules of every worktree no worker sits at (one kept for work git can't see on main still had 3-5 GB of them)
   // #4905: and first, everything still running in its worktree (its claude, the dev servers and watchers it started) ends
-  prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\nimport { endIn as __rbEndIn } from '../rb-reaper.js';\n");
+  // #5658: in each repo's worktree of a worker across repositories, and whatever its session's process group started
+  // (all a worker with no worktree has, its processes being in the main checkout)
+  prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\nimport { endWorker as __rbEndWorker, trackHome as __rbTrackHome } from '../rb-reaper.js';\n");
   patch("workers/manager.js", "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos);\n",
-    "        return __rbEndIn(w.info.worktree?.path ? path.join(this.trees.dir, w.info.worktree.path) : '').then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos)).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
+    "        return __rbTrackHome(__rbEndWorker([w.info.worktree?.path, ...(w.info.repos ?? []).map((r) => r.path)].filter(Boolean).map((p) => path.join(this.trees.dir, p)), proc?.pid).then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos))).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
+
+  // #5657: and the office finishes a send-home under way before it exits (upstream gave it 300 ms); Ctrl+C twice still quits
+  prepend("cli.js", "import { homeSettled as __rbHomeSettled } from './rb-reaper.js';\n");
+  patch("cli.js", "    office.shutdown(keep);\n    setTimeout(() => process.exit(0), 300);\n",
+    "    office.shutdown(keep);\n    void __rbHomeSettled(undefined, (n) => console.log(`  finishing ${n} send-home${n === 1 ? '' : 's'} first (Ctrl+C again to quit now)…`)).finally(() => setTimeout(() => process.exit(0), 300));\n");
 
   // 6a2. #5523: a checkout of this repo outran upstream's 20 s `git worktree add` timeout
   // and a worktree starts from origin/main, not from whatever branch the floor checkout was left on; a hire on a full

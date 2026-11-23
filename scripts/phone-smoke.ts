@@ -41,6 +41,9 @@ async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobi
   try {
     // Every visit starts as a first visit: a game that autosaves (Two Fronts) would otherwise hand the laptop's run to the phones.
     await tab.call("Storage.clearDataForOrigin", { origin: new URL(url).origin, storageTypes: "all" });
+    // The board checks layout, not motion: with reduced motion a page lies still when it is looked at. Mythic Masters'
+    // title paper swings in from edge-on, and on a busy CI runner the audit caught it on its spine, every button a sliver (#5633).
+    await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(cdp, tab, url);
     const audit = await tab.eval<Audit>(`(${pageAudit})()`);
     const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 70, clip: { x: 0, y: 0, width: size.w, height: size.h, scale: mobile ? 0.6 : 0.4 } });

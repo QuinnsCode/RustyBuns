@@ -4,13 +4,13 @@
 // gets 5 minutes, and a git the office stopped says it ran out of time.
 import { once } from "./once.ts";
 
-/** How long `git worktree add` may take, in ms. */
+/** How long `git worktree add` (and `remove`, which deletes as many files: #5657) may take, in ms. */
 export const CHECKOUT_TIMEOUT_MS = 5 * 60_000;
 
-/** server/worktrees.js: a longer timeout for `worktree add`, and a timed-out git said as one. */
+/** server/worktrees.js: a longer timeout for `worktree add` and `remove`, and a timed-out git said as one. */
 export function slowCheckout(js: string) {
   const rel = "worktrees.js";
-  const add = `(args[0] === 'worktree' && args[1] === 'add' ? ${CHECKOUT_TIMEOUT_MS} : `;
+  const add = `(args[0] === 'worktree' && (args[1] === 'add' || args[1] === 'remove') ? ${CHECKOUT_TIMEOUT_MS} : `;
   js = once(js, rel, "stdio: ['ignore', 'pipe', 'pipe'], timeout: 20_000 })", `stdio: ['ignore', 'pipe', 'pipe'], timeout: ${add}20_000) })`);
   js = once(js, rel, "encoding: 'utf8', timeout: 60_000, maxBuffer", `encoding: 'utf8', timeout: ${add}60_000), maxBuffer`);
   js = once(js, rel, "export function gitError(err) {\n    const e = err;\n",

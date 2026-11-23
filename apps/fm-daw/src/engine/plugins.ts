@@ -1,6 +1,7 @@
-// Host-only: a player's own CLAP and VST3 plugins, run by the Rust host (native/crates/fm_daw/src/clap.rs, src/vst3.rs,
-// one surface in src/hosted.rs) through bun:ffi (#5244, #5268). `pluginFolders` and `scanPlugins` find the `.clap` and
-// `.vst3` files where plugin installers put them; `openBundle`
+// Host-only: a player's own CLAP, VST3 and Audio Unit plugins, run by the Rust host (native/crates/fm_daw/src/clap.rs,
+// src/vst3.rs, src/au.rs, one surface in src/hosted.rs) through bun:ffi (#5244, #5268, #5517). `pluginFolders` and
+// `scanPlugins` find the `.clap` and `.vst3` files where plugin installers put them, and `systemPlugins` the AUs macOS
+// keeps (named `au:type:subtype:maker`, not a path); `openBundle`
 // loads one and lists the plugins inside; `make` starts one, and from then on this side only sends notes and
 // parameter changes, and asks for blocks of its sound (interleaved stereo, the layout `fm_render` writes).
 // `openEditor` opens the plugin's own editor as a native window (#5267), and `changes` hands back the knobs turned in it.
@@ -10,13 +11,14 @@ import { readdirSync, statSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import { homedir } from "node:os";
 import { loadNative } from "@rustybuns/native";
-import { arr, type Guard } from "@rustybuns/util/guard";
+import { arr, str, type Guard } from "@rustybuns/util/guard";
 import { ParamChange, PluginInfo, PluginParam, type PluginEvent } from "../plugin-track.ts";
 import { audible, type Project } from "../project.ts";
 import { P } from "./params.ts";
 
 export const pluginSymbols = {
   fm_plugin_error: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
+  fm_plugin_system: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
   fm_plugin_open: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
   fm_plugin_close: { args: [FFIType.ptr], returns: FFIType.void },
   fm_plugin_list: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u32 },
@@ -89,7 +91,13 @@ export interface Bundle {
   close(): void;
 }
 
-/** Opens a `.clap` or a `.vst3` (a file, or a bundle folder); a string says why it couldn't. */
+/** The plugins the system keeps rather than a folder: macOS's Audio Units, by the `au:` names `openBundle` takes. */
+export async function systemPlugins(): Promise<string[]> {
+  const l = await pluginLib();
+  return l ? json(arr(str(64), 4096), text((o, c) => l.fm_plugin_system(o ? ptr(o) : null, c))) : [];
+}
+
+/** Opens an `au:` name, a `.clap` or a `.vst3` (a file, or a bundle folder); a string says why it couldn't. */
 export async function openBundle(path: string): Promise<Bundle | string> {
   const l = await pluginLib();
   if (!l) return "plugins need the desktop app's native engine";

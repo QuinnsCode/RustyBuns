@@ -13,6 +13,8 @@
 //     has; `office:sweep` asks `office-workers list` and skips without it (#3387). A merged worker at rest counts as
 //     gone, and each floor sweeps every 30 minutes too (see `sweepEvery`, below).
 //  4. Playwright's browser builds no installed playwright-core names (`prunePlaywright`, manual, dry run first).
+//  5. Worktree folders a send-home left half deleted: no `.git`, not in `git worktree list`, an hour old (`sweepHalfGone`,
+//     #5657). What still runs in one ends first. Every floor sweep runs it.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync, statfsSync } from "node:fs";
@@ -21,6 +23,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { poolModules } from "./install.ts";
+import { endIn } from "./reaper.ts";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -164,20 +167,62 @@ export async function sweepBuilt(repo: string, live: string[], go: boolean, now 
   return { paths, bytes };
 }
 
+// 2026-11-23 (#5657): 50 of 172 folders in the office's worktrees were half-deleted, about 400 MB each: no `.git`, and
+// not in `git worktree list`. A send-home cut off part way (git's 60 s `worktree remove` timeout, the office exiting
+// 300 ms after a shutdown, an `rm` racing a process still writing there) left the folder, then `git worktree prune`
+// forgot it, and no rule here touched a folder git doesn't know. Such a folder an hour old now goes, after whatever
+// still runs in it ends. Its scratch folder goes on the next sweep, once the folder is gone.
+
+/**
+ * The folders in `repo`'s worktrees that are left over from a send-home cut off part way: an hour old or more, no
+ * `.git` in them, and not in `git worktree list`. None when git can't list its worktrees.
+ */
+export async function halfGone(repo: string, now = Date.now()): Promise<string[]> {
+  const listed = (await run(["git", "-C", repo, "worktree", "list", "--porcelain"])).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
+  if (!listed.length) return [];
+  const known = new Set(listed.flatMap((p) => { try { return [path.resolve(p), realpathSync(p)]; } catch { return [path.resolve(p)]; } }));
+  const out: string[] = [];
+  for (const name of (await treesOf(repo)) ?? []) {
+    const dir = path.join(repo, WORKTREES, name);
+    try {
+      const st = await lstat(dir);
+      if (!st.isDirectory() || now - st.mtimeMs < 3_600_000) continue; // a hire's checkout makes its folder before git lists it
+      if (known.has(dir) || known.has(realpathSync(dir))) continue;
+      try { await lstat(path.join(dir, ".git")); continue; } catch {}
+      out.push(dir);
+    } catch {}
+  }
+  return out;
+}
+
+/** Removes (`go`) or lists `halfGone(repo)`, ending what still runs in each first (`end`, the reaper's `endIn`). Never throws. */
+export async function sweepHalfGone(repo: string, go: boolean, end: (dir: string) => Promise<unknown> = endIn, now = Date.now()): Promise<Swept> {
+  const paths = await halfGone(repo, now);
+  const sizes = await duKb(paths);
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) try { await end(p); await rm(p, { recursive: true, force: true }); } catch { continue; }
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths, bytes };
+}
+
 /**
  * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
  * worktree paths workers sit at), also the `node_modules` and build output of every other worktree.
  */
 export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
+    const h = await sweepHalfGone(dir, true);
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
     const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
+      h.paths.length && `${h.paths.length} half-deleted worktree folder${h.paths.length === 1 ? "" : "s"}`,
       r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
       m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
-    return said.length ? `🧹 Swept ${said.join(" and ")}, ${gb(r.bytes + m.bytes)} freed` : "";
+    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
 }
 

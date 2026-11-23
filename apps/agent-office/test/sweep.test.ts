@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -165,4 +165,28 @@ test("lockfile and cache names parse the same way, and odd ones parse to nothing
   expect([...keep]).toEqual(["@alchemy.run/acme@2.0.0-beta.84", "w@workspace:packages/w"]);
   expect(cacheKey("@alchemy.run/acme@2.0.0-beta.84@@@1")).toBe("@alchemy.run/acme@2.0.0-beta.84");
   expect([cacheKey("@T@24e5fbdaf51fd700@@@1"), cacheKey("accepts"), cacheKey("x.npm"), cacheKey("a@1.0.0@@hash@@@1")]).toEqual([undefined, undefined, undefined, undefined]);
+});
+
+// #5657: 50 folders a cut-off send-home left behind (no .git, forgotten by git), 400 MB each, that no rule removed
+test("a half-deleted worktree folder an hour old goes after what runs in it ends; a live worktree and a fresh checkout stay", async () => {
+  const repo = tmp();
+  const git = (...a: string[]) => Bun.spawnSync(["git", "-C", repo, ...a], { stdout: "ignore", stderr: "ignore" });
+  git("init", "-q", "-b", "main");
+  writeFileSync(path.join(repo, "a.txt"), "a\n");
+  git("add", ".");
+  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a");
+  const trees = path.join(repo, WORKTREES);
+  const live = path.join(trees, "live-1"), half = path.join(trees, "bolt-2fe0"), fresh = path.join(trees, "hiring-1");
+  git("worktree", "add", "-q", "-b", "office/live-1", live);
+  for (const d of [half, fresh]) mkdirSync(path.join(d, "apps/game"), { recursive: true });
+  writeFileSync(path.join(half, "apps/game/main.ts"), Buffer.alloc(1 << 20));
+  const old = (Date.now() - 2 * 3_600_000) / 1000;
+  for (const d of [live, half]) utimesSync(d, old, old);
+
+  const ended: string[] = [];
+  const done = await sweepHalfGone(repo, true, async (d) => { ended.push(d); });
+  expect(done.paths).toEqual([half]);
+  expect(ended).toEqual([half]);
+  expect(done.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect([existsSync(half), existsSync(path.join(live, "a.txt")), existsSync(fresh)]).toEqual([false, true, true]);
 });
