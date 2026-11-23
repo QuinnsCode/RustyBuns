@@ -86,20 +86,29 @@ impl Plugin {
     pub fn params(&self) -> Vec<Param> { each!(self, p => p.params()) }
     pub fn render(&mut self, out: &mut [f32], frames: usize) -> bool { each!(self, p => p.render(out, frames)) }
     pub fn take_changes(&mut self, cap: usize) -> String { each!(self, p => p.take_changes(cap)) }
-    /// How its own editor opens here; a VST3's (#5516) and an AU's don't yet.
+    /// How its own editor opens here: a VST3's always inside a window of ours (#5516); an AU's doesn't yet (#5741).
     pub fn editor_kind(&self) -> Option<Kind> {
-        match self { Plugin::Clap(p) => p.editor_kind(), _ => None }
+        match self {
+            Plugin::Clap(p) => p.editor_kind(),
+            Plugin::Vst3(p) => p.editor_kind(),
+            #[cfg(target_os = "macos")]
+            Plugin::Au(_) => None,
+        }
     }
     pub fn open_editor(&mut self, title: &str) -> Result<(), String> {
         match self {
             Plugin::Clap(p) => p.open_editor(title),
-            Plugin::Vst3(p) => Err(format!("{}'s editor doesn't open here yet: FM DAW opens CLAP editors, VST3 ones are next", p.name())),
+            Plugin::Vst3(p) => p.open_editor(title),
             #[cfg(target_os = "macos")]
-            Plugin::Au(p) => Err(format!("{}'s editor doesn't open here yet: FM DAW opens CLAP editors, Audio Unit ones come later", p.name())),
+            Plugin::Au(p) => Err(format!("{}'s editor doesn't open here yet: FM DAW opens CLAP and VST3 editors, Audio Unit ones come later", p.name())),
         }
     }
-    pub fn close_editor(&mut self) { if let Plugin::Clap(p) = self { p.close_editor() } }
-    pub fn pump(&mut self) -> bool { match self { Plugin::Clap(p) => p.pump(), _ => false } }
+    pub fn close_editor(&mut self) {
+        match self { Plugin::Clap(p) => p.close_editor(), Plugin::Vst3(p) => p.close_editor(), #[cfg(target_os = "macos")] Plugin::Au(_) => {} }
+    }
+    pub fn pump(&mut self) -> bool {
+        match self { Plugin::Clap(p) => p.pump(), Plugin::Vst3(p) => p.pump(), #[cfg(target_os = "macos")] Plugin::Au(_) => false }
+    }
 }
 
 #[cfg(test)]

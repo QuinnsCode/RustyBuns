@@ -62,7 +62,8 @@ test("a VST3 found in the VST3 folder plays notes and its sliders move it, as a 
   expect(peak(play)).toBe(0);
 
   expect(p.editor).toBeNull();
-  expect(p.openEditor("Test Tone, track 1")).toContain("doesn't open here yet");
+  // its controller makes no view (and off macOS FM DAW has no window to hold one yet)
+  expect(p.openEditor("Test Tone, track 1")).toContain(process.platform === "darwin" ? "has no editor of its own" : "macOS for now");
   expect(p.changes()).toEqual([]);
   p.free();
   expect(p.render(new Float32Array(2), 1)).toBe(false);
