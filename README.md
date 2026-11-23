@@ -16,6 +16,8 @@
 
 **The idea engine: a meta-metaframework, typed from front to back.** When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
 
+**It is called Rusty Buns, but your app needs neither Rust nor Bun.** On the edge, your app is a plain Worker. Rust and Bun are here because they connect to everything so well: Bun runs the tool, the local copies and the desktop file, and Rust is an option for speed.
+
 ### Why use it, most important first
 
 1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it.
@@ -25,7 +27,29 @@
 5. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first.
 6. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load.
 7. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
-8. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
+8. **Easy to test.** A full copy of the app is a folder. Make ten copies in one test.
+9. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
+
+### The app module: keep the logic in the middle
+
+Put your business logic in one TypeScript module: the rules, the state and the types. The module does not know where it runs.
+
+For each target, write only the thin part that connects the module to http, comms and storage. The logic does not move.
+
+```
+          your app module: the rules, the state, the types
+                               │
+            one interface for each of the five parts
+                               │
+     ┌───────────┬─────────────┼─────────────┬─────────────┐
+  the page    a Worker      a server     the desktop     a test
+  (Vite)      + a DO       (Bun+sqlite)  (one file)   (a temp folder)
+```
+
+- **Client to server.** The page and the backend import the same module. They agree on each rule and each message.
+- **TypeScript to Rust.** When one path must be faster, put Rust behind the same interface. The TypeScript twin gives the same answer, so the rest of the app does not change.
+- **DX and DevOps that scale.** A new target is a new thin part, not a rewrite. An edge, a box and a desktop app together is not a hard setup.
+- **Tests with mini copies.** `localBindings(dir)` gives a temp folder its own D1, KV, R2 and Durable Object storage. Each copy is the real app, with no cloud and no network.
 
 ### How easy the five parts are
 
@@ -592,7 +616,7 @@ Rusty Buns generates the host, the wrangler config and the Alchemy stack from `r
 
 ### Rusty Buns is a joke name because you need neither
 
-To run the app, the minimum is Vite, which builds the page, and Bun, which runs the backend. To deploy it, add Effect and Alchemy. All other parts (Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
+Your app needs neither Rust nor Bun: on the edge it is a plain Worker. The tool needs Vite, which builds the page, and Bun, which runs the local copies and the desktop file. To deploy, add Effect and Alchemy. All other parts (Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
 
 <details><summary>More</summary>
 
