@@ -34,6 +34,11 @@ export const DODGE = { skirmisher: 0.25, flyer: 0.2, bruiser: 0.15, tank: 0.08 }
  * stand there trading blows; for `ticks` free ticks it slips back out round the target, with a dash sideways first if it
  * has the stamina, and comes in again from the side. */
 export const RUN = { ticks: 40 } as const;
+/** Reel (#5239 combat line, round 11): a blow that stuns us for `stun` frames or more (a heavy, a launcher, an ultimate)
+ * isn't answered the moment the stun wears off. For `ticks` free ticks we back out from the hitter and circle away,
+ * then come in again. Before, the struck body was free about 10 frames before the hitter and walked straight back in
+ * to swing: the two stood and traded. */
+export const REEL = { stun: 24, ticks: 30 } as const;
 
 /** Which way out of shape `a` for fighter `me`, as a unit [x, z]: sideways out of a column's or wall's lane or a cone's fan,
  * to the side it already stands on; straight out from a ring's middle. A way that runs off the ring turns: a lane's to its
@@ -55,12 +60,15 @@ export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 /** A bot for fighter `side`: it fights the nearest foe still in (`foeOf`), so it plays a team fight as it plays one on one. */
 export function bot(side: number, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, away = 0, leave = false, dir = rnd() < 0.5 ? 1 : -1;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, away = 0, reel = 0, leave = false, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
   function think(m: Match): Input {
     const me = m.f[side]!, o = m.f[foeOf(m, side)]!;
+    // The first tick we see a big blow that landed on us (REEL; the sim has already counted the hit's own tick, so `hurt`
+    // is 1): the reel starts once its stun is over, and a punish we were owed is gone.
+    if (me.state === "stun" && me.hurt === 1 && me.stun >= REEL.stun) { reel = REEL.ticks; punish = 0; }
     // Buttons are edges: let go every other tick so the sim sees a press.
     flip = !flip;
     if (holdFor > 0) { holdFor--; return { ...IDLE, ...hold, ...(flip ? {} : { light: false, heavy: false, special: false, ultimate: false, dash: false, up: false }) }; }
@@ -167,6 +175,19 @@ export function bot(side: number, seed: number): Bot {
       [i.mx, i.mz] = wayOut(w, me);
       if (!me.exhausted && me.stamina >= me.b.dashCost && rnd() < DODGE[me.c.archetype]) press("dash");
       return i;
+    }
+
+    // Reeling from a big blow: back out from the hitter while it is close, then circle away round it. No rnd().
+    if (reel > 0) {
+      reel--;
+      if (me.onGround) {
+        const rad = d < reach + RING + 1.5 ? -0.8 : 0;
+        let s = dir;
+        if (hypot(me.pos.x - (dz / d) * s * 3 - (dx / d) * 2, me.pos.z + (dx / d) * s * 3 - (dz / d) * 2) > ARENA.radius - 1.5) s = -s;
+        const vx = (-dz / d) * s + (dx / d) * rad, vz = (dx / d) * s + (dz / d) * rad, n = hypot(vx, vz);
+        i.mx = vx / n; i.mz = vz / n;
+        return i;
+      }
     }
 
     if (threat && !me.exhausted && rnd() < (me.b.mass < 30 ? 0.08 : 0.03)) {

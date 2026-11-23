@@ -356,6 +356,22 @@ describe("the bruiser bot", () => {
     expect(hit.moved).toBeGreaterThan(0.8);
     expect(whiff.moved).toBeLessThan(0.2);
   });
+
+  test("reels: struck by a heavy, it backs out once the stun wears off instead of walking straight back in to swing", () => {
+    // The bruiser stands still until the tank's heavy lands (its bot sees every tick but isn't played), then its bot
+    // plays the stun and its first 0.4 s free; the hitter stands where its heavy left it.
+    const m = newMatch(bruiser, tank), me = bot(0, 1), [f, o] = m.f;
+    f.pos = { x: 0, y: 0, z: 0 }; f.yaw = 0; o.pos = { x: f.b.radius + o.b.radius + 0.5, y: 0, z: 0 }; o.yaw = Math.PI;
+    step(m, [IDLE, hold({ heavy: true })]);
+    while (f.state !== "stun" && m.tick < 120) { me(m); step(m, [IDLE, IDLE]); }
+    expect(f.state).toBe("stun");
+    while (f.state === "stun") step(m, [me(m), IDLE]);
+    const gap = () => Math.hypot(f.pos.x - o.pos.x, f.pos.z - o.pos.z), from = gap();
+    let swung = false;
+    for (let t = 0; t < 24; t++) { step(m, [me(m), IDLE]); swung ||= f.state === "attack"; }
+    expect(gap()).toBeGreaterThan(from + 0.5);
+    expect(swung).toBe(false);
+  });
 });
 
 describe("the skirmisher bot", () => {
