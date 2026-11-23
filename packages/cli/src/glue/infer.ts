@@ -50,6 +50,8 @@ export interface Inferred {
     proxy: string[];
     /** Each of those paths' target ("http://localhost:3001"), null when the config doesn't spell it out. */
     proxyTargets: Record<string, string | null>;
+    /** The server build lands in <outDir>/server (Foldkit's `ssr`): a static Worker must leave it out of its assets. */
+    serverInOut: boolean;
   };
   /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
   astro: AstroInfo | null;
@@ -152,7 +154,7 @@ export function inferVite(root: string, buildConfig: string | null = null) {
   if (buildConfig && !existsSync(join(root, buildConfig))) buildConfig = null;
   const configPath = buildConfig ? join(root, buildConfig) : cands.map((c) => join(root, c)).find(existsSync) ?? null;
   const desktopConfigPath = ["vite.desktop.config.ts", "vite.desktop.config.mts"].map((c) => join(root, c)).find(existsSync) ?? null;
-  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath, proxy: [] as string[], proxyTargets: {} as Record<string, string | null> };
+  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath, proxy: [] as string[], proxyTargets: {} as Record<string, string | null>, serverInOut: false };
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
   out.plugins = vitePlugins(src);
@@ -160,12 +162,23 @@ export function inferVite(root: string, buildConfig: string | null = null) {
   out.proxyTargets = viteProxyTargets(src);
   out.root = viteRoot(src);
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
+  out.serverInOut = serverInOutDir(src, out.outDir);
   const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/$/, "") || ".";
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:path\.)?resolve\([^,]+,\s*["']([^"']+)["']\)/g)) out.aliases[m[1]!] = dir(m[2]!);
   // "@": fileURLToPath(new URL("./src", import.meta.url))
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:\w+\.)?fileURLToPath\(\s*new\s+URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)\s*\)/g)) out.aliases[m[1]!] ??= dir(m[2]!);
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*["']([^"']+)["']/g)) out.aliases[m[1]!] ??= dir(m[2]!);
   return out;
+}
+
+/**
+ * Whether the config's server build goes inside the client's outDir: Foldkit's `foldkit({ ssr: ... })`
+ * writes <outDir>/server (#5767), and any config can name "<outDir>/server" itself.
+ */
+export function serverInOutDir(src: string, outDir: string | null): boolean {
+  if (/\bfoldkit\s*\(/.test(src) && /\bssr\s*:/.test(src)) return true;
+  const out = (outDir ?? "dist").replace(/^\.\//, "").replace(/\/$/, "");
+  return [`"${out}/server`, `'${out}/server`, `"./${out}/server`, `'./${out}/server`].some((s) => src.includes(s));
 }
 
 /** The keys of vite's `server.proxy` object ("/api", "^/ws/.*"), from the config's text. */

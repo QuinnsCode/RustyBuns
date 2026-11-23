@@ -6,6 +6,7 @@ import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths, viteProx
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { craProxy, viteConfig, vueCliProxy } from "../src/glue/port-vite.ts";
+import { assetIgnore } from "@rustybuns/shell-bun/assetsignore";
 
 // These tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
@@ -932,6 +933,27 @@ test("init: a vite config's own outDir is kept, so plugins that write there stil
   const c = p.read("rustybuns.config.ts");
   expect(c).toContain('"assets": "build"');
   expect(c).toContain('"build": "bunx vite build"');
+});
+
+test("init: a Foldkit SSR app's server bundle under outDir stays out of the static Worker's assets", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "rat", dependencies: { vite: "^7", foldkit: "^1", "@foldkit/vite-plugin": "^1" } }), "bun.lock": "",
+    "vite.config.ts": 'import { foldkit } from "@foldkit/vite-plugin";\nexport default { build: { outDir: "dist/web" }, plugins: [foldkit({ ssr: { serverEntry: "src/server.ts", clientEntry: "src/main.ts", build: { prerender: ["/"] } } })] };\n',
+  });
+  expect(p.run("init").code).toBe(0);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"assets": "dist/web"');
+  // What vite would leave, then the build's own last step, then what the upload keeps.
+  for (const f of ["index.html", "assets/main.js", "server/fetch.js", "server/foldkit.build.json", "server/assets/x.js"]) {
+    mkdirSync(join(p.dir, "dist/web", f, ".."), { recursive: true });
+    writeFileSync(join(p.dir, "dist/web", f), "");
+  }
+  const build: string = JSON.parse(c.match(/"build": ("(?:[^"\\]|\\.)*")/)![1]!);
+  const last = Bun.spawnSync(["sh", "-c", build.split(" && ").at(-1)!], { cwd: p.dir });
+  expect(last.exitCode).toBe(0);
+  const out = assetIgnore(p.read("dist/web/.assetsignore"));
+  expect(["index.html", "assets/main.js", "server/fetch.js", "server/foldkit.build.json", "server/assets/x.js"].filter((f) => !out(f)))
+    .toEqual(["index.html", "assets/main.js"]);
 });
 
 test("init: an older Astro adapter's wrangler paths (dist/_worker.js, dist) are used as built", () => {
