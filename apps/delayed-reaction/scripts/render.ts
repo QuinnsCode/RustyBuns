@@ -1,11 +1,13 @@
 // Render the music offline and judge what can be judged without ears.
 //   bun scripts/render.ts [?level=5&bpm=140&delay=6&beat=0&setup=snap] [--bars 64] [--out dist/stems] [--check] [--all]
-// A headless Chrome runs scripts/render-page.ts (the same Music the game plays, on an OfflineAudioContext),
-// posts each stem back here, and this writes WAVs (mix, drums, bass, synth, dub) and prints levels, clipping,
-// stereo width and how far the kicks sit from the tempo grid. --check exits 1 when a number is out of range.
+// A headless Chrome (scripts/chrome.ts, so it dies with this script) runs scripts/render-page.ts (the same Music the
+// game plays, on an OfflineAudioContext), posts each stem back here, and this writes WAVs (mix, drums,
+// bass, synth, dub) and prints levels, clipping, stereo width and how far the kicks sit from the tempo grid. --check
+// exits 1 when a number is out of range.
 // --all renders every setup in src/dub.ts, each into its own folder under --out, and prints one row per track.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { launchChrome, openTab } from "../../../scripts/chrome.ts";
 import { kickCount, setupNamed, SETUPS } from "../src/dub.ts";
 import { kicks, offGrid, row, wav, type Row, type Take } from "../src/stems.ts";
 
@@ -13,7 +15,6 @@ const args = process.argv.slice(2);
 const flag = (name: string, dflt: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1]! : dflt; };
 const query = args.find((a) => a.startsWith("?")) ?? "";
 const bars = flag("--bars", ""), out = flag("--out", "dist/stems"), check = args.includes("--check"), all = args.includes("--all");
-const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const built = await Bun.build({ entrypoints: [new URL("./render-page.ts", import.meta.url).pathname], target: "browser" });
 if (!built.success) throw new Error(built.logs.join("\n"));
@@ -44,11 +45,13 @@ const server = Bun.serve({
 async function render(q: string, dir: string): Promise<string[]> {
   takes.clear();
   done = new Promise<void>((ok, bad) => { finish = (err) => (err ? bad(new Error(err)) : ok()); });
-  const profile = join(process.env.TMPDIR ?? "/tmp", `dr-render-${process.pid}`);
-  const chrome = Bun.spawn([CHROME, "--headless=new", "--disable-gpu", "--no-first-run", `--user-data-dir=${profile}`,
-    "--autoplay-policy=no-user-gesture-required", `http://127.0.0.1:${server.port}/?${bars ? `bars=${bars}` : ""}${q.replace("?", "&")}`], { stdout: "ignore", stderr: "ignore" });
+  const chrome = await launchChrome(["--autoplay-policy=no-user-gesture-required"]);
   const timer = setTimeout(() => finish("timed out after 20 minutes"), 1_200_000);
-  try { await done; } finally { clearTimeout(timer); chrome.kill(); }
+  try {
+    const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
+    await tab.call("Page.navigate", { url: `http://127.0.0.1:${server.port}/?${bars ? `bars=${bars}` : ""}${q.replace("?", "&")}` });
+    await done;
+  } finally { clearTimeout(timer); chrome.stop(); }
 
   mkdirSync(dir, { recursive: true });
   const rows: Row[] = [];

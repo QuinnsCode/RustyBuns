@@ -16,12 +16,14 @@
 //! track's insert inside the engine (`fm_track_eq_set`).
 //! `remote` plays someone else's sound on the beat it was stamped with (`fm_remote_*`).
 //! `circuit` is the circuit amp (packages/gear/src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
-//! `clap` and `vst3` host a player's own CLAP or VST3 plugin on the desktop, both behind `hosted` (`fm_plugin_*`);
+//! `clap`, `vst3` and `au` host a player's own CLAP, VST3 or (macOS) Audio Unit plugin on the desktop, all behind `hosted` (`fm_plugin_*`);
 //! the wasm build leaves them out.
 
 pub mod circuit;
 pub mod eq;
 pub mod remote;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod au;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod clap;
 #[cfg(not(target_arch = "wasm32"))]
@@ -1040,7 +1042,7 @@ pub extern "C" fn fm_amp_iterations(r: *mut circuit::Rig) -> f64 { unsafe { r.as
 #[cfg(not(target_arch = "wasm32"))]
 mod plugin_ffi {
     use super::clap::{describe_json, gui::Kind, params_json};
-    use super::hosted::{Bundle, Plugin};
+    use super::hosted::{system_plugins, Bundle, Plugin};
     use std::cell::RefCell;
 
     thread_local! { static ERROR: RefCell<String> = const { RefCell::new(String::new()) }; }
@@ -1057,7 +1059,19 @@ mod plugin_ffi {
     #[no_mangle]
     pub unsafe extern "C" fn fm_plugin_error(out: *mut u8, cap: u32) -> u32 { ERROR.with(|e| give(&e.borrow(), out, cap)) }
 
-    /// Opens a `.clap` or `.vst3` (a file, or a bundle folder); null on failure (`fm_plugin_error` says why).
+    /// The plugins the system keeps rather than a folder (macOS's Audio Units), as a JSON array of the names
+    /// `fm_plugin_open` takes (`au:type:subtype:maker`); `[]` elsewhere.
+    /// # Safety
+    /// `out` must point to `cap` bytes, or be null.
+    #[no_mangle]
+    pub unsafe extern "C" fn fm_plugin_system(out: *mut u8, cap: u32) -> u32 {
+        let mut s = String::from("[");
+        for (i, n) in system_plugins().iter().enumerate() { if i > 0 { s.push(','); } super::clap::json_str(n, &mut s); }
+        s.push(']');
+        give(&s, out, cap)
+    }
+
+    /// Opens an `au:` name, a `.clap` or a `.vst3` (a file, or a bundle folder); null on failure (`fm_plugin_error` says why).
     /// # Safety
     /// `path` must point to `len` bytes of UTF-8.
     #[no_mangle]

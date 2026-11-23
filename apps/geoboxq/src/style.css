@@ -71,6 +71,8 @@ button.on { border-color: var(--accent); color: var(--accent); }
 .account { justify-self: end; }
 /* The Cmd/Ctrl+K palette (@rustybuns/util/palette) in the page's paper and orange. */
 :root { --rb-pal-bg: var(--card); --rb-pal-fg: var(--ink); --rb-pal-muted: var(--soft); --rb-pal-line: var(--line); --rb-pal-hover: var(--bg); --rb-pal-accent: var(--accent); }
+/* Its corner button bottom-left, over the box pictures' column: bottom-right it sat on a row's Remove (#5633), and eqosys's Report has that corner. */
+body .rb-pal-btn { right: auto; left: max(10px, env(safe-area-inset-left)); }
 /* The short answer, at the top where a phone sees it: the full packing is further down (#answer). */
 .verdict { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 0 0 20px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: inherit; text-decoration: none; }
 .verdict .answer { font-size: 1.15rem; }

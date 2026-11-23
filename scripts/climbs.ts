@@ -18,6 +18,8 @@
 //   bun run climbs                  the board
 //   bun run climbs --next           the round to hand out (not taken by an open PR, not stalled, under target)
 //   bun run climbs --next --hire    hire a worker for it through office-workers
+//   bun run climbs --next --hire --wait   the office is full (12 workers): try again each minute until a desk frees
+//   bun run climbs --next --hire --anyway (or --hold)   passed to office-workers when other open work changes the same files
 //   bun run climbs --next --skip mythic   leave out every climb whose title names it (repeat for more words)
 //   bun run climbs --next --issue 4287    that climb's round, whatever the board would pick
 //   bun run climbs --json
@@ -103,6 +105,18 @@ Then hop the climb forward so it stays at the top of the issues: open a new issu
 At or over the target: file one issue in the private manual-run repo (\`gh issue create --repo ${MANUAL_REPO} --label "manual run"\`) titled "MANUAL RUN: score QuinnsCode/RustyBuns#${c.number} yourself" with how to see it, and the judge's score; the owner's score decides if it closes. Three rounds with no gain: a comment starting \`Stalled:\` with the blocker. Then stop; the next round goes to the next free worker.`;
 };
 
+const FULL = /at its limit of \d+ workers/i;
+
+/** Hire, and with `wait` hire again each minute while the office is full. Any other refusal ends it. */
+export async function hire(run: () => Promise<{ code: number; out: string }>, wait: boolean, pause = (ms: number) => Bun.sleep(ms)): Promise<number> {
+  for (let tries = 1; ; tries++) {
+    const { code, out } = await run();
+    if (!code || !wait || !FULL.test(out)) return code;
+    if (tries === 1) console.log("The office is full: trying again each minute until a desk frees.");
+    await pause(60_000);
+  }
+}
+
 async function gh(args: string[]): Promise<string> {
   const p = Bun.spawn(["gh", ...args], { stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
@@ -137,8 +151,12 @@ if (import.meta.main) {
     }
     console.log(board([c])[0] + "\n\n" + baton(c));
     if (argv.includes("--hire")) {
-      const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c)], { stdout: "inherit", stderr: "inherit" });
-      process.exit(await p.exited);
+      process.exit(await hire(async () => {
+        const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c), ...argv.filter((a) => a === "--anyway" || a === "--hold")], { stdout: "pipe", stderr: "pipe" });
+        const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+        process.stdout.write(out); process.stderr.write(err);
+        return { code, out: out + err };
+      }, argv.includes("--wait")));
     }
   } else if (argv.includes("--json")) console.log(JSON.stringify(all, null, 2));
   else {

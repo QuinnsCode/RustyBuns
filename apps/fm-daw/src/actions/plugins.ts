@@ -1,11 +1,11 @@
 "use server";
-// Runs on the desktop host: the plugin tracks' CLAP and VST3 plugins (#5265, #5268). The page lists what's installed, starts one on a
+// Runs on the desktop host: the plugin tracks' CLAP, VST3 and Audio Unit plugins (#5265, #5268, #5517). The page lists what's installed, starts one on a
 // track, and then asks for its sound a block at a time, with the notes the worklet played since the last block
-// (src/engine/plugin-route.ts). Only a `.clap` or `.vst3` the scan found can be opened: loading one runs its code.
+// (src/engine/plugin-route.ts). Only a `.clap`, `.vst3` or AU the scan found can be opened: loading one runs its code.
 import { existsSync } from "node:fs";
 import { candidates } from "@rustybuns/native";
 import { check, int, num, str } from "@rustybuns/util/guard";
-import { openBundle, renderEvents, scanPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
+import { openBundle, renderEvents, scanPlugins, systemPlugins, type Bundle, type HostedPlugin } from "../engine/plugins.ts";
 import { ownCopy, PluginAskArgs, TrackPlugin, type BlockReply, type PluginChoice, type StartReply } from "../plugin-track.ts";
 
 const bundles = new Map<string, Bundle>();
@@ -20,12 +20,12 @@ async function bundle(path: string): Promise<Bundle | string> {
   return b;
 }
 
-/** Every plugin in the CLAP and VST3 folders, for the track menu. One that won't load is left out. */
+/** Every plugin in the CLAP and VST3 folders and every AU macOS lists, for the track menu. One that won't load is left out. */
 export async function findPlugins(): Promise<PluginChoice[]> {
   // the desk's own native library is a `.clap` holding Test Tone: a dev build lists it, so there's always one to try
   const own = candidates("fm_daw", {}).find((p) => !p.startsWith("/$bunfs") && existsSync(p));
   const out: PluginChoice[] = [];
-  for (const path of new Set([...scanPlugins(), ...(own ? [own] : [])])) {
+  for (const path of new Set([...scanPlugins(), ...(own ? [own] : []), ...await systemPlugins()])) {
     const b = await bundle(path);
     if (typeof b === "string") continue;
     b.plugins.forEach((p, index) => out.push({ path, index, name: p.name, vendor: p.vendor, id: p.id }));
@@ -36,7 +36,7 @@ export async function findPlugins(): Promise<PluginChoice[]> {
 
 /**
  * Starts `plugin` on track `track` (or a bounce's slot, BOUNCE_SLOT) at the context's rate, with its moved sliders where they were. The groove may be a
- * friend's, naming the `.clap` or `.vst3` in their folder: this computer's own copy of the same plugin plays (`ownCopy`).
+ * friend's, naming the `.clap` or `.vst3` in their folder (an AU's `au:` name is the same on every Mac): this computer's own copy of the same plugin plays (`ownCopy`).
  */
 export async function startPlugin(track: unknown, plugin: unknown, sampleRate: unknown): Promise<StartReply> {
   const t = check(int(0, 63), track), p = check(TrackPlugin, plugin), sr = check(num(8000, 384000), sampleRate);

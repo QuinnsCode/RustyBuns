@@ -24,13 +24,14 @@ export const PluginValue = obj({ id: int(0, 2 ** 32 - 1), v: num(-1e300, 1e300) 
 export type PluginValue = Of<typeof PluginValue>;
 
 export const TrackPlugin = obj({
-  /** The `.clap` or `.vst3` on the host's disk (a file, or a macOS bundle folder); for a web plugin, its module's address. */
+  /** The `.clap` or `.vst3` on the host's disk (a file, or a macOS bundle folder); an Audio Unit's `au:type:subtype:maker`
+   *  (the system keeps AUs, so its codes name it); for a web plugin, its module's address. */
   path: str(4096),
   /** A Web Audio Module, played in the page; left out for a CLAP plugin on the desktop host. */
   web: opt(bool()),
   /** Which plugin inside it (a bundle can hold several). */
   index: int(0, 255),
-  /** The plugin's own id (CLAP's reverse-domain one, a VST3's class id in hex): how a friend's computer finds its copy, wherever it's installed. */
+  /** The plugin's own id (CLAP's reverse-domain one, a VST3's class id in hex, an AU's `type:subtype:maker`): how a friend's computer finds its copy, wherever it's installed. */
   id: opt(str(500)),
   name: str(200),
   values: arr(PluginValue, MAX_PLUGIN_VALUES, { drop: true }),

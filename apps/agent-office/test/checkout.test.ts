@@ -20,10 +20,10 @@ beforePinned(async () => {
   mod = await import(file);
 });
 
-pinnedTest("worktree add gets the long timeout, other git calls keep theirs", () => {
+pinnedTest("worktree add and remove get the long timeout, other git calls keep theirs", () => {
   const js = readFileSync(file, "utf8");
-  expect(js.split(`args[1] === 'add' ? ${CHECKOUT_TIMEOUT_MS} : 20_000`).length).toBe(2);
-  expect(js.split(`args[1] === 'add' ? ${CHECKOUT_TIMEOUT_MS} : 60_000`).length).toBe(2);
+  expect(js.split(`args[1] === 'remove') ? ${CHECKOUT_TIMEOUT_MS} : 20_000`).length).toBe(2);
+  expect(js.split(`args[1] === 'remove') ? ${CHECKOUT_TIMEOUT_MS} : 60_000`).length).toBe(2);
 });
 
 pinnedTest("a hire still makes its worktree", () => {
