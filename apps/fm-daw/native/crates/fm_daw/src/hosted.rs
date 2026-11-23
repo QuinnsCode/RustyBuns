@@ -52,18 +52,18 @@ impl Plugin {
     pub fn take_changes(&mut self, cap: usize) -> String {
         match self { Plugin::Clap(p) => p.take_changes(cap), Plugin::Vst3(p) => p.take_changes(cap) }
     }
-    /// How its own editor opens here; a VST3's doesn't yet (#5516).
+    /// How its own editor opens here (a VST3's always inside a window of ours, #5516).
     pub fn editor_kind(&self) -> Option<Kind> {
-        match self { Plugin::Clap(p) => p.editor_kind(), Plugin::Vst3(_) => None }
+        match self { Plugin::Clap(p) => p.editor_kind(), Plugin::Vst3(p) => p.editor_kind() }
     }
     pub fn open_editor(&mut self, title: &str) -> Result<(), String> {
         match self {
             Plugin::Clap(p) => p.open_editor(title),
-            Plugin::Vst3(p) => Err(format!("{}'s editor doesn't open here yet: FM DAW opens CLAP editors, VST3 ones are next", p.name())),
+            Plugin::Vst3(p) => p.open_editor(title),
         }
     }
-    pub fn close_editor(&mut self) { if let Plugin::Clap(p) = self { p.close_editor() } }
-    pub fn pump(&mut self) -> bool { match self { Plugin::Clap(p) => p.pump(), Plugin::Vst3(_) => false } }
+    pub fn close_editor(&mut self) { match self { Plugin::Clap(p) => p.close_editor(), Plugin::Vst3(p) => p.close_editor() } }
+    pub fn pump(&mut self) -> bool { match self { Plugin::Clap(p) => p.pump(), Plugin::Vst3(p) => p.pump() } }
 }
 
 #[cfg(test)]

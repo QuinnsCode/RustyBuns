@@ -186,10 +186,10 @@ impl Plugin {
     pub fn take_changes(&mut self, cap: usize) -> String { take_changes(&mut self.changes, cap) }
 }
 
-/// Our window for an editor that embeds. Hand-written over the Objective-C runtime (the engine keeps no dependencies),
-/// and AppKit is loaded only when the first window is made.
-#[cfg(target_os = "macos")]
-mod window {
+/// Our window for an editor that embeds (a CLAP's that only embeds, every VST3's). Hand-written over the Objective-C
+/// runtime (the engine keeps no dependencies), and AppKit is loaded only when the first window is made.
+#[cfg(all(target_os = "macos", not(test)))]
+pub(crate) mod window {
     use std::ffi::{c_char, c_int, c_void, CStr};
     use std::sync::OnceLock;
 
@@ -211,8 +211,7 @@ mod window {
     }
     extern "C" { fn pthread_main_np() -> c_int; }
 
-    /// (`cargo test` runs on worker threads, and its pretend editor makes no window.)
-    pub fn on_main_thread() -> bool { cfg!(test) || unsafe { pthread_main_np() == 1 } }
+    pub fn on_main_thread() -> bool { unsafe { pthread_main_np() == 1 } }
 
     unsafe fn sel(n: &CStr) -> Id { sel_registerName(n.as_ptr()) }
     unsafe fn cls(n: &CStr) -> Id { objc_getClass(n.as_ptr()) }
@@ -309,8 +308,8 @@ mod window {
 }
 
 /// No window of ours here yet: only plugins that float open an editor.
-#[cfg(not(target_os = "macos"))]
-mod window {
+#[cfg(all(not(target_os = "macos"), not(test)))]
+pub(crate) mod window {
     use std::ffi::{c_void, CStr};
     pub const CAN: bool = false;
     pub fn on_main_thread() -> bool { true }
@@ -322,6 +321,27 @@ mod window {
         pub fn show(&self) {}
         pub fn visible(&self) -> bool { false }
         pub fn set_size(&self, _: u32, _: u32) {}
+    }
+}
+
+/// `cargo test`'s window, on every OS: no screen (tests run on worker threads), just its size and whether it's up,
+/// which a test changes as a player would.
+#[cfg(test)]
+pub(crate) mod window {
+    use std::cell::Cell;
+    use std::ffi::{c_void, CStr};
+    pub const CAN: bool = true;
+    pub fn on_main_thread() -> bool { true }
+    pub fn pump_events() {}
+    pub struct Window { pub size: Cell<(u32, u32)>, pub shown: Cell<bool>, pub resizable: bool, view: Box<u8> }
+    impl Window {
+        pub fn new(_: &CStr, w: u32, h: u32, resizable: bool) -> Option<Window> {
+            Some(Window { size: Cell::new((w, h)), shown: Cell::new(false), resizable, view: Box::new(0) })
+        }
+        pub fn view(&self) -> *mut c_void { &*self.view as *const u8 as *mut c_void }
+        pub fn show(&self) { self.shown.set(true) }
+        pub fn visible(&self) -> bool { self.shown.get() }
+        pub fn set_size(&self, w: u32, h: u32) { self.size.set((w, h)) }
     }
 }
 
