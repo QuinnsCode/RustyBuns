@@ -17,6 +17,7 @@ export function ohmsCode(value: string): string | null {
 /** Samsung's ceramics by value and size: 0805 X7R 50 V, 0805 X5R 25 V for 10 µF, C0G where the board asks for it. */
 const CERAMIC: Record<string, Source> = {
   "100n cap0805": { maker: "Samsung", mpn: "CL21B104KBCNNNC", what: "100 nF X7R 50 V 0805" },
+  "330n cap0805": { maker: "Samsung", mpn: "CL21B334KBFNNNE", what: "330 nF X7R 50 V 0805" },
   "10n cap0805": { maker: "Samsung", mpn: "CL21B103KBANNNC", what: "10 nF X7R 50 V 0805" },
   "10u cap0805": { maker: "Samsung", mpn: "CL21A106KAYNNNE", what: "10 µF X5R 25 V 0805" },
   "100p C0G cap0805": { maker: "Samsung", mpn: "CL21C101JBANNNC", what: "100 pF C0G 50 V 0805" },
@@ -41,9 +42,13 @@ const NAMED: [RegExp, Source][] = [
   [/^SS14$/, { maker: "onsemi", mpn: "SS14", what: "Schottky 1 A 40 V, SMA" }],
   [/^B5819W$/, { maker: "Diodes Inc.", mpn: "B5819W-7-F", what: "Schottky 1 A 40 V, SOD-123" }],
   [/^1N4148W$/, { maker: "Diodes Inc.", mpn: "1N4148W-7-F", what: "signal diode, SOD-123" }],
+  [/^LM78L05$/, { maker: "Texas Instruments", mpn: "LM78L05ACMX/NOPB", what: "5 V regulator, SOIC-8" }],
+  [/^HCPL0601$/, { maker: "Broadcom", mpn: "HCPL-0601-500E", what: "optocoupler for MIDI in, SOIC-8" }],
+  [/^ATTINY1614$/, { maker: "Microchip", mpn: "ATTINY1614-SSNR", what: "microcontroller, SOIC-14" }],
+  [/^MCP4822$/, { maker: "Microchip", mpn: "MCP4822-E/SN", what: "dual 12-bit DAC, SOIC-8" }],
+  [/^(MIDI in|UPDI):/, { maker: "Würth", mpn: "61300311121", what: "1×3 pin header 2.54 mm" }],
   [/^PJ398SM$/, { maker: "Thonk", mpn: "PJ398SM", what: "3.5 mm mono jack (Thonkiconn), through-hole" }],
   [/^2x5 shrouded header$/, { maker: "Würth", mpn: "61201021621", what: "2×5 shrouded header 2.54 mm, Eurorack power" }],
-  [/^3362P 1k trimmer$/, { maker: "Bourns", mpn: "3362P-1-102LF", what: "1 k trimmer" }],
 ];
 
 /** A pot's Comment as wall-kit.tsx writes it: `Alpha RD901F 100k B`. */
@@ -64,6 +69,8 @@ export function sourceOf(r: BomRow): Source | null {
     const extra = r.Comment && r.Comment !== r.Value ? ` ${r.Comment}` : "";
     return CERAMIC[`${r.Value}${extra} ${fp}`] ?? null;
   }
+  const trim = /^3362P (\d)k trimmer$/.exec(r.Comment);
+  if (trim) return { maker: "Bourns", mpn: `3362P-1-${trim[1]}02LF`, what: `${trim[1]} k trimmer` };
   const pot = POT.exec(r.Comment);
   if (pot) {
     const [, v, taper] = pot;

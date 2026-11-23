@@ -5,7 +5,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { Glob } from "bun";
 import { join } from "node:path";
 import { PEDALS } from "../src/circuit/amps.ts";
-import { panel } from "../circuits/wall-panels.ts";
+import { PANELS } from "../circuits/wall-panels.ts";
 import { csvRows, kitZip, moduleSheetOf, readBom, sheetOf, type KitFiles } from "../src/kit/kit.ts";
 import { ohmsCode } from "../src/kit/parts.ts";
 import { toleranceBand, widest } from "../src/kit/tolerance.ts";
@@ -96,9 +96,9 @@ test("a resistor's value as its part number writes it", () => {
 });
 
 test("every sound wall module's parts all have a part number", async () => {
-  for (const id of ["seq", "vco", "vcf", "vca", "env", "lfo", "mix", "out", "noise"]) {
-    const s = moduleSheetOf(panel(id), await kitOnDisk(`wall-${id}`));
-    expect([id, s.made, s.parts.filter((p) => !p.mpn).map((p) => `${p.ref} ${p.value}`)]).toEqual([id, true, []]);
+  for (const p of PANELS) {
+    const s = moduleSheetOf(p, await kitOnDisk(`wall-${p.id}`));
+    expect([p.id, s.made, s.parts.filter((x) => !x.mpn).map((x) => `${x.ref} ${x.value}`)]).toEqual([p.id, true, []]);
   }
 });
 
