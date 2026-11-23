@@ -30,6 +30,8 @@ const ICON = {
   midi: svg('<circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="10" r="1"/><path d="M9 15h6"/>'),
   minus: svg('<path d="M5 12h14"/>'),
   plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+  ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
+  shield: svg('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -37,7 +39,7 @@ const ICON = {
 interface Shelf { track: Track; overview: Float32Array }
 
 /** One person in the room, for the DJ list: whether they may play the decks, and whether the leader can change it. */
-export interface Dj { id: string; name: string; on: boolean; you: boolean }
+export interface Dj { id: string; name: string; on: boolean; you: boolean; /** Refused the decks (src/spin.ts). */ refused?: boolean; /** A moderator the host named. */ mod?: boolean }
 /** The room the decks are in: its booth, its shared clock, the live line, and who may play. */
 export interface DeckRoom {
   booth: Booth;
@@ -55,6 +57,13 @@ export interface DeckRoom {
   setDj(id: string, on: boolean): void;
   /** Raise your hand to play. */
   ask(): void;
+  /** The lineup card (src/studio/spin-card.ts), shown in the header. */
+  card?: HTMLElement;
+  /** You run the decks (you lead, or you moderate): refuse people the decks. */
+  runs?(): boolean;
+  refuse?(id: string, on: boolean): void;
+  /** The leader names a moderator. */
+  setMod?(id: string, on: boolean): void;
 }
 
 export type { DeckView };
@@ -102,7 +111,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const midiB = button(`${ICON.midi}<span>MIDI</span>`, "Play the jog wheels from a MIDI controller", "dj-midi");
   midiB.addEventListener("click", () => void connectMidiJog(jogs).then((said) => { flash(said); midiB.classList.toggle("on", said.startsWith("MIDI jog")); }));
   tools.append(midiB, peopleB, closeB);
-  head.append(title, tools, people);
+  head.append(title, ...(room?.card ? [room.card] : []), tools, people);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -388,7 +397,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
         const b = button(p.on ? "On" : "Off", p.on ? `Take ${p.name} off the decks` : `Let ${p.name} play the decks`, p.on ? "on" : "");
         b.addEventListener("click", () => { room.setDj(p.id, !p.on); setTimeout(drawPeople, 300); });
         li.append(b);
-      } else li.append(el("small", {}, p.on ? "may play" : "listening"));
+      } else li.append(el("small", {}, p.refused ? "refused" : p.on ? "may play" : "listening"));
+      if (!p.you && room.runs?.()) {
+        const r = button(ICON.ban, p.refused ? `Let ${p.name} back on the decks` : `Refuse ${p.name} the decks (they still dance and listen)`, p.refused ? "on" : "");
+        r.addEventListener("click", () => { room.refuse?.(p.id, !p.refused); setTimeout(drawPeople, 300); });
+        li.append(r);
+      }
+      if (!p.you && lead && room.setMod) {
+        const m = button(ICON.shield, p.mod ? `${p.name} moderates: take it back` : `Make ${p.name} a moderator`, p.mod ? "on" : "");
+        m.addEventListener("click", () => { room.setMod?.(p.id, !p.mod); setTimeout(drawPeople, 300); });
+        li.append(m);
+      }
       ul.append(li);
     }
     if (!list.length) ul.append(el("li", {}, "<small>Nobody's in the room yet: invite a friend, then let them on here.</small>"));

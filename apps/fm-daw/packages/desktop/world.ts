@@ -10,6 +10,8 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { applySpin, decodeSpinClient, leave as leaveSpin, mayDeck, noSpin, onNow, sanitizeSpin, stepUp, type Spin, type SpinOp, type SpinServer } from "../../src/spin.ts";
+import type { DeckPress, DeckSay } from "../../src/dj/booth.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
 import { decodeClockClient, type ClockClient, type ClockServer } from "../../src/clock.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, soundIds, type TakeBytes } from "../../src/take.ts";
@@ -51,7 +53,7 @@ const bounceKey = (room: string) => `sesh/${room}/bounce.wav`;
 export const MAX_BOUNCE_BYTES = 24 * 2 ** 20;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch, who may do what and the wind-back ladder. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, ladder: raw });
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, spin: maybe(raw), ladder: raw });
 /** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
 const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
@@ -73,6 +75,8 @@ export interface WorldEnv {
   ROOM_SEATS?: string;
 }
 /** `peer` numbers a socket for the live line; 0 is one that was turned away. `host`: it's the sesh's maker. */
+/** A deck someone's machine plays, as the World last heard it. */
+type DeckHeld = { peer: number; who: string | undefined; name: string; playing: boolean };
 type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string };
 /** The maker's browser keeps a random key per sesh and sends it as ?key=; the world keeps only its hash. */
 const KEY = /^[a-z0-9]{16,64}$/;
@@ -89,7 +93,7 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer | ClockServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | SpinServer | RtcServer | ClockServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
@@ -115,6 +119,10 @@ export default class World {
   /** Who the leader let do what (src/grants.ts), kept beside the groove; the raised hands only live while their people are in. */
   private grants: Grants = noGrants();
   private asks: Record<string, Can> = {};
+  /** Who may spin (src/spin.ts): the decks' mode, moderators, refused people and lineup, kept beside the grants. */
+  private spin: Spin = noSpin();
+  /** Which peer last said it has a track on each deck, and whether it plays: the next DJ cues up only on a free one. */
+  private deckSides: [DeckHeld | null, DeckHeld | null] = [null, null];
   /** The maker's room code, hashed: "" is a public sesh. */
   private lock = "";
   /** When each address last got the code wrong. */
@@ -146,6 +154,7 @@ export default class World {
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
       this.grants = sanitizeGrants(await ctx.storage.get("grants"));
+      this.spin = sanitizeSpin(await ctx.storage.get("spin"));
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
       this.ladder = check(LadderGuard, await ctx.storage.get("ladder")) ?? this.ladder;
       this.ladderTakes = this.offTracks(await this.ladderTakeIds());
@@ -236,6 +245,7 @@ export default class World {
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
       if (b?.grants) { this.grants = sanitizeGrants(b.grants); await this.ctx.storage.put("grants", this.grants); }
+      if (b?.spin) { this.spin = sanitizeSpin(b.spin); await this.ctx.storage.put("spin", this.spin); }
       const ladder = check(BackupLadder, b?.ladder);
       if (ladder) {
         const snaps: number[] = [];
@@ -305,6 +315,8 @@ export default class World {
       if (rtc) { this.onRtc(ws, rtc); return; }
       const st = decodeStudioClient(frame.value);
       if (st) { if (st.t === "studio") this.onStudio(ws, st.op); else this.onBoard(ws, st.board); return; }
+      const sp = decodeSpinClient(frame.value);
+      if (sp) { void this.onSpin(ws, sp.op); return; }
       const g = decodeGrantClient(frame.value);
       if (g) { void this.onGrant(ws, g); return; }
       const c = decodeChatClient(frame.value);
@@ -322,6 +334,7 @@ export default class World {
       // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go);
       // someone the leader muted moves and dresses as ever, but none of their notes go on
       const muted = (msg.e.t === "on" || msg.e.t === "sound") && isMuted(this.grants, seat?.me);
+      if (msg.e.t === "deck" || msg.e.t === "press") { if (seat?.peer) this.onDeck(ws, seat, msg.e); return; }
       if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
@@ -549,6 +562,7 @@ export default class World {
       // the maker's key names the maker's person, who leads; everyone hears who may do what once they're named
       if (seat.host && this.grants.maker !== me) await this.setGrants({ ...this.grants, maker: me });
       else if (this.host) this.broadcast(this.grantsMsg());
+      this.sockets.send(ws, { t: "spin", spin: this.spin });
     } else {
       if (m.t === "say") {
         const bucket = this.talk.get(ws) ?? new TokenBucket(CHAT_RATE, CHAT_BURST, Date.now());
@@ -614,6 +628,42 @@ export default class World {
     await this.setGrants(next);
   }
 
+  /**
+   * A deck command (what's on a deck, or a press on someone's) goes on only when the spin rules let its sender
+   * (src/spin.ts), checked here and not only in the page. In open decks the first one carrying a track steps them up.
+   */
+  private onDeck(ws: RoomSocket, seat: Seat, e: DeckSay | DeckPress) {
+    const who = seat.me, lead = this.may(seat, "lead"), play = this.may(seat, "play");
+    const side = this.deckSides[e.side];
+    const freeSide = !side || side.peer === seat.peer || !side.playing;
+    const holds = e.t === "deck" && !!side && side.peer === seat.peer && side.name === e.name;
+    if (!mayDeck(this.spin, who, { lead, play, now: Date.now(), e, freeSide, holds }).ok) return;
+    if (e.t === "deck") this.deckSides[e.side] = e.name ? { peer: seat.peer, who, name: e.name, playing: e.playing } : side?.peer === seat.peer ? null : side;
+    this.broadcast({ t: "live", from: seat.peer, e }, ws);
+    // a new track steps them up in open decks; one they were already playing out doesn't
+    if (who && e.t === "deck" && e.name && !holds && !lead) void this.setSpin(stepUp(this.spin, who));
+  }
+
+  /** A spin op: the host and moderators run the decks, anyone allowed asks or steps up and down. Each change reaches everyone. */
+  private async onSpin(ws: RoomSocket, op: SpinOp) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.me) return;                           // named people only
+    const now = Date.now(), was = this.spin;
+    const next = applySpin(was, op, seat.me, { lead: this.may(seat, "lead"), play: this.may(seat, "play"), now });
+    // taken off or refused: what they hold on the decks is no longer theirs to play out, and their page stops
+    const off = next === was ? undefined : op.o === "off" ? (op.who ?? onNow(was, now) ?? undefined) : op.o === "refuse" && op.on ? op.who : undefined;
+    if (off) for (const s of [0, 1] as const) if (this.deckSides[s]?.who === off) this.deckSides[s] = null;
+    await this.setSpin(next, off);
+  }
+
+  private async setSpin(s: Spin, off?: string) {
+    if (s === this.spin) return;
+    this.spin = s;
+    this.backupDirty = true;
+    await this.ctx.storage.put("spin", s);
+    this.broadcast(off ? { t: "spin", spin: s, off } : { t: "spin", spin: s });
+  }
+
   private async setGrants(g: Grants) {
     if (g !== this.grants) {
       this.grants = g;
@@ -642,7 +692,10 @@ export default class World {
     if (seat.me && this.host) {
       if (!this.sockets.open().some((w) => w !== ws && this.sockets.who(w)?.me === seat.me)) delete this.asks[seat.me];
       this.broadcast(this.grantsMsg(ws), ws);
+      // the decks they had are free, and off the decks and out of the queue with their last tab
+      if (!this.sockets.open().some((w) => w !== ws && this.sockets.who(w)?.me === seat.me)) void this.setSpin(leaveSpin(this.spin, seat.me));
     }
+    for (const s of [0, 1] as const) if (this.deckSides[s]?.peer === seat.peer) this.deckSides[s] = null;
     // what they carried stays where it was; a lead they held falls out of their hand (the others drop it on "gone")
     this.studio = letGo(this.studio, seat.peer);
     this.broadcastPeers();
@@ -675,7 +728,7 @@ export default class World {
         const snaps: { at: number; project: unknown }[] = [];
         for (const at of this.ladder.snaps) { const p = await s.get(snapKey(at)); if (p) snaps.push({ at, project: p }); }
         const ladder = snaps.length ? { edited: this.ladder.edited, snaps } : undefined;
-        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, ladder }));
+        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, spin: this.spin, ladder }));
       } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
@@ -689,7 +742,7 @@ export default class World {
       await s.deleteAlarm();
       await this.dropTakes(new Set());
       this.ladderTakes.clear();
-      for (const k of ["project", "chat", "studio", "boards", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "boards", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "spin", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
@@ -701,6 +754,8 @@ export default class World {
       this.floor = "free";
       this.lock = "";
       this.grants = noGrants();
+      this.spin = noSpin();
+      this.deckSides = [null, null];
       this.asks = {};
       return;
     }
@@ -734,7 +789,7 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: ServerMsg | ChatServer | StudioServer | GrantServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
+  private broadcast(m: ServerMsg | ChatServer | StudioServer | GrantServer | SpinServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
 
   private broadcastPeers() {
     this.broadcast({ t: "peers", n: this.sockets.open().length });

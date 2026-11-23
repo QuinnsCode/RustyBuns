@@ -9,6 +9,7 @@ import type { TakeBytes } from "../take.ts";
 import type { Rung } from "../rewind.ts";
 import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 import { decodeGrantServer, type GrantClient, type GrantServer } from "../grants.ts";
+import { decodeSpinServer, type SpinClient, type SpinOp, type SpinServer } from "../spin.ts";
 import { decodeRtcServer, type Line, type RtcClient, type RtcServer, type Signal } from "../guitar.ts";
 import { decodeClockServer, type ClockClient, type ClockServer } from "../clock.ts";
 import { decodeStudioServer, type Board, type StudioClient, type StudioOp, type StudioServer } from "../studio.ts";
@@ -34,6 +35,8 @@ export interface Net {
   lock(code: string): void;
   /** A leader grants, hands on or answers; anyone asks. Dropped while offline, like chat. */
   grant(m: GrantClient): void;
+  /** Who may spin (src/spin.ts): the host's and moderators' calls, or your own ask, step up or down. Dropped while offline. */
+  spin(op: SpinOp): void;
   /** Ask for the groove as it was `ago` minutes back, for this page alone; it comes back through onRewound. */
   rewind(ago: Rung): void;
   /** A guitar call's setup for one other person (src/guitar.ts); dropped while offline. */
@@ -98,6 +101,8 @@ export function connect(opts: {
   onChat(m: ChatServer): void;
   /** Who may do what, who has a hand up, and who's in (the jam room has no use for it yet). */
   onGrants?(m: GrantServer): void;
+  /** The decks' mode, lineup and who's on (src/spin.ts). */
+  onSpin?(m: SpinServer): void;
   /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
   onTakeBytes(m: TakeBytes): void;
   /** The groove this page asked for (null: the sesh doesn't go back that far), as of `at` (ms). */
@@ -123,14 +128,14 @@ export function connect(opts: {
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg | ChatServer | GrantServer | RtcServer | ClockServer | StudioServer, ClientMsg | ChatClient | GrantClient | RtcClient | ClockClient | StudioClient>(() => {
+  const link = connectSocket<ServerMsg | ChatServer | GrantServer | SpinServer | RtcServer | ClockServer | StudioServer, ClientMsg | ChatClient | GrantClient | SpinClient | RtcClient | ClockClient | StudioClient>(() => {
     const t = opts.token?.();
     if (!t) return url;
     const signed = new URL(url);
     signed.searchParams.set("token", t);
     return signed;
   }, {
-    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v) ?? decodeStudioServer(v), queue: 200,
+    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeSpinServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v) ?? decodeStudioServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "op") opts.onOp(m.op);
@@ -141,6 +146,7 @@ export function connect(opts: {
       else if (m.t === "full") full = m.why;
       else if (m.t === "takeBytes") opts.onTakeBytes(m);
       else if (m.t === "grants") opts.onGrants?.(m);
+      else if (m.t === "spin") opts.onSpin?.(m);
       else if (m.t === "rewound") opts.onRewound?.(m.ago, m.at, m.project);
       else if (m.t === "rtc") opts.onRtc?.(m);
       else if (m.t === "tick" || m.t === "tock") opts.onClock?.(m);
@@ -170,6 +176,7 @@ export function connect(opts: {
     floor: (state) => { link.send({ t: "floor", state }); },
     lock: (code) => { link.send({ t: "lock", code }); },
     grant: (m) => { if (link.open) link.send(m); },
+    spin: (op) => { if (link.open) link.send({ t: "spin", op }); },
     take: (m) => { link.send(m); },
     rewind: (ago) => { if (link.open) link.send({ t: "rewind", ago }); },
     rtc: (to, line, s) => { if (link.open) link.send({ t: "rtc", to, line, s }); },
