@@ -79,8 +79,9 @@ const open = async () => {
 const card = () => page<string>(`document.querySelector(".tour b")?.textContent ?? ""`);
 const tool = (name: string, args: object = {}) => page<any>(`window.__tools[${JSON.stringify(name)}].execute(${JSON.stringify(args)})`);
 
-let failed = 0;
+let failed = 0, ran = 0;
 async function check(mode: string, name: string, fn: () => Promise<void>) {
+  ran++;
   const t = performance.now();
   try { await fn(); console.log(`ok    ${mode.padEnd(12)} ${name} (${Math.round(performance.now() - t)} ms)`); }
   catch (e) { failed++; console.log(`FAIL  ${mode.padEnd(12)} ${name}: ${(e as Error).message}`); }
@@ -92,20 +93,30 @@ const scene = (spec: string) => page(`(() => { sessionStorage.setItem("cs_tour",
 /** One chapter is data: the checks below are the same three per way for each. `first` is a phrase from its opening step; `held` from the person-only step's hold. */
 type Chapter = { id: string; steps: string[]; you: number; held: string; first: string; other: string };
 const CHAPTERS: Chapter[] = [
-  { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester flags the red tests", "Queue the merge"], you: 4, held: "A merge changes main", first: "deterministic", other: "play" },
+  { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester flags the red tests", "Dexter trims the tokens", "Queue the merge"], you: 5, held: "A merge changes main", first: "deterministic", other: "play" },
   { id: "agents", steps: ["Agents on one repo", "Agents claim lines", "Two on the same line", "Merges settle by line id", "Agents rebase themselves", "Hosted agents", "Agents can't ship"], you: 5, held: "costs money", first: "at once", other: "play" },
-  { id: "history", steps: ["A new way to think about a repo", "Own your git history", "Say where git truth lives", "A repo that builds itself", "Deploy all over"], you: 2, held: "which side wins", first: "living lines", other: "play" },
+  { id: "history", steps: ["A new way to think about a repo", "Own your git history", "Say where git truth lives", "A repo that builds itself", "Deploy all over", "See who your repo listens to"], you: 2, held: "which side wins", first: "living lines", other: "play" },
+  { id: "ship", steps: ["Plan first, always", "A preview before it ships", "Deploy for real", "Production is a choice", "Take over what's already live", "Ship when you commit", "Monorepos welcome", "Keys that never come back out", "Secrets from 1Password", "Every deploy on the record"], you: 2, held: "can cost money", first: "planned this exact config", other: "play" },
+  { id: "checks", steps: ["Cut some lines out", "Test results in the gutter", "A card of the fix", "Build changes get a second look", "The dependency doctor", "Updates that have aged"], you: 3, held: "a person's job", first: "everything they use", other: "play" },
+  { id: "tools", steps: ["One command palette", "Search code", "Agents from your shell", "An API for outside agents", "Webhooks for CI/CD"], you: 3, held: "acts as you", first: "Cmd+K", other: "play" },
+  { id: "lines", steps: ["See who's here", "Who changed what, live", "Share some lines, not the repo", "Playlists of code", "Your mods, marked", "Public or private"], you: 5, held: "who can see the repo", first: "who else has this file open", other: "play" },
+  { id: "account", steps: ["Your profile is your own site", "Rate limits that queue", "Visitors' digs clean up", "Private GitHub repos, on the desktop", "Big repos, small bills", "A file is a Durable Object"], you: 3, held: "GitHub login", first: "HTML, CSS and script", other: "play" },
   { id: "together", steps: ["Multiplayer, every which way", "Edit live, together", "Private lines in a public repo"], you: 2, held: "who can see", first: "same repo at once", other: "play" },
 ];
 
 try {
-  // Every feature id a step claims must be on the strip.
+  // Every feature on the strip has a step (`feat`) or a reason in TOUR_SKIP, and every id either names is on the strip.
   const order = (await Bun.file("src/features/order.txt").text()).split("\n").filter(Boolean);
   await open();
   const tagged = await page<string[]>(`[...new Set(TOUR.map((s) => s.feat).filter(Boolean))]`);
-  const unknown = tagged.filter((f) => !order.includes(f));
-  if (unknown.length) { failed++; console.log(`FAIL  coverage     unknown feature ids: ${unknown.join(", ")}`); }
-  else console.log(`ok    coverage     ${tagged.length} of ${order.length} features have a scene`);
+  const skipped = await page<string[]>(`Object.keys(TOUR_SKIP)`);
+  const unknown = [...tagged, ...skipped].filter((f) => !order.includes(f));
+  const missing = order.filter((f) => !tagged.includes(f) && !skipped.includes(f));
+  const both = skipped.filter((f) => tagged.includes(f));
+  if (unknown.length || missing.length || both.length) {
+    failed++;
+    console.log(`FAIL  coverage     ${[unknown.length && `not on the strip: ${unknown.join(", ")}`, missing.length && `no step or skip reason: ${missing.join(", ")}`, both.length && `skipped yet toured: ${both.join(", ")}`].filter(Boolean).join("; ")}`);
+  } else console.log(`ok    coverage     ${tagged.length} of ${order.length} features have a scene, ${skipped.length} skipped with a reason`);
 
   for (const c of CHAPTERS.filter((c) => !arg("only") || c.id === arg("only"))) {
     const title = c.steps;
@@ -203,5 +214,5 @@ try {
   ws.close(); chrome.kill(); watch.kill(9); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 2} passed`);
+console.log(failed ? `\n${failed} failed` : `\nall ${ran} passed`);
 process.exit(failed ? 1 : 0);

@@ -7916,21 +7916,30 @@ const PANEL_SAY = {
   webhooks: ["webhook", "GitHub-shaped, HMAC-signed webhooks for your CI/CD, retried on a queue."],
   "audit-log": ["shield", "Who changed tokens, crew, invites, visibility and deploy keys."],
 };
+// The strip's feature (features/order.txt) a panel shows, where it shows one.
+const PANEL_FEAT = { about: "your-mods", branches: "branches", "rusty-buns": "fit", dependencies: "doctor", "try-rusty-buns": "try-rusty-buns", "preview-deploy": "preview-deploys", webhooks: "webhooks", sharing: "share-lines" };
 const $$ = (q) => [...document.querySelectorAll(q)];
 const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, ...init }));
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
+// The strip's features (features/order.txt) that no step carries as `feat`, each with why. tour-smoke fails on an id in neither.
+const TOUR_SKIP = {
+  "show-around": "It is this tour.",
+  demos: "It is the page that plays these chapters.",
+  "getting-started": "Only an account with no repos sees it; the Sign in and Dig a repo chapters walk the same path.",
+  "welcome-tour": "A terminal script (bun run welcome), not a page.",
+};
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["history", "git-graph", "Your repo, your history"], ["together", "users-round", "Together, line by line"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["history", "git-graph", "Your repo, your history"], ["together", "users-round", "Together, line by line"], ["ship", "rocket", "Ship it, safely"], ["checks", "list-checks", "Build and checks"], ["tools", "plug", "Hook up your tools"], ["lines", "share-2", "Lines of your own"], ["account", "user-round", "Your account and the bill"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
-  { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
+  { ch: "signin", feat: "accounts", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
     go: () => {
       if (me()) return "Already signed in.";
       if (session.mode === "alias") { $("#login input")?.focus(); return "Type an alias up top and press Sign in."; }
       signInDrawer(); return "";
     }, label: "Sign in", done: () => !!me() },
-  { ch: "dig", ic: "shovel", t: "Dig up a repo", at: "#ghdig", on: "any",
+  { ch: "dig", feat: "dig", ic: "shovel", t: "Dig up a repo", at: "#ghdig", on: "any",
     say: () => !me() ? "Sign in first (go back a step), then dig up any public GitHub repo." : $("#ghdig") ? "Search GitHub, paste a link, or pick one of yours, then press Dig it up. It forks into a git repo you own here; upstream never hears about it." : "Digging happens on the home page.",
     go: () => {
       const f = $("#ghdig");
@@ -7942,11 +7951,11 @@ const TOUR = [
     }, label: () => $("#ghdig") ? "Pick one for me" : "Take me there" },
   { ch: "code", ic: "shovel", t: "Dug up", at: ".repohead h1", on: "repo",
     say: (t) => `${t.owner}/${t.repo} is a real git repo, opened on its README. Use Next and Back to walk round this page.` },
-  { ch: "code", ic: "user-round-pen", t: "Every line knows who wrote it", at: "#lines", on: "repo",
+  { ch: "code", feat: "blame", ic: "user-round-pen", t: "Every line knows who wrote it", at: "#lines", on: "repo",
     say: () => "Blame sits beside every line, person or agent. Lines, not files, are the unit: each has its own id and history." },
   { ch: "code", ic: "folder-tree", t: "The files", at: ".explorer", on: "repo",
     say: () => "Every file in the repo, on the left. Open one and the right bar follows it." },
-  { ch: "code", ic: "history", t: "Time travel", at: "#hist", on: "repo", go: () => { $("#hist")?.click(); return "Drag the slider back through every edit this file ever had."; },
+  { ch: "code", feat: "time-travel", ic: "history", t: "Time travel", at: "#hist", on: "repo", go: () => { $("#hist")?.click(); return "Drag the slider back through every edit this file ever had."; },
     say: () => "Replay this file to any edit it ever had, with blame at every rev." },
   { ch: "code", ic: "mouse-pointer-click", t: "Pick some lines", at: ".crumbbar", on: "repo",
     go: () => {
@@ -7969,13 +7978,13 @@ const TOUR = [
       return "No agent runs on this machine, so here's an invite: hand the link to Claude Code, Codex, pi or opencode and it joins the crew over MCP.";
     },
     say: () => "Put a coding agent on this file. It holds the lines it works on, edits live, and lands on a branch for you to merge." },
-  { ch: "code", ic: "git-commit-horizontal", t: "It's still real git", at: "#clone", on: "repo", go: () => { $("#clone")?.click(); return "git clone works, git pull works, your tools work."; },
+  { ch: "code", feat: "clone", ic: "git-commit-horizontal", t: "It's still real git", at: "#clone", on: "repo", go: () => { $("#clone")?.click(); return "git clone works, git pull works, your tools work."; },
     say: () => "Commit pushes a real git commit. Clone it with plain git, or point your AI at it: claude mcp add codesplitter." },
   { ch: "panels", ic: "panel-right", t: "What's on the right", at: ".drail", on: "repo",
     say: () => "The right bar: tabs for the code, the repo as hosted here, and what it can do. Next walks the panels. Up here you switch tab or widen the side." },
-  { ch: "panels", ic: "git-compare-arrows", t: "The git bar", at: "#gitbar", on: "repo",
+  { ch: "panels", feat: "git-bar", ic: "git-compare-arrows", t: "The git bar", at: "#gitbar", on: "repo",
     say: () => "Mirrored, push, pull, uncommitted and conflicts, as pills across the top of the repo." },
-  ...Object.entries(PANEL_SAY).map(([key, [ic, say]]) => ({ ch: "panels", ic, panel: key, at: `.dpanels > .sec[data-key="${key}"]`, on: "repo", say: () => say })),
+  ...Object.entries(PANEL_SAY).map(([key, [ic, say]]) => ({ ch: "panels", feat: PANEL_FEAT[key], ic, panel: key, at: `.dpanels > .sec[data-key="${key}"]`, on: "repo", say: () => say })),
   // The loop that makes codeSplitter edit codeSplitter, run on whatever repo this is: an agent edits, checks run on its
   // branch, Mervin merges it, a person deploys it, the watchdog backs it out if it's sick. `you` marks what autoplay
   // leaves to a person: it costs an agent run, or it merges, or it ships.
@@ -8009,6 +8018,8 @@ const TOUR = [
     say: () => "He orders the branches into waves: those sharing no file go together, and a clashing one waits for the wave before. Merge a wave and the next wave's branches take main in by themselves." },
   { ch: "queue", ic: "flask-conical", t: "Ester flags the red tests", at: "[data-board]", on: "repo",
     say: () => "When a PR's own checks go red, the board says so and names the failing ones. On a branch here, Ester sorts each red check: main's, flaky, the branch's own, or one that breaks only riding with others. Tell her one is flaky and it becomes her rule for the repo. A red branch is held back until it's green, and the rest queues." },
+  { ch: "queue", ic: "scissors", t: "Dexter trims the tokens", at: null, on: "any",
+    say: () => "Dexter reads the agents' session logs and adds up the tokens: which tool results were biggest, which chore an agent did by hand, and when a session has grown big enough to hand off and start fresh. He proposes trims to the text every session pays for as a diff to approve, and never edits a file. Rules and no model, so asking him costs nothing." },
   { ch: "queue", ic: "git-merge", t: "Queue the merge", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
     go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready: Mervin holds a branch until its checks pass."; b.click(); return "Merged by line id. The next wave is free to go."; },
     say: () => "Mervin suggests the order and the board shows what's red, but main moves when you press Merge. Agents don't." },
@@ -8039,6 +8050,8 @@ const TOUR = [
     say: () => "Its code, deploy config, dependency doctor and agents in one place: agents propose on branches, the doctor keeps it fresh, previews prove it, and your commit ships it." },
   { ch: "history", feat: "deploy-all-over", ic: "globe", t: "Deploy all over", at: null, on: "any",
     say: () => "One config ships the same app as a desktop binary, a Cloudflare Worker, and a server on Hetzner or Railway." },
+  { ch: "history", feat: "git-map", ic: "git-fork", t: "See who your repo listens to", at: null, on: "any",
+    say: () => "The git map draws upstream, your repo and its branches as curves: solid keeps listening, dashed was copied once. Under it, main's commits are dots, upstream's black and yours orange. Click one to revert it." },
   // Together, line by line (features: multiplayer, live-together, private-lines).
   { ch: "together", feat: "multiplayer", ic: "users-round", t: "Multiplayer, every which way", at: null, on: "any",
     say: () => "Human to human, human to AI, AI to AI: everyone in the same repo at once, live, line by line, and every line says who." },
@@ -8046,6 +8059,77 @@ const TOUR = [
     say: () => "Lines have stable ids, so agents editing different lines never collide. Edits stream to every open page." },
   { ch: "together", feat: "private-lines", ic: "eye-off", t: "Private lines in a public repo", at: "#lines", on: "repo", you: "Hiding lines changes who can see them, so you choose which.",
     say: () => "Hide some lines from everyone but the crew: on the page, in blame, in shares, and blank in git." },
+  // Ship it, safely (features: plan-first, preview-deploys, deploy, prod-guard, adopt-live, ship-on-commit, monorepos, deploy-keys, varlock, deploy-log).
+  { ch: "ship", feat: "plan-first", ic: "clipboard-list", t: "Plan first, always", at: '.dpanels > .sec[data-key="deploy"]', on: "repo",
+    say: () => "A deploy refuses unless you planned this exact config. The plan lists every billable resource first, and a big server waits for your yes." },
+  { ch: "ship", feat: "preview-deploys", ic: "eye", t: "A preview before it ships", at: null, on: "any",
+    say: () => "Spin up a throwaway preview of the repo before anything ships. It is logged like every deploy." },
+  { ch: "ship", feat: "deploy", ic: "rocket", t: "Deploy for real", at: '.dpanels > .sec[data-key="deploy"]', on: "repo", you: "A deploy ships to a live stage and can cost money, so you press this one.",
+    say: () => "Ship the repo's stack to a stage you pick. Only a person presses Deploy; agents never start one." },
+  { ch: "ship", feat: "prod-guard", ic: "flag", t: "Production is a choice", at: null, on: "any",
+    say: () => "A stack that takes over live resources ships only once the owner marks the repo as production." },
+  { ch: "ship", feat: "adopt-live", ic: "link", t: "Take over what's already live", at: null, on: "any",
+    say: () => "Name an existing Worker and D1 database and the deploy adopts them, storage intact, instead of making new ones." },
+  { ch: "ship", feat: "ship-on-commit", ic: "git-commit-vertical", t: "Ship when you commit", at: null, on: "any",
+    say: () => "Turn it on and your own commits to main deploy. A commit that lands mid-deploy ships once more afterwards." },
+  { ch: "ship", feat: "monorepos", ic: "folder-tree", t: "Monorepos welcome", at: null, on: "any",
+    say: () => "Point deploys and previews at the app's own folder inside a bigger repo." },
+  { ch: "ship", feat: "deploy-keys", ic: "vault", t: "Keys that never come back out", at: null, on: "any",
+    say: () => "Deploy keys are write-only: sealed in the database, shown only by their last 4, scrubbed from output, and kept from agent containers." },
+  { ch: "ship", feat: "varlock", ic: "fingerprint", t: "Secrets from 1Password", at: null, on: "any",
+    say: () => "Deploy secrets come through varlock, behind Touch ID, straight into the Worker. The repo holds names and references, never values." },
+  { ch: "ship", feat: "deploy-log", ic: "scroll-text", t: "Every deploy on the record", at: null, on: "any",
+    say: () => "Who, which commit, which stage, the result and the end of its output, for the last 50 deploys and previews." },
+  // Build and checks (features: cut, test-gutter, cards, build-changes, doctor, safe-updates).
+  { ch: "checks", feat: "cut", ic: "scissors", t: "Cut some lines out", at: "#lines", on: "repo",
+    say: () => "Pick some lines and press Cut: they and everything they use become their own branch. Run its tests, then merge the fix back." },
+  { ch: "checks", feat: "test-gutter", ic: "list-checks", t: "Test results in the gutter", at: "#lines", on: "repo",
+    say: () => "A cut's test run marks each test's line pass or fail, and every line a failure's stack points at." },
+  { ch: "checks", feat: "cards", ic: "image", t: "A card of the fix", at: null, on: "any",
+    say: () => "A cut's code and its test result, drawn into a PNG inside the Worker with no image library, ready to post." },
+  { ch: "checks", feat: "build-changes", ic: "shield-alert", t: "Build changes get a second look", at: '.dpanels > .sec[data-key="branches"]', on: "repo", you: "Reading the build changes is a person's job, so you press this one.",
+    say: () => "A branch that touches package.json, a lockfile or deploy config waits until someone presses I've read the build changes." },
+  { ch: "checks", feat: "doctor", ic: "stethoscope", t: "The dependency doctor", at: null, on: "any",
+    say: () => "The doctor proposes safe updates on a branch, tests them in a throwaway clone, and when one breaks runs your chain: retry, an AI fix, a web search, hold back, roll back or alert." },
+  { ch: "checks", feat: "safe-updates", ic: "calendar-clock", t: "Updates that have aged", at: null, on: "any",
+    say: () => "It skips releases younger than 3 days, rebuilds lockfiles with install scripts off, and reads private registries from .npmrc." },
+  // Hook up your tools (features: palette, search, agent-cli, api-tokens, webhooks).
+  { ch: "tools", feat: "palette", ic: "command", t: "One command palette", at: "#jump", on: "any",
+    say: () => "Press Cmd+K. Every action is one API call, shown next to it, so people and agents do the same things the same way." },
+  { ch: "tools", feat: "search", ic: "search", t: "Search code", at: "#jump", on: "any",
+    say: () => "Full-text search over everything committed that you are allowed to see." },
+  { ch: "tools", feat: "agent-cli", ic: "square-terminal", t: "Agents from your shell", at: null, on: "any",
+    say: () => "bun agent.ts does what the Agent button does, so a script or another agent can drive one." },
+  { ch: "tools", feat: "api-tokens", ic: "key-round", t: "An API for outside agents", at: null, on: "any", you: "A token acts as you, so you make it.",
+    say: () => "An OpenAPI spec of every command, and personal tokens that act as you: read-only or not, always expiring, never an admin." },
+  { ch: "tools", feat: "webhooks", ic: "webhook", t: "Webhooks for CI/CD", at: null, on: "any",
+    say: () => "GitHub-shaped JSON, signed with HMAC-SHA256, logged, and retried when a delivery fails." },
+  // Lines of your own (features: presence, activity, share-lines, playlists, your-mods, visibility).
+  { ch: "lines", feat: "presence", ic: "users", t: "See who's here", at: "#lines", on: "repo",
+    say: () => "Presence shows who else has this file open, as they type." },
+  { ch: "lines", feat: "activity", ic: "activity", t: "Who changed what, live", at: null, on: "any",
+    say: () => "A slim rail of every edit and hold as it lands, one row per person or agent run. Filter it, and click a row to jump to its lines." },
+  { ch: "lines", feat: "share-lines", ic: "share-2", t: "Share some lines, not the repo", at: "#lines", on: "repo",
+    say: () => "A live link to a range that follows those lines as the file changes, even from a private repo." },
+  { ch: "lines", feat: "playlists", ic: "library", t: "Playlists of code", at: null, on: "any",
+    say: () => "Collect line ranges you love from any file you can see. Each track follows its lines as they change." },
+  { ch: "lines", feat: "your-mods", ic: "stamp", t: "Your mods, marked", at: "#lines", on: "repo",
+    say: () => "A fork says where it came from and at which commit. Every line you changed is marked; the rest are blamed on upstream." },
+  { ch: "lines", feat: "visibility", ic: "lock", t: "Public or private", at: null, on: "any", you: "Public or private decides who can see the repo, so you choose.",
+    say: () => "A private repo you can't see answers 404, in search too." },
+  // Your account and the bill (features: profile, limits, temp-digs, private-github, cheap-big-repos, file-is-a-do).
+  { ch: "account", feat: "profile", ic: "palette", t: "Your profile is your own site", at: "#who", on: "any",
+    say: () => "Rebuild your profile with HTML, CSS and script, even a three.js world, from a repo named page." },
+  { ch: "account", feat: "limits", ic: "timer", t: "Rate limits that queue", at: null, on: "any",
+    say: () => "Over the cap, a dig waits its turn in line instead of failing, and finds you on your profile when it's done." },
+  { ch: "account", feat: "temp-digs", ic: "hourglass", t: "Visitors' digs clean up", at: null, on: "any",
+    say: () => "A visitor's fork lasts a day, and only so many live at once, so nobody's experiment runs up the bill." },
+  { ch: "account", feat: "private-github", ic: "key-square", t: "Private GitHub repos, on the desktop", at: null, on: "any", you: "It uses your own GitHub login, so you sign in for it.",
+    say: () => "Dig up your own private repos with your GitHub login, handed to git for the one clone and never written into the repo." },
+  { ch: "account", feat: "cheap-big-repos", ic: "feather", t: "Big repos, small bills", at: null, on: "any",
+    say: () => "A file becomes a Durable Object only when someone opens it, and a commit pushes only what changed: one edited line costs one blob." },
+  { ch: "account", feat: "file-is-a-do", ic: "box", t: "A file is a Durable Object", at: null, on: "any",
+    say: () => "Each file has one writer, so every edit from every person and agent lands in one order." },
   // The desktop and the web (features: desktop, own-hardware-ci, commit-to-git). What is true today: the web app never listens to a machine's
   // files. The desktop is its own copy of the app with its git on disk; it reaches out (mirrors, a runner that pulls, a CLI with a token).
   { ch: "desktop", feat: "desktop", ic: "monitor", t: "The same app on your machine", at: null, on: "any",
@@ -8056,10 +8140,14 @@ const TOUR = [
     say: () => "A runner on your Mac claims queued checks from the site, runs them in a scrubbed clone and reports back. It needs no open port, so the web app never reaches into your files." },
   { ch: "desktop", ic: "smartphone", t: "Your phone, same desktop", at: null, on: "any",
     say: () => "bun run phone puts the running desktop on HTTPS and prints a one-use pairing link with a QR code. Only a phone that opens the link gets in." },
+  { ch: "desktop", feat: "every-os", ic: "monitor-smartphone", t: "A binary for every desktop", at: null, on: "any",
+    say: () => "macOS on arm64 and x64, Linux on x64 and arm64, and Windows, all cross-compiled from one machine." },
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",
     say: () => "The backrooms of a repo: its lines tear off the walls as paper birds, and you swat them with the rolled-up README. Bring friends and bop them too." },
+  { ch: "play", feat: "levels", ic: "landmark", t: "Levels", at: null, on: "any",
+    say: () => "Small, well-loved repos to browse and dig up: mitt, clsx, Ky, Zustand, Hono, Express, Preact. Each one is a level." },
 ];
 const tourName = (spec) => { const [id, ...steps] = String(spec).split(":"); return TOUR_CHAPTERS.find(([k]) => k === id)[2] + (steps.length ? ` (steps ${steps.join("")})` : ""); };
 const tourChapter = (ch) => TOUR.findIndex((s) => s.ch === ch);
