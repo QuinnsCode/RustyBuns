@@ -1,6 +1,6 @@
 # Pocket Dice (PWA example)
 
-> **What it proves:** one web page can become an Android app with no Android code. Pocket Dice is a Progressive Web App (PWA): a TypeScript page, a Rust dice roller compiled to WebAssembly, a service worker that keeps it all on the phone, and a manifest that lets Chrome on Android install it. One of the [Rusty Buns](../../README.md) examples.
+> **What it proves:** one web page can become an Android app with no Android code, and the same page a desktop app. Pocket Dice is a Progressive Web App (PWA): a TypeScript page, a Rust dice roller compiled to WebAssembly, a service worker that keeps it all on the phone, and a manifest that lets Chrome on Android install it. One of the [Rusty Buns](../../README.md) examples.
 
 ## Use it
 
@@ -20,6 +20,17 @@ bun run dev          # the page, hot reloading (no service worker in dev)
 bun run preview      # the built app with its service worker, as the phone gets it
 bun run deploy       # to Cloudflare (workers.dev gives the HTTPS that installing needs)
 ```
+
+## Run it as a desktop app
+
+The same page, built once, also ships as a Rusty Buns desktop app (`targets.desktop` in `rustybuns.config.ts`, `mode: "spa"` as in hello-world):
+
+```
+bun run desktop:dev      # the dev host in its own window
+bun run desktop:build    # a release binary in dist/
+```
+
+The host serves `dist/ui` on 127.0.0.1 behind its per-launch token, and the service worker registers there too (localhost counts as secure), so the desktop copy also rolls offline. The manifest link carries `crossorigin="use-credentials"`: browsers fetch a manifest without cookies by default, and the host's token gate would turn it away.
 
 ## Put it on an Android phone
 
@@ -68,4 +79,4 @@ Needs `rustup target add wasm32-unknown-unknown` once. With the builder valve sh
 
 ## Tests
 
-`test/app.test.ts` builds the app, serves it, and opens it in headless Chrome at phone size. Chrome's own installability check must find nothing wrong, the service worker must take the page over, and a roll must come from the wasm and match the TS. Then the server stops and a shared link loads from the cache alone. `bun run probe pwa-example --url <preview url>` reads `pocketDice.state()`.
+`test/app.test.ts` builds the app, serves it, and opens it in headless Chrome at phone size. Chrome's own installability check must find nothing wrong, the service worker must take the page over, and a roll must come from the wasm and match the TS. Then the server stops and a shared link loads from the cache alone. Last it builds the desktop dev host and checks the worker and the wasm roller there. `bun run probe pwa-example --url <preview url>` reads `pocketDice.state()`.

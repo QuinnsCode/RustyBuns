@@ -11,13 +11,17 @@
     "wasm": "bun scripts/wasm.ts",
     "icons": "bun scripts/icons.ts",
     "twa": "bun scripts/twa.ts",
-    "deploy": "vite build && bunx wrangler deploy"
+    "deploy": "vite build && bunx wrangler deploy",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "lucide": "1.55.0"
   },
   "devDependencies": {
+    "@rustybuns/cli": "^0.1.12",
     "vite": "^6.4.4"
   }
 }
