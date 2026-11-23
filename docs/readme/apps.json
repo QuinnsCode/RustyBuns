@@ -63,6 +63,11 @@
         "app": "excalibrawl",
         "name": "Excalibrawl",
         "line": "A drawing fight each hour. Clef and Clef Flash select only a move, shape, colour, grid cell and size from a picture of their halves. Or two text models write a drawing language that uses few tokens. Clef is the referee, and a fight costs two cents or less. Replays are in R2, and a Durable Object has the live socket."
+      },
+      {
+        "app": "fleet-commander",
+        "name": "Fleet Commander",
+        "line": "A real-time fleet battle from the bridge of a wedge destroyer: call plays for your wings of fighters, trade broadsides, hold the hyperspace lane and rake the base on the world below. Win a sector and command a dreadnought whose captains run their own wings."
       }
     ]
   },
