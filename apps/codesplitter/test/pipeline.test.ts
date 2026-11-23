@@ -122,6 +122,65 @@ test("the hooks run at a merge: an AI's review runs off the request, its nay hol
   expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(5);" }] });
 });
 
+test("an AI review is a run in the list: the crew see it read, a Stop leaves the card to a person, and one the app quit in is asked again", async () => {
+  const call = await local({ GH_CLI: "off", HEAL: "1" });
+  const R = "/api/repos/ana/r";
+  let asked = 0, hold: Promise<void> | null = null;
+  call.env.AGENT_EXEC = (async (_cmd, cwd, signal) => {
+    asked++;
+    await Promise.race([hold, new Promise((_, no) => signal?.addEventListener("abort", () => no(new Error("stopped"))))]);
+    writeFileSync(join(cwd, "VERDICT.md"), "YAY\n");
+    return { code: 0, out: "" };
+  }) as Exec;
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await post(call, "ana", `${R}/files`, { path: "a.ts", content: "x(1);" });
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ hooks: { "before-ester": "ai" } }) });
+  await post(call, "ana", `${R}/branches`, { name: "b1" });
+  const edit = (t: string, base: number) => post(call, "ana", `${R}/do/ops?path=a.ts&branch=b1`, { ops: [{ kind: "set", line: "L1", base, text: t }] });
+  await edit("x(3);", 2);
+  const merge = async () => { const r = await post(call, "ana", `${R}/branches/b1/merge`, {}); return { status: r.status, body: await r.json() as { hook?: { say: string; reason?: string } } }; };
+  type Listed = { id: number; status: string; agent: string; task: string; error?: string; spent?: number; review?: { review: string; branch?: string } };
+  const runs = async () => (await (await call("ana", `${R}/agents`)).json()) as Listed[];
+
+  // While the agent reads, its review is a running run: the prompt its task, the branch it reads.
+  hold = new Promise(() => {});
+  expect((await merge()).body.hook?.say).toBe("running");
+  while (!asked) await Bun.sleep(5);
+  const [reading] = await runs();
+  expect(reading).toMatchObject({ status: "running", review: { review: "hook", branch: "b1" } });
+  expect(reading!.agent).toStartWith("review-");
+  expect(reading!.task).toContain("before-ester");
+  // The owner stops it: the run ends stopped, and the hook waits for a person rather than ask again.
+  expect(await (await post(call, "ana", `${R}/agents/stop`, { ids: [reading!.id] })).json()).toEqual({ stopped: [reading!.id] });
+  await reviewsDone();
+  expect((await runs())[0]).toMatchObject({ id: reading!.id, status: "stopped", error: "stopped by @ana" });
+  const held = await merge();
+  expect(held.body.hook).toMatchObject({ say: "waiting" });
+  expect(held.body.hook?.reason).toContain("was stopped");
+  expect(asked).toBe(1);
+
+  // An edit asks again, and this time the app quits mid-review: its claim and its run are left running, the agent gone.
+  expect((await edit("x(4);", 1)).status).toBe(200);
+  const { hash } = await (await call("ana", `${R}/branches/b1/hooks`)).json() as { hash: string };
+  await call.env.DB.prepare("INSERT INTO hook_verdicts (owner, repo, branch, hook, hash, say, by, reason, at) VALUES ('ana', 'r', 'b1', 'before-ester', ?, 'running', 'ai', NULL, ?) ON CONFLICT (owner, repo, branch, hook) DO UPDATE SET hash = excluded.hash, say = 'running', by = 'ai', reason = NULL")
+    .bind(hash, Date.now()).run();
+  const review = { review: "hook", owner: "ana", repo: "r", branch: "b1", at: "before-ester", hash, user: "ana" };
+  await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, result) VALUES ('ana', 'r', 'codesplitter.pipeline.json', 'claude', 'review', 'review-claude', 'running', ?, ?)")
+    .bind(Date.now(), JSON.stringify({ review })).run();
+  expect((await merge()).body.hook?.say).toBe("running");
+  expect(asked).toBe(1);
+  // The next look at the list finds it cut off: it is stopped, and the review is asked again, which lands the merge.
+  hold = null;
+  const [cut] = (await runs()).filter((r) => r.task === "review");
+  expect(cut).toMatchObject({ status: "stopped" });
+  await reviewsDone();
+  expect(asked).toBe(2);
+  expect((await runs())[0]).toMatchObject({ status: "done", review: { hash } });
+  expect((await runs())[0]!.spent).toBeGreaterThan(0);
+  expect((await merge()).status).toBe(200);
+});
+
 test("lanes drive the checks: a commit queues only the lanes it calls for, and the repo keeps each lane's count", async () => {
   const call = await local({ GH_CLI: "off" });
   const R = "/api/repos/ana/r";
