@@ -267,10 +267,13 @@ test("tsconfig: relative extends is followed, nearer paths win, baseUrl is per-f
   expect(inferTsconfigAliases(p.dir)).toEqual({ "@": "app", "~": "web" });
 });
 
-test("package manager: lockfiles, then packageManager field", () => {
+test("package manager: lockfiles, then packageManager field, then the workspace root's", () => {
   expect(detectPm(project({ "package-lock.json": "{}" }).dir)).toBe("npm");
   expect(detectPm(project({ "package.json": '{"packageManager":"pnpm@9.1.0"}' }).dir)).toBe("pnpm");
   expect(detectPm(project({ "yarn.lock": "", "package-lock.json": "{}" }).dir)).toBe("yarn");
+  // A pnpm workspace member (Rat Stack's apps/web): the lockfile is at the root, so `add deploy` runs pnpm, not npm.
+  const ws = project({ "pnpm-workspace.yaml": "packages:\n  - apps/*\n", "pnpm-lock.yaml": "", "package.json": "{}", "apps/web/package.json": '{"name":"@rat-stack/web"}' });
+  expect(detectPm(join(ws.dir, "apps/web"))).toBe("pnpm");
 });
 
 test("wrangler toml parse and dropped keys", () => {

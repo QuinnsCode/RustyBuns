@@ -199,3 +199,20 @@ Fake secrets turned the Clerk-based templates' 500s into working pages.
 | 1 | a 500 on a Cloudflare monorepo app (algorandfoundation/gGov) | open |
 
 The by-kind pass rates are written to `summary.md`'s "By kind of app" table on each run. The next full sample (`--sample 30`) should come from the dedicated build box, not a laptop.
+
+## Rat Stack
+
+**Run: Nov 23 2026, one app (joelhooks/rat-stack `4869d23`, `apps/web`), this checkout, on the builder Mac in a sandbox.**
+
+This was a single hand run, not a `trial-github.ts` sweep ([#4803](https://github.com/QuinnsCode/RustyBuns/issues/4803)). The details are in [FRAMEWORKS.md](FRAMEWORKS.md#rat-stack-our-toolchain-so-install-less).
+
+| step | result |
+|---|---|
+| `pnpm install` | ok (pnpm 11.3.0) |
+| `init` | vite app, pnpm (npm before this run's fix) |
+| `add deploy` | keeps alchemy beta.87 + effect 4.1.4; installs 5 missing packages |
+| `plan --offline` | ok on beta.87, after Rat Stack's own content steps ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)) |
+| `build desktop --dev`, `run desktop` | builds and serves |
+| `smoke apps/web` | stops at install: a workspace member alone ([#5768](https://github.com/QuinnsCode/RustyBuns/issues/5768)) |
+
+Open: the static Worker would upload the server bundle as public files and drop server rendering ([#5767](https://github.com/QuinnsCode/RustyBuns/issues/5767)). Rat Stack's own `apps/infra` stack stays its deploy.

@@ -119,9 +119,11 @@ export function detectPm(root: string): PackageManager {
   if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(join(root, "yarn.lock"))) return "yarn";
   if (existsSync(join(root, "package-lock.json"))) return "npm";
-  // No lockfile yet (fresh clone, or a monorepo child): the corepack field, then the install-time env.
+  // No lockfile here: the corepack field, then a workspace member's root (Rat Stack's apps/web sits in a pnpm workspace), then the install-time env.
   const declared = String(readJson(join(root, "package.json"))?.packageManager ?? "").split("@")[0];
   if (declared === "bun" || declared === "pnpm" || declared === "yarn" || declared === "npm") return declared;
+  const ws = workspaceRoot(root);
+  if (ws) return detectPm(ws);
   const ua = process.env.npm_config_user_agent?.split("/")[0];
   if (ua === "bun" || ua === "pnpm" || ua === "yarn") return ua;
   return "npm";
