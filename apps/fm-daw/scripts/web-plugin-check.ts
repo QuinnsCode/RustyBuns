@@ -7,7 +7,7 @@
 // with an effect in its Insert (#5359, FM DAW's own Gain): as loud as dry at Gain 1, half at 0.5, dry again once it's
 // off, and an instrument isn't taken as an effect. Then the bounce with the effect in it (#5551: half at 0.5), and
 // a web plugin track (Test Tone) with Gain in its Insert, heard and bounced at half, and panned hard left it is silent
-// on the right, live and bounced (#5617). Prints what it measured; exit 1 when
+// on the right, live and bounced (#5617), and a deep low cut on its Shape takes it down live as in its bounce (#5641). Prints what it measured; exit 1 when
 // any of that fails. A built page: build the app, `bunx vite preview --outDir dist/client`, then `--url` that.
 // Without --url it serves the app on its own dev server, which needs .rustybuns/vite.ts (`bunx rustybuns boundary`
 // here writes it).
@@ -123,9 +123,16 @@ const JOURNEY = `(async () => {
   await wait(600);
   const leftBounce = await fmdaw.mix(K, 2);
   fmdaw.pan(K, 0);
+  // its Shape (#5641): a deep low cut above Test Tone's 440 Hz leaves it as quiet live as in its bounce
+  await wait(200);
+  const cutDry = await hold();
+  fmdaw.shape(K, [{ kind: "lowCut", f: 4000, g: 0, q: 0.7, slope: 48, on: true }, null, null, null, null, null, null, null]);
+  await wait(300);
+  const cutLive = await hold(), cutBounce = await fmdaw.mix(K, 2);
+  fmdaw.shape(K, Array(8).fill(null));
   fmdaw.plays(K, null);
   const bounce = { dry: bDry, whole: bWhole, half: bHalf };
-  const plugin = { on: pOn, error: pFxError, dry: pDry, half: pHalf, back: pBack, bDry: pbDry, bHalf: pbHalf, leftLive, leftBounce };
+  const plugin = { on: pOn, error: pFxError, dry: pDry, half: pHalf, back: pBack, bDry: pbDry, bHalf: pbHalf, leftLive, leftBounce, cutDry, cutLive, cutBounce };
   const insert = { track: K, fxOn, fxError, fxSliders, dry, whole, half, refused, refusedHeld, back, bounce, plugin };
   return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line, insert };
 })()`;
@@ -168,6 +175,8 @@ try {
     ["its bounce is at half too", r.insert.plugin.bHalf.missed.length === 0 && r.insert.plugin.bDry.l > 0.002 && near(r.insert.plugin.bHalf.l / r.insert.plugin.bDry.l, 0.5, 0.05)],
     ["a web plugin track panned hard left is heard on the left and silent on the right", r.insert.plugin.leftLive.l > 0.02 && r.insert.plugin.leftLive.r < 0.05 * r.insert.plugin.leftLive.l],
     ["and its bounce too", r.insert.plugin.leftBounce.l > 0.002 && r.insert.plugin.leftBounce.r < 0.01 * r.insert.plugin.leftBounce.l],
+    ["a web plugin track's Shape is heard live: a deep low cut takes it down", r.insert.plugin.cutDry > 0.02 && r.insert.plugin.cutLive < 0.1 * r.insert.plugin.cutDry],
+    ["as its bounce has it", r.insert.plugin.cutBounce.l < 0.1 * r.insert.plugin.bDry.l],
     ["no page errors", noise.length === 0],
   ];
   console.log(JSON.stringify(r));

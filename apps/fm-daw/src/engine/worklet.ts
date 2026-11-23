@@ -127,6 +127,9 @@ class FmProcessor extends AudioWorkletProcessor {
   /** What comes back from those effects (the fifth input, two channels a track): panned and sent here, under the master. */
   private returns = new InsertReturns();
   private returnStrip = { gain: () => this.master, pan: (t: number) => this.strip.pan(t), send: (t: number) => this.strip.send(t) };
+  /** A plugin track's Shape on its return (#5641), as the bounce's plugin route plays it (an FM voice's is in the engine, before its tap). */
+  private returnEq: (TsEq | null)[] = Array.from({ length: TRACKS }, () => null);
+  private shaped = { dry: new Float64Array(256), l: new Float32Array(128), r: new Float32Array(128) };
   /** The channel whose Shape is open, copied to the third output for its spectrum: a track (its engine tap), the Space return, or (`desk.listen`) a player's channel or aux 2. */
   private listenTrack = -1;
   private listenSpace = false;
@@ -363,6 +366,7 @@ class FmProcessor extends AudioWorkletProcessor {
     this.trackEq[t] = doc;
     sendTrackEq(this.engine, t, doc, this.trackLast[t]);
     this.plugins.shape(t, doc);
+    this.returnEq[t]?.set(doc);
   }
 
   /**
@@ -433,8 +437,26 @@ class FmProcessor extends AudioWorkletProcessor {
     for (let t = 0; t < TRACKS; t++) {
       const l = back[2 * t], r = back[2 * t + 1] ?? l;
       if (!l || !r || this.amps.has(t)) continue;
-      this.returns.mix(t, l, r, 0, this.buf, frames, this.returnStrip, this.send);
+      const [sl, sr] = this.plugins.has(t) ? this.shapeReturn(t, l, r, frames) : [l, r];
+      this.returns.mix(t, sl, sr, 0, this.buf, frames, this.returnStrip, this.send);
     }
+  }
+
+  /** A web plugin track's return through its Shape: the page's sound never passed the engine's, so it gets it here. */
+  private shapeReturn(t: number, l: Float32Array, r: Float32Array, frames: number): [Float32Array, Float32Array] {
+    let eq = this.returnEq[t];
+    if (!eq) {
+      if (!this.trackEq[t].some((b) => b?.on)) return [l, r];
+      eq = this.returnEq[t] = new TsEq(sampleRate);
+      eq.set(this.trackEq[t]); eq.reset();
+    }
+    if (!eq.live()) return [l, r];
+    if (this.shaped.l.length < frames) this.shaped = { dry: new Float64Array(2 * frames), l: new Float32Array(frames), r: new Float32Array(frames) };
+    const s = this.shaped;
+    for (let f = 0; f < frames; f++) { s.dry[2 * f] = l[f]; s.dry[2 * f + 1] = r[f]; }
+    eq.insert(s.dry, frames);
+    for (let f = 0; f < frames; f++) { s.l[f] = s.dry[2 * f]; s.r[f] = s.dry[2 * f + 1]; }
+    return [s.l, s.r];
   }
 
   private setLatency() { this.seq.latency = this.outLatency + (this.eq.latency ?? 0) / sampleRate; }

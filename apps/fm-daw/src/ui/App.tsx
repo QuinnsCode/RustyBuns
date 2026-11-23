@@ -52,7 +52,7 @@ import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
-import { flatEq } from "../engine/eq.ts";
+import { flatEq, type EqDoc } from "../engine/eq.ts";
 import { DeskFeed, loadMsg, type HeardPlayer } from "./load.ts";
 import { applyStudio, emptyStudio, type Patch } from "../studio.ts";
 import { auxGear, boardIn } from "../room/room.ts";
@@ -485,6 +485,8 @@ export function App() {
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
       pan: (track: number, v: number) => commit({ t: "param", track, i: P.PAN, v }),
+      // a track's Shape (its EQ bands), as the desk's Shape panel sets it
+      shape: (track: number, bands: EqDoc) => commit({ t: "eq", track, bands }),
       // audio onto a track at a beat, as a recording lands (the clip lane then shows it)
       land: (track: number, beat: number, pcm: Float32Array, rate: number) => landTake(track, beat, pcm, rate),
       trust: (track: number) => { pump.current?.trust(track, proj.current); fxPump.current?.trust(track, proj.current); },
