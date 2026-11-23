@@ -111,6 +111,26 @@ export function dieWith(dir: string, chrome: number, parent = process.pid) {
   return dog;
 }
 
+/**
+ * The same watchdog for a whole process group (a child spawned `detached`, whose pid is its group): once `parent` is gone,
+ * every process in the group goes with -9 and `dir` is deleted. `wrangler dev` is node, workerd and esbuild; killing node
+ * alone, or a test run killed outright, left all three on the builder for days (#5337). `stop` kills it with -9.
+ */
+export function groupDiesWith(group: number, dir: string, parent = process.pid) {
+  const script = 'trap "" INT HUP TERM; while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill -9 "-$2" 2>/dev/null; rm -rf -- "$3"';
+  const dog = Bun.spawn(["sh", "-c", script, "group-watchdog", String(parent), String(group), dir], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  dog.unref();
+  return dog;
+}
+
+/** Ends a `detached` child's whole group: TERM, up to `graceMs` for it to go, then -9 for whatever is left. */
+export async function killGroup(proc: { pid: number; exited: Promise<unknown> }, graceMs = 5000) {
+  const signal = (s: NodeJS.Signals) => { try { process.kill(-proc.pid, s); } catch { /* already gone */ } };
+  signal("SIGTERM");
+  await Promise.race([proc.exited, Bun.sleep(graceMs)]);
+  signal("SIGKILL");
+}
+
 async function* lines(stream: ReadableStream<Uint8Array>) {
   const text = new TextDecoder();
   let rest = "";

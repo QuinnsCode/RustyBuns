@@ -9,7 +9,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { freePort } from "../../../scripts/chrome.ts";
+import { freePort, groupDiesWith, killGroup } from "../../../scripts/chrome.ts";
 
 const APP = new URL("..", import.meta.url).pathname;
 
@@ -57,11 +57,13 @@ async function startOnce(bin: string, port: number, o: EdgeOpts): Promise<{ edge
   if (o.deadMs) vars.DEAD_MS = String(o.deadMs);
   const args = ["dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", state, "--show-interactive-dev-session=false"];
   for (const [k, v] of Object.entries(vars)) args.push("--var", `${k}:${v}`);
-  const proc = Bun.spawn([bin, ...args], { cwd: APP, stdout: "pipe", stderr: "pipe", env: { ...process.env, WRANGLER_SEND_METRICS: "false", NO_COLOR: "1" } });
+  const proc = Bun.spawn([bin, ...args], { cwd: APP, stdout: "pipe", stderr: "pipe", detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: "false", NO_COLOR: "1" } });
+  // its own group, so stop takes workerd and esbuild with it; the watchdog does the same if this process dies first (#5337)
+  const watch = groupDiesWith(proc.pid, state);
   let out = "";
   const read = async (s: ReadableStream<Uint8Array>) => { const r = s.getReader(), d = new TextDecoder(); for (let c = await r.read(); !c.done; c = await r.read()) out += d.decode(c.value, { stream: true }); };
   void read(proc.stdout); void read(proc.stderr);
-  const stop = async () => { proc.kill(); await proc.exited; rmSync(state, { recursive: true, force: true }); };
+  const stop = async () => { await killGroup(proc); watch.kill(9); rmSync(state, { recursive: true, force: true }); };
   const end = Date.now() + 60_000;
   while (!/Ready on http/.test(out)) {
     const crashed = proc.exitCode !== null && !/\[ERROR\]/.test(out);

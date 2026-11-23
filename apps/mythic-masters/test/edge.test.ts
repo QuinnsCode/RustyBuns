@@ -150,3 +150,20 @@ test("a wrangler that crashes before it is ready gets one more go; one that repo
   await edge.stop();
   await expect(serveEdge(0, { bin: fake("broken", 'echo "[ERROR] bad config" >&2; exit 1') })).rejects.toThrow("bad config");
 });
+
+// #5337: a run killed outright left wrangler, workerd and esbuild on the builder for days.
+test("a test run killed with -9 takes wrangler and everything it started with it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mm-fake-wrangler-"));
+  const bin = join(dir, "wrangler"), kid = join(dir, "kid.pid");
+  // a wrangler that starts its own child (workerd), as the real one does
+  writeFileSync(bin, `#!/bin/sh\nsleep 300 &\necho $! > ${JSON.stringify(kid)}\necho "Ready on http://127.0.0.1"\nwait\n`);
+  chmodSync(bin, 0o755);
+  const run = Bun.spawn(["bun", "-e", `await (await import(${JSON.stringify(new URL("../scripts/edge.ts", import.meta.url).pathname)})).serveEdge(0, { bin: ${JSON.stringify(bin)} }); console.log("up"); await Bun.sleep(300_000);`], { stdout: "pipe", stderr: "inherit" });
+  const reader = run.stdout.getReader();
+  for (let said = ""; !said.includes("up");) { const r = await reader.read(); if (r.done) break; said += new TextDecoder().decode(r.value); }
+  const pid = Number(await Bun.file(kid).text());
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  expect(alive()).toBe(true);
+  run.kill(9);
+  await until("wrangler's child to go", () => !alive(), 15_000);
+});

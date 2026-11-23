@@ -24,6 +24,7 @@ import { $ } from "bun";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { killGroup } from "./chrome.ts";
 import { help } from "./help.ts";
 
 const fork = async (repo: string, base: string) => (await $`git merge-base ${base} HEAD`.cwd(repo).text()).trim();
@@ -60,10 +61,16 @@ function linkModules(repo: string, into: string, dir = "."): void {
   }
 }
 
+/** The scratch folders in use, and the end of anything still running from one: a test's `bun -e` and its headless Chrome
+ *  outlived test-bites on the builder for days (#5337). Every process whose command line names the folder goes with -9. */
+const scratches = new Set<string>();
+const reap = (dir: string) => Bun.spawnSync(["pkill", "-9", "-f", "--", dir]);
+
 /** `ref` checked out in a scratch worktree with `files` copied over it from `repo`'s working tree and its
  *  node_modules linked, handed to `use`, then removed. */
 async function scratchTree<T>(repo: string, ref: string, files: string[], use: (scratch: string) => Promise<T>): Promise<T> {
   const scratch = join(mkdtempSync(join(tmpdir(), "test-bites-")), "tree");
+  scratches.add(dirname(scratch));
   await $`git worktree add -q --detach ${scratch} ${ref}`.cwd(repo).quiet();
   try {
     for (const file of files) {
@@ -73,6 +80,8 @@ async function scratchTree<T>(repo: string, ref: string, files: string[], use: (
     linkModules(repo, scratch);
     return await use(scratch);
   } finally {
+    reap(dirname(scratch));
+    scratches.delete(dirname(scratch));
     await $`git worktree remove --force ${scratch}`.cwd(repo).quiet().nothrow();
     rmSync(dirname(scratch), { recursive: true, force: true });
   }
@@ -92,7 +101,13 @@ export async function passesOnBase(repo: string, base: string, files: string[]):
 async function testsPass(root: string, tests: string[], ms = 180_000): Promise<boolean> {
   for (const [cwd, group] of Map.groupBy(tests, (t) => home(root, t))) {
     const cmd = ["bun", "test", ...group.map((t) => "./" + relative(cwd, join(root, t)))];
-    if ((await Bun.spawn(cmd, { cwd, stdout: "ignore", stderr: "ignore", timeout: ms }).exited) !== 0) return false;
+    // its own process group: a timeout, or the run ending, takes everything the tests started with it
+    const run = Bun.spawn(cmd, { cwd, stdout: "ignore", stderr: "ignore", detached: true });
+    const late = setTimeout(() => void killGroup(run, 2000), ms);
+    const code = await run.exited;
+    clearTimeout(late);
+    await killGroup(run, 0);
+    if (code !== 0) return false;
   }
   return true;
 }
@@ -210,6 +225,7 @@ export function ranges(lines: number[]): string {
 
 if (import.meta.main) {
   help(import.meta.path);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { for (const dir of scratches) reap(dir); process.exit(130); });
   const at = process.argv.indexOf("--base");
   const base = at > 0 ? process.argv[at + 1] ?? "origin/main" : "origin/main";
   const repo = (await $`git rev-parse --show-toplevel`.text()).trim();
