@@ -12,6 +12,8 @@ import { hasPagesFunctions, writePagesWorker, compilesAtStartup, EVAL_AT_STARTUP
 import { generateAlchemy, referencedApps } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
+import { buildSteam } from "./steam.ts";
+import type { SteamOs } from "./config.ts";
 import { smoke } from "./smoke.ts";
 import { signDarwin } from "./sign.ts";
 import { buildBox, buildGuests, checkBox, loadGuests } from "./box.ts";
@@ -1488,8 +1490,17 @@ try {
     case "build": {
       const [what, ...flags] = rest;
       const t = flags.indexOf("--target");
+      if (what === "steam") {
+        const v = (k: string) => { const i = flags.indexOf(k); return i >= 0 ? flags[i + 1] : undefined; };
+        const r = await buildSteam(await loadConfig(), {
+          targets: v("--target")?.split(",") as SteamOs[] | undefined, live: v("--live"), version: v("--version"), vdfOnly: flags.includes("--vdf-only"),
+        });
+        for (const os of r.depots) console.log(`depot ${r.ids[os]} ${os}: ${r.out}/depots/${os}${r.launches[os] ? ` (launch ${r.launches[os]})` : ""}`);
+        console.log(`built ${r.out}/app_build.vdf`);
+        break;
+      }
       if (what === "box") { console.log(`built ${await buildBox(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined })}`); break; }
-      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] [--outfile dist/app-darwin-arm64] [--sign] [--notarize <profile>] | build box [--target linux-x64]");
+      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] [--outfile dist/app-darwin-arm64] [--sign] [--notarize <profile>] | build box [--target linux-x64] | build steam [--target windows-x64,darwin-arm64,linux-x64] [--live beta] [--version 1.2.0] [--vdf-only]");
       const { on: check, checker } = checkFlags(flags, false);
       const o = flags.indexOf("--outfile");
       const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, outfile: o >= 0 ? flags[o + 1] : undefined, noCompile: flags.includes("--dev"), check: check ? checker : undefined, profile: true });
@@ -1574,6 +1585,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   build box [--target T]     the same host for the box: Hetzner gets a linux binary + node
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
+  build steam [--target T,..] targets.steam: the desktop host in an Electron window with
+            [--live beta]    steamworks.js, one SteamPipe depot per OS in dist/steam/depots/
+            [--vdf-only]     and dist/steam/app_build.vdf (--live sets that branch live;
+                             --vdf-only rewrites the vdf over depots already there)
 
   containers [list]          the config's container bindings, and whether each image is built or stale
   containers build [B…]      build for linux/amd64 with a progress line per image, then a size table

@@ -38,8 +38,6 @@ export type AppId = keyof typeof APPS;
 export interface Link { label: string; path: string; phone?: boolean }
 export interface Run { app: AppId; links: Link[] }
 
-const hp = "/?level=yosemite-falls&spawn=creek%20halfpipe";
-const battle = (q: string) => `/?battle=1&${q}`;
 const dr = (q: string) => `/?level=5${q}`;
 const clash = (a: string, b: string, skin: string) => `/?a=${a}&b=${b}&skin=${skin}`;
 const office = (n: number): Link[] =>
@@ -93,49 +91,16 @@ export const RUNS: Record<number, Run> = {
     { label: "Sesh, second window (was #5376, #5264)", path: "/sesh/taste" },
     { label: "Jam room (was #5025)", path: "/jam.html" },
   ] },
-  7: { app: "office", links: [...office(2430), ...office(2568), { label: "Box first run, phone (was #2568)", path: "/?scenario=box-first-run", phone: true }, { label: "GitHub writes (was #2961)", path: "/?scenario=writes-grants" }] },
+  7: { app: "office", links: [...office(7), { label: "Box first run, phone (was #2568)", path: "/?scenario=box-first-run", phone: true }] },
   3: { app: "delayed", links: [...["snap", "rush", "warren", "chase"].map((name) => ({ label: `${name} (was #3215)`, path: `/?setup=${name}&level=3` })), { label: "warren's drop (was #3215)", path: "/?setup=warren&level=3&beat=128" }, { label: "snap on the phone (was #3215)", path: "/?setup=snap&level=3", phone: true }, { label: "Stab (was #2605)", path: dr("&stem=dub") }, { label: "Growl (was #2605)", path: dr("&stem=bass") }, { label: "Drums (was #2605)", path: dr("&stem=drums") }, { label: "Call and answer (was #2605)", path: dr("&beat=28") }, { label: "Everything (was #2605)", path: dr("") }] },
-  5096: { app: "loadIn", links: [{ label: "Cable feel room", path: "/feel.html" }, { label: "DJ booth, wired", path: "/?level=dj-booth&wired=1" }, { label: "Menu", path: "/" }, { label: "First gig", path: "/?level=first-gig" }, { label: "Feel room, phone", path: "/feel.html", phone: true }] },
-  4889: { app: "loadIn", links: ["garage", "dive-bar", "bigger-bar"].map((l) => ({ label: l, path: `/?level=${l}` })) },
-  4959: { app: "loadIn", links: [{ label: "Desert", path: "/?level=desert" }] },
-  5353: { app: "loadIn", links: [{ label: "Dive bar", path: "/?level=dive-bar" }, { label: "Park", path: "/?level=park" }] },
-  3259: { app: "skate", links: [{ label: "Solid kit", path: "/?level=el-capitan" }, { label: "1 km park", path: "/?level=half-dome" }, { label: "Halfpipe", path: hp }] },
-  2486: { app: "skate", links: [{ label: "Push and ollie", path: "/?level=el-capitan" }, { label: "Halfpipe", path: hp }] },
-  2794: { app: "skate", links: [{ label: "Grabs and flicks", path: "/?level=el-capitan" }, { label: "Touch pad", path: "/?level=el-capitan&controls=touch" }] },
-  2401: { app: "skate", links: [{ label: "Rail", path: "/?level=el-capitan&spawn=rail" }, { label: "Balance", path: "/?level=el-capitan&spawn=balance" }, { label: "Vert", path: hp }] },
-  2812: { app: "skate", links: [{ label: "Halfpipe", path: hp }, { label: "Grabs", path: "/?level=el-capitan" }, { label: "Rail", path: "/?level=el-capitan&spawn=rail" }] },
-  2443: { app: "twoFronts", links: [{ label: "Attack", path: battle("side=attacker&brief=1") }, { label: "Defend", path: battle("side=defender&brief=1") }] },
-  2407: { app: "twoFronts", links: [{ label: "Marines, desert", path: battle("side=marines&world=desert") }, { label: "Marines, city", path: battle("side=marines&world=city") }, { label: "Wooka, beach", path: battle("side=wooka&world=beach") }, { label: "Wooka, forest", path: battle("side=wooka&world=forest") }, { label: "Station, Marines attack", path: battle("side=attacker&hero=marines&world=station") }] },
-  2267: { app: "twoFronts", links: [{ label: "Station", path: battle("world=station&side=attacker") }, { label: "Station, yards", path: battle("world=station&side=attacker&map=yards") }] },
-  2261: { app: "twoFronts", links: ["desert", "city", "beach", "station"].map((w) => ({ label: w, path: battle(`world=${w}`) })) },
-  1986: { app: "qcrm", links: [{ label: "Home", path: "/" }, { label: "Demo", path: "/demo" }, { label: "Contacts", path: "/app?scenario=populated" }, { label: "Webhooks", path: "/app?scenario=webhooks" }, { label: "Phone", path: "/app?scenario=populated", phone: true }] },
-  2702: { app: "mythic-masters", links: [{ label: "Jackalope vs Jersey Devil", path: clash("jackalope", "jersey-devil", "stadium") }, { label: "Jersey Devil vs hodag", path: clash("jersey-devil", "hodag", "stadium") }, { label: "Jersey Devil vs hodag, volcano", path: clash("jersey-devil", "hodag", "volcano") }, { label: "Jersey Devil vs hodag, sky island", path: clash("jersey-devil", "hodag", "sky") }] },
   111: { app: "office", links: office(111) },
-  2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
-  2425: { app: "office", links: office(2425) },
-  4212: { app: "twoFronts", links: [{ label: "Title", path: "/" }, { label: "Title, phone", path: "/", phone: true }, { label: "Short war, Marines (then New campaign for the lobby)", path: "/?war=short&side=marines&vs=ai" }] },
-  2735: { app: "twoFronts", links: [{ label: "Short war, Marines", path: "/?war=short" }, { label: "Short war, Wooka", path: "/?war=short&side=wooka" }] },
-  2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
-  2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
-  2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
-  2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
   105: { app: "discGolf", links: [{ label: "Gulf Stream", path: "/?seed=42&swim=36.5,-72" }, { label: "Open Pacific", path: "/?seed=42&swim=-25,-120" }, { label: "Off Portugal", path: "/?seed=42&swim=39.5,-10" }, { label: "Phone, Gulf Stream", path: "/?seed=42&swim=36.5,-72", phone: true }, { label: "A whole round", path: "/?seed=42" }] },
-  3576: { app: "gitRecon", links: [{ label: "Title", path: "/" }, { label: "Loadout", path: "/?screen=loadout" }, { label: "Settings", path: "/?screen=settings" }, { label: "Won", path: "/?screen=won" }, { label: "Lost", path: "/?screen=lost" }, { label: "Title on a phone", path: "/", phone: true }, { label: "Won on a phone", path: "/?screen=won", phone: true }] },
-  2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
-  2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
   45: { app: "cronSwanson", links: [{ label: "Taste check before Railway (a throwaway copy)", path: "/" }] },
-  4554: { app: "fmDaw", links: [{ label: "Q Amp, live (speakers down, then Plug in)", path: "/amp.html" }] },
-  2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 
 /** Left out of the queue, and why (the owner's calls). */
 export const PARKED: Record<number, string> = {
-  609: "roll-up, not a task",
-  2333: "needs full Xcode",
   114: "handled when it comes up",
-  2330: "low priority",
-  2348: "Delayed Reaction phone checks wait for its UI",
-  2356: "Delayed Reaction phone checks wait for its UI",
 };
 
 /** The owner's own tags per issue number, kept in ~/.rustybuns/manual-tags.json so every checkout shares them. */
@@ -152,17 +117,17 @@ export const cleanTags = (tags: string[]) => [...new Set(tags.map(cleanTag).filt
 export interface Card extends Omit<Issue, "labels"> { app?: AppId; links: Link[]; labels: string[]; tags: string[] }
 
 /** Loadable issues first, grouped by app in APPS order, then the ones that need the owner's hands, newest first. */
-export function queue(issues: Issue[], tags: Tags = {}): { cards: Card[]; parked: { number: number; why: string }[] } {
+export function queue(issues: Issue[], tags: Tags = {}, runs: Record<number, Run> = RUNS, parked: Record<number, string> = PARKED): { cards: Card[]; parked: { number: number; why: string }[] } {
   const order = Object.keys(APPS);
-  const live = issues.filter((i) => !(i.number in PARKED));
+  const live = issues.filter((i) => !(i.number in parked));
   const cards: Card[] = live.map((i) => ({
-    ...i, ...RUNS[i.number] ?? { links: [] },
+    ...i, ...runs[i.number] ?? { links: [] },
     labels: i.labels.map((l) => l.name).filter((n) => n !== "manual run"),
     tags: tags[i.number] ?? [],
   }));
   const rank = (c: Card) => (c.app ? order.indexOf(c.app) : order.length);
   cards.sort((a, b) => rank(a) - rank(b) || b.number - a.number);
-  return { cards, parked: issues.filter((i) => i.number in PARKED).map((i) => ({ number: i.number, why: PARKED[i.number]! })) };
+  return { cards, parked: issues.filter((i) => i.number in parked).map((i) => ({ number: i.number, why: parked[i.number]! })) };
 }
 
 /** The gh commands an answer runs: Yes comments and closes, No comments and leaves it open. */
