@@ -28,7 +28,7 @@ import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateDocs, regenerateLock, syntaxCheck, tryInClone } from "./deps.ts";
-import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, toFile, uncatalogue } from "./archive.ts";
+import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, readTree, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
@@ -209,6 +209,44 @@ async function mainFilesUnder(env: Env, owner: string, repo: string, dir: string
     }
   };
   await walk(dir);
+  return out;
+}
+
+/**
+ * The branch's files that can't sit beside main's: a file where main has a folder of files the branch keeps, or a file
+ * under a path main has as a file. git holds one or the other, so merging would quietly drop a side from main's tree.
+ */
+async function folderClashes(env: Env, owner: string, repo: string, rows: FileRow[]): Promise<string[]> {
+  const gone = new Set(rows.filter((f) => f.deleted).map((f) => f.path));
+  const adds = rows.filter((f) => !f.deleted && !f.merged).map((f) => f.path);
+  if (!adds.length) return [];
+  const h = await handleFor(env, owner, repo).catch(() => null);
+  const tip = h && (await h.handle.log({ ref: h.branch, limit: 1 }).catch(() => []))[0];
+  // What `path` is in main's git: a file, a folder, or not there.
+  const inGit = async (path: string): Promise<"file" | "dir" | null> => {
+    if (!h || !tip) return null;
+    let tree = tip.treeHash;
+    const segs = path.split("/");
+    for (const [i, seg] of segs.entries()) {
+      const e = (await readTree(env, h.handle, tree))?.find((x) => x.name === seg);
+      if (!e) return null;
+      if (i === segs.length - 1) return e.type === "tree" ? "dir" : "file";
+      if (e.type !== "tree") return null;
+      tree = e.hash;
+    }
+    return null;
+  };
+  const written = async (path: string) => !!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first());
+  const writtenUnder = async (dir: string) => (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'")
+    .bind(owner, repo, dir.replace(/[%_\\]/g, "\\$&") + "/%").all<{ path: string }>()).results.map((r) => r.path);
+  const out: string[] = [];
+  for (const path of adds) {
+    const under = [...await writtenUnder(path), ...(await inGit(path) === "dir" ? await mainFilesUnder(env, owner, repo, path) : [])];
+    const dirs = path.split("/").slice(0, -1).map((_, i, s) => s.slice(0, i + 1).join("/"));
+    let fileAbove = false;
+    for (const d of dirs) if (!gone.has(d) && (await inGit(d) === "file" || await written(d))) { fileAbove = true; break; }
+    if (fileAbove || under.some((p) => !gone.has(p))) out.push(path);
+  }
   return out;
 }
 
@@ -892,6 +930,9 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     return f.path;
   }))).filter((p): p is string => !!p);
   if (moved.length) return fail("BinaryMoved", `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, { files: moved });
+  // A file and a folder by one name can't both be on main (#4800): git would keep one and lose the other.
+  const clashed = await folderClashes(env, owner, repo, rows);
+  if (clashed.length) return fail("FolderClash", `${clashed.join(", ")} would be a file and a folder at once on main: rename one on the branch, then merge`, { files: clashed });
   // A dry run first, so a conflict anywhere merges nothing.
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
   if ("blocked" in run) return json(run.blocked, 409);

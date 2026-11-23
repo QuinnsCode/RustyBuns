@@ -80,6 +80,8 @@ export const APPS: QApp[] = [
   // A studio is a shop there: its owners and admins set up the shop's sites and products on /orgs.html.
   { id: "qview3d", name: "QView3D", kind: "suite", origins: ["https://qview3d.notryanquinn.workers.dev"], returns: ["https://qview3d.notryanquinn.workers.dev/orgs.html"], starts: ["member"], shot: true, genre: "Business", maturity: "experimental", studios: true },
   { id: "sharesplat", name: "ShareSplat", kind: "suite", origins: ["https://sharesplat.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Business", maturity: "experimental" },
+  // A bakery's site whose words are edited with the built-in CMS (packages/cms). Coming soon until its first deploy.
+  { id: "copy-desk", name: "Copy Desk", kind: "suite", origins: ["https://copy-desk.notryanquinn.workers.dev"], starts: ["member"], genre: "Business", maturity: "experimental", soon: true },
   { id: "splat-desktop", name: "Splat Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Productivity", maturity: "experimental" },
   // Parked until tscircuit updates its own dependencies (its README).
   { id: "tscircuit-desktop", name: "tscircuit Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Productivity", maturity: "experimental" },

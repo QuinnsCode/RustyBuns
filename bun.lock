@@ -201,6 +201,16 @@
         "fast-check": "4.10.2",
       },
     },
+    "apps/copy-desk": {
+      "name": "copy-desk",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/cms": "^0.1.12",
+      },
+      "devDependencies": {
+        "vite": "^6.4.4",
+      },
+    },
     "apps/cron-swanson": {
       "name": "cron-swanson",
       "version": "0.1.0",

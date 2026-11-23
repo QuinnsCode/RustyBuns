@@ -1,0 +1,7 @@
+{
+  "posts": [
+    { "id": "rye", "date": "", "title": "Vuelve el centeno oscuro", "body": "La masa madre de centeno despertó. Centeno oscuro los viernes, dos panes por persona.", "published": 1 },
+    { "id": "holiday", "date": "", "title": "Abiertos los pedidos de fiestas", "body": "Pide un stollen o una caja de bollos para las fiestas en el mostrador. Recógelo antes del 23 de diciembre.", "published": 1 },
+    { "id": "oven", "date": "", "title": "Un segundo horno", "body": "El mes que viene llega un segundo horno, y con él, pretzels.", "published": 0 }
+  ]
+}

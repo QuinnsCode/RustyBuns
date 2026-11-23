@@ -204,6 +204,11 @@
         "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
       },
       {
+        "app": "copy-desk",
+        "name": "Copy Desk",
+        "line": "A small business site on the built-in CMS: its words and news posts are JSON files you edit as forms and translate, with no code to touch."
+      },
+      {
         "app": "load-in",
         "name": "Sound Guy Simulator",
         "line": "A first-person sound-crew sim on real numbers: carry the gear at its real weight, bowl out rolls of cable that weigh what cable weighs, wire power and signal, and aim the speakers, from a garage to an arena."

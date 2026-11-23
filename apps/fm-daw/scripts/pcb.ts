@@ -1,15 +1,18 @@
-// A Q pedal from its board file to what a fab needs (ANALOG.md section 8):
-// renders circuits/q-<pedal>.tsx in tscircuit (packed, autorouted, its DRC run),
-// then writes into circuits/q-<pedal>/:
+// A Q pedal or a sound wall module from its board file to what a fab needs (ANALOG.md
+// section 8, WALL.md): renders circuits/q-<pedal>.tsx or wall-<module>.tsx in tscircuit
+// (packed, autorouted, its DRC run), then writes into circuits/<board>/:
 //   gerbers/        the copper, mask, silkscreen, outline and drill files
 //   bom.csv         the parts list
 //   pnp.csv         pick-and-place, for an assembled order
 //   pcb.svg         the board, top view
-//   drill.svg       a drill template for a 125B box, holes from the board's own knobs
-// and circuits/q-<pedal>.circuit.json (the schematic the test plays). The box
-// every pedal shares (supply, bias, Level, LED, jacks, footswitch) is circuits/q-box.tsx.
-//   bun scripts/pcb.ts              every pedal (installs tscircuit in a scratch folder the first time)
+//   drill.svg       a pedal's drill template for a 125B box, holes from the board's own knobs;
+//                   a module's front panel (circuits/wall-panels.ts, where its jacks and pots sit)
+// and circuits/<board>.circuit.json (the schematic the sim plays). The box every pedal
+// shares (supply, bias, Level, LED, jacks, footswitch) is circuits/q-box.tsx; what every
+// module shares (Eurorack power, jacks, pots) is circuits/wall-kit.tsx.
+//   bun scripts/pcb.ts              every pedal and module (installs tscircuit in a scratch folder the first time)
 //   bun scripts/pcb.ts fuzz dist    just these (`q-fuzz` works too)
+//   bun scripts/pcb.ts wall         every module; `vco` or `wall-vco` one
 // tscircuit pins zod 3, so it never enters the workspace: it runs in
 // $FM_DAW_PCB_DIR (default: the temp folder), and so does the Gerber exporter,
 // which needs a newer tscircuit helper than tscircuit itself pins.
@@ -18,8 +21,9 @@ import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { help } from "../../../scripts/help.ts";
-import { drillHoles, drillSvg } from "../src/circuit/enclosure.ts";
-import { arr, check, obj, raw, str } from "@rustybuns/util/guard";
+import { drillHoles, drillSvg, panelSvg } from "../src/circuit/enclosure.ts";
+import { panel } from "../circuits/wall-panels.ts";
+import { arr, check, num, obj, raw, str } from "@rustybuns/util/guard";
 
 help(import.meta.path);
 const app = join(import.meta.dir, "..");
@@ -51,12 +55,13 @@ const render = folder("render", {
 });
 const gerber = folder("gerber", { "circuit-json-to-gerber": "0.0.122" });
 
-// Every q-*.tsx but the shared box is a pedal; copy them all, since each imports the box.
-const files = readdirSync(circuits).filter((f) => /^q-.*\.tsx$/.test(f));
+// Every q-*.tsx but the shared box is a pedal, every wall-*.tsx but the kit a module; copy them all (and the
+// panels the modules read), since each imports its box or kit.
+const files = readdirSync(circuits).filter((f) => /^(q|wall)-.*\.tsx?$/.test(f));
 for (const f of files) cpSync(join(circuits, f), join(render, f));
-const all = files.map((f) => f.slice(0, -4)).filter((id) => id !== "q-box");
-const asked = process.argv.slice(2).map((a) => a.startsWith("q-") ? a : `q-${a}`);
-for (const a of asked) if (!all.includes(a)) { console.error(`${a}: no circuits/${a}.tsx (pedals: ${all.join(", ")})`); process.exit(1); }
+const all = files.filter((f) => f.endsWith(".tsx")).map((f) => f.slice(0, -4)).filter((id) => id !== "q-box" && id !== "wall-kit");
+const asked = process.argv.slice(2).flatMap((a) => a === "wall" ? all.filter((id) => id.startsWith("wall-")) : [a.startsWith("q-") || a.startsWith("wall-") ? a : all.includes(`q-${a}`) ? `q-${a}` : `wall-${a}`]);
+for (const a of asked) if (!all.includes(a)) { console.error(`${a}: no circuits/${a}.tsx (boards: ${all.join(", ")})`); process.exit(1); }
 let failed = 0;
 for (const id of asked.length ? asked : all) failed += await pcb(id);
 if (failed) process.exit(1);
@@ -64,7 +69,8 @@ if (failed) process.exit(1);
 /** One pedal: render, export, drill template. The number of errors. */
 async function pcb(id: string): Promise<number> {
   const out = join(circuits, id), json = join(scratch, `${id}.circuit.json`);
-  const title = id.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  const module = id.startsWith("wall-") ? panel(id.slice(5)) : null;
+  const title = module ? module.name : id.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
   console.log(`${title}:`);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "gerbers"), { recursive: true });
@@ -104,6 +110,14 @@ console.log("gerbers", Object.keys(files).join(" "));
   const keep = new Set(["source_component", "source_port", "source_net", "source_trace"]);
   await Bun.write(join(circuits, `${id}.circuit.json`), JSON.stringify(els.filter((e) => keep.has(check(obj({ type: str(80) }), e)?.type ?? "")), null, 1) + "\n");
 
+  if (module) {
+    const wrong = powerColumns(els);
+    if (wrong) { console.log("  " + wrong); return errors.length + 1; }
+    // A module's panel parts sit where its panel says (wall-panels.ts), so the template is drawn from that.
+    await Bun.write(join(out, "drill.svg"), panelSvg(module));
+    console.log(`drill.svg: ${module.hp} HP panel, ${module.jacks.length} jacks, ${module.knobs.length} knobs`);
+    return errors.length;
+  }
   // Alpha 16 mm board-mount pots: the shaft sits about 7.5 mm from the leg row
   // (check your pot's datasheet before drilling). 3PDT bushing 12 mm, jacks 10 mm, DC jack 12 mm.
   const holes = drillHoles(els, {
@@ -118,4 +132,20 @@ console.log("gerbers", Object.keys(files).join(" "));
   await Bun.write(join(out, "drill.svg"), drillSvg(holes, `${title}, 125B box`));
   console.log(`drill.svg: ${holes.map((h) => `${h.name} ${h.face} (${h.x.toFixed(1)}, ${h.y.toFixed(1)})`).join(", ")}`);
   return errors.length;
+}
+
+/**
+ * Why a module's power header would burn it, or null: on a Eurorack ribbon -12 V is the two pins of one end
+ * column and +12 V the two of the other, so JP1's N1/N2 pads must share an x at one end and P1/P2 at the other.
+ */
+function powerColumns(els: unknown[]): string | null {
+  const Comp = obj({ type: str(80), name: str(80), source_component_id: str(200) });
+  const Port = obj({ type: str(80), name: str(80), source_port_id: str(200), source_component_id: str(200) });
+  const PcbPort = obj({ type: str(80), source_port_id: str(200), x: num(-1e4, 1e4) });
+  const jp = els.flatMap((e) => { const c = check(Comp, e); return c?.type === "source_component" && c.name === "JP1" ? [c.source_component_id] : []; })[0];
+  const ports = els.flatMap((e) => { const q = check(Port, e); return q?.type === "source_port" && q.source_component_id === jp ? [q] : []; });
+  const x = (name: string) => { const q = ports.find((r) => r.name === name); const at = q && els.map((e) => check(PcbPort, e)).find((r) => r?.type === "pcb_port" && r.source_port_id === q.source_port_id); return at?.x ?? NaN; };
+  const xs = ports.map((q) => x(q.name)), lo = Math.min(...xs), hi = Math.max(...xs), near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  const ok = near(x("N1"), x("N2")) && near(x("P1"), x("P2")) && ((near(x("N1"), lo) && near(x("P1"), hi)) || (near(x("N1"), hi) && near(x("P1"), lo)));
+  return ok ? null : `power_header_error: JP1's -12 V (N1 ${x("N1")}, N2 ${x("N2")}) and +12 V (P1 ${x("P1")}, P2 ${x("P2")}) aren't its two end columns`;
 }

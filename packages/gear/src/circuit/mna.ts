@@ -28,6 +28,8 @@ export type Part =
   | { kind: "C"; a: string; b: string; farads: number }
   /** A DC supply, + at `a`. */
   | { kind: "V"; a: string; b: string; volts: number }
+  /** A current source: `amps` out of `a`, through it, into `b`. `Circuit.push` sets it as it plays (TypeScript only). */
+  | { kind: "I"; a: string; b: string; amps: number }
   /** A diode, anode `a`, cathode `k`. Defaults are a 1N4148-ish silicon diode. */
   | { kind: "D"; a: string; k: string; is?: number; n?: number }
   /**
@@ -104,10 +106,27 @@ function taper(kind: number, at: number): number {
   return at;
 }
 
+/** The share of a pot's resistance between its `a` leg and the wiper at travel `at` (0 to 1). */
+export const potShare = (p: Extract<Part, { kind: "Pot" }>): number => taper(TAPERS.indexOf(p.taper ?? "lin"), p.at ?? 0.5);
+
+/**
+ * The netlist with every pot set where it stands, as two plain resistors (a to wiper, wiper to b). A circuit
+ * whose knobs move seldom builds this again when one moves (`Circuit.adopt` keeps its sound going) instead
+ * of paying two Newton ports a pot every sample.
+ */
+export function fixPots(net: Netlist): Netlist {
+  const parts = net.parts.flatMap((p): Part[] => {
+    if (p.kind !== "Pot") return [p];
+    const t = potShare(p);
+    return [{ kind: "R", a: p.a, b: p.w, ohms: Math.max(p.ohms * t, 1) }, { kind: "R", a: p.w, b: p.b, ohms: Math.max(p.ohms * (1 - t), 1) }];
+  });
+  return { ...net, parts };
+}
+
 /** A part's nodes in the order both solvers number them; `opamp` names an op-amp's hidden node. */
 function legs(p: Part, opamp: number): string[] {
   switch (p.kind) {
-    case "R": case "C": case "V": case "L": case "VarR": return [p.a, p.b];
+    case "R": case "C": case "V": case "I": case "L": case "VarR": return [p.a, p.b];
     case "D": return [p.a, p.k];
     case "Opamp": return [p.plus, p.minus, p.out, `~${opamp}`];
     case "Triode": return [p.p, p.g, p.k];
@@ -135,6 +154,7 @@ function values(p: Part): [number, number[], number] {
     case "LDR": return [10, [p.dark ?? 1e6, p.lit ?? 1e3, p.rise ?? 0.0025, p.fall ?? 0.035, p.lamp ?? 0], 0];
     case "OTA": return [11, [], 0];
     case "VarR": return [12, [p.hi, p.lo], 0];
+    case "I": return [13, [p.amps], 0];
   }
 }
 
@@ -193,8 +213,8 @@ export function encodeNetlist(net: Netlist): Float64Array {
   const rows: number[][] = [];
   let opamps = 0;
   for (const p of net.parts) {
-    if (p.kind === "VarR" || (p.kind === "Opamp" && p.rail === 0)) {
-      throw new Error(`the Rust solver has no ${p.kind === "Opamp" ? "rail-less op-amp" : p.kind} yet`);
+    if (p.kind === "VarR" || p.kind === "I" || (p.kind === "Opamp" && p.rail === 0)) {
+      throw new Error(`the Rust solver has no ${p.kind === "Opamp" ? "rail-less op-amp" : p.kind === "I" ? "current source" : p.kind} yet`);
     }
     if (p.kind === "Triode" && (p.tube ?? "12AX7") !== "12AX7") throw new Error(`the Rust solver has only the 12AX7, not ${p.tube}`);
     const ns = legs(p, opamps).map(node), [kind, vals, flag] = values(p);
@@ -230,7 +250,10 @@ export class Circuit {
   private x: Float64Array;
   private out: number;
   private inRow: number;
-  private supplies: { row: number; volts: number }[] = [];
+  /** DC supplies: their branch row, volts, and the node they hold up when their other end is ground (else −2). */
+  private supplies: { row: number; volts: number; node: number }[] = [];
+  /** Current sources: amps out of node `a` into node `b` (ground is the unread index). */
+  private sources: { a: number; b: number; amps: number }[] = [];
   private caps: { a: number; b: number; g: number; v: number; i: number; ieq: number }[] = [];
   private hiss: { a: number; b: number; sigma: number }[] = [];
   /**
@@ -349,7 +372,9 @@ export class Circuit {
         conductance(tr, a, b, gc); // open at DC: the dc matrix leaves it out
         this.caps.push({ a, b, g: gc, v: 0, i: 0, ieq: 0 });
       } else if (p.kind === "V") {
-        this.supplies.push({ row: source(a, b), volts: p.volts });
+        this.supplies.push({ row: source(a, b), volts: p.volts, node: b === n ? a : -2 });
+      } else if (p.kind === "I") {
+        this.sources.push({ a, b, amps: p.amps });
       } else if (p.kind === "D") {
         diode(a, b, 0, v[0], v[1]);
       } else if (p.kind === "VarR") {
@@ -423,7 +448,39 @@ export class Circuit {
     this.v = new Float64Array(K); this.vNew = new Float64Array(K); this.iP = new Float64Array(K); this.p = new Float64Array(K);
     this.J = new Float64Array(K * K); this.F = new Float64Array(K); this.JF = new Float64Array(K * K); this.iNow = new Float64Array(K);
     // A step adds a column of A⁻¹ per source and history current, then K port currents back; each Newton iteration is about K³.
-    this.flat = n * (1 + this.supplies.length + 2 * this.caps.length + 2 * this.inds.length + this.hiss.length + K);
+    this.flat = n * (1 + this.supplies.length + 2 * this.sources.length + 2 * this.caps.length + 2 * this.inds.length + this.hiss.length + K);
+  }
+
+  /**
+   * The supply on `node` (a "V" part from it to ground) as an input of its own: its slot for `drive`, or −1.
+   * A circuit with several inputs (a mixer's channels, a filter's control current) drives them this way.
+   */
+  supplyAt(node: string): number {
+    const i = this.nodes.get(node);
+    return i === undefined ? -1 : this.supplies.findIndex((s) => s.node === i);
+  }
+  /** Sets supply `slot` (from `supplyAt`) to `volts` from the next step on. */
+  drive(slot: number, volts: number): void { this.supplies[slot].volts = volts; }
+  /** The current source into `node` (an "I" part), for `push`, or −1. */
+  sourceInto(node: string): number {
+    const i = this.nodes.get(node);
+    return i === undefined ? -1 : this.sources.findIndex((s) => s.b === i);
+  }
+  /** Sets current source `slot` (from `sourceInto`) to `amps` from the next step on. */
+  push(slot: number, amps: number): void { this.sources[slot].amps = amps; }
+
+  /**
+   * Carries on where `old` left off: its capacitors' and inductors' charge, the junctions' voltages and the LDRs'
+   * light. For the same netlist with other values (a pot moved, `fixPots`), so a rebuild doesn't click.
+   * False, and nothing taken, when the two aren't the same circuit.
+   */
+  adopt(old: Circuit): boolean {
+    if (old.size !== this.size || old.K !== this.K || old.caps.length !== this.caps.length || old.inds.length !== this.inds.length || old.ldrs.length !== this.ldrs.length) return false;
+    this.caps.forEach((c, i) => { c.v = old.caps[i].v; c.i = old.caps[i].i; });
+    this.inds.forEach((l, i) => { l.v = old.inds[i].v; l.i = old.inds[i].i; });
+    this.ldrs.forEach((d, i) => { d.light = old.ldrs[i].light; });
+    this.v.set(old.v); this.x.set(old.x); this.iNow.set(old.iNow);
+    return true;
   }
 
   /** The voltage on a named node after the last step (0 for ground or a name not in the circuit). */
@@ -585,6 +642,7 @@ export class Circuit {
         A.set(this.baseDc); b.fill(0);
         b[this.inRow] = vin;
         for (const sp of this.supplies) b[sp.row] = (sp.volts * Math.min(s, 10)) / 10;
+        for (const c of this.sources) { const i = (c.amps * Math.min(s, 10)) / 10; if (c.a < n) b[c.a] -= i; if (c.b < n) b[c.b] += i; }
         old.set(v);
         for (let k = 0; k < K; k++) v[k] = x[pa[k]] - x[pb[k]];
         if (it > 0) this.limit(v, old);
@@ -637,6 +695,7 @@ export class Circuit {
     if (this.pots.length) this.turnPots(this.potGlide);
     this.addCol(this.inRow, vin);
     for (const s of this.supplies) this.addCol(s.row, s.volts);
+    for (const c of this.sources) { if (c.a < n) this.addCol(c.a, -c.amps); if (c.b < n) this.addCol(c.b, c.amps); }
     for (const c of this.caps) {
       c.ieq = c.g * c.v + c.i;
       if (c.a < n) this.addCol(c.a, c.ieq);

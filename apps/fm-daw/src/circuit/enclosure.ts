@@ -1,8 +1,11 @@
 // A drill template for a pedal box, from the board itself: the knobs and the
 // LED go where their legs sit on the PCB, so the holes and the board can't
 // disagree. The footswitch and the jacks go where kit builders put them on a
-// 125B box (about 122 × 66 × 39 mm). Print the SVG at 100% and tape it on.
+// 125B box (about 122 × 66 × 39 mm). Print the SVG at 100% and tape it on. A sound wall
+// module's template is its Eurorack panel, from circuits/wall-panels.ts (where its board
+// puts each jack and pot), with the rail screws' holes.
 import { arr, check, num, obj, raw, str } from "@rustybuns/util/guard";
+import { HP, PANEL_H, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
 
 /** The 125B box, outside, in mm: the face is `w` × `h`, the sides are `d` deep. */
 export const BOX_125B = { w: 66, h: 122, d: 39 };
@@ -81,4 +84,26 @@ export function drillSvg(holes: Hole[], title: string, box = BOX_125B): string {
     + `<text x="${m}" y="${m}" font-size="3.5" font-family="sans-serif">${title}. Print at 100%: this line is 50 mm.</text>`
     + `<path d="M${m} ${m + 3}h50" stroke="#000" stroke-width="0.4"/>`
     + rects.join("") + marks.join("") + `</svg>\n`;
+}
+
+/** A Eurorack panel's holes, mm from its top left corner: jacks 6 mm, pots 7 mm, and the 3.2 mm rail screws. */
+export function panelHoles(p: Panel): { name: string; x: number; y: number; drill: number }[] {
+  const w = panelWidth(p.hp), at = (x: number, y: number) => ({ x: w / 2 + x, y: PANEL_H / 2 - y });
+  const screws = [7.5, ...(p.hp >= 10 ? [7.5 + (p.hp - 3) * HP] : [])].flatMap((x) => [{ name: "screw", x, y: 3, drill: 3.2 }, { name: "screw", x, y: PANEL_H - 3, drill: 3.2 }]);
+  return [
+    ...p.jacks.map((j) => ({ name: j.label, ...at(j.x, j.y), drill: 6 })),
+    ...p.knobs.map((k) => ({ name: k.label, ...at(k.x, k.y), drill: 7 })),
+    ...screws,
+  ];
+}
+
+/** The panel as a drilling template, in mm: its outline, each hole with a cross at its centre, and what goes in it. */
+export function panelSvg(p: Panel): string {
+  const w = panelWidth(p.hp), f = (v: number) => v.toFixed(2);
+  const holes = panelHoles(p).map((h) => `<circle cx="${f(h.x)}" cy="${f(h.y)}" r="${f(h.drill / 2)}"/><path d="M${f(h.x - 1)} ${f(h.y)}h2M${f(h.x)} ${f(h.y - 1)}v2"/>` +
+    (h.name === "screw" ? "" : `<text x="${f(h.x)}" y="${f(h.y - h.drill / 2 - 1)}">${h.name}</text>`)).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${f(w + 20)}mm" height="${PANEL_H + 26}mm" viewBox="-10 -16 ${f(w + 20)} ${PANEL_H + 26}">` +
+    `<style>circle,rect,path{fill:none;stroke:#000;stroke-width:0.2}text{font:2.4px sans-serif;text-anchor:middle}</style>` +
+    `<text x="${f(w / 2)}" y="-9">${p.name}, ${p.hp} HP: print at 100%</text><text x="${f(w / 2)}" y="-5">${f(w)} × ${PANEL_H} mm</text>` +
+    `<rect x="0" y="0" width="${f(w)}" height="${PANEL_H}"/>${holes}</svg>\n`;
 }
