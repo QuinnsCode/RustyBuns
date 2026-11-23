@@ -117,7 +117,7 @@ export function dieWith(dir: string, chrome: number, parent = process.pid) {
  * alone, or a test run killed outright, left all three on the builder for days (#5337). `stop` kills it with -9.
  */
 export function groupDiesWith(group: number, dir: string, parent = process.pid) {
-  const script = 'trap "" INT HUP TERM; while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill -9 -- "-$2" 2>/dev/null; rm -rf -- "$3"';
+  const script = 'trap "" INT HUP TERM; while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill -9 "-$2" 2>/dev/null; rm -rf -- "$3"';
   const dog = Bun.spawn(["sh", "-c", script, "group-watchdog", String(parent), String(group), dir], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
   dog.unref();
   return dog;
