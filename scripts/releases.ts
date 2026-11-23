@@ -12,7 +12,9 @@
 //   bun run releases --install        a launchd job on the office Mac: --publish at :17 past every hour 7am to 10pm,
 //                                     log in ~/.rustybuns/releases/releases.log (--uninstall takes it off). It runs from its
 //                                     own detached checkout at ~/.rustybuns/releases/rustybuns, made on the first install,
-//                                     and each --publish there first moves it to origin/main
+//                                     and each --publish there first moves it to origin/main. That checkout is a worktree of
+//                                     the clone holding the deploy state (~/Documents/projects/RustyBuns), so a plan there
+//                                     updates what is live. An old one from another clone: the install says how to move it
 //   bun run releases --rerelease      the page's "To re-release" list (live apps main moved since their last deploy from
 //                                     this Mac): one at a time, asks, plans a rustybuns deploy, asks again, deploys. Run
 //                                     it from that job checkout (it follows main); the hourly --publish waits meanwhile
@@ -27,7 +29,7 @@ import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
 import { lastDeploys } from "./bridge-lib.ts";
 import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
-import { appDot, appOfPath, busiest, deployOf, hasState, owed, pacific, repoDot, stateDirs, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { appDot, appOfPath, busiest, deployOf, hasState, owed, pacific, repoDot, stateClone, stateDirs, tally, type Counts, type Dot } from "./releases-lib.ts";
 import { sharedStateBase } from "../packages/cli/src/state.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
@@ -36,6 +38,8 @@ const LABEL = "com.rustybuns.releases";
 const dir = path.join(homedir(), ".rustybuns", "releases");
 const file = path.join(dir, "releases.html");
 const repo = path.resolve(import.meta.dir, "..");
+/** The owner's own clone: the live apps' deploy state is shared through its git dir (.git/rustybuns/alchemy). */
+const REAL = path.join(homedir(), "Documents", "projects", HOME);
 
 /** `deployed` is its newest deploy from this Mac (~/.rustybuns/deploys.jsonl); `owed` means main moved it since, and
  *  `deploy` is how it goes out again (`dir` is its folder). Repos other than RustyBuns have none of these. */
@@ -257,7 +261,7 @@ if (import.meta.main) {
   help(import.meta.path);
   const args = process.argv.slice(2);
   if (args.includes("--install")) {
-    const j = job(jobCheckout(repo, path.join(dir, "rustybuns")));
+    const j = job(jobCheckout(stateClone([REAL, repo]), path.join(dir, "rustybuns")));
     console.log(install(j) ? `installed: ${LABEL} publishes the releases page at :17, 7am to 10pm from ${j.cwd}, log ${j.log}` : "launchctl bootstrap failed");
     process.exit();
   }

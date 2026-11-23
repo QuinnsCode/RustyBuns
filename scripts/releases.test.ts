@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appDot, busiest, deployOf, hasState, owed, pacific, repoDot, stateDirs, tally } from "./releases-lib.ts";
+import { appDot, busiest, deployOf, hasState, owed, pacific, repoDot, stateClone, stateDirs, tally } from "./releases-lib.ts";
 
 test("each app gets the dot the owner reads it by", () => {
   const up = { ok: true }, down = { ok: false };
@@ -73,4 +73,13 @@ test("the walker sees no state in a checkout of another clone, and won't plan a 
   mkdirSync(join(shared, "state", "eqosys", "live_ryanquinn"), { recursive: true });
   expect(hasState(stateDirs(app, shared))).toBe(true);
   expect(hasState(stateDirs(app, null))).toBe(false);    // outside git, only .alchemy/state counts
+});
+
+test("the job's checkout comes from the clone whose git dir holds the deploy state", () => {
+  const root = mkdtempSync(join(tmpdir(), "rel-clones-"));
+  const [real, office] = [join(root, "real"), join(root, "office")];
+  for (const c of [real, office]) Bun.spawnSync(["git", "init", "-q", c]);
+  expect(stateClone([join(root, "gone"), real, office])).toBe(office);  // no state anywhere: the clone it runs from
+  mkdirSync(join(real, ".git", "rustybuns", "alchemy", "apps", "eqosys", "state"), { recursive: true });
+  expect(stateClone([join(root, "gone"), real, office])).toBe(real);
 });
