@@ -7,10 +7,10 @@ The idea comes from Q Amp's pedals ([ANALOG.md](ANALOG.md) section 8): the circu
 **It lands in five pull requests**, so each can be read on its own:
 
 1. The solver's new inputs and the board reader's dual and quad chips ([#5704](https://github.com/QuinnsCode/RustyBuns/pull/5704)).
-2. The boards: panels, kit, module sources, `pcb.ts` and this page.
-3. The fab files `pcb.ts` writes from them.
-4. The sims and the engine.
-5. The gear room.
+2. The boards: panels, kit, module sources, `pcb.ts` and this page ([#5706](https://github.com/QuinnsCode/RustyBuns/pull/5706)).
+3. The fab files `pcb.ts` writes from them ([#5707](https://github.com/QuinnsCode/RustyBuns/pull/5707)).
+4. The sims and the engine ([#5709](https://github.com/QuinnsCode/RustyBuns/pull/5709)).
+5. The gear room ([#5711](https://github.com/QuinnsCode/RustyBuns/pull/5711)).
 
 Until the last is in, the sections on how the sim plays a module and on playing it in the room describe what those pull requests add.
 
