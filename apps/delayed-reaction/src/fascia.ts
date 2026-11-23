@@ -111,3 +111,19 @@ export const backplate = [
     .map(([pos, turn]) => `${dataUri(screwBody(turn, "s"), 16, 16)} ${pos} / 13px 13px no-repeat`),
   "linear-gradient(#14161b, #08090c 35%, #0b0c10)",
 ].join(", ");
+
+/** The Controls sliders as a mixing desk's faders (the panel's `faders` tokens): a ribbed cap with a white index line, in a
+ * sunken slot with a tick every tenth. Both are small inline SVG, under a kilobyte together. */
+export const faderCap = dataUri(`<defs><linearGradient id="fc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a5f6b"/><stop offset=".5" stop-color="#2a2d35"/><stop offset="1" stop-color="#16181d"/></linearGradient></defs>
+  <rect x=".5" y=".5" width="15" height="27" rx="2.5" fill="url(#fc)" stroke="#000" stroke-opacity=".7"/>
+  ${[5, 8, 20, 23].map((y) => `<line x1="3" x2="13" y1="${y}" y2="${y}" stroke="#000" stroke-opacity=".55"/><line x1="3" x2="13" y1="${y + 1}" y2="${y + 1}" stroke="#fff" stroke-opacity=".12"/>`).join("")}
+  <rect x="2" y="13" width="12" height="2" fill="${INK}"/>`, 16, 28);
+export const faderSlot = [
+  `repeating-linear-gradient(90deg, ${INK}40 0 1px, transparent 1px 10%) 0 50% / 100% 100% no-repeat`,
+  "linear-gradient(#000, #1a1c22)",
+].join(", ");
+/** The switches' knob: a square chrome cap, and lit, the same cap with the go lane's green LED in it. */
+const cap = (led: string) => dataUri(`<rect x=".5" y=".5" width="15" height="15" rx="2" fill="#2a2d35" stroke="#000" stroke-opacity=".7"/>
+  <rect x="2" y="2" width="12" height="5" rx="1" fill="#fff" fill-opacity=".08"/><circle cx="8" cy="9.5" r="2.6" fill="${led}"/>`, 16, 16);
+export const switchKnob = `${cap("#3a3e48")} center / 100% 100%`;
+export const switchLit = `${cap(LANE_COLOURS[3])} center / 100% 100%`;

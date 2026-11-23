@@ -32,8 +32,14 @@ export interface Opts {
   show?: ("touchAxes" | "audio" | "view")[];
   /** Optional rows (ids from `SECTIONS` in schema.ts, e.g. "fov", "rumble") this game honours; the rest show greyed out. */
   enable?: string[];
+  /** Leave out the rows the game doesn't have instead of greying them out (a section left empty goes too, and so do the fold-all buttons): a short panel for a game with few settings. */
+  lean?: boolean;
+  /** Draw sliders as faders (needs `skin: "house"`): a slot from `--ui-track` and a cap from `--ui-thumb` (any background, an SVG cap too), `--ui-thumb-w`/`--ui-thumb-h` its size. */
+  faders?: boolean;
   /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"]; needs `show: ["audio"]`. */
   sounds?: [string, string][];
+  /** Section titles by id from `SECTIONS` (e.g. { lookX: "Tunnel" }), for a game whose sections mean something else. */
+  titles?: Record<string, string>;
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
   labels?: Partial<Record<NumKey, string>>;
   /** Called with the saved settings on mount and after every change. */
@@ -114,7 +120,7 @@ export function mountControls(o: Opts) {
     const el = Object.assign(document.createElement("section"), { className: "gc-sec" });
     el.setAttribute("data-sec", id);
     const head = Object.assign(document.createElement("button"), { type: "button", className: "gc-sec-h" });
-    head.append(icon(ic ?? def.icon, 18), Object.assign(document.createElement("span"), { textContent: title ?? def.title }), Object.assign(document.createElement("span"), { className: "gc-chev" }));
+    head.append(icon(ic ?? def.icon, 18), Object.assign(document.createElement("span"), { textContent: title ?? o.titles?.[id] ?? def.title }), Object.assign(document.createElement("span"), { className: "gc-chev" }));
     head.lastElementChild!.append(icon("ChevronDown", 16));
     const body = Object.assign(document.createElement("div"), { className: "gc-sec-b" });
     el.append(head, body);
@@ -153,7 +159,7 @@ export function mountControls(o: Opts) {
     paintProfiles();
   };
   card.append(profBar);
-  if (!o.tabs) card.append(foldBar());
+  if (!o.tabs && !o.lean) card.append(foldBar());
   if (o.tabs) {
     const nav = Object.assign(document.createElement("div"), { className: "gc-tabs", role: "tablist" });
     const names = { controls: "Controls", audio: "Audio", account: "Account" } as const;
@@ -310,6 +316,7 @@ export function mountControls(o: Opts) {
     l.firstElementChild!.append(icon(ic, 16), label);
     if (out) l.append(out);
     input.disabled = off;
+    if (off && o.lean) return;
     if (off) { l.classList.add("gc-off"); l.title = "Not in this game yet"; } else cur!.live++;
     into.append(l);
   };
@@ -390,7 +397,7 @@ export function mountControls(o: Opts) {
   if (o.tabs && o.account) { const acct = o.account(panes.account); if (acct) syncs.push(acct.sync); }
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
   reset.addEventListener("click", () => { s = { ...DEFAULTS }; bind?.resetAll(); resets.forEach((f) => f()); saveKeys(); say(""); o.onReset?.(); syncs.forEach((f) => f()); save(); });
-  card.append(foldBar());
+  if (!o.lean) card.append(foldBar());
   if (bind) {
     const bar = document.createElement("div");
     bar.className = "gc-bar";
@@ -414,6 +421,7 @@ export function mountControls(o: Opts) {
   installStyles(o.skin ?? "classic", o.css);
   applyTheme(o.theme, btn, dlg);
   if (o.skin === "house") { btn.classList.add("ui-house"); dlg.classList.add("ui-house"); }
+  if (o.faders) dlg.classList.add("gc-faders");
   syncs.forEach((f) => f());
   paintProfiles();
   o.onChange?.({ ...s });
