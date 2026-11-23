@@ -11,6 +11,7 @@ import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { programRoutes } from "./programs.ts";
 import { sshKeyRoutes } from "./ssh-keys.ts";
+import { sshRemoteRoutes } from "./ssh-remote.ts";
 import { chartRoutes, serveChart, sweepCharts } from "./charts.ts";
 import { rankOf } from "./policy.ts";
 import { FileCommitted, FileTexts, fromText, text, type Doc } from "./lines.ts";
@@ -355,6 +356,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/admin/drain  the deploy's warning to every busy room (drain.ts)
   const draining = await drainRoutes(req, env, p);
   if (draining) return draining;
+  // GET /api/ssh/remote  the ssh gate's lookup: a repo's remote and a short token for the user its key named (ssh-remote.ts)
+  const sshRemote = await sshRemoteRoutes(req, env, p, url, (o, r, u) => access(env, o, r, u));
+  if (sshRemote) return sshRemote;
   // A cookie-signed write from another site goes no further (security.ts).
   const foreign = crossSite(req, env);
   if (foreign) return foreign;
