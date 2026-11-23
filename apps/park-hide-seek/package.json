@@ -11,7 +11,6 @@
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
     "fetch-zones": "bun scripts/fetch-zones.ts",
-    "models": "bun scripts/characters.ts",
     "edge:dev": "bun check && vite build && bunx wrangler dev",
     "deploy": "bun check && vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app park-hide-seek"
   },

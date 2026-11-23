@@ -640,7 +640,13 @@ export class World3D {
   private placeChar(ch: Character, z: Zone, x: number, y: number, yaw: number, pitch: number, crouch: boolean, speed: number, light: boolean, dt: number, caught: boolean, climb = false) {
     ch.root.position.copy(toThree(x, y, z.height(x, y) + (climb ? CLIMB_HEIGHT : 0)));
     ch.root.rotation.y = Math.PI - yaw;
-    pose(ch, speed, crouch, pitch, dt);
+    // Which way it's travelling, from the way it faces: a sidestep steps sideways, a retreat steps back.
+    if (ch.last && speed > 0.3) {
+      const dx = ch.root.position.x - ch.last.x, dz = ch.root.position.z - ch.last.z;
+      if (dx * dx + dz * dz > 1e-8) ch.heading = Math.atan2(-dx * Math.cos(yaw) - dz * Math.sin(yaw), dx * Math.sin(yaw) - dz * Math.cos(yaw));
+    }
+    (ch.last ??= new THREE.Vector3()).copy(ch.root.position);
+    pose(ch, speed, crouch, pitch, dt, caught);
     // Crouched in a bush, your head and hat still poke out of the top. You're only drawn for someone
     // close enough to see you, so this shows them what they can see instead of hiding it in leaves.
     const b = crouch && !caught ? z.bushAt(x, y) : null;
@@ -651,8 +657,8 @@ export class World3D {
     }
     ch.root.userData.lift = (ch.root.userData.lift ?? 0) + (lift - (ch.root.userData.lift ?? 0)) * Math.min(1, dt * 6);
     ch.root.position.y += ch.root.userData.lift;
-    // Caught campers sit down and glow a little, so it's clear they're out.
-    if (caught) { ch.body.position.y = -0.5; ch.tag.material.color.set("#9a9a9a"); }
+    // Caught campers sit down (pose does that) and their name greys, so it's clear they're out.
+    if (caught) ch.tag.material.color.set("#9a9a9a");
     const on = light && this.tod !== "day";
     if (ch.light) {
       ch.light.intensity = on ? 60 : 0;
