@@ -91,7 +91,8 @@
       0.12,
       0.4,
       0
-    ]
+    ],
+    "hand": [0.3, 0.26, 0.22, 0.95, 0]
   },
   "nodes": {
     "hip": [
@@ -200,7 +201,7 @@
       0.52,
       1.07,
       0.4,
-      0.045
+      0.025
     ]
   },
   "links": [
@@ -1054,119 +1055,6 @@
       "point": 0.45
     },
     {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.06,
-        -0.03
-      ],
-      "dir": [
-        1,
-        -0.5,
-        -0.06
-      ],
-      "len": 0.12,
-      "base": 0.016,
-      "tip_base": 0.004,
-      "curve": 45,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.06,
-        -0.01
-      ],
-      "dir": [
-        1,
-        -0.5,
-        -0.02
-      ],
-      "len": 0.12,
-      "base": 0.016,
-      "tip_base": 0.004,
-      "curve": 45,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.06,
-        0.01
-      ],
-      "dir": [
-        1,
-        -0.5,
-        0.02
-      ],
-      "len": 0.12,
-      "base": 0.016,
-      "tip_base": 0.004,
-      "curve": 45,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.06,
-        0.03
-      ],
-      "dir": [
-        1,
-        -0.5,
-        0.06
-      ],
-      "len": 0.12,
-      "base": 0.016,
-      "tip_base": 0.004,
-      "curve": 45,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "foot",
-      "at": "l_foot",
-      "form": "paw",
-      "len": 0.22,
-      "width": 0.13,
-      "toes": 4,
-      "claw": 0.04,
-      "sole": 0.05,
-      "mirror": true,
-      "material": "fur",
-      "claw_mat": "claw"
-    },
-    {
       "kind": "tuft",
       "along": [
         "head",
@@ -1248,6 +1136,34 @@
       "curve": 20,
       "flat": 0.5,
       "material": "tuft"
+    },
+    {
+      "kind": "foot",
+      "at": "l_foot",
+      "form": "digits",
+      "len": 0.22,
+      "width": 0.13,
+      "toes": 4,
+      "claw": 0.028,
+      "sole": 0.05,
+      "mirror": true,
+      "material": "fur",
+      "claw_mat": "claw"
+    },
+    {
+      "kind": "foot",
+      "form": "hand",
+      "at": "l_hand",
+      "dir": [0.88, -0.44, -0.176],
+      "palm": [0, 0, -1],
+      "len": 0.156,
+      "width": 0.07,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.07,
+      "mirror": true,
+      "material": "hand",
+      "claw_mat": "claw"
     }
   ],
   "hide": {
@@ -1266,5 +1182,8 @@
       ]
     ],
     "map": 1024
+  },
+  "round": {
+    "hand": 600
   }
 }

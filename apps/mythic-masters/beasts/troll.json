@@ -16,7 +16,8 @@
     "moss": [0.3, 0.45, 0.2, 0.95, 0],
     "frost": [0.88, 0.94, 1.0, 0.6, 0],
     "eye": [0.7, 0.9, 1.0, 0.3, 0, 2],
-    "belly": [0.58, 0.58, 0.55, 0.95, 0]
+    "belly": [0.58, 0.58, 0.55, 0.95, 0],
+    "hand": [0.42, 0.47, 0.52, 0.95, 0]
   },
   "nodes": {
     "tail3": [-0.7, 0.8, 0, 0.04],
@@ -37,7 +38,7 @@
     "l_shoulder": [0.2, 1.95, 0.42, 0.144],
     "l_elbow": [0.3, 1.4, 0.56, 0.112],
     "l_hand": [0.45, 0.92, 0.56, 0.112],
-    "l_finger": [0.56, 0.72, 0.56, 0.08]
+    "l_finger": [0.56, 0.72, 0.56, 0.045]
   },
   "links": [
     ["tail3", "tail2"],
@@ -79,11 +80,14 @@
     {"kind": "horn", "at": "head", "off": [0.1, -0.2, 0.1], "dir": [0.1, -1, 0.15], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
     {"kind": "horn", "at": "head", "off": [0.04, -0.22, 0.0], "dir": [0.0, -1, 0.0], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
     {"kind": "horn", "at": "head", "off": [0.0, -0.2, 0.16], "dir": [-0.1, -1, 0.3], "len": 0.32, "base": 0.07, "mirror": true, "material": "moss"},
-    {"kind": "foot", "at": "l_foot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "claw": 0.108, "sole": 0.12, "mirror": true},
-    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle"], "radii": [0.17, 0.12, 0.105], "calf": 0.3, "depth": 1.1, "mirror": true},
-    {"kind": "limb", "along": ["l_shoulder", "l_elbow", "l_hand", "l_finger"], "radii": [0.15, 0.1, 0.12, 0.1], "calf": 0.2, "mirror": true},
-    {"kind": "foot", "at": "l_finger", "form": "paw", "len": 0.28, "width": 0.24, "toes": 4, "claw": 0.08, "sole": 0.07, "mirror": true},
-    {"kind": "ridge", "at": "head", "off": [0.17, 0.1, 0.07], "dir": [0.2, 0.2, 1], "len": 0.14, "base": 0.045, "curve": 25, "material": "frost", "mirror": true}
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle"], "radii": [0.17, 0.12, 0.105], "calf": 0.3, "depth": 1.1, "mirror": true, "elbow": 0.2},
+    {"kind": "limb", "along": ["l_shoulder", "l_elbow", "l_hand", "l_finger"], "radii": [0.15, 0.1, 0.12, 0.049], "calf": 0.2, "mirror": true, "elbow": 0.2},
+    {"kind": "ridge", "at": "head", "off": [0.17, 0.1, 0.07], "dir": [0.2, 0.2, 1], "len": 0.14, "base": 0.045, "curve": 25, "material": "frost", "mirror": true},
+    {"kind": "foot", "at": "l_foot", "form": "digits", "len": 0.408, "width": 0.312, "toes": 4, "claw": 0.076, "sole": 0.12, "mirror": true},
+    {"kind": "foot", "form": "hand", "at": "l_finger", "dir": [0.482, -0.876, 0], "palm": [0, 0, -1], "len": 0.28, "width": 0.126, "curl": 45, "fingers": 4, "claw": 0.017, "mirror": true, "material": "hand"}
   ],
-  "hide": {"pattern": "bark", "size": 0.14, "colours": [[0.15, 0.16, 0.18], [0.48, 0.54, 0.6]], "map": 512, "grain": "up", "moss": {"colour": [0.36, 0.42, 0.22], "cover": 0.3}}
+  "hide": {"pattern": "bark", "size": 0.14, "colours": [[0.15, 0.16, 0.18], [0.48, 0.54, 0.6]], "map": 512, "grain": "up", "moss": {"colour": [0.36, 0.42, 0.22], "cover": 0.3}},
+  "round": {
+    "hand": 600
+  }
 }

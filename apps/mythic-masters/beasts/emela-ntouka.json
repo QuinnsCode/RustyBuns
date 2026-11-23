@@ -59,10 +59,8 @@
     {"kind": "horn", "at": "snout", "off": [-0.04, 0.02, 0], "dir": [0.55, 1, 0], "len": 0.75, "base": 0.11, "material": "horn"},
     {"kind": "spikes", "along": ["neck", "chest", "belly", "hip", "tail1", "tail2"], "n": 12, "len": 0.1, "base": 0.1, "lean": -0.4, "sink": 0.85, "material": "plate"},
     {"kind": "eye", "at": "head", "off": [0.08, 0.06, 0.16], "r": 0.03, "material": "eye", "mirror": true},
-    {"kind": "horn", "at": "l_ffoot", "off": [0.06, -0.02, 0], "dir": [1, -0.4, 0], "len": 0.08, "base": 0.07, "material": "plate", "mirror": true},
-    {"kind": "horn", "at": "l_hfoot", "off": [0.06, -0.02, 0], "dir": [1, -0.4, 0], "len": 0.08, "base": 0.07, "material": "plate", "mirror": true},
-    {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "sole": 0.12, "mirror": true},
-    {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "sole": 0.12, "mirror": true}
+    {"kind": "foot", "at": "l_ffoot", "form": "digits", "len": 0.408, "width": 0.312, "toes": 4, "claw": 0.04, "sole": 0.12, "mirror": true, "claw_mat": "plate"},
+    {"kind": "foot", "at": "l_hfoot", "form": "digits", "len": 0.408, "width": 0.312, "toes": 4, "claw": 0.04, "sole": 0.12, "mirror": true, "claw_mat": "plate"}
   ],
   "hide": {"pattern": "skin", "size": 0.14, "colours": [[0.19, 0.19, 0.2]], "map": 256}
 }

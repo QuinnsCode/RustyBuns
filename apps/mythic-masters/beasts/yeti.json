@@ -73,7 +73,8 @@
       0.09,
       0.5,
       0
-    ]
+    ],
+    "hand": [0.86, 0.85, 0.82, 0.95, 0]
   },
   "nodes": {
     "hip": [
@@ -164,7 +165,7 @@
       0.2,
       0.6,
       0.52,
-      0.06
+      0.029
     ]
   },
   "links": [
@@ -988,139 +989,32 @@
     {
       "kind": "foot",
       "at": "l_foot",
-      "form": "paw",
+      "form": "digits",
       "len": 0.4,
       "width": 0.17,
-      "toes": 5,
-      "claw": 0.018,
+      "toes": 4,
+      "claw": 0.013,
       "sole": 0.05,
       "mirror": true,
       "material": "face"
     },
     {
-      "kind": "horn",
+      "kind": "foot",
+      "form": "hand",
       "at": "l_hand",
-      "off": [
-        0.035,
-        -0.09,
-        -0.035
-      ],
       "dir": [
-        0.3,
-        -1,
-        -0.052500000000000005
+        0.315,
+        -0.946,
+        -0.079
       ],
-      "len": 0.11,
-      "base": 0.022,
-      "tip_base": 0.014,
-      "curve": 50,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
+      "palm": [0, 0, -1],
+      "len": 0.182,
+      "width": 0.082,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.011,
       "mirror": true,
-      "material": "face"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.035,
-        -0.09,
-        -0.012
-      ],
-      "dir": [
-        0.3,
-        -1,
-        -0.018000000000000002
-      ],
-      "len": 0.11,
-      "base": 0.022,
-      "tip_base": 0.014,
-      "curve": 50,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "face"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.035,
-        -0.09,
-        0.012
-      ],
-      "dir": [
-        0.3,
-        -1,
-        0.018000000000000002
-      ],
-      "len": 0.11,
-      "base": 0.022,
-      "tip_base": 0.014,
-      "curve": 50,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "face"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.035,
-        -0.09,
-        0.035
-      ],
-      "dir": [
-        0.3,
-        -1,
-        0.052500000000000005
-      ],
-      "len": 0.11,
-      "base": 0.022,
-      "tip_base": 0.014,
-      "curve": 50,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "face"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.06,
-        -0.02,
-        -0.04
-      ],
-      "dir": [
-        0.6,
-        -0.8,
-        -0.3
-      ],
-      "len": 0.08,
-      "base": 0.022,
-      "tip_base": 0.015,
-      "curve": 30,
-      "bend": [
-        0,
-        0,
-        1
-      ],
-      "mirror": true,
-      "material": "face"
+      "material": "hand"
     }
   ],
   "paint": [
@@ -1147,5 +1041,8 @@
       ]
     ],
     "map": 512
+  },
+  "round": {
+    "hand": 600
   }
 }

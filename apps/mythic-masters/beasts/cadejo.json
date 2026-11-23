@@ -190,54 +190,6 @@
       0.7200000000000001,
       0,
       0.05
-    ],
-    "l_ffoot_a1": [
-      0.285,
-      0.06,
-      0.0975,
-      0.03
-    ],
-    "l_ffoot_a2": [
-      0.32999999999999996,
-      0.06,
-      0.0975,
-      0.0225
-    ],
-    "l_ffoot_b1": [
-      0.285,
-      0.06,
-      0.1425,
-      0.03
-    ],
-    "l_ffoot_b2": [
-      0.32999999999999996,
-      0.06,
-      0.1425,
-      0.0225
-    ],
-    "l_hfoot_a1": [
-      -0.365,
-      0.05,
-      0.0975,
-      0.03
-    ],
-    "l_hfoot_a2": [
-      -0.31999999999999995,
-      0.05,
-      0.0975,
-      0.0225
-    ],
-    "l_hfoot_b1": [
-      -0.365,
-      0.05,
-      0.1425,
-      0.03
-    ],
-    "l_hfoot_b2": [
-      -0.31999999999999995,
-      0.05,
-      0.1425,
-      0.0225
     ]
   },
   "links": [
@@ -312,38 +264,6 @@
     [
       "head",
       "snout_jaw"
-    ],
-    [
-      "l_ffoot",
-      "l_ffoot_a1"
-    ],
-    [
-      "l_ffoot_a1",
-      "l_ffoot_a2"
-    ],
-    [
-      "l_ffoot",
-      "l_ffoot_b1"
-    ],
-    [
-      "l_ffoot_b1",
-      "l_ffoot_b2"
-    ],
-    [
-      "l_hfoot",
-      "l_hfoot_a1"
-    ],
-    [
-      "l_hfoot_a1",
-      "l_hfoot_a2"
-    ],
-    [
-      "l_hfoot",
-      "l_hfoot_b1"
-    ],
-    [
-      "l_hfoot_b1",
-      "l_hfoot_b2"
     ]
   ],
   "parts": [
@@ -575,6 +495,30 @@
       "flat": 0.15,
       "droop": 6,
       "jaw": 0.1
+    },
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "digits",
+      "len": 0.161,
+      "width": 0.09,
+      "toes": 4,
+      "claw": 0.016,
+      "sole": 0.06,
+      "mirror": true,
+      "material": "grey"
+    },
+    {
+      "kind": "foot",
+      "at": "l_hfoot",
+      "form": "digits",
+      "len": 0.161,
+      "width": 0.09,
+      "toes": 4,
+      "claw": 0.016,
+      "sole": 0.05,
+      "mirror": true,
+      "material": "grey"
     }
   ],
   "blobs": [
@@ -663,17 +607,9 @@
       "nodes": [
         "l_fknee",
         "l_ffoot",
-        "l_ffoot_a1",
-        "l_ffoot_a2",
-        "l_ffoot_b1",
-        "l_ffoot_b2",
         "l_hknee",
         "l_hankle",
-        "l_hfoot",
-        "l_hfoot_a1",
-        "l_hfoot_a2",
-        "l_hfoot_b1",
-        "l_hfoot_b2"
+        "l_hfoot"
       ],
       "material": "grey"
     },

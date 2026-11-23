@@ -54,8 +54,8 @@
     ["l_hock", "l_bfoot"]
   ],
   "parts": [
-    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_ffoot"], "radii": [0.152, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur"},
-    {"kind": "limb", "along": ["l_hipj", "l_hock", "l_bfoot"], "radii": [0.19, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur"},
+    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_ffoot"], "radii": [0.152, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur", "elbow": 0.2},
+    {"kind": "limb", "along": ["l_hipj", "l_hock", "l_bfoot"], "radii": [0.19, 0.1045, 0.08], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "fur", "elbow": 0.2},
     {
       "kind": "horn",
       "at": "head",
@@ -97,26 +97,6 @@
       "material": "frost"
     },
     {
-      "kind": "horn",
-      "at": "l_ffoot",
-      "off": [0.07, -0.02, 0],
-      "dir": [1, -0.4, 0],
-      "len": 0.12,
-      "base": 0.03,
-      "mirror": true,
-      "material": "frost"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [0.07, -0.02, 0],
-      "dir": [1, -0.4, 0],
-      "len": 0.12,
-      "base": 0.03,
-      "mirror": true,
-      "material": "frost"
-    },
-    {
       "kind": "eye",
       "at": "head",
       "off": [0.17, 0.07, 0.12],
@@ -125,7 +105,31 @@
       "material": "eye"
     },
     {"kind": "ridge", "at": "head", "off": [0.17, 0.13, 0.1], "dir": [1, -0.15, 0.4], "len": 0.13, "base": 0.03, "curve": 15, "bend": [0, 1, 0], "mirror": true, "material": "ear"},
-    {"kind": "teeth", "along": ["head", "muzzle"], "n": 6, "len": 0.06, "base": 0.018, "lower": true, "material": "frost"}
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 6, "len": 0.06, "base": 0.018, "lower": true, "material": "frost"},
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "digits",
+      "len": 0.28,
+      "width": 0.26,
+      "toes": 4,
+      "claw": 0.06,
+      "sole": 0.08,
+      "mirror": true,
+      "claw_mat": "frost"
+    },
+    {
+      "kind": "foot",
+      "at": "l_bfoot",
+      "form": "digits",
+      "len": 0.28,
+      "width": 0.26,
+      "toes": 4,
+      "claw": 0.06,
+      "sole": 0.08,
+      "mirror": true,
+      "claw_mat": "frost"
+    }
   ],
   "blobs": [
     {

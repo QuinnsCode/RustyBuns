@@ -67,7 +67,8 @@
       0.15,
       0.4,
       0
-    ]
+    ],
+    "hand": [0.36, 0.46, 0.3, 0.8, 0]
   },
   "nodes": {
     "hip": [
@@ -152,7 +153,7 @@
       0.25,
       0.67,
       0.12,
-      0.02
+      0.015
     ]
   },
   "links": [
@@ -988,81 +989,6 @@
       "material": "quill"
     },
     {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.01,
-        -0.01,
-        -0.015
-      ],
-      "dir": [
-        1,
-        -0.6,
-        -0.06
-      ],
-      "len": 0.07,
-      "base": 0.008,
-      "tip_base": 0.003,
-      "curve": 60,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.01,
-        -0.01,
-        0
-      ],
-      "dir": [
-        1,
-        -0.6,
-        0
-      ],
-      "len": 0.07,
-      "base": 0.008,
-      "tip_base": 0.003,
-      "curve": 60,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.01,
-        -0.01,
-        0.015
-      ],
-      "dir": [
-        1,
-        -0.6,
-        0.06
-      ],
-      "len": 0.07,
-      "base": 0.008,
-      "tip_base": 0.003,
-      "curve": 60,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
       "kind": "foot",
       "at": "l_foot",
       "form": "talon",
@@ -1074,6 +1000,25 @@
       "sole": 0.03,
       "mirror": true,
       "material": "hide",
+      "claw_mat": "claw"
+    },
+    {
+      "kind": "foot",
+      "form": "hand",
+      "at": "l_hand",
+      "dir": [
+        0.913,
+        -0.183,
+        -0.365
+      ],
+      "palm": [0, 0, -1],
+      "len": 0.096,
+      "width": 0.043,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.042,
+      "mirror": true,
+      "material": "hand",
       "claw_mat": "claw"
     }
   ],
@@ -1102,5 +1047,8 @@
       ],
       "cover": 0.35
     }
+  },
+  "round": {
+    "hand": 600
   }
 }

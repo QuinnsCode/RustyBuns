@@ -76,7 +76,8 @@
       0.12,
       0.95,
       0
-    ]
+    ],
+    "hand": [0.45, 0.34, 0.26, 0.8, 0]
   },
   "nodes": {
     "hip": [
@@ -161,7 +162,7 @@
       0.3,
       0.92,
       0.54,
-      0.1
+      0.038
     ],
     "l_toe_a1": [
       -0.24,
@@ -374,60 +375,6 @@
     },
     {
       "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.02,
-        0
-      ],
-      "dir": [
-        0.5,
-        -1,
-        0
-      ],
-      "len": 0.4,
-      "base": 0.04,
-      "material": "claw",
-      "mirror": true
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.02,
-        0
-      ],
-      "dir": [
-        0.5,
-        -1,
-        0.35
-      ],
-      "len": 0.36,
-      "base": 0.035,
-      "material": "claw",
-      "mirror": true
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.02,
-        0
-      ],
-      "dir": [
-        0.5,
-        -1,
-        -0.35
-      ],
-      "len": 0.36,
-      "base": 0.035,
-      "material": "claw",
-      "mirror": true
-    },
-    {
-      "kind": "horn",
       "at": "l_toe",
       "off": [
         -0.03,
@@ -600,24 +547,6 @@
       "material": "claw"
     },
     {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.03,
-        -0.02,
-        0.06
-      ],
-      "dir": [
-        0.5,
-        -1,
-        0.6
-      ],
-      "len": 0.3,
-      "base": 0.03,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
       "kind": "skull",
       "at": "head",
       "off": [
@@ -641,14 +570,18 @@
     },
     {
       "kind": "foot",
+      "form": "hand",
       "at": "l_hand",
-      "form": "paw",
-      "len": 0.22,
-      "width": 0.18,
-      "toes": 3,
-      "claw": 0.04,
-      "sole": 0.08,
-      "mirror": true
+      "dir": [0.346, -0.938, 0],
+      "palm": [0, 0, -1],
+      "len": 0.24,
+      "width": 0.108,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.108,
+      "mirror": true,
+      "material": "hand",
+      "claw_mat": "claw"
     }
   ],
   "paint": [
@@ -687,5 +620,8 @@
     "material": "moss",
     "below": -0.3
   },
-  "hide": {"pattern": "fur", "size": 0.014, "colours": [[0.19, 0.23, 0.1], [0.43, 0.51, 0.23]], "map": 256}
+  "hide": {"pattern": "fur", "size": 0.014, "colours": [[0.19, 0.23, 0.1], [0.43, 0.51, 0.23]], "map": 256},
+  "round": {
+    "hand": 600
+  }
 }

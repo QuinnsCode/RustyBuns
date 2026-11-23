@@ -1052,32 +1052,6 @@
       "material": "fur"
     },
     {
-      "kind": "foot",
-      "at": "l_ffoot",
-      "form": "paw",
-      "len": 0.18,
-      "width": 0.132,
-      "toes": 4,
-      "claw": 0.036,
-      "sole": 0.06,
-      "mirror": true,
-      "material": "fur",
-      "claw_mat": "claw"
-    },
-    {
-      "kind": "foot",
-      "at": "l_bfoot",
-      "form": "paw",
-      "len": 0.168,
-      "width": 0.12,
-      "toes": 4,
-      "claw": 0.0336,
-      "sole": 0.06,
-      "mirror": true,
-      "material": "fur",
-      "claw_mat": "claw"
-    },
-    {
       "kind": "tuft",
       "along": [
         "head",
@@ -1173,6 +1147,32 @@
       "curve": 35,
       "flat": 0.5,
       "material": "tuft"
+    },
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "digits",
+      "len": 0.18,
+      "width": 0.132,
+      "toes": 4,
+      "claw": 0.025,
+      "sole": 0.06,
+      "mirror": true,
+      "material": "fur",
+      "claw_mat": "claw"
+    },
+    {
+      "kind": "foot",
+      "at": "l_bfoot",
+      "form": "digits",
+      "len": 0.168,
+      "width": 0.12,
+      "toes": 4,
+      "claw": 0.024,
+      "sole": 0.06,
+      "mirror": true,
+      "material": "fur",
+      "claw_mat": "claw"
     }
   ]
 }

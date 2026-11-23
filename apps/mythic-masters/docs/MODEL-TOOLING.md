@@ -216,3 +216,15 @@ What was learned:
 Paired judge, out of 30: Afanc 17 to 18. Verdict "better (slightly)". The Zmey's teeth don't show at gallery size, so the judge didn't score it. Feet, wing and joint counts didn't move.
 
 What was learned: an `ear` leaf has a rounded tip, so it suits round or long ears, not a cat's pointed ones. A `horn` cone still does that best.
+
+## Round 10: real hands and toed paws on the rest of the roster (#5643)
+
+The starters got two builders: foot form `hand` and form `digits`. This round puts them on 47 more sheets, and elbows on two others.
+- **Paws:** 65 feet (each one a mirrored pair) become `digits` (four toes, claws out of their tips). They used to be a `paw`, a skin toe chain (`l_ff_t0a`..., `l_foot_a1`...) or a bare node with claw horns glued on. The toe nodes and their horns go. Claws are about half the old horns' length. The Tarasque's paws were 6 cm under the ground (a `sole` deeper than its node is high), and its roll test failed until they stood on the floor.
+- **Hands:** 21 hands (each a mirrored pair, or one of the Dokkaebi's two) become `hand`, each with its own `hand` material (the skin's colour) and a `round` quota of 600, so the decimator keeps the fingers. Finger chains, finger horns and paw-hands go. The wrist node narrows to about 0.16 of the hand's length.
+- **Grips:** Oni and Dokkaebi close a fist (`curl` 200) round their clubs, and the Tengu round its fan. The prop moves so its handle runs through the closed fingers. The hand stays on the wrist.
+- **Limbs:** each `limb` tube of three or more nodes gets `elbow` 0.2.
+- **Kept as they were:** hooves (Kelpie, Puca, Minotaur, Jersey Devil, Qilin, Camahueto, Tikbalang's split feet), talons (Kongamato, Zmey, Snallygaster, Mothman, Chupacabra, Sasabonsam, Roc, Ropen), webs and flippers (Kappa, Fur-bearing Trout, Nessie, Champ), the Sphinx's mitten, the Leshy's root feet and twig hands, the Sasabonsam's iron hooks, the backward feet of the Mapinguari and Curupira, the Fresno Nightcrawler's stick legs, the Ushi-oni's spider legs, the Hydra's bare paws (toes break its head-shake test, as in round 4), and the Kelpie's legs (elbows there flip which way its grab pulls the feet).
+- **Bug fixed in `hand`:** a mirrored hand's knuckle axis came out as the opposite of its mirror image, because a mirror turns a cross product inside out. The right hand was then a copy of the left, thumb on the wrong side. `side` turns it back (`test/beast-parts.test.ts`).
+
+Every sheet rigs its feet and wings as before. With fewer toe nodes, some rigs have fewer joints and tips.

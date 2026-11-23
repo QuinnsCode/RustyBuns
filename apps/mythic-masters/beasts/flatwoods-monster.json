@@ -53,7 +53,8 @@
       0.55,
       0.9,
       0
-    ]
+    ],
+    "hand": [0.18, 0.3, 0.22, 0.55, 0.3]
   },
   "nodes": {
     "base": [
@@ -102,7 +103,7 @@
       0.5,
       1.5,
       0.42,
-      0.12
+      0.046
     ],
     "l_hood": [
       0.06,
@@ -194,24 +195,6 @@
       "material": "eye"
     },
     {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        1,
-        -0.3,
-        0
-      ],
-      "len": 0.12,
-      "base": 0.04,
-      "material": "claw",
-      "mirror": true
-    },
-    {
       "kind": "spikes",
       "along": [
         "base",
@@ -224,7 +207,25 @@
       "spread": 360,
       "tilt": 1,
       "material": "mist"
+    },
+    {
+      "kind": "foot",
+      "form": "hand",
+      "at": "l_hand",
+      "dir": [0.808, -0.577, 0.115],
+      "palm": [0, 0, -1],
+      "len": 0.288,
+      "width": 0.13,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.072,
+      "mirror": true,
+      "material": "hand",
+      "claw_mat": "claw"
     }
   ],
-  "branch_smoothing": 1
+  "branch_smoothing": 1,
+  "round": {
+    "hand": 600
+  }
 }

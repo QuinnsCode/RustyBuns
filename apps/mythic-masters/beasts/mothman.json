@@ -73,7 +73,8 @@
       0.8,
       0.1,
       0
-    ]
+    ],
+    "hand": [0.24, 0.23, 0.24, 0.9, 0]
   },
   "nodes": {
     "hip": [
@@ -152,7 +153,7 @@
       0.2,
       0.93,
       0.32,
-      0.04
+      0.036
     ],
     "collar_f": [
       0.19,
@@ -765,102 +766,6 @@
       "material": "hindwing"
     },
     {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.03,
-        -0.03
-      ],
-      "dir": [
-        0.35,
-        -1,
-        -0.06
-      ],
-      "len": 0.13,
-      "base": 0.016,
-      "curve": 45,
-      "bend": [
-        1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.03,
-        -0.01
-      ],
-      "dir": [
-        0.35,
-        -1,
-        -0.02
-      ],
-      "len": 0.13,
-      "base": 0.016,
-      "curve": 45,
-      "bend": [
-        1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.03,
-        0.01
-      ],
-      "dir": [
-        0.35,
-        -1,
-        0.02
-      ],
-      "len": 0.13,
-      "base": 0.016,
-      "curve": 45,
-      "bend": [
-        1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.03,
-        0.03
-      ],
-      "dir": [
-        0.35,
-        -1,
-        0.06
-      ],
-      "len": 0.13,
-      "base": 0.016,
-      "curve": 45,
-      "bend": [
-        1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
       "kind": "foot",
       "at": "l_foot",
       "form": "talon",
@@ -871,6 +776,25 @@
       "sole": 0.06,
       "mirror": true,
       "material": "claw"
+    },
+    {
+      "kind": "foot",
+      "form": "hand",
+      "at": "l_hand",
+      "dir": [
+        0.492,
+        -0.862,
+        -0.123
+      ],
+      "palm": [0, 0, -1],
+      "len": 0.226,
+      "width": 0.102,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.078,
+      "mirror": true,
+      "material": "hand",
+      "claw_mat": "claw"
     }
   ],
   "paint": [
@@ -900,5 +824,8 @@
       ]
     ],
     "map": 512
+  },
+  "round": {
+    "hand": 600
   }
 }
