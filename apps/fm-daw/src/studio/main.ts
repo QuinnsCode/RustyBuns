@@ -51,6 +51,9 @@ import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { isMuted, leaders, may as mayDo, type GrantServer } from "../grants.ts";
+import { check } from "@rustybuns/util/guard";
+import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
+import { spinCard } from "./spin-card.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
@@ -818,16 +821,42 @@ async function deckPanel(): Promise<DecksPanel> {
     onToggle: (open) => { if (open) { lane?.close(); desk.close(); releaseAll(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
     room: here ? {
       booth, now: roomNow, send: live,
-      may: () => (may(player).play ? { ok: true } : { ok: false, why: "Listen only: the leader hasn't let you on the decks. DJs, then Ask to play" }),
+      may: mayDecks,
       nameOf: (p) => jam.others.get(p)?.name || "Someone",
       toPa: (stream, name) => void playToRoom(stream, name),
       djs: () => ({ lead: iLead(), people: djList() }),
       setDj, ask: raise,
+      card: card.root, runs: iRun,
+      refuse: (who, on) => net?.spin({ o: "refuse", who, on }),
+      setMod: (who, on) => net?.spin({ o: "mod", who, on }),
     } : undefined,
   });
   return decks;
 }
 async function openDecks() { (await deckPanel()).open(); }
+/** Who may spin (src/spin.ts), as the World last said. */
+let spin: Spin | null = null;
+/** You run the decks: you lead, or the host named you a moderator. */
+const iRun = () => !!spin && runsDecks(spin, rights.me ?? undefined, iLead());
+const card = spinCard({
+  spin: () => spin, now: () => roomNow(), me: () => rights.me ?? undefined, runs: iRun, mayPlay: () => may(player).play,
+  people: () => djList().map((d) => ({ id: d.id, name: d.name })),
+  nameOf: (id) => (id === rights.me ? name || "You" : [...jam.others].find(([p]) => peerIds[p] === id)?.[1].name || "Someone"),
+  send: (m) => net?.spin(m),
+});
+/** Whether you may start a track on the decks: the play grant, then the spin rules (a lineup slot is its own leave). */
+function mayDecks(): { ok: true } | { ok: false; why: string } {
+  const play = may(player).play;
+  if (!spin) return play ? { ok: true } : { ok: false, why: "Listen only: the leader hasn't let you on the decks. DJs, then Ask to play" };
+  const r = mayCue(spin, rights.me ?? undefined, { lead: iLead(), play, now: roomNow() });
+  return r.ok || spin.mode === "lineup" || play ? r : { ok: false, why: "Listen only: the leader hasn't let you on the decks. DJs, then Ask to play" };
+}
+/** The World's spin rules came: show them; taken off the decks, yours stop playing. */
+function onSpin(m: SpinServer) {
+  spin = m.spin;
+  if (m.off && m.off === rights.me && decks) for (const d of decks.decks.decks) d.pause();
+  card.draw();
+}
 /** The room's shared clock now, ms: where a deck is, everywhere, is worked out on it (src/clock.ts). */
 const roomNow = () => band.clock.leaderTime(wall());
 /** Your peer number on the live line, from the World's grants. */
@@ -836,7 +865,7 @@ const mayPlayDecks = (who: string | undefined) => !!who && !!rights.grants && ma
 /** Everyone in the room for the DJ list: you first, then each person, and whether they may play the decks. */
 function djList(): Dj[] {
   const list: Dj[] = rights.me ? [{ id: rights.me, name: name || "You", on: may(player).play, you: true }] : [];
-  for (const [peer, o] of jam.others) { const who = peerIds[peer]; if (who && who !== rights.me) list.push({ id: who, name: o.name || "Someone", on: mayPlayDecks(who), you: false }); }
+  for (const [peer, o] of jam.others) { const who = peerIds[peer]; if (who && who !== rights.me && !list.some((d) => d.id === who)) list.push({ id: who, name: o.name || "Someone", on: mayPlayDecks(who), you: false, refused: !!spin?.refused.includes(who), mod: !!spin?.mods.includes(who) }); }
   return list;
 }
 /** The leader lets someone play the decks (the play grant), or takes them off; the rest of their grant stays. */
@@ -876,7 +905,8 @@ const help = mountHelp({
 $("help-open").addEventListener("click", () => help.open());
 
 if (here) net = connect({
-  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); },
+  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; deskSync(); rights.asked = (rights.me && m.asks[rights.me]) || null; people(); roomStudios(); card.draw(); },
+  onSpin,
   onRewound: back.answer,
   onStudio(m) {
     // the sesh's gear, at this studio's gear wall: a bench board read here, so aux 2 plays its circuit when it is cabled in
@@ -1311,6 +1341,15 @@ const harness = {
   /** Plug your guitar in (the audio input) or pull it out, as I does; then where every guitar stands. */
   guitar: async () => { await guitar(); return harness.guitars(); },
   /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
+  /**
+   * Who may spin (src/spin.ts): the card by the decks as it reads (mode, who's on, next, the clock) and the rules.
+   * `show`: draw the card from these rules, as if the World sent them (the page's view only: the World still decides).
+   */
+  spin: (show?: unknown) => {
+    const s = show === undefined ? null : check(Spin, show);
+    if (s) onSpin({ t: "spin", spin: s });
+    return { card: card.state(), spin };
+  },
   /**
    * The DJ booth (src/dj/booth.ts): each deck as its screen shows it (name, who plays it, bpm, key, pos, len, playing,
    * cue), whose it is (null: yours or free), and the 3D decks on the table. `press`: a key on deck 0 or 1 ("play",

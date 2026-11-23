@@ -2,10 +2,9 @@
 // zoomed waveforms stacked across the top on one time scale so you can see the kicks line up, and the library under
 // it all: drop files on it (or a deck), or pick them, and send each to A or B. Each deck is a club media player
 // (player-panel.ts: the screen, the jog wheel in VINYL or CD, a big CUE and PLAY, the tempo fader); the close-up
-// zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts). The mixer: trim, high, mid, low and
-// the filter per channel, their faders, meters and headphone cue buttons, the crossfader and its curve, the master,
-// split cue and the cue mix. Keys while it's open: Q/P play A/B, W/O cue, 1 to 4 and 7 to 0 hot cues, the arrows
-// slide the crossfader, Esc closes it. Icons after lucide (ISC), the word as the tooltip.
+// zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts).
+// The mixer is mixer-panel.ts's four channels, master and twin filters. Keys while it's open: Q/P play A/B, W/O cue,
+// 1 to 4 and 7 to 0 hot cues, the arrows slide the crossfader, Esc closes it. Icons after lucide (ISC), the word as the tooltip.
 // In a room (`room`), the decks are the booth's (booth.ts): a deck someone else loaded shows here as they play it
 // (its waveform, key, tempo, where it is on the room's clock) and its play, cue, sync, hot cues and jumps go to them;
 // yours go out to the room the same way, and your master plays to the room's PA while you have a track on. The
@@ -13,23 +12,27 @@
 import "./panel.css";
 import { peaks, type Grid } from "./analyze.ts";
 import { Booth, changed, farView, hotOf, keyPress, posAt, sayOf, SAY_EVERY_MS, waveFrom, waveOf, type DeckPress, type DeckSay, type DeckView, type Press } from "./booth.ts";
-import { Decks, type Beside, type Knob, type Side, type Track } from "./engine.ts";
+import { Decks, type Beside, type Side, type Track } from "./engine.ts";
+import { DECK_CHANNEL } from "./mixer.ts";
+import { mountMixer } from "./mixer-panel.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { connectMidiJog, Jog, playerFace } from "./player-panel.ts";
-import { button, el, slider, svg } from "./dom.ts";
+import { button, el, svg } from "./dom.ts";
+import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
 /** The waveforms' colours: deck A blue, deck B orange, what's played greyed, the cue and the four hot cues. */
 const LOOKS_DECK = { wave: ["#4aa8ff", "#ff9a3c"] as const, played: "#5b5f68", cue: "#ffd23c", hot: ["#ff4a6a", "#4affa0", "#4ab8ff", "#d84aff"] };
 
 const ICON = {
-  phones: svg('<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>'),
   upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>'),
   x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   midi: svg('<circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="10" r="1"/><path d="M9 15h6"/>'),
   minus: svg('<path d="M5 12h14"/>'),
   plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+  ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
+  shield: svg('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -37,7 +40,7 @@ const ICON = {
 interface Shelf { track: Track; overview: Float32Array }
 
 /** One person in the room, for the DJ list: whether they may play the decks, and whether the leader can change it. */
-export interface Dj { id: string; name: string; on: boolean; you: boolean }
+export interface Dj { id: string; name: string; on: boolean; you: boolean; /** Refused the decks (src/spin.ts). */ refused?: boolean; /** A moderator the host named. */ mod?: boolean }
 /** The room the decks are in: its booth, its shared clock, the live line, and who may play. */
 export interface DeckRoom {
   booth: Booth;
@@ -55,6 +58,13 @@ export interface DeckRoom {
   setDj(id: string, on: boolean): void;
   /** Raise your hand to play. */
   ask(): void;
+  /** The lineup card (src/studio/spin-card.ts), shown in the header. */
+  card?: HTMLElement;
+  /** You run the decks (you lead, or you moderate): refuse people the decks. */
+  runs?(): boolean;
+  refuse?(id: string, on: boolean): void;
+  /** The leader names a moderator. */
+  setMod?(id: string, on: boolean): void;
 }
 
 export type { DeckView };
@@ -86,6 +96,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   /** Someone else's deck on `side`, or null when it's yours or free. */
   const far = (side: Side) => room?.booth.sides[side] ?? null;
   const shelf: Shelf[] = [];
+  /** Tempos from collection files the DJ dropped, by file name. */
+  const known = new Map<string, Tempo>();
   /** Each track's peaks at a few resolutions (player.ts), so the close-up draws a few hundred bars at any zoom. */
   const fine = new Map<Track, Level[]>(), over = new Map<Track, Float32Array>();
   const root = el("section", { id: "dj", role: "dialog", "aria-label": "The decks" });
@@ -102,7 +114,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const midiB = button(`${ICON.midi}<span>MIDI</span>`, "Play the jog wheels from a MIDI controller", "dj-midi");
   midiB.addEventListener("click", () => void connectMidiJog(jogs).then((said) => { flash(said); midiB.classList.toggle("on", said.startsWith("MIDI jog")); }));
   tools.append(midiB, peopleB, closeB);
-  head.append(title, tools, people);
+  head.append(title, ...(room?.card ? [room.card] : []), tools, people);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -120,54 +132,10 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   root.append(head, zoomBox, row, lib);
   (o.parent ?? document.body).append(root);
 
-  // ---- the mixer
-  const mixer = el("div", { class: "dj-mixer" });
-  const strips = ([0, 1] as const).map((side) => {
-    const strip = el("div", { class: "dj-strip" });
-    const knobs: Record<Knob, HTMLInputElement> = {
-      trim: slider("Trim", -1, 1, 0.01, 0), high: slider("High", -1, 1, 0.01, 0), mid: slider("Mid", -1, 1, 0.01, 0), low: slider("Low", -1, 1, 0.01, 0), filter: slider("Filter: left a low-pass, right a high-pass", -1, 1, 0.01, 0),
-      fader: slider(`Channel ${side ? "B" : "A"} fader`, 0, 1, 0.01, 0.8, "dj-fader"),
-    };
-    for (const k of ["trim", "high", "mid", "low", "filter"] as const) {
-      const lab = el("label", {}, `<span>${k === "trim" ? "TRIM" : k === "filter" ? "FILTER" : k.toUpperCase()}</span>`);
-      lab.append(knobs[k]);
-      strip.append(lab);
-      knobs[k].addEventListener("input", () => decks.knob(side, k, Number(knobs[k].value)));
-      knobs[k].addEventListener("dblclick", () => { knobs[k].value = "0"; decks.knob(side, k, 0); });
-    }
-    const cue = button(ICON.phones, `Cue channel ${side ? "B" : "A"} in the headphones`, "dj-pfl");
-    cue.addEventListener("click", () => decks.cue(side, !decks.channels[side].cue));
-    const meter = el("div", { class: "dj-meter" }, "<i></i>");
-    const faderRow = el("div", { class: "dj-faderrow" });
-    faderRow.append(meter, knobs.fader);
-    knobs.fader.addEventListener("input", () => decks.knob(side, "fader", Number(knobs.fader.value)));
-    strip.append(cue, faderRow);
-    return { strip, cue, meter: meter.firstElementChild as HTMLElement, knobs };
-  });
-  const xfade = slider("Crossfader (← →)", -1, 1, 0.01, 0, "dj-xfade");
-  xfade.addEventListener("input", () => decks.cross(Number(xfade.value)));
-  xfade.addEventListener("dblclick", () => { xfade.value = "0"; decks.cross(0); });
-  const curve = button("Smooth", "The crossfader's curve: smooth for blends, cut for scratching", "dj-curve");
-  curve.addEventListener("click", () => decks.setCurve(decks.curve === "smooth" ? "cut" : "smooth"));
-  const masterL = el("label", {}, "<span>MASTER</span>"), master = slider("Master level", 0, 1, 0.01, 0.8);
-  masterL.append(master);
-  master.addEventListener("input", () => decks.setMaster(Number(master.value)));
-  const masterMeter = el("div", { class: "dj-meter dj-master" }, "<i></i>");
-  const blendL = el("label", {}, "<span>CUE MIX</span>"), blend = slider("Headphones: the cue (left) or the master (right)", 0, 1, 0.01, 0);
-  blendL.append(blend);
-  blend.addEventListener("input", () => decks.setCueBlend(Number(blend.value)));
-  const split = button("Split cue", "One output (headphones on a laptop): the cue in your left ear, the master in your right", "dj-split");
-  split.addEventListener("click", () => decks.setSplit(!decks.split));
+  // ---- the mixer (mixer-panel.ts): a deck someone else plays dims its channel
   const quant = button("Quantize", "Cues and loops land on the beat", "dj-quant on");
   quant.addEventListener("click", () => { decks.quantize = !decks.quantize; });
-  const stripsRow = el("div", { class: "dj-strips" });
-  stripsRow.append(strips[0].strip, el("div", { class: "dj-mid" }), strips[1].strip);
-  stripsRow.children[1]!.append(masterL, masterMeter, blendL);
-  const xrow = el("div", { class: "dj-xrow" });
-  xrow.append(el("b", {}, "A"), xfade, el("b", {}, "B"));
-  const opts = el("div", { class: "dj-opts" });
-  opts.append(curve, split, quant);
-  mixer.append(stripsRow, xrow, opts);
+  const mixer = mountMixer(decks.mixer, { far: (ch) => DECK_CHANNEL.some((c, side) => c === ch && !!far(side as Side)), extra: [quant] });
 
   // ---- the two players (player-panel.ts)
   const jogs = [new Jog(decks.decks[0], o.ctx), new Jog(decks.decks[1], o.ctx)] as const;
@@ -178,10 +146,10 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
   }));
-  row.append(players[0].box, mixer, players[1].box);
+  row.append(players[0].box, mixer.root, players[1].box);
 
   // ---- the library
-  const pick = el("input", { type: "file", accept: "audio/*", multiple: "", hidden: "" });
+  const pick = el("input", { type: "file", accept: "audio/*,.xml,.nml,.dat,.ext", multiple: "", hidden: "" });
   const add = button(`${ICON.upload}<span>Add music</span>`, "Add music from this computer (mp3, wav, m4a, ogg, flac): it stays on this computer", "dj-add");
   add.addEventListener("click", () => pick.click());
   pick.addEventListener("change", () => { for (const f of pick.files ?? []) void fromFile(null, f); pick.value = ""; });
@@ -205,6 +173,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       const li = el("li"), n = el("span", { title: s.track.name }), bpm = el("small");
       n.textContent = s.track.name;
       bpm.textContent = s.track.grid ? `${s.track.grid.bpm} BPM` : "no beat found";
+      if (s.track.from) bpm.title = `Tempo: ${FROM_LABEL[s.track.from]}`;
       const toA = button("A", `Load on deck A`), toB = button("B", `Load on deck B`);
       toA.addEventListener("click", () => put(0, s.track)); toB.addEventListener("click", () => put(1, s.track));
       li.append(n, bpm, toA, toB);
@@ -234,18 +203,27 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   async function load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track> {
     if (!canLoad(side)) throw new Error(`deck ${side ? "B" : "A"} is busy`);
     flash(`Reading ${name}…`);
-    const t = await decks.load(side, name, bytes).catch((e: unknown) => { flash(`Couldn't read ${name}: ${e instanceof Error ? e.message : "not a sound file this browser knows"}`); throw e; });
+    const t = await decks.load(side, name, bytes, known.get(fileKey(name))).catch((e: unknown) => { flash(`Couldn't read ${name}: ${e instanceof Error ? e.message : "not a sound file this browser knows"}`); throw e; });
     shelve(t);
     room?.booth.sides.splice(side, 1, null);
     flash(t.grid ? `${name}: ${t.grid.bpm} BPM${t.key ? `, ${t.key.camelot} ${t.key.name}` : ""}` : `${name}: no steady beat found, so sync and loops are off for it`);
     return t;
   }
   async function fromFile(side: Side | null, f: File) {
+    // a collection file from DJ software: tempos for tracks by name, now and for what comes later
+    if (/\.(xml|nml|dat|ext)$/i.test(f.name)) {
+      const got = readCollection(new Uint8Array(await f.arrayBuffer()));
+      for (const [k, v] of got) known.set(k, v);
+      for (const { track: t } of shelf) { const k = got.get(fileKey(t.name)); if (k && t.from !== "grid") Object.assign(t, settle(k, () => t.grid)); }
+      drawList();
+      flash(got.size ? `${f.name}: tempos for ${got.size} track${got.size === 1 ? "" : "s"}` : `${f.name}: no tempos in it`);
+      return;
+    }
     // a library add goes on whichever deck is empty, else just into the library
     const empty = decks.decks.findIndex((d, i) => !d.track && !far(i === 0 ? 0 : 1));
     const to = side ?? (empty >= 0 ? (empty as Side) : null);
     if (to === null) {
-      const t = await decks.decode(f.name, await f.arrayBuffer()).catch(() => null);
+      const t = await decks.decode(f.name, await f.arrayBuffer(), known.get(fileKey(f.name))).catch(() => null);
       if (!t) { flash(`Couldn't read ${f.name}`); return; }
       shelve(t);
       flash(t.grid ? `${f.name}: ${t.grid.bpm} BPM` : `${f.name}: no steady beat found`);
@@ -388,7 +366,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
         const b = button(p.on ? "On" : "Off", p.on ? `Take ${p.name} off the decks` : `Let ${p.name} play the decks`, p.on ? "on" : "");
         b.addEventListener("click", () => { room.setDj(p.id, !p.on); setTimeout(drawPeople, 300); });
         li.append(b);
-      } else li.append(el("small", {}, p.on ? "may play" : "listening"));
+      } else li.append(el("small", {}, p.refused ? "refused" : p.on ? "may play" : "listening"));
+      if (!p.you && room.runs?.()) {
+        const r = button(ICON.ban, p.refused ? `Let ${p.name} back on the decks` : `Refuse ${p.name} the decks (they still dance and listen)`, p.refused ? "on" : "");
+        r.addEventListener("click", () => { room.refuse?.(p.id, !p.refused); setTimeout(drawPeople, 300); });
+        li.append(r);
+      }
+      if (!p.you && lead && room.setMod) {
+        const m = button(ICON.shield, p.mod ? `${p.name} moderates: take it back` : `Make ${p.name} a moderator`, p.mod ? "on" : "");
+        m.addEventListener("click", () => { room.setMod?.(p.id, !p.mod); setTimeout(drawPeople, 300); });
+        li.append(m);
+      }
       ul.append(li);
     }
     if (!list.length) ul.append(el("li", {}, "<small>Nobody's in the room yet: invite a friend, then let them on here.</small>"));
@@ -404,14 +392,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     const now = performance.now();
     players[0].draw(now); players[1].draw(now); drawZoom();
     zoomLabel.textContent = `±${zoomS()} s`;
-    for (const side of [0, 1] as const) {
-      strips[side].strip.classList.toggle("far", !!far(side));
-      strips[side].meter.style.transform = `scaleY(${decks.level(side)})`;
-      strips[side].cue.classList.toggle("on", decks.channels[side].cue);
-    }
-    (masterMeter.firstElementChild as HTMLElement).style.transform = `scaleY(${decks.level(2)})`;
-    curve.textContent = decks.curve === "smooth" ? "Smooth" : "Cut";
-    split.classList.toggle("on", decks.split);
+    mixer.draw();
     quant.classList.toggle("on", decks.quantize);
     if (performance.now() > noteUntil && note.textContent) note.textContent = "";
   }
@@ -426,7 +407,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (e.code === "Escape") close();
     else if (k && k.press === "cueDown") { if (!cueKeys.has(e.code)) { cueKeys.add(e.code); press(k.side, "cueDown"); } }
     else if (k) press(k.side, k.press);
-    else if (e.code === "ArrowLeft" || e.code === "ArrowRight") { decks.cross(decks.xfader + (e.code === "ArrowLeft" ? -0.1 : 0.1)); xfade.value = String(decks.xfader); }
+    else if (e.code === "ArrowLeft" || e.code === "ArrowRight") { decks.cross(decks.xfader + (e.code === "ArrowLeft" ? -0.1 : 0.1)); }
     else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
   }
