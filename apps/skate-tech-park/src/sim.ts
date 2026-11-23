@@ -46,8 +46,8 @@ export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, 
 const TUNE = { accel: 3, brake: 14, top: 11.5 * T, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
-  boost: 32, // m/s² from the rear jets
-  boostTop: 48 * T,
+  boost: 24, // m/s² from the rear jets: from a push's top to the jets' own in about a second, and up a hillside cut to a gap's launch
+  boostTop: 24 * T, // about 120 km/h: fast enough for every gap's line (28 to 32 m/s), not so fast a wall throws the board a hundred metres up
   fanTop: 0.6, // the fan holds it to this share of top speed
   fanPull: 26, // m/s² extra downward in the air with the fan on
   fanStep: 1.6, // metres: with the fan on, a kerb, box side or stair this low is driven up
@@ -174,6 +174,7 @@ const RISER = 0.3; // a stair riser this low the wheels roll up at speed (a stri
 const CURVED = 0.02; // 1/m: ground curving up this tightly along the heading is a transition, where a foot can't push (a plain slope is no curve)
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
 const ROLL_OVER = SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air (a vert air is a couple of metres, so this stays under it)
+const PUSH_HILL = 0.6; // share of a rise's pull a push makes up on top of its flat-ground push
 const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
 
 export const FLICK_TIME = 0.24 * T;
@@ -652,13 +653,14 @@ function advance(s: State, inp: Input, level: Level): State {
     const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
     const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
     const fakie = s.speed < -1, k = 0.5, curve = (level.height(s.x + fx * k, s.z + fz * k) - 2 * level.height(s.x, s.z) + level.height(s.x - fx * k, s.z - fz * k)) / (k * k),
-      foot = Math.abs(s.pitch) < PUSH_STEEP && curve < CURVED; // a foot only reaches the ground off a wall, or a curve up one
+      foot = Math.abs(s.pitch) < PUSH_STEEP && curve < CURVED, // a foot only reaches the ground off a wall, or a curve up one
+      uphill = (way: number) => PUSH_HILL * G * Math.sin(Math.max(0, s.pitch * way)); // pushing up a rise the legs work harder: a gentle one is climbed, one near PUSH_STEEP only held
     if (fakie) { // rolling backwards (back down off a wall): push on the way it rolls, and S brakes
       if (inp.throttle < 0) s.speed = Math.min(0, s.speed - inp.throttle * tune.brake * DT);
-      else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * tune.accel * DT; // pushing fakie only goes so fast
+      else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * (tune.accel + uphill(-1)) * DT; // pushing fakie only goes so fast
     } else if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
-    else if (foot && (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5)) s.speed += inp.throttle * tune.accel * DT;
-    if (boosting) s.speed += BOOST * DT;
+    else if (foot && (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5)) s.speed += inp.throttle * (tune.accel + uphill(Math.sign(inp.throttle))) * DT;
+    if (boosting && s.pitch * Math.sign(s.speed || 1) < WALL) s.speed += BOOST * DT; // up a wall the deck points at the sky: the jets let go rather than fire it up the face
     // past what pushing reaches (a downhill, or the jets let go) only the wheels and the air slow it, as when coasting
     if (!boosting && (!inp.throttle || Math.abs(s.speed) > push)) s.speed -= Math.sign(s.speed) * Math.min(Math.abs(s.speed), (ROLL + DRAG * s.speed * s.speed) * DT);
     s.speed = clamp(s.speed, -top, top); // rolling back down a wall fakie is as fast as rolling down it forwards
