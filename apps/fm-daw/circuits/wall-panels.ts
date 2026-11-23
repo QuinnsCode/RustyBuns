@@ -133,6 +133,17 @@ export const PANELS: Panel[] = [
   },
 ];
 
+/** A Eurorack panel's holes, mm from its top left corner: jacks 6 mm, pots 7 mm, and the 3.2 mm rail screws. */
+export function panelHoles(p: Panel): { name: string; x: number; y: number; drill: number }[] {
+  const w = panelWidth(p.hp), at = (x: number, y: number) => ({ x: w / 2 + x, y: PANEL_H / 2 - y });
+  const screws = [7.5, ...(p.hp >= 10 ? [7.5 + (p.hp - 3) * HP] : [])].flatMap((x) => [{ name: "screw", x, y: 3, drill: 3.2 }, { name: "screw", x, y: PANEL_H - 3, drill: 3.2 }]);
+  return [
+    ...p.jacks.map((j) => ({ name: j.label, ...at(j.x, j.y), drill: 6 })),
+    ...p.knobs.map((k) => ({ name: k.label, ...at(k.x, k.y), drill: 7 })),
+    ...screws,
+  ];
+}
+
 export const panel = (id: string): Panel => {
   const p = PANELS.find((x) => x.id === id);
   if (!p) throw new Error(`no sound wall module ${id} (${PANELS.map((x) => x.id).join(", ")})`);

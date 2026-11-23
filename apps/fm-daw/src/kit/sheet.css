@@ -1,4 +1,4 @@
-/* A pedal's build sheet (sheet.ts): a dark panel over the gear room or Q Amp, the same look as the board view. */
+/* A pedal's or a module's build sheet (sheet.ts): a dark panel over the gear room or Q Amp, the same look as the board view. */
 .build-sheet {
   --ink: #eceef1; --dim: #9aa1ab; --warn: #ffb000; --mono: "IBM Plex Mono", ui-monospace, monospace;
   /* Under the site's page links along the top. */
@@ -7,7 +7,7 @@
   background: #0b0e11; color: var(--ink); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; outline: none;
 }
-.build-sheet[hidden] { display: none; }
+.build-sheet[hidden], .build-sheet .icon-btn[hidden] { display: none; }
 .sheet-top { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; color: var(--dim); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
 .sheet-title { font: 600 1rem/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
 .sheet-note { flex: 1; min-width: 0; font: 500 11px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
