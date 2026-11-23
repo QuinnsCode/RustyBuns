@@ -115,6 +115,9 @@ darkens the `eye` material, has nothing to darken on these beasts.
 
 ## How a round goes
 
+Not on the office Mac: nothing runs Blender there (the owner's order, 2026-11-23; see
+[BLENDER-TOOLS.md](BLENDER-TOOLS.md)). Steps 2, 3 and 5 below start Blender.
+
 1. Read the beast's `about`, its legend in `src/lore.ts` and its moves. Write down the one big trait (rule 5).
 2. Build it: `bun proposals/house/<plan>.ts <id>` writes the sheet, `bun scripts/beasts.ts <id>` builds it and
    draws `blender/out/<id>.png`. Look at the picture every time.

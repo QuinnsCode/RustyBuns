@@ -1,11 +1,10 @@
 // One heavy job of a kind at a time on this Mac, at low priority: `bun scripts/heavy.ts <kind> <cmd...>`.
 //
-//   bun scripts/heavy.ts blender bun scripts/beasts.ts kelpie
 //   bun scripts/heavy.ts chrome bun scripts/burst-shots.ts out now --hit
 //
-// When several agents share one Mac, each wraps its Blender runs in `blender` and its headless Chrome runs in
-// `chrome`. A run waits its turn for that kind's lock, then runs under `nice`, so the Mac stays usable: on
-// 2026-11-22 three lanes' Blenders and Chromes at once froze the 16 GB office Mac and it had to be forced off.
+// When several agents share one Mac, each wraps its headless Chrome and dev-server runs in `chrome` (any word
+// names a lock). A run waits its turn for that kind's lock, then runs under `nice`, so the Mac stays usable.
+// It is not a way to run Blender on the office Mac: nothing runs Blender there (docs/BLENDER-TOOLS.md).
 // The lock is a folder in the temp dir holding the owner's pid; a lock whose owner is gone is taken over.
 // Exits with the command's own code.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
