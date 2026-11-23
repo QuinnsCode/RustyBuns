@@ -10,17 +10,60 @@
   <a href="REFERENCE.md">Reference</a>
 </p>
 
-# Rusty Buns: write the logic once, ship it everywhere
+# Rusty Buns: write your app logic once, ship it everywhere
 
-**Write your app's logic one time, in TypeScript. Keep it typed on the web, the desktop and the phone. Deploy it anywhere with Effect and Alchemy.**
+**Write your app's logic one time in TypeScript and keep it typed across web, desktop (macOS, Windows, Linux) and the phone. Deploy it anywhere with the power of Effect and Alchemy. You own your code, we are just a dev dependency meta metaframework helping your own app code fit into as many places possibly with ease.**
 
-It is my idea engine. When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
+**This has been my idea engine: a meta-metaframework, typed from front to back.** Where I can write the app logic once, and then just piece by piece add on each new place it runs (a desktop file, a Worker, a server, a phone). I can reuse so much code and not trigger constant scope-creep and rewrites. You and your coding agents add them one after another.
 
-1. **Logic once, typed end to end.** The page, the backend, the config and the deploy are one TypeScript program. One guard describes each message, and the server and every client import it. Rust is only for the one path that must be faster.
-2. **Five simple primitives, and we move you.** Each app is http, comms, storage, memory and identity. Write against those small shapes, and the same app runs on a laptop, on the edge, on a server and on a phone's home screen.
-3. **Deploy manywhere.** Each target is a typed Effect Layer in an Alchemy stack. To change where the app runs, change one line of config. The compiler finds what is missing before anything costs money.
+**I call it Rusty Buns, but your app needs neither Rust nor Bun.** You need Bun to build the app, but that can be done on a dev server. Your app and your users do not need it. On the edge, the app is a plain Worker which can be TS or even WASM Rust. The desktop file has Bun inside it, so a user installs nothing. Rust is an option for speed, and it has a great interop story from native to client to server. I use Rust and Bun because they connect to everything so well.
 
-The code is yours. Rusty Buns does not change `src/`, and it is not in your bundle. To remove it, use `git rm`.
+### Why bother with Rusty Buns?
+
+1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it. Wanna do something weird? Do it, your code is your code.
+2. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
+3. **The front is basically a Vite app.** Use any framework on top. Rusty Buns adds the extras.
+4. **The back goes where you choose.** Edge or server, serverless or serverful. It fits each host because your app uses only five simple parts: http, comms, storage, memory and identity. Cloudflare, Railway and Hetzner are built in today. Alchemy supports more, and you can add those yourself.
+5. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first. We also add Effect.ts in because Alchemy uses it so start experimenting with it.
+6. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load. Rust just offers the best interop from edge to server to native imo.
+7. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
+8. **Easy to test.** A full copy of the app is a folder. Make ten copies in one test. Alchemy and Rusty Buns make it easy!
+9. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
+
+### \~The Future of the App Module\~
+
+Put your business logic in one TypeScript module: the rules, the state and the types. The module does not know where it runs.
+
+For each target, write only the thin part that connects the module to http, comms and storage. The logic does not move.
+
+```
+          your app module: the rules, the state, the types
+                               │
+            one interface for each of the five parts
+                               │
+     ┌───────────┬─────────────┼─────────────┬─────────────┐
+  the page    a Worker      a server     the desktop     a test
+  (Vite)      + a DO       (Bun+sqlite)  (one file)   (a temp folder)
+```
+
+- **Client to server.** The page and the backend import the same module. They agree on each rule and each message.
+- **TypeScript to Rust.** When one path must be faster, put Rust behind the same interface. The TypeScript twin gives the same answer, so the rest of the app does not change.
+- **DX and DevOps that scale.** A new target is a new thin part, not a rewrite. An edge, a box and a desktop app together is not a hard setup.
+- **Tests with mini copies.** `localBindings(dir)` gives a temp folder its own D1, KV, R2 and Durable Object storage. Each copy is the real app, with no cloud and no network.
+
+### The Primitives: really just simpler wrappers
+
+Each part is one line of config. Each line runs on a laptop and on the edge:
+
+| Part | One line in `rustybuns.config.ts` | On the edge | On a laptop or server |
+|---|---|---|---|
+| **http** | `worker: { main: "src/worker.ts" }` | a Worker `fetch` | `Bun.serve` |
+| **comms** | `WORLD: { type: "durable_object", className: "World" }` | a Durable Object | a class in the process |
+| **storage** | `DB: { type: "d1", databaseName: "my-app" }` | D1, KV, R2 | sqlite and a folder |
+| **memory** | nothing to add | the isolate | the process |
+| **identity** | `SESSION_SECRET: { type: "secret" }` | your Worker or Access | the same code |
+
+You write `env.DB.prepare(...)` one time. Rusty Buns gives `env.DB` the correct twin for each place, with its type from the config.
 
 ### What Rusty Buns stands on
 
@@ -572,7 +615,7 @@ Rusty Buns generates the host, the wrangler config and the Alchemy stack from `r
 
 ### Rusty Buns is a joke name because you need neither
 
-To run the app, the minimum is Vite, which builds the page, and Bun, which runs the backend. To deploy it, add Effect and Alchemy. All other parts (Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
+Your app needs neither Rust nor Bun: on the edge it is a plain Worker. The tool needs Vite, which builds the page, and Bun, which runs the local copies and the desktop file. To deploy, add Effect and Alchemy. All other parts (Cloudflare, Rust, Hetzner, Railway) are options. Add one when you want it, and remove it when you do not.
 
 <details><summary>More</summary>
 
