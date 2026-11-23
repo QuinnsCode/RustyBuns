@@ -4,7 +4,7 @@
 // you what a click will do: a ghost where the box you carry would land, and the jacks a cable in your hand can go into.
 import * as THREE from "three";
 import { type Aim, type Room, gearOf, hand, handAt, heldId, item, jackAt, knobValue, landingPose, openJacks, placedNow, sag, theirLeads } from "./room.ts";
-import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
+import { type GearModel, caseModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
 const cableMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.6 });
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xffb46b, transparent: true, opacity: 0.22, depthWrite: false });
@@ -19,7 +19,7 @@ export class GearScene {
   private lit = new Set<THREE.Mesh>();
   private ghost: { gear: string; box: THREE.Group } | null = null;
 
-  constructor() { this.group.add(rackModel(), pedalWallModel()); }
+  constructor() { this.group.add(rackModel(), pedalWallModel(), caseModel()); }
 
   /** Draw the room's patch as it is now, and light what `aim` points at. */
   sync(room: Room, aim: Aim | null) {

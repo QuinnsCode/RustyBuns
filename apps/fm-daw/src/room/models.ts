@@ -1,13 +1,14 @@
 // Qollab Studio's gear in three.js, for the gear room and every studio's gear wall. The amps, the cab, the pedals, Q Split,
 // Q Bucket and the guitar are the shared gear models (@rustybuns/models/gear, what Sound Guy Simulator rigs): the amp
 // head and the cab in Q Amp's clear acrylic, with tubes that glow with what each stage does and cones that push, and
-// each pedal a stompbox in its colour. The loop machines, a bench board's clear box, the desk, the wall rack and the
-// pedal wall are drawn here. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom
+// each pedal a stompbox in its colour. The loop machines, a bench board's clear box, the desk, the wall rack, the
+// pedal wall and the sound wall's case and modules (each panel labelled as its drill template is) are drawn here. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom
 // centre at the origin, front +z), and the jack rings and knob caps go where room.ts aims.
 import * as THREE from "three";
 import { gear, gearLook, type GearLook, stompbox } from "@rustybuns/models/gear";
 import type { Face, GearDef, Vec3 } from "./room.ts";
 import { PEDAL_WALL, RACK } from "./room.ts";
+import { CASE } from "./frame.ts";
 
 export interface GearModel {
   group: THREE.Group;
@@ -70,10 +71,49 @@ export function turnKnob(k: { mesh: THREE.Object3D; face: Face }, v: number) {
   k.mesh.rotateY(-a);
 }
 
+/** Each module's panel, drawn once: brushed aluminium, its name across the top, each jack's and knob's label above it. */
+const PANELS = new Map<string, THREE.Texture>();
+function panelFace(g: GearDef): THREE.Texture {
+  const had = PANELS.get(g.id);
+  if (had) return had;
+  const px = 4000, [w, h] = g.size, c = document.createElement("canvas");
+  c.width = Math.round(w * px); c.height = Math.round(h * px);
+  const x = c.getContext("2d");
+  if (x) {
+    const grad = x.createLinearGradient(0, 0, c.width, 0);
+    grad.addColorStop(0, "#c9ccd1"); grad.addColorStop(0.5, "#e4e6e9"); grad.addColorStop(1, "#c3c6cb");
+    x.fillStyle = grad; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = "#1d1f23"; x.textAlign = "center";
+    x.font = `600 ${Math.round(px * 0.0045)}px "Barlow Condensed", sans-serif`;
+    x.fillText(g.name.toUpperCase(), c.width / 2, px * 0.012);
+    x.font = `500 ${Math.round(px * 0.0026)}px "Barlow Condensed", sans-serif`;
+    const at = (p: Vec3, up: number) => [(p[0] + w / 2) * px, (h - p[1] - up) * px] as const;
+    for (const k of g.knobs) { const [cx, cy] = at(k.at, 0.0085); x.fillText(k.label.toUpperCase(), cx, cy); }
+    for (const j of g.jacks) {
+      const [cx, cy] = at(j.at, 0.0072);
+      x.fillStyle = j.dir === "out" ? "#b8442f" : "#1d1f23";
+      x.fillText((j.label ?? j.name).toUpperCase(), cx, cy);
+    }
+    x.fillStyle = "#1d1f23";
+    for (const y of [0.003, h - 0.003]) for (const sx of [0.0075, ...(w > 0.045 ? [w - 0.0075] : [])]) { x.beginPath(); x.arc(sx * px, y * px, px * 0.0016, 0, Math.PI * 2); x.fill(); }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  PANELS.set(g.id, t);
+  return t;
+}
+
 export function gearModel(g: GearDef): GearModel {
   const group = new THREE.Group(), [w, h, d] = g.size;
   const m: GearModel = { group, knobs: new Map(), jacks: new Map(), tubes: [], cones: [] };
-  if (g.kind === "amp") {
+  if (g.kind === "module") {
+    // A Eurorack module: its panel and, behind it, the green board its jacks and pots are soldered to.
+    const face = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.002), new THREE.MeshStandardMaterial({ map: panelFace(g), metalness: 0.55, roughness: 0.38 }));
+    face.position.set(0, h / 2, d / 2 - 0.001);
+    const pcb = box(w * 0.88, h * 0.84, 0.0016, mat(0x1f6b3a, 0.1, 0.7), h / 2);
+    pcb.position.z = d / 2 - 0.012;
+    group.add(face, pcb);
+  } else if (g.kind === "amp") {
     // the shared amp head (@rustybuns/models/gear) in Q Amp's clear shell, its own knobs left off for this amp's
     group.add(shared(gear("amp-head", { look: clear() }), g.size, ["knob"]));
     for (let i = 0; i < 6; i++) {
@@ -129,8 +169,10 @@ export function gearModel(g: GearDef): GearModel {
     // the shared guitar, stood on its end
     group.add(shared(gear("guitar"), g.size));
   }
+  // A module's 3.5 mm jacks and 9 mm pots are small beside a quarter-inch jack and a pedal's knob.
+  const small = g.kind === "module";
   for (const j of g.jacks) {
-    const ring = onFace(0.011, 0.014, j.face, j.at, new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25, emissive: 0xff6b4a, emissiveIntensity: 0 }));
+    const ring = onFace(small ? 0.0042 : 0.011, small ? 0.006 : 0.014, j.face, j.at, new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.9, roughness: 0.25, emissive: 0xff6b4a, emissiveIntensity: 0 }));
     group.add(ring);
     m.jacks.set(j.name, ring);
   }
@@ -144,6 +186,7 @@ export function gearModel(g: GearDef): GearModel {
     cap.position.set(k.at[0], k.at[1], k.at[2]);
     // A small board's pots sit close: their caps shrink to fit side by side.
     if (g.circuit === "bench") cap.scale.setScalar(Math.min(1, w / (g.knobs.length + 1) / 0.034));
+    if (small) cap.scale.setScalar(0.42);
     group.add(cap);
     m.knobs.set(k.name, { mesh: cap, face: k.face });
   }
@@ -158,6 +201,33 @@ export function pedalWallModel(): THREE.Group {
   g.add(board);
   for (const y of PEDAL_WALL.shelves) g.add(box(d, 0.025, len, mat(0x30343a, 0.7, 0.4), y - 0.0125));
   g.position.set((PEDAL_WALL.x0 + PEDAL_WALL.x1) / 2, 0, (PEDAL_WALL.z0 + PEDAL_WALL.z1) / 2);
+  return g;
+}
+
+/**
+ * The sound wall's case on its stand: a wooden case open at the front, a pair of rails (top and bottom) for each
+ * row the modules screw into, a back panel, and four legs down to the floor.
+ */
+export function caseModel(): THREE.Group {
+  const g = new THREE.Group(), w = CASE.x1 - CASE.x0, d = CASE.z1 - CASE.z0, bottom = CASE.rows[0] - 0.012, wood = mat(0x6b4a2e, 0, 0.75), steel = mat(0xb9bdc3, 0.85, 0.3);
+  const tall = CASE.top - bottom, fz = CASE.front - (CASE.z0 + CASE.z1) / 2;
+  for (const x of [-w / 2 + 0.006, w / 2 - 0.006]) { const cheek = box(0.012, tall, d, wood, bottom + tall / 2); cheek.position.x = x; g.add(cheek); }
+  g.add(box(w, 0.012, d, wood, bottom - 0.006), box(w, 0.012, d, wood, CASE.top + 0.006));
+  const back = box(w - 0.024, tall, 0.006, mat(0x1b1c1f, 0.2, 0.8), bottom + tall / 2);
+  back.position.z = -d / 2 + 0.003;
+  g.add(back);
+  for (const r of CASE.rows) for (const y of [r + 0.003, r + 0.1285 - 0.003]) {
+    const rail = box(w - 0.024, 0.009, 0.01, steel, y);
+    rail.position.z = fz - 0.008;
+    g.add(rail);
+  }
+  for (const x of [-w / 2 + 0.03, w / 2 - 0.03]) for (const z of [-d / 2 + 0.03, d / 2 - 0.03]) {
+    const leg = box(0.025, bottom - 0.012, 0.025, mat(0x30343a, 0.7, 0.4));
+    leg.position.set(x, 0, z);
+    leg.position.y = (bottom - 0.012) / 2;
+    g.add(leg);
+  }
+  g.position.set((CASE.x0 + CASE.x1) / 2, 0, (CASE.z0 + CASE.z1) / 2);
   return g;
 }
 
