@@ -17,7 +17,10 @@
 //                                     updates what is live. An old one from another clone: the install says how to move it
 //   bun run releases --rerelease      the page's "To re-release" list (live apps main moved since their last deploy from
 //                                     this Mac): one at a time, asks, plans a rustybuns deploy, asks again, deploys. Run
-//                                     it from that job checkout (it follows main); the hourly --publish waits meanwhile
+//                                     it from that job checkout (it follows main); the hourly --publish waits meanwhile.
+//                                     Your order goes first: a JSON list of app ids in ~/.rustybuns/release-order.json
+//                                     (the release-order artifact copies one: `pbpaste > ~/.rustybuns/release-order.json`),
+//                                     then the rest busiest first
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -29,7 +32,7 @@ import { arr, bool, obj, opt, str } from "../packages/util/src/guard.ts";
 import { ping, scan } from "./bridge.ts";
 import { lastDeploys } from "./bridge-lib.ts";
 import { DEPLOY_LOG } from "../packages/cli/src/report-deploy.ts";
-import { appDot, appOfPath, busiest, deployOf, hasState, owed, pacific, repoDot, stateClone, stateDirs, tally, type Counts, type Dot } from "./releases-lib.ts";
+import { appDot, appOfPath, busiest, deployOf, hasState, inOrder, owed, pacific, repoDot, stateClone, stateDirs, tally, type Counts, type Dot } from "./releases-lib.ts";
 import { sharedStateBase } from "../packages/cli/src/state.ts";
 
 const OWNER = "QuinnsCode", HOME = "RustyBuns";
@@ -40,6 +43,9 @@ const file = path.join(dir, "releases.html");
 const repo = path.resolve(import.meta.dir, "..");
 /** The owner's own clone: the live apps' deploy state is shared through its git dir (.git/rustybuns/alchemy). */
 const REAL = path.join(homedir(), "Documents", "projects", HOME);
+/** The order the owner wants live apps re-released in: a JSON list of app ids, copied from the release-order artifact. */
+const ORDER = path.join(homedir(), ".rustybuns", "release-order.json");
+const order = (): string[] => { try { return arr(str(80), 300, { drop: true })(JSON.parse(readFileSync(ORDER, "utf8"))); } catch { return []; } };
 
 /** `deployed` is its newest deploy from this Mac (~/.rustybuns/deploys.jsonl); `owed` means main moved it since, and
  *  `deploy` is how it goes out again (`dir` is its folder). Repos other than RustyBuns have none of these. */
@@ -128,7 +134,7 @@ function table(rows: Row[], id: string, deploys = false) {
 
 /** The live apps main has moved since their last deploy, each with the line that ships it again from its folder. */
 function owedList(rows: Row[]) {
-  const owe = rows.filter((r) => r.owed);
+  const owe = inOrder(rows.filter((r) => r.owed), order());
   if (!owe.length) return `<p class="clear">Every live app is deployed up to main.</p>`;
   const li = (r: Row) => `<li><b>${esc(r.name)}</b><span class="when">merged ${at(r.pushed)} · deployed ${at(r.deployed, "not logged")}</span>
     <code>${r.deploy ? `cd ${esc(r.dir ?? "")} &amp;&amp; ${r.deploy.plan ? "bunx rustybuns plan &amp;&amp; " : ""}${esc(r.deploy.cmd)}` : "no deploy script"}</code></li>`;
@@ -224,7 +230,7 @@ function rerelease(d: Releases) {
   const main = Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: repo }).stdout.toString().trim();
   if (!head || head !== main) { console.log(`${repo} is not on origin/main; run it from ~/.rustybuns/releases/rustybuns, which follows main.`); return 1; }
   const cli = path.join(repo, "packages", "cli", "src", "index.ts");
-  const owe = d.apps.filter((r) => r.owed && r.deploy && r.dir && r.id);
+  const owe = inOrder(d.apps.filter((r) => r.owed && r.deploy && r.dir && r.id), order());
   const done: string[] = [], skipped: string[] = [], failed: string[] = [];
   console.log(`${owe.length} live apps behind main. y deploys, s skips, q stops.`);
   mkdirSync(dir, { recursive: true });

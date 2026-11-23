@@ -60,6 +60,13 @@ export function busiest<R extends Counts & { name: string; dot: Dot }>(rows: R[]
   return [...rows].sort((a, b) => b.today - a.today || b.week - a.week || rank[a.dot] - rank[b.dot] || a.name.localeCompare(b.name));
 }
 
+/** The owner's order first (app ids, the one they care about most first, from ~/.rustybuns/release-order.json), then
+ *  every app it doesn't name in the order it came. */
+export function inOrder<R extends { id: string | null }>(rows: R[], order: string[]): R[] {
+  const at = (r: R) => { const i = r.id ? order.indexOf(r.id) : -1; return i < 0 ? order.length : i; };
+  return [...rows].sort((a, b) => at(a) - at(b));
+}
+
 /** A time as the owner reads it, in Pacific time: "4:56pm PST Dec-13-2026" (PDT in summer). */
 export function pacific(iso: string): string {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
