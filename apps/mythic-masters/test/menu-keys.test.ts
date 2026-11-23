@@ -20,9 +20,12 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
       await Bun.sleep(150);
     };
     const focused = () => tab.eval<string>("document.activeElement?.id || document.activeElement?.dataset.id || ''");
+    // what the page was doing when a wait ran out: the scene and how far in, frames drawn, focus, visibility
+    const where = () => tab.eval<string>(`JSON.stringify({ director: mythicMasters.director.state(), frames: window.__mmFrames?.() ?? null, focus: document.activeElement?.id || document.activeElement?.tagName, hidden: document.hidden, visibility: document.visibilityState, hasFocus: document.hasFocus() })`).catch((e) => String(e));
     const until = async (what: string, ok: () => Promise<boolean>, ms = 30_000) => {
-      for (const end = Date.now() + ms; !(await ok()); await Bun.sleep(100)) if (Date.now() > end) throw new Error(`never saw ${what}`);
+      for (const end = Date.now() + ms; !(await ok()); await Bun.sleep(100)) if (Date.now() > end) throw new Error(`never saw ${what}: ${await where()}`);
     };
+    await tab.eval(`(() => { let n = 0; const f = () => { n++; requestAnimationFrame(f); }; requestAnimationFrame(f); window.__mmFrames = () => n; })()`);
     const shown = (sel: string) => tab.eval<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return !!el && !el.closest("[hidden]") && el.getBoundingClientRect().height > 0; })()`);
     const text = (sel: string) => tab.eval<string>(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ""`);
 
@@ -36,13 +39,19 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("Enter");
     await until("Tape 1", () => tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`));
     expect(await tab.eval<boolean>("mythicMasters.journey.state() === null")).toBe(true);
-    // a key skips it once the tape listens, later on a slow runner: press while it still plays, not once after a timer
-    await until("Tape 1 skipped", async () => {
-      if (!(await tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`))) return true;
-      await press("Enter");
-      await Bun.sleep(250);
-      return false;
-    });
+    // a key skips it once the tape listens, later on a slow runner: press while it still plays, not once after a timer.
+    // Each poll keeps the scene's time and the frames drawn, so a wait that runs out says what the tape was doing.
+    const polls: string[] = [];
+    try {
+      await until("Tape 1 skipped", async () => {
+        const at = await tab.eval<{ id: string | null; t: number; frames: number | null }>(`({ id: mythicMasters.director.state().beat?.id ?? null, t: +(mythicMasters.director.state().beat?.t ?? 0).toFixed(2), frames: window.__mmFrames?.() ?? null })`);
+        polls.push(`${at.id}@${at.t}s f${at.frames}`);
+        if (at.id !== "abduction") return true;
+        await press("Enter");
+        await Bun.sleep(250);
+        return false;
+      });
+    } catch (e) { throw new Error(`${(e as Error).message}\n  last polls: ${polls.slice(-8).join(", ")}`); }
 
     // The Book opens: page by page it says the job and offers its five, then asks. The arrows walk its buttons.
     await until("the Book", () => shown("#bookTalk .demand"));

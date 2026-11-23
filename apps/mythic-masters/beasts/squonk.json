@@ -1265,102 +1265,6 @@
       "material": "tear"
     },
     {
-      "kind": "eye",
-      "at": "l_ffoot",
-      "off": [
-        0.1,
-        -0.029,
-        -0.0363
-      ],
-      "r": 0.01,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_ffoot",
-      "off": [
-        0.1,
-        -0.029,
-        -0.0114
-      ],
-      "r": 0.01,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_ffoot",
-      "off": [
-        0.1,
-        -0.029,
-        0.0114
-      ],
-      "r": 0.01,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_ffoot",
-      "off": [
-        0.1,
-        -0.029,
-        0.0363
-      ],
-      "r": 0.01,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_bfoot",
-      "off": [
-        0.108,
-        -0.029,
-        -0.0392
-      ],
-      "r": 0.0108,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_bfoot",
-      "off": [
-        0.108,
-        -0.029,
-        -0.0123
-      ],
-      "r": 0.0108,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_bfoot",
-      "off": [
-        0.108,
-        -0.029,
-        0.0123
-      ],
-      "r": 0.0108,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
-      "kind": "eye",
-      "at": "l_bfoot",
-      "off": [
-        0.108,
-        -0.029,
-        0.0392
-      ],
-      "r": 0.0108,
-      "mirror": true,
-      "material": "nail"
-    },
-    {
       "kind": "ear",
       "at": "head",
       "off": [
@@ -1381,10 +1285,51 @@
       "material": "skin",
       "thick": 0.5,
       "fold": 0.3
+    },
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "digits",
+      "r": 0.04,
+      "len": 0.15,
+      "width": 0.12,
+      "toes": 4,
+      "claw": 0.012,
+      "claw_mat": "nail",
+      "sole": 0.045,
+      "curl": 75,
+      "mirror": true,
+      "material": "skin"
+    },
+    {
+      "kind": "foot",
+      "at": "l_bfoot",
+      "form": "digits",
+      "r": 0.04,
+      "len": 0.15,
+      "width": 0.12,
+      "toes": 4,
+      "claw": 0.012,
+      "claw_mat": "nail",
+      "sole": 0.045,
+      "curl": 75,
+      "mirror": true,
+      "material": "skin"
     }
   ],
   "belly": "belly",
   "belly_turn": -0.35,
   "blend": 0.008,
-  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.47, 0.46, 0.41]], "map": 256}
+  "hide": {
+    "pattern": "skin",
+    "size": 0.08,
+    "colours": [
+      [
+        0.47,
+        0.46,
+        0.41
+      ]
+    ],
+    "map": 256
+  }
 }
