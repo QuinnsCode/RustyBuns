@@ -9,6 +9,8 @@
 //   bun scripts/ci-report.ts --days 3      a shorter window
 //   bun scripts/ci-report.ts --top 5       how many suites the rings section lists (10)
 //   bun scripts/ci-report.ts --no-logs     skip the jobs' logs (no per-test failure names, no slow files)
+//   bun scripts/ci-report.ts --file        no report: open an issue (label ci-blocker) for each test that failed on
+//                                          3+ PRs in one day of the last day, once per test (ci-blockers.yml, #5566)
 //
 // Finished runs, job lists, compares and logs are cached under $TMPDIR/ci-report-cache, so a second run is quick.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -387,23 +389,72 @@ async function failures(rows: Row[], using: Map<string, Set<string>>, logs: bool
   say("| test | failed | untouched | PRs | days |\n|---|---:|---:|---:|---|");
   for (const [k, fs] of [...named].sort((a, b) => b[1].length - a[1].length).slice(0, 15))
     say(`| ${k.replace(/\|/g, "\\|").slice(0, 140)} | ${fs.length} | ${fs.filter((f) => f.touched === false).length} | ${new Set(fs.map((f) => prKey(f.row))).size} | ${[...new Set(fs.map((f) => day(f.at).slice(5)))].sort().join(", ")} |`);
-  // The same test failing on 3+ PRs in one day is main broken (or a flake), whatever those PRs touched: a PR that
-  // moved packages/util "touches" qcrm, yet didn't break its demo. A job with no test names counts only when untouched.
-  const blocks = new Map<string, Fail[]>();
+  const big = blockersOf(fails.map((f) => ({ ...f, pr: prKey(f.row), run: f.row.run.id })));
+  say(`\n### Tests that blocked many PRs at once\n\nThe same test failing on 3 or more PRs on one day, most PRs first; "untouched" counts the PRs that changed nothing it tests.\n`);
+  say("| day | test | PRs blocked | untouched | first → last failure |\n|---|---|---:|---:|---|");
+  for (const b of big.slice(0, 20)) say(`| ${b.day} | ${b.test.replace(/\|/g, "\\|").slice(0, 140)} | ${b.prs.length} | ${b.untouched} | ${hhmm(b.first)} → ${hhmm(b.last)} |`);
+  if (!big.length) say("| - | none | | | |");
+  say("");
+  return fails;
+}
+
+export type Failed = { suite: string; tests: string[]; touched?: boolean; at: string; pr: number | string; run: number };
+export type Blocker = { day: string; test: string; prs: (number | string)[]; untouched: number; first: string; last: string; runs: number[] };
+
+/** The same test failing on 3+ PRs in one day is main broken (or a flake), whatever those PRs touched: a PR that
+ * moved packages/util "touches" qcrm, yet didn't break its demo. A job with no test names counts only when untouched.
+ * Most PRs first. */
+export function blockersOf(fails: Failed[], min = 3): Blocker[] {
+  const blocks = new Map<string, Failed[]>();
   for (const f of fails) for (const k of f.tests.length ? f.tests : f.touched === false ? [`${f.suite} (no test named in the log)`] : []) {
     const key = `${day(f.at)}\t${k}`;
     blocks.set(key, [...(blocks.get(key) ?? []), f]);
   }
-  const big = [...blocks].map(([k, fs]) => ({ k, fs, prs: new Set(fs.map((f) => prKey(f.row))) })).filter((b) => b.prs.size >= 3).sort((a, b) => b.prs.size - a.prs.size);
-  say(`\n### Tests that blocked many PRs at once\n\nThe same test failing on 3 or more PRs on one day, most PRs first; "untouched" counts the PRs that changed nothing it tests.\n`);
-  say("| day | test | PRs blocked | untouched | first → last failure |\n|---|---|---:|---:|---|");
-  for (const b of big.slice(0, 20)) {
-    const [d, test] = b.k.split("\t"), times = b.fs.map((f) => f.at).sort();
-    say(`| ${d} | ${test!.replace(/\|/g, "\\|").slice(0, 140)} | ${b.prs.size} | ${new Set(b.fs.filter((f) => f.touched === false).map((f) => prKey(f.row))).size} | ${hhmm(times[0]!)} → ${hhmm(times.at(-1)!)} |`);
+  return [...blocks].map(([k, fs]) => {
+    const [d, test] = k.split("\t") as [string, string], times = fs.map((f) => f.at).sort();
+    return { day: d, test, prs: [...new Set(fs.map((f) => f.pr))], untouched: new Set(fs.filter((f) => f.touched === false).map((f) => f.pr)).size, first: times[0]!, last: times.at(-1)!, runs: [...new Set(fs.map((f) => f.run))] };
+  }).filter((b) => b.prs.length >= min).sort((a, b) => b.prs.length - a.prs.length);
+}
+
+const Issue = obj({ number: num(0, 1e9), state: str(20), body: str(70_000, { min: 0 }) });
+const IssueList = arr(Issue, 500, { drop: true });
+export type Issue = Of<typeof Issue>;
+const testMark = (test: string) => `ci-blocker test=${Bun.hash(test).toString(36)}`;
+
+/** The issues to open for these blockers (#5566): none for a test that already has an open one, or that had one
+ * for the same day (closed means someone dealt with it), and at most `cap` in one go so a bad day can't flood the board. */
+export function issuesFor(blockers: Blocker[], existing: Issue[], cap = 5): { title: string; body: string }[] {
+  const out: { title: string; body: string }[] = [];
+  for (const b of blockers) {
+    const mark = testMark(b.test), dayMark = `${mark} day=${b.day}`;
+    if (existing.some((i) => i.body.includes(dayMark) || (i.state === "OPEN" && i.body.includes(mark)))) continue;
+    if (out.length >= cap) break;
+    out.push({
+      title: `CI: ${b.test.replace(/\s+/g, " ").slice(0, 120)} failed on ${b.prs.length} PRs on ${b.day}`,
+      body: [
+        `The same test failed on ${b.prs.length} pull requests on ${b.day} (${b.first.slice(11, 16)} to ${b.last.slice(11, 16)} UTC), ${b.untouched} of them PRs that changed nothing it tests. That is main broken or a flaky test, and every open PR in its reach stays red until it is fixed.`,
+        "", "```", b.test.slice(0, 1000), "```", "",
+        `PRs: ${b.prs.map((p) => (typeof p === "number" ? `#${p}` : `\`${p}\``)).join(", ")}`,
+        `Runs: ${b.runs.slice(0, 10).map((r) => `https://github.com/${REPO}/actions/runs/${r}`).join(" ")}`,
+        "", "Fix it on main (or skip the flake and file it), then close this. Opened by `bun scripts/ci-report.ts --file` (ci-blockers.yml).",
+        "", `<!-- ${dayMark} -->`,
+      ].join("\n"),
+    });
   }
-  if (!big.length) say("| - | none | | | |");
-  say("");
-  return fails;
+  return out;
+}
+
+/** --file: open the issues for the blockers in `rows`, labelled ci-blocker. */
+async function fileBlockers(rows: Row[], using: Map<string, Set<string>>, days: number) {
+  const fails = await failures(rows, using, true, () => {});
+  const big = blockersOf(fails.map((f) => ({ ...f, pr: prKey(f.row), run: f.row.run.id })));
+  await Bun.$`gh label create ci-blocker --repo ${REPO} --color B60205 --description ${"one test failing on 3+ PRs in a day (#5566)"}`.nothrow().quiet();
+  const list = await Bun.$`gh issue list --repo ${REPO} --label ci-blocker --state all --limit 200 --json number,state,body`.text();
+  const existing = check(IssueList, JSON.parse(list));
+  if (!existing) throw new Error("gh issue list: unexpected shape");
+  const todo = issuesFor(big, existing);
+  console.log(`${big.length} tests failed on 3+ PRs in a day over the last ${days} day(s); ${todo.length} new issue(s).`);
+  for (const i of todo) console.log((await Bun.$`gh issue create --repo ${REPO} --label ci-blocker --title ${i.title} --body ${i.body}`.text()).trim(), i.title);
 }
 
 async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: Fail[], using: Map<string, Set<string>>, days: number, say: (s: string) => void) {
@@ -501,10 +552,14 @@ async function rings(rows: Row[], fails: Fail[], using: Map<string, Set<string>>
 
 if (import.meta.main) {
   help(import.meta.path);
-  const argv = process.argv.slice(2), days = Number(argv[argv.indexOf("--days") + 1]) || 7, logs = !argv.includes("--no-logs");
+  const argv = process.argv.slice(2), file = argv.includes("--file");
+  const days = Number(argv[argv.indexOf("--days") + 1]) || (file ? 1 : 7), logs = !argv.includes("--no-logs");
   const since = Date.now() - days * 86_400_000;
   const [runs, pulls] = await Promise.all([
-    Promise.all([...WORKFLOWS, ...SHARED].map(async (wf) => (await runsOf(wf, days)).map((run) => ({ run, wf })))).then((x) => x.flat()),
+    Promise.all((file ? WORKFLOWS : [...WORKFLOWS, ...SHARED]).map(async (wf) => (await runsOf(wf, days).catch((e: Error) => {
+      if (SHARED.includes(wf) && /HTTP 404/.test(e.message)) return []; // a workflow file this branch adds: no runs yet
+      throw e;
+    })).map((run) => ({ run, wf })))).then((x) => x.flat()),
     pullsSince(since - 14 * 86_400_000),
   ]);
   // A run whose job list GitHub won't hand over (a 502 that outlasts the retries) is left out and counted, not fatal.
@@ -514,6 +569,7 @@ if (import.meta.main) {
     return jobs && { ...r, jobs, pr: prFor(r.run, pulls) };
   }))).filter((r) => r !== undefined);
   const using = appsUsing();
+  if (file) { await fileBlockers(rows, using, days); process.exit(0); }
   const out: string[] = [], say = (s: string) => out.push(s);
   say(`# CI report: ${WORKFLOWS.join(" and ")}, last ${days} days\n`);
   const pr = rows.filter((r) => WORKFLOWS.includes(r.wf));
