@@ -57,6 +57,35 @@
       "secs": 12.4
     }
   ],
+  "fm-daw": [
+    {
+      "file": "fm-daw-the-studio.mp4",
+      "title": "Qollab Studio",
+      "secs": 30
+    },
+    {
+      "file": "fm-daw-gear-room.mp4",
+      "title": "The gear room",
+      "secs": 11.4
+    },
+    {
+      "file": "fm-daw-jam.mp4",
+      "title": "The jam room",
+      "secs": 9.4
+    }
+  ],
+  "geoboxq": [
+    {
+      "file": "geoboxq-fits.mp4",
+      "title": "What fits",
+      "secs": 11.6
+    },
+    {
+      "file": "geoboxq-pack.mp4",
+      "title": "Pack it",
+      "secs": 6.8
+    }
+  ],
   "git-recon": [
     {
       "file": "git-recon-war-for-main.mp4",
@@ -143,6 +172,30 @@
       "file": "park-hide-seek-seek.mp4",
       "title": "Seek",
       "secs": 9
+    }
+  ],
+  "qcrm": [
+    {
+      "file": "qcrm-contacts.mp4",
+      "title": "Your contacts",
+      "secs": 13.4
+    },
+    {
+      "file": "qcrm-automate.mp4",
+      "title": "Automate it",
+      "secs": 9.2
+    }
+  ],
+  "qollab": [
+    {
+      "file": "qollab-rooms.mp4",
+      "title": "Rooms in one call",
+      "secs": 17.6
+    },
+    {
+      "file": "qollab-parties.mp4",
+      "title": "Parties",
+      "secs": 8.8
     }
   ],
   "skate-tech-park": [
