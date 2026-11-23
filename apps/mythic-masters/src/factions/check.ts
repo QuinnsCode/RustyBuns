@@ -4,15 +4,19 @@
 // manner, the other two factions, the reading). `bun scripts/factions.ts` prints it; the test holds all three files to it.
 import { Bad, isRecord } from "@rustybuns/util/guard";
 import { REGIONS } from "../regions.ts";
+import { road } from "../world/world.ts";
 import { SECTIONS, sections, STARTERS } from "../journey.ts";
 import { ROSTER } from "../roster.ts";
 import { lint } from "./ste.ts";
 import { Faction, FACTIONS, HOOKS, STYLES, Weave, WHEN_KEYS, type FactionId, type Lines, type When } from "./model.ts";
 
-/** The section (0-based) each quest step waits at, step 1 in region 1 to step 8 in region 8. */
+/** The region each quest step waits in: the road's order (`road` in world.ts), so step 4 is in the Great Lakes
+ * (region 5) and step 5 in the Pacific Northwest (region 4), the order you reach them in. */
+export const STEP_REGION: readonly number[] = road();
+/** The section (0-based) each quest step waits at, in its region (STEP_REGION). */
 export const SPINE: Record<FactionId, number[]> = {
-  office: [4, 5, 0, 7, 5, 1, 4, 8],
-  institute: [8, 9, 10, 4, 6, 4, 6, 7],
+  office: [4, 5, 0, 5, 7, 1, 4, 8],
+  institute: [8, 9, 10, 6, 4, 4, 6, 7],
   lamplighters: [2, 8, 2, 8, 8, 2, 4, 5],
 };
 /** The sections each faction posts in, by region. */
@@ -49,11 +53,11 @@ const KIND: Record<keyof typeof DEPTH, readonly (keyof When)[]> = {
   "the reading": ["now", "past", "trend"],
 };
 
-/** The creatures that are behind you by region n: the wild ones and keepers of every section up to it (a region's
- * mythic, on its last stone, is nobody else's to hold), and the starters. */
+/** The creatures that are behind you by region n: the wild ones and keepers of every section of it and of each
+ * region before it on the road (a region's mythic, on its last stone, is nobody else's to hold), and the starters. */
 export function behind(n: number): Set<string> {
-  const out = new Set<string>(STARTERS);
-  for (const g of REGIONS) if (g.n <= n) for (const s of sections(g)) { for (const w of s.wilds) out.add(w); if (s.k < SECTIONS - 1) out.add(s.keeper); }
+  const out = new Set<string>(STARTERS), upTo = STEP_REGION.indexOf(n), walked = upTo < 0 ? [] : STEP_REGION.slice(0, upTo + 1);
+  for (const g of REGIONS) if (walked.includes(g.n)) for (const s of sections(g)) { for (const w of s.wilds) out.add(w); if (s.k < SECTIONS - 1) out.add(s.keeper); }
   return out;
 }
 
@@ -127,8 +131,8 @@ export function problems(id: FactionId, raw: unknown): string[] {
 
   // the quest: eight steps, at the plan's places, each with one reply of every style
   f.quest.forEach((st, i) => {
-    const at = `quest[${i}]`, n = i + 1, ok = behind(n);
-    if (st.id !== `${id}.${n}`) out.push(`${at}: id is "${st.id}", not "${id}.${n}"`);
+    const at = `quest[${i}]`, n = STEP_REGION[i]!, ok = behind(n);
+    if (st.id !== `${id}.${i + 1}`) out.push(`${at}: id is "${st.id}", not "${id}.${i + 1}"`);
     if (st.n !== n || st.k !== SPINE[id][i]) out.push(`${at}: stands at ${st.n}:${st.k}, the plan says ${n}:${SPINE[id][i]}`);
     if (!people.has(st.who)) out.push(`${at}: nobody called "${st.who}"`);
     whenAt(st.needs, `${at}.needs`);

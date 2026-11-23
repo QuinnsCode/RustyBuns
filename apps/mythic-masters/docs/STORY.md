@@ -26,14 +26,6 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S5 | world wants the game has (built) | 21% | 0.21 |
 | | **total** | | **3.41 of 5** |
 
-## Where the game disagrees with itself
-
-Read from the game, not the JSON: each is an issue to fix in the game.
-
-- beat office-5 needs office-4, which is further down the road
-- beat institute-5 needs institute-4, which is further down the road
-- beat lamplighters-5 needs lamplighters-4, which is further down the road
-
 ## Threads
 
 | thread | kind | beats | built | pitch |
@@ -218,14 +210,14 @@ Region 5, from level 34.
 **sub**
 
 - **A wet letter** (The Frog Watch; built). The Frog Watch dry the letter by their torches and add a pressed frog (rubber) for the Blurry Society. *After: Written backwards.*
-- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 34; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot, Night Boat.*
-- **No Cars** (the Office: No Cars, level 37; built, from the game). On Mackinac Island Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
-- **The Long Study** (the Institute: The Long Study, level 37; built, from the game). Toby Reyes asked for one specimen out of the cold room on Isle Royale. *After: Ash Layer.*
-- **Night Boat** (Lamplighters: Night Boat, level 38; built, from the game). Pip asked me to ride the night boat over Lake Champlain with three passengers. *After: The Road Shut.*
+- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 34; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot.*
+- **The Frames** (the Office: The Frames, level 37; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
+- **The Count** (the Institute: The Count, level 37; built, from the game). Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held. *After: Field Guide.*
+- **The Road Shut** (Lamplighters: The Road Shut, level 38; built, from the game). Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant. *After: Tall Tales.*
 
 **side**
 
-- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 37; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: No Cars.*
+- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 37; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: The Frames.*
 - **The wolf count** (Great Lakes and Lake Champlain: Isle Royale, level 37; idea). Wolves and moose on Isle Royale have been counted every winter since 1958, the longest study of its kind. Help the count from a snow camp; one set of tracks is not a wolf's. *After: The Isle Royale Brute.*
 - **The Lake Erie Prowler** (The Lake Erie Prowler, level 38; built, from the game). A sighting board in Lake Erie: the trucker saw the Dover Demon. Three signs lead to its lair.
 - **The Isle Royale Brute** (The Isle Royale Brute, level 41; built, from the game). A sighting board in Isle Royale: the trucker saw the Beast of Bray Road. Three signs lead to its lair.
@@ -257,19 +249,19 @@ Region 4, from level 26.
 
 **main**
 
-- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 28; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, Ash Layer.*
+- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 28; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, The Count.*
 - **Sasquatch at Sasquatch's ridge** (Pacific Northwest rainforest: Sasquatch's ridge, level 34; built, from the game). The last stone of the Pacific Northwest rainforest trail: the region's mythic, Sasquatch, in its lair. Beat it and the Book can hold it.
 
 **sub**
 
 - **A blurry photograph** (The Blurry Society; built). The Blurry Society send their best photograph, which shows nothing at all, to the Antler Choir. *After: A wet letter.*
-- **Ash Layer** (the Institute: Ash Layer, level 28; built, from the game). Ms. Carrow counted deliverables at Mount St. Helens: twelve needed, nine held. *After: Field Guide.*
-- **The Frames** (the Office: The Frames, level 30; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
-- **The Road Shut** (Lamplighters: The Road Shut, level 30; built, from the game). Wren Ashby shut the road at Redwood Creek and asked me for a promise about the giant. *After: Tall Tales.*
+- **The Long Study** (the Institute: The Long Study, level 28; built, from the game). Toby Reyes asked for one specimen out of the cold room at Mount St. Helens. *After: The Count.*
+- **The Tandem** (the Office: The Tandem, level 30; built, from the game). At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
+- **Night Boat** (Lamplighters: Night Boat, level 30; built, from the game). Pip asked me to ride the night boat down Redwood Creek with three passengers. *After: The Road Shut.*
 
 **side**
 
-- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 26; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: Ash Layer.*
+- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 26; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: The Count.*
 - **The Lake Quinault Brute** (The Lake Quinault Brute, level 30; built, from the game). A sighting board in Lake Quinault: the birdwatcher saw the Splintercat. Three signs lead to its lair.
 - **The missing frames** (Pacific Northwest rainforest: The film, level 30; idea). The 1967 Bluff Creek film runs about a minute. A collector says there were more frames, cut and lost. Find three cans of film at the creek's old camps. *After: The Bluff Creek Prowler.*
 - **The Bluff Creek Prowler** (The Bluff Creek Prowler, level 33; built, from the game). A sighting board in Bluff Creek: the farmhand saw the Wampus Cat. Three signs lead to its lair.
@@ -306,7 +298,7 @@ Region 6, from level 42.
 **sub**
 
 - **A sung letter** (The Antler Choir; built). The Antler Choir can't write; they sing the answer, and you carry the tune to the Thirteen Counters. *After: A blurry photograph.*
-- **Annex 9** (the Office: Annex 9, level 42; built, from the game). You stood inside Annex 9, the Office store at Roswell, and the cordon showed you out. *After: No Cars.*
+- **Annex 9** (the Office: Annex 9, level 42; built, from the game). You stood inside Annex 9, the Office store at Roswell, and the cordon showed you out. *After: The Tandem.*
 - **Annex Raid** (Lamplighters: Annex Raid, level 43; built, from the game). Wren Ashby led a night raid on Annex 9 from the dunes at White Sands. *After: Night Boat.*
 - **Footprints at White Sands** (Southwest desert: White Sands, level 43; idea). At White Sands the gypsum keeps tracks for days. Gary's boot prints walk beside something with three toes, then the boot prints run. *After: The tripod at Niagara.*
 - **Field Strength** (the Institute: Field Strength, level 44; built, from the game). Dr. Vale read the Book with her meter at Meteor Crater and did not say the result. *After: The Long Study.*
@@ -497,17 +489,16 @@ flowchart LR
   office_2["Quiet Zone"]
   institute_3["Field Guide"]
   mythic_great_lakes_and_lake_champlain["Champ at Champ's water"]
-  institute_4["Ash Layer"]
+  institute_4["The Count"]
   mythic_bayou_and_everglades["Rougarou at The rougarou's swamp"]
   mythic_ozarks_and_the_southern_plains["Ozark Howler at The howler's hollow"]
-  lamplighters_5["Night Boat"]
   office_8["Two Forms"]
   lamplighters_3["Tall Tales"]
   lamplighters_1["First Lamp"]
   board_2_6["The New River Gorge Shrieker"]
   office_3["The Wooden One"]
   board_4_6["The Bluff Creek Prowler"]
-  office_5["No Cars"]
+  office_4["The Frames"]
   board_5_6["The Isle Royale Brute"]
   institute_6["Field Strength"]
   lamplighters_7["Smugglers' Bay"]
@@ -531,7 +522,6 @@ flowchart LR
   mythic_ozarks_and_the_southern_plains --> last_page_north
   gary_cedar_water --> gary_gorge
   gary_gorge --> gary_tripod
-  lamplighters_5 --> gary_tripod
   gary_tripod --> gary_white_sands
   gary_white_sands --> gary_fouke
   office_8 --> gary_fouke
@@ -552,7 +542,7 @@ flowchart LR
   office_3 --> fair_hodag
   institute_4 --> count_the_rings
   board_4_6 --> the_missing_frames
-  office_5 --> no_cars
+  office_4 --> no_cars
   board_5_6 --> wolf_count
   institute_6 --> crater_survey
   lamplighters_7 --> smugglers_pirogue

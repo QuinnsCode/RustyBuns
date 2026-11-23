@@ -94,7 +94,7 @@
       ],
       "youWin": [
         { "text": "The check is complete. You pass. A lamp keeper says the count out loud: {count}. Walk on." },
-        { "text": "You pass. You made a promise at Redwood Creek. Keep it the way I keep this lamp.", "when": { "flags": ["ridge-promise"] } },
+        { "text": "You pass. You made a promise at Lake Champlain. Keep it the way I keep this lamp.", "when": { "flags": ["ridge-promise"] } },
         { "text": "You pass, {you}. Take the lit path. I put that one down for people like you.", "when": { "now": ["warm", "close"] } }
       ],
       "youLose": [
@@ -399,15 +399,15 @@
     {
       "id": "lamplighters.4",
       "title": "The Road Shut",
-      "n": 4,
+      "n": 5,
       "k": 8,
       "who": "wren",
       "hail": [
-        { "text": "The road is shut past this stone, {you}. I shut it. The redwoods here are the tallest trees on Earth. People still look at the ground." },
+        { "text": "The road west is shut past this stone, {you}. I shut it. Lake Champlain has its own giant, in the water. The one I mean walks a ridge out west." },
         { "text": "The Book holds {count}. One is the giant. So I am too late with my request. Then hold it well.", "when": { "owns": ["sasquatch"] } },
         { "text": "The Book holds {count} and no giant. Good. Then my request is still in time.", "when": { "lacks": ["sasquatch"] } },
         { "text": "The suits have a copy of your tape. More film brings more people up this road. I shut it harder now.", "when": { "flags": ["tape-copied"] } },
-        { "text": "The grant officer counted your line-up at Mount St. Helens. Everybody counts. We count to keep. She counts to bill.", "when": { "flags": ["carrow-counted"] } },
+        { "text": "The grant officer counted your line-up on Isle Royale. Everybody counts. We count to keep. She counts to bill.", "when": { "flags": ["carrow-counted"] } },
         { "text": "The reports on you get worse, {you}. I read each one. I still ask you this in person.", "when": { "trend": ["falling"] } },
         { "text": "{gap} since we spoke. I shut 2 more roads in that time. This is the one that matters.", "when": { "gap": ["long"] } },
         { "text": "You still carry my lamp. So I ask you plainly, the way I gave it.", "when": { "flags": ["lamp-carried"] } }
@@ -454,8 +454,8 @@
       ],
       "fight": {
         "teams": [
-          { "team": [{ "id": "splintercat", "up": 3, "title": "Ruth" }, { "id": "fur-bearing-trout", "up": 3, "title": "June" }, { "id": "wampus-cat", "up": 3, "title": "Otis" }] },
-          { "when": { "trend": ["falling"] }, "team": [{ "id": "splintercat", "up": 4, "title": "Ruth" }, { "id": "fur-bearing-trout", "up": 4, "title": "June" }, { "id": "wampus-cat", "up": 4, "title": "Otis" }] }
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Ruth" }, { "id": "loveland-frogman", "up": 3, "title": "June" }, { "id": "wampus-cat", "up": 3, "title": "Otis" }] },
+          { "when": { "trend": ["falling"] }, "team": [{ "id": "splintercat", "up": 4, "title": "Ruth" }, { "id": "loveland-frogman", "up": 4, "title": "June" }, { "id": "wampus-cat", "up": 4, "title": "Otis" }] }
         ],
         "youWin": [
           { "text": "They are down. You pass. NOTE: The request stands. A fight does not answer it. Your hand does." },
@@ -473,22 +473,22 @@
         { "text": "The road is still shut. Ruth, June and Otis are rested. So is the question." },
         { "text": "{gap}. Nobody passed in that time. The road is still shut. Go again.", "when": { "gap": ["long"] } }
       ],
-      "log": "Wren Ashby shut the road at Redwood Creek and asked me for a promise about the giant."
+      "log": "Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant."
     },
     {
       "id": "lamplighters.5",
       "title": "Night Boat",
-      "n": 5,
+      "n": 4,
       "k": 8,
       "who": "pip",
       "hail": [
-        { "text": "Sparrow to {you}. Lake Champlain is about 120 miles long. We move them over it after dark. I must not say where. It is the east dock." },
-        { "text": "Message starts. The safe house at the east dock is empty. The suits came first. Protocol QUIET. They took Mabel. Message ends. Sorry. I am not calm.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "Sparrow to {you}. Redwood Creek runs about 60 miles to the sea, under the tallest trees on Earth. We move them down it after dark. I must not say where. It is the north bank." },
+        { "text": "Message starts. The safe house on the north bank is empty. The suits came first. Protocol QUIET. They took Mabel. Message ends. Sorry. I am not calm.", "when": { "flags": ["protocol-quiet"] } },
         { "text": "You took Specimen HI-031 out of the Institute cold room. We shelter it now. It has a name now. It is Clyde. It eats well.", "when": { "flags": ["specimen-freed"] } },
         { "text": "We have a tip from inside the Office. A suit with a scrapbook. Lamp One says not to say Quist on the air. I said Quist.", "when": { "flags": ["quist-turned"] } },
         { "text": "{gap} since we last talked. I counted. Lamp One says I count the wrong things.", "when": { "gap": ["long"] } },
         { "text": "You ran my paper at Tug Fork. So I asked for you by call sign. You do not have one. I can fix that.", "when": { "flags": ["message-run"] } },
-        { "text": "It is dark, so the boat is ready. Do not use your torch on the dock. The lamps show the way to the water.", "when": { "night": true } },
+        { "text": "It is dark, so the boat is ready. Do not use your torch on the bank. The lamps show the way to the water.", "when": { "night": true } },
         { "text": "You make jokes when I talk. I like it. Lamp One says I must not like it on the air.", "when": { "manner": "dry" } }
       ],
       "ask": [
@@ -522,7 +522,7 @@
         {
           "id": "not-smuggler",
           "style": "hard",
-          "say": "I'm not smuggling anything across a border lake at night.",
+          "say": "I'm not smuggling anything down a creek at night.",
           "answer": [
             { "text": "It is not smuggling. It is moving. The manual has a different page for each. Sparrow out. I mean, fine." }
           ],
@@ -547,10 +547,10 @@
         "setsWin": []
       },
       "rematch": [
-        { "text": "The boat is ready again. The lake did not get shorter. Go." },
-        { "text": "{gap} on the dock. The passengers learned your name. Go again.", "when": { "gap": ["long"] } }
+        { "text": "The boat is ready again. The creek did not get shorter. Go." },
+        { "text": "{gap} on the bank. The passengers learned your name. Go again.", "when": { "gap": ["long"] } }
       ],
-      "log": "Pip asked me to ride the night boat over Lake Champlain with three passengers."
+      "log": "Pip asked me to ride the night boat down Redwood Creek with three passengers."
     },
     {
       "id": "lamplighters.6",
@@ -720,8 +720,8 @@
       "hail": [
         { "text": "Route 66 was commissioned in 1926. Long Haul parked his truck on it. This is the end of our line, {you}. I walk with four." },
         { "text": "We met you first, at {met}, at a path light. I gave you a question then. Tonight I give you my answer.", "when": { "first": "lamplighters" } },
-        { "text": "You made a promise at Redwood Creek. The Book holds the giant. The promise is broken. I say it out loud so you hear it.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } },
-        { "text": "You made a promise at Redwood Creek. The Book holds {count} and no giant. The promise is kept. I checked. I always check.", "when": { "flags": ["ridge-promise"], "lacks": ["sasquatch"] } },
+        { "text": "You made a promise at Lake Champlain. The Book holds the giant. The promise is broken. I say it out loud so you hear it.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } },
+        { "text": "You made a promise at Lake Champlain. The Book holds {count} and no giant. The promise is kept. I checked. I always check.", "when": { "flags": ["ridge-promise"], "lacks": ["sasquatch"] } },
         { "text": "The Office is closed. The Institute is closed. We are the last ones behind you. Their leftovers walk with me now.", "when": { "done": ["office.8", "institute.8"] } },
         { "text": "You held the bay with Long Haul. He tells it at every truck stop. I heard it 6 times.", "when": { "flags": ["bay-held"] } },
         { "text": "You sent the suits to Barataria and the cache burned. You helped after. Both are in the log. I read both.", "when": { "flags": ["cache-burned"] } },

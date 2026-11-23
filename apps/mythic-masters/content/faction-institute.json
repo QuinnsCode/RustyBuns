@@ -325,9 +325,9 @@
       "log": "Dr. Vale asked for squonk tears at Cox's field guide."
     },
     {
-      "id": "institute.4", "title": "Ash Layer", "n": 4, "k": 4, "who": "carrow",
+      "id": "institute.4", "title": "The Count", "n": 5, "k": 6, "who": "carrow",
       "hail": [
-        { "text": "I am Ms. Carrow, grant officer. Mount St. Helens erupted on May 18, 1980, and the ash layer dates each sample here. I date things too. The grant has 19 days left." },
+        { "text": "I am Ms. Carrow, grant officer. On Isle Royale the wolves and moose are counted each winter, and have been since 1958. I count things too. The grant has 19 days left." },
         { "text": "I am Ms. Carrow, grant officer. The Office has a copy of your tape. I bought a copy of the copy. I counted the creatures on it. You are ahead of this Institute.", "when": { "flags": ["tape-copied"] } },
         { "text": "I am Ms. Carrow, grant officer. You took one bottle of Reagent 12. It cost 212 dollars. It is line 40 of my ledger. You are now a cost.", "when": { "flags": ["reagent-taken"] } },
         { "text": "I am Ms. Carrow, grant officer. Your standing with this Institute is poor. I do not mind. I like nobody. It saves time.", "when": { "now": ["cold", "cool"] } },
@@ -362,8 +362,8 @@
       ],
       "fight": {
         "teams": [
-          { "team": [{ "id": "splintercat", "up": 3, "title": "Specimen HI-024" }, { "id": "fur-bearing-trout", "up": 3, "title": "Specimen HI-026" }, { "id": "champ", "up": 4, "title": "Specimen HI-027" }] },
-          { "when": { "have": { "binds": 12 } }, "team": [{ "id": "splintercat", "up": 4, "title": "Specimen HI-024" }, { "id": "fur-bearing-trout", "up": 4, "title": "Specimen HI-026" }, { "id": "champ", "up": 5, "title": "Specimen HI-027" }] }
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Specimen HI-024" }, { "id": "beast-of-bray-road", "up": 3, "title": "Specimen HI-026" }, { "id": "champ", "up": 4, "title": "Specimen HI-027" }] },
+          { "when": { "have": { "binds": 12 } }, "team": [{ "id": "splintercat", "up": 4, "title": "Specimen HI-024" }, { "id": "beast-of-bray-road", "up": 4, "title": "Specimen HI-026" }, { "id": "champ", "up": 5, "title": "Specimen HI-027" }] }
         ],
         "youWin": [
           { "text": "Three specimens down. They still count as three. I counted your line-up in use. I count it as a risk. Good day." },
@@ -379,18 +379,18 @@
         { "text": "You are back. The three specimens are still deliverables. Fight them again, and I will count again." },
         { "text": "You were away for {gap}. I charged the wait to the grant. Begin.", "when": { "gap": ["long"] } }
       ],
-      "log": "Ms. Carrow counted deliverables at Mount St. Helens: twelve needed, nine held."
+      "log": "Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held."
     },
     {
-      "id": "institute.5", "title": "The Long Study", "n": 5, "k": 6, "who": "toby",
+      "id": "institute.5", "title": "The Long Study", "n": 4, "k": 4, "who": "toby",
       "hail": [
-        { "text": "{you}. Quiet, please. The study of wolves and moose on Isle Royale began in 1958. Dr. Vale admires it. She has nine days of money. The Office will come for our cold room. I want one specimen out first." },
+        { "text": "{you}. Quiet, please. Mount St. Helens erupted in 1980, and scientists have watched life come back here since then. Dr. Vale admires that study. She has nine days of money. The Office will come for our cold room. I want one specimen out first." },
         { "text": "{you}. You are late, and so am I. Protocol QUIET began. The Office took the cold room last night. Eight bags, eight specimens, one form. One specimen is left. It is in my lunch cooler.", "when": { "flags": ["protocol-quiet"] } },
         { "text": "Wren Ashby plans a raid on the Office store. I heard it on a radio that I do not own. If she opens cages, I want one of ours far away first.", "when": { "flags": ["raid-plan"] } },
-        { "text": "You always give me a straight answer, {you}. So I trust you with this. Dr. Vale must not know. The study here began in 1958. Ours has nine days. I want one specimen out.", "when": { "manner": "straight" } },
+        { "text": "You always give me a straight answer, {you}. So I trust you with this. Dr. Vale must not know. The study here began in 1980. Ours has nine days. I want one specimen out.", "when": { "manner": "straight" } },
         { "text": "You make jokes, and I laugh, and then Dr. Vale looks at me. This is not a joke. Nine days of money are left. I want one specimen out of the cold room.", "when": { "manner": "dry" } },
         { "text": "It is {gap} since we spoke. I did not sleep in that time. I counted. Listen. The Office will come for the cold room, and I need your help.", "when": { "gap": ["long"] } },
-        { "text": "Ms. Carrow counted nine specimens at Mount St. Helens. If one leaves, she counts eight. I will say that I counted wrong. I have not slept, so she will believe it.", "when": { "flags": ["carrow-counted"] } }
+        { "text": "Ms. Carrow counted nine specimens on Isle Royale. If one leaves, she counts eight. I will say that I counted wrong. I have not slept, so she will believe it.", "when": { "flags": ["carrow-counted"] } }
       ],
       "ask": [
         { "text": "Specimen HI-031 is a Loveland Frogman. It likes rain, and it does not like bags. Will you take it out of here?" },
@@ -436,7 +436,7 @@
         { "text": "The door is unlocked. The alarm is tired. Please win this time. I cannot ask a second Carrier." },
         { "text": "You were away for {gap}. The grant has fewer days now. HI-031 is still here. Please.", "when": { "gap": ["long"] } }
       ],
-      "log": "Toby Reyes asked for one specimen out of the cold room on Isle Royale."
+      "log": "Toby Reyes asked for one specimen out of the cold room at Mount St. Helens."
     },
     {
       "id": "institute.6", "title": "Field Strength", "n": 6, "k": 4, "who": "vale",
@@ -501,7 +501,7 @@
         { "text": "{you}. Lake Okeechobee is about 730 square miles. I must stand in it tonight. Ms. Carrow will cut the grant unless we tag the rougarou. Dr. Vale wrote a plan. I am the lure. The grant has 3 days left." },
         { "text": "{you}. You know the Lamplighters. They shelter things that we put in bags. I am a thing in a plan now. I am the lure for the rougarou. Would they shelter a technician?", "when": { "met": ["lamplighters"] } },
         { "text": "{you}. I am the lure in the rougarou plan. I hear that some people put lights on the night paths. I do not know them. I know nobody who is not on the payroll.", "when": { "unmet": ["lamplighters"] } },
-        { "text": "{you}. You took HI-031 out for me at Isle Royale. Nobody found out. Now I ask again, and the specimen is me. I am the lure in the rougarou plan.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "{you}. You took HI-031 out for me at Mount St. Helens. Nobody found out. Now I ask again, and the specimen is me. I am the lure in the rougarou plan.", "when": { "flags": ["specimen-freed"] } },
         { "text": "The Office burned a Lamplighter cache at Barataria. You told them where the boats go. I do not judge. I have not slept. Now tell me where I can go. I am the lure in the rougarou plan.", "when": { "flags": ["cache-burned"] } },
         { "text": "The Book holds a rougarou already. Dr. Vale says that a bind is not a tag. The grant needs our tag on one. So the plan stands, and I am still the lure.", "when": { "owns": ["rougarou"] } },
         { "text": "You always make me laugh, {you}. Please do not do it now. The plan says that the lure stays still. I am the lure. The rougarou is the rest of the plan.", "when": { "manner": "dry" } },

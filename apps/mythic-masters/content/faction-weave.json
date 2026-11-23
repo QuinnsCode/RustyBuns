@@ -9,7 +9,7 @@
     { "flag": "ridge-promise", "creature": "sasquatch" }
   ],
   "crossings": [
-    { "id": "ridge-broken", "to": "lamplighters", "when": { "flags": ["ridge-promise"], "noFlags": ["ridge-promise-late"], "owns": ["sasquatch"] }, "text": "You made a promise at Redwood Creek. The Book holds the giant now. We counted. The count does not lie.", "sway": -3, "sets": ["ridge-broken"] },
+    { "id": "ridge-broken", "to": "lamplighters", "when": { "flags": ["ridge-promise"], "noFlags": ["ridge-promise-late"], "owns": ["sasquatch"] }, "text": "You made a promise at Lake Champlain. The Book holds the giant now. We counted. The count does not lie.", "sway": -3, "sets": ["ridge-broken"] },
     { "id": "ridge-kept", "to": "lamplighters", "when": { "flags": ["ridge-promise"], "noFlags": ["ridge-promise-late"], "lacks": ["sasquatch"], "been": ["4:11"] }, "text": "You went up the ridge. You came down with an empty page. The road stays shut. Thank you.", "sway": 2, "sets": ["ridge-kept"] },
 
     { "id": "quiet-zone-after", "to": "office", "when": { "inOrder": ["office.2", "lamplighters.2"], "flags": ["message-run"] }, "text": "A light signal crossed the Quiet Zone after our stop. The signal used your route. Agent Pell wrote 3 pages about it.", "sway": -1 },
