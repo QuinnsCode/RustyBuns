@@ -54,6 +54,10 @@ What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) 
   changes the decimated mesh. Don't take the pin off, and don't change it to fit more Blenders on a machine.
   Plants and ground never decimate, and come out byte for byte the same at `-t 1` and `-t 8` (checked on three
   plants and two ground layers, #3823), so they need no pin.
+- **Several agents on one Mac take turns.** Wrap every Blender run in `bun scripts/heavy.ts blender <cmd...>` and
+  every headless Chrome or dev-server run in `bun scripts/heavy.ts chrome <cmd...>`: one job of a kind runs at a
+  time, under `nice`, and the rest wait. On 2026-11-22 three lanes' Blenders and Chromes at once froze the 16 GB
+  office Mac and it had to be forced off. One agent working alone doesn't need it.
 - **One Blender per core, not all at once.** All 76 at once asked about 26 GB of a 16 GB Mac (126 s). One per
   core (`--jobs`, the default) took 98 s. Build only the sheet you changed.
 - **The build is most of the time, not the start.** A single build takes 1-5 s; Blender's start is about 0.8 s
