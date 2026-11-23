@@ -66,17 +66,22 @@ export interface StudioDef {
 
 /**
  * An open-air party's rig, drawn by open-air.ts: the speaker stacks (each a horn bin, a mid-bass horn and a mid-high horn
- * on a sand dolly, its front facing yaw's way as a seat looks), the lighting truss behind the stage with its moving heads
- * and lasers, the lantern poles round the floor, the generator off to one side, and a seed for the plants and rocks out in the dark. The size is the ground you can walk.
+ * on a sand dolly, its front facing yaw's way as a seat looks), a lighting truss with moving heads and lasers if the party
+ * has one, the tall lantern poles, the generator off to one side, and a seed for the plants and rocks out in the dark.
+ * The size is the ground you can walk.
  */
 export interface Outdoor {
   stacks: { at: [number, number]; yaw: number }[];
-  truss: { at: [number, number]; yaw: number; w: number; h: number };
+  /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
+  mono?: boolean;
+  truss?: { at: [number, number]; yaw: number; w: number; h: number };
   generator?: { at: [number, number]; yaw: number };
-  /** The carved wooden lantern poles round the dance floor: the corners of the line they stand on (x0, z0, x1, z1). */
-  lanternPoles?: [number, number, number, number];
+  /** The tall carved wooden lantern poles: where each stands, and the way its crook (and the lantern on it) reaches. */
+  lanternPoles?: { at: [number, number]; yaw: number }[];
   /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */
   lanterns?: [number, number, number][];
+  /** Everyone carries a hand lantern of their own while they're on their feet, and puts it down to sit at a seat. */
+  carry?: boolean;
   seed: number;
 }
 

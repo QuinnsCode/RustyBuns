@@ -2,11 +2,11 @@
 // look.ts's lit room. A sky fading from deep blue overhead to a dusty glow on the horizon, stars and a full moon, the
 // ranges standing black against it; a clearing of sand in the Mojave, under the moon's cold light; the speaker stacks
 // from Sound Guy Simulator's desert night (packages/models gear: a 21" horn bin, a mid-bass horn and a mid-high horn on
-// a sand dolly); a truss behind the stage with moving heads that sweep the floor and lasers that fan over the crowd;
-// round the dance floor, hand-carved wooden poles with a vine cut up each one and a lantern hung from its crook, the
-// flames never quite still; the generator off to one side with its jerry cans; Joshua trees, creosote, barrel cactus,
-// beavertail and granite boulders out in the dark. On high a strong bloom, so the beams and the lanterns glow. Every
-// light moves on the clock it's given (`render`), the same for everyone.
+// a sand dolly); a truss with moving heads that sweep the floor and lasers that fan over the crowd, for a party that
+// has one; tall hand-carved wooden poles with a vine cut up each one and a lantern hung from its crook, the flames never
+// quite still; the generator off to one side with its jerry cans; Joshua trees, creosote, barrel cactus, beavertail and
+// granite boulders out in the dark. On high a bloom, so the lanterns glow. Every light moves on the clock it's given
+// (`render`), the same for everyone.
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -93,7 +93,7 @@ export function headAim(i: number, n: number, t: number): { pan: number; tilt: n
 }
 
 export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality): Look {
-  const out: Outdoor = def.outdoor ?? { stacks: [], truss: { at: [0, -def.size.d / 2 + 1], yaw: 0, w: 8, h: 4 }, seed: 1 };
+  const out: Outdoor = def.outdoor ?? { stacks: [], seed: 1 };
   const high = quality === "high";
   // a room's lens stops at 80 m; out here the sky and the dunes are further than that
   camera.far = 400; camera.updateProjectionMatrix();
@@ -173,101 +173,96 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   const look = gearLook();
   for (const s of out.stacks) group.add(paStack(s.at, s.yaw, look));
 
-  // ---- the truss: two towers and a span of box truss, the heads hung under it, the lasers on top
-  const truss = new THREE.Group(), tr = out.truss;
-  truss.position.set(tr.at[0], 0, tr.at[1]); truss.rotation.y = tr.yaw;
-  group.add(truss);
-  const alu = surface("metal", "#c9ccd1");
-  const chord = (len: number, along: "x" | "y") => {
-    const sec = new THREE.Group(), r = 0.025, off = 0.14;
-    for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), alu);
-      if (along === "x") { c.rotation.z = Math.PI / 2; c.position.set(0, a * off, b * off); } else c.position.set(a * off, 0, b * off);
-      sec.add(c);
-    }
-    // the zig-zag lacing between the chords, one draw call
-    const n = Math.floor(len / 0.3), lace = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.012, 0.012, 0.4, 6), alu, n * 2), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
-    for (let i = 0; i < n; i++) for (const side of [-1, 1]) {
-      const t = -len / 2 + (i + 0.5) * 0.3;
-      e.set(along === "x" ? 0 : (i % 2 ? 0.8 : -0.8), 0, along === "x" ? (i % 2 ? 0.8 : -0.8) + Math.PI / 2 : 0);
-      q.setFromEuler(e);
-      lace.setMatrixAt(i * 2 + (side > 0 ? 1 : 0), m.compose(along === "x" ? new THREE.Vector3(t, 0, side * off) : new THREE.Vector3(side * off, t, 0), q, new THREE.Vector3(1, 1, 1)));
-    }
-    sec.add(lace);
-    return sec;
-  };
-  for (const x of [-tr.w / 2, tr.w / 2]) { const tw = chord(tr.h, "y"); tw.position.set(x, tr.h / 2, 0); truss.add(tw); }
-  const span = chord(tr.w + 0.3, "x"); span.position.y = tr.h; truss.add(span);
-
-  // the moving heads: a yoke and a head each, a spot light and its beam, seen in the dust
+  // ---- the truss, where the party has one: two towers and a span of box truss, the heads hung under it, the lasers on top
   const heads: { yoke: THREE.Group; head: THREE.Group; light: THREE.SpotLight; beam: THREE.Mesh }[] = [];
-  const n = 6, black = surface("plastic", "#121316");
-  const beamGeo = new THREE.CylinderGeometry(0.05, 1.6, 22, 24, 1, true).translate(0, -11, 0);
-  for (let i = 0; i < n; i++) {
-    const yoke = new THREE.Group();
-    yoke.position.set(-tr.w / 2 + 1 + (i * (tr.w - 2)) / (n - 1), tr.h - 0.25, 0.1);
-    const arms = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.12), black);
-    arms.position.y = -0.1;
-    const head = new THREE.Group();
-    head.position.y = -0.3;
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.36, 18), black);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.12, 18).rotateX(Math.PI / 2).translate(0, -0.185, 0), new THREE.MeshBasicMaterial({ color: BEAMS[i % BEAMS.length] }));
-    lens.userData.looked = true;
-    const color = new THREE.Color(BEAMS[i % BEAMS.length]);
-    const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
-    const light = new THREE.SpotLight(color, 160, 30, 0.12, 0.5, 1.6);
-    light.position.set(0, -0.2, 0);
-    light.target.position.set(0, -10, 0);
-    head.add(body, lens, beam, light, light.target);
-    yoke.add(arms, head);
-    truss.add(yoke);
-    heads.push({ yoke, head, light, beam });
-  }
-
-  // the lasers: thin green and cyan lines fanning out over the crowd from the top of the truss
   const lasers: THREE.Mesh[] = [];
-  const laserGeo = new THREE.CylinderGeometry(0.012, 0.012, 60, 4).translate(0, 30, 0).rotateX(Math.PI / 2);
-  for (let i = 0; i < LASERS; i++) {
-    const m = new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: i % 2 ? "#3dff6a" : "#28d8ff", transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-    m.position.set(0, tr.h + 0.3, 0);
-    truss.add(m);
-    lasers.push(m);
-  }
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.4), black);
-  box.position.set(0, tr.h + 0.22, 0);
-  truss.add(box);
+  if (out.truss) {
+    const truss = new THREE.Group(), tr = out.truss;
+    truss.position.set(tr.at[0], 0, tr.at[1]); truss.rotation.y = tr.yaw;
+    group.add(truss);
+    const alu = surface("metal", "#c9ccd1");
+    const chord = (len: number, along: "x" | "y") => {
+      const sec = new THREE.Group(), r = 0.025, off = 0.14;
+      for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]] as const) {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), alu);
+        if (along === "x") { c.rotation.z = Math.PI / 2; c.position.set(0, a * off, b * off); } else c.position.set(a * off, 0, b * off);
+        sec.add(c);
+      }
+      // the zig-zag lacing between the chords, one draw call
+      const n = Math.floor(len / 0.3), lace = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.012, 0.012, 0.4, 6), alu, n * 2), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+      for (let i = 0; i < n; i++) for (const side of [-1, 1]) {
+        const t = -len / 2 + (i + 0.5) * 0.3;
+        e.set(along === "x" ? 0 : (i % 2 ? 0.8 : -0.8), 0, along === "x" ? (i % 2 ? 0.8 : -0.8) + Math.PI / 2 : 0);
+        q.setFromEuler(e);
+        lace.setMatrixAt(i * 2 + (side > 0 ? 1 : 0), m.compose(along === "x" ? new THREE.Vector3(t, 0, side * off) : new THREE.Vector3(side * off, t, 0), q, new THREE.Vector3(1, 1, 1)));
+      }
+      sec.add(lace);
+      return sec;
+    };
+    for (const x of [-tr.w / 2, tr.w / 2]) { const tw = chord(tr.h, "y"); tw.position.set(x, tr.h / 2, 0); truss.add(tw); }
+    const span = chord(tr.w + 0.3, "x"); span.position.y = tr.h; truss.add(span);
 
-  // ---- the lantern poles round the dance floor: three carvings, each pole one of them turned to hang its lantern
-  // over the floor, none quite the same height or quite upright
-  const flames: THREE.PointLight[] = [];
-  if (out.lanternPoles) {
-    const [x0, z0, x1, z1] = out.lanternPoles, corners: [number, number][] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    const stand: [number, number][] = [];
-    for (let c = 0; c < 4; c++) {
-      const [ax, az] = corners[c]!, [bx, bz] = corners[(c + 1) % 4]!, segs = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 6));
-      // none between the corners on the stage's side: nothing stands between the floor and the decks
-      for (let k = 0; k < segs; k++) if (c !== 0 || k === 0) stand.push([ax + ((bx - ax) * k) / segs, az + ((bz - az) * k) / segs]);
+    // the moving heads: a yoke and a head each, a spot light and its beam, seen in the dust
+    const n = 6, black = surface("plastic", "#121316");
+    const beamGeo = new THREE.CylinderGeometry(0.05, 1.6, 22, 24, 1, true).translate(0, -11, 0);
+    for (let i = 0; i < n; i++) {
+      const yoke = new THREE.Group();
+      yoke.position.set(-tr.w / 2 + 1 + (i * (tr.w - 2)) / (n - 1), tr.h - 0.25, 0.1);
+      const arms = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.12), black);
+      arms.position.y = -0.1;
+      const head = new THREE.Group();
+      head.position.y = -0.3;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.36, 18), black);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.12, 18).rotateX(Math.PI / 2).translate(0, -0.185, 0), new THREE.MeshBasicMaterial({ color: BEAMS[i % BEAMS.length] }));
+      lens.userData.looked = true;
+      const color = new THREE.Color(BEAMS[i % BEAMS.length]);
+      const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      const light = new THREE.SpotLight(color, 160, 30, 0.12, 0.5, 1.6);
+      light.position.set(0, -0.2, 0);
+      light.target.position.set(0, -10, 0);
+      head.add(body, lens, beam, light, light.target);
+      yoke.add(arms, head);
+      truss.add(yoke);
+      heads.push({ yoke, head, light, beam });
     }
+
+    // the lasers: thin green and cyan lines fanning out over the crowd from the top of the truss
+    const laserGeo = new THREE.CylinderGeometry(0.012, 0.012, 60, 4).translate(0, 30, 0).rotateX(Math.PI / 2);
+    for (let i = 0; i < LASERS; i++) {
+      const m = new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: i % 2 ? "#3dff6a" : "#28d8ff", transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      m.position.set(0, tr.h + 0.3, 0);
+      truss.add(m);
+      lasers.push(m);
+    }
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.4), black);
+    box.position.set(0, tr.h + 0.22, 0);
+    truss.add(box);
+  }
+
+  // ---- the tall lantern poles: three carvings, each pole one of them, none quite the same height or quite upright,
+  // its crook reaching the way the room turns it
+  const flames: THREE.PointLight[] = [];
+  if (out.lanternPoles?.length) {
+    const stand = out.lanternPoles;
     const carved = [0, 1, 2].map((k) => lanternPole(out.seed + k * 97));
     const wood = surface("wood", "#8a6844"), paper = new THREE.MeshStandardMaterial({ color: "#2a1606", emissive: "#ffb257", emissiveIntensity: 2.4 });
     const m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion();
     carved.forEach((pole, k) => {
-      const mine = stand.map((at, i) => ({ at, i })).filter((p) => p.i % carved.length === k);
+      const mine = stand.map((p, i) => ({ p, i })).filter(({ i }) => i % carved.length === k);
+      if (!mine.length) return;
       const poles = new THREE.InstancedMesh(pole.wood, wood, mine.length), panes = new THREE.InstancedMesh(pole.glow, paper, mine.length);
       panes.userData.looked = true;
-      mine.forEach(({ at: [x, z], i }, n) => {
-        const size = 0.9 + rnd() * 0.25;
-        e.set((rnd() - 0.5) * 0.08, Math.atan2(-(cz - z), cx - x) + (rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.08);
+      mine.forEach(({ p: { at: [x, z], yaw }, i }, n) => {
+        const size = 1.05 + rnd() * 0.15;
+        // the crook reaches toward +x: turned so it reaches the pole's yaw (0 toward +z, as a seat faces)
+        e.set((rnd() - 0.5) * 0.06, yaw - Math.PI / 2 + (rnd() - 0.5) * 0.2, (rnd() - 0.5) * 0.06);
         m.compose(new THREE.Vector3(x, duneAt(x, z, flat) - 0.03, z), q.setFromEuler(e), new THREE.Vector3(size, size, size));
         poles.setMatrixAt(n, m); panes.setMatrixAt(n, m);
-        // every other lantern lights the sand and the faces near it; the rest only glow
-        if (i % 2 === 0) {
-          const l = new THREE.PointLight("#ffb060", 10, 13, 1.8);
-          l.position.copy(pole.flame).applyMatrix4(m);
-          l.userData.i = i;
-          group.add(l);
-          flames.push(l);
-        }
+        const l = new THREE.PointLight("#ffb060", 12, 14, 1.8);
+        l.position.copy(pole.flame).applyMatrix4(m);
+        l.userData.i = i;
+        group.add(l);
+        flames.push(l);
       });
       group.add(poles, panes);
     });
@@ -350,7 +345,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
         l.rotation.set(-0.06 - Math.abs(Math.sin(t * 0.7)) * 0.12, spread + Math.sin(t * 0.9) * 0.25, 0);
         l.visible = Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
       });
-      for (const l of flames) l.intensity = 10 * flameAt(l.userData.i as number, t);
+      for (const l of flames) l.intensity = 12 * flameAt(l.userData.i as number, t);
       if (composer) composer.render(); else renderer.render(scene, cam);
     },
     resize(wpx, hpx) {

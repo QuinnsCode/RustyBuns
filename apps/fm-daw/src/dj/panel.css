@@ -19,7 +19,7 @@
 .dj-people p { white-space: normal; }
 /* someone else's deck: its play, cue, sync, hot cues and jumps reach them; the pitch, loops and jog are theirs alone */
 .dj-deck.far { border-style: dashed; }
-.dj-deck.far .dj-pitchcol, .dj-deck.far .dj-loops, .dj-deck.far .dj-wheel, .dj-deck.far .dj-mode { opacity: 0.35; pointer-events: none; }
+.dj-deck.far .dj-pitchcol, .dj-deck.far .dj-loops { opacity: 0.35; pointer-events: none; }
 /* the close-up, both decks on one time scale, and its zoom */
 .dj-zoombox { position: relative; }
 .dj-zoom { width: 100%; height: 120px; border-radius: 8px; background: #0d0e11; display: block; touch-action: pan-y; }

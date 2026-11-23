@@ -1,7 +1,9 @@
 // Lanterns to carry, in an open-air room (room.ts `Outdoor.lanterns`; Desert Gathering's stand at the ends of the deck
 // table). Anyone walks up and takes one with F or a click (the key and the click the room uses for things), walks off
 // into the dark by its light and sets it down anywhere; everyone sees where each one is and who has it, because the
-// World keeps them (src/lanterns.ts) and says who got one when two reach for it.
+// World keeps them (src/lanterns.ts) and says who got one when two reach for it. Where everyone carries one
+// (`Outdoor.carry`), each body on its feet has a hand lantern of its own too, put down while they sit at a seat (the DJ
+// plays by the poles' light) and put away while they carry one of the room's.
 //
 // Each is made by hand, in the carved poles' style (open-air.ts `lanternPole`): a little wooden house of four posts and a
 // pointed roof, paper panes with a lattice bar, a rope handle, and a candle inside. A carried one hangs out of its
@@ -60,6 +62,22 @@ export function lanternPlaces(def: StudioDef, ls: Lanterns, me: number | null, j
   });
 }
 
+/**
+ * The hand lanterns of a room where everyone carries one: yours and each other body's, while on their feet and not
+ * carrying one of the room's. Numbered on from the room's own lanterns, so each flickers in its own time.
+ */
+export function handLanterns(def: StudioDef, ls: Lanterns, me: number | null, jam: Jam): LanternPlace[] {
+  if (!def.outdoor?.carry) return [];
+  const n = def.outdoor.lanterns?.length ?? 0, here = ls.room === def.id, out: LanternPlace[] = [];
+  const holds = (peer: number | null) => here && peer !== null && carried(ls, peer) !== null;
+  if (!jam.me.seat && !holds(me)) out.push({ i: n, ...inHand(def, jam.me.x, jam.me.z, jam.me.yaw), yaw: jam.me.yaw, by: "me" });
+  for (const [peer, o] of jam.others) {
+    if (o.seat || holds(peer)) continue;
+    out.push({ i: n + 1 + out.length, ...inHand(def, o.at[0], o.at[1], o.yaw), yaw: o.yaw, by: peer });
+  }
+  return out;
+}
+
 /** The lanterns here: what the World says about them, taking and setting one down, and (with a scene) drawing them. */
 export class LanternsHere {
   ls: Lanterns;
@@ -68,7 +86,7 @@ export class LanternsHere {
   private drawn: LanternsDrawn | null;
   constructor(readonly def: StudioDef, private send: (m: LanternClient) => void, scene?: THREE.Scene) {
     this.ls = noLanterns(def.id);
-    this.drawn = scene && def.outdoor?.lanterns?.length ? new LanternsDrawn(scene, def.outdoor.lanterns.length) : null;
+    this.drawn = scene && (def.outdoor?.lanterns?.length || def.outdoor?.carry) ? new LanternsDrawn(scene) : null;
   }
   get count() { return this.def.outdoor?.lanterns?.length ?? 0; }
 
@@ -78,6 +96,8 @@ export class LanternsHere {
   /** The lantern in your hand, if any. */
   mine(): number | null { return this.me === null || this.ls.room !== this.def.id ? null : carried(this.ls, this.me); }
   places(jam: Jam) { return lanternPlaces(this.def, this.ls, this.me, jam); }
+  /** The hand lanterns everyone on their feet carries, where the room has them. */
+  hands(jam: Jam) { return handLanterns(this.def, this.ls, this.me, jam); }
 
   /** The free lantern nearest you within reach, or null. */
   near(jam: Jam): number | null {
@@ -122,10 +142,11 @@ export class LanternsHere {
   }
 
   /** Each frame: every lantern where it is, its flame and its pool, and the real lights on the nearest few. */
-  frame(jam: Jam, eye: THREE.Vector3, t: number) { this.drawn?.frame(this.def, this.places(jam), eye, t); }
+  frame(jam: Jam, eye: THREE.Vector3, t: number) { this.drawn?.frame(this.def, [...this.places(jam), ...this.hands(jam)], eye, t); }
 
   state(jam: Jam) {
-    return { mine: this.mine(), near: this.near(jam), lanterns: this.places(jam).map((p) => ({ ...p, x: round(p.x), y: round(p.y), z: round(p.z), yaw: round(p.yaw) })) };
+    const at = (p: LanternPlace) => ({ ...p, x: round(p.x), y: round(p.y), z: round(p.z), yaw: round(p.yaw) });
+    return { mine: this.mine(), near: this.near(jam), lanterns: this.places(jam).map(at), hands: this.hands(jam).map(at) };
   }
 }
 const round = (v: number) => Math.round(v * 100) / 100;
@@ -166,41 +187,45 @@ function poolTexture(): THREE.Texture {
   return t;
 }
 
-/** The lanterns in a scene: one mesh set each, a pool under each, and LIT real lights handed to the nearest. */
+/** The lanterns in a scene: one mesh set each (made the first time its number is drawn), a pool under each, and LIT real lights handed to the nearest. */
 class LanternsDrawn {
   private items: { g: THREE.Group; flame: THREE.Mesh; panes: THREE.Mesh; pool: THREE.Mesh }[] = [];
   private lights: THREE.PointLight[] = [];
-  constructor(scene: THREE.Scene, n: number) {
-    const m = lanternModel(), wood = surface("wood", "#8a6844");
-    const candle = new THREE.MeshStandardMaterial({ color: "#efe2c4", emissive: "#ffcf8a", emissiveIntensity: 0.6, roughness: 0.8 });
-    const poolMat = new THREE.MeshBasicMaterial({ map: poolTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
-    const poolGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    for (let i = 0; i < n; i++) {
-      const g = new THREE.Group();
-      // each its own paper and flame, so each flickers out of step
-      const panes = new THREE.Mesh(m.panes, new THREE.MeshStandardMaterial({ color: "#2a1606", emissive: "#ffb257", emissiveIntensity: 1.5, transparent: true, opacity: 0.92 }));
-      const flame = new THREE.Mesh(m.flame, new THREE.MeshBasicMaterial({ color: "#ffd890", toneMapped: false }));
-      panes.userData.looked = true;
-      g.add(new THREE.Mesh(m.wood, wood), panes, new THREE.Mesh(m.candle, candle), flame);
-      const pool = new THREE.Mesh(poolGeo, poolMat.clone());
-      pool.renderOrder = 2;
-      scene.add(g, pool);
-      this.items.push({ g, flame, panes, pool });
-    }
+  private m = lanternModel();
+  private wood = surface("wood", "#8a6844");
+  private candle = new THREE.MeshStandardMaterial({ color: "#efe2c4", emissive: "#ffcf8a", emissiveIntensity: 0.6, roughness: 0.8 });
+  private poolMat = new THREE.MeshBasicMaterial({ map: poolTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  private poolGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  constructor(private scene: THREE.Scene) {
     // a fixed few lights, always in the scene (a light coming or going recompiles every material): unused ones sit dark
-    for (let k = 0; k < Math.min(LIT, n); k++) {
+    for (let k = 0; k < LIT; k++) {
       const l = new THREE.PointLight("#ffb060", 0, 9, 1.8);
       scene.add(l);
       this.lights.push(l);
     }
-    this.lightAt = m.light;
   }
-  private lightAt: THREE.Vector3;
+  private item(i: number) {
+    while (this.items.length <= i) {
+      const g = new THREE.Group(), m = this.m;
+      // each its own paper and flame, so each flickers out of step
+      const panes = new THREE.Mesh(m.panes, new THREE.MeshStandardMaterial({ color: "#2a1606", emissive: "#ffb257", emissiveIntensity: 1.5, transparent: true, opacity: 0.92 }));
+      const flame = new THREE.Mesh(m.flame, new THREE.MeshBasicMaterial({ color: "#ffd890", toneMapped: false }));
+      panes.userData.looked = true;
+      g.add(new THREE.Mesh(m.wood, this.wood), panes, new THREE.Mesh(m.candle, this.candle), flame);
+      const pool = new THREE.Mesh(this.poolGeo, this.poolMat.clone());
+      pool.renderOrder = 2;
+      this.scene.add(g, pool);
+      this.items.push({ g, flame, panes, pool });
+    }
+    return this.items[i]!;
+  }
 
   frame(def: StudioDef, places: LanternPlace[], eye: THREE.Vector3, t: number) {
+    // a hand lantern whose carrier sat down or left is put away
+    const shown = new Set(places.map((p) => p.i));
+    this.items.forEach((it, i) => { it.g.visible = it.pool.visible = shown.has(i); });
     for (const p of places) {
-      const it = this.items[p.i];
-      if (!it) continue;
+      const it = this.item(p.i);
       // a carried one swings a little as it's walked
       const sway = p.by === null ? 0 : Math.sin(t * 3.1 + p.i) * 0.05;
       it.g.position.set(p.x, p.y, p.z);
@@ -219,7 +244,7 @@ class LanternsDrawn {
     this.lights.forEach((l, k) => {
       const p = nearest[k];
       if (!p) { l.intensity = 0; return; }
-      l.position.set(p.x + this.lightAt.x, p.y + this.lightAt.y, p.z + this.lightAt.z);
+      l.position.set(p.x + this.m.light.x, p.y + this.m.light.y, p.z + this.m.light.z);
       l.intensity = 4 * flameAt(p.i + 40, t);
     });
   }
