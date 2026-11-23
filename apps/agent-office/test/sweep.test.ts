@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepScratch, WORKTREES } from "../live/sweep.ts";
@@ -42,6 +42,7 @@ test("node_modules and ignored build output go from worktrees nobody sits at; a 
     for (const m of ["node_modules/effect", "apps/game/node_modules/three", "apps/game/dist", "apps/tool/target/debug", "apps/game/.wrangler/tmp", "apps/docs/dist"]) mkdirSync(path.join(dir, m), { recursive: true });
     writeFileSync(path.join(dir, "node_modules/effect/index.js"), Buffer.alloc(1 << 20));
     writeFileSync(path.join(dir, "apps/game/main.ts"), "work");
+    writeFileSync(path.join(dir, "bun.lock"), "{}");
     writeFileSync(path.join(dir, "apps/docs/dist/index.html"), "checked in");
     writeFileSync(path.join(dir, ".gitignore"), "node_modules\ndist\ntarget\n.wrangler\n");
     git(dir, "init", "-q");
@@ -62,6 +63,8 @@ test("node_modules and ignored build output go from worktrees nobody sits at; a 
   expect(gone.filter((p) => existsSync(p))).toEqual([]);
   expect([existsSync(path.join(left, "apps/game/main.ts")), existsSync(path.join(left, "apps/docs/dist/index.html"))]).toEqual([true, true]);
   expect([existsSync(path.join(seated, "apps/game/dist")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
+  // the empty desk's root node_modules went to the pool for the next hire (#5656), not the bin
+  expect(readdirSync(path.join(repo, ".agent-office/node-pool")).map((n) => readdirSync(path.join(repo, ".agent-office/node-pool", n)))).toEqual([["node_modules"]]);
 });
 
 // 2026-11-22: six workers whose PR had merged sat at their desks with "go home once merged" off, 6 GB of node_modules each

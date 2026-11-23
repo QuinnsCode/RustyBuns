@@ -20,6 +20,7 @@ import { lstat, readdir, readFile, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
+import { poolModules } from "./install.ts";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -155,6 +156,8 @@ export async function sweepBuilt(repo: string, live: string[], go: boolean, now 
   const sizes = await duKb(paths);
   let bytes = 0;
   for (const p of paths) {
+    // a worktree's root node_modules goes to the pool for the next hire (#5656): no files deleted, nothing freed
+    if (go && trees.includes(path.dirname(p)) && path.basename(p) === "node_modules" && await poolModules(path.dirname(p))) continue;
     if (go) try { await rm(p, { recursive: true, force: true }); } catch { continue; }
     bytes += (sizes.get(p) ?? 0) * 1024;
   }
