@@ -2,7 +2,7 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, rigging, stompbox } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, gearParts, rigging, stompbox } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
@@ -129,4 +129,26 @@ test("a stompbox builds at the size asked, its jacks out of each end and its foo
     expect(g.getObjectByName("switch")!.position.y).toBeGreaterThan(size[1] - 0.012);
     expect(triangles(g)).toBeLessThan(2000);
   }
+});
+
+test("the club pair moves as a DJ plays it: the mixer's faders, meters, crossfader and filters, the player's platter and ring apart", () => {
+  const mixer = gear("mixer-club-4"), parts = gearParts(mixer);
+  for (const name of ["fader-1", "fader-2", "fader-3", "fader-4", "meter-1", "meter-2", "meter-3", "meter-4", "cross", "filter-1", "filter-2"]) expect(parts.has(name), name).toBe(true);
+  expect(mixer.userData).toMatchObject({ faderTravel: 0.06, crossTravel: 0.045 });
+  // a meter full is a bar running back from its front end along the face; the filters sit either side of the crossfader
+  mixer.updateMatrixWorld(true);
+  const bar = new THREE.Box3().setFromObject(parts.get("meter-1")!);
+  expect(bar.max.z - bar.min.z).toBeGreaterThan(0.08);
+  expect(bar.max.y - bar.min.y).toBeLessThan(0.002);
+  const [f1, f2, cross] = ["filter-1", "filter-2", "cross"].map((n) => parts.get(n)!.position);
+  expect(f1!.x).toBeLessThan(cross!.x - 0.05);
+  expect(f2!.x).toBeGreaterThan(cross!.x + 0.05);
+
+  const deck = gear("deck-cd"), dp = gearParts(deck);
+  for (const name of ["platter", "ring", "screen", "cue", "play", "tempo"]) expect(dp.has(name), name).toBe(true);
+  expect(dp.get("platter")!.position.distanceTo(dp.get("ring")!.position)).toBeLessThan(1e-9);
+  // the screen tilts up toward the DJ more than the top does, and play is nearer them than cue
+  expect(dp.get("screen")!.rotation.x).toBeGreaterThan(dp.get("platter")!.rotation.x + 0.1);
+  expect(dp.get("play")!.position.z).toBeGreaterThan(dp.get("cue")!.position.z);
+  expect(deck.userData.tempoTravel).toBeGreaterThan(0.08);
 });
