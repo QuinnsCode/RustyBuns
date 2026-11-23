@@ -72,6 +72,8 @@ have come in all (I) and your pace over your last few sections (D). A party's re
 ## The quests
 
 A step opens when the step before it is done and you have cleared its section: they wait at the stone behind you.
+The steps follow the road (`road` in `src/world/world.ts`), so step 4 is in the Great Lakes and step 5 in the Pacific
+Northwest: beating the Great North Woods opens the lakes, and the lakes open the northwest (#5623).
 Each step is a hail, a question with three replies (one straight, one dry, one hard), and usually a fight.
 
 ### The Office: "The File"
@@ -81,8 +83,8 @@ Each step is a hail, a question with three replies (one straight, one dry, one h
 | office.1 Form 9-C | Pine Barrens, Apple Pie Hill | Pell and Quist make an official stop under the fire tower and ask for your name and "the item in your hand". Straight: you give your name. Dry: you give Gary's. Hard: you refuse, and they send in Asset 1. | `office-file` or `office-gary` |
 | office.2 Quiet Zone | Appalachian hollows, Green Bank | The Office has a listening post in the radio quiet zone. Pell orders the Book "switched off". Quist asks, off the record, what the Mothman looked like. | `quist-warm` (straight) |
 | office.3 The Wooden One | Great North Woods, Rhinelander | The Office's oldest asset is the wired wooden hodag from the 1896 fair. Pell guards it. You can tell them it is wood. | `asset-one-wood` |
-| office.4 The Frames | Pacific Northwest, The film | Your camcorder is evidence. They want the tape. Straight: Quist makes a copy. Hard: a fight for it. | `tape-copied` |
-| office.5 No Cars | Great Lakes, Mackinac Island | No cars on the island, so the agents share a tandem. Control starts Protocol QUIET: the Office now seizes what the other two hold. Quist, alone for a minute, asks what the Book does with them. | `protocol-quiet` (always), `quist-turned` |
+| office.4 The Frames | Great Lakes, Mackinac Island | The Office missed the Bluff Creek film out west. Your camcorder is evidence. They want the tape. Straight: Quist makes a copy. Hard: a fight for it. | `tape-copied` |
+| office.5 The Tandem | Pacific Northwest, The film | At the film site, with the sedan dead again, the agents share a tandem. Control starts Protocol QUIET: the Office now seizes what the other two hold. Quist, alone for a minute, asks what the Book does with them. | `protocol-quiet` (always), `quist-turned` |
 | office.6 Annex 9 | Southwest desert, Roswell | The Office's store. If the Lamplighters' raid came first (`annex-raided`) the cages are empty and Pell is writing it up; if not, they are full and Quist is counting. | - |
 | office.7 Jurisdiction | Bayou, Barataria | The agents chase Lamplighter boats in a pirogue. Straight: you tell them where the boats go. Dry: you point the wrong way. Hard: you block the channel. | `cache-burned` (straight) |
 | office.8 Two Forms | Ozarks, Texarkana | The federal building stands on a state line, so everything needs two forms. Section Chief Brandt comes in person with Asset 0. Her team is smaller if Quist turned. | `office-closed` |
@@ -94,8 +96,8 @@ Each step is a hail, a question with three replies (one straight, one dry, one h
 | institute.1 Baseline | Pine Barrens, Blue Hole | Toby is in waders in the spring. Dr. Vale wants a baseline: your lead on the scale. Straight: you allow it. Dry: you offer a pebble. Hard: no, and a technician's specimens test you. | `sample-given` |
 | institute.2 Cold Room | Appalachian hollows, McClintic | The old concrete igloos are the Institute's cold store. Vale offers Reagent 12, their own ink, for data. | `reagent-taken` |
 | institute.3 Field Guide | Great North Woods, Cox's field guide | The Institute treats the 1910 lumberwoods guide as a protocol. They want squonk tears; a bearer who holds a squonk is asked to lend it. | `squonk-lent` |
-| institute.4 Ash Layer | Pacific Northwest, Mount St. Helens | Ms. Carrow arrives to count deliverables: twelve specimens, and they have nine. She looks at your line-up. | `carrow-counted` |
-| institute.5 The Long Study | Great Lakes, Isle Royale | Vale admires a study that has run since 1958; she has nine days of money. Toby asks you to take a specimen out before the Office comes for the cold room. | `specimen-freed` |
+| institute.4 The Count | Great Lakes, Isle Royale | Where wolves and moose are counted each winter, Ms. Carrow arrives to count deliverables: twelve specimens, and they have nine. She looks at your line-up. | `carrow-counted` |
+| institute.5 The Long Study | Pacific Northwest, Mount St. Helens | Vale admires the study of life coming back after the 1980 eruption; she has nine days of money. Toby asks you to take a specimen out before the Office comes for the cold room. | `specimen-freed` |
 | institute.6 Field Strength | Southwest desert, Meteor Crater | They have built a meter for the twelve fields and want the Book near it. It reads one thing, every time, and Vale will not say what. | `meter-read` |
 | institute.7 Grant Review | Bayou, Okeechobee | Carrow will cut the grant unless they tag the rougarou, and Vale's plan uses Toby as the lure. Straight: you get Toby out. Dry: you tell Carrow. Hard: you fight Vale's team. | `toby-out` |
 | institute.8 Final Report | Ozarks, Tornado Alley | A storm-chase rig on the plains. Vale's last test is the Book itself: "Put the Book on the scale." Her rig is short-handed if Toby left. | `institute-closed` |
@@ -107,8 +109,8 @@ Each step is a hail, a question with three replies (one straight, one dry, one h
 | lamplighters.1 First Lamp | Pine Barrens, Wharton Forest (after your first night) | Wren Ashby stands at a path light. The lights are theirs, and you have been walking on them. She asks why you carry the Book. Straight earns a lamp. | `lamp-carried` |
 | lamplighters.2 Dead Drop | Appalachian hollows, Tug Fork | No radios near Green Bank, so they use lamps and mirrors. Pip needs a message carried past the Office's cordon. | `message-run` |
 | lamplighters.3 Tall Tales | Great North Woods, Logging camp | The camps' tall tales are the Lamplighters' code book. Old Dutch asks you to leave the hidebehind alone; if the Book holds one already, they count it. | `tale-kept` |
-| lamplighters.4 The Road Shut | Pacific Northwest, Redwood Creek | They keep people off the ridge and ask for a promise: beat the giant if you must, do not bind it. The promise is checked later. | `ridge-promise` |
-| lamplighters.5 Night Boat | Great Lakes, Lake Champlain | They move creatures over the lake after dark. If Protocol QUIET has begun, a safe house is already empty, and Wren plans a raid. | `raid-plan` |
+| lamplighters.4 The Road Shut | Great Lakes, Lake Champlain | They shut the road west and keep people off the ridge out there, and ask for a promise: beat the giant if you must, do not bind it. The promise is checked later. | `ridge-promise` |
+| lamplighters.5 Night Boat | Pacific Northwest, Redwood Creek | They move creatures down the creek to the sea after dark. If Protocol QUIET has begun, a safe house is already empty, and Wren plans a raid. | `raid-plan` |
 | lamplighters.6 Annex Raid | Southwest desert, White Sands | The raid on Annex 9, against Office cordon officers. Easier if you have stood inside the Annex. | `annex-raided` |
 | lamplighters.7 Smugglers' Bay | Bayou, Barataria | The same bay as office.7. If you sent the Office here first, it is a rescue; if you get here first, the Office finds it empty. | `bay-held` |
 | lamplighters.8 The Long Haul | Ozarks, Route 66 | Old Dutch's truck, and Wren's own team that walks with her. Her verdict reads your whole past. | `lamplighters-closed` |

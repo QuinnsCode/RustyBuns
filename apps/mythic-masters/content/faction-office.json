@@ -384,13 +384,13 @@
     {
       "id": "office.4",
       "title": "The Frames",
-      "n": 4,
-      "k": 7,
+      "n": 5,
+      "k": 5,
       "who": "quist",
       "hail": [
-        { "text": "Agent Quist, evidence detail. A film left Bluff Creek on October 20, 1967. The Office did not get that film. Agent Pell says we do not make one error twice. He wants your tape." },
+        { "text": "Agent Quist, evidence detail. A film left Bluff Creek, out west, on October 20, 1967. The Office did not get that film. Agent Pell says we do not make one error twice. He wants your tape." },
         { "text": "Agent Quist, evidence detail. You gave the Lamplighters a promise about the ridge. NOTE: No Office form covers the ridge. Agent Pell checked twice. We want only your tape.", "when": { "flags": ["ridge-promise"] } },
-        { "text": "Agent Quist, evidence detail. Ms. Carrow counted your line-up at Mount St. Helens. The Institute sold us the count. It was not a round number. Agent Pell wants your tape now.", "when": { "done": ["institute.4"] } },
+        { "text": "Agent Quist, evidence detail. Ms. Carrow counted your line-up on Isle Royale. The Institute sold us the count. It was not a round number. Agent Pell wants your tape now.", "when": { "done": ["institute.4"] } },
         { "text": "Agent Quist, evidence detail. Your file is thick, {you}. Most of it is Form 22. Agent Pell does not say your name now. He says: the tape.", "when": { "past": ["cold", "cool"] } },
         { "text": "Agent Quist, evidence detail. Your reading with the Office goes up. Agent Pell does not trust a number that goes up. I like it. He still wants your tape.", "when": { "trend": ["rising"] } },
         { "text": "Hello, {you}. I drew the mothman from your description. It is in the scrapbook, page 9. Agent Pell wants your tape. I only want to watch it.", "when": { "flags": ["quist-warm"] } },
@@ -433,8 +433,8 @@
       ],
       "fight": {
         "teams": [
-          { "team": [{ "id": "splintercat", "up": 3, "title": "Asset 40" }, { "id": "fur-bearing-trout", "up": 3, "title": "Asset 41" }, { "id": "champ", "up": 4, "title": "Asset 44" }] },
-          { "when": { "flags": ["quist-warm"] }, "team": [{ "id": "splintercat", "up": 2, "title": "Asset 40" }, { "id": "fur-bearing-trout", "up": 2, "title": "Asset 41" }, { "id": "champ", "up": 3, "title": "Asset 44" }] }
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Asset 40" }, { "id": "teakettler", "up": 3, "title": "Asset 41" }, { "id": "champ", "up": 4, "title": "Asset 44" }] },
+          { "when": { "flags": ["quist-warm"] }, "team": [{ "id": "splintercat", "up": 2, "title": "Asset 40" }, { "id": "teakettler", "up": 2, "title": "Asset 41" }, { "id": "champ", "up": 3, "title": "Asset 44" }] }
         ],
         "youWin": [
           { "text": "Three assets are down. That is Form 22 in three parts. The tape stays with you. I am not sad about it." },
@@ -456,18 +456,18 @@
     },
     {
       "id": "office.5",
-      "title": "No Cars",
-      "n": 5,
-      "k": 5,
+      "title": "The Tandem",
+      "n": 4,
+      "k": 7,
       "who": "quist",
       "hail": [
-        { "text": "Mackinac Island banned cars in 1898. The sedan is on the mainland. It did not start. Agent Pell and I share a tandem. Control started Protocol QUIET on the radio today." },
-        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Institute holds. You went to Isle Royale before us. Agent Pell says you are always before us. He is not wrong.", "when": { "done": ["institute.5"] } },
-        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Lamplighters shelter. You were on their night boat at Lake Champlain. Agent Pell has the tandem. A tandem cannot follow a boat.", "when": { "done": ["lamplighters.5"] } },
-        { "text": "Hello, {you}. Agent Pell took the tandem to the dock. I have one minute. Control started Protocol QUIET. The Office now seizes what the other two hold.", "when": { "flags": ["quist-warm"] } },
+        { "text": "The film was made here at Bluff Creek in 1967. Agent Pell stands where the camera stood. The sedan did not start. We share a tandem. Control started Protocol QUIET on the radio today." },
+        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Institute holds. You went to Mount St. Helens before us. Agent Pell says you are always before us. He is not wrong.", "when": { "done": ["institute.5"] } },
+        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Lamplighters shelter. You were on their night boat on Redwood Creek. Agent Pell has the tandem. A tandem cannot follow a boat.", "when": { "done": ["lamplighters.5"] } },
+        { "text": "Hello, {you}. Agent Pell took the tandem up the creek. I have one minute. Control started Protocol QUIET. The Office now seizes what the other two hold.", "when": { "flags": ["quist-warm"] } },
         { "text": "Hello, {you}. I watched my copy of your tape 11 times. Control started Protocol QUIET today. The Office now seizes what the other two hold. I have one minute alone.", "when": { "flags": ["tape-copied"] } },
         { "text": "Hello, {you}. I have a joke about the tandem. I will not tell it. Control started Protocol QUIET today. The Office now seizes what the other two hold.", "when": { "manner": "dry" } },
-        { "text": "You were away for {gap}. In that time Control started Protocol QUIET. The Office now seizes what the other two hold. Agent Pell is at the dock with the tandem.", "when": { "gap": ["long"] } }
+        { "text": "You were away for {gap}. In that time Control started Protocol QUIET. The Office now seizes what the other two hold. Agent Pell is up the creek with the tandem.", "when": { "gap": ["long"] } }
       ],
       "ask": [
         { "text": "I have one minute alone, {you}. I ask this for me, not for the file. What does the Book do with them after it binds them?" }
@@ -510,8 +510,8 @@
           { "team": [{ "id": "loveland-frogman", "up": 4, "title": "Asset 52" }, { "id": "dover-demon", "up": 4, "title": "Asset 53" }, { "id": "beast-of-bray-road", "up": 5, "title": "Asset 57" }] }
         ],
         "youWin": [
-          { "text": "Three assets are down on an island with no cars. I must carry the crates on the tandem. That is Form 22 and a sore back." },
-          { "text": "You won. I will file Form 22 slowly. Agent Pell reads slowly. You have time to leave the island.", "when": { "flags": ["quist-warm"] } }
+          { "text": "Three assets are down at the film site. I must carry the crates on the tandem. That is Form 22 and a sore back." },
+          { "text": "You won. I will file Form 22 slowly. Agent Pell reads slowly. You have time to leave the creek.", "when": { "flags": ["quist-warm"] } }
         ],
         "youLose": [
           { "text": "The assets held. Protocol QUIET continues. I did not want to win this one. Do not log that." },
@@ -522,10 +522,10 @@
         "setsWin": []
       },
       "rematch": [
-        { "text": "You are back, {you}. Agent Pell is at the dock again. I have one more minute. Asset 52 is ready if you say Box 7." },
+        { "text": "You are back, {you}. Agent Pell is up the creek again. I have one more minute. Asset 52 is ready if you say Box 7." },
         { "text": "You were away for {gap}. Protocol QUIET ran for {gap}. The lists got longer. I got quieter.", "when": { "gap": ["long"] } }
       ],
-      "log": "On Mackinac Island Control started Protocol QUIET, and Agent Quist asked what the Book does with them."
+      "log": "At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them."
     },
     {
       "id": "office.6",

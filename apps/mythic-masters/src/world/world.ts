@@ -391,6 +391,18 @@ export function openRegions(beaten: ReadonlySet<number>): Set<number> {
   return open;
 }
 
+/** The road: the playable regions in the order a player who takes the lowest-numbered open region each time beats
+ * them, region 1 first (1, 2, 3, 5, 4, ...: the lakes open before the northwest). Faction steps and levels follow it. */
+export function road(): number[] {
+  const playable = REGIONS.filter((g) => g.tier === "playable").map((g) => g.n), done: number[] = [];
+  while (done.length < playable.length) {
+    const open = openRegions(new Set(done)), next = playable.find((n) => open.has(n) && !done.includes(n));
+    if (next === undefined) break;
+    done.push(next);
+  }
+  return done;
+}
+
 // Some roads need more than an arena: a creature in your line-up that can get you across. Beat the Jersey Devil, bind it,
 // keep it in the line-up, and the flier crosses the gorge to Mothman's hollows. The south is over water: a swimmer
 // (a beast of the lakes and rivers, Champ or the Lizard Man) carries you over the gulf, and the Andes past it need a

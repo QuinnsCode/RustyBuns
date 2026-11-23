@@ -7,27 +7,16 @@ import { creature } from "../roster.ts";
 import { FACTION } from "../factions/engine.ts";
 import { FACTIONS } from "../factions/model.ts";
 import { HUNTS } from "../world/hunts.ts";
-import { GATES, openRegions } from "../world/world.ts";
+import { GATES, openRegions, road } from "../world/world.ts";
 import type { Arc, Kind, Placed } from "./model.ts";
 
 export const PLAYABLE: Region[] = REGIONS.filter((g) => g.tier === "playable");
 export const regionOf = (n: number) => REGIONS.find((g) => g.n === n);
 
-/** The order the roads open in: the lowest-numbered open region first, as levels.ts plays it; and for each region, the
- * region whose mythic opened its road (undefined for the first). */
-export function roadOrder(): { n: number; from?: number }[] {
-  const beaten = new Set<number>(), order: { n: number; from?: number }[] = [];
-  const playable = new Set(PLAYABLE.map((g) => g.n));
-  let open = new Set([1]);
-  while (order.length < playable.size) {
-    const next = [...open].filter((n) => playable.has(n) && !beaten.has(n)).sort((a, b) => a - b)[0];
-    if (next === undefined) break;
-    order.push({ n: next, from: order.length ? opener(next, [...order.map((o) => o.n)]) : undefined });
-    beaten.add(next);
-    open = openRegions(beaten);
-  }
-  return order;
-}
+/** The order the roads open in (`road` in world.ts), and for each region the region whose mythic opened its road
+ * (undefined for the first). */
+export const roadOrder = (): { n: number; from?: number }[] =>
+  road().map((n, i, all) => ({ n, from: i ? opener(n, all.slice(0, i)) : undefined }));
 /** Which beaten region's mythic first opened region n's road. */
 function opener(n: number, done: number[]): number | undefined {
   for (let i = 1; i <= done.length; i++) if (openRegions(new Set(done.slice(0, i))).has(n)) return done[i - 1];

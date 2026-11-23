@@ -159,8 +159,7 @@
           "text": "Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose.",
           "at": "section:5:0",
           "needs": [
-            "gary-gorge",
-            "lamplighters-5"
+            "gary-gorge"
           ],
           "status": "idea"
         },
@@ -421,7 +420,7 @@
           "text": "Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat.",
           "at": "section:5:5",
           "needs": [
-            "office-5"
+            "office-4"
           ],
           "status": "idea"
         },

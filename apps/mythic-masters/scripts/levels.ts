@@ -27,7 +27,7 @@ import { creature, type Creature } from "../src/roster.ts";
 import { bot } from "../src/bot.ts";
 import { newMatch, step } from "../src/sim.ts";
 import { TIER_LEVEL, tierOf } from "../src/tiers.ts";
-import { openRegions, wildLevel } from "../src/world/world.ts";
+import { openRegions, road, wildLevel } from "../src/world/world.ts";
 import { rate } from "./tune.ts";
 import { help } from "../../../scripts/help.ts";
 
@@ -53,15 +53,7 @@ export function orders(): number[][] {
   return out;
 }
 /** The road a player who takes the lowest-numbered open region each time walks: region 1 first. */
-export function route(): number[] {
-  const done: number[] = [];
-  while (done.length < PLAYABLE.length) {
-    const open = openRegions(new Set(done)), next = PLAYABLE.find((n) => open.has(n) && !done.includes(n));
-    if (next === undefined) break;
-    done.push(next);
-  }
-  return done;
-}
+export const route = road;
 
 export interface Stone { n: number; k: number; keeper: string; wilds: string[]; level: number; boss: boolean }
 /** Every stone of the road, in the order it is walked. */

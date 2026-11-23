@@ -138,9 +138,9 @@ describe("the three factions behind you", () => {
       if (holding) bind(j, "sasquatch", 20);
       meet(j, "lamplighters", at(1, 2));
       for (const s of l.quest.slice(0, 3)) factionsOf(j).done.push(s.id);
-      for (let k = 0; k <= stage.k; k++) clearSection(j, 4, k);
-      const scene = approach(j, "lamplighters", at(4, stage.k))!;
-      reply(j, scene, stage.replies.find((r) => (r.sets ?? []).includes("ridge-promise"))!.id, at(4, stage.k));
+      for (let k = 0; k <= stage.k; k++) clearSection(j, stage.n, k);
+      const scene = approach(j, "lamplighters", at(stage.n, stage.k))!;
+      reply(j, scene, stage.replies.find((r) => (r.sets ?? []).includes("ridge-promise"))!.id, at(stage.n, stage.k));
       if (!holding) bind(j, "sasquatch", 40);
       const before = standingOf(j, "lamplighters").s, said: string[] = [];
       for (let i = 0; i < 12; i++) { const a = aside(j, "lamplighters", "wren", at(4, 9)); if (a) said.push(a); }
@@ -219,12 +219,14 @@ describe("the three factions behind you", () => {
       expect({ step: st.id, waits: waiting(j, f, { now: T0, n: st.n, k: st.k + 1 })?.id }).toEqual({ step: st.id, waits: st.id });
     }
     expect(jumpTo("office.9", T0)).toBeNull();
-    // four of the Office's steps done: the page lists them in order with their lines, and where No Cars waits
+    // the steps follow the road: each fourth step waits in the lakes, reached before the northwest is walked
+    for (const f of FACTIONS) expect({ f, northwest: jumpTo(`${f}.4`, T0)!.cleared[4] ?? 0 }).toEqual({ f, northwest: 0 });
+    // four of the Office's steps done: the page lists them in order with their lines, and where The Tandem waits
     const j = jumpTo("office.5", T0)!, [office, ...rest] = ledgerOf(j);
     expect(rest).toEqual([]);
-    expect([office!.name, office!.calls, office!.done.map((d) => d.id), office!.next?.title]).toEqual([FACTION.office.name, "Subject", ["office.1", "office.2", "office.3", "office.4"], "No Cars"]);
+    expect([office!.name, office!.calls, office!.done.map((d) => d.id), office!.next?.title]).toEqual([FACTION.office.name, "Subject", ["office.1", "office.2", "office.3", "office.4"], "The Tandem"]);
     expect(office!.done[0]!.log).toBe(FACTION.office.quest[0]!.log);
-    expect(office!.next!.where).toContain("Mackinac Island");
+    expect(office!.next!.where).toContain("The film");
     expect(office!.standing).toMatch(/^(Cold|Cool|Even|Warm|Close) to you now, \w+ on the whole, and (falling|steady|rising)\.$/);
     // the last step won, the quest is closed; nothing met yet, the page is empty
     const end = jumpTo("lamplighters.8", T0)!, ctx = at(8, FACTION.lamplighters.quest[7]!.k + 1);
