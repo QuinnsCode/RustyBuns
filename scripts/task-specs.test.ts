@@ -3,7 +3,7 @@ import { features, level, readSession } from "./task-specs.ts";
 
 test.each([
   ["vague", "Add reorder to past orders."],
-  ["decided", "Let customers reorder. It prefills the new-order form and never places an order by itself. Only the signed-in customer's own orders."],
+  ["decided", "Let customers reorder. It must prefill the new-order form and never place an order by itself. Only the signed-in customer's own orders."],
   ["agent-ready", `Let customers reorder a past order. Start in apps/shop/src/orders.ts. ${"It prefills the form, never submits. ".repeat(20)} Verify with apps/shop/test/orders.test.ts.`],
   ["thread", "Work on issue #4.\n[comment]\nmaybe one click?\n[comment]\nno, prefill only"],
 ])("%s", (want, text) => expect<string>(level(features(text))).toBe(want));
