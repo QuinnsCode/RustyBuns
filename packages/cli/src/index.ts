@@ -675,6 +675,13 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
+  // A server build inside the outDir (Foldkit's ssr writes <outDir>/server) would ship as public
+  // files that never run (#5767): the build ends by naming server/ in .assetsignore, which Cloudflare,
+  // Alchemy and the desktop's staging all leave out. Written after vite, since vite empties the outDir.
+  if (web && inf.vite.serverInOut) {
+    web.build += ` && bun -e "require('node:fs').appendFileSync('${web.assets}/.assetsignore','\\nserver/\\n')"`;
+    console.log(`assets:   ${web.assets}/server/ is the app's server build: .assetsignore leaves it out of the static Worker, so only the prerendered pages and client files ship`);
+  }
   // The servers beside or inside the app the proxy points at, whose files init can name: the host runs each
   // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
   // A page that imports "use server" modules needs the boundary plugin in its own vite config, and every
