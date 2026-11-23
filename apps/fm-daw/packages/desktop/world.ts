@@ -6,6 +6,7 @@
 import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type Project, type ServerMsg } from "../../src/project.ts";
 import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
 import { applyStudio, boardsIn, decodeStudioClient, emptyStudio, letGo, sanitizeBoards, sanitizePatch, withBoard, type Board, type Studio, type StudioOp, type StudioServer } from "../../src/studio.ts";
+import { applyLantern, decodeLanternClient, dropLanterns, noLanterns, sanitizeLanterns, type LanternClient, type Lanterns, type LanternServer } from "../../src/lanterns.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
@@ -89,10 +90,13 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer | ClockServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | RtcServer | ClockServer | LanternServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
+  /** An open-air room's lanterns (src/lanterns.ts), saved with the studio; where each body last stood, to drop a carrier's. */
+  private lanterns: Lanterns = noLanterns("");
+  private stood = new Map<number, [number, number]>();
   /** The bench pedals' boards (src/studio.ts): what circuit each bench box in the patch is, for everyone who comes in. */
   private boards: Board[] = [];
   private chat: Chat = empty();
@@ -138,6 +142,7 @@ export default class World {
       this.chat = sanitizeChat(await ctx.storage.get("chat"));
       this.studio = { patch: sanitizePatch(await ctx.storage.get("studio")), held: {} };
       this.boards = sanitizeBoards(await ctx.storage.get("boards"));
+      this.lanterns = sanitizeLanterns(await ctx.storage.get("lanterns"));
       this.room = String((await ctx.storage.get("room")) ?? "");
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
       this.idleAt = Number(await ctx.storage.get("idleAt")) || 0;
@@ -181,6 +186,7 @@ export default class World {
     // the boards first, so the patch's bench boxes are pedals by the time it comes
     for (const board of this.boards) this.sockets.send(server, { t: "studio-board", board } satisfies StudioServer);
     if (this.studioUsed()) this.sockets.send(server, this.studioAll(server));
+    if (Object.keys(this.lanterns.moved).length) this.sockets.send(server, this.lanternsMsg(server));
     this.broadcastPeers();
     return response;
   }
@@ -305,6 +311,8 @@ export default class World {
       if (rtc) { this.onRtc(ws, rtc); return; }
       const st = decodeStudioClient(frame.value);
       if (st) { if (st.t === "studio") this.onStudio(ws, st.op); else this.onBoard(ws, st.board); return; }
+      const lan = decodeLanternClient(frame.value);
+      if (lan) { this.onLantern(ws, lan); return; }
       const g = decodeGrantClient(frame.value);
       if (g) { void this.onGrant(ws, g); return; }
       const c = decodeChatClient(frame.value);
@@ -322,6 +330,8 @@ export default class World {
       // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go);
       // someone the leader muted moves and dresses as ever, but none of their notes go on
       const muted = (msg.e.t === "on" || msg.e.t === "sound") && isMuted(this.grants, seat?.me);
+      // where each body stands, so a lantern's carrier who leaves drops it there
+      if (seat?.peer && msg.e.t === "body") { if (msg.e.room) this.stood.delete(seat.peer); else this.stood.set(seat.peer, [msg.e.at[0], msg.e.at[2]]); }
       if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
@@ -531,6 +541,25 @@ export default class World {
     return { t: "studio-all", studio: this.studio, ...(you ? { you } : {}) };
   }
 
+  /**
+   * A lantern taken or set down. Anyone in the room may carry one (no grant: it changes nothing in the groove), in the
+   * room the sesh is in; whoever asks second for one gets the lanterns back as they are.
+   */
+  private onLantern(ws: RoomSocket, m: LanternClient) {
+    const seat = this.sockets.who(ws);
+    if (!seat?.peer) return;
+    const next = !this.project?.studio || this.project.studio === m.room ? applyLantern(this.lanterns, seat.peer, m) : this.lanterns;
+    if (next === this.lanterns) { this.sockets.send(ws, this.lanternsMsg(ws)); return; }
+    this.lanterns = next;
+    this.saveStudio();
+    for (const w of this.sockets.open()) this.sockets.send(w, this.lanternsMsg(w));
+  }
+
+  private lanternsMsg(ws: RoomSocket): LanternServer {
+    const you = this.sockets.who(ws)?.peer;
+    return { t: "lanterns", lanterns: this.lanterns, ...(you ? { you } : {}) };
+  }
+
   private studioUsed() { return this.studio.patch.placed.length > 0 || Object.keys(this.studio.held).length > 0; }
 
   /** The chat: `hello` says who a socket is; lines, renames and deletions only count after it. */
@@ -645,6 +674,13 @@ export default class World {
     }
     // what they carried stays where it was; a lead they held falls out of their hand (the others drop it on "gone")
     this.studio = letGo(this.studio, seat.peer);
+    const lit = dropLanterns(this.lanterns, seat.peer, this.stood.get(seat.peer));
+    this.stood.delete(seat.peer);
+    if (lit !== this.lanterns) {
+      this.lanterns = lit;
+      this.saveStudio();
+      for (const w of this.sockets.open()) if (w !== ws) this.sockets.send(w, this.lanternsMsg(w));
+    }
     this.broadcastPeers();
     if (this.sockets.open().some((w) => w !== ws)) return;
     // the last one out: save now, start the idle clock, and give the room's slot back
@@ -667,6 +703,10 @@ export default class World {
       this.studioDirty = false;
       await s.put("studio", this.studio.patch);
       if (this.boards.length) await s.put("boards", this.boards); else await s.delete("boards");
+      // saved as if every carrier set theirs down where they stand: a hand doesn't outlive the room
+      let lit = this.lanterns;
+      for (const w of this.sockets.open()) { const p = this.sockets.who(w)?.peer; if (p) lit = dropLanterns(lit, p, this.stood.get(p)); }
+      if (Object.keys(lit.moved).length) await s.put("lanterns", lit); else await s.delete("lanterns");
     }
     if (this.bucket && this.room && (this.project || this.studioUsed()) && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
@@ -689,13 +729,14 @@ export default class World {
       await s.deleteAlarm();
       await this.dropTakes(new Set());
       this.ladderTakes.clear();
-      for (const k of ["project", "chat", "studio", "boards", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "boards", "lanterns", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
       this.chat = empty();
       this.studio = emptyStudio();
       this.boards = [];
+      this.lanterns = noLanterns("");
       this.idleAt = 0;
       this.host = "";
       this.floor = "free";

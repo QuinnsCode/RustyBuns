@@ -5,6 +5,7 @@
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 import { PROP_KINDS, propBlocks, propBox, thingBox, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
 import { footprint, inFootprint } from "./gear-wall.ts";
+import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
@@ -45,6 +46,7 @@ export const Studio: Guard<StudioDef> = obj({
     truss: obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) }),
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
     lanternPoles: opt((v): [number, number, number, number] => { const [a, b, c, d] = arr(num(-25, 25), 4, { min: 4 })(v); return [a, b, c, d]; }),
+    lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
     seed: int(0, 2 ** 31),
   })),
 });

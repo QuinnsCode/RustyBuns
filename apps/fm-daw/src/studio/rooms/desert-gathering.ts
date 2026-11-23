@@ -44,6 +44,8 @@ export const DESERT_GATHERING: StudioDef = {
     truss: { at: [0, -11.8], yaw: 0, w: 14, h: 5.2 },
     generator: { at: [-15, -12], yaw: 0.4 },
     lanternPoles: [-12, -4, 12, 12],
+    // six to carry off, three at each end of the deck table (its top 1.75 m up: the stage and the board)
+    lanterns: [[-1.5, 1.75, -7.95], [-1.3, 1.75, -7.72], [-1.1, 1.75, -7.98], [1.1, 1.75, -7.98], [1.3, 1.75, -7.72], [1.5, 1.75, -7.95]],
     seed: 4242,
   },
 };
