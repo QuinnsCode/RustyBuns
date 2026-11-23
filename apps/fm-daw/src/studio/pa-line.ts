@@ -2,8 +2,8 @@
 // and everyone else's set in. The player says so on the live line ({ t: "pa", on }), each listener asks for a call
 // (`want`), and the player calls them with the stream, Opus at 256 kb/s in stereo with no silence suppression, so a
 // breakdown's quiet stays music. A set comes in through a media element (Chrome only lets a remote stream into Web
-// Audio once one holds it), then its level (your mute, the room's PA level), into `to`: it plays everywhere in the room
-// at once, the way a PA covers a floor, not from one spot. You hear your own set from the decks, not from here.
+// Audio once one holds it), then its level (your mute, the room's PA level), into `to`: the room's speakers (pa-room.ts)
+// play it from where they stand, heard from where you stand. You hear your own set from the decks, not from here.
 // Signals go through the sesh's World (`send`), on the lines `pa-out` (the player's side) and `pa-in` (a listener's).
 import { otherEnd, tuneOpus, type IceServer, type Line, type RtcServer, type Signal } from "../guitar.ts";
 

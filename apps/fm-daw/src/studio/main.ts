@@ -61,6 +61,7 @@ import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
+import { PaRoom, paSpeakers } from "./pa-room.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
@@ -71,7 +72,7 @@ import { mountDecks, type DecksPanel, type Dj } from "../dj/panel.ts";
 import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
-import { openAir } from "./open-air.ts";
+import { openAir, paStack } from "./open-air.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
@@ -127,6 +128,8 @@ function buildRoom() {
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
   // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
   if (!def.outdoor) scene.add(floor, ceil);
+  // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
+  if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(paStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
   for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
@@ -416,7 +419,8 @@ async function startAudio() {
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
-    pa = new PaLine(out.ctx, out.ctx.destination, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
+    paRoom = new PaRoom(out.ctx, def, out.ctx.destination);
+    pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
@@ -490,6 +494,8 @@ async function guitar() {
 }
 // ---- the PA (src/studio/pa-line.ts): a set played to the whole room, yours out (the DJ decks' master), theirs in
 let pa: PaLine | null = null;
+/** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
+let paRoom: PaRoom | null = null;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
 const paOn = new Map<number, string>();
 /** What you're playing to the room, or null. */
@@ -509,6 +515,7 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 /** Each guitar through its track's amp, at your mutes, where its player stands; you, where you are. */
 function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
+  paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
   if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
@@ -1313,7 +1320,7 @@ const harness = {
       await startAudio();
       if (out) { const o = out.ctx.createOscillator(), d = out.ctx.createMediaStreamDestination(); o.frequency.value = 220; o.connect(d); o.start(); await playToRoom(d.stream, "Test tone"); }
     } else if (on === false && myPa) await playToRoom(null);
-    return { mine: myPa?.name ?? null, on: Object.fromEntries(paOn), ...(pa?.state() ?? { playing: false, live: [], calls: [] }) };
+    return { mine: myPa?.name ?? null, on: Object.fromEntries(paOn), ...(pa?.state() ?? { playing: false, live: [], calls: [] }), speakers: paRoom?.state() ?? [] };
   },
   guitars: () => ({ mine: myGuitar, input: myGuitar === null ? null : myInput, in: Object.fromEntries(plugged), mics: [...mics], calls: guitars?.state() ?? [], lags: Object.fromEntries(lags) }),
   /** Rec (R): record a player's input (0 you) as a take, onto `pick` if you lead; again lands it. Then what Rec is doing. */
