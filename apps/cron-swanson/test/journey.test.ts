@@ -78,3 +78,38 @@ test("with a token set, only health is open", async () => {
   const status = async (path: string, auth?: string) => (await call(new Request(`http://cron.test${path}`, { headers: auth ? { authorization: auth } : {} }))).status;
   expect([await status("/api/health"), await status("/api/jobs"), await status("/api/jobs", "Bearer nope"), await status("/api/jobs", "Bearer s3cret")]).toEqual([200, 401, 401, 200]);
 });
+
+test("tick a reminder off, let one slide: the counts the page sorts by", async () => {
+  const store = new Store();
+  let now = at("2026-11-23T08:59:30Z");
+  const call = api(store, { now: () => now });
+  const ask = async (method: string, path: string, body?: unknown) => {
+    const res = await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? null : JSON.stringify(body) }));
+    return { status: res.status, body: parseJson(await res.text()) };
+  };
+  const water = Job((await ask("POST", "/api/jobs", {
+    app: "me", name: "Drink water", tags: ["body"], cadence: { kind: "every", minutes: 30 }, tz: "UTC", action: { kind: "remind" },
+  })).body);
+  const stats = async () => JobsReply((await ask("GET", "/api/jobs")).body).jobs.find((r) => r.job.id === water.id)!.stats;
+  expect(await stats()).toEqual({ fired: 0, done: 0, ignored: 0, lastDoneAt: null, lastFiredAt: null });
+
+  // It fires; ticked off five minutes later. A second tick keeps the first time.
+  now = water.nextAt! + 250;
+  const [first] = await tick(store, now);
+  now += 5 * 60_000;
+  const done = await ask("POST", `/api/runs/${first!.id}/done`);
+  expect(Run(done.body).doneAt).toBe(now);
+  await ask("POST", `/api/runs/${first!.id}/done`);
+  expect(await stats()).toMatchObject({ fired: 1, done: 1, ignored: 0, lastDoneAt: now });
+
+  // The next one nobody ticks: not ignored yet while it's the newest and under an hour old, ignored once the
+  // next one fires.
+  now = store.job(water.id)!.nextAt! + 250;
+  await tick(store, now);
+  expect(await stats()).toMatchObject({ fired: 2, done: 1, ignored: 0 });
+  now = store.job(water.id)!.nextAt! + 250;
+  await tick(store, now);
+  expect(await stats()).toMatchObject({ fired: 3, done: 1, ignored: 1, lastFiredAt: now });
+
+  expect((await ask("POST", "/api/runs/99999/done")).status).toBe(404);
+});
