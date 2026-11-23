@@ -20,12 +20,16 @@ const ICONS = {
   importAudio: <>{FILE}<path d="M8 13v4" /><path d="M11 11v8" /><path d="M14 12v6" /><path d="M17 14v2" /></>,
   // file with a note
   importMidi: <>{FILE}<circle cx="10" cy="17" r="2" /><path d="M12 17v-6l3 1" /></>,
+  // magnet
+  snap: <><path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15" /><path d="m5 8 4 4" /><path d="m12 15 4 4" /></>,
   stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
   x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
 };
 
 export function AddMenu(props: {
   track: string; rec: Recording | null; counting: number; ready: boolean; input: string | null;
+  /** Quantize input: recorded MIDI snaps to the Grid (`grid`, its label) as it goes down. */
+  snap: boolean; grid: string; onSnap(on: boolean): void;
   onRecordAudio(): void; onRecordMidi(): void; onStop(): void; onFile(kind: "audio" | "midi", f: File): void; onInputOff(): void;
 }) {
   const audioFile = useRef<HTMLInputElement>(null), midiFile = useRef<HTMLInputElement>(null);
@@ -47,6 +51,8 @@ export function AddMenu(props: {
       </> : <>
         <button className="icon-btn" onClick={props.onRecordAudio} disabled={!props.ready} title={`Record audio onto ${props.track}: a mic or a guitar, one pass of the loop${needSound}`} aria-label="Record audio"><Icon>{ICONS.audio}</Icon></button>
         <button className="icon-btn" onClick={props.onRecordMidi} disabled={!props.ready} title={`Record MIDI onto ${props.track}: the notes you play (R)${needSound}`} aria-label="Record MIDI"><Icon>{ICONS.midi}</Icon></button>
+        <button className={props.snap ? "icon-btn on" : "icon-btn"} aria-pressed={props.snap} onClick={() => props.onSnap(!props.snap)}
+          title={props.snap ? `Quantize input is on: recorded MIDI snaps to the Grid (${props.grid})` : "Quantize input is off: recorded MIDI lands where you played it"} aria-label="Quantize input"><Icon>{ICONS.snap}</Icon></button>
         <button className="icon-btn" onClick={() => audioFile.current?.click()} title={`Import audio onto ${props.track}: wav, mp3, m4a, ogg or flac (or drop one on a track)`} aria-label="Import audio"><Icon>{ICONS.importAudio}</Icon></button>
         <button className="icon-btn" onClick={() => midiFile.current?.click()} title={`Import MIDI onto ${props.track}: a .mid file (or drop one on a track)`} aria-label="Import MIDI"><Icon>{ICONS.importMidi}</Icon></button>
       </>}

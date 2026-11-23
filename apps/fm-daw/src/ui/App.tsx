@@ -130,7 +130,8 @@ export function App() {
   const [metro, setMetro] = useState(false);
   const [gridIdx, setGridIdx] = useState(2);
   const [strength, setStrength] = useState(1);
-  const [inputQ, setInputQ] = useState(true);
+  // off: what you play lands where you played it (the roll takes free notes); the magnet by Record MIDI snaps it to the Grid
+  const [inputQ, setInputQ] = useState(false);
   const [octave, setOctave] = useState(0);
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
@@ -1020,12 +1021,11 @@ export function App() {
             <label className="field inline"><span className="silk">Strength {Math.round(strength * 100)}%</span>
               <input type="range" min={0} max={100} value={Math.round(strength * 100)} onChange={(e) => setStrength(Number(e.currentTarget.value) / 100)} />
             </label>
-            <label className="check" title="Quantize notes as they're recorded"><input type="checkbox" checked={inputQ} onChange={(e) => setInputQ(e.currentTarget.checked)} /> Quantize input</label>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: quantize(t.notes, grid.beats, strength, L) })}>Quantize {t.name}</button>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: [] })}>Clear {t.name}</button>
             <AddMenu track={t.name} ready={!!audio} counting={counting} input={armed !== null ? project.tracks[armed].name : null}
               rec={recording ? (armed !== null ? { kind: "audio", track: project.tracks[armed].name } : { kind: "midi", track: t.name }) : null}
-              onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} onStop={stopRec} onInputOff={closeInput}
+              onRecordAudio={() => { void recordAudio(); }} onRecordMidi={recordMidi} snap={inputQ} onSnap={setInputQ} grid={grid.label} onStop={stopRec} onInputOff={closeInput}
               onFile={(kind, f) => { void imports.importFile(kind, f, selected, win.from); }} />
             {clipsOf(t).length > 0 && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
             <span className="spacer" />
