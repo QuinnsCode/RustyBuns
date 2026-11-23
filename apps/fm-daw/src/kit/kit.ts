@@ -231,7 +231,7 @@ export const moduleKit = (p: Panel): string => `wall-${p.id}`;
 /** A sound wall module's sheet from its kit folder's files: its parts, its board's layers and its panel's. */
 export function moduleSheetOf(p: Panel, kit: KitFiles): Sheet {
   const made = isKit(kit), parts = made ? partsOf(readBom(kit["bom.csv"]!), undefined) : [], lines = bomLines(parts);
-  const panel = Object.keys(kit).filter((f) => f.startsWith("panel/gerbers/")).map((f) => f.slice(6)).sort();
+  const panel = Object.keys(kit).filter((f) => f.startsWith("panel/gerbers/")).map((f) => f.slice("panel/gerbers/".length)).sort();
   return { pedal: p.id, name: p.name, kit: moduleKit(p), made, parts, lines, layers: [...gerbers(kit), ...panel.map((l) => `panel/${l}`)], text: moduleSheet(p, lines) };
 }
 
