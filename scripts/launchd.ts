@@ -1,7 +1,7 @@
 // A launchd job on the office Mac: a plist in ~/Library/LaunchAgents that runs one bun script on a calendar, with its
 // output in a log. The ledger (apps/agent-office/ester/ledger-daily.ts) runs daily at 10:07; the releases page
 // (scripts/releases.ts) at :17 past each waking hour. Imported, not run.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { esc } from "../packages/util/src/index.ts";
@@ -75,17 +75,29 @@ export function catchUp(repo: string): "moved" | "current" | "skipped" {
   return "moved";
 }
 
-/** The checkout a job runs from: a detached worktree at `home` on `origin/main`, made once and installed, whichever
- *  checkout installs it (an office worktree is deleted when its worker goes home; the owner's own is on a branch with
- *  their edits, which catchUp never moves). Throws when `home` has edits, since catchUp would never move it either. */
+/** The git dir a checkout shares with its worktrees (`--git-common-dir`), or null outside git. */
+function commonDir(cwd: string): string | null {
+  const r = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  return r.ok ? realpathSync(r.out) : null;
+}
+
+/** The checkout a job runs from: a detached worktree at `home` on `origin/main`, made once from `repo` and installed
+ *  (an office worktree is deleted when its worker goes home; the owner's own is on a branch with their edits, which
+ *  catchUp never moves). `repo` is the clone whose git dir the job needs: the releases walker's is the one holding the
+ *  deploy state (#5586). Throws when `home` has edits, since catchUp would never move it either, or when it is a
+ *  worktree of another clone, with the line that removes it so the next install makes it again. */
 export function jobCheckout(repo: string, home: string): string {
-  if (!git(home, "rev-parse", "--git-dir").ok) {
+  if (!existsSync(home) || !git(home, "rev-parse", "--git-dir").ok) {
     mkdirSync(path.dirname(home), { recursive: true });
     git(repo, "fetch", "-q", "origin", "main");
     const r = git(repo, "worktree", "add", "-q", "--detach", home, "FETCH_HEAD");
     if (!r.ok) throw new Error(`git worktree add ${home}: ${r.err}`);
     Bun.spawnSync(["bun", "install", "--frozen-lockfile"], { cwd: home, stdout: "ignore", stderr: "inherit" });
-  } else if (catchUp(home) === "skipped") throw new Error(`${home} has edits or is on a branch, so it can't follow origin/main: see git -C ${home} status`);
+    return home;
+  }
+  const have = commonDir(home), want = commonDir(repo);
+  if (have !== want) throw new Error(`${home} is a worktree of ${have}, not ${want}. Move it: git --git-dir=${have} worktree remove ${home}, then install again`);
+  if (catchUp(home) === "skipped") throw new Error(`${home} has edits or is on a branch, so it can't follow origin/main: see git -C ${home} status`);
   return home;
 }
 

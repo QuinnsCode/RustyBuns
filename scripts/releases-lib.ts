@@ -1,5 +1,6 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { sharedStateBase } from "../packages/cli/src/state.ts";
 // The releases page's rules (scripts/releases.ts): which dot a repo or app gets, and how merged PRs count per day and week.
 
 /** live: its prod link answers. error: the link is down or its last run failed. testing: being built, not released yet.
@@ -92,4 +93,10 @@ export function stateDirs(cwd: string, sharedBase: string | null): string[] {
 /** True when any of `dirs` holds a stack's state. */
 export function hasState(dirs: string[]): boolean {
   return dirs.some((d) => { try { return readdirSync(d).length > 0; } catch { return false; } });
+}
+
+/** The clone the job's checkout is made from: the first of `clones` whose git dir holds deploy state, so a plan from
+ *  the job sees what is live instead of planning it all new (#5586); the last one when none does. */
+export function stateClone(clones: string[]): string {
+  return clones.find((c) => existsSync(c) && hasState([sharedStateBase(c) ?? ""])) ?? clones[clones.length - 1];
 }
