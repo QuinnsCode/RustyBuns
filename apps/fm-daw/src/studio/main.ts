@@ -998,7 +998,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
   if (code === "Escape" && !$("modules").hidden) return openModules(false);
-  if (code === "KeyK" && !jam.me.seat) return openModules($("modules").hidden);
+  if (code === "KeyK" && !jam.me.seat) return openModules(!!$("modules").hidden);
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Tab") {
     if (desk.isOpen()) return desk.close();
