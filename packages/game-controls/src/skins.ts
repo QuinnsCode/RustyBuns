@@ -1,7 +1,8 @@
 // The looks for the Controls panel. The panel itself (panel.ts) is headless: it only sets `gc-*` classes.
 // "classic" is the dark card the first nine games shipped with, "house" is the soft, bold kit look driven by
 // `--ui-*` tokens (plus `--ui-panel`, the card's own backplate, which falls back to `--ui-bg`: a game's framed panel art
-// without touching the buttons), and "none" adds nothing so a game can style the classes itself.
+// without touching the buttons; `--ui-knob`/`--ui-knob-on` (and their `-glow`, `--ui-knob-radius`) for the switch knob, and with
+// `faders` the `--ui-track`/`--ui-thumb` slider), and "none" adds nothing so a game can style the classes itself.
 import { TOKENS, type Theme, applyTheme } from "@rustybuns/ui";
 export type Skin = "classic" | "house" | "none";
 export { type Theme, applyTheme, TOKENS };
@@ -70,11 +71,16 @@ const house = `
 .ui-house .gc-note{color:var(--ui-accent)}
 .ui-house .gc-card input[type=range]{accent-color:var(--ui-accent)}
 .ui-house .gc-card input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;width:40px;height:24px;margin:0;border:var(--ui-border) solid var(--ui-line);border-radius:999px;background:var(--ui-soft);cursor:pointer;transition:background .15s,border-color .15s}
-.ui-house .gc-card input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--ui-dim);transition:transform .15s,background .15s}
+.ui-house .gc-card input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:var(--ui-knob-radius,50%);background:var(--ui-knob,var(--ui-dim));box-shadow:var(--ui-knob-glow,none);transition:transform .15s,background .15s}
 .ui-house .gc-card input[type=checkbox]:checked{background:var(--ui-accent-soft);border-color:var(--ui-accent)}
-.ui-house .gc-card input[type=checkbox]:checked::after{transform:translateX(16px);background:var(--ui-accent)}
+.ui-house .gc-card input[type=checkbox]:checked::after{transform:translateX(16px);background:var(--ui-knob-on,var(--ui-accent));box-shadow:var(--ui-knob-on-glow,none)}
 .ui-house .gc-card label.gc-off{opacity:1;color:var(--ui-dim)}.ui-house .gc-card label.gc-off input{border-style:dashed;background:transparent;opacity:.6}
 .ui-house .gc-card label{border-bottom:1px solid var(--ui-soft)}.ui-house .gc-card label:has(>input[type=checkbox]){grid-template-columns:1fr auto}
+.ui-house.gc-faders .gc-card input[type=range]{appearance:none;-webkit-appearance:none;height:var(--ui-thumb-h,24px);margin:0;background:transparent;cursor:pointer}
+.ui-house.gc-faders .gc-card input[type=range]::-webkit-slider-runnable-track{height:var(--ui-track-h,6px);border-radius:999px;background:var(--ui-track,var(--ui-soft))}
+.ui-house.gc-faders .gc-card input[type=range]::-moz-range-track{height:var(--ui-track-h,6px);border-radius:999px;background:var(--ui-track,var(--ui-soft))}
+.ui-house.gc-faders .gc-card input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:var(--ui-thumb-w,14px);height:var(--ui-thumb-h,24px);margin-top:calc((var(--ui-track-h,6px) - var(--ui-thumb-h,24px)) / 2);border:0;border-radius:var(--ui-radius-sm);background:var(--ui-thumb,var(--ui-accent))}
+.ui-house.gc-faders .gc-card input[type=range]::-moz-range-thumb{width:var(--ui-thumb-w,14px);height:var(--ui-thumb-h,24px);border:0;border-radius:var(--ui-radius-sm);background:var(--ui-thumb,var(--ui-accent))}
 .ui-house .gc-sec{border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm)}.ui-house .gc-sec-h:hover{background:var(--ui-soft)}
 .ui-house .gc-key{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .ui-house :focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}

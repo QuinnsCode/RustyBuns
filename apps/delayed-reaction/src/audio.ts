@@ -62,6 +62,9 @@ export class Music {
   private readonly rand: () => number;
   private readonly curve: Float32Array<ArrayBuffer>;
   muted = false;
+  private level = 1;
+  /** The player's music volume (the Controls slider), 0 to 1, on top of the mix's own level. */
+  set volume(v: number) { this.level = v; this.out.gain.setTargetAtTime(this.master, this.ctx.currentTime, 0.05); }
   /** Play only this part of the mix (the other three stay silent), or the whole mix when null. */
   only: Stem | null = null;
 
@@ -156,7 +159,7 @@ export class Music {
   private on(part: Stem) { return !this.muted && (!this.only || this.only === part); }
 
   // An arranged track stacks more at once (sub, growl, toms, two tails), so it runs a touch lower for the same headroom.
-  private get master() { return this.setup ? MASTER * (this.setup.long ? 0.7 : 0.85) : MASTER; }
+  private get master() { return this.level * (this.setup ? MASTER * (this.setup.long ? 0.7 : 0.85) : MASTER); }
 
   /** Seconds per beat of the running chart. */
   get spb() { return 60 / (this.chart?.bpm ?? 120); }
