@@ -153,6 +153,8 @@ export default defineConfig({
     WATCHDOG_SECRET: op("WATCHDOG_SECRET/password", true),
     // The deploy's call to warn busy rooms (rustybuns deploy --drain-url, src/drain.ts): optional, the route is off without it.
     DRAIN_SECRET: op("DRAIN_SECRET/password", true),
+    // The ssh gate's remote lookup (ssh/, src/ssh-remote.ts): the gate's GATE_SECRET. Optional: the route is off without it.
+    SSH_GATE_SECRET: op("SSH_GATE_SECRET/password", true),
     // Hosted deploys: one Durable Object per repo, each run in its own container
     // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
     // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.

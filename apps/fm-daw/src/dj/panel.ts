@@ -113,7 +113,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const root = el("section", { id: "dj", role: "dialog", "aria-label": "The decks" });
   root.hidden = true;
   const head = el("header");
-  const title = el("h2", {}, "Decks");
+  const title = el("h2", {}, "QDJs <small>+ Qone mixer</small>");
   const closeB = button(ICON.x, "Back to the room (Esc)", "dj-close");
   const peopleB = button(`${ICON.users}<span>DJs</span>`, "Who may play the decks: add the DJ for the night", "dj-people-open");
   const people = el("div", { class: "dj-people", role: "dialog", "aria-label": "Who may play the decks" });
@@ -180,6 +180,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     tube: () => tubes[side]?.view() ?? null,
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
+    quantize: () => decks.quantize,
   }));
   row.append(players[0].box, mixer.root, players[1].box);
   // start on the mixer in the carousel (a no-op when all three fit)

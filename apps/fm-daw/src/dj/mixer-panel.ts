@@ -1,12 +1,14 @@
-// The mixer's face (mixer.ts plays it), after the four-channel analog club mixer with twin filters: a dark face with
-// the four channels in vertical strips and the master strip on the right, each strip top to bottom its trim, the four
-// EQ knobs with caps coloured by band, the two aux sends, the filter assign, the cue button, then the LED meter beside
-// a long-throw fader and the crossfader assign under it. The two filter sections sit at the bottom left and right with
-// the crossfader between them. Knobs turn by a drag up or down (Shift for fine), by the wheel and by the arrow keys;
+// The Qone mixer's face (mixer.ts plays it), a four-channel analog-style club mixer with twin filters: a grey face lit
+// in one orange, so it reads in a dark booth (NIGHT turns the face down and the glow up), the four channels in vertical
+// strips and the master strip on the right, each strip top to bottom its trim, the four EQ knobs, the two aux sends,
+// the filter assign (1 or 2), the cue button, then the LED meter beside a long-throw fader and the crossfader assign
+// under it. FILTER 1 and FILTER 2 sit at the bottom left and right (each named in its curve's corner), each with its
+// LFO (LFO 1, LFO 2: depth, beats a round, shape, and its tempo from deck A, deck B or TAP, a lamp pulsing with it),
+// the crossfader between them. Hover a knob and its label reads its value (dB, Hz, Q). Knobs turn by a drag up or down (Shift for fine), by the wheel and by the arrow keys;
 // a double-click puts one back to where it starts. On a phone the strips scroll sideways and the filters stack.
 import "./mixer.css";
 import { button, el, svg } from "./dom.ts";
-import { CHANNELS, DECK_CHANNEL, filterGain, LFO_BEATS, resQ, sweepHz, type Band, type Ch, type FilterType, type Mixer } from "./mixer.ts";
+import { bandDb, CHANNELS, DECK_CHANNEL, filterGain, LFO_BEATS, LFO_FOLLOW, LFO_SHAPES, lfoValue, resQ, sweepHz, trimDb, type Band, type Ch, type FilterType, type LfoFollow, type LfoShape, type Mixer } from "./mixer.ts";
 
 const PHONES_D = '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>';
 const PHONES = svg(PHONES_D);
@@ -23,27 +25,45 @@ const SPEAKER = mini('<rect width="16" height="20" x="4" y="2" rx="2"/><path d="
 const VOLUME = mini('<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>');
 const SEND = mini('<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>');
 const HEADPHONES = mini(PHONES_D);
-/** A knob cap's colour by what it turns. */
-const CAP: Record<Band | "trim" | "send" | "filter" | "master", string> = {
-  trim: "#d9d6cf", high: "#4ab8ff", hiMid: "#4affa0", loMid: "#ffd23c", low: "#ff4a6a", send: "#8a8f99", filter: "#ff6b4a", master: "#f1efe9",
+const MOON = mini('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>');
+/** Each LFO shape drawn as its own little wave (the word in the tooltip). */
+const SHAPE_ICON: Record<LfoShape, string> = {
+  sine: mini('<path d="M2 12c2-6 5-6 6 0s4 6 6 0 4-6 6 0"/>'),
+  tri: mini('<path d="M2 12 6 6l6 12 6-12 4 6"/>'),
+  square: mini('<path d="M2 12V6h5v12h5V6h5v12h5v-6"/>'),
+  up: mini('<path d="M2 18 11 6v12l9-12v12"/>'),
+  down: mini('<path d="M2 6l9 12V6l9 12V6"/>'),
 };
+const SHAPE_WORD: Record<LfoShape, string> = { sine: "sine", tri: "triangle", square: "square", up: "ramp up", down: "ramp down" };
+const FOLLOW_WORD: Record<LfoFollow, string> = { a: "deck A's beat", b: "deck B's beat", tap: "the TAP button" };
+/** The one accent: between a cloud's orange and rust. */
+export const ACCENT = "#ee6a1f";
+const DB = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(1)} dB`;
+const PCT = (v: number) => `${Math.round(v * 100)}%`;
+const HZ = (hz: number) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 0 : 1)} kHz` : `${Math.round(hz)} Hz`);
 const BAND_LABEL: Record<Band, string> = { high: "HI", hiMid: "HI MID", loMid: "LO MID", low: "LOW" };
 /** The band's short name under its knob (the long one is in its tooltip). */
 const BAND_SHORT: Record<Band, string> = { high: "HI", hiMid: "MID", loMid: "LMID", low: "LOW" };
 const TYPE_LABEL: Record<FilterType, string> = { hp: "HPF", bp: "BPF", lp: "LPF" };
 const TYPE_TITLE: Record<FilterType, string> = { hp: "High-pass: cuts the lows below the sweep", bp: "Band-pass: keeps a band around the sweep", lp: "Low-pass: cuts the highs above the sweep" };
 
-/** A knob: -135 to 135 degrees over `min` to `max`, read from `get` each frame and turned through `put`. */
-function knob(o: { label: string; title: string; min: number; max: number; reset: number; cap: string; size?: "s" | "m" | "l"; get: () => number; put: (v: number) => void }) {
+/**
+ * A knob: -135 to 135 degrees over `min` to `max`, read from `get` each frame and turned through `put`. Hovered or
+ * held, its label reads `show`'s words for the value (the hover readout, for a dark booth).
+ */
+export function knob(o: { label: string; title: string; min: number; max: number; reset: number; size?: "s" | "m" | "l"; get: () => number; put: (v: number) => void; show?: (v: number) => string }) {
   const box = el("div", { class: `mx-knob mx-${o.size ?? "m"}` });
   const dial = el("div", { class: "mx-dial", role: "slider", tabindex: "0", title: o.title, "aria-label": o.title, "aria-valuemin": String(o.min), "aria-valuemax": String(o.max) }, '<i class="mx-cap"><b></b></i>');
-  (dial.firstElementChild as HTMLElement).style.background = o.cap;
-  box.append(dial, el("span", {}, o.label));
+  const label = el("span", {}, o.label);
+  box.append(dial, label);
+  let hover = false;
+  box.addEventListener("pointerenter", () => { hover = true; shown = NaN; });
+  box.addEventListener("pointerleave", () => { hover = false; shown = NaN; });
   const span = o.max - o.min, turn = (v: number) => o.put(Math.min(o.max, Math.max(o.min, v)));
   let drag: { y: number; v: number; id: number } | null = null;
   dial.addEventListener("pointerdown", (e) => { drag = { y: e.clientY, v: o.get(), id: e.pointerId }; dial.setPointerCapture(e.pointerId); e.preventDefault(); });
   dial.addEventListener("pointermove", (e) => { if (drag && e.pointerId === drag.id) turn(drag.v + ((drag.y - e.clientY) / (e.shiftKey ? 600 : 150)) * span); });
-  const up = () => { drag = null; };
+  const up = () => { drag = null; shown = NaN; };
   dial.addEventListener("pointerup", up); dial.addEventListener("pointercancel", up);
   dial.addEventListener("wheel", (e) => { e.preventDefault(); turn(o.get() - Math.sign(e.deltaY) * span / (e.shiftKey ? 200 : 40)); }, { passive: false });
   dial.addEventListener("dblclick", () => turn(o.reset));
@@ -56,9 +76,11 @@ function knob(o: { label: string; title: string; min: number; max: number; reset
   return {
     box,
     draw() {
-      const v = o.get();
+      const v = o.get(), read = (hover || drag) && o.show;
       if (v === shown) return;
       shown = v;
+      if (read) label.textContent = o.show!(v); else label.innerHTML = o.label;
+      box.classList.toggle("read", !!read);
       (dial.firstElementChild as HTMLElement).style.transform = `rotate(${-135 + ((v - o.min) / span) * 270}deg)`;
       dial.setAttribute("aria-valuenow", v.toFixed(2));
     },
@@ -87,13 +109,13 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
     const ch = n as Ch, s = () => m.channels[ch]!.s, strip = el("div", { class: "mx-strip" });
     const deck = DECK_CHANNEL.indexOf(ch as 1 | 2);
     strip.append(el("div", { class: "mx-num" }, `${n + 1}${deck >= 0 ? `<small>${deck ? "B" : "A"}</small>` : ""}`));
-    const k = (key: "trim" | Band | "send1" | "send2", label: string, title: string, cap: string, size: "s" | "m" = "m") =>
-      add(knob({ label, title: `${title}, channel ${n + 1}`, min: key.startsWith("send") ? 0 : -1, max: 1, reset: 0, cap, size, get: () => s()[key], put: (v) => m.set(ch, key, v) })).box;
-    strip.append(k("trim", "TRIM", "Input level: -12 to +12 dB", CAP.trim));
+    const k = (key: "trim" | Band | "send1" | "send2", label: string, title: string, show: (v: number) => string, size: "s" | "m" = "m") =>
+      add(knob({ label, title: `${title}, channel ${n + 1}`, min: key.startsWith("send") ? 0 : -1, max: 1, reset: 0, size, get: () => s()[key], put: (v) => m.set(ch, key, v), show })).box;
+    strip.append(k("trim", "TRIM", "Input level: -12 to +12 dB", (v) => DB(trimDb(v))));
     for (const b of ["high", "hiMid", "loMid", "low"] as const)
-      strip.append(k(b, BAND_SHORT[b], b === "high" || b === "low" ? `${BAND_LABEL[b]}: +6 dB to a full kill` : `${BAND_LABEL[b]}: +6 dB to -26 dB`, CAP[b]));
+      strip.append(k(b, BAND_SHORT[b], b === "high" || b === "low" ? `${BAND_LABEL[b]}: +6 dB to a full kill` : `${BAND_LABEL[b]}: +6 dB to -26 dB`, (v) => (bandDb(b, v) <= -80 ? "KILL" : DB(bandDb(b, v)))));
     const sends = el("div", { class: "mx-pair" });
-    sends.append(k("send1", `${SEND}1`, "Aux send 1", CAP.send, "s"), k("send2", `${SEND}2`, "Aux send 2", CAP.send, "s"));
+    sends.append(k("send1", `${SEND}1`, "Aux send 1", PCT, "s"), k("send2", `${SEND}2`, "Aux send 2", PCT, "s"));
     strip.append(sends);
     // the filter assign: 1, 2, or neither (off)
     const fa = el("div", { class: "mx-assign" });
@@ -121,14 +143,14 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
 
   // the master strip: master and booth, the stereo meters, the headphones
   const ms = el("div", { class: "mx-strip mx-masterstrip" });
-  ms.append(el("div", { class: "mx-num" }, "MST"));
-  ms.append(add(knob({ label: "MASTER", title: "Master level: what the room hears", min: 0, max: 1, reset: 0.8, cap: CAP.master, get: () => m.master, put: (v) => m.setMaster(v) })).box);
-  ms.append(add(knob({ label: `${SPEAKER}`, title: "Booth level: your own speakers, apart from the master", min: 0, max: 1, reset: 0.8, cap: CAP.master, get: () => m.booth, put: (v) => m.setBooth(v) })).box);
+  ms.append(el("div", { class: "mx-num mx-brand", title: "The Qone mixer" }, "QONE"));
+  ms.append(add(knob({ label: "MASTER", title: "Master level: what the room hears", min: 0, max: 1, reset: 0.8, get: () => m.master, put: (v) => m.setMaster(v), show: PCT })).box);
+  ms.append(add(knob({ label: `${SPEAKER}`, title: "Booth level: your own speakers, apart from the master", min: 0, max: 1, reset: 0.8, get: () => m.booth, put: (v) => m.setBooth(v), show: PCT })).box);
   const lr = el("div", { class: "mx-lr" }), ml = meter("mx-tall"), mr = meter("mx-tall");
   lr.append(ml, mr);
   ms.append(lr, el("div", { class: "mx-sub", title: "Headphones" }, HEADPHONES));
-  ms.append(add(knob({ label: "MIX", title: "Headphones: the cue (left) to the master (right)", min: 0, max: 1, reset: 0, cap: CAP.send, size: "s", get: () => m.cueBlend, put: (v) => m.setCueBlend(v) })).box);
-  ms.append(add(knob({ label: VOLUME, title: "Headphone level", min: 0, max: 1, reset: 0.8, cap: CAP.send, size: "s", get: () => m.phones, put: (v) => m.setPhones(v) })).box);
+  ms.append(add(knob({ label: "MIX", title: "Headphones: the cue (left) to the master (right)", min: 0, max: 1, reset: 0, size: "s", get: () => m.cueBlend, put: (v) => m.setCueBlend(v), show: (v) => `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` })).box);
+  ms.append(add(knob({ label: VOLUME, title: "Headphone level", min: 0, max: 1, reset: 0.8, size: "s", get: () => m.phones, put: (v) => m.setPhones(v), show: PCT })).box);
   const split = button(SPLIT, "Split cue: one output (a laptop's headphones), the cue in your left ear and the master in your right", "mx-split");
   split.addEventListener("click", () => m.setSplit(!m.split));
   ms.append(split);
@@ -150,16 +172,24 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
     const curve = el("canvas", { class: "mx-curve", width: "200", height: "56", "aria-label": `Filter ${n + 1}'s curve` });
     const knobs = el("div", { class: "mx-fknobs" });
     knobs.append(
-      add(knob({ label: "FREQ", title: `Filter ${n + 1} sweep: 20 Hz to 20 kHz`, min: 0, max: 1, reset: n ? 0.3 : 0.6, cap: CAP.filter, size: "l", get: () => f().freq, put: (v) => m.filter(n, { freq: v }) })).box,
-      add(knob({ label: "RES", title: `Filter ${n + 1} resonance: mild to wild`, min: 0, max: 1, reset: 0.3, cap: CAP.filter, get: () => f().res, put: (v) => m.filter(n, { res: v }) })).box,
+      add(knob({ label: "FREQ", title: `Filter ${n + 1} sweep: 20 Hz to 20 kHz`, min: 0, max: 1, reset: n ? 0.3 : 0.6, size: "l", get: () => f().freq, put: (v) => m.filter(n, { freq: v }), show: (v) => HZ(sweepHz(v)) })).box,
+      add(knob({ label: "RES", title: `Filter ${n + 1} resonance: mild to wild`, min: 0, max: 1, reset: 0.3, get: () => f().res, put: (v) => m.filter(n, { res: v }), show: (v) => `Q ${resQ(v).toFixed(1)}` })).box,
     );
     const lfo = el("div", { class: "mx-lfo" });
-    const beats = button("", `Filter ${n + 1} LFO: beats per sweep`, "mx-beats");
+    const beats = button("", `LFO ${n + 1}: beats a round`, "mx-beats");
     beats.addEventListener("click", () => { const i = LFO_BEATS.indexOf(f().beats as (typeof LFO_BEATS)[number]); m.filter(n, { beats: LFO_BEATS[(i + 1) % LFO_BEATS.length]! }); });
-    const tap = button("", `Filter ${n + 1} LFO tempo: tap it on the beat`, "mx-tap");
+    const tap = button("", `LFO ${n + 1} tempo: tap it on the beat`, "mx-tap");
+    const shape = button("", "", "mx-shape");
+    shape.addEventListener("click", () => m.filter(n, { shape: LFO_SHAPES[(LFO_SHAPES.indexOf(f().shape) + 1) % LFO_SHAPES.length]! }));
+    const follow = button("", "", "mx-follow");
+    follow.addEventListener("click", () => m.filter(n, { follow: LFO_FOLLOW[(LFO_FOLLOW.indexOf(f().follow) + 1) % LFO_FOLLOW.length]! }));
+    const lamp = el("i", { class: "mx-lamp", "aria-hidden": "true" });
     tap.addEventListener("pointerdown", () => m.tap(n, performance.now()));
-    lfo.append(el("span", { class: "mx-lfo-tag", title: `Filter ${n + 1}'s LFO: it swings the sweep on the beat` }, WAVE), add(knob({ label: "", title: `Filter ${n + 1} LFO depth: how far it swings the sweep`, min: 0, max: 1, reset: 0, cap: CAP.send, size: "s", get: () => f().depth, put: (v) => m.filter(n, { depth: v }) })).box, beats, tap);
-    box.append(head, curve, knobs, lfo);
+    lfo.append(el("span", { class: "mx-lfo-tag", title: `LFO ${n + 1}: it swings filter ${n + 1}'s sweep on the beat` }, `${WAVE}${n + 1}`), lamp,
+      add(knob({ label: "", title: `LFO ${n + 1} depth: how far it swings filter ${n + 1}'s sweep`, min: 0, max: 1, reset: 0, size: "s", get: () => f().depth, put: (v) => m.filter(n, { depth: v }), show: (v) => `±${(v * 3).toFixed(1)}` })).box, beats);
+    const lfo2 = el("div", { class: "mx-lfo" });
+    lfo2.append(shape, follow, tap);
+    box.append(head, curve, knobs, lfo, lfo2);
     let drawn = "";
     return {
       box,
@@ -168,8 +198,19 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
         on.classList.toggle("on", s.on);
         for (const x of types) x.b.classList.toggle("on", s.types.includes(x.t));
         beats.textContent = `${s.beats < 1 ? "½" : s.beats}`;
-        tap.innerHTML = `${TAP}${Math.round(s.bpm)}`;
-        if (key !== drawn) { drawn = key; drawCurve(curve, s.on, s.types, sweepHz(s.freq), resQ(s.res)); }
+        const tapKey = `${s.follow}${Math.round(s.follow === "tap" ? s.bpm : m.lfoBpm(n))}${s.shape}`;
+        if (tap.dataset.k !== tapKey) {
+          tap.dataset.k = tapKey;
+          tap.innerHTML = `${TAP}${Math.round(s.follow === "tap" ? s.bpm : m.lfoBpm(n))}`;
+          tap.classList.toggle("on", s.follow === "tap");
+          shape.innerHTML = SHAPE_ICON[s.shape]; shape.title = `LFO ${n + 1} shape: ${SHAPE_WORD[s.shape]} (press for the next)`; shape.setAttribute("aria-label", shape.title);
+          follow.textContent = s.follow === "tap" ? "TAP" : s.follow.toUpperCase();
+          follow.title = `LFO ${n + 1} tempo: from ${FOLLOW_WORD[s.follow]} (press for the next)`; follow.setAttribute("aria-label", follow.title);
+          follow.classList.toggle("on", s.follow !== "tap");
+        }
+        // the lamp pulses with the LFO, so you can see it sit on the beat
+        lamp.style.opacity = String(s.depth > 0 ? 0.15 + 0.85 * ((lfoValue(s.shape, m.lfoPhase(n)) + 1) / 2) : 0.1);
+        if (key !== drawn) { drawn = key; drawCurve(curve, s.on, s.types, sweepHz(s.freq), resQ(s.res), `FILTER ${n + 1}`); }
       },
     };
   });
@@ -180,7 +221,9 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
   const curveB = button("", "The crossfader's curve: smooth for blends, cut for scratching", "mx-curveb");
   curveB.addEventListener("click", () => m.setCurve(m.curve === "smooth" ? "cut" : "smooth"));
   const opts = el("div", { class: "mx-opts" });
-  opts.append(curveB, ...(o.extra ?? []));
+  const night = button(MOON, "Night: the face turned down and the lit controls glowing brighter, for a dark booth", "mx-night");
+  night.addEventListener("click", () => root.classList.toggle("night"));
+  opts.append(curveB, night, ...(o.extra ?? []));
   mid.append(xrow, opts);
   bottom.append(filters[0]!.box, mid, filters[1]!.box);
   root.append(strips, bottom);
@@ -202,6 +245,8 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
       (mr.firstElementChild as HTMLElement).style.transform = `scaleY(${r})`;
       split.classList.toggle("on", m.split);
       if (curveB.dataset.c !== m.curve) { curveB.dataset.c = m.curve; curveB.innerHTML = m.curve === "smooth" ? SPLINE : SCISSORS; curveB.title = `The crossfader's curve: ${m.curve === "smooth" ? "smooth, for blends" : "cut, for scratching"} (press to change)`; }
+      night.classList.toggle("on", root.classList.contains("night"));
+      m.tick();
       for (const f of filters) f.draw();
       for (const d of draws) d();
     },
@@ -209,14 +254,16 @@ export function mountMixer(m: Mixer, o: { far?: (ch: Ch) => boolean; extra?: HTM
 }
 
 /** The filter's curve, 20 Hz to 20 kHz across, -24 to +24 dB up: the LFO swings it, this is where it rests. */
-function drawCurve(c: HTMLCanvasElement, on: boolean, types: readonly FilterType[], f0: number, q: number) {
+function drawCurve(c: HTMLCanvasElement, on: boolean, types: readonly FilterType[], f0: number, q: number, name: string) {
   const g = c.getContext("2d");
   if (!g) return;
   const w = c.width, h = c.height;
   g.clearRect(0, 0, w, h);
   g.strokeStyle = "#2a2d33"; g.lineWidth = 1;
   g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
-  g.strokeStyle = on ? "#ff6b4a" : "#5b5f68"; g.lineWidth = 2;
+  g.fillStyle = on ? ACCENT : "#7c7f86"; g.font = '600 24px "Barlow Condensed", sans-serif'; g.textBaseline = "top"; g.fillText(name, 6, 3);
+  g.strokeStyle = on ? ACCENT : "#5b5f68"; g.lineWidth = 2;
+  g.shadowColor = on ? ACCENT : "transparent"; g.shadowBlur = on ? 6 : 0;
   g.beginPath();
   for (let x = 0; x <= w; x += 2) {
     const hz = 20 * Math.pow(1000, x / w), db = 20 * Math.log10(Math.max(1e-4, filterGain(types, hz, f0, q)));
@@ -224,6 +271,7 @@ function drawCurve(c: HTMLCanvasElement, on: boolean, types: readonly FilterType
     if (x) g.lineTo(x, y); else g.moveTo(x, y);
   }
   g.stroke();
+  g.shadowBlur = 0;
 }
 
 export type MixerFace = ReturnType<typeof mountMixer>;

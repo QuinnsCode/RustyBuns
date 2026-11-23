@@ -114,3 +114,17 @@
 @media (max-height: 820px) and (min-width: 900px) {
   .dj-zoom { height: clamp(84px, 14vh, 120px); }
 }
+/* the QDJ additions: LOOP IN / OUT / RELOOP, master tempo, a button per tempo range, the START and BRAKE knobs; the edge being moved by the jog blinks */
+#dj { --acc: #ee6a1f; --acc-glow: rgba(238, 106, 31, 0.55); --ink: #c9cbcf; --dim: #7c7f86; }
+#dj h2 small { font-size: 15px; color: #7c7f86; letter-spacing: 0.06em; }
+.dj-loopio { display: flex; gap: 6px; }
+#dj .dj-loopio button.on, #dj .dj-mt.on, #dj .dj-ranges button.on { background: var(--acc); border-color: var(--acc); color: #141416; box-shadow: 0 0 8px var(--acc-glow); }
+#dj .dj-loopio button.adj { animation: dj-adj 0.5s steps(2, jump-none) infinite; }
+@keyframes dj-adj { from { box-shadow: 0 0 2px var(--acc-glow); filter: brightness(0.7); } to { box-shadow: 0 0 14px var(--acc-glow); filter: brightness(1.2); } }
+.dj-ranges { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 100%; }
+#dj .dj-ranges button, #dj .dj-mt { min-height: 22px; min-width: 0; padding: 0 2px; font-size: 11px; border-radius: 5px; }
+#dj .dj-mt { width: 100%; }
+.dj-body { grid-template-columns: minmax(0, 1fr) 64px; }
+.dj-b .dj-body { grid-template-columns: 64px minmax(0, 1fr); }
+.dj-pitchcol .dj-pitch { height: 200px; }
+.dj-deck { align-content: start; }

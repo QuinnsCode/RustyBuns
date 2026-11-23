@@ -1,0 +1,39 @@
+# One issue the same day a test fails on 3+ PRs (#5566). A broken main turns every open PR red (2026-11-16: the
+# playground shelf test on 8 PRs), and ci-report.ts's "blocked many PRs" table only showed it days later. After
+# each failed apps or typecheck run this reads the last day's runs and their failing tests, and opens one issue
+# (label ci-blocker) per test that failed on 3+ PRs, once per test: an open issue for it, or one that day, skips it.
+# workflow_run always runs main's copy of this file, so a PR can't change what it does with issues: write.
+name: ci-blockers
+on:
+  workflow_run:
+    workflows: [apps, typecheck]
+    types: [completed]
+  workflow_dispatch:
+
+# One at a time, so two failures landing together can't both open the issue. A newer run replaces a waiting one.
+concurrency: { group: ci-blockers, cancel-in-progress: false }
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  flag:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/apps/*/
+            /apps/**/package.json
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: bun scripts/ci-report.ts --file | tee -a "$GITHUB_STEP_SUMMARY"

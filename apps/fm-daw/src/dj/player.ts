@@ -139,3 +139,41 @@ export function bars(levels: Level[], pos: number, span: number, w: number, out:
   const i0 = Math.max(0, Math.floor((pos - span) * l.bps)), i1 = Math.min(l.p.length, Math.ceil((pos + span) * l.bps));
   for (let i = i0; i < i1; i++) out(w / 2 + (i / l.bps - pos) * pxPerS, bw, l.p[i]!);
 }
+
+// ---- the deck's motion: a turntable's motor start and brake
+
+/**
+ * How a deck moves: at `from` seconds into its track at `at` on the audio clock, its speed going in a straight line
+ * from `r0` to `r1` (track seconds a second) over `T` seconds, then holding `r1`. A steady deck has r0 = r1 and T = 0.
+ * The page and the deck's worklet both read it, so they agree on where the deck is to the sample.
+ */
+export interface Motion { from: number; at: number; r0: number; r1: number; T: number }
+/** The deck's speed `e` seconds after its motion began. */
+export function speedAt(m: Motion, e: number): number {
+  if (e <= 0) return m.r0;
+  return m.T > 0 && e < m.T ? m.r0 + ((m.r1 - m.r0) * e) / m.T : m.r1;
+}
+/** How far the deck has gone `e` seconds after its motion began, track seconds (before any loop wraps it). */
+export function travel(m: Motion, e: number): number {
+  if (e <= 0) return 0;
+  if (m.T > 0 && e < m.T) return m.r0 * e + ((m.r1 - m.r0) * e * e) / (2 * m.T);
+  const T = Math.max(0, m.T);
+  return ((m.r0 + m.r1) / 2) * T + m.r1 * (e - T);
+}
+/** The longest motor start and brake the knobs give, seconds. */
+export const START_MAX_S = 2;
+export const BRAKE_MAX_S = 4;
+/** A ramp knob (0 to 1) in seconds, finer at the short end (a square law): 0 is a CD player's instant start or stop. */
+export const rampS = (knob: number, max: number) => max * Math.min(1, Math.max(0, knob)) ** 2;
+
+// ---- loop in, loop out, and the jog adjusting a loop's edge
+
+/** Seconds of track a turn of the jog moves a loop's edge while it's being adjusted. */
+export const ADJUST_S = 0.5;
+/** The shortest loop the jog leaves, seconds. */
+export const MIN_LOOP_S = 0.02;
+/** The loop with its `edge` moved `ds` seconds (clockwise on: the out point later makes it longer), kept inside the track. */
+export function adjustLoop(loop: { start: number; end: number }, edge: "in" | "out", ds: number, length: number): { start: number; end: number } {
+  if (edge === "out") return { start: loop.start, end: Math.min(length, Math.max(loop.start + MIN_LOOP_S, loop.end + ds)) };
+  return { start: Math.max(0, Math.min(loop.end - MIN_LOOP_S, loop.start + ds)), end: loop.end };
+}
