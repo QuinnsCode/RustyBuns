@@ -234,9 +234,9 @@ pub struct Engine {
     /// Each track's Shape, its chunk while the insert filters it, and the chunk's dry sum and send.
     inserts: Vec<eq::Eq>,
     ins_live: [bool; TRACKS],
-    /// Tracks whose chunk goes to render()'s `taps` (an Amp insert) instead of the sum, and which do this chunk.
-    tapped: [bool; TRACKS],
-    tap_now: [bool; TRACKS],
+    /// Tracks whose chunk goes to render()'s `taps` (1 an Amp insert, instead of the sum; 2 a copy, left in it), and which do this chunk.
+    tapped: [u8; TRACKS],
+    tap_now: [u8; TRACKS],
     tb: Vec<f64>, mix: Vec<f64>, snd: Vec<f64>, snd2: Vec<f64>,
 }
 
@@ -257,8 +257,8 @@ impl Engine {
             peak_l: 0.0, peak_r: 0.0, min_gain: 1.0, nans: 0.0,
             inserts: (0..TRACKS).map(|_| eq::Eq::new(sr)).collect(),
             ins_live: [false; TRACKS],
-            tapped: [false; TRACKS],
-            tap_now: [false; TRACKS],
+            tapped: [0; TRACKS],
+            tap_now: [0; TRACKS],
             tb: vec![0.0; TRACKS * CHUNK * 2], mix: vec![0.0; CHUNK * 2], snd: vec![0.0; CHUNK * 2], snd2: vec![0.0; CHUNK * 2],
         };
         for t in 0..TRACKS { for i in 0..NPARAMS { e.set_param(t, i, 0.0); } }
@@ -398,8 +398,9 @@ impl Engine {
     }
 
     /// Tap a track for its Amp insert: while on, and render() is given `taps`, its chunk (after pan and
-    /// Shape, before master) goes there in mono instead of into the sum and the send.
-    pub fn set_tap(&mut self, t: usize, on: bool) { if t < TRACKS { self.tapped[t] = on; } }
+    /// Shape, before master) goes there in mono instead of into the sum and the send. `mode` 2 taps it for the page's
+    /// ears only: the track stays in the sum and the send, and a copy goes to `taps` (its Shape's spectrum). 0 is off.
+    pub fn set_tap(&mut self, t: usize, mode: u8) { if t < TRACKS { self.tapped[t] = mode.min(2); } }
 
     /// Interleaved stereo into `out`; with `send`, also the Space send bus
     /// (each track times its SEND, after pan, its insert and master), and with `send2` the desk's
@@ -415,7 +416,7 @@ impl Engine {
         let mut at = 0;
         while at < n {
             let k = CHUNK.min(n - at);
-            for t in 0..TRACKS { self.ins_live[t] = self.inserts[t].live(); self.tap_now[t] = tapping && self.tapped[t]; }
+            for t in 0..TRACKS { self.ins_live[t] = self.inserts[t].live(); self.tap_now[t] = if tapping { self.tapped[t] } else { 0 }; }
             for j in 0..k {
                 let (mut l, mut r) = (0.0f64, 0.0f64);
                 let (mut sl, mut sr2) = (0.0f64, 0.0f64);
@@ -715,7 +716,7 @@ impl Engine {
                         }
                     } else { ml = mono * tr.pan_l; mr = mono * tr.pan_r; }
                     // a track with a Shape waits in its own chunk; the rest go straight into the sum
-                    if self.ins_live[t] || self.tap_now[t] { let o = (t * CHUNK + j) * 2; self.tb[o] = ml; self.tb[o + 1] = mr; continue; }
+                    if self.ins_live[t] || self.tap_now[t] != 0 { let o = (t * CHUNK + j) * 2; self.tb[o] = ml; self.tb[o + 1] = mr; continue; }
                     l += ml;
                     r += mr;
                     let sa = tr.params[P_SEND];
@@ -739,10 +740,10 @@ impl Engine {
             // each Shape on its track's chunk, then into the sum and the send, track by track
             // a tapped one (after its Shape) out to its amp in mono, centred as the amp hears a take
             for t in 0..TRACKS {
-                if !self.ins_live[t] && !self.tap_now[t] { continue; }
+                if !self.ins_live[t] && self.tap_now[t] == 0 { continue; }
                 let buf = &mut self.tb[t * CHUNK * 2..(t * CHUNK + k) * 2];
                 if self.ins_live[t] { self.inserts[t].insert(buf, k); }
-                if self.tap_now[t] { continue; }
+                if self.tap_now[t] == 1 { continue; }
                 let (sa, sb) = (self.tracks[t].params[P_SEND], self.tracks[t].params[P_SEND2]);
                 for j in 0..k * 2 { self.mix[j] += buf[j]; self.snd[j] += buf[j] * sa; self.snd2[j] += buf[j] * sb; }
             }
@@ -750,7 +751,7 @@ impl Engine {
                 for t in 0..TRACKS {
                     let o = t * CHUNK * 2;
                     for j in 0..k {
-                        let mut y = if self.tap_now[t] { (self.tb[o + j * 2] + self.tb[o + j * 2 + 1]) * std::f64::consts::FRAC_1_SQRT_2 } else { 0.0 };
+                        let mut y = if self.tap_now[t] != 0 { (self.tb[o + j * 2] + self.tb[o + j * 2 + 1]) * std::f64::consts::FRAC_1_SQRT_2 } else { 0.0 };
                         // the NaN guard, for a track the master never sees
                         if !y.is_finite() { self.nans += 1.0; self.panic(); y = 0.0; }
                         tp[(at + j) * TRACKS + t] = y as f32;
@@ -863,7 +864,8 @@ pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32
 }
 
 #[no_mangle]
-pub extern "C" fn fm_set_tap(e: *mut Engine, track: u32, on: u32) { with!(e, e.set_tap(track as usize, on != 0)) }
+/// `mode`: 0 off, 1 out of the sum (an Amp insert), 2 a copy for the page (the track stays in the sum).
+pub extern "C" fn fm_set_tap(e: *mut Engine, track: u32, mode: u32) { with!(e, e.set_tap(track as usize, mode.min(2) as u8)) }
 
 /// # Safety
 /// `out` must point to at least 4 f32s.

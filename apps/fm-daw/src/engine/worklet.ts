@@ -1,7 +1,7 @@
 // The audio thread. Owns one FmEngine (TS, or Rust compiled to wasm) and the
 // sequencer that drives it. The page talks to it only through messages; the
 // worklet keeps a mirror of every param so it can swap engines mid-groove.
-import { TsEngine, sendTrackEq, type FmEngine } from "./engine.ts";
+import { TsEngine, sendTrackEq, type FmEngine, type Tap } from "./engine.ts";
 import { WasmEngine, WasmEq, WasmRemote, instantiateFm, type Exports } from "./wasm.ts";
 import { TsRemote, type RemoteLine } from "./remote.ts";
 import { TsEq, flatEq, withEqLane, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
@@ -16,9 +16,10 @@ import { TAKE_RATE, TakeCapture, TakeDeck } from "../take.ts";
 import { SOUND_FRAMES, gridBeatAt } from "../clock.ts";
 import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
-import { Mixer, RigReturn, shapeStage } from "../mixer.ts";
+import { Mixer, RigReturn, shapeStage, trackId } from "../mixer.ts";
 import type { FromWorklet, ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
+import type { ShapeAt } from "../desk.ts";
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor { readonly port: MessagePort }
@@ -126,6 +127,10 @@ class FmProcessor extends AudioWorkletProcessor {
   /** What comes back from those effects (the fifth input, two channels a track): panned and sent here, under the master. */
   private returns = new InsertReturns();
   private returnStrip = { gain: () => this.master, pan: (t: number) => this.strip.pan(t), send: (t: number) => this.strip.send(t) };
+  /** The channel whose Shape is open, copied to the third output for its spectrum: a track (its engine tap), the Space return, or (`desk.listen`) a player's channel or aux 2. */
+  private listenTrack = -1;
+  private listenSpace = false;
+  private heard = new Float32Array(256);
 
   constructor() {
     super();
@@ -159,7 +164,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.engine.setParam(m.track, m.i, m.v);
         break;
       case "plugin": this.plugins.set(m.track, m.on); break;
-      case "insert": if (m.on) this.inserts.add(m.track); else { this.inserts.delete(m.track); this.returns.drop(m.track); } this.engine.setTap(m.track, this.tapped(m.track)); break;
+      case "insert": if (m.on) this.inserts.add(m.track); else { this.inserts.delete(m.track); this.returns.drop(m.track); } this.engine.setTap(m.track, this.tapOf(m.track)); break;
       case "pluginParam": this.plugins.param(m.track, m.id, m.v); break;
       case "pluginBlock": this.plugins.push(m.track, m.pcm, m.ok); break;
       case "notes": s.setNotes(m.track, m.notes); break;
@@ -197,6 +202,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
       case "desk": this.setDesk(m); break;
       case "quiet": this.quiet(m.peer, m.track); break;
+      case "listen": this.listen(m.at); break;
       case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.input.reset(); break;
       case "pluginSend":
         if (!m.on) { this.pluginOut.delete(m.track); this.webOut.delete(m.track); break; }
@@ -295,7 +301,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (!this.deskFed && !this.rig && !this.tap) return;
     if (this.deskOut.length < frames * 2) this.deskOut = new Float32Array(frames * 2);
     this.blockFrames = frames;
-    this.desk.process(this.deskIn, this.deskOut, frames, this.buses);
+    this.desk.process(this.deskIn, this.deskOut, frames, this.buses, this.desk.listen === null ? undefined : this.heard);
     for (let f = 0; f < frames * 2; f++) this.buf[f] += this.deskOut[f];
   }
   /** The remote sound bound for track `t`'s amp, added into its dry input. */
@@ -383,10 +389,26 @@ class FmProcessor extends AudioWorkletProcessor {
   /** A track's amp, and its synth tapped out of the engine's sum to play through it. */
   private setAmp(t: number, amp: TrackAmp | null) {
     this.amps.set(t, amp);
-    this.engine.setTap(t, this.tapped(t));
+    this.engine.setTap(t, this.tapOf(t));
   }
   /** A track out of the engine's sum: through its amp, or out to its web effect. */
   private tapped(t: number) { return this.amps.has(t) || this.inserts.has(t); }
+  /** A track's tap in the engine: out of the sum, a copy while its Shape is open, or none. */
+  private tapOf(t: number): Tap { return this.tapped(t) || (t === this.listenTrack ? "listen" : false); }
+
+  /** Which channel's sound goes to the third output (src/ui/audio.ts `heard`). */
+  private listen(at: ShapeAt | null) {
+    const was = this.listenTrack;
+    this.listenTrack = -1; this.listenSpace = false; this.desk.listen = null;
+    if (at && "channel" in at) {
+      const t = Array.from({ length: TRACKS }, (_, i) => trackId(i)).indexOf(at.channel);
+      if (t >= 0) this.listenTrack = t; else this.desk.listen = at.channel;
+    } else if (at && "aux" in at) {
+      if (at.aux === 1) this.listenSpace = true; else this.desk.listen = at.aux;
+    }
+    if (was >= 0) this.engine.setTap(was, this.tapOf(was));
+    if (this.listenTrack >= 0) this.engine.setTap(this.listenTrack, this.tapOf(this.listenTrack));
+  }
 
   /**
    * Each inserted track's sound (after its fader, before the master) on its channel of the second output, for its
@@ -426,7 +448,7 @@ class FmProcessor extends AudioWorkletProcessor {
       eq.set(this.eqPlayed);
       eq.listen(this.listening);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
-      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.seq.bends[t]); next.setTap(t, this.tapped(t)); }
+      for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.seq.bends[t]); next.setTap(t, this.tapOf(t)); }
       next.setMaster(this.master);
       // a new engine starts with every insert where it is now, not fading in
       this.trackEq.forEach((d, t) => sendTrackEq(next, t, d, []));
@@ -456,20 +478,21 @@ class FmProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const L = out[0], R = out[1] ?? out[0];
     const frames = L.length;
-    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.send2 = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); }
+    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); this.send2 = new Float32Array(frames * 2); this.taps = new Float32Array(frames * TRACKS); this.heard = new Float32Array(frames); }
     try {
       const grid = this.gridNow();
       if (Number.isFinite(grid)) this.seq.sync(grid);
       const pos = this.seq.pos, playing = this.seq.playing, abs0 = this.seq.abs;
       const bpf = (this.seq.bpm / 60 / sampleRate) * this.seq.rate;
-      // with no amp or web effect on any track, no taps: every track stays in the engine's sum
-      const taps = this.amps.any || this.inserts.size ? this.taps : undefined;
+      // with no amp or web effect on any track, and no track's Shape open, no taps: every track stays in the engine's sum
+      const taps = this.amps.any || this.inserts.size || this.listenTrack >= 0 ? this.taps : undefined;
       this.seq.process(this.buf, frames, this.send, taps, this.rig ? this.send2 : undefined);
       const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
       this.blockBeat = abs0; this.blockBpf = bpf;
       this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear, taps, this.remotes.size ? this.remoteIn : undefined);
       this.mixRemote(frames, abs0, bpf);
       this.tap = inputs[2]?.length ? inputs[2] : null;
+      this.heard.fill(0, 0, frames);
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
       if (this.inserts.size) this.sendInserts(outputs[1], this.taps, frames);
@@ -480,7 +503,10 @@ class FmProcessor extends AudioWorkletProcessor {
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
       this.squash.process(this.buf, frames);
-      this.space.process(this.buf, this.send, frames, this.spaceEq);
+      this.space.process(this.buf, this.send, frames, this.spaceEq, this.listenSpace ? this.heard : undefined);
+      // a track's tap is (L+R)/√2 before the master; heard as the desk's channels are, (L+R)/2 after it
+      const lt = this.listenTrack;
+      if (lt >= 0) for (let f = 0; f < frames; f++) this.heard[f] = this.taps[f * TRACKS + lt] * Math.SQRT1_2 * this.master;
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);
@@ -488,6 +514,8 @@ class FmProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ t: "engine", kind: "ts", error: `engine crashed: ${String((e as Error)?.message ?? e)}` });
     }
     for (let f = 0; f < frames; f++) { L[f] = this.buf[f * 2]; R[f] = this.buf[f * 2 + 1]; }
+    const heard = outputs[2]?.[0];
+    if (heard) heard.set(this.heard.subarray(0, frames));
     this.frames += frames;
     this.sinceReport += frames / sampleRate;
     if (this.sinceReport >= REPORT_EVERY) {

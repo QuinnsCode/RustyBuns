@@ -108,6 +108,8 @@ function opMsg(op: Op, next: Project): ToWorklet {
 }
 
 /** What the page's web plugins play into, once the audio is on. */
+/** The Shape tab's pick (`master`, a channel's id, `aux-<n>`) as the desk names it. */
+const shapeAtKey = (key: string): ShapeAt => (key === "master" ? { master: true } : key.startsWith("aux-") ? { aux: Number(key.slice(4)) } : { channel: key });
 const pageAudio = (a: AudioOut | null): PageAudio | null => a && { ctx: a.ctx, taps: a.webTaps, fxIn: a.fxIn, webIn: a.webIn, fxOut: a.fxOut, web: (t, g) => a.web(t, g), route: (t, on) => a.routeWeb(t, on) };
 
 export function App() {
@@ -425,6 +427,15 @@ export function App() {
   }
 
   useEffect(() => () => { void audioRef.current?.ctx.close(); }, []);
+  // the open Shape's channel copied out of the mix for its spectrum (the master's is the mix itself)
+  const [deskShape, setDeskShape] = useState<ShapeAt | null>(null);
+  const listenAt: ShapeAt | null = view === "shape" ? shapeAtKey(shapeOn) : view === "desk" ? deskShape : null;
+  const listenKey = JSON.stringify(listenAt);
+  useEffect(() => {
+    if (!audio) return;
+    audio.listen(listenAt);
+    return () => { audio.listen(null); };
+  }, [audio, listenKey]);
   const sideMeters = useRef<{ a: AudioOut; l: AnalyserNode; r: AnalyserNode } | null>(null);
   // played some other way (Space, the transport's Play, the room): the first-try card has done its job
   useEffect(() => { if (transportOn && audio && !tried) markTried(); }, [transportOn]);
@@ -1039,7 +1050,7 @@ export function App() {
             <Bench project={project} wasm={fetchWasm} />
           ) : view === "desk" ? (
             <DeskPanel project={project} players={deskPlayers} cabled={aux2.label} onOps={(ops, group) => { for (const o of ops) commit(o, { group: group ?? "desk" }); }}
-              sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null} />
+              sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null} heard={audio?.heard ?? null} onShape={setDeskShape} />
           ) : view === "amp" ? (
             <AmpPanel name={t.name} amp={t.amp} onChange={(amp, group) => commit({ t: "amp", track: selected, amp }, group ? { group } : {})}
               armed={armed === selected} monitor={monitor && armed === selected}
@@ -1061,7 +1072,6 @@ export function App() {
                 <select value={on.key} onChange={(e) => setShapeOn(e.currentTarget.value)} aria-label="Which Shape to edit">
                   {ats.map((x) => <option key={x.key} value={x.key}>{shapeName(desk, x.at)}{x.key !== "master" && seshShape(project, deskPlayers, x.at).some(Boolean) ? " ·" : ""}</option>)}
                 </select>
-                {on.key !== "master" && <span className="dim" title="Only the master's sound reaches the page on its own; a channel's spectrum isn't drawn">curve only</span>}
               </label>
             );
             const sr = audio?.ctx.sampleRate ?? 48000, an = audio?.analyser ?? null;
@@ -1073,7 +1083,7 @@ export function App() {
                 onMove={(i, v, was) => move(MASTER, i, v, was)} followsPlay
                 linear={!!project.eqLinear} onLinear={(linear) => commit({ t: "eqPhase", linear })} />
             ) : (
-              <Shape key={on.key} head={head} doc={doc} sampleRate={sr} analyser={null}
+              <Shape key={on.key} head={head} doc={doc} sampleRate={sr} analyser={audio?.heard ?? null}
                 onChange={(bands, group) => { for (const o of shapeOps(proj.current, deskPlayers, on.at, bands)) commit(o, group ? { group } : {}); }} />
             );
           })() : t.kind === "drum" ? (<>

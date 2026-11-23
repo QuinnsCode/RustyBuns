@@ -4,7 +4,7 @@ import type { RecordedMove } from "./sequencer.ts";
 import type { EqDoc, EqListen } from "./eq.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
 import type { PluginEvent } from "../plugin-track.ts";
-import type { Channel } from "../desk.ts";
+import type { Channel, ShapeAt } from "../desk.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 import type { DeckClip } from "../take.ts";
 
@@ -83,7 +83,12 @@ export type ToWorklet =
    */
   | { t: "pluginSend"; track: number; on: boolean; web?: boolean }
   /** Send the input out in slices, each with the beat it was played on (`inLatency`: seconds the input comes in late). */
-  | { t: "send"; on: boolean; inLatency: number };
+  | { t: "send"; on: boolean; inLatency: number }
+  /**
+   * Copy this channel's sound (a track's, a player's or a return's, after its Shape) to the third output, for the
+   * spectrum on its Shape, while that Shape is open; the channel stays in the mix. Null (or the master): none.
+   */
+  | { t: "listen"; at: ShapeAt | null };
 
 export type FromWorklet =
   | { t: "tick"; pos: number; abs: number; synced: boolean; late: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number; ampMisses: number; pluginMisses: number }

@@ -179,6 +179,8 @@ export class Mixer {
   private strip = new Float32Array(256);
   private bus = Array.from({ length: AUXES }, () => new Float32Array(128));
   private wet = new Float32Array(256);
+  /** The one channel (by id) or return (by aux) whose sound `process` copies out to its `heard`, for its Shape's spectrum. */
+  listen: string | number | null = null;
   constructor(private readonly sampleRate: number) {}
 
   set(desk: Desk) {
@@ -203,8 +205,10 @@ export class Mixer {
    * Each channel's source by its id (mono, `frames` long; a missing one is silence) into `out`, interleaved stereo, written over.
    * `buses` runs once the channels have sent, before the returns play: each aux bus (mono), to read or add to
    * (the sesh's audio thread adds the tracks' aux 2 sends, and takes the players' Space sends).
+   * With `heard`, the `listen` channel or return after its Shape and fader, in mono (silence while it plays nothing).
    */
-  process(inputs: ReadonlyMap<string, Float32Array>, out: Float32Array, frames: number, buses?: (bus: readonly Float32Array[]) => void) {
+  process(inputs: ReadonlyMap<string, Float32Array>, out: Float32Array, frames: number, buses?: (bus: readonly Float32Array[]) => void, heard?: Float32Array) {
+    heard?.fill(0, 0, frames);
     if (this.strip.length < frames * 2) { this.strip = new Float32Array(frames * 2); this.wet = new Float32Array(frames * 2); this.bus = this.bus.map(() => new Float32Array(frames)); }
     out.fill(0, 0, frames * 2);
     for (const b of this.bus) b.fill(0, 0, frames);
@@ -220,6 +224,7 @@ export class Mixer {
         const l = s[i * 2] * f, r = s[i * 2 + 1] * f;
         out[i * 2] += l * pl; out[i * 2 + 1] += r * pr;
         const m = (l + r) * 0.5;
+        if (heard && this.listen === c.id) heard[i] = m;
         for (let k = 0; k < AUXES; k++) if (c.sends[k]) this.bus[k][i] += m * c.sends[k];
       }
     });
@@ -230,6 +235,7 @@ export class Mixer {
       fx.process(this.bus[r.aux - 1], this.wet, frames, this.retEqs[r.aux - 1]);
       const f = faderGain(r.fader);
       for (let i = 0; i < frames * 2; i++) out[i] += this.wet[i] * f;
+      if (heard && this.listen === r.aux) for (let i = 0; i < frames; i++) heard[i] = (this.wet[i * 2] + this.wet[i * 2 + 1]) * 0.5 * f;
     }
   }
 }

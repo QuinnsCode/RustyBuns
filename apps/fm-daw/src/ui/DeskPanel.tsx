@@ -12,11 +12,15 @@ import { Shape } from "./Shape.tsx";
 
 const atKey = (at: ShapeAt) => ("master" in at ? "master" : "aux" in at ? `aux:${at.aux}` : at.channel);
 
-export function DeskPanel({ project, players, cabled, onOps, sampleRate, analyser }: {
+export function DeskPanel({ project, players, cabled, onOps, sampleRate, analyser, heard, onShape }: {
   project: Project; players: readonly Player[]; cabled: string; onOps: (ops: Op[], group?: string) => void;
   sampleRate: number;
   /** The master's sound, for the master's spectrum. */
   analyser: AnalyserNode | null;
+  /** The open Shape's channel on its own (src/ui/audio.ts `heard`), for its spectrum. */
+  heard?: AnalyserNode | null;
+  /** Which Shape is open (null: none), so its channel's sound is copied out to `heard`. */
+  onShape?: (at: ShapeAt | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<ShapeAt | null>(null);
@@ -34,16 +38,18 @@ export function DeskPanel({ project, players, cabled, onOps, sampleRate, analyse
   const shown = at && ("master" in at || ("aux" in at ? desk.returns.some((r) => r.aux === at.aux) : desk.channels.some((c) => c.id === at.channel))) ? at : null;
   const name = shown ? shapeName(desk, shown) : "";
   const master = shown !== null && "master" in shown;
+  const shownKey = shown ? atKey(shown) : "";
+  useEffect(() => { onShape?.(shown); }, [shownKey]);
+  useEffect(() => () => onShape?.(null), []);
   return (
     <section className="desk-panel" aria-label="Mixer">
       <span className="silk">Mixer</span>
       {shown && (
-        <Shape key={atKey(shown)} doc={seshShape(project, players, shown)} sampleRate={sampleRate} analyser={master ? analyser : null}
+        <Shape key={atKey(shown)} doc={seshShape(project, players, shown)} sampleRate={sampleRate} analyser={master ? analyser : heard ?? null}
           onChange={(bands, group) => onOps(shapeOps(latest.current.project, players, shown, bands), group)}
           head={
             <span className="desk-shape-head">
               <span className="silk">Shape · {name}</span>
-              {!master && <span className="dim" title="Only the master's sound reaches the page on its own; a channel's spectrum isn't drawn">curve only</span>}
               <button type="button" className="ghost" onClick={() => setAt(null)} title="Close Shape" aria-label="Close Shape">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
