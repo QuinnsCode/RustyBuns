@@ -10,7 +10,8 @@
 // Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a card or an unsettled
 // clash in your files (so a hook can stop and ask), 0 otherwise. It prints a `Merge after #N` line for the PR body;
 // scripts/after.ts (after.yml) merges main into the branch once those land (#5344). It notes the HEAD it read in the worktree's git folder
-// (`rustybuns-preflight`), and .claude/hooks/guard.ts turns away `gh pr create` on a commit it hasn't read (#4956). Lock and generated files are listed apart:
+// (`rustybuns-preflight`) with the PRs it named, and .claude/hooks/guard.ts turns away `gh pr create` on a commit it
+// hasn't read (#4956), or whose body lacks that `Merge after` line (#5344). Lock and generated files are listed apart:
 // they are expected to clash and are regenerated.
 
 import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
@@ -95,6 +96,6 @@ if (import.meta.main) {
   }
   const code = v && (v.cards.length || v.clashes.length) ? 1 : 0;
   const stamp = run$(["git", "rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight"]).trim();
-  await Bun.write(stamp, `${head} ${code}\n`);
+  await Bun.write(stamp, `${head} ${code} ${others.map((p) => p.number).join(",")}\n`);
   process.exit(code);
 }

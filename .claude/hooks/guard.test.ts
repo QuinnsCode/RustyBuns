@@ -143,3 +143,21 @@ test("opening a PR waits for preflight on HEAD; a draft, another repo and other 
   for (const [c, ran] of [["gh pr create --title x", "aaa"], ["gh pr create --draft", null], ["gh pr create -R o/r", null], ["gh pr view 3", null]] as const)
     expect([c, prCreate(c, "/w", at(ran))]).toEqual([c, null]);
 });
+
+// #5344: when preflight named open PRs, the body carries its Merge after line, the one scripts/after.ts acts on
+test.each([
+  ["gh pr create --title x --body \"Merge after #12, #34\n\nCloses #1\"", null],
+  ["gh pr create --title x --body \"$(cat <<'EOF'\nFixes it.\n\nMerge after #12 and #34\nEOF\n)\"", null],
+  ["gh pr create --title x --body-file body.md", null],
+  ["gh pr create --title x --body-file - < body.md", null],
+  ["gh pr create --title x --body \"Fixes it. Closes #1\"", "missing #12, #34"],
+  ["gh pr create --title x --body \"Merge after #12\"", "missing #34"],
+  ["gh pr create --title x -F empty.md", "missing #12, #34"],
+])("the PR body names what preflight found: %s", (cmd, why) => {
+  const at = () => ({ head: "aaa", ran: "aaa", after: [12, 34] });
+  const read = (p: string) => (p === "/w/body.md" ? "Fixes it.\n\nMerge after #12, #34\n" : "");
+  const got = prCreate(cmd, "/w", at, read);
+  if (why) expect(got).toContain(why);
+  else expect(got).toBeNull();
+  expect(prCreate(cmd, "/w", () => ({ head: "aaa", ran: "aaa", after: [] }), read)).toBeNull();
+});

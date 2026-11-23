@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, relative, resolve } from "node:path";
 import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
+import { blockers } from "../../scripts/after.ts";
 import { type Of, obj, opt, or, raw, rec, str } from "../../packages/util/src/guard.ts";
 
 /** What Claude Code sends a PreToolUse hook on stdin: the tool, its arguments, and where it runs. */
@@ -312,9 +313,11 @@ export function wideScan(cmd: string, cwd: string, top: string): string | null {
 
 // #4956: `gh pr create` waits for `bun scripts/preflight.ts` to have run on the commit it opens. Preflight writes the
 // HEAD it read into the worktree's own git folder (`git rev-parse --git-path rustybuns-preflight`); `stamped` reads
-// that back for a folder: the HEAD there, and the HEAD preflight saw (null when it never ran).
-type Stamped = (dir: string) => { head: string; ran: string | null };
-export function prCreate(cmd: string, cwd: string, stamped: Stamped): string | null {
+// that back for a folder: the HEAD there, the HEAD preflight saw (null when it never ran), and the open PRs it named.
+// #5344: when it named some, the body must carry its `Merge after #N` line, or scripts/after.ts never merges main in.
+type Stamped = (dir: string) => { head: string; ran: string | null; after?: number[] };
+const readOr = (path: string) => { try { return readFileSync(path, "utf8"); } catch { return ""; } };
+export function prCreate(cmd: string, cwd: string, stamped: Stamped, read = readOr): string | null {
   let dir = cwd;
   for (const seg of segments(cmd)) {
     const t = strip(seg).rest;
@@ -322,9 +325,17 @@ export function prCreate(cmd: string, cwd: string, stamped: Stamped): string | n
     if (basename(t[0] ?? "") !== "gh" || t[1] !== "pr" || t[2] !== "create") continue;
     // `gh pr create -R other/repo` or a draft isn't this branch merging next
     if (t.some((x) => x === "-R" || x.startsWith("--repo") || x === "-d" || x === "--draft")) continue;
-    const { head, ran } = stamped(dir);
-    if (!head || ran === head) continue;
-    return `run \`bun scripts/preflight.ts\` on this commit first (${ran ? "it last ran on an older one" : "it hasn't run here"}): it names the open PRs changing your files and how yours merges after them; put its "merge after #N" in the PR body`;
+    const { head, ran, after = [] } = stamped(dir);
+    if (!head) continue;
+    if (ran !== head) return `run \`bun scripts/preflight.ts\` on this commit first (${ran ? "it last ran on an older one" : "it hasn't run here"}): it names the open PRs changing your files and how yours merges after them; put its "merge after #N" in the PR body`;
+    if (!after.length) continue;
+    // the body is a file (`--body-file f`, `-F f`), or inline in the command (`--body "..."`, a heredoc)
+    const k = t.findIndex((x) => x === "--body-file" || x === "-F" || x.startsWith("--body-file="));
+    const file = k < 0 ? null : t[k]!.startsWith("--body-file=") ? t[k]!.slice(12) : t[k + 1];
+    if (file === "-") continue;
+    const said = blockers((file ? read(resolve(dir, file)) : cmd).replace(/["'$(]/g, "\n"));
+    const missing = after.filter((n) => !said.includes(n));
+    if (missing.length) return `put preflight's line in the PR body, on its own line: \`Merge after ${after.map((n) => `#${n}`).join(", ")}\` (missing ${missing.map((n) => `#${n}`).join(", ")}): scripts/after.ts merges main into your branch once those land, and only reads that line`;
   }
   return null;
 }
@@ -332,9 +343,8 @@ export function prCreate(cmd: string, cwd: string, stamped: Stamped): string | n
 const preflightStamp: Stamped = (dir) => {
   const git = (...a: string[]) => { const r = Bun.spawnSync(["git", "-C", dir, ...a], { stderr: "ignore" }); return r.exitCode === 0 ? r.stdout.toString().trim() : ""; };
   const head = git("rev-parse", "HEAD"), file = git("rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight");
-  let ran: string | null = null;
-  try { ran = file ? readFileSync(file, "utf8").trim().split(/\s+/)[0] ?? null : null; } catch {}
-  return { head, ran };
+  const [ran = null, , named = ""] = file ? readOr(file).trim().split(/\s+/).filter(Boolean) : [];
+  return { head, ran, after: named.split(",").filter((n) => /^\d+$/.test(n)).map(Number) };
 };
 
 const gitBranch: BranchOf = (cwd) => {
