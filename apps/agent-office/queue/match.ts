@@ -35,3 +35,9 @@ export function issuesIn(data: unknown): Issue[] | undefined {
     return;
   }
 }
+
+// a finished task that never ran: the office files a failed start (e.g. "couldn't start: Could not create a git
+// worktree") under Finished, beside the real finishes, with only grey text to tell it apart
+export function didntStart(text: string): boolean {
+  return /couldn['’]t start:/i.test(text);
+}
