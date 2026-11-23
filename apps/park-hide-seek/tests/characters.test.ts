@@ -21,7 +21,7 @@ test("every body and hat a look can pick builds, stands on its feet, and a range
   const all = [...BODIES.map((_, body) => makeCharacter("camper", look({ body, hat: HATS[body % HATS.length]! }), "c")), makeCharacter("ranger", look({ body: 4 }), "r"), makeBigfoot()];
   const heights = new Set<number>();
   for (const ch of all) {
-    expect(ch.body.mesh.geometry.index!.count / 3).toBeLessThan(16000);
+    expect(ch.body.mesh.geometry.index!.count / 3).toBeLessThan(17500);       // the heaviest is a ranger with long hair: about 16,600
     walk(ch, 0.5, 0);
     // standing: both ankles a boot's height off the ground, the head near the top of the body
     for (const foot of ["footR", "footL"] as const) expect(at(ch, foot).y).toBeCloseTo(0.09 * (ch.body.height / 1.75), 2);
@@ -55,6 +55,18 @@ test("a walking foot stays where it was put down, and a crouch brings the head d
   walk(ch, 1, 0.8, true);
   expect(at(ch, "head").y).toBeLessThan(standing - 0.35);
   expect(ch.tag.position.y).toBeLessThan(standing + 0.2);       // the name follows the head down
+});
+
+test("skin is painted with tone: a camper's skin is many shades, their jacket is not", () => {
+  const g = makeCharacter("camper", look({ hat: "none" }), "s").body.mesh.geometry;
+  const surface = g.getAttribute("surface"), color = g.getAttribute("color");
+  const shades = (kind: number) => {
+    const seen = new Set<string>();
+    for (let i = 0; i < surface.count; i++) if (surface.getX(i) === kind) seen.add(`${color.getX(i).toFixed(3)},${color.getY(i).toFixed(3)}`);
+    return seen.size;
+  };
+  expect(shades(1)).toBeGreaterThan(40);       // skin: flushed cheeks, shaded sockets
+  expect(shades(0)).toBeLessThan(15);          // cloth: one colour a slot
 });
 
 test("a look saved before bodies had a pick still loads, with a body of its own", () => {
