@@ -1023,7 +1023,7 @@ Each game gets the same cog menu for controls and gamepads, and the same soft, b
 
 <details><summary>More</summary>
 
-- **`@rustybuns/game-controls`** is the Controls panel that each game shares: look sensitivity for mouse, stick and touch, invert Y, a key list, gamepad support and profiles, saved for each game. Its sections fold, and a game can wear the house skin or its own theme. A game that passes `quality` gets a Rendering section (Auto, Low, Mid, High, and a Display tab when it uses tabs), and `hideOff` hides the rows it does not honour instead of greying them.
+- **`@rustybuns/game-controls`** is the Controls panel that each game shares: look sensitivity for mouse, stick and touch, invert Y, a key list, gamepad support and profiles, saved for each game. Its sections fold, and a game can wear the house skin or its own theme. A game that passes `quality` gets a Rendering section (Auto, Low, Mid, High, and a Display tab when it uses tabs), and `lean` leaves out the rows it does not honour instead of greying them.
 - **`@rustybuns/ui`** is the house kit: design tokens and small DOM components (button, chip, toggle, slider, tabs, panel, dialog, toast) with no dependencies. A game changes its look with CSS custom properties, not by forking the components. codeSplitter, eqosys, the Playground and the games use it.
 - The eqosys surfaces in a game (the account chip, the report form, the lobby, the spaces panel, the tutorial card) take the same tokens, so they look like part of the game.
 
