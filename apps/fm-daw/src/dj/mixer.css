@@ -1,63 +1,70 @@
-/* The mixer's face (mixer-panel.ts): a dark brushed face, four channel strips and the master, the twin filters at the bottom left and right, the crossfader between them. Labels never wrap. */
-.mx { background: linear-gradient(#1a1b1f, #111215); border: 1px solid #2a2d33; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 #2c2f35; }
+/* The Qone mixer's face (mixer-panel.ts): grey, with one orange (between a cloud's orange and rust) for everything lit, and a glow on it for a dark booth; NIGHT turns the face down and the glow up. Four channel strips and the master, the twin filters at the bottom left and right, the crossfader between them. Labels never wrap. */
+.mx { --face: #1c1d20; --strip: #17181b; --edge: #2b2d31; --ink: #c9cbcf; --dim: #7c7f86; background: linear-gradient(#1f2023, #141518); border: 1px solid var(--edge); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 #2e3034; }
+.mx.night { --face: #0e0f10; --strip: #0b0b0c; --edge: #1d1e20; --ink: #9a9ca1; --dim: #55585e; --acc-glow: rgba(238, 106, 31, 0.9); background: #0b0b0c; }
 .mx-strips { flex: none; display: grid; grid-template-columns: repeat(4, minmax(64px, 1fr)) minmax(68px, 1.1fr); gap: 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.mx-strip { display: grid; gap: 3px; justify-items: center; align-content: start; padding: 4px 2px; border-radius: 8px; background: #16171b; border: 1px solid #23262b; min-width: 64px; }
+.mx-strip { display: grid; gap: 3px; justify-items: center; align-content: start; padding: 4px 2px; border-radius: 8px; background: var(--strip); border: 1px solid var(--edge); min-width: 64px; }
 .mx-strip.far { opacity: 0.35; pointer-events: none; }
-.mx-masterstrip { background: #1b1c21; }
-.mx-num { font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: #f1efe9; white-space: nowrap; }
-.mx-num small { margin-left: 3px; font-size: 11px; color: #9aa0aa; }
-.mx-sub { display: inline-flex; color: #6b707a; margin-top: 2px; }
-/* a knob: the cap turns, its white line points at the value */
+.mx-masterstrip { background: var(--face); }
+.mx-num { font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--ink); white-space: nowrap; }
+.mx-num small { margin-left: 3px; font-size: 11px; color: var(--dim); }
+.mx-brand { color: var(--acc); letter-spacing: 0.14em; text-shadow: 0 0 6px var(--acc-glow); }
+.mx-sub { display: inline-flex; color: var(--dim); margin-top: 2px; }
+/* a knob: a grey cap that turns, its orange line points at the value; hovered, it glows and its label reads the value */
 .mx-knob { display: grid; justify-items: center; gap: 1px; }
-.mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: #9aa0aa; white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
+.mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
 .mx-knob span:empty { display: none; }
-.mx-dial { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #2b2e34, #0c0d10 70%); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; }
-.mx-dial:focus-visible { box-shadow: 0 0 0 2px #ff6b4a; }
+.mx-knob.read span { display: inline-flex; color: var(--acc); text-shadow: 0 0 5px var(--acc-glow); font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0; }
+.mx-dial { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #2d2f33, #0c0d0f 70%); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; transition: box-shadow 0.12s; }
+.mx-knob:hover .mx-dial, .mx-dial:focus-visible { box-shadow: 0 0 0 1px var(--acc), 0 0 10px var(--acc-glow); }
 .mx-s .mx-dial { width: 22px; height: 22px; }
 .mx-l .mx-dial { width: 42px; height: 42px; }
-.mx-cap { width: 74%; height: 74%; border-radius: 50%; position: relative; box-shadow: inset 0 -3px 4px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.6); }
-.mx-cap b { position: absolute; left: calc(50% - 1px); top: 2px; width: 2px; height: 38%; border-radius: 1px; background: #111; }
+.mx-cap { width: 74%; height: 74%; border-radius: 50%; position: relative; background: linear-gradient(#5d6066, #3a3c41); box-shadow: inset 0 -3px 4px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.6); }
+.mx-cap b { position: absolute; left: calc(50% - 1px); top: 2px; width: 2px; height: 38%; border-radius: 1px; background: var(--acc); box-shadow: 0 0 4px var(--acc-glow); }
 .mx-pair { display: flex; gap: 2px; }
-/* the small push buttons: assigns, cue, filter types */
-#dj .mx button { min-height: 24px; min-width: 22px; padding: 0 4px; border-radius: 5px; font-size: 12px; gap: 3px; }
-#dj .mx button.on { background: #ff6b4a; border-color: #ff6b4a; color: #15171b; }
+/* the small push buttons: assigns, cue, filter types; lit ones glow */
+#dj .mx button { min-height: 24px; min-width: 22px; padding: 0 4px; border-radius: 5px; font-size: 12px; gap: 3px; background: #25272b; border-color: #383a3f; color: var(--ink); }
+#dj .mx button:hover { border-color: var(--acc); box-shadow: 0 0 6px var(--acc-glow); }
+#dj .mx button.on { background: var(--acc); border-color: var(--acc); color: #141416; box-shadow: 0 0 8px var(--acc-glow); }
 .mx-assign { display: flex; gap: 2px; align-items: center; }
-.mx-assign span { display: inline-flex; color: #6b707a; }
+.mx-assign span { display: inline-flex; color: var(--dim); }
 #dj .mx-x button { padding: 0 2px; min-width: 16px; font-size: 10px; }
-#dj .mx-cue.on { background: #ffd23c; border-color: #ffd23c; color: #111; }
-/* the long-throw faders and the LED meters */
+/* the long-throw faders and the LED meters (grey, then orange, the top segments hottest) */
 .mx-faderrow { display: flex; gap: 4px; align-items: stretch; height: 104px; }
-.mx-fader { writing-mode: vertical-lr; direction: rtl; height: 104px; width: 26px; margin: 0; accent-color: #f1efe9; }
-.mx-meter { width: 7px; background: #0a0b0d; border-radius: 2px; position: relative; overflow: hidden; height: 104px; }
-.mx-meter i { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, #3ddc84 0 65%, #ffd23c 65% 85%, #ff4a4a 85%); }
-.mx-meter::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0 5px, #0a0b0d 5px 7px); }
+.mx-fader { writing-mode: vertical-lr; direction: rtl; height: 104px; width: 26px; margin: 0; accent-color: #9a9da3; }
+.mx-meter { width: 7px; background: #0a0a0b; border-radius: 2px; position: relative; overflow: hidden; height: 104px; }
+.mx-meter i { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, #8d9096 0 60%, #ee6a1f 60% 88%, #ff3d1a 88%); box-shadow: 0 0 6px var(--acc-glow); }
+.mx-meter::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0 5px, #0a0a0b 5px 7px); }
 .mx-lr { display: flex; gap: 4px; }
 .mx-tall { height: 96px; }
 /* the bottom row: filter 1, the crossfader, filter 2 */
 .mx-bottom { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 0.9fr) minmax(0, 1fr); gap: 8px; align-items: start; }
-.mx-filter { display: grid; gap: 4px; background: #16171b; border: 1px solid #23262b; border-radius: 10px; padding: 6px; min-width: 0; }
+.mx-filter { display: grid; gap: 4px; background: var(--strip); border: 1px solid var(--edge); border-radius: 10px; padding: 6px; min-width: 0; }
 .mx-fhead { display: flex; gap: 2px; flex-wrap: nowrap; }
 #dj .mx-fhead button { padding: 0 3px; font-size: 11px; flex: 1; }
 .mx-fon span { font-size: 12px; }
-.mx-curve { width: 100%; height: 34px; background: #0d0e11; border-radius: 6px; display: block; }
+.mx-curve { width: 100%; height: 34px; background: #0b0b0c; border-radius: 6px; display: block; }
 .mx-fknobs, .mx-lfo { display: flex; gap: 6px; align-items: center; justify-content: center; }
-.mx-lfo-tag { display: inline-flex; color: #9aa0aa; }
+.mx-lfo-tag { display: inline-flex; align-items: center; gap: 1px; color: var(--ink); font: 600 12px "Barlow Condensed", sans-serif; }
+/* the LFO's lamp pulses with its swing */
+.mx-lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc-glow); opacity: 0.1; flex: none; }
 #dj .mx-lfo button { font-size: 11px; }
 .mx-xmid { display: grid; gap: 8px; align-content: center; min-height: 100%; }
-.mx-xrow { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; font: 600 15px "Barlow Condensed", sans-serif; color: #9aa0aa; }
-.mx-xfade { width: 100%; accent-color: #f1efe9; }
+.mx-xrow { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; font: 600 15px "Barlow Condensed", sans-serif; color: var(--dim); }
+.mx-xfade { width: 100%; accent-color: var(--acc); }
 .mx-opts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
 @media (max-width: 560px) {
   .mx-strips { grid-template-columns: repeat(5, 64px); }
   .mx-bottom { grid-template-columns: 1fr 1fr; }
   .mx-xmid { grid-column: 1 / -1; order: 3; }
 }
-/* a short screen (a laptop's 720 lines): the band labels go (the caps' colours say HI, MID, LMID, LOW; the words are in
-   the tooltips) and the faders shorten, so the filters stay in view */
+/* a short screen (a laptop's 720 lines): the band labels go (the knobs keep their order, HI to LOW; hover one and its
+   label comes back with its value, the words are in the tooltips) and the faders shorten, so the filters stay in view */
 @media (max-height: 820px) and (min-width: 900px) {
-  .mx-strip .mx-knob:not(.mx-l) span { display: none; }
-  .mx-faderrow, .mx-fader, .mx-meter { height: 84px; }
-  .mx-tall { height: 76px; }
+  .mx-strip .mx-knob:not(.mx-l):not(.read) span { display: none; }
+  .mx-faderrow, .mx-fader, .mx-meter { height: 64px; }
+  .mx-curve { height: 26px; }
+  .mx-filter { gap: 3px; }
+  .mx-tall { height: 58px; }
   .mx-strip { gap: 2px; }
   .mx { gap: 6px; }
 }

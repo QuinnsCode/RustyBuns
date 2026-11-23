@@ -5,8 +5,10 @@
 
 /** Tempos a track is read as: anything slower is doubled, anything faster halved (a 70 BPM half-time beat is 140). */
 export const BPM_RANGE = [85, 175] as const;
-/** The pitch fader's ranges, per cent either way (the button under it steps through them). */
-export const PITCH_RANGES = [8, 16, 50] as const;
+/** The tempo fader's ranges, per cent either way: a button for each beside the fader, as on a club player. */
+export const PITCH_RANGES = [6, 8, 10, 12, 15, 25, 50, 100] as const;
+/** The narrowest range that reaches `p` per cent (sync widens the fader to it). */
+export const rangeFor = (p: number) => PITCH_RANGES.find((r) => r >= Math.abs(p)) ?? 100;
 
 /** A track's beat grid: its tempo, and the time in seconds of a downbeat near its start. */
 export interface Grid { bpm: number; offset: number }
