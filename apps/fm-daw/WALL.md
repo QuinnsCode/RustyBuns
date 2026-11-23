@@ -42,8 +42,9 @@ Each module is named by what it does. Each panel is laid out in `circuits/wall-p
 | Q Wobble | LFO, triangle and square | 6 | An integrator and a Schmitt trigger. | Rate and levels from R1, Rate, C1 and the divider R2/R3. |
 | Q Bus | Mixer: 4 channels, sends A and B, returns A and B, main | 16 | A buffer after each channel's level, then inverting summers (with an inverter after each) for main, A and B. DC-coupled, so it mixes CV too. | The board's own gains from its netlist (`src/wall/linear.ts`), worked out again when a knob moves. |
 | Q Out | Line out to the room | 6 | Level, a 300k/100k divider to line level, and a buffer per side. In R takes In L when nothing is in it. | Its board's gains, as Q Bus. |
+| Q Hiss | Noise, sample and hold | 6 | A transistor's base-emitter junction in breakdown, amplified a hundredfold. A clock's edge, high-passed and squared by a comparator, opens a JFET onto a 1 nF hold capacitor for a fifth of a millisecond. S&H In takes the noise when nothing is in it. | White noise at the junction (20 mV rms, a typical part) through the board's coupling, gain and the op-amp's bandwidth. The sample and hold tracks while the high-passed clock is over the comparator's threshold. |
 
-A module that switches (the clocks, the oscillators) is read off its parts rather than solved each sample. A module that bends (OTAs, diodes) runs its netlist in the solver. A module that is linear mixes with its board's gain matrix. Change a part on a board and the sound follows: for example, C2 on Q Saw sets its pitch.
+A module that switches (the clocks, the oscillators, the sample and hold) is read off its parts rather than solved each sample. A module that bends (OTAs, diodes) runs its netlist in the solver. A module that is linear mixes with its board's gain matrix. Change a part on a board and the sound follows: for example, C2 on Q Saw sets its pitch.
 
 All levels are Eurorack's: audio is ±5 V, pitch is 1 V an octave, and gates are 0 to 10 V. Between a mixer's send and the room's gear, the wall turns 5 V into a hot 1 V line and back again. That return comes back one block late (128 samples, 2.7 ms at 48 kHz), because Q Amp's rig runs a block at a time.
 
@@ -54,6 +55,7 @@ Each circuit is drawn from a textbook topology or a datasheet's application circ
 - **LM13700 datasheet** (Texas Instruments, [ti.com/lit/gpn/lm13700](https://www.ti.com/lit/gpn/lm13700)): the OTA amplifier (Q Level) and the state-variable filter (Q Filter). It also has a triangle/square VCO and a stereo volume control.
 - **Exponential converter and sawtooth core** (Q Saw, Q Filter's converter): the textbook matched-pair converter. Its reference current is held by an op-amp, and its CV is divided down to VT·ln 2 a volt (17.9 mV at 26 °C). The scale trimmer is RT1.
 - **NE555 and CD4017 datasheets** (Q Steps): the 555's astable equation, f = 1.44 / ((R1 + 2 R2) C), and the 4017 counting eight with Q8 on its reset.
+- **Noise and sample and hold** (Q Hiss): the textbook reverse-biased base-emitter noise source and a JFET track-and-hold, with the clock's edge differentiated into a comparator.
 - **Transistor ladder filter**, US patent 3,475,623 (1969, now expired; a scan is at [till.com](https://www.till.com/articles/moog/US03475623.html)). It is not on the wall yet: the solver can play one, but a four-stage ladder of transistor pairs costs several times what Q Filter does (see [Next](#next)).
 - **Eurorack mechanics and power**, from Doepfer's A-100 construction details ([doepfer.de/a100_man/a100m_e.htm](https://doepfer.de/a100_man/a100m_e.htm)). Panels are 128.5 mm tall and 1 HP is 5.08 mm, with 84 HP to a row. The 10-pin power header has −12 V on the ribbon's red stripe, ground in the middle and +12 V at the other end.
 - **Footprints**, from KiCad's library: the 3.5 mm jack is `Connector_Audio/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical`, the "Thonkiconn" type (pads S, TN, T at 0, 3.1 and 11.4 mm, bushing at 6.48 mm). The pot is `Potentiometer_THT/Potentiometer_Alpha_RD901F-40-00D_Single_Vertical` (legs 2.5 mm apart, shaft 7.5 mm off the leg row, two mounting tabs). Only their pad positions were taken.
@@ -92,8 +94,9 @@ It also writes `circuits/wall-<id>.circuit.json`, the netlist the sim reads. Eve
 | Q Wobble | 6 | 18 | 39 | 7 | TL072 |
 | Q Bus | 16 | 64 | 136 | 118 | 2 × TL074, TL072 |
 | Q Out | 6 | 20 | 42 | 14 | TL072 |
+| Q Hiss | 6 | 30 | 62 | 31 | TL074 |
 
-That is 72 HP for the set, so it fits one 84 HP row with room for two more 6 HP modules.
+The set fits one 84 HP row of the case (`test/wall-panels.test.ts` checks it); the upper row is free for more.
 
 **A finding about the power header.** tscircuit numbers a two-row header around its outline, like a chip: pins 1 and 2 down the first column, 3 to 6 along one row, 7 to 10 back along the other. A ribbon cable numbers it with odd pins on one row and even on the other. With ribbon numbering, +12 V would have landed on two of the board's ground pins. The kit labels the header's pins by where tscircuit puts them, and `pcb.ts` fails any module board whose ±12 V pads aren't its two end columns.
 
@@ -118,6 +121,7 @@ The boards are made to be built, but none has been built yet. What a build takes
 - **Hole sizes:** the 7 mm pot hole and 6 mm jack hole are the usual sizes for these parts. Check yours.
 - **Timing capacitors:** Q Steps' C1, Q Swell's C1 and Q Wobble's C1 are X7R ceramics, which lose capacitance with voltage and temperature. Times may run 10 to 30% short of the sim's. A film or C0G part holds them.
 - **Q Saw's tracking:** Q1 and Q2 must be matched and touching (or one dual part), and RT1 trimmed until an octave is an octave. The sim is the trimmed board at 26 °C.
+- **Q Hiss' level:** how loud a junction hisses varies several times from one transistor to the next. Pick a loud one, or change R4 (the gain) to suit. Q2 is a J201 because its pinch-off (under 1.5 V) holds it off across ±5 V with the gate at −11 V; a J111 may not.
 - **What the sim leaves out:** VCO drift, the 555's longer first cycle, Q Level's current-mirror mismatch, and the LM13700's Darlington buffers (not used here: op-amps buffer instead).
 
 ## What's where
