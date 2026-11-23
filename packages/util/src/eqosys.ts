@@ -228,7 +228,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return l && fresh(l, 5_000) ? sendReport(eqosysUrl(), l.token, r) : { ok: false, error: "Sign in with eqosys first." };
   };
   /** A corner "Report" button for the page, only where eqosys can send the player back. Signed out, it sends them through eqosys. */
-  const reportButton = (build?: string) => !canSignIn() ? () => {} : mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), build });
+  const reportButton = (build?: string) => !canSignIn() ? () => {} : mountReportButton({ token: () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; }, url: eqosysUrl, signIn: () => void signIn("report"), ...(build ? { build } : {}) });
 
   /** Achievements earned while signed out or offline, kept until they can be sent. */
   const held = () => { try { const v: unknown = JSON.parse(kept.get("held") || "[]"); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 200) : []; } catch { return []; } };
@@ -300,7 +300,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
     // Only a signed-in chip folds: signed out, the badge is just the mark and Sign in always shows beside it.
-    const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), again = { ...o, note: undefined };
+    const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), { note: _note, ...again } = o;
     const part = <E extends HTMLElement>(name: string, e: E) => { e.dataset.part = name; return e; };
     const parts: HTMLElement[] = [];
     if (can && !who) parts.push(part("badge", eqBadge()));
@@ -323,7 +323,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     else if (can) parts.push(part("act", eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => {
       const hear = o.onSignIn;
       if (!hear) return void signIn();
-      void signInHere().then((r) => { accountChip(slot, { ...o, note: r.error }); if (r.login) hear(r.login); });
+      void signInHere().then((r) => { accountChip(slot, { ...o, ...(r.error ? { note: r.error } : {}) }); if (r.login) hear(r.login); });
     } })));
     if (o.note) parts.push(part("note", Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note })));
     // Sign in turning into Sign out (or back): the arrow turns over as the button settles.

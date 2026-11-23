@@ -58,7 +58,7 @@ export function board({ url, token, app }: BoardConfig) {
     if (needs && !t) return { ok: false, error: "Sign in with eqosys first." };
     const headers: Record<string, string> = t ? { authorization: `Bearer ${t}` } : {};
     if (body !== undefined) headers["content-type"] = "application/json";
-    const res = await fetch(`${url()}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }).catch(() => null);
+    const res = await fetch(`${url()}${path}`, { method, headers, body: body === undefined ? null : JSON.stringify(body) }).catch(() => null);
     if (!res) return { ok: false, error: "eqosys can't be reached." };
     const v: unknown = await res.json().catch(() => null);
     if (!res.ok) return { ok: false, error: check(Refused, v)?.error ?? "eqosys said no." };
