@@ -22,6 +22,8 @@ const harness = {
   /** Open the decks with the demo tracks (the probe has no gesture; headless Chrome lets audio start anyway). */
   start: () => { start(); return harness.state(); },
   state: () => panel ? { open: panel.isOpen(), library: panel.library(), ...panel.decks.state(), master: panel.decks.level(2), players: panel.jogs.map((j) => j.state()), zoom: panel.zoom() } : null,
+  /** Load a file's bytes onto a deck as a dropped file would: its tempo and where that came from (tag, software grid, ear). */
+  load: async (side: Side, name: string, bytes: number[]) => { const t = await start().load(side, name, Uint8Array.from(bytes).buffer); return { bpm: t.grid?.bpm ?? null, firstBeat: t.grid?.offset ?? null, from: t.from ?? null }; },
   play: (side: Side) => panel?.decks.decks[side].toggle(),
   sync: (side: Side) => panel?.decks.sync(side) ?? false,
   cross: (x: number) => panel?.decks.cross(x),
