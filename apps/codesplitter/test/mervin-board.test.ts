@@ -106,8 +106,8 @@ describe("mervin board", () => {
     expect(pr([]).ci).toBe("none");
   });
 
-  test("gh's PR list reads through BoardPrs: a PR with no head commit is refused", () => {
-    const listed = [{ number: 5, headRefOid: "abc", autoMergeRequest: { enabledAt: "x" }, statusCheckRollup: [{ context: "legacy", state: "SUCCESS" }, { name: "apps", conclusion: null, status: "QUEUED" }] }];
+  test("gh's PR list reads through BoardPrs: a PR with no head commit is refused, a running check (empty conclusion) is read", () => {
+    const listed = [{ number: 5, headRefOid: "abc", autoMergeRequest: { enabledAt: "x" }, statusCheckRollup: [{ context: "legacy", state: "SUCCESS" }, { name: "apps", conclusion: null, status: "QUEUED" }, { name: "typecheck", conclusion: "", status: "IN_PROGRESS" }] }];
     const [pr] = BoardPrs(listed);
     expect(pr.autoMergeRequest).toBeTruthy();
     expect(ciOf(pr).ci).toBe("pending");

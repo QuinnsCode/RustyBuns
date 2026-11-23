@@ -10,6 +10,7 @@ import type { Decks, Side } from "./engine.ts";
 import { BEND_HOLD_MS, bendOf, jogAct, midiJog, partAt, PLATTER_R, RING_IN, TURN_S, turnBetween, type JogMode, type JogPart } from "./player.ts";
 import scratchWorkletUrl from "./scratch-worklet.ts?worker&url";
 import { button, el, slider, svg } from "./dom.ts";
+import { FROM_LABEL } from "./tags.ts";
 
 type Deck = Decks["decks"][number];
 
@@ -268,7 +269,8 @@ export function playerFace(h: PlayerHost) {
       }
       const s = d.state(), t = d.track;
       name.textContent = `${letter}  ${s.name ?? "Drop a track here"}`;
-      info.textContent = t ? `${s.bpm ?? "--"} BPM  ${s.key ? `${s.key.camelot} ${s.key.name}` : ""}  ${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(s.pos)}  -${clock(s.length - s.pos)}` : "";
+      info.textContent = t ? `${s.bpm ?? "--"} BPM  ${s.key ? `${s.key.camelot} ${s.key.name}` : ""}  ${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(s.pos)}  -${clock(s.length - s.pos)}${t.from && s.bpm ? `  · ${FROM_LABEL[t.from]}` : ""}` : "";
+      info.title = t?.from && s.bpm ? `Tempo: ${FROM_LABEL[t.from]}` : "";
       play.innerHTML = s.playing ? ICON.pause : ICON.play;
       play.classList.toggle("on", s.playing);
       cue.classList.toggle("on", d.cueHeld);

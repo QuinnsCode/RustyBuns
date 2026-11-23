@@ -4,6 +4,7 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import { mountDecks, type DecksPanel } from "./panel.ts";
 import type { Side } from "./engine.ts";
+import type { Ch, ChannelKnob, Curve, FilterState, XAssign } from "./mixer.ts";
 import type { JogMode, JogPart } from "./player.ts";
 
 let panel: DecksPanel | null = null;
@@ -18,10 +19,18 @@ function start(): DecksPanel {
 document.querySelector("#start button")?.addEventListener("click", () => void start());
 
 declare global { interface Window { qdecks: typeof harness } }
+const mx = () => panel?.decks.mixer;
 const harness = {
   /** Open the decks with the demo tracks (the probe has no gesture; headless Chrome lets audio start anyway). */
   start: () => { start(); return harness.state(); },
-  state: () => panel ? { open: panel.isOpen(), library: panel.library(), ...panel.decks.state(), master: panel.decks.level(2), players: panel.jogs.map((j) => j.state()), zoom: panel.zoom() } : null,
+  /** The decks, the mixer (mixer.ts's MixerState), what its meters read now (0 to 1), the players' jogs and the close-up's zoom. */
+  state: () => {
+    if (!panel) return null;
+    const m = panel.decks.mixer;
+    return { open: panel.isOpen(), library: panel.library(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), zoom: panel.zoom() };
+  },
+  /** Load a file's bytes onto a deck as a dropped file would: its tempo and where that came from (tag, software grid, ear). */
+  load: async (side: Side, name: string, bytes: number[]) => { const t = await start().load(side, name, Uint8Array.from(bytes).buffer); return { bpm: t.grid?.bpm ?? null, firstBeat: t.grid?.offset ?? null, from: t.from ?? null }; },
   play: (side: Side) => panel?.decks.decks[side].toggle(),
   sync: (side: Side) => panel?.decks.sync(side) ?? false,
   cross: (x: number) => panel?.decks.cross(x),
@@ -47,6 +56,22 @@ const harness = {
   turn: (side: Side, part: JogPart, turns: number) => panel?.jogs[side].turn(part, turns),
   /** Press cue down or let it go (the big CUE button). */
   cue: (side: Side, down: boolean) => panel?.press(side, down ? "cueDown" : "cueUp"),
-  knob: (side: Side, k: "trim" | "low" | "mid" | "high" | "filter" | "fader", v: number) => panel?.decks.knob(side, k, v),
+  /** A knob on deck `side`'s own channel (A is channel 2, B channel 3). */
+  knob: (side: Side, k: ChannelKnob, v: number) => panel?.decks.knob(side, k, v),
+  /** Channel `ch` (0 to 3): a knob or fader, the cue, the filter assign (0 off, 1, 2), the crossfader assign. */
+  channel: (ch: Ch, k: ChannelKnob, v: number) => mx()?.set(ch, k, v),
+  /** Channel `ch` in the headphones (its cue button), on or off. */
+  pfl: (ch: Ch, on: boolean) => mx()?.cue(ch, on),
+  assignFilter: (ch: Ch, n: 0 | 1 | 2) => mx()?.assignFilter(ch, n),
+  assignX: (ch: Ch, a: XAssign) => mx()?.assignX(ch, a),
+  /** Filter `n` (0 or 1): on, types (hp, bp, lp), freq, res, depth (0 to 1), beats, bpm. */
+  filter: (n: 0 | 1, to: Partial<FilterState>) => mx()?.filter(n, to),
+  tap: (n: 0 | 1) => mx()?.tap(n, performance.now()),
+  curve: (c: Curve) => mx()?.setCurve(c),
+  master: (v: number) => mx()?.setMaster(v),
+  booth: (v: number) => mx()?.setBooth(v),
+  phones: (v: number) => mx()?.setPhones(v),
+  cueBlend: (v: number) => mx()?.setCueBlend(v),
+  split: (on: boolean) => mx()?.setSplit(on),
 };
 window.qdecks = harness;
