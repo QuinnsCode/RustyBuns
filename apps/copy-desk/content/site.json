@@ -1,0 +1,20 @@
+{
+  "brand": "Harbor Street Bakery",
+  "tagline": "Bread at seven, buns at nine, gone by noon.",
+  "nav": { "news": "News", "hours": "Hours", "edit": "Edit this site" },
+  "hero": {
+    "title": "Baked on Harbor Street since this morning",
+    "body": "Sourdough, rye and cinnamon buns from one wood oven. Every word on this page lives in a JSON file, and you can change it without touching the code."
+  },
+  "hours": {
+    "title": "Hours",
+    "lines": ["Tuesday to Friday, 7:00 to 14:00", "Saturday, 8:00 to 13:00", "Sunday and Monday, closed"]
+  },
+  "news": { "title": "News", "empty": "Nothing new this week. Come in for bread." },
+  "edit": {
+    "title": "Change these words",
+    "body": "Run `bun run cms` in apps/copy-desk and open http://localhost:4707. Each file in content/ is a form: change a line, save, reload this page. Add a language there and translate each line next to the original.",
+    "published": "A post shows here when its published is 1. Set it to 0 to take it down."
+  },
+  "footer": "Made with Rusty Buns. The words are in content/*.json."
+}

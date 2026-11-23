@@ -1,0 +1,19 @@
+{
+  "name": "copy-desk",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Copy Desk\" --port 4707",
+    "test": "bun test test",
+    "deploy": "vite build && bunx wrangler deploy && bun ../../packages/cli/src/index.ts report-deploy --app copy-desk"
+  },
+  "dependencies": {
+    "@rustybuns/cms": "^0.1.12"
+  },
+  "devDependencies": {
+    "vite": "^6.4.4"
+  }
+}
