@@ -349,6 +349,39 @@ const BBD_MODES: Record<BbdMode, { stages: number; ms: [number, number]; lfoHz: 
 };
 
 /**
+ * The chip itself: `n` buckets (half its stages: each clock period moves a
+ * sample two stages), one step down per clock tick. Each tick samples the input
+ * where it falls between this output sample and the last (jittered a little),
+ * and the oldest bucket comes out, a little charge lost and a little hiss on it.
+ * What clocks it and what filters it is the board's: the rack's `Bbd`, the
+ * sound wall's delay module.
+ */
+export class Brigade {
+  private readonly buckets: Float64Array;
+  private at = 0;
+  private phase = 0;
+  private held = 0;
+  private prevIn = 0;
+  private readonly rand = mulberry32(7);
+  constructor(private n: number, most = n) { this.buckets = new Float64Array(most); }
+  /** Another chip's length, emptied (what it held is gone). */
+  resize(n: number) { this.n = n; this.buckets.fill(0); }
+  /** One output sample: `u` in, `ticks` clock ticks in this sample's time (the clock over the sample rate). */
+  run(u: number, ticks: number): number {
+    this.phase += ticks;
+    while (this.phase >= 1) {
+      this.phase -= 1;
+      const f = Math.min(1, Math.max(0, 1 - this.phase / ticks + (this.rand() - 0.5) * 0.02));
+      this.held = this.buckets[this.at] * 0.999 + (this.rand() - 0.5) * 2e-4;
+      this.buckets[this.at] = this.prevIn + (u - this.prevIn) * f;
+      this.at = (this.at + 1) % this.n;
+    }
+    this.prevIn = u;
+    return this.held;
+  }
+}
+
+/**
  * A bucket-brigade chip: N capacitors that pass a sample down one step per
  * clock tick, so the delay is N / (2 · clock). The clock comes from an LFO, so
  * the delay sweeps (chorus, flanger) or holds still (delay). Around it, as on
@@ -358,19 +391,14 @@ const BBD_MODES: Record<BbdMode, { stages: number; ms: [number, number]; lfoHz: 
  */
 export class Bbd implements Machine {
   readonly kind = "bbd";
-  private buckets = new Float64Array(4096 / 2);
+  private chip = new Brigade(512, 4096 / 2);
   private n = 512;
-  private bAt = 0;
-  private phase = 0;
-  private held = 0;
-  private prevIn = 0;
   private aa: Biquad[] = [];
   private recon: Biquad[] = [];
   private envIn = 1e-4;
   private envOut = 1e-4;
   private lfo = 0;
   private fb = 0;
-  private rand = mulberry32(7);
   private mode: BbdMode = "chorus";
   private rate = 0.4;
   private depth = 0.5;
@@ -385,7 +413,7 @@ export class Bbd implements Machine {
     const m = BBD_MODES[mode], sr = this.sr;
     this.mode = mode;
     this.n = m.stages / 2;
-    this.buckets.fill(0);
+    this.chip.resize(this.n);
     this.aa = [Biquad.make("lp", m.filterHz, 0.54, sr), Biquad.make("lp", m.filterHz, 1.31, sr)];
     this.recon = [Biquad.make("lp", m.filterHz, 0.54, sr), Biquad.make("lp", m.filterHz, 1.31, sr)];
   }
@@ -413,19 +441,9 @@ export class Bbd implements Machine {
     this.envIn += (Math.abs(u) - this.envIn) * (Math.abs(u) > this.envIn ? this.atk : this.rel);
     u /= Math.sqrt(Math.max(this.envIn, 1e-4));
     // The clock: ticks per output sample, each one moving every bucket a step.
-    const ticks = (this.n / this.delaySeconds()) / sr;
-    this.phase += ticks;
-    while (this.phase >= 1) {
-      this.phase -= 1;
-      // Sample the input where the tick falls (jittered a little), take out the oldest bucket.
-      const f = Math.min(1, Math.max(0, 1 - this.phase / ticks + (this.rand() - 0.5) * 0.02));
-      this.held = this.buckets[this.bAt] * 0.999 + (this.rand() - 0.5) * 2e-4; // a little charge lost, a little hiss
-      this.buckets[this.bAt] = this.prevIn + (u - this.prevIn) * f;
-      this.bAt = (this.bAt + 1) % this.n;
-    }
-    this.prevIn = u;
+    const held = this.chip.run(u, (this.n / this.delaySeconds()) / sr);
     // Reconstruction, then the expander: multiply by the level, undoing the square root.
-    let y = chain(this.recon, this.held);
+    let y = chain(this.recon, held);
     this.envOut += (Math.abs(y) - this.envOut) * (Math.abs(y) > this.envOut ? this.atk : this.rel);
     y *= Math.max(this.envOut, 1e-4) * 0.89; // so a steady note comes back at its own level
     this.fb = y;

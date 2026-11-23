@@ -237,13 +237,17 @@ export function startPatch(): Patch {
   };
 }
 
-/** The sound wall's starter system, side by side in the case's lower row from its left end: one of every module. */
+/**
+ * The sound wall's starter system, side by side from the left end of the case's lower row: one of every module,
+ * going on in the upper row once the lower one is full.
+ */
 function starterWall(): Placed[] {
-  let hp = 0;
+  let hp = 0, row = 0;
   return PANELS.map((p) => {
+    if (hp + p.hp > CASE.hp) { row++; hp = 0; }
     const x = CASE.rail + ((hp + p.hp / 2) * HP) / 1000;
     hp += p.hp;
-    return { id: `wall-${p.id}`, gear: `mod-${p.id}`, at: [x, CASE.rows[0], CASE.front - MODULE_D / 2], turn: 0 };
+    return { id: `wall-${p.id}`, gear: `mod-${p.id}`, at: [x, CASE.rows[row], CASE.front - MODULE_D / 2], turn: 0 };
   });
 }
 

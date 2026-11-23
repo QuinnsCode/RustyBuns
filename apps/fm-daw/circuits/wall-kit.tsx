@@ -45,7 +45,20 @@ export const LM78L05 = { pin1: "VOUT", pin2: "GNDA", pin3: "GNDB", pin4: "NCA", 
 export const HCPL0601 = { pin1: "NCA", pin2: "ANODE", pin3: "CATHODE", pin4: "NCB", pin5: "GND", pin6: "VO", pin7: "VE", pin8: "VCC" };
 export const ATTINY1614 = { pin1: "VDD", pin2: "PA4", pin3: "PA5", pin4: "PA6", pin5: "PA7", pin6: "PB3", pin7: "PB2", pin8: "PB1", pin9: "PB0", pin10: "UPDI", pin11: "PA1", pin12: "PA2", pin13: "PA3", pin14: "GND" };
 export const MCP4822 = { pin1: "VDD", pin2: "CS", pin3: "SCK", pin4: "SDI", pin5: "LDAC", pin6: "VOUTB", pin7: "VSS", pin8: "VOUTA" };
-export const FOOTPRINT: Record<string, string> = { TL072: "soic8", TL074: "soic14", LM13700: "soic16", NE555: "soic8", CD4017: "soic16", LM78L05: "soic8", HCPL0601: "soic8", ATTINY1614: "soic14", MCP4822: "soic8" };
+/**
+ * Q Brigade's delay, from the datasheets: Coolaudio's V3208D (2048 stages, DIP-8 only), onsemi's SA571 compander
+ * (SOIC-16 wide; its 12 V and ground as VPOS and VNEG, so the kit decouples it as a 12 V-only chip), and the clock's
+ * CD4046 VCO, CD4013 flip-flop and CD4049UB drivers on its own 9 V (an LM78L09, the LM78L05's pinout).
+ */
+export const V3208 = { pin1: "GND", pin2: "CP1", pin3: "IN", pin4: "VGG", pin5: "VDD", pin6: "CP2", pin7: "OUT1", pin8: "OUT2" };
+export const SA571 = { pin1: "RECTCAP1", pin2: "RECTIN1", pin3: "GIN1", pin4: "VNEG", pin5: "INV1", pin6: "R3A", pin7: "OUT1", pin8: "THD1", pin9: "THD2", pin10: "OUT2", pin11: "R3B", pin12: "INV2", pin13: "VPOS", pin14: "GIN2", pin15: "RECTIN2", pin16: "RECTCAP2" };
+export const CD4046 = { pin1: "PCPOUT", pin2: "PC1OUT", pin3: "COMPIN", pin4: "VCOOUT", pin5: "INH", pin6: "C1A", pin7: "C1B", pin8: "VSS", pin9: "VCOIN", pin10: "DEMOD", pin11: "R1", pin12: "R2", pin13: "PC2OUT", pin14: "SIGIN", pin15: "ZENER", pin16: "VDD" };
+export const CD4013 = { pin1: "Q1", pin2: "QB1", pin3: "CLK1", pin4: "RST1", pin5: "D1", pin6: "SET1", pin7: "VSS", pin8: "SET2", pin9: "D2", pin10: "RST2", pin11: "CLK2", pin12: "QB2", pin13: "Q2", pin14: "VDD" };
+export const CD4049 = { pin1: "VDD", pin2: "YA", pin3: "A", pin4: "YB", pin5: "B", pin6: "YC", pin7: "C", pin8: "VSS", pin9: "D", pin10: "YD", pin11: "E", pin12: "YE", pin13: "NCA", pin14: "F", pin15: "YF", pin16: "NCB" };
+export const FOOTPRINT: Record<string, string> = {
+  TL072: "soic8", TL074: "soic14", LM13700: "soic16", NE555: "soic8", CD4017: "soic16", LM78L05: "soic8", HCPL0601: "soic8", ATTINY1614: "soic14", MCP4822: "soic8",
+  LM78L09: "soic8", V3208D: "dip8", SA571: "soic16_w11mm_pl1.6mm_pw0.6mm", CD4046: "soic16", CD4013: "soic14", CD4049UB: "soic16",
+};
 
 /** A net's name from a jack's or knob's (`send-a` is SEND_A). */
 export const netOf = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
@@ -153,7 +166,7 @@ export function wallBoard(m: Module) {
 export function Chip({ name, part }: { name: string; part: keyof typeof PINS }) {
   return <chip name={name} manufacturerPartNumber={part} footprint={FOOTPRINT[part]} pinLabels={PINS[part]} />;
 }
-const PINS = { TL072, TL074, LM13700, NE555, CD4017, LM78L05, HCPL0601, ATTINY1614, MCP4822 };
+const PINS = { TL072, TL074, LM13700, NE555, CD4017, LM78L05, HCPL0601, ATTINY1614, MCP4822, LM78L09: LM78L05, V3208D: V3208, SA571, CD4046, CD4013, CD4049UB: CD4049 };
 
 /** Shorthand for traces: `wire("U1 > .OUTA", "net.SAW")` reads as `<trace from=".U1 > .OUTA" to="net.SAW" />`. */
 export function wires(pairs: [string, string][]) {

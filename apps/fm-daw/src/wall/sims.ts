@@ -12,7 +12,7 @@
 //     the sound follows. Q Keys' microcontroller is its firmware's logic (notes, the MIDI clock) into the board's gains.
 // Volts in and volts out, Eurorack's levels: audio +-5 V, 1 V an octave, gates 0 to 10 V.
 import { clamp, mulberry32 } from "@rustybuns/util";
-import { Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
+import { Biquad, Brigade, Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { netlistOf, readBoard, type Board, type BoardOptions, type BoardPart } from "../circuit/tscircuit.ts";
 import { panel } from "../../circuits/wall-panels.ts";
 import seqBoard from "../../circuits/wall-seq.circuit.json";
@@ -25,9 +25,10 @@ import lfoBoard from "../../circuits/wall-lfo.circuit.json";
 import mixBoard from "../../circuits/wall-mix.circuit.json";
 import outBoard from "../../circuits/wall-out.circuit.json";
 import noiseBoard from "../../circuits/wall-noise.circuit.json";
+import bbdBoard from "../../circuits/wall-bbd.circuit.json";
 
 /** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
-const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard], ["keys", keysBoard]]);
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard], ["keys", keysBoard], ["bbd", bbdBoard]]);
 /** Every module kind the wall has. */
 export const KINDS = [...BOARDS.keys()];
 
@@ -81,7 +82,8 @@ function board(id: string): Board {
   const p = panel(id);
   const decouple = ["U1", "U2", "U3", "U4"].flatMap((u) => [`C${u}P`, `C${u}N`]);
   // The 555 and the 4017, and Q Keys' digital side, aren't parts the solver models; their numbers are read off.
-  const chips = id === "seq" ? ["U1", "U2"] : id === "keys" ? ["U1", "U2", "U3", "U4", "JP2", "JP3"] : [];
+  // Q Brigade's compander, bucket brigade, regulator and clock chips are read off their datasheets the same way.
+  const chips = id === "seq" ? ["U1", "U2"] : id === "keys" ? ["U1", "U2", "U3", "U4", "JP2", "JP3"] : id === "bbd" ? ["U2", "U3", "U5", "U6", "U7", "U8"] : [];
   return readBoard(BOARDS.get(id), { leaveOut: [...p.jacks.map((j) => j.part), "JP1", "DP1", "DP2", "CP1", "CP2", ...decouple, ...chips] });
 }
 
@@ -574,12 +576,130 @@ class Keys implements Sim {
   read() { return { note: this.held.at(-1) ?? -1, dacA: this.code, dacB: this.velCode, pitch: this.pitch(this.code * DAC_STEP), bpm: this.bpm, div: this.div, beat: this.beat }; }
 }
 
+/** The SA571's own parts (onsemi's datasheet): R1 into the rectifier, R2 into the gain cell, R3, and the cell's bias. */
+const SA571 = { r1: 10e3, r2: 20e3, r3: 20e3, ib: 140e-6 };
+/** Its unity-gain level: the rectified average at which the compressor and the expander pass a signal as it is. */
+const COMPANDER_UNITY = (SA571.r1 * SA571.r2 * SA571.ib) / (2 * SA571.r3);
+/** The least average its rectifier sees: its bias current (under 0.1 uA, the datasheet) through R1. */
+const RECT_FLOOR = 0.1e-6 * SA571.r1;
+/** Its output's swing about where it rests (5.8 V and 3 V on 12 V): from a volt over ground to a volt under 12. */
+const COMP_SWING = 4.8, EXP_LOW = -2, EXP_HIGH = 8;
+/** The V3208D (Coolaudio's datasheet): 2048 stages; 2.5% distortion at 0.36 V rms, which is a tanh knee at 0.93 V. */
+const BBD_STAGES = 2048, BBD_KNEE = 0.93;
+/** Q Brigade's own rail (U5, an LM78L09) and the CD4046 VCO's stray capacitance, which adds to C20. */
+const V9 = 9, VCO_STRAY = 32e-12;
+
+/** A unity-gain Sallen-Key low-pass from its two resistors and its feedback and ground capacitors. */
+function sallenKey(r1: number, r2: number, cf: number, cg: number, sampleRate: number): Biquad {
+  const rc = Math.sqrt(r1 * r2 * cf * cg);
+  return Biquad.make("lp", 1 / (2 * Math.PI * rc), rc / (cg * (r1 + r2)), sampleRate);
+}
+
+/**
+ * Q Brigade: the board's signal path a sample at a time, every number from its parts. In and the repeats through
+ * U1A's gains; the SA571's compressor, its output divided by its own rectified average (C4 the averaging), so a level
+ * halves in decibels; U1B's anti-alias corner; the V3208D's 1024 buckets (gear's `Brigade`) moved at the clock, bent
+ * past the datasheet's swing; the outputs' divider into U1C's reconstruction; the expander, its input times its average
+ * (C16), undoing the compressor; U1D's gain to WET, and Mix's gains to Out. The clock: Time, Mod (the LFO, read off
+ * R22 to R24, Rate and C18 as Q Wobble's) and Time CV through U4C's gains, clamped onto the CD4046's VCO, whose
+ * rate runs from 1 / (R31 (C20 + 32 pF)) at 0 V to that plus 1 / (R30 (C20 + 32 pF)) at 9 V; U7 halves it. The
+ * delay is the chip's stages over twice its clock. C1 into the compressor's own R3 keeps DC (a CV, an offset) out of
+ * it; the other AC couplings, all under 2 Hz between audio stages, are left out.
+ */
+class Bbd implements Sim {
+  readonly ins = ["in", "cv"];
+  readonly outs = ["out"];
+  private readonly b = board("bbd");
+  private readonly chip = new Brigade(BBD_STAGES / 2);
+  private readonly aa: Biquad;
+  private readonly recon: Biquad;
+  private readonly dcBlock: number;
+  private readonly compAvg: number;
+  private readonly expAvg: number;
+  private readonly vcoAvg: number;
+  private readonly fMin: number;
+  private readonly fSpan: number;
+  private readonly outShare: number;
+  private readonly tri: number;
+  private sum = (_i: number, _w: number) => 0;
+  private ctl = (_t: number, _cv: number) => 0;
+  private wetGain = 0;
+  private mix = (_i: number, _w: number) => 0;
+  private hz = 1;
+  private phase = 0;
+  private envC = RECT_FLOOR;
+  private envE = RECT_FLOOR;
+  private comp = 0;
+  private dc = 0;
+  private vcoIn = 0;
+  private clock = 0;
+  private wet = 0;
+  constructor(private readonly sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    this.aa = sallenKey(r("R7"), r("R8"), r("C6"), r("C7"), sampleRate);
+    this.recon = sallenKey(r("R17"), r("R18"), r("C12"), r("C13"), sampleRate);
+    this.dcBlock = pole(SA571.r3 * r("C1"), sampleRate);
+    // Each SA571 rectifier averages through its own 10k into its capacitor.
+    this.compAvg = pole(SA571.r1 * r("C4"), sampleRate);
+    this.expAvg = pole(SA571.r1 * r("C16"), sampleRate);
+    this.vcoAvg = pole(r("R29") * r("C19"), sampleRate);
+    const c = r("C20") + VCO_STRAY;
+    this.fMin = 1 / (r("R31") * c);
+    this.fSpan = 1 / (r("R30") * c);
+    // The chip's two outputs through R14 and R15 into R16.
+    const src = (r("R14") * r("R15")) / (r("R14") + r("R15"));
+    this.outShare = r("R16") / (r("R16") + src);
+    this.tri = (RAIL * r("R23")) / r("R24");
+    this.knobs(k);
+  }
+  knobs(k: Record<string, number>) {
+    const b = turned("bbd", this.b, { ...knobsOf("bbd"), ...k }), r = (n: string) => value(b, n);
+    const two = (g: Gains) => (x: number, w: number) => g.gain[0][0] * x + g.gain[0][1] * w + g.offset[0];
+    this.sum = two(gains(netOf(b, ["R1", "R2", "R3", "RV2", "U1A"]), ["IN", "WET"], ["SUMO"]));
+    this.ctl = two(gains(netOf(b, ["R25", "R26", "R27", "R28", "RV1", "RV3", "U4C"]), ["TRI", "CV"], ["CTL"]));
+    this.wetGain = gains(netOf(b, ["R19", "R20", "U1D"]), ["EAC"], ["WET"]).gain[0][0];
+    this.mix = two(gains(netOf(b, ["RV5", "U4D", "R21"]), ["IN", "WET"], ["OUT"]));
+    this.hz = r("R24") / (4 * r("R23") * (r("R22") + rheostat(b, "RV4")) * r("C18"));
+  }
+  /** The VCO's rate at VCO In, and the chip's clock: half of it. */
+  private clockAt(v: number) { return (this.fMin + (this.fSpan * clamp(v, 0, V9)) / V9) / 2; }
+  step(x: Float64Array, y: Float64Array) {
+    // The LFO, as Q Wobble's.
+    this.phase = (this.phase + this.hz / this.sampleRate) % 1;
+    const t = this.phase, tri = t < 0.5 ? this.tri * (1 - 4 * t) : this.tri * (4 * t - 3);
+    // The clock: U4C's sum clamped by D1 and D2, smoothed by R29 and C19.
+    const ctl = clamp(this.ctl(tri, x[1]), -RAIL, RAIL);
+    this.vcoIn += this.vcoAvg * (clamp(ctl, -SCHOTTKY, V9 + SCHOTTKY) - this.vcoIn);
+    this.clock = this.clockAt(this.vcoIn);
+    // In and the repeats, then the compressor: the gain cell in its op-amp's feedback, so out = in x unity / average(out).
+    const sum = clamp(this.sum(x[0], this.wet), -RAIL, RAIL);
+    this.dc += this.dcBlock * (sum - this.dc);
+    const u = sum - this.dc;
+    const c = clamp((-u * COMPANDER_UNITY) / Math.max(this.envC, RECT_FLOOR), -COMP_SWING, COMP_SWING);
+    this.envC += this.compAvg * (Math.abs(c) - this.envC);
+    this.comp = c;
+    // Through the chip, bent where it runs out of swing.
+    const into = this.aa.run(c);
+    const held = this.chip.run(BBD_KNEE * Math.tanh(into / BBD_KNEE), this.clock / this.sampleRate);
+    const back = this.recon.run(held * this.outShare);
+    // The expander: out = in x average(in) / unity, inverting.
+    this.envE += this.expAvg * (Math.abs(back) - this.envE);
+    const e = clamp((-back * Math.max(this.envE, RECT_FLOOR)) / COMPANDER_UNITY, EXP_LOW, EXP_HIGH);
+    this.wet = clamp(this.wetGain * e, -RAIL, RAIL);
+    y[0] = clamp(this.mix(x[0], this.wet), -RAIL, RAIL);
+  }
+  /** The delay now (the chip's stages over twice its clock), the clock, the LFO's rate and the compressed level. */
+  read() { return { ms: (BBD_STAGES / (2 * this.clock)) * 1000, clock: this.clock, lfo: this.hz, vcoIn: this.vcoIn, comp: this.comp }; }
+  /** The delay's range on this board, ms: Time and CV's whole sweep, from the VCO at 9 V to the VCO at 0 V. */
+  range(): [number, number] { return [BBD_STAGES / (2 * this.clockAt(V9)) * 1000, BBD_STAGES / (2 * this.clockAt(0)) * 1000]; }
+}
 
 /** A module of `kind` at these knobs. */
 export function makeSim(kind: string, sampleRate: number, knobs: Record<string, number> = {}): Sim {
   switch (kind) {
     case "vco": return new Vco(sampleRate, knobs);
     case "keys": return new Keys(sampleRate, knobs);
+    case "bbd": return new Bbd(sampleRate, knobs);
     case "lfo": return new Lfo(sampleRate, knobs);
     case "seq": return new Seq(sampleRate, knobs);
     case "env": return new Env(sampleRate, knobs);

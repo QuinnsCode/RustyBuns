@@ -588,7 +588,7 @@ const harness = {
   speakers: (up: boolean) => speakers(up),
   /** The room as it starts. */
   reset: () => { room = newRoom(startPatch()); },
-  /** A new sound wall module in your hand (N's picker), by kind: seq, vco, vcf, vca, env, lfo, mix, out. */
+  /** A new sound wall module in your hand (N's picker), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise, keys, bbd. */
   addModule: (kind: string) => bringModule(room, kind),
   /** The sound wall: what the room makes of it (`listen().wall`) and, with the speakers up, what each module is doing. */
   wall: async () => {
