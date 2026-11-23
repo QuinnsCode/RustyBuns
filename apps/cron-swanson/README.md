@@ -72,8 +72,15 @@ Install the ntfy app, subscribe to a topic with a long random name, and set `CRO
 
 ## Railway
 
-`railway.json` builds `Dockerfile` from the repo root. Give the service a volume at `/data` and a
-`CRON_SWANSON_TOKEN`, and keep it at one replica.
+`railway.json` builds `Dockerfile` from the repo root. The image installs only this app's packages (one, plus the
+repo's own `packages/`), not the whole repo's 4 GB.
+
+1. New service from this GitHub repo. Leave **Root Directory** empty: the Dockerfile copies the whole repo.
+2. Settings, **Config-as-code**, Railway Config File: `/apps/cron-swanson/railway.json`. Railway only reads the
+   root's `railway.json` on its own, so without this it never finds the Dockerfile or the health check.
+3. A volume mounted at `/data` (jobs and runs live in `/data/cron-swanson.sqlite`).
+4. The variable `CRON_SWANSON_TOKEN`, a long random string. Keep **one replica**: two would fire every job twice.
+5. Settings, Networking, **Generate Domain**, then open it and paste the token when the page asks.
 
 ## API
 

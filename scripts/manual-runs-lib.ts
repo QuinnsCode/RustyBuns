@@ -29,6 +29,8 @@ export const APPS = {
   // the wasm build is the same Rust engine the desktop runs (bit for bit), and `boundary` writes the .rustybuns/vite.ts vite needs
   fmDaw: { name: "FM DAW", dir: "apps/fm-daw", cmd: (port) => ["sh", "-c", `bun scripts/build-native.ts --wasm --optional && bunx rustybuns boundary && ${vite()(port).join(" ")}`] },
   atLens: { name: "AT Lens", dir: "apps/at-lens", cmd: (port) => ["bun", "run", "edge:dev", "--ip", "127.0.0.1", "--port", String(port), "--inspector-port", String(port + 1)] },
+  // a throwaway copy: jobs made in the window are gone when it closes
+  cronSwanson: { name: "Cron Swanson", dir: "apps/cron-swanson", cmd: (port) => ["sh", "-c", `PORT=${port} CRON_SWANSON_DB=:memory: bun src/main.ts`] },
 } satisfies Record<string, App>;
 export type AppId = keyof typeof APPS;
 
@@ -121,6 +123,7 @@ export const RUNS: Record<number, Run> = {
   3576: { app: "gitRecon", links: [{ label: "Title", path: "/" }, { label: "Loadout", path: "/?screen=loadout" }, { label: "Settings", path: "/?screen=settings" }, { label: "Won", path: "/?screen=won" }, { label: "Lost", path: "/?screen=lost" }, { label: "Title on a phone", path: "/", phone: true }, { label: "Won on a phone", path: "/?screen=won", phone: true }] },
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
+  45: { app: "cronSwanson", links: [{ label: "Taste check before Railway (a throwaway copy)", path: "/" }] },
   4554: { app: "fmDaw", links: [{ label: "Q Amp, live (speakers down, then Plug in)", path: "/amp.html" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
