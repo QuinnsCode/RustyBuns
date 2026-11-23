@@ -6,6 +6,7 @@
 // Units: one unit is about a metre at the scale the camera shows (a destroyer is 180 long), seconds for time.
 // The plane is (x, z); a heading `a` points along (cos a, sin a).
 import { clamp, len, nextRandom } from "@rustybuns/util";
+import type { Pending } from "./plays.ts";
 import { WING_CALLS, type Role, type ShipKind, type Side } from "../names.ts";
 
 export type Stance = "attack" | "neutral" | "defend";
@@ -64,6 +65,8 @@ export interface Wing {
   launchAt: number;
   /** A play holds a wing at its waypoint until its group is all there (a pincer arrives at once). */
   group: number; groupAt: number; staged: boolean; waypoint: { x: number; z: number } | null;
+  /** A route drawn on the table: points to pass, in order, before the waypoint and the order. */
+  route: { x: number; z: number }[];
   /** An order the play put off until a time (a feint's real strike). */
   later: { at: number; order: WingOrder; approach: Approach; stance: Stance } | null;
   size: number;
@@ -95,8 +98,10 @@ export interface World {
   comms: { t: number; side: Side; who: string; say: string }[];
   outcome: null | "win" | "loss" | "draw";
   why: string;
-  focus: number; foresightUntil: number; tranceUntil: number;
-  /** The Rim admiral: its temper (what it does when you rake) and the doctrine it runs now. */
+  focus: number; foresightUntil: number; tranceUntil: number; voiceUntil: number;
+  /** Orders on the radio, not yet heard by the wings (they land `COMMS_LAG` s after you give them). */
+  pending: Pending[];
+  /** The Compact admiral: its temper (what it does when you rake) and the doctrine it runs now. */
   rimTemper: "zealot" | "pragmatist" | "cagey"; rimDoctrine: Doctrine; rimIntent: string; rimNext: number;
   flagship: number;
   limit: number;
@@ -124,7 +129,10 @@ export const CRAFT: Record<Role, { speed: number; hp: number; dps: number; vs: R
 
 export const TORP = { speed: 190, dmg: 240, ttl: 9, bypass: 0.3, launch: 340 };
 export const DT = 0.1;
-export const FOCUS = { foresight: 40, trance: 60, foresightS: 25, tranceS: 15 };
+export const FOCUS = { foresight: 40, trance: 60, voice: 25, foresightS: 25, tranceS: 15, voiceS: 40 };
+/** Seconds an order to the wings spends on the radio before they act on it; Command Voice makes it none. */
+export const COMMS_LAG = 2;
+export type Power = "foresight" | "trance" | "voice";
 
 const TAU = Math.PI * 2;
 const wrap = (a: number) => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
@@ -136,7 +144,7 @@ export function emptyWorld(seed: number, mode: World["mode"] = "flagship"): Worl
     t: 0, rng: seed >>> 0, nextId: 1, mode, ships: [], wings: [], torps: [],
     planet: { name: "Vael", x: 0, z: 0, r: 420, base: 2600, baseMax: 2600 }, lane: { x: 0, z: 0 },
     waves: [], fx: [], fxN: 0, comms: [], outcome: null, why: "",
-    focus: 30, foresightUntil: 0, tranceUntil: 0,
+    focus: 30, foresightUntil: 0, tranceUntil: 0, voiceUntil: 0, pending: [],
     rimTemper: "zealot", rimDoctrine: "steady", rimIntent: "", rimNext: 0,
     flagship: 0, limit: 480,
     stats: { navyCraftLost: 0, rimCraftLost: 0, torpsShot: 0, torpsHit: 0, splits: 0, shipsLost: { navy: 0, rim: 0 }, dealt: { navy: { guns: 0, torps: 0, craft: 0, rake: 0 }, rim: { guns: 0, torps: 0, craft: 0, rake: 0 } } },
@@ -159,7 +167,7 @@ export function addWing(w: World, home: Ship, role: Role, name: string, size: nu
   const g: Wing = {
     id: w.nextId++, side: home.side, role, name, home: home.id, craft: [], stance: "neutral", formation: role === "bomber" ? "tight" : "screen",
     order: { k: "escort", target: home.id, targetIs: "ship" }, approach: "direct", x: home.x, z: home.z,
-    state: "launching", launchAt: at, group: 0, groupAt: 0, staged: true, waypoint: null, later: null, size, saidAt: -99, wipedAt: 0,
+    state: "launching", launchAt: at, group: 0, groupAt: 0, staged: true, waypoint: null, later: null, route: [], size, saidAt: -99, wipedAt: 0,
   };
   w.wings.push(g);
   return g;
@@ -359,7 +367,7 @@ function shipGuns(w: World, s: Ship, dt: number) {
 
 function rake(w: World, s: Ship, vol: number) {
   const p = w.planet;
-  // Rim hulls parked on the line to the planet take the fire meant for the land, 70% of it.
+  // Compact hulls parked on the line to the planet take the fire meant for the land, 70% of it.
   const shield = w.ships.find((o) => !o.dead && o.side !== s.side && o.kind !== "station" && segDist(s.x, s.z, p.x, p.z, o.x, o.z) < HULL[o.kind].r + 60 && dist(s.x, s.z, o.x, o.z) < dist(s.x, s.z, p.x, p.z));
   let toLand = vol * 0.9;
   if (shield) {
@@ -431,6 +439,7 @@ function wingGoal(w: World, g: Wing): { x: number; z: number } | null {
   if (g.state === "returning") return home ?? null;
   const o = g.order;
   if (o.k === "return") return home ?? null;
+  if (g.route.length) return g.route[0];
   if (o.k === "patrol") return o;
   const t = pos(w, o.target, o.targetIs);
   if (!t) return null;
@@ -497,7 +506,7 @@ function stepWing(w: World, g: Wing, dt: number) {
     const home = ship(w, g.home);
     if (home && home.reserve >= 2 && g.craft.length && w.t - g.wipedAt > 20) {
       g.size = Math.min(g.size, home.reserve); home.reserve -= g.size;
-      g.craft = []; g.state = "launching"; g.launchAt = w.t + 2; g.waypoint = null; g.later = null;
+      g.craft = []; g.state = "launching"; g.launchAt = w.t + 2; g.waypoint = null; g.later = null; g.route = [];
       g.order = { k: "escort", target: home.id, targetIs: "ship" };
     }
     return;
@@ -513,16 +522,18 @@ function stepWing(w: World, g: Wing, dt: number) {
   if (!goal && g.state === "out") {
     const home = ship(w, g.home) ?? flagshipOf(w, g.side);
     g.order = home ? { k: "escort", target: home.id, targetIs: "ship" } : { k: "patrol", x: g.x, z: g.z };
-    g.waypoint = null;
+    g.waypoint = null; g.route = [];
     return;
   }
   if (goal) {
     const d = dist(g.x, g.z, goal.x, goal.z);
     const sp = st.speed * (g.formation === "tight" ? 1.05 : 1);
     if (d > 1) { const k = Math.min(1, (sp * dt) / d); g.x += (goal.x - g.x) * k; g.z += (goal.z - g.z) * k; }
+    // On a drawn route: past this point, on to the next. The group's clock starts once the route is flown.
+    if (g.route.length && goal === g.route[0] && dist(g.x, g.z, goal.x, goal.z) < 40) { g.route.shift(); if (!g.route.length) g.groupAt = w.t; }
     if (g.state === "returning" && d < 60) {
       g.state = "launching"; g.launchAt = w.t + 6;
-      g.order = { k: "escort", target: g.home, targetIs: "ship" }; g.waypoint = null;
+      g.order = { k: "escort", target: g.home, targetIs: "ship" }; g.waypoint = null; g.route = [];
       for (const c of live) { c.torps = st.torps; c.hp = st.hp; }
       return;
     }
@@ -671,7 +682,7 @@ function arrive(w: World, wave: Wave) {
     fx(w, "jump", "rim", s.x, s.z, s.x - Math.cos(toward) * 600, s.z - Math.sin(toward) * 600);
     spec.wings.forEach((role, j) => addWing(w, s, role, nextCall(w, "rim"), role === "bomber" ? 4 : 5, w.t + 4 + j * 3));
   });
-  say(w, "navy", "Sensors", warden ? `Rim ships ripped out of hyperspace on top of the ${warden.name}! Shields down, hit them now.` : "Rim ships out of hyperspace behind us!");
+  say(w, "navy", "Sensors", warden ? `Compact ships ripped out of hyperspace on top of the ${warden.name}! Shields down, hit them now.` : "Compact ships out of hyperspace behind us!");
 }
 
 const RIM_SHIPS = ["Defiance", "Long Night", "Hearthfire", "Free Wind", "Last Harvest", "Unbowed", "Kindred", "Tallowmere", "Stonebreak", "Open Hand"];
@@ -686,18 +697,19 @@ export function nextCall(w: World, side: Side) {
 function judge(w: World) {
   const fl = flagship(w);
   if (!fl) { w.outcome = "loss"; w.why = "Your flagship is gone."; return; }
-  if (w.planet.base <= 0) { w.outcome = "win"; w.why = `The Rim base on ${w.planet.name} burns.`; return; }
+  if (w.planet.base <= 0) { w.outcome = "win"; w.why = `The Compact base on ${w.planet.name} burns.`; return; }
   const rimLeft = w.ships.some((s) => !s.dead && s.side === "rim") || w.waves.some((v) => !v.done);
-  if (!rimLeft) { w.outcome = "win"; w.why = `Every Rim hull over ${w.planet.name} is broken. The base is yours to take.`; return; }
-  if (w.t >= w.limit) { w.outcome = "draw"; w.why = "Time: the Rim holds on long enough to evacuate."; }
+  if (!rimLeft) { w.outcome = "win"; w.why = `Every Compact hull over ${w.planet.name} is broken. The base is yours to take.`; return; }
+  if (w.t >= w.limit) { w.outcome = "draw"; w.why = "Time: the Compact holds on long enough to evacuate."; }
 }
 
 /** Spend focus on a power. Returns whether it took. */
-export function usePower(w: World, p: "foresight" | "trance"): boolean {
+export function usePower(w: World, p: Power): boolean {
   const cost = FOCUS[p];
   if (w.focus < cost || w.outcome) return false;
   w.focus -= cost;
   if (p === "foresight") { w.foresightUntil = w.t + FOCUS.foresightS; say(w, "navy", "You", "I see what they mean to do."); }
-  else { w.tranceUntil = w.t + FOCUS.tranceS; say(w, "navy", "You", "Every pilot, with me. Feel the battle."); }
+  else if (p === "trance") { w.tranceUntil = w.t + FOCUS.tranceS; say(w, "navy", "You", "Every pilot, with me. Feel the battle."); }
+  else { w.voiceUntil = w.t + FOCUS.voiceS; say(w, "navy", "You", "All wings, hear me. Move when I say."); }
   return true;
 }

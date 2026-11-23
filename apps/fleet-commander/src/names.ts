@@ -6,19 +6,19 @@ export type Side = "navy" | "rim";
 export type ShipKind = "dreadnought" | "destroyer" | "frigate" | "corvette" | "cruiser" | "carrier" | "station";
 export type Role = "interceptor" | "bomber" | "escort";
 
-export const SIDE_NAME: Record<Side, string> = { navy: "The Concord Navy", rim: "The Free Rim" };
+export const SIDE_NAME: Record<Side, string> = { navy: "The Directorate", rim: "The Free Worlds Compact" };
 
 export const SHIP_NAME: Record<ShipKind, string> = {
   dreadnought: "Sovereign-class dreadnought",
   destroyer: "Lance-class destroyer",
   frigate: "Warden interdictor",
-  corvette: "Rim corvette",
+  corvette: "Compact corvette",
   cruiser: "Bastion cruiser",
   carrier: "Hive carrier",
   station: "Orbital bastion",
 };
 
-/** A wing's craft by side: what the navy flies, and what the Rim flies in the same job. */
+/** A wing's craft by side: what the navy flies, and what the Compact flies in the same job. */
 export const CRAFT_NAME: Record<Side, Record<Role, string>> = {
   navy: { interceptor: "Dart", bomber: "Maul", escort: "Warden" },
   rim: { interceptor: "Hornet", bomber: "Lancer", escort: "Shrike" },
@@ -30,5 +30,6 @@ export const WING_CALLS: Record<Side, string[]> = {
   rim: ["Gold", "Rust", "Moss", "Sable", "Tallow", "Copper", "Fern", "Amber"],
 };
 
-/** The commander's two gifts, read from the focus meter: seeing their next move, and the trance over your pilots. */
-export const POWER_NAME = { foresight: "Foresight", trance: "Fleet Trance" };
+/** The commander's three gifts, read from the focus meter: seeing their next move, the trance over your pilots, and
+ *  the voice every wing hears at once. */
+export const POWER_NAME = { foresight: "Foresight", trance: "Fleet Trance", voice: "Command Voice" };

@@ -1,4 +1,4 @@
-// The hulls, made in code: plain three.js shapes, no files. The navy builds sharp wedges in pale grey; the Rim flies
+// The hulls, made in code: plain three.js shapes, no files. The navy builds sharp wedges in pale grey; the Compact flies
 // what it could weld together, long industrial hulls in rust and ochre with their drives showing.
 import * as THREE from "three";
 import type { Role, ShipKind, Side } from "../names.ts";

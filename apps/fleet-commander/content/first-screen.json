@@ -1,13 +1,13 @@
 {
   "title": "Fleet Commander",
   "kicker": "From the bridge of a wedge destroyer",
-  "goal": "You command a destroyer and its wings of fighters. Call plays, pick their stance and formation, trade broadsides with Rim ships, and burn the base on the world below.",
+  "goal": "You command a destroyer and its wings of fighters. Call plays, pick their stance and formation, trade broadsides with Compact ships, and burn the base on the world below.",
   "play": "Quick battle",
-  "playSub": "One destroyer, six wings, a Rim base",
+  "playSub": "One destroyer, six wings, a Compact base",
   "campaign": "Campaign",
   "campaignSub": "A sector of worlds: mines, bases, lanes",
   "armada": "Armada",
   "armadaSub": "A dreadnought and three destroyers",
-  "computer": "Computer: 1-6 pick a wing, F the flagship, G the interdictor. Click a Rim ship to mark it, right-click to order. Q-Y call plays, A/S/D stance, Z/X/C formation, B broadside, V rake the world, Space foresight, M trance. Drag or arrows to pan, wheel to zoom.",
-  "phone": "Phone: tap a card to pick it, tap a Rim ship to mark it, then tap a play. Drag to pan, pinch to zoom."
+  "computer": "Computer: 1-6 pick a wing, F the flagship, G the interdictor. Click a Compact ship to mark it, right-click to order, right-drag to draw a route (Shift adds an arm). Q-Y call plays, A/S/D stance, Z/X/C formation, B broadside, V rake the world, Space foresight, M trance, N command voice. Drag or arrows to pan, wheel to zoom.",
+  "phone": "Phone: tap a card to pick it, tap a Compact ship to mark it, then tap a play, or tap the pen and drag a route. Drag to pan, pinch to zoom."
 }

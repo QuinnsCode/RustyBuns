@@ -2,9 +2,9 @@
 // trading broadsides and then raking the world. Seeded, so every run of a test is the same battle.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { autoCommander, brains } from "../src/sim/ai.ts";
-import { runFleetPlay, runPlay, wingsOf } from "../src/sim/plays.ts";
+import { landsAt, runFleetPlay, runPlay, send, wingsOf } from "../src/sim/plays.ts";
 import { armada, battle } from "../src/sim/scenarios.ts";
-import { alive, flagship, step, type World } from "../src/sim/world.ts";
+import { COMMS_LAG, alive, flagship, step, usePower, type World } from "../src/sim/world.ts";
 
 setDefaultTimeout(60_000);
 
@@ -63,7 +63,7 @@ test("the interdictor on the lane drags reinforcements onto itself, shields down
   for (const s of dropped) expect(Math.cos(fl.a) * (s.x - fl.x) + Math.sin(fl.a) * (s.z - fl.z)).toBeLessThan(0);
 });
 
-test("rake the world and the Rim's temper answers: a zealot shields the land, a pragmatist broadsides your flagship", () => {
+test("rake the world and the Compact's temper answers: a zealot shields the land, a pragmatist broadsides your flagship", () => {
   const answer = (temper: "zealot" | "pragmatist") => {
     const w = battle({ seed: 5, kind: "assault", strength: 2, temper });
     run(w, 5);
@@ -90,4 +90,37 @@ test("the Armada: your captains run their own wings, and a fleet pincer sends de
   expect(destroyers.map((d) => d.order.k)).toEqual(["flank", "flank", "flank"]);
   const sides = destroyers.map((d) => (d.order.k === "flank" ? Math.sign((d.order.wz - target.z) * Math.cos(target.a) - (d.order.wx - target.x) * Math.sin(target.a)) : 0));
   expect(new Set(sides).size).toBe(2);
+});
+
+test("orders go out on the radio; Command Voice lands them at once; two drawn arms wait for each other and split the shields", () => {
+  const w = battle({ seed: 4, kind: "assault", strength: 2, temper: "zealot" });
+  run(w, 12);
+  const carrier = rim(w, "carrier"), fl = flagship(w)!;
+  const mine = wingsOf(w, fl.id);
+  const bomber = mine.find((g) => g.role === "bomber")!;
+  // On the radio: nothing happens for COMMS_LAG seconds, then the wings act.
+  send(w, { at: landsAt(w), k: "play", id: "torpedo-run", wings: mine.map((g) => g.id), ships: [], target: carrier.id, fleet: false });
+  expect(bomber.order.k).toBe("escort");
+  run(w, COMMS_LAG + 0.1);
+  expect(bomber.order).toMatchObject({ k: "attack", target: carrier.id });
+  // Command Voice: the recall lands the moment it is given.
+  w.focus = 100;
+  expect(usePower(w, "voice")).toBe(true);
+  send(w, { at: landsAt(w), k: "play", id: "recall", wings: mine.map((g) => g.id), ships: [], target: 0, fleet: false });
+  expect(bomber.state).toBe("returning");
+
+  // A pincer you drew: two routes round the carrier's sides, one group. Both arms fly them, wait, and go together.
+  const d = battle({ seed: 4, kind: "assault", strength: 2, temper: "zealot" });
+  run(d, 12);
+  const c = rim(d, "carrier"), f = flagship(d)!, ws = wingsOf(d, f.id);
+  const arm = (side: number) => [{ x: f.x + 300, z: f.z + side * 500 }, { x: (f.x + c.x) / 2, z: c.z + side * 800 }, { x: c.x, z: c.z + side * 600 }];
+  const group = ++d.groupN, end = { k: "attack", target: c.id, targetIs: "ship" } as const;
+  send(d, { at: landsAt(d), k: "route", wings: ws.filter((_, i) => i % 2 === 0).map((g) => g.id), route: arm(-1), end, group });
+  send(d, { at: landsAt(d), k: "route", wings: ws.filter((_, i) => i % 2 === 1).map((g) => g.id), route: arm(1), end, group });
+  const splits = d.stats.splits;
+  let held = false;
+  run(d, 90, () => { if (ws.some((g) => g.route.length) && ws.some((g) => !g.route.length && g.waypoint && alive(g).length)) held = true; });
+  expect(held).toBe(true);
+  expect(d.comms.some((m) => m.say === "In position. Going in, all together!")).toBe(true);
+  expect(d.stats.splits - splits).toBeGreaterThan(2);
 });

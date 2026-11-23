@@ -1,15 +1,15 @@
 // The page: the bridge. It runs the sim at a fixed tick, draws it (view/scene.ts), and turns clicks and keys into
-// orders: pick wings or ships, mark a Rim ship, call a play, set stance and formation, order the flagship to
+// orders: pick wings or ships, mark a Compact ship, call a play, set stance and formation, order the flagship to
 // broadside or rake. `window.fleetCommander` is the harness (scripts/probe.ts HANDLES): state() says what is on the
 // table, and its moves play the game without a mouse.
-import { createElement, Crosshair, Eye, Sparkles, Pause, Play as PlayIcon, LogOut, Layers, Shield, Swords, Scale, Triangle, Rows3, Shuffle, Flame, Magnet, Anchor, Target, Split, Hammer, Rocket, Undo2, Radar, Ghost, Map as MapIcon, type IconNode } from "lucide";
+import { createElement, Crosshair, Eye, Sparkles, Megaphone, PenLine, LogOut, Layers, Shield, Swords, Scale, Triangle, Rows3, Shuffle, Flame, Magnet, Anchor, Target, Split, Hammer, Rocket, Undo2, Radar, Ghost, Map as MapIcon, type IconNode } from "lucide";
 import { addCommands, howToPlay } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { esc } from "@rustybuns/util";
 import { accountChip, finishSignIn } from "./eqosys.ts";
 import { CRAFT_NAME, POWER_NAME, SHIP_NAME, type Role } from "./names.ts";
-import { DT, FOCUS, HULL, alive, flagship, ship, step, usePower, wing, type Formation, type Ship, type Stance, type Wing, type World } from "./sim/world.ts";
-import { PLAYS, playById, runFleetPlay, runPlay, wingsOf, type PlayId } from "./sim/plays.ts";
+import { COMMS_LAG, DT, FOCUS, HULL, alive, flagship, ship, step, usePower, wing, type Formation, type Power, type Ship, type Stance, type Wing, type WingOrder, type World } from "./sim/world.ts";
+import { PLAYS, landsAt, playById, send, wingsOf, type PlayId } from "./sim/plays.ts";
 import { autoCommander, brains } from "./sim/ai.ts";
 import { armada, battle, quick, type Fleet } from "./sim/scenarios.ts";
 import { Bridge, shipAt, type Look, type Overlay } from "./view/scene.ts";
@@ -30,7 +30,16 @@ const ui = {
   seed: 1,
   sel: new Set<number>(),
   target: 0,
+  /** Only the harness pauses (probe shots); a player can't (taste call T2: real-time, no pause). */
   paused: false,
+  /** The camera rides the flagship (T8): where it sits from the ship. Panning moves the offset, F resets it. */
+  ride: { dx: 700, dz: 100, on: true },
+  /** Drawing a play on the table: the pen (P) and the stroke being drawn, and the group the last stroke joined. */
+  pen: false,
+  stroke: null as { x: number; z: number }[] | null,
+  drawGroup: 0,
+  /** The last drawn attack: on a phone (no Shift), a route onto the same ship within 10 s is another arm of it. */
+  lastDraw: { t: -99, target: 0 },
   speed: 1,
   acc: 0,
   banner: { text: "", until: 0 },
@@ -46,7 +55,8 @@ function startBattle(w: World, kind: typeof ui.kind) {
   const fl = flagship(w)!;
   // A tall screen sees less across: pull back and keep the flagship in frame.
   const tall = innerHeight > innerWidth;
-  bridge.view.x = fl.x + (tall ? 350 : 700); bridge.view.z = fl.z + 100; bridge.view.dist = (w.mode === "armada" ? 3600 : 2600) * (tall ? 1.5 : 1);
+  ui.ride = { dx: tall ? 350 : 700, dz: 100, on: true }; ui.stroke = null; ui.drawGroup = 0; ui.lastDraw = { t: -99, target: 0 };
+  bridge.view.x = fl.x + ui.ride.dx; bridge.view.z = fl.z + ui.ride.dz; bridge.view.dist = (w.mode === "armada" ? 3600 : 2600) * (tall ? 1.5 : 1);
   show("battle");
   // Your wings start selected, so a first play works at once.
   if (w.mode === "flagship") for (const g of wingsOf(w, fl.id)) ui.sel.add(g.id);
@@ -54,7 +64,7 @@ function startBattle(w: World, kind: typeof ui.kind) {
   const first = w.ships.find((s) => s.side === "rim" && s.kind === "carrier") ?? w.ships.find((s) => s.side === "rim");
   if (first) ui.target = first.id;
   buildPlays();
-  flash(w.mode === "armada" ? "You hold the Sovereign. Your captains wait for orders." : `Over ${w.planet.name}. Wings selected, the Rim carrier marked: call a play.`);
+  flash(w.mode === "armada" ? "You hold the Sovereign. Your captains wait for orders." : `Over ${w.planet.name}. Wings selected, the Compact carrier marked: call a play.`);
 }
 
 function startQuick(seed = ui.seed) { ui.seed = seed; startBattle(quick(seed), "quick"); }
@@ -108,18 +118,60 @@ const selShips = (w: World) => [...ui.sel].map((id) => ship(w, id)).filter((s): 
 function callPlay(id: PlayId) {
   const w = ui.w; if (!w) return;
   const p = playById(id);
-  if (p.needsTarget && !ship(w, ui.target)) return flash(`${p.name}: mark a Rim ship first (click it).`);
-  let line: string;
-  if (w.mode === "armada") {
-    const ships = selShips(w).filter((s) => s.auto);
-    const wings = selWings(w);
-    line = ships.length ? runFleetPlay(w, id, ships, ui.target) : runPlay(w, id, wings.length ? wings : wingsOf(w, w.flagship), ui.target);
-  } else {
-    const ws = selWings(w);
-    line = runPlay(w, id, ws.length ? ws : wingsOf(w, w.flagship), ui.target);
-  }
-  flash(line);
+  if (p.needsTarget && !ship(w, ui.target)) return flash(`${p.name}: mark a Compact ship first (click it).`);
+  const ships = w.mode === "armada" ? selShips(w).filter((s) => s.auto) : [];
+  const t = ship(w, ui.target);
+  send(w, { at: landsAt(w), k: "play", id, wings: orderWings(w).map((g) => g.id), ships: ships.map((s) => s.id), target: p.needsTarget && t ? t.id : 0, fleet: ships.length > 0 });
+  bark(`${p.name}${p.needsTarget && t ? ` on the ${t.name}` : ""}.`);
+}
+
+/** The wings an order goes to: the selected ones, or the flagship's when none is picked. */
+const orderWings = (w: World) => { const ws = selWings(w); return ws.length ? ws : wingsOf(w, w.flagship); };
+
+/** You say it on the bridge; the wings hear it when the radio gets it there (at once under Command Voice). */
+function bark(line: string) {
+  const w = ui.w; if (!w) return;
+  const lag = w.t >= w.voiceUntil;
+  flash(lag ? `${line} Radio: ${COMMS_LAG} s.` : line);
   w.comms.push({ t: w.t, side: "navy", who: "You", say: line });
+}
+
+/** What an order at a point means: attack the Compact ship or wing there, guard ours, or patrol the spot. */
+function orderFor(w: World, x: number, z: number): WingOrder {
+  const slop = bridge.unitsPerPixel(canvas.clientHeight) * 14;
+  const s = shipAt(w, x, z, slop);
+  const foeWing = w.wings.find((g) => g.side === "rim" && g.state === "out" && alive(g).some((c) => Math.hypot(c.x - x, c.z - z) < slop * 2));
+  if (s && s.side === "rim") return { k: "attack", target: s.id, targetIs: "ship" };
+  if (foeWing) return { k: "attack", target: foeWing.id, targetIs: "wing" };
+  if (s && s.side === "navy") return { k: "escort", target: s.id, targetIs: "ship" };
+  return { k: "patrol", x, z };
+}
+
+/** A play you drew: the stroke's points are the route; where it ends is the order (as a right-click there).
+ *  `join` (Shift) makes it another arm of the last one: an attack's arms wait for each other at their routes' ends. */
+function drawnPlay(stroke: { x: number; z: number }[], join: boolean) {
+  const w = ui.w; if (!w || stroke.length < 2) return;
+  const ws = orderWings(w);
+  if (!ws.length) return flash("No wings to fly it.");
+  const end = stroke[stroke.length - 1];
+  const o = orderFor(w, end.x, end.z);
+  // Every 220 units of the stroke is a point to pass. An attack drops the end (the target itself).
+  const pts: { x: number; z: number }[] = [stroke[0]];
+  let acc = 0;
+  for (let i = 1; i < stroke.length; i++) {
+    acc += Math.hypot(stroke[i].x - stroke[i - 1].x, stroke[i].z - stroke[i - 1].z);
+    if (acc >= 220) { pts.push(stroke[i]); acc = 0; }
+  }
+  if (o.k === "attack" && o.targetIs === "ship") { const t = ship(w, o.target)!; while (pts.length > 1 && Math.hypot(pts[pts.length - 1].x - t.x, pts[pts.length - 1].z - t.z) < 260) pts.pop(); ui.target = t.id; }
+  else pts.push(end);
+  const onShip = o.k === "attack" && o.targetIs === "ship" ? o.target : 0;
+  if (touchMode && onShip && ui.lastDraw.target === onShip && w.t - ui.lastDraw.t < 10) join = true;
+  ui.lastDraw = { t: w.t, target: onShip };
+  const group = join && ui.drawGroup ? ui.drawGroup : ++w.groupN;
+  ui.drawGroup = group;
+  send(w, { at: landsAt(w), k: "route", wings: ws.map((g) => g.id), route: pts, end: o, group });
+  const what = o.k === "attack" ? (o.targetIs === "ship" ? `on the ${ship(w, o.target)?.name}` : `on ${wing(w, o.target)?.name}`) : o.k === "escort" ? `to the ${ship(w, o.target)?.name}` : "to that point";
+  bark(`${ws.length > 1 ? `${ws.length} wings` : ws[0].name} by your route ${what}${join ? ", a second arm" : ""}.`);
 }
 
 function setStance(st: Stance) {
@@ -135,7 +187,7 @@ function flagshipOrder(k: "broadside" | "rake" | "hold") {
   const fl = flagship(w); if (!fl) return;
   if (k === "broadside") {
     const t = ship(w, ui.target);
-    if (!t) return flash("Broadside: mark a Rim ship first.");
+    if (!t) return flash("Broadside: mark a Compact ship first.");
     fl.order = { k: "engage", target: t.id, broadside: true };
     flash(`${fl.name}: coming about, broadside to the ${t.name}.`);
   } else if (k === "rake") {
@@ -157,15 +209,8 @@ function orderAt(x: number, z: number) {
   const w = ui.w; if (!w) return;
   const slop = bridge.unitsPerPixel(canvas.clientHeight) * 14;
   const s = shipAt(w, x, z, slop);
-  const foeWing = w.wings.find((g) => g.side === "rim" && g.state === "out" && alive(g).some((c) => Math.hypot(c.x - x, c.z - z) < slop * 2));
-  for (const g of selWings(w)) {
-    if (g.state === "returning") g.state = "out";
-    g.waypoint = null; g.staged = true; g.later = null;
-    if (s && s.side === "rim") g.order = { k: "attack", target: s.id, targetIs: "ship" };
-    else if (foeWing) g.order = { k: "attack", target: foeWing.id, targetIs: "wing" };
-    else if (s && s.side === "navy") g.order = { k: "escort", target: s.id, targetIs: "ship" };
-    else g.order = { k: "patrol", x, z };
-  }
+  const ws = selWings(w);
+  if (ws.length) { send(w, { at: landsAt(w), k: "route", wings: ws.map((g) => g.id), route: [], end: orderFor(w, x, z), group: 0 }); if (w.t >= w.voiceUntil) flash(`Radio: ${COMMS_LAG} s.`); }
   for (const sh of selShips(w)) {
     if (s && s.side === "rim") { sh.order = { k: "engage", target: s.id, broadside: false }; sh.focus = s.id; }
     else if (sh.kind === "frigate" && Math.hypot(x - w.lane.x, z - w.lane.z) < 350) sh.order = { k: "lane" };
@@ -175,7 +220,7 @@ function orderAt(x: number, z: number) {
   if (s && s.side === "rim") ui.target = s.id;
 }
 
-/** Left-click: pick your own (shift adds), or mark a Rim ship. */
+/** Left-click: pick your own (shift adds), or mark a Compact ship. */
 function clickAt(x: number, z: number, add: boolean) {
   const w = ui.w; if (!w) return;
   const slop = bridge.unitsPerPixel(canvas.clientHeight) * 14;
@@ -214,25 +259,33 @@ const touches = new Map<number, { x: number; y: number }>();
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("pointerdown", (e) => {
   touchMode = e.pointerType === "touch";
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic pointer (the harness) has none */ }
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (touches.size === 2) { const [a, b] = [...touches.values()]; drag.pinch = Math.hypot(a.x - b.x, a.y - b.y); }
   Object.assign(drag, { on: true, moved: false, x: e.clientX, y: e.clientY, button: e.button });
+  ui.stroke = null;
+  if (ui.screen === "battle" && touches.size === 1 && (e.button === 2 || (ui.pen && e.button === 0))) { const p = pickAt(e); if (p) ui.stroke = [p]; }
 });
+const pickAt = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); return bridge.pick(e.clientX - r.left, e.clientY - r.top, r.width, r.height); };
 canvas.addEventListener("pointermove", (e) => {
   const t = touches.get(e.pointerId);
   if (t) { t.x = e.clientX; t.y = e.clientY; }
   if (touches.size === 2) {
     const [a, b] = [...touches.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
     if (drag.pinch) bridge.view.dist = clampDist(bridge.view.dist * (drag.pinch / d));
-    drag.pinch = d; drag.moved = true; return;
+    drag.pinch = d; drag.moved = true; ui.stroke = null; return;
   }
   if (!drag.on) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
+  if (ui.stroke) {
+    const p = pickAt(e), q = ui.stroke[ui.stroke.length - 1];
+    if (p && Math.hypot(p.x - q.x, p.z - q.z) > 30) ui.stroke.push(p);
+    return;
+  }
   if (drag.moved && drag.button !== 2) {
     const u = bridge.unitsPerPixel(canvas.clientHeight);
-    bridge.view.x -= dx * u; bridge.view.z -= dy * u / Math.sin(bridge.view.tilt);
+    pan(-dx * u, -dy * u / Math.sin(bridge.view.tilt));
     drag.x = e.clientX; drag.y = e.clientY;
   }
 });
@@ -242,13 +295,16 @@ canvas.addEventListener("pointerup", (e) => {
   drag.pinch = 0;
   if (!drag.on) return;
   drag.on = false;
+  const stroke = ui.stroke; ui.stroke = null;
+  if (stroke && drag.moved) { drawnPlay(stroke, e.shiftKey); return; }
   if (drag.moved) return;
-  const r = canvas.getBoundingClientRect();
-  const p = bridge.pick(e.clientX - r.left, e.clientY - r.top, r.width, r.height);
+  const p = pickAt(e);
   if (!p || ui.screen !== "battle") return;
   if (e.button === 2) orderAt(p.x, p.z); else clickAt(p.x, p.z, e.shiftKey);
 });
 const clampDist = (d: number) => Math.max(500, Math.min(9000, d));
+/** Pan the table: with the camera riding the flagship, this moves where it sits from the ship. */
+function pan(dx: number, dz: number) { if (ui.ride.on && ui.screen === "battle") { ui.ride.dx += dx; ui.ride.dz += dz; } bridge.view.x += dx; bridge.view.z += dz; }
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); bridge.view.dist = clampDist(bridge.view.dist * Math.exp(e.deltaY * 0.001)); }, { passive: false });
 
 const held = new Set<string>();
@@ -273,23 +329,25 @@ document.addEventListener("keydown", (e) => {
     case "b": flagshipOrder("broadside"); break;
     case "v": flagshipOrder("rake"); break;
     case "g": { const w = ui.w; const fr = w?.ships.find((s) => s.side === "navy" && s.kind === "frigate" && !s.dead); if (fr) { ui.sel.clear(); ui.sel.add(fr.id); if (e.shiftKey) laneOrder(); } break; }
-    case "f": { const w = ui.w; if (w) { ui.sel.clear(); ui.sel.add(w.flagship); const fl = flagship(w); if (fl) { bridge.view.x = fl.x; bridge.view.z = fl.z; } } break; }
+    case "f": { const w = ui.w; if (w) { ui.sel.clear(); ui.sel.add(w.flagship); ui.ride = { dx: innerHeight > innerWidth ? 350 : 700, dz: 100, on: true }; } break; }
     case " ": e.preventDefault(); power("foresight"); break;
     case "m": power("trance"); break;
-    case "p": ui.paused = !ui.paused; break;
+    case "n": power("voice"); break;
+    case "p": togglePen(); break;
     case "l": toggleLook(); break;
     case ".": cycleSpeed(); break;
     case "tab": e.preventDefault(); { const w = ui.w; if (w) { const rim = w.ships.filter((s) => s.side === "rim" && !s.dead); const i = rim.findIndex((s) => s.id === ui.target); if (rim.length) ui.target = rim[(i + 1) % rim.length].id; } } break;
   }
 });
 
-function power(p: "foresight" | "trance") {
+function power(p: Power) {
   const w = ui.w; if (!w) return;
   if (!usePower(w, p)) flash(`${POWER_NAME[p]} needs ${FOCUS[p]} focus.`);
-  else flash(p === "foresight" ? "Foresight: you see their next move, and the weak arcs of their shields." : "Fleet Trance: every pilot of yours flies better, theirs worse.");
+  else flash(p === "foresight" ? `${POWER_NAME.foresight}: you see their next move, and the weak arcs of their shields.` : p === "trance" ? `${POWER_NAME.trance}: every pilot of yours flies better, theirs worse.` : `${POWER_NAME.voice}: for ${FOCUS.voiceS} s your wings act on every order the moment you give it.`);
 }
+function togglePen() { ui.pen = !ui.pen; ui.stroke = null; $("pen").classList.toggle("on", ui.pen); flash(ui.pen ? (touchMode ? "Pen: drag a route for the picked wings, ending on a ship. A second route onto that ship within 10 s strikes with the first." : "Pen: drag a route for the picked wings, ending on a ship. Shift adds an arm that strikes with the last.") : "Pen away: dragging pans again."); }
 function toggleLook() { const l: Look = bridge.look === "cinema" ? "holo" : "cinema"; bridge.setLook(l); localStorage.setItem("fleet-commander.look", l); }
-function cycleSpeed() { ui.speed = ui.speed === 1 ? 2 : ui.speed === 2 ? 4 : ui.speed === 4 ? 0.5 : 1; $("speed").textContent = `${ui.speed}x`; }
+function cycleSpeed() { ui.speed = ui.speed === 1 ? 2 : ui.speed === 2 ? 4 : 1; $("speed").textContent = `${ui.speed}x`; }
 
 // ---------------------------------------------------------------- the HUD
 
@@ -307,11 +365,14 @@ function buildPlays() {
   const stance = (["attack", "neutral", "defend"] as Stance[]).map((s, i) => `<button type="button" class="ord" data-stance="${s}" title="${fleet ? ["Press", "Steady", "Shield"][i] + " doctrine" : STANCE_WORD[s] + " stance"} (${"ASD"[i]})" aria-label="${STANCE_WORD[s]}">${icon(STANCE_ICON[s])}</button>`).join("");
   const form = (["tight", "screen", "loose"] as Formation[]).map((f, i) => `<button type="button" class="ord" data-form="${f}" title="${FORM_WORD[f]} formation (${"ZXC"[i]})" aria-label="${FORM_WORD[f]}">${icon(FORM_ICON[f])}</button>`).join("");
   const shipOrders = `<button type="button" class="ord" data-ship="broadside" title="Flagship: broadside the marked ship (B)" aria-label="Broadside">${icon(Anchor)}</button><button type="button" class="ord" data-ship="rake" title="Flagship: rake the world's base from low orbit (V). Guns on the land are not on ships." aria-label="Rake">${icon(Flame)}</button><button type="button" class="ord" data-ship="lane" title="Interdictor: sit on the hyperspace lane (Shift+G). Reinforcements are dragged out on top of it, shields down." aria-label="Hold the lane">${icon(Magnet)}</button>`;
-  $("orders").innerHTML = `<div class="grp">${stance}</div><div class="grp">${form}</div><div class="grp">${shipOrders}</div>`;
+  const pen = `<button type="button" class="ord${ui.pen ? " on" : ""}" id="pen" title="Draw a play (P, or right-drag): drag a route for the picked wings, end it on a ship to attack. Shift adds an arm that strikes with the last." aria-label="Draw a play">${icon(PenLine)}</button>`;
+  $("orders").innerHTML = `<div class="grp">${pen}</div><div class="grp">${stance}</div><div class="grp">${form}</div><div class="grp">${shipOrders}</div>`;
   $("foresight").innerHTML = `${icon(Eye)}<span>${POWER_NAME.foresight}</span><kbd>Space</kbd>`;
-  $("foresight").title = `${POWER_NAME.foresight} (${FOCUS.foresight} focus): see the Rim admiral's next move for ${FOCUS.foresightS} s, and hit their shields' weak arcs harder.`;
+  $("foresight").title = `${POWER_NAME.foresight} (${FOCUS.foresight} focus): see the Compact admiral's next move for ${FOCUS.foresightS} s, and hit their shields' weak arcs harder.`;
   $("trance").innerHTML = `${icon(Sparkles)}<span>${POWER_NAME.trance}</span><kbd>M</kbd>`;
   $("trance").title = `${POWER_NAME.trance} (${FOCUS.trance} focus): for ${FOCUS.tranceS} s your pilots hit a third harder and theirs fly worse.`;
+  $("voice").innerHTML = `${icon(Megaphone)}<span>${POWER_NAME.voice}</span><kbd>N</kbd>`;
+  $("voice").title = `${POWER_NAME.voice} (${FOCUS.voice} focus): for ${FOCUS.voiceS} s your orders reach the wings at once, not ${COMMS_LAG} s later.`;
 }
 
 document.addEventListener("click", (e) => {
@@ -322,6 +383,7 @@ document.addEventListener("click", (e) => {
   if (b.dataset.form) setFormation(b.dataset.form as Formation);
   if (b.dataset.ship === "lane") laneOrder();
   else if (b.dataset.ship) flagshipOrder(b.dataset.ship as "broadside" | "rake");
+  if (b.id === "pen") togglePen();
   if (b.dataset.pick) { const id = Number(b.dataset.pick); if (!(e as MouseEvent).shiftKey) ui.sel.clear(); ui.sel.add(id); }
   if (b.dataset.sys && ui.sector) goSystem(b.dataset.sys);
 });
@@ -331,7 +393,9 @@ const bar = (v: number, cls: string) => `<span class="meter ${cls}"><i style="wi
 function orderWord(w: World, g: Wing): string {
   if (g.state === "launching") return w.t < g.launchAt ? "in the hangar" : "launching";
   if (g.state === "returning") return "heading home";
+  if (w.pending.some((p) => p.wings.includes(g.id))) return "orders on the radio";
   if (g.later) return `waiting ${Math.ceil(g.later.at - w.t)} s`;
+  if (g.route.length) return "flying your route";
   if (g.waypoint) return "to its flank";
   const o = g.order;
   if (o.k === "attack") return o.targetIs === "ship" ? `attacking ${ship(w, o.target)?.name ?? "?"}` : `hunting ${wing(w, o.target)?.name ?? "?"}`;
@@ -370,9 +434,10 @@ function drawHud(w: World) {
   $<HTMLElement>("focus-fill").style.width = `${w.focus}%`;
   $<HTMLButtonElement>("foresight").disabled = w.focus < FOCUS.foresight;
   $<HTMLButtonElement>("trance").disabled = w.focus < FOCUS.trance;
+  $<HTMLButtonElement>("voice").disabled = w.focus < FOCUS.voice;
+  $("voice").classList.toggle("live", w.t < w.voiceUntil);
   $("foresight").classList.toggle("live", w.t < w.foresightUntil);
   $("trance").classList.toggle("live", w.t < w.tranceUntil);
-  $("pause").innerHTML = icon(ui.paused ? PlayIcon : Pause);
   const list = rosterList(w);
   let html = shipCard(w, fl, "F");
   const fr = w.ships.find((s) => s.side === "navy" && s.kind === "frigate");
@@ -400,8 +465,10 @@ function overlay(w: World): Overlay {
   const stanceC: Record<Stance, number> = { attack: 0xff6a4a, neutral: 0x9fd8ff, defend: 0x7dffb0 };
   const lineFor = (g: Wing, color: number) => {
     const live = alive(g); if (!live.length || g.state === "launching") return;
+    let from: { x: number; z: number } = g;
+    for (const p of g.route) { o.lines.push({ x1: from.x, z1: from.z, x2: p.x, z2: p.z, color }); from = p; }
     const to = g.waypoint ?? (g.order.k === "patrol" ? g.order : g.order.k === "return" ? ship(w, g.home) : g.order.targetIs === "ship" ? ship(w, g.order.target) : wing(w, g.order.target));
-    if (to) o.lines.push({ x1: g.x, z1: g.z, x2: to.x, z2: to.z, color });
+    if (to) o.lines.push({ x1: from.x, z1: from.z, x2: to.x, z2: to.z, color });
     if (g.waypoint && g.order.k === "attack") { const t = ship(w, g.order.target); if (t) o.lines.push({ x1: g.waypoint.x, z1: g.waypoint.z, x2: t.x, z2: t.z, color: 0x445566 }); }
   };
   for (const id of ui.sel) {
@@ -417,8 +484,12 @@ function overlay(w: World): Overlay {
       if (s.auto) for (const g of wingsOf(w, s.id)) lineFor(g, stanceC[g.stance]);
     }
   }
-  // Foresight: the Rim's wings show where they are going.
+  // Foresight: the Compact's wings show where they are going.
   if (w.t < w.foresightUntil) for (const g of w.wings) if (g.side === "rim") lineFor(g, 0xff9a3d);
+  // The stroke being drawn, and drawn routes still on the radio.
+  const path = (pts: { x: number; z: number }[], color: number) => { for (let i = 1; i < pts.length; i++) o.lines.push({ x1: pts[i - 1].x, z1: pts[i - 1].z, x2: pts[i].x, z2: pts[i].z, color }); };
+  if (ui.stroke) path(ui.stroke, 0xf2f6ff);
+  for (const p of w.pending) if (p.k === "route") path(p.route, 0x5f7890);
   // The lane's mouth, always.
   o.rings.push({ x: w.lane.x, z: w.lane.z, r: 320, color: 0x6a5acd });
   return o;
@@ -473,10 +544,13 @@ function frame(now: number) {
     }
     // Arrow keys pan.
     const u = bridge.unitsPerPixel(canvas.clientHeight) * 600 * real;
-    if (held.has("ArrowLeft")) bridge.view.x -= u;
-    if (held.has("ArrowRight")) bridge.view.x += u;
-    if (held.has("ArrowUp")) bridge.view.z -= u;
-    if (held.has("ArrowDown")) bridge.view.z += u;
+    if (held.has("ArrowLeft")) pan(-u, 0);
+    if (held.has("ArrowRight")) pan(u, 0);
+    if (held.has("ArrowUp")) pan(0, -u);
+    if (held.has("ArrowDown")) pan(0, u);
+    // The camera rides the flagship (T8), easing after it so the table doesn't jitter.
+    const fl = flagship(w);
+    if (ui.ride.on && fl) { const k = Math.min(1, real * 3); bridge.view.x += (fl.x + ui.ride.dx - bridge.view.x) * k; bridge.view.z += (fl.z + ui.ride.dz - bridge.view.z) * k; }
     if (now - ui.hudAt > 120) { ui.hudAt = now; drawHud(w); }
     if (w.outcome && !ui.paused) { ui.paused = true; setTimeout(() => w.outcome && ui.screen === "battle" && endBattle(w), 2500); }
   }
@@ -503,9 +577,9 @@ const harness = {
   state: () => {
     const w = ui.w;
     return {
-      screen: ui.screen, kind: ui.kind, look: bridge.look, paused: ui.paused, speed: ui.speed,
+      screen: ui.screen, kind: ui.kind, look: bridge.look, paused: ui.paused, speed: ui.speed, pen: ui.pen,
       battle: w ? {
-        t: w.t, mode: w.mode, outcome: w.outcome, why: w.why, focus: Math.round(w.focus), foresight: w.t < w.foresightUntil, trance: w.t < w.tranceUntil,
+        t: w.t, mode: w.mode, outcome: w.outcome, why: w.why, focus: Math.round(w.focus), foresight: w.t < w.foresightUntil, trance: w.t < w.tranceUntil, voice: w.t < w.voiceUntil, radio: w.pending.length,
         planet: { name: w.planet.name, base: Math.round(w.planet.base), of: Math.round(w.planet.baseMax) },
         rim: { temper: w.rimTemper, doctrine: w.rimDoctrine, intent: w.rimIntent },
         selected: [...ui.sel], target: ui.target,
@@ -531,13 +605,15 @@ const harness = {
   lane: () => laneOrder(),
   /** Order the selection at a sim point (what a right-click does). */
   orderAt: (x: number, z: number) => orderAt(x, z),
-  power: (p: "foresight" | "trance") => power(p),
+  power: (p: Power) => power(p),
+  /** Draw a play through sim points [x, z][] for the picked wings (what a right-drag does); `join` adds an arm. */
+  draw: (pts: [number, number][], join = false) => { drawnPlay(pts.map(([x, z]) => ({ x, z })), join); return ui.banner.text; },
   /** Run the battle `seconds` ahead at once (paused or not). */
   run: (seconds: number) => { const w = ui.w; if (!w) return null; for (let i = 0; i < seconds / DT && !w.outcome; i++) step(w, brains); drawHud(w); return harness.state().battle; },
   look: (l: Look) => bridge.setLook(l),
   pause: (on = true) => { ui.paused = on; },
   /** Point the camera at a sim point, `dist` out. */
-  camera: (x: number, z: number, dist?: number) => { bridge.view.x = x; bridge.view.z = z; if (dist) bridge.view.dist = dist; },
+  camera: (x: number, z: number, dist?: number) => { ui.ride.on = false; bridge.view.x = x; bridge.view.z = z; if (dist) bridge.view.dist = dist; },
 };
 window.fleetCommander = harness;
 
@@ -545,8 +621,8 @@ const PREFIX = "fleet_commander";
 const words = (id: string) => $(id).textContent?.trim() ?? "";
 addCommands([
   howToPlay(PREFIX, () => ({ goal: words("goal"), desktop: words("desktop"), phone: words("phone"), first: "Press Quick battle." })),
-  { name: `${PREFIX}_start`, title: "Start a quick battle", group: "Play", description: "Start the quick battle (one destroyer, six wings, a Rim base). Answers with the state.", execute: () => harness.quick(1) },
-  { name: `${PREFIX}_state`, title: "Look at the battle", group: "Play", description: "The battle now: time, outcome, focus, the planet's base, every ship and wing with its order, the Rim admiral's temper and doctrine, and the campaign sector.", annotations: { readOnlyHint: true }, execute: () => harness.state() },
+  { name: `${PREFIX}_start`, title: "Start a quick battle", group: "Play", description: "Start the quick battle (one destroyer, six wings, a Compact base). Answers with the state.", execute: () => harness.quick(1) },
+  { name: `${PREFIX}_state`, title: "Look at the battle", group: "Play", description: "The battle now: time, outcome, focus, the planet's base, every ship and wing with its order, the Compact admiral's temper and doctrine, and the campaign sector.", annotations: { readOnlyHint: true }, execute: () => harness.state() },
 ]);
 mountPalette();
 
@@ -561,11 +637,11 @@ async function boot() {
   $("to-menu").addEventListener("click", () => show("menu"));
   $("quit").addEventListener("click", () => { if (ui.kind === "campaign" && ui.w && ui.sector) { ui.w.outcome = "loss"; ui.w.why = "You ordered the retreat."; endBattle(ui.w); } else show("menu"); });
   $("sector-quit").addEventListener("click", () => show("menu"));
-  $("pause").addEventListener("click", () => { ui.paused = !ui.paused; });
   $("speed").addEventListener("click", cycleSpeed);
   $("look").addEventListener("click", toggleLook);
   $("foresight").addEventListener("click", () => power("foresight"));
   $("trance").addEventListener("click", () => power("trance"));
+  $("voice").addEventListener("click", () => power("voice"));
   $("look").innerHTML = icon(Layers);
   $("quit").innerHTML = icon(LogOut);
   $("sector-quit").innerHTML = icon(MapIcon);

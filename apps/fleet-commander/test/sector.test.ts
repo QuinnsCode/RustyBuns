@@ -35,7 +35,7 @@ test("a campaign: seize a mine and supply follows, chase every base down, and th
   expect(Object.keys(s.bases)).toEqual([]);
 });
 
-test("left alone, the Rim finishes its base on Ilk and spreads; beaten, the fleet limps home and refits", () => {
+test("left alone, the Compact finishes its base on Ilk and spreads; beaten, the fleet limps home and refits", () => {
   const s = newSector(5);
   for (let i = 0; i < 9; i++) rimTurn(s);
   expect(s.bases.ilk).toBeGreaterThan(0);
