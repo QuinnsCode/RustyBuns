@@ -132,6 +132,9 @@ Each one is the owner's to make; the game runs on the default today. The page to
 ## Balance today (a climb, not settled)
 
 `autoCommander` (a by-the-book player) wins every quick battle it is given; a fleet with no orders loses every one.
-Over 12 seeds: torpedo run is the safest (92% hull left, 20 craft lost), feint the fastest (3:17), pincer and hammer
-split shields twice as often, hunt alone rarely wins (8 of 12). The Rim's fighters die too early; its carriers should
-relaunch. Numbers live in `HULL`, `CRAFT` and `TORP` at the top of `src/sim/world.ts`.
+Hangars hold spare craft (`Ship.reserve`): a wing wiped out is rebuilt from them 20 s later, so the Rim's carriers keep
+launching and your own spares are a campaign resource that refits buy back. Over 12 seeds, autoCommander calling one
+play all battle: every play wins, each at a different cost. Feint is fastest (4:07) with the most hull left (67%),
+torpedo run lands the most torpedoes (68) at 4:22, hammer and anvil and pincer are slow (5:16, 5:38) but split shields
+more, and hunt keeps the flagship safest (75%) by killing their bombers. Numbers live in `HULL`, `CRAFT` and `TORP` at
+the top of `src/sim/world.ts`, and the spares in `src/sim/scenarios.ts`.

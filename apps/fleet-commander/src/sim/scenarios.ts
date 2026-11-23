@@ -6,10 +6,12 @@ import type { Role } from "../names.ts";
 import { addShip, addWing, emptyWorld, nextCall, rand, say, type Wave, type World } from "./world.ts";
 
 /** What the fleet brings in from the campaign: the flagship's hull (0..1) and its wings' craft. */
-export interface Fleet { hull: number; wings: { role: Role; craft: number }[] }
+/** `reserve`: spare craft in the flagship's hangar, to rebuild a wing that is wiped out. */
+export interface Fleet { hull: number; reserve: number; wings: { role: Role; craft: number }[] }
 
 export const FULL_FLEET: Fleet = {
   hull: 1,
+  reserve: 10,
   wings: [
     { role: "interceptor", craft: 6 }, { role: "interceptor", craft: 6 },
     { role: "bomber", craft: 5 }, { role: "bomber", craft: 5 },
@@ -42,6 +44,7 @@ export function battle(spec: BattleSpec): World {
 
   const fl = addShip(w, "navy", "destroyer", "Relentless", -1300, 0, 0, false);
   fl.hull = fl.hullMax * fleet.hull;
+  fl.reserve = fleet.reserve;
   w.flagship = fl.id;
   const fr = addShip(w, "navy", "frigate", "Warden", -1250, 320, 0, false);
   fr.order = { k: "hold" };
@@ -51,11 +54,13 @@ export function battle(spec: BattleSpec): World {
   if (spec.kind === "assault") {
     const bastion = addShip(w, "rim", "station", "Bastion of " + w.planet.name, 980, -380, Math.PI, true);
     addWing(w, bastion, "interceptor", nextCall(w, "rim"), 5, 3);
+    bastion.reserve = 5 * st;
   }
   const cruiser = addShip(w, "rim", "cruiser", "Defiance", 720, 160, Math.PI, true);
   addWing(w, cruiser, "escort", nextCall(w, "rim"), 4, 6);
   if (st >= 2 || spec.kind !== "strike") {
     const carrier = addShip(w, "rim", "carrier", "Hearthfire", 1080, 480, Math.PI, true);
+    carrier.reserve = 6 * st;
     addWing(w, carrier, "interceptor", nextCall(w, "rim"), 5, 5);
     addWing(w, carrier, "bomber", nextCall(w, "rim"), 4, 9);
     if (st >= 3) addWing(w, carrier, "bomber", nextCall(w, "rim"), 4, 14);
@@ -86,12 +91,13 @@ export function armada(seed: number): World {
   w.limit = 600;
   const sov = addShip(w, "navy", "dreadnought", "Sovereign", -1900, 0, 0, false);
   w.flagship = sov.id;
+  sov.reserve = 8;
   addWing(w, sov, "interceptor", nextCall(w, "navy"), 6, 1);
   addWing(w, sov, "escort", nextCall(w, "navy"), 6, 2);
   const names = ["Relentless", "Vigil", "Austere"];
   names.forEach((n, i) => {
     const d = addShip(w, "navy", "destroyer", n, -1500, (i - 1) * 620, 0, true);
-    d.boss = sov.id; d.doctrine = "steady";
+    d.boss = sov.id; d.doctrine = "steady"; d.reserve = 6;
     (["interceptor", "bomber", "escort"] as Role[]).forEach((r, j) => addWing(w, d, r, nextCall(w, "navy"), r === "bomber" ? 5 : 5, 3 + i + j * 1.5));
   });
   const fr = addShip(w, "navy", "frigate", "Warden", -1600, 900, 0, false);
@@ -106,6 +112,7 @@ export function armada(seed: number): World {
   });
   [[1500, 600], [1650, -700]].forEach(([x, z], i) => {
     const c = addShip(w, "rim", "carrier", ["Hearthfire", "Open Hand"][i], x, z, Math.PI, true);
+    c.reserve = 12;
     addWing(w, c, "interceptor", nextCall(w, "rim"), 5, 5 + i);
     addWing(w, c, "bomber", nextCall(w, "rim"), 4, 9 + i);
     addWing(w, c, "bomber", nextCall(w, "rim"), 4, 15 + i);

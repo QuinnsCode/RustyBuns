@@ -80,7 +80,7 @@ export function settle(s: Sector, outcome: "win" | "loss" | "draw", fleet: Fleet
   } else if (outcome === "loss") {
     s.defeats++;
     s.at = "aster";
-    s.fleet = { hull: 0.35, wings: fleet.wings.map((g) => ({ ...g, craft: Math.max(1, Math.floor(g.craft / 2)) })) };
+    s.fleet = { hull: 0.35, reserve: Math.floor(fleet.reserve / 2), wings: fleet.wings.map((g) => ({ ...g, craft: Math.max(1, Math.floor(g.craft / 2)) })) };
     s.log.unshift(`Turn ${s.turn}: beaten at ${here.name}. The flagship limps back to Aster Gate.`);
     if (s.defeats >= 3) { s.outcome = "lost"; s.log.unshift("Three defeats. Command is taken from you."); return; }
   } else s.log.unshift(`Turn ${s.turn}: no decision at ${here.name}. The Rim holds on.`);
@@ -89,13 +89,13 @@ export function settle(s: Sector, outcome: "win" | "loss" | "draw", fleet: Fleet
 
 /** What it costs to bring the fleet back to full here: a craft is 1 supply, 5% of hull is 1. Half at the yard. */
 export function refitCost(s: Sector) {
-  const craft = s.fleet.wings.reduce((a, g, i) => a + (FULL_FLEET.wings[i].craft - g.craft), 0);
+  const craft = s.fleet.wings.reduce((a, g, i) => a + (FULL_FLEET.wings[i].craft - g.craft), 0) + (FULL_FLEET.reserve - s.fleet.reserve);
   const hull = Math.ceil(((1 - s.fleet.hull) * 100) / 5);
   const k = s.at === "aster" ? 0.5 : 1;
   return { craft, hull, cost: Math.ceil((craft + hull) * k) };
 }
 
-/** Spend supply to refit, as far as it goes: craft first, then hull. Only on a world you hold. */
+/** Spend supply to refit, as far as it goes: the wings' craft first, then the hangar's spares, then hull. Only on a world you hold. */
 export function refit(s: Sector): boolean {
   if (!s.held.includes(s.at)) return false;
   const k = s.at === "aster" ? 0.5 : 1;
@@ -103,6 +103,7 @@ export function refit(s: Sector): boolean {
   for (let i = 0; i < s.fleet.wings.length; i++) {
     while (s.fleet.wings[i].craft < FULL_FLEET.wings[i].craft && s.supply >= k) { s.fleet.wings[i].craft++; s.supply -= k; spent = true; }
   }
+  while (s.fleet.reserve < FULL_FLEET.reserve && s.supply >= k) { s.fleet.reserve++; s.supply -= k; spent = true; }
   while (s.fleet.hull < 1 && s.supply >= k) { s.fleet.hull = Math.min(1, s.fleet.hull + 0.05); s.supply -= k; spent = true; }
   s.supply = Math.round(s.supply * 10) / 10;
   if (spent) s.log.unshift(`Turn ${s.turn}: refit at ${sys(s.at).name}.`);

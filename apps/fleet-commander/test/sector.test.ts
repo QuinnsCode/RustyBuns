@@ -49,6 +49,6 @@ test("left alone, the Rim finishes its base on Ilk and spreads; beaten, the flee
   t.supply = 100;
   expect(refit(t)).toBe(true);
   expect(t.fleet).toEqual(FULL_FLEET);
-  // Half price at the yard: 16 craft and 13 steps of hull cost about 15 supply, not 29.
-  expect(100 - t.supply).toBeLessThan(16);
+  // Half price at the yard: 16 craft, 5 spares and 13 steps of hull cost about 17 supply, not 34.
+  expect(100 - t.supply).toBeLessThan(19);
 });

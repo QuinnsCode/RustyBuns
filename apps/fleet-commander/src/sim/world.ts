@@ -49,6 +49,8 @@ export interface Ship {
   boss: number;
   /** Dazed (pulled out of hyperspace short): no guns until then. */
   stunUntil: number;
+  /** Spare craft in the hangar: a wing wiped out is rebuilt from them and relaunched. */
+  reserve: number;
 }
 
 export interface Craft { id: number; x: number; z: number; vx: number; vz: number; hp: number; dead: boolean; torps: number; cd: number; foe: number }
@@ -67,6 +69,8 @@ export interface Wing {
   size: number;
   /** When its leader last spoke, so the comms don't stutter. */
   saidAt: number;
+  /** When its last craft died. */
+  wipedAt: number;
 }
 
 export interface Torp { id: number; side: Side; x: number; z: number; vx: number; vz: number; target: number; ttl: number; dead: boolean }
@@ -144,7 +148,7 @@ export function addShip(w: World, side: Side, kind: ShipKind, name: string, x: n
   const h = HULL[kind];
   const s: Ship = {
     id: w.nextId++, side, kind, name, x, z, a, v: 0, hull: h.hull, hullMax: h.hull, shield: h.shield, shieldMax: h.shield,
-    lastHit: -99, hits: [], splitUntil: 0, order: { k: "hold" }, gunCd: rand(w) * 2, dead: false, auto, doctrine: "steady", focus: 0, boss: 0, stunUntil: 0,
+    lastHit: -99, hits: [], splitUntil: 0, order: { k: "hold" }, gunCd: rand(w) * 2, dead: false, auto, doctrine: "steady", focus: 0, boss: 0, stunUntil: 0, reserve: 0,
   };
   w.ships.push(s);
   return s;
@@ -155,7 +159,7 @@ export function addWing(w: World, home: Ship, role: Role, name: string, size: nu
   const g: Wing = {
     id: w.nextId++, side: home.side, role, name, home: home.id, craft: [], stance: "neutral", formation: role === "bomber" ? "tight" : "screen",
     order: { k: "escort", target: home.id, targetIs: "ship" }, approach: "direct", x: home.x, z: home.z,
-    state: "launching", launchAt: at, group: 0, groupAt: 0, staged: true, waypoint: null, later: null, size, saidAt: -99,
+    state: "launching", launchAt: at, group: 0, groupAt: 0, staged: true, waypoint: null, later: null, size, saidAt: -99, wipedAt: 0,
   };
   w.wings.push(g);
   return g;
@@ -235,6 +239,7 @@ function hitCraft(w: World, g: Wing, c: Craft, dmg: number) {
   fx(w, "boom", g.side, c.x, c.z);
   if (g.side === "rim") { w.stats.rimCraftLost++; w.focus = Math.min(100, w.focus + 2.5); }
   else w.stats.navyCraftLost++;
+  if (!alive(g).length) g.wipedAt = w.t;
   if (!alive(g).length && g.state === "out") say(w, g.side, g.name, g.side === "navy" ? `${g.name} wing is gone.` : "We're finished, scatter!");
 }
 
@@ -487,7 +492,16 @@ function stepWing(w: World, g: Wing, dt: number) {
   if (g.state === "docked") return;
   if (g.state === "launching") return launch(w, g);
   const live = alive(g);
-  if (!live.length) return;
+  if (!live.length) {
+    // A wing wiped out is rebuilt from its ship's spare craft 20 s later, while the ship lives.
+    const home = ship(w, g.home);
+    if (home && home.reserve >= 2 && g.craft.length && w.t - g.wipedAt > 20) {
+      g.size = Math.min(g.size, home.reserve); home.reserve -= g.size;
+      g.craft = []; g.state = "launching"; g.launchAt = w.t + 2; g.waypoint = null; g.later = null;
+      g.order = { k: "escort", target: home.id, targetIs: "ship" };
+    }
+    return;
+  }
   const st = CRAFT[g.role];
   // Out of torpedoes: bombers go home to rearm.
   if (g.role === "bomber" && g.state === "out" && live.every((c) => c.torps === 0) && ship(w, g.home)) {

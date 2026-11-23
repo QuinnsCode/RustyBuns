@@ -74,7 +74,7 @@ function flash(text: string) { ui.banner = { text, until: performance.now() + 45
 /** The fleet as it leaves a battle: the flagship's hull and its wings' living craft. */
 function fleetAfter(w: World): Fleet {
   const fl = w.ships.find((s) => s.id === w.flagship)!;
-  return { hull: Math.max(0.2, fl.hull / fl.hullMax), wings: wingsOf(w, fl.id).map((g) => ({ role: g.role, craft: alive(g).length })) };
+  return { hull: Math.max(0.2, fl.hull / fl.hullMax), reserve: fl.reserve, wings: wingsOf(w, fl.id).map((g) => ({ role: g.role, craft: alive(g).length })) };
 }
 
 function endBattle(w: World) {
@@ -440,7 +440,7 @@ function drawSector() {
   svg.innerHTML = lanes + worlds;
   const here = sys(s.at), rc = refitCost(s);
   const canRefit = s.held.includes(s.at) && rc.cost > 0;
-  $("sector-stats").textContent = `Turn ${s.turn} · Supply ${s.supply} · Hull ${Math.round(s.fleet.hull * 100)}% · Craft ${s.fleet.wings.reduce((a, g) => a + g.craft, 0)}/32 · Bases ${Object.keys(s.bases).length}`;
+  $("sector-stats").textContent = `Turn ${s.turn} · Supply ${s.supply} · Hull ${Math.round(s.fleet.hull * 100)}% · Craft ${s.fleet.wings.reduce((a, g) => a + g.craft, 0)}/32 + ${s.fleet.reserve} spare · Bases ${Object.keys(s.bases).length}`;
   const moves = near.map((id) => { const t = threatAt(s, id); const what = t ? (t.kind === "assault" ? `assault a base (strength ${t.strength})` : t.kind === "strike" ? "strike before the base is done" : "seize the mine from its picket") : "a quiet jump"; return `<button type="button" class="jump" data-sys="${id}"><b>${esc(sys(id).name)}</b><small>${esc(what)}</small></button>`; }).join("");
   $("sector-here").innerHTML = s.outcome
     ? `<h3>${s.outcome === "won" ? "The sector is yours" : "The sector is lost"}</h3><p>${s.outcome === "won" ? "Command gives you the Sovereign: try the Armada." : "Start again from the menu."}</p>`
