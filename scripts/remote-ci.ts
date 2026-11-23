@@ -160,11 +160,18 @@ const teed = (cmd: string) => `{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"
 // reads the builder's battery.
 /** A builder slot's name, as the claim prints it. */
 const SLOT = /^slot-[\w-]+$/;
+// Taking a dead run's lock back ends what that run left running first: anything whose command line names the slot's
+// folder (wrangler, workerd and esbuild from its node_modules, a hung `git-receive-pack '.../slot-3'`) or that sits in
+// it (its `bun test`). They outlived their runs on Bob by days (#5337).
+const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN}); do P="$PWD/\${l#locks/}"; `
+  + `pkill -9 -f -- "$P(/|'|[[:space:]]|$)" 2>/dev/null; `
+  + `lsof -a -d cwd -Fpn 2>/dev/null | awk -v P="$P" '/^p/ { p = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == P || index(n, P "/") == 1) print p }' | xargs kill -9 2>/dev/null; `
+  + `rmdir "$l"; done; `;
 export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string; batt: Battery }> {
   const write = rec ? `printf '%s' ${q(JSON.stringify(rec))} > "runs/$d.json"; : > "runs/$d.log"; ` : "";
   // a lock is a folder; anything else there is junk (a heartbeat's touch after release once left a file at locks/slot-1, and
   // every claim after it read rmdir's complaint as its slot name and ran nowhere, over and over, for hours: 2026-11-22)
-  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN} -exec rmdir {} + 2>/dev/null; `
+  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; ${REAP}`
     + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);

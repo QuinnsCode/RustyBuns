@@ -82,7 +82,7 @@ test("the pool never runs more than the cap and returns the worst code", async (
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
 // Each run leaves a record its menu bar reads: who and what while it runs, then how it ended.
-test("a run waits until Bob serves, takes back a dead run's slot, sends the working tree, shows on his menu, outlasts losing him mid-run, and a stray file in his locks doesn't jam a slot", async () => {
+test("a run waits until Bob serves, takes back a dead run's slot and ends what it left running, sends the working tree, shows on his menu, outlasts losing him mid-run, and a stray file in his locks doesn't jam a slot", async () => {
   const root = mkdtempSync(`${tmpdir()}/remote-ci-`), work = `${root}/work`, home = `${root}/home`;
   const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   await Bun.write(`${work}/package.json`, `{"name":"w"}`);
@@ -92,6 +92,8 @@ test("a run waits until Bob serves, takes back a dead run's slot, sends the work
   mkdirSync(`${home}/builder/locks/slot-1`);
   const dead = new Date(Date.now() - 10 * 60_000);
   utimesSync(`${home}/builder/locks/slot-1`, dead, dead);
+  // ... and left a server running from the slot's node_modules (a `wrangler dev` that outlived its run by days, #5337)
+  const leftover = Bun.spawn(["sh", "-c", "while :; do sleep 1; done", `${home}/builder/slot-1/node_modules/.bin/wrangler`], { stdout: "ignore" });
   // The first ssh fails (Bob off) and the valve is shut, so the run waits for the next one; a fake pmset says AC.
   const ssh = `${root}/ssh`, pmset = `${root}/bin/pmset`;
   await Bun.write(ssh, `#!/bin/sh\n[ -f "${root}/up" ] || { touch "${root}/up"; exit 255; }\nshift\nexport PATH="${root}/bin:$PATH"\ncd "${home}" && exec sh -c "$*"\n`);
@@ -109,6 +111,7 @@ test("a run waits until Bob serves, takes back a dead run's slot, sends the work
     // Mid-run, the slot is locked and its record is there: what the menu bar shows.
     expect(await main(["run", ".", "sh", "-c", `cat new.txt; cp -R ${builder} ${root}/mid`], work)).toBe(0);
     expect(await Bun.file(`${builder}/slot-1/new.txt`).text()).toBe("hello");
+    expect(leftover.signalCode ?? await Promise.race([leftover.exited.then(() => leftover.signalCode), Bun.sleep(2000).then(() => "still running")])).toBe("SIGKILL");
     const mid = readRuns(`${root}/mid`);
     expect(mid.running.map((r) => [r.slot, r.who, r.cmd, r.last])).toEqual([["slot-1", "byte", expect.stringContaining(".: sh -c cat new.txt"), "hello"]]);
     expect(menu(mid, mid.running[0]!.started + 75_000).split("\n").slice(0, 3)).toEqual(["Bob: 1 running", "---", expect.stringMatching(/^slot-1 {2}byte {2}1m 15s \|/)]);
