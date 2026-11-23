@@ -65,7 +65,7 @@ test.skipIf(!hasChrome)("deck A through channel 2: kill, filter, crossfader assi
   expect(await loudest("master[0]")).toBeLessThan(0.01);
   await page(`qdecks.assignX(1, "off")`);
   await until("A back in the master on THRU", "qdecks.state().meters.master[0] > 0.05");
-  expect(await page<string>(`document.querySelector(".mx-strip:nth-child(2) .mx-x button:nth-child(2)").classList.contains("on") ? "lit" : "dark"`)).toBe("lit");
+  await until("THRU lit on channel 2 (the face draws on the next frame)", `document.querySelector(".mx-strip:nth-child(2) .mx-x button:nth-child(2)").classList.contains("on")`);
 
   // a phone: the mixer takes the width (its strips scroll inside it if they must), the booth never sideways
   const phone = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
