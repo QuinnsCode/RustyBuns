@@ -21,6 +21,8 @@ fn sidestep(a: Archetype) -> f64 {
 }
 const PUNISH: f64 = 60.0;
 const RUN_TICKS: f64 = 40.0;
+const REEL_STUN: f64 = 24.0;
+const REEL_TICKS: f64 = 30.0;
 const WAIT_CHANCE: f64 = 0.5;
 const WAIT_CLOSING: f64 = 0.5;
 const WAIT_BACK: f64 = 20.0;
@@ -89,6 +91,7 @@ pub struct Bot {
     punish: f64,
     back: f64,
     away: f64,
+    reel: f64,
     leave: bool,
     dir: f64,
     orbit: f64,
@@ -117,6 +120,7 @@ impl Bot {
             punish: 0.0,
             back: 0.0,
             away: 0.0,
+            reel: 0.0,
             leave: false,
             dir,
             orbit,
@@ -137,6 +141,11 @@ impl Bot {
         let side = self.side;
         let me = &m.f[side];
         let o = &m.f[foe_of(m, side)];
+        // The first tick we see a big blow that landed on us (bot.ts REEL).
+        if me.state == State::Stun && me.hurt == 1.0 && me.stun >= REEL_STUN {
+            self.reel = REEL_TICKS;
+            self.punish = 0.0;
+        }
         self.flip = !self.flip;
         if self.hold_for > 0.0 {
             self.hold_for -= 1.0;
@@ -358,6 +367,24 @@ impl Bot {
                 if !me.exhausted && me.stamina >= me.b.dash_cost && c.bot.rnd.float() < dodge(me.c.archetype) {
                     c.press(me, Key::Dash);
                 }
+                return c.i;
+            }
+        }
+
+        // Reeling from a big blow (bot.ts): back out from the hitter while it is close, then circle away round it.
+        if c.bot.reel > 0.0 {
+            c.bot.reel -= 1.0;
+            if me.on_ground {
+                let rad = if d < reach + RING + 1.5 { -0.8 } else { 0.0 };
+                let mut s = c.bot.dir;
+                if hypot(me.pos.x - (dz / d) * s * 3.0 - (dx / d) * 2.0, me.pos.z + (dx / d) * s * 3.0 - (dz / d) * 2.0) > ARENA_RADIUS - 1.5 {
+                    s = -s;
+                }
+                let vx = (-dz / d) * s + (dx / d) * rad;
+                let vz = (dx / d) * s + (dz / d) * rad;
+                let n = hypot(vx, vz);
+                c.i.mx = vx / n;
+                c.i.mz = vz / n;
                 return c.i;
             }
         }
