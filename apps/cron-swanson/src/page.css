@@ -9,6 +9,7 @@
   --cloud: rgba(255, 255, 255, .95); --cloud2: rgba(255, 236, 170, .55);
   --scan: rgba(217, 130, 43, .28); --scan-line: #d9822b;
   --shadow: 0 12px 40px rgba(150, 110, 40, .14);
+  --bus: rgba(59, 42, 30, .04); --bolt: #fff3b0; --digital: ui-monospace, monospace;
   font: 14px/1.45 ui-rounded, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -21,6 +22,7 @@
     --cloud: rgba(150, 120, 102, .5); --cloud2: rgba(242, 166, 90, .14);
     --scan: rgba(255, 210, 160, .26); --scan-line: #ffd9a8;
     --shadow: 0 14px 50px rgba(0, 0, 0, .35);
+    --bus: rgba(255, 236, 214, .035); --bolt: #fff6c8;
   }
 }
 :root[data-theme="dark"] {
@@ -32,10 +34,11 @@
   --cloud: rgba(150, 120, 102, .5); --cloud2: rgba(242, 166, 90, .14);
   --scan: rgba(255, 210, 160, .26); --scan-line: #ffd9a8;
   --shadow: 0 14px 50px rgba(0, 0, 0, .35);
+  --bus: rgba(255, 236, 214, .035); --bolt: #fff6c8;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; color: var(--ink); background: radial-gradient(1200px 500px at 50% -10%, var(--bg2), transparent 70%), var(--bg); padding-bottom: 150px; }
+body { margin: 0; min-height: 100vh; overflow-x: hidden; color: var(--ink); background: radial-gradient(1200px 500px at 50% -10%, var(--bg2), transparent 70%), var(--bg); padding-bottom: 110px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--soft); border-radius: 999px; padding: 6px 14px; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, box-shadow .15s, transform .1s; }
 button:hover { background: var(--line); }
@@ -69,40 +72,92 @@ em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums
 @keyframes drift { from { transform: translateX(-12vw); } 50% { transform: translateX(12vw); } to { transform: translateX(-12vw); } }
 @media (prefers-reduced-motion: reduce) { .cloud { animation: none; } }
 
-/* ---- frame ---- */
-.topbar { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; }
-.brand { display: flex; gap: 10px; align-items: center; font-size: 16px; }
+/* ---- frame: the busses fill the screen; + bottom left, views bottom right, the gear top right ---- */
+.topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; padding: 14px 22px; }
+.brand { display: flex; gap: 10px; align-items: center; font-family: var(--digital); font-weight: var(--digital-weight, 300); font-size: 15px; letter-spacing: .02em; }
+.brand b { font-weight: inherit; }
 .logo { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 45%, transparent); }
-.toggles { display: flex; gap: 2px; }
-.gate { position: relative; z-index: 1; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 14px; margin: 0 auto 16px; max-width: 640px; }
-.stage { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; padding: 0 22px; max-width: 1440px; margin: 0 auto; }
-.main { display: grid; gap: 20px; min-width: 0; align-content: start; }
+button.round { border-radius: 50%; padding: 9px; }
+.gate { position: relative; z-index: 3; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 14px; margin: 0 auto 16px; max-width: 640px; }
+.view { position: relative; z-index: 1; padding: 0 22px; max-width: 1600px; margin: 0 auto; }
+.digital, .num, .job time, .preview span, .cal small, .hint { font-family: var(--digital); font-weight: var(--digital-weight, 300); }
 
+/* ---- busses ---- */
+.busses { position: relative; }
+.roll { display: block; width: 100%; }
+.bus-icons { position: absolute; left: 22px; top: 0; width: 30px; pointer-events: none; }
+.bus-icon { position: absolute; left: 0; display: grid; place-items: center; width: 30px; color: var(--lane); filter: drop-shadow(0 0 8px var(--lane)); }
+.empty { display: grid; justify-items: center; gap: 10px; color: var(--muted); padding: 18vh 0; }
+.tip { position: fixed; z-index: 6; pointer-events: none; display: grid; gap: 2px; padding: 8px 12px; border-radius: 14px; background: var(--solid); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 13px; max-width: 220px; }
+.tip span { color: var(--muted); font-size: 12px; }
+
+/* ---- calendar ---- */
+.calendar { padding: 14px 16px; display: grid; gap: 10px; }
+.calendar .bar { justify-content: center; }
+.calendar .bar b { font-family: var(--digital); font-weight: var(--digital-weight, 300); min-width: 150px; text-align: center; }
+.cal { display: grid; gap: 4px; }
+.cal-head, .cal-body { display: grid; grid-template-columns: 44px repeat(7, minmax(0, 1fr)); }
+.cal-day { display: grid; justify-items: center; padding: 4px 0; color: var(--muted); }
+.cal-day b { font-family: var(--digital); font-weight: var(--digital-weight, 300); font-size: 20px; color: var(--ink); }
+.cal-day.today b { color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 0 10px; }
+.cal-body { height: calc(100vh - 290px); min-height: 360px; overflow-y: auto; position: relative; }
+.cal-rail, .cal-col { position: relative; height: 1440px; }
+.cal-hour { height: 60px; border-top: 1px solid var(--line); }
+.cal-hour small { position: relative; top: -8px; font-size: 10px; color: var(--muted); background: var(--panel); padding-right: 4px; }
+.cal-col { border-left: 1px solid var(--line); background: repeating-linear-gradient(to bottom, transparent 0 59px, var(--line) 59px 60px); }
+.cal-chip { position: absolute; height: 22px; padding: 0 8px; font-size: 11px; justify-content: flex-start; gap: 5px; overflow: hidden; white-space: nowrap; border: 1px solid color-mix(in srgb, var(--lane) 45%, transparent); background: color-mix(in srgb, var(--lane) 20%, var(--solid)); box-shadow: 0 0 12px color-mix(in srgb, var(--lane) 25%, transparent); }
+.cal-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--lane); flex: none; }
+.cal-chip span { overflow: hidden; text-overflow: ellipsis; }
+.cal-chip em { font-size: 10px; margin-left: auto; }
+.cal-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+/* ---- dock ---- */
+.dock { position: fixed; inset: auto 0 0 0; z-index: 4; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 22px 18px; pointer-events: none; }
+.dock > * { pointer-events: auto; }
+.fab { width: 62px; height: 62px; border-radius: 50%; justify-content: center; padding: 0; background: var(--solid); box-shadow: var(--shadow); }
+.fab.primary { box-shadow: 0 6px 30px color-mix(in srgb, var(--accent) 55%, transparent); }
+.yule { width: 192px; height: 120px; image-rendering: pixelated; pointer-events: none !important; margin-bottom: -18px; filter: drop-shadow(0 0 26px rgba(255, 140, 40, .45)); }
+
+/* ---- pop-ups ---- */
+.pop { position: fixed; z-index: 5; padding: 12px; display: grid; gap: 10px; background: var(--solid); backdrop-filter: none; animation: rise .18s ease-out; }
+.pop-views { right: 22px; bottom: 92px; }
+.pop-gear { right: 22px; top: 62px; width: 260px; }
+.seg.icons button { padding: 9px 12px; }
+.set { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: center; color: var(--muted); }
+.set .seg { justify-content: flex-start; }
+.toggle { justify-content: center; }
+.toggle.on { background: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--ink); }
+.toggle.wide { justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keys { margin: 0; font-size: 12px; text-align: center; }
+kbd { font-family: var(--digital); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+
+/* ---- toasts: a reminder that went off, waiting for a tick or a snooze ---- */
+.toasts { position: fixed; z-index: 5; top: 14px; left: 50%; transform: translateX(-50%); width: min(400px, calc(100vw - 160px)); display: grid; gap: 8px; }
+.toasts:empty { display: none; }
+.toast { padding: 6px 6px 6px 14px; display: flex; align-items: center; gap: 6px; border-radius: 999px; background: var(--solid); backdrop-filter: none; border-color: color-mix(in srgb, var(--pick) 55%, transparent); box-shadow: var(--shadow), 0 0 30px color-mix(in srgb, var(--pick) 30%, transparent); animation: land .45s cubic-bezier(.2, 1.4, .4, 1); }
+.toast b { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast .primary { padding: 7px 12px; }
+.toast small { color: var(--muted); font-family: var(--digital); font-weight: var(--digital-weight, 300); }
+.toast-acts { display: flex; gap: 4px; justify-content: flex-end; }
+@keyframes land { from { transform: translateY(-16px) scale(.96); opacity: 0; } }
+
+/* ---- the + dialog ---- */
+.adder #quick { padding: 22px; display: grid; gap: 14px; }
+.what { font-size: 22px; padding: 14px 18px; border-radius: 18px; font-weight: 550; }
+.line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.line.off { opacity: .35; pointer-events: none; }
+.ico { color: var(--muted); display: inline-flex; }
+.n { width: 84px; font-size: 22px; text-align: center; padding: 8px; }
+#when { width: auto; flex: 1; min-width: 200px; }
+.hint { margin: 0; min-height: 1.2em; color: var(--muted); font-size: 13px; }
+#quick footer { display: flex; align-items: center; gap: 8px; }
+button.big { padding: 12px 22px; }
 /* ---- chips ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips:empty { display: none; }
 .chip { padding: 5px 12px; font-size: 13px; }
 .chip.on { background: var(--ink); color: var(--solid); border-color: transparent; font-weight: 600; }
 .chip.on em { color: inherit; opacity: .7; }
-
-/* ---- the big add ---- */
-.quick { display: grid; gap: 14px; padding: 22px 24px; margin-top: 18px; }
-.what { font-size: 22px; padding: 14px 18px; border-radius: 18px; background: var(--soft); font-weight: 550; }
-.what::placeholder { color: var(--muted); font-weight: 450; }
-.pick { display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-.pick:last-of-type { grid-template-columns: 90px minmax(0, 1fr); }
-.ask { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-#when { width: auto; }
-.quick.no-time #when, .quick.no-time #when-chips { opacity: .35; pointer-events: none; }
-.go { display: flex; align-items: center; gap: 10px; }
-.hint { flex: 1; margin: 0; color: var(--muted); font-size: 13px; }
-button.big { font-size: 17px; padding: 12px 26px; }
-
-/* ---- the roll ---- */
-.roll-card { padding: 16px 18px 12px; }
-.roll-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-.roll { display: block; width: 100%; }
-.empty-roll { text-align: center; padding: 30px 0; margin: 0; }
 
 /* ---- all alarms ---- */
 .all { padding: 16px 18px; display: grid; gap: 12px; }
@@ -139,19 +194,6 @@ button.big { font-size: 17px; padding: 12px 26px; }
 button.ghost.done { color: var(--accent); }
 .empty { text-align: center; color: var(--muted); padding: 40px 0; }
 
-/* ---- toasts: fired reminders waiting for a tick or a snooze ---- */
-.toasts { position: sticky; top: 16px; align-self: start; display: grid; gap: 12px; padding: 4px; }
-.toast { padding: 14px 16px; display: grid; gap: 6px; border-color: color-mix(in srgb, var(--pick) 55%, transparent); box-shadow: var(--shadow), 0 0 30px color-mix(in srgb, var(--pick) 25%, transparent); animation: land .45s cubic-bezier(.2, 1.4, .4, 1); }
-.toast-top { display: flex; gap: 8px; align-items: center; }
-.toast-top b { font-size: 15px; }
-.toast small { color: var(--muted); }
-.toast-acts { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
-.toast-acts .primary { padding: 6px 14px; }
-@keyframes land { from { transform: translateX(30px) scale(.96); opacity: 0; } }
-
-/* ---- the fire ---- */
-.yule { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: 192px; height: 120px; image-rendering: pixelated; pointer-events: none; z-index: 2; filter: drop-shadow(0 0 26px rgba(255, 140, 40, .45)); }
-
 /* ---- dialog: a dream card bordered in its alarm's colour ---- */
 dialog { border: 1.5px solid var(--pick, var(--accent)); border-radius: 26px; padding: 0; width: min(640px, calc(100vw - 32px)); background: var(--solid); color: var(--ink); box-shadow: 0 30px 80px rgba(0, 0, 0, .35), 0 0 60px color-mix(in srgb, var(--pick, var(--accent)) 30%, transparent); }
 dialog[open] { animation: rise .25s ease-out; }
@@ -184,25 +226,26 @@ legend { font-size: 12px; font-weight: 650; padding: 0 4px; }
 .preview span { color: var(--muted); }
 .error { color: var(--bad); margin: 0; min-height: 1em; }
 
-@media (max-width: 1000px) {
-  .stage { grid-template-columns: minmax(0, 1fr); }
-  .toasts { position: fixed; top: auto; bottom: 130px; right: 12px; width: min(340px, calc(100vw - 24px)); max-height: 50vh; overflow-y: auto; padding: 24px; margin: -20px; z-index: 3; }
-}
+
 @media (max-width: 640px) {
-  .stage, .topbar { padding: 0 12px; }
-  .topbar { padding-top: 12px; padding-bottom: 12px; }
-  .quick { padding: 16px; margin-top: 8px; }
-  .what { font-size: 18px; }
-  .pick, .pick:last-of-type { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  #when { width: 100%; }
-  .go { flex-wrap: wrap; } .hint { flex-basis: 100%; }
-  .go .big { flex: 1; justify-content: center; }
+  .view, .topbar { padding-left: 12px; padding-right: 12px; }
+  .bus-icons { left: 12px; }
+  .dock { padding: 0 12px 12px; }
+  .fab { width: 54px; height: 54px; }
+  .yule { width: 128px; height: 80px; margin-bottom: -12px; }
+  .pop-views { right: 12px; bottom: 76px; }
+  .pop-gear { right: 12px; }
+  .cal-head, .cal-body { grid-template-columns: 30px repeat(7, minmax(0, 1fr)); }
+  .cal-chip span { display: none; }
   .bar { flex-wrap: wrap; } .search { flex: 1 1 100%; order: 3; }
   .job { grid-template-columns: auto minmax(0, 1fr) auto; }
   .job .acts { grid-column: 2 / -1; justify-content: flex-end; }
   .grid { grid-template-columns: 1fr; }
-  .yule { width: 128px; height: 80px; }
-  body { padding-bottom: 100px; }
 }
-/* A blur inside the scrolling stack paints a grey box behind it: toasts get a solid card instead. */
-.toast { background: var(--solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* The shared Cmd/Ctrl+K palette, in this page's colours and font, with a filled selection (no side stripe). */
+:root { --rb-pal-bg: var(--solid); --rb-pal-fg: var(--ink); --rb-pal-line: var(--line); --rb-pal-hover: color-mix(in srgb, var(--accent) 18%, transparent); --rb-pal-accent: var(--accent); }
+.rb-pal-sheet { border-radius: 26px; border-width: 1px; box-shadow: var(--shadow); }
+.rb-pal-list li { border-radius: 14px; }
+.rb-pal-list li.on { box-shadow: none; }
+.rb-pal-list .rb-pal-group, .rb-pal-note, .rb-pal-out, .rb-pal kbd { font-family: var(--digital); }

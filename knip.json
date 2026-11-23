@@ -6,6 +6,7 @@
         "src/page.html",
         "src/page.ts",
         "src/sync.ts",
+        "src/cli.ts",
         "test/**/*.test.ts"
       ],
       "project": [
