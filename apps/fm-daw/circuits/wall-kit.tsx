@@ -144,8 +144,8 @@ export function wallBoard(m: Module) {
 }
 
 /** A chip of a known package, by name. */
-export function Chip({ name, part, ...rest }: { name: string; part: keyof typeof PINS } & Record<string, unknown>) {
-  return <chip name={name} manufacturerPartNumber={part} footprint={FOOTPRINT[part]} pinLabels={PINS[part]} {...rest} />;
+export function Chip({ name, part }: { name: string; part: keyof typeof PINS }) {
+  return <chip name={name} manufacturerPartNumber={part} footprint={FOOTPRINT[part]} pinLabels={PINS[part]} />;
 }
 const PINS = { TL072, TL074, LM13700, NE555, CD4017 };
 

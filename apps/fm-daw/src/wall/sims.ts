@@ -24,9 +24,10 @@ import lfoBoard from "../../circuits/wall-lfo.circuit.json";
 import mixBoard from "../../circuits/wall-mix.circuit.json";
 import outBoard from "../../circuits/wall-out.circuit.json";
 
-const BOARDS: Record<string, unknown> = { seq: seqBoard, vco: vcoBoard, vcf: vcfBoard, vca: vcaBoard, env: envBoard, lfo: lfoBoard, mix: mixBoard, out: outBoard };
+/** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard]]);
 /** Every module kind the wall has. */
-export const KINDS = Object.keys(BOARDS);
+export const KINDS = [...BOARDS.keys()];
 
 /** A TL07x's output swing on +-12 V, and the supplies. */
 export const RAIL = 11;
@@ -56,7 +57,7 @@ function board(id: string): Board {
   const p = panel(id);
   const decouple = ["U1", "U2", "U3", "U4"].flatMap((u) => [`C${u}P`, `C${u}N`]);
   const chips = id === "seq" ? ["U1", "U2"] : []; // the 555 and the 4017 aren't parts the solver models; their numbers are read off
-  return readBoard(BOARDS[id], { leaveOut: [...p.jacks.map((j) => j.part), "JP1", "DP1", "DP2", "CP1", "CP2", ...decouple, ...chips] });
+  return readBoard(BOARDS.get(id), { leaveOut: [...p.jacks.map((j) => j.part), "JP1", "DP1", "DP2", "CP1", "CP2", ...decouple, ...chips] });
 }
 
 const part = (b: Board, name: string): BoardPart => {
