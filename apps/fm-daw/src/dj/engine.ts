@@ -4,12 +4,13 @@
 // where you are; held: it plays from the mark; let go: back to the mark), four hot cues, loops on the beat grid, beat
 // jumps, a jog nudge and sync. Deck A plays into the mixer's channel 2 and deck B into 3; what the mixer's master puts
 // out goes to your speakers (at the booth level) and to `stream` (a MediaStream: what the room hears of your set).
+import { pick, readTempo, settle, type Tempo, type TempoFrom } from "./tags.ts";
 import { beatPhase, detectGrid, inLoop, keyOf, loopAt, phaseJump, snap, syncRate, type Grid, type Key } from "./analyze.ts";
 import { DECK_CHANNEL, Mixer, type ChannelKnob } from "./mixer.ts";
 
 export type Side = 0 | 1;
-/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key. */
-export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null; key: Key | null }
+/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key, and where the grid came from (tags.ts). */
+export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null; key: Key | null; from?: TempoFrom }
 /** Where another deck is, for sync: its grid, its rate, whether it plays and where (it may be on someone else's machine). */
 export interface Beside { grid: Grid | null; rate: number; playing: boolean; pos: number }
 
@@ -156,8 +157,8 @@ export class Decks {
   get xfader(): number { return this.mixer.xfader; }
 
   /** Decode a file the DJ picked, find its beat, and put it on deck `side`. */
-  async load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track> {
-    const t = await this.decode(name, bytes);
+  async load(side: Side, name: string, bytes: ArrayBuffer, known?: Tempo | null): Promise<Track> {
+    const t = await this.decode(name, bytes, known);
     this.decks[side].load(t);
     return t;
   }
@@ -165,14 +166,16 @@ export class Decks {
   fromSamples(name: string, mono: Float32Array, rate: number): Track {
     const buffer = this.ctx.createBuffer(1, mono.length, rate);
     buffer.copyToChannel(Float32Array.from(mono), 0);
-    return { name, buffer, mono, grid: detectGrid(mono, rate), key: keyOf(mono, rate) };
+    const grid = detectGrid(mono, rate);
+    return { name, buffer, mono, grid, key: keyOf(mono, rate), from: grid ? "ear" : undefined };
   }
-  /** Decode a file and find its beat, for the library. */
-  async decode(name: string, bytes: ArrayBuffer): Promise<Track> {
+  /** Decode a file and find its beat (from its tags or `known`, a dropped collection's, before listening), for the library. */
+  async decode(name: string, bytes: ArrayBuffer, known?: Tempo | null): Promise<Track> {
+    const told = pick(readTempo(new Uint8Array(bytes)), known); // before decoding, which takes the bytes
     const buffer = await this.ctx.decodeAudioData(bytes);
     const mono = new Float32Array(buffer.length);
     for (let c = 0; c < buffer.numberOfChannels; c++) { const d = buffer.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i]! += d[i]! / buffer.numberOfChannels; }
-    return { name, buffer, mono, grid: detectGrid(mono, buffer.sampleRate), key: keyOf(mono, buffer.sampleRate) };
+    return { name, buffer, mono, ...settle(told, () => detectGrid(mono, buffer.sampleRate)), key: keyOf(mono, buffer.sampleRate) };
   }
   /** Put a track already decoded on a deck (the library's). */
   put(side: Side, t: Track) { this.decks[side].load(t); }

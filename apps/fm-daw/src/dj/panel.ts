@@ -19,6 +19,7 @@ import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { connectMidiJog, Jog, playerFace } from "./player-panel.ts";
 import { button, el, svg } from "./dom.ts";
+import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
 /** The waveforms' colours: deck A blue, deck B orange, what's played greyed, the cue and the four hot cues. */
 const LOOKS_DECK = { wave: ["#4aa8ff", "#ff9a3c"] as const, played: "#5b5f68", cue: "#ffd23c", hot: ["#ff4a6a", "#4affa0", "#4ab8ff", "#d84aff"] };
@@ -86,6 +87,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   /** Someone else's deck on `side`, or null when it's yours or free. */
   const far = (side: Side) => room?.booth.sides[side] ?? null;
   const shelf: Shelf[] = [];
+  /** Tempos from collection files the DJ dropped, by file name. */
+  const known = new Map<string, Tempo>();
   /** Each track's peaks at a few resolutions (player.ts), so the close-up draws a few hundred bars at any zoom. */
   const fine = new Map<Track, Level[]>(), over = new Map<Track, Float32Array>();
   const root = el("section", { id: "dj", role: "dialog", "aria-label": "The decks" });
@@ -137,7 +140,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   row.append(players[0].box, mixer.root, players[1].box);
 
   // ---- the library
-  const pick = el("input", { type: "file", accept: "audio/*", multiple: "", hidden: "" });
+  const pick = el("input", { type: "file", accept: "audio/*,.xml,.nml,.dat,.ext", multiple: "", hidden: "" });
   const add = button(`${ICON.upload}<span>Add music</span>`, "Add music from this computer (mp3, wav, m4a, ogg, flac): it stays on this computer", "dj-add");
   add.addEventListener("click", () => pick.click());
   pick.addEventListener("change", () => { for (const f of pick.files ?? []) void fromFile(null, f); pick.value = ""; });
@@ -161,6 +164,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       const li = el("li"), n = el("span", { title: s.track.name }), bpm = el("small");
       n.textContent = s.track.name;
       bpm.textContent = s.track.grid ? `${s.track.grid.bpm} BPM` : "no beat found";
+      if (s.track.from) bpm.title = `Tempo: ${FROM_LABEL[s.track.from]}`;
       const toA = button("A", `Load on deck A`), toB = button("B", `Load on deck B`);
       toA.addEventListener("click", () => put(0, s.track)); toB.addEventListener("click", () => put(1, s.track));
       li.append(n, bpm, toA, toB);
@@ -190,18 +194,27 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   async function load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track> {
     if (!canLoad(side)) throw new Error(`deck ${side ? "B" : "A"} is busy`);
     flash(`Reading ${name}…`);
-    const t = await decks.load(side, name, bytes).catch((e: unknown) => { flash(`Couldn't read ${name}: ${e instanceof Error ? e.message : "not a sound file this browser knows"}`); throw e; });
+    const t = await decks.load(side, name, bytes, known.get(fileKey(name))).catch((e: unknown) => { flash(`Couldn't read ${name}: ${e instanceof Error ? e.message : "not a sound file this browser knows"}`); throw e; });
     shelve(t);
     room?.booth.sides.splice(side, 1, null);
     flash(t.grid ? `${name}: ${t.grid.bpm} BPM${t.key ? `, ${t.key.camelot} ${t.key.name}` : ""}` : `${name}: no steady beat found, so sync and loops are off for it`);
     return t;
   }
   async function fromFile(side: Side | null, f: File) {
+    // a collection file from DJ software: tempos for tracks by name, now and for what comes later
+    if (/\.(xml|nml|dat|ext)$/i.test(f.name)) {
+      const got = readCollection(new Uint8Array(await f.arrayBuffer()));
+      for (const [k, v] of got) known.set(k, v);
+      for (const { track: t } of shelf) { const k = got.get(fileKey(t.name)); if (k && t.from !== "grid") Object.assign(t, settle(k, () => t.grid)); }
+      drawList();
+      flash(got.size ? `${f.name}: tempos for ${got.size} track${got.size === 1 ? "" : "s"}` : `${f.name}: no tempos in it`);
+      return;
+    }
     // a library add goes on whichever deck is empty, else just into the library
     const empty = decks.decks.findIndex((d, i) => !d.track && !far(i === 0 ? 0 : 1));
     const to = side ?? (empty >= 0 ? (empty as Side) : null);
     if (to === null) {
-      const t = await decks.decode(f.name, await f.arrayBuffer()).catch(() => null);
+      const t = await decks.decode(f.name, await f.arrayBuffer(), known.get(fileKey(f.name))).catch(() => null);
       if (!t) { flash(`Couldn't read ${f.name}`); return; }
       shelve(t);
       flash(t.grid ? `${f.name}: ${t.grid.bpm} BPM` : `${f.name}: no steady beat found`);
