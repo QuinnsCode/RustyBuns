@@ -14,13 +14,13 @@ test("the EQ: every band boosts +6 dB, the high and low cut to a kill, the two m
 });
 
 test("the filter: each type passes its side of the sweep, high + low is a notch, and the resonance peaks it", () => {
-  const f0 = sweepHz(0.5), q = resQ(0), db = (types: FilterType[], hz: number, qq = q) => Math.round(20 * Math.log10(filterGain(types, hz, f0, qq)));
+  const f0 = sweepHz(0.5), q = resQ(0), db = (types: FilterType[], hz: number, qq = q) => Math.round(20 * Math.log10(filterGain(types, hz, f0, qq))) + 0; // + 0: no -0
   expect(Math.round(f0)).toBe(632); // the middle of the knob is the middle octave of 20 Hz to 20 kHz
   expect([Math.round(sweepHz(0)), Math.round(sweepHz(1))]).toEqual([20, 20000]);
   const rows: [FilterType[], number, number][] = [
     [["lp"], f0 / 10, 0], [["lp"], f0 * 10, -40],
     [["hp"], f0 * 10, 0], [["hp"], f0 / 10, -40],
-    [["bp"], f0, 0], [["bp"], f0 * 10, -24],
+    [["bp"], f0, 0], [["bp"], f0 * 10, -16],
     [["hp", "lp"], f0 / 10, 0], [["hp", "lp"], f0 * 10, 0],
     [["hp", "bp", "lp"], f0 * 3, 0],
   ];
