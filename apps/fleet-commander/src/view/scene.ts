@@ -9,8 +9,8 @@ import { ENGINE, craftGeometry, craftMaterial, dotTexture, planetTexture, shipMo
 export type Look = "cinema" | "holo";
 
 const FIRE: Record<Side, { gun: number; bolt: number; pdc: number }> = {
-  navy: { gun: 0xff7a3d, bolt: 0xffb070, pdc: 0xfff0a0 },
-  rim: { gun: 0x6fe3ff, bolt: 0x9ff0ff, pdc: 0xd8fff4 },
+  navy: { gun: 0xbfe0ff, bolt: 0x7fbfff, pdc: 0xf0f7ff },
+  rim: { gun: 0xff7a2a, bolt: 0xffa04a, pdc: 0xffe0b0 },
 };
 
 interface Streak { x1: number; z1: number; x2: number; z2: number; born: number; life: number; len: number; width: number; color: THREE.Color; y: number }
@@ -30,7 +30,7 @@ export class Bridge {
   readonly camera = new THREE.PerspectiveCamera(45, 1, 10, 40000);
   /** Where the camera looks (sim x, z) and how far out it sits. */
   view = { x: -600, z: 0, dist: 2600, tilt: 0.95, yaw: 0 };
-  look: Look = "cinema";
+  look: Look = "holo";
   private ships = new Map<number, THREE.Group>();
   private crafts = new Map<string, THREE.InstancedMesh>();
   private planet: THREE.Mesh;
@@ -105,6 +105,7 @@ export class Bridge {
     this.lineMesh.frustumCulled = false; s.add(this.lineMesh);
     this.overlayMesh = new THREE.LineSegments(this.overlayGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75, depthWrite: false }));
     this.overlayMesh.frustumCulled = false; s.add(this.overlayMesh);
+    this.setLook(this.look);
   }
 
   resize(w: number, h: number) {
@@ -253,7 +254,7 @@ export class Bridge {
       for (let i = 0; i < 5; i++) this.streaks.push({ x1: f.x1, z1: f.z1, x2: f.x2, z2: f.z2, born: now + i * 0.04, life: Math.max(0.2, d / 900), len: 9, width: 1.6, color: col(c.pdc), y: 8 });
     } else if (f.k === "bolt") this.streaks.push({ ...f, born: now + Math.random() * 0.5, life: Math.max(0.3, d / 1800), len: 90, width: 7, color: col(c.bolt), y: 6 });
     else if (f.k === "rake") {
-      this.streaks.push({ ...f, born: now + Math.random() * 0.6, life: 0.45, len: 110, width: 9, color: col(0xffa24a), y: 20 });
+      this.streaks.push({ ...f, born: now + Math.random() * 0.6, life: 0.45, len: 110, width: 9, color: col(0xbfe0ff), y: 20 });
       // The surface under the shot: the planet sits half below the battle plane.
       const p = this.p, dd = Math.hypot(f.x2 - p.x, f.z2 - p.z), y = -p.r * 0.55 + Math.sqrt(Math.max(0, p.r * p.r - dd * dd));
       this.flashes.push({ x: f.x2, z: f.z2, y, born: now + 0.5, life: 2.2, size: 140, color: col(0xff7a2a) });

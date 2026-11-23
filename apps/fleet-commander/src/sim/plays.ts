@@ -3,7 +3,7 @@
 // captain AI calls the same plays for its own wings, and an admiral calls ship plays for its captains: one
 // vocabulary at every level of command.
 import type { Role } from "../names.ts";
-import { alive, approachPoint, nearestShip, ship, wing, type Approach, type Formation, type Ship, type Stance, type Wing, type World, type WingOrder } from "./world.ts";
+import { COMMS_LAG, alive, approachPoint, nearestShip, say, ship, wing, type Approach, type Formation, type Ship, type Stance, type Wing, type World, type WingOrder } from "./world.ts";
 
 export type PlayId = "torpedo-run" | "pincer" | "hammer-anvil" | "screen" | "hunt" | "feint" | "recall";
 
@@ -28,7 +28,7 @@ export const PLAYS: Play[] = [
 export const playById = (id: PlayId) => PLAYS.find((p) => p.id === id)!;
 
 function order(g: Wing, o: WingOrder, stance: Stance, formation: Formation, approach: Approach = "direct") {
-  g.order = o; g.stance = stance; g.formation = formation; g.approach = approach; g.later = null;
+  g.order = o; g.stance = stance; g.formation = formation; g.approach = approach; g.later = null; g.route = [];
   if (g.state === "returning") g.state = "out";
 }
 
@@ -135,5 +135,59 @@ export function runFleetPlay(w: World, id: PlayId, ships: Ship[], target = 0): s
     case "recall":
       for (const s of ss) for (const g of wingsOf(w, s.id)) if (g.state === "out") { g.order = { k: "return" }; g.state = "returning"; }
       return "All wings, home to your decks.";
+  }
+}
+
+/** An order on the radio: a play for wings (or, `fleet`, for destroyers), or a route drawn on the table. Plain data
+ *  (ids and points), so a lockstep game can send it as it is. */
+export type Pending =
+  | { at: number; k: "play"; id: PlayId; wings: number[]; ships: number[]; target: number; fleet: boolean }
+  | { at: number; k: "route"; wings: number[]; route: { x: number; z: number }[]; end: WingOrder; group: number };
+
+/** When an order given now lands: `COMMS_LAG` s from now, or at once under Command Voice. */
+export const landsAt = (w: World) => (w.t < w.voiceUntil ? w.t : w.t + COMMS_LAG);
+
+/** Put an order on the radio. One that lands now (Command Voice) runs at once. */
+export function send(w: World, p: Pending) {
+  if (p.at <= w.t) deliver(w, p); else w.pending.push(p);
+}
+
+/** The brain that hands the wings their orders as they arrive. */
+export function courier(w: World) {
+  if (!w.pending.length) return;
+  const due = w.pending.filter((p) => p.at <= w.t);
+  if (!due.length) return;
+  w.pending = w.pending.filter((p) => p.at > w.t);
+  for (const p of due) deliver(w, p);
+}
+
+const ACK = ["Copy.", "Wilco.", "Understood, moving.", "On our way.", "Heard you, going."];
+
+function deliver(w: World, p: Pending) {
+  const ws = p.wings.map((id) => wing(w, id)).filter((g): g is Wing => !!g);
+  if (p.k === "route") { runRoute(w, ws, p.route, p.end, p.group); }
+  else if (p.fleet) { runFleetPlay(w, p.id, p.ships.map((id) => ship(w, id)).filter((s): s is Ship => !!s), p.target); return; }
+  else {
+    const line = runPlay(w, p.id, ws, p.target);
+    // The target died on the way, or no wing is left to fly it.
+    if (line.includes(" needs a target") || line.startsWith("No wings")) { say(w, "navy", "Tactical", line); return; }
+  }
+  const lead = ws.find((g) => alive(g).length);
+  if (lead) say(w, "navy", lead.name, ACK[(lead.id + w.groupN) % ACK.length]);
+}
+
+/** A route drawn on the table: the wings fly through its points in order, then do `end` (attack, escort, patrol).
+ *  An attack waits at the route's last point until every wing of its `group` is there (draw two arms with the same
+ *  group and they strike together, like a pincer you drew yourself). */
+export function runRoute(w: World, wings: Wing[], route: { x: number; z: number }[], end: WingOrder, group: number) {
+  for (const g of wings) {
+    if (g.craft.length && !alive(g).length) continue;
+    if (g.state === "returning") g.state = "out";
+    g.order = end; g.later = null; g.approach = "direct";
+    const pts = route.map((p) => ({ x: p.x, z: p.z }));
+    if (end.k === "attack" && end.targetIs === "ship" && pts.length) {
+      g.waypoint = pts.pop()!; g.staged = false; g.group = group; g.route = pts;
+      g.groupAt = pts.length ? 1e9 : w.t;
+    } else { g.waypoint = null; g.staged = true; g.group = 0; g.route = pts; }
   }
 }

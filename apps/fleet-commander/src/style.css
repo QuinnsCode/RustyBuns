@@ -1,5 +1,5 @@
 /* The command deck: dark glass panels with a cold blue edge over the battle, numbers in a fixed-width face so
-   clocks and counts never jitter. The Rim's words come in amber. */
+   clocks and counts never jitter. Ours speak white-blue, the Compact's words come in orange. */
 :root {
   --ink: #d9e6f2; --dim: #7f93a8; --edge: rgba(120, 190, 255, 0.28); --glass: rgba(6, 14, 24, 0.72);
   --navy: #9fd8ff; --rim: #ffb36b; --good: #7dffb0; --bad: #ff6a4a; --gold: #e8c66a;
@@ -119,13 +119,19 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--dim); border: 1px 
 #sector-log { list-style: none; padding: 0; margin: 0; font-size: 13.5px; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
 #sector-log li:first-child { color: var(--ink); }
 
+/* ---- middling screens: the three gifts show their icons and keys; the names are in the tooltips */
+@media (max-width: 1560px) {
+  .power span { display: none; }
+  #focus .bar { width: 100px; }
+}
+
 /* ---- small screens: the roster is a strip along the top, comms go quiet */
 @media (max-width: 820px) {
   #roster { width: auto; right: 10px; flex-direction: row; overflow-x: auto; max-height: none; top: 8px; left: 8px; right: 8px; gap: 4px; }
   .card { min-width: 132px; padding: 4px 6px; }
   .card small { display: none; }
   #top { top: 84px; gap: 6px; padding: 3px 6px; max-width: calc(100vw - 16px); }
-  #clock { font-size: 14px; min-width: 10ch; }
+  #clock { font-size: 14px; min-width: 12ch; }
   #focus .bar { width: 48px; }
   .power { padding: 3px 6px; }
   .power span, .power kbd, .play kbd { display: none; }

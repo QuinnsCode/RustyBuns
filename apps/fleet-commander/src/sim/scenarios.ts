@@ -1,6 +1,6 @@
 // The battles: who is where when the fleet drops out of hyperspace. Every battle is fought in a planet's gravity well,
-// where stations and bases sit, with a hyperspace lane's mouth off to one side that the Rim's reinforcements come
-// through. The quick battle is the assault on a Rim base; the Armada puts you a level up, on a dreadnought whose
+// where stations and bases sit, with a hyperspace lane's mouth off to one side that the Compact's reinforcements come
+// through. The quick battle is the assault on a Compact base; the Armada puts you a level up, on a dreadnought whose
 // destroyers each run their own wings.
 import type { Role } from "../names.ts";
 import { addShip, addWing, emptyWorld, nextCall, rand, say, type Wave, type World } from "./world.ts";
@@ -32,7 +32,7 @@ export interface BattleSpec {
 
 const TEMPERS: World["rimTemper"][] = ["zealot", "pragmatist", "cagey"];
 
-/** A battle over a world. assault: a Rim base under a bastion; seize: a resource world with a picket; strike: a base
+/** A battle over a world. assault: a Compact base under a bastion; seize: a resource world with a picket; strike: a base
  *  still being built (no bastion yet, its base half done). */
 export function battle(spec: BattleSpec): World {
   const w = emptyWorld(spec.seed);
@@ -73,12 +73,12 @@ export function battle(spec: BattleSpec): World {
   if (st >= 2) waves.push({ at: 170, done: false, ships: [{ kind: "corvette", wings: ["escort"] }, { kind: "corvette", wings: [] }] });
   if (spec.kind === "seize") waves.length = 1;
   w.waves = waves;
-  say(w, "navy", "Helm", `Out of hyperspace over ${w.planet.name}. The Rim is waiting.`);
+  say(w, "navy", "Helm", `Out of hyperspace over ${w.planet.name}. The Compact is waiting.`);
   say(w, "navy", "Sensors", `A hyperspace lane opens to the south. Expect them to reinforce through it in ${waves[0].at} seconds.`);
   return w;
 }
 
-/** The quick battle: a full fleet against a Rim base. */
+/** The quick battle: a full fleet against a Compact base. */
 export const quick = (seed: number) => battle({ seed, kind: "assault", strength: 2 });
 
 /** One level up: a dreadnought whose three destroyers are captained for you. You set each one's target and

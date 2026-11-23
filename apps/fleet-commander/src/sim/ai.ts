@@ -1,9 +1,9 @@
 // The minds on the other side of the table, and the ones under you. A captain runs one ship and its wings with a
-// doctrine (press, steady, shield) by calling plays from the same playbook you use. The Rim admiral sets its captains'
+// doctrine (press, steady, shield) by calling plays from the same playbook you use. The Compact admiral sets its captains'
 // doctrines from its temper and what you are doing: rake its world and a zealot throws hulls in the way, a
 // pragmatist turns every gun on your flagship. Foresight shows you its next call before it makes it.
 import { HULL, alive, flagship, nearestShip, say, ship, type Doctrine, type Ship, type World } from "./world.ts";
-import { runPlay, wingsOf, type PlayId } from "./plays.ts";
+import { courier, runPlay, wingsOf, type PlayId } from "./plays.ts";
 
 const THINK = 3;
 const plays = new WeakMap<World, Map<number, PlayId>>();
@@ -43,7 +43,7 @@ export function captain(w: World, s: Ship) {
     : s.doctrine === "press" ? (bombersOut ? null : w.t % 30 < 15 ? "pincer" : "torpedo-run")
     : bombersOut ? "hunt" : "hammer-anvil";
   if (!play) return;
-  // A shield captain only screens a ship it is guarding; a Rim shield captain screens the station.
+  // A shield captain only screens a ship it is guarding; a Compact shield captain screens the station.
   const target = play === "screen" || play === "hunt" ? 0 : focus.id;
   if (s.side === "rim" && play === "screen") {
     const station = w.ships.find((o) => !o.dead && o.side === "rim" && o.kind === "station");
@@ -57,14 +57,14 @@ export function captain(w: World, s: Ship) {
   if (s.side === "navy" && lastPlay.get(s.id) !== play) { lastPlay.set(s.id, play); say(w, "navy", s.name, line); }
 }
 
-/** What the Rim admiral will do next, in plain words, for Foresight. */
+/** What the Compact admiral will do next, in plain words, for Foresight. */
 function intentLine(d: Doctrine, temper: World["rimTemper"]) {
   const when = temper === "zealot" ? "If you rake the world, every hull they have will throw itself in the way." : temper === "pragmatist" ? "If you rake the world, they will forget the land and broadside your flagship." : "They will hold back, bleed you with bombers, and wait for the lane.";
   const now = d === "press" ? "Now: all guns on your flagship, bombers on its flanks." : d === "shield" ? "Now: hulls between you and the planet, fighters guarding the bastion." : "Now: trading at range, fighters hunting your bombers.";
   return `${now} ${when}`;
 }
 
-/** The Rim admiral: picks its doctrine from its temper and the battle, and hands it to every Rim captain. */
+/** The Compact admiral: picks its doctrine from its temper and the battle, and hands it to every Compact captain. */
 export function rimAdmiral(w: World) {
   if (w.t < w.rimNext) return;
   w.rimNext = w.t + 2;
@@ -78,7 +78,7 @@ export function rimAdmiral(w: World) {
   else if (hurt < 1) d = "shield";
   if (d !== w.rimDoctrine) {
     w.rimDoctrine = d;
-    say(w, "rim", "Rim admiral", d === "shield" ? "Protect the world! Put yourselves between them and our people." : d === "press" ? "All ships, their flagship. Break it and they break." : "Hold at range. Bleed them.");
+    say(w, "rim", "Compact admiral", d === "shield" ? "Protect the world! Put yourselves between them and our people." : d === "press" ? "All ships, their flagship. Break it and they break." : "Hold at range. Bleed them.");
   }
   w.rimIntent = intentLine(d, w.rimTemper);
   for (const s of w.ships) if (s.side === "rim" && !s.dead) s.doctrine = d;
@@ -89,13 +89,13 @@ export function navyCaptains(w: World) {
   for (const s of w.ships) if (s.side === "navy" && s.auto && !s.dead) captain(w, s);
 }
 
-/** Every Rim captain. */
+/** Every Compact captain. */
 export function rimCaptains(w: World) {
   for (const s of w.ships) if (s.side === "rim" && !s.dead) captain(w, s);
 }
 
-/** The brains a battle runs every tick: the Rim side, and your captains when you have any. */
-export const brains = [rimAdmiral, rimCaptains, navyCaptains];
+/** The brains a battle runs every tick: the Compact side, and your captains when you have any. */
+export const brains = [courier, rimAdmiral, rimCaptains, navyCaptains];
 
 /** A ship's guns in range of what. Used by the bridge to show who can hit whom. */
 export const inRange = (a: Ship, b: Ship) => Math.hypot(a.x - b.x, a.z - b.z) <= HULL[a.kind].range;
