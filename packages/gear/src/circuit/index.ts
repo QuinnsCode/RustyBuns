@@ -7,3 +7,4 @@ export * from "./power.ts";
 export * from "./cab.ts";
 export * from "./filters.ts";
 export * from "./machines.ts";
+export * from "./linear.ts";
