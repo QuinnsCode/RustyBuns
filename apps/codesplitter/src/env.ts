@@ -114,6 +114,8 @@ export interface Env {
   WATCHDOG_SECRET?: string;
   /** Bearer for POST /api/admin/drain, which the deploy calls to warn busy rooms (drain.ts). Optional: the route is off without it. */
   DRAIN_SECRET?: string;
+  /** Bearer for GET /api/ssh/remote, the ssh gate's lookup (ssh-remote.ts, ssh/): its GATE_SECRET. Optional: the route is off without it. */
+  SSH_GATE_SECRET?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
