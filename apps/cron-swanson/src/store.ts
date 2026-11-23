@@ -8,10 +8,10 @@ const KEEP_RUNS = 200;
 /** A reminder nobody ticked off within this long (or before its job fired again) counts as ignored. */
 const IGNORE_AFTER_MS = 60 * 60_000;
 
-interface RunRow { id: number; job_id: string; scheduled_at: number; fired_at: number; manual: number; status: string; code: number | null; ms: number | null; error: string; done_at: number | null }
+interface RunRow { id: number; job_id: string; scheduled_at: number; fired_at: number; manual: number; status: string; code: number | null; ms: number | null; error: string; done_at: number | null; snooze_until: number | null }
 
 const toRun = (r: RunRow): Run =>
-  Run({ id: r.id, jobId: r.job_id, scheduledAt: r.scheduled_at, firedAt: r.fired_at, manual: r.manual === 1, status: r.status, code: r.code, ms: r.ms, error: r.error, doneAt: r.done_at });
+  Run({ id: r.id, jobId: r.job_id, scheduledAt: r.scheduled_at, firedAt: r.fired_at, manual: r.manual === 1, status: r.status, code: r.code, ms: r.ms, error: r.error, doneAt: r.done_at, snoozedUntil: r.snooze_until });
 
 export class Store {
   readonly db: Database;
@@ -29,6 +29,7 @@ export class Store {
     // Files made before reminders could be ticked off get the column; it's null on every old run.
     const cols = this.db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
     if (!cols.some((c) => c.name === "done_at")) this.db.exec("ALTER TABLE runs ADD COLUMN done_at INTEGER");
+    if (!cols.some((c) => c.name === "snooze_until")) this.db.exec("ALTER TABLE runs ADD COLUMN snooze_until INTEGER");
   }
 
   private read(body: string): Job { return Job(parseJson(body)); }
@@ -58,11 +59,11 @@ export class Store {
       .all(now).map((r) => this.read(r.body));
   }
 
-  addRun(run: Omit<Run, "id" | "doneAt">): Run {
+  addRun(run: Omit<Run, "id" | "doneAt" | "snoozedUntil">): Run {
     const { lastInsertRowid } = this.db.query("INSERT INTO runs (job_id, scheduled_at, fired_at, manual, status, code, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .run(run.jobId, run.scheduledAt, run.firedAt, run.manual ? 1 : 0, run.status, run.code, run.ms, run.error);
     this.db.query("DELETE FROM runs WHERE job_id = ?1 AND id NOT IN (SELECT id FROM runs WHERE job_id = ?1 ORDER BY id DESC LIMIT ?2)").run(run.jobId, KEEP_RUNS);
-    return { ...run, id: Number(lastInsertRowid), doneAt: null };
+    return { ...run, id: Number(lastInsertRowid), doneAt: null, snoozedUntil: null };
   }
 
   /** Ticks a reminder off (once: a second tick keeps the first time). The run, or null when there's no such run. */
@@ -72,12 +73,19 @@ export class Store {
     return row ? toRun(row) : null;
   }
 
+  /** Puts a reminder off until `until`. The run, or null when there's no such run. */
+  snooze(id: number, until: number): Run | null {
+    this.db.query("UPDATE runs SET snooze_until = ? WHERE id = ?").run(until, id);
+    const row = this.db.query<RunRow, [number]>("SELECT * FROM runs WHERE id = ?").get(id);
+    return row ? toRun(row) : null;
+  }
+
   /** Each job's counts over its kept runs (see Stats). A job with no runs isn't in the map. */
   stats(now: number): Map<string, Stats> {
-    const rows = this.db.query<{ job_id: string; fired: number; done: number; ignored: number; last_done: number | null; last_fired: number | null }, [number]>(`
+    const rows = this.db.query<{ job_id: string; fired: number; done: number; ignored: number; last_done: number | null; last_fired: number | null }, [number, number]>(`
       SELECT job_id, COUNT(*) AS fired, COUNT(done_at) AS done, MAX(done_at) AS last_done, MAX(fired_at) AS last_fired,
-        SUM(status = 'reminded' AND done_at IS NULL AND (fired_at < ?1 OR id < (SELECT MAX(id) FROM runs l WHERE l.job_id = r.job_id))) AS ignored
-      FROM runs r GROUP BY job_id`).all(now - IGNORE_AFTER_MS);
+        SUM(status = 'reminded' AND done_at IS NULL AND (snooze_until IS NULL OR snooze_until < ?2) AND (fired_at < ?1 OR id < (SELECT MAX(id) FROM runs l WHERE l.job_id = r.job_id))) AS ignored
+      FROM runs r GROUP BY job_id`).all(now - IGNORE_AFTER_MS, now);
     return new Map(rows.map((r) => [r.job_id, { fired: r.fired, done: r.done, ignored: r.ignored, lastDoneAt: r.last_done, lastFiredAt: r.last_fired }]));
   }
 

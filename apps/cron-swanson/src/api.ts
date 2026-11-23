@@ -67,7 +67,12 @@ export const Run = obj({
   error: str(500, { min: 0, dflt: "" }),
   /** When a reminder was ticked off on the page, or null. One left unticked an hour, or past its job's next firing, counts as ignored. */
   doneAt: nul(TIME),
+  /** Until when a reminder is snoozed (its toast comes back then), or null. */
+  snoozedUntil: nul(TIME),
 });
+
+/** POST /api/runs/:id/snooze: put a reminder off for a while, up to a day. */
+export const Snooze = obj({ minutes: int(1, 1440) });
 export type Run = Of<typeof Run>;
 
 const COUNT = int(0, Number.MAX_SAFE_INTEGER);

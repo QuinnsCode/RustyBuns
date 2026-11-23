@@ -129,5 +129,13 @@ test("tick a reminder off, let one slide: the counts the page sorts by", async (
   await tick(store, now);
   expect(await stats()).toMatchObject({ fired: 3, done: 1, ignored: 1, lastFiredAt: now });
 
+  // Snoozed from its toast: it says until when, and isn't ignored while it waits, even past the hour.
+  const [latest] = store.runs(1, water.id);
+  const snoozed = await ask("POST", `/api/runs/${latest!.id}/snooze`, { minutes: 90 });
+  expect(Run(snoozed.body).snoozedUntil).toBe(now + 90 * 60_000);
+  now += 70 * 60_000;
+  expect(await stats()).toMatchObject({ ignored: 1 });
+  expect((await ask("POST", `/api/runs/${latest!.id}/snooze`, { minutes: 0 })).status).toBe(400);
+
   expect((await ask("POST", "/api/runs/99999/done")).status).toBe(404);
 });

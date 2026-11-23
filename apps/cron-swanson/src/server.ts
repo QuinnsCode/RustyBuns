@@ -5,7 +5,7 @@ import { Bad, type Guard } from "@rustybuns/util/guard";
 import { parseJson, privateJson } from "@rustybuns/util/http";
 import type { Claims } from "@rustybuns/util/token";
 import { next } from "./bacron.ts";
-import { AppJobs, AppName, Declared, JobInput, NOT_OWNER, SIGN_IN, type Job, type JobsReply, type SyncReply } from "./api.ts";
+import { AppJobs, AppName, Declared, JobInput, NOT_OWNER, SIGN_IN, Snooze, type Job, type JobsReply, type SyncReply } from "./api.ts";
 import { fire, deliver, type Deliver } from "./ticker.ts";
 import type { Store } from "./store.ts";
 import { sameToken, ticket } from "./live.ts";
@@ -115,9 +115,16 @@ function route(store: Store, o: Options, now: () => number, send: Deliver): (req
       return privateJson(job, 201);
     }
 
-    const tick = /^\/api\/runs\/(\d{1,15})\/done$/.exec(path);
+    const tick = /^\/api\/runs\/(\d{1,15})\/(done|snooze)$/.exec(path);
     if (tick && req.method === "POST") {
-      const run = store.done(Number(tick[1]), now());
+      const id = Number(tick[1]);
+      let run;
+      if (tick[2] === "done") run = store.done(id, now());
+      else {
+        const input = await body(req, Snooze);
+        if (input instanceof Response) return input;
+        run = store.snooze(id, now() + input.minutes * 60_000);
+      }
       return run ? privateJson(run) : refuse("no such run", 404);
     }
 

@@ -1,14 +1,19 @@
-// The page: apps down the side, the five lanes across the top, jobs in the middle with a ticking countdown,
-// the latest runs (and so every reminder) on the right. The editor previews the next runs with the same
-// engine the server ticks with, so what it shows is what will happen.
+// The page: clouds up top with the big add (what, when, how often), then the roll (the coming alarms as glowing
+// notes a playhead sweeps across, an 808 on each), then every alarm in a list you can sort. Reminders that fired
+// stack up as toasts on the right until they're ticked off or snoozed. A pixel yule log burns at the bottom.
+// The editor previews the next runs with the same engine the server ticks with, so what it shows is what will happen.
 import { esc } from "@rustybuns/util";
 import { Bad } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { LiveMsg, PROTOCOL } from "./live.ts";
-import { createElement, AlarmClock, Bell, BellOff, BellRing, Check, CircleCheck, Cloud, LogIn, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
+import { createElement, AlarmClock, AlarmClockPlus, Bell, BellOff, BellRing, Check, Cloud, LogIn, Monitor, Moon, Sun, Volume2, VolumeX, AlarmClockOff, Pause, Pencil, Play, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
+import { boom, alarm } from "./boom.ts";
+import { roll, tracks, type Lane } from "./roll.ts";
+import { yule } from "./yule.ts";
+import { FURTHEST_MS, OFTEN, cadenceFor, isOften, local, needsTime, quickTimes, type Often } from "./quick.ts";
 import { APP, EQOSYS, Job, JobInput, JobsReply, NOT_OWNER, Refusal, SIGN_IN, type Run } from "./api.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -68,22 +73,69 @@ const ORDER: Record<Sort, (a: Row, b: Row) => number> = {
 
 // ---- desktop alerts ----
 
-// The page's own system notifications: each new reminder pops up on this computer while a tab is open
-// (ntfy covers the phone and a closed laptop). The first load only marks what's already there as seen.
-let seen = -1;
+// ---- toasts ----
+
+// A reminder that fired and isn't ticked off or snoozed sits in the stack on the right: the newest one per alarm,
+// from the last day. Each one that joins the stack (a new firing, or a snooze running out) booms, and pops up as a
+// system notification when desktop alerts are on. The first load only marks what's already there.
+let shown: Set<number> | null = null;
 const canAlert = () => "Notification" in window && Notification.permission === "granted";
-function alertNew(runs: Run[]) {
-  const top = runs.reduce((m, r) => Math.max(m, r.id), 0);
-  if (seen >= 0 && canAlert()) {
-    const names = new Map(state.rows.map((r) => [r.job.id, r.job]));
-    for (const r of runs.filter((r) => r.id > seen && r.status === "reminded").reverse()) {
-      const j = names.get(r.jobId);
-      if (!j) continue;
-      const n = new Notification(`${j.app}: ${j.name}`, { body: j.why || j.note || describe(j.cadence), tag: `cron-swanson-${r.id}` });
-      n.onclick = () => { window.focus(); n.close(); };
-    }
+const DAY = 86_400_000;
+
+function open(): Run[] {
+  const now = serverNow(), newest = new Map<string, Run>();
+  for (const r of state.runs) if (!newest.has(r.jobId)) newest.set(r.jobId, r);
+  return [...newest.values()].filter((r) => r.status === "reminded" && r.doneAt === null && (r.snoozedUntil === null || r.snoozedUntil <= now) && r.firedAt > now - DAY);
+}
+
+function renderToasts() {
+  const now = open(), names = new Map(state.rows.map((r) => [r.job.id, r.job]));
+  const fresh = shown ? now.filter((r) => !shown!.has(r.id)) : [];
+  shown = new Set(now.map((r) => r.id));
+  if (fresh.length && loud) alarm();
+  if (canAlert()) for (const r of fresh) {
+    const j = names.get(r.jobId);
+    if (!j) continue;
+    const n = new Notification(`${j.app}: ${j.name}`, { body: j.why || j.note || describe(j.cadence), tag: `cron-swanson-${r.id}` });
+    n.onclick = () => { window.focus(); n.close(); };
   }
-  seen = Math.max(seen, top);
+  const key = now.map((r) => r.id).join(",");
+  const box = $("toasts");
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.innerHTML = now.map((r) => {
+    const j = names.get(r.jobId);
+    if (!j) return "";
+    return `<div class="toast card" style="--pick: var(--${flow(j.cadence)})" role="alertdialog" aria-label="${esc(j.name)}">
+      <div class="toast-top"><i class="dot lane-${flow(j.cadence)}"></i><b>${esc(j.name)}</b></div>
+      <small>${esc(j.why || describe(j.cadence))} · ${esc(clock(r.firedAt))}</small>
+      <div class="toast-acts">
+        <button type="button" class="ghost" data-snooze="${r.id}" data-min="10">${icon(AlarmClockOff, 14)} 10 min</button>
+        <button type="button" class="ghost" data-snooze="${r.id}" data-min="60">1 hour</button>
+        <button type="button" class="primary" data-done="${r.id}">${icon(Check, 14)} Done</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ---- sound and theme ----
+
+const SOUND_KEY = "cron-swanson-sound", THEME_KEY = "cron-swanson-theme";
+let loud = false;
+try { loud = localStorage.getItem(SOUND_KEY) === "on"; } catch { /* private window */ }
+const THEMES = ["system", "light", "dark"] as const;
+type Theme = (typeof THEMES)[number];
+let theme: Theme = "system";
+try { const t = localStorage.getItem(THEME_KEY); if (t === "light" || t === "dark") theme = t; } catch { /* private window */ }
+
+function paintToggles() {
+  document.documentElement.dataset.theme = theme;
+  $("theme").innerHTML = icon(theme === "light" ? Sun : theme === "dark" ? Moon : Monitor);
+  $("theme").title = `Look: ${theme === "system" ? "follows the system" : theme}`;
+  $("sound").innerHTML = icon(loud ? Volume2 : VolumeX);
+  $("sound").title = loud ? "808s on" : "808s off";
+  $("sound").classList.toggle("on", loud);
+  painter.sound(loud);
 }
 function paintAlerts() {
   const el = $("alerts");
@@ -107,7 +159,6 @@ async function load() {
   state.rows = data.jobs;
   state.runs = data.runs;
   state.skew = data.now - Date.now();
-  alertNew(data.runs);
   render();
   // A new day's ticket: the socket opens again on it.
   if (data.live && (!link || data.ticket !== held)) { link?.close(); goLive(data.live, data.ticket); }
@@ -169,11 +220,11 @@ function render() {
   const all = state.rows;
   const apps = [...count(all, (r) => r.job.app)].sort(([a], [b]) => a.localeCompare(b));
   $("apps").innerHTML = [[null, all.length] as const, ...apps].map(([app, n]) =>
-    `<button type="button" data-app="${esc(app ?? "")}" class="${state.app === app ? "on" : ""}"><span>${esc(app ?? "All apps")}</span><em>${n}</em></button>`).join("");
+    `<button type="button" data-app="${esc(app ?? "")}" class="chip ${state.app === app ? "on" : ""}"><span>${esc(app ?? "All apps")}</span><em>${n}</em></button>`).join("");
   $("app-list").innerHTML = apps.map(([a]) => `<option value="${esc(a)}">`).join("");
 
   const tags = [...count(all.flatMap((r) => r.job.tags), (t) => t)].sort(([a], [b]) => a.localeCompare(b));
-  $("tags").innerHTML = tags.length ? tags.map(([t, n]) => `<button type="button" data-tag="${esc(t)}" class="chip ${state.tag === t ? "on" : ""}">#${esc(t)} <em>${n}</em></button>`).join("") : `<p class="quiet">No tags yet</p>`;
+  $("tags").innerHTML = tags.length ? tags.map(([t, n]) => `<button type="button" data-tag="${esc(t)}" class="chip ${state.tag === t ? "on" : ""}">#${esc(t)} <em>${n}</em></button>`).join("") : "";
 
   const lanes = count(all.filter((r) => matches(r, { lane: false })), (r) => flow(r.job.cadence));
   const inView = all.filter((r) => matches(r, { lane: false })).length;
@@ -186,17 +237,51 @@ function render() {
     ? groups.map(([app, rows]) => `${state.app || state.sort !== "next" ? "" : `<h2 class="group">${esc(app)}<em>${rows.length}</em></h2>`}<ul class="jobs">${rows.map(jobRow).join("")}</ul>`).join("")
     : `<div class="empty">${icon(AlarmClock, 28)}<p>${all.length ? "Nothing matches." : "No jobs yet. Make one with New."}</p></div>`;
 
-  const names = new Map(all.map((r) => [r.job.id, r.job]));
-  $("runs").innerHTML = state.runs.length ? state.runs.slice(0, 60).map((r) => {
-    const j = names.get(r.jobId);
-    const tick = r.status !== "reminded" ? "" : r.doneAt !== null
-      ? `<span class="ticked" title="Done ${esc(clock(r.doneAt))}">${icon(CircleCheck, 14)}</span>`
-      : `<button type="button" class="ghost" data-done="${r.id}" title="Done">${icon(Check, 14)}</button>`;
-    return `<li class="run run-${r.status} ${r.doneAt !== null ? "is-done" : ""}" title="${esc(r.error || (r.code ? `HTTP ${r.code}` : r.status))}">${icon(STATUS_ICON[r.status], 14)}
-      <span class="what"><b>${esc(j?.name ?? "deleted job")}</b><small>${esc(j?.app ?? "")} · ${clock(r.firedAt)}</small></span><span class="num">${drift(r)}</span>${tick}</li>`;
-  }).join("") : `<li class="quiet">Nothing has run yet.</li>`;
+  renderRoll();
+  renderToasts();
   tickClocks();
 }
+
+// ---- the roll ----
+
+// One 808 pitch per lane, low to high: async, daily, weekly, monthly, yearly.
+const HZ: Record<Flow, number> = { async: 41.2, daily: 49, weekly: 55, monthly: 65.4, yearly: 73.4 };
+const SPANS = { "6h": ["6 h", 6 * 3_600_000], "1d": ["Day", DAY], "1w": ["Week", 7 * DAY], "1mo": ["Month", 31 * DAY], "3mo": ["3 months", FURTHEST_MS] } as const;
+type Span = keyof typeof SPANS;
+const SPAN_KEY = "cron-swanson-span";
+let span: Span = "1d";
+try { const v = localStorage.getItem(SPAN_KEY); if (v && Object.hasOwn(SPANS, v)) span = v as Span; } catch { /* private window */ }
+const painter = roll($<HTMLCanvasElement>("roll"), (j) => openEditor(j), (lane) => boom(lane.hz, { len: 0.5, gain: 0.35 }));
+
+function renderRoll() {
+  $("spans").innerHTML = Object.entries(SPANS).map(([k, [label]]) => `<button type="button" class="chip ${span === k ? "on" : ""}" data-span="${k}">${label}</button>`).join("");
+  const styles = getComputedStyle(document.documentElement), now = serverNow(), ms = SPANS[span][1];
+  const lanes: Lane[] = state.rows.filter((r) => matches(r) && r.job.enabled && r.job.nextAt !== null && r.job.nextAt < now + ms)
+    .sort((a, b) => FLOWS.indexOf(flow(a.job.cadence)) - FLOWS.indexOf(flow(b.job.cadence)) || nextAt(a) - nextAt(b))
+    .map((r) => ({ job: r.job, color: styles.getPropertyValue(`--${flow(r.job.cadence)}`).trim(), hz: HZ[flow(r.job.cadence)] }));
+  $("roll-empty").hidden = lanes.length > 0;
+  $("roll").hidden = lanes.length === 0;
+  painter.draw(tracks(lanes, now, ms), now, ms);
+}
+
+// ---- the big add ----
+
+let often: Often = "once";
+const whenBox = $<HTMLInputElement>("when");
+function paintQuick() {
+  const now = serverNow();
+  whenBox.min = local(new Date(now));
+  whenBox.max = local(new Date(now + FURTHEST_MS));
+  $("when-chips").innerHTML = quickTimes(now).map((q) => `<button type="button" class="chip ${whenBox.value === local(q.at) ? "on" : ""}" data-when="${local(q.at)}">${q.label}</button>`).join("");
+  $("often-chips").innerHTML = Object.entries(OFTEN).map(([k, label]) => `<button type="button" class="chip ${often === k ? "on" : ""}" data-often="${k}">${label}</button>`).join("");
+  whenBox.disabled = !needsTime(often);
+  $("quick").classList.toggle("no-time", !needsTime(often));
+  const c = cadenceFor(often, new Date(whenBox.value), now);
+  if (typeof c === "string") { $("quick-hint").textContent = needsTime(often) && !whenBox.value ? "" : c; return; }
+  const next = upcoming(c, now, Intl.DateTimeFormat().resolvedOptions().timeZone, 2, now);
+  $("quick-hint").textContent = next.length ? `${describe(c)} · first ${clock(next[0]!)}` : "";
+}
+
 
 function kindIcon(j: Job): string {
   const a = j.action;
@@ -262,7 +347,31 @@ document.body.addEventListener("click", (e) => {
   const el = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null;
   if (!el) return;
   if (el.id === "sign-in") { if (eq.login()) eq.signOut(); void eq.signIn(); }
-  else if (el.dataset.done) void send("POST", `/api/runs/${el.dataset.done}/done`);
+  else if (el.dataset.done) { void send("POST", `/api/runs/${el.dataset.done}/done`); if (loud) boom(73.4, { len: 0.35, gain: 0.3 }); }
+  else if (el.dataset.snooze) void send("POST", `/api/runs/${el.dataset.snooze}/snooze`, { minutes: Number(el.dataset.min) });
+  else if (el.dataset.span) {
+    if (Object.hasOwn(SPANS, el.dataset.span)) span = el.dataset.span as Span;
+    try { localStorage.setItem(SPAN_KEY, span); } catch { /* kept for this visit only */ }
+    renderRoll();
+  }
+  else if (el.dataset.when) { whenBox.value = el.dataset.when; paintQuick(); }
+  else if (isOften(el.dataset.often)) {
+    often = el.dataset.often;
+    if (needsTime(often) && !whenBox.value) whenBox.value = local(quickTimes(serverNow()).at(-2)!.at);
+    paintQuick();
+  }
+  else if (el.id === "theme") {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]!;
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* kept for this visit only */ }
+    paintToggles();
+    renderRoll();
+  }
+  else if (el.id === "sound") {
+    loud = !loud;
+    try { localStorage.setItem(SOUND_KEY, loud ? "on" : "off"); } catch { /* kept for this visit only */ }
+    paintToggles();
+    if (loud) boom(55);
+  }
   else if (el.id === "alerts") void Notification.requestPermission().then(paintAlerts);
   else if (el.dataset.app !== undefined) { state.app = el.dataset.app || null; render(); }
   else if (el.dataset.tag !== undefined) { state.tag = state.tag === el.dataset.tag ? null : el.dataset.tag; render(); }
@@ -303,7 +412,7 @@ $("days").innerHTML = DAYS.map((d, i) => `<label class="day"><input type="checkb
 $("mday").innerHTML = Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("") + `<option value="-1">Last day</option>`;
 $("month").innerHTML = MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("");
 $("tz-list").innerHTML = Intl.supportedValuesOf("timeZone").map((z) => `<option value="${z}">`).join("");
-$("new").innerHTML = `${icon(Plus)} New`;
+$("add").innerHTML = `${icon(AlarmClockPlus, 20)} Add alarm`;
 $("close").innerHTML = icon(X);
 $("search-icon").innerHTML = icon(Search);
 $("logo").innerHTML = icon(AlarmClock, 22);
@@ -364,6 +473,7 @@ function openEditor(j: Job | null) {
   $("error").textContent = "";
   $("editor-title").textContent = j ? "Edit job" : "New job";
   $("delete").hidden = !j;
+  dialog.style.setProperty("--pick", j ? `var(--${flow(j.cadence)})` : "var(--accent)");
   field("tz").value = j?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   field("app").value = j?.app ?? state.app ?? "";
   if (j) {
@@ -417,7 +527,25 @@ form.addEventListener("submit", async (e) => {
   if (err) $("error").textContent = err; else dialog.close();
 });
 
+$("quick").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const what = $<HTMLInputElement>("what"), c = cadenceFor(often, new Date(whenBox.value), serverNow());
+  if (typeof c === "string") { $("quick-hint").textContent = c; return; }
+  const err = await send("POST", "/api/jobs", { app: state.app ?? "me", name: what.value.trim(), tags: [], cadence: c, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, action: { kind: "remind" } });
+  if (err) { $("quick-hint").textContent = err; return; }
+  what.value = "";
+  whenBox.value = "";
+  paintQuick();
+  if (loud) { boom(49, { len: 0.4 }); setTimeout(() => boom(65.4, { len: 0.6 }), 160); }
+});
+whenBox.addEventListener("input", paintQuick);
+
 // ---- go ----
+
+yule($<HTMLCanvasElement>("yule"));
+paintToggles();
+paintQuick();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderRoll);
 
 // Back from eqosys with a code: trade it for the login first (a failed one says why in the gate).
 void eq.finishSignIn().then((back) => { if (back?.error) gate(SIGN_IN, back.error); else void load(); });
