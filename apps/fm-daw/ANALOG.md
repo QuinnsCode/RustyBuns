@@ -231,6 +231,7 @@ FM DAW is a synth DAW, and the same solver gives it analog parts too:
 - **Analog filters on a track:** the transistor ladder low-pass, OTA state-variable filters, a diode ladder. Section 1's BJT and OTA parts are all they need.
 - **Tape on the master bus:** section 4's tape model as a mixdown machine (saturation, head bump, gentle wow), after Shape, the master EQ.
 - **Spring reverb as a send.**
+- **A modular case of these circuits:** built as the gear room's sound wall ([WALL.md](WALL.md)), eight Eurorack modules (sequencer, VCO, OTA filter, VCA, envelope, LFO, a mixer with sends and returns, an output), each a board with fab files.
 
 ## Issues
 

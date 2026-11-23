@@ -9,7 +9,9 @@
 // desk: a strip per track and per player the live line plays sound for, and every move an edit the sesh keeps
 // (`deskOps`). In a sesh you also see who else is in the room: each page says where its body is on the live line,
 // and a box or a cable end in someone's hand is drawn at their body. A board dropped here goes to the sesh too, so
-// it is the same pedal for everyone. `window.qstudio` is the harness (scripts/probe.ts HANDLES).
+// it is the same pedal for everyone. Right of the rack stands the sound wall (../wall/, WALL.md): its modules in the
+// case run on an audio thread of their own (wall-worklet.ts), heard from its Q Out; N brings another module.
+// `window.qstudio` is the harness (scripts/probe.ts HANDLES).
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./studio.css";
@@ -20,6 +22,9 @@ import { defaultAvatar } from "@rustybuns/util/avatar";
 import workletUrl from "../amp/worklet.ts?worker&url";
 import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
+import wallWorkletUrl from "./wall-worklet.ts?worker&url";
+import type { FromWall, ToWall } from "./wall-worklet.ts";
+import { PANELS } from "../../circuits/wall-panels.ts";
 import { Desk, deskFor, deskOps, deskPlays, playerId, seshDesk, seshShape, shapeAt, shapeName, shapeOps, withChannel, withReturn, withSend, withShape, type Player, type ShapeAt, type Source } from "../mixer.ts";
 import { closeShape, openShape, refreshShape } from "../ui/shape-overlay.tsx";
 import { apply, decodeServer, type Live, type Project } from "../project.ts";
@@ -38,7 +43,7 @@ import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { GearScene } from "./gear-scene.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
@@ -197,7 +202,7 @@ if (sesh) {
   });
 }
 
-let phase: "menu" | "play" | "desk" | "sheet" = "menu";
+let phase: "menu" | "play" | "desk" | "sheet" | "modules" = "menu";
 let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let dragging: { id: string; knob: string } | null = null;
@@ -268,6 +273,11 @@ let panner: PannerNode | null = null;
 let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 let heardKey = "";
 let speakersUp = false;
+/** The sound wall's audio thread, heard from its Q Out, and what it was last sent. */
+let wallNode: AudioWorkletNode | null = null;
+let wallPanner: PannerNode | null = null;
+let wallKey = "";
+let wallState: FromWall | null = null;
 
 async function speakers(up: boolean) {
   speakersUp = up;
@@ -277,6 +287,12 @@ async function speakers(up: boolean) {
     ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
     await ctx.audioWorklet.addModule(deskWorkletUrl);
+    await ctx.audioWorklet.addModule(wallWorkletUrl);
+    wallNode = new AudioWorkletNode(ctx, "q-wall", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    wallNode.port.onmessage = (e: MessageEvent<FromWall>) => { wallState = e.data; };
+    wallPanner = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
+    wallNode.connect(wallPanner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
+    wallKey = "";
     deskNode = new AudioWorkletNode(ctx, "q-desk", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("../amp/part-worker.ts", import.meta.url), { type: "module" }), (m) => { meter = m; });
@@ -289,6 +305,32 @@ async function speakers(up: boolean) {
     heardKey = ""; deskKey = "";
   }
   await ctx.resume();
+}
+
+/** The sound wall's audio thread gets the wall (its modules, their knobs, the cables, the sends' gear) when it changes. */
+function wallSound(h: Heard) {
+  const key = JSON.stringify(h.wall.spec);
+  if (!wallNode || key === wallKey) return;
+  wallKey = key;
+  wallNode.port.postMessage({ t: "wall", spec: h.wall.spec } satisfies ToWall);
+}
+
+/** N: the modules there are, each a button that brings one to your hands. */
+function openModules(open: boolean) {
+  if (!open) { play(); return; }
+  phase = "modules"; menu(); document.exitPointerLock?.();
+  const list = $("modules-list");
+  if (list.childElementCount) return;
+  for (const p of PANELS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    const name = document.createElement("b"), what = document.createElement("span");
+    name.textContent = p.name;
+    what.textContent = `${p.what}, ${p.hp} HP`;
+    b.append(name, what);
+    b.addEventListener("click", () => { play(); say(bringModule(room, p.id)); });
+    list.append(b);
+  }
 }
 
 /** The desk's audio thread gets the desk and what each aux has cabled in, when either changes. */
@@ -376,6 +418,8 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "KeyM") void speakers(!speakersUp);
   if (e.code === "Escape" && phase === "sheet") { sheet.close(); return; }
   if (e.code === "Tab" && phase !== "menu") { e.preventDefault(); openDesk(phase !== "desk"); return; }
+  if (e.code === "KeyN" && (phase === "play" || phase === "modules")) { openModules(phase === "play"); return; }
+  if (e.code === "Escape" && phase === "modules") { openModules(false); return; }
   if (phase !== "play") return;
   if (e.code === "KeyF") say(use(room));
   if (e.code === "KeyG") say(drop(room));
@@ -406,7 +450,7 @@ document.addEventListener("drop", (e) => {
 addEventListener("blur", () => { keys.clear(); dragging = null; });
 document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play") { phase = "menu"; menu(); } });
 
-function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; if (phase !== "sheet") sheet.el.hidden = true; }
+function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; $("modules").hidden = phase !== "modules"; if (phase !== "sheet") sheet.el.hidden = true; }
 
 // ---- a pedal's build sheet (../kit/sheet.ts): B, or the pad's Y, on a pedal on the wall or in your hand ----
 const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
@@ -455,18 +499,22 @@ function frame(now: number) {
   sound(heard);
   deskSound(heard);
   deskView(heard);
+  wallSound(heard);
   glow(heard);
   camera.position.set(room.you.x, EYE, room.you.z);
   camera.rotation.set(room.you.pitch, room.you.yaw, 0);
   if (ctx && panner) {
     const cab = heard.chain.length ? room.studio.patch.placed.find((p) => p.id === heard.chain[heard.chain.length - 1]) : undefined;
     if (cab) { panner.positionX.value = cab.at[0]; panner.positionY.value = cab.at[1] + 0.3; panner.positionZ.value = cab.at[2]; }
+    const out = room.studio.patch.placed.find((p) => p.id === heard.wall.spec.modules.find((m) => m.kind === "out")?.id);
+    if (wallPanner && out) { wallPanner.positionX.value = out.at[0]; wallPanner.positionY.value = out.at[1] + 0.06; wallPanner.positionZ.value = out.at[2]; }
     const l = ctx.listener, f = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
     l.positionX.value = room.you.x; l.positionY.value = EYE; l.positionZ.value = room.you.z;
     l.forwardX.value = f.x; l.forwardY.value = f.y; l.forwardZ.value = f.z;
   }
   $("hint").textContent = now < flash.until ? flash.text : hint(room, a);
-  $("heard").textContent = heard.playing ? `Playing: ${heard.chain.map((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; }).join(" > ")}${hopText()}${heard.problems.length ? `. ${heard.problems[0]}` : ""}` : `Silent: ${heard.problems[0] ?? ""}`;
+  $("heard").textContent = (heard.playing ? `Playing: ${heard.chain.map((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; }).join(" > ")}${hopText()}${heard.problems.length ? `. ${heard.problems[0]}` : ""}` : `Silent: ${heard.problems[0] ?? ""}`) +
+    (heard.wall.playing ? `. Sound wall playing, ${heard.wall.modules.length} modules${heard.wall.problems[0] ? `: ${heard.wall.problems[0]}` : ""}` : "");
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -543,17 +591,29 @@ const harness = {
   speakers: (up: boolean) => speakers(up),
   /** The room as it starts. */
   reset: () => { room = newRoom(startPatch()); },
+  /** A new sound wall module in your hand (N's picker), by kind: seq, vco, vcf, vca, env, lfo, mix, out. */
+  addModule: (kind: string) => bringModule(room, kind),
+  /** The sound wall: what the room makes of it (`listen().wall`) and, with the speakers up, what each module is doing. */
+  wall: async () => {
+    const heard = listen(room.studio.patch).wall;
+    if (!wallNode) return { heard, modules: null, load: null };
+    const got = new Promise<FromWall | null>((res) => { const was = wallState; const t = setInterval(() => { if (wallState !== was) { clearInterval(t); res(wallState); } }, 10); setTimeout(() => { clearInterval(t); res(wallState); }, 500); });
+    wallNode.port.postMessage({ t: "state" } satisfies ToWall);
+    const s = await got;
+    return { heard, modules: s?.modules ?? null, load: s?.load ?? null };
+  },
 };
 window.qstudio = harness;
 
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["B", "A pedal's build sheet"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["B", "A pedal's build sheet"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["N", "A new sound wall module"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
 $("play").addEventListener("click", play);
 $("desk-close").addEventListener("click", () => openDesk(false));
+$("modules-close").addEventListener("click", () => openModules(false));
 $("speakers").addEventListener("click", () => void speakers(!speakersUp));
 menu();
 resize();

@@ -6,7 +6,9 @@
 //
 // `<inductor>`, `<potentiometer>` and `<transistor>` map straight to parts. Chips are
 // told apart by their pin labels: OUT, INP and INN make an op-amp (its supply pins
-// are ignored; the rails come from `rail`), and with IABC an OTA; PLATE, GRID and
+// are ignored; the rails come from `rail`), and with IABC an OTA. A dual or quad package
+// (a TL074, an LM13700) letters each amp's pins (OUTA, INPA, INNA, IABCA, ...) and each
+// becomes a part of its own, U1A, U1B and so on. PLATE, GRID and
 // CATHODE make a 12AX7 (another tube by `tubes`); DRAIN, GATE and SOURCE a JFET; LEDA, LEDK, LDR1 and LDR2 a
 // vactrol (an LED lighting an LDR); LDR1 and LDR2 alone a bare photocell under a lamp.
 // A net named in `supplies` gets a DC source to ground.
@@ -97,6 +99,9 @@ export interface BoardOptions extends ReadOptions {
 /** What moves a part: the control's name (a rig `Mod`'s `ctl`) and its range in ohms. */
 export interface Moved { ctl: string; hi: number; lo: number }
 
+/** The units a multi-amp package's pin labels end in. */
+const UNITS = ["A", "B", "C", "D"];
+
 /** Reads a board out of tscircuit's circuit JSON. Throws, naming the part, on what the simulator can't model. */
 export function readBoard(json: unknown, o: ReadOptions = {}): Board {
   const els = arr(raw, 100_000)(json);
@@ -117,7 +122,7 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
     const key = p.subcircuit_connectivity_map_key;
     return key ? netName.get(key) ?? key : `open:${p.source_port_id}`;
   };
-  const parts = comps.filter((c) => !skip.has(c.name)).map((c): BoardPart => {
+  const parts = comps.filter((c) => !skip.has(c.name)).flatMap((c): BoardPart | BoardPart[] => {
     const name = c.name;
     const pins = ports.filter((p) => p.source_component_id === c.source_component_id).sort((a, b) => (a.pin_number ?? 0) - (b.pin_number ?? 0));
     const label = (pin: string) => {
@@ -170,6 +175,13 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
     }
     if (c.ftype === "simple_chip") {
       const names = new Set(pins.map((p) => p.name.toUpperCase()));
+      // A dual or quad package (TL072, TL074, LM13700): OUTA, INPA, INNA (and IABCA) make unit U1A, and so on.
+      const units = UNITS.filter((u) => names.has(`OUT${u}`) && names.has(`INP${u}`) && names.has(`INN${u}`));
+      if (units.length) {
+        return units.map((u): BoardPart => names.has(`IABC${u}`)
+          ? { name: name + u, kind: "OTA", plus: label(`INP${u}`), minus: label(`INN${u}`), out: label(`OUT${u}`), abc: label(`IABC${u}`) }
+          : { name: name + u, kind: "Opamp", plus: label(`INP${u}`), minus: label(`INN${u}`), out: label(`OUT${u}`) });
+      }
       if (names.has("OUT") && names.has("INP") && names.has("INN") && names.has("IABC")) return { name, kind: "OTA", plus: label("INP"), minus: label("INN"), out: label("OUT"), abc: label("IABC") };
       if (names.has("OUT") && names.has("INP") && names.has("INN")) return { name, kind: "Opamp", plus: label("INP"), minus: label("INN"), out: label("OUT") };
       if (names.has("PLATE") && names.has("GRID") && names.has("CATHODE")) return { name, kind: "Triode", p: label("PLATE"), g: label("GRID"), k: label("CATHODE") };

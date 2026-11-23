@@ -17,6 +17,14 @@ main { position: fixed; inset: 0; }
 #play { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 10px 22px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; }
 #look { background: transparent; color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; padding: 9px 16px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; margin-left: 8px; }
 /* the desk view (Tab): strips side by side, scrolling sideways inside the panel when they don't fit */
+#modules { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 14px 16px; }
+#modules header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#modules h2 { margin: 0; font: 600 24px/1 "Barlow Condensed", sans-serif; }
+#modules .keys { color: var(--dim); font-size: 13px; }
+#modules-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#modules-list button { text-align: left; padding: 10px 12px; border-radius: 10px; }
+#modules-list b { display: block; font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
+#modules-list span { color: var(--dim); font-size: 12px; }
 #desk { position: absolute; left: 16px; right: 16px; bottom: 16px; max-height: calc(100% - 32px); overflow: auto; background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 14px 16px; }
 #desk[hidden] { display: none; }
 #desk header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
