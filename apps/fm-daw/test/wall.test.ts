@@ -5,6 +5,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { bringModule, inCase, item, listen, lookAt, newRoom, pickUp, putDown, use, walkTo, type Room } from "../src/room/room.ts";
 import { renderWall } from "../src/wall/wall.ts";
+import { PANELS } from "../circuits/wall-panels.ts";
 
 setDefaultTimeout(60_000);
 
@@ -16,7 +17,7 @@ test("patch a voice on the sound wall, hear it follow the sequencer, add a modul
   const r = newRoom();
   // Every module of the starter system stands in the case's lower row, powered; nothing is cabled, so it is quiet.
   const starters = r.studio.patch.placed.filter((p) => p.id.startsWith("wall-"));
-  expect(starters.map((p) => p.id)).toEqual(["wall-seq", "wall-vco", "wall-vcf", "wall-vca", "wall-env", "wall-lfo", "wall-mix", "wall-out"]);
+  expect(starters.map((p) => p.id)).toEqual(PANELS.map((p) => `wall-${p.id}`));
   expect(starters.every((p) => inCase(p))).toBe(true);
   expect(listen(r.studio.patch).wall).toMatchObject({ playing: false, problems: ["nothing cabled into Q Out's inputs"] });
 

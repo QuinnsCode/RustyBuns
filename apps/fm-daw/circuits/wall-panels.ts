@@ -15,6 +15,11 @@ export interface PanelJack {
   part: string;
   /** An input that takes this other input's signal while nothing is plugged in (its jack's switch, TN). */
   normal?: string;
+  /**
+   * An input whose switch (TN) is on a net of the module's own while nothing is plugged in (Q Steps' clock in takes
+   * its 555): the board wires TN to that net, and the sim hears whether a cable is in (`Sim.plugged`).
+   */
+  inside?: string;
 }
 export interface PanelKnob {
   name: string;
@@ -39,6 +44,8 @@ export const BOARD_H = 108;
 export const boardWidth = (hp: number) => Math.floor((panelWidth(hp) - 2) * 10) / 10;
 
 const jack = (part: string, name: string, label: string, dir: "in" | "out", x: number, y: number, normal?: string): PanelJack => ({ part, name, label, dir, x, y, ...(normal ? { normal } : {}) });
+/** An input on its own circuit while nothing is plugged in (`PanelJack.inside`). */
+const inside = (part: string, name: string, label: string, x: number, y: number, net: string): PanelJack => ({ part, name, label, dir: "in", x, y, inside: net });
 const knob = (part: string, name: string, label: string, x: number, y: number, dflt = 0.5, taper: PanelKnob["taper"] = "lin"): PanelKnob => ({ part, name, label, x, y, dflt, taper });
 
 /**
@@ -55,7 +62,7 @@ export const PANELS: Panel[] = [
       ...STEPS.map((d, i) => knob(`RV${i + 1}`, `step-${i + 1}`, `${i + 1}`, -21 + (i % 4) * 14, i < 4 ? 32 : 14, d)),
       knob("RV9", "rate", "Rate", -14, -8, 0.87),
     ],
-    jacks: [jack("J1", "gate", "Gate", "out", -14, -36), jack("J2", "cv", "CV", "out", 14, -36)],
+    jacks: [jack("J1", "gate", "Gate", "out", -14, -36), jack("J2", "cv", "CV", "out", 14, -36), inside("J3", "clock", "Clock", 14, -8, "CLK")],
   },
   {
     id: "vco", name: "Q Saw", what: "oscillator (VCO)", hp: 10,

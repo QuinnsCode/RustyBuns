@@ -108,6 +108,7 @@ export function wallBoard(m: Module) {
         <trace key={`${j.part}t`} from={pin(j.part, "T")} to={`net.${netOf(j.name)}`} />,
         <trace key={`${j.part}s`} from={pin(j.part, "S")} to="net.GND" />,
         ...(j.normal ? [<trace key={`${j.part}n`} from={pin(j.part, "TN")} to={`net.${netOf(j.normal)}`} />] : []),
+        ...(j.inside ? [<trace key={`${j.part}n`} from={pin(j.part, "TN")} to={`net.${j.inside}`} />] : []),
       ])}
       {m.panel.knobs.flatMap((k) => {
         const { ends: [a, b], wiper } = m.pots[k.name], w = `net.${wiper ?? `${netOf(k.name)}_W`}`;

@@ -77,6 +77,7 @@ export class Wall {
     this.nodes = order.map((i) => nodes[i]);
     for (const n of this.nodes) n.from = n.from.map((s) => (s?.t === "out" ? { ...s, node: remap.get(s.node) ?? s.node } : s));
     for (const r of this.rets) r.mixer = remap.get(r.mixer) ?? r.mixer;
+    for (const n of this.nodes) n.sim.plugged?.(n.from.map((x) => x?.t === "out" || x?.t === "ret"));
     this.outs = this.nodes.flatMap((n, i) => (n.kind === "out" ? [[i, n.sim.outs.indexOf("out-l"), n.sim.outs.indexOf("out-r")] as [number, number, number]] : []));
   }
 
