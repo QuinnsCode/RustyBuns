@@ -382,9 +382,9 @@ const HOME_CSS = `
 .home .shot .clip{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s}.home .shot .clip.on{opacity:1}
 .game-page .reel{display:grid;gap:.7rem;min-width:0}
 .game-page .picks{display:flex;gap:.6rem;overflow-x:auto;padding-bottom:.3rem;scrollbar-width:thin}
-.game-page .picks button{flex:none;display:grid;grid-template-columns:auto auto;justify-content:space-between;gap:.15rem .5rem;width:9.5rem;padding:0 0 .35rem;border:0;border-radius:10px;background:none;color:var(--ink);font:inherit;font-size:.78rem;text-align:left;cursor:pointer}
+.game-page .picks button{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;justify-content:space-between;gap:.15rem .5rem;width:9.5rem;padding:0 0 .35rem;border:0;border-radius:10px;background:none;color:var(--ink);font:inherit;font-size:.78rem;text-align:left;cursor:pointer}
 .game-page .picks img{grid-column:1/-1;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;outline:2px solid transparent;outline-offset:2px;transition:outline-color .2s}
-.game-page .picks button[aria-pressed=true] img{outline-color:var(--acc)}.game-page .picks small{color:var(--mut)}
+.game-page .picks button[aria-pressed=true] img{outline-color:var(--acc)}.game-page .picks span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-page .picks small{color:var(--mut)}
 .home .made h2{margin:0 0 .6rem}
 .home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 `;

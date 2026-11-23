@@ -31,11 +31,11 @@ test("an app's page plays its first clip, and a pick in the strip plays that one
   const tab = await openTab(chrome.cdp, { w: 1440, h: 900 });
   await load(chrome.cdp, tab, `http://127.0.0.1:${srv.port}/app`, 1500);
   const clips = clipsOf(app.id);
-  expect(await tab.eval("window.__reel.state()")).toEqual({ playing: clips[0]!.src, clips: clips.length });
+  expect(await tab.eval<unknown>("window.__reel.state()")).toEqual({ playing: clips[0]!.src, clips: clips.length });
   await tab.eval(`document.querySelectorAll("[data-pick]")[1].click()`);
   await Bun.sleep(800);
-  expect(await tab.eval("window.__reel.state()")).toEqual({ playing: clips[1]!.src, clips: clips.length });
-  expect(await tab.eval(`[...document.querySelectorAll("[data-pick]")].map((b) => b.getAttribute("aria-pressed"))`)).toEqual(clips.map((_, i) => String(i === 1)));
+  expect(await tab.eval<unknown>("window.__reel.state()")).toEqual({ playing: clips[1]!.src, clips: clips.length });
+  expect(await tab.eval<unknown>(`[...document.querySelectorAll("[data-pick]")].map((b) => b.getAttribute("aria-pressed"))`)).toEqual(clips.map((_, i) => String(i === 1)));
   await tab.close();
 });
 
@@ -45,9 +45,9 @@ test("a tile starts its clip when the pointer rests on it and drops it when the 
   const at = await tab.eval<{ x: number; y: number }>(`(() => { const e = document.querySelector(".game [data-clip]"); e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await tab.call("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
   await Bun.sleep(1500);
-  expect(await tab.eval(`(() => { const v = document.querySelector(".game video.clip"); return v ? { playing: !v.paused, src: new URL(v.src).pathname === v.closest("[data-clip]").dataset.clip } : null; })()`)).toEqual({ playing: true, src: true });
+  expect(await tab.eval<unknown>(`(() => { const v = document.querySelector(".game video.clip"); return v ? { playing: !v.paused, src: new URL(v.src).pathname === v.closest("[data-clip]").dataset.clip } : null; })()`)).toEqual({ playing: true, src: true });
   await tab.call("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2 });
   await Bun.sleep(200);
-  expect(await tab.eval(`document.querySelectorAll("video.clip").length`)).toBe(0);
+  expect(await tab.eval<number>(`document.querySelectorAll("video.clip").length`)).toBe(0);
   await tab.close();
 });
