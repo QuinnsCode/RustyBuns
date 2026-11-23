@@ -822,7 +822,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // a release build whoever started it.
   if (bin.NODE_ENV === "test") delete bin.NODE_ENV;
   // A monorepo app's workspace packages that ship as source with a build step are built first.
-  for (const pre of workspacePrebuild(process.cwd())) {
+  for (const pre of workspacePrebuild(process.cwd(), build ?? "")) {
     console.log(`building a workspace dependency: ${pre}`);
     await step("workspace build", () => $`sh -c ${pre}`.env(bin));
   }

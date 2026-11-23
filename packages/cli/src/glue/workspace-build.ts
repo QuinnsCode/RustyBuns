@@ -10,11 +10,17 @@ import { detectPm } from "./infer.ts";
 // point at a file that isn't there, deepest first.
 //   apps/web -> @acme/ui ("main": "dist/index.js", no dist/) -> @acme/tokens (same)
 //   -> ["(cd '<root>/packages/tokens' && pnpm run build)", "(cd '<root>/packages/ui' && pnpm run build)"]
+// Then the app's own pre-steps that an inferred `vite build` skips: a `predev` made only of
+// script runs in workspace packages (`pnpm --filter @acme/site generate`: files the app imports
+// from a sibling that ships source), and its `prebuild` (#5766).
 
 type Member = { name: string; dir: string; pkg: any };
 
-/** The shell steps that build `dir`'s unbuilt workspace dependencies, in dependency order. */
-export function workspacePrebuild(dir: string): string[] {
+/**
+ * The shell steps that build `dir`'s unbuilt workspace dependencies, in dependency order, then its
+ * own generate steps. `build` is the build they go in front of: a `<pm> run build` runs `prebuild` itself.
+ */
+export function workspacePrebuild(dir: string, build = ""): string[] {
   const root = workspaceRoot(dir);
   if (!root) return [];
   const members = new Map(workspaceMembers(root).map((m) => [m.name, m]));
@@ -31,7 +37,41 @@ export function workspacePrebuild(dir: string): string[] {
     }
   };
   const self = readJson(join(resolve(dir), "package.json"));
-  if (self) { if (self.name) seen.add(self.name); visit(self); }
+  if (!self) return out;
+  if (self.name) seen.add(self.name);
+  visit(self);
+  for (const [name, script] of filteredRuns(self.scripts?.predev, members)) {
+    const step = `(cd ${sh(members.get(name)!.dir)} && ${pm} run ${script})`;
+    if (!out.includes(step)) out.push(step);
+  }
+  if (self.scripts?.prebuild && !new RegExp(`^${pm} run build\\b`).test(build.trim())) out.push(`(cd ${sh(resolve(dir))} && ${pm} run prebuild)`);
+  return out;
+}
+
+/**
+ * A script made only of runs in workspace members, as [member, script] pairs; [] if any part is something else.
+ *   "pnpm --filter @acme/site generate && yarn workspace ui run icons" -> [["@acme/site", "generate"], ["ui", "icons"]]
+ */
+export function filteredRuns(script: unknown, members: Map<string, unknown>): [string, string][] {
+  if (typeof script !== "string" || !script.trim()) return [];
+  const out: [string, string][] = [];
+  for (const part of script.split("&&")) {
+    const words = part.trim().split(/\s+/).map((w) => w.replace(/^(['"])(.*)\1$/, "$2"));
+    const [pm, ...rest] = words;
+    if (!pm || !["pnpm", "npm", "yarn", "bun"].includes(pm)) return [];
+    let name = "";
+    const args: string[] = [];
+    for (let i = 0; i < rest.length; i++) {
+      const w = rest[i]!;
+      const eq = /^(--filter|--workspace)=(.+)$/.exec(w);
+      if (eq) name = eq[2]!;
+      else if (["--filter", "-F", "--workspace", "-w"].includes(w)) name = rest[++i] ?? "";
+      else if (pm === "yarn" && w === "workspace" && !name) name = rest[++i] ?? "";
+      else if (w !== "run") args.push(w);
+    }
+    if (!members.has(name) || args.length !== 1 || args[0]!.startsWith("-")) return [];
+    out.push([name, args[0]!]);
+  }
   return out;
 }
 
