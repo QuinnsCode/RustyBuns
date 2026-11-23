@@ -16,7 +16,7 @@
 
 **The idea engine: a meta-metaframework, typed from front to back.** When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
 
-**It is called Rusty Buns, but your app needs neither Rust nor Bun.** On the edge, your app is a plain Worker. Rust and Bun are here because they connect to everything so well: Bun runs the tool, the local copies and the desktop file, and Rust is an option for speed.
+**It is called Rusty Buns, but your app needs neither Rust nor Bun.** You need Bun to build. Your app and your users do not. On the edge, the app is a plain Worker. The desktop file has Bun inside it, so a user installs nothing. Rust is an option for speed. We use Rust and Bun because they connect to everything so well.
 
 ### Why use it, most important first
 
