@@ -1,5 +1,5 @@
 // The PA heard from the floor (src/studio/pa-room.ts): level by the inverse square law, the speed of sound's delay,
-// the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from.
+// the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from: one mono point source.
 import { expect, test } from "bun:test";
 import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, type Speaker } from "../src/studio/pa-room.ts";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
@@ -27,11 +27,16 @@ test("a speaker behind you is quieter and duller than the same one in front", ()
   expect(hearSpeaker(stack, { x: 0, z: -10, yaw: 0 }).gain).toBeLessThan(behind.gain);
 });
 
-test("Desert Gathering plays from its four stacks, the left pair on the floor's left; a room without decks has no PA", () => {
-  const sp = paSpeakers(DESERT_GATHERING);
-  expect(sp.map((s) => [s.at[0], s.side])).toEqual([[-9.6, 0], [-8.4, 0], [8.4, 1], [9.6, 1]]);
-  // on the floor, facing the stage, the left stacks are on your left
-  const ears = { x: 0, z: 4, yaw: 0 };
-  expect(hearSpeaker(sp[0], ears).pan).toBeLessThan(0);
+test("Desert Gathering plays one mono sum from a single wall of stacks behind the decks; stereo stacks play their side; a room without decks has no PA", () => {
+  const sp = paSpeakers(DESERT_GATHERING), dj = DESERT_GATHERING.spots.find((s) => s.kind === "dj")!;
+  expect(sp.map((s) => s.side)).toEqual(["mono", "mono", "mono", "mono"]);
+  // one point source: shoulder to shoulder, under 5 m end to end, all behind the DJ
+  const xs = sp.map((s) => s.at[0]);
+  expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(5);
+  expect(sp.every((s) => s.at[1] < dj.at[1])).toBe(true);
+  // the same rig in stereo: the left pair plays the left of the set, and on the floor it's on your left
+  const stereo = paSpeakers({ ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, mono: false } });
+  expect(stereo.map((s) => s.side)).toEqual([0, 0, 1, 1]);
+  expect(hearSpeaker(stereo[0], { x: 0, z: 4, yaw: 0 }).pan).toBeLessThan(0);
   expect(paSpeakers(LIVE_ROOM)).toEqual([]);
 });

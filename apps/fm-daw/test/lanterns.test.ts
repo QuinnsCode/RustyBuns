@@ -1,4 +1,4 @@
-// Desert Gathering's lanterns through the real World: two people in the room, one takes a lantern off the deck table,
+// Desert Gathering's lanterns through the real World: two people in the room, one takes a spare from the booth's corner,
 // the other sees it go with them and can't take it, it is set down far out in the desert, and a reload (and a World
 // woken cold from its storage) still finds it there. A carrier who leaves drops theirs where they stood.
 import { expect, test } from "bun:test";
@@ -8,11 +8,11 @@ import { decodeLanternServer } from "../src/lanterns.ts";
 import { decodeServer } from "../src/project.ts";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { LanternsHere } from "../src/studio/lanterns.ts";
-import { body, gone, hear, newJam, walkTo } from "../src/studio/jam.ts";
+import { body, gone, hear, newJam, sit, walkTo } from "../src/studio/jam.ts";
 
 useWorld();
 
-test("a lantern taken off the deck table goes with its carrier for everyone, stays where it's set down, and drops where a leaver stood", async () => {
+test("a lantern taken from the booth goes with its carrier for everyone, stays where it's set down, and drops where a leaver stood", async () => {
   const { ctx, store, world, join, leave } = await setup({}, "dusty-moon-fox");
   /** The jam room's page on a socket: its people from the live line, its lanterns from the World. */
   const page = async () => {
@@ -32,16 +32,20 @@ test("a lantern taken off the deck table goes with its carrier for everyone, sta
   };
   const amy = await page(), ben = await page();
   const table = DESERT_GATHERING.outdoor!.lanterns!;
-  expect(table).toHaveLength(6);
-  // both walk up to the left end of the deck table, in front of it on the stage
-  amy.go(-1.3, -6.9); ben.go(-1.2, -6.8);
+  expect(table).toHaveLength(4);
+  // both walk up to the spares at the booth's left front corner, each with a hand lantern of their own
+  amy.go(-2, -6.4); ben.go(-1.9, -6.3);
   amy.pump(); ben.pump();
+  const whose = (p: { lit: LanternsHere; jam: typeof amy.jam }) => p.lit.hands(p.jam).map((h) => h.by === "me" ? "mine" : "theirs");
+  expect([whose(amy), whose(ben)]).toEqual([["mine", "theirs"], ["mine", "theirs"]]);
   expect(amy.lit.hint(amy.jam)).toContain("pick up");
   const first = amy.lit.near(amy.jam)!;
   expect(first).not.toBeNull();
   expect(amy.lit.use(amy.jam, first).ok).toBe(true);
   amy.pump(); ben.pump();
   expect(amy.lit.mine()).toBe(first);
+  // carrying the spare, she puts her own away: ben sees one lantern in her hand, not two
+  expect(whose(ben)).toEqual(["mine"]);
   // ben sees it in amy's hand, and his grab for that one is turned down
   const seen = () => ben.lit.places(ben.jam)[first]!;
   expect(seen().by).toBe(amy.lit.me!);
@@ -68,7 +72,7 @@ test("a lantern taken off the deck table goes with its carrier for everyone, sta
   expect(Math.hypot(out[first]!.x - 15, out[first]!.z - 1.4)).toBeLessThan(0.1);
   expect(out.filter((p) => p.i !== first).map((p) => [p.x, p.y, p.z])).toEqual(table.filter((_, i) => i !== first));
   // amy takes a second one and leaves with it in her hand: it drops on the sand where she last stood
-  amy.go(1.3, -6.9);
+  amy.go(2, -6.4);
   const second = amy.lit.near(amy.jam)!;
   expect(amy.lit.use(amy.jam).ok).toBe(true);
   amy.go(5, 3);
@@ -87,4 +91,16 @@ test("a lantern taken off the deck table goes with its carrier for everyone, sta
   const back = decodeLanternServer(ws.sent.find((m) => m.t === "lanterns"))!;
   expect(back.lanterns.moved[first]).toEqual(ben2.ws.sent.findLast((m) => m.t === "lanterns").lanterns.moved[first]);
   expect(back.lanterns.moved[second]).toEqual({ at: [dropped.x, 0, dropped.z] });
+});
+
+test("everyone on their feet carries a hand lantern, and the DJ puts theirs down to play", () => {
+  const amy = newJam(DESERT_GATHERING), ben = newJam(DESERT_GATHERING), lit = new LanternsHere(DESERT_GATHERING, () => {});
+  hear(ben, 7, body(amy));
+  expect(lit.hands(ben).map((h) => h.by)).toEqual(["me", 7]);
+  // amy walks round behind the booth and steps up to the decks
+  walkTo(amy, 0, -9.2);
+  expect(sit(amy, "dj")).toEqual({ ok: true });
+  expect(new LanternsHere(DESERT_GATHERING, () => {}).hands(amy)).toEqual([]);
+  hear(ben, 7, body(amy));
+  expect(lit.hands(ben).map((h) => h.by)).toEqual(["me"]);
 });

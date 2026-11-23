@@ -28,8 +28,8 @@ export const HEAD_BACK = 0.7;
 /** How loud the room's ring is, against the speakers' direct sound at REF_M (it follows the loudest stack's level, square-rooted). */
 export const WET = 0.4;
 
-/** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays. */
-export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 }
+/** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays ("mono": both, summed). */
+export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono" }
 /** What you hear of one speaker: its level (0 to 1), its delay (s), the air's low-pass (Hz), and its pan (-1 left to 1 right). */
 export interface Heard { gain: number; delay: number; cutoff: number; pan: number; m: number }
 /** Where you are and which way you face (yaw 0 looks down -z, as jam.ts's). */
@@ -41,7 +41,7 @@ const AIR_4K_DB = 10 * Math.log10(Math.E) * AIR[5];
 /**
  * The room's PA speakers: an open-air party's stacks where it has them, else a stack either side of the DJ table,
  * just past its ends and a little toward the crowd, facing the way the DJ faces. None in a room without decks.
- * Each plays the side of the set it stands on, seen from the floor.
+ * Each plays the side of the set it stands on, seen from the floor, or all the same mono sum where the party's rig is mono.
  */
 export function paSpeakers(def: StudioDef): Speaker[] {
   const dj = def.spots.find((s) => s.kind === "dj");
@@ -51,6 +51,7 @@ export function paSpeakers(def: StudioDef): Speaker[] {
     for (const k of [-1, 1]) stacks.push({ at: [b.cx + rx * out * k + fx * 0.5, b.cz + rz * out * k + fz * 0.5], yaw: dj.yaw + Math.PI });
   }
   if (!stacks.length) return [];
+  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
@@ -122,9 +123,12 @@ export class PaRoom {
     limit.connect(to); to = limit;
     const split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
     this.input.connect(split);
+    // the mono sum: one channel, so the stereo set mixes down into it (left and right, half each)
+    const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit", channelInterpretation: "speakers" });
+    this.input.connect(mono);
     for (const sp of speakers) {
       const gain = new GainNode(ctx, { gain: 0 }), delay = new DelayNode(ctx, { maxDelayTime: 1 }), air = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 20000, Q: 0.5 }), pan = new StereoPannerNode(ctx);
-      split.connect(gain, sp.side);
+      if (sp.side === "mono") mono.connect(gain); else split.connect(gain, sp.side);
       gain.connect(delay).connect(air).connect(pan).connect(to);
       this.voices.push({ sp, gain, delay, air, pan });
     }
