@@ -6,8 +6,13 @@
 //  2. `reapOrphans`: every 5 minutes the office ends processes whose parent is pid 1 (nobody waits on them) and whose
 //     working directory is in a worktree that is gone, or that no worker sits at, and stopped (state T) orphaned claude
 //     sessions with their office-workers mcp and caffeinate children, which lsof gives no working directory (#5209).
-//  3. `swapUsage`: the swap gauge. Over `SWAP_HOLD` the office says so on the floor and holds new hires (`swapHold`);
-//     mem_stats reports it with the reaper's count.
+//     Also (2026-11-23, when leftovers held the office to three workers): an orphan in a session's scratch folder of such
+//     a worktree (`/tmp/claude-<uid>/<the worktree's path, - for /, .>/...`: a `python -m http.server` there ran 26 days),
+//     and a Claude Code shell whose session is gone (`zsh -c source ~/.claude/shell-snapshots/...` under pid 1: a watch
+//     loop polling `office-workers list` or `gh pr list` every 30 s for ten days after its session ended), wherever it sits.
+//  3. `swapUsage`: the swap gauge. Over `SWAP_HOLD` the office says so on the floor and holds new hires (`swapHold`),
+//     naming what holds the memory (`heavy`: the top three by memory, a system one said plainly, as fseventsd at 27 GB
+//     after a month up, cleared by a restart, or Docker's VM); mem_stats reports it with the reaper's count.
 //  4. `stuck`: a process of the office's (under it, or in one of its worktrees) that is stopped (ps state T) on two rounds
 //     in a row gets SIGCONT. On 2026-11-18 about 90 sessions sat stopped for up to 6 days: the storage guard had paused
 //     them with SIGSTOP, and a stopped process neither runs nor dies of the SIGHUP or SIGTERM sent when its worker
@@ -100,6 +105,24 @@ export function stoppedLeftovers(procs: Proc[], self = process.pid): Proc[] {
   return [...out];
 }
 
+/** A Claude Code session's scratch folder is under `claude-<uid>/<key>`, the key its project's path with every other character as -. */
+const SCRATCH = /\/claude-\d+\/([^/]+)(\/|$)/;
+const keyOf = (dir: string) => dir.replace(/[^A-Za-z0-9]/g, "-");
+/** A shell Claude Code runs a command or a monitor in: under pid 1, its session is gone. */
+const SESSION_SHELL = /^\/bin\/(zsh|bash|sh) -c source \S*\/\.claude\/shell-snapshots\//;
+
+/** Claude Code shells whose session is gone (parent pid 1), and what still runs under them. */
+export function leftShells(procs: Proc[], self = process.pid): Proc[] {
+  const keep = ours(procs, self);
+  const out = new Set(procs.filter((p) => p.ppid === 1 && SESSION_SHELL.test(p.args) && !keep.has(p.pid)));
+  for (let grew = true; grew;) {
+    grew = false;
+    const pids = new Set([...out].map((p) => p.pid));
+    for (const p of procs) if (!out.has(p) && pids.has(p.ppid) && !keep.has(p.pid)) { out.add(p); grew = true; }
+  }
+  return [...out];
+}
+
 export interface ReapFloor { dir: string; workers?: { list(): { worktree?: { path?: string } }[] } }
 
 /**
@@ -113,9 +136,12 @@ export function orphans(floors: Iterable<ReapFloor>, procs = processes(), self =
   for (const f of floors) {
     const seated = f.workers ? new Set(f.workers.list().flatMap((w) => (w.worktree?.path ? [path.basename(w.worktree.path)] : []))) : undefined;
     for (const root of spellings(path.join(f.dir, WORKTREES))) {
+      const key = keyOf(root) + "-";
       for (const p of lone) {
-        if (!p.cwd.startsWith(root + path.sep)) continue;
-        const name = p.cwd.slice(root.length + 1).split(path.sep)[0]!;
+        // in the worktree, or in a session's scratch folder of it
+        const scratch = SCRATCH.exec(p.cwd)?.[1];
+        const name = p.cwd.startsWith(root + path.sep) ? p.cwd.slice(root.length + 1).split(path.sep)[0]! : scratch?.startsWith(key) ? scratch.slice(key.length) : null;
+        if (!name) continue;
         const gone = !existsSync(path.join(root, name));
         if ((gone || (seated && !seated.has(name))) && !out.includes(p)) out.push(p);
       }
@@ -166,37 +192,54 @@ export function swapUsage(): Swap | null {
 export const SWAP_HOLD = 80;
 const holdAt = () => { const v = process.env.AGENT_OFFICE_SWAP_HOLD; return v === "off" ? Infinity : Number(v) || SWAP_HOLD; };
 
-/** Why a hire waits, or undefined when it can go ahead. */
-export function swapHold(swap = swapUsage()): string | undefined {
-  const at = holdAt();
-  if (!swap || swap.pct <= at) return undefined;
-  return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%. Send someone home or stop what they left running (#4905)`;
+/** What a system process is, said plainly, and what clears it. */
+const PLAIN: [RegExp, string][] = [
+  [/^fseventsd$/, "fseventsd (macOS's file watcher: a restart clears it)"],
+  [/^com\.apple\.Virtua/, "Docker's VM (quit Docker Desktop)"],
+  [/^com\.docker/, "Docker (quit Docker Desktop)"],
+];
+/** `top -l 1 -o mem -stats command,mem` on a Mac: the biggest `n` as "name size", a system one in plain words. */
+export function parseHeavy(text: string, n = 3): string[] {
+  const rows = text.split("\n").map((l) => /^(.+?)\s+(\d+(?:\.\d+)?[KMG])\+?-?\s*$/.exec(l.trim())).filter((m): m is RegExpExecArray => !!m && m[1] !== "COMMAND");
+  return rows.slice(0, n).map((m) => `${PLAIN.find(([re]) => re.test(m[1]!))?.[1] ?? m[1]!.trim()} ${m[2]}`);
+}
+export function heavy(): string[] {
+  if (process.platform !== "darwin") return [];
+  return parseHeavy(run(["top", "-l", "1", "-o", "mem", "-stats", "command,mem", "-n", "3"]));
 }
 
-export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number }
+/** Why a hire waits, or undefined when it can go ahead. `big`: what holds the memory (the reaper's last reading). */
+export function swapHold(swap = swapUsage(), big = stats.heavy): string | undefined {
+  const at = holdAt();
+  if (!swap || swap.pct <= at) return undefined;
+  return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%.${big.length ? ` Most of it: ${big.join(", ")}.` : ""} Send someone home or stop what they left running (#4905)`;
+}
 
-const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0 };
+export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number; heavy: string[] }
+
+const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0, heavy: [] };
 const stopped = new Set<number>();
 
 /** What the reaper has done since the office started, for /__rb/mem. */
-export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped] });
+export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped], heavy: [...stats.heavy] });
 
 /** One round: wake what stays stopped, end the orphans, read the swap, and say on the floor once when swap crosses SWAP_HOLD. */
-export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read = { procs: processes, swap: swapUsage }) {
+export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read: { procs: () => Proc[]; swap: () => Swap | null; heavy?: () => string[] } = { procs: processes, swap: swapUsage, heavy }) {
   const woke = stuck(floors(), stopped, read.procs()).filter((p) => { try { process.kill(p.pid, "SIGCONT"); return true; } catch { return false; } });
   stats.woken += woke.length;
   if (woke.length) toast(`Woke ${woke.length} stopped process${woke.length === 1 ? "" : "es"} of the office (state T since the last round): ${woke.slice(0, 3).map((p) => p.args.slice(0, 40)).join("; ")}`);
   const procs = read.procs();
-  const found = [...new Set([...orphans(floors(), procs), ...stoppedLeftovers(procs)])];
+  const found = [...new Set([...orphans(floors(), procs), ...stoppedLeftovers(procs), ...leftShells(procs)])];
   const n = await end(found.map((p) => p.pid));
   stats.reaped += n;
   if (n) {
     stats.lastReaped = found.slice(0, 10).map((p) => `${p.pid} ${p.args.slice(0, 80)} (in ${p.cwd})`);
-    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: stopped sessions of old office runs, or of worktrees nobody sits at (#4905, #5209)`);
+    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: shells and stopped sessions whose session is gone, or servers of worktrees nobody sits at (#4905, #5209)`);
   }
   const was = stats.swap?.pct ?? 0;
   stats.swap = read.swap();
   stats.at = Date.now();
+  stats.heavy = stats.swap && stats.swap.pct > holdAt() ? (read.heavy?.() ?? []) : [];
   const hold = swapHold(stats.swap);
   if (hold && was <= holdAt()) toast(hold);
   return n;

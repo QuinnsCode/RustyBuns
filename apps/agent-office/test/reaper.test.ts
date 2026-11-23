@@ -1,8 +1,8 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { endIn, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
+import { endIn, parseHeavy, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
 import { WORKTREES } from "../live/sweep.ts";
 
 setDefaultTimeout(30_000);
@@ -16,6 +16,11 @@ const leave = (dir: string) => {
   started.push(pid);
   return pid;
 };
+/**
+ * The machine's processes as the reaper sees them, with ours under pid 1 (a CI runner may hand orphans to a subreaper)
+ * and every other orphan's parent hidden, so a test round never ends a real leftover on the machine it runs on.
+ */
+const ours = () => processes().map((p) => (started.includes(p.pid) ? { ...p, ppid: 1 } : p.ppid === 1 ? { ...p, ppid: 0 } : p));
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 afterAll(() => {
@@ -38,7 +43,7 @@ test("the reaper ends orphans of gone and deskless worktrees, keeps a seated wor
   rmSync(gone, { recursive: true });
   const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "pixel-3") } }] } };
   // a CI runner may hand orphans to a subreaper rather than pid 1, so ours count as pid 1's
-  const procs = () => processes().map((p) => (started.includes(p.pid) ? { ...p, ppid: 1 } : p));
+  const procs = ours;
   const said: string[] = [];
   const n = await reapOnce(() => [floor], (m) => said.push(m), { procs, swap: () => ({ usedMb: 22_000, totalMb: 24_576, pct: 90 }) });
   expect(n).toBe(2);
@@ -83,7 +88,7 @@ test("the reaper wakes and ends stopped claude sessions an old office left, with
   };
   const [claude, caffeinate, other] = [spawnStopped(named("claude")), spawnStopped(named("caffeinate")), spawnStopped(Bun.which("sleep")!)];
   const ppid: Record<number, number> = { [claude]: 1, [caffeinate]: claude, [other]: 1 };
-  const procs = () => processes().map((p) => (p.pid in ppid ? { ...p, ppid: ppid[p.pid]!, cwd: "" } : p));
+  const procs = () => processes().map((p) => (p.pid in ppid ? { ...p, ppid: ppid[p.pid]!, cwd: "" } : p.ppid === 1 ? { ...p, ppid: 0 } : p));
   const n = await reapOnce(() => [], () => {}, { procs, swap: () => null });
   expect(n).toBe(2);
   expect([alive(claude), alive(caffeinate), alive(other)]).toEqual([false, false, true]);
@@ -99,4 +104,25 @@ test("swap is read from a Mac's sysctl or Linux's meminfo, and only over 80% hol
   for (const [text, pct] of rows) expect(parseSwap(text)?.pct ?? null).toBe(pct);
   expect(swapHold(parseSwap(rows[0]![0]))).toContain("no new hires");
   expect(swapHold(parseSwap(rows[1]![0]))).toBeUndefined();
+  // what holds it, said plainly, from a Mac's top
+  const big = parseHeavy("COMMAND          MEM\nfseventsd        27G\ncom.apple.Virtua 8206M\nGoogle Chrome He 1730M+\n");
+  expect(big).toEqual(["fseventsd (macOS's file watcher: a restart clears it) 27G", "Docker's VM (quit Docker Desktop) 8206M", "Google Chrome He 1730M"]);
+  expect(swapHold(parseSwap(rows[0]![0]), big)).toContain("Most of it: fseventsd");
+});
+
+test("the reaper ends a server left in a gone worktree's scratch folder, and a Claude Code shell whose session is gone, with its loop", async () => {
+  // the office's worktrees folder as a session's scratch key: every character but letters and digits a -
+  const key = path.join(realpathSync(repo), WORKTREES).replace(/[^A-Za-z0-9]/g, "-");
+  const scratch = (name: string) => { const d = path.join(repo, "tmp", "claude-501", `${key}-${name}`, "session", "scratchpad"); mkdirSync(d, { recursive: true }); return d; };
+  tree("gizmo-6"); tree("pixel-7");
+  const [server, kept] = [leave(scratch("gizmo-6")), leave(scratch("pixel-7"))];
+  // a watch loop's shell, as Claude Code starts one; its session ended, so it sits under pid 1
+  const shell = Bun.spawn(["/bin/sh", "-c", "source /nowhere/.claude/shell-snapshots/snap.sh 2>/dev/null || true; while true; do sleep 30; done"], { stdout: "ignore", stderr: "ignore" });
+  started.push(shell.pid);
+  await Bun.sleep(300);
+  const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "pixel-7") } }] } };
+  const procs = ours;
+  const n = await reapOnce(() => [floor], () => {}, { procs, swap: () => null });
+  expect({ server: alive(server), shell: alive(shell.pid), kept: alive(kept) }).toEqual({ server: false, shell: false, kept: true });
+  expect(n).toBeGreaterThanOrEqual(3); // the server, the shell and the sleep under it
 });

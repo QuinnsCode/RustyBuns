@@ -82,7 +82,7 @@ test("the pool never runs more than the cap and returns the worst code", async (
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
 // Each run leaves a record its menu bar reads: who and what while it runs, then how it ended.
-test("a run waits until Bob serves, takes back a dead run's slot, sends the working tree, shows on his menu, and outlasts losing him mid-run", async () => {
+test("a run waits until Bob serves, takes back a dead run's slot, sends the working tree, shows on his menu, outlasts losing him mid-run, and a stray file in his locks doesn't jam a slot", async () => {
   const root = mkdtempSync(`${tmpdir()}/remote-ci-`), work = `${root}/work`, home = `${root}/home`;
   const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   await Bun.write(`${work}/package.json`, `{"name":"w"}`);
@@ -113,6 +113,8 @@ test("a run waits until Bob serves, takes back a dead run's slot, sends the work
     expect(mid.running.map((r) => [r.slot, r.who, r.cmd, r.last])).toEqual([["slot-1", "byte", expect.stringContaining(".: sh -c cat new.txt"), "hello"]]);
     expect(menu(mid, mid.running[0]!.started + 75_000).split("\n").slice(0, 3)).toEqual(["Bob: 1 running", "---", expect.stringMatching(/^slot-1 {2}byte {2}1m 15s \|/)]);
 
+    // a late heartbeat once left a plain file where a released lock was: the slot is still taken, not jammed for good
+    await Bun.write(`${builder}/locks/slot-1`, "");
     expect(await main(["run", ".", "sh", "-c", "echo nope; exit 1"], work)).toBe(1);
     // He goes away mid-run (ssh exits 255): the run waits for him again and runs from the start, not a failure
     expect(await main(["run", ".", "sh", "-c", `[ -f ${root}/dropped ] || { touch ${root}/dropped; exit 255; }; echo back`], work)).toBe(0);
