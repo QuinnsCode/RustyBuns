@@ -7,8 +7,10 @@
 //
 //   bun scripts/preflight.ts [--base origin/main] [--json]
 //
-// Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a card or an unsettled
-// clash in your files (so a hook can stop and ask), 0 otherwise. It prints a `Merge after #N` line for the PR body;
+// Before all that it names any file the branch rolls back to a copy main had before a recent commit (#5687).
+//
+// Reads git and `gh` only; commit first, it merges HEAD, not the working tree. Exits 1 on a rollback, a card or an
+// unsettled clash in your files (so a hook can stop and ask), 0 otherwise. It prints a `Merge after #N` line for the PR body;
 // scripts/after.ts (after.yml) merges main into the branch once those land (#5344). It notes the HEAD it read in the worktree's git folder
 // (`rustybuns-preflight`) with the PRs it named, and .claude/hooks/guard.ts turns away `gh pr create` on a commit it
 // hasn't read (#4956), or whose body lacks that `Merge after` line (#5344). Lock and generated files are listed apart:
@@ -58,6 +60,38 @@ export function verdict(board: Board): { settles: FileRow[]; look: FileRow[]; ca
   };
 }
 
+/** A file this branch puts back the way it was before `commit` (already on main) changed it. */
+export interface Rollback { path: string; commit: string; subject: string }
+
+/**
+ * Files the branch rolls back (#5687): the branch's copy of a file is exactly the one main had just before a commit
+ * from the last `days` days before the merge-base, a file it deletes being one such a commit created. A commit made
+ * in a worktree that sat on an old main and was then reset onto the new one does this (#5600, #5626): the squash keeps
+ * the old copies and undoes work nobody meant to touch. One `git diff` and one `git log`; generated files are skipped.
+ */
+export function rollbacks(git: (...a: string[]) => string, base: string, head = "HEAD", days = 14): Rollback[] {
+  const mb = git("merge-base", base, head).trim();
+  const raw = (line: string) => /^:\d+ \d+ ([0-9a-f]{40}) ([0-9a-f]{40}) \w+\t(.+)$/.exec(line);
+  const mine = new Map<string, string>(); // path -> the branch's blob (zeros when it deletes the file)
+  for (const line of git("diff", "--raw", "--no-abbrev", "--no-renames", mb, head).split("\n")) {
+    const m = raw(line);
+    if (m && !GENERATED.some((g) => g.test(m[3]!))) mine.set(m[3]!, m[2]!);
+  }
+  if (!mine.size) return [];
+  const since = Number(git("log", "-1", "--format=%ct", mb).trim()) - days * 86400;
+  const out: Rollback[] = [];
+  let at: { commit: string; ct: number; subject: string } | undefined;
+  for (const line of git("log", "--raw", "--no-abbrev", "--no-renames", "--format=@@ %H %ct %s", "-n", "500", mb, "--", ...mine.keys()).split("\n")) {
+    const c = /^@@ ([0-9a-f]{40}) (\d+) (.*)$/.exec(line);
+    if (c) { at = { commit: c[1]!, ct: Number(c[2]), subject: c[3]! }; continue; }
+    const m = raw(line);
+    if (!m || !at || at.ct < since || mine.get(m[3]!) !== m[1]) continue;
+    out.push({ path: m[3]!, commit: at.commit, subject: at.subject });
+    mine.delete(m[3]!); // newest such commit only
+  }
+  return out;
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const base = args.includes("--base") ? args[args.indexOf("--base") + 1]! : "origin/main";
@@ -70,13 +104,19 @@ if (import.meta.main) {
   const branch = run$(["git", "rev-parse", "--abbrev-ref", "HEAD"]).trim();
   const head = run$(["git", "rev-parse", "HEAD"]).trim();
   const prs = arr(OpenPr, Infinity)(JSON.parse(run$(["gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "number,title,headRefName,headRefOid,files"])));
+  const back = rollbacks((...a) => run$(["git", ...a]), base);
   const { clash, generated } = overlaps(mine, prs, branch);
   const others = clash.map((o) => prs.find((p) => p.number === o.pr)!);
   const v = others.length ? verdict(run(undefined, run$(["git", "rev-parse", base]).trim(), [...others, { number: ME, title: "this branch", headRefOid: head, headRefName: branch }]).board) : undefined;
   // Each file Mervin settles for this branch is a conflict nobody fights: counted once per branch and file.
   for (const f of v?.settles ?? []) noteSaved("preflight", `preflight ${branch} ${f.path}`);
-  if (args.includes("--json")) console.log(JSON.stringify({ clash, generated, ...(v && { mervin: v }) }, null, 2));
+  if (args.includes("--json")) console.log(JSON.stringify({ clash, generated, rollbacks: back, ...(v && { mervin: v }) }, null, 2));
   else {
+    if (back.length) {
+      console.log("This branch puts back older copies of files main has changed since (#5687):");
+      for (const r of back) console.log(`  ${r.path}  undoes ${r.commit.slice(0, 9)} ${r.subject}`);
+      console.log(`Unless you meant to revert them, take main's copy and commit: git checkout ${base} -- ${back.map((r) => r.path).join(" ")}\n`);
+    }
     for (const o of clash) console.log(`#${o.pr} ${o.title}\n  also changes: ${o.files.slice(0, 8).join(", ")}${o.files.length > 8 ? ` (+${o.files.length - 8})` : ""}`);
     for (const o of generated) console.log(`#${o.pr} shares only generated files (${o.files.join(", ")}): regenerate after merging main`);
     if (!v) console.log("no other open PR changes your files");
@@ -94,7 +134,7 @@ if (import.meta.main) {
     }
     if (others.length) console.log(`\nPut this line in the PR body; scripts/after.ts merges main in once they land:\n  Merge after ${others.map((p) => `#${p.number}`).join(", ")}`);
   }
-  const code = v && (v.cards.length || v.clashes.length) ? 1 : 0;
+  const code = back.length || (v && (v.cards.length || v.clashes.length)) ? 1 : 0;
   const stamp = run$(["git", "rev-parse", "--path-format=absolute", "--git-path", "rustybuns-preflight"]).trim();
   await Bun.write(stamp, `${head} ${code} ${others.map((p) => p.number).join(",")}\n`);
   process.exit(code);
