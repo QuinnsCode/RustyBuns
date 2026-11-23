@@ -27,7 +27,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue, floorGuardSeat } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
-import { slowCheckout } from "./checkout.ts";
+import { slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -152,7 +152,8 @@ async function prepare(tag: string) {
     "        return __rbEndIn(w.info.worktree?.path ? path.join(this.trees.dir, w.info.worktree.path) : '').then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos)).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
 
   // 6a2. #5523: a checkout of this repo outran upstream's 20 s `git worktree add` timeout
-  writeFileSync(path.join(srv, "worktrees.js"), slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8")));
+  // and a worktree starts from origin/main, not from whatever branch the floor checkout was left on
+  writeFileSync(path.join(srv, "worktrees.js"), startFromDefault(slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8"))));
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
