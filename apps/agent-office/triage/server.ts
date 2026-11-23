@@ -25,6 +25,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 export { startReaper } from "../live/reaper.ts";
+export { startCiLoop } from "../live/ci-loop.ts";
 import { officeReload } from "../live/reload.ts";
 import type { ContextReply } from "../live/replies.ts";
 import { CARRY_ON, ContextWatch, Meter, ModeWatch, nameOf, sessionLines, StallWatch, type Context, type Stall } from "../ester/dexter.ts";
