@@ -1,0 +1,21 @@
+# Microcontroller firmware in the repo, built for its chip with no hardware: Q Keys' ATtiny1614 (apps/fm-daw/firmware/keys,
+# #5749). Its logic is also built for the runner and played against the sim in apps/fm-daw/test/wall-firmware.test.ts.
+name: firmware
+on:
+  pull_request:
+    paths: ["apps/fm-daw/firmware/**", ".github/workflows/firmware.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/fm-daw/firmware/**", ".github/workflows/firmware.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  keys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-avr avr-libc binutils-avr
+      - run: make -C apps/fm-daw/firmware/keys
