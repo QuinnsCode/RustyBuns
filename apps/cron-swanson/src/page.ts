@@ -128,18 +128,16 @@ const isTheme = (v: unknown): v is Theme => typeof v === "string" && (THEMES as 
 let theme: Theme = "system";
 try { const t = localStorage.getItem(THEME_KEY); if (isTheme(t)) theme = t; } catch { /* private window */ }
 
-/** Twelve light, digital faces from Google Fonts for the numbers and labels; the owner picks one. */
-const FONTS: [name: string, weight: number][] = [
-  ["Azeret Mono", 300], ["Martian Mono", 300], ["Chakra Petch", 300], ["Oxanium", 300], ["Share Tech Mono", 400], ["Space Mono", 400],
-  ["Major Mono Display", 400], ["Michroma", 400], ["Tektur", 400], ["Kode Mono", 400], ["Doto", 500], ["DotGothic16", 400],
-];
+/** The two digital faces (Google Fonts) for the numbers and labels: a light mono, or dot-matrix. */
+const FONTS: [name: string, weight: number][] = [["Azeret Mono", 300], ["Doto", 500]];
 let font = FONTS[0]![0];
 try { const v = localStorage.getItem(FONT_KEY); if (v && FONTS.some(([n]) => n === v)) font = v; } catch { /* private window */ }
 function wearFont() {
   const [name, weight] = FONTS.find(([n]) => n === font) ?? FONTS[0]!;
   let link = document.getElementById("font-link") as HTMLLinkElement | null;
   if (!link) { link = document.createElement("link"); link.id = "font-link"; link.rel = "stylesheet"; document.head.append(link); }
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name).replace(/%20/g, "+")}:wght@${weight}&display=swap`;
+  // Both faces in one request, so the gear's two buttons each show their own.
+  link.href = `https://fonts.googleapis.com/css2?${FONTS.map(([n, w]) => `family=${n.replace(/ /g, "+")}:wght@${w}`).join("&")}&display=swap`;
   document.documentElement.style.setProperty("--digital", `"${name}", ui-monospace, monospace`);
   document.documentElement.style.setProperty("--digital-weight", String(weight));
 }
@@ -163,9 +161,7 @@ function paintSettings() {
     alerts.title = p === "granted" ? "Desktop alerts on" : p === "denied" ? "Blocked: allow notifications for this site" : "Turn on desktop alerts";
     alerts.classList.toggle("on", p === "granted");
   }
-  const box = $<HTMLSelectElement>("font");
-  if (!box.options.length) box.innerHTML = FONTS.map(([n], i) => `<option value="${esc(n)}">${i + 1}. ${esc(n)}</option>`).join("");
-  box.value = font;
+  $("font-picks").innerHTML = FONTS.map(([n, wt]) => `<button type="button" class="${font === n ? "on" : ""}" data-font="${esc(n)}" title="${esc(n)}" style="font-family:'${esc(n)}',ui-monospace,monospace;font-weight:${wt}">09:41</button>`).join("");
   const l = eq.login();
   $("set-account").innerHTML = l
     ? `<span>${icon(LogOut)}</span><button type="button" class="toggle wide" id="sign-out" title="Sign out">${esc(l.name || l.email)}</button>`
@@ -461,6 +457,7 @@ document.body.addEventListener("click", (e) => {
   else if (isView(el.dataset.view)) { setView(el.dataset.view); $("views-menu").hidden = true; }
   else if (isUnit(el.dataset.unit)) { unit = el.dataset.unit; paintAdder(); }
   else if (isTheme(el.dataset.themePick)) setTheme(el.dataset.themePick);
+  else if (el.dataset.font) setFont(el.dataset.font);
   else if (el.id === "sound") setSound(!loud);
   else if (el.id === "alerts") void Notification.requestPermission().then(paintSettings);
   else if (el.id === "plus" || el.dataset.openAdder !== undefined) openAdder();
@@ -497,7 +494,6 @@ document.addEventListener("pointerdown", (e) => {
     if (!$(pop).hidden && !t?.closest(`#${pop}, #${opener}`)) $(pop).hidden = true;
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("settings").hidden = true; $("views-menu").hidden = true; } });
-$<HTMLSelectElement>("font").addEventListener("change", (e) => setFont((e.target as HTMLSelectElement).value));
 
 $<HTMLInputElement>("q").addEventListener("input", (e) => { state.q = (e.target as HTMLInputElement).value; render(); });
 
@@ -705,8 +701,8 @@ function commands(): Command[] {
       execute: (a) => setTheme(oneOf(THEMES)(obj({ theme: str(10) })(a).theme)) },
     { name: "cs_sound", title: "808s on or off", group: "Settings", icon: "audio-lines", answers: false, description: "Turn the 808s on or off (toggles without an argument).",
       inputSchema: { type: "object", properties: { on: { type: "boolean" } } }, execute: (a) => setSound(obj({ on: bool(!loud) })(a).on) },
-    { name: "cs_font", title: "Font", group: "Settings", icon: "type", ask: `1 to ${FONTS.length}, or a name`, answers: false,
-      description: `Pick one of the ${FONTS.length} fonts: ${FONTS.map(([n]) => n).join(", ")}.`, inputSchema: { type: "object", properties: { font: { type: "string" } }, required: ["font"] },
+    { name: "cs_font", title: "Font", group: "Settings", icon: "type", ask: FONTS.map(([n]) => n).join(" or "), answers: false,
+      description: `Pick the font: ${FONTS.map(([n]) => n).join(" or ")} (or 1, 2).`, inputSchema: { type: "object", properties: { font: { type: "string" } }, required: ["font"] },
       execute: (a) => { const v = String((a as { font?: unknown }).font ?? "").trim(); const byNo = FONTS[Number(v) - 1]; const hit = byNo ?? FONTS.find(([n]) => n.toLowerCase().includes(v.toLowerCase())); if (!hit) throw new Bad(`no font "${v}"`); setFont(hit[0]); } },
     { name: "cs_state", title: "What's on screen", group: "Settings", icon: "info", annotations: read, palette: false,
       description: "The page's view, window, look, sound, font, and how many alarms and waiting reminders there are.",

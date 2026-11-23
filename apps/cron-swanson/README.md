@@ -11,16 +11,16 @@ It also holds the jobs that run on a timer for other apps (nightly backups, week
 
 **Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
 
-**How to use:** the screen is your alarms as little clouds on tracks, grouped into busses by how often they come
+**How to use:** the screen is your alarms as glowing piano-roll notes on tracks, grouped into busses by how often they come
 round (every few minutes, daily, weekly, monthly, yearly), with time running left to right. A playhead sweeps across;
-each cloud it reaches gets struck by lightning, and with the 808s on (the gear) it thumps a bass note.
+each note it reaches lights up under a faint thread of light, and with the 808s on (the gear) it thumps a bass note.
 
 - **+** (bottom left): type what, then every 0 to 60 minutes, hours, days, weeks or months (0 is once) and when it
   starts, up to three months out. It tidies the number: 60 minutes is an hour, 31 days a month. The sliders icon opens
   the full editor (cron lines, URLs, tags, time zones).
 - **Views** (bottom right): busses, a list you can sort (next up, shortest interval, done most, fired most, ignored
   most, idle longest), or a week calendar. Under busses, pick how far ahead: 6h, 1d, 1w, 1mo or 3mo.
-- **Gear** (top right): light, dark or the system's look; 808s; desktop alerts; one of twelve digital fonts; sign in or out.
+- **Gear** (top right): light, dark or the system's look; 808s; desktop alerts; the font (Azeret Mono or Doto); sign in or out.
 - **A reminder going off** floats in at the top: tick it off, or snooze it 10 minutes or an hour (it comes back then).
 - **Cmd/Ctrl+K**: every one of these as a command. The same commands are WebMCP tools an agent in the browser can
   call, and `bun apps/cron-swanson/src/cli.ts` (`list`, `add`, `waiting`, `done`, `snooze`, `pause`, `resume`,

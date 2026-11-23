@@ -1,7 +1,7 @@
-// The busses: the coming alarms as little fuzzy clouds hovering on their tracks, time running left to right from now
+// The busses: the coming alarms as fuzzy piano-roll notes on their tracks, time running left to right from now
 // to the end of the window. Tracks are grouped into busses by lane (every-N, daily, weekly, monthly, yearly), the way a
-// mixer groups channels. A playhead sweeps across on a loop; each cloud it reaches gets struck by lightning and, with
-// the speaker on, thumps an 808 at its bus's pitch. An alarm too busy to draw cloud by cloud is one long cloud bank.
+// mixer groups channels. A playhead sweeps across on a loop; each note it reaches lights up under a faint flicker of
+// light and, with the speaker on, thumps an 808 at its bus's pitch. An alarm too busy to draw note by note is one held note.
 import { upcoming, type Flow } from "./bacron.ts";
 import type { Job } from "./api.ts";
 
@@ -75,36 +75,35 @@ export function roll(canvas: HTMLCanvasElement, o: { height(): number; pick(job:
     return bus;
   }
 
-  function cloud(x: number, y: number, r: number, color: string, glow: number) {
+  /** A note: a piano-roll bar with a soft, fuzzy halo, brighter for a moment when the playhead strikes it. */
+  function note(x: number, y: number, bw: number, bh: number, color: string, glow: number) {
     ctx.save();
-    ctx.globalAlpha = 0.5 + glow * 0.45;
     ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 14 + glow * 26;
-    ctx.filter = `blur(${1.6 - glow}px)`;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.arc(x - r * 0.85, y + r * 0.25, r * 0.7, 0, Math.PI * 2);
-    ctx.arc(x + r * 0.9, y + r * 0.2, r * 0.75, 0, Math.PI * 2);
-    ctx.arc(x + r * 0.2, y - r * 0.5, r * 0.65, 0, Math.PI * 2);
-    ctx.fill();
+    // The fuzz: a faint wider bar under the core, and the core's own glow (shadows, not filters: a blur filter on
+    // every note every frame stalls the page).
+    ctx.globalAlpha = 0.18 + glow * 0.3;
+    ctx.beginPath(); ctx.roundRect(x - bw / 2 - 3, y - bh / 2 - 3, bw + 6, bh + 6, bh / 2 + 3); ctx.fill();
+    ctx.globalAlpha = 0.72 + glow * 0.28;
+    ctx.shadowColor = color; ctx.shadowBlur = 10 + glow * 18;
+    ctx.beginPath(); ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, Math.min(5, bh / 2)); ctx.fill();
+    // A thin light along the top, like a lit key.
+    ctx.shadowBlur = 0; ctx.globalAlpha = 0.35 + glow * 0.4; ctx.fillStyle = "#fff";
+    ctx.fillRect(x - bw / 2 + 3, y - bh / 2 + 2, Math.max(1, bw - 6), 1);
     ctx.restore();
   }
 
-  /** A lightning bolt striking down onto the cloud at x, from `top` to `bottom`. */
-  function bolt(x: number, top: number, bottom: number, color: string, k: number) {
-    const h = bottom - top, w = h * 0.42;
-    // The classic bolt: down-left, a notch back right, then down to a point.
-    const pts: [number, number][] = [[0.15, 0], [-0.45, 0.55], [0.02, 0.55], [-0.2, 1], [0.5, 0.38], [0.05, 0.38], [0.35, 0]];
+  /** The strike: a faint thread of light that flickers down onto the note, a hair-thin wobble, never a cartoon bolt. */
+  function thread(x: number, top: number, bottom: number, color: string, k: number, now: number) {
     ctx.save();
-    ctx.globalAlpha = k;
-    ctx.fillStyle = css("--bolt") || "#fff6c8";
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 22;
+    ctx.globalAlpha = k * 0.75;
+    ctx.strokeStyle = css("--bolt") || "#fff6c8";
+    ctx.shadowColor = color; ctx.shadowBlur = 6;
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
-    pts.forEach(([px, py], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + px * w, top + py * h));
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(x, top);
+    const steps = 7, flick = Math.floor(now / 40);
+    for (let i = 1; i <= steps; i++) ctx.lineTo(x + (i < steps ? Math.sin(flick * 7.3 + i * 12.9) * 2.2 : 0), top + ((bottom - top) * i) / steps);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -134,16 +133,17 @@ export function roll(canvas: HTMLCanvasElement, o: { height(): number; pick(job:
       const c = tr.lane.color, wob = seed(tr.lane.job.id);
       ctx.fillStyle = line; ctx.fillRect(GUTTER, mid, w - GUTTER - 16, 1);
       if (tr.hum) {
-        for (let x = GUTTER + 8; x < w - 20; x += 14) cloud(x, mid + Math.sin(now / 900 + x / 40) * 1.5, Math.min(9, th * 0.22), c, 0);
+        // Too busy for single notes: one long held note across the window.
+        note((w + GUTTER) / 2, mid, w - GUTTER - 44, Math.min(10, th * 0.22), c, 0);
         continue;
       }
       const gap = (w - GUTTER) / Math.max(1, tr.times.length);
-      const r = Math.max(4, Math.min(th * 0.2, gap * 0.32, 18));
+      const bw = Math.max(5, Math.min(gap * 0.62, 46)), bh = Math.max(6, Math.min(th * 0.3, 16));
       for (const t of tr.times) {
         const x = xOf(t, w), hit = struck.get(`${tr.lane.job.id}:${t}`) ?? -1e9, k = Math.max(0, 1 - (now - hit) / 450);
-        const y = mid + (still ? 0 : Math.sin(now / 850 + wob * 6 + t / 3.6e6) * Math.min(3, th * 0.06));
-        cloud(x, y, r, c, k);
-        if (k > 0) bolt(x, y - r - th * 0.42, y - r * 0.3, c, k);
+        const y = mid + (still ? 0 : Math.sin(now / 850 + wob * 6 + t / 3.6e6) * Math.min(1.5, th * 0.03));
+        if (k > 0) thread(x, y - th * 0.5, y - bh / 2, c, k, now);
+        note(x, y, bw, bh, c, k);
       }
     }
     if (!still) {
