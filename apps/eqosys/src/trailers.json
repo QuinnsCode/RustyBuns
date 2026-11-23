@@ -32,5 +32,32 @@
       "title": "Send it",
       "secs": 14
     }
+  ],
+  "two-fronts": [
+    {
+      "file": "two-fronts-not-cuddly.mp4",
+      "title": "Not cuddly",
+      "secs": 33.2
+    },
+    {
+      "file": "two-fronts-orbit.mp4",
+      "title": "The orbit",
+      "secs": 13.2
+    },
+    {
+      "file": "two-fronts-the-horde.mp4",
+      "title": "Be the horde",
+      "secs": 15
+    },
+    {
+      "file": "two-fronts-hold-the-line.mp4",
+      "title": "Hold the line",
+      "secs": 13.2
+    },
+    {
+      "file": "two-fronts-radio.mp4",
+      "title": "Radio chatter",
+      "secs": 10.6
+    }
   ]
 }

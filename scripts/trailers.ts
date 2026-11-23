@@ -108,7 +108,7 @@ body.cap b{font-weight:800;font-size:40px;letter-spacing:-.02em;line-height:1.02
   text-shadow:0 3px 0 rgba(0,0,0,.55),0 0 22px rgba(0,0,0,.6);-webkit-text-stroke:1px rgba(0,0,0,.35)}
 body.cap small{display:block;margin-top:8px;font-size:17px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;opacity:.92;text-shadow:0 2px 8px rgba(0,0,0,.8)}
 body.card{background:radial-gradient(120% 90% at 50% 40%,#1d2b33 0%,#0b1014 70%);place-content:center;text-align:center;gap:14px}
-body.card b{font-size:76px;font-weight:800;letter-spacing:-.04em;line-height:1}
+body.card b{font-size:66px;max-width:780px;justify-self:center;text-wrap:balance;font-weight:800;letter-spacing:-.04em;line-height:1}
 body.card small{font-size:20px;letter-spacing:.32em;text-transform:uppercase;color:#7fe3d0}
 body.card i{font-style:normal;font-size:22px;opacity:.85;max-width:640px;justify-self:center;line-height:1.35}
 body.card .q{font-size:15px;letter-spacing:.4em;color:#9aa;margin-top:18px}`;
@@ -150,7 +150,8 @@ async function cut(tab: Tab, app: string, reel: Reel, takes: string): Promise<{ 
       ff(["-loop", "1", "-t", String(len), "-i", png, "-vf", `scale=w='trunc(${OUT_W}*(1+0.06*t/${len})/2)*2':h='trunc(${OUT_H}*(1+0.06*t/${len})/2)*2':eval=frame,crop=${OUT_W}:${OUT_H},fade=in:st=0:d=0.2,fade=out:st=${len - 0.2}:d=0.2,fps=${FPS},format=yuv420p`, "-c:v", "libx264", "-crf", "18", "-preset", "veryfast", part]);
       total += len;
     } else {
-      const src = join(takes, `${c.take}.mp4`), fx = c.fx ?? [];
+      // "fm-daw/jam" is another app's take.
+      const src = c.take.includes("/") ? join(cache, `${c.take}.mp4`) : join(takes, `${c.take}.mp4`), fx = c.fx ?? [];
       if (!existsSync(src)) throw new Error(`${app}/${reel.name}: no take ${c.take}`);
       const speed = fx.includes("slow") ? 2 : fx.includes("fast") ? 0.5 : 1, len = c.len ?? 2.4, from = c.len ? c.at : c.at;
       const args = ["-ss", String(from), "-t", String(len / speed), "-i", src];
@@ -199,8 +200,8 @@ if (import.meta.main) {
         for (const t of plan.takes) {
           const file = join(takes, `${t.name}.mp4`);
           if (existsSync(file) && !retake) continue;
-          server ??= await serve(app, plan.serve as Serve | undefined);
-          const tab = { ...(await openTab(cdp, { w: W, h: H })), cdp };
+          server ??= await serve(plan.app ?? app, plan.serve as Serve | undefined);
+          const tab = { ...(await openTab(cdp, { w: t.size?.[0] ?? W, h: t.size?.[1] ?? H })), cdp };
           try { await shoot(tab, t.url ?? server.url, t, file); } finally { await tab.close(); }
         }
         server?.stop(), server = undefined;
@@ -218,7 +219,7 @@ if (import.meta.main) {
       finally { server?.stop(); }
     }
   } finally { stop(); }
-  writeFileSync(manifestFile, JSON.stringify(Object.fromEntries(Object.entries(manifest).sort()), null, 2) + "\n");
+  if (!takesOnly) writeFileSync(manifestFile, JSON.stringify(Object.fromEntries(Object.entries(manifest).sort()), null, 2) + "\n");
   console.log(report.join("\n"));
   if (report.some((r) => r.startsWith("FAIL"))) process.exitCode = 1;
 }

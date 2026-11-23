@@ -385,6 +385,7 @@ const HOME_CSS = `
 .game-page .picks button{flex:none;display:grid;grid-template-columns:auto auto;justify-content:space-between;gap:.15rem .5rem;width:9.5rem;padding:0 0 .35rem;border:0;border-radius:10px;background:none;color:var(--ink);font:inherit;font-size:.78rem;text-align:left;cursor:pointer}
 .game-page .picks img{grid-column:1/-1;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;outline:2px solid transparent;outline-offset:2px;transition:outline-color .2s}
 .game-page .picks button[aria-pressed=true] img{outline-color:var(--acc)}.game-page .picks small{color:var(--mut)}
+.home .made h2{margin:0 0 .6rem}
 .home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 `;
 
@@ -467,6 +468,21 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
       </span>
     </section>
   );
+}
+
+/** What the clips show of what's built here, besides the apps: eqosys itself, Qollab's rooms, tscircuit boards as pedals. */
+const MADE = [["eqosys", "eqosys", "One account for every game"], ["qollab", "Qollab", "Rooms, parties and saves in one call"], ["tscircuit", "Pedals from tscircuit", "Boards you play, then order"]] as const;
+function MadeHere() {
+  const made = MADE.flatMap(([id, name, line]) => { const c = clipsOf(id)[0]; return c ? [{ id, name, line, c }] : []; });
+  return made.length ? (
+    <section className="cat made" aria-label="Made here">
+      <h2>Made here</h2>
+      <div className="shelf">{made.map(({ id, name, line, c }) => (
+        <div key={id} className="glass game"><span className="shot" data-clip={c.src}><img src={c.still} alt="" width={640} height={360} loading="lazy" decoding="async" draggable={false} /></span>
+          <span className="cap"><span className="name"><b>{name}</b></span><small>{line}</small></span></div>
+      ))}</div>
+    </section>
+  ) : null;
 }
 
 /** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
@@ -589,6 +605,7 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
             </details>
           ) : null;
         })}
+        <MadeHere />
       </div>
     </div>
   );
