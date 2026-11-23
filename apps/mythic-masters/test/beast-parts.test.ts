@@ -89,6 +89,18 @@ test.skipIf(!findBlender())("a hand has a palm, four curling fingers and a thumb
   expect(Object.keys(got).filter((k) => /^foot1_c\d$/.test(k))).toHaveLength(4);
 });
 
+test.skipIf(!findBlender())("a mirrored pair of hands are mirror images: each thumb on its own hand's inner side", async () => {
+  const got = await build(
+    [{ kind: "foot", form: "hand", at: "l_hand", dir: [0.3, -1, 0], palm: [0, 0, -1], len: 0.2, width: 0.08, mirror: true, material: "fur" }],
+    { l_hand: [0.1, 1, 0.3, 0.03], r_hand: [0.1, 1, -0.3, 0.03] },
+  );
+  const centre = (vs: number[][]) => [0, 1, 2].map((k) => vs.reduce((s, v) => s + v[k]!, 0) / vs.length);
+  const left = centre(got["foot0_th"]!), right = centre(got["foot0r_th"]!);
+  expect(right[0]!).toBeCloseTo(left[0]!, 3);
+  expect(right[1]!).toBeCloseTo(left[1]!, 3);
+  expect(right[2]!).toBeCloseTo(-left[2]!, 3);
+});
+
 test.skipIf(!findBlender())("a leg whose gaskin slants back keeps every ring facing the same way, with no twist at the knee", async () => {
   // a lion's hind leg: down and forward to the knee, back at 45 degrees to a high hock, upright to the paw
   const nodes = { l_hipj: [-0.6, 0.8, 0.17, 0.05], l_knee: [-0.5, 0.53, 0.2, 0.03], l_hock: [-0.71, 0.3, 0.2, 0.03], l_bfoot: [-0.65, 0.1, 0.18, 0.04] };

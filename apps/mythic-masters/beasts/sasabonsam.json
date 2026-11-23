@@ -59,7 +59,7 @@
     {"kind": "horn", "at": "head", "off": [-0.0585, 0.156, 0.117], "dir": [-0.5, 1, 0.5], "len": 0.2047, "base": 0.0512, "mirror": true, "material": "hide"},
     {"kind": "eye", "at": "head", "off": [0.156, 0.078, 0.1365], "r": 0.0478, "mirror": true, "material": "eye"},
     {"kind": "wing", "hub": "l_wwrist", "tips": ["l_wtip", [-0.2, 1.55, 1.2], [-0.45, 1.3, 0.95]], "body": [[-0.45, 1.05, 0.5], [-0.25, 1.05, 0.15], "l_wroot"], "sag": 0.16, "scallop": 0.35, "bone": 0.025, "bone_mat": "iron", "mirror": true, "material": "wing"},
-    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_foot"], "radii": [0.12, 0.075, 0.04], "depth": 1.15, "calf": 0.12, "mirror": true, "material": "hide"},
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_foot"], "radii": [0.12, 0.075, 0.04], "depth": 1.15, "calf": 0.12, "mirror": true, "material": "hide", "elbow": 0.2},
     {"kind": "foot", "at": "l_foot", "form": "talon", "len": 0.16, "width": 0.2, "toes": 3, "spread": 36, "claw": 0.06, "claw_mat": "iron", "mirror": true, "material": "hide"},
     {"kind": "horn", "at": "l_hand", "off": [0, 0, 0], "dir": [0.35, -1, -0.35], "len": 0.22, "base": 0.024, "tip_base": 0.01, "curve": 60, "bend": [1, 0.2, 0], "mirror": true, "material": "iron"},
     {"kind": "horn", "at": "l_hand", "off": [0, 0, 0], "dir": [0.45, -1, 0], "len": 0.25, "base": 0.025, "tip_base": 0.01, "curve": 60, "bend": [1, 0.2, 0], "mirror": true, "material": "iron"},

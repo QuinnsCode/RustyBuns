@@ -880,7 +880,9 @@ def hand_part(name, at, p, side, mat, nail_mat):
     d = m(p.get("dir", (0, -1, 0))).normalized()
     n = m(p.get("palm", (0, 0, -1)))
     n = (n - d * n.dot(d)).normalized()
-    w = d.cross(n)  # across the knuckles; mirrors with the hand, so the thumb keeps to its own side
+    # across the knuckles. A mirror turns a cross product inside out, so `side` turns it back: the right hand is
+    # the left one's mirror image, its thumb on the same (inner) side, not the left hand copied across
+    w = d.cross(n) * side
     ln, wd = p["len"], p["width"]
     thick, palm_len = p.get("thick", wd * 0.42), ln * 0.45
     rings = []

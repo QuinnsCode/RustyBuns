@@ -45,7 +45,7 @@
     ["l_elbow", "l_hand"]
   ],
   "parts": [
-    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle", "l_foot"], "radii": [0.1966, 0.1885, 0.1235, 0.11], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "bark"},
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle", "l_foot"], "radii": [0.1966, 0.1885, 0.1235, 0.11], "depth": 1.1, "calf": 0.1, "mirror": true, "material": "bark", "elbow": 0.2},
     {
       "kind": "horn",
       "at": "head",

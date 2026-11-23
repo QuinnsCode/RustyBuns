@@ -95,36 +95,40 @@
       "along": ["l_shoulder", "l_fknee", "l_ffoot"],
       "radii": [0.26, 0.19, 0.22],
       "calf": 0.05,
-      "mirror": true
+      "mirror": true,
+      "elbow": 0.2
     },
     {
       "kind": "limb",
       "along": ["l_hipj", "l_hknee", "l_hfoot"],
       "radii": [0.28, 0.2, 0.23],
       "calf": 0.07,
-      "mirror": true
+      "mirror": true,
+      "elbow": 0.2
     },
     {
       "kind": "foot",
       "at": "l_ffoot",
-      "form": "paw",
+      "form": "digits",
       "len": 0.34,
       "width": 0.36,
-      "toes": 3,
-      "claw": 0.06,
-      "claw_mat": "nail",
-      "mirror": true
+      "toes": 4,
+      "claw": 0.042,
+      "sole": 0.16,
+      "mirror": true,
+      "claw_mat": "nail"
     },
     {
       "kind": "foot",
       "at": "l_hfoot",
-      "form": "paw",
+      "form": "digits",
       "len": 0.36,
       "width": 0.38,
-      "toes": 3,
-      "claw": 0.06,
-      "claw_mat": "nail",
-      "mirror": true
+      "toes": 4,
+      "claw": 0.042,
+      "sole": 0.17,
+      "mirror": true,
+      "claw_mat": "nail"
     }
   ],
   "hide": {"pattern": "skin", "size": 0.16, "colours": [[0.28, 0.18, 0.13]], "map": 256}

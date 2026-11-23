@@ -121,26 +121,6 @@
     },
     {
       "kind": "horn",
-      "at": "l_ffoot",
-      "off": [0.04, -0.02, 0],
-      "dir": [1, -0.25, 0.2],
-      "len": 0.13,
-      "base": 0.03,
-      "mirror": true,
-      "material": "spike"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [0.04, -0.02, 0],
-      "dir": [1, -0.25, 0.2],
-      "len": 0.13,
-      "base": 0.03,
-      "mirror": true,
-      "material": "spike"
-    },
-    {
-      "kind": "horn",
       "at": "snout",
       "off": [0.045, -0.06, 0.06],
       "dir": [0.2, -1, 0],
@@ -173,7 +153,31 @@
     },
     {"kind": "teeth", "along": ["head", "snout"], "n": 8, "len": 0.05, "base": 0.015, "lower": true, "material": "spike"},
     {"kind": "ridge", "at": "head", "off": [0.08, 0.12, 0.12], "dir": [1, -0.1, 0.3], "len": 0.14, "base": 0.04, "curve": 25, "bend": [0, 1, 0], "mirror": true, "material": "hide"},
-    {"kind": "scales", "along": ["chest", "belly", "hip", "tail1", "tail2", "tail3"], "n": 10, "len": 0.1, "base": 0.09, "overlap": 0.5, "rows": 3, "spread": 90, "material": "hide"}
+    {"kind": "scales", "along": ["chest", "belly", "hip", "tail1", "tail2", "tail3"], "n": 10, "len": 0.1, "base": 0.09, "overlap": 0.5, "rows": 3, "spread": 90, "material": "hide"},
+    {
+      "kind": "foot",
+      "at": "l_ffoot",
+      "form": "digits",
+      "len": 0.196,
+      "width": 0.182,
+      "toes": 4,
+      "claw": 0.065,
+      "sole": 0.06,
+      "mirror": true,
+      "claw_mat": "spike"
+    },
+    {
+      "kind": "foot",
+      "at": "l_bfoot",
+      "form": "digits",
+      "len": 0.196,
+      "width": 0.182,
+      "toes": 4,
+      "claw": 0.065,
+      "sole": 0.06,
+      "mirror": true,
+      "claw_mat": "spike"
+    }
   ],
   "hide": {"pattern": "scales", "size": 0.05, "colours": [[1, 0.15, 0.12], [0.7, 0.09, 0.07]], "map": 512}
 }

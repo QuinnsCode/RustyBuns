@@ -196,78 +196,6 @@
       0.9900000000000001,
       0,
       0.065
-    ],
-    "l_fpaw_a1": [
-      0.43,
-      0.05,
-      0.15000000000000002,
-      0.035
-    ],
-    "l_fpaw_a2": [
-      0.48,
-      0.05,
-      0.15000000000000002,
-      0.026250000000000002
-    ],
-    "l_fpaw_b1": [
-      0.43,
-      0.05,
-      0.2,
-      0.035
-    ],
-    "l_fpaw_b2": [
-      0.48,
-      0.05,
-      0.2,
-      0.026250000000000002
-    ],
-    "l_fpaw_c1": [
-      0.43,
-      0.05,
-      0.25,
-      0.035
-    ],
-    "l_fpaw_c2": [
-      0.48,
-      0.05,
-      0.25,
-      0.026250000000000002
-    ],
-    "l_hfoot_a1": [
-      -0.45,
-      0.05,
-      0.13,
-      0.035
-    ],
-    "l_hfoot_a2": [
-      -0.4,
-      0.05,
-      0.13,
-      0.026250000000000002
-    ],
-    "l_hfoot_b1": [
-      -0.45,
-      0.05,
-      0.18,
-      0.035
-    ],
-    "l_hfoot_b2": [
-      -0.4,
-      0.05,
-      0.18,
-      0.026250000000000002
-    ],
-    "l_hfoot_c1": [
-      -0.45,
-      0.05,
-      0.22999999999999998,
-      0.035
-    ],
-    "l_hfoot_c2": [
-      -0.4,
-      0.05,
-      0.22999999999999998,
-      0.026250000000000002
     ]
   },
   "links": [
@@ -346,54 +274,6 @@
     [
       "head",
       "snout_jaw"
-    ],
-    [
-      "l_fpaw",
-      "l_fpaw_a1"
-    ],
-    [
-      "l_fpaw_a1",
-      "l_fpaw_a2"
-    ],
-    [
-      "l_fpaw",
-      "l_fpaw_b1"
-    ],
-    [
-      "l_fpaw_b1",
-      "l_fpaw_b2"
-    ],
-    [
-      "l_fpaw",
-      "l_fpaw_c1"
-    ],
-    [
-      "l_fpaw_c1",
-      "l_fpaw_c2"
-    ],
-    [
-      "l_hfoot",
-      "l_hfoot_a1"
-    ],
-    [
-      "l_hfoot_a1",
-      "l_hfoot_a2"
-    ],
-    [
-      "l_hfoot",
-      "l_hfoot_b1"
-    ],
-    [
-      "l_hfoot_b1",
-      "l_hfoot_b2"
-    ],
-    [
-      "l_hfoot",
-      "l_hfoot_c1"
-    ],
-    [
-      "l_hfoot_c1",
-      "l_hfoot_c2"
     ]
   ],
   "parts": [
@@ -412,24 +292,6 @@
       ],
       "len": 0.08,
       "base": 0.016,
-      "material": "claw",
-      "mirror": true
-    },
-    {
-      "kind": "horn",
-      "at": "l_fpaw",
-      "off": [
-        0.03,
-        -0.02,
-        0
-      ],
-      "dir": [
-        1,
-        -0.3,
-        0
-      ],
-      "len": 0.08,
-      "base": 0.022,
       "material": "claw",
       "mirror": true
     },
@@ -552,114 +414,6 @@
       "material": "fur"
     },
     {
-      "kind": "horn",
-      "at": "l_fpaw_a2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        -0.020000000000000004
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_fpaw_b2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        0
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_fpaw_c2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        0.020000000000000004
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hfoot_a2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        -0.020000000000000004
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hfoot_b2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        0
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hfoot_c2",
-      "off": [
-        0,
-        0,
-        0
-      ],
-      "dir": [
-        0.05,
-        0,
-        0.020000000000000004
-      ],
-      "len": 0.07,
-      "base": 0.0175,
-      "mirror": true,
-      "material": "claw"
-    },
-    {
       "kind": "skull",
       "at": "head",
       "off": [
@@ -680,6 +434,32 @@
       "flat": 0.15,
       "droop": 6,
       "jaw": 0.1
+    },
+    {
+      "kind": "foot",
+      "at": "l_fpaw",
+      "form": "digits",
+      "len": 0.18,
+      "width": 0.152,
+      "toes": 4,
+      "claw": 0.04,
+      "sole": 0.05,
+      "mirror": true,
+      "material": "sock",
+      "claw_mat": "claw"
+    },
+    {
+      "kind": "foot",
+      "at": "l_hfoot",
+      "form": "digits",
+      "len": 0.18,
+      "width": 0.152,
+      "toes": 4,
+      "claw": 0.039,
+      "sole": 0.05,
+      "mirror": true,
+      "material": "sock",
+      "claw_mat": "claw"
     }
   ],
   "blobs": [
@@ -704,21 +484,9 @@
         "l_fknee",
         "l_ffoot",
         "l_fpaw",
-        "l_fpaw_a1",
-        "l_fpaw_a2",
-        "l_fpaw_b1",
-        "l_fpaw_b2",
-        "l_fpaw_c1",
-        "l_fpaw_c2",
         "l_hknee",
         "l_hankle",
-        "l_hfoot",
-        "l_hfoot_a1",
-        "l_hfoot_a2",
-        "l_hfoot_b1",
-        "l_hfoot_b2",
-        "l_hfoot_c1",
-        "l_hfoot_c2"
+        "l_hfoot"
       ],
       "material": "sock"
     },

@@ -80,7 +80,8 @@
       1,
       0.1,
       0
-    ]
+    ],
+    "hand": [0.3, 0.2, 0.17, 0.75, 0]
   },
   "nodes": {
     "hip": [
@@ -195,7 +196,7 @@
       0.42,
       1.13,
       0.18,
-      0.035
+      0.027
     ],
     "l_wroot": [
       0.02,
@@ -870,78 +871,6 @@
     },
     {
       "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.01,
-        -0.02
-      ],
-      "dir": [
-        0.5,
-        -1,
-        -0.06
-      ],
-      "len": 0.07,
-      "base": 0.012,
-      "curve": 70,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.01,
-        0
-      ],
-      "dir": [
-        0.5,
-        -1,
-        0
-      ],
-      "len": 0.07,
-      "base": 0.012,
-      "curve": 70,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_hand",
-      "off": [
-        0.02,
-        -0.01,
-        0.02
-      ],
-      "dir": [
-        0.5,
-        -1,
-        0.06
-      ],
-      "len": 0.07,
-      "base": 0.012,
-      "curve": 70,
-      "bend": [
-        -1,
-        0,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
       "at": "tail4",
       "off": [
         -0.02,
@@ -982,6 +911,25 @@
       ],
       "mirror": true,
       "material": "hide"
+    },
+    {
+      "kind": "foot",
+      "form": "hand",
+      "at": "l_hand",
+      "dir": [
+        0.793,
+        -0.595,
+        -0.132
+      ],
+      "palm": [0, 0, -1],
+      "len": 0.17,
+      "width": 0.076,
+      "curl": 45,
+      "fingers": 4,
+      "claw": 0.042,
+      "mirror": true,
+      "material": "hand",
+      "claw_mat": "claw"
     }
   ],
   "hide": {
@@ -995,5 +943,8 @@
       ]
     ],
     "map": 512
+  },
+  "round": {
+    "hand": 600
   }
 }
