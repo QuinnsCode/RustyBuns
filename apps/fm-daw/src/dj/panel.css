@@ -19,8 +19,13 @@
 .dj-people p { white-space: normal; }
 /* someone else's deck: its play, cue, sync, hot cues and jumps reach them; the pitch, loops and jog are theirs alone */
 .dj-deck.far { border-style: dashed; }
-.dj-deck.far .dj-pitchcol, .dj-deck.far .dj-loops, .dj-deck.far .dj-jumps button:nth-child(2), .dj-deck.far .dj-jumps button:nth-child(3), .dj-strip.far { opacity: 0.35; pointer-events: none; }
-.dj-zoom { width: 100%; height: 120px; border-radius: 8px; background: #0d0e11; display: block; }
+.dj-deck.far .dj-pitchcol, .dj-deck.far .dj-loops, .dj-deck.far .dj-wheel, .dj-deck.far .dj-mode, .dj-strip.far { opacity: 0.35; pointer-events: none; }
+/* the close-up, both decks on one time scale, and its zoom */
+.dj-zoombox { position: relative; }
+.dj-zoom { width: 100%; height: 120px; border-radius: 8px; background: #0d0e11; display: block; touch-action: pan-y; }
+.dj-zoombar { position: absolute; right: 6px; top: 6px; display: flex; align-items: center; gap: 4px; background: rgba(13, 14, 17, 0.8); border-radius: 8px; padding: 2px; }
+#dj .dj-zoombar button { min-height: 28px; min-width: 28px; padding: 0 4px; }
+.dj-zoombar span { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; color: #c9ccd2; min-width: 52px; text-align: center; white-space: nowrap; }
 .dj-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px) minmax(0, 1fr); gap: 12px; }
 .dj-deck { background: #17191d; border: 1px solid #2a2d33; border-radius: 12px; padding: 10px; display: grid; gap: 8px; min-width: 0; }
 .dj-deck.over { border-color: #ff6b4a; }
@@ -32,18 +37,28 @@
 .dj-body { display: grid; grid-template-columns: minmax(0, 1fr) 54px; gap: 10px; }
 .dj-b .dj-body { grid-template-columns: 54px minmax(0, 1fr); }
 .dj-controls { display: grid; gap: 8px; align-content: start; min-width: 0; }
-.dj-transport, .dj-hot, .dj-loops, .dj-jumps { display: flex; gap: 6px; flex-wrap: wrap; }
-#dj .dj-play, #dj .dj-cue { width: 58px; height: 58px; border-radius: 50%; font-size: 16px; }
-#dj .dj-cue { color: #ffd23c; border-color: #6b5a1c; }
-#dj .dj-play.on { background: #3ddc84; border-color: #3ddc84; }
-#dj .dj-sync { align-self: center; }
+/* the club player: pads over the jog wheel, the big CUE and PLAY under it at the bottom left */
+.dj-pads { display: flex; gap: 6px; flex-wrap: wrap; justify-content: space-between; }
+.dj-hot, .dj-loops, .dj-transport-side { display: flex; gap: 6px; flex-wrap: wrap; }
+.dj-jogrow { position: relative; display: grid; justify-items: center; }
+.dj-wheel { width: min(100%, 260px); aspect-ratio: 1; touch-action: none; cursor: grab; display: block; }
+.dj-wheel:active { cursor: grabbing; }
+#dj .dj-mode { position: absolute; top: 0; right: 0; min-height: 30px; font-size: 13px; }
+#dj .dj-mode.on { background: #2a2d33; border-color: #c9ccd2; color: #f1efe9; }
+.dj-transport { display: flex; gap: 10px; align-items: center; }
+.dj-transport-side { margin-left: auto; justify-content: flex-end; }
+#dj .dj-play, #dj .dj-cue { width: 72px; height: 72px; flex: none; border-radius: 50%; font-size: 18px; border-width: 2px; }
+#dj .dj-cue { color: #ffd23c; border-color: #8a7420; }
+#dj .dj-cue.on { background: #ffd23c; color: #15171b; border-color: #ffd23c; }
+#dj .dj-play { color: #3ddc84; border-color: #2a7a4c; }
+#dj .dj-play.on { background: #3ddc84; border-color: #3ddc84; color: #15171b; }
 .dj-hot button:nth-child(1).set { background: #ff4a6a !important; color: #111 !important; }
 .dj-hot button:nth-child(2).set { background: #4affa0 !important; color: #111 !important; }
 .dj-hot button:nth-child(3).set { background: #4ab8ff !important; color: #111 !important; }
 .dj-hot button:nth-child(4).set { background: #d84aff !important; color: #111 !important; }
 .dj-loops button.on { background: #3ddc84 !important; border-color: #3ddc84 !important; color: #111 !important; }
 .dj-pitchcol { display: grid; justify-items: center; gap: 6px; align-content: start; }
-.dj-pitch { writing-mode: vertical-lr; direction: ltr; height: 170px; width: 28px; accent-color: #c9ccd2; }
+.dj-pitch { writing-mode: vertical-lr; direction: ltr; height: 260px; width: 28px; accent-color: #c9ccd2; }
 .dj-mixer { background: #121317; border: 1px solid #2a2d33; border-radius: 12px; padding: 10px; display: grid; gap: 10px; align-content: start; }
 .dj-strips { display: grid; grid-template-columns: 1fr 64px 1fr; gap: 8px; }
 .dj-strip, .dj-mid { display: grid; gap: 4px; align-content: start; justify-items: stretch; }
