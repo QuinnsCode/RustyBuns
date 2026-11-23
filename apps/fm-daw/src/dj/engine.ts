@@ -37,7 +37,7 @@ class Deck {
   private from = 0;
   private at = 0;
   private bend = 1;
-  constructor(private ctx: AudioContext, private into: AudioNode) {}
+  constructor(private ctx: AudioContext, readonly into: AudioNode) {}
 
   rate() { return (1 + (this.pitch * this.range) / 100) * this.bend; }
   /** Where the deck is now, seconds into its track. */
@@ -69,7 +69,8 @@ class Deck {
   unload() { this.stopSrc(); this.track = null; this.playing = false; this.from = 0; this.cue = 0; this.loop = null; this.synced = false; this.cueHeld = false; }
   play() { if (!this.track || this.playing) return; this.playing = true; this.start(); }
   pause() { if (!this.playing) return; this.mark(); this.playing = false; this.stopSrc(); }
-  toggle() { if (this.playing) this.pause(); else this.play(); }
+  /** Play / pause; pressed while the cue is held, the deck plays on from there (letting go of the cue no longer stops it). */
+  toggle() { if (this.cueHeld) { this.cueHeld = false; return; } if (this.playing) this.pause(); else this.play(); }
   seek(s: number) {
     if (!this.track) return;
     this.from = Math.min(this.track.buffer.duration, Math.max(0, s));
