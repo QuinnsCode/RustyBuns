@@ -64,7 +64,7 @@ import { choosing, dress as dressHud, ring as hudRing, SKINS as HUD_SKINS, skinN
 import { crewHtml, newMemory, pairOf, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
-import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard, type Where } from "./director.ts";
+import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Scene as CutScene, type Stage, type VsCard, type Where } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { Memories } from "@rustybuns/util/memories";
 import { budgetQuality } from "@rustybuns/util/quality";
@@ -434,6 +434,7 @@ const director = new Director();
 // landmarks, a first binding. A passing gag or a fight's faceoff never is.
 const memories = new Memories("mythic-masters.memories");
 let poke = false; // a key or a tap this frame, to cut a scene short
+let skipped: CutScene | null = null; // the scene a key cut short, while it fades out on real time (frame)
 let pending: { m: Match; bound: boolean } | null = null; // a fight over, its result waiting on a freeze frame
 const talked = new Set<string>(); // the trail sections that have had their line on tape this session
 let worldUp = false; // the world view is built (its hooks can run while it builds)
@@ -1077,9 +1078,6 @@ function showTitle() {
  * written into the journey in begin(). `burnt` is the journey you burned, for what the Book says over its five. */
 let opening: Pick<Journey, "talk"> | null = null, burnt: Journey | null = null;
 function startOpening() {
-  // the title's New game keeps the keyboard's focus under the tape: a key pressed to skip the tape would press it again
-  // and start Tape 1 over (on a slow machine, over and over, so the tape never ended: the menu-keys test on CI)
-  if (document.activeElement instanceof HTMLElement && document.activeElement.closest("#title")) document.activeElement.blur();
   burnt = journey; journey = null; opening = {}; chosen.length = 0;
   try { localStorage.removeItem(SAVE_KEY); } catch { /* a private window */ }
   talks.length = 0; talking = null; drawTalk();
@@ -2204,7 +2202,7 @@ mountScenes({ list: () => Object.keys(SCENES), play: (name, t) => playScene(name
 
 let last = performance.now(), acc = 0;
 function frame(now: number) {
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
   padEdges();
   spar?.show(!$("#starters").hidden);
   // the first goal stays on screen in the world until it is done: the first keeper of the Pine Barrens beaten
@@ -2221,7 +2219,11 @@ function frame(now: number) {
   touchEl.classList.toggle("bindable", inkNow() !== null);
   touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
-  memories.step(director.step(dt, poke)); poke = false;
+  // A skip jumps the scene to its last `fade` seconds; those run on real time, not the 0.1 s cap, so a skipped tape
+  // ends after its fade however slowly frames come (on CI's software GL, four capped frames outlasted a 30 s wait).
+  if (poke && director.skippable) skipped = director.scene;
+  memories.step(director.step(skipped && director.scene === skipped ? Math.max(dt, raw) : dt, poke)); poke = false;
+  if (skipped && director.scene !== skipped) skipped = null;
   if (boat) { if (director.scene === boat.s) boat.started = true; else if (boat.started || !director.beat) { const b = boat; boat = null; b.then(); } }
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
