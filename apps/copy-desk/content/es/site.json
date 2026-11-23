@@ -1,0 +1,20 @@
+{
+  "brand": "Panadería Harbor Street",
+  "tagline": "Pan a las siete, bollos a las nueve, se acaba al mediodía.",
+  "nav": { "news": "Noticias", "hours": "Horario", "edit": "Editar este sitio" },
+  "hero": {
+    "title": "Horneado en Harbor Street desde esta mañana",
+    "body": "Masa madre, centeno y bollos de canela de un solo horno de leña. Cada palabra de esta página vive en un archivo JSON, y puedes cambiarla sin tocar el código."
+  },
+  "hours": {
+    "title": "Horario",
+    "lines": ["De martes a viernes, 7:00 a 14:00", "Sábado, 8:00 a 13:00", "Domingo y lunes, cerrado"]
+  },
+  "news": { "title": "Noticias", "empty": "Nada nuevo esta semana. Ven por pan." },
+  "edit": {
+    "title": "Cambia estas palabras",
+    "body": "Ejecuta `bun run cms` en apps/copy-desk y abre http://localhost:4707. Cada archivo de content/ es un formulario: cambia una línea, guarda y recarga esta página. Añade un idioma allí y traduce cada línea junto al original.",
+    "published": "Una entrada se muestra aquí cuando su published es 1. Ponlo en 0 para retirarla."
+  },
+  "footer": "Hecho con Rusty Buns. Las palabras están en content/*.json."
+}

@@ -1,0 +1,25 @@
+{
+  "posts": [
+    {
+      "id": "rye",
+      "date": "2026-11-20",
+      "title": "Dark rye is back",
+      "body": "The rye starter woke up. Dark rye on Fridays, two loaves a person.",
+      "published": 1
+    },
+    {
+      "id": "holiday",
+      "date": "2026-11-18",
+      "title": "Holiday orders open",
+      "body": "Order a stollen or a buns box for the holidays at the counter. Pick up by 23 December.",
+      "published": 1
+    },
+    {
+      "id": "oven",
+      "date": "2026-11-25",
+      "title": "A second oven",
+      "body": "A second oven arrives next month, and with it, pretzels.",
+      "published": 0
+    }
+  ]
+}

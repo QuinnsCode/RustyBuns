@@ -171,6 +171,13 @@
     "cta": "Open",
     "more": "A guided shot list tells you where to stand next.\nDrop in a finished splat and it turns on a studio-white turntable you can embed."
   },
+  "copy-desk": {
+    "name": "Copy Desk",
+    "kicker": "Site Content",
+    "blurb": "Change your site's words and news, and translate them, without touching the code.",
+    "cta": "Open",
+    "more": "Every line lives in a JSON file the built-in CMS turns into forms.\nPublish a post by setting it to 1, and add a language beside the original."
+  },
   "qview3d": {
     "name": "QView3D",
     "kicker": "3D Product Customiser",
