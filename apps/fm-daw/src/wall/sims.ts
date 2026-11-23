@@ -6,11 +6,12 @@
 //     handed to the chip's bias pin as a current source, rather than solving the transistors each sample.
 //   - What is linear and has no memory (the mixer, the output) mixes with its board's own gains (`gains` in
 //     @rustybuns/gear/circuit), worked out again whenever a knob moves.
-//   - What switches (the oscillators, the LFO, the sequencer's clock and counter) runs from the numbers its parts set:
+//   - What switches (the oscillators, the LFO, the sequencer's clock and counter, the sample and hold) runs from the numbers its parts set:
 //     the reference current, the integrating capacitor and the comparator's threshold for the VCO, the 555's
 //     resistors and capacitor for the clock, the Schmitt trigger's divider for the LFO. Change a part on the board and
-//     the sound follows.
+//     the sound follows. Q Keys' microcontroller is its firmware's logic (notes, the MIDI clock) into the board's gains.
 // Volts in and volts out, Eurorack's levels: audio +-5 V, 1 V an octave, gates 0 to 10 V.
+import { mulberry32 } from "@rustybuns/util";
 import { Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { netlistOf, readBoard, type Board, type BoardOptions, type BoardPart } from "../circuit/tscircuit.ts";
 import { panel } from "../../circuits/wall-panels.ts";
@@ -22,9 +23,11 @@ import envBoard from "../../circuits/wall-env.circuit.json";
 import lfoBoard from "../../circuits/wall-lfo.circuit.json";
 import mixBoard from "../../circuits/wall-mix.circuit.json";
 import outBoard from "../../circuits/wall-out.circuit.json";
+import keysBoard from "../../circuits/wall-keys.circuit.json";
+import noiseBoard from "../../circuits/wall-noise.circuit.json";
 
 /** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
-const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard]]);
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["keys", keysBoard], ["noise", noiseBoard]]);
 /** Every module kind the wall has. */
 export const KINDS = [...BOARDS.keys()];
 
@@ -39,6 +42,20 @@ const RESET_S = 2e-6;
 const SCHOTTKY = 0.15, GATE_HIGH = 10.5;
 /** A B5819W Schottky's junction (about 0.25 V at 10 mA), where a board has one and the solver models its diode. */
 const SCHOTTKY_JUNCTION = { is: 1e-6, n: 1.05 };
+/** A small silicon transistor's base-emitter drop, where a clock input's threshold hangs on one, and a 1N4148's. */
+const VBE = 0.65, DIODE = 0.6;
+/** A TL07x's gain-bandwidth, Hz: what rolls off the top of a high-gain stage. */
+const GBW = 3e6;
+/**
+ * The hiss of a small NPN's base-emitter junction in breakdown at about 10 uA, volts rms over the audio band. It
+ * varies several times from one transistor to the next (and with the current), so a built Q Hiss can be louder or
+ * quieter than this; it is what makes the sim's noise come out at a few volts, as the board means it to.
+ */
+const JUNCTION_RMS = 0.02;
+/** Q Keys' MCP4822: 12 bits at 1 mV a step (its 2.048 V reference, gain 2), and the MIDI clock's 24 ticks a beat. */
+const DAC_STEP = 1e-3, DAC_TOP = 4095, PPQN = 24;
+/** The key at 0 V on Q Keys' pitch out (C2), and the note lengths its Div knob picks, in MIDI clock ticks. */
+const KEYS_BASE = 36, DIVS = [24, 12, 6];
 
 /** One module at work: volts at its inputs in, volts at its outputs out, a sample at a time. Jacks in panel order. */
 export interface Sim {
@@ -49,13 +66,20 @@ export interface Sim {
   knobs(k: Record<string, number>): void;
   /** What it is doing, for probes and tests. */
   read(): Record<string, number>;
+  /** Which of its inputs have a cable in, when the board tells them apart (an `inside` jack's switch). */
+  plugged?(ins: boolean[]): void;
+  /** A key down (velocity 0 to 1) or up (0): the room's keys and MIDI, for a module that takes them. */
+  note?(midi: number, vel: number): void;
+  /** The sesh's tempo, and the beat it is on now when the band's clock is known. */
+  tempo?(bpm: number, beat: number | null): void;
 }
 
 /** A module's board, read with what isn't its circuit left out: its jacks, the power header and every chip's decoupling. */
 function board(id: string): Board {
   const p = panel(id);
   const decouple = ["U1", "U2", "U3", "U4"].flatMap((u) => [`C${u}P`, `C${u}N`]);
-  const chips = id === "seq" ? ["U1", "U2"] : []; // the 555 and the 4017 aren't parts the solver models; their numbers are read off
+  // The 555 and the 4017, and Q Keys' digital side, aren't parts the solver models; their numbers are read off.
+  const chips = id === "seq" ? ["U1", "U2"] : id === "keys" ? ["U1", "U2", "U3", "U4", "JP2", "JP3"] : [];
   return readBoard(BOARDS.get(id), { leaveOut: [...p.jacks.map((j) => j.part), "JP1", "DP1", "DP2", "CP1", "CP2", ...decouple, ...chips] });
 }
 
@@ -191,9 +215,13 @@ class Lfo implements Sim {
   read() { return { hz: this.hz }; }
 }
 
-/** Q Steps: the 555's rate and duty from R1, R2, Rate and C1; each step's CV from its pot, the Schottky and R4/R5. */
+/**
+ * Q Steps: the 555's rate and duty from R1, R2, Rate and C1; each step's CV from its pot, the Schottky and R4/R5. With
+ * a cable in Clock In, a step on each rise past Q1's threshold (its Vbe over R9's share of R8 and R9), and the gate out
+ * is that clock.
+ */
 class Seq implements Sim {
-  readonly ins: string[] = [];
+  readonly ins = ["clock"];
   readonly outs = ["gate", "cv"];
   private readonly b = board("seq");
   private hz = 1;
@@ -201,7 +229,15 @@ class Seq implements Sim {
   private phase = 0;
   private at = 0;
   private cvs: number[] = [];
-  constructor(private readonly sampleRate: number, k: Record<string, number>) { this.knobs(k); }
+  private external = false;
+  private high = false;
+  private readonly threshold: number;
+  constructor(private readonly sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    this.threshold = (VBE * (r("R8") + r("R9"))) / r("R9");
+    this.knobs(k);
+  }
+  plugged(ins: boolean[]) { this.external = ins[0]; }
   knobs(k: Record<string, number>) {
     const b = turned("seq", this.b, { ...knobsOf("seq"), ...k }), r = (n: string) => value(b, n);
     const rb = r("R2") + rheostat(b, "RV9"), ra = r("R1");
@@ -213,13 +249,146 @@ class Seq implements Sim {
       return p.kind === "Pot" ? Math.max(0, potShare(p) * SUPPLIES.V12 - SCHOTTKY) * down : 0;
     });
   }
-  step(_x: Float64Array, y: Float64Array) {
-    this.phase += this.hz / this.sampleRate;
-    if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
-    y[0] = this.phase < this.duty ? GATE_HIGH : 0;
+  step(x: Float64Array, y: Float64Array) {
+    if (this.external) {
+      // Q1 has some hysteresis in practice; a tenth of a volt keeps a slow edge from counting twice.
+      const v = x[0], high = this.high ? v > this.threshold - 0.1 : v > this.threshold;
+      if (high && !this.high) this.at = (this.at + 1) % 8;
+      this.high = high;
+      y[0] = v;
+    } else {
+      this.phase += this.hz / this.sampleRate;
+      if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
+      y[0] = this.phase < this.duty ? GATE_HIGH : 0;
+    }
     y[1] = this.cvs[this.at];
   }
-  read() { return { hz: this.hz, step: this.at + 1, cv: this.cvs[this.at] }; }
+  read() { return { hz: this.external ? 0 : this.hz, step: this.at + 1, cv: this.cvs[this.at], threshold: this.threshold }; }
+}
+
+/**
+ * Q Keys: its firmware's logic into its board. The last key held is the pitch, a volt an octave from C2, written to the
+ * DAC as a firmware for a gain of two would (1 mV steps, 12 bits); the gate is high while any key is; the velocity is
+ * the DAC's other half. The clock counts the MIDI clock (the sesh's tempo, 24 ticks a beat) down to the Div knob's
+ * quarter, eighth or sixteenth, high for the first half of each. U5's four gains come from the board, RT1 trimmed as a
+ * builder trims it, until a key an octave up is a volt up.
+ */
+class Keys implements Sim {
+  readonly ins: string[] = [];
+  readonly outs = ["pitch", "gate", "vel", "clock"];
+  private readonly b = board("keys");
+  private readonly trim: number;
+  private pitch = (_v: number) => 0;
+  private gate = (_v: number) => 0;
+  private vel = (_v: number) => 0;
+  private clk = (_v: number) => 0;
+  private div = 12;
+  private held: number[] = [];
+  private code = 0;
+  private velCode = 0;
+  private bpm = 120;
+  private beat = 0;
+  constructor(private readonly sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    // RT1 (between PT and the inverting input) plus R4 against R3: a gain of two when RT1 is R3 less R4.
+    this.trim = Math.min(1, Math.max(0, (r("R3") - r("R4")) / r("RT1")));
+    this.knobs(k);
+  }
+  knobs(k: Record<string, number>) {
+    const b = turned("keys", this.b, { ...knobsOf("keys"), ...k }, { RT1: this.trim });
+    this.pitch = line(gains(netOf(b, ["R3", "R4", "R5", "RT1", "U5A"]), ["DAC_A"], ["PITCH"]));
+    this.gate = line(gains(netOf(b, ["R6", "R7", "R8", "U5B"]), ["GATE5"], ["GATE"]));
+    this.vel = line(gains(netOf(b, ["R9", "R10", "R11", "U5C"]), ["DAC_B"], ["VEL"]));
+    this.clk = line(gains(netOf(b, ["R12", "R13", "R14", "U5D"]), ["CLK5"], ["CLOCK"]));
+    // The Div knob's wiper on the microcontroller's ADC, in thirds.
+    const p = part(b, "RV1"), turn = p.kind === "Pot" ? potShare(p) : 0.5;
+    this.div = DIVS[Math.min(DIVS.length - 1, Math.floor(turn * DIVS.length))];
+  }
+  note(midi: number, vel: number) {
+    this.held = this.held.filter((n) => n !== midi);
+    if (vel > 0) { this.held.push(midi); this.velCode = Math.min(DAC_TOP, Math.round(vel * DAC_TOP)); }
+    const last = this.held.at(-1);
+    if (last !== undefined) this.code = Math.min(DAC_TOP, Math.max(0, Math.round((last - KEYS_BASE) / 12 / 2 / DAC_STEP)));
+  }
+  tempo(bpm: number, beat: number | null) {
+    this.bpm = bpm;
+    if (beat !== null) this.beat = beat;
+  }
+  step(_x: Float64Array, y: Float64Array) {
+    this.beat += this.bpm / 60 / this.sampleRate;
+    const tick = Math.floor(this.beat * PPQN), d = this.div;
+    const on = this.held.length > 0;
+    y[0] = this.pitch(this.code * DAC_STEP);
+    y[1] = this.gate(on ? 5 : 0);
+    y[2] = this.vel(this.velCode * DAC_STEP);
+    y[3] = this.clk((((tick % d) + d) % d) < d / 2 ? 5 : 0);
+  }
+  read() { return { note: this.held.at(-1) ?? -1, pitch: this.pitch(this.code * DAC_STEP), bpm: this.bpm, div: this.div, beat: this.beat }; }
+}
+
+/** A one-pole low-pass's coefficient for time constant `tau` seconds at this rate. */
+const pole = (tau: number, sampleRate: number) => 1 - Math.exp(-1 / (tau * sampleRate));
+
+/**
+ * Q Hiss: the junction's hiss (JUNCTION_RMS, white) through C1 into R2, then U1A's gain (one at DC, 1 + R4/R3 above
+ * R3 and C2's corner) rolled off where the gain meets the op-amp's bandwidth. The sample and hold tracks its input
+ * while the clock's edge, high-passed by C4 and R8 (D3 holding it above -0.6 V), stays over R9/R10's share of 12 V,
+ * and holds it after. S&H In is the noise while nothing is plugged in.
+ */
+class Noise implements Sim {
+  readonly ins = ["in", "clock"];
+  readonly outs = ["noise", "out"];
+  private readonly b = board("noise");
+  private readonly rand = mulberry32(0x5eed);
+  private readonly ac: number;
+  private readonly shelf: number;
+  private readonly gain: number;
+  private readonly top: number;
+  private readonly edge: number;
+  private readonly ref: number;
+  private own = true;
+  private dc = 0;
+  private lowAc = 0;
+  private lowTop = 0;
+  private trig = 0;
+  private lastClock = 0;
+  private held = 0;
+  private tracking = false;
+  constructor(private readonly sampleRate: number, _k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    this.ac = pole(r("R2") * r("C1"), sampleRate);
+    this.shelf = pole(r("R3") * r("C2"), sampleRate);
+    this.gain = r("R4") / r("R3");
+    this.top = pole((1 + this.gain) / (2 * Math.PI * GBW), sampleRate);
+    this.edge = Math.exp(-1 / (r("R8") * r("C4") * sampleRate));
+    this.ref = (SUPPLIES.V12 * r("R10")) / (r("R9") + r("R10"));
+  }
+  knobs(_k: Record<string, number>) {}
+  plugged(ins: boolean[]) { this.own = !ins[0]; }
+  /** White noise, JUNCTION_RMS rms (Box-Muller). */
+  private hiss(): number {
+    const u = 1 - this.rand(), v = this.rand();
+    return JUNCTION_RMS * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  step(x: Float64Array, y: Float64Array) {
+    // C1 into R2 takes off the junction's DC; U1A gains its highs by 1 + R4/R3.
+    const j = this.hiss();
+    this.dc += this.ac * (j - this.dc);
+    const a = j - this.dc;
+    this.lowAc += this.shelf * (a - this.lowAc);
+    const amp = a + this.gain * (a - this.lowAc);
+    this.lowTop += this.top * (amp - this.lowTop);
+    const noise = this.lowTop > RAIL ? RAIL : this.lowTop < -RAIL ? -RAIL : this.lowTop;
+    y[0] = noise;
+    // The clock's edge, high-passed and clamped, against the threshold.
+    const c = x[1];
+    this.trig = Math.max(-DIODE, this.edge * (this.trig + c - this.lastClock));
+    this.lastClock = c;
+    this.tracking = this.trig > this.ref;
+    if (this.tracking) this.held = this.own ? noise : x[0];
+    y[1] = this.held > RAIL ? RAIL : this.held < -RAIL ? -RAIL : this.held;
+  }
+  read() { return { held: this.held, tracking: this.tracking ? 1 : 0, threshold: this.ref }; }
 }
 
 /** A module whose board runs in the solver: built again (carrying its state on) when a knob on its signal path moves. */
@@ -390,6 +559,8 @@ export function makeSim(kind: string, sampleRate: number, knobs: Record<string, 
     case "env": return new Env(sampleRate, knobs);
     case "vca": return new Vca(sampleRate, knobs);
     case "vcf": return new Vcf(sampleRate, knobs);
+    case "keys": return new Keys(sampleRate, knobs);
+    case "noise": return new Noise(sampleRate, knobs);
     case "mix": case "out": return new Linear(kind, knobs);
   }
   throw new Error(`no sound wall module ${kind}`);
