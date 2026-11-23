@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { RoomSocket } from "@rustybuns/util/room";
 import { parseJson } from "@rustybuns/util/http";
 import { Job, JobsReply } from "../src/api.ts";
-import { LiveMsg, PROTOCOL, relay } from "../src/live.ts";
+import { LiveMsg, PROTOCOL, relay, ticket } from "../src/live.ts";
 import worker, { Relay, type Env } from "../src/relay.ts";
 import { api } from "../src/server.ts";
 import { Store } from "../src/store.ts";
@@ -39,26 +39,28 @@ const heard = (s: Sock) => s.sent.map((m) => LiveMsg(parseJson(m)).t);
 const word = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(/^=\?UTF-8\?B\?(.*)\?=$/.exec(s)![1]!), (c) => c.charCodeAt(0)));
 
 test("the laptop and the phone hear every change the server makes, and a reminder reaches the phone", async () => {
-  // Two devices open the page; a stranger's token is turned away.
-  const laptop = await page("s3cret"), lap = last!;
-  const phone = await page("s3cret"), ph = last!;
-  // (The 101 names PROTOCOL back in workerd; Bun's Response drops a 101's headers, so that part is checked under wrangler dev.)
-  expect([laptop.status, phone.status]).toEqual([101, 101]);
-  expect((await page("nope")).status).toBe(401);
-  expect((await worker.fetch(new Request(`${edge.url}publish`, { method: "POST" }), env)).status).toBe(401);
-
   const store = new Store();
   const live = relay(edge.url.href, "s3cret");
   const send = withPush(deliver, `${ntfy.url}cron-swanson-test`);
-  let now = Date.parse("2026-11-14T08:59:30Z");
-  const call = api(store, { now: () => now, send, live: "wss://relay.test/live", changed: live.poke });
+  let now = Date.now();
+  const call = api(store, { token: "s3cret", now: () => now, send, live: "wss://relay.test/live", changed: live.poke });
   const ask = async (method: string, path: string, body?: unknown) =>
-    parseJson(await (await call(new Request(`http://cron.test${path}`, { method, body: body === undefined ? null : JSON.stringify(body) }))).text());
+    parseJson(await (await call(new Request(`http://cron.test${path}`, { method, headers: { authorization: "Bearer s3cret" }, body: body === undefined ? null : JSON.stringify(body) }))).text());
 
-  // The page learns where the relay is from the list it already fetches; reading it changes nothing.
-  expect(JobsReply(await ask("GET", "/api/jobs")).live).toBe("wss://relay.test/live");
+  // The page learns where the relay is, and the day's ticket onto it, from the list it already fetches; reading it changes nothing.
+  const list = JobsReply(await ask("GET", "/api/jobs"));
+  expect(list.live).toBe("wss://relay.test/live");
+
+  // Two devices open the page on that ticket; a made-up one, yesterday's, or the raw token is turned away.
+  const laptop = await page(list.ticket!), lap = last!;
+  const phone = await page(list.ticket!), ph = last!;
+  // (The 101 names PROTOCOL back in workerd; Bun's Response drops a 101's headers, so that part is checked under wrangler dev.)
+  expect([laptop.status, phone.status]).toEqual([101, 101]);
+  expect([(await page("nope")).status, (await page(await ticket("s3cret", now - 2 * 86_400_000))).status, (await page("s3cret")).status]).toEqual([401, 401, 401]);
+  expect((await worker.fetch(new Request(`${edge.url}publish`, { method: "POST" }), env)).status).toBe(401);
   await live.idle();
   expect(heard(lap)).toEqual([]);
+  now = Date.parse("2026-11-14T08:59:30Z");
 
   // A job made on the laptop: both pages hear it.
   const job = Job(await ask("POST", "/api/jobs", {

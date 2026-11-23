@@ -1,17 +1,25 @@
-// The API: list, make, change, pause, run and delete jobs, and match an app's jobs to its own list. With CRON_SWANSON_TOKEN set, every route but
-// /api/health wants `Authorization: Bearer <token>`; unset, it's open (a laptop, a test).
+// The API: list, make, change, pause, run and delete jobs, and match an app's jobs to its own list. Every route but
+// /api/health wants `Authorization: Bearer <...>`: the owner's eqosys token (the page, signed in) or CRON_SWANSON_TOKEN
+// (scripts and apps: sync.ts). With neither set, it's open (a laptop, a test).
 import { Bad, type Guard } from "@rustybuns/util/guard";
 import { parseJson, privateJson } from "@rustybuns/util/http";
+import type { Claims } from "@rustybuns/util/token";
 import { next } from "./bacron.ts";
-import { AppJobs, AppName, Declared, JobInput, type Job, type JobsReply, type SyncReply } from "./api.ts";
+import { AppJobs, AppName, Declared, JobInput, NOT_OWNER, SIGN_IN, type Job, type JobsReply, type SyncReply } from "./api.ts";
 import { fire, deliver, type Deliver } from "./ticker.ts";
 import type { Store } from "./store.ts";
-import { sameToken } from "./live.ts";
+import { sameToken, ticket } from "./live.ts";
 
 const MAX_BODY = 64 * 1024;
 
+/** Who may use the page: the one eqosys account with this email (CRON_SWANSON_OWNER), its token checked by `checker` (a TokenChecker). */
+export interface Owner { email: string; checker: { check(token: string): Promise<Claims | null> } }
+
 export interface Options {
-  token?: string; send?: Deliver; now?: () => number;
+  /** The bearer for machine callers (CRON_SWANSON_TOKEN), and the secret the relay's tickets are signed with. */
+  token?: string;
+  owner?: Owner;
+  send?: Deliver; now?: () => number;
   /** The relay's socket URL the page should hold (wss://.../live), or none to poll each minute. */
   live?: string;
   /** Called after anything a page shows changed: the nudge to the relay. */
@@ -19,6 +27,17 @@ export interface Options {
 }
 
 const refuse = (error: string, status: number) => privateJson({ error }, status);
+
+/** Why `req` may not in, or null when it may: the machine token, or an eqosys token for the owner's account. */
+async function door(req: Request, o: Options): Promise<string | null> {
+  if (!o.token && !o.owner) return null;
+  const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!given) return SIGN_IN;
+  if (o.token && sameToken(given, o.token)) return null;
+  const who = o.owner ? await o.owner.checker.check(given) : null;
+  if (!who) return SIGN_IN;
+  return who.email.toLowerCase() === o.owner!.email.toLowerCase() ? null : NOT_OWNER;
+}
 
 async function body<T>(req: Request, guard: Guard<T>): Promise<T | Response> {
   const text = await req.text();
@@ -78,12 +97,13 @@ function route(store: Store, o: Options, now: () => number, send: Deliver): (req
     const url = new URL(req.url), path = url.pathname;
     if (path === "/api/health") return privateJson({ ok: true, now: now() });
     if (!path.startsWith("/api/")) return refuse("not found", 404);
-    if (o.token && !sameToken(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", o.token)) return refuse("token needed", 401);
+    const shut = await door(req, o);
+    if (shut) return refuse(shut, 401);
 
     if (path === "/api/jobs" && req.method === "GET") {
       const last = store.lastRuns(), stats = store.stats(now());
       const none = { fired: 0, done: 0, ignored: 0, lastDoneAt: null, lastFiredAt: null };
-      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null, stats: stats.get(job.id) ?? none })), runs: store.runs(100), now: now(), live: o.live ?? null };
+      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null, stats: stats.get(job.id) ?? none })), runs: store.runs(100), now: now(), live: o.live ?? null, ticket: o.live && o.token ? await ticket(o.token, now()) : null };
       return privateJson(reply);
     }
     if (path === "/api/jobs" && req.method === "POST") {

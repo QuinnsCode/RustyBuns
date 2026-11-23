@@ -1,9 +1,10 @@
 // What the server, the relay (relay.ts) and the page share about the live channel, and the server's two ways
 // out: a nudge to the relay after anything changes, and a push to the phone when a reminder fires.
 // No Bun or DOM here: the relay's Worker bundles this file too.
+import { hmacHex, hmacSigned } from "@rustybuns/util/bytes";
 import { num, obj, oneOf, type Of } from "@rustybuns/util/guard";
 
-/** The subprotocol a page offers first; the token rides second, in a header instead of the URL. */
+/** The subprotocol a page offers first; its ticket rides second, in a header instead of the URL. */
 export const PROTOCOL = "cron-swanson";
 
 /** What the relay tells every page: something changed at `at`, fetch /api/jobs again. */
@@ -18,7 +19,24 @@ export function sameToken(given: string, want: string): boolean {
   return diff === 0;
 }
 
-/** The token a page offered as its second subprotocol, or "" when it offered none. */
+const DAY = 86_400_000;
+
+/**
+ * A page's pass onto the relay, signed with the shared CRON_SWANSON_TOKEN so the page never holds the token itself:
+ * good until the end of tomorrow (UTC), so it stays the same all day and a page reconnects once a day at most.
+ */
+export async function ticket(token: string, now = Date.now()): Promise<string> {
+  const exp = (Math.floor(now / DAY) + 2) * DAY;
+  return `${exp}.${await hmacHex(token, `live.${exp}`)}`;
+}
+
+/** Whether `given` is a ticket signed with `token` that hasn't run out. */
+export async function ticketOk(given: string, token: string, now = Date.now()): Promise<boolean> {
+  const m = /^(\d{13})\.([0-9a-f]{64})$/.exec(given);
+  return !!m && Number(m[1]) > now && hmacSigned(token, `live.${m[1]}`, m[2]!);
+}
+
+/** The ticket a page offered as its second subprotocol, or "" when it offered none. */
 export function offeredToken(req: Request): string {
   const offered = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
   return offered[0] === PROTOCOL ? offered[1] ?? "" : "";

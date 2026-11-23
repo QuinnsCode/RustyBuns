@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { parseJson } from "@rustybuns/util/http";
-import { Job, JobsReply, Refusal, Run } from "../src/api.ts";
+import { jwksOf, newKey, sign, TokenChecker } from "@rustybuns/util/token";
+import { APP, Job, JobsReply, NOT_OWNER, Refusal, Run, SIGN_IN } from "../src/api.ts";
 import { api } from "../src/server.ts";
 import { Store } from "../src/store.ts";
 import { tick } from "../src/ticker.ts";
@@ -73,10 +74,27 @@ test("a day in the life: make jobs per app, the ticker fires them on the minute,
   expect((await ask("GET", `/api/jobs/${job.id}/runs`)).status).toBe(404);
 });
 
-test("with a token set, only health is open", async () => {
-  const call = api(new Store(), { token: "s3cret" });
-  const status = async (path: string, auth?: string) => (await call(new Request(`http://cron.test${path}`, { headers: auth ? { authorization: auth } : {} }))).status;
-  expect([await status("/api/health"), await status("/api/jobs"), await status("/api/jobs", "Bearer nope"), await status("/api/jobs", "Bearer s3cret")]).toEqual([200, 401, 401, 200]);
+test("the owner signed in with eqosys gets the jobs; nobody, a stranger or a token for another app gets a 401; scripts keep the bearer", async () => {
+  // A stand-in eqosys: its JWKS, and tokens signed the way eqosys signs them.
+  const signer = { EQOSYS_SIGNING_KEY: await newKey() };
+  const eq = Bun.serve({ port: 0, fetch: async () => Response.json(await jwksOf(signer)) });
+  const iss = eq.url.origin;
+  const tokenFor = async (email: string, app = APP) => (await sign(signer, iss, { user: { id: `u_${email}`, email, name: email }, app, source: app, access: [] }))!;
+  try {
+    const call = api(new Store(), { token: "s3cret", owner: { email: "Owner@Example.com", checker: new TokenChecker(iss, APP) } });
+    const ask = async (auth?: string) => {
+      const res = await call(new Request("http://cron.test/api/jobs", { headers: auth ? { authorization: `Bearer ${auth}` } : {} }));
+      const body = parseJson(await res.text());
+      return res.ok ? [res.status, JobsReply(body).jobs.length] : [res.status, Refusal(body).error];
+    };
+    expect((await call(new Request("http://cron.test/api/health"))).status).toBe(200);
+    expect(await ask(await tokenFor("owner@example.com"))).toEqual([200, 0]);
+    expect(await ask("s3cret")).toEqual([200, 0]);
+    expect(await ask()).toEqual([401, SIGN_IN]);
+    expect(await ask(await tokenFor("someone@example.com"))).toEqual([401, NOT_OWNER]);
+    expect(await ask(await tokenFor("owner@example.com", "qcrm"))).toEqual([401, SIGN_IN]);
+    expect(await ask("nope")).toEqual([401, SIGN_IN]);
+  } finally { eq.stop(true); }
 });
 
 test("tick a reminder off, let one slide: the counts the page sorts by", async () => {

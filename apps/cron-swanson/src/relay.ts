@@ -3,12 +3,12 @@
 // `{ t: "changed" }` and fetches /api/jobs again. The Bun server stays the clock (DO alarms landed minutes late),
 // and nothing is stored here: a woken relay has its hibernated sockets and nothing else to lose.
 // Deployed from relay/ (rustybuns.config.ts there); TOKEN is the same secret as the server's CRON_SWANSON_TOKEN.
-//   GET  /live      a page's socket; subprotocols `cron-swanson, <token>`
+//   GET  /live      a page's socket; subprotocols `cron-swanson, <ticket>` (the day's ticket /api/jobs hands a signed-in page)
 //   POST /publish   the server's nudge; Authorization: Bearer <token>
 //   GET  /health    open
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { json } from "@rustybuns/util/http";
-import { PROTOCOL, offeredToken, sameToken, type LiveMsg } from "./live.ts";
+import { PROTOCOL, offeredToken, sameToken, ticketOk, type LiveMsg } from "./live.ts";
 
 type Stub = { fetch(r: Request): Promise<Response> };
 export type Env = { RELAY: { idFromName(n: string): unknown; get(id: unknown): Stub }; TOKEN?: string };
@@ -51,7 +51,7 @@ export default {
     const want = env.TOKEN ?? "";
     if (path === "/live") {
       if (req.headers.get("upgrade") !== "websocket") return json({ error: "websocket only" }, 426);
-      if (want && !sameToken(offeredToken(req), want)) return json({ error: "token needed" }, 401);
+      if (want && !(await ticketOk(offeredToken(req), want))) return json({ error: "ticket needed" }, 401);
       return echo(await room().fetch(req));
     }
     if (path === "/publish" && req.method === "POST") {

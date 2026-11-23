@@ -129,6 +129,13 @@
     "blurb": "The smallest Rusty Buns app: one page, static assets only.",
     "cta": "Open"
   },
+  "cron-swanson": {
+    "name": "Cron Swanson",
+    "kicker": "Every Timer In One Place",
+    "blurb": "Every scheduled job and reminder across the apps, sorted by app, with when it runs next and why.",
+    "cta": "Open",
+    "more": "Backups, check-ins and renewals on one clock.\nTick a reminder off when it's done."
+  },
   "at-lens": {
     "name": "AT Lens",
     "kicker": "Open Social Protocol",
