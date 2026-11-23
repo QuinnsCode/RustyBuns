@@ -14,8 +14,8 @@ import deckWorkletUrl from "./deck-worklet.ts?worker&url";
 import { DECK_CHANNEL, Mixer, type ChannelKnob } from "./mixer.ts";
 
 export type Side = 0 | 1;
-/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key, and where the grid came from (tags.ts). */
-export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null; key: Key | null; from?: TempoFrom }
+/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key, and where the grid came from (tags.ts), and the hot cues the DJ's software set (put on the deck's four when it loads). */
+export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null; key: Key | null; from?: TempoFrom; hot?: (number | null)[] }
 /** Where another deck is, for sync: its grid, its rate, whether it plays and where (it may be on someone else's machine). */
 export interface Beside { grid: Grid | null; rate: number; playing: boolean; pos: number }
 
@@ -118,7 +118,7 @@ class Deck {
 
   load(t: Track) {
     this.track = t; this.playing = false; this.m = { from: 0, at: this.ctx.currentTime, r0: 0, r1: 0, T: 0 };
-    this.cue = t.grid?.offset ?? 0; this.hot = [null, null, null, null]; this.loop = null; this.loopIn = null; this.lastLoop = null; this.adjust = null; this.synced = false;
+    this.cue = t.grid?.offset ?? 0; this.hot = [0, 1, 2, 3].map((i) => t.hot?.[i] ?? null); this.loop = null; this.loopIn = null; this.lastLoop = null; this.adjust = null; this.synced = false;
     this.sendTrack(); this.post();
   }
   /** Take the track off (someone else loaded onto this deck in the booth). */
