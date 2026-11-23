@@ -375,7 +375,8 @@ export class Puppet {
   private readonly gq = new THREE.Quaternion();
   private readonly fq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()] as const;
   private readonly fv = [new THREE.Vector3(), new THREE.Vector3()] as const;
-  private readonly head: { tip: number; rest: THREE.Vector3 }[];
+  /** The head's tips, each with its rest and which way a shake swings it (`side`, +1 or -1). */
+  private readonly head: { tip: number; rest: THREE.Vector3; side: number }[];
   private readonly tail: { tip: number; rest: THREE.Vector3; lag: THREE.Vector3 } | null;
   private tailSet = false;
   /** The limbs that hang (an upright beast's arms, a fin, a second tail): the top bone of each, the tip it swings. */
@@ -548,7 +549,11 @@ export class Puppet {
     });
     // the head and tail get goals of their own: the head turns to look, the tail is dragged behind the turns
     const { head, tail } = headAndTail(rig, sheet, beast.model.name);
-    this.head = head.map((tip) => ({ tip, rest: new THREE.Vector3(...this.ik.worldPosition(tip)) }));
+    // a shake swings each tip of a many-headed beast out to its own side of the group, so the heads part and
+    // close; by order alone the two outer heads of three would swing together
+    const rests = head.map((tip) => new THREE.Vector3(...this.ik.worldPosition(tip)));
+    const mid = rests.reduce((a, v) => a + v.z, 0) / (rests.length || 1);
+    this.head = head.map((tip, i) => ({ tip, rest: rests[i]!, side: rests[i]!.z < mid ? -1 : 1 }));
     this.front = Math.max(...sheet.tips.map((t) => this.ik.worldPosition(t)[0]));
     this.tail = tail === null ? null : { tip: tail, rest: new THREE.Vector3(...this.ik.worldPosition(tail)), lag: new THREE.Vector3() };
     this.limbs = hangingLimbs(rig, sheet, head);
@@ -866,7 +871,9 @@ export class Puppet {
         // rearing, the front feet come up off the ground and paw the air; a tank's slam is a stamp of them
         if (rear && front) this.tmp.y += rear * 0.16 * h;
         if (forward && front && A.stomp) this.tmp.y += wind * A.stomp * h;
-        if (front && mo === "grab") { this.tmp.x += (wind * 0.3 - mk * 0.12) * h; this.tmp.y += wind * 0.12 * h; }
+        // a grab reaches the front feet out through the wind-up and rakes them back on the strike, past where a
+        // plain strike's overreaching feet already stop, or the rake is lost in the leg's reach
+        if (front && mo === "grab") { this.tmp.x += (wind * 0.3 - mk * 0.18) * h; this.tmp.y += wind * 0.12 * h; }
         if (front && mo === "drum") { this.tmp.x -= wk * 0.12 * h; this.tmp.y += wk * (0.12 + Math.abs(Math.sin(tick * 0.9)) * 0.1) * h; }
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
       }
@@ -986,8 +993,8 @@ export class Puppet {
     this.look.y -= bob * 0.6;
     if (grounded && !pose && f.state === "free") { this.look.z += Math.sin(tick * 0.019) * Math.sin(tick * 0.007) * 0.06 * h * (1 - run); this.look.y += Math.sin(tick * 0.027) * 0.015 * h; }
     this.head.forEach((t, i) => {
-      // the tips of a many-headed beast swing out of phase
-      const shake = mo === "shake" ? Math.sin(tick * 0.7 + i * Math.PI) * 0.3 * wk * h : 0;
+      // the tips of a many-headed beast swing apart and together
+      const shake = mo === "shake" ? Math.sin(tick * 0.7) * t.side * 0.3 * wk * h : 0;
       // the look and the stride's sway go through a spring, so an idle glance reaches the solver smoothly; a
       // shake is the move itself, a deliberate fast swing, and stays raw
       const sf = this.soft;

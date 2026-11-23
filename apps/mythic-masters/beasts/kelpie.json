@@ -119,8 +119,8 @@
       "curve": 50,
       "material": "weed"
     },
-    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_fankle", "l_ffoot"], "radii": [0.088, 0.055, 0.034, 0.04], "depth": 1.15, "calf": 0.12, "mirror": true, "material": "hide"},
-    {"kind": "limb", "along": ["l_hipj", "l_hock", "l_bankle", "l_bfoot"], "radii": [0.105, 0.06, 0.034, 0.04], "depth": 1.2, "calf": 0.15, "mirror": true, "material": "hide"},
+    {"kind": "limb", "along": ["l_shoulder", "l_fknee", "l_fankle", "l_ffoot"], "radii": [0.088, 0.055, 0.034, 0.04], "depth": 1.15, "calf": 0.12, "elbow": 0.2, "mirror": true, "material": "hide"},
+    {"kind": "limb", "along": ["l_hipj", "l_hock", "l_bankle", "l_bfoot"], "radii": [0.105, 0.06, 0.034, 0.04], "depth": 1.2, "calf": 0.15, "elbow": 0.2, "mirror": true, "material": "hide"},
     {"kind": "foot", "at": "l_ffoot", "form": "hoof", "len": 0.14, "width": 0.1, "toes": 1, "mirror": true, "material": "hoof"},
     {"kind": "foot", "at": "l_bfoot", "form": "hoof", "len": 0.14, "width": 0.1, "toes": 1, "mirror": true, "material": "hoof"},
     {"kind": "skull", "at": "head", "off": [0.04, 0, 0], "dir": [0.85, -0.45, 0], "len": 0.55, "width": 0.085, "height": 0.11, "snout": 0.55, "stop": 0.35, "flat": 0.15, "jaw": 0.25, "material": "hide"}
