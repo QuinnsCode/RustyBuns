@@ -19,6 +19,7 @@
 //   bun run climbs --next           the round to hand out (not taken by an open PR, not stalled, under target)
 //   bun run climbs --next --hire    hire a worker for it through office-workers
 //   bun run climbs --next --hire --wait   the office is full (12 workers): try again each minute until a desk frees
+//   bun run climbs --next --hire --anyway (or --hold)   passed to office-workers when other open work changes the same files
 //   bun run climbs --next --skip mythic   leave out every climb whose title names it (repeat for more words)
 //   bun run climbs --next --issue 4287    that climb's round, whatever the board would pick
 //   bun run climbs --json
@@ -151,7 +152,7 @@ if (import.meta.main) {
     console.log(board([c])[0] + "\n\n" + baton(c));
     if (argv.includes("--hire")) {
       process.exit(await hire(async () => {
-        const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c)], { stdout: "pipe", stderr: "pipe" });
+        const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c), ...argv.filter((a) => a === "--anyway" || a === "--hold")], { stdout: "pipe", stderr: "pipe" });
         const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
         process.stdout.write(out); process.stderr.write(err);
         return { code, out: out + err };
