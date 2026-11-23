@@ -34,6 +34,7 @@ import { Band } from "../studio/band.ts";
 import { figure, type Figure } from "../studio/figure.ts";
 import { BODY_HZ } from "../studio/jam.ts";
 import { FarSound } from "../studio/plugin-line.ts";
+import { QWERTY, startMidi } from "../ui/input.ts";
 import { drawDesk } from "./desk.ts";
 import type { AmpSettings, FromAmp } from "../amp/messages.ts";
 import { AmpThreads } from "../amp/threads.ts";
@@ -117,7 +118,8 @@ let seeded = false;
 let asked = false;
 /** Which person each number on the live line is (the World's grants), and whose sound the live line plays (their guitar, mic or plugin track). */
 let peerIds: Record<string, string> = {};
-const far = new FarSound(new Band(() => ({ bpm: project?.bpm ?? 120, loopBeats: 16 }), () => performance.timeOrigin + performance.now()), () => {});
+const band = new Band(() => ({ bpm: project?.bpm ?? 120, loopBeats: 16 }), () => performance.timeOrigin + performance.now());
+const far = new FarSound(band, () => {});
 const myName = localMe().name || "Someone", myLook = savedLook(myName);
 /** In a sesh the desk is the sesh's: its tracks, your own channel (the guitar), a channel per player the live line plays sound for (as FM DAW's Mixer tab shows them), and its returns. */
 function inSesh(): { project: Project; who: Player; players: Player[] } | null {
@@ -266,6 +268,11 @@ let wallNode: AudioWorkletNode | null = null;
 let wallPanner: PannerNode | null = null;
 let wallKey = "";
 let wallState: FromWall | null = null;
+/** The tempo the wall was last sent, and when (the band's beat is sent again now and then, so Q Keys' clock stays on it). */
+let wallTempo = { bpm: 0, synced: false, at: 0 };
+/** Z: the letter keys play Q Keys (as FM DAW's keyboard does), and you stand still, until Z again. */
+let playingKeys = false;
+const KEYS_C = 48;
 
 async function speakers(up: boolean) {
   speakersUp = up;
@@ -280,7 +287,14 @@ async function speakers(up: boolean) {
     wallNode.port.onmessage = (e: MessageEvent<FromWall>) => { wallState = e.data; };
     wallPanner = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
     wallNode.connect(wallPanner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
-    wallKey = "";
+    wallKey = ""; wallTempo = { bpm: 0, synced: false, at: 0 };
+    // A MIDI keyboard plays Q Keys too, whenever the speakers are up.
+    void startMidi({
+      on: (n, v) => wallNode?.port.postMessage({ t: "note", midi: n, vel: v } satisfies ToWall),
+      off: (n) => wallNode?.port.postMessage({ t: "note", midi: n, vel: 0 } satisfies ToWall),
+      panic: () => { for (let n = 0; n < 128; n++) wallNode?.port.postMessage({ t: "note", midi: n, vel: 0 } satisfies ToWall); },
+      bend: () => {}, cc: () => {}, devices: () => {},
+    });
     deskNode = new AudioWorkletNode(ctx, "q-desk", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("../amp/part-worker.ts", import.meta.url), { type: "module" }), (m) => { meter = m; });
@@ -298,7 +312,14 @@ async function speakers(up: boolean) {
 /** The sound wall's audio thread gets the wall (its modules, their knobs, the cables, the sends' gear) when it changes. */
 function wallSound(h: Heard) {
   const key = JSON.stringify(h.wall.spec);
-  if (!wallNode || key === wallKey) return;
+  if (!wallNode) return;
+  // The sesh's tempo for Q Keys' clock, and the band's beat when its clock is known.
+  const bpm = project?.bpm ?? 120, now = performance.now(), synced = band.synced;
+  if (bpm !== wallTempo.bpm || synced !== wallTempo.synced || (synced && now - wallTempo.at > 4000)) {
+    wallTempo = { bpm, synced, at: now };
+    wallNode.port.postMessage({ t: "tempo", bpm, beat: synced ? band.beat() : null } satisfies ToWall);
+  }
+  if (key === wallKey) return;
   wallKey = key;
   wallNode.port.postMessage({ t: "wall", spec: h.wall.spec } satisfies ToWall);
 }
@@ -400,7 +421,22 @@ document.addEventListener("mousemove", (e) => {
   room.you.yaw -= e.movementX * s * ctl.lookX;
   room.you.pitch = clamp(room.you.pitch - e.movementY * s * ctl.lookY * (ctl.invertY ? -1 : 1), -1.35, 1.25);
 });
+/** A key of the room's keyboard down or up on Q Keys. */
+function keyNote(code: string, down: boolean): boolean {
+  const semi = QWERTY[code];
+  if (!playingKeys || semi === undefined) return false;
+  wallNode?.port.postMessage({ t: "note", midi: KEYS_C + semi, vel: down ? 0.8 : 0 } satisfies ToWall);
+  return true;
+}
 document.addEventListener("keydown", (e) => {
+  if (e.code === "KeyZ" && phase === "play" && !e.repeat) {
+    if (playingKeys) for (const c of Object.keys(QWERTY)) keyNote(c, false);
+    else for (const c of Object.keys(QWERTY)) keys.delete(c); // so you don't walk off on a key held as Z went down
+    playingKeys = !playingKeys;
+    flash = { text: playingKeys ? "Playing Q Keys: A to ' are the notes from C3. Z to walk again." : "Walking again.", until: performance.now() + 2500 };
+    return;
+  }
+  if (playingKeys && phase === "play" && QWERTY[e.code] !== undefined) { if (!e.repeat) keyNote(e.code, true); return; }
   keys.add(e.code);
   if (e.repeat) return;
   if (e.code === "KeyM") void speakers(!speakersUp);
@@ -415,7 +451,7 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "KeyE") turnHeld(room, 1);
   if (e.code === "KeyB") openSheetHere();
 });
-document.addEventListener("keyup", (e) => keys.delete(e.code));
+document.addEventListener("keyup", (e) => { keyNote(e.code, false); keys.delete(e.code); });
 /** A board's JSON dropped in the room: it stands on the floor in front of you, or the bench says why it won't play. */
 function dropBoard(json: unknown, name: string): Answer {
   const b = readBench(json, name);

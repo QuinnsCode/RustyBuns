@@ -40,7 +40,12 @@ export const TL074 = { pin1: "OUTA", pin2: "INNA", pin3: "INPA", pin4: "VPOS", p
 export const LM13700 = { pin1: "IABCA", pin2: "DBIASA", pin3: "INPA", pin4: "INNA", pin5: "OUTA", pin6: "VNEG", pin7: "BINA", pin8: "BOUTA", pin9: "BOUTB", pin10: "BINB", pin11: "VPOS", pin12: "OUTB", pin13: "INNB", pin14: "INPB", pin15: "DBIASB", pin16: "IABCB" };
 export const NE555 = { pin1: "VNEG", pin2: "TRIG", pin3: "Q", pin4: "RESET", pin5: "CTRL", pin6: "THRES", pin7: "DISCH", pin8: "VPOS" };
 export const CD4017 = { pin1: "Q5", pin2: "Q1", pin3: "Q0", pin4: "Q2", pin5: "Q6", pin6: "Q7", pin7: "Q3", pin8: "VNEG", pin9: "Q8", pin10: "Q4", pin11: "Q9", pin12: "CO", pin13: "EN", pin14: "CLK", pin15: "RST", pin16: "VPOS" };
-export const FOOTPRINT: Record<string, string> = { TL072: "soic8", TL074: "soic14", LM13700: "soic16", NE555: "soic8", CD4017: "soic16" };
+/** Q Keys' digital side, on its own 5 V: the regulator, the MIDI input's optocoupler, the microcontroller and the DAC. */
+export const LM78L05 = { pin1: "VOUT", pin2: "GNDA", pin3: "GNDB", pin4: "NCA", pin5: "NCB", pin6: "GNDC", pin7: "GNDD", pin8: "VIN" };
+export const HCPL0601 = { pin1: "NCA", pin2: "ANODE", pin3: "CATHODE", pin4: "NCB", pin5: "GND", pin6: "VO", pin7: "VE", pin8: "VCC" };
+export const ATTINY1614 = { pin1: "VDD", pin2: "PA4", pin3: "PA5", pin4: "PA6", pin5: "PA7", pin6: "PB3", pin7: "PB2", pin8: "PB1", pin9: "PB0", pin10: "UPDI", pin11: "PA1", pin12: "PA2", pin13: "PA3", pin14: "GND" };
+export const MCP4822 = { pin1: "VDD", pin2: "CS", pin3: "SCK", pin4: "SDI", pin5: "LDAC", pin6: "VOUTB", pin7: "VSS", pin8: "VOUTA" };
+export const FOOTPRINT: Record<string, string> = { TL072: "soic8", TL074: "soic14", LM13700: "soic16", NE555: "soic8", CD4017: "soic16", LM78L05: "soic8", HCPL0601: "soic8", ATTINY1614: "soic14", MCP4822: "soic8" };
 
 /** A net's name from a jack's or knob's (`send-a` is SEND_A). */
 export const netOf = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
@@ -148,7 +153,7 @@ export function wallBoard(m: Module) {
 export function Chip({ name, part }: { name: string; part: keyof typeof PINS }) {
   return <chip name={name} manufacturerPartNumber={part} footprint={FOOTPRINT[part]} pinLabels={PINS[part]} />;
 }
-const PINS = { TL072, TL074, LM13700, NE555, CD4017 };
+const PINS = { TL072, TL074, LM13700, NE555, CD4017, LM78L05, HCPL0601, ATTINY1614, MCP4822 };
 
 /** Shorthand for traces: `wire("U1 > .OUTA", "net.SAW")` reads as `<trace from=".U1 > .OUTA" to="net.SAW" />`. */
 export function wires(pairs: [string, string][]) {
