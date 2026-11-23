@@ -98,7 +98,7 @@ export async function finishPass(env: Env, m: { owner: string; repo: string; lan
   if (run?.status !== "running") return null;
   const head = run.log;
   const text = await aboardDiff(env, owner, repo, lane, seats, sha).catch(() => null);
-  const r = text ? await askAi(env, owner, busPrompt(lane.name, seats.length), text) : { error: "the changes aboard couldn't be read" };
+  const r = text ? await askAi(env, { review: "bus", ...m }, busPrompt(lane.name, seats.length), text) : { error: "the changes aboard couldn't be read" };
   const v = "error" in r ? { say: "none", by: "ai", reason: `the AI pass couldn't answer: ${r.error}` } : r;
   await env.DB.prepare("UPDATE bus_passes SET say = ?, by = ?, reason = ?, at = ? WHERE owner = ? AND repo = ? AND lane = ? AND sha = ?")
     .bind(v.say, v.by, v.reason ?? null, Date.now(), owner, repo, lane.name, sha).run();

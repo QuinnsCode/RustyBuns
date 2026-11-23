@@ -25,7 +25,8 @@ import { hunks } from "./patch.ts";
 import { harnessCommand } from "./harness.ts";
 import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
-import { hostedBudget, installedHarnesses } from "./agent-routes.ts";
+import { hostedBudget, installedHarnesses, reviewRow } from "./agent-routes.ts";
+import { tokens, usageOf } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { healUnavailable } from "./heal.ts";
 import { parseJson } from "./util.ts";
@@ -105,19 +106,24 @@ export function readVerdict(run: { code: number; out: string; text: string | nul
 }
 
 /**
- * One AI review of `diff`, asked with `prompt` (reviewPrompt, or the bus's pass in pipeline-bus.ts): the verdict, or why it
+ * One AI review `m` of `diff`, asked with `prompt` (reviewPrompt, or the bus's pass in pipeline-bus.ts): the verdict, or why it
  * couldn't give one. The cheapest coding agent installed, and nothing when healing is off or the site's hosted budget is spent.
+ * It runs as an agent run (agent-routes.ts reviewRow, #4002): in the repo's run list, where the crew can stop it.
  */
-export async function askAi(env: Env, owner: string, prompt: string, diff: string): Promise<{ say: "yay" | "nay"; reason?: string; by: string } | { error: string }> {
-  const off = healUnavailable(env, owner), cheap = off ? null : cheapest(installedHarnesses(env));
+export async function askAi(env: Env, m: ReviewMessage, prompt: string, diff: string): Promise<{ say: "yay" | "nay"; reason?: string; by: string } | { error: string }> {
+  const off = healUnavailable(env, m.owner), cheap = off ? null : cheapest(installedHarnesses(env));
   if (!cheap) return { error: off ?? "no coding agent's CLI is installed here" };
-  const spent = await hostedBudget(env);
-  if (spent) return { error: await errorIn(spent, "the site's hosted budget is spent") };
+  const budget = await hostedBudget(env);
+  if (budget) return { error: await errorIn(budget, "the site's hosted budget is spent") };
   const box: Sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
   const given = diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n(the diff goes on: ${diff.length - MAX_DIFF} more characters)\n` : diff;
-  const run = await box(harnessCommand(cheap.harness, prompt, { model: cheap.model }), { path: VERDICT_FILE, text: given })
+  const row = await reviewRow(env, m, cheap.harness, cheap.model ?? null, prompt);
+  const run = await box(harnessCommand(cheap.harness, prompt, { model: cheap.model }), { path: VERDICT_FILE, text: given }, row.signal)
     .catch((e) => ({ code: 1, out: String((e as Error)?.message ?? e), text: null }));
   const v = readVerdict(run, cheap.harness);
+  // What it read and wrote, where its CLI says; else the prompt, the diff in and out, and its output.
+  const spent = usageOf(run.out)?.tokens ?? tokens(prompt.length + given.length * 2 + run.out.length);
+  if (!await row.end(v, spent)) return { error: `run ${row.id} was stopped` };
   return "error" in v ? v : { ...v, by: `ai:${cheap.harness}${cheap.model ? `/${cheap.model}` : ""}` };
 }
 
@@ -155,7 +161,7 @@ async function runReview(env: Env, m: ReviewMessage) {
   if (await branchHash(env, m.owner, m.repo, m.branch).catch(() => null) !== m.hash) return forget();
   const { results: files } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path")
     .bind(m.owner, m.repo, m.branch).all<{ path: string; deleted: number; blob: string | null }>();
-  const r = await askAi(env, m.owner, reviewPrompt(m.at, m.branch), await branchDiff(env, m.owner, m.repo, m.branch, files, m.user));
+  const r = await askAi(env, m, reviewPrompt(m.at, m.branch), await branchDiff(env, m.owner, m.repo, m.branch, files, m.user));
   const v = "error" in r ? { say: "waiting", by: "ai", reason: `the AI review couldn't answer: ${r.error}` } : r;
   // Only over its own claim: a person who answered meanwhile, or a newer hash, stands.
   await env.DB.prepare("UPDATE hook_verdicts SET say = ?, by = ?, reason = ?, at = ? WHERE owner = ? AND repo = ? AND branch = ? AND hook = ? AND hash = ? AND say = 'running'")

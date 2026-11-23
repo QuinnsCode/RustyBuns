@@ -76,6 +76,8 @@ import { readSaved, readStats } from "./stats.ts";
 import { deskHeard } from "./office.ts";
 import { engineLines, type Engine } from "./heal.ts";
 import { isBuildFile } from "./buildfiles.ts";
+import { PIPELINE_FILE } from "./pipeline.ts";
+import type { ReviewMessage } from "./pipeline-hooks.ts";
 
 /** The fields of a Run (below) a client acts on: whether it's done, and what it landed or left. */
 export const RunSeen = obj({
@@ -146,6 +148,8 @@ export interface Run {
   progress?: { runs: number; applied: number; spent: number };
   /** On the start's answer only (#1163): open branches already rewriting its file or the ones its task names. */
   busy?: Busy[];
+  /** An AI review (#4002): a hook's at a merge, or a bus's pass (pipeline-hooks.ts askAi). It edits nothing; its verdict is `say` and `reason`. */
+  review?: ReviewMessage; say?: "yay" | "nay"; reason?: string;
 }
 
 /** Something someone on the crew told a running agent, and who (`by`; notes from before #3711 have none). */
@@ -233,6 +237,44 @@ const lives = new WeakMap<object, Map<number, AbortController>>();
 const liveOf = (env: Env) => { let m = lives.get(env); if (!m) lives.set(env, m = new Map()); return m; };
 /** Tells the pages on run file `path` (main's) that a run there started or ended, so they read the runs again (#3714). */
 const runsMoved = (env: Env, owner: string, repo: string, path: string) => toFile(env, owner, repo, path, "agent", "runs", { method: "POST" }).then(() => {}, () => {});
+
+/** How an AI review's run ended: its verdict, or why it couldn't give one. */
+export type ReviewEnd = { say: "yay" | "nay"; reason?: string } | { error: string };
+
+/**
+ * An AI review (pipeline-hooks.ts askAi) as a run in the repo's list (#4002), on the pipeline's file: its prompt is the task and its
+ * verdict the result, so the crew see it, stop it and count what it spent like any other run. It edits nothing and has no thread.
+ * `signal` aborts on a Stop; `end` keeps how it went and says false when the run was stopped meanwhile (its verdict doesn't count).
+ */
+export async function reviewRow(env: Env, review: ReviewMessage, harness: Harness, model: string | null, task: string) {
+  const { owner, repo } = review;
+  const { id } = (await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING id")
+    .bind(owner, repo, PIPELINE_FILE, harness, task.slice(0, 2000), model, `review-${harness}`, Date.now(), JSON.stringify({ review })).first<{ id: number }>())!;
+  await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
+    .bind(owner, repo, owner, repo).run();
+  const stop = new AbortController();
+  // Here a Stop aborts it at once (stopRuns); a hosted one's Stop lands on another isolate, so it looks.
+  if (!env.AGENT_SANDBOX) liveOf(env).set(id, stop);
+  const looking = env.AGENT_SANDBOX ? setInterval(() => void env.DB.prepare("SELECT status FROM agent_runs WHERE id = ?").bind(id).first<string>("status")
+    .then((s) => { if (s !== "running") stop.abort(); }, () => {}), CHECK_MS) : undefined;
+  await runsMoved(env, owner, repo, PIPELINE_FILE);
+  const end = async (r: ReviewEnd, spent: number) => {
+    clearInterval(looking);
+    liveOf(env).delete(id);
+    const result: Partial<Run> = { review, spent, ...r };
+    const done = await env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind("error" in r ? "failed" : "done", JSON.stringify(result), id).run();
+    await runsMoved(env, owner, repo, PIPELINE_FILE);
+    return !!done.meta?.changes;
+  };
+  return { id, signal: stop.signal, end };
+}
+
+/** A desktop review the app quit in the middle of: its run is stopped, and the review is asked again, since its claim still waits on it. */
+async function reaskReview(env: Env, r: Row, review: ReviewMessage) {
+  const done = await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
+    .bind("the app stopped before the review answered: it is asked again", r.id).run();
+  if (done.meta?.changes) await (await import("./pipeline-hooks.ts")).offRequest(env, review);
+}
 
 /** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 export function agentsUnavailable(env: Env): string | null {
@@ -338,7 +380,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const rows = results;
     // A desktop run lives in this process, so one this process doesn't have was cut by the app quitting: it starts again from the file as it stands.
     if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.harness !== OWN && !liveOf(env).has(r.id)) {
-      await interrupt(env, self, url.origin, r, "the app stopped before the agent finished").catch(() => {});
+      const { review } = resultOf(r);
+      await (review ? reaskReview(env, r, review) : interrupt(env, self, url.origin, r, "the app stopped before the agent finished")).catch(() => {});
       Object.assign(r, (await getRow(env, r.id)) ?? {});
     }
     // A hosted run's own deadline timer lives in the consumer's isolate; if that went (a deploy, a crash), nothing else would end the row.
