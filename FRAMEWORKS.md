@@ -91,7 +91,21 @@ It already pins its own Alchemy and Effect (2.0.0-beta.87 and 4.1.4 in Nov 2026,
 - installs only the deploy packages the app lacks, at its own Alchemy and Effect versions (`--dry-run` shows the list, or "nothing to install");
 - and `plan`/`deploy` then run that Alchemy instead of asking to re-pin.
 
-A range (`^2.0.0-beta.87`), a pnpm `catalog:` or another major still gets the pinned set. Not tried yet: a real Rat Stack clone through `init`, `plan` and the desktop host.
+A range (`^2.0.0-beta.87`), a pnpm `catalog:` or another major still gets the pinned set.
+
+### A real clone (Nov 23, rat-stack `4869d23`)
+
+Run on the builder Mac in a sandbox (empty HOME, dead Cloudflare creds), from `apps/web` ([#4803](https://github.com/QuinnsCode/RustyBuns/issues/4803)):
+
+- **`init`** reads it as a Vite app and writes the desktop target plus a static Worker from `dist/web`. It used to pick npm, because the lockfile sits at the workspace root, and `add deploy` would then have run `npm i` inside a pnpm workspace. `init` now takes a workspace member's package manager from its root, so the build is `pnpm exec vite build` and `add deploy` runs `pnpm add -D`.
+- **`add deploy --dry-run`** keeps alchemy 2.0.0-beta.87 and effect 4.1.4, writes no overrides, and lists only what is missing: the Hetzner, Railway, Neon and frontend-frameworks providers plus `@effect/platform-bun`. The real `add deploy` installs them in about 15 s and adds `plan` and `deploy` scripts.
+- **`plan --offline`** loads our generated stack on Rat Stack's own beta.87 (typecheck 0.15 s, worker build 32 s): `+ Build`, `+ Worker`, 2 to create. No upper bound is needed on the own-pins rule.
+- **`build desktop --dev`** builds (client build 31 s), and `run desktop` serves on 127.0.0.1.
+- **What it took first.** The worker build fails on a fresh clone until Rat Stack's own content steps have run, because `apps/web` imports files that `apps/site` generates: `pnpm sources:fetch`, `pnpm --filter @rat-stack/capability build`, and `pnpm --filter @rat-stack/site generate` (its `predev`, and what turbo runs before `build`). On a shallow clone of that commit, `generate` also wanted `git fetch --unshallow` and `pnpm git-snapshot`. `init` doesn't infer these steps yet ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)).
+- **`rustybuns smoke apps/web`** stops at install: it copies only the member, so the `workspace:*` deps don't resolve ([#5768](https://github.com/QuinnsCode/RustyBuns/issues/5768)).
+- **Not on the office Mac.** Rat Stack's worker build (14 workspace packages, then vite) froze the 16 GB office Mac twice. Run it on the builder.
+
+**Should `init` read `apps/infra/alchemy.run.ts`? No.** That stack is the whole project's cloud footprint: the `ratstack.sh` zone, DNS and mail records, email routing, four Workers, a Turbo cache and its own state store. Its `Website` is `Cloudflare.Website.Foldkit`, with server rendering and a service binding to the RPC backend. Taking it over would point `rustybuns deploy` at production DNS and mail. Rat Stack deploys itself (`pnpm deploy:*`, `pnpm infra:*`). What Rusty Buns adds is the desktop host. Our own static Worker from `dist/web` is a preview only: it has no server renderer and no `/rpc`, and it would upload `dist/web/server/` (the server bundle) as public files ([#5767](https://github.com/QuinnsCode/RustyBuns/issues/5767)).
 
 ## Out of scope: Angular and Gatsby
 
