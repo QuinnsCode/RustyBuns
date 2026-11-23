@@ -1,9 +1,10 @@
 // The DJ booth (src/dj/booth.ts) on a back-to-back night: one DJ loads a track and its key is read from the sound;
 // what's on the deck goes over the live line, through the World's guard, to the other DJ, who sees it move on the
-// room's shared clock, presses it, and can't load over it while it plays. And a tap on the 3D deck finds its key.
+// room's shared clock, presses it, scratches it from their own jog wheel, and can't load over it while it plays.
+// And a tap on the 3D deck finds its key.
 import { expect, test } from "bun:test";
 import { camelot, keyOf } from "../src/dj/analyze.ts";
-import { Booth, changed, deckKeyAt, DECK_KEYS, posAt, sayOf, waveFrom, waveOf, type DeckSay } from "../src/dj/booth.ts";
+import { Booth, changed, deckKeyAt, DECK_KEYS, JOG_HELD_MS, JOG_SEND_MS, JogOut, posAt, sayOf, waveFrom, waveOf, type DeckPress, type DeckSay, type JogSent } from "../src/dj/booth.ts";
 import type { DeckState } from "../src/dj/engine.ts";
 import { decodeClient, decodeServer } from "../src/project.ts";
 
@@ -34,7 +35,7 @@ const deck = (o: Partial<DeckState> = {}): DeckState => ({
   key: { tonic: 9, minor: true, name: "Am", camelot: "8A" }, cue: 0.2, hot: [null, null, null, null], loop: null, synced: false, ...o,
 });
 /** A live event from the page, through the World's guard, and out to everyone else. */
-function overTheLine(e: DeckSay | { t: "press"; to: number; side: 0 | 1; press: "play" }) {
+function overTheLine(e: DeckSay | DeckPress) {
   const sent = decodeClient(JSON.parse(JSON.stringify({ t: "live", e })));
   if (sent?.t !== "live") throw new Error("the World refused it");
   const got = decodeServer(JSON.parse(JSON.stringify({ t: "live", from: 4, e: sent.e })));
@@ -80,4 +81,32 @@ test("a tap on the 3D deck finds the key under it", () => {
   const k = DECK_KEYS;
   expect([deckKeyAt(...k.play), deckKeyAt(...k.cue), deckKeyAt(k.hot.x0 + 2 * k.hot.gap, k.hot.z), deckKeyAt(0, k.jog.z + 0.05), deckKeyAt(0, k.screen.z - 0.03), deckKeyAt(0.16, 0.22)])
     .toEqual(["play", "cueDown", "hot3", "jog", "screen", null]);
+});
+
+test("a scratch on the other DJ's deck: the platter held, a second of turns at 60 a frame sent in batches, let go", () => {
+  const sent: JogSent[] = [], at: number[] = [];
+  let now = 1000;
+  const out = new JogOut((j) => { sent.push(j); at.push(now); });
+  out.touch(true, now);
+  // a second of scratching back and forth, a move every frame
+  let total = 0;
+  for (let f = 0; f < 60; f++) { now += 1000 / 60; const t = Math.sin(f / 6) * 0.02; total += t; out.turn("top", t, now); out.tick(now); }
+  now += 20; out.tick(now); now += 40; out.tick(now);
+  out.touch(false, now);
+  expect(sent[0]).toEqual({ part: "top", touch: true });
+  expect(sent.at(-1)).toEqual({ part: "top", touch: false });
+  const turns = sent.filter((j) => j.turns !== undefined);
+  expect(turns.length).toBeLessThanOrEqual(1000 / JOG_SEND_MS + 1);
+  expect(turns.reduce((a, j) => a + j.turns!, 0)).toBeCloseTo(total, 9);
+  for (let i = 1; i < at.length - 1; i++) expect(at[i]! - at[i - 1]!).toBeGreaterThanOrEqual(JOG_SEND_MS - 1e-9);
+  // held still, it says it's still held, so its player doesn't let go
+  out.touch(true, now); const n = sent.length;
+  now += JOG_HELD_MS; out.tick(now);
+  expect(sent.slice(n)).toEqual([{ part: "top", touch: true }]);
+
+  // each goes through the World as a press for the deck's player; a wheel that isn't one doesn't
+  const jog: DeckPress = { t: "press", to: 4, side: 1, press: "jog", mode: "vinyl", ...turns[0]! };
+  expect(overTheLine(jog)).toEqual(jog);
+  expect(decodeClient({ t: "live", e: { ...jog, part: "rim" } })).toBeNull();
+  expect(decodeClient({ t: "live", e: { ...jog, turns: 500 } })).toBeNull();
 });
