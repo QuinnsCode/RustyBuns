@@ -57,6 +57,18 @@ test("a walking foot stays where it was put down, and a crouch brings the head d
   expect(ch.tag.position.y).toBeLessThan(standing + 0.2);       // the name follows the head down
 });
 
+test("skin is painted with tone: a camper's skin is many shades, their jacket is not", () => {
+  const g = makeCharacter("camper", look({ hat: "none" }), "s").body.mesh.geometry;
+  const surface = g.getAttribute("surface"), color = g.getAttribute("color");
+  const shades = (kind: number) => {
+    const seen = new Set<string>();
+    for (let i = 0; i < surface.count; i++) if (surface.getX(i) === kind) seen.add(`${color.getX(i).toFixed(3)},${color.getY(i).toFixed(3)}`);
+    return seen.size;
+  };
+  expect(shades(1)).toBeGreaterThan(40);       // skin: flushed cheeks, shaded sockets
+  expect(shades(0)).toBeLessThan(15);          // cloth: one colour a slot
+});
+
 test("a look saved before bodies had a pick still loads, with a body of its own", () => {
   const old = parseLook({ shirt: 2, pants: 1, skin: 3, hat: "cap", pack: true });
   expect(old?.body).toBe(parseLook({ shirt: 2, pants: 1, skin: 3, hat: "cap", pack: false })!.body);
