@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { issueNumber, issueText, issuesIn, matches } from "../queue/match.ts";
+import { didntStart, issueNumber, issueText, issuesIn, matches } from "../queue/match.ts";
 
 test("every word has to show up, ignoring case", () => {
   expect(matches("", "anything")).toBe(true);
@@ -31,4 +31,10 @@ test("issues come off the snapshots and board refreshes, nothing else is parsed"
   expect(issuesIn(JSON.stringify({ t: "screen", issues: { items } }))).toBeUndefined();
   expect(issuesIn('{"t":"gh.issues", broken')).toBeUndefined();
   expect(issuesIn(new ArrayBuffer(4))).toBeUndefined();
+});
+
+test("a failed start is told apart from a real finish", () => {
+  expect(didntStart("Claude Code · initial: Opus 5.5 · Medium · couldn't start: Could not create a git worktree")).toBe(true);
+  expect(didntStart("Claude Code · Medium · couldn’t start: no seat")).toBe(true);
+  expect(didntStart("Claude Code · initial: Opus 5.5 · Medium · finished · Byte · PR #5640")).toBe(false);
 });
