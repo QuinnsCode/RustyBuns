@@ -15,6 +15,7 @@
     <div id="hud" hidden>
       <header id="top">
         <span id="clock" class="num" title="Battle time and the limit"></span>
+        <span id="supply" class="num" title="Supply: strongpoints you hold pay it. It buys wings and thermal sensors." hidden></span>
         <div id="focus" title="Focus: your read on the battle. It fills with time and kills.">
           <div class="bar"><i id="focus-fill"></i></div>
           <button id="foresight" type="button" class="power"></button>
@@ -36,6 +37,8 @@
         <div id="orders" aria-label="Orders for the selection"></div>
       </footer>
       <div id="tip" hidden></div>
+      <canvas id="minimap" aria-label="Minimap: click to look there, right-click to order the picked ships there"></canvas>
+      <div id="box" hidden></div>
     </div>
 
     <section id="menu">
@@ -43,7 +46,8 @@
       <p class="kicker" data-copy="kicker"></p>
       <p id="goal" data-copy="goal"></p>
       <div class="modes">
-        <button id="play" type="button" class="primary"><b data-copy="play"></b><small data-copy="playSub"></small></button>
+        <button id="theater" type="button" class="primary"><b data-copy="theater"></b><small data-copy="theaterSub"></small></button>
+        <button id="play" type="button"><b data-copy="play"></b><small data-copy="playSub"></small></button>
         <button id="campaign" type="button"><b data-copy="campaign"></b><small data-copy="campaignSub"></small></button>
         <button id="armada" type="button"><b data-copy="armada"></b><small data-copy="armadaSub"></small></button>
       </div>

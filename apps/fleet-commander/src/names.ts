@@ -3,8 +3,8 @@
 // Our own setting: a navy of wedge destroyers against a ragged frontier rising. No borrowed names.
 
 export type Side = "navy" | "rim";
-export type ShipKind = "dreadnought" | "destroyer" | "frigate" | "corvette" | "cruiser" | "carrier" | "station";
-export type Role = "interceptor" | "bomber" | "escort";
+export type ShipKind = "dreadnought" | "destroyer" | "frigate" | "sensor" | "corvette" | "cruiser" | "carrier" | "station" | "bulwark" | "minelayer";
+export type Role = "interceptor" | "bomber" | "escort" | "scout";
 
 export const SIDE_NAME: Record<Side, string> = { navy: "The Directorate", rim: "The Free Worlds Compact" };
 
@@ -12,16 +12,19 @@ export const SHIP_NAME: Record<ShipKind, string> = {
   dreadnought: "Sovereign-class dreadnought",
   destroyer: "Lance-class destroyer",
   frigate: "Warden interdictor",
+  sensor: "Argus sensor ship",
   corvette: "Compact corvette",
   cruiser: "Bastion cruiser",
   carrier: "Hive carrier",
   station: "Orbital bastion",
+  bulwark: "Tidewall bulwark",
+  minelayer: "Sower minelayer",
 };
 
 /** A wing's craft by side: what the navy flies, and what the Compact flies in the same job. */
 export const CRAFT_NAME: Record<Side, Record<Role, string>> = {
-  navy: { interceptor: "Dart", bomber: "Maul", escort: "Warden" },
-  rim: { interceptor: "Hornet", bomber: "Lancer", escort: "Shrike" },
+  navy: { interceptor: "Dart", bomber: "Maul", escort: "Warden", scout: "Kite" },
+  rim: { interceptor: "Hornet", bomber: "Lancer", escort: "Shrike", scout: "Moth" },
 };
 
 /** Call signs, handed out in order to the wings a ship launches. */

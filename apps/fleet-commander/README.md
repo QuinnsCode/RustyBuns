@@ -2,25 +2,41 @@
 
 > **What it proves:** a real-time fleet battle in three.js from one seeded sim with no DOM in it, where the player
 > and the AI captains call plays from the same playbook, so the same game runs one level up (a dreadnought commanding
-> destroyers). The design, its parts and the open taste calls are in [DESIGN.md](DESIGN.md).
+> destroyers). The Theater plays it as a top-down RTS over a whole star system in the fog, with gravity wells that
+> speed up what falls along them and rifts that hide hulls from sensors. The design, its parts and the open taste calls
+> are in [DESIGN.md](DESIGN.md).
 
 ## Play it
 
 **What it is:** a space-fleet battle seen from the bridge of a wedge destroyer. You don't fly; you command. Send wings
 of fighters out in plays (a torpedo run, a pincer, a feint), trade broadsides with Compact ships, hold the hyperspace lane
-against their reinforcements, and burn their base on the world below.
+against their reinforcements, and burn their base on the world below. Or play the *Theater*: a whole star system in the
+fog of war, where you hunt a Compact fleet hiding in rifts and in the star's heat, slingshot round gravity wells, and
+hold strongpoints for supply.
 
 **Play:** not online yet. Run it yourself: `bun install --frozen-lockfile` at the repo root, then
 `cd apps/fleet-commander && bun run dev`.
 
-**How to play:** press *Quick battle*. Your six wings start selected and the Compact carrier is marked: press **W** for a
+**How to play the Theater:** press *Theater*. The board is dark: the Compact is in the system, but you can't see where.
+Press **3** to pick your scouts and right-click into the black to send them (they see into rifts; only the sensor
+ship, or thermal sensors, sees into the star's heat). Drag a box round your ships and right-click to move or attack, or
+right-drag a route that curves round a planet or the star: a hull falling along a gravity well moves faster, so the
+long way round can be the quick way. **K** pings with the sensor ship: everything near shows for a few seconds,
+mines too, but the Compact hears it. Park hulls on a strongpoint to take it; each one you hold pays supply, which buys
+wings and thermal sensors (the buttons at the right of the bar). Hold all four for a minute, burn the base on Hollow,
+or break every Compact hull to win. Watch for mines round what the Compact holds, and for ambushers that wait in the
+dark and give themselves away when they fire.
+
+**How to play a quick battle:** press *Quick battle*. Your six wings start selected and the Compact carrier is marked: press **W** for a
 pincer on it, **Shift+G** to send your interdictor to the lane, **B** to broadside the marked ship. When the orbital
 bastion falls, **V** rakes the base. Or draw a play: right-drag a route from your wings round to a ship, and Shift+right-drag a
 second arm; the arms wait for each other and strike together. Orders to wings take 2 s on the radio (Command Voice, **N**,
 makes them instant), and there is no pause. *Campaign* is a sector of worlds to take turn by turn; *Armada* puts you on a
 dreadnought whose three destroyers run their own wings.
 
-**Controls:** Desktop: **1-6** pick a wing (Shift adds), **F** the flagship, **G** the interdictor; click a Compact ship to
+**Controls:** Theater, desktop: drag a box to pick, right-click to move or attack, right-drag a route, **K** ping,
+the minimap (click to look, right-click to order) and the screen edges or arrows move the view, the middle button
+drags it, wheel to zoom. Every battle, desktop: **1-6** pick a wing (Shift adds), **F** the flagship, **G** the interdictor; click a Compact ship to
 mark it, right-click to order the selection there, right-drag to draw it a route (Shift adds an arm; **P** is the pen
 for a plain drag). **Q W E R T Y** call plays (torpedo run, pincer, hammer and anvil,
 screen, hunt, feint), **H** recalls. **A S D** stance (attack, steady, defend), **Z X C** formation (tight, screen,
@@ -38,7 +54,7 @@ bun run dev                     # in the browser
 bun test                        # the battles and the campaign, played by the tests
 ```
 
-Jump links: `/?battle=quick` (or `armada`, `campaign`), `&seed=4`, `&look=holo`.
+Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`), `&seed=4`, `&look=holo`.
 
 ## What's in it
 
@@ -47,6 +63,8 @@ Jump links: `/?battle=quick` (or `armada`, `campaign`), `&seed=4`, `&look=holo`.
 | `src/sim/world.ts` | the battle: ships, wings, torpedoes, shields by arc, broadsides, point defence, the rake, the lane, one `step`. No DOM. |
 | `src/sim/plays.ts` | the playbook: wing plays (`runPlay`) and the same plays for a fleet of destroyers (`runFleetPlay`) |
 | `src/sim/ai.ts` | the Compact admiral and its tempers, the captains that run a ship and its wings, and `autoCommander` (a by-the-book player for tests, the menu and an empty seat) |
+| `src/sim/theater.ts` | the Theater: sensors and the fog (rifts, heat shear, pings, firing gives you away), mines, strongpoints and supply, requisitions, the Pyre system. Gravity wells are `wellAt` in `world.ts`. |
+| `src/view/fog.ts`, `minimap.ts` | the fog of war over the table (explored, seen, the veils) and the minimap |
 | `src/sim/scenarios.ts` | the battles: the assault on a base, a picket, a strike on a half-built base, the Armada |
 | `src/sector.ts` | the campaign map: worlds, lanes, supply, bases that spread, refits |
 | `src/view/scene.ts`, `models.ts` | the view: hulls made in code, tracer streams, bolts, drive plumes, explosions, the orders overlay, holo and cinema looks |
@@ -57,7 +75,8 @@ Jump links: `/?battle=quick` (or `armada`, `campaign`), `&seed=4`, `&look=holo`.
 
 `window.fleetCommander.state()` returns the screen, the battle (time, outcome, focus, the base, every ship and wing
 with its order, the Compact admiral's temper and doctrine) and the campaign. `quick(seed)`, `armada(seed)`, `campaign()`
-and `go(world)` start things; `select(...ids)`, `mark(id)`, `play(id)`, `stance(s)`, `formation(f)`,
+and `go(world)` start things, and `theater(seed)` the Theater (`ping()`, `buy(what)`, `box(x1, y1, x2, y2)` there; its state
+has `field`: supply, strongpoints, what you see and last saw); `select(...ids)`, `mark(id)`, `play(id)`, `stance(s)`, `formation(f)`,
 `flagship('broadside' | 'rake' | 'hold')`, `lane()`, `orderAt(x, z)`, `power(p)` command; `run(seconds)` plays the
 battle ahead at once. In the Rusty Buns repo, `bun run probe fleet-commander "/?battle=quick"` reads it from headless
 Chrome.

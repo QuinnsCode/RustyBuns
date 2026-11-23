@@ -17,7 +17,8 @@ export type Doctrine = "press" | "steady" | "shield";
 
 export type ShipOrder =
   | { k: "hold" }
-  | { k: "move"; x: number; z: number }
+  /** Go to a point, by way of `via` (a route drawn round a gravity well: the slingshot). */
+  | { k: "move"; x: number; z: number; via?: { x: number; z: number }[] }
   /** Close to gun range and turn broadside to it (broadside: hold the turn even if it means taking fire). */
   | { k: "engage"; target: number; broadside: boolean }
   /** Bombard the base on the planet's surface from low orbit. Guns on the land are guns not on ships. */
@@ -52,6 +53,10 @@ export interface Ship {
   stunUntil: number;
   /** Spare craft in the hangar: a wing wiped out is rebuilt from them and relaunched. */
   reserve: number;
+  /** Firing gives a ship away: until then any enemy sensor in range sees it, rift or no rift. */
+  loudUntil: number;
+  /** Where an ambusher waits (the theater): it goes back there when nothing it can see is close. */
+  post: { x: number; z: number } | null;
 }
 
 export interface Craft { id: number; x: number; z: number; vx: number; vz: number; hp: number; dead: boolean; torps: number; cd: number; foe: number }
@@ -81,9 +86,37 @@ export interface Torp { id: number; side: Side; x: number; z: number; vx: number
 export interface Planet { name: string; x: number; z: number; r: number; base: number; baseMax: number }
 
 /** What dealt a hit on a ship, for the after-action report. */
-export type DmgSrc = "guns" | "torps" | "craft" | "rake";
+export type DmgSrc = "guns" | "torps" | "craft" | "rake" | "mines";
 export type FxKind = "gun" | "pdc" | "bolt" | "boom" | "bigboom" | "rake" | "jump" | "torphit";
 export interface Fx { n: number; k: FxKind; side: Side; x1: number; z1: number; x2: number; z2: number }
+
+/** A gravity well: a star, a planet or a rift. Inside `r` hulls and craft fall along it (faster, bent toward it);
+ *  nothing enters `core`. */
+export interface Well { kind: "star" | "planet" | "rift"; name: string; x: number; z: number; core: number; r: number; pull: number }
+/** Where sensors fail: a rift (depth 1: scouts and the sensor ship see in) or the thermal shear round a star (depth
+ *  2: only the sensor ship, or thermal sensors). Point blank, anything is seen. */
+export interface Veil { kind: "rift" | "shear"; x: number; z: number; r: number; depth: number }
+export interface Mine { id: number; side: Side; x: number; z: number; dead: boolean }
+/** A strongpoint: hold it (hulls inside, none of theirs) and it pays supply. `hold` runs -1 (the Compact) to 1 (yours). */
+export interface Strongpoint { id: number; name: string; x: number; z: number; r: number; owner: Side | null; hold: number }
+
+/** The theater: a whole star system in the fog. Null in the older battles, where everyone sees everything. */
+export interface Field {
+  /** Half the map's size: it runs -wide..wide in x and -deep..deep in z. */
+  wide: number; deep: number;
+  wells: Well[]; veils: Veil[]; mines: Mine[]; points: Strongpoint[];
+  supply: Record<Side, number>;
+  /** The enemy ships, wings and mines each side sees now (the sensors refresh it twice a second). */
+  sees: Record<Side, Set<number>>;
+  /** Thermal sensors bought: +1 to every sensor of that side. */
+  tier: Record<Side, number>;
+  /** The sensor ship's active ping: everything within its reach shows until `until`; the next one after `ready`. */
+  ping: { x: number; z: number; until: number; ready: number };
+  /** Where each side last saw each enemy hull, kept after its sensors lose it (until it is seen again or dies). */
+  known: Record<Side, Map<number, { x: number; z: number; t: number }>>;
+  /** Since when you have held every strongpoint (0: you don't). */
+  heldSince: number;
+}
 
 export interface Wave { at: number; done: boolean; ships: { kind: ShipKind; wings: Role[] }[] }
 
@@ -107,6 +140,7 @@ export interface World {
   limit: number;
   stats: { navyCraftLost: number; rimCraftLost: number; torpsShot: number; torpsHit: number; splits: number; shipsLost: Record<Side, number>; dealt: Record<Side, Record<DmgSrc, number>> };
   groupN: number;
+  field: Field | null;
 }
 
 /** A hull's numbers: size, speed, guns, point defence and what its hangar launches. */
@@ -114,17 +148,23 @@ export const HULL: Record<ShipKind, { r: number; hull: number; shield: number; s
   dreadnought: { r: 230, hull: 16000, shield: 8000, speed: 9, turn: 0.05, guns: 220, range: 1100, pd: 14, pdRange: 220 },
   destroyer: { r: 90, hull: 6000, shield: 2600, speed: 16, turn: 0.12, guns: 90, range: 900, pd: 7, pdRange: 170 },
   frigate: { r: 40, hull: 1700, shield: 1000, speed: 30, turn: 0.4, guns: 16, range: 600, pd: 5, pdRange: 150 },
+  sensor: { r: 45, hull: 1400, shield: 900, speed: 26, turn: 0.35, guns: 6, range: 500, pd: 6, pdRange: 160 },
   corvette: { r: 28, hull: 500, shield: 260, speed: 40, turn: 0.6, guns: 9, range: 500, pd: 4, pdRange: 130 },
   cruiser: { r: 75, hull: 2200, shield: 1300, speed: 14, turn: 0.15, guns: 30, range: 850, pd: 6, pdRange: 160 },
   carrier: { r: 80, hull: 1900, shield: 900, speed: 12, turn: 0.12, guns: 10, range: 600, pd: 7, pdRange: 170 },
   station: { r: 85, hull: 3000, shield: 2200, speed: 0, turn: 0, guns: 30, range: 900, pd: 9, pdRange: 190 },
+  /** The Compact's answer to the firepower it lacks: a round hull with deep shields and a thick point-defence screen. */
+  bulwark: { r: 95, hull: 3600, shield: 5200, speed: 11, turn: 0.1, guns: 34, range: 800, pd: 12, pdRange: 210 },
+  minelayer: { r: 50, hull: 1300, shield: 900, speed: 18, turn: 0.3, guns: 6, range: 450, pd: 5, pdRange: 140 },
 };
 
 /** A craft's numbers by role: speed, hit points, gun damage a second, and what it is good against. */
 export const CRAFT: Record<Role, { speed: number; hp: number; dps: number; vs: Record<Role, number>; vsShip: number; torps: number }> = {
-  interceptor: { speed: 150, hp: 22, dps: 9, vs: { interceptor: 1, bomber: 1.6, escort: 0.6 }, vsShip: 1.5, torps: 0 },
-  bomber: { speed: 85, hp: 34, dps: 4, vs: { interceptor: 0.5, bomber: 0.6, escort: 0.4 }, vsShip: 1, torps: 2 },
-  escort: { speed: 115, hp: 44, dps: 8, vs: { interceptor: 1.4, bomber: 1, escort: 1 }, vsShip: 2, torps: 0 },
+  interceptor: { speed: 150, hp: 22, dps: 9, vs: { interceptor: 1, bomber: 1.6, escort: 0.6, scout: 1.8 }, vsShip: 1.5, torps: 0 },
+  bomber: { speed: 85, hp: 34, dps: 4, vs: { interceptor: 0.5, bomber: 0.6, escort: 0.4, scout: 0.5 }, vsShip: 1, torps: 2 },
+  escort: { speed: 115, hp: 44, dps: 8, vs: { interceptor: 1.4, bomber: 1, escort: 1, scout: 1.4 }, vsShip: 2, torps: 0 },
+  /** Unarmed and fast: eyes, not guns. */
+  scout: { speed: 240, hp: 16, dps: 0, vs: { interceptor: 0, bomber: 0, escort: 0, scout: 0 }, vsShip: 0, torps: 0 },
 };
 
 export const TORP = { speed: 190, dmg: 240, ttl: 9, bypass: 0.3, launch: 340 };
@@ -139,6 +179,32 @@ const wrap = (a: number) => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
 export const rand = (w: World) => nextRandom(w, "rng");
 const dist = (ax: number, az: number, bx: number, bz: number) => len(bx - ax, bz - az);
 
+/** What the gravity wells do at a point: `boost` multiplies speed (a hull falling along a well goes faster: the
+ *  slingshot), and `ax, az` is the pull toward the well's core, which bends a moving hull's path. */
+export function wellAt(w: World, x: number, z: number) {
+  let boost = 1, ax = 0, az = 0;
+  for (const g of w.field?.wells ?? []) {
+    const dx = g.x - x, dz = g.z - z, d = Math.hypot(dx, dz);
+    if (d >= g.r || d < 1) continue;
+    const k = 1 - d / g.r;
+    boost = Math.max(boost, 1 + 0.8 * k);
+    ax += (dx / d) * g.pull * k * k; az += (dz / d) * g.pull * k * k;
+  }
+  return { boost, ax, az };
+}
+
+/** Nothing flies into a star or a planet: a thing inside a core is put back on its rim. */
+function outOfCores(w: World, o: { x: number; z: number }, pad: number) {
+  for (const g of w.field?.wells ?? []) {
+    if (g.kind === "rift") continue;
+    const d = dist(g.x, g.z, o.x, o.z), r = g.core + pad;
+    if (d < r && d > 0.01) { o.x = g.x + ((o.x - g.x) / d) * r; o.z = g.z + ((o.z - g.z) / d) * r; }
+  }
+}
+
+/** Whether `side` can see the enemy ship, wing or mine `id`. Outside the theater everyone sees everything. */
+export const sees = (w: World, side: Side, id: number) => !w.field || w.field.sees[side].has(id);
+
 export function emptyWorld(seed: number, mode: World["mode"] = "flagship"): World {
   return {
     t: 0, rng: seed >>> 0, nextId: 1, mode, ships: [], wings: [], torps: [],
@@ -147,8 +213,8 @@ export function emptyWorld(seed: number, mode: World["mode"] = "flagship"): Worl
     focus: 30, foresightUntil: 0, tranceUntil: 0, voiceUntil: 0, pending: [],
     rimTemper: "zealot", rimDoctrine: "steady", rimIntent: "", rimNext: 0,
     flagship: 0, limit: 480,
-    stats: { navyCraftLost: 0, rimCraftLost: 0, torpsShot: 0, torpsHit: 0, splits: 0, shipsLost: { navy: 0, rim: 0 }, dealt: { navy: { guns: 0, torps: 0, craft: 0, rake: 0 }, rim: { guns: 0, torps: 0, craft: 0, rake: 0 } } },
-    groupN: 0,
+    stats: { navyCraftLost: 0, rimCraftLost: 0, torpsShot: 0, torpsHit: 0, splits: 0, shipsLost: { navy: 0, rim: 0 }, dealt: { navy: { guns: 0, torps: 0, craft: 0, rake: 0, mines: 0 }, rim: { guns: 0, torps: 0, craft: 0, rake: 0, mines: 0 } } },
+    groupN: 0, field: null,
   };
 }
 
@@ -156,7 +222,7 @@ export function addShip(w: World, side: Side, kind: ShipKind, name: string, x: n
   const h = HULL[kind];
   const s: Ship = {
     id: w.nextId++, side, kind, name, x, z, a, v: 0, hull: h.hull, hullMax: h.hull, shield: h.shield, shieldMax: h.shield,
-    lastHit: -99, hits: [], splitUntil: 0, order: { k: "hold" }, gunCd: rand(w) * 2, dead: false, auto, doctrine: "steady", focus: 0, boss: 0, stunUntil: 0, reserve: 0,
+    lastHit: -99, hits: [], splitUntil: 0, order: { k: "hold" }, gunCd: rand(w) * 2, dead: false, auto, doctrine: "steady", focus: 0, boss: 0, stunUntil: 0, reserve: 0, loudUntil: 0, post: null,
   };
   w.ships.push(s);
   return s;
@@ -183,7 +249,7 @@ export function say(w: World, side: Side, who: string, line: string) {
   if (w.comms.length > 60) w.comms.splice(0, w.comms.length - 60);
 }
 
-function fx(w: World, k: FxKind, side: Side, x1: number, z1: number, x2 = x1, z2 = z1) {
+export function fx(w: World, k: FxKind, side: Side, x1: number, z1: number, x2 = x1, z2 = z1) {
   w.fx.push({ n: ++w.fxN, k, side, x1, z1, x2, z2 });
   if (w.fx.length > 900) w.fx.splice(0, w.fx.length - 900);
 }
@@ -239,7 +305,7 @@ function sink(w: World, s: Ship) {
   for (const g of w.wings) if (g.home === s.id && g.state !== "out") g.state = "out";
 }
 
-function hitCraft(w: World, g: Wing, c: Craft, dmg: number) {
+export function hitCraft(w: World, g: Wing, c: Craft, dmg: number) {
   if (c.dead) return;
   c.hp -= dmg;
   if (c.hp > 0) return;
@@ -263,8 +329,12 @@ function steerShip(w: World, s: Ship, gx: number, gz: number, faceA: number | nu
   s.a = wrap(s.a + clamp(da, -h.turn * dt, h.turn * dt));
   const speedWant = d > 30 ? h.speed * clamp(d / 200, 0.25, 1) * (Math.abs(wrap(want - s.a)) > 1.2 ? 0.35 : 1) : 0;
   s.v += clamp(speedWant - s.v, -h.speed * 0.3 * dt, h.speed * 0.3 * dt);
-  s.x += Math.cos(s.a) * s.v * dt;
-  s.z += Math.sin(s.a) * s.v * dt;
+  if (!w.field) { s.x += Math.cos(s.a) * s.v * dt; s.z += Math.sin(s.a) * s.v * dt; return; }
+  // In the theater a moving hull falls along the wells it crosses; one holding station keeps its place.
+  const f = wellAt(w, s.x, s.z), drift = s.v > 2 ? 1 : 0;
+  s.x += (Math.cos(s.a) * s.v * f.boost + f.ax * drift) * dt;
+  s.z += (Math.sin(s.a) * s.v * f.boost + f.az * drift) * dt;
+  outOfCores(w, s, h.r);
 }
 
 /** Where a ship of `side` shields `target` from: on the line from it to the nearest enemy capital, `k` of the way. */
@@ -291,7 +361,12 @@ export function orbitPoint(w: World, s: { x: number; z: number }) {
 function moveShip(w: World, s: Ship, dt: number) {
   const o = s.order;
   if (o.k === "hold") return steerShip(w, s, s.x, s.z, null, dt);
-  if (o.k === "move") return steerShip(w, s, o.x, o.z, null, dt);
+  if (o.k === "move") {
+    const p = o.via?.[0];
+    if (p && dist(s.x, s.z, p.x, p.z) < 240) o.via!.shift();
+    else if (p) return steerShip(w, s, p.x, p.z, null, dt);
+    return steerShip(w, s, o.x, o.z, null, dt);
+  }
   if (o.k === "lane") return steerShip(w, s, w.lane.x, w.lane.z, null, dt);
   if (o.k === "rake") {
     const at = orbitPoint(w, s);
@@ -339,15 +414,17 @@ function shipGuns(w: World, s: Ship, dt: number) {
   const vol = h.guns * 2;
   if (s.order.k === "rake") {
     const at = orbitPoint(w, s);
-    if (dist(s.x, s.z, at.x, at.z) < 260) return rake(w, s, vol);
+    if (dist(s.x, s.z, at.x, at.z) < 260) { s.loudUntil = w.t + 4; return rake(w, s, vol); }
   }
   const foeSide: Side = s.side === "navy" ? "rim" : "navy";
   const o = s.order;
+  // You can't shoot what you can't see (the theater's fog); firing gives you away for four seconds.
   const want = o.k === "engage" || o.k === "flank" ? ship(w, o.target) : s.focus ? ship(w, s.focus) : undefined;
-  const target = want && dist(s.x, s.z, want.x, want.z) <= h.range ? want : nearestShip(w, foeSide, s.x, s.z, (t) => dist(s.x, s.z, t.x, t.z) <= h.range);
+  const target = want && dist(s.x, s.z, want.x, want.z) <= h.range && sees(w, s.side, want.id) ? want : nearestShip(w, foeSide, s.x, s.z, (t) => dist(s.x, s.z, t.x, t.z) <= h.range && sees(w, s.side, t.id));
   if (target) {
     let f = bearFactor(s, target.x, target.z);
     if (o.k === "engage" && o.broadside && f === 1) f = 1.4;
+    s.loudUntil = w.t + 4;
     hitShip(w, target, vol * f, s.x, s.z, 0, s.side);
     const n = Math.round(3 + f * 4);
     for (let i = 0; i < n; i++) {
@@ -357,7 +434,7 @@ function shipGuns(w: World, s: Ship, dt: number) {
     return;
   }
   // No ship in range: the batteries walk onto a wing (they are poor at it).
-  const g = w.wings.find((g) => g.side === foeSide && g.state === "out" && alive(g).length && dist(s.x, s.z, g.x, g.z) < h.range * 0.6);
+  const g = w.wings.find((g) => g.side === foeSide && g.state === "out" && alive(g).length && dist(s.x, s.z, g.x, g.z) < h.range * 0.6 && sees(w, s.side, g.id));
   if (g) {
     const c = alive(g)[Math.floor(rand(w) * alive(g).length)];
     if (rand(w) < 0.12) hitCraft(w, g, c, 30);
@@ -485,7 +562,7 @@ function launch(w: World, g: Wing) {
 function nearestFoeCraft(w: World, g: Wing, x: number, z: number, r: number, prefer?: Role) {
   let best: { g: Wing; c: Craft } | null = null, bd = r;
   for (const o of w.wings) {
-    if (o.side === g.side || o.state !== "out") continue;
+    if (o.side === g.side || o.state !== "out" || !sees(w, g.side, o.id)) continue;
     for (const c of o.craft) {
       if (c.dead) continue;
       const d = dist(x, z, c.x, c.z) * (prefer && o.role === prefer ? 0.6 : 1);
@@ -517,7 +594,12 @@ function stepWing(w: World, g: Wing, dt: number) {
     g.state = "returning";
     say(w, g.side, g.name, g.side === "navy" ? "Racks empty, heading home." : "Out of fish, coming back.");
   }
-  const goal = wingGoal(w, g);
+  let goal = wingGoal(w, g);
+  // Scouts are eyes, not guns: with enemy fighters closing, they run, and come back once clear.
+  if (g.role === "scout" && g.state === "out") {
+    const threat = nearestFoeCraft(w, g, g.x, g.z, 550);
+    if (threat) { const d = Math.max(1, dist(g.x, g.z, threat.c.x, threat.c.z)); goal = { x: g.x + ((g.x - threat.c.x) / d) * 500, z: g.z + ((g.z - threat.c.z) / d) * 500 }; }
+  }
   // A target that died: fall back to escorting home.
   if (!goal && g.state === "out") {
     const home = ship(w, g.home) ?? flagshipOf(w, g.side);
@@ -527,8 +609,9 @@ function stepWing(w: World, g: Wing, dt: number) {
   }
   if (goal) {
     const d = dist(g.x, g.z, goal.x, goal.z);
-    const sp = st.speed * (g.formation === "tight" ? 1.05 : 1);
+    const sp = st.speed * (g.formation === "tight" ? 1.05 : 1) * wellAt(w, g.x, g.z).boost;
     if (d > 1) { const k = Math.min(1, (sp * dt) / d); g.x += (goal.x - g.x) * k; g.z += (goal.z - g.z) * k; }
+    outOfCores(w, g, 40);
     // On a drawn route: past this point, on to the next. The group's clock starts once the route is flown.
     if (g.route.length && goal === g.route[0] && dist(g.x, g.z, goal.x, goal.z) < 40) { g.route.shift(); if (!g.route.length) g.groupAt = w.t; }
     if (g.state === "returning" && d < 60) {
@@ -547,7 +630,7 @@ function stepWing(w: World, g: Wing, dt: number) {
     c.cd -= dt;
     // Who to fight: dogfights inside the stance's radius (round the charge when escorting).
     const centre = chargePos && g.stance === "defend" ? chargePos : c;
-    let foe = g.state === "out" && g.role !== "bomber" ? nearestFoeCraft(w, g, centre.x, centre.z, ENGAGE[g.stance], g.role === "interceptor" ? "bomber" : undefined) : null;
+    let foe = g.state === "out" && g.role !== "bomber" && g.role !== "scout" ? nearestFoeCraft(w, g, centre.x, centre.z, ENGAGE[g.stance], g.role === "interceptor" ? "bomber" : undefined) : null;
     if (o.k === "attack" && o.targetIs === "wing" && g.role !== "bomber") {
       const tg = wing(w, o.target);
       const tc = tg && alive(tg).sort((p, q) => dist(c.x, c.z, p.x, p.z) - dist(c.x, c.z, q.x, q.z))[0];
@@ -558,12 +641,14 @@ function stepWing(w: World, g: Wing, dt: number) {
     else { const s = slot(g, i, live.length, heading); dx = g.x + s.x; dz = g.z + s.z; }
     // Steer: craft turn hard but not instantly; a loose wing jinks.
     const want = Math.atan2(dz - c.z, dx - c.x), dd = dist(c.x, c.z, dx, dz);
-    const speed = st.speed * (foe ? 1.15 : clamp(dd / 30, 0.6, 1.4));
+    const well = w.field ? wellAt(w, c.x, c.z) : null;
+    const speed = st.speed * (foe ? 1.15 : clamp(dd / 30, 0.6, 1.4)) * (well?.boost ?? 1);
     const jink = g.formation === "loose" ? Math.sin(w.t * 3 + i) * 0.5 : 0;
     const tvx = Math.cos(want + jink) * speed, tvz = Math.sin(want + jink) * speed;
-    c.vx += (tvx - c.vx) * Math.min(1, dt * 3.2);
-    c.vz += (tvz - c.vz) * Math.min(1, dt * 3.2);
+    c.vx += (tvx - c.vx) * Math.min(1, dt * 3.2) + (well?.ax ?? 0) * dt;
+    c.vz += (tvz - c.vz) * Math.min(1, dt * 3.2) + (well?.az ?? 0) * dt;
     c.x += c.vx * dt; c.z += c.vz * dt;
+    if (well) outOfCores(w, c, 20);
     c.foe = foe?.c.id ?? 0;
     if (g.state !== "out") return;
     // Guns on a craft.
@@ -576,7 +661,7 @@ function stepWing(w: World, g: Wing, dt: number) {
       return;
     }
     // Shooting down torpedoes: escorts and interceptors near one.
-    if (g.role !== "bomber") {
+    if (g.role !== "bomber" && g.role !== "scout") {
       const t = w.torps.find((t) => !t.dead && t.side !== g.side && dist(c.x, c.z, t.x, t.z) < 60);
       if (t && rand(w) < (g.role === "escort" ? 0.9 : 0.5) * dt * 4) { t.dead = true; w.stats.torpsShot++; fx(w, "gun", g.side, c.x, c.z, t.x, t.z); fx(w, "boom", t.side, t.x, t.z); return; }
     }
@@ -673,16 +758,19 @@ function arrive(w: World, wave: Wave) {
   wave.done = true;
   const warden = w.ships.find((s) => !s.dead && s.side === "navy" && dist(s.x, s.z, w.lane.x, w.lane.z) < 320);
   const fl = flagship(w);
-  const at = warden ? { x: w.lane.x, z: w.lane.z } : fl ? { x: fl.x - Math.cos(fl.a) * 900, z: fl.z - Math.sin(fl.a) * 900 } : w.lane;
-  const toward = fl ? Math.atan2(fl.z - at.z, fl.x - at.x) : 0;
+  // In the theater they come out of the lane itself and make for the nearest strongpoint the Compact holds.
+  const at = warden || w.field ? { x: w.lane.x, z: w.lane.z } : fl ? { x: fl.x - Math.cos(fl.a) * 900, z: fl.z - Math.sin(fl.a) * 900 } : w.lane;
+  const hold = w.field?.points.filter((p) => p.owner === "rim").sort((a, b) => dist(a.x, a.z, at.x, at.z) - dist(b.x, b.z, at.x, at.z))[0];
+  const toward = hold ? Math.atan2(hold.z - at.z, hold.x - at.x) : fl ? Math.atan2(fl.z - at.z, fl.x - at.x) : 0;
   wave.ships.forEach((spec, i) => {
     const s = addShip(w, "rim", spec.kind, `${rimShipName(w)}`, at.x + (i - (wave.ships.length - 1) / 2) * 160 * Math.cos(toward + Math.PI / 2), at.z + (i - (wave.ships.length - 1) / 2) * 160 * Math.sin(toward + Math.PI / 2), toward, true);
-    s.order = fl ? { k: "engage", target: fl.id, broadside: false } : { k: "hold" };
+    if (w.field) { const p = hold ?? w.planet; s.post = { x: p.x + (i - 0.5) * 260, z: p.z + 200 }; s.order = { k: "move", x: s.post.x, z: s.post.z }; }
+    else s.order = fl ? { k: "engage", target: fl.id, broadside: false } : { k: "hold" };
     if (warden) { s.shield = 0; s.stunUntil = w.t + 8; }
     fx(w, "jump", "rim", s.x, s.z, s.x - Math.cos(toward) * 600, s.z - Math.sin(toward) * 600);
     spec.wings.forEach((role, j) => addWing(w, s, role, nextCall(w, "rim"), role === "bomber" ? 4 : 5, w.t + 4 + j * 3));
   });
-  say(w, "navy", "Sensors", warden ? `Compact ships ripped out of hyperspace on top of the ${warden.name}! Shields down, hit them now.` : "Compact ships out of hyperspace behind us!");
+  say(w, "navy", "Sensors", warden ? `Compact ships ripped out of hyperspace on top of the ${warden.name}! Shields down, hit them now.` : w.field ? "Hyperspace wake at the lane: Compact reinforcements, heading in." : "Compact ships out of hyperspace behind us!");
 }
 
 const RIM_SHIPS = ["Defiance", "Long Night", "Hearthfire", "Free Wind", "Last Harvest", "Unbowed", "Kindred", "Tallowmere", "Stonebreak", "Open Hand"];

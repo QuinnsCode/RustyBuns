@@ -5,6 +5,7 @@ import * as THREE from "three";
 import type { Role, Side } from "../names.ts";
 import { HULL, alive, type Fx, type Ship, type World } from "../sim/world.ts";
 import { ENGINE, craftGeometry, craftMaterial, dotTexture, planetTexture, shipModel } from "./models.ts";
+import { Fog } from "./fog.ts";
 
 export type Look = "cinema" | "holo";
 
@@ -22,6 +23,8 @@ export interface Overlay {
   /** Lines from a thing to where it is going, in sim coordinates, with a colour. */
   lines: { x1: number; z1: number; x2: number; z2: number; color: number }[];
   rings: { x: number; z: number; r: number; color: number }[];
+  /** In the theater: the Compact ships, wings and mines your side sees. The rest are not drawn. */
+  sees?: Set<number>;
 }
 
 export class Bridge {
@@ -53,6 +56,13 @@ export class Bridge {
   private dummy = new THREE.Object3D();
   private planetSeed: number;
   private p = { x: 0, z: 0, r: 1 };
+  /** The theater's bodies (star, other planets, rift whorls), the fog laid over the table, and the visible mines. */
+  private bodies: THREE.Object3D[] = [];
+  private bodiesFor: World | null = null;
+  private fogPlane: THREE.Mesh | null = null;
+  private fogTex: THREE.CanvasTexture | null = null;
+  private mineMesh: THREE.InstancedMesh;
+  fog: Fog | null = null;
 
   constructor(canvas: HTMLCanvasElement, seed: number) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -87,7 +97,7 @@ export class Bridge {
     this.atmo = new THREE.Mesh(new THREE.SphereGeometry(1.06, 48, 32), new THREE.MeshBasicMaterial({ color: 0x6fb8ff, transparent: true, opacity: 0.16, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
     s.add(this.atmo);
 
-    this.grid = new THREE.GridHelper(12000, 60, 0x1d6f8a, 0x0b3344);
+    this.grid = new THREE.GridHelper(20000, 100, 0x1d6f8a, 0x0b3344);
     this.grid.visible = false; s.add(this.grid);
 
     // Every streak (guns, bolts, tracers) is one instance of a stretched glowing plane; every flash one instance of a dot.
@@ -105,6 +115,10 @@ export class Bridge {
     this.lineMesh.frustumCulled = false; s.add(this.lineMesh);
     this.overlayMesh = new THREE.LineSegments(this.overlayGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75, depthWrite: false }));
     this.overlayMesh.frustumCulled = false; s.add(this.overlayMesh);
+    // Drawn after the fog, so fire and your orders show through it.
+    this.overlayMesh.renderOrder = 3; this.lineMesh.renderOrder = 3; this.streakMesh.renderOrder = 3; this.flashMesh.renderOrder = 3;
+    this.mineMesh = new THREE.InstancedMesh(new THREE.OctahedronGeometry(14), new THREE.MeshBasicMaterial({ color: 0xff7a2a, wireframe: true }), 128);
+    this.mineMesh.frustumCulled = false; this.mineMesh.count = 0; s.add(this.mineMesh);
     this.setLook(this.look);
   }
 
@@ -170,8 +184,9 @@ export class Bridge {
     this.atmo.position.copy(this.planet.position); this.atmo.scale.setScalar(p.r);
     this.atmo.visible = this.look === "cinema";
 
-    this.drawShips(w, now);
-    this.drawCraft(w);
+    this.drawField(w, overlay, now);
+    this.drawShips(w, now, overlay.sees);
+    this.drawCraft(w, overlay.sees);
     this.p = w.planet;
     this.takeFx(w, now);
     this.drawFx(now);
@@ -180,7 +195,46 @@ export class Bridge {
     void alpha;
   }
 
-  private drawShips(w: World, now: number) {
+  /** The theater: build its bodies and fog once per battle, then lay the fog and the seen mines each frame. */
+  private drawField(w: World, o: Overlay, now: number) {
+    const f = w.field;
+    if (this.bodiesFor !== w) {
+      for (const b of this.bodies) this.scene.remove(b);
+      this.bodies = []; this.bodiesFor = w;
+      if (this.fogPlane) { this.scene.remove(this.fogPlane); this.fogPlane = null; this.fog = null; }
+      if (f) {
+        const dot = dotTexture();
+        f.wells.forEach((g, i) => {
+          if (g.kind === "star") {
+            const star = new THREE.Mesh(new THREE.SphereGeometry(g.core, 40, 24), new THREE.MeshBasicMaterial({ color: 0xffc070 }));
+            star.position.set(g.x, -g.core * 0.4, g.z); this.bodies.push(star);
+            const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot, color: 0xff9a40, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+            halo.position.copy(star.position); halo.scale.set(g.core * 5, g.core * 5, 1); this.bodies.push(halo);
+          } else if (g.kind === "planet" && g.name !== w.planet.name) {
+            const p = new THREE.Mesh(new THREE.SphereGeometry(g.core, 40, 24), new THREE.MeshStandardMaterial({ map: planetTexture(this.planetSeed + i * 31), roughness: 1 }));
+            p.position.set(g.x, -g.core * 0.55, g.z); p.userData.planet = true; this.bodies.push(p);
+          }
+        });
+        for (const b of this.bodies) this.scene.add(b);
+        this.fog = new Fog(f.wide, f.deep);
+        this.fogTex = new THREE.CanvasTexture(this.fog.canvas);
+        const plane = new THREE.PlaneGeometry(f.wide * 2, f.deep * 2); plane.rotateX(-Math.PI / 2);
+        this.fogPlane = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: this.fogTex, transparent: true, depthWrite: false, depthTest: false }));
+        this.fogPlane.position.y = 40; this.fogPlane.renderOrder = 2; this.scene.add(this.fogPlane);
+      }
+    }
+    for (const b of this.bodies) if (b.userData.planet) { b.rotation.y = now * 0.01; ((b as THREE.Mesh).material as THREE.MeshStandardMaterial).wireframe = this.look === "holo"; }
+    if (this.fogTex) this.fogTex.needsUpdate = true;
+    let n = 0;
+    if (f) for (const m of f.mines) {
+      if (n >= 128 || (o.sees && m.side === "rim" && !o.sees.has(m.id))) continue;
+      this.dummy.position.set(m.x, 10, m.z); this.dummy.rotation.set(0, now + m.id, 0); this.dummy.scale.setScalar(1); this.dummy.updateMatrix();
+      this.mineMesh.setMatrixAt(n++, this.dummy.matrix);
+    }
+    this.mineMesh.count = n; this.mineMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private drawShips(w: World, now: number, sees?: Set<number>) {
     for (const s of w.ships) {
       let g = this.ships.get(s.id);
       if (!g) {
@@ -191,10 +245,12 @@ export class Bridge {
         this.shields.set(s.id, { mesh: bubble, hit: -9 });
       }
       const sh = this.shields.get(s.id)!;
-      if (s.dead) {
+      const hidden = !!sees && s.side === "rim" && !sees.has(s.id);
+      if (s.dead || hidden) {
         if (g.visible) { g.visible = false; sh.mesh.visible = false; }
         continue;
       }
+      if (!g.visible) { g.visible = true; sh.mesh.visible = true; }
       g.position.set(s.x, 0, s.z);
       // A heading along +x in the sim is the model's nose; three's y rotation turns the other way.
       g.rotation.y = -s.a;
@@ -209,12 +265,13 @@ export class Bridge {
     }
   }
 
-  private drawCraft(w: World) {
+  private drawCraft(w: World, sees?: Set<number>) {
     const counts = new Map<string, number>();
     // Drawn bigger the further out the camera is, so a wing still reads at fleet scale.
-    const k = Math.max(1.4, Math.min(4, this.view.dist / 1300));
+    const k = Math.max(1.4, Math.min(5, this.view.dist / 1300));
     for (const g of w.wings) {
       if (g.state !== "out" && g.state !== "returning") continue;
+      if (sees && g.side === "rim" && !sees.has(g.id)) continue;
       const key = `${g.side}-${g.role}`;
       let m = this.crafts.get(key);
       if (!m) {
@@ -302,8 +359,9 @@ export class Bridge {
     const seg = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, c: THREE.Color, k = 1) => { pos.push(x1, y1, z1, x2, y2, z2); col.push(c.r * k, c.g * k, c.b * k, c.r * k * 0.1, c.g * k * 0.1, c.b * k * 0.1); };
     const eng = { navy: new THREE.Color(ENGINE.navy), rim: new THREE.Color(ENGINE.rim) };
     // Craft trails.
+    const shown = (side: Side, id: number) => !o.sees || side === "navy" || o.sees.has(id);
     for (const g of w.wings) {
-      if (g.state !== "out" && g.state !== "returning") continue;
+      if ((g.state !== "out" && g.state !== "returning") || !shown(g.side, g.id)) continue;
       for (const c of alive(g)) { const y = 12 + (c.id % 7) * 3; seg(c.x, y, c.z, c.x - c.vx * 0.35, y, c.z - c.vz * 0.35, eng[g.side], 0.8); }
     }
     // Torpedoes: a hot point and a long drive plume.
@@ -311,7 +369,7 @@ export class Bridge {
     for (const t of w.torps) seg(t.x, 10, t.z, t.x - t.vx * 0.7, 10, t.z - t.vz * 0.7, t.side === "navy" ? torpC : eng.rim, 1.4);
     // Capital drive plumes.
     for (const s of w.ships) {
-      if (s.dead || s.kind === "station" || s.v < 1) continue;
+      if (s.dead || s.kind === "station" || s.v < 1 || !shown(s.side, s.id)) continue;
       const r = HULL[s.kind].r, bx = s.x - Math.cos(s.a) * r * 1.05, bz = s.z - Math.sin(s.a) * r * 1.05;
       seg(bx, 0, bz, bx - Math.cos(s.a) * s.v * 6, 0, bz - Math.sin(s.a) * s.v * 6, eng[s.side], 1);
     }
@@ -327,7 +385,17 @@ export class Bridge {
     // The marked target: a ring that breathes.
     const t = w.ships.find((s) => s.id === o.target && !s.dead);
     if (t) ring(t.x, t.z, HULL[t.kind].r * (1.35 + Math.sin(now * 5) * 0.05), 0xff5a4a);
-    if (this.look === "holo") for (const s of w.ships) if (!s.dead) ring(s.x, s.z, HULL[s.kind].r * 1.2, s.side === "navy" ? 0x2aa8c8 : 0xc86a2a);
+    if (this.look === "holo") for (const s of w.ships) if (!s.dead && shown(s.side, s.id)) ring(s.x, s.z, HULL[s.kind].r * 1.2, s.side === "navy" ? 0x2aa8c8 : 0xc86a2a);
+    // The theater: gravity contours round each well, and each strongpoint's ring with an arc for how far it is held.
+    if (w.field) {
+      for (const g of w.field.wells) for (const k of [1, 0.66, 0.36]) ring(g.x, g.z, g.r * k, g.kind === "rift" ? 0x3a2a66 : 0x173a52);
+      for (const p of w.field.points) {
+        const c = p.owner === "navy" ? 0x63e6ff : p.owner === "rim" ? 0xff9a4d : 0x8a96a3;
+        ring(p.x, p.z, p.r, c); ring(p.x, p.z, p.r * 0.2, c);
+        const arc = Math.abs(p.hold) * Math.PI * 2, ac = p.hold > 0 ? 0x63e6ff : 0xff9a4d;
+        for (let i = 0; i < 48 && (i / 48) * Math.PI * 2 < arc; i++) { const a = (i / 48) * Math.PI * 2 - Math.PI / 2, b = a + Math.PI / 24; line(p.x + Math.cos(a) * p.r * 1.08, p.z + Math.sin(a) * p.r * 1.08, p.x + Math.cos(b) * p.r * 1.08, p.z + Math.sin(b) * p.r * 1.08, ac); }
+      }
+    }
     this.overlayGeo.setAttribute("position", new THREE.Float32BufferAttribute(op, 3));
     this.overlayGeo.setAttribute("color", new THREE.Float32BufferAttribute(oc, 3));
   }
