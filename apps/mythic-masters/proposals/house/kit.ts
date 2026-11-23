@@ -398,7 +398,7 @@ export function writeSheet(id: string, body: { feet: number; wings?: number } & 
 }
 
 /** The ids a plan's command line names (all of the table's, given none), checked against the table. */
-export function pick(table: Record<string, unknown>, argv = process.argv.slice(2)): string[] {
+export function pick(table: object, argv = process.argv.slice(2)): string[] {
   const ids = argv.filter((a) => !a.startsWith("--"));
   for (const id of ids) if (!(id in table)) throw new Error(`no beast ${id} in this plan (have: ${Object.keys(table).join(", ")})`);
   return ids.length ? ids : Object.keys(table);

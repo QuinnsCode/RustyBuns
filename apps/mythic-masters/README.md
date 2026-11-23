@@ -89,6 +89,15 @@ The open world's ground is eight tileable layers (needle litter, leaf litter, tu
 
 ## The beasts are sheets
 
+**One look for every beast.** [docs/ART-STYLE.md](docs/ART-STYLE.md) is the style every model is drawn to, as eight
+numbered rules (a big head, round soft forms, thick short limbs with big feet, one house face, one trait from the
+legend made big, three colours and the eyes), with the Hodag, Squonk and Jackalope as the models to copy. The face,
+limb, foot and palette come from one kit, `proposals/house/kit.ts`, and a beast is a short row of numbers in a
+body plan beside it (`quadruped.ts`, `biped.ts`, `longneck.ts`) that writes its sheet. The Kelpie, the Minotaur and
+the Loch Ness Monster are built this way; `bun proposals/house/lineup.ts <id ...>` draws beasts side by side at
+true scale ([the three beside the starters](docs/shots-2026-11-22-house/lineup-pilots.jpg)). The rest of the roster
+is still in its older looks.
+
 Each creature is one sheet, `beasts/<id>.json`, and one form: a legend has no young or elder version. A bound
 creature grows by level (`atLevel` in `src/journey.ts` scales its stats) while its body stays the sheet's (#3502). Its body is a stick figure (nodes with a radius, links
 between them, `l_` names mirrored) that Blender's skin modifier wraps in flesh, plus parts laid on it (spikes
