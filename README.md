@@ -16,9 +16,29 @@
 
 It is my idea engine. When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
 
-1. **Logic once, typed end to end.** The page, the backend, the config and the deploy are one TypeScript program. One guard describes each message, and the server and every client import it. Rust is only for the one path that must be faster.
-2. **Five simple primitives, and we move you.** Each app is http, comms, storage, memory and identity. Write against those small shapes, and the same app runs on a laptop, on the edge, on a server and on a phone's home screen.
-3. **Deploy manywhere.** Each target is a typed Effect Layer in an Alchemy stack. To change where the app runs, change one line of config. The compiler finds what is missing before anything costs money.
+### Why use it, most important first
+
+1. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
+2. **Learn five parts, not a platform.** http, comms, storage, memory and identity.
+3. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
+4. **The compiler finds the errors first.** One language, typed from the page to the deploy.
+5. **You can leave.** Your code stays standard. `git rm` removes Rusty Buns.
+6. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
+7. **Use Rust only for speed.** Each Rust part has a TypeScript twin.
+
+### How easy the five parts are
+
+Each part is one line of config. Each line runs on a laptop and on the edge:
+
+| Part | One line in `rustybuns.config.ts` | On the edge | On a laptop or server |
+|---|---|---|---|
+| **http** | `worker: { main: "src/worker.ts" }` | a Worker `fetch` | `Bun.serve` |
+| **comms** | `WORLD: { type: "durable_object", className: "World" }` | a Durable Object | a class in the process |
+| **storage** | `DB: { type: "d1", databaseName: "my-app" }` | D1, KV, R2 | sqlite and a folder |
+| **memory** | nothing to add | the isolate | the process |
+| **identity** | `SESSION_SECRET: { type: "secret" }` | your Worker or Access | the same code |
+
+You write `env.DB.prepare(...)` one time. Rusty Buns gives `env.DB` the correct twin for each place, with its type from the config.
 
 The code is yours. Rusty Buns does not change `src/`, and it is not in your bundle. To remove it, use `git rm`.
 
