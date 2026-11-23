@@ -246,16 +246,18 @@ test("a push is gentle and tops out at a speed you can steer at, while the jets 
 
   const jets = run(start(0, -100, 0, flatLv), 3, () => ({ throttle: 1, boost: true }), flatLv);
   expect(kmh(jets)).toBeGreaterThan(110); // the jets are the real speed
+  run(jets, 5, () => ({ throttle: 1, boost: true }), flatLv);
+  expect(kmh(jets)).toBeLessThan(130); // and they top out where a wall still throws it up tens of metres, not hundreds
 
   const hill = makeLevel({ name: "h", pieces: [piece("ramp", "slope", 0, 0, Math.PI, 20, 400, 0, 120)], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -400, maxZ: 400 } });
   const down = run(start(0, -198, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
   expect(kmh(down)).toBeGreaterThan(75); // gravity carries it past what pushing reaches
 
   // let go at jet speed, only the wheels and the air slow it: no hidden brake back down to push speed
-  const loose = Object.assign(start(0, -250, 0, flatLv), { speed: 40 });
+  const loose = Object.assign(start(0, -250, 0, flatLv), { speed: 33 });
   run(loose, 3, () => ({}), flatLv);
-  expect(loose.speed).toBeGreaterThan(0.85 * 40);
-  expect(loose.speed).toBeLessThan(40);
+  expect(loose.speed).toBeGreaterThan(0.85 * 33);
+  expect(loose.speed).toBeLessThan(33);
 });
 
 test("a bad landing carries on: the rider slides and rolls across the ground, slowing, before standing up", () => {
@@ -374,7 +376,7 @@ test("held jets push on the ground only: in the air they add nothing, so Shift i
 
 test("at a spawn on a hillside the rider keeps a foot down until the first key, then the hill takes the board again", async () => {
   const { LEVELS } = await import("../src/levels/index.ts");
-  const dome = (await LEVELS.find((e) => e.id === "half-dome")!.load()) as Level & { spawns: { x: number; z: number; yaw: number }[] };
+  const dome = (await LEVELS.find((e) => e.id === "half-dome")!.load()) as Level & { spawns: { name: string; x: number; z: number; yaw: number }[] };
   const sp = dome.spawns[0]!; // "dome view": a loose board rolls off it fakie at about 12 km/h
   const loose = run(start(sp.x, sp.z, sp.yaw, dome), 5, () => ({}), dome);
   expect(Math.hypot(loose.x - sp.x, loose.z - sp.z)).toBeGreaterThan(2);
@@ -384,4 +386,9 @@ test("at a spawn on a hillside the rider keeps a foot down until the first key, 
   run(s, 2, () => ({ throttle: 1 }), dome);
   expect(s.planted).toBe(false);
   expect(Math.hypot(s.x - sp.x, s.z - sp.z)).toBeGreaterThan(2);
+
+  const run0 = dome.spawns.find((p) => p.name === "dome run")!; // facing up a gentle rise: a push climbs it rather than only holding the board still
+  const up = run(start(run0.x, run0.z, run0.yaw, dome, true), 3, () => ({ throttle: 1 }), dome);
+  expect(up.speed).toBeGreaterThan(3);
+  expect(up.y).toBeGreaterThan(dome.height(run0.x, run0.z));
 });
