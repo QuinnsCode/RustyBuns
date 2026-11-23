@@ -13,8 +13,14 @@ export const RACK = { x0: -1.3, x1: 1.3, z0: -HALF_D, z1: -HALF_D + 0.45, shelve
 export const PEDAL_WALL = { x0: -1.6, x1: -1.35, z0: -2.45, z1: -0.65, shelves: [1.0, 1.4] };
 /** Everything with shelves: what blocks your walk and what a box set down can land on. */
 export const SHELVING = [RACK, PEDAL_WALL];
-/** The rack and the pedal wall as boxes on the floor, in the gear room's frame: what you walk round. */
-export const shelvingRects = (): Rect[] => SHELVING.map((s) => ({ cx: (s.x0 + s.x1) / 2, cz: (s.z0 + s.z1) / 2, hw: (s.x1 - s.x0) / 2, hd: (s.z1 - s.z0) / 2, turn: 0 }));
+/**
+ * The sound wall (WALL.md): a Eurorack case on a stand against the back wall, right of the rack, two rows of 84 HP.
+ * `rail` is where a row's first HP starts, `rows` where each row's modules stand (their bottom), `front` the plane
+ * their panels sit in. Only a module lands in a row, and only a module in a row has power.
+ */
+export const CASE = { x0: 1.6, x1: 2.07, z0: -HALF_D, z1: -HALF_D + 0.26, rail: 1.6215, hp: 84, rows: [1.14, 1.14 + 0.13335], top: 1.425, front: -HALF_D + 0.25 };
+/** The rack, the pedal wall and the sound wall's case as boxes on the floor, in the gear room's frame: what you walk round. */
+export const shelvingRects = (): Rect[] => [...SHELVING, CASE].map((s) => ({ cx: (s.x0 + s.x1) / 2, cz: (s.z0 + s.z1) / 2, hw: (s.x1 - s.x0) / 2, hd: (s.z1 - s.z0) / 2, turn: 0 }));
 /** Where a box may be set down: the gear room's walls, or (its gear wall in a studio) the studio's. */
 export interface Bounds { x0: number; x1: number; z0: number; z1: number }
 export const GEAR_ROOM: Bounds = { x0: -HALF_W, x1: HALF_W, z0: -HALF_D, z1: HALF_D };

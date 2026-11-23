@@ -7,21 +7,24 @@
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
-import { GEAR_ROOM, HALF_D, HALF_W, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./frame.ts";
+import { CASE, GEAR_ROOM, HALF_D, HALF_W, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./frame.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { Avatar } from "@rustybuns/util/avatar";
 import { bench, type BenchPedal } from "../circuit/bench.ts";
 import { AUXES } from "../mixer.ts";
+import { HP, PANEL_H, PANELS, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
+import type { WallCable, WallSpec } from "../wall/wall.ts";
 import type { Live } from "../project.ts";
 import { applyStudio, emptyStudio, letGo, MAX_BOARD_CHARS, MAX_KNOBS, type Board, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
 export type Vec3 = [number, number, number];
 /** The face of a box a jack or knob sits on, in the box's own frame: front is +z. */
 export type Face = "front" | "back" | "left" | "right" | "top";
-export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face }
+/** A jack: its name in the patch, which way the signal goes, where it is, and (on a module's panel) what it says. */
+export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face; label?: string }
 /** A knob 0 to 1 (the patch's range); `circuit` is its 0 to 10 name in the amp or pedal it drives. */
 export interface KnobDef { name: string; label: string; at: Vec3; face: Face; dflt: number }
-export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk";
+export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk" | "module";
 /** The loop machines (Q Amp's Q Bucket, Q Tape, Q Spring) as boxes of their own. */
 export type MachineKind = LoopSpec["kind"];
 /** A piece of studio gear: its size (w, h, d in metres, standing on its bottom face), jacks and knobs, and the circuit or machine it runs. */
@@ -80,6 +83,28 @@ const SPLIT: GearDef = {
   knobs: [{ name: "blend", label: "Blend", at: [0, 0.06, -0.05], face: "top", dflt: 0.5 }],
 };
 
+/** How deep a sound wall module is, behind its panel, in metres. */
+const MODULE_D = 0.035;
+/**
+ * A sound wall module (WALL.md): its front panel as circuits/wall-panels.ts draws it, every jack and knob on the
+ * front where its board puts it, so the panel you cable here is the one its drill template makes. `circuit` is
+ * the panel's id, the sim and board it plays (src/wall/sims.ts).
+ */
+export function moduleGear(p: Panel): GearDef {
+  const w = panelWidth(p.hp) / 1000, h = PANEL_H / 1000, at = (x: number, y: number): Vec3 => [x / 1000, h / 2 + y / 1000, MODULE_D / 2];
+  return {
+    id: `mod-${p.id}`, name: p.name, kind: "module", size: [w, h, MODULE_D], kg: 0.15, circuit: p.id,
+    jacks: p.jacks.map((j) => ({ name: j.name, dir: j.dir, at: at(j.x, j.y), face: "front", label: j.label })),
+    knobs: p.knobs.map((k) => ({ name: k.name, label: k.label, at: at(k.x, k.y), face: "front", dflt: k.dflt })),
+  };
+}
+/** Whether a box is a sound wall module standing in one of the case's rows: powered, so it plays. */
+export function inCase(p: Placed, g: GearDef | undefined = gearOf(p)): boolean {
+  if (g?.kind !== "module") return false;
+  const [x, y, z] = p.at, w = g.size[0];
+  return CASE.rows.some((r) => Math.abs(y - r) < 0.004) && x - w / 2 >= CASE.rail - 0.001 && x + w / 2 <= CASE.rail + (CASE.hp * HP) / 1000 + 0.001 && Math.abs(z + MODULE_D / 2 - CASE.front) < 0.01;
+}
+
 /** How many tracks the desk's patch bay has inserts for: `send-1` out to the gear, back into `return-1`. */
 export const DESK_TRACKS = 4;
 /** The desk's aux sends and returns (src/mixer.ts): `aux-send-1` out to an effect, back into `aux-return-1`, on its own fader. */
@@ -106,6 +131,7 @@ export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries
   machineGear("tape", "Q Tape", [0.34, 0.14, 0.22], 4, [["time", "Time", 0.4], ["repeats", "Repeats", 0.4], ["mix", "Mix", 0.4]]),
   machineGear("spring", "Q Spring", [0.42, 0.12, 0.16], 3, [["dwell", "Dwell", 0.5], ["mix", "Mix", 0.4]]),
   DESK,
+  ...PANELS.map(moduleGear),
   { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0, 0.165, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
 ].map((g) => [g.id, g]));
 
@@ -178,7 +204,7 @@ function benchNet(patch: Patch, p: Placed) {
 
 // ---- the room ----
 
-export { HALF_W, HALF_D, WALL_H, RACK, PEDAL_WALL, shelvingRects, GEAR_ROOM, type Bounds } from "./frame.ts";
+export { HALF_W, HALF_D, WALL_H, RACK, PEDAL_WALL, CASE, shelvingRects, GEAR_ROOM, type Bounds } from "./frame.ts";
 export const EYE = 1.62, RADIUS = 0.25, WALK = 1.5;
 /** How far your hands reach from your eyes, metres. */
 export const REACH = 2.1;
@@ -203,10 +229,21 @@ export function startPatch(): Patch {
       { id: "cab", gear: "cab-2x12", at: at(1.8, 0, -1.5), turn: -0.4 },
       { id: "guitar", gear: "guitar", at: at(-1.0, 0, -0.3), turn: 0.5 },
       { id: "desk", gear: "desk", at: at(0.2, 0, -0.25), turn: 0 },
+      ...starterWall(),
     ],
     cables: [],
     knobs: {},
   };
+}
+
+/** The sound wall's starter system, side by side in the case's lower row from its left end: one of every module. */
+function starterWall(): Placed[] {
+  let hp = 0;
+  return PANELS.map((p) => {
+    const x = CASE.rail + ((hp + p.hp / 2) * HP) / 1000;
+    hp += p.hp;
+    return { id: `wall-${p.id}`, gear: `mod-${p.id}`, at: [x, CASE.rows[0], CASE.front - MODULE_D / 2], turn: 0 };
+  });
 }
 
 /** A room saved before some gear came in gets it, where the room starts with it (a box of each kind it lacks). */
@@ -325,6 +362,8 @@ function hitBall(c: Vec3, rad: number, o: Vec3, d: Vec3): number | null {
 
 export type Aim = { t: "item"; id: string } | { t: "jack"; end: End } | { t: "knob"; id: string; knob: string };
 const PART_R = 0.03;
+/** A sound wall module's jacks and knobs sit 12 to 15 mm apart, so each is a smaller target. */
+const partR = (g: GearDef) => (g.kind === "module" ? 0.009 : PART_R);
 
 /** What you look at within reach: a jack or knob before the box it is on, the nearest box otherwise. */
 export function aimed(r: Room): Aim | null {
@@ -336,8 +375,9 @@ export function aimed(r: Room): Aim | null {
     if (!g || p.id === held) continue;
     offer(hitBox(p, g.size, o, d), { t: "item", id: p.id });
     // A small part wins over the face it sits on: it is nearer than the face by a hair, or should be.
-    for (const j of g.jacks) { const t = hitBall(toWorld(p, j.at), PART_R, o, d); offer(t === null ? null : t - 0.05, { t: "jack", end: [p.id, j.name] }); }
-    for (const k of g.knobs) { const t = hitBall(toWorld(p, k.at), PART_R, o, d); offer(t === null ? null : t - 0.05, { t: "knob", id: p.id, knob: k.name }); }
+    const pr = partR(g);
+    for (const j of g.jacks) { const t = hitBall(toWorld(p, j.at), pr, o, d); offer(t === null ? null : t - 0.05, { t: "jack", end: [p.id, j.name] }); }
+    for (const k of g.knobs) { const t = hitBall(toWorld(p, k.at), pr, o, d); offer(t === null ? null : t - 0.05, { t: "knob", id: p.id, knob: k.name }); }
   }
   hits.sort((a, b) => a.t - b.t);
   return hits[0]?.aim ?? null;
@@ -410,7 +450,8 @@ export function pickUp(r: Room, id: string): Answer {
   if (!p) return no(`no ${id} in the room`);
   if (hand(r)) return no("your hands are full");
   if (!reachable(r, p)) return no(`${nameOf(r, id)} is out of reach`);
-  const stacked = r.studio.patch.placed.find((q) => q.id !== id && q.at[1] > p.at[1] + 0.01 && sitsOn(q, p));
+  const top = p.at[1] + (gearOf(p)?.size[1] ?? 0);
+  const stacked = r.studio.patch.placed.find((q) => q.id !== id && q.at[1] > p.at[1] + 0.01 && Math.abs(q.at[1] - top) < 0.003 && sitsOn(q, p));
   if (stacked) return no(`${nameOf(r, stacked.id)} is on top of it`);
   if (!act(r, { t: "pick", id })) return no(`someone else has ${nameOf(r, id)}`);
   r.heldTurn = p.turn - r.you.yaw;
@@ -432,9 +473,31 @@ function landing(r: Room, id: string, x: number, z: number, fromY: number): numb
   for (const s of SHELVING) if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) s.shelves.forEach(below);
   for (const p of r.studio.patch.placed) {
     const g = gearOf(p);
-    if (g && p.id !== id && sitsOn({ id, gear: "", at: [x, 0, z], turn: 0 }, p)) below(p.at[1] + g.size[1]);
+    if (g && p.id !== id && !inCase(p, g) && sitsOn({ id, gear: "", at: [x, 0, z], turn: 0 }, p)) below(p.at[1] + g.size[1]);
   }
   return y;
+}
+
+/**
+ * Where a module in your hand goes into the case: held in front of it, the row nearest your hands, the HP nearest
+ * where you hold it that is free (no module overlaps it), its panel flush with the case's front. Null away from the
+ * case, or with no room in that row.
+ */
+function caseSlot(r: Room, id: string, g: GearDef, x: number, y: number, z: number): Vec3 | null {
+  if (x < CASE.x0 - 0.1 || x > CASE.x1 + 0.1 || z > CASE.z1 + 0.6) return null;
+  const hp = Math.round((g.size[0] * 1000 + 0.3) / HP), row = CASE.rows.reduce((a, b) => (Math.abs(b - y) < Math.abs(a - y) ? b : a));
+  const taken = r.studio.patch.placed.flatMap((p) => {
+    const q = gearOf(p);
+    if (p.id === id || !q || !inCase(p, q) || Math.abs(p.at[1] - row) > 0.004) return [];
+    const left = Math.round(((p.at[0] - q.size[0] / 2 - CASE.rail) * 1000) / HP), n = Math.round((q.size[0] * 1000 + 0.3) / HP);
+    return [[left, left + n]];
+  });
+  const free = (s: number) => s >= 0 && s + hp <= CASE.hp && taken.every(([a, b]) => s + hp <= a || s >= b);
+  const want = Math.round(((x - g.size[0] / 2 - CASE.rail) * 1000) / HP);
+  for (let d = 0; d <= CASE.hp; d++) for (const s of [want - d, want + d]) {
+    if (free(s)) return [CASE.rail + ((s + hp / 2) * HP) / 1000, row, CASE.front - g.size[2] / 2];
+  }
+  return null;
 }
 
 /**
@@ -445,7 +508,9 @@ function landing(r: Room, id: string, x: number, z: number, fromY: number): numb
 export function landingPose(r: Room): { at: Vec3; turn: number; on: string } | null {
   const id = heldId(r), p = id ? item(r, id) : undefined;
   if (!id || !p) return null;
-  const pose = holdPose(r, p), b = r.bounds ?? GEAR_ROOM;
+  const pose = holdPose(r, p), b = r.bounds ?? GEAR_ROOM, g = gearOf(p);
+  const slot = g?.kind === "module" ? caseSlot(r, id, g, pose.at[0], pose.at[1], pose.at[2]) : null;
+  if (slot) return { at: slot, turn: 0, on: "the sound wall" };
   const x = Math.max(b.x0 + 0.2, Math.min(b.x1 - 0.2, pose.at[0]));
   const z = Math.max(b.z0 + 0.2, Math.min(b.z1 - 0.2, pose.at[2]));
   const y = landing(r, id, x, z, pose.at[1]);
@@ -479,6 +544,22 @@ export function benchIn(r: Room, pedal: BenchPedal, spot?: { x: number; z: numbe
   if (!act(r, { t: "bring", id, gear: g.id, at: [x, 0, z], turn })) return no("the room is full");
   act(r, { t: "put", at: [x, landing(r, id, x, z, 0), z], turn });
   return { ok: true, id };
+}
+
+/**
+ * A new sound wall module of `kind` (a panel's id) in your hand, to set into the case: N's picker, or a probe. Its id is
+ * the kind and the next free number (`vco-2`).
+ */
+export function bringModule(r: Room, kind: string): Answer {
+  const g = STUDIO_GEAR[`mod-${kind}`];
+  if (!g) return no(`no sound wall module ${kind}`);
+  if (hand(r)) return no("your hands are full");
+  const ids = new Set(r.studio.patch.placed.map((p) => p.id));
+  let n = 1;
+  while (ids.has(`${kind}-${n}`)) n++;
+  if (!act(r, { t: "bring", id: `${kind}-${n}`, gear: g.id, at: [r.you.x, 0, r.you.z], turn: r.you.yaw })) return no("the room is full");
+  r.heldTurn = 0;
+  return OK;
 }
 
 /** Turn what you hold by a 15 degree step (Q and E): -1 left, 1 right. */
@@ -625,6 +706,23 @@ export interface Heard {
   inserts: Insert[];
   /** Each desk aux with a cable in its send or return: the effect cabled in, which the desk's return plays (src/mixer.ts `RigReturn`). */
   returns: AuxReturn[];
+  /** The sound wall: its own audio thread, beside the cab's and the desk's (src/wall/wall.ts). */
+  wall: WallHeard;
+}
+
+/** A sound wall mixer's send to the room's gear and back into its return. */
+export interface WallLoop { mixer: string; aux: "a" | "b"; chain: string[]; whole: boolean; problems: string[] }
+/** What the sound wall plays: the modules with power, the cables between them, the gear looped on its mixers' sends. */
+export interface WallHeard {
+  /** A Q Out in the case has a cable in: the wall is heard in the room. */
+  playing: boolean;
+  /** The modules in the case, in the patch's order. */
+  modules: string[];
+  /** What the wall's audio thread runs. */
+  spec: WallSpec;
+  loops: WallLoop[];
+  /** The first thing in the way, in words. */
+  problems: string[];
 }
 
 /** A desk aux: the gear between its send and its return, in signal order, and what the rig plays for it when it is whole. */
@@ -768,7 +866,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
 
   const why: string[] = [];
   const fail = (w: string) => { if (!why.length) why.push(w); };
-  let found: Omit<Heard, "inserts" | "returns"> | null = null;
+  let found: Omit<Heard, "inserts" | "returns" | "wall"> | null = null;
   const cabs = patch.placed.filter((p) => kind(p.id)?.kind === "cab");
   for (const cab of cabs) {
     const src = other([cab.id, "in"]);
@@ -807,9 +905,44 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
       if (!found && !problem) found = { playing: true, chain, ...rig(w.amp, w.items, loop?.items ?? []) };
     }
   }
-  if (found) return { ...found, inserts, returns };
+  // The sound wall: modules in the case, cables between them (out to in), and room gear between a mixer's send and return.
+  const isModule = (id: string) => kind(id)?.kind === "module";
+  const powered = patch.placed.filter((p) => inCase(p));
+  const on = new Set(powered.map((p) => p.id)), wallWhy: string[] = [];
+  const dirOf = (e: End) => kind(e[0])?.jacks.find((j) => j.name === e[1])?.dir;
+  const cables: WallCable[] = [];
+  for (const c of patch.cables) {
+    if (!isModule(c.from[0]) || !isModule(c.to[0])) continue;
+    const off = [c.from[0], c.to[0]].find((id) => !on.has(id));
+    if (off) { wallWhy.push(`${name(off)} isn't in the sound wall's case: no power`); continue; }
+    cables.push(dirOf(c.from) === "out" ? { from: c.from, to: c.to } : { from: c.to, to: c.from });
+  }
+  const loops: WallLoop[] = [], wallReturns: WallSpec["returns"] = [];
+  for (const m of powered.filter((p) => kind(p.id)?.circuit === "mix")) {
+    for (const aux of ["a", "b"] as const) {
+      const ret: End = [m.id, `ret-${aux}`], send: End = [m.id, `send-${aux}`], into = other(ret);
+      // Nothing in the return, or a module into it: the wall's own patch.
+      if (!into || isModule(into[0])) continue;
+      const w = walk(ret, (e) => same(e, send), true);
+      const loop = !w.why && w.amp ? ampLoop(w.amp) : null;
+      const problem = w.why ?? loop?.why ?? (w.items.length ? null : `${name(m.id)}'s send ${aux.toUpperCase()} goes straight back into its return: no effect on it`);
+      const r = problem ? null : rig(w.amp, w.items, loop?.items ?? []);
+      loops.push({ mixer: m.id, aux, chain: r ? [m.id, ...expand(w.items), ...(loop?.items ?? []), m.id] : [], whole: !!r, problems: problem ? [problem] : r?.problems ?? [] });
+      if (r) wallReturns.push({ mixer: m.id, aux, settings: r.settings });
+      else if (problem) wallWhy.push(problem);
+    }
+  }
+  const outs = powered.filter((p) => kind(p.id)?.circuit === "out");
+  const playing = outs.some((o) => cables.some((c) => c.to[0] === o.id));
+  if (!playing) wallWhy.push(outs.length ? `nothing cabled into ${name(outs[0].id)}'s inputs` : "no Q Out in the sound wall's case");
+  const wall: WallHeard = {
+    playing, modules: powered.map((p) => p.id), loops, problems: wallWhy,
+    spec: { modules: powered.flatMap((p) => { const g = kind(p.id); return g?.circuit ? [{ id: p.id, kind: g.circuit, knobs: patch.knobs[p.id] ?? {} }] : []; }), cables, returns: wallReturns },
+  };
+
+  if (found) return { ...found, inserts, returns, wall };
   const insertWhy = inserts.find((i) => !i.whole)?.problems[0];
-  return { playing: false, chain: [], running: [], settings: null, problems: [...(insertWhy ? [insertWhy] : []), ...why], inserts, returns };
+  return { playing: false, chain: [], running: [], settings: null, problems: [...(insertWhy ? [insertWhy] : []), ...why], inserts, returns, wall };
 }
 
 // ---- for probes and tests ----
