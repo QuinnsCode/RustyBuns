@@ -89,3 +89,16 @@ test("a patched voice plays the sequencer's notes, and a send through a spring c
   const wet = renderWall({ ...VOICE, returns: [{ mixer: "mix", aux: "a", settings: spring }] }, 1.5).left;
   expect(rms(wet.map((v, i) => v - left[i]))).toBeGreaterThan(rms(left) * 0.05);
 });
+
+test("Q Hiss hisses, and samples its own noise on each clock", () => {
+  // Its noise a few volts rms, and with only a clock in, a new level of that noise on each rise, held between.
+  const hiss = makeSim("noise", 48000), hx = new Float64Array(2), hy = new Float64Array(2), held = new Set<number>();
+  hiss.plugged?.([false, true]);
+  let sq = 0;
+  for (let i = 0; i < 48000; i++) { hx[1] = (i * 4) % 48000 < 24000 ? 10 : 0; hiss.step(hx, hy); sq += hy[0] ** 2; held.add(hy[1]); }
+  expect(Math.sqrt(sq / 48000)).toBeGreaterThan(0.5);
+  expect(Math.sqrt(sq / 48000)).toBeLessThan(5);
+  // Four clocks, each tracking for about a fifth of a millisecond (ten samples), then holding.
+  expect(held.size).toBeGreaterThan(4);
+  expect(held.size).toBeLessThan(80);
+});

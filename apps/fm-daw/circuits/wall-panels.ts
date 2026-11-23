@@ -114,6 +114,15 @@ export const PANELS: Panel[] = [
       jack("J3", "out-l", "Out L", "out", -6.5, -38), jack("J4", "out-r", "Out R", "out", 6.5, -38),
     ],
   },
+  {
+    id: "noise", name: "Q Hiss", what: "noise, sample and hold", hp: 6,
+    knobs: [],
+    jacks: [
+      jack("J1", "noise", "Noise", "out", 0, 30),
+      inside("J2", "in", "S&H In", -6.5, -16, "NOISE"), jack("J3", "clock", "Clock", "in", 6.5, -16),
+      jack("J4", "out", "Out", "out", 0, -38),
+    ],
+  },
 ];
 
 export const panel = (id: string): Panel => {

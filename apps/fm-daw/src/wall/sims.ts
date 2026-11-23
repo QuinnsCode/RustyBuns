@@ -6,11 +6,12 @@
 //     handed to the chip's bias pin as a current source, rather than solving the transistors each sample.
 //   - What is linear and has no memory (the mixer, the output) mixes with its board's own gains (`gains` in
 //     @rustybuns/gear/circuit), worked out again whenever a knob moves.
-//   - What switches (the oscillators, the LFO, the sequencer's clock and counter) runs from the numbers its parts set:
+//   - What switches (the oscillators, the LFO, the sequencer's clock and counter, the sample and hold) runs from the numbers its parts set:
 //     the reference current, the integrating capacitor and the comparator's threshold for the VCO, the 555's
 //     resistors and capacitor for the clock, the Schmitt trigger's divider for the LFO. Change a part on the board and
 //     the sound follows.
 // Volts in and volts out, Eurorack's levels: audio +-5 V, 1 V an octave, gates 0 to 10 V.
+import { mulberry32 } from "@rustybuns/util";
 import { Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { netlistOf, readBoard, type Board, type BoardOptions, type BoardPart } from "../circuit/tscircuit.ts";
 import { panel } from "../../circuits/wall-panels.ts";
@@ -22,9 +23,10 @@ import envBoard from "../../circuits/wall-env.circuit.json";
 import lfoBoard from "../../circuits/wall-lfo.circuit.json";
 import mixBoard from "../../circuits/wall-mix.circuit.json";
 import outBoard from "../../circuits/wall-out.circuit.json";
+import noiseBoard from "../../circuits/wall-noise.circuit.json";
 
 /** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
-const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard]]);
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard]]);
 /** Every module kind the wall has. */
 export const KINDS = [...BOARDS.keys()];
 
@@ -35,6 +37,16 @@ const SUPPLIES = { V12: 12, VN12: -12 };
 const VT = (1.380649e-23 * 299.15) / 1.602176634e-19;
 /** How long the VCO's reset takes (the comparator's slew and the JFET emptying C2): what flattens its top octaves. */
 const RESET_S = 2e-6;
+/** A 1N4148's drop, where one clamps a node. */
+const DIODE = 0.6;
+/** A TL07x's gain-bandwidth, Hz: what rolls off the top of a high-gain stage. */
+const GBW = 3e6;
+/**
+ * The hiss of a small NPN's base-emitter junction in breakdown at about 10 uA, volts rms over the audio band. It
+ * varies several times from one transistor to the next (and with the current), so a built Q Hiss can be louder or
+ * quieter than this; it is what makes the sim's noise come out at a few volts, as the board means it to.
+ */
+const JUNCTION_RMS = 0.02;
 /** A Schottky's drop at the sequencer bus's few microamps, and a 555's high output on 12 V. */
 const SCHOTTKY = 0.15, GATE_HIGH = 10.5;
 /** A B5819W Schottky's junction (about 0.25 V at 10 mA), where a board has one and the solver models its diode. */
@@ -164,6 +176,71 @@ class Vco implements Sim {
     y[1] = pulse;
   }
   read() { return { hz: this.hz }; }
+}
+
+/** A one-pole low-pass's coefficient for time constant `tau` seconds at this rate. */
+const pole = (tau: number, sampleRate: number) => 1 - Math.exp(-1 / (tau * sampleRate));
+
+/**
+ * Q Hiss: the junction's hiss (JUNCTION_RMS, white) through C1 into R2, then U1A's gain (one at DC, 1 + R4/R3 above
+ * R3 and C2's corner) rolled off where the gain meets the op-amp's bandwidth. The sample and hold tracks its input
+ * while the clock's edge, high-passed by C4 and R8 (D3 holding it above -0.6 V), stays over R9/R10's share of 12 V,
+ * and holds it after. S&H In is the noise while nothing is plugged in.
+ */
+class Noise implements Sim {
+  readonly ins = ["in", "clock"];
+  readonly outs = ["noise", "out"];
+  private readonly b = board("noise");
+  private readonly rand = mulberry32(0x5eed);
+  private readonly ac: number;
+  private readonly shelf: number;
+  private readonly gain: number;
+  private readonly top: number;
+  private readonly edge: number;
+  private readonly ref: number;
+  private own = true;
+  private dc = 0;
+  private lowAc = 0;
+  private lowTop = 0;
+  private trig = 0;
+  private lastClock = 0;
+  private held = 0;
+  private tracking = false;
+  constructor(private readonly sampleRate: number, _k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    this.ac = pole(r("R2") * r("C1"), sampleRate);
+    this.shelf = pole(r("R3") * r("C2"), sampleRate);
+    this.gain = r("R4") / r("R3");
+    this.top = pole((1 + this.gain) / (2 * Math.PI * GBW), sampleRate);
+    this.edge = Math.exp(-1 / (r("R8") * r("C4") * sampleRate));
+    this.ref = (SUPPLIES.V12 * r("R10")) / (r("R9") + r("R10"));
+  }
+  knobs(_k: Record<string, number>) {}
+  plugged(ins: boolean[]) { this.own = !ins[0]; }
+  /** White noise, JUNCTION_RMS rms (Box-Muller). */
+  private hiss(): number {
+    const u = 1 - this.rand(), v = this.rand();
+    return JUNCTION_RMS * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  step(x: Float64Array, y: Float64Array) {
+    // C1 into R2 takes off the junction's DC; U1A gains its highs by 1 + R4/R3.
+    const j = this.hiss();
+    this.dc += this.ac * (j - this.dc);
+    const a = j - this.dc;
+    this.lowAc += this.shelf * (a - this.lowAc);
+    const amp = a + this.gain * (a - this.lowAc);
+    this.lowTop += this.top * (amp - this.lowTop);
+    const noise = this.lowTop > RAIL ? RAIL : this.lowTop < -RAIL ? -RAIL : this.lowTop;
+    y[0] = noise;
+    // The clock's edge, high-passed and clamped, against the threshold.
+    const c = x[1];
+    this.trig = Math.max(-DIODE, this.edge * (this.trig + c - this.lastClock));
+    this.lastClock = c;
+    this.tracking = this.trig > this.ref;
+    if (this.tracking) this.held = this.own ? noise : x[0];
+    y[1] = this.held > RAIL ? RAIL : this.held < -RAIL ? -RAIL : this.held;
+  }
+  read() { return { held: this.held, tracking: this.tracking ? 1 : 0, threshold: this.ref }; }
 }
 
 /** Q Wobble: the Schmitt trigger and integrator's rate and levels from R1, Rate, C1 and the divider R2/R3. */
@@ -414,6 +491,7 @@ export function makeSim(kind: string, sampleRate: number, knobs: Record<string, 
     case "env": return new Env(sampleRate, knobs);
     case "vca": return new Vca(sampleRate, knobs);
     case "vcf": return new Vcf(sampleRate, knobs);
+    case "noise": return new Noise(sampleRate, knobs);
     case "mix": case "out": return new Linear(kind, knobs);
   }
   throw new Error(`no sound wall module ${kind}`);
