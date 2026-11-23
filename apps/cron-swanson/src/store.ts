@@ -6,7 +6,7 @@ import { Job, Run, type Stats } from "./api.ts";
 
 const KEEP_RUNS = 200;
 /** A reminder nobody ticked off within this long (or before its job fired again) counts as ignored. */
-export const IGNORE_AFTER_MS = 60 * 60_000;
+const IGNORE_AFTER_MS = 60 * 60_000;
 
 interface RunRow { id: number; job_id: string; scheduled_at: number; fired_at: number; manual: number; status: string; code: number | null; ms: number | null; error: string; done_at: number | null }
 
