@@ -36,14 +36,14 @@
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
-import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, check, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
 import { classify, dial, readVerdicts, recordVerdict, tierLine, type Tier } from "./ci-tier.ts";
 
-/** A row of ci-apps' matrix: one without an app, test and prep isn't a job. */
+/** A row of ci-apps' matrix: one without an app, test and prep isn't a job. A group row ("borg+qcrm") runs from `dir`, the root. */
 const line = str(Infinity, { min: 0 });
-const Row = obj({ app: line, test: line, prep: line, boot: (v: unknown) => v === true, shard: (v: unknown) => (typeof v === "string" ? v : "") });
+const Row = obj({ app: line, test: line, prep: line, boot: (v: unknown) => v === true, shard: (v: unknown) => (typeof v === "string" ? v : ""), dir: opt(line) });
 export type Job = Of<typeof Row>;
 
 // The `apps=` line of `ci-apps.ts test`: the apps with a test command or a boot check.
@@ -231,7 +231,7 @@ type RemoteJob = { label: string; dir: string; cmd: string };
  */
 export function ciJobs(out: string, all = false): RemoteJob[] {
   const apps = parseJobs(out).flatMap((j) => {
-    const dir = appDir(j.app);
+    const dir = j.dir || appDir(j.app);
     const steps = [j.test, all && j.boot ? `bun ${upFrom(dir)}scripts/boot.ts` : ""].filter(Boolean);
     // A shard's label is the test swarm's suite name for it ("codesplitter:2/3").
     return steps.length ? [{ label: j.shard ? `${j.app}:${j.shard}` : j.app, dir, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
@@ -259,7 +259,7 @@ export function targetedJobs(out: string, files: string[]): RemoteJob[] {
   const whole = ciJobs(out);
   const seen = new Set<string>();
   return parseJobs(out).flatMap((j) => {
-    const dir = appDir(j.app);
+    const dir = j.dir || appDir(j.app);
     const tests = files.filter((f) => f.startsWith(`${dir}/`) && /\.test\.[cm]?[jt]sx?$/.test(f)).map((f) => `./${relative(dir, f)}`);
     const label = j.shard ? `${j.app}:${j.shard}` : j.app;
     if (!tests.length) return whole.filter((r) => r.label === label);
