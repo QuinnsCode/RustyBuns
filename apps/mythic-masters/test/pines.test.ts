@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SECTIONS } from "../src/journey.ts";
 import { POIS } from "../src/world/poi.ts";
-import { cleared, inBuilding, lineDist, PINE_N, PUDDLES, SIGHTS } from "../src/world/pines.ts";
+import { cleared, inBuilding, lineDist, PINE_N, PUDDLES, RUTS, SIGHTS } from "../src/world/pines.ts";
 import { newTrek, TRAILS, trek } from "../src/world/trail.ts";
 import { spawn, type Walker } from "../src/world/world.ts";
 import { DAY, weather } from "../src/world/nature.ts";
@@ -9,8 +9,8 @@ import { DAY, weather } from "../src/world/nature.ts";
 const trail = TRAILS.get(PINE_N)!;
 
 describe("the Pine Barrens' landmarks", () => {
-  test("Batsto, the fire tower and the bogs stand by their own sections, off the trail and clear of the other places", () => {
-    expect(SIGHTS.map((s) => [s.id, s.k])).toEqual([["batsto", 0], ["fire-tower", 4], ["bogs", 6]]);
+  test("Batsto, Atsion Lake, the fire tower and the bogs stand by their own sections, off the trail and clear of the other places", () => {
+    expect(SIGHTS.map((s) => [s.id, s.k])).toEqual([["batsto", 0], ["atsion", 2], ["fire-tower", 4], ["bogs", 6]]);
     for (const s of SIGHTS) {
       const stone = trail.stones[s.k]!;
       expect([s.id, Math.hypot(s.x - stone.x, s.z - stone.z) < 250]).toEqual([s.id, true]);
@@ -21,6 +21,13 @@ describe("the Pine Barrens' landmarks", () => {
     }
     expect(cleared(trail.stones[2]!.x, trail.stones[2]!.z)).toBe(false);
     expect(PUDDLES.length).toBeGreaterThan(40);
+    // two wheel ruts run the length of the sand road: a stretch every few metres on each side
+    expect(RUTS.length).toBeGreaterThan((trail.length / 3) * 1.5);
+    // Atsion's white cedars stand round its lake, none in the water
+    const atsion = SIGHTS.find((s) => s.id === "atsion")!, lake = atsion.parts.find((p) => p.kind === "lake")!, cedars = atsion.parts.filter((p) => p.kind === "cedar");
+    expect(cedars.length).toBeGreaterThan(20);
+    const co = Math.cos(lake.yaw), sn = Math.sin(lake.yaw);
+    for (const c of cedars) { const dx = c.x - lake.x, dz = c.z - lake.z; expect(Math.hypot((dx * co - dz * sn) / (lake.w / 2), (dx * sn + dz * co) / (lake.d / 2))).toBeGreaterThan(1); }
   });
 
   test("walking at Batsto's mansion, you stop at its wall", () => {

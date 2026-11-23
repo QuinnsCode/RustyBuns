@@ -23,8 +23,8 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S2 | every playable region's world names all 7 senses (place, life, weather, sound, people, history, craft) | 100% | 1.00 |
 | S3 | written beats tied to another arc (40% is full marks) | 100% | 1.00 |
 | S4 | written beats the game plays (built) | 20% | 0.20 |
-| S5 | world wants the game has (built) | 16% | 0.16 |
-| | **total** | | **3.36 of 5** |
+| S5 | world wants the game has (built) | 21% | 0.21 |
+| | **total** | | **3.41 of 5** |
 
 ## Where the game disagrees with itself
 
@@ -96,8 +96,12 @@ Region 1, from level 2.
 - [x] place: Apple Pie Hill's steel fire tower with a cab on top, the only high point for miles, the Batona Trail passing its foot.
 - [x] place: Sugar-sand roads: white, soft and deep-rutted, with the pines close on both sides and puddles the colour of tea.
 - [x] place: Cranberry bogs in rows behind low dykes and sluice gates, flooded red at harvest.
-- [ ] place: Deep ruts in the sugar-sand roads, bright white where the wheels wore through.
-- [ ] life: Pitch pines with fire-blackened bark and new tufts growing straight from the trunk, scrub oak under them, Atlantic white cedar in the wet ground.
+- [x] place: Atsion Lake: cedar water the colour of strong tea, a sand beach and a dock, white cedars dark round the far shore.
+- [x] place: Rivers and streams the colour of tea from the cedar swamps, running out dark into the bay.
+- [x] place: Two soft wheel ruts down every sugar-sand road, packed darker than the loose white sand of the crown.
+- [x] life: Short, crooked pitch pines, none much over ten metres, standing open over waist-high scrub oak and huckleberry.
+- [x] life: Atlantic white cedar, dark and close, only where the ground is wet: along the streams and round the lakes.
+- [ ] life: Pitch pine bark blackened by old fires, with new tufts of needles growing straight from the trunk.
 - [ ] life: The Pine Barrens tree frog (green with a lavender stripe), northern pine snakes, deer, turkey vultures over the plains.
 - [x] weather: Summer thunderstorms that roll in at dusk.
 - [ ] weather: Spring smoke from controlled burns lying low in the pines.

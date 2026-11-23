@@ -623,8 +623,29 @@
           "status": "built"
         },
         {
+          "kind": "place",
+          "what": "Atsion Lake: cedar water the colour of strong tea, a sand beach and a dock, white cedars dark round the far shore.",
+          "at": "section:1:2",
+          "status": "built"
+        },
+        {
+          "kind": "place",
+          "what": "Rivers and streams the colour of tea from the cedar swamps, running out dark into the bay.",
+          "status": "built"
+        },
+        {
           "kind": "life",
-          "what": "Pitch pines with fire-blackened bark and new tufts growing straight from the trunk, scrub oak under them, Atlantic white cedar in the wet ground.",
+          "what": "Short, crooked pitch pines, none much over ten metres, standing open over waist-high scrub oak and huckleberry.",
+          "status": "built"
+        },
+        {
+          "kind": "life",
+          "what": "Atlantic white cedar, dark and close, only where the ground is wet: along the streams and round the lakes.",
+          "status": "built"
+        },
+        {
+          "kind": "life",
+          "what": "Pitch pine bark blackened by old fires, with new tufts of needles growing straight from the trunk.",
           "status": "idea"
         },
         {
@@ -670,8 +691,8 @@
         },
         {
           "kind": "place",
-          "what": "Deep ruts in the sugar-sand roads, bright white where the wheels wore through.",
-          "status": "idea"
+          "what": "Two soft wheel ruts down every sugar-sand road, packed darker than the loose white sand of the crown.",
+          "status": "built"
         }
       ]
     },
