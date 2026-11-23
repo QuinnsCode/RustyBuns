@@ -1,7 +1,8 @@
 // The decks' mixer in headless Chrome (scripts/chrome.ts) on /decks.html, a DJ's first minute on it: deck A plays
 // into channel 2 and out of the master; a wheel turn on channel 2's LOW knob kills the bass and a double-click puts it
 // back; filter 1 assigned and swept shut all but silences the channel; the crossfader slammed to Y drops A (on X) out of the
-// master until its assign goes to THRU. On a phone the booth doesn't scroll sideways and both filters' sweep knobs are on screen.
+// master until its assign goes to THRU. On a phone the booth doesn't scroll sideways, both filters' sweep knobs are on screen,
+// and the A tab swings the carousel over to deck A with its whole platter in view.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -39,6 +40,9 @@ test.skipIf(!hasChrome)("deck A through channel 2: kill, filter, crossfader assi
   await until("the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
   const s0 = await page<{ channels: { xf: string }[] }>("qdecks.state()");
   expect(s0.channels.map((c) => c.xf)).toEqual(["off", "x", "y", "off"]);
+  // a laptop screen holds the whole booth without scrolling: both PLAY buttons and both filters' sweeps in view
+  const inView = await page<boolean[]>(`[...document.querySelectorAll(".dj-play, .mx-l .mx-dial")].map((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })`);
+  expect(inView).toEqual([true, true, true, true]);
   await page("qdecks.play(0)");
   await until("A in channel 2 and the master", "qdecks.state().meters.channels[1] > 0.05 && qdecks.state().meters.master[0] > 0.05");
   expect(await loudest("channels[2]")).toBeLessThan(0.01); // B isn't playing
@@ -77,4 +81,11 @@ test.skipIf(!hasChrome)("deck A through channel 2: kill, filter, crossfader assi
   expect(fit.dj).toBeLessThanOrEqual(fit.djW + 1);
   expect(fit.freq.length).toBe(2);
   for (const [l, r] of fit.freq) { expect(l).toBeGreaterThanOrEqual(0); expect(r).toBeLessThanOrEqual(390); }
+  // the phone's carousel opens on the mixer; the A tab brings deck A's platter across, whole on the screen
+  expect(await phone.eval<number | null>("qdecks.state().carousel")).toBe(1);
+  await phone.eval(`document.querySelector('.dj-tabs button[aria-label="Deck A"]').click()`);
+  for (const end = Date.now() + 5000; Date.now() < end && !(await phone.eval<boolean>("document.querySelector('.dj-row').scrollLeft < 1")); ) await Bun.sleep(50);
+  expect(await phone.eval<number | null>("qdecks.state().carousel")).toBe(0);
+  const wheel = await phone.eval<number[]>(`(() => { const r = document.querySelector(".dj-a .dj-wheel").getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.width)]; })()`);
+  expect(wheel[0]).toBeGreaterThanOrEqual(0); expect(wheel[1]).toBeLessThanOrEqual(390); expect(wheel[2]).toBeGreaterThan(250);
 });

@@ -294,17 +294,18 @@ function thing(s: Spot): THREE.Group {
       // the cloth falls to the sand down the front and both ends, so the crowd sees only the tapestry (the DJ's side is open)
       const drop = t.h - 0.01, cloak = (w: number, seed: number) => new THREE.MeshStandardMaterial({ map: tapestry(w, drop, seed), roughness: 0.95, side: THREE.DoubleSide });
       const weave = cloak(t.w, def.outdoor.seed), ends = cloak(t.d, def.outdoor.seed + 3);
-      box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0);
+      boothGear.addRest(box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0));
       put(new THREE.Mesh(new THREE.PlaneGeometry(t.w + 0.02, drop), weave), 0, t.h - drop / 2, -t.d / 2 - 0.012).rotation.y = Math.PI;
       for (const k of [-1, 1]) put(new THREE.Mesh(new THREE.PlaneGeometry(t.d + 0.02, drop), ends), k * (t.w / 2 + 0.012), t.h - drop / 2, 0).rotation.y = k * Math.PI / 2;
     } else {
-      box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
+      boothGear.addRest(box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0));
       box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
       for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
     }
     const front = t.d / 2 - 0.08;
     const mixer = gearModel("mixer-club-4", { look });
     put(mixer, 0, top, front - 0.358 / 2);
+    boothGear.addRest(mixer);
     for (const side of [-1, 1]) {
       const deck = gearModel("deck-cd", { look });
       put(deck, side * (0.32 / 2 + 0.03 + 0.32 / 2), top, front - 0.405 / 2);
@@ -882,7 +883,7 @@ function deckView(side: Side): DeckView | null {
   const t = booth.sides[side];
   return t ? farView(t, roomNow(), jam.others.get(t.owner)?.name || "Someone", waveFrom(t.say.wave)) : null;
 }
-/** A click or tap on the DJ table's decks: a key presses (cue held while the button is), the screen or jog opens the decks. */
+/** A click or tap on the DJ table: a deck's key presses it (cue held while the button is), and anywhere on it opens the whole setup, both decks and the mixer. */
 let heldCue: Side | null = null;
 function touchDecks(e: MouseEvent): boolean {
   const seat = spotOf(jam, jam.me.seat);
@@ -890,10 +891,10 @@ function touchDecks(e: MouseEvent): boolean {
   const ndc = locked() ? new THREE.Vector2(0, 0) : new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   const hit = boothGear.hit(ndc, camera);
   if (!hit) return false;
-  if (hit.key === "screen" || hit.key === "jog") { void openDecks(); return true; }
   const key = hit.key;
   void deckPanel().then((d) => {
-    if (!d.decks.decks[hit.side].track && !booth.sides[hit.side]) return void d.open();
+    d.open();
+    if (key === "screen" || key === "jog" || key === "open" || (!d.decks.decks[hit.side].track && !booth.sides[hit.side])) return;
     if (key === "cueDown") heldCue = hit.side;
     d.press(hit.side, key);
   });

@@ -13,4 +13,4 @@ export const button = (icon: string, title: string, cls = "") => el("button", { 
 export const slider = (label: string, min: number, max: number, step: number, value: number, cls = "") =>
   el("input", { type: "range", min: String(min), max: String(max), step: String(step), value: String(value), "aria-label": label, title: label, class: cls });
 /** A lucide-style icon (ISC) from its path markup. */
-export const svg = (body: string) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+export const svg = (body: string, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;

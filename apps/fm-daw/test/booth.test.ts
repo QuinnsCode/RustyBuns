@@ -1,11 +1,13 @@
 // The DJ booth (src/dj/booth.ts) on a back-to-back night: one DJ loads a track and its key is read from the sound;
 // what's on the deck goes over the live line, through the World's guard, to the other DJ, who sees it move on the
 // room's shared clock, presses it, scratches it from their own jog wheel, and can't load over it while it plays.
-// And a tap on the 3D deck finds its key.
+// And a tap on the 3D deck finds its key, and a tap anywhere else on the table opens the whole setup.
 import { expect, test } from "bun:test";
 import { camelot, keyOf } from "../src/dj/analyze.ts";
 import { Booth, changed, deckKeyAt, DECK_KEYS, JOG_HELD_MS, JOG_SEND_MS, JogOut, posAt, sayOf, waveFrom, waveOf, type DeckPress, type DeckSay, type JogSent } from "../src/dj/booth.ts";
 import type { DeckState } from "../src/dj/engine.ts";
+import { BoothGear } from "../src/studio/booth-3d.ts";
+import * as THREE from "three";
 import { decodeClient, decodeServer } from "../src/project.ts";
 
 const RATE = 22050;
@@ -81,6 +83,25 @@ test("a tap on the 3D deck finds the key under it", () => {
   const k = DECK_KEYS;
   expect([deckKeyAt(...k.play), deckKeyAt(...k.cue), deckKeyAt(k.hot.x0 + 2 * k.hot.gap, k.hot.z), deckKeyAt(0, k.jog.z + 0.05), deckKeyAt(0, k.screen.z - 0.03), deckKeyAt(0.16, 0.22)])
     .toEqual(["play", "cueDown", "hot3", "jog", "screen", null]);
+});
+
+test("a click anywhere on the DJ table opens the decks; a key on a deck still presses", () => {
+  // deck A, the mixer and deck B side by side on a table, looked at from straight above
+  const k = DECK_KEYS, gear = new BoothGear(), table = new THREE.Group();
+  const slab = (w: number, d: number, x: number, y: number) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.02, d)); m.position.set(x, y, 0); table.add(m); return m; };
+  const deckAt = [-0.36, 0.36] as const;
+  const decks = deckAt.map((x) => { const g = new THREE.Group(); g.position.set(x, 0.9, 0); g.add(new THREE.Mesh(new THREE.BoxGeometry(k.size[0], 0.06, k.size[1]).translate(0, -0.03, 0))); table.add(g); return g; });
+  const mixer = slab(0.32, 0.36, 0, 0.89), top = slab(1.2, 0.6, 0, 0.85);
+  table.updateMatrixWorld(true);
+  decks.forEach((g, side) => gear.add(g, side === 0 ? 0 : 1));
+  gear.addRest(mixer); gear.addRest(top);
+  const tap = (x: number, z: number) => {
+    const cam = new THREE.PerspectiveCamera(60, 1, 0.01, 10);
+    cam.position.set(x, 1.8, z); cam.lookAt(x, 0, z); cam.updateMatrixWorld(true);
+    return gear.hit(new THREE.Vector2(0, 0), cam);
+  };
+  expect([tap(deckAt[0] + k.play[0], k.play[1]), tap(deckAt[1] + k.play[0], k.play[1]), tap(0, 0), tap(0.58, 0.25), tap(deckAt[0] + 0.15, 0.21), tap(3, 3)])
+    .toEqual([{ side: 0, key: "play" }, { side: 1, key: "play" }, { side: 0, key: "open" }, { side: 0, key: "open" }, { side: 0, key: "open" }, null]);
 });
 
 test("a scratch on the other DJ's deck: the platter held, a second of turns at 60 a frame sent in batches, let go", () => {

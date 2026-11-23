@@ -115,6 +115,8 @@ export interface PlayerHost {
   turn(part: JogPart, turns: number): void;
   /** Someone else's deck on this side, as its screen shows it (null: yours or free). */
   theirs(): DeckView | null;
+  /** A YouTube video on this deck (youtube.ts), as its screen shows it, with its hot cues (null: none). */
+  tube(): (DeckView & { hot: readonly (number | null)[]; cueHeld: boolean }) | null;
   /** Draw the whole track on the screen's overview. */
   paintOverview(c: HTMLCanvasElement, v: DeckView | null): void;
   /** A file dropped on the player. */
@@ -127,6 +129,11 @@ export function playerFace(h: PlayerHost) {
   const box = el("div", { class: `dj-deck dj-${side ? "b" : "a"}` });
   const name = el("div", { class: "dj-name" }, letter);
   const info = el("div", { class: "dj-info" });
+  const top = el("div", { class: "dj-top" });
+  top.append(name, info);
+  // a YouTube video's player sits here while one is on (the panel fills it)
+  const video = el("div", { class: "dj-video" });
+  video.hidden = true;
   const overview = el("canvas", { class: "dj-over", width: "600", height: "56", "aria-label": `Deck ${letter}: the whole track, click to jump` });
   overview.addEventListener("pointerdown", (e) => {
     const r = overview.getBoundingClientRect();
@@ -210,7 +217,7 @@ export function playerFace(h: PlayerHost) {
   controls.append(pads, jogRow, transport);
   const body = el("div", { class: "dj-body" });
   body.append(side ? pitchCol : controls, side ? controls : pitchCol);
-  box.append(name, info, overview, body);
+  box.append(top, overview, video, body);
   box.addEventListener("dragover", (e) => { e.preventDefault(); box.classList.add("over"); });
   box.addEventListener("dragleave", () => box.classList.remove("over"));
   box.addEventListener("drop", (e) => { e.preventDefault(); box.classList.remove("over"); const f = e.dataTransfer?.files[0]; if (f) h.drop(f); });
@@ -255,12 +262,31 @@ export function playerFace(h: PlayerHost) {
 
   return {
     box,
+    video,
     draw(now: number) {
       jog.tick(now);
-      const v = h.theirs();
-      box.classList.toggle("far", !!v);
+      const theirs = h.theirs(), tube = theirs ? null : h.tube(), v = theirs ?? tube;
+      box.classList.toggle("far", !!theirs);
+      box.classList.toggle("tube", !!tube);
       mode.textContent = jog.mode === "vinyl" ? "VINYL" : "CD";
       mode.classList.toggle("on", jog.mode === "vinyl");
+      if (tube) {
+        // a YouTube video: its player on the deck, the pitch fader its speed, the cue and hot cues on its clock
+        const s = d.state();
+        name.textContent = `${letter}  ${tube.name ?? "YouTube"}`;
+        info.textContent = `${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(tube.pos)}  -${clock(Math.max(0, tube.len - tube.pos))}  · YouTube`;
+        info.title = "";
+        play.innerHTML = tube.playing ? ICON.pause : ICON.play;
+        play.classList.toggle("on", tube.playing);
+        cue.classList.toggle("on", tube.cueHeld);
+        sync.classList.remove("on");
+        range.textContent = `±${s.range}`;
+        if (document.activeElement !== pitch) pitch.value = String(s.pitch);
+        hots.forEach((b, i) => b.classList.toggle("set", tube.hot[i] != null));
+        h.paintOverview(overview, tube);
+        drawWheel(tube.pos, tube.len, tube.cue, tube.playing);
+        return;
+      }
       if (v) {
         // someone else's deck: what they said, where it is now on the room's clock; their buttons go to them
         name.textContent = `${letter}  ${v.name ?? ""}`;
