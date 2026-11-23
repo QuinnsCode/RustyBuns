@@ -65,11 +65,22 @@ export const Run = obj({
   code: nul(int(0, 999)),
   ms: nul(TIME),
   error: str(500, { min: 0, dflt: "" }),
+  /** When a reminder was ticked off on the page, or null. One left unticked an hour, or past its job's next firing, counts as ignored. */
+  doneAt: nul(TIME),
 });
 export type Run = Of<typeof Run>;
 
+const COUNT = int(0, Number.MAX_SAFE_INTEGER);
+
+/**
+ * A job's track record over its kept runs: how often it fired, how often it was ticked off, how often a reminder
+ * was let slide, and when it was last ticked off or fired. The page sorts by these (most ignored, idle longest).
+ */
+export const Stats = obj({ fired: COUNT, done: COUNT, ignored: COUNT, lastDoneAt: nul(TIME), lastFiredAt: nul(TIME) });
+export type Stats = Of<typeof Stats>;
+
 /** GET /api/jobs: every job with its last run, the latest runs across all of them, the server's clock, and the relay's socket URL when there is one. */
-export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run) }), 10_000), runs: arr(Run, 1000), now: TIME, live: nul(str(2000)) });
+export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run), stats: Stats }), 10_000), runs: arr(Run, 1000), now: TIME, live: nul(str(2000)) });
 export type JobsReply = Of<typeof JobsReply>;
 
 const { app: _app, enabled: _enabled, ...DECLARED } = INPUT;

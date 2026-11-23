@@ -81,8 +81,9 @@ function route(store: Store, o: Options, now: () => number, send: Deliver): (req
     if (o.token && !sameToken(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", o.token)) return refuse("token needed", 401);
 
     if (path === "/api/jobs" && req.method === "GET") {
-      const last = store.lastRuns();
-      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null })), runs: store.runs(100), now: now(), live: o.live ?? null };
+      const last = store.lastRuns(), stats = store.stats(now());
+      const none = { fired: 0, done: 0, ignored: 0, lastDoneAt: null, lastFiredAt: null };
+      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null, stats: stats.get(job.id) ?? none })), runs: store.runs(100), now: now(), live: o.live ?? null };
       return privateJson(reply);
     }
     if (path === "/api/jobs" && req.method === "POST") {
@@ -92,6 +93,12 @@ function route(store: Store, o: Options, now: () => number, send: Deliver): (req
       const job = plan({ ...input, id: crypto.randomUUID(), key: "", createdAt: t, updatedAt: t, anchor: t, nextAt: null }, t);
       store.put(job);
       return privateJson(job, 201);
+    }
+
+    const tick = /^\/api\/runs\/(\d{1,15})\/done$/.exec(path);
+    if (tick && req.method === "POST") {
+      const run = store.done(Number(tick[1]), now());
+      return run ? privateJson(run) : refuse("no such run", 404);
     }
 
     const own = APP.exec(path);

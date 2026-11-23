@@ -86,7 +86,7 @@ em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums
 .empty { text-align: center; color: var(--muted); padding: 60px 0; }
 
 .runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--soft); }
+.run { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--soft); }
 .run .what { overflow: hidden; }
 .run b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .run small { color: var(--muted); }
@@ -130,7 +130,17 @@ legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); }
   .apps { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
   .main { padding: 16px; }
+  .bar { flex-wrap: wrap; } .search { flex-basis: 100%; min-height: 38px; } .sort { margin-right: auto; }
   .job { grid-template-columns: auto minmax(0, 1fr) auto; }
   .job .acts { grid-column: 2 / -1; justify-content: flex-end; }
   .grid { grid-template-columns: 1fr; }
 }
+
+/* Orders, desktop alerts, and ticking reminders off */
+.sort select { width: auto; padding: 8px 10px; border-radius: 10px; background: var(--panel); }
+button.alerts.on { color: var(--accent); }
+.record { color: var(--muted); font-size: 12px; }
+.record .ignored { color: var(--bad); font-weight: 600; }
+button.ghost.done { color: var(--accent); }
+.ticked { color: var(--muted); display: inline-flex; }
+.run.is-done .what b { text-decoration: line-through; color: var(--muted); }

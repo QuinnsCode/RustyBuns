@@ -11,7 +11,9 @@ tags. Its engine, **bacron**, ticks on each minute boundary and fires on time to
 **Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
 
 **How to use:** pick an app on the side, add a job, and say when it runs ("weekdays at 09:00") and why it is there.
-Each job shows when it runs next, and tags and search find it again.
+Each job shows when it runs next, and tags and search find it again. Tick a reminder off (the check) when you've
+done it; the order menu sorts by next up, shortest interval, done most, fired most, ignored most or idle longest.
+The bell in the top bar turns on desktop alerts: each reminder pops up as a system notification while a tab is open.
 
 **Account:** not needed.
 
@@ -28,6 +30,11 @@ Each job shows when it runs next, and tags and search find it again.
   job or a run the moment it happens. Without it, pages fetch again just after each minute.
 - **Reminders that reach you**: with an [ntfy](https://ntfy.sh) topic set, a reminder pings the phone at its minute
   (its app and name as the title, its why or note as the text). A push that fails says so on the run.
+- **Done or ignored**: tick a reminder off on its row or in Recent runs. One left unticked for an hour, or until
+  its job fires again, counts as ignored. Each job shows how often it fired, was done and was ignored (over its
+  last 200 runs), and the order menu sorts by those, or by how long since it was last any use.
+- **Desktop alerts**: the bell asks the browser for notifications; then each new reminder pops up on this computer
+  while a Cron Swanson tab is open (ntfy, below, covers the phone and a closed laptop).
 - **Drift you can see**: each run records how far it was off its minute. A job due while the box was down fires
   once when it's back, marked late, and then goes on from now.
 
@@ -87,11 +94,12 @@ repo's own `packages/`), not the whole repo's 4 GB.
 | Route | Does |
 | --- | --- |
 | `GET /api/health` | `{ ok, now }`, open without a token. |
-| `GET /api/jobs` | Every job with its last run, the latest 100 runs, the server's clock, and `live`: the relay's socket URL or null. |
+| `GET /api/jobs` | Every job with its last run and its `stats` (`fired`, `done`, `ignored`, `lastDoneAt`, `lastFiredAt`), the latest 100 runs, the server's clock, and `live`: the relay's socket URL or null. |
 | `POST /api/jobs` | Makes a job: `{ app, name, why?, note?, tags, cadence, tz, action, enabled? }`. |
 | `PUT /api/jobs/:id` | Changes one (same body). A new cadence restarts its "every" count. |
 | `DELETE /api/jobs/:id` | Deletes it and its runs. |
 | `POST /api/jobs/:id/run` | Fires it now, logged as by hand. |
+| `POST /api/runs/:id/done` | Ticks a reminder off (`doneAt`); a second tick keeps the first time. |
 | `GET /api/jobs/:id/runs` | Its last runs (`?limit=`, up to 200). |
 | `PUT /api/apps/:app/jobs` | Matches the app's listed jobs to `{ jobs: [{ key, name, cadence, tz, tags, action, why?, note? }] }`: new keys added, changed ones updated, missing ones deleted. Jobs made by hand, and pauses made on the page, stay. Says `{ added, changed, removed, same }`. |
 

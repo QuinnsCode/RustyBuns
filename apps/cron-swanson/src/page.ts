@@ -6,7 +6,7 @@ import { Bad } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { LiveMsg, PROTOCOL } from "./live.ts";
-import { createElement, AlarmClock, Bell, Check, Cloud, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
+import { createElement, AlarmClock, Bell, BellOff, BellRing, Check, CircleCheck, Cloud, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
 import { Job, JobInput, JobsReply, Refusal, type Run } from "./api.ts";
 
@@ -23,8 +23,64 @@ const auth = (): Record<string, string> => (token ? { authorization: `Bearer ${t
 // ---- state ----
 
 type Row = JobsReply["jobs"][number];
-const state = { rows: [] as Row[], runs: [] as Run[], skew: 0, app: null as string | null, lane: "all" as Flow | "all", tag: null as string | null, q: "" };
+const state = { rows: [] as Row[], runs: [] as Run[], skew: 0, app: null as string | null, lane: "all" as Flow | "all", tag: null as string | null, q: "", sort: "next" as Sort };
 const serverNow = () => Date.now() + state.skew;
+
+// ---- sorts ----
+
+// Next up keeps the apps as groups; every other order is one list, so the top of it is the answer.
+const SORTS = { next: "Next up", interval: "Shortest interval", done: "Done most", fired: "Fired most", ignored: "Ignored most", idle: "Idle longest" } as const;
+type Sort = keyof typeof SORTS;
+const isSort = (v: unknown): v is Sort => typeof v === "string" && Object.hasOwn(SORTS, v);
+const SORT_KEY = "cron-swanson-sort";
+try { const v = localStorage.getItem(SORT_KEY); if (isSort(v)) state.sort = v; } catch { /* private window */ }
+
+/** How far apart its next two runs are (a one-off sorts last). */
+function period(j: Job): number {
+  const [a, b] = upcoming(j.cadence, serverNow(), j.tz, 2, j.anchor);
+  return a !== undefined && b !== undefined ? b - a : Infinity;
+}
+
+/** When it last earned its keep: ticked off, else fired, else made. Idle longest is the oldest of these. */
+const lastUsed = (r: Row) => r.stats.lastDoneAt ?? r.stats.lastFiredAt ?? r.job.createdAt;
+
+const nextAt = (r: Row) => r.job.nextAt ?? Infinity;
+const ORDER: Record<Sort, (a: Row, b: Row) => number> = {
+  next: (a, b) => nextAt(a) - nextAt(b),
+  interval: (a, b) => period(a.job) - period(b.job) || nextAt(a) - nextAt(b),
+  done: (a, b) => b.stats.done - a.stats.done || nextAt(a) - nextAt(b),
+  fired: (a, b) => b.stats.fired - a.stats.fired || nextAt(a) - nextAt(b),
+  ignored: (a, b) => b.stats.ignored - a.stats.ignored || nextAt(a) - nextAt(b),
+  idle: (a, b) => lastUsed(a) - lastUsed(b),
+};
+
+// ---- desktop alerts ----
+
+// The page's own system notifications: each new reminder pops up on this computer while a tab is open
+// (ntfy covers the phone and a closed laptop). The first load only marks what's already there as seen.
+let seen = -1;
+const canAlert = () => "Notification" in window && Notification.permission === "granted";
+function alertNew(runs: Run[]) {
+  const top = runs.reduce((m, r) => Math.max(m, r.id), 0);
+  if (seen >= 0 && canAlert()) {
+    const names = new Map(state.rows.map((r) => [r.job.id, r.job]));
+    for (const r of runs.filter((r) => r.id > seen && r.status === "reminded").reverse()) {
+      const j = names.get(r.jobId);
+      if (!j) continue;
+      const n = new Notification(`${j.app}: ${j.name}`, { body: j.why || j.note || describe(j.cadence), tag: `cron-swanson-${r.id}` });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  }
+  seen = Math.max(seen, top);
+}
+function paintAlerts() {
+  const el = $("alerts");
+  if (!("Notification" in window)) { el.hidden = true; return; }
+  const p = Notification.permission;
+  el.innerHTML = icon(p === "granted" ? BellRing : BellOff);
+  el.title = p === "granted" ? "Desktop alerts on" : p === "denied" ? "Desktop alerts blocked: allow notifications for this site" : "Turn on desktop alerts";
+  el.classList.toggle("on", p === "granted");
+}
 
 const LANE_LABEL: Record<Flow | "all", string> = { all: "All", async: "Async", daily: "Daily", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
 
@@ -38,6 +94,7 @@ async function load() {
   state.rows = data.jobs;
   state.runs = data.runs;
   state.skew = data.now - Date.now();
+  alertNew(data.runs);
   render();
   if (data.live && !link) goLive(data.live);
 }
@@ -108,17 +165,20 @@ function render() {
   $("flows").innerHTML = (["all", ...FLOWS] as const).map((f) =>
     `<button type="button" data-lane="${f}" class="lane lane-${f} ${state.lane === f ? "on" : ""}"><i></i>${LANE_LABEL[f]}<em>${f === "all" ? inView : lanes.get(f) ?? 0}</em></button>`).join("");
 
-  const shown = all.filter((r) => matches(r)).sort((a, b) => (a.job.nextAt ?? Infinity) - (b.job.nextAt ?? Infinity));
-  const groups = state.app ? [[state.app, shown] as const] : [...Map.groupBy(shown, (r) => r.job.app)].sort(([a], [b]) => a.localeCompare(b));
+  const shown = all.filter((r) => matches(r)).sort(ORDER[state.sort]);
+  const groups = state.app || state.sort !== "next" ? [[state.app ?? "", shown] as const] : [...Map.groupBy(shown, (r) => r.job.app)].sort(([a], [b]) => a.localeCompare(b));
   $("list").innerHTML = shown.length
-    ? groups.map(([app, rows]) => `${state.app ? "" : `<h2 class="group">${esc(app)}<em>${rows.length}</em></h2>`}<ul class="jobs">${rows.map(jobRow).join("")}</ul>`).join("")
+    ? groups.map(([app, rows]) => `${state.app || state.sort !== "next" ? "" : `<h2 class="group">${esc(app)}<em>${rows.length}</em></h2>`}<ul class="jobs">${rows.map(jobRow).join("")}</ul>`).join("")
     : `<div class="empty">${icon(AlarmClock, 28)}<p>${all.length ? "Nothing matches." : "No jobs yet. Make one with New."}</p></div>`;
 
   const names = new Map(all.map((r) => [r.job.id, r.job]));
   $("runs").innerHTML = state.runs.length ? state.runs.slice(0, 60).map((r) => {
     const j = names.get(r.jobId);
-    return `<li class="run run-${r.status}" title="${esc(r.error || (r.code ? `HTTP ${r.code}` : r.status))}">${icon(STATUS_ICON[r.status], 14)}
-      <span class="what"><b>${esc(j?.name ?? "deleted job")}</b><small>${esc(j?.app ?? "")} · ${clock(r.firedAt)}</small></span><span class="num">${drift(r)}</span></li>`;
+    const tick = r.status !== "reminded" ? "" : r.doneAt !== null
+      ? `<span class="ticked" title="Done ${esc(clock(r.doneAt))}">${icon(CircleCheck, 14)}</span>`
+      : `<button type="button" class="ghost" data-done="${r.id}" title="Done">${icon(Check, 14)}</button>`;
+    return `<li class="run run-${r.status} ${r.doneAt !== null ? "is-done" : ""}" title="${esc(r.error || (r.code ? `HTTP ${r.code}` : r.status))}">${icon(STATUS_ICON[r.status], 14)}
+      <span class="what"><b>${esc(j?.name ?? "deleted job")}</b><small>${esc(j?.app ?? "")} · ${clock(r.firedAt)}</small></span><span class="num">${drift(r)}</span>${tick}</li>`;
   }).join("") : `<li class="quiet">Nothing has run yet.</li>`;
   tickClocks();
 }
@@ -130,19 +190,35 @@ function kindIcon(j: Job): string {
   return `<span class="kind" title="Reminder">${icon(Bell, 14)}</span>`;
 }
 
-function jobRow({ job: j, last }: Row): string {
-  const lane = flow(j.cadence);
+/** "3 d", "5 h", "12 min": how long ago, roughly. */
+function ago(t: number): string {
+  const m = Math.max(0, Math.round((serverNow() - t) / 60_000));
+  return m < 60 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
+}
+
+/** Its track record in a few words: what it's done so far, and how long since it was last any use. */
+function record(r: Row): string {
+  const { fired, done, ignored } = r.stats;
+  const bits = [fired && `${fired} fired`, done && `${done} done`, ignored && `<b class="ignored">${ignored} ignored</b>`].filter(Boolean);
+  if (state.sort === "idle") bits.push(`idle ${ago(lastUsed(r))}`);
+  return bits.length ? `<span class="record">${bits.join(" · ")}</span>` : "";
+}
+
+function jobRow(row: Row): string {
+  const { job: j, last } = row, lane = flow(j.cadence);
+  const owed = last?.status === "reminded" && last.doneAt === null;
   return `<li class="job ${j.enabled ? "" : "paused"}" data-id="${esc(j.id)}">
     <i class="dot lane-${lane}" title="${LANE_LABEL[lane]}"></i>
     <div class="body">
       <div class="top"><b>${esc(j.name)}</b><span class="cad">${esc(describe(j.cadence))}</span>${kindIcon(j)}</div>
-      <div class="sub">${j.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join("")}${j.why ? `<span class="why">${esc(j.why)}</span>` : ""}</div>
+      <div class="sub">${j.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join("")}${j.why ? `<span class="why">${esc(j.why)}</span>` : ""}${record(row)}</div>
     </div>
     <div class="when">
       ${j.nextAt === null ? `<span class="quiet">${j.enabled ? "done" : "paused"}</span>` : `<time class="num" data-at="${j.nextAt}" title="${esc(clock(j.nextAt))}"></time>`}
       ${last ? `<small class="last run-${last.status}" title="${esc(last.error || clock(last.firedAt))}">${icon(STATUS_ICON[last.status], 12)} ${drift(last)}</small>` : `<small class="quiet">never run</small>`}
     </div>
     <div class="acts">
+      ${owed ? `<button type="button" class="ghost done" data-done="${last.id}" title="Done">${icon(Check)}</button>` : ""}
       ${j.action.kind === "elsewhere" ? "" : `<button type="button" class="ghost" data-act="run" title="Run now">${icon(Play)}</button>`}
       <button type="button" class="ghost" data-act="toggle" title="${j.enabled ? "Pause" : "Resume"}">${icon(j.enabled ? Pause : AlarmClock)}</button>
       <button type="button" class="ghost" data-act="edit" title="Edit">${icon(Pencil)}</button>
@@ -170,7 +246,9 @@ const toInput = (j: Job): JobInput => ({ app: j.app, name: j.name, note: j.note,
 document.body.addEventListener("click", (e) => {
   const el = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null;
   if (!el) return;
-  if (el.dataset.app !== undefined) { state.app = el.dataset.app || null; render(); }
+  if (el.dataset.done) void send("POST", `/api/runs/${el.dataset.done}/done`);
+  else if (el.id === "alerts") void Notification.requestPermission().then(paintAlerts);
+  else if (el.dataset.app !== undefined) { state.app = el.dataset.app || null; render(); }
   else if (el.dataset.tag !== undefined) { state.tag = state.tag === el.dataset.tag ? null : el.dataset.tag; render(); }
   else if (el.dataset.lane) { state.lane = el.dataset.lane as Flow | "all"; render(); }
   else if (el.dataset.act) {
@@ -181,6 +259,16 @@ document.body.addEventListener("click", (e) => {
     if (el.dataset.act === "edit") openEditor(row.job);
   }
 });
+
+const sortBox = $<HTMLSelectElement>("sort");
+sortBox.innerHTML = Object.entries(SORTS).map(([k, label]) => `<option value="${k}">${label}</option>`).join("");
+sortBox.value = state.sort;
+sortBox.addEventListener("change", () => {
+  if (isSort(sortBox.value)) state.sort = sortBox.value;
+  try { localStorage.setItem(SORT_KEY, state.sort); } catch { /* kept for this visit only */ }
+  render();
+});
+paintAlerts();
 
 $<HTMLInputElement>("q").addEventListener("input", (e) => { state.q = (e.target as HTMLInputElement).value; render(); });
 $<HTMLFormElement>("gate").addEventListener("submit", (e) => {
