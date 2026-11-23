@@ -172,8 +172,9 @@ export class PluginRoute {
    * sides are balanced on the engine's own pan law, and at centre it comes as it is), through the track's Shape, at
    * its level, and that times its SEND into `send`, the Space bus, when given.
    * `tap`, if given, also gets each track's own sound, mono and before its strip (the sesh hears it: src/studio/plugin-line.ts).
+   * `heard`, if given, gets that one track's sound after its Shape and level, in mono, for its Shape's spectrum.
    */
-  mix(out: Float32Array, frames: number, strip: Strip, send?: Float32Array, tap?: (t: number, mono: Float32Array, frames: number) => void) {
+  mix(out: Float32Array, frames: number, strip: Strip, send?: Float32Array, tap?: (t: number, mono: Float32Array, frames: number) => void, heard?: { track: number; into: Float32Array }) {
     if (tap && this.mono.length < frames) this.mono = new Float32Array(frames);
     if (this.dry.length < 2 * frames) this.dry = new Float64Array(2 * frames);
     const dry = this.dry;
@@ -203,6 +204,7 @@ export class PluginRoute {
         const a = dry[2 * f] * l.level, c = dry[2 * f + 1] * l.level;
         out[2 * f] += a;
         out[2 * f + 1] += c;
+        if (heard?.track === t) heard.into[f] = (a + c) * 0.5;
         if (send) { send[2 * f] += a * sa; send[2 * f + 1] += c * sa; }
       }
       if (mono) tap?.(t, mono, frames);

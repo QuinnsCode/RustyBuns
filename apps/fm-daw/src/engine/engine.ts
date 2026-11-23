@@ -689,8 +689,8 @@ export class TsEngine implements FmEngine {
           const o = t * CHUNK * 2;
           for (let j = 0; j < k; j++) {
             let y = this.tapNow[t] ? (tb[o + j * 2] + tb[o + j * 2 + 1]) * Math.SQRT1_2 : 0;
-            // the NaN guard, for a track the master never sees
-            if (!Number.isFinite(y)) { this.nans++; this.panic(); y = 0; }
+            // the NaN guard, for a track the master never sees (a listened one's copy is only zeroed: the master counts it)
+            if (!Number.isFinite(y)) { if (this.tapNow[t] === 1) { this.nans++; this.panic(); } y = 0; }
             taps[(at + j) * TRACKS + t] = y;
           }
         }

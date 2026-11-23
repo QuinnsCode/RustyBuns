@@ -107,9 +107,9 @@ function opMsg(op: Op, next: Project): ToWorklet {
   }
 }
 
-/** What the page's web plugins play into, once the audio is on. */
 /** The Shape tab's pick (`master`, a channel's id, `aux-<n>`) as the desk names it. */
 const shapeAtKey = (key: string): ShapeAt => (key === "master" ? { master: true } : key.startsWith("aux-") ? { aux: Number(key.slice(4)) } : { channel: key });
+/** What the page's web plugins play into, once the audio is on. */
 const pageAudio = (a: AudioOut | null): PageAudio | null => a && { ctx: a.ctx, taps: a.webTaps, fxIn: a.fxIn, webIn: a.webIn, fxOut: a.fxOut, web: (t, g) => a.web(t, g), route: (t, on) => a.routeWeb(t, on) };
 
 export function App() {

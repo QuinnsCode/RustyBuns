@@ -752,8 +752,8 @@ impl Engine {
                     let o = t * CHUNK * 2;
                     for j in 0..k {
                         let mut y = if self.tap_now[t] != 0 { (self.tb[o + j * 2] + self.tb[o + j * 2 + 1]) * std::f64::consts::FRAC_1_SQRT_2 } else { 0.0 };
-                        // the NaN guard, for a track the master never sees
-                        if !y.is_finite() { self.nans += 1.0; self.panic(); y = 0.0; }
+                        // the NaN guard, for a track the master never sees (a listened one's copy is only zeroed: the master counts it)
+                        if !y.is_finite() { if self.tap_now[t] == 1 { self.nans += 1.0; self.panic(); } y = 0.0; }
                         tp[(at + j) * TRACKS + t] = y as f32;
                     }
                 }

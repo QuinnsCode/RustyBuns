@@ -1,5 +1,5 @@
-// A channel's Shape draws its own spectrum: while it is open the audio thread copies that channel (a track, or a
-// return) to its third output, and the channel stays in the mix as it was. The engines' listen tap is the same in TS and Rust.
+// A channel's Shape draws its own spectrum: while it is open the audio thread copies that channel (an FM track, a
+// hosted plugin's track, or a return) to its third output, and the channel stays in the mix as it was. The engines' listen tap is the same in TS and Rust.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { BLOCK, SR, posted, processor, useWorklet, type Proc } from "./worklet-kit.ts";
 import { existsSync, readFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { TsEngine, type FmEngine, type Tap } from "../src/engine/engine.ts";
 import { createNativeEngine } from "../src/engine/native.ts";
 import { renderPattern } from "../src/engine/sequencer.ts";
 import type { ShapeAt } from "../src/desk.ts";
+import type { ToWorklet } from "../src/engine/messages.ts";
 
 setDefaultTimeout(60_000);
 useWorklet();
@@ -18,10 +19,11 @@ useWorklet();
 const rms = (x: ArrayLike<number>) => { let n = 0; for (let i = 0; i < x.length; i++) n += x[i] * x[i]; return Math.sqrt(n / x.length); };
 const WASM = new URL("../public/fm_daw.wasm", import.meta.url);
 
-/** One second of Night Shift through the audio thread on `kind`'s engine, listening to `at`: the mix (left) and the copy. */
+/** One second of Night Shift through the audio thread on `kind`'s engine, track 3 a hosted plugin's (a tone), listening to `at`: the mix (left) and the copy. */
 async function play(kind: "ts" | "rust", at: ShapeAt | null) {
   const { p, say } = processor();
   say(loadMsg(nightShift()));
+  say({ t: "plugin", track: 2, on: true });
   if (kind === "rust") {
     say({ t: "engine", kind, bytes: new Uint8Array(readFileSync(WASM)).buffer });
     for (let i = 0; i < 100 && !posted.some((m) => m.t === "engine"); i++) await Bun.sleep(10);
@@ -30,14 +32,21 @@ async function play(kind: "ts" | "rust", at: ShapeAt | null) {
   say({ t: "master", gain: 0.6 });
   say({ t: "listen", at });
   say({ t: "play", countIn: 0 });
-  return blocks(p, SR);
+  return blocks(p, SR, say);
 }
-function blocks(p: Proc, frames: number) {
+function blocks(p: Proc, frames: number, say: (m: ToWorklet) => void) {
+  let rendered = 0;
   const mix = new Float32Array(frames), heard = new Float32Array(frames);
   for (let at = 0; at < frames; at += BLOCK) {
     const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK), H = new Float32Array(BLOCK).fill(NaN);
     p.process([[new Float32Array(BLOCK)]], [[L, R], Array.from({ length: TRACKS }, () => new Float32Array(BLOCK)), [H]]);
     mix.set(L.subarray(0, frames - at), at); heard.set(H.subarray(0, frames - at), at);
+    for (const m of posted.splice(0)) {
+      if (m.t !== "pluginAsk") continue;
+      const pcm = new Float32Array(m.frames * 2);
+      for (let f = 0; f < m.frames; f++, rendered++) pcm[f * 2] = pcm[f * 2 + 1] = 0.3 * Math.sin((2 * Math.PI * 330 * rendered) / SR);
+      say({ t: "pluginBlock", track: m.track, pcm, ok: true });
+    }
   }
   return { mix, heard };
 }
@@ -47,7 +56,7 @@ test("an open Shape hears its own channel, and the mix is as it was", async () =
   for (const kind of kinds) {
     const none = await play(kind, null);
     expect(none.heard.every((v) => v === 0)).toBe(true);                   // the master's Shape: nothing copied
-    for (const at of [{ channel: "track-6" }, { aux: 1 }] satisfies ShapeAt[]) {
+    for (const at of [{ channel: "track-6" }, { channel: "track-3" }, { aux: 1 }] satisfies ShapeAt[]) {
       const { mix, heard } = await play(kind, at);
       expect(rms(heard)).toBeGreaterThan(0.002);
       expect(heard.every(Number.isFinite)).toBe(true);

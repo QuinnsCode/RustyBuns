@@ -254,7 +254,7 @@ class FmProcessor extends AudioWorkletProcessor {
     const fader = this.fader;
     // a track going to the sesh too: its sound at its fader, on the beat it's heard on here (nobody played it in late)
     const tap = this.pluginOut.size ? (t: number, mono: Float32Array, n: number) => { if (!this.webOut.has(t)) this.pluginOut.get(t)?.push(mono, fader(t), n, beat0, bpf, this.port); } : undefined;
-    this.plugins.mix(this.buf, frames, this.strip, this.send, tap);
+    this.plugins.mix(this.buf, frames, this.strip, this.send, tap, this.listenTrack >= 0 ? { track: this.listenTrack, into: this.heard } : undefined);
     for (const a of this.plugins.asks()) this.port.postMessage({ t: "pluginAsk", ...a } satisfies FromWorklet);
   }
 
@@ -506,7 +506,8 @@ class FmProcessor extends AudioWorkletProcessor {
       this.space.process(this.buf, this.send, frames, this.spaceEq, this.listenSpace ? this.heard : undefined);
       // a track's tap is (L+R)/√2 before the master; heard as the desk's channels are, (L+R)/2 after it
       const lt = this.listenTrack;
-      if (lt >= 0) for (let f = 0; f < frames; f++) this.heard[f] = this.taps[f * TRACKS + lt] * Math.SQRT1_2 * this.master;
+      // (added: a hosted plugin's track has its sound and its Shape in mixPlugins, and a silent engine voice)
+      if (lt >= 0) for (let f = 0; f < frames; f++) this.heard[f] += this.taps[f * TRACKS + lt] * Math.SQRT1_2 * this.master;
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);
