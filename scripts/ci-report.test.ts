@@ -32,3 +32,15 @@ test("a test job's time no listed step covers counts as test, elsewhere as other
   expect(lane).toEqual({ checkout: 0.5, setup: 0, install: 0.5, test: 2, other: 0 });
   expect(splitOf({ name: "plan", started_at: at(0), completed_at: at(90), steps }).other).toBe(0.5);
 });
+
+test("minutesBy counts every workflow's job-minutes, skipped jobs left out, most first with its share", async () => {
+  const { minutesBy } = await import("./ci-report.ts");
+  const at = (m: number) => new Date(Date.UTC(2026, 10, 21, 1, m)).toISOString();
+  const job = (start: number, end: number, conclusion = "success") => ({ id: 1, run_id: 1, name: "j", status: "completed", conclusion, created_at: at(0), started_at: at(start), completed_at: at(end), steps: [] });
+  const out = minutesBy([
+    { wf: "apps.yml", jobs: [job(0, 10), job(0, 5, "skipped")] },
+    { wf: "desktop-drop.yml", jobs: [job(0, 30)] },
+    { wf: "apps.yml", jobs: [job(0, 10)] },
+  ]);
+  expect(out).toEqual([{ wf: "desktop-drop.yml", runs: 1, min: 30, share: 0.6 }, { wf: "apps.yml", runs: 2, min: 20, share: 0.4 }]);
+});

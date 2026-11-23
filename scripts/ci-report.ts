@@ -1,5 +1,6 @@
 // Where the CI time goes: the last N days of `apps` and `typecheck` runs, read-only through `gh api`, as one
-// short markdown report: queue waits and wall time per run, concurrency by hour of day, each job's median and
+// short markdown report: queue waits and wall time per run, concurrency by hour of day (every workflow counts
+// there, since they all share one concurrent-job ceiling: desktop-drop, desktop-hourly, express and the rest), each job's median and
 // p90 with its checkout / install / test split, failures per test (and how many were on PRs that didn't touch
 // that app, the sign of a broken main or a flaky test), what moving suites to a schedule would save, and the
 // slowest PR suites with their slowest test files and which release ring each could move to.
@@ -10,7 +11,7 @@
 //   bun scripts/ci-report.ts --no-logs     skip the jobs' logs (no per-test failure names, no slow files)
 //
 // Finished runs, job lists, compares and logs are cached under $TMPDIR/ci-report-cache, so a second run is quick.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arr, check, num, obj, opt, rec, str, type Guard, type Of } from "../packages/util/src/guard.ts";
@@ -18,6 +19,8 @@ import { help } from "./help.ts";
 import { appDir, appDirs, appOf as appOfPath } from "./app-dirs.ts";
 
 const REPO = "QuinnsCode/RustyBuns", WORKFLOWS = ["apps.yml", "typecheck.yml"];
+/** Every other workflow: not a PR check, but its jobs take runners from the same account ceiling (#5567). */
+const SHARED = readdirSync(join(import.meta.dir, "../.github/workflows")).filter((f) => /\.ya?ml$/.test(f) && !WORKFLOWS.includes(f)).sort();
 const t = opt(str(60, { min: 0 })), name = str(500, { min: 0 });
 
 const Step = obj({ name, conclusion: t, started_at: t, completed_at: t });
@@ -232,10 +235,20 @@ function appsUsing(): Map<string, Set<string>> {
 type Row = { run: Run; wf: string; jobs: Job[]; pr?: { number: number; base: string } };
 const ran = (j: Job) => j.conclusion !== "skipped" && !!j.started_at;
 
+/** Job-minutes per workflow, most first, with each one's share of the whole. */
+export function minutesBy(rows: { wf: string; jobs: Job[] }[]): { wf: string; runs: number; min: number; share: number }[] {
+  const by = new Map<string, { runs: number; min: number }>();
+  for (const { wf, jobs } of rows) { const e = by.get(wf) ?? { runs: 0, min: 0 }; e.runs++; e.min += sum(jobs.filter(ran).map((j) => span(j.started_at, j.completed_at))); by.set(wf, e); }
+  const total = sum([...by.values()].map((e) => e.min));
+  return [...by].map(([wf, e]) => ({ wf, ...e, share: total ? e.min / total : 0 })).sort((a, b) => b.min - a.min);
+}
+
 function perRun(rows: Row[], say: (s: string) => void) {
   say("## 1. Runs: queue, wall time, job-minutes\n");
+  say(`Every workflow, since they share one concurrent-job ceiling; sections 2 to 5 read only ${WORKFLOWS.join(" and ")}.\n`);
   say("| workflow | runs | created → first job, p50 / p90 | queue wait per run, p50 / p90 (job-min) | wall, p50 / p90 / max | job-min per run, p50 / total |\n|---|---:|---:|---:|---:|---:|");
-  for (const wf of WORKFLOWS) {
+  for (const wf of [...WORKFLOWS, ...SHARED]) {
+    if (!rows.some((r) => r.wf === wf)) continue;
     const rs = rows.filter((r) => r.wf === wf && r.run.status === "completed").map(({ run, jobs }) => {
       const js = jobs.filter(ran);
       const first = Math.min(...js.map((j) => ms(j.started_at)));
@@ -249,6 +262,8 @@ function perRun(rows: Row[], say: (s: string) => void) {
     const c = (k: keyof (typeof rs)[number]) => rs.map((r) => r[k]);
     say(`| ${wf} | ${rs.length} | ${m1(pct(c("toFirst"), 0.5))} / ${m1(pct(c("toFirst"), 0.9))} min | ${m1(pct(c("queue"), 0.5))} / ${m1(pct(c("queue"), 0.9))} | ${m1(pct(c("wall"), 0.5))} / ${m1(pct(c("wall"), 0.9))} / ${m1(pct(c("wall"), 1))} min | ${m1(pct(c("work"), 0.5))} / ${Math.round(sum(c("work")))} |`);
   }
+  const by = minutesBy(rows), others = by.filter((e) => !WORKFLOWS.includes(e.wf));
+  say(`\nJob-min by workflow: ${by.map((e) => `${e.wf} ${Math.round(e.min)} (${Math.round(100 * e.share)}%)`).join(", ")}. The ones that aren't PR checks: ${Math.round(sum(others.map((e) => e.min)))} job-min, ${Math.round(100 * sum(others.map((e) => e.share)))}% of the runners' time.`);
   const js = rows.flatMap((r) => r.jobs.filter(ran));
   const waits = js.map((j) => span(j.created_at, j.started_at));
   say(`\nEvery job: waited ${m1(pct(waits, 0.5))} min for a runner at the median, ${m1(pct(waits, 0.9))} at p90, ${m1(pct(waits, 1))} at most; ${Math.round(sum(waits))} job-min of waiting against ${Math.round(sum(js.map((j) => span(j.started_at, j.completed_at))))} job-min of work.`);
@@ -489,7 +504,7 @@ if (import.meta.main) {
   const argv = process.argv.slice(2), days = Number(argv[argv.indexOf("--days") + 1]) || 7, logs = !argv.includes("--no-logs");
   const since = Date.now() - days * 86_400_000;
   const [runs, pulls] = await Promise.all([
-    Promise.all(WORKFLOWS.map(async (wf) => (await runsOf(wf, days)).map((run) => ({ run, wf })))).then((x) => x.flat()),
+    Promise.all([...WORKFLOWS, ...SHARED].map(async (wf) => (await runsOf(wf, days)).map((run) => ({ run, wf })))).then((x) => x.flat()),
     pullsSince(since - 14 * 86_400_000),
   ]);
   // A run whose job list GitHub won't hand over (a 502 that outlasts the retries) is left out and counted, not fatal.
@@ -501,11 +516,12 @@ if (import.meta.main) {
   const using = appsUsing();
   const out: string[] = [], say = (s: string) => out.push(s);
   say(`# CI report: ${WORKFLOWS.join(" and ")}, last ${days} days\n`);
-  say(`${rows.length} runs (${WORKFLOWS.map((w) => `${rows.filter((r) => r.wf === w).length} ${w}`).join(", ")}), ${rows.reduce((n, r) => n + r.jobs.filter(ran).length, 0)} jobs that ran, ${day(new Date(since).toISOString())} to ${day(new Date().toISOString())}${missed ? `; ${missed} runs left out (GitHub wouldn't list their jobs)` : ""}. Times are ${Intl.DateTimeFormat().resolvedOptions().timeZone}. Made by \`bun scripts/ci-report.ts\`.\n`);
+  const pr = rows.filter((r) => WORKFLOWS.includes(r.wf));
+  say(`${rows.length} runs (${[...WORKFLOWS, ...SHARED].filter((w) => rows.some((r) => r.wf === w)).map((w) => `${rows.filter((r) => r.wf === w).length} ${w}`).join(", ")}), ${rows.reduce((n, r) => n + r.jobs.filter(ran).length, 0)} jobs that ran, ${day(new Date(since).toISOString())} to ${day(new Date().toISOString())}${missed ? `; ${missed} runs left out (GitHub wouldn't list their jobs)` : ""}. Times are ${Intl.DateTimeFormat().resolvedOptions().timeZone}. Made by \`bun scripts/ci-report.ts\`.\n`);
   perRun(rows, say);
-  const jobs = perJob(rows, say);
-  const fails = await failures(rows, using, logs, say);
-  await suggestions(rows, jobs, fails, using, days, say);
-  await rings(rows, fails, using, days, Number(argv[argv.indexOf("--top") + 1]) || 10, logs, say);
+  const jobs = perJob(pr, say);
+  const fails = await failures(pr, using, logs, say);
+  await suggestions(pr, jobs, fails, using, days, say);
+  await rings(pr, fails, using, days, Number(argv[argv.indexOf("--top") + 1]) || 10, logs, say);
   console.log(out.join("\n"));
 }
