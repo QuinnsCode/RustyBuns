@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -62,6 +62,26 @@ test("node_modules and ignored build output go from worktrees nobody sits at; a 
   expect(gone.filter((p) => existsSync(p))).toEqual([]);
   expect([existsSync(path.join(left, "apps/game/main.ts")), existsSync(path.join(left, "apps/docs/dist/index.html"))]).toEqual([true, true]);
   expect([existsSync(path.join(seated, "apps/game/dist")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
+});
+
+// 2026-11-22: six workers whose PR had merged sat at their desks with "go home once merged" off, 6 GB of node_modules each
+test("a seated worker whose PR merged loses its node_modules and build output like an empty desk; one still working keeps them", async () => {
+  const repo = tmp();
+  const tree = (name: string) => {
+    const dir = path.join(repo, WORKTREES, name);
+    mkdirSync(path.join(dir, "node_modules/effect"), { recursive: true });
+    writeFileSync(path.join(dir, "main.ts"), "work");
+    Bun.spawnSync(["git", "-C", dir, "init", "-q"], { stdout: "ignore", stderr: "ignore" });
+    const at = (Date.now() - 30 * 3_600_000) / 1000;
+    utimesSync(path.join(dir, ".git"), at, at);
+    return dir;
+  };
+  const landed = tree("gizmo-1"), working = tree("nibble-2");
+  const desks = [{ id: "g", worktree: { path: path.join(WORKTREES, "gizmo-1") } }, { id: "n", worktree: { path: path.join(WORKTREES, "nibble-2") } }, { id: "shell" }];
+  const live = inUse(repo, desks, new Set(["g"]));
+  expect(live).toEqual([working]);
+  await sweepBuilt(repo, live, true);
+  expect([existsSync(path.join(landed, "node_modules")), existsSync(path.join(landed, "main.ts")), existsSync(path.join(working, "node_modules"))]).toEqual([false, true, true]);
 });
 
 test("Playwright keeps the builds any installed playwright-core names and drops the rest", async () => {

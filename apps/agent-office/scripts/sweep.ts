@@ -13,8 +13,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
-import { caches, duKb, gb, listTrees, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
+import { arr, bool, check, obj, opt, str } from "@rustybuns/util/guard";
+import { caches, duKb, gb, inUse, listTrees, pruneBunCache, prunePlaywright, sweepBuilt, sweepScratch } from "../live/sweep.ts";
 
 const args = process.argv.slice(2);
 const go = args.includes("--go");
@@ -33,17 +33,18 @@ function officeRepos(): string[] {
   return out;
 }
 
-/** The worktree paths workers sit at on `repo`'s floor, from the office; undefined when it doesn't answer. */
+/** The worktree paths workers on `repo`'s floor still use (not "landed: free to go"), from the office; undefined when it doesn't answer. */
 async function seatedTrees(repo: string): Promise<string[] | undefined> {
   try {
     const proc = Bun.spawn(["office-workers", "list", "--json"], { cwd: repo, stdout: "pipe", stderr: "ignore" });
     const text = await new Response(proc.stdout).text();
     if ((await proc.exited) !== 0) return undefined;
     const got = check(Seated, JSON.parse(text));
-    return got?.workers.flatMap((w) => (w.worktree ? [path.join(repo, w.worktree.path)] : []));
+    if (!got) return undefined;
+    return inUse(repo, got.workers, new Set(got.workers.filter((w) => w.merged && !w.staying).map((w) => w.id)));
   } catch { return undefined; }
 }
-const Seated = obj({ workers: arr(obj({ worktree: opt(obj({ path: str(4096) })) }), 1000) });
+const Seated = obj({ workers: arr(obj({ id: str(64), worktree: opt(obj({ path: str(4096) })), merged: opt(bool()), staying: opt(str(200)) }), 1000) });
 
 const repos = many("--repo").length ? many("--repo") : officeRepos();
 const verb = go ? "freed" : "would free";

@@ -142,7 +142,7 @@ export class StorageGuard {
     const free = this.d.free();
     const low = floorBytes > 0 && free < floorBytes;
     if (low && !this.low)
-      this.d.alert(`💾 Only ${gb(free)} free on the disk (floor ${gb(floorBytes)}): clear space before it fills (bun caches, Docker, old worktrees)`);
+      this.d.alert(`💾 Only ${gb(free)} free on the disk (floor ${gb(floorBytes)}): clear space before it fills: office-workers home --merged, bun caches, Docker, old worktrees`);
     this.low = low;
     for (const id of [...this.over]) if (!seats.some((s) => s.id === id)) this.over.delete(id);
     for (const seat of seats) {
