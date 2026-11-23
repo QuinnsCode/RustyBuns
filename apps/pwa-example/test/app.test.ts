@@ -1,9 +1,12 @@
 // Pocket Dice as a phone gets it: `vite build`, the build served as Workers assets would serve it, opened in headless
 // Chrome at phone size. Chrome must find nothing in the way of installing it (the check Android runs before it offers
 // "Install app"), the service worker must take the page over, and a roll must be the Rust roller's. Then the server
-// goes away and the page loads again, a shared roll's link included, from the phone's cache alone.
+// goes away and the page loads again, a shared roll's link included, from the phone's cache alone. Last, the same
+// page as the desktop app: the dev host (`rustybuns build desktop --dev`) serves it behind its token, and the worker
+// and the Rust roller work there too.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchChrome, load, openTab, type Chrome, type Tab } from "../../../scripts/chrome.ts";
 import { tsRoller, wasmRoller } from "../src/roller.ts";
@@ -65,4 +68,32 @@ test("installs, works offline, and opens a shared roll with no network", async (
   const offline = await until("loads from the cache", (s) => s.last?.seed === 7);
   expect(offline).toMatchObject({ engine: "wasm", controlled: true, last: { seed: 7, n: 3, sides: 20, dice: tsRoller.roll(7, 3, 20) } });
   expect(tab.noise).toEqual([]);
+});
+
+test("the desktop app serves the same page, worker and wasm included", async () => {
+  const cli = join(app, "../../packages/cli/src/index.ts"), token = "pocket-dice-desktop", home = mkdtempSync(join(tmpdir(), "dice-desktop-"));
+  const build = Bun.spawnSync(["bun", cli, "build", "desktop", "--dev"], { cwd: app, stdout: "pipe", stderr: "pipe" });
+  if (build.exitCode !== 0) throw new Error(`build desktop --dev: ${build.stderr.toString().slice(-800)}`);
+  const host = Bun.spawn(["bun", ".rustybuns/dev/desktop.js"], {
+    cwd: app, stdout: "pipe", stderr: "inherit",
+    env: { ...process.env, HOME: home, RB_NO_BROWSER: "1", RB_TOKEN: token },
+  });
+  try {
+    const out = host.stdout.getReader();
+    let seen = "", url = "";
+    for (let r = await out.read(); !r.done; r = await out.read()) {
+      seen += new TextDecoder().decode(r.value);
+      const m = seen.match(/serving (http:\/\/[\d.]+:\d+)/);
+      if (m) { url = m[1]!; break; }
+    }
+    if (!url) throw new Error(`host exited before serving:\n${seen}`);
+    tab = await openTab(chrome.cdp, { w: 900, h: 700 }, true);
+    await load(chrome.cdp, tab, `${url}/?token=${token}`, 500);
+    expect(await until("worker takes over", (s) => s.offlineReady && s.controlled)).toMatchObject({ engine: "wasm" });
+    expect((await tab.eval<State["last"]>("pocketDice.roll(9)"))?.dice).toEqual(tsRoller.roll(9, 2, 6));
+    expect(tab.noise).toEqual([]);
+  } finally {
+    host.kill();
+    rmSync(home, { recursive: true, force: true });
+  }
 });

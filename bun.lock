@@ -996,10 +996,12 @@
       "name": "pwa-example",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
       },
       "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
         "vite": "^6.4.4",
       },
     },
