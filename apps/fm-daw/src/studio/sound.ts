@@ -124,7 +124,7 @@ export function spaceAt(def: StudioDef, at: readonly number[]): Space {
 // ---- how long it rings ----
 
 /** Sound soaked up by the air itself over a metre, per band (4m in the reverb formula, 20 °C, half humidity). */
-const AIR = [0, 0, 0.0005, 0.0012, 0.003, 0.0096];
+export const AIR = [0, 0, 0.0005, 0.0012, 0.003, 0.0096];
 const C = 343;
 
 export interface Acoustics {

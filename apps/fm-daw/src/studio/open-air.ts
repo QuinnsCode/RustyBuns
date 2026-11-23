@@ -15,7 +15,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import { gear, gearLook } from "@rustybuns/models/gear";
+import { gear, gearLook, type GearLook } from "@rustybuns/models/gear";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import type { Outdoor, StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -35,6 +35,21 @@ export function duneAt(x: number, z: number, flat: number): number {
 /** How high the far ranges stand at compass angle `a` (radians), metres: a few ridges on top of each other, never flat. */
 export function ridgeAt(a: number, seed: number): number {
   return Math.max(3, 11 + 8 * Math.sin(3 * a + seed) + 5 * Math.sin(7 * a + seed * 2.3) + 3 * Math.sin(13 * a + seed * 0.7) + 1.8 * Math.sin(29 * a + seed * 5.1));
+}
+
+/** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
+ *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts). */
+export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+  const st = new THREE.Group();
+  st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
+  let y = 0;
+  for (const id of ["sand-dolly", "horn-sub-21", "stack-mid-bass", "stack-mid-high"] as const) {
+    const g = gear(id, { look });
+    g.position.y = y;
+    st.add(g);
+    y += new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).y;
+  }
+  return st;
 }
 
 /** How bright lantern `i`'s flame is at time `t` seconds, about 1: a slow breath and a quick flutter, each lantern out of step. */
@@ -156,18 +171,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
   const look = gearLook();
-  for (const s of out.stacks) {
-    const st = new THREE.Group();
-    st.position.set(s.at[0], 0, s.at[1]); st.rotation.y = s.yaw;
-    let y = 0;
-    for (const id of ["sand-dolly", "horn-sub-21", "stack-mid-bass", "stack-mid-high"] as const) {
-      const g = gear(id, { look });
-      g.position.y = y;
-      st.add(g);
-      y += new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).y;
-    }
-    group.add(st);
-  }
+  for (const s of out.stacks) group.add(paStack(s.at, s.yaw, look));
 
   // ---- the truss: two towers and a span of box truss, the heads hung under it, the lasers on top
   const truss = new THREE.Group(), tr = out.truss;
