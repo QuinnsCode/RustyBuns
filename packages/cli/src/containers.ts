@@ -7,10 +7,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
+import { Effect, Scope } from "effect";
 import { join, relative, resolve } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { refusedSummary, sessionCerts } from "./egress-gate.ts";
 import { ENV_SCHEMA } from "./wheel.ts";
+import { step } from "./lifecycle.ts";
 
 export interface ContainerBinding {
   name: string;
@@ -268,78 +270,86 @@ export async function startProdLike(app: string, b: ContainerBinding, tag: strin
   if (joined.exitCode !== 0) fail("joining the gate to the container's network", joined);
   const running = (n: string) => docker("inspect", "-f", "{{.State.Running}}", n).stdout.toString().trim() === "true";
   const logs = () => { const r = docker("logs", gname); return (r.stdout.toString() + r.stderr.toString()).split("\n").filter((l) => l.startsWith("egress")); };
-  return { port, alive: () => running(cname), logs, stop() { const sum = refusedSummary(logs(), b.name); cleanup(); return sum; } };
+  let summary: string | undefined;
+  return { port, alive: () => running(cname), logs, stop() { if (summary === undefined) { summary = refusedSummary(logs(), b.name); cleanup(); } return summary; } };
 }
+
+/**
+ * `startProdLike` for the life of the current scope: the containers, their network and the CA's temp directory go
+ * when it closes, however it closes (the end, an error, or a signal through runScoped). `onStop` gets the summary.
+ */
+const prodLikeScoped = (app: string, b: ContainerBinding, tag: string, flags: { env: Record<string, string>; file?: string; dir?: string }, onStop?: (summary: string) => void) =>
+  Effect.acquireRelease(step(() => startProdLike(app, b, tag, flags)), (g) => Effect.sync(() => { const sum = g.stop(); onStop?.(sum); }));
+
+/** `docker rm -f name` when the current scope closes: a container started under it never outlives the command. */
+const removedAtEnd = (name: string) => Effect.acquireRelease(Effect.void, () => Effect.sync(() => { kill(name); }));
 
 const kill = (name: string) => Bun.spawnSync(["docker", "rm", "-f", name], { stdout: "ignore", stderr: "ignore" });
 
-export async function runOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; shell?: boolean; verbose?: boolean; dir?: string; prodLike?: boolean }): Promise<void> {
+/**
+ * `containers run`: the image on a free port, its logs as they come, until it exits or the command is stopped.
+ * Run it under runScoped: a Ctrl-C, a SIGTERM (an agent harness timing out) or a closed terminal removes the
+ * container (and with --prod-like the gate, the network and the CA) instead of leaving them running.
+ */
+export const runOne = (app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; shell?: boolean; verbose?: boolean; dir?: string; prodLike?: boolean }): Effect.Effect<void, unknown, Scope.Scope> => Effect.gen(function* () {
   const led = readLedger(flags.dir);
-  if (freshness(b, led, contextHash(b.context)) !== "built") { console.log(`${b.name}: ${led[b.name] ? "stale" : "not built"}, building`); await buildOne(app, b, flags); }
+  if (freshness(b, led, contextHash(b.context)) !== "built") { console.log(`${b.name}: ${led[b.name] ? "stale" : "not built"}, building`); yield* step(() => buildOne(app, b, flags)); }
   const tag = imageTag(app, b), name = `rb-${app}-${b.name}-${process.pid}`.toLowerCase();
   const empty = schemaNames(flags.dir).filter((n) => !(n in flags.env));
-  const port = await freePort();
-  if (flags.shell) {
-    const argv = runArgs(tag, name, port, { ...flags, shell: true });
-    console.log(`$ ${argv.join(" ")}`);
-    await Bun.spawn(argv, { stdio: ["inherit", "inherit", "inherit"] }).exited;
-    return;
-  }
-  if (flags.prodLike) return runProdLike(app, b, tag, empty, flags);
-  const argv = runArgs(tag, name, port, flags);
+  const port = yield* step(() => freePort());
+  if (flags.prodLike) return yield* runProdLike(app, b, tag, empty, flags);
+  const argv = runArgs(tag, name, port, flags.shell ? { ...flags, shell: true } : flags);
   console.log(`$ ${argv.join(" ")}`);
+  yield* removedAtEnd(name);
+  if (flags.shell) { yield* step(() => Bun.spawn(argv, { stdio: ["inherit", "inherit", "inherit"] }).exited); return; }
   const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
   let done = false;
-  const stop = () => { kill(name); };
-  process.once("SIGINT", () => { stop(); });
   void p.exited.then(() => { done = true; });
   const pre = `${b.name} | `;
   void Promise.all([lines(p.stdout, (l) => console.log(pre + l)), lines(p.stderr, (l) => console.error(pre + l))]);
-  const ms = await waitReady(port, () => !done);
-  if (ms === null) { stop(); throw new Error(`${b.name} did not answer on :${PORT} (${done ? "the container exited" : "timed out after 60s"}). Its logs are above.`); }
+  const ms = yield* step(() => waitReady(port, () => !done));
+  if (ms === null) return yield* Effect.fail(new Error(`${b.name} did not answer on :${PORT} (${done ? "the container exited" : "timed out after 60s"}). Its logs are above.`));
   console.log(`\n${b.name} ready in ${(ms / 1000).toFixed(1)}s: http://127.0.0.1:${port}  (Ctrl-C stops and removes it)`);
   if (empty.length) console.log(`not set (pass --env NAME=VALUE or --env-file): ${empty.join(", ")}`);
-  await p.exited;
-  stop();
-}
+  yield* step(() => p.exited);
+});
 
-/** `run --prod-like`: the gate and the container, the gate's log lines as they come, its refused-host summary at Ctrl-C. */
-async function runProdLike(app: string, b: ContainerBinding, tag: string, empty: string[], flags: { env: Record<string, string>; file?: string; dir?: string }) {
-  const g = await startProdLike(app, b, tag, flags);
-  let seen = 0, stopped = false, summary = "";
-  const end = () => { if (!stopped) { stopped = true; summary = g.stop(); } };
-  process.once("SIGINT", end);
-  const ms = await waitReady(g.port, g.alive);
-  if (ms === null) { const out = g.logs().join("\n"); end(); throw new Error(`${b.name} did not answer on :${PORT} under the gate.\n${out}\n${summary}`); }
+/** `run --prod-like`: the gate and the container, the gate's log lines as they come, its refused-host summary at the end. */
+const runProdLike = (app: string, b: ContainerBinding, tag: string, empty: string[], flags: { env: Record<string, string>; file?: string; dir?: string }) => Effect.gen(function* () {
+  const g = yield* prodLikeScoped(app, b, tag, flags, (sum) => console.log(sum));
+  const ms = yield* step(() => waitReady(g.port, g.alive));
+  if (ms === null) return yield* Effect.fail(new Error(`${b.name} did not answer on :${PORT} under the gate.\n${g.logs().join("\n")}`));
   console.log(`\n${b.name} ready in ${(ms / 1000).toFixed(1)}s, prod-like (no route out but the gate): http://127.0.0.1:${g.port}  (Ctrl-C stops and removes it)`);
   if (empty.length) console.log(`not set (pass --env NAME=VALUE or --env-file): ${empty.join(", ")}`);
-  while (!stopped && g.alive()) {
+  let seen = 0;
+  while (g.alive()) {
     const all = g.logs(); all.slice(seen).forEach((l) => console.log(l)); seen = all.length;
-    await Bun.sleep(1000);
+    yield* Effect.sleep(1000);
   }
-  end();
-  console.log(summary);
-}
+});
 
-export async function smokeOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; verbose?: boolean; dir?: string; prodLike?: boolean }): Promise<{ ok: boolean; note: string }> {
+/** `containers smoke` for one binding: did the image answer on its port? Its containers go when it ends; under runScoped, a signal ends it too. */
+export const smokeOne = (app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; verbose?: boolean; dir?: string; prodLike?: boolean }): Effect.Effect<{ ok: boolean; note: string }, unknown> => Effect.scoped(Effect.gen(function* () {
   const led = readLedger(flags.dir);
-  try { if (freshness(b, led, contextHash(b.context)) !== "built") await buildOne(app, b, flags); } catch (e) { return { ok: false, note: `build failed: ${(e as Error).message.split("\n")[0]}` }; }
+  if (freshness(b, led, contextHash(b.context)) !== "built") {
+    const built = yield* Effect.result(step(() => buildOne(app, b, flags)));
+    if (built._tag === "Failure") return { ok: false, note: `build failed: ${(built.failure as Error).message.split("\n")[0]}` };
+  }
   if (flags.prodLike) {
-    const g = await startProdLike(app, b, imageTag(app, b), flags);
-    const ms = await waitReady(g.port, g.alive);
+    const g = yield* prodLikeScoped(app, b, imageTag(app, b), flags);
+    const ms = yield* step(() => waitReady(g.port, g.alive));
     const out = g.logs().join("\n"), sum = g.stop();
     return ms !== null ? { ok: true, note: `answered on :${PORT} in ${(ms / 1000).toFixed(1)}s under the gate\n${out}\n${sum}` } : { ok: false, note: `never answered under the gate\n${out}\n${sum}` };
   }
-  const tag = imageTag(app, b), name = `rb-smoke-${app}-${b.name}-${process.pid}`.toLowerCase(), port = await freePort();
+  const tag = imageTag(app, b), name = `rb-smoke-${app}-${b.name}-${process.pid}`.toLowerCase(), port = yield* step(() => freePort());
+  yield* removedAtEnd(name);
   const start = Bun.spawnSync(runArgs(tag, name, port, { ...flags, detach: true }));
   if (start.exitCode !== 0) return { ok: false, note: start.stderr.toString().trim().split("\n").pop() ?? "docker run failed" };
   const running = () => Bun.spawnSync(["docker", "inspect", "-f", "{{.State.Running}}", name]).stdout.toString().trim() === "true";
-  try {
-    const ms = await waitReady(port, running);
-    if (ms !== null) return { ok: true, note: `answered on :${PORT} in ${(ms / 1000).toFixed(1)}s` };
-    const logs = Bun.spawnSync(["docker", "logs", "--tail", "10", name]);
-    return { ok: false, note: `${running() ? "never answered" : "exited"}\n${(logs.stdout.toString() + logs.stderr.toString()).trim()}` };
-  } finally { kill(name); }
-}
+  const ms = yield* step(() => waitReady(port, running));
+  if (ms !== null) return { ok: true, note: `answered on :${PORT} in ${(ms / 1000).toFixed(1)}s` };
+  const logs = Bun.spawnSync(["docker", "logs", "--tail", "10", name]);
+  return { ok: false, note: `${running() ? "never answered" : "exited"}\n${(logs.stdout.toString() + logs.stderr.toString()).trim()}` };
+}));
 
 export const CONTAINERS_USAGE = `usage: rustybuns containers [list] | build [BINDING…] [--verbose] | run BINDING [--shell] [--prod-like] [--env NAME=VALUE]… [--env-file path] | smoke [BINDING…] [--prod-like]`;

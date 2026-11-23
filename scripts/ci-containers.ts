@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appDir, appDirs } from "./app-dirs.ts";
 import { type ContainerBinding, buildOne, containerBindings, mb, smokeOne } from "../packages/cli/src/containers.ts";
+import { runScoped } from "../packages/cli/src/lifecycle.ts";
 
 /** The bindings a diff touches: those whose context folder holds a changed file, all of them when the generator moved. */
 export function touched(bindings: ContainerBinding[], changed: string[], appDir: string): string[] {
@@ -98,7 +99,7 @@ if (import.meta.main) {
         const r = await buildOne(a1, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL });
         Object.assign(row, { build: `${(r.ms / 1000).toFixed(0)}s`, size: mb(r.size) });
         if (process.env.BASE) row.delta = delta(r.size, await baseSize(a1, b, process.env.BASE));
-        const s = await smokeOne(a1, b, { env: {} });
+        const s = await runScoped(smokeOne(a1, b, { env: {} }));
         row.ok = s.ok;
         if (s.ok) row.boot = /in ([\d.]+s)/.exec(s.note)?.[1]; else row.fail = s.note;
       } catch (e) { row.fail = (e as Error).message; }
