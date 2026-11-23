@@ -51,6 +51,7 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 | `test/circuit.test.ts` | Every board plays like its voicing; each clipper swap lands at its own forward drop and a smaller cap tightens the lows; the solver hits textbook numbers; no rig blows up on a hot input; the supply sags on a loud chord and not a quiet one; an amp with nothing on its jack is silent, then blows when played; the mic darkens off the centre; the Rust port plays every rig like the TypeScript one while the knobs, the mic and the load change. |
 | `test/bench.test.ts` | The drawn drive pedal becomes gear and plays in front of the amp, its pots turning; boards people get wrong say why. |
 | `test/amp.test.ts` | Working Q Amp's panel while the riff plays: only what moved is rebuilt, nothing passes −1 dBFS, no Newton misses; the loop's machines switched and turned without a rebuild, their tails ringing on. |
+| `circuits/wall-*.tsx` | The gear room's sound wall: eight Eurorack modules as boards, `bun scripts/pcb.ts wall` turning each into fab files. See [WALL.md](WALL.md). |
 | `test/machines.test.ts` | The spring's chirp (lows arrive later), the tape's motor glide and saturating runaway, the bucket brigade's delay and compander level. |
 
 ## How it works
