@@ -23,6 +23,7 @@ Until the last is in, the sections on how the sim plays a module and on playing 
   3. Q Steps Gate into Q Swell Gate, and Q Swell Out into Q Level CV.
   4. Q Level Out into Q Bus In 1, and Q Bus Main into Q Out In L.
 - **Hear it:** M brings the speakers up. The wall plays from where its Q Out stands. The status line at the bottom says "Sound wall playing", or why it is silent.
+- **Clock In:** cable any clock (a square, a gate, another module's clock) into Q Steps' Clock and it steps on that instead of its own Rate.
 - **Sends and returns:** Q Bus has two aux buses. Turn a channel's A knob up, cable Send A out to a pedal or one of the rack's machines (Q Spring, Q Tape, Q Bucket), and cable that box's out back into Ret A. The return comes back into the main bus on its own knob, as a desk's return does. A send can also go to another module (into Q Filter, say), and a module's out can go into a return.
 - **Add a module:** N opens the module list. Pick one and it comes to your hands. Hold it in front of the case and click: it goes into the nearest free spot on the row nearest your hands, snapped to the HP grid. A module out of the case has no power, so it plays nothing.
 - **Probes:** `qstudio.addModule(kind)` and `await qstudio.wall()`. See `bun run probe --list fm-daw`.
@@ -33,7 +34,7 @@ Each module is named by what it does. Each panel is laid out in `circuits/wall-p
 
 | Module | What it is | HP | The circuit | How the sim plays it |
 |---|---|---|---|---|
-| Q Steps | 8-step sequencer | 12 | A 555 astable clock into a CD4017 counter. Each step's pot feeds a Schottky onto a bus, which is buffered and divided by six to 0 to 2 V. The 555 is also the gate out. | Clock rate and duty from R1, R2, Rate and C1. Each step's CV from its pot, the Schottky and the divider. |
+| Q Steps | 8-step sequencer | 12 | A 555 astable clock into a CD4017 counter. Each step's pot feeds a Schottky onto a bus, which is buffered and divided by six to 0 to 2 V. The clock is also the gate out. Clock In takes the 555's place while a cable is in it, squared up by a transistor (any clock over about 1.3 V). | Clock rate and duty from R1, R2, Rate and C1. Each step's CV from its pot, the Schottky and the divider. A cabled clock steps it on each rise past the transistor's threshold (Vbe over R8 and R9). |
 | Q Saw | VCO | 10 | Sawtooth core. An exponential converter (a matched NPN pair, its reference servoed by an op-amp) feeds an integrator. A comparator and a JFET reset it at 5 V. Saw and pulse (Width) out, exponential FM in. | The core's frequency from its parts: f = I / (C2 × 5 V), I = Iref·e^(−Vb/VT). The CV side's gains come from the board's netlist. PolyBLEP keeps the saw and pulse from aliasing. |
 | Q Filter | VCF, 12 dB/octave state-variable | 10 | Two LM13700 OTAs as integrators with an op-amp summer, as in the LM13700 datasheet, giving LP, BP and HP at once. A three-PNP exponential converter sets both OTAs' bias. | The filter loop runs in the circuit solver every sample. The converter's current comes from its parts and is pushed into the OTAs' bias pins. |
 | Q Level | VCA, linear | 6 | One LM13700 OTA, with an op-amp current-to-voltage stage (so 0 V out at rest) and a linear current sink and PNP mirror on its bias pin. | The OTA and output op-amp run in the solver. The bias current is P_CTL / R10, from the control side's netlist gains. |
@@ -83,7 +84,7 @@ It also writes `circuits/wall-<id>.circuit.json`, the netlist the sim reads. Eve
 
 | Board | HP | Parts | Traces | Vias | Chips |
 |---|---|---|---|---|---|
-| Q Steps | 12 | 40 | 88 | 76 | NE555, CD4017, TL072 |
+| Q Steps | 12 | 46 | 99 | 66 | NE555, CD4017, TL072 |
 | Q Saw | 10 | 49 | 99 | 70 | TL074, TL072 |
 | Q Filter | 10 | 48 | 104 | 48 | TL074, LM13700, TL072 |
 | Q Level | 6 | 36 | 78 | 39 | TL074, LM13700 |

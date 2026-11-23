@@ -9,3 +9,9 @@ apps/git-recon export-ignore
 apps/alien-disc-golf export-ignore
 apps/park-hide-seek export-ignore
 apps/delayed-reaction export-ignore
+
+# Board files pcb.ts writes (Gerbers, netlists, renders): generated, so a review diff folds them away.
+apps/fm-daw/circuits/**/gerbers/** linguist-generated
+apps/fm-daw/circuits/*.circuit.json linguist-generated
+apps/fm-daw/circuits/**/pcb.svg linguist-generated
+apps/fm-daw/circuits/**/drill.svg linguist-generated

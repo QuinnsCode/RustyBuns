@@ -39,6 +39,8 @@ const RESET_S = 2e-6;
 const SCHOTTKY = 0.15, GATE_HIGH = 10.5;
 /** A B5819W Schottky's junction (about 0.25 V at 10 mA), where a board has one and the solver models its diode. */
 const SCHOTTKY_JUNCTION = { is: 1e-6, n: 1.05 };
+/** A small silicon transistor's base-emitter drop, where a clock input's threshold hangs on one. */
+const VBE = 0.65;
 
 /** One module at work: volts at its inputs in, volts at its outputs out, a sample at a time. Jacks in panel order. */
 export interface Sim {
@@ -49,6 +51,8 @@ export interface Sim {
   knobs(k: Record<string, number>): void;
   /** What it is doing, for probes and tests. */
   read(): Record<string, number>;
+  /** Which of its inputs have a cable in, when the board tells them apart (an `inside` jack's switch). */
+  plugged?(ins: boolean[]): void;
 }
 
 /** A module's board, read with what isn't its circuit left out: its jacks, the power header and every chip's decoupling. */
@@ -191,9 +195,13 @@ class Lfo implements Sim {
   read() { return { hz: this.hz }; }
 }
 
-/** Q Steps: the 555's rate and duty from R1, R2, Rate and C1; each step's CV from its pot, the Schottky and R4/R5. */
+/**
+ * Q Steps: the 555's rate and duty from R1, R2, Rate and C1; each step's CV from its pot, the Schottky and R4/R5. With
+ * a cable in Clock In, a step on each rise past Q1's threshold (its Vbe over R9's share of R8 and R9), and the gate out
+ * is that clock.
+ */
 class Seq implements Sim {
-  readonly ins: string[] = [];
+  readonly ins = ["clock"];
   readonly outs = ["gate", "cv"];
   private readonly b = board("seq");
   private hz = 1;
@@ -201,7 +209,15 @@ class Seq implements Sim {
   private phase = 0;
   private at = 0;
   private cvs: number[] = [];
-  constructor(private readonly sampleRate: number, k: Record<string, number>) { this.knobs(k); }
+  private external = false;
+  private high = false;
+  private readonly threshold: number;
+  constructor(private readonly sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    this.threshold = (VBE * (r("R8") + r("R9"))) / r("R9");
+    this.knobs(k);
+  }
+  plugged(ins: boolean[]) { this.external = ins[0]; }
   knobs(k: Record<string, number>) {
     const b = turned("seq", this.b, { ...knobsOf("seq"), ...k }), r = (n: string) => value(b, n);
     const rb = r("R2") + rheostat(b, "RV9"), ra = r("R1");
@@ -213,13 +229,21 @@ class Seq implements Sim {
       return p.kind === "Pot" ? Math.max(0, potShare(p) * SUPPLIES.V12 - SCHOTTKY) * down : 0;
     });
   }
-  step(_x: Float64Array, y: Float64Array) {
-    this.phase += this.hz / this.sampleRate;
-    if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
-    y[0] = this.phase < this.duty ? GATE_HIGH : 0;
+  step(x: Float64Array, y: Float64Array) {
+    if (this.external) {
+      // Q1 has some hysteresis in practice; a tenth of a volt keeps a slow edge from counting twice.
+      const v = x[0], high = this.high ? v > this.threshold - 0.1 : v > this.threshold;
+      if (high && !this.high) this.at = (this.at + 1) % 8;
+      this.high = high;
+      y[0] = v;
+    } else {
+      this.phase += this.hz / this.sampleRate;
+      if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
+      y[0] = this.phase < this.duty ? GATE_HIGH : 0;
+    }
     y[1] = this.cvs[this.at];
   }
-  read() { return { hz: this.hz, step: this.at + 1, cv: this.cvs[this.at] }; }
+  read() { return { hz: this.external ? 0 : this.hz, step: this.at + 1, cv: this.cvs[this.at], threshold: this.threshold }; }
 }
 
 /** A module whose board runs in the solver: built again (carrying its state on) when a knob on its signal path moves. */

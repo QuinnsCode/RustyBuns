@@ -51,6 +51,17 @@ test("each module's board does what its panel says", () => {
   expect(bus.gain("in-1", "send-a")).toBeCloseTo(0, 3);
   expect(bus.gain("in-1", "send-b")).toBeCloseTo(1, 2);
   expect(bus.gain("ret-a", "main")).toBeGreaterThan(0.2);
+  // Q Steps with a cable in Clock In: a step on each rise of a 5 V clock, its own 555 let go and the gate following
+  // the clock; a clock under Q1's threshold (about 1.3 V) moves nothing.
+  const steps = (volts: number) => {
+    const seq = makeSim("seq", 48000), x = new Float64Array(1), y = new Float64Array(2);
+    seq.plugged?.([true]);
+    let gate = 0;
+    for (let i = 0; i < 48000; i++) { x[0] = (i * 4) % 48000 < 24000 ? volts : 0; seq.step(x, y); gate = Math.max(gate, y[0]); }
+    return { ...seq.read(), gate };
+  };
+  expect(steps(5)).toMatchObject({ step: 5, hz: 0, gate: 5 });
+  expect(steps(1)).toMatchObject({ step: 1 });
 });
 
 const cable = (a: string, ja: string, b: string, jb: string) => ({ from: [a, ja] as [string, string], to: [b, jb] as [string, string] });
