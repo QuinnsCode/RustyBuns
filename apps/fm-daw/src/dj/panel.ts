@@ -11,7 +11,7 @@
 // people button lists who may play the decks: the leader adds a DJ with one press, anyone else asks.
 import "./panel.css";
 import { peaks, type Grid } from "./analyze.ts";
-import { Booth, changed, farView, hotOf, keyPress, posAt, sayOf, SAY_EVERY_MS, waveFrom, waveOf, type DeckPress, type DeckSay, type DeckView, type Press } from "./booth.ts";
+import { Booth, changed, farView, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, keyPress, posAt, sayOf, SAY_EVERY_MS, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
 import { Decks, type Beside, type Side, type Track } from "./engine.ts";
 import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
@@ -142,6 +142,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const players = ([0, 1] as const).map((side) => playerFace({
     side, deck: decks.decks[side], jog: jogs[side],
     press: (p, x) => press(side, p, x),
+    touch: (on) => { const t = far(side); if (t) jogOut(side, t.owner)?.touch(on, performance.now()); else jogs[side].touch(on); },
+    turn: (part, turns) => { const t = far(side); if (t) jogOut(side, t.owner)?.turn(part, turns, performance.now()); else jogs[side].turn(part, turns); },
     theirs: () => (far(side) ? view(side) : null),
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
@@ -314,6 +316,29 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     else if (p === "seek" && x !== undefined) d.seek(x * d.track.buffer.duration);
     say(true);
   }
+  // the jog wheel on a deck someone else plays: gathered here (JogOut), run there through its Jog
+  const jogsOut: [{ to: number; out: JogOut } | null, { to: number; out: JogOut } | null] = [null, null];
+  function jogOut(side: Side, to: number): JogOut | null {
+    if (!room) return null;
+    const may = room.may();
+    if (!may.ok) { flash(may.why); return null; }
+    const had = jogsOut[side];
+    if (had?.to === to) return had.out;
+    const out = new JogOut((j) => room.send({ t: "press", to, side, press: "jog", mode: jogs[side].mode, ...j }));
+    jogsOut[side] = { to, out };
+    return out;
+  }
+  /** Who holds each of your platters from their page, and when they last said so (this page's clock). */
+  const heldFar: [{ from: number; at: number } | null, { from: number; at: number } | null] = [null, null];
+  function jogHere(from: number, e: JogPressed) {
+    const jog = jogs[e.side], now = performance.now();
+    if (!decks.decks[e.side].track) return;
+    if (jog.mode !== e.mode) jog.setMode(e.mode);
+    if (e.touch !== undefined) { jog.touch(e.touch); heldFar[e.side] = e.touch ? { from, at: now } : null; }
+    if (e.turns) jog.turn(e.part, e.turns, now, JOG_SEND_MS * 3);
+    if (heldFar[e.side]?.from === from) heldFar[e.side]!.at = now;
+    say();
+  }
   function view(side: Side): DeckView {
     const theirs = far(side);
     if (theirs && room) return farView(theirs, room.now(), room.nameOf(theirs.owner), waveIn(theirs.say.wave));
@@ -342,10 +367,20 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     const on = decks.decks.some((d) => d.track && (d.playing || d.state().pos > 0));
     if (on !== onPa) { onPa = on; room.toPa(on ? decks.stream : null, decks.decks.find((d) => d.playing)?.track?.name ?? ""); }
   }
-  if (room) setInterval(() => { room.booth.sweep(performance.now()); say(); }, 250);
+  if (room) setInterval(() => {
+    const now = performance.now();
+    room.booth.sweep(now);
+    for (const side of [0, 1] as const) {
+      jogs[side].tick(now); jogsOut[side]?.out.tick(now);
+      // a platter held from a page that went quiet lets go
+      const h = heldFar[side];
+      if (h && now - h.at > JOG_LOST_MS) { heldFar[side] = null; jogs[side].touch(false); }
+    }
+    say();
+  }, 250);
   function heard(from: number, e: DeckSay | DeckPress) {
     if (!room) return;
-    if (e.t === "press") return void pressHere(e.side, e.press, e.x);
+    if (e.t === "press") return void (e.press === "jog" ? jogHere(from, e) : pressHere(e.side, e.press, e.x));
     if (room.booth.heard(from, e, performance.now(), !!decks.decks[e.side].track)) {
       // they loaded onto a deck you had: yours comes off
       decks.decks[e.side].unload();
@@ -391,6 +426,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (root.hidden) return;
     const now = performance.now();
     players[0].draw(now); players[1].draw(now); drawZoom();
+    jogsOut[0]?.out.tick(now); jogsOut[1]?.out.tick(now);
     zoomLabel.textContent = `±${zoomS()} s`;
     mixer.draw();
     quant.classList.toggle("on", decks.quantize);

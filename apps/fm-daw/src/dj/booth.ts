@@ -4,12 +4,15 @@
 // beat grid, key and a 120-bar waveform, the cue, playing or not, and where it was at a time on the room's shared
 // clock), again on every change and every two seconds. Everyone else works out where it is now from that and the
 // clock. A press on someone else's deck (`press`) goes to its player, whose machine does it; the World lets a press
-// through only from someone with the play grant, as it does a note. Loading onto a deck someone else has is fine
+// through only from someone with the play grant, as it does a note. The jog wheel goes the same way (a `press` of
+// "jog": the platter touched or let go, and its turns gathered so a scratch sends JOG_SEND_MS apart, not every frame;
+// `JogOut` gathers them, the player runs them through its own `Jog`). Loading onto a deck someone else has is fine
 // while it's stopped, and theirs goes; while it plays, it's theirs.
 // Pure, no DOM: the World's guards (project.ts), the page and the tests share it.
 import { b64url, unb64url } from "@rustybuns/util/bytes";
-import { bool, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { DeckState, Side } from "./engine.ts";
+import type { JogMode, JogPart } from "./player.ts";
 
 /** The waveform the room sees of a deck: this many bars, one byte each. */
 export const WAVE_BARS = 120;
@@ -17,6 +20,14 @@ export const WAVE_BARS = 120;
 export const SAY_EVERY_MS = 2000;
 /** A deck nobody has spoken for in this long is free again (its player's machine went quiet), ms. */
 export const STALE_MS = 9000;
+
+/** Turns of someone else's jog wheel are gathered and sent at most this often, ms (a scratch moves 60 times a second). */
+export const JOG_SEND_MS = 50;
+/** A held platter says it's still held this often, ms; its player lets go of one it hasn't heard of in JOG_LOST_MS (the hand's page went). */
+export const JOG_HELD_MS = 1000;
+export const JOG_LOST_MS = 3500;
+/** The most turns one jog press carries: far more than a hand turns a wheel in JOG_SEND_MS. */
+const JOG_MAX_TURNS = 20;
 
 /** What someone may press on a deck that plays on another machine. `seek` jumps to `x` of the way through. */
 export const PRESSES = ["play", "cueDown", "cueUp", "sync", "hot1", "hot2", "hot3", "hot4", "back", "fwd", "seek"] as const;
@@ -41,8 +52,19 @@ export const DeckSay = obj({
 });
 export type DeckSay = Of<typeof DeckSay>;
 /** Someone presses a button on `to`'s deck. */
-export const DeckPress = obj({ t: tag("press"), to: int(1, Infinity), side: SIDE, press: oneOf(PRESSES), x: opt(num(0, 1)) });
+const KeyPress = obj({ t: tag("press"), to: int(1, Infinity), side: SIDE, press: oneOf(PRESSES), x: opt(num(0, 1)) });
+/**
+ * Someone works the jog wheel on `to`'s deck, in their wheel's `mode`: the top platter touched or let go (`touch`),
+ * and `turns` (clockwise on) of `part` since the last one. Its player runs them through its own Jog.
+ */
+const JogPress = obj({
+  t: tag("press"), to: int(1, Infinity), side: SIDE, press: tag("jog"), mode: oneOf(["vinyl", "cd"] as const satisfies readonly JogMode[]),
+  part: oneOf(["top", "ring"] as const satisfies readonly JogPart[]), touch: opt(bool()), turns: opt(num(-JOG_MAX_TURNS, JOG_MAX_TURNS)),
+});
+/** A press on someone else's deck: a button, or the jog wheel. */
+export const DeckPress = (v: unknown): Of<typeof KeyPress> | Of<typeof JogPress> => check(KeyPress, v) ?? JogPress(v);
 export type DeckPress = Of<typeof DeckPress>;
+export type JogPressed = Of<typeof JogPress>;
 
 /** A waveform (peaks 0..1, any length) as the room carries it: WAVE_BARS bytes. */
 export function waveOf(peaks: Float32Array): string {
@@ -150,4 +172,40 @@ export function deckKeyAt(x: number, z: number): Press | "jog" | "screen" | null
   if (Math.abs(x) <= k.screen.half[0] && Math.abs(z - k.screen.z) <= k.screen.half[1]) return "screen";
   if (Math.hypot(x, z - k.jog.z) <= k.jog.r) return "jog";
   return null;
+}
+
+/** What a jog wheel on someone else's deck sends: a touch or a let-go of the platter, or turns of a part. */
+export type JogSent = { part: JogPart; touch?: boolean; turns?: number };
+
+/**
+ * The jog wheel on a deck someone else plays: turns are gathered and go out at most every JOG_SEND_MS, and a touch or
+ * a let-go goes at once, after the turns before it. Call `tick` each frame so the last turns of a move go too, and a
+ * held platter says it's still held.
+ */
+export class JogOut {
+  private part: JogPart | null = null;
+  private turns = 0;
+  private sent = -Infinity;
+  private held = false;
+  constructor(private readonly send: (j: JogSent) => void) {}
+  touch(on: boolean, now: number) {
+    this.flush(now);
+    if (on === this.held) return;
+    this.held = on;
+    this.send({ part: "top", touch: on }); this.sent = now;
+  }
+  turn(part: JogPart, turns: number, now: number) {
+    if (this.part !== part) this.flush(now);
+    this.part = part; this.turns += turns;
+    if (now - this.sent >= JOG_SEND_MS) this.flush(now);
+  }
+  tick(now: number) {
+    if (this.turns && now - this.sent >= JOG_SEND_MS) this.flush(now);
+    else if (this.held && now - this.sent >= JOG_HELD_MS) { this.send({ part: "top", touch: true }); this.sent = now; }
+  }
+  private flush(now: number) {
+    if (!this.part || !this.turns) return;
+    this.send({ part: this.part, turns: this.turns }); this.sent = now;
+    this.turns = 0;
+  }
 }

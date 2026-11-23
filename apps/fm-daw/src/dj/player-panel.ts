@@ -41,6 +41,8 @@ export class Jog {
   bend = 1;
   private wasPlaying = false;
   private lastRing = 0;
+  /** How long the ring's nudge holds once it stops: longer for turns that come over the live line in batches. */
+  private hold = BEND_HOLD_MS;
   private tps = 0;
   private node: AudioWorkletNode | null = null;
   /** The stretch of the track the scratch voice holds. */
@@ -66,8 +68,8 @@ export class Jog {
     this.node?.port.postMessage({ on: false });
     if (this.wasPlaying) d.play();
   }
-  /** A turn of `turns` (clockwise on) on a part of the wheel. */
-  turn(part: JogPart, turns: number, now = performance.now()) {
+  /** A turn of `turns` (clockwise on) on a part of the wheel. `hold`: how long a nudge it gives lasts once the turns stop, ms. */
+  turn(part: JogPart, turns: number, now = performance.now(), hold = BEND_HOLD_MS) {
     const d = this.deck, t = d.track;
     if (!t || !turns) return;
     const act = jogAct(this.mode, part, turns, d.playing, this.touched);
@@ -78,11 +80,11 @@ export class Jog {
       this.tps = this.tps * 0.5 + inst * 0.5;
       this.bend = bendOf(this.tps);
       d.nudge(this.bend);
-      this.lastRing = now;
+      this.lastRing = now; this.hold = hold;
     }
   }
   /** Each frame: the ring's nudge lets go once it stops moving. */
-  tick(now: number) { if (this.bend !== 1 && now - this.lastRing > BEND_HOLD_MS) this.unbend(); }
+  tick(now: number) { if (this.bend !== 1 && now - this.lastRing > this.hold) this.unbend(); }
   state() { return { mode: this.mode, touched: this.touched, bend: this.bend }; }
   private unbend() { this.tps = 0; if (this.bend !== 1) { this.bend = 1; this.deck.nudge(1); } }
   /** The scratch voice to `pos`, sending it a fresh stretch of the track when the platter nears the edge of the last. */
@@ -108,6 +110,9 @@ export interface PlayerHost {
   jog: Jog;
   /** A press on this deck, here or sent to its player in the booth. */
   press(p: Press, x?: number): void;
+  /** The top platter touched or let go, and a turn of the wheel: on this deck's Jog, or sent to its player in the booth. */
+  touch(on: boolean): void;
+  turn(part: JogPart, turns: number): void;
   /** Someone else's deck on this side, as its screen shows it (null: yours or free). */
   theirs(): DeckView | null;
   /** Draw the whole track on the screen's overview. */
@@ -166,24 +171,24 @@ export function playerFace(h: PlayerHost) {
     return { r: Math.hypot(x, y) / (r.width / 2), a: Math.atan2(y, x) };
   };
   wheel.addEventListener("pointerdown", (e) => {
-    if (grab || h.theirs()) return;
+    if (grab) return;
     const p = where(e), part = partAt(p.r);
     if (!part) return;
     e.preventDefault();
     wheel.setPointerCapture(e.pointerId);
     grab = { id: e.pointerId, part, a: p.a };
-    if (part === "top") jog.touch(true);
+    if (part === "top") h.touch(true);
   });
   wheel.addEventListener("pointermove", (e) => {
     if (!grab || e.pointerId !== grab.id) return;
     const a = where(e).a;
-    jog.turn(grab.part, turnBetween(grab.a, a));
+    h.turn(grab.part, turnBetween(grab.a, a));
     grab.a = a;
   });
-  const letGo = (e: PointerEvent) => { if (!grab || e.pointerId !== grab.id) return; if (grab.part === "top") jog.touch(false); grab = null; };
+  const letGo = (e: PointerEvent) => { if (!grab || e.pointerId !== grab.id) return; if (grab.part === "top") h.touch(false); grab = null; };
   wheel.addEventListener("pointerup", letGo);
   wheel.addEventListener("pointercancel", letGo);
-  wheel.addEventListener("wheel", (e) => { if (h.theirs()) return; e.preventDefault(); jog.turn("ring", e.deltaY / 600); }, { passive: false });
+  wheel.addEventListener("wheel", (e) => { e.preventDefault(); h.turn("ring", e.deltaY / 600); }, { passive: false });
 
   const pitch = slider(`Deck ${letter} pitch`, -1, 1, 0.001, 0, "dj-pitch");
   pitch.addEventListener("input", () => d.setPitch(Number(pitch.value)) /* a vertical range runs min at the top: slower up, faster toward you, as on a club player */);
