@@ -44,3 +44,20 @@ test("minutesBy counts every workflow's job-minutes, skipped jobs left out, most
   ]);
   expect(out).toEqual([{ wf: "desktop-drop.yml", runs: 1, min: 30, share: 0.6 }, { wf: "apps.yml", runs: 2, min: 20, share: 0.4 }]);
 });
+
+test("a test failing on 3+ PRs in a day opens one issue, and not again while it is open or for that day", async () => {
+  const { blockersOf, issuesFor } = await import("./ci-report.ts");
+  const shelf = "test/shelf.test.ts › shelf lists the apps";
+  const fail = (pr: number, h: number, tests = [shelf]) => ({ suite: "test playground", tests, touched: pr !== 1, at: new Date(2026, 10, 16, h).toISOString(), pr, run: 100 + pr });
+  const big = blockersOf([fail(1, 9), fail(2, 10), fail(2, 11), fail(3, 12), fail(4, 13, ["test/other.test.ts › x"]), fail(5, 14, ["test/other.test.ts › x"])]);
+  expect(big.map((b) => [b.test, b.prs, b.untouched])).toEqual([[shelf, [1, 2, 3], 1]]);
+
+  const [issue, ...more] = issuesFor(big, []);
+  expect(more).toEqual([]);
+  expect(issue!.title).toBe(`CI: ${shelf} failed on 3 PRs on 2026-11-16`);
+  expect(issue!.body).toContain("#1, #2, #3");
+  expect(issuesFor(big, [{ number: 9, state: "OPEN", body: issue!.body }])).toEqual([]);
+  expect(issuesFor(big, [{ number: 9, state: "CLOSED", body: issue!.body }])).toEqual([]);
+  // Closed on an earlier day and failing again: a new issue.
+  expect(issuesFor(big, [{ number: 9, state: "CLOSED", body: issue!.body.replace("day=2026-11-16", "day=2026-11-15") }])).toHaveLength(1);
+});
