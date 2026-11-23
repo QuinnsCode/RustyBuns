@@ -175,7 +175,7 @@ export function PianoRoll(props: {
         </button>
         <button className={snapOn ? "ghost tiny on" : "ghost tiny"} aria-pressed={snapOn} onClick={() => setSnap(!snapOn)}
           title={snapOn ? "Snap is on (N): notes land on the Grid. Hold Alt while you drag to place one freely" : "Snap is off (N): notes start and end exactly where you put them"} aria-label="Snap to grid">
-          <Icon d={["m12 15 4 4", "M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z", "m5 8 4 4"]} />
+          <Icon d={MAGNET} />
         </button>
         <span className="silk roll-snap">{snapOn ? "Snap" : "Free"}</span>
       </div>
@@ -223,7 +223,10 @@ export function PianoRoll(props: {
 }
 
 /** A lucide icon (ISC): pencil, scissors and magnet above. */
-function Icon({ d, circles = [] }: { d: string[]; circles?: [number, number][] }) {
+/** The Snap magnet, the roll's and the drum grid's. */
+export const MAGNET = ["m12 15 4 4", "M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z", "m5 8 4 4"];
+
+export function Icon({ d, circles = [] }: { d: string[]; circles?: [number, number][] }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       {circles.map(([cx, cy]) => <circle key={`${cx}:${cy}`} cx={cx} cy={cy} r="3" />)}

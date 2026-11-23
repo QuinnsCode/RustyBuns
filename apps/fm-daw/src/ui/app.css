@@ -117,6 +117,8 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .step:hover { outline: 1px solid var(--track); }
 .step.on { background: var(--track); opacity: calc(.45 + var(--v) * .55); }
 .step.off-grid { background: repeating-linear-gradient(135deg, var(--track) 0 4px, color-mix(in srgb, var(--track) 55%, var(--cell)) 4px 8px); }
+.step { position: relative; overflow: hidden; }
+.hit-mark { position: absolute; top: 3px; bottom: 3px; width: 3px; border-radius: 2px; background: var(--ink); opacity: .85; pointer-events: none; }
 .playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); pointer-events: none; box-shadow: 0 0 6px var(--ink); }
 
 /* the view window over the editors (Timeline.tsx) */
