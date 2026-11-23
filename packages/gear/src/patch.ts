@@ -51,7 +51,7 @@ export function cableFor(kind: string): CableKind {
 const isOut = (kind: string) => kind.endsWith("-out");
 
 /** Gear that makes a signal of its own when it has power (a desk: its playback). */
-const SOURCES = new Set(["mixer-small", "guitar", "amp-head", "deck-media", "turntable"]);
+const SOURCES = new Set(["mixer-small", "guitar", "amp-head", "deck-media", "turntable", "deck-cd"]);
 const DESKS = new Set(["mixer-small"]);
 const deskIn = (kind: string) => kind === "xlr-in" || kind === "line-in";
 
@@ -60,6 +60,7 @@ const DJ_INS = ["phono-in", "rca-in"].flatMap((k) => [1, 2, 3, 4].map((n) => `${
 const THROUGH: Record<string, Record<string, readonly string[]>> = {
   "di-box": { "xlr-out": ["inst-in"], "line-out": ["inst-in"] },
   "mixer-dj": Object.fromEntries([1, 2, 3, 4].map((n) => [`xlr-out-${n}`, DJ_INS])),
+  "mixer-club-4": Object.fromEntries([1, 2, 3, 4].map((n) => [`xlr-out-${n}`, DJ_INS])),
 };
 
 type Link = { cable: Cable; out: End; in: End };

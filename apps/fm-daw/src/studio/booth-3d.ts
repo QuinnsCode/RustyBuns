@@ -22,7 +22,7 @@ export class BoothGear {
   clear() { this.gear = []; }
   /** A media deck model on the table, deck A (DJ's left) or B. */
   add(group: THREE.Object3D, side: Side) {
-    const screenPart = group.getObjectByName("part:screen"), jog = group.getObjectByName("part:jog") ?? null;
+    const screenPart = group.getObjectByName("part:screen"), jog = group.getObjectByName("part:jog") ?? group.getObjectByName("part:platter") ?? null;
     const ring: THREE.Mesh[] = [];
     group.getObjectByName("part:ring")?.traverse((o) => { if (o instanceof THREE.Mesh) ring.push(o); });
     let screen: CanvasRenderingContext2D | null = null, tex: THREE.CanvasTexture | null = null;

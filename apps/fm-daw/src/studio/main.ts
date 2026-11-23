@@ -293,11 +293,11 @@ function thing(s: Spot): THREE.Group {
       for (const x of [-t.w / 2 + 0.05, t.w / 2 - 0.05]) for (const z of [-t.d / 2 + 0.05, t.d / 2 - 0.05]) tube(0.02, v(x, 0, z), v(x, top - 0.04, z), blackSteel);
     }
     const front = t.d / 2 - 0.08;
-    const mixer = gearModel("mixer-dj", { look });
-    put(mixer, 0, top, front - 0.414 / 2);
+    const mixer = gearModel("mixer-club-4", { look });
+    put(mixer, 0, top, front - 0.358 / 2);
     for (const side of [-1, 1]) {
-      const deck = gearModel("deck-media", { look });
-      put(deck, side * (0.333 / 2 + 0.03 + 0.329 / 2), top, front - 0.453 / 2);
+      const deck = gearModel("deck-cd", { look });
+      put(deck, side * (0.32 / 2 + 0.03 + 0.32 / 2), top, front - 0.405 / 2);
       // deck A on the DJ's left: its screen, jog and keys are the booth's (booth-3d.ts)
       boothGear.add(deck, side < 0 ? 0 : 1);
     }

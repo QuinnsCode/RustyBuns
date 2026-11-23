@@ -258,6 +258,24 @@ const list: Gear[] = [
     jacks: { "power-in": 1, "phono-in": 4, "rca-in": 4, "xlr-out": 4, "ground-in": 2 },
     draw: { idle: 30, loud: 40 },
   },
+  // The Desert Gathering booth's pair (#5651): wired as the deck and mixer above, our own models of two club classics.
+  {
+    id: "deck-cd",
+    what: "club media player",
+    size: box(0.32, 0.105, 0.405),
+    kg: 4.6,
+    jacks: { "power-in": 1, "rca-out": 1, "digital-out": 1 },
+    draw: { idle: 22, loud: 30 },
+    deck: { out: "line" },
+  },
+  {
+    id: "mixer-club-4",
+    what: "4-channel analog club mixer with twin filters",
+    size: box(0.32, 0.088, 0.358),
+    kg: 6.5,
+    jacks: { "power-in": 1, "phono-in": 4, "rca-in": 4, "xlr-out": 4, "ground-in": 2 },
+    draw: { idle: 25, loud: 35 },
+  },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
   // ---- The festival's two systems (Sound Guy Simulator step 9, #5029), our own boxes in two well-known families. ----
