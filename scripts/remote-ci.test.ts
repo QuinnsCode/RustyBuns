@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
-import { battery, ciJobs, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
+import { battery, ciJobs, load, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -128,6 +128,36 @@ test("a run waits until Bob serves, takes back a dead run's slot and ends what i
     expect(menu(after, Date.now()).split("\n")[0]).toBe("Bob: idle");
     expect(await Bun.file(`${root}/up`).exists()).toBe(true);
     expect((await Bun.$`git status --porcelain`.cwd(work).text()).trim()).toBe("?? new.txt");
+  } finally {
+    process.env = saved;
+  }
+}, 30000);
+
+// A push packs what the slot's refs don't reach. Once a run's commit stays there, the next run one commit on sends
+// just that commit, not all the history since the slot was set up (seven 200 MB packs at once restarted the office Mac).
+test("after a run the slot keeps its commit, so the next push packs only what is new", async () => {
+  const root = mkdtempSync(`${tmpdir()}/remote-ci-push-`), work = `${root}/work`, slot = `${root}/builder/slot-1`, ssh = `${root}/ssh`;
+  const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  const commit = async (file: string, text: string) => {
+    await Bun.write(`${work}/${file}`, text);
+    return (await Bun.$`git add -A && git commit -qm ${file} && git rev-parse HEAD`.cwd(work).env(env).text()).trim();
+  };
+  await Bun.write(`${work}/package.json`, `{"name":"w"}`);
+  await Bun.$`git init -q`.cwd(work);
+  await commit("one.txt", "one");
+  await Bun.$`git clone -q ${work} ${slot} && mkdir -p ${root}/builder/runs`;
+  await Bun.write(ssh, `#!/bin/sh\nshift\ncd "${root}" && exec sh -c "$*"\n`);
+  chmodSync(ssh, 0o755);
+  const saved = { ...process.env };
+  Object.assign(process.env, env, { GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb` });
+  try {
+    const two = await commit("big.txt", "x".repeat(1 << 20));
+    expect(await load({ host: "max", dir: `${root}/builder`, ssh: [ssh] }, "slot-1", two, work)).toBe(0);
+    const three = await commit("c.txt", "c");
+    const shown = (await Bun.$`git for-each-ref ${"--format=%(objectname)"}`.cwd(slot).text()).trim().split("\n");
+    const packed = (await Bun.$`git rev-list --objects ${three} --not ${shown}`.cwd(work).text()).trim().split("\n");
+    expect(packed).toHaveLength(3); // its commit, its tree and c.txt; not big.txt again
+    expect(readdirSync(`${root}/rb`)).toEqual([]); // the push lock is given back
   } finally {
     process.env = saved;
   }
