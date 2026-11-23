@@ -11,7 +11,7 @@
 //     resistors and capacitor for the clock, the Schmitt trigger's divider for the LFO. Change a part on the board and
 //     the sound follows. Q Keys' microcontroller is its firmware's logic (notes, the MIDI clock) into the board's gains.
 // Volts in and volts out, Eurorack's levels: audio +-5 V, 1 V an octave, gates 0 to 10 V.
-import { mulberry32 } from "@rustybuns/util";
+import { clamp, mulberry32 } from "@rustybuns/util";
 import { Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { netlistOf, readBoard, type Board, type BoardOptions, type BoardPart } from "../circuit/tscircuit.ts";
 import { panel } from "../../circuits/wall-panels.ts";
@@ -285,7 +285,9 @@ class Lfo implements Sim {
 /**
  * Q Steps: the 555's rate and duty from R1, R2, Rate and C1; each step's CV from its pot, the Schottky and R4/R5. With
  * a cable in Clock In, a step on each rise past Q1's threshold (its Vbe over R9's share of R8 and R9), and the gate out
- * is that clock.
+ * is that clock. In a sesh (`tempo` with the band's beat) its own clock follows the shared beat, so every page plays
+ * the same step on the same beat: the 555's rate rounds to the nearest power of two steps a beat (an eighth to 16), and
+ * the count is the beat's.
  */
 class Seq implements Sim {
   readonly ins = ["clock"];
@@ -298,6 +300,10 @@ class Seq implements Sim {
   private cvs: number[] = [];
   private external = false;
   private high = false;
+  /** The sesh's tempo while it follows the band's beat, else 0 (its own 555); the beat it is on, and its steps a beat. */
+  private bpm = 0;
+  private beat = 0;
+  private perBeat = 1;
   private readonly threshold: number;
   constructor(private readonly sampleRate: number, k: Record<string, number>) {
     const r = (n: string) => value(this.b, n);
@@ -310,6 +316,7 @@ class Seq implements Sim {
     const rb = r("R2") + rheostat(b, "RV9"), ra = r("R1");
     this.hz = 1.44 / ((ra + 2 * rb) * r("C1"));
     this.duty = (ra + rb) / (ra + 2 * rb);
+    this.divide();
     const down = r("R5") / (r("R4") + r("R5"));
     this.cvs = Array.from({ length: 8 }, (_, i) => {
       const p = part(b, `RV${i + 1}`);
@@ -324,13 +331,28 @@ class Seq implements Sim {
       this.high = high;
       y[0] = v;
     } else {
-      this.phase += this.hz / this.sampleRate;
-      if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
+      if (this.bpm) {
+        this.beat += this.bpm / 60 / this.sampleRate;
+        const t = this.beat * this.perBeat, w = Math.floor(t);
+        this.at = ((w % 8) + 8) % 8; this.phase = t - w;
+      } else {
+        this.phase += this.hz / this.sampleRate;
+        if (this.phase >= 1) { this.phase -= 1; this.at = (this.at + 1) % 8; }
+      }
       y[0] = this.phase < this.duty ? GATE_HIGH : 0;
     }
     y[1] = this.cvs[this.at];
   }
-  read() { return { hz: this.external ? 0 : this.hz, step: this.at + 1, cv: this.cvs[this.at], threshold: this.threshold }; }
+  /** Steps a beat: the 555's rate to the nearest power of two of the sesh's beats, an eighth to 16. */
+  private divide() { if (this.bpm) this.perBeat = 2 ** clamp(Math.round(Math.log2((this.hz * 60) / this.bpm)), -3, 4); }
+  tempo(bpm: number, beat: number | null) {
+    if (beat === null || !(bpm > 0)) { this.bpm = 0; return; }
+    this.bpm = bpm;
+    this.divide();
+    // onto the band's beat only when it is off by more than a fiftieth of one, so a message's jitter never moves a gate
+    if (Math.abs(beat - this.beat) > 0.02) this.beat = beat;
+  }
+  read() { return { hz: this.external ? 0 : this.bpm ? (this.perBeat * this.bpm) / 60 : this.hz, step: this.at + 1, cv: this.cvs[this.at], threshold: this.threshold }; }
 }
 
 /** A module whose board runs in the solver: built again (carrying its state on) when a knob on its signal path moves. */

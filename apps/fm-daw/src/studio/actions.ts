@@ -29,6 +29,7 @@ export const ACTIONS: Action[] = [
   { key: "Mouse", does: "Look (or the right stick)", icon: "eye", where: "walk", table: "Look" },
   { key: "Space", does: "Sit at the instrument or seat in front of you", icon: "armchair", where: "walk", strip: 1, short: "sit", table: "Sit at a spot, stand up" },
   { key: "I", does: "Plug in your guitar (in the vocal booth, your mic)", icon: "guitar", where: "walk", strip: 2, short: "guitar" },
+  { key: "K", does: "A new sound wall module in your hands, for the gear wall's case", icon: "circuit-board", where: "walk" },
   { key: "Q", does: "Picture quality, high or low", icon: "monitor", where: "walk" },
   { key: "Tab", does: "The instrument's panel: patch, EQ, mixer strip, notes", icon: "sliders-horizontal", where: "seat", at: [...PLAYED, "drums"], strip: 1, short: "the instrument's panel" },
   { key: "Tab", does: "The full mixer: a channel per track and per player, and the returns (sitting at the desk opens it too)", icon: "sliders-horizontal", where: "walk" },

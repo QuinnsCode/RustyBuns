@@ -1,10 +1,12 @@
 // The gear room's hands in the jam room: pick up, set down, cables and knobs at the studio's gear wall (gear-wall.ts),
 // on the sesh's patch. It is room.ts's Room, kept in step with the World as the gear room page keeps its own, with
 // your body put into the gear room's frame each time you reach. What a guitar plays through comes out of the same
-// patch, so every page in the sesh hears the chain cabled at the wall, from where its cab stands. Pure: no DOM.
-import { type Aim, type Answer, type Room, aimed, boardIn, drop, gearOf, hand, heldId, hint, item, knobValue, landingPose, listen, lookAt, newRoom, openJacks, setKnob, startPatch, turnHeld, use } from "../room/room.ts";
+// patch, so every page in the sesh hears the chain cabled at the wall, from where its cab stands, and the sound wall's
+// case plays there too, from where its Q Out stands. Pure: no DOM.
+import { type Aim, type Answer, type Room, aimed, boardIn, bringModule, drop, gearOf, hand, heldId, hint, item, knobValue, landingPose, listen, lookAt, newRoom, openJacks, setKnob, startPatch, turnHeld, use } from "../room/room.ts";
 import { applyStudio, patchOps, type StudioOp, type StudioServer } from "../studio.ts";
 import type { AmpSettings } from "../amp/messages.ts";
+import type { WallSpec } from "../wall/wall.ts";
 import { gearBounds, gearPlace, toGear, toStudio } from "./gear-wall.ts";
 import type { Jam } from "./jam.ts";
 import type { StudioDef } from "./room.ts";
@@ -77,6 +79,12 @@ export class GearHands {
   letGo(): Answer { return drop(this.room); }
   /** Turn what you carry (Q, E): -1 left, 1 right. False when your hands are empty, so the key does what it did. */
   turn(dir: number): boolean { if (!heldId(this.room)) return false; turnHeld(this.room, dir); return true; }
+  /** A new sound wall module in your hands (K's list), by kind: a `bring` the World passes on like any box. */
+  bring(j: Jam, kind: string): Answer {
+    if (!this.joined) return { ok: false, why: "The sesh's gear is on its way" };
+    if (j.me.seat) return { ok: false, why: "Stand up to carry a module" };
+    return bringModule(this.reach(j), kind);
+  }
   /** The line under the crosshair at the wall, or "" away from it. */
   hint(j: Jam): string { return this.wants(j) ? hint(this.reach(j), this.aim(j)) : ""; }
 
@@ -89,6 +97,16 @@ export class GearHands {
     const from = h.chain[0] ? item(this.room, h.chain[0]) : undefined;
     if (!h.settings || !cab || from?.gear !== "guitar") return null;
     return { settings: h.settings, at: toStudio(gearPlace(this.def), cab.at[0], cab.at[2]), chain: h.chain };
+  }
+
+  /**
+   * The sound wall as the patch has it (the modules in the case, the cables, the sends' gear), and where its Q Out
+   * stands in the studio (x, y, z): null when no Q Out is in the case.
+   */
+  wall(): { spec: WallSpec; at: [number, number, number] | null; playing: boolean; problems: string[] } {
+    const w = listen(this.room.studio.patch).wall, out = item(this.room, w.spec.modules.find((m) => m.kind === "out")?.id ?? "");
+    const at = out ? toStudio(gearPlace(this.def), out.at[0], out.at[2]) : null;
+    return { spec: w.spec, at: at && out ? [at[0], out.at[1] + 0.06, at[1]] : null, playing: w.playing, problems: w.problems };
   }
 
   /** For the harness (qjam.state().gear): the patch, what you hold and aim at, where a box you carry would land, and what plays. */
