@@ -158,13 +158,17 @@ const teed = (cmd: string) => `{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"
 
 // Claim a free slot, waiting while every slot is busy. The same round trip writes the slot's run record and
 // reads the builder's battery.
+/** A builder slot's name, as the claim prints it. */
+const SLOT = /^slot-[\w-]+$/;
 export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string; batt: Battery }> {
   const write = rec ? `printf '%s' ${q(JSON.stringify(rec))} > "runs/$d.json"; : > "runs/$d.log"; ` : "";
-  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 -mmin +${STALE_MIN} -exec rmdir {} + ; `
+  // a lock is a folder; anything else there is junk (a heartbeat's touch after release once left a file at locks/slot-1, and
+  // every claim after it read rmdir's complaint as its slot name and ran nowhere, over and over, for hours: 2026-11-22)
+  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN} -exec rmdir {} + 2>/dev/null; `
     + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);
-    if (code === 0) { const [slot = "", ...rest] = out.trim().split("\n"); return { slot, batt: battery(rest.join("\n")) }; }
+    if (code === 0) { const lines = out.trim().split("\n"), at = lines.findIndex((l) => SLOT.test(l)); return { slot: lines[at] ?? "", batt: battery(lines.slice(at + 1).join("\n")) }; }
     if (code !== BUSY) throw new Error(`could not reach the builder (${code}): ${out.trim() || "no slots? run scripts/builder-setup.sh there"}`);
     if (!waited) console.log("every builder slot is busy; waiting");
     await Bun.sleep(5000);
@@ -467,11 +471,15 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
       if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
       if (p.where === "here") return fallback(argv, cwd, p.why!);
       if (said !== p.why) console.log((said = p.why!));
+      // the session that started this wait is gone (it was a background task): nobody reads the answer, so stop waiting
+      // rather than poll for Bob for days under pid 1 (2026-11-23, leftovers that held the office to three workers)
+      if (process.ppid === 1) { console.error("the session that asked for this run is gone: not waiting for the builder"); return NOT_RUN; }
       await Bun.sleep(poll);
     }
 
     // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
-    const beat = setInterval(() => { remote(b, `touch locks/${q(slot)}`); }, HEARTBEAT_MS);
+    // only a lock that is still there is kept fresh: a touch after release would leave a file where the lock was
+    const beat = setInterval(() => { remote(b, `[ -d locks/${q(slot)} ] && touch locks/${q(slot)}`); }, HEARTBEAT_MS);
     const finish = (code: number) => { clearInterval(beat); return code === LOST ? release(b, slot) : release(b, slot, { ...rec, ended: Date.now(), code }); };
     const giveBack = () => { finish(130).finally(() => process.exit(130)); };
     process.once("SIGINT", giveBack);
