@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { board, isClimb, movedTo, next, score, target, type Climb } from "./climbs.ts";
+import { board, hire, isClimb, movedTo, next, score, target, type Climb } from "./climbs.ts";
 
 test("a round's Score line sets the score and target; without one the last x/10 is a guess", () => {
   const rows: [string, string[], number | null, number | null, boolean][] = [
@@ -46,4 +46,18 @@ test("a climb left open after it moved up is flagged on the board and never hand
     ({ number, title: `climb ${number}`, score, scale: 10, target: 9, guessed: false, touched: "2026-11-02T00:00:00Z", taken: null, stalled: false, moved });
   expect(next([c(2802, 1.5, 3516), c(3516, 4)])?.number).toBe(3516);
   expect(board([c(2802, 1.5, 3516)])[0]).toContain("(moved up to #3516, close it)");
+});
+
+test("--wait hires again while the office is full, and stops on a hire or any other refusal", async () => {
+  const full = { code: 1, out: "office-workers: The office is at its limit of 12 workers on this machine — send one home before hiring another" };
+  const rows: [boolean, { code: number; out: string }[], number, number][] = [
+    [true, [full, full, { code: 0, out: "Hired Nova" }], 0, 3],
+    [false, [full, { code: 0, out: "Hired Nova" }], 1, 1],
+    [true, [{ code: 1, out: "open work changes its files" }, { code: 0, out: "" }], 1, 1],
+  ];
+  for (const [wait, replies, code, calls] of rows) {
+    let n = 0;
+    expect(await hire(async () => replies[n++]!, wait, async () => {})).toBe(code);
+    expect(n).toBe(calls);
+  }
 });
