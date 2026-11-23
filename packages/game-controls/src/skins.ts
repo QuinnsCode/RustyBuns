@@ -53,6 +53,7 @@ const classic = `
 .gc-craft .gc-key{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .gc-craft .gc-acct{display:grid;gap:10px;justify-items:start}
 .gc-craft .gc-acct p{margin:0;color:var(--gc-dim)}
+.gc-choice{display:grid;gap:6px}.gc-seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:6px}.gc-hint{margin:0;font-size:12px;opacity:.75}.gc-hint[hidden]{display:none}
 @media (max-width:520px){.gc-dialog{align-items:end}.gc-card{border-radius:14px 14px 0 0}}
 `;
 

@@ -43,15 +43,18 @@ export function parsePadBindings(raw: unknown, actions: PadAction[]): PadBinding
   return out;
 }
 
-export function createPadBindings(actions: PadAction[], stored: unknown = null) {
+/** `reserved`: buttons the game reads for itself (Start for a menu, the d-pad for walking) that no action may take. */
+export function createPadBindings(actions: PadAction[], stored: unknown = null, reserved: readonly number[] = []) {
   let now = parsePadBindings(stored, actions);
+  for (const [id, b] of Object.entries(now)) if (reserved.includes(b)) delete now[id];
   const get = (id: string): number => now[id] ?? actions.find((a) => a.id === id)?.button ?? -1;
   return {
     actions,
     get,
     isDefault: (id: string) => !(id in now),
-    /** Bind the action to this button; one another action holds is refused (the label of the holder comes back). */
+    /** Bind the action to this button; one another action holds is refused (the label of the holder comes back), and a reserved one with `with: ""`. */
     set(id: string, button: number): { ok: true } | { ok: false; with: string } {
+      if (reserved.includes(button)) return { ok: false, with: "" };
       const other = actions.find((a) => a.id !== id && get(a.id) === button);
       if (other) return { ok: false, with: other.label };
       now = { ...now, [id]: button };
@@ -125,8 +128,8 @@ export function createPad(binds: PadBindingSet, zone = 0.15, read: () => ArrayLi
 export type Pad = ReturnType<typeof createPad>;
 
 /** The game's pad bindings, restored from what this browser saved under the same `key` the cog uses. */
-export function loadPad(key: string, actions: PadAction[], zone?: number): Pad {
+export function loadPad(key: string, actions: PadAction[], zone?: number, reserved: readonly number[] = []): Pad {
   let stored: unknown = null;
   try { stored = JSON.parse(localStorage.getItem(`${key}.pad`) ?? "null"); } catch {}
-  return createPad(createPadBindings(actions, stored), zone);
+  return createPad(createPadBindings(actions, stored, reserved), zone);
 }

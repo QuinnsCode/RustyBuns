@@ -123,4 +123,5 @@ def main():
         print(f"closeups -> {out} (ortho {scale:.2f} m)")
 
 
-main()
+if __name__ == "__main__":  # proposals/house/lineup.py imports the camera and light from here
+    main()

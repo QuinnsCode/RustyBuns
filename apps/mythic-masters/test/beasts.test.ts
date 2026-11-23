@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
 import { int, obj, opt } from "@rustybuns/util/guard";
 import { loadGlb } from "@rustybuns/rig/model";
+import * as THREE from "three";
 import { BeastRig, feetPaired, headAndTail, Puppet, wingsOf, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, newMatch, type Fighter } from "../src/sim.ts";
@@ -260,4 +261,73 @@ test.each(["yeti", "rougarou"])("the %s's body rebounds past rest after a blow, 
   }
   expect(Math.max(...rise.slice(30, 54))).toBeGreaterThan(0.04);    // up over rest between 0.5 and 0.9 s
   expect(Math.abs(rise.at(-1)!)).toBeLessThan(0.05);                 // and back near it by 1.5 s
+}, 30_000);
+
+// #5185 round 12: the Rougarou's hips rode a free sine and rose past what its standing leg reached, so the planted foot
+// came up off the ground and it ran on no foot at all (5% of frames at 0.6 of its top speed).
+test("a running rougarou keeps a foot on the ground", async () => {
+  const c = ROSTER.find((x) => x.id === "rougarou")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0], h = body(c).height, v = f.b.topSpeed * 0.6;
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  for (let i = 0; i < 30; i++) p.update(f, 1 / 60, i);
+  f.vel = { x: v, y: 0, z: 0 };
+  let none = 0;
+  for (let i = 30; i < 270; i++) {
+    f.pos.x += v / 60;
+    p.update(f, 1 / 60, i);
+    if (i >= 90 && p.feetWorld().every((q) => q.y > 0.03 * h)) none++;
+  }
+  expect(none).toBeLessThanOrEqual(2);
+}, 30_000);
+
+// #5185 round 13: the sim keeps the two bodies' circles apart, but a long body reaches past its own: standing close, the
+// Black Shuck's snout and shoulders sat 0.4 m inside the Wampus Cat's. The whole body gives ground until it is clear.
+test("standing close, the black shuck keeps its body out of the wampus cat's", async () => {
+  const c = ROSTER.find((x) => x.id === "black-shuck")!, o = ROSTER.find((x) => x.id === "wampus-cat")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, o).f[0], r = body(o).radius, foe = { x: body(c).radius + r, y: 0, z: 0 };
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i, foe, r);
+  let into = -Infinity;
+  p.group.traverse((b) => { if (b instanceof THREE.Bone) into = Math.max(into, b.getWorldPosition(new THREE.Vector3()).x - (foe.x - r)); });
+  expect(into).toBeLessThan(0.05);
+}, 30_000);
+
+// #5185 round 11: flying chest down, a flyer's arms hung straight under the chest (the Jersey Devil's ahead of its hips,
+// the Sasabonsam's 0.4 of its height below them). They sweep back along the flanks now.
+test.each([
+  ["jersey-devil", "behind the hips", (tip: { x: number; y: number }, _h: number) => expect(tip.x).toBeLessThan(0)],
+  ["sasabonsam", "up along the body", (tip: { x: number; y: number }, h: number) => expect(tip.y).toBeGreaterThan(-0.32 * h)],
+] as const)("the %s flies with its arms swept back: %s", async (id, _what, check) => {
+  const c = ROSTER.find((x) => x.id === id)!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 2, z: 0 }; f.yaw = 0; f.onGround = false; f.flying = true; f.vel = { x: f.b.topSpeed * 0.8, y: 0, z: 0 };
+  for (let i = 0; i < 120; i++) p.update(f, 1 / 60, i, { x: 0, y: 1, z: 10 });
+  for (const l of p.limbsWorld()) check(l.drawn.sub(p.rootWorld()), body(c).height);
+}, 30_000);
+
+// #5185 round 10: a blow twisted a biped about 20 degrees away from it and the twist only eased off with the recoil, so
+// it never came back square. Now it turns less, swings back past square, and settles.
+test("a blow's twist swings the sasquatch back past square, then settles", async () => {
+  const c = ROSTER.find((x) => x.id === "sasquatch")!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const striker = { x: 3, y: 0, z: 0.6 }, body0 = p.group.children[0]!;
+  let tick = 0;
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, tick++, striker);
+  const yaw: number[] = [];
+  f.state = "stun"; f.stun = 22;
+  for (let i = 1; i <= 54; i++) {
+    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free";
+    p.update(f, 1 / 60, tick++, striker);
+    yaw.push((body0.rotation.y * 180) / Math.PI);
+  }
+  const away = Math.sign(yaw[6]!), peak = Math.max(...yaw.map((y) => y * away));
+  expect(peak).toBeGreaterThan(6);                                   // it still turns on the blow
+  expect(peak).toBeLessThan(15);                                     // but not the 20 degrees it took
+  expect(Math.min(...yaw.slice(15, 40).map((y) => y * away))).toBeLessThan(-1.5);   // past square the other way
+  expect(Math.abs(yaw.at(-1)!)).toBeLessThan(2);                     // and square again by 0.9 s
 }, 30_000);

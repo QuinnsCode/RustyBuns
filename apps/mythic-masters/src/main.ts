@@ -12,7 +12,7 @@ import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rustybuns/game-controls";
+import { type Bindings, keyName, loadPad, mountControls, parseSettings, volumeOf } from "@rustybuns/game-controls";
 import { ACTIONS, actionOf, keymap, KEY, moveKeys, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
 import { check, obj, str } from "@rustybuns/util/guard";
@@ -44,7 +44,9 @@ import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creatur
 import { worldView, type Foe } from "./world/view.ts";
 import { travelOf } from "./world/world.ts";
 import { plantBudget, setPlantBudget } from "./world/flora.ts";
-import { pickQuality, QUALITY } from "@rustybuns/util/quality";
+import { applyQuality, budgetQuality, type Quality, QUALITY } from "@rustybuns/util/quality";
+import { CHOICES, type Choice, choose, looksOf, qualityNote, startChoice } from "./display.ts";
+import { music as score, SCORE, type Cue } from "./music.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
 import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
@@ -67,7 +69,6 @@ import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Scene as CutScene, type Stage, type VsCard, type Where } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
 import { Memories } from "@rustybuns/util/memories";
-import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
@@ -96,7 +97,20 @@ const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)
 const canvas = $<HTMLCanvasElement>("#view");
 // The quality tier (@rustybuns/util/quality: ?quality=low|mid|high, remembered, else guessed from the GPU): the canvas's pixel
 // ratio, antialiasing and shadows, whether the bloom passes run, and how far the open world's plants reach (src/world/flora.ts).
-const tier = pickQuality().quality, QUAL = QUALITY[tier];
+// Settings > Display picks it by hand (src/display.ts) or leaves it on Auto, where the frame budget below steers it.
+const started = startChoice(), tier = started.tier, QUAL = QUALITY[tier];
+let qualityChoice: Choice = started.choice, drawn: Quality = tier;
+// The view's looks from Settings > Display (looksOf): read by frame(), draw() and the bloom pass.
+let looks = { brightness: 1, shake: 1, still: false, bloom: true };
+// Reduce motion: every check of the OS setting on this page (page.ts stillPages, util/morph.ts) answers "reduce" while
+// the switch is on, and body.still carries the same for the CSS (tome.css, at the end).
+const STILL_QUERY = /^\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)$/, askMedia = window.matchMedia.bind(window);
+const osStill = askMedia("(prefers-reduced-motion: reduce)");
+window.matchMedia = (q: string): MediaQueryList => {
+  const real = askMedia(q);
+  if (!looks.still || !STILL_QUERY.test(q.trim())) return real;
+  return new Proxy(real, { get: (t, k) => { if (k === "matches") return true; const v: unknown = Reflect.get(t, k, t); return typeof v === "function" ? v.bind(t) : v; } });
+};
 // `?draw=0`: the page plays (the world, its fights, the party's socket) but draws nothing, for a machine whose GL is software
 // (a CI runner draws the open world at a frame a second): the two-page journey runs there this way (test/together.test.ts).
 const DRAW = new URLSearchParams(location.search).get("draw") !== "0";
@@ -119,13 +133,26 @@ scene.environmentIntensity = 0.35;
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 300);
 camera.position.set(-14, 7, 0);
 // On a desktop the brightest things (eyes, flames, shots, hit sparks) bloom into the air around them; a phone
-// skips the extra passes and draws straight to the screen.
+// skips the extra passes and draws straight to the screen, until Settings > Display turns Bloom on there.
+const PHONE = matchMedia("(max-width: 700px), (pointer: coarse)").matches;
 const grade = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, tint: { value: new THREE.Color(1, 1, 1) }, saturation: { value: 1 } },
   vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
   fragmentShader: "uniform sampler2D tDiffuse; uniform vec3 tint; uniform float saturation; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(mix(vec3(l), c.rgb, saturation) * tint, c.a); }",
 });
-const composer = tier === "low" || matchMedia("(max-width: 700px), (pointer: coarse)").matches ? null : new EffectComposer(renderer);
+let composer: EffectComposer | null = null;
+/** The bloom chain: made at load on a desktop not on Low, else the first time Bloom is wanted on a tier that has it. */
+function composeBloom() {
+  if (composer) return composer;
+  const c = (composer = new EffectComposer(renderer));
+  c.addPass(new RenderPass(scene, camera));
+  c.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
+  c.addPass(grade);
+  c.addPass(new OutputPass());
+  c.setPixelRatio(renderer.getPixelRatio()); c.setSize(innerWidth, innerHeight);
+  return c;
+}
+if (tier !== "low" && !PHONE) composeBloom();
 // A wild one's beast compiles its shaders before it swaps in for its capsule (walker3d.ts), for the target the scene is
 // really drawn into (the composer's, when there is one: tone mapping and colour space are part of a program).
 warmWith((o) => {
@@ -136,12 +163,6 @@ warmWith((o) => {
   renderer.setRenderTarget(was);
   return ready;
 });
-if (composer) {
-  composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 0.88));
-  composer.addPass(grade);
-  composer.addPass(new OutputPass());
-}
 /** The arena skin's light colour grade (gradeOf): a tint and saturation on the linear image, before tone mapping. */
 function setGrade(skin: Skin) {
   const g = gradeOf(skin);
@@ -153,12 +174,29 @@ addEventListener("resize", resize); resize();
 // mid at most) drops a tier when frames miss the 60 Hz beat for a few seconds, and climbs
 // back, no higher than it started, once they're calm: the pixel ratio and shadows follow, and low turns the bloom off. Its
 // own rAF callback, so it reads the same timestamps as the game's loop without living in it.
-const tiers = budgetQuality(renderer, [], { quality: tier, onChange: (q) => {
+// A tier picked in Settings is held: the budget only steers on Auto.
+/** What a tier change touches past the renderer: the plants, the composer's size, and whether bloom runs. */
+function onTier(q: Quality) {
+  drawn = q;
   setPlantBudget(q); // the plant ring shrinks or grows at the next re-plant
   composer?.setPixelRatio(renderer.getPixelRatio()); resize();
-  for (const p of composer?.passes ?? []) if (p instanceof UnrealBloomPass) p.enabled = q !== "low";
-} });
-const watchTier = (now: number) => { tiers.tick(now); requestAnimationFrame(watchTier); };
+  setBloom();
+}
+/** Bloom runs when Settings wants it and the tier has it (Low never does); the chain is made the first time it is needed. */
+function setBloom() {
+  const on = looks.bloom && drawn !== "low";
+  if (on) composeBloom();
+  for (const p of composer?.passes ?? []) if (p instanceof UnrealBloomPass) p.enabled = on;
+}
+let tiers = budgetQuality(renderer, [], { quality: tier, onChange: onTier });
+/** Settings > Display > Quality: Auto starts the budget again from the machine's guess; a tier applies now and is remembered. */
+function pickTier(c: Choice) {
+  qualityChoice = c;
+  try { choose(c, localStorage); } catch { /* this session only */ }
+  if (c === "auto") { const guess = startChoice({ search: "", store: null }).tier; tiers = budgetQuality(renderer, [], { quality: guess, onChange: onTier }); onTier(guess); }
+  else { applyQuality(c, renderer); onTier(c); }
+}
+const watchTier = (now: number) => { if (qualityChoice === "auto") tiers.tick(now); requestAnimationFrame(watchTier); };
 requestAnimationFrame(watchTier);
 
 // --- the picker -------------------------------------------------------------------------------------
@@ -1547,7 +1585,9 @@ touchEl.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // --- gamepad: polled once a frame ----------------------------------------------------------------------
 let padKeys: string[] = [], padMove: Stick = NO_STICK, padAim: Stick = NO_STICK;
-const pad = loadPad(KEY, PAD_ACTIONS, PAD_ZONE); // buttons rebind in the Controls dialog and save under `${KEY}.pad`
+// buttons rebind in the Controls dialog and save under `${KEY}.pad`; Start (the journal), the d-pad (walking, the menus)
+// and Home (the system's) are the game's own, so no action can be moved onto them
+const pad = loadPad(KEY, PAD_ACTIONS, PAD_ZONE, [PAD_START, 12, 13, 14, 15, 16]);
 let padDown: number[] = [];
 function pollPad() {
   const st = pad.poll();
@@ -1680,7 +1720,8 @@ function draw(m: Match, alpha: number) {
   const cr = Math.hypot(camera.position.x, camera.position.z), out = cr > 0.01 ? (shove.x * camera.position.x + shove.z * camera.position.z) / cr : 0;
   const cut = out > 0 && cr > ARENA.radius - 2 ? out / cr : 0;
   camera.position.x += shove.x - camera.position.x * cut; camera.position.z += shove.z - camera.position.z * cut;
-  if (shake > 0.002) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
+  const sk = shake * looks.shake; // Settings > Display > Screen shake (none with Reduce motion)
+  if (sk > 0.002) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * sk, (Math.random() - 0.5) * sk, (Math.random() - 0.5) * sk));
   // at chest height, a little past the middle toward them: you stay at the frame's edge, they hold its centre
   const aim = camMode === "side" ? 0.5 : 0.58, chest = 0.3 + tall * 0.35;
   camera.lookAt(me.pos.x + dx * aim, me.pos.y + (them.pos.y - me.pos.y) * aim + chest, me.pos.z + dz * aim);
@@ -1690,6 +1731,7 @@ function draw(m: Match, alpha: number) {
  * first, then the result. */
 function ended(m: Match, bound = false) {
   const t = trip, won = m.winner === 0, loser = m.f[won ? 1 : 0];
+  if (!bots[0] || versusOn) tune.sting(bound ? "bind" : m.winner === m.f[versusOn ? mine : 0]!.team ? "win" : "loss"); // a watched bout has no side to cheer
   const wiped = !!t && !won && journey !== null && nextUp(journey, new Set([...t.out, t.slot])) < 0;
   const big = !!t && (bound || wiped || (won && (t.kind === "keeper" || t.kind === "mythic")));
   if (!big) {
@@ -2004,12 +2046,22 @@ function accountPane(pane: HTMLElement) {
   return { sync: draw };
 }
 
+// A phone draws without the bloom chain unless asked: its Bloom row starts off there (written before the panel reads it).
+if (PHONE) try { const s = parseSettings(JSON.parse(localStorage.getItem(KEY) ?? "null")); if (s.more.bloom === undefined) localStorage.setItem(KEY, JSON.stringify({ ...s, more: { ...s.more, bloom: false } })); } catch { /* defaults */ }
 const controls = mountControls({
-  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio"], sounds: [["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"], ["quill", "The quill (the book writing itself)"]],
-  hide: ["lookX", "lookY", "invertY"], labels: { touch: "Camera turn by touch" },
+  key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio", "view"],
+  sounds: [["stings", "Music stings"], ["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"], ["quill", "The quill (the book writing itself)"]],
+  hide: ["lookX", "lookY", "invertY", "zoom", "tilt"], labels: { touch: "Camera turn by touch" },
+  // Settings > Display: the quality picker heads Rendering (with Bloom); Vision has brightness, shake and reduce motion
+  enable: ["bloom", "shake", "reduceMotion"], lean: true, // a row the game doesn't honour isn't shown at all
+  quality: { tiers: CHOICES, get: () => qualityChoice, set: (id) => { const c = CHOICES.find(([k]) => k === id); if (c) pickTier(c[0]); }, note: () => qualityNote(drawn, qualityChoice, QUAL.antialias) },
   account: accountPane,
   extras: layoutRows, pad,
-  onChange: (s) => { lookScale = s.touch; drawHints(); },
+  onChange: (s) => {
+    lookScale = s.touch; drawHints();
+    looks = looksOf(s, osStill.matches); setBloom();
+    document.body.classList.toggle("still", looks.still);
+  },
   onToggle: (open) => {
     const over = (!!m && !m.over) || world.shown; // opened over a fight or the walk, Settings is the pause
     paused = open; keys.clear(); fingers.clear();
@@ -2037,6 +2089,22 @@ const drown = drowner(() => volumeOf(controls.get(), "sfx", "drown"));
 const wilds = ambience(() => (world.shown && !paused ? volumeOf(controls.get(), "sfx", "wild") : 0));
 const pen = quill(() => volumeOf(controls.get(), "sfx", "quill"));
 penSound((lines, step) => pen.write(lines, step));
+// The Book's music (src/music.ts), at Settings' Music volume; its stings can be switched off on their own.
+const tune = score(() => volumeOf(controls.get(), "music"), { stings: () => volumeOf(controls.get(), "music", "stings") > 0 });
+let forcedCue: Cue | null = null; // mythicMasters.music(cue) holds one for a harness
+/** The cue for what is on screen: a fight, the world by day or night, else the Book (title, its pages, a result). */
+function cueNow(night: number): Cue {
+  if (forcedCue) return forcedCue;
+  if (m && !m.over && !world.shown) return "fight";
+  if (world.shown && !journalOpen) return night > 0.5 ? "night" : "day";
+  return "book";
+}
+/** Someone in the fight on now is under a quarter of their health: the fight music lifts. */
+function nearTheEnd() {
+  if (!m || m.over) return false;
+  for (const f of m.f) if (!f.down && f.hp < f.b.hp * 0.25) return true;
+  return false;
+}
 
 // --- the director's stage: its camera over yours, the saucer, the bars, the tape, the freeze frame ------------------
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4(), LENS = camera.fov;
@@ -2277,11 +2345,13 @@ function frame(now: number) {
   stageSaucer(director.stage.saucer);
   cinema(director.stage);
   drown.update(director.stage);
-  wilds.update(world.ambient(), dt);
+  const wild = world.ambient();
+  wilds.update(wild, dt);
+  tune.tick(cueNow(wild.night), nearTheEnd(), paused);
   const rim = arena?.getObjectByName("rim");
   if (rim) rim.position.set(-camera.position.x, Math.max(6, camera.position.y * 0.6 + 6), -camera.position.z); // behind what you see, edging it
   // the world's ground was coloured for a straight render; filmic lifts its midtones, so it walks a stop darker
-  renderer.toneMappingExposure = world.shown ? 0.62 : 1;
+  renderer.toneMappingExposure = (world.shown ? 0.62 : 1) * looks.brightness; // Settings > Display > Scene brightness
   grade.enabled = !world.shown; // the open world is graded by its own ground; only an arena wears its skin's grade
   renderer.info.reset();
   if (DRAW) { if (composer) composer.render(); else renderer.render(scene, camera); }
@@ -2405,7 +2475,17 @@ Object.assign(window, {
     camera: (mode: "lock" | "side") => { camMode = mode; },
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
-    quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
+    /** `choice` is Settings > Display's pick (auto, low, mid, high; `quality(choice)` picks as its buttons do); `bloom`, `pixelRatio`, `shadows` and `exposure` what the renderer does now, `looks` the Display rows. */
+    quality: (choice?: Choice) => {
+      if (choice && CHOICES.some(([k]) => k === choice)) { pickTier(choice); controls.refresh(); }
+      return { now: drawn, choice: qualityChoice, steps: tiers.steps, plants: plantBudget(), bloom: !!composer?.passes.some((p) => p instanceof UnrealBloomPass && p.enabled), pixelRatio: renderer.getPixelRatio(), shadows: renderer.shadowMap.enabled, antialias: QUAL.antialias, exposure: +renderer.toneMappingExposure.toFixed(3), looks: { ...looks }, still: matchMedia("(prefers-reduced-motion: reduce)").matches };
+    },
+    /** The Book's music (src/music.ts): the cue playing, whether it is heard, the level asked of its gain and the gain now; `music("fight")` holds a cue (book, day, night, fight), `music(null)` lets the screen pick again, `music("win")` plays a sting (win, loss, bind). */
+    music: (cue?: Cue | "win" | "loss" | "bind" | null) => {
+      if (cue === "win" || cue === "loss" || cue === "bind") tune.sting(cue);
+      else if (cue === null || (cue !== undefined && Object.hasOwn(SCORE, cue))) forcedCue = cue;
+      return tune.state();
+    },
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; if (id !== undefined && m) hud(m); return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `ferry()` takes the boat to the Yule Isle or back (`state().isle` on the island: where you stand, its slip and landing fire; `state().ports` the piers) and `standIsle(x, z)` on it, `teleport(x, z)` onto open ground or a port town's pier, `face(x, z)` to turn the camera toward a spot (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */

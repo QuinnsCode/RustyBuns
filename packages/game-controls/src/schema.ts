@@ -3,7 +3,8 @@
 // game"), so the whole list is visible everywhere and adding a feature to a game is one word, not a new row.
 import type { IconName } from "./icons.ts";
 
-export type Tab = "controls" | "audio";
+/** "display" is its own tab only for a game that passes `quality`; anywhere else its sections sit under Controls. */
+export type Tab = "controls" | "audio" | "display";
 export type Unit = "x" | "%" | "deg";
 
 interface Base { id: string; label: string; icon: IconName }
@@ -49,7 +50,11 @@ export const SECTIONS: SectionDef[] = [
     slider("rumbleLevel", "Rumble strength", "Vibrate", 1, 0, 1, 0.05, "%"),
     slider("aimAssist", "Aim assist", "Crosshair", 0, 0, 1, 0.05, "%"),
   ] },
-  { id: "vision", tab: "controls", title: "Vision", icon: "Eye", rows: [
+  // The quality picker (`quality` in panel.ts) heads it; it is left out for a game with neither the picker nor a row of it.
+  { id: "render", tab: "display", title: "Rendering", icon: "Monitor", rows: [
+    toggle("bloom", "Bloom", "Sparkles", true),
+  ] },
+  { id: "vision", tab: "display", title: "Vision", icon: "Eye", rows: [
     slider("fov", "Field of view", "Camera", 75, 60, 110, 1, "deg"),
     toggle("headBob", "Head bob", "Timer", true),
     slider("shake", "Screen shake", "Waves", 1, 0, 1, 0.05, "%"),
@@ -59,7 +64,6 @@ export const SECTIONS: SectionDef[] = [
     toggle("highContrast", "High contrast", "Contrast", false),
     slider("textSize", "Text size", "Eye", 1, 0.8, 1.6, 0.05, "x"),
   ] },
-  { id: "game", tab: "controls", title: "This game", icon: "Puzzle", rows: [] },
   { id: "game", tab: "controls", title: "This game", icon: "Puzzle", rows: [] },
   { id: "music", tab: "audio", title: "Music", icon: "Music", rows: [] },
   { id: "fx", tab: "audio", title: "Effects", icon: "Volume2", rows: [] },

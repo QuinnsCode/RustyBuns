@@ -1,4 +1,13 @@
 import { expect, test } from "bun:test";
+import { createPadBindings as reservedPad } from "../src/index.ts";
+
+test("a button the game keeps for itself can't take an action, and a save that put one there goes back", () => {
+  const acts = [{ id: "jump", label: "Jump", button: 0 }, { id: "guard", label: "Guard", button: 7 }];
+  const b = reservedPad(acts, { guard: 9 }, [9, 12]);
+  expect(b.get("guard")).toBe(7);
+  expect(b.set("jump", 12)).toEqual({ ok: false, with: "" });
+  expect(b.set("jump", 3)).toEqual({ ok: true });
+});
 import { createPad, createPadBindings, deadZone, parsePadBindings, type PadSnapshot } from "../src/gamepad.ts";
 
 const actions = [{ id: "fire", label: "Fire", button: 7 }, { id: "jump", label: "Jump", button: 0 }];

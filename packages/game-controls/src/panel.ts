@@ -6,7 +6,7 @@
 // wide one, and scrolls when the screen is short.
 import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
 import { ICONS, type IconName } from "./icons.ts";
-import { type Extra, EXTRAS, section } from "./schema.ts";
+import { type Extra, section, type Tab } from "./schema.ts";
 import { type Book, type Profile, SLOTS, parseBook, remember, switchTo } from "./profiles.ts";
 import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
 import { type Pad, buttonName } from "./gamepad.ts";
@@ -63,6 +63,13 @@ export interface Opts {
   css?: string;
   /** Called when Reset to defaults is pressed, so a game can reset its own extras. */
   onReset?: () => void;
+  /**
+   * A quality picker at the head of a Rendering section: `tiers` as [id, label] (the first is the default Reset goes
+   * back to, e.g. ["auto", "Auto"]), `get` the one chosen now, `set` to apply and remember one (the game owns both, so
+   * this package imports no quality code), `note` a line under it re-read after each pick (what applies now, what
+   * needs a reload). With `tabs`, it also gives the panel a Display tab holding Rendering and Vision.
+   */
+  quality?: { tiers: [string, string][]; get: () => string; set: (id: string) => void; note?: () => string };
 }
 
 /** The game's key bindings, restored from what this browser saved under the same `key` the cog uses. */
@@ -90,7 +97,10 @@ export function mountControls(o: Opts) {
   card.append(head);
   if (o.tabs) { dlg.classList.add("gc-craft"); btn.classList.add("gc-craft"); }
   // With `tabs`, rows land in the pane for their tab; without, everything goes straight into the card.
-  const panes: Record<"controls" | "audio" | "account", HTMLElement> = { controls: card, audio: card, account: card };
+  const panes: Record<Tab | "account", HTMLElement> = { controls: card, display: card, audio: card, account: card };
+  // A Display tab only for a game with the quality picker; everywhere else its sections stay under Controls, as before.
+  const display = !!o.tabs && !!o.quality;
+  const paneOf = (t: Tab) => panes[t === "display" && !display ? "controls" : t];
   let into: HTMLElement = card;
   const icon = (n: IconName, size = 16) => createElement(ICONS[n], { width: size, height: size });
 
@@ -128,7 +138,7 @@ export function mountControls(o: Opts) {
     head.addEventListener("click", () => { fold(sc, shut(sc)); saveFold(); });
     secs.push(sc);
     cur = sc;
-    panes[def.tab].append(el);
+    paneOf(def.tab).append(el);
     return (into = body);
   };
 
@@ -162,17 +172,18 @@ export function mountControls(o: Opts) {
   if (!o.tabs && !o.lean) card.append(foldBar());
   if (o.tabs) {
     const nav = Object.assign(document.createElement("div"), { className: "gc-tabs", role: "tablist" });
-    const names = { controls: "Controls", audio: "Audio", account: "Account" } as const;
-    const show = (id: keyof typeof names) => {
-      for (const k of Object.keys(names) as (keyof typeof names)[]) { panes[k].hidden = k !== id; nav.querySelector(`[data-tab="${k}"]`)?.setAttribute("aria-selected", String(k === id)); }
+    const names = { controls: "Controls", display: "Display", audio: "Audio", account: "Account" } as const;
+    const tabs = (Object.keys(names) as (keyof typeof names)[]).filter((k) => k !== "display" || display);
+    const show = (id: keyof typeof panes) => {
+      for (const k of tabs) { panes[k].hidden = k !== id; nav.querySelector(`[data-tab="${k}"]`)?.setAttribute("aria-selected", String(k === id)); }
     };
-    for (const k of Object.keys(names) as (keyof typeof names)[]) {
+    for (const k of tabs) {
       panes[k] = Object.assign(document.createElement("div"), { className: "gc-pane", role: "tabpanel" });
       nav.append(Object.assign(document.createElement("button"), { type: "button", className: "gc-tab", role: "tab", textContent: names[k] }));
       nav.lastElementChild!.setAttribute("data-tab", k);
       nav.lastElementChild!.addEventListener("click", () => show(k));
     }
-    card.append(nav, foldBar(), panes.controls, panes.audio, panes.account);
+    card.append(nav, foldBar(), ...tabs.map((k) => panes[k]));
     show("controls");
     into = panes.controls;
   }
@@ -270,7 +281,7 @@ export function mountControls(o: Opts) {
       const b = pollRaw();
       if (b !== undefined) {
         const r = padBinds.set(waiting, b);
-        if (r.ok) { waiting = null; say(""); savePad(); } else say(`${buttonName(b)} is already ${r.with}. Pick another button, or change ${r.with} first.`);
+        if (r.ok) { waiting = null; say(""); savePad(); } else say(r.with ? `${buttonName(b)} is already ${r.with}. Pick another button, or change ${r.with} first.` : `${buttonName(b)} is the game's own (menus, walking). Pick another button.`);
         repaint();
       }
       if (waiting) raf = requestAnimationFrame(watch);
@@ -368,6 +379,33 @@ export function mountControls(o: Opts) {
   begin("gamepad");
   buildPad();
   more("gamepad");
+  const q = o.quality;
+  if (q || section("render").rows.some((r) => o.enable?.includes(r.id))) {
+    begin("render");
+    if (q) {
+      cur!.live++;
+      // one choice of a few, as buttons in a row (the chosen one lit like a key waiting), and its note under them
+      const wrap = Object.assign(document.createElement("div"), { className: "gc-choice" });
+      const seg = Object.assign(document.createElement("div"), { className: "gc-seg", role: "group", ariaLabel: "Quality" });
+      const hint = Object.assign(document.createElement("p"), { className: "gc-hint" });
+      const paint = () => {
+        const now = q.get();
+        seg.querySelectorAll<HTMLButtonElement>("button").forEach((b) => { const on = b.value === now; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+        hint.textContent = q.note?.() ?? ""; hint.hidden = !hint.textContent;
+      };
+      for (const [id, label] of q.tiers) {
+        const b = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `quality-${id}`, value: id, textContent: label });
+        b.addEventListener("click", () => { q.set(id); paint(); });
+        seg.append(b);
+      }
+      wrap.append(Object.assign(document.createElement("span"), { className: "gc-lab" }), seg, hint);
+      wrap.firstElementChild!.append(icon("Gauge", 16), "Quality");
+      into.append(wrap);
+      syncs.push(paint);
+      resets.push(() => { if (q.tiers[0]) q.set(q.tiers[0][0]); });
+    }
+    more("render");
+  }
   begin("vision");
   slider(o.labels?.brightness ?? "Brightness", "brightness", "Sun", !view);
   slider(o.labels?.zoom ?? "Camera zoom", "zoom", "Camera", !view);
