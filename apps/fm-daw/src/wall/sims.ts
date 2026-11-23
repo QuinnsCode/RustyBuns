@@ -571,7 +571,7 @@ class Keys implements Sim {
     y[2] = this.vel(this.velCode * DAC_STEP);
     y[3] = this.clk((((tick % d) + d) % d) < d / 2 ? 5 : 0);
   }
-  read() { return { note: this.held.at(-1) ?? -1, pitch: this.pitch(this.code * DAC_STEP), bpm: this.bpm, div: this.div, beat: this.beat }; }
+  read() { return { note: this.held.at(-1) ?? -1, dacA: this.code, dacB: this.velCode, pitch: this.pitch(this.code * DAC_STEP), bpm: this.bpm, div: this.div, beat: this.beat }; }
 }
 
 

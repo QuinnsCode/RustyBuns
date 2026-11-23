@@ -132,7 +132,7 @@ The boards are made to be built, but none has been built yet. What a build takes
 - **Footprints:** the jack and pot footprints follow KiCad's library, but they haven't been tried against parts in hand. The trimmer RT1 (Q Saw's scale) uses a 2.54 mm in-line footprint, which is right for a 3362P-style trimmer, but check yours.
 - **Hole sizes:** the 7 mm pot hole and 6 mm jack hole are the usual sizes for these parts. Check yours.
 - **Timing capacitors:** Q Steps' C1, Q Swell's C1 and Q Wobble's C1 are X7R ceramics, which lose capacitance with voltage and temperature. Times may run 10 to 30% short of the sim's. A film or C0G part holds them.
-- **Q Keys' firmware isn't written yet** ([#5749](https://github.com/QuinnsCode/RustyBuns/issues/5749)): the board has the microcontroller and its UPDI header (JP3), and the sim plays what the firmware should do. Its MIDI comes in on a 3-pin header at the back (JP2: source, sink, shield), for a TRS or DIN lead; a front-panel MIDI jack would need a stereo jack footprint the kit doesn't have yet.
+- **Q Keys' firmware** is in `firmware/keys` (C for avr-gcc: `make` builds `keys.hex`, `make flash` programs it over UPDI on JP3 with a serial UPDI adapter and pymcuprog). Its logic (`keys.c`, no hardware) is also built for the computer and played against the sim's `Keys` in `test/wall-firmware.test.ts`, and the `firmware` workflow builds it for the ATtiny1614. Not yet flashed onto a board. Its MIDI comes in on a 3-pin header at the back (JP2: source, sink, shield), for a TRS or DIN lead; a front-panel MIDI jack would need a stereo jack footprint the kit doesn't have yet.
 - **Q Saw's tracking:** Q1 and Q2 must be matched and touching (or one dual part), and RT1 trimmed until an octave is an octave. The sim is the trimmed board at 26 °C.
 - **Q Hiss' level:** how loud a junction hisses varies several times from one transistor to the next. Pick a loud one, or change R4 (the gain) to suit. Q2 is a J201 because its pinch-off (under 1.5 V) holds it off across ±5 V with the gate at −11 V; a J111 may not.
 - **What the sim leaves out:** VCO drift, the 555's longer first cycle, Q Level's current-mirror mismatch, and the LM13700's Darlington buffers (not used here: op-amps buffer instead).
@@ -146,6 +146,7 @@ The boards are made to be built, but none has been built yet. What a build takes
 | `circuits/wall-<id>.tsx` | Each module's circuit. `wall-<id>/` holds its fab files, and `wall-<id>.circuit.json` the netlist the sim reads. |
 | `src/wall/linear.ts` | A linear board's gains from its netlist: the mixers, and every module's control side. |
 | `src/wall/sims.ts` | Each module as sound, from its board. |
+| `firmware/keys/` | Q Keys' ATtiny1614 firmware: `keys.c` the logic (shared with the test), `main.c` the pins. |
 | `src/wall/wall.ts` | The patch at work: modules in cable order, a sample at a time, the sends' room gear a block at a time. `renderWall` for tests. |
 | `src/room/wall-worklet.ts` | The wall's own audio thread, in the gear room and at every studio's gear wall: the patch, the keys played and the sesh's tempo. |
 | `src/room/wall-page.ts` | The thread on a page (`WallLine`: its panner at Q Out, notes, the tempo and the band's beat) and the module list. |
