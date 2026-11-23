@@ -79,8 +79,11 @@ const COUNT = int(0, Number.MAX_SAFE_INTEGER);
 export const Stats = obj({ fired: COUNT, done: COUNT, ignored: COUNT, lastDoneAt: nul(TIME), lastFiredAt: nul(TIME) });
 export type Stats = Of<typeof Stats>;
 
-/** GET /api/jobs: every job with its last run, the latest runs across all of them, the server's clock, and the relay's socket URL when there is one. */
-export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run), stats: Stats }), 10_000), runs: arr(Run, 1000), now: TIME, live: nul(str(2000)) });
+/**
+ * GET /api/jobs: every job with its last run, the latest runs across all of them, the server's clock, and the relay's socket
+ * URL when there is one, with the day's ticket the relay lets a page in on (live.ts `ticket`) when it is locked.
+ */
+export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run), stats: Stats }), 10_000), runs: arr(Run, 1000), now: TIME, live: nul(str(2000)), ticket: nul(str(200)) });
 export type JobsReply = Of<typeof JobsReply>;
 
 const { app: _app, enabled: _enabled, ...DECLARED } = INPUT;
@@ -102,3 +105,9 @@ export type SyncReply = Of<typeof SyncReply>;
 
 /** What a refused request says. */
 export const Refusal = obj({ error: str(500) });
+
+/** Cron Swanson's id in eqosys's APPS (apps/eqosys/src/apps.ts), and the eqosys it signs in through (EQOSYS_URL on the server). */
+export const APP = "cron-swanson";
+export const EQOSYS = "https://eqosys.qntbr.com";
+/** What a 401 says: nobody signed in, or someone signed in who isn't the owner (CRON_SWANSON_OWNER). */
+export const SIGN_IN = "sign in with eqosys", NOT_OWNER = "not the owner's account";

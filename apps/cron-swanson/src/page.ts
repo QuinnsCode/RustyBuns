@@ -5,20 +5,32 @@ import { esc } from "@rustybuns/util";
 import { Bad } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { eqosys } from "@rustybuns/util/eqosys";
 import { LiveMsg, PROTOCOL } from "./live.ts";
-import { createElement, AlarmClock, Bell, BellOff, BellRing, Check, CircleCheck, Cloud, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
+import { createElement, AlarmClock, Bell, BellOff, BellRing, Check, CircleCheck, Cloud, LogIn, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
-import { Job, JobInput, JobsReply, Refusal, type Run } from "./api.ts";
+import { APP, EQOSYS, Job, JobInput, JobsReply, NOT_OWNER, Refusal, SIGN_IN, type Run } from "./api.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const icon = (node: IconNode, size = 16) => createElement(node, { width: size, height: size, "stroke-width": 2, "aria-hidden": "true" }).outerHTML;
 
-// ---- token ----
+// ---- sign-in ----
 
-const TOKEN_KEY = "cron-swanson-token";
-let token = "";
-try { token = localStorage.getItem(TOKEN_KEY) ?? ""; } catch { /* private window */ }
-const auth = (): Record<string, string> => (token ? { authorization: `Bearer ${token}` } : {});
+// The page signs in through eqosys and sends its token; the server lets in only the owner's account. A local eqosys
+// stands in with the `cron-swanson.eqosys` setting in localStorage (its URL).
+const eq = eqosys({ app: APP, url: EQOSYS, from: [location.origin], prefix: "cron-swanson" });
+const auth = (): Record<string, string> => { const l = eq.login(); return l ? { authorization: `Bearer ${l.token}` } : {}; };
+
+/** The bar that asks for a sign-in: nobody yet, or someone who isn't the owner (switch accounts). */
+function gate(why: string | null, note = "") {
+  const el = $("gate");
+  el.hidden = why === null;
+  if (why === null) return;
+  const l = eq.login();
+  const say = note || (why === NOT_OWNER && l ? `Signed in as ${l.name || l.email}, but this Cron Swanson is someone else's.` : "Sign in to see your jobs.");
+  el.innerHTML = `<span>${esc(say)}</span><button class="primary" type="button" id="sign-in">${icon(LogIn)} ${l && why === NOT_OWNER ? "Switch account" : "Sign in with eqosys"}</button>`;
+}
+const why401 = async (res: Response) => (await readJson(res, Refusal))?.error ?? SIGN_IN;
 
 // ---- state ----
 
@@ -87,7 +99,8 @@ const LANE_LABEL: Record<Flow | "all", string> = { all: "All", async: "Async", d
 async function load() {
   const res = await fetch("/api/jobs", { headers: auth() }).catch(() => null);
   if (!res) return;
-  $("gate").hidden = res.status !== 401;
+  if (res.status === 401) { gate(await why401(res)); return; }
+  gate(null);
   if (!res.ok) return;
   const data = await readJson(res, JobsReply);
   if (!data) return;
@@ -96,17 +109,19 @@ async function load() {
   state.skew = data.now - Date.now();
   alertNew(data.runs);
   render();
-  if (data.live && !link) goLive(data.live);
+  // A new day's ticket: the socket opens again on it.
+  if (data.live && (!link || data.ticket !== held)) { link?.close(); goLive(data.live, data.ticket); }
 }
 
 // ---- live ----
 
 // With a relay, every page hears a nudge the moment a job changes or a run lands (on this device or another) and
 // fetches again; the minute poll below only runs while that socket is down.
-let link: Link<never> | null = null;
-function goLive(url: string) {
+let link: Link<never> | null = null, held: string | null = null;
+function goLive(url: string, ticket: string | null) {
+  held = ticket;
   link = connectSocket<LiveMsg, never>(url, {
-    protocols: token ? [PROTOCOL, token] : [PROTOCOL],
+    protocols: ticket ? [PROTOCOL, ticket] : [PROTOCOL],
     decode: (v) => { try { return LiveMsg(v); } catch { return null; } },
     onMessage: () => { void load(); },
     // Catch up on whatever happened while it was down.
@@ -235,7 +250,7 @@ function tickClocks() {
 async function send(method: string, path: string, body?: unknown): Promise<string | null> {
   const res = await fetch(path, { method, headers: { ...auth(), "content-type": "application/json" }, body: body === undefined ? null : JSON.stringify(body) }).catch(() => null);
   if (!res) return "Can't reach the server.";
-  if (res.status === 401) { $("gate").hidden = false; return "Token needed."; }
+  if (res.status === 401) { gate(await why401(res)); return "Sign in first."; }
   if (!res.ok) return (await readJson(res, Refusal))?.error ?? `HTTP ${res.status}`;
   await load();
   return null;
@@ -246,7 +261,8 @@ const toInput = (j: Job): JobInput => ({ app: j.app, name: j.name, note: j.note,
 document.body.addEventListener("click", (e) => {
   const el = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null;
   if (!el) return;
-  if (el.dataset.done) void send("POST", `/api/runs/${el.dataset.done}/done`);
+  if (el.id === "sign-in") { if (eq.login()) eq.signOut(); void eq.signIn(); }
+  else if (el.dataset.done) void send("POST", `/api/runs/${el.dataset.done}/done`);
   else if (el.id === "alerts") void Notification.requestPermission().then(paintAlerts);
   else if (el.dataset.app !== undefined) { state.app = el.dataset.app || null; render(); }
   else if (el.dataset.tag !== undefined) { state.tag = state.tag === el.dataset.tag ? null : el.dataset.tag; render(); }
@@ -271,12 +287,6 @@ sortBox.addEventListener("change", () => {
 paintAlerts();
 
 $<HTMLInputElement>("q").addEventListener("input", (e) => { state.q = (e.target as HTMLInputElement).value; render(); });
-$<HTMLFormElement>("gate").addEventListener("submit", (e) => {
-  e.preventDefault();
-  token = $<HTMLInputElement>("token").value.trim();
-  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* kept for this visit only */ }
-  void load();
-});
 
 // ---- editor ----
 
@@ -409,7 +419,8 @@ form.addEventListener("submit", async (e) => {
 
 // ---- go ----
 
-void load();
+// Back from eqosys with a code: trade it for the login first (a failed one says why in the gate).
+void eq.finishSignIn().then((back) => { if (back?.error) gate(SIGN_IN, back.error); else void load(); });
 setInterval(tickClocks, 1000);
 // Just after each minute the ticker fires; fetch then so new runs and countdowns show without waiting.
 const refresh = () => setTimeout(() => { if (!link?.open) void load(); refresh(); }, 60_000 - (serverNow() % 60_000) + 2_000);

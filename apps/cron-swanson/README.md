@@ -15,7 +15,9 @@ Each job shows when it runs next, and tags and search find it again. Tick a remi
 done it; the order menu sorts by next up, shortest interval, done most, fired most, ignored most or idle longest.
 The bell in the top bar turns on desktop alerts: each reminder pops up as a system notification while a tab is open.
 
-**Account:** not needed.
+**Account:** your eqosys account. Online, the page sends you to eqosys to sign in and comes back signed in; only the
+account named in `CRON_SWANSON_OWNER` gets in (anyone else is asked to switch accounts). Run on your own machine with
+neither `CRON_SWANSON_OWNER` nor `CRON_SWANSON_TOKEN` set, it's open and asks nothing.
 
 - **Five lanes**: async (every N minutes, one-offs, busy cron lines), daily, weekly, monthly, yearly. Each has a count.
 - **Per app and all apps**: the side lists every app; pick one or see them all grouped. Tags and search narrow it down.
@@ -57,7 +59,9 @@ bun test test
 | --- | --- |
 | `PORT` | Where it listens (default 8790). |
 | `CRON_SWANSON_DB` | The SQLite file (default `data/cron-swanson.sqlite`; the Dockerfile uses `/data/...` for a volume). |
-| `CRON_SWANSON_TOKEN` | When set, every route but `/api/health` wants `Authorization: Bearer <token>`. The page asks for it once. |
+| `CRON_SWANSON_OWNER` | The email of the one eqosys account the page lets in. The page signs in through eqosys and sends its token; the server checks it against eqosys's keys (`@rustybuns/util/token`). |
+| `EQOSYS_URL` | Which eqosys signs people in (default `https://eqosys.qntbr.com`). A page signs in against a local one with `localStorage["cron-swanson.eqosys"] = "http://localhost:<port>"`. |
+| `CRON_SWANSON_TOKEN` | The bearer for scripts and apps (`src/sync.ts`): `Authorization: Bearer <token>`. Also the relay's secret. With neither this nor `CRON_SWANSON_OWNER` set, the API is open. |
 | `CRON_SWANSON_RELAY` | The relay Worker's URL (`https://cron-swanson-relay.<you>.workers.dev`). The server nudges it after each change; pages hold a socket to it. |
 | `CRON_SWANSON_NTFY` | An ntfy topic URL (`https://ntfy.sh/<a long random name>`). Each reminder is pushed there. Anyone who knows the name can read the topic, so make it long. |
 
@@ -69,7 +73,8 @@ stores nothing and keeps no clock; the Bun server stays the clock, since Durable
 The socket hibernates between nudges, so an idle page costs next to nothing.
 
 1. `cd apps/cron-swanson/relay && bunx wrangler deploy`
-2. Give the Worker a `TOKEN` secret equal to `CRON_SWANSON_TOKEN` (the page offers it as a subprotocol, the server as a bearer).
+2. Give the Worker a `TOKEN` secret equal to `CRON_SWANSON_TOKEN`. The server sends it as a bearer; a signed-in page
+   never sees it, and offers the day's ticket `/api/jobs` hands it instead (signed with the token, good until the end of tomorrow).
 3. Set `CRON_SWANSON_RELAY` on the server to the Worker's URL and restart it.
 
 ## Reminders on the phone: ntfy
@@ -86,15 +91,21 @@ repo's own `packages/`), not the whole repo's 4 GB.
 2. Settings, **Config-as-code**, Railway Config File: `/apps/cron-swanson/railway.json`. Railway only reads the
    root's `railway.json` on its own, so without this it never finds the Dockerfile or the health check.
 3. A volume mounted at `/data` (jobs and runs live in `/data/cron-swanson.sqlite`).
-4. The variable `CRON_SWANSON_TOKEN`, a long random string. Keep **one replica**: two would fire every job twice.
-5. Settings, Networking, **Generate Domain**, then open it and paste the token when the page asks.
+4. The variables `CRON_SWANSON_OWNER` (your eqosys email) and `CRON_SWANSON_TOKEN` (a long random string, for
+   scripts and the relay). Keep **one replica**: two would fire every job twice.
+5. Settings, Networking, **Generate Domain**.
+6. Put that domain in Cron Swanson's row in eqosys's `APPS` (`apps/eqosys/src/apps.ts`, `origins`) in a PR and deploy
+   eqosys, so eqosys sends you back there after you sign in. Then open the domain and sign in.
 
 ## API
 
 | Route | Does |
 | --- | --- |
 | `GET /api/health` | `{ ok, now }`, open without a token. |
-| `GET /api/jobs` | Every job with its last run and its `stats` (`fired`, `done`, `ignored`, `lastDoneAt`, `lastFiredAt`), the latest 100 runs, the server's clock, and `live`: the relay's socket URL or null. |
+| `GET /api/jobs` | Every job with its last run and its `stats` (`fired`, `done`, `ignored`, `lastDoneAt`, `lastFiredAt`), the latest 100 runs, the server's clock, `live`: the relay's socket URL or null, and `ticket`: the day's pass onto it or null. |
+
+Every route but health wants `Authorization: Bearer <...>`: the owner's eqosys token or `CRON_SWANSON_TOKEN`. A 401 says
+`sign in with eqosys` (no token, or one that doesn't check out) or `not the owner's account`.
 | `POST /api/jobs` | Makes a job: `{ app, name, why?, note?, tags, cadence, tz, action, enabled? }`. |
 | `PUT /api/jobs/:id` | Changes one (same body). A new cadence restarts its "every" count. |
 | `DELETE /api/jobs/:id` | Deletes it and its runs. |

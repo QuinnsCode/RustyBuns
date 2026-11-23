@@ -76,6 +76,9 @@ export const APPS: QApp[] = [
   { id: "hello-world", name: "Hello World", kind: "suite", origins: ["https://hello-world.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity" },
   { id: "at-lens", name: "AT Lens", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Productivity", maturity: "experimental" },
   { id: "auto-rig", name: "Auto Rig", kind: "suite", origins: ["https://auto-rig.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Productivity" },
+  // The owner's own scheduler (apps/cron-swanson): only CRON_SWANSON_OWNER's account gets past its server. Its Railway origin goes
+  // here once it has one (QuinnsCode/rustybuns-manual#45); until then it signs in from a page on this machine against a local eqosys.
+  { id: "cron-swanson", name: "Cron Swanson", kind: "suite", origins: [], starts: ["member"], genre: "Productivity", maturity: "experimental" },
   { id: "meshy-studio", name: "Meshy Batch Studio", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Productivity", maturity: "experimental" },
   // A studio is a shop there: its owners and admins set up the shop's sites and products on /orgs.html.
   { id: "qview3d", name: "QView3D", kind: "suite", origins: ["https://qview3d.notryanquinn.workers.dev"], returns: ["https://qview3d.notryanquinn.workers.dev/orgs.html"], starts: ["member"], shot: true, genre: "Business", maturity: "experimental", studios: true },
