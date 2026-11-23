@@ -226,3 +226,27 @@ test("two pedals off the pedal wall: in a row, reordered while it plays, then si
   cable("tape", "out", "split", "return-b");
   expect(listen(r.studio.patch)).toMatchObject({ playing: false, problems: ["Q Tape is on Q Split's side B: a split's sides take pedals"] });
 });
+
+test("the bay round the gear corner: walk over to the lounge, round the couch, and set a pedal down by it", () => {
+  const r = newRoom();
+  // Out past the old 3.5 m wall to the lounge rug, a pedal from the wall in hand.
+  walkTo(r, -0.7, -1.9);
+  expect(click(r, "drive")).toEqual({ ok: true });
+  // round the lounge chair onto the rug
+  walkTo(r, 1.0, 0.6); walkTo(r, 1.8, 2.7); walkTo(r, 3.1, 2.7);
+  expect(r.you.x).toBeCloseTo(3.1, 1);
+  // The coffee table is in the way of the couch: you stop at it, short of the far wall.
+  walkTo(r, 5.8, 2.7);
+  expect(r.you.x).toBeLessThan(3.6);
+  // and the bay's own walls hold: the roller door is at 6 m
+  walkTo(r, 3.8, 3.6); walkTo(r, 3.8, 9);
+  expect(r.you.z).toBeLessThan(6);
+  expect(r.you.z).toBeGreaterThan(5.5);
+  // Set the pedal down on the floor past the old room's 3 m wall: it lands there, not clamped back.
+  walkTo(r, 3.8, 4.6);
+  r.you.yaw = 0; r.you.pitch = -0.6;
+  expect(use(r)).toEqual({ ok: true });
+  const drive = item(r, "drive")!;
+  expect(drive.at[1]).toBe(0);
+  expect(drive.at[2]).toBeGreaterThan(3.5);
+});
