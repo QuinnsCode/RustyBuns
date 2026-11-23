@@ -1,8 +1,8 @@
 // The DJ decks' arithmetic (src/dj/analyze.ts) on what a DJ does every night: load a track and read its tempo and
-// first beat, sync one deck to the other and land on its beat, throw a loop in, and blend across. The decks
-// themselves (Web Audio) are driven through /decks.html's harness (qdecks) by the probe.
+// first beat, sync one deck to the other and land on its beat, and throw a loop in (the mixer is test/dj-mixer.test.ts).
+// The decks themselves (Web Audio) are driven through /decks.html's harness (qdecks) by the probe.
 import { expect, test } from "bun:test";
-import { beatPhase, crossfade, detectGrid, filterAt, inLoop, loopAt, phaseJump, syncRate } from "../src/dj/analyze.ts";
+import { beatPhase, detectGrid, inLoop, loopAt, phaseJump, syncRate } from "../src/dj/analyze.ts";
 import { DEMOS, demoTrack } from "../src/dj/demo.ts";
 
 const RATE = 44100;
@@ -30,14 +30,4 @@ test("sync: the 128 deck comes down to 124 and jumps onto the other deck's beat;
   expect(loopAt(0.1, 4, a).start).toBeCloseTo(a.offset, 6);
   // the clock runs past its end: round again from its start
   expect(inLoop(l.end + 0.25, l)).toBeCloseTo(l.start + 0.25, 6);
-});
-
-test("the crossfader blends at constant power or cuts, and the filter knob sweeps each way from a dead middle", () => {
-  for (const x of [-1, -0.5, 0, 0.3, 1]) { const [g1, g2] = crossfade(x); expect(g1 * g1 + g2 * g2).toBeCloseTo(1, 6); }
-  expect(crossfade(0, "cut")).toEqual([1, 1]);
-  expect(crossfade(1, "cut")).toEqual([0, 1]);
-  expect(filterAt(0)).toBeNull();
-  expect(filterAt(-1)).toEqual({ type: "lowpass", freq: 150 });
-  expect(filterAt(1)?.type).toBe("highpass");
-  expect(Math.round(filterAt(1)!.freq)).toBe(8000);
 });

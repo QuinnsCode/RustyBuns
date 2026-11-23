@@ -1,12 +1,11 @@
-// Two decks and a DJ mixer in Web Audio, for music you load yourself (analyze.ts does the arithmetic; panel.ts draws it).
-// Each deck plays a decoded file at a rate the pitch fader sets (the tempo and the pitch move together, as on a turntable)
-// with play and pause, the cue button a media player has (stopped: it marks where you are; held: it plays from the mark;
-// let go: back to the mark), four hot cues, loops on the beat grid, beat jumps, a jog nudge and sync. Each channel on
-// the mixer has a trim, three EQ bands that cut to a kill, one filter knob (low-pass left, high-pass right), a fader,
-// a meter and a cue button for the headphones; then the crossfader, the master level and a limiter so nothing clips.
-// What comes out goes to your speakers and to `stream` (a MediaStream: what the room hears of your set). With one
-// output, `split` cue sends the headphone mix to the left ear and the master to the right, the trick for a laptop.
-import { beatPhase, crossfade, detectGrid, eqDb, faderGain, filterAt, inLoop, keyOf, loopAt, phaseJump, snap, syncRate, type Grid, type Key } from "./analyze.ts";
+// Two decks in Web Audio, for music you load yourself (analyze.ts does the arithmetic; panel.ts draws it; mixer.ts is
+// the four-channel mixer they play into). Each deck plays a decoded file at a rate the pitch fader sets (the tempo and
+// the pitch move together, as on a turntable) with play and pause, the cue button a media player has (stopped: it marks
+// where you are; held: it plays from the mark; let go: back to the mark), four hot cues, loops on the beat grid, beat
+// jumps, a jog nudge and sync. Deck A plays into the mixer's channel 2 and deck B into 3; what the mixer's master puts
+// out goes to your speakers (at the booth level) and to `stream` (a MediaStream: what the room hears of your set).
+import { beatPhase, detectGrid, inLoop, keyOf, loopAt, phaseJump, snap, syncRate, type Grid, type Key } from "./analyze.ts";
+import { DECK_CHANNEL, Mixer, type ChannelKnob } from "./mixer.ts";
 
 export type Side = 0 | 1;
 /** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key. */
@@ -143,99 +142,18 @@ class Deck {
   stop() { this.stopSrc(); this.playing = false; }
 }
 
-/** A mixer channel: trim, the three bands, the filter, the fader, and its taps (meter, headphone cue). */
-class Channel {
-  readonly input: GainNode;
-  readonly trim: GainNode;
-  readonly low: BiquadFilterNode;
-  readonly mid: BiquadFilterNode;
-  readonly high: BiquadFilterNode;
-  readonly filter: BiquadFilterNode;
-  readonly fader: GainNode;
-  readonly xf: GainNode;
-  readonly meter: AnalyserNode;
-  readonly pfl: GainNode;
-  knobs = { trim: 0, low: 0, mid: 0, high: 0, filter: 0, fader: 0.8 };
-  cue = false;
-  constructor(ctx: AudioContext, out: AudioNode, cueBus: AudioNode) {
-    this.input = ctx.createGain();
-    this.trim = ctx.createGain();
-    this.low = new BiquadFilterNode(ctx, { type: "lowshelf", frequency: 150 });
-    this.mid = new BiquadFilterNode(ctx, { type: "peaking", frequency: 1000, Q: 0.7 });
-    this.high = new BiquadFilterNode(ctx, { type: "highshelf", frequency: 5000 });
-    this.filter = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 22000, Q: 0.9 });
-    this.fader = ctx.createGain();
-    this.xf = ctx.createGain();
-    this.meter = new AnalyserNode(ctx, { fftSize: 512 });
-    this.pfl = ctx.createGain();
-    this.pfl.gain.value = 0;
-    this.input.connect(this.trim).connect(this.low).connect(this.mid).connect(this.high).connect(this.filter);
-    this.filter.connect(this.fader).connect(this.xf).connect(out);
-    this.filter.connect(this.meter);
-    this.filter.connect(this.pfl).connect(cueBus);
-    this.apply(ctx);
-  }
-  apply(ctx: AudioContext) {
-    const t = ctx.currentTime, k = this.knobs, set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.01);
-    set(this.trim.gain, Math.pow(10, (k.trim * 12) / 20));
-    set(this.low.gain, eqDb(k.low)); set(this.mid.gain, eqDb(k.mid)); set(this.high.gain, eqDb(k.high));
-    const f = filterAt(k.filter);
-    this.filter.type = f?.type ?? "lowpass";
-    set(this.filter.frequency, f?.freq ?? 22000);
-    set(this.fader.gain, faderGain(k.fader));
-    set(this.pfl.gain, this.cue ? 1 : 0);
-  }
-}
-
-export type Knob = "trim" | "low" | "mid" | "high" | "filter" | "fader";
-
-/** The decks and the mixer. `stream` is the master as a MediaStream, for the room. */
+/** The decks and the mixer (mixer.ts): deck A into channel 2, deck B into 3. `stream` is the master, for the room. */
 export class Decks {
   readonly decks: [Deck, Deck];
-  readonly channels: [Channel, Channel];
-  readonly master: GainNode;
-  readonly limiter: DynamicsCompressorNode;
-  readonly masterMeter: AnalyserNode;
-  readonly stream: MediaStream;
-  private readonly cueBus: GainNode;
-  private readonly cueMix: [GainNode, GainNode];
-  private readonly toSpeakers: GainNode;
-  private readonly splitOut: GainNode;
-  xfader = 0;
-  curve: "smooth" | "cut" = "smooth";
+  readonly mixer: Mixer;
   quantize = true;
-  split = false;
-  cueBlend = 0;
-  masterLevel = 0.8;
 
   constructor(readonly ctx: AudioContext, speakers: AudioNode = ctx.destination) {
-    const bus = ctx.createGain();
-    this.cueBus = ctx.createGain();
-    this.channels = [new Channel(ctx, bus, this.cueBus), new Channel(ctx, bus, this.cueBus)];
-    this.decks = [new Deck(ctx, this.channels[0].input), new Deck(ctx, this.channels[1].input)];
-    this.master = ctx.createGain();
-    this.limiter = new DynamicsCompressorNode(ctx, { threshold: -3, knee: 0, ratio: 20, attack: 0.002, release: 0.08 });
-    this.masterMeter = new AnalyserNode(ctx, { fftSize: 512 });
-    bus.connect(this.master).connect(this.limiter);
-    this.limiter.connect(this.masterMeter);
-    const dest = ctx.createMediaStreamDestination();
-    this.limiter.connect(dest);
-    this.stream = dest.stream;
-    // the speakers: the master, or (split cue) the headphone mix in the left ear and the master in the right
-    this.toSpeakers = ctx.createGain();
-    this.limiter.connect(this.toSpeakers).connect(speakers);
-    const merger = ctx.createChannelMerger(2);
-    this.cueMix = [ctx.createGain(), ctx.createGain()];
-    this.cueBus.connect(this.cueMix[0]);
-    this.limiter.connect(this.cueMix[1]);
-    const mono = (n: AudioNode, ch: number) => { const g = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit", channelInterpretation: "speakers" }); n.connect(g).connect(merger, 0, ch); };
-    const headphones = ctx.createGain();
-    this.cueMix[0].connect(headphones); this.cueMix[1].connect(headphones);
-    mono(headphones, 0); mono(this.limiter, 1);
-    this.splitOut = ctx.createGain();
-    merger.connect(this.splitOut).connect(speakers);
-    this.applyMix();
+    this.mixer = new Mixer(ctx, speakers);
+    this.decks = [new Deck(ctx, this.mixer.channels[DECK_CHANNEL[0]]!.input), new Deck(ctx, this.mixer.channels[DECK_CHANNEL[1]]!.input)];
   }
+  get stream(): MediaStream { return this.mixer.stream; }
+  get xfader(): number { return this.mixer.xfader; }
 
   /** Decode a file the DJ picked, find its beat, and put it on deck `side`. */
   async load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track> {
@@ -259,41 +177,16 @@ export class Decks {
   /** Put a track already decoded on a deck (the library's). */
   put(side: Side, t: Track) { this.decks[side].load(t); }
 
-  knob(side: Side, k: Knob, v: number) { this.channels[side].knobs[k] = v; this.channels[side].apply(this.ctx); }
-  cue(side: Side, on: boolean) { this.channels[side].cue = on; this.channels[side].apply(this.ctx); }
-  cross(x: number) { this.xfader = Math.min(1, Math.max(-1, x)); this.applyMix(); }
-  setCurve(c: "smooth" | "cut") { this.curve = c; this.applyMix(); }
-  setMaster(v: number) { this.masterLevel = Math.min(1, Math.max(0, v)); this.applyMix(); }
-  setSplit(on: boolean) { this.split = on; this.applyMix(); }
-  setCueBlend(v: number) { this.cueBlend = Math.min(1, Math.max(0, v)); this.applyMix(); }
+  /** Deck `side`'s own channel: a knob, its headphone cue. */
+  knob(side: Side, k: ChannelKnob, v: number) { this.mixer.set(DECK_CHANNEL[side], k, v); }
+  cue(side: Side, on: boolean) { this.mixer.cue(DECK_CHANNEL[side], on); }
+  cross(x: number) { this.mixer.cross(x); }
   /** Sync deck `side` to the other deck here, or to `to` (the other deck, played on someone else's machine). */
   sync(side: Side, to?: Beside) {
     const o = this.decks[side === 0 ? 1 : 0];
     return this.decks[side].sync(to ?? { grid: o.track?.grid ?? null, rate: o.rate(), playing: o.playing, pos: o.pos() });
   }
-  private applyMix() {
-    const t = this.ctx.currentTime, [a, b] = crossfade(this.xfader, this.curve), set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.008);
-    set(this.channels[0].xf.gain, a); set(this.channels[1].xf.gain, b);
-    set(this.master.gain, faderGain(this.masterLevel) * 1.25);
-    set(this.toSpeakers.gain, this.split ? 0 : 1);
-    set(this.splitOut.gain, this.split ? 1 : 0);
-    set(this.cueMix[0].gain, 1 - this.cueBlend); set(this.cueMix[1].gain, this.cueBlend);
-  }
 
-  /** How loud a channel (0, 1) or the master (2) is now, 0 to 1 (its peak over the last few ms). */
-  level(which: 0 | 1 | 2): number {
-    const a = which === 2 ? this.masterMeter : this.channels[which].meter, buf = new Float32Array(a.fftSize);
-    a.getFloatTimeDomainData(buf);
-    let m = 0;
-    for (const v of buf) if (Math.abs(v) > m) m = Math.abs(v);
-    return Math.min(1, m);
-  }
-
-  state() {
-    return {
-      decks: this.decks.map((d) => d.state()), xfader: this.xfader, curve: this.curve, quantize: this.quantize, split: this.split, cueBlend: this.cueBlend, master: this.masterLevel,
-      channels: this.channels.map((c) => ({ ...c.knobs, cue: c.cue })),
-    };
-  }
+  state() { return { decks: this.decks.map((d) => d.state()), quantize: this.quantize, ...this.mixer.state() }; }
   close() { for (const d of this.decks) d.stop(); }
 }
