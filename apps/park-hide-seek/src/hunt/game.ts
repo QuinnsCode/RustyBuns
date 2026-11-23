@@ -124,11 +124,14 @@ export function disguiseFor(z: Zone, x: number, y: number): Disguise | null {
 export type Phase = "lobby" | "drop" | "hide" | "hunt" | "results" | "over";
 export type Hat = "none" | "beanie" | "cap" | "bucket";
 
-export interface Look { shirt: number; pants: number; skin: number; hat: Hat; pack: boolean }
+/** What a player looks like: colours by index, a hat, a pack, and which of BODIES they are built like. */
+export interface Look { shirt: number; pants: number; skin: number; hat: Hat; pack: boolean; body: number }
 export const SHIRTS = ["#d9482b", "#2f7d32", "#2b6cb0", "#e0a526", "#8e44ad", "#e86fa1", "#1aa39a", "#f2efe6"];
 export const PANTS = ["#3b3f4a", "#6b5236", "#2d4a6b", "#5b6b3a"];
 export const SKINS = ["#f2d0b5", "#e0b089", "#c68a5e", "#8d5a3b", "#5b3a27"];
 export const HATS: Hat[] = ["none", "beanie", "cap", "bucket"];
+/** The body types, by the name of their build in @rustybuns/models/human. Looks only: every body moves and hides the same. */
+export const BODIES = ["average", "slender", "athletic", "curvy", "heavy", "pear", "lanky", "petite", "stocky", "strong"] as const;
 
 export type Msg =
   | { t: "name"; name: string }
@@ -236,7 +239,7 @@ const time = within(0, Number.MAX_SAFE_INTEGER);
 const when = nul(time);
 const unit = within(0, 1);
 const pt = (v: unknown): Pt => { const [x, y] = arr(at, 2, { min: 2 })(v); return [x!, y!]; };
-const LookG: Guard<Look> = obj({ shirt: int(0, 64), pants: int(0, 64), skin: int(0, 64), hat: oneOf(HATS), pack: bool() });
+const LookG: Guard<Look> = obj({ shirt: int(0, 64), pants: int(0, 64), skin: int(0, 64), hat: oneOf(HATS), pack: bool(), body: int(0, BODIES.length - 1, 0) });
 const RoleG = oneOf(["camper", "ranger"]);
 const TodG = oneOf(["day", "dusk", "night"]);
 const SkyG: Guard<Sky> = obj({ tod: TodG, fog: unit, rain: unit, wind: unit, overcast: bool(), snow: bool() });
@@ -322,7 +325,10 @@ const who = (id: string) => `\u0001${id}\u0001`;
 const BOT_NAMES = ["Juniper", "Sequoia", "Marmot", "Pika", "Bison", "Osprey", "Yucca", "Aspen"];
 
 export function randomLook(r: () => number = Math.random): Look {
-  return { shirt: Math.floor(r() * SHIRTS.length), pants: Math.floor(r() * PANTS.length), skin: Math.floor(r() * SKINS.length), hat: HATS[Math.floor(r() * HATS.length)], pack: r() < 0.6 };
+  // The body comes out of the same draw as the pack (its later digits), so a seeded round draws as many numbers as it did.
+  const shirt = Math.floor(r() * SHIRTS.length), pants = Math.floor(r() * PANTS.length), skin = Math.floor(r() * SKINS.length), hat = HATS[Math.floor(r() * HATS.length)]!;
+  const last = r();
+  return { shirt, pants, skin, hat, pack: last < 0.6, body: Math.floor(((last * 997) % 1) * BODIES.length) };
 }
 
 export class Hunt {
@@ -952,15 +958,17 @@ export class Hunt {
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 type Wire = { [k in "t" | "name" | "zone" | "tod" | "live" | "laps" | "mode" | "level" | "id" | "x" | "y" | "yaw" | "pitch" | "crouch" | "prone" | "climb" | "run" | "light" | "ask"]?: unknown }
-  & { look?: { [k in "shirt" | "pants" | "skin" | "hat" | "pack"]?: unknown } | null };
+  & { look?: { [k in "shirt" | "pants" | "skin" | "hat" | "pack" | "body"]?: unknown } | null };
 
 /** A look, from a guest's message or this page's own storage: colours in range and a known hat, or null. */
 export function parseLook(raw: unknown): Look | null {
-  const { shirt, pants, skin, hat: h, pack } = (raw ?? {}) as { shirt?: unknown; pants?: unknown; skin?: unknown; hat?: unknown; pack?: unknown };
+  const { shirt, pants, skin, hat: h, pack, body } = (raw ?? {}) as { shirt?: unknown; pants?: unknown; skin?: unknown; hat?: unknown; pack?: unknown; body?: unknown };
   const hat = HATS.find((x) => x === h);
   const ok = num(shirt) && num(pants) && num(skin) && hat
     && shirt >= 0 && shirt < SHIRTS.length && pants >= 0 && pants < PANTS.length && skin >= 0 && skin < SKINS.length;
-  return ok ? { shirt: shirt | 0, pants: pants | 0, skin: skin | 0, hat, pack: !!pack } : null;
+  // A look saved before bodies had a pick gets one from its colours, the same one every time.
+  const built = num(body) && body >= 0 && body < BODIES.length ? body | 0 : ok ? (shirt + pants * 3 + skin * 5) % BODIES.length | 0 : 0;
+  return ok ? { shirt: shirt | 0, pants: pants | 0, skin: skin | 0, hat, pack: !!pack, body: built } : null;
 }
 
 /** A guest's message: every field is unknown until checked here; a non-object has none. */

@@ -7,7 +7,7 @@ import { getJson, readJson } from "@rustybuns/util/http";
 import { UPDATE_TEXT, pv, updateNotice } from "@rustybuns/util/protocol";
 import { LanReply, MatchReply, PROTOCOL, ParksReply, STORE_URL } from "../api.ts";
 import { allAsks, askBlocked, askText, parseAsk, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
-import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, parseLook, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
+import { BODIES, HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, parseLook, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
 import { PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { REGIONS } from "@rustybuns/terrain";
@@ -443,6 +443,7 @@ function renderLook() {
   const sw = (key: "shirt" | "pants" | "skin", colors: string[]) => `<div class="look-row">${key === "shirt" ? "Jacket" : key === "pants" ? "Pants" : "Skin"}</div><div class="swatches">${colors.map((c, i) => `<button data-look="${key}" data-i="${i}" aria-pressed="${look[key] === i}" style="background:${c}" title="${c}"></button>`).join("")}</div>`;
   const html = `${sw("shirt", SHIRTS)}${sw("pants", PANTS)}${sw("skin", SKINS)}
     <div class="look-row">Hat</div><div class="row-btns" style="margin:4px 0 10px">${HATS.map((h) => `<button data-look="hat" data-v="${h}" aria-pressed="${look.hat === h}">${h === "none" ? "None" : h[0].toUpperCase() + h.slice(1)}</button>`).join("")}</div>
+    <div class="look-row">Build</div><div class="row-btns" style="margin:4px 0 10px">${BODIES.map((b, i) => `<button data-look="body" data-i="${i}" aria-pressed="${look.body === i}">${b[0]!.toUpperCase() + b.slice(1)}</button>`).join("")}</div>
     <div class="row-btns"><button data-look="pack" aria-pressed="${look.pack}">Backpack</button><button data-look="random">Surprise me</button></div>`;
   if (html !== lastLook) { lastLook = html; $("look").innerHTML = html; }
 }
@@ -451,7 +452,7 @@ $("look").addEventListener("click", (e) => {
   const b = (e.target as HTMLElement).closest("button");
   if (!b) return;
   const k = b.dataset.look;
-  if (k === "shirt" || k === "pants" || k === "skin") look = { ...look, [k]: Number(b.dataset.i) };
+  if (k === "shirt" || k === "pants" || k === "skin" || k === "body") look = { ...look, [k]: Number(b.dataset.i) };
   else if (k === "hat") look = { ...look, hat: b.dataset.v as Look["hat"] };
   else if (k === "pack") look = { ...look, pack: !look.pack };
   else if (k === "random") look = randomLook();
