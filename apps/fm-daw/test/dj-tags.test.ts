@@ -48,6 +48,29 @@ const ogg = (...kv: string[]) => cat(page(cat([1], "vorbis", new Uint8Array(23))
 const wav = (tag: Uint8Array) => { const rest = cat("WAVE", "fmt ", u32le(16), new Uint8Array(16), "data", u32le(2), [0, 0], "id3 ", u32le(tag.length), tag, tag.length & 1 ? [0] : []); return cat("RIFF", u32le(rest.length), rest); };
 const aiff = (tag: Uint8Array) => { const rest = cat("AIFF", "COMM", u32be(18), new Uint8Array(18), "ID3 ", u32be(tag.length), tag, tag.length & 1 ? [0] : []); return cat("FORM", u32be(rest.length), rest); };
 
+/** The four-deck program's cue list: [type (0 cue, 4 grid), ms, hot cue (-1 none)] each, names left empty. */
+const cuep = (...cues: [number, number, number][]) => {
+  const f64 = (x: number) => { const b = new Uint8Array(8); new DataView(b.buffer).setFloat64(0, x, true); return b; };
+  return chunk("PEUC", cat(u32le(cues.length), ...cues.map(([type, ms, hot]) => cat(u32le(1), u32le(0), u32le(0), u32le(type), f64(ms), f64(0), u32le(-1 >>> 0), u32le(hot >>> 0)))));
+};
+const traktor = (bpm: number, ...cues: [number, number, number][]) => ["PRIV", cat("TRAKTOR4\0", chunk("DMRT", [chunk("ATAD", [chunk("MPBH", f32(bpm, true))]), cuep(...cues)]))] as [string, Uint8Array];
+/**
+ * An MP3's first frame (MPEG 1 Layer III, stereo): bare audio, or an Info frame whose tag is LAME's (its CRC good or
+ * zeroed) or FFmpeg's. The CRC is LAME's own: CRC-16/ARC over the frame up to it.
+ */
+function mp3(hz: 44100 | 48000, info?: "lame" | "zero crc" | "lavc") {
+  const head = [0xff, 0xfb, hz === 44100 ? 0x90 : 0x94, 0x44];
+  if (!info) return cat(head, new Uint8Array(413));
+  const f = cat(head, new Uint8Array(32), "Info", u32be(0), info === "lavc" ? "Lavc62.11" : "LAME3.100", new Uint8Array(27), new Uint8Array(200));
+  if (info === "lame") {
+    let c = 0;
+    for (const b of f.subarray(0, 4 + 32 + 8 + 34)) { c ^= b; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xa001 : c >>> 1; }
+    f.set(u16be(c), 4 + 32 + 8 + 34);
+  }
+  return f;
+}
+const frame = (hz: number) => 1152 / hz;
+
 const round = (t: Tempo | null): Tempo | null => t && { ...t, firstBeat: t.firstBeat === undefined ? undefined : Math.round(t.firstBeat * 1000) / 1000 };
 
 const files: [string, Uint8Array, Tempo | null][] = [
@@ -58,6 +81,15 @@ const files: [string, Uint8Array, Tempo | null][] = [
   ["its hot cues with only a plain tempo", id3(3, [["TBPM", text("120")], ["GEOB", geob("Serato Markers2", markers2([1, 1000]))]]), { bpm: 120, source: "tag", hot: [null, 1, null, null] }],
   ["its auto tags alone: a tempo, no first beat", id3(3, [["GEOB", geob("Serato Autotags", autotags("140.00"))]]), { bpm: 140, source: "grid" }],
   ["the four-deck program's PRIV frame", id3(3, [["PRIV", cat("TRAKTOR4\0", chunk("DMRT", [chunk("ATAD", [chunk("MPBH", f32(124.5, true))])]))]]), { bpm: 124.5, source: "grid" }],
+  ["its cue list: the grid marker and hot cues (0 is the first; a loop and a cue with none left off)", id3(3, [traktor(120, [5, 1000, 2], [0, 30_000, 1], [4, 500, -1], [0, 2500, 0], [0, 9000, -1])]), { bpm: 120, firstBeat: 0.5, source: "grid", hot: [2.5, 30, null, null] }],
+  // An MP3's positions, onto the timeline the browser decodes: the four-deck program's stay when it reads the info frame...
+  ["its grid on an MP3 with a good LAME tag", cat(id3(3, [traktor(120, [4, 500, -1])]), mp3(44100, "lame")), { bpm: 120, firstBeat: 0.5, source: "grid" }],
+  ["its grid on a bare MP3", cat(id3(3, [traktor(120, [4, 500, -1])]), mp3(44100)), { bpm: 120, firstBeat: 0.5, source: "grid" }],
+  // ...and run a frame late when it plays that frame as sound
+  ["its grid on an MP3 whose LAME tag has no CRC", cat(id3(3, [traktor(120, [4, 500, -1], [0, 2500, 0])]), mp3(44100, "zero crc")), { bpm: 120, firstBeat: 0.474, source: "grid", hot: [2.5 - frame(44100), null, null, null] }],
+  ["its grid on an MP3 FFmpeg made", cat(id3(4, [traktor(120, [4, 500, -1])]), mp3(48000, "lavc")), { bpm: 120, firstBeat: 0.476, source: "grid" }],
+  // the vinyl-emulation program's always do; a cue at the very start stays at the start
+  ["the vinyl-emulation program's grid and cues on an MP3", cat(id3(4, [["GEOB", geob("Serato BeatGrid", beatgrid(0.512, 120))], ["GEOB", geob("Serato Markers2", markers2([0, 0], [1, 2512]))]]), mp3(48000, "lame")), { bpm: 120, firstBeat: 0.488, source: "grid", hot: [0, 2.512 - frame(48000), null, null] }],
   ["an m4a's tmpo", mp4(atom("tmpo", atom("data", u32be(21), u32be(0), u16be(140)))), { bpm: 140, source: "tag" }],
   ["an m4a's base64 grid", mp4(atom("----", atom("mean", [0, 0, 0, 0], "com.serato.dj"), atom("name", [0, 0, 0, 0], "beatgrid"), atom("data", u32be(1), u32be(0), b64("Serato BeatGrid", beatgrid(0.2, 122))))), { bpm: 122, firstBeat: 0.2, source: "grid" }],
   ["a FLAC's BPM comment", flac("TITLE=x", "BPM=97"), { bpm: 97, source: "tag" }],

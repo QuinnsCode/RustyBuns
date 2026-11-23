@@ -9,9 +9,10 @@
 //   SERATO_BEATGRID, in MP4 a `----` atom of mean com.serato.dj, base64 either way; its hot cues the CUE entries of
 //   "Serato Markers2" (SERATO_MARKERS_V2, markersv2), itself base64 text inside;
 // - the four-deck program's ID3 PRIV frame of owner TRAKTOR4: nested chunks (a reversed four-letter id, a length and
-//   a child count, little-endian), its BPM a float in the leaf HBPM. Its grid marker lives in a cue list that is
-//   only partly decoded in public, so that grid comes from the collection file instead (#5773). MP3 grid positions are taken
-//   as written: whether they need the ~26 ms encoder delay taken off is open until a real tagged file is checked.
+//   a child count, little-endian), its BPM a float in the leaf HBPM, its grid marker and hot cues in the cue
+//   list of leaf CUEP (laid out as hellricer's 2021 write-up has it; not yet checked against a file the program wrote).
+// An MP3's positions move onto the browser's timeline: one MP3 frame earlier for the vinyl-emulation program, and for the
+// four-deck one when it can't read the file's info frame (`mp3Lead`).
 // From a collection file the DJ drops (`readCollection`), tempos for tracks by file name:
 // - the four-deck program's XML collection: ENTRY > LOCATION FILE, TEMPO BPM, CUE_V2 TYPE="4" START (ms) the grid,
 //   CUE_V2 TYPE="0" HOTCUE n the hot cues;
@@ -132,7 +133,7 @@ function id3(b: Uint8Array): Found {
   let at = 0;
   if (flags & 0x40) at = ver === 4 ? synchsafe(body, 0) : 4 + view(body).getUint32(0);
   const found: Found = {};
-  let auto: number | undefined, grid: { bpm?: number; first?: number } | null = null;
+  let auto: number | undefined, grid: { bpm?: number; first?: number } | null = null, seratoHot: Hot, traktor: Traktor | undefined;
   const idLen = ver === 2 ? 3 : 4, headLen = ver === 2 ? 6 : 10;
   while (at + headLen <= body.length) {
     const id = ascii(body, at, idLen);
@@ -149,15 +150,58 @@ function id3(b: Uint8Array): Found {
       const [desc, q] = id3Text(f, p, enc);
       if (desc === "Serato Autotags") auto = autotags(f.subarray(q)) ?? auto;
       else if (desc === "Serato BeatGrid") grid = beatgrid(f.subarray(q)) ?? grid;
-      else if (desc === "Serato Markers2") found.hot = markers2(f.subarray(q)) ?? found.hot;
+      else if (desc === "Serato Markers2") seratoHot = markers2(f.subarray(q)) ?? seratoHot;
     } else if (id === "PRIV") {
       const [owner, p] = id3Text(f, 0, 0);
-      if (owner === "TRAKTOR4") found.grid = tempo(nestedBpm(f.subarray(p)) ?? NaN, "grid") ?? found.grid;
+      if (owner === "TRAKTOR4") traktor = traktor4(f.subarray(p)) ?? traktor;
     }
   }
+  // An MP3's positions are each program's own timeline: shift them onto the one the browser decodes (see `mp3Lead`).
+  const lead = mp3Lead(b, 10 + synchsafe(b, 6) + (ver === 4 && flags & 0x10 ? 10 : 0));
+  const sr = lead?.frame ?? 0, tk = lead && !lead.trusted ? lead.frame : 0;
+  if (traktor) {
+    found.grid = tempo(traktor.bpm ?? NaN, "grid", shift(traktor.first, tk)) ?? found.grid;
+    found.hot = hotList(traktor.hot.map(([i, t]) => [i, shift(t, tk)!]));
+  }
+  if (seratoHot) found.hot = seratoHot.map((t) => (t === null ? null : shift(t, sr)!));
   const gridBpm = auto ?? grid?.bpm;
-  if (gridBpm !== undefined) found.grid = tempo(gridBpm, "grid", grid?.first) ?? found.grid;
+  if (gridBpm !== undefined) found.grid = tempo(gridBpm, "grid", shift(grid?.first, sr)) ?? found.grid;
   return found;
+}
+const shift = (t: number | undefined, by: number) => (t === undefined ? undefined : Math.max(0, t - by));
+
+/**
+ * The MP3 frame after the tag: one frame's length in seconds (1152 samples, 576 for MPEG 2 and 2.5), and whether its
+ * info frame is one the four-deck program skips. The browser decodes an MP3 the way FFmpeg does: it skips the Xing or
+ * Info frame and, when a LAME tag says how long the encoder delay is, trims that too. Against that timeline:
+ * - the vinyl-emulation program's positions run one frame late on every MP3 (26 ms at 44.1 kHz, 24 at 48: Mixxx's
+ *   SeratoTags::guessTimingOffsetMillis for its FFmpeg decoder);
+ * - the four-deck program's run one frame late when the info frame is there but it can't read it as one (no LAME
+ *   tag, an FFmpeg "Lavc" or "Lavf" one, or a LAME tag whose CRC is zero or wrong), so it plays that frame as sound;
+ *   with no info frame, or a LAME tag with a good CRC, they line up (the DJ converters' "26 ms" cases A to D, as
+ *   dj-kb.readthedocs.io/dj_collection_converters sets them out).
+ * Null when no Layer III frame starts there, so an AIFF or WAV ID3 chunk shifts nothing.
+ */
+function mp3Lead(b: Uint8Array, at: number): { frame: number; trusted: boolean } | null {
+  for (const end = Math.min(b.length - 4, at + 4096); at < end && b[at] === 0;) at++; // padding past the tag's size
+  if (at + 4 > b.length || b[at] !== 0xff || (b[at + 1]! & 0xe0) !== 0xe0) return null;
+  const ver = (b[at + 1]! >> 3) & 3, layer = (b[at + 1]! >> 1) & 3, rate = (b[at + 2]! >> 2) & 3, bits = b[at + 2]! >> 4;
+  if (ver === 1 || layer !== 1 || rate === 3 || bits === 0 || bits === 15) return null;
+  const hz = [44100, 48000, 32000][rate]! / (ver === 3 ? 1 : ver === 2 ? 2 : 4), mono = b[at + 3]! >> 6 === 3;
+  const frame = (ver === 3 ? 1152 : 576) / hz;
+  const x = at + 4 + (ver === 3 ? (mono ? 17 : 32) : mono ? 9 : 17), tag = ascii(b, x, 4);
+  if (tag !== "Xing" && tag !== "Info") return { frame, trusted: true };
+  const has = x + 8 <= b.length ? view(b).getUint32(x + 4) : 0;
+  const lame = x + 8 + (has & 1 ? 4 : 0) + (has & 2 ? 4 : 0) + (has & 4 ? 100 : 0) + (has & 8 ? 4 : 0);
+  if (lame + 36 > b.length || !/^(LAME|L3\.9|GOGO)/.test(ascii(b, lame, 4))) return { frame, trusted: false };
+  const crc = view(b).getUint16(lame + 34);
+  return { frame, trusted: crc !== 0 && crc === crc16(b.subarray(at, lame + 34)) };
+}
+/** CRC-16/ARC (reflected 0x8005, from zero): the LAME tag's check over its frame up to the CRC. */
+function crc16(p: Uint8Array): number {
+  let c = 0;
+  for (const byte of p) { c ^= byte; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xa001 : c >>> 1; }
+  return c;
 }
 
 /** "Serato Autotags": version 01 01, then the BPM, auto gain and gain as NUL-ended text. */
@@ -206,17 +250,41 @@ function markers2(p: Uint8Array): Hot {
   return hotList(cues);
 }
 
-/** The four-deck program's PRIV payload: chunks of id (4), length (u32 LE), children (u32 LE); BPM is the float in leaf HBPM. */
-function nestedBpm(p: Uint8Array, depth = 0): number | undefined {
-  const v = view(p);
-  for (let at = 0; at + 12 <= p.length && depth < 8;) {
-    const id = ascii(p, at, 4), len = v.getUint32(at + 4, true), kids = v.getUint32(at + 8, true);
-    const body = p.subarray(at + 12, at + 12 + len);
-    if (kids > 0) { const got = nestedBpm(body, depth + 1); if (got !== undefined) return got; }
-    else if ((id === "HBPM" || id === "MPBH") && body.length >= 4) return view(body).getFloat32(0, true);
-    at += 12 + len;
+interface Traktor { bpm?: number; first?: number; hot: [number, number][] }
+/**
+ * The four-deck program's PRIV payload: chunks of id (4, written backwards), length (u32 LE), children (u32 LE). The BPM
+ * is the float in leaf HBPM; leaf CUEP is the cue list: a u32 count, then each cue as u32 (1), a u32 name length and the
+ * name in UTF-16LE, u32 display order, u32 type (0 cue, 4 grid), f64 start in ms, f64 length, i32 repeats, i32 hot cue
+ * (0 is the first, -1 none). All little-endian, as the tree is; the start in ms as in its collection file's CUE_V2.
+ */
+function traktor4(p: Uint8Array): Traktor | undefined {
+  const leaves = new Map<string, Uint8Array>();
+  const walk = (q: Uint8Array, depth: number) => {
+    const v = view(q);
+    for (let at = 0; at + 12 <= q.length && depth < 8;) {
+      const id = ascii(q, at, 4), len = v.getUint32(at + 4, true), kids = v.getUint32(at + 8, true), body = q.subarray(at + 12, at + 12 + len);
+      if (kids > 0) walk(body, depth + 1);
+      else { const key = [...id].reverse().join(""); if (!leaves.has(key)) leaves.set(key, body); }
+      at += 12 + len;
+    }
+  };
+  walk(p, 0);
+  const got = (id: string) => leaves.get(id) ?? leaves.get([...id].reverse().join(""));
+  const bpmBody = got("HBPM"), out: Traktor = { hot: [] };
+  if (bpmBody && bpmBody.length >= 4) out.bpm = view(bpmBody).getFloat32(0, true);
+  const c = got("CUEP");
+  if (c && c.length >= 4) {
+    const v = view(c);
+    for (let i = 0, n = v.getUint32(0, true), at = 4; i < n && at + 8 <= c.length; i++) {
+      at += 8 + v.getUint32(at + 4, true) * 2;
+      if (at + 32 > c.length) break;
+      const type = v.getUint32(at + 4, true), ms = v.getFloat64(at + 8, true), hot = v.getInt32(at + 28, true);
+      if (type === 4 && out.first === undefined) out.first = ms / 1000;
+      else if (type === 0 && hot >= 0) out.hot.push([hot, ms / 1000]);
+      at += 32;
+    }
   }
-  return undefined;
+  return out.bpm === undefined && out.first === undefined && !out.hot.length ? undefined : out;
 }
 
 /** Comments as KEY=value (Vorbis, Opus, FLAC): u32 LE vendor length and vendor, a u32 LE count, then each entry. */
