@@ -2,7 +2,9 @@
 // player on the deck (its sound never reaches this page: the browser keeps another site's audio to itself), so the
 // deck drives the player instead: play, the cue, hot cues, jumps and the overview's seek move it, the pitch fader sets
 // its speed (YouTube rounds to the speeds it offers), and the deck's channel fader, trim, crossfader and master set its
-// volume. The EQ, the filters, the scratch and the room's PA can't reach it; only you hear it. Nothing is hosted here.
+// volume. The EQ, the filters, the scratch and the room's PA can't reach it. In a room the deck says its video, where
+// it is and its speed on the booth's line (booth.ts), and each listener's page plays the same video (room-tube.ts).
+// Nothing is hosted here.
 import { obj, str } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { faderGain } from "./analyze.ts";
@@ -38,16 +40,16 @@ export const tubeTitle = async (id: string) => (await getJson(`https://www.youtu
 interface YtPlayer {
   playVideo(): void; pauseVideo(): void; seekTo(s: number, allowAhead: boolean): void;
   getCurrentTime(): number; getDuration(): number; getPlayerState(): number;
-  setVolume(v: number): void; setPlaybackRate(r: number): void; loadVideoById(id: string): void; destroy(): void;
+  setVolume(v: number): void; setPlaybackRate(r: number): void; getPlaybackRate(): number; loadVideoById(id: string): void; destroy(): void;
 }
 interface YtEvent { data: number; target: YtPlayer }
 declare global {
   interface Window {
-    YT?: { Player: new (host: HTMLElement, o: { videoId: string; width?: string; height?: string; playerVars?: Record<string, number>; events?: { onReady?: (e: YtEvent) => void; onStateChange?: (e: YtEvent) => void } }) => YtPlayer };
+    YT?: { Player: new (host: HTMLElement, o: { videoId: string; width?: string; height?: string; playerVars?: Record<string, number>; events?: { onReady?: (e: YtEvent) => void; onStateChange?: (e: YtEvent) => void; onError?: (e: YtEvent) => void } }) => YtPlayer };
     onYouTubeIframeAPIReady?: () => void;
   }
 }
-const PLAYING = 1;
+const PLAYING = 1, BUFFERING = 3;
 const NO_WAVE = new Float32Array(0);
 let api: Promise<void> | null = null;
 /** YouTube's player script, added once. */
@@ -78,6 +80,10 @@ export class TubeDeck {
   private shownRate = 1;
   private shownVol = -1;
   private playing = false;
+  /** What YouTube's player last said it is doing: playing or filling up to play (not what was asked of it). */
+  moving = false;
+  /** Why YouTube's player gave up on the video, or null. */
+  failed: string | null = null;
 
   constructor(readonly id: string, host: HTMLElement, title = "YouTube") {
     this.title = title;
@@ -89,13 +95,18 @@ export class TubeDeck {
       this.made = new YT.Player(box, {
         videoId: id, width: "100%", height: "100%",
         playerVars: { playsinline: 1, controls: 0, disablekb: 1, rel: 0, iv_load_policy: 3, fs: 0 },
-        events: { onReady: (e) => { if (this.made) { this.player = e.target; ok(); } }, onStateChange: (e) => { this.playing = e.data === PLAYING; } },
+        events: { onReady: (e) => { if (this.made) { this.player = e.target; ok(); } }, onStateChange: (e) => { this.playing = e.data === PLAYING; this.moving = e.data === PLAYING || e.data === BUFFERING; },
+          onError: (e) => { this.failed = e.data === 101 || e.data === 150 ? "its owner doesn't let it play outside YouTube" : "YouTube couldn't play it"; } },
       });
     }));
   }
   pos() { return this.player?.getCurrentTime() ?? 0; }
   len() { return this.player?.getDuration() ?? 0; }
   isPlaying() { return this.playing; }
+  /** The speed the video really plays at (YouTube rounds what it's asked to the speeds it offers). */
+  rate() { return this.player?.getPlaybackRate() ?? 1; }
+  /** Whether YouTube's player is up, so its calls do something. */
+  isReady() { return !!this.player; }
   play() { this.player?.playVideo(); this.playing = true; }
   pause() { this.player?.pauseVideo(); this.playing = false; }
   seek(s: number) { this.player?.seekTo(Math.max(0, Math.min(this.len() || s, s)), true); }

@@ -68,7 +68,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
-  A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it) hands
+  A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it, `--wait` to keep trying each minute while the office is full) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
 - `bun run rings`: the release rings (notes/RELEASE_RINGS.md), one line each: the commit it sits on and its age, its last red, and how many PRs wait to climb into it. Ester's card shows the same.

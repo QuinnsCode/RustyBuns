@@ -2,7 +2,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { endIn, parseHeavy, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
+import { endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
 import { WORKTREES } from "../live/sweep.ts";
 
 setDefaultTimeout(30_000);
@@ -28,13 +28,26 @@ afterAll(() => {
   rmSync(repo, { recursive: true, force: true });
 });
 
-test("sending a worker home ends what runs in its worktree, subfolders too, and nothing else", async () => {
-  const mine = tree("byte-1"), other = tree("nibble-2");
+test("sending a worker home ends what runs in each of its worktrees, subfolders too, and nothing else", async () => {
+  // a worker across repositories: this floor's worktree and another repo's, side by side in its workspace
+  const mine = tree("byte-1/RustyBuns"), mineToo = tree("byte-1/qcrm"), other = tree("nibble-2");
   mkdirSync(path.join(mine, "apps/x"), { recursive: true });
-  const [dev, vite, theirs] = [leave(mine), leave(path.join(mine, "apps/x")), leave(other)];
-  expect(await endIn(mine)).toBe(2);
-  expect([alive(dev), alive(vite), alive(theirs)]).toEqual([false, false, true]);
+  const [dev, vite, api, theirs] = [leave(mine), leave(path.join(mine, "apps/x")), leave(mineToo), leave(other)];
+  expect(await endWorker([mine, mineToo])).toBe(3);
+  expect([alive(dev), alive(vite), alive(api), alive(theirs)]).toEqual([false, false, false, true]);
   process.kill(theirs, "SIGKILL"); // else it is a deskless orphan for the reaper below
+});
+
+test("sending home a worker with no worktree ends what its session started, not what others left in the checkout", async () => {
+  // its session leads its own process group, as a pty's child does; what it backgrounds stays in that group
+  const session = Bun.spawn(["sh", "-c", "sleep 120 >/dev/null 2>&1 & echo $!"], { cwd: repo, stdout: "pipe", detached: true });
+  const server = Number((await new Response(session.stdout).text()).trim());
+  started.push(server);
+  await session.exited;
+  const someoneElses = leave(repo);
+  expect(await endWorker([], session.pid)).toBe(1);
+  expect([alive(server), alive(someoneElses)]).toEqual([false, true]);
+  process.kill(someoneElses, "SIGKILL");
 });
 
 test("the reaper ends orphans of gone and deskless worktrees, keeps a seated worker's, and says when swap is over 80%", async () => {
@@ -51,6 +64,19 @@ test("the reaper ends orphans of gone and deskless worktrees, keeps a seated wor
   expect(reaperStats()).toMatchObject({ reaped: 2, swap: { pct: 90 } });
   expect(said.join("\n")).toContain("Ended 2 leftover processes");
   expect(said.join("\n")).toContain("no new hires");
+  process.kill(kept, "SIGKILL"); // else it is a deskless orphan for the reaper below
+});
+
+test("a seated worker's orphan a day old is an earlier session's leftover and ends; a younger one is kept", async () => {
+  const seat = tree("widget-8");
+  const [stale, demo] = [leave(seat), leave(seat)];
+  const floor = { dir: repo, workers: { list: () => [{ worktree: { path: path.join(WORKTREES, "widget-8") } }] } };
+  const procs = () => ours().map((p) => (p.pid === stale ? { ...p, age: OLD_ORPHAN_S + 60 } : p));
+  expect(await reapOnce(() => [floor], () => {}, { procs, swap: () => null })).toBe(1);
+  expect([alive(stale), alive(demo)]).toEqual([false, true]);
+  process.kill(demo, "SIGKILL");
+  // ps's elapsed time, as the age is read
+  expect(["05:09", "03:05:09", "2-03:05:09"].map(parseEtime)).toEqual([309, 11_109, 183_909]);
 });
 
 test("a seated worker's session left stopped is woken on the second round, and a stopped one is ended without waiting for KILL", async () => {
@@ -70,7 +96,7 @@ test("a seated worker's session left stopped is woken on the second round, and a
 
   process.kill(session, "SIGSTOP");
   const t0 = Date.now();
-  expect(await endIn(seat)).toBe(1);
+  expect(await endWorker([seat])).toBe(1);
   expect(alive(session)).toBe(false);
   expect(Date.now() - t0).toBeLessThan(1500);
 });
@@ -108,6 +134,9 @@ test("swap is read from a Mac's sysctl or Linux's meminfo, and only over 80% hol
   const big = parseHeavy("COMMAND          MEM\nfseventsd        27G\ncom.apple.Virtua 8206M\nGoogle Chrome He 1730M+\n");
   expect(big).toEqual(["fseventsd (macOS's file watcher: a restart clears it) 27G", "Docker's VM (quit Docker Desktop) 8206M", "Google Chrome He 1730M"]);
   expect(swapHold(parseSwap(rows[0]![0]), big)).toContain("Most of it: fseventsd");
+  // the sandbox box comes back after every restart, so a hold while it is up says how to stop it
+  expect(swapHold(parseSwap(rows[0]![0]), [], true)).toContain("`bun run office:box down`");
+  expect(swapHold(parseSwap(rows[0]![0]), [], false)).not.toContain("office:box");
 });
 
 test("the reaper ends a server left in a gone worktree's scratch folder, and a Claude Code shell whose session is gone, with its loop", async () => {

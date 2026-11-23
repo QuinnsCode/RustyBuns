@@ -1,12 +1,12 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
-import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 import { CircleHelp, createElement } from "lucide";
 import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, faderCap, faderSlot, fibre, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -139,6 +139,7 @@ function showMenu(result?: Run, note = "") {
 async function start(level: number, scene?: Scenario) {
   menu.hidden = true;
   music ??= new Music();
+  music.volume = volumeOf(ctl, "music");
   const made = scene ? runOf(scene) : null;
   const chart = made?.chart ?? makeChart(level);
   run = made?.run ?? createRun(chart);
@@ -242,13 +243,18 @@ window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
 // ---- controls ----
 /** The radio is the theme: a black fascia, cold white ink and hairlines, monospace like the display. The lanes keep the colour. */
-const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "1px", "--ui-panel": backplate, "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace" };
+const NEON = { "--ui-bg": "#0b0c10", "--ui-ink": "#e9ecf2", "--ui-dim": "#9aa0b4", "--ui-line": "#e9ecf259", "--ui-border": "1px", "--ui-panel": backplate, "--ui-soft": "#14161c", "--ui-accent": "#e9ecf2", "--ui-on-accent": "#0b0c10", "--ui-accent-soft": "#20232b", "--ui-scrim": "#000c", "--ui-radius": "10px", "--ui-radius-sm": "6px", "--ui-font": "ui-monospace, SFMono-Regular, Menlo, monospace",
+  "--ui-track": faderSlot, "--ui-track-h": "8px", "--ui-thumb": `${faderCap} center / 100% 100%`, "--ui-thumb-w": "16px", "--ui-thumb-h": "28px",
+  "--ui-knob": switchKnob, "--ui-knob-on": switchLit, "--ui-knob-radius": "3px", "--ui-knob-on-glow": `0 0 6px ${LANE_COLOURS[3]}` };
 
 mountControls({
   key: "delayed-reaction.controls", parent: el("controls-host"),
-  skin: "house", theme: NEON,
+  skin: "house", theme: NEON, faders: true,
+  // Only what a rhythm game has: the tunnel's sway (the look rows, renamed) and the music. The rest stays out.
+  lean: true, show: ["audio"], hide: ["invertY", "touch", "sfx", "sfxOn"],
+  titles: { lookX: "Tunnel sway", lookY: "Tunnel tilt" }, labels: { lookX: "Side", lookY: "Up", music: "Volume" },
   keys: [["D F J K", "Pads 1 to 4"], ["Arrow keys", "Pads 1 to 4"], ["Hold", "Long notes"], ["M", "Mute"], ["Esc", "Leave the run"]],
-  onChange: (s) => { ctl = s; },
+  onChange: (s) => { ctl = s; if (music) music.volume = volumeOf(s, "music"); },
   onToggle: (open) => {
     paused = open;
     for (const l of [...down]) padUp(l);

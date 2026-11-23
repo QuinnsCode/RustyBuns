@@ -172,13 +172,15 @@ function teeOff() {
   if (holeIx === 0 && strokes === 0) coach.start();
 }
 
+/** The forecast board's run plate: NOAA's cycle ("GFS 06z +3h"), or that this is the stand-in. */
+const wxRun = () => wind.source === "noaa" ? wind.label.replace(/^NOAA /, "").replace(/ \d{4}-\d\d-\d\d/, "") : "Synthetic";
 /** The wind source as a HUD chip beside the score: live NOAA in teal, the synthetic stand-in in amber. */
 function windChipLine() {
   const live = wind.source === "noaa";
   windChip.hidden = false;
   windChip.className = `wind-chip ${live ? "live" : "synthetic"}`;
   windChip.title = live ? `Live wind: ${wind.label}` : `No live wind: ${wind.label}`;
-  windChip.innerHTML = `<i></i>${live ? esc(wind.label.replace(/^NOAA /, "").replace(/ \d{4}-\d\d-\d\d/, "")) : "No live wind"}`;
+  windChip.innerHTML = `<i></i>${live ? esc(wxRun()) : "No live wind"}`;
 }
 
 function startHole(ix: number) {
@@ -218,10 +220,9 @@ function renderPanel() {
     const here = countryAt(lie);
     panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}${info("about-aim", "How to throw")}</h2>
       ${about("about-aim", `<p>${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.</p><p>The basket is in from ${BASKET_KM} km.</p><p class="keys"><kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</p>`)}
-      <div class="board">${rose}<div>
-        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}.</p>
-        <div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div></div>
-      <figure class="forecast"><figcaption>Wind along the throw <span>${loft === "high" ? "jet" : "surface"}, m/s · tee → landing</span></figcaption><div id="strip">${stripHtml()}</div></figure>
+      <section class="wx ${wind.source}" aria-label="Forecast board"><header><span><i></i>Forecast board</span><span>${esc(wxRun())}</span></header>
+      <div class="board">${rose}<div><p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}.</p><div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div></div>
+      <figure class="forecast"><figcaption>Along the throw <span>${loft === "high" ? "jet" : "surface"}, m/s · tee → landing</span></figcaption><div id="strip">${stripHtml()}</div></figure></section>
       <div class="row"><label>${icon("navigation")} Aim</label><input id="heading" type="range" min="0" max="359" step="1" value="${heading}" /><output id="heading-out">${heading}° ${compass(heading)}</output></div>
       <div class="row"><label>${icon("chevrons-up")} Power</label><input id="power" type="range" min="${MIN_POWER}" max="${MAX_POWER}" step="${POWER_STEP}" value="${power}" /><output id="power-out">${fmt(carryKm(power))} km</output></div>
       <div class="row"><label>${icon("wind")} Loft</label>

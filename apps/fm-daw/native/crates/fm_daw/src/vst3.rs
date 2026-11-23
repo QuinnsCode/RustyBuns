@@ -9,7 +9,8 @@
 //! the parameter list. The host keeps the two in step: a slider moved here goes to both.
 //!
 //! Parameters: VST3 hands the host values in 0..1. A stepped one (`stepCount` > 0) is shown as 0..stepCount, so a
-//! switch is 0 or 1 like a CLAP one; the rest stay 0..1. Editors (`IPlugView`) aren't opened yet (#5516).
+//! switch is 0 or 1 like a CLAP one; the rest stay 0..1. A plugin's own editor (`IPlugView`) opens in a window of ours,
+//! and the knobs turned in it come back ([`gui`], #5516).
 //!
 //! Threads, like the CLAP host: everything is called from the one thread that owns the handle. A plugin runs in this
 //! process: one that crashes takes the app with it.
@@ -19,8 +20,10 @@
 
 use crate::clap::{dl, keep_change, take_changes, Descriptor, Param, MAX_EVENTS, MAX_FRAMES};
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::cell::Cell;
 use std::sync::Arc;
 
+pub mod gui;
 pub mod tone;
 
 // ---- the VST3 ABI (pluginterfaces/base and pluginterfaces/vst, SDK 3.8) ----
@@ -693,6 +696,11 @@ pub struct Plugin {
     input_changes: Box<Changes>,
     output_changes: Box<Changes>,
     changes: Vec<(u32, f64)>,
+    /// Our `IComponentHandler`, set on the controller: its editor's knob turns.
+    handler: Box<gui::Handler>,
+    editor: Option<gui::Editor>,
+    /// Whether the controller makes an editor view we can hold, once asked.
+    has_view: Cell<Option<bool>>,
     inputs: Vec<Vec<Vec<f32>>>,
     outputs: Vec<Vec<Vec<f32>>>,
     _bundle: Arc<Bundle>,
@@ -722,6 +730,7 @@ impl Plugin {
             active: false, processing: false, broken: false, steps: Vec::new(),
             events: Box::new(EventList { vtbl: &EVENTS_VTBL, events: Vec::with_capacity(MAX_EVENTS) }),
             input_changes: Changes::new(), output_changes: Changes::new(), changes: Vec::new(),
+            handler: gui::Handler::new(), editor: None, has_view: Cell::new(None),
             inputs: Vec::new(), outputs: Vec::new(), _bundle: bundle.clone(),
         };
         unsafe {
@@ -741,6 +750,7 @@ impl Plugin {
                 }
             }
             if p.controller.is_none() { p.controller = p.component.query(&IEDIT_CONTROLLER); }
+            if let Some(ctl) = p.controller.as_ref() { (ctl.v::<ControllerVtbl>().set_component_handler)(ctl.ptr(), p.handler.ptr()); }
             if let (true, Some(ctl)) = (p.separate, p.controller.as_ref().map(Com::ptr)) {
                 let cv: &ControllerVtbl = vt(ctl);
                 if let (Some(a), Some(b)) = (p.component.query(&ICONNECTION_POINT), query(ctl, &ICONNECTION_POINT)) {
@@ -844,6 +854,7 @@ impl Plugin {
     }
 
     fn block(&mut self, n: usize) -> bool {
+        self.take_edits();
         let Some(proc_) = self.processor.as_ref() else { return false };
         for bus in self.inputs.iter_mut().chain(self.outputs.iter_mut()) { for ch in bus.iter_mut() { ch[..n].fill(0.0); } }
         let mut in_ptrs: Vec<Vec<*mut f32>> = self.inputs.iter_mut().map(|b| b.iter_mut().map(|c| c.as_mut_ptr()).collect()).collect();
@@ -866,7 +877,7 @@ impl Plugin {
         for q in &self.output_changes.queues[..self.output_changes.used] {
             let Some(&(_, v)) = q.points.last() else { continue };
             if let Some(ctl) = self.controller.as_ref() { unsafe { (ctl.v::<ControllerVtbl>().set_param_normalized)(ctl.ptr(), q.id, v); } }
-            let k = self.steps.iter().find(|s| s.id == q.id).map_or(1.0, |s| if s.steps > 0 { s.steps as f64 } else { 1.0 });
+            let k = self.scale(q.id);
             keep_change(&mut self.changes, q.id, v * k);
         }
         status == OK
@@ -880,6 +891,7 @@ impl Plugin {
 
 impl Drop for Plugin {
     fn drop(&mut self) {
+        self.close_editor();
         unsafe {
             if let (true, Some(p)) = (self.processing, self.processor.as_ref()) { (p.v::<ProcessorVtbl>().set_processing)(p.ptr(), 0); }
             if self.active { (self.component.v::<ComponentVtbl>().set_active)(self.component.ptr(), 0); }
@@ -890,6 +902,7 @@ impl Drop for Plugin {
                         (b.v::<ConnectionVtbl>().disconnect)(b.ptr(), a.ptr());
                     }
                 }
+                (ctl.v::<ControllerVtbl>().set_component_handler)(ctl.ptr(), std::ptr::null_mut());
                 if self.separate { (ctl.v::<ControllerVtbl>().terminate)(ctl.ptr()); }
             }
             self.processor = None;

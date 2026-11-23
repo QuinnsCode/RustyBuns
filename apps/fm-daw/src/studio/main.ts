@@ -64,7 +64,8 @@ import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
-import { PaRoom, paSpeakers } from "./pa-room.ts";
+import { PaRoom, paSpeakers, roomLevel } from "./pa-room.ts";
+import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
@@ -168,6 +169,11 @@ const gearScene = new GearScene();
 const boothGear = new BoothGear();
 /** The booth: the decks other DJs in the room have on (src/dj/booth.ts), heard before the decks panel is up too. */
 const booth = new Booth();
+/** Someone's YouTube deck, played in a hidden player here on the room's clock (src/dj/room-tube.ts): the PA can't carry it. */
+const roomTubes = new RoomTubes();
+const tubeSpeakers = paSpeakers(def);
+addEventListener("pointerdown", () => roomTubes.pressed(), true);
+addEventListener("keydown", () => roomTubes.pressed(), true);
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
 /** A spot's instrument or furniture, and its seat. */
@@ -1268,10 +1274,13 @@ function frame(now: number) {
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
+  // a YouTube deck as loud as the PA is where you stand, at your mutes and the leader's
+  const tubeAt = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw });
+  roomTubes.follow(booth.sides, roomNow(), (peer) => (mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : tubeAt));
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
-  $("hint").textContent = now < flash.until ? flash.text : hint();
+  $("hint").textContent = now < flash.until ? flash.text : roomTubes.note() ?? hint();
   help.frame(phase === "play");
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
@@ -1367,6 +1376,8 @@ const harness = {
     if (o?.press) (await deckPanel()).press(o.press.side, o.press.key);
     return { ...(o?.tap ? { tapped } : {}), decks: ([0, 1] as const).map((side) => { const v = deckView(side); return { owner: booth.owner(side), ...(v ? { ...v, wave: v.wave.length } : {}) }; }), onTable: boothGear.count, pa: !!myPa };
   },
+  /** Someone's YouTube deck as this page plays it (src/dj/room-tube.ts): each deck's video, whether it's moving, where, and why it can't play. */
+  tubes: () => ({ decks: roomTubes.state(), note: roomTubes.note() }),
   /** The PA: on, a test tone (a 220 Hz hum) played to the whole room, as a DJ's set goes; off, stopped. With no argument, its state. */
   pa: async (on?: boolean) => {
     if (on === true && !myPa) {
