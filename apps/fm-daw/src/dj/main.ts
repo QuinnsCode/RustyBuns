@@ -49,6 +49,17 @@ const harness = {
   loop: (side: Side, beats: number | null) => panel?.decks.decks[side].setLoop(beats),
   hot: (side: Side, i: number) => panel?.decks.decks[side].hotCue(i, true),
   pitch: (side: Side, p: number) => panel?.decks.decks[side].setPitch(p),
+  /** The tempo range buttons (6 to 100 per cent), master tempo (MT), and the START / BRAKE knobs (0 to 1). */
+  range: (side: Side, r: number) => panel?.decks.decks[side].setRange(r),
+  keylock: (side: Side, on: boolean) => panel?.decks.decks[side].setKeylock(on),
+  ramp: (side: Side, which: "start" | "brake", v: number) => panel?.decks.decks[side].setRamp(which, v),
+  /** LOOP IN, LOOP OUT (again while looping: the jog moves the out point) and RELOOP / EXIT, as the buttons press them. */
+  loopIn: (side: Side) => panel?.decks.decks[side].loopInPress(panel.decks.quantize),
+  loopOut: (side: Side) => panel?.decks.decks[side].loopOutPress(panel.decks.quantize),
+  reloop: (side: Side) => panel?.decks.decks[side].reloop(),
+  quantize: (on: boolean) => { if (panel) panel.decks.quantize = on; },
+  /** Where each LFO is in its round (0 to 1) and its tempo now. */
+  lfo: () => { const m = mx(); return m ? ([0, 1] as const).map((n) => ({ phase: m.lfoPhase(n), bpm: m.lfoBpm(n) })) : null; },
   /** The jog mode, VINYL or CD (the switch on each player). */
   jogMode: (side: Side, mode: JogMode) => panel?.jogs[side].setMode(mode),
   /** The close-up's zoom, an index into ZOOMS (0 is closest, a quarter second either side). */

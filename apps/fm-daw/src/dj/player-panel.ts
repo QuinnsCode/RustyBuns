@@ -1,13 +1,17 @@
-// A deck's face as a club media player (panel.ts puts two of them either side of the mixer): the screen (name,
+// A QDJ deck's face, a club media player (panel.ts puts two of them either side of the Qone mixer): the screen (name,
 // tempo, key, time, the whole track to click and jump), the big jog wheel, a big CUE and a big PLAY/PAUSE, the
-// VINYL/CD switch, sync, four hot cues, loops, beat jumps, and the tempo fader with its range. `Jog` drives the deck
+// VINYL/CD switch, sync, four hot cues, beat loops, LOOP IN / OUT / RELOOP (OUT again while it loops: the jog moves the
+// out point, clockwise longer), beat jumps, and the tempo column: MT (master tempo, the key held), a button for each
+// tempo range (6 to 100 per cent), the fader, and the START and BRAKE knobs (how long play takes to come up to speed
+// and pause to stop, as a turntable's motor and brake). `Jog` drives the deck
 // from the wheel (player.ts has its arithmetic): pointer, touch, a scroll on the wheel, or a MIDI jog (`connectMidiJog`).
 // The wheel is drawn as two rings with a gap between: the top platter, which turns with the record in VINYL, and
 // the side ring; the screen in its middle shows the position marker (a turn every 1.8 s) and how far in the track is.
 import { clock, LOOPS, PITCH_RANGES } from "./analyze.ts";
+import { knob } from "./mixer-panel.ts";
 import type { DeckView, Press } from "./booth.ts";
 import type { Decks, Side } from "./engine.ts";
-import { BEND_HOLD_MS, bendOf, jogAct, midiJog, partAt, PLATTER_R, RING_IN, TURN_S, turnBetween, type JogMode, type JogPart } from "./player.ts";
+import { BEND_HOLD_MS, bendOf, BRAKE_MAX_S, jogAct, midiJog, partAt, PLATTER_R, rampS, RING_IN, START_MAX_S, TURN_S, turnBetween, type JogMode, type JogPart } from "./player.ts";
 import scratchWorkletUrl from "./scratch-worklet.ts?worker&url";
 import { button, el, slider, svg } from "./dom.ts";
 import { FROM_LABEL } from "./tags.ts";
@@ -58,7 +62,7 @@ export class Jog {
   touch(on: boolean) {
     const d = this.deck;
     if (on) {
-      if (this.mode !== "vinyl" || this.touched || !d.track) return;
+      if (this.mode !== "vinyl" || this.touched || !d.track || d.adjust) return;
       this.touched = true; this.wasPlaying = d.playing;
       d.pause(); this.unbend(); this.voice(d.pos());
       return;
@@ -72,6 +76,7 @@ export class Jog {
   turn(part: JogPart, turns: number, now = performance.now(), hold = BEND_HOLD_MS) {
     const d = this.deck, t = d.track;
     if (!t || !turns) return;
+    if (d.adjust && d.loop) { d.adjustTurn(turns); return; }
     const act = jogAct(this.mode, part, turns, d.playing, this.touched);
     if (act.kind === "scratch") { const p = Math.min(t.buffer.duration, Math.max(0, d.pos() + act.ds)); d.seek(p); this.voice(p); }
     else if (act.kind === "step") d.seek(d.pos() + act.ds);
@@ -121,6 +126,8 @@ export interface PlayerHost {
   paintOverview(c: HTMLCanvasElement, v: DeckView | null): void;
   /** A file dropped on the player. */
   drop(f: File): void;
+  /** Quantize is on: loop points land on the beat. */
+  quantize(): boolean;
 }
 
 /** A club media player's face for one deck: `box` to put on the page, `draw` each frame. */
@@ -161,6 +168,15 @@ export function playerFace(h: PlayerHost) {
     return b;
   });
   const loops = el("div", { class: "dj-loops" });
+  // LOOP IN, LOOP OUT and RELOOP / EXIT, as a club player has them
+  const manual = el("div", { class: "dj-loopio" });
+  const inB = button("IN", "Loop in: mark where a loop starts (looping: the jog moves the in point; again, done)");
+  const outB = button("OUT", "Loop out: the loop ends here and plays round from IN (looping: the jog moves the out point, clockwise longer, back shorter; again, done)");
+  const reB = button("RELOOP", "Reloop / exit: out of the loop and play on, or back into the last loop");
+  inB.addEventListener("click", () => d.loopInPress(h.quantize()));
+  outB.addEventListener("click", () => d.loopOutPress(h.quantize()));
+  reB.addEventListener("click", () => d.reloop());
+  manual.append(inB, outB, reB);
   const loopBs = LOOPS.filter((b) => b >= 0.5 && b <= 16).map((beats) => {
     const b = button(beats < 1 ? "½" : String(beats), `Loop ${beats} beat${beats === 1 ? "" : "s"} (again: off)`);
     b.addEventListener("click", () => d.setLoop(d.loop?.beats === beats ? null : beats));
@@ -200,13 +216,24 @@ export function playerFace(h: PlayerHost) {
   const pitch = slider(`Deck ${letter} pitch`, -1, 1, 0.001, 0, "dj-pitch");
   pitch.addEventListener("input", () => d.setPitch(Number(pitch.value)) /* a vertical range runs min at the top: slower up, faster toward you, as on a club player */);
   pitch.addEventListener("dblclick", () => { pitch.value = "0"; d.setPitch(0); });
-  const range = button("±8", "The pitch fader's range", "dj-range");
-  range.addEventListener("click", () => d.setRange(PITCH_RANGES[(PITCH_RANGES.indexOf(d.range as 8) + 1) % PITCH_RANGES.length]!));
+  // master tempo, the tempo ranges, the fader, and the motor's start and brake
+  const mt = button("MT", "Master tempo: the key stays put when the tempo moves (off: tempo and pitch together, as a record)", "dj-mt");
+  mt.addEventListener("click", () => d.setKeylock(!d.keylock));
+  const ranges = el("div", { class: "dj-ranges" });
+  const rangeBs = PITCH_RANGES.map((r) => {
+    const b = button(String(r), `Tempo range ±${r}%`);
+    b.addEventListener("click", () => d.setRange(r));
+    ranges.append(b);
+    return { b, r };
+  });
+  const secs = (v: number) => (v < 0.05 ? "0 s" : `${v.toFixed(v < 1 ? 2 : 1)} s`);
+  const startK = knob({ label: "START", title: `Deck ${letter} start: how long play takes to come up to speed, a turntable's motor (0 to ${START_MAX_S} s)`, min: 0, max: 1, reset: 0, size: "s", get: () => d.ramp.start, put: (v) => d.setRamp("start", v), show: (v) => secs(rampS(v, START_MAX_S)) });
+  const brakeK = knob({ label: "BRAKE", title: `Deck ${letter} brake: how long pause takes to stop, the pitch falling with it (0 to ${BRAKE_MAX_S} s)`, min: 0, max: 1, reset: 0, size: "s", get: () => d.ramp.brake, put: (v) => d.setRamp("brake", v), show: (v) => secs(rampS(v, BRAKE_MAX_S)) });
   const pitchCol = el("div", { class: "dj-pitchcol" });
-  pitchCol.append(range, pitch);
+  pitchCol.append(mt, ranges, pitch, startK.box, brakeK.box);
 
   const pads = el("div", { class: "dj-pads" });
-  pads.append(hot, loops);
+  pads.append(hot, loops, manual);
   const jogRow = el("div", { class: "dj-jogrow" });
   jogRow.append(wheel, mode);
   const transport = el("div", { class: "dj-transport" });
@@ -247,16 +274,18 @@ export function playerFace(h: PlayerHost) {
     g.beginPath(); g.moveTo(c + Math.cos(spin) * R * 0.42, c + Math.sin(spin) * R * 0.42); g.lineTo(c + Math.cos(spin) * R * (PLATTER_R - 0.04), c + Math.sin(spin) * R * (PLATTER_R - 0.04)); g.stroke();
     // the screen in the middle: how far in (the arc), the cue, and the position marker
     const sr = R * 0.36;
+    g.font = `600 ${Math.round(S * 0.06)}px "Barlow Condensed", sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.beginPath(); g.arc(c, c, sr, 0, Math.PI * 2); g.fillStyle = "#08090b"; g.fill();
     if (len > 0) {
       g.beginPath(); g.arc(c, c, sr - 5, -Math.PI / 2, -Math.PI / 2 + (pos / len) * Math.PI * 2);
       g.strokeStyle = live ? col : "#5b5f68"; g.lineWidth = 5; g.stroke();
+      if (d.adjust) { g.fillStyle = "#ee6a1f"; g.fillText(d.adjust === "out" ? "LOOP OUT" : "LOOP IN", c, c - sr * 0.55); }
       const ca = (cuePos / TURN_S) * Math.PI * 2 - Math.PI / 2;
       g.fillStyle = LOOK.cue; g.beginPath(); g.arc(c + Math.cos(ca) * (sr - 16), c + Math.sin(ca) * (sr - 16), 4, 0, Math.PI * 2); g.fill();
     }
     g.strokeStyle = "#f1efe9"; g.lineWidth = 4; g.lineCap = "round";
     g.beginPath(); g.moveTo(c + Math.cos(spin) * (sr * 0.25), c + Math.sin(spin) * (sr * 0.25)); g.lineTo(c + Math.cos(spin) * (sr - 12), c + Math.sin(spin) * (sr - 12)); g.stroke();
-    g.fillStyle = "#c9ccd2"; g.font = `600 ${Math.round(S * 0.06)}px "Barlow Condensed", sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "#c9ccd2";
     g.fillText(jog.mode === "vinyl" ? "VINYL" : "CD", c, c + sr * 0.55);
   }
 
@@ -273,14 +302,14 @@ export function playerFace(h: PlayerHost) {
       if (tube) {
         // a YouTube video: its player on the deck, the pitch fader its speed, the cue and hot cues on its clock
         const s = d.state();
-        name.textContent = `${letter}  ${tube.name ?? "YouTube"}`;
+        name.textContent = `QDJ ${letter}  ${tube.name ?? "YouTube"}`;
         info.textContent = `${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(tube.pos)}  -${clock(Math.max(0, tube.len - tube.pos))}  · YouTube`;
         info.title = "";
         play.innerHTML = tube.playing ? ICON.pause : ICON.play;
         play.classList.toggle("on", tube.playing);
         cue.classList.toggle("on", tube.cueHeld);
         sync.classList.remove("on");
-        range.textContent = `±${s.range}`;
+        for (const { b, r } of rangeBs) b.classList.toggle("on", s.range === r);
         if (document.activeElement !== pitch) pitch.value = String(s.pitch);
         hots.forEach((b, i) => b.classList.toggle("set", tube.hot[i] != null));
         h.paintOverview(overview, tube);
@@ -289,7 +318,7 @@ export function playerFace(h: PlayerHost) {
       }
       if (v) {
         // someone else's deck: what they said, where it is now on the room's clock; their buttons go to them
-        name.textContent = `${letter}  ${v.name ?? ""}`;
+        name.textContent = `QDJ ${letter}  ${v.name ?? ""}`;
         info.textContent = `${v.bpm ?? "--"} BPM  ${v.key ?? ""}   ${clock(v.pos)}  -${clock(v.len - v.pos)}   ${v.who ?? ""}`;
         play.innerHTML = v.playing ? ICON.pause : ICON.play;
         play.classList.toggle("on", v.playing);
@@ -299,14 +328,20 @@ export function playerFace(h: PlayerHost) {
         return;
       }
       const s = d.state(), t = d.track;
-      name.textContent = `${letter}  ${s.name ?? "Drop a track here"}`;
+      name.textContent = `QDJ ${letter}  ${s.name ?? "Drop a track here"}`;
       info.textContent = t ? `${s.bpm ?? "--"} BPM  ${s.key ? `${s.key.camelot} ${s.key.name}` : ""}  ${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(s.pos)}  -${clock(s.length - s.pos)}${t.from && s.bpm ? `  · ${FROM_LABEL[t.from]}` : ""}` : "";
       info.title = t?.from && s.bpm ? `Tempo: ${FROM_LABEL[t.from]}` : "";
       play.innerHTML = s.playing ? ICON.pause : ICON.play;
       play.classList.toggle("on", s.playing);
       cue.classList.toggle("on", d.cueHeld);
       sync.classList.toggle("on", s.synced);
-      range.textContent = `±${s.range}`;
+      for (const { b, r } of rangeBs) b.classList.toggle("on", s.range === r);
+      mt.classList.toggle("on", s.keylock);
+      inB.classList.toggle("on", s.loopIn !== null || s.adjust === "in");
+      outB.classList.toggle("on", !!s.loop);
+      inB.classList.toggle("adj", s.adjust === "in"); outB.classList.toggle("adj", s.adjust === "out");
+      reB.classList.toggle("on", !!s.loop);
+      startK.draw(); brakeK.draw();
       if (document.activeElement !== pitch) pitch.value = String(s.pitch);
       hots.forEach((b, i) => b.classList.toggle("set", s.hot[i] != null));
       for (const { b, beats } of loopBs) b.classList.toggle("on", s.loop?.beats === beats);
