@@ -1,8 +1,10 @@
 // Processes that outlive their owners, ended (#4905). On 2026-11-16 the 16 GB office Mac froze with 23 of 24.5 GB of swap
 // taken by leftovers: headless Chromes, dev servers whose worktree was deleted, and `claude` sessions of workers sent home.
 //
-//  1. `endIn(dir)`: sending a worker home ends every process whose working directory is inside its worktree (its claude,
-//     the dev servers and watchers it started), TERM then KILL, before the worktree goes. Never the office or its parents.
+//  1. `endWorker(dirs, session)`: sending a worker home ends every process whose working directory is inside one of its
+//     worktrees (its claude, the dev servers and watchers it started; each repo's, for a worker across repositories), and
+//     what its session's process group started (a worker with no worktree runs in the main checkout), TERM then KILL,
+//     before the worktree goes. Never the office or its parents.
 //  2. `reapOrphans`: every 5 minutes the office ends processes whose parent is pid 1 (nobody waits on them) and whose
 //     working directory is in a worktree that is gone, or that no worker sits at, and stopped (state T) orphaned claude
 //     sessions with their office-workers mcp and caffeinate children, which lsof gives no working directory (#5209).
@@ -10,18 +12,33 @@
 //     a worktree (`/tmp/claude-<uid>/<the worktree's path, - for /, .>/...`: a `python -m http.server` there ran 26 days),
 //     and a Claude Code shell whose session is gone (`zsh -c source ~/.claude/shell-snapshots/...` under pid 1: a watch
 //     loop polling `office-workers list` or `gh pr list` every 30 s for ten days after its session ended), wherever it sits.
+//     And (#5658) an orphan in a seated worktree once it is a day old (`OLD_ORPHAN_S`): a dev server an earlier session
+//     of a long-running worker left (it crashed, or the office was stopped with Ctrl-C) lives as long as that worker does,
+//     while a demo server left up on purpose keeps its day.
 //  3. `swapUsage`: the swap gauge. Over `SWAP_HOLD` the office says so on the floor and holds new hires (`swapHold`),
 //     naming what holds the memory (`heavy`: the top three by memory, a system one said plainly, as fseventsd at 27 GB
-//     after a month up, cleared by a restart, or Docker's VM); mem_stats reports it with the reaper's count.
+//     after a month up, cleared by a restart, or Docker's VM); mem_stats reports it with the reaper's count. When the
+//     office's sandbox box is up it says `bun run office:box down` too: it runs with `--restart unless-stopped`, and a
+//     test box from 10-28 kept coming back for weeks, holding Docker's VM at 8 GB (#5658).
 //  4. `stuck`: a process of the office's (under it, or in one of its worktrees) that is stopped (ps state T) on two rounds
 //     in a row gets SIGCONT. On 2026-11-18 about 90 sessions sat stopped for up to 6 days: the storage guard had paused
 //     them with SIGSTOP, and a stopped process neither runs nor dies of the SIGHUP or SIGTERM sent when its worker
 //     goes, while it keeps its memory in swap. `end` sends SIGCONT after SIGTERM for the same reason.
 import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { NAME as BOX } from "../sandbox/box.ts";
 import { WORKTREES } from "./sweep.ts";
 
-export interface Proc { pid: number; ppid: number; cwd: string; args: string; /** ps state: T is stopped. */ stat?: string }
+export interface Proc {
+  pid: number; ppid: number; cwd: string; args: string; /** ps state: T is stopped. */ stat?: string;
+  /** Its process group. */ pgid?: number; /** Seconds since it started. */ age?: number;
+}
+
+/** ps's elapsed time, `[[dd-]hh:]mm:ss`, in seconds. */
+export function parseEtime(t: string): number {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(t.trim());
+  return m ? Number(m[1] ?? 0) * 86_400 + Number(m[2] ?? 0) * 3600 + Number(m[3]) * 60 + Number(m[4]) : 0;
+}
 
 const run = (cmd: string[]) => {
   try { return Bun.spawnSync(cmd, { stdout: "pipe", stderr: "ignore" }).stdout.toString(); } catch { return ""; }
@@ -41,11 +58,11 @@ export function processes(): Proc[] {
     }
   }
   const out: Proc[] = [];
-  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,stat=,args="]).split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s(.*)$/.exec(l);
+  for (const l of run(["ps", "-A", "-o", "pid=,ppid=,pgid=,etime=,stat=,args="]).split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s(.*)$/.exec(l);
     if (!m) continue;
     const pid = Number(m[1]);
-    out.push({ pid, ppid: Number(m[2]), stat: m[3]!, cwd: cwds.get(pid) ?? "", args: m[4]!.trim() });
+    out.push({ pid, ppid: Number(m[2]), pgid: Number(m[3]), age: parseEtime(m[4]!), stat: m[5]!, cwd: cwds.get(pid) ?? "", args: m[6]!.trim() });
   }
   return out;
 }
@@ -108,10 +125,35 @@ export async function homeSettled(capMs = HOME_WAIT_MS, say?: (n: number) => voi
   return n;
 }
 
-/** Send-home's hook: end everything running in a worker's worktree. Never throws; resolves with the count. */
-export async function endIn(dir: string): Promise<number> {
-  try { return await end(pidsIn(dir)); } catch { return 0; }
+/**
+ * What a worker's session started: the processes in `session`'s process group (a pty's child leads its own) and under
+ * it, less the office and its parents, and never the office's own group. For a worker with no worktree, whose
+ * processes run in the main checkout where a worktree can't tell them from anyone else's (#5658).
+ */
+export function pidsOf(session: number | undefined, procs = processes(), self = process.pid): number[] {
+  if (!session || session <= 1) return [];
+  const keep = ours(procs, self);
+  if (procs.find((p) => p.pid === self)?.pgid === session) return [];
+  const kids = new Map<number, number[]>();
+  for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p.pid]);
+  const out = new Set(procs.filter((p) => p.pgid === session || p.pid === session).map((p) => p.pid));
+  for (const todo = [...out]; todo.length;) for (const k of kids.get(todo.pop()!) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); }
+  return [...out].filter((p) => !keep.has(p));
 }
+
+/**
+ * Send-home's hook: end everything in each of a worker's worktrees (its floor's and, across repositories, every
+ * repo's) and what its session started. Never throws; resolves with the count.
+ */
+export async function endWorker(dirs: string[], session?: number): Promise<number> {
+  try {
+    const procs = processes();
+    return await end([...new Set([...dirs.flatMap((d) => pidsIn(d, procs)), ...pidsOf(session, procs)])]);
+  } catch { return 0; }
+}
+
+/** Everything running in one folder (a half-deleted worktree the sweep removes). Never throws; resolves with the count. */
+export const endIn = (dir: string) => endWorker([dir]);
 
 /** A worker session and what it starts: a stopped one whose office is gone waits for a SIGCONT nobody will send. */
 const SESSION = /(^|[\s/])(claude|caffeinate)(\s|$)|office-workers\.js mcp/;
@@ -148,9 +190,13 @@ export function leftShells(procs: Proc[], self = process.pid): Proc[] {
 
 export interface ReapFloor { dir: string; workers?: { list(): { worktree?: { path?: string } }[] } }
 
+/** An orphan in a seated worktree older than this (a day) is an earlier session's leftover, not a demo left up for today. */
+export const OLD_ORPHAN_S = 86_400;
+
 /**
- * The orphans to end: parent pid 1, working directory in one of `floors`' worktrees that is gone or no worker sits at.
- * A floor that can't list its workers only loses orphans of worktrees that are gone.
+ * The orphans to end: parent pid 1, working directory in one of `floors`' worktrees that is gone or no worker sits at,
+ * or that a worker sits at when the orphan is over `OLD_ORPHAN_S` old. A floor that can't list its workers only loses
+ * orphans of worktrees that are gone, and old ones.
  */
 export function orphans(floors: Iterable<ReapFloor>, procs = processes(), self = process.pid): Proc[] {
   const keep = ours(procs, self);
@@ -166,7 +212,7 @@ export function orphans(floors: Iterable<ReapFloor>, procs = processes(), self =
         const name = p.cwd.startsWith(root + path.sep) ? p.cwd.slice(root.length + 1).split(path.sep)[0]! : scratch?.startsWith(key) ? scratch.slice(key.length) : null;
         if (!name) continue;
         const gone = !existsSync(path.join(root, name));
-        if ((gone || (seated && !seated.has(name))) && !out.includes(p)) out.push(p);
+        if ((gone || (seated && !seated.has(name)) || (p.age ?? 0) > OLD_ORPHAN_S) && !out.includes(p)) out.push(p);
       }
     }
   }
@@ -231,23 +277,36 @@ export function heavy(): string[] {
   return parseHeavy(run(["top", "-l", "1", "-o", "mem", "-stats", "command,mem", "-n", "3"]));
 }
 
-/** Why a hire waits, or undefined when it can go ahead. `big`: what holds the memory (the reaper's last reading). */
-export function swapHold(swap = swapUsage(), big = stats.heavy): string | undefined {
-  const at = holdAt();
-  if (!swap || swap.pct <= at) return undefined;
-  return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%.${big.length ? ` Most of it: ${big.join(", ")}.` : ""} Send someone home or stop what they left running (#4905)`;
+/** Whether the office's sandbox box is running (`docker ps`; false with no Docker, or one that doesn't answer in 5 s). */
+export function boxUp(): boolean {
+  if (!Bun.which("docker")) return false;
+  try {
+    const r = Bun.spawnSync(["docker", "ps", "-q", "--filter", `name=^${BOX}$`], { stdout: "pipe", stderr: "ignore", timeout: 5000 });
+    return r.exitCode === 0 && r.stdout.toString().trim() !== "";
+  } catch { return false; }
 }
 
-export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number; heavy: string[] }
+/**
+ * Why a hire waits, or undefined when it can go ahead. `big`: what holds the memory, and `box`: whether the sandbox
+ * box is up (the reaper's last reading).
+ */
+export function swapHold(swap = swapUsage(), big = stats.heavy, box = stats.box): string | undefined {
+  const at = holdAt();
+  if (!swap || swap.pct <= at) return undefined;
+  const boxLine = box ? " The office's sandbox box is up, and it comes back after a restart: `bun run office:box down` stops it." : "";
+  return `Swap is at ${swap.pct}% (${(swap.usedMb / 1024).toFixed(1)} of ${(swap.totalMb / 1024).toFixed(1)} GB): no new hires until it is under ${at}%.${big.length ? ` Most of it: ${big.join(", ")}.` : ""}${boxLine} Send someone home or stop what they left running (#4905)`;
+}
 
-const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0, heavy: [] };
+export interface ReaperStats { reaped: number; lastReaped: string[]; woken: number; swap: Swap | null; hold: number | null; at: number; heavy: string[]; box: boolean }
+
+const stats: ReaperStats = { reaped: 0, lastReaped: [], woken: 0, swap: null, hold: SWAP_HOLD, at: 0, heavy: [], box: false };
 const stopped = new Set<number>();
 
 /** What the reaper has done since the office started, for /__rb/mem. */
 export const reaperStats = (): ReaperStats => ({ ...stats, hold: Number.isFinite(holdAt()) ? holdAt() : null, lastReaped: [...stats.lastReaped], heavy: [...stats.heavy] });
 
 /** One round: wake what stays stopped, end the orphans, read the swap, and say on the floor once when swap crosses SWAP_HOLD. */
-export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read: { procs: () => Proc[]; swap: () => Swap | null; heavy?: () => string[] } = { procs: processes, swap: swapUsage, heavy }) {
+export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, read: { procs: () => Proc[]; swap: () => Swap | null; heavy?: () => string[]; box?: () => boolean } = { procs: processes, swap: swapUsage, heavy, box: boxUp }) {
   const woke = stuck(floors(), stopped, read.procs()).filter((p) => { try { process.kill(p.pid, "SIGCONT"); return true; } catch { return false; } });
   stats.woken += woke.length;
   if (woke.length) toast(`Woke ${woke.length} stopped process${woke.length === 1 ? "" : "es"} of the office (state T since the last round): ${woke.slice(0, 3).map((p) => p.args.slice(0, 40)).join("; ")}`);
@@ -257,12 +316,14 @@ export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (messag
   stats.reaped += n;
   if (n) {
     stats.lastReaped = found.slice(0, 10).map((p) => `${p.pid} ${p.args.slice(0, 80)} (in ${p.cwd})`);
-    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: shells and stopped sessions whose session is gone, or servers of worktrees nobody sits at (#4905, #5209)`);
+    toast(`Ended ${n} leftover process${n === 1 ? "" : "es"}: shells and stopped sessions whose session is gone, servers of worktrees nobody sits at, or a day-old one an earlier session left (#4905, #5209, #5658)`);
   }
   const was = stats.swap?.pct ?? 0;
   stats.swap = read.swap();
   stats.at = Date.now();
-  stats.heavy = stats.swap && stats.swap.pct > holdAt() ? (read.heavy?.() ?? []) : [];
+  const over = !!stats.swap && stats.swap.pct > holdAt();
+  stats.heavy = over ? (read.heavy?.() ?? []) : [];
+  stats.box = over && !!read.box?.();
   const hold = swapHold(stats.swap);
   if (hold && was <= holdAt()) toast(hold);
   return n;
