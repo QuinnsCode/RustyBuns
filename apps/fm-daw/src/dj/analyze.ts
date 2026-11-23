@@ -1,7 +1,7 @@
 // The DJ decks' arithmetic, with no Web Audio in it (engine.ts plays it, panel.ts draws it): a track's tempo and where
 // its first beat lands, found from the sound; its waveform at any width; where a deck is on the beat, and the pitch and
-// jump that bring it into step with the other; loops and beat jumps on the grid; the crossfader's two curves; and what
-// the EQ and filter knobs do. A knob is -1 to 1 throughout, 0 in the middle.
+// jump that bring it into step with the other; loops and beat jumps on the grid; the crossfader's two curves and the
+// faders' square law (mixer.ts has the EQ and the filters).
 
 /** Tempos a track is read as: anything slower is doubled, anything faster halved (a 70 BPM half-time beat is 140). */
 export const BPM_RANGE = [85, 175] as const;
@@ -141,23 +141,6 @@ export function crossfade(x: number, curve: "smooth" | "cut" = "smooth"): [numbe
 
 /** A channel fader's gain at `v` (0 to 1): a square law, so the top of its travel is where the fine control is. */
 export const faderGain = (v: number) => { const c = Math.min(1, Math.max(0, v)); return c * c; };
-
-/** An EQ knob's boost or cut in dB: the middle is flat, up to +6, down to a kill (-40, as good as gone). */
-export function eqDb(knob: number): number {
-  const k = Math.min(1, Math.max(-1, knob));
-  return k >= 0 ? k * 6 : k <= -0.98 ? -40 : k * 26;
-}
-
-/**
- * What the one filter knob does: left of the middle a low-pass sweeping down from 20 kHz to 150 Hz, right of it a
- * high-pass sweeping up from 20 Hz to 8 kHz, and a dead zone in the middle where it does nothing.
- */
-export function filterAt(knob: number): { type: "lowpass" | "highpass"; freq: number } | null {
-  const k = Math.min(1, Math.max(-1, knob));
-  if (Math.abs(k) < 0.04) return null;
-  const t = (Math.abs(k) - 0.04) / 0.96;
-  return k < 0 ? { type: "lowpass", freq: 20000 * Math.pow(150 / 20000, t) } : { type: "highpass", freq: 20 * Math.pow(8000 / 20, t) };
-}
 
 /** A time as a deck's screen shows it: minutes, seconds and tenths. */
 export function clock(s: number): string {
