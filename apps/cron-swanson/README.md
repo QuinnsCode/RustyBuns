@@ -6,25 +6,30 @@ tags. Its engine, **bacron**, ticks on each minute boundary and fires on time to
 
 ## Use it
 
-**What it is:** one list of every job that runs on a timer (nightly backups, weekly check-ins, yearly renewals), sorted by app.
+**What it is:** your alarms and reminders in one place, there to pester you: water, sweeps, rent, the furnace filter.
+It also holds the jobs that run on a timer for other apps (nightly backups, weekly check-ins, yearly renewals).
 
 **Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
 
-**How to use:** pick an app on the side, add a job, and say when it runs ("weekdays at 09:00") and why it is there.
-Each job shows when it runs next, and tags and search find it again. Tick a reminder off (the check) when you've
-done it; the order menu sorts by next up, shortest interval, done most, fired most, ignored most or idle longest.
-The bell in the top bar turns on desktop alerts: each reminder pops up as a system notification while a tab is open.
+**How to use:** type what to nag you about in the big box up top, tap when (in 15 min, tonight, tomorrow 9 am, or
+any time up to three months out) and how often (once, every 15 min, every hour, every day, weekdays, every week,
+every month), and press Add alarm. More options opens the full editor (cron lines, URLs, tags, time zones).
+Below it, Coming up shows each alarm as glowing notes across the next 6 hours, day, week, month or three months; a
+playhead sweeps across, and with the speaker on, each note it passes plays an 808. Click a row to edit that alarm.
+When a reminder goes off it lands as a card on the right: Done ticks it off, 10 min or 1 hour snoozes it (it comes
+back then). The bell turns on desktop alerts, the sun/moon/screen button picks light, dark or the system's look.
+All alarms, further down, sorts by next up, shortest interval, done most, fired most, ignored most or idle longest.
 
 **Account:** your eqosys account. Online, the page sends you to eqosys to sign in and comes back signed in; only the
 account named in `CRON_SWANSON_OWNER` gets in (anyone else is asked to switch accounts). Run on your own machine with
 neither `CRON_SWANSON_OWNER` nor `CRON_SWANSON_TOKEN` set, it's open and asks nothing.
 
 - **Five lanes**: async (every N minutes, one-offs, busy cron lines), daily, weekly, monthly, yearly. Each has a count.
-- **Per app and all apps**: the side lists every app; pick one or see them all grouped. Tags and search narrow it down.
+- **Per app and all apps**: chips over All alarms pick one app or show them all grouped. Tags and search narrow it down.
 - **Plain cadences or cron lines**: "Weekdays at 09:00", "Monthly on the last day", or `*/15 9-17 * * 1-5`. Each runs on
   its own time zone. The 31st in a short month runs on its last day; Feb 29 runs on Feb 28 in other years; a time
   that daylight saving skips runs just after the jump.
-- **Reminder or URL**: a job shows up in Recent runs, and can also `GET` or `POST` a URL (with its id, app, name,
+- **Reminder or URL**: a reminder lands as a card on the right, and can also `GET` or `POST` a URL (with its id, app, name,
   tags and the time it was due).
 - **Each app lists its own**: a `cron-swanson.json` in the app folder, sent with one call; Cloudflare cron triggers
   in its wrangler config come along and sit in their lanes too (Cloudflare runs those, so they log no runs here).
@@ -32,8 +37,8 @@ neither `CRON_SWANSON_OWNER` nor `CRON_SWANSON_TOKEN` set, it's open and asks no
   job or a run the moment it happens. Without it, pages fetch again just after each minute.
 - **Reminders that reach you**: with an [ntfy](https://ntfy.sh) topic set, a reminder pings the phone at its minute
   (its app and name as the title, its why or note as the text). A push that fails says so on the run.
-- **Done or ignored**: tick a reminder off on its row or in Recent runs. One left unticked for an hour, or until
-  its job fires again, counts as ignored. Each job shows how often it fired, was done and was ignored (over its
+- **Done, snoozed or ignored**: tick a reminder off on its card or its row, or snooze it (it comes back as a card
+  when the snooze ends). One left unticked for an hour, or until its job fires again, and not snoozed, counts as ignored. Each job shows how often it fired, was done and was ignored (over its
   last 200 runs), and the order menu sorts by those, or by how long since it was last any use.
 - **Desktop alerts**: the bell asks the browser for notifications; then each new reminder pops up on this computer
   while a Cron Swanson tab is open (ntfy, below, covers the phone and a closed laptop).
@@ -111,6 +116,7 @@ Every route but health wants `Authorization: Bearer <...>`: the owner's eqosys t
 | `DELETE /api/jobs/:id` | Deletes it and its runs. |
 | `POST /api/jobs/:id/run` | Fires it now, logged as by hand. |
 | `POST /api/runs/:id/done` | Ticks a reminder off (`doneAt`); a second tick keeps the first time. |
+| `POST /api/runs/:id/snooze` | Puts a reminder off: `{ minutes }`, 1 to 1440 (`snoozedUntil`). |
 | `GET /api/jobs/:id/runs` | Its last runs (`?limit=`, up to 200). |
 | `PUT /api/apps/:app/jobs` | Matches the app's listed jobs to `{ jobs: [{ key, name, cadence, tz, tags, action, why?, note? }] }`: new keys added, changed ones updated, missing ones deleted. Jobs made by hand, and pauses made on the page, stay. Says `{ added, changed, removed, same }`. |
 
@@ -148,4 +154,4 @@ triggers come in as "Cloudflare cron trigger" jobs keyed by their line.
 - `src/ticker.ts`: fires what's due each minute, books the next run first, calls URLs.
 - `src/sync.ts`: reads an app folder's own list and wrangler crons and sends them.
 - `src/store.ts`: SQLite. `src/server.ts`: the API. `src/api.ts`: the wire shapes both sides check.
-- `src/page.*`: the page, bundled by Bun from the HTML import in `src/main.ts`.
+- `src/page.*`: the page, bundled by Bun from the HTML import in `src/main.ts`. `src/quick.ts`: the big add (when and how often to a cadence, three months at most). `src/roll.ts`: Coming up, the notes and the playhead. `src/boom.ts`: the 808. `src/yule.ts`: the pixel fire.

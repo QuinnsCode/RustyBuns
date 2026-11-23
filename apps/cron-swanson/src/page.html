@@ -8,35 +8,65 @@
   <link rel="stylesheet" href="./page.css" />
 </head>
 <body>
-  <div class="shell">
-    <aside class="side">
-      <div class="brand">
-        <span class="logo" id="logo"></span>
-        <div><b>Cron Swanson</b><small>bacron engine</small></div>
-      </div>
-      <h3>Apps</h3>
-      <nav id="apps" class="apps"></nav>
-      <h3>Tags</h3>
-      <div id="tags" class="tags"></div>
-    </aside>
+  <div class="sky" aria-hidden="true"><i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i><i class="cloud c4"></i><i class="cloud c5"></i></div>
 
+  <header class="topbar">
+    <div class="brand"><span class="logo" id="logo"></span><b>Cron Swanson</b></div>
+    <div class="toggles">
+      <button id="sound" class="ghost" type="button"></button>
+      <button id="alerts" class="ghost alerts" type="button"></button>
+      <button id="theme" class="ghost" type="button"></button>
+    </div>
+  </header>
+
+  <div id="gate" class="gate card" hidden></div>
+
+  <div class="stage">
     <main class="main">
-      <header class="bar">
-        <label class="search"><span id="search-icon"></span><input id="q" type="search" placeholder="Search names, notes, why" autocomplete="off" /></label>
-        <label class="sort" title="Order"><select id="sort" aria-label="Order"></select></label>
-        <button id="alerts" class="ghost alerts" type="button"></button>
-        <button id="new" class="primary" type="button"></button>
-      </header>
-      <div id="gate" class="gate" hidden></div>
-      <nav id="flows" class="flows" aria-label="Lanes"></nav>
-      <section id="list" class="list"></section>
+      <form id="quick" class="quick card" autocomplete="off">
+        <input id="what" class="what" name="what" required maxlength="120" placeholder="What should I nag you about?" />
+        <div class="pick">
+          <span class="ask">When</span>
+          <div class="chips" id="when-chips"></div>
+          <input id="when" type="datetime-local" aria-label="When" />
+        </div>
+        <div class="pick">
+          <span class="ask">How often</span>
+          <div class="chips" id="often-chips"></div>
+        </div>
+        <div class="go">
+          <p class="hint" id="quick-hint"></p>
+          <button type="button" class="ghost more" id="new">More options</button>
+          <button type="submit" class="primary big" id="add"></button>
+        </div>
+      </form>
+
+      <section class="card roll-card">
+        <header class="roll-head">
+          <h2>Coming up</h2>
+          <div class="chips" id="spans"></div>
+        </header>
+        <canvas id="roll" class="roll"></canvas>
+        <p class="quiet empty-roll" id="roll-empty" hidden>Nothing coming up in this window.</p>
+      </section>
+
+      <section class="card all">
+        <header class="bar">
+          <h2>All alarms</h2>
+          <label class="search"><span id="search-icon"></span><input id="q" type="search" placeholder="Search" autocomplete="off" /></label>
+          <label class="sort" title="Order"><select id="sort" aria-label="Order"></select></label>
+        </header>
+        <nav id="flows" class="chips flows" aria-label="Lanes"></nav>
+        <div class="chips" id="apps"></div>
+        <div class="chips" id="tags"></div>
+        <section id="list" class="list"></section>
+      </section>
     </main>
 
-    <aside class="feed">
-      <h3>Recent runs</h3>
-      <ol id="runs" class="runs"></ol>
-    </aside>
+    <aside class="toasts" id="toasts" aria-live="polite"></aside>
   </div>
+
+  <canvas id="yule" class="yule" aria-hidden="true"></canvas>
 
   <dialog id="editor">
     <form id="form" method="dialog">
