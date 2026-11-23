@@ -14,17 +14,17 @@
 
 **Write your app's logic one time, in TypeScript. Keep it typed on the web, the desktop and the phone. Deploy it anywhere with Effect and Alchemy.**
 
-It is my idea engine. When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
+**The idea engine: a meta-metaframework, typed from front to back.** When the logic is written once, each new place that it runs (a desktop file, a Worker, a server, a phone) is a new implementation on the same logic, not a rewrite. You and your coding agents add them one after another.
 
 ### Why use it, most important first
 
-1. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
-2. **Learn five parts, not a platform.** http, comms, storage, memory and identity.
-3. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
-4. **The compiler finds the errors first.** One language, typed from the page to the deploy.
-5. **You can leave.** Your code stays standard. `git rm` removes Rusty Buns.
-6. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
-7. **Use Rust only for speed.** Each Rust part has a TypeScript twin.
+1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it.
+2. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
+3. **Learn five parts, not a platform.** http, comms, storage, memory and identity.
+4. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first.
+5. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load.
+6. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
+7. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
 
 ### How easy the five parts are
 
@@ -40,7 +40,6 @@ Each part is one line of config. Each line runs on a laptop and on the edge:
 
 You write `env.DB.prepare(...)` one time. Rusty Buns gives `env.DB` the correct twin for each place, with its type from the config.
 
-The code is yours. Rusty Buns does not change `src/`, and it is not in your bundle. To remove it, use `git rm`.
 
 ### What Rusty Buns stands on
 
