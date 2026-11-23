@@ -34,8 +34,9 @@
 // ~/.rustybuns/trust.jsonl (BUILDER_TRUST). Five clean tier 0 or 1 runs in a row in two weeks, and that agent's next run is
 // only the test files its diff changed in each app; a failure puts it back on the whole suite. `all` is always whole.
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { arr, check, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
@@ -192,19 +193,44 @@ export function release(b: Builder, slot: string, rec?: RunRecord) {
   return stream(remote(b, `${done}rmdir locks/${s}`), "release", true);
 }
 
+// One push to the builder at a time from this Mac: each is a git pack-objects of up to 440 MB, and seven at once
+// restarted the 16 GB office Mac (2026-11-23). A lock whose process is gone is taken back.
+export async function pushLock(dir = `${process.env.RUSTYBUNS_HOME ?? `${homedir()}/.rustybuns`}/builder-push.lock`) {
+  mkdirSync(dirname(dir), { recursive: true });
+  for (let said = false; ; await Bun.sleep(500)) {
+    try {
+      mkdirSync(dir);
+      writeFileSync(`${dir}/pid`, String(process.pid));
+      return () => rmSync(dir, { recursive: true, force: true });
+    } catch {
+      if (!alive(dir)) { rmSync(dir, { recursive: true, force: true }); continue; }
+      if (!said) console.log("waiting for another push to the builder");
+      said = true;
+    }
+  }
+}
+function alive(dir: string) {
+  let pid: number;
+  try { pid = Number(readFileSync(`${dir}/pid`, "utf8")); } catch { return Date.now() - (statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? 0) < 30_000; }
+  try { process.kill(pid, 0); return true; } catch (e) { return e instanceof Error && "code" in e && e.code === "EPERM"; }
+}
+
 // Send the commit straight to the slot's own repo, then check it out on top of its warm node_modules.
 // The ref is the slot's scratch: one a run left behind (it failed before its checkout) is overwritten, not a reason to refuse.
+// After the checkout the commit stays at refs/remote-ci/base, so the next push packs only what is new since this run
+// (a few KB). Without it the slot showed only its setup-day refs, and every push packed 200 MB of history again.
 export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   const ref = `refs/remote-ci/${slot}`;
-  const push = Bun.spawn(["git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `+${sha}:${ref}`], {
+  const unlock = await pushLock();
+  const push = Bun.spawn(["nice", "git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `+${sha}:${ref}`], {
     cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
   });
   const hung = setTimeout(() => { console.error(`the push to ${slot} hung for ${PUSH_MS / 60_000} minutes; giving up`); push.kill(); }, PUSH_MS);
-  const pushed = await push.exited;
+  const pushed = await push.exited.finally(unlock);
   clearTimeout(hung);
   if (pushed) return PUSH_FAILED;
-  const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref -d ${ref} `
-    + `&& git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
+  const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref refs/remote-ci/base ${sha} `
+    + `&& git update-ref -d ${ref} && git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
   return code;
 }
 
