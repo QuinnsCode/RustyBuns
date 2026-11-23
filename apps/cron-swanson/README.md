@@ -11,25 +11,31 @@ It also holds the jobs that run on a timer for other apps (nightly backups, week
 
 **Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
 
-**How to use:** type what to nag you about in the big box up top, tap when (in 15 min, tonight, tomorrow 9 am, or
-any time up to three months out) and how often (once, every 15 min, every hour, every day, weekdays, every week,
-every month), and press Add alarm. More options opens the full editor (cron lines, URLs, tags, time zones).
-Below it, Coming up shows each alarm as glowing notes across the next 6 hours, day, week, month or three months; a
-playhead sweeps across, and with the speaker on, each note it passes plays an 808. Click a row to edit that alarm.
-When a reminder goes off it lands as a card on the right: Done ticks it off, 10 min or 1 hour snoozes it (it comes
-back then). The bell turns on desktop alerts, the sun/moon/screen button picks light, dark or the system's look.
-All alarms, further down, sorts by next up, shortest interval, done most, fired most, ignored most or idle longest.
+**How to use:** the screen is your alarms as little clouds on tracks, grouped into busses by how often they come
+round (every few minutes, daily, weekly, monthly, yearly), with time running left to right. A playhead sweeps across;
+each cloud it reaches gets struck by lightning, and with the 808s on (the gear) it thumps a bass note.
+
+- **+** (bottom left): type what, then every 0 to 60 minutes, hours, days, weeks or months (0 is once) and when it
+  starts, up to three months out. It tidies the number: 60 minutes is an hour, 31 days a month. The sliders icon opens
+  the full editor (cron lines, URLs, tags, time zones).
+- **Views** (bottom right): busses, a list you can sort (next up, shortest interval, done most, fired most, ignored
+  most, idle longest), or a week calendar. Under busses, pick how far ahead: 6h, 1d, 1w, 1mo or 3mo.
+- **Gear** (top right): light, dark or the system's look; 808s; desktop alerts; one of twelve digital fonts; sign in or out.
+- **A reminder going off** floats in at the top: tick it off, or snooze it 10 minutes or an hour (it comes back then).
+- **Cmd/Ctrl+K**: every one of these as a command. The same commands are WebMCP tools an agent in the browser can
+  call, and `bun apps/cron-swanson/src/cli.ts` (`list`, `add`, `waiting`, `done`, `snooze`, `pause`, `resume`,
+  `ring`; `--help`) does them from a terminal over the API.
 
 **Account:** your eqosys account. Online, the page sends you to eqosys to sign in and comes back signed in; only the
 account named in `CRON_SWANSON_OWNER` gets in (anyone else is asked to switch accounts). Run on your own machine with
 neither `CRON_SWANSON_OWNER` nor `CRON_SWANSON_TOKEN` set, it's open and asks nothing.
 
 - **Five lanes**: async (every N minutes, one-offs, busy cron lines), daily, weekly, monthly, yearly. Each has a count.
-- **Per app and all apps**: chips over All alarms pick one app or show them all grouped. Tags and search narrow it down.
+- **Per app and all apps**: in the list view, chips pick one app or show them all grouped. Tags and search narrow it down.
 - **Plain cadences or cron lines**: "Weekdays at 09:00", "Monthly on the last day", or `*/15 9-17 * * 1-5`. Each runs on
   its own time zone. The 31st in a short month runs on its last day; Feb 29 runs on Feb 28 in other years; a time
   that daylight saving skips runs just after the jump.
-- **Reminder or URL**: a reminder lands as a card on the right, and can also `GET` or `POST` a URL (with its id, app, name,
+- **Reminder or URL**: a reminder floats in at the top until ticked off or snoozed, and can also `GET` or `POST` a URL (with its id, app, name,
   tags and the time it was due).
 - **Each app lists its own**: a `cron-swanson.json` in the app folder, sent with one call; Cloudflare cron triggers
   in its wrangler config come along and sit in their lanes too (Cloudflare runs those, so they log no runs here).
@@ -154,4 +160,4 @@ triggers come in as "Cloudflare cron trigger" jobs keyed by their line.
 - `src/ticker.ts`: fires what's due each minute, books the next run first, calls URLs.
 - `src/sync.ts`: reads an app folder's own list and wrangler crons and sends them.
 - `src/store.ts`: SQLite. `src/server.ts`: the API. `src/api.ts`: the wire shapes both sides check.
-- `src/page.*`: the page, bundled by Bun from the HTML import in `src/main.ts`. `src/quick.ts`: the big add (when and how often to a cadence, three months at most). `src/roll.ts`: Coming up, the notes and the playhead. `src/boom.ts`: the 808. `src/yule.ts`: the pixel fire.
+- `src/page.*`: the page, bundled by Bun from the HTML import in `src/main.ts`. `src/every.ts`: the + line (every N of a unit to a cadence, three months at most). `src/roll.ts`: the busses, the clouds and the playhead. `src/calendar.ts`: the week view. `src/reminders.ts`: which alarm a name means and what's waiting (the page and the CLI share it). `src/cli.ts`: the terminal commands. `src/boom.ts`: the 808. `src/yule.ts`: the pixel fire.
