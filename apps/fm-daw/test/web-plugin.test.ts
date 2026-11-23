@@ -33,7 +33,7 @@ function synth() {
   return { told, module: { default: { createInstance: async () => ({ audioNode: node }) } } };
 }
 
-/** The page, the worklet and the rack: ops change the groove, `play` runs the audio with `bus` on the second input. */
+/** The page, the worklet and the rack: ops change the groove, `play` runs the audio with `bus` on track 0's return (#5617). */
 function desk(plugin: TrackPlugin, modules: Record<string, unknown>) {
   const { p, say } = processor();
   const loaded: string[] = [], kept = new Map<string, string>();
@@ -57,13 +57,14 @@ function desk(plugin: TrackPlugin, modules: Record<string, unknown>) {
     pump, loaded, fader, say, settle,
     get project() { return proj; },
     op(o: Op, msg?: ToWorklet) { proj = apply(proj, o); if (msg) say(msg); pump.sync(proj); },
-    /** `seconds` of the left side out, the plugins' bus steady at `bus` (track 0's own channel at `tap`), the asks carried to the pump as the page would. */
+    /** `seconds` of the left side out, track 0's return steady at `bus` both sides (its own channel at `tap`), the asks carried to the pump as the page would. */
     async play(seconds: number, bus = 0, tap = 0): Promise<number> {
       let last = 0;
       for (let at = 0; at < seconds * SR; at += BLOCK) {
         const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
         const taps = Array.from({ length: TRACKS }, (_, t) => new Float32Array(BLOCK).fill(t === 0 ? tap : 0));
-        (p as Proc).process([[new Float32Array(BLOCK)], [new Float32Array(BLOCK).fill(bus), new Float32Array(BLOCK).fill(bus)], [], taps], [[L, R]]);
+        const returns = Array.from({ length: 2 * TRACKS }, (_, c) => new Float32Array(BLOCK).fill(c < 2 ? bus : 0));
+        (p as Proc).process([[new Float32Array(BLOCK)], [], [], taps, returns], [[L, R]]);
         last = L[BLOCK - 1]!;
         for (; seen < posted.length; seen++) { const m = posted[seen]!; if (m.t === "pluginAsk") pump.ask(m); }
         await settle();

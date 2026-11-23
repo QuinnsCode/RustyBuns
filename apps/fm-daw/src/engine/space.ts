@@ -8,10 +8,14 @@
 // algorithm is public domain). The delay feeds the reverb, so echoes smear
 // into the tail. The wet signal is widened (side boosted) and slowly rotated
 // across the field, so the space moves around a dry centre that stays put:
-// kick, snare and a centred lead hit in mono while the tails swirl. Then its own peak limiter and a hard clamp at CEILING: the
-// wet signal adds level, and nothing leaves louder than -1 dBFS.
+// kick, snare and a centred lead hit in mono while the tails swirl. The Space return's Shape, when it has one, works on
+// that wet signal alone. Then its own peak limiter and a hard clamp at CEILING: the wet signal adds level, and nothing
+// leaves louder than -1 dBFS, however the Shape boosts it.
 // No allocation in process().
 import { CEILING } from "./params.ts";
+
+/** A Shape on Space's wet signal: an EQ over interleaved stereo, in place (TsEq). */
+export interface WetShape { process(buf: Float32Array, frames: number): void }
 
 const COMBS = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
 const ALLPASSES = [556, 441, 341, 225];
@@ -48,6 +52,8 @@ export class Space {
   private readonly hpA: number;
   private limEnv = 0; private readonly limRel: number;
   private swirl = 0; private readonly swirlInc: number;
+  /** This block's wet signal, interleaved, before the Shape and the limiter. */
+  private wet = new Float32Array(256);
 
   constructor(sampleRate: number) {
     this.sr = sampleRate;
@@ -83,12 +89,17 @@ export class Space {
     this.dLpL = 0; this.dLpR = 0; this.hpL = 0; this.hpR = 0; this.hpXL = 0; this.hpXR = 0; this.limEnv = 0;
   }
 
-  /** Adds the wet signal from `send` into `buf`, in place, both interleaved stereo. */
-  process(buf: Float32Array, send: Float32Array, frames: number) {
+  /**
+   * Adds the wet signal from `send` into `buf`, in place, both interleaved stereo. `shape` (the Space return's Shape)
+   * works on the wet signal alone, before the limiter, so FM DAW's page, the bounce and the gear room's desk all hear it
+   * in the same place.
+   */
+  process(buf: Float32Array, send: Float32Array, frames: number, shape?: WetShape | null) {
     const n = Math.min(frames, buf.length >> 1, send.length >> 1);
     if (this.amount === 0 && this.amountNow < 1e-4) { this.amountNow = 0; return; }
+    if (this.wet.length < n * 2) this.wet = new Float32Array(n * 2);
+    const w = this.wet;
     for (let f = 0; f < n; f++) {
-      const l = buf[f * 2], r = buf[f * 2 + 1];
       const il = send[f * 2], ir = send[f * 2 + 1];
       this.amountNow += (this.amount - this.amountNow) * 0.0005;
       // one-pole high-pass on the send
@@ -134,9 +145,15 @@ export class Space {
       if (this.swirl > 2 * Math.PI) this.swirl -= 2 * Math.PI;
       const a = Math.sin(this.swirl) * SWIRL, ca = Math.cos(a), sa = Math.sin(a);
       const sl = mid + side, sr = mid - side;
-      let ol = l + (sl * ca - sr * sa) * g;
-      let or = r + (sl * sa + sr * ca) * g;
-      if (!Number.isFinite(ol) || !Number.isFinite(or)) { this.reset(); ol = Number.isFinite(l) ? l : 0; or = Number.isFinite(r) ? r : 0; }
+      const wl2 = (sl * ca - sr * sa) * g, wr2 = (sl * sa + sr * ca) * g;
+      if (!Number.isFinite(wl2) || !Number.isFinite(wr2)) { this.reset(); w[f * 2] = 0; w[f * 2 + 1] = 0; continue; }
+      w[f * 2] = wl2; w[f * 2 + 1] = wr2;
+    }
+    shape?.process(w, n);
+    for (let f = 0; f < n; f++) {
+      const l = buf[f * 2], r = buf[f * 2 + 1];
+      let ol = l + w[f * 2], or = r + w[f * 2 + 1];
+      if (!Number.isFinite(ol) || !Number.isFinite(or)) { ol = Number.isFinite(l) ? l : 0; or = Number.isFinite(r) ? r : 0; }
       const pk = Math.max(Math.abs(ol), Math.abs(or));
       this.limEnv = pk > this.limEnv ? pk : pk + (this.limEnv - pk) * this.limRel;
       const lim = this.limEnv > CEILING ? CEILING / this.limEnv : 1;

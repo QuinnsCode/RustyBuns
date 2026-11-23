@@ -1,9 +1,10 @@
 // The browser's own plugin host (#4899): a Web Audio Module (the WAM 2 API, webaudiomodules.com) plays a plugin track
 // in the page, where the desktop's CLAP host can't reach. The module is a node in the page's audio graph: the track's
-// notes reach it as MIDI, and its sound goes through the track's fader into the engine's second input, so it gets the
-// master's Shape, Squash and meters like every other track. A WAM can also be an effect on a track (#5359): the
-// track's FM sound leaves the worklet on a channel of its own, goes through the module, and comes back on the same
-// input as the instruments' sound (a render quantum late, the delay a loop through the audio thread costs).
+// notes reach it as MIDI, and its sound goes through the track's Insert, then its fader, back into the engine, which
+// pans it by the track's PAN (#5617), so it gets the master's Shape, Squash and meters like every other track. A WAM
+// can also be an effect on a track (#5359): the track's FM sound leaves the worklet on a channel of its own, goes
+// through the module, and comes back on the same input as the instruments' sound (a render quantum late, the delay a
+// loop through the audio thread costs).
 //
 // A plugin is code. One from another site runs in this page with everything the page can do, and a groove is shared:
 // a friend's track can name any address. So a module from another site loads only after this player says its site
@@ -85,7 +86,7 @@ export interface RackDeps {
   /** One of the module's plugins, made on the page's audio context in the host's group. */
   make(cls: WamClass, group: string): Promise<unknown>;
   /**
-   * A fader at 0 between `node` and the engine's second input, where every web plugin's sound goes; `node` also goes,
+   * A fader at 0 on `node`'s sound, after the track's effect, on its way back into the engine to be panned; `node` also goes,
    * before the fader, to track `track`'s own tap, so the sesh can hear it (src/studio/plugin-line.ts).
    */
   fader(node: WamNode, track: number): Fader;
@@ -328,7 +329,7 @@ function wamHost(ctx: BaseAudioContext): Promise<string> {
 }
 
 /** What the page's rack plays into: src/ui/audio.ts's AudioOut, as the page hands it over. */
-export interface PageAudio { ctx: AudioContext; bus: AudioNode; taps: AudioNode; fxIn: AudioNode[]; webOut: AudioNode[]; returns: AudioNode; route(t: number, on: boolean): void }
+export interface PageAudio { ctx: AudioContext; taps: AudioNode; fxIn: AudioNode[]; webIn: AudioNode[]; fxOut: AudioNode[]; web(t: number, fader: AudioNode | null): void; route(t: number, on: boolean): void }
 
 /** A module rendered on an OfflineAudioContext of its own: the bounce's copy of a web plugin. */
 export function offlineRig(sampleRate: number, frames: number): OfflineRig {
@@ -355,11 +356,12 @@ export function offlineRig(sampleRate: number, frames: number): OfflineRig {
 }
 
 /**
- * The page's rack: modules play into `bus` on `ctx`, each also into its track's channel of `taps` (one per track), the
- * WAM SDK's host half loaded when the first one starts. Before the audio is on (`audio` null) it can only bounce.
- * A module's fader plays into its track's `webOut`, which goes on to `bus` (or into the track's effect: `route`).
- * An `effect` rack's modules each take their track's `fxIn` (its channel of the engine's second output, and its page
- * plugin while it has an effect) instead, and play back into the engine on `returns`, two channels a track (#5551).
+ * The page's rack: modules play into their track's `webIn` on `ctx`, each also into its track's channel of `taps` (one
+ * per track), the WAM SDK's host half loaded when the first one starts. Before the audio is on (`audio` null) it can
+ * only bounce. From `webIn` a module's sound goes through the track's effect, if any (`route`), then its fader (`web`),
+ * then back into the engine, which pans and sends it as a bounce does (#5617). An `effect` rack's modules each take
+ * their track's `fxIn` (its channel of the engine's second output, and its page plugin while it has an effect) and play
+ * into its `fxOut` (#5551).
  */
 export function pageRack(audio: () => PageAudio | null, kind: "instrument" | "effect" = "instrument"): WamRack {
   const on = () => { const a = audio(); if (!a) throw new Error("the audio isn't on"); return a; };
@@ -369,29 +371,28 @@ export function pageRack(audio: () => PageAudio | null, kind: "instrument" | "ef
     load: (url) => import(/* @vite-ignore */ url),
     make: (cls, group) => cls.createInstance(group, on().ctx),
     fader: (node, track) => {
-      const live = on(), g = new GainNode(live.ctx, { gain: 0 }), { taps } = live;
-      node.connect(g);
-      g.connect(live.webOut[track] ?? live.bus);
+      const live = on(), into = live.webIn[track], { taps } = live;
+      if (!into) throw new Error("no such track");
+      const g = new GainNode(live.ctx, { gain: 0, channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" });
+      node.connect(into);
+      live.web(track, g);
       node.connect(taps, 0, track);
-      return { gain: g.gain, disconnect: () => { g.disconnect(); try { node.disconnect?.(taps); } catch { /* already off it */ } } };
+      return { gain: g.gain, disconnect: () => { live.web(track, null); g.disconnect(); try { node.disconnect?.(into); } catch { /* already off it */ } try { node.disconnect?.(taps); } catch { /* already off it */ } } };
     },
     insert: (node, track) => {
       if (!(node instanceof AudioNode)) throw new Error("that module's node isn't on this page's audio");
-      const live = on(), fxIn = live.fxIn[track];
-      if (!fxIn) throw new Error("no such track");
-      // a mono effect comes back on both sides; a stereo one as it is
-      const g = new GainNode(live.ctx, { gain: 1, channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" });
-      const split = new ChannelSplitterNode(live.ctx, { numberOfOutputs: 2 });
+      const live = on(), fxIn = live.fxIn[track], fxOut = live.fxOut[track];
+      if (!fxIn || !fxOut) throw new Error("no such track");
+      // a mono effect comes back on both sides (fxOut is two); a stereo one as it is
+      const g = new GainNode(live.ctx, { gain: 1 });
       // out of the engine and back into it is a loop, and the audio graph only plays a loop with a delay in it: one render quantum
       const d = new DelayNode(live.ctx, { delayTime: 0, maxDelayTime: 0.01 });
       fxIn.connect(d);
       d.connect(node);
       node.connect(g);
-      g.connect(split);
-      split.connect(live.returns, 0, 2 * track);
-      split.connect(live.returns, 1, 2 * track + 1);
+      g.connect(fxOut);
       live.route(track, true);
-      return { gain: g.gain, disconnect: () => { live.route(track, false); try { fxIn.disconnect(d); } catch { /* already off it */ } d.disconnect(); g.disconnect(); split.disconnect(); } };
+      return { gain: g.gain, disconnect: () => { live.route(track, false); try { fxIn.disconnect(d); } catch { /* already off it */ } d.disconnect(); g.disconnect(); } };
     },
     offline: offlineRig,
     show: showPanel,

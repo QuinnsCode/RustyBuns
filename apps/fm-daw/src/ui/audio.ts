@@ -15,47 +15,81 @@ export class AudioOut {
   readonly node: AudioWorkletNode;
   /** What leaves the speakers, for Shape's spectrum. */
   readonly analyser: AnalyserNode;
-  /** Where the page's own plugins play (src/ui/wam.ts): the engine's second input, mixed in under the master. */
-  readonly webBus: GainNode;
   /** Each page plugin's own sound, before its fader, on its track's channel: the engine's fourth input, sent to the sesh (src/studio/plugin-line.ts). */
   readonly webTaps: ChannelMergerNode;
   /** Each track's FM sound bound for a web effect (src/ui/wam.ts), a channel a track: the engine's second output. */
   readonly inserts: ChannelSplitterNode;
   /** What each track's web effect hears: its channel of `inserts`, and a page plugin's sound when the track has one (#5551). */
   readonly fxIn: GainNode[];
-  /** Each page plugin's sound after its fader, on its way to `webBus`, or into its track's effect while it has one. */
-  readonly webOut: GainNode[];
-  /** The web effects' sound coming back, two channels a track (2t, 2t + 1): the engine's fifth input pans and sends it. */
+  /** Each page plugin's own sound, before its fader: on to `webPost`, or into its track's effect while it has one. */
+  readonly webIn: GainNode[];
+  /** A page plugin's sound after its track's effect (or with none), before its fader: `web` hangs the fader here. */
+  readonly webPost: GainNode[];
+  /** What each track's web effect plays: into its page plugin's fader while the track has one, else straight to `ret`. */
+  readonly fxOut: GainNode[];
+  /** Each track's way back into the engine, two sides (a mono sound on both): its channels of `returns`. */
+  readonly ret: GainNode[];
+  /** The page's sound coming back, two channels a track (2t, 2t + 1): the engine's fifth input pans and sends it (#5617). */
   readonly returns: ChannelMergerNode;
+  private inserted = new Set<number>();
+  private playing = new Set<number>();
   private constructor(ctx: AudioContext, node: AudioWorkletNode) {
     this.ctx = ctx; this.node = node;
     this.analyser = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
     node.connect(this.analyser);
-    this.webBus = new GainNode(ctx);
-    this.webBus.connect(node, 0, 1);
     this.webTaps = new ChannelMergerNode(ctx, { numberOfInputs: TRACKS });
     this.webTaps.connect(node, 0, 3);
     this.inserts = new ChannelSplitterNode(ctx, { numberOfOutputs: TRACKS });
     node.connect(this.inserts, 1);
     this.fxIn = Array.from({ length: TRACKS }, (_, t) => { const g = new GainNode(ctx); this.inserts.connect(g, t); return g; });
-    this.webOut = Array.from({ length: TRACKS }, () => { const g = new GainNode(ctx); g.connect(this.webBus); return g; });
     this.returns = new ChannelMergerNode(ctx, { numberOfInputs: 2 * TRACKS });
     this.returns.connect(node, 0, 4);
+    const stereo = { channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" } as const;
+    this.ret = Array.from({ length: TRACKS }, (_, t) => {
+      const g = new GainNode(ctx, stereo), split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+      g.connect(split);
+      split.connect(this.returns, 0, 2 * t);
+      split.connect(this.returns, 1, 2 * t + 1);
+      return g;
+    });
+    this.webPost = Array.from({ length: TRACKS }, () => new GainNode(ctx, stereo));
+    this.webIn = Array.from({ length: TRACKS }, (_, t) => { const g = new GainNode(ctx, stereo); g.connect(this.webPost[t]!); return g; });
+    this.fxOut = Array.from({ length: TRACKS }, (_, t) => { const g = new GainNode(ctx, stereo); g.connect(this.ret[t]!); return g; });
   }
 
-  /** Track `t`'s page plugin into its web effect (`on`), or straight to the mix. */
+  /**
+   * Track `t`'s web effect in (`on`) or out. With a page plugin on the track, its sound goes through the effect and then
+   * its fader, as a bounce has it (#5617); an FM track's sound left the engine after its fader, so its effect plays back.
+   */
   routeWeb(t: number, on: boolean) {
-    const g = this.webOut[t];
-    if (!g) return;
-    try { g.disconnect(); } catch { /* not connected yet */ }
-    g.connect(on ? this.fxIn[t]! : this.webBus);
+    if (on) this.inserted.add(t); else this.inserted.delete(t);
+    this.rewire(t);
+  }
+
+  /** Track `t`'s page plugin plays through `fader` (null: it stopped): its sound into the track's effect, if any, then `fader`, then back to the engine. */
+  web(t: number, fader: AudioNode | null) {
+    const post = this.webPost[t];
+    if (!post) return;
+    try { post.disconnect(); } catch { /* not connected yet */ }
+    if (fader) { post.connect(fader); fader.connect(this.ret[t]!); this.playing.add(t); } else this.playing.delete(t);
+    this.rewire(t);
+  }
+
+  private rewire(t: number) {
+    const inn = this.webIn[t], fx = this.fxOut[t];
+    if (!inn || !fx) return;
+    const on = this.inserted.has(t);
+    try { inn.disconnect(); } catch { /* not connected yet */ }
+    try { fx.disconnect(); } catch { /* not connected yet */ }
+    inn.connect(on ? this.fxIn[t]! : this.webPost[t]!);
+    fx.connect(on && this.playing.has(t) ? this.webPost[t]! : this.ret[t]!);
   }
 
   static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
-    // inputs: yours (a guitar or mic), the page's own plugins, the aux sends of guitars heard on calls (CALL_SENDS), the
-    // page's plugins one track a channel, and the web effects' returns (two channels a track). Outputs: the mix, and each track's sound for its web effect, a channel each
+    // inputs: yours (a guitar or mic), nothing (it was the page's own plugins, which come back on the returns now), the aux sends of guitars heard on calls (CALL_SENDS), the
+    // page's plugins one track a channel, and the page's returns (two channels a track: web effects and page plugins). Outputs: the mix, and each track's sound for its web effect, a channel each
     const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 5, numberOfOutputs: 2, outputChannelCount: [2, TRACKS] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
     node.connect(ctx.destination);

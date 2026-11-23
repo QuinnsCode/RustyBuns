@@ -1,4 +1,4 @@
-// The desert night party: out past the end of the road under a full moon, where the sound-system crew stacks a wall of
+// Desert Gathering: out past the end of the road under a full moon, where the sound-system crew stacks a wall of
 // speakers and the dancing goes until sunrise. The truck stops at the end of the track and everything walks 30 m over
 // sand (every step slower); the generator's small wheels dig in, so it rides the sand cart on its balloon tyres. The
 // wall is four horn-loaded dance stacks (a 115 kg 21" bin, a mid-bass horn, a mid-high horn: 235 kg, past any lift),

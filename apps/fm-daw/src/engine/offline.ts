@@ -59,7 +59,7 @@ export function pluginScore(p: Project, sampleRate: number, frames: number): Map
  * `plugins` gives a plugin track's sound as the host rendered it (interleaved stereo, `bounceFrames` long): it goes
  * down the track's strip (PAN, Shape, fader, SEND) into the mix where the takes do. Without it the track is silent.
  * `aux2`: the gear cabled into the desk's aux 2 return (the sesh's gear room patch); the tracks' sends to it come
- * back on the return's fader, through its Shape; the Space return's Shape plays on the sends into Space. The players'
+ * back on the return's fader, through its Shape; the Space return's Shape plays on Space's wet signal, before its limiter. The players'
  * channels are live sound, so a bounce has none of them.
  */
 export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number, takes?: (id: string) => Float32Array | undefined, plugins?: (track: number) => Float32Array | undefined, aux2?: AmpSettings | null, fx?: BounceInserts): Float32Array {
@@ -88,7 +88,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   const rig = aux2 && !ret.mute && p.tracks.some((t) => t.params[P.SEND2] > 0) ? new RigReturn(sampleRate, aux2) : null;
   const send2 = rig ? new Float32Array((frames + late) * 2) : undefined;
   const bus = new Float32Array(128), wet = new Float32Array(256), back = faderGain(ret.fader);
-  // each return's own Shape, as the desk plays it live: aux 2's on what its gear hands back, Space's on what goes in
+  // each return's own Shape, as the desk plays it live: aux 2's on what its gear hands back, Space's on its wet signal before its limiter
   const retEq = rig && ret.eq ? shapeStage(null, ret.eq, sampleRate) : null;
   const spaceEq = p.desk?.space?.eq ? shapeStage(null, p.desk.space.eq, sampleRate) : null;
   // a plugin track's notes are the plugin's, not its FM voice's, whether or not its sound came
@@ -136,8 +136,7 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   const space = new Space(sampleRate);
   space.setTempo(p.bpm);
   space.setAmount(p.space);
-  spaceEq?.process(sent, out.length >> 1);
-  space.process(out, sent, out.length >> 1);
+  space.process(out, sent, out.length >> 1, spaceEq);
   return out;
 }
 

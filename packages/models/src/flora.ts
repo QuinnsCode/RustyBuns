@@ -1,4 +1,5 @@
-// Plants, built from a seed: shrubs, saguaros, barrel cacti and prickly pear. Each is one flat-shaded
+// Plants (and a boulder), built from a seed: shrubs, saguaros, barrel cacti, prickly pear, and the high desert's
+// Joshua trees and creosote. Each is one flat-shaded
 // BufferGeometry with its colours in a `color` attribute, origin at the foot, y up, in metres, so an app draws
 // every copy of one in a single instanced mesh (vertexColors on, instance colours to tint each copy).
 // The same seed always grows the same plant.
@@ -8,6 +9,9 @@
 //   saguaro   a ribbed column 6-7 m tall, two or three arms that elbow up, cream flowers on the crowns
 //   barrel    a squat ribbed barrel cactus under a ring of yellow flowers
 //   pear      prickly pear: flat pads growing out of pads, magenta fruit on the tips
+//   joshua    a Joshua tree 4-6 m tall: a shaggy forking trunk, a ball of spiked leaves on every tip
+//   creosote  a creosote bush about 1.5 m tall: thin stems fanning out, loose olive tufts
+//   boulder   a round granite boulder about a metre across (scale each copy)
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
@@ -15,6 +19,7 @@ import { mulberry32 } from "@rustybuns/util";
 export const FLORA_COLORS = {
   leaf: "#5f8a3a", leafLit: "#86a948", leafDeep: "#3a5a2a", twig: "#5a4030", berry: "#b8323a",
   cactus: "#5f8a52", bloom: "#f4ecd0", bloomEye: "#e6b93a", pad: "#7aa457", fruit: "#b0306a",
+  bark: "#6e5b47", spike: "#7c8d52", thatch: "#8a7654", stem: "#77706a", creosote: "#6b7438", creosoteLit: "#8a9148", granite: "#b39a7e",
 };
 type Hue = keyof typeof FLORA_COLORS;
 
@@ -206,4 +211,52 @@ export function pear(seed: number): THREE.BufferGeometry {
   }
   for (const t of tips) parts.push(blob(rand, "fruit", t.clone().setY(t.y + 0.03), V(0.05, 0.07, 0.05), 0, 0));
   return merge(parts);
+}
+
+/** A Joshua tree: a shaggy trunk that forks and forks again, a ball of stiff spiked leaves on every tip. */
+export function joshua(seed: number): THREE.BufferGeometry {
+  const rand = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const limb = (from: THREE.Vector3, dir: THREE.Vector3, len: number, r: number, depth: number) => {
+    // each limb bows a little as it goes, and thins toward its end
+    const bow = V(rand() - 0.5, 0, rand() - 0.5).multiplyScalar(len * 0.25);
+    const mid = from.clone().addScaledVector(dir, len * 0.5).add(bow), end = from.clone().addScaledVector(dir, len);
+    parts.push(tube("bark", [[from.x, from.y, from.z, r], [mid.x, mid.y, mid.z, r * 0.9], [end.x, end.y, end.z, r * 0.8]], 7, 0, 0, false));
+    if (depth === 0 || (depth < 2 && rand() < 0.25)) {
+      // the rosette: stiff leaves out every way, the old ones hanging down the limb under it as a shag
+      parts.push(blob(rand, "spike", end.clone().addScaledVector(dir, 0.18), V(0.42, 0.46, 0.42), 1, 0.12, 0.38));
+      parts.push(blob(rand, "thatch", end.clone().addScaledVector(dir, -0.22), V(r * 1.9, 0.3, r * 1.9), 1, 0.1, 0.25));
+      return;
+    }
+    const turn = rand() * Math.PI * 2, forks = rand() < 0.3 ? 3 : 2;
+    for (let k = 0; k < forks; k++) {
+      const a = turn + (k * 2 * Math.PI) / forks + (rand() - 0.5) * 0.7, out = 0.55 + rand() * 0.35;
+      limb(end, V(Math.cos(a) * out, 0.75 + rand() * 0.3, Math.sin(a) * out).normalize(), len * (0.62 + rand() * 0.2), r * 0.74, depth - 1);
+    }
+  };
+  limb(V(0, 0, 0), V((rand() - 0.5) * 0.16, 1, (rand() - 0.5) * 0.16).normalize(), 1.7 + rand() * 0.7, 0.2, 2 + Math.floor(rand() * 2));
+  return merge(parts);
+}
+
+/** A creosote bush: thin grey stems fanning out of the sand, small olive leaves in loose tufts along them. */
+export function creosote(seed: number): THREE.BufferGeometry {
+  const rand = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  for (let k = 0; k < 9; k++) {
+    const a = (k * 2 * Math.PI) / 9 + (rand() - 0.5) * 0.5, out = 0.35 + rand() * 0.55, h = 0.9 + rand() * 0.7;
+    const cx = Math.cos(a), sz = Math.sin(a);
+    parts.push(tube("stem", [[cx * 0.04, 0, sz * 0.04, 0.018], [cx * out * 0.5, h * 0.55, sz * out * 0.5, 0.012], [cx * out, h, sz * out, 0.006]], 4, 0, 0, false));
+    for (let j = 0; j < 3; j++) {
+      const t = 0.55 + j * 0.2, r = 0.13 + rand() * 0.07;
+      parts.push(blob(rand, j === 2 ? "creosoteLit" : "creosote", V(cx * out * t, h * t + 0.04, sz * out * t), V(r, r * 0.7, r), 0, 0.2, 0.3));
+    }
+  }
+  return merge(parts);
+}
+
+/** A granite boulder about a metre across, weathered round, sitting a little into the ground. */
+export function boulder(seed: number): THREE.BufferGeometry {
+  const rand = mulberry32(seed);
+  const w = 0.55 + rand() * 0.25, h = 0.45 + rand() * 0.3, d = 0.5 + rand() * 0.25;
+  return blob(rand, "granite", V(0, h * 0.62, 0), V(w, h, d), 2, 0.2, 0.05, 0);
 }

@@ -68,7 +68,7 @@ export const LADDER: readonly { level: Level; name: string }[] = [
   { level: DIVE_BAR, name: "The dive bar" },
   { level: BIGGER_BAR, name: "The bigger bar" },
   { level: PARK, name: "The community event" },
-  { level: DESERT, name: "The desert night party" },
+  { level: DESERT, name: "Desert Gathering" },
   { level: FESTIVAL, name: "The local festival" },
   { level: SMALL_ARENA, name: "The small arena" },
   { level: ARENA, name: "The arena" },

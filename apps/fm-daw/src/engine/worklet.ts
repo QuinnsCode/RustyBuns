@@ -88,7 +88,7 @@ class FmProcessor extends AudioWorkletProcessor {
   private deskFed = false;
   private deskOut = new Float32Array(256);
   private rig: RigReturn | null = null;
-  /** The Space return's Shape, on what goes into Space (so Space's limiter stays last); null while flat. */
+  /** The Space return's Shape, on Space's wet signal before its limiter (as the gear room's desk plays it); null while flat. */
   private spaceEq: TsEq | null = null;
   private send2 = new Float32Array(256);
   /**
@@ -258,13 +258,6 @@ class FmProcessor extends AudioWorkletProcessor {
     for (const t of this.webOut) this.pluginOut.get(t)?.push(taps?.[t] ?? this.hush, this.fader(t), frames, beat0, bpf, this.port);
   }
 
-  /** The page's own plugins (Web Audio Modules, src/ui/wam.ts), each already at its track's fader, under the room's master. */
-  private mixWeb(bus: Float32Array[] | undefined, frames: number) {
-    const l = bus?.[0], r = bus?.[1] ?? l;
-    if (!l || !r) return;
-    for (let f = 0; f < frames; f++) { this.buf[f * 2] += l[f] * this.master; this.buf[f * 2 + 1] += r[f] * this.master; }
-  }
-
   /** The players' channels and the aux 2 return as the page worked them out; a new rig only when gear is first cabled in. */
   private setDesk(m: Extract<ToWorklet, { t: "desk" }>) {
     this.desk.set({ channels: m.players.map((p) => p.channel), returns: [{ aux: 2, name: "Aux 2", fx: "cabled", fader: m.aux2.fader, mute: m.aux2.mute, ...(m.aux2.eq ? { eq: m.aux2.eq } : {}) }] });
@@ -408,10 +401,14 @@ class FmProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Each web effect's return (the fifth input: a track's left on channel 2t, right on 2t + 1) down its PAN and SEND. */
-  private mixInserts(back: Float32Array[] | undefined, frames: number) {
+  /**
+   * Each track's return from the page (the fifth input: a track's left on channel 2t, right on 2t + 1) down its PAN and
+   * SEND: a web effect's, and a page plugin's sound, already at its fader (#5617). Every track, as a page plugin's
+   * track tells the audio thread nothing; a track with nothing there adds silence.
+   */
+  private mixReturns(back: Float32Array[] | undefined, frames: number) {
     if (!back?.length) return;
-    for (const t of this.inserts) {
+    for (let t = 0; t < TRACKS; t++) {
       const l = back[2 * t], r = back[2 * t + 1] ?? l;
       if (!l || !r || this.amps.has(t)) continue;
       this.returns.mix(t, l, r, 0, this.buf, frames, this.returnStrip, this.send);
@@ -475,16 +472,15 @@ class FmProcessor extends AudioWorkletProcessor {
       this.tap = inputs[2]?.length ? inputs[2] : null;
       this.mixDesk(frames);
       if (this.plugins.any) this.mixPlugins(frames, abs0, bpf);
-      this.mixWeb(inputs[1], frames);
-      if (this.inserts.size) { this.sendInserts(outputs[1], this.taps, frames); this.mixInserts(inputs[4], frames); }
+      if (this.inserts.size) this.sendInserts(outputs[1], this.taps, frames);
+      this.mixReturns(inputs[4], frames);
       if (this.webOut.size) this.sendWeb(inputs[3], frames, abs0, bpf);
       if (this.sending) this.sendSlices(inputs[0], frames, abs0, bpf);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
-      this.spaceEq?.process(this.send, frames);
       this.squash.process(this.buf, frames);
-      this.space.process(this.buf, this.send, frames);
+      this.space.process(this.buf, this.send, frames, this.spaceEq);
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);

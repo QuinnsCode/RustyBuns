@@ -9,7 +9,7 @@ import type { AmpSettings } from "./amp/messages.ts";
 import { flatEq, TsEq, type EqDoc } from "./engine/eq.ts";
 import { AUXES, audible, callStrip, faderGain, MAX_CHANNELS, newChannel, playerId, RETURNS, shapeAt, shapeOf, UNITY, withShape, type Channel, type Desk, type ShapeAt } from "./desk.ts";
 import { P } from "./engine/params.ts";
-import { Space } from "./engine/space.ts";
+import { Space, type WetShape } from "./engine/space.ts";
 import type { Op, Project } from "./project.ts";
 
 export * from "./desk.ts";
@@ -126,20 +126,23 @@ export function shapeStage(was: TsEq | null, eq: EqDoc, sampleRate: number): TsE
   return ts;
 }
 
-/** An effect on a return: its aux bus in (mono), the wet signal out (stereo, interleaved, written over). */
-export interface ReturnFx { process(input: Float32Array, out: Float32Array, frames: number): void }
+/**
+ * An effect on a return: its aux bus in (mono), the wet signal out (stereo, interleaved, written over), through the
+ * return's Shape (`shape`, when it has one) where that effect wants it.
+ */
+export interface ReturnFx { process(input: Float32Array, out: Float32Array, frames: number, shape?: WetShape | null): void }
 
-/** FM DAW's Space as a return: all wet, the dry is the channels' own. */
+/** FM DAW's Space as a return: all wet, the dry is the channels' own. Its Shape plays before Space's limiter, as on FM DAW's page. */
 export class SpaceReturn implements ReturnFx {
   private readonly space: Space;
   private send = new Float32Array(256);
   constructor(sampleRate: number) { this.space = new Space(sampleRate); this.space.setAmount(1); }
   setTempo(bpm: number) { this.space.setTempo(bpm); }
-  process(input: Float32Array, out: Float32Array, frames: number) {
+  process(input: Float32Array, out: Float32Array, frames: number, shape?: WetShape | null) {
     if (this.send.length < frames * 2) this.send = new Float32Array(frames * 2);
     for (let i = 0; i < frames; i++) { this.send[i * 2] = input[i]; this.send[i * 2 + 1] = input[i]; }
     out.fill(0, 0, frames * 2);
-    this.space.process(out, this.send, frames);
+    this.space.process(out, this.send, frames, shape);
   }
 }
 
@@ -150,13 +153,14 @@ export class RigReturn implements ReturnFx {
   constructor(private readonly sampleRate: number, settings: AmpSettings) { this.set(settings); }
   /** New knobs or gear: a machine keeps its echoes unless the chain itself changed. */
   set(settings: AmpSettings) { this.live = applySettings(settings, this.live, this.sampleRate); }
-  process(input: Float32Array, out: Float32Array, frames: number) {
+  process(input: Float32Array, out: Float32Array, frames: number, shape?: WetShape | null) {
     if (this.wet.length < frames) this.wet = new Float32Array(frames);
     const live = this.live;
     if (!live) { out.fill(0, 0, frames * 2); return; }
     live.rig.process(input, this.wet, frames);
     const k = 1 / (live.scale || LINE_SCALE);
     for (let i = 0; i < frames; i++) { const y = this.wet[i] * k; out[i * 2] = y; out[i * 2 + 1] = y; }
+    shape?.process(out, frames);
   }
 }
 
@@ -170,7 +174,7 @@ export class Mixer {
   private desk: Desk = { channels: [], returns: [] };
   private readonly eqs = new Map<string, TsEq>();
   private readonly fx: (ReturnFx | null)[] = Array.from({ length: AUXES }, () => null);
-  /** Each return's Shape, on what its effect hands back; null while flat. */
+  /** Each return's Shape, handed to its effect (Space's before its limiter, gear's on what it hands back); null while flat. */
   private readonly retEqs: (TsEq | null)[] = Array.from({ length: AUXES }, () => null);
   private strip = new Float32Array(256);
   private bus = Array.from({ length: AUXES }, () => new Float32Array(128));
@@ -223,8 +227,7 @@ export class Mixer {
     for (const r of this.desk.returns) {
       const fx = this.fx[r.aux - 1];
       if (!fx || r.mute) continue;
-      fx.process(this.bus[r.aux - 1], this.wet, frames);
-      this.retEqs[r.aux - 1]?.process(this.wet, frames);
+      fx.process(this.bus[r.aux - 1], this.wet, frames, this.retEqs[r.aux - 1]);
       const f = faderGain(r.fader);
       for (let i = 0; i < frames * 2; i++) out[i] += this.wet[i] * f;
     }

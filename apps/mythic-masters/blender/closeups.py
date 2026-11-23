@@ -80,6 +80,11 @@ def main():
     tile = int(argv[argv.index("--tile") + 1]) if "--tile" in argv else 600
     if "--tile" in argv:
         del argv[argv.index("--tile"):argv.index("--tile") + 2]
+    focus = None  # --focus x,y,z,size: a spot in the game's frame (y up, facing +x, left = +z) and the frame's width
+    if "--focus" in argv:
+        x, y, z, size = (float(v) for v in argv[argv.index("--focus") + 1].split(","))
+        focus = ((x, -z, y), size)  # the glTF importer turns y up into Blender's z up, the game's +z into -y
+        del argv[argv.index("--focus"):argv.index("--focus") + 2]
     if len(argv) < 2 or len(argv) % 2:
         raise SystemExit("usage: blender -b -P blender/closeups.py -- <in.glb> <out.png> [<in.glb> <out.png> ...] [--tile px]")
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -103,6 +108,8 @@ def main():
         (mid, scale, (0.75, -1, 0.4)),                    # three-quarter, from a little above
         (hmid, hsize, (0.9, -0.7, 0.25)),                 # the head, filling the frame
     )
+    if focus:  # a limb up close: from its outer side a little ahead, and from the front (the last two tiles)
+        shots = shots[:2] + ((focus[0], focus[1], (0.6, -1, 0.15)), (focus[0], focus[1], (1, -0.25, 0.1)))
     for out, meshes, _ in builds:
         for o in scene.objects:
             if o.type == "MESH":
