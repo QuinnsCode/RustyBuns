@@ -1,0 +1,36 @@
+{
+  "git-recon": [
+    {
+      "file": "git-recon-war-for-main.mp4",
+      "title": "The war for main",
+      "secs": 34.6
+    },
+    {
+      "file": "git-recon-boot-camp.mp4",
+      "title": "Boot camp",
+      "secs": 12.4
+    },
+    {
+      "file": "git-recon-newsreel.mp4",
+      "title": "Newsreel",
+      "secs": 13.8
+    },
+    {
+      "file": "git-recon-outtakes.mp4",
+      "title": "Outtakes",
+      "secs": 11.6
+    },
+    {
+      "file": "git-recon-drop-in.mp4",
+      "title": "Drop in",
+      "secs": 9.8
+    }
+  ],
+  "skate-tech-park": [
+    {
+      "file": "skate-tech-park-send-it.mp4",
+      "title": "Send it",
+      "secs": 14
+    }
+  ]
+}
