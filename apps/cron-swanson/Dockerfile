@@ -4,7 +4,8 @@
 FROM oven/bun:1
 WORKDIR /repo
 COPY . .
-RUN bun install --frozen-lockfile
+# Only this app and the packages it uses: a whole-repo install is about 4 GB of node_modules, this is one package.
+RUN bun install --frozen-lockfile --filter cron-swanson
 WORKDIR /repo/apps/cron-swanson
 ENV PORT=8080 NODE_ENV=production CRON_SWANSON_DB=/data/cron-swanson.sqlite
 EXPOSE 8080
