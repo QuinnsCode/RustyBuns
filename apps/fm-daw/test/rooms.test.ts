@@ -84,7 +84,7 @@ test("every room can be built, loads in /jam.html, and rings as it says", () => 
     "stone-room": ["huge", "vocal", "huge"], barn: ["live", "vocal", "dead"], "desk-concert": ["tight", "vocal", "tight"], "orchestra-room": ["big", "piano", "big"], "console-room": ["tight", "vocal", "tight"],
     "sound-stage": ["tight", "vocal", "tight"],
     // out on the sand under open sky only the ground throws anything back: short and dry
-    "desert-rave": ["tight", "dj", "tight"],
+    "desert-gathering": ["tight", "dj", "tight"],
   };
   for (const r of ROOM_LIST) {
     expect({ id: r.id, problems: problems(r), loads: check(Studio, r) !== null }).toEqual({ id: r.id, problems: [], loads: true });
@@ -121,7 +121,7 @@ function walkUpTo(j: Jam, id: string) {
 
 test("the new studios: walk in at the door, round the furniture to every seat, sit and play", () => {
   const groove = demoProject();
-  for (const id of ["desk-concert", "orchestra-room", "console-room", "sound-stage", "desert-rave"]) {
+  for (const id of ["desk-concert", "orchestra-room", "console-room", "sound-stage", "desert-gathering"]) {
     const room = ROOMS[id], j = newJam(room);
     for (const s of room.spots) {
       expect({ id, seat: s.id, reached: walkUpTo(j, s.id) }).toEqual({ id, seat: s.id, reached: true });
@@ -130,7 +130,7 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
       // at an instrument, a key plays its track
       if (s.kind === "keys" || s.kind === "bass" || s.kind === "drums") expect(keyNote(j, groove, "KeyA")).not.toBeNull();
       // up on the sound stage's band riser, your eyes ride half a metre higher than at the floor mix desk
-      if (id === "desert-rave" && s.kind !== "couch") expect({ seat: s.id, up: cameraPose(j).at[1] > 1.8 }).toEqual({ seat: s.id, up: true }); // on the stage
+      if (id === "desert-gathering" && s.kind !== "couch") expect({ seat: s.id, up: cameraPose(j).at[1] > 1.8 }).toEqual({ seat: s.id, up: true }); // on the stage
       if (id === "sound-stage") expect({ seat: s.id, eye: Math.round((cameraPose(j).at[1] - 1.35) * 10) / 10 + 0 }).toEqual({ seat: s.id, eye: ({ desk: 0, couch: 0.3 } as Record<string, number>)[s.id] ?? 0.5 });
       stand(j);
     }

@@ -2,7 +2,7 @@
 // the inside to the light and culls the outside); and a shrub about the size the park hides campers in.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { barrel, pear, saguaro, shrub } from "../src/index.ts";
+import { barrel, boulder, creosote, joshua, pear, saguaro, shrub } from "../src/index.ts";
 
 /** Volume from the triangles' winding: positive when they face out. */
 function volume(geo: THREE.BufferGeometry) {
@@ -21,6 +21,9 @@ test.each([
   ["saguaro", saguaro, 5.5, 8],
   ["barrel", barrel, 0.6, 1],
   ["pear", pear, 0.8, 2],
+  ["joshua", joshua, 3.5, 7.5],
+  ["creosote", creosote, 1.2, 2],
+  ["boulder", boulder, 0.6, 1.4],
 ] as const)("%s: one seed grows one plant, standing on the ground, faces out", (_, grow, lo, hi) => {
   const geo = grow(7);
   expect(geo.attributes.position.array).toEqual(grow(7).attributes.position.array);

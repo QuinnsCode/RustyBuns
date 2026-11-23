@@ -1,19 +1,22 @@
-// An open-air party, drawn (room.ts `outdoor`; the desert rave, rooms/desert-rave.ts): the night in place of look.ts's
-// lit room. A sky fading from deep blue overhead to a dusty glow on the horizon, stars and a full moon; sand out to the
-// dunes, under the moon's cold light; the speaker stacks from Sound Guy Simulator's desert night (packages/models gear:
-// a 21" horn bin, a mid-bass horn and a mid-high horn on a sand dolly); a truss behind the stage with moving heads that
-// sweep the floor and lasers that fan over the crowd; bulbs strung on poles round the dance floor; the generator off
-// to one side with its jerry cans; saguaro, barrel cactus and prickly pear out in the dark. On high a strong bloom, so
-// the beams and the bulbs glow. Every light moves on the clock it's given (`render`), the same for everyone.
+// An open-air party, drawn (room.ts `outdoor`; Desert Gathering, rooms/desert-gathering.ts): the night in place of
+// look.ts's lit room. A sky fading from deep blue overhead to a dusty glow on the horizon, stars and a full moon, the
+// ranges standing black against it; a clearing of sand in the Mojave, under the moon's cold light; the speaker stacks
+// from Sound Guy Simulator's desert night (packages/models gear: a 21" horn bin, a mid-bass horn and a mid-high horn on
+// a sand dolly); a truss behind the stage with moving heads that sweep the floor and lasers that fan over the crowd;
+// round the dance floor, hand-carved wooden poles with a vine cut up each one and a lantern hung from its crook, the
+// flames never quite still; the generator off to one side with its jerry cans; Joshua trees, creosote, barrel cactus,
+// beavertail and granite boulders out in the dark. On high a strong bloom, so the beams and the lanterns glow. Every
+// light moves on the clock it's given (`render`), the same for everyone.
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
 import { gear, gearLook } from "@rustybuns/models/gear";
-import { barrel, pear, saguaro } from "@rustybuns/models/flora";
+import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import type { Outdoor, StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
 
@@ -27,6 +30,45 @@ export function duneAt(x: number, z: number, flat: number): number {
   const r = Math.hypot(x, z), k = Math.min(1, Math.max(0, (r - flat) / 40));
   const swell = Math.sin(x * 0.045 + Math.cos(z * 0.03) * 2) * 0.5 + Math.sin(z * 0.06 + x * 0.02) * 0.5;
   return k * k * (4 + 5 * swell);
+}
+
+/** How high the far ranges stand at compass angle `a` (radians), metres: a few ridges on top of each other, never flat. */
+export function ridgeAt(a: number, seed: number): number {
+  return Math.max(3, 11 + 8 * Math.sin(3 * a + seed) + 5 * Math.sin(7 * a + seed * 2.3) + 3 * Math.sin(13 * a + seed * 0.7) + 1.8 * Math.sin(29 * a + seed * 5.1));
+}
+
+/** How bright lantern `i`'s flame is at time `t` seconds, about 1: a slow breath and a quick flutter, each lantern out of step. */
+export function flameAt(i: number, t: number): number {
+  return 0.86 + 0.09 * Math.sin(t * 2.1 + i * 1.7) + 0.05 * Math.sin(t * 9.3 + i * 4.1) * Math.sin(t * 3.7 + i);
+}
+
+/**
+ * A lantern pole, carved by hand: a crooked staff 3.3 m tall that curls over into a crook at the top, a vine cut in a
+ * spiral up it, and from the crook a lantern on a cord: a little wooden house with a pointed roof and paper panes.
+ * Foot at the origin, the crook reaching toward +x. `wood` is everything carved, `glow` the lit panes.
+ */
+export function lanternPole(seed: number): { wood: THREE.BufferGeometry; glow: THREE.BufferGeometry; flame: THREE.Vector3 } {
+  const r = mulberry32(seed), wob = () => (r() - 0.5) * 0.12;
+  const staff = new THREE.CatmullRomCurve3([[0, 0, 0], [wob(), 1, wob()], [wob(), 2, wob()], [0, 2.9, 0], [0.18, 3.28, 0], [0.42, 3.34, 0], [0.58, 3.16, 0], [0.52, 2.98, 0], [0.44, 3.02, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+  const wood: THREE.BufferGeometry[] = [new THREE.TubeGeometry(staff, 48, 0.05, 7)];
+  // the vine: a thinner strand wound round the staff from the knee to the shoulder
+  const vine: THREE.Vector3[] = [];
+  for (let i = 0; i <= 60; i++) { const u = 0.1 + (i / 60) * 0.6, a = i * 0.42, c = staff.getPointAt(u); vine.push(new THREE.Vector3(c.x + Math.cos(a) * 0.062, c.y, c.z + Math.sin(a) * 0.062)); }
+  wood.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(vine), 120, 0.014, 5));
+  // two turned bands and a foot, so it reads as made, not found
+  for (const u of [0.07, 0.66]) { const c = staff.getPointAt(u); wood.push(new THREE.TorusGeometry(0.062, 0.016, 6, 12).rotateX(Math.PI / 2).translate(c.x, c.y, c.z)); }
+  wood.push(new THREE.CylinderGeometry(0.075, 0.1, 0.16, 8).translate(0, 0.08, 0));
+  // the lantern, hung under the crook's tip
+  const x = 0.52, base = 2.28, h = 0.3, half = 0.11;
+  wood.push(new THREE.CylinderGeometry(0.006, 0.006, 2.98 - (base + h + 0.16), 5).translate(x, (2.98 + base + h + 0.16) / 2, 0));
+  wood.push(new THREE.BoxGeometry(half * 2 + 0.04, 0.025, half * 2 + 0.04).translate(x, base, 0));
+  wood.push(new THREE.BoxGeometry(half * 2 + 0.04, 0.02, half * 2 + 0.04).translate(x, base + h, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) wood.push(new THREE.BoxGeometry(0.022, h, 0.022).translate(x + sx * half, base + h / 2, sz * half));
+  // a lattice bar across each pane, a third of the way up
+  for (const a of [0, Math.PI / 2]) wood.push(new THREE.BoxGeometry(half * 2, 0.014, 0.008).translate(0, 0, half).rotateY(a).translate(x, base + h * 0.36, 0), new THREE.BoxGeometry(half * 2, 0.014, 0.008).translate(0, 0, -half).rotateY(a).translate(x, base + h * 0.36, 0));
+  wood.push(new THREE.CylinderGeometry(0.012, half * 1.75, 0.16, 4).rotateY(Math.PI / 4).translate(x, base + h + 0.09, 0));
+  const glow = new THREE.BoxGeometry(half * 2 - 0.02, h - 0.02, half * 2 - 0.02).translate(x, base + h / 2, 0);
+  return { wood: mergeGeometries(wood.map((g) => g.index ? g.toNonIndexed() : g))!, glow, flame: new THREE.Vector3(x, base + h / 2, 0) };
 }
 
 /** Where a head on the truss points at time `t` seconds: pan and tilt in radians, each head out of step with the next. */
@@ -88,6 +130,19 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   moonlight.shadow.bias = -0.0005;
   group.add(moonlight, moonlight.target);
   group.add(new THREE.HemisphereLight("#33406e", "#2a1d14", 0.55));
+
+  // ---- the ranges: two lines of bare mountains all the way round, black against the horizon's glow
+  for (const [radius, tall, color, seed] of [[176, 1, "#151329", out.seed % 7], [150, 0.55, "#0c0b17", (out.seed % 11) + 3]] as const) {
+    const n = 240, pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2, x = Math.cos(a) * radius, z = Math.sin(a) * radius;
+      pos.push(x, -4, z, x, ridgeAt(a, seed) * tall, z);
+      if (i < n) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    const ridge = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    ridge.setIndex(idx);
+    group.add(new THREE.Mesh(ridge, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, fog: false })));
+  }
 
   // ---- the ground: sand to the dunes, laid in metres so its ripples come out their real size
   const flat = Math.max(def.size.w, def.size.d) / 2 + 6;
@@ -178,37 +233,40 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   box.position.set(0, tr.h + 0.22, 0);
   truss.add(box);
 
-  // ---- bulbs strung round the dance floor, on poles, sagging between them
-  const bulbs: THREE.Vector3[] = [];
-  const poles: THREE.Vector3[] = [];
-  if (out.festoon) {
-    const [x0, z0, x1, z1] = out.festoon, corners: [number, number][] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+  // ---- the lantern poles round the dance floor: three carvings, each pole one of them turned to hang its lantern
+  // over the floor, none quite the same height or quite upright
+  const flames: THREE.PointLight[] = [];
+  if (out.lanternPoles) {
+    const [x0, z0, x1, z1] = out.lanternPoles, corners: [number, number][] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const stand: [number, number][] = [];
     for (let c = 0; c < 4; c++) {
-      const [ax, az] = corners[c]!, [bx, bz] = corners[(c + 1) % 4]!, len = Math.hypot(bx - ax, bz - az), segs = Math.max(1, Math.round(len / 6)) | 1;
-      for (let s = 0; s < segs; s++) {
-        const a = new THREE.Vector3(ax + ((bx - ax) * s) / segs, 3.6, az + ((bz - az) * s) / segs);
-        const b = new THREE.Vector3(ax + ((bx - ax) * (s + 1)) / segs, 3.6, az + ((bz - az) * (s + 1)) / segs);
-        poles.push(a);
-        for (let k = 0; k < 8; k++) { const t = k / 8, q = a.clone().lerp(b, t); q.y -= Math.sin(t * Math.PI) * 0.55; bulbs.push(q); }
-      }
+      const [ax, az] = corners[c]!, [bx, bz] = corners[(c + 1) % 4]!, segs = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 6));
+      // none between the corners on the stage's side: nothing stands between the floor and the decks
+      for (let k = 0; k < segs; k++) if (c !== 0 || k === 0) stand.push([ax + ((bx - ax) * k) / segs, az + ((bz - az) * k) / segs]);
     }
-    const wood = surface("wood", "#4a3826");
-    for (const q of poles) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 3.7, 8), wood); pole.position.set(q.x, 1.85, q.z); group.add(pole); }
-    const bulbMat = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#ffcf86", emissiveIntensity: 2.2 });
-    const inst = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 10, 8), bulbMat, bulbs.length), m = new THREE.Matrix4();
-    bulbs.forEach((q, i) => inst.setMatrixAt(i, m.makeTranslation(q.x, q.y, q.z)));
-    inst.userData.looked = true;
-    group.add(inst);
-    // the wire: one line through every bulb, each run its own strip
-    const wire = new THREE.LineBasicMaterial({ color: "#1a1612" });
-    for (let i = 0; i < bulbs.length; i += 8) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...bulbs.slice(i, i + 8), poles[(i / 8 + 1) % poles.length]!]), wire));
-    // a few warm lights, so the floor and the faces near the edge catch the glow
-    for (const q of [poles[0], poles[Math.floor(poles.length / 4)], poles[Math.floor(poles.length / 2)], poles[Math.floor((poles.length * 3) / 4)]]) {
-      if (!q) continue;
-      const l = new THREE.PointLight("#ffc278", 12, 14, 1.8);
-      l.position.set(q.x, 3.2, q.z);
-      group.add(l);
-    }
+    const carved = [0, 1, 2].map((k) => lanternPole(out.seed + k * 97));
+    const wood = surface("wood", "#8a6844"), paper = new THREE.MeshStandardMaterial({ color: "#2a1606", emissive: "#ffb257", emissiveIntensity: 2.4 });
+    const m = new THREE.Matrix4(), e = new THREE.Euler(), q = new THREE.Quaternion();
+    carved.forEach((pole, k) => {
+      const mine = stand.map((at, i) => ({ at, i })).filter((p) => p.i % carved.length === k);
+      const poles = new THREE.InstancedMesh(pole.wood, wood, mine.length), panes = new THREE.InstancedMesh(pole.glow, paper, mine.length);
+      panes.userData.looked = true;
+      mine.forEach(({ at: [x, z], i }, n) => {
+        const size = 0.9 + rnd() * 0.25;
+        e.set((rnd() - 0.5) * 0.08, Math.atan2(-(cz - z), cx - x) + (rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.08);
+        m.compose(new THREE.Vector3(x, duneAt(x, z, flat) - 0.03, z), q.setFromEuler(e), new THREE.Vector3(size, size, size));
+        poles.setMatrixAt(n, m); panes.setMatrixAt(n, m);
+        // every other lantern lights the sand and the faces near it; the rest only glow
+        if (i % 2 === 0) {
+          const l = new THREE.PointLight("#ffb060", 10, 13, 1.8);
+          l.position.copy(pole.flame).applyMatrix4(m);
+          l.userData.i = i;
+          group.add(l);
+          flames.push(l);
+        }
+      });
+      group.add(poles, panes);
+    });
   }
 
   // ---- the generator and its jerry cans, off to the side
@@ -223,16 +281,21 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     }
   }
 
-  // ---- the plants, out past the dance floor: one instanced mesh per kind, each copy turned and sized from the seed
+  // ---- the plants and the rocks, round the clearing: one instanced mesh per carving, each copy turned and sized from
+  // the seed. Joshua trees stand apart; creosote fills between them; the boulders run from a football to a van.
   const plantMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
   const keepOut = (x: number, z: number) => Math.abs(x) < def.size.w / 2 + 2 && Math.abs(z) < def.size.d / 2 + 2;
-  for (const [grow, count, near] of [[saguaro, 26, 26], [barrel, 60, 22], [pear, 50, 22]] as const) {
+  for (const [grow, count, near, small, big] of [
+    [joshua, 13, 24, 0.8, 1.25], [joshua, 13, 30, 0.7, 1.2], [joshua, 12, 40, 0.8, 1.3],
+    [creosote, 80, 22, 0.6, 1.2], [creosote, 80, 22, 0.6, 1.2], [barrel, 30, 22, 0.7, 1.3], [pear, 30, 22, 0.7, 1.3],
+    [boulder, 45, 23, 0.3, 1.2], [boulder, 22, 26, 1.2, 3.2],
+  ] as const) {
     const geo = grow(Math.floor(rnd() * 1e6)), inst = new THREE.InstancedMesh(geo, plantMat, count), m = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {
       let x = 0, z = 0;
       for (let tries = 0; tries < 20; tries++) { const a = rnd() * Math.PI * 2, r = near + rnd() * 70; x = Math.cos(a) * r; z = Math.sin(a) * r; if (!keepOut(x, z)) break; }
-      const s = 0.7 + rnd() * 0.6;
-      m.compose(new THREE.Vector3(x, duneAt(x, z, flat) - 0.05, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2), new THREE.Vector3(s, s, s));
+      const s = small + rnd() * (big - small);
+      m.compose(new THREE.Vector3(x, duneAt(x, z, flat) - 0.05 * s, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2), new THREE.Vector3(s, s, s));
       inst.setMatrixAt(i, m);
     }
     inst.castShadow = high;
@@ -263,7 +326,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   walk();
 
   let frames = 0, fps = 0, since = performance.now(), count = 0;
-  const lights = 2 + heads.length + 4;
+  const lights = 2 + heads.length + flames.length;
   return {
     quality,
     render(cam) {
@@ -283,6 +346,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
         l.rotation.set(-0.06 - Math.abs(Math.sin(t * 0.7)) * 0.12, spread + Math.sin(t * 0.9) * 0.25, 0);
         l.visible = Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
       });
+      for (const l of flames) l.intensity = 10 * flameAt(l.userData.i as number, t);
       if (composer) composer.render(); else renderer.render(scene, cam);
     },
     resize(wpx, hpx) {
