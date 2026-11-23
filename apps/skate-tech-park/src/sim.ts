@@ -46,7 +46,7 @@ export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, 
 const TUNE = { accel: 3, brake: 14, top: 11.5 * T, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
-  boost: 28, // m/s² from the rear jets: from a push's top to the jets' own in about a second and a half
+  boost: 24, // m/s² from the rear jets: from a push's top to the jets' own in about a second, and up a hillside cut to a gap's launch
   boostTop: 24 * T, // about 120 km/h: fast enough for every gap's line (28 to 32 m/s), not so fast a wall throws the board a hundred metres up
   fanTop: 0.6, // the fan holds it to this share of top speed
   fanPull: 26, // m/s² extra downward in the air with the fan on
