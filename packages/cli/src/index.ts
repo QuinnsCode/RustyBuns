@@ -1337,14 +1337,18 @@ async function containersCommand(args: string[]) {
     console.log(sizeTable(rows));
   } else if (sub === "run") {
     if (bs.length !== 1 || names.length !== 1) throw new UsageError({ message: "containers run takes exactly one BINDING" });
-    await runOne(cfg.name, bs[0]!, { env, file, shell, verbose, prodLike });
+    // under runScoped: a Ctrl-C or SIGTERM removes the container instead of leaving it running
+    await runScoped(runOne(cfg.name, bs[0]!, { env, file, shell, verbose, prodLike }));
   } else {
-    let bad = 0;
-    for (const b of bs) {
-      const r = await smokeOne(cfg.name, b, { env, file, verbose, prodLike });
-      console.log(`${r.ok ? "✅" : "❌"} ${b.name}  ${r.note}`);
-      if (!r.ok) bad++;
-    }
+    const bad = await runScoped(Effect.gen(function* () {
+      let n = 0;
+      for (const b of bs) {
+        const r = yield* smokeOne(cfg.name, b, { env, file, verbose, prodLike });
+        console.log(`${r.ok ? "✅" : "❌"} ${b.name}  ${r.note}`);
+        if (!r.ok) n++;
+      }
+      return n;
+    }));
     if (bad) process.exitCode = 1;
   }
 }

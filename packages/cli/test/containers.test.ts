@@ -62,3 +62,29 @@ test("the GHA layer cache is one scope per image, read and written", async () =>
   expect(args).toContain("type=gha,mode=max,scope=codesplitter-ci_runner");
   expect(args[0]).toBe("--load");
 });
+
+test("a SIGTERM mid-run removes the container, for run and smoke alike", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-cscope-")), bin = join(dir, "bin"), log = join(dir, "docker.log");
+  mkdirSync(join(dir, "api"), { recursive: true });
+  writeFileSync(join(dir, "api", "Dockerfile"), "FROM scratch\n");
+  mkdirSync(bin);
+  // a docker that logs each call: `run` without -d stays attached until the container is removed, like the real client
+  writeFileSync(join(bin, "docker"), `#!/bin/sh\necho "$*" >> ${log}\ncase "$1" in\n  run) case "$*" in *" -d "*) echo id;; *) while [ ! -f ${dir}/gone ]; do sleep 0.05; done;; esac;;\n  inspect) echo true;;\n  rm) touch ${dir}/gone;;\nesac\n`, { mode: 0o755 });
+  const b = { name: "API", className: "Api", dockerfile: "api/Dockerfile", context: join(dir, "api"), maxInstances: 1, instanceType: "lite" };
+  writeLedger({ API: { hash: contextHash(b.context), size: 1, at: Date.now(), dockerfile: b.dockerfile } }, dir);
+  const src = join(import.meta.dir, "../src");
+  for (const cmd of ["runOne", "smokeOne"]) {
+    writeFileSync(log, "");
+    // the command as `rustybuns containers run|smoke` runs it, in its own process so the signal is real
+    const script = join(dir, `${cmd}.ts`);
+    writeFileSync(script, `import { ${cmd} } from "${src}/containers.ts"; import { runScoped } from "${src}/lifecycle.ts";
+await runScoped(${cmd}("demo", ${JSON.stringify(b)}, { env: {}, dir: ${JSON.stringify(dir)} })).catch((e) => process.exit(e.exitCode ?? 1));`);
+    const p = Bun.spawn([process.execPath, script], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, stdout: "ignore", stderr: "ignore" });
+    const end = Date.now() + 10_000;
+    while (!(await Bun.file(log).text()).includes("run ") && Date.now() < end) await Bun.sleep(20);
+    await Bun.sleep(100);
+    p.kill("SIGTERM");
+    expect(await p.exited).toBe(143);
+    expect(await Bun.file(log).text()).toMatch(new RegExp(`^rm -f rb-(smoke-)?demo-api-${p.pid}$`, "m"));
+  }
+}, 30_000);
