@@ -20,11 +20,12 @@
 
 1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it.
 2. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
-3. **Learn five parts, not a platform.** http, comms, storage, memory and identity.
-4. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first.
-5. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load.
-6. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
-7. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
+3. **The front is a Vite app.** Use any framework on top. Rusty Buns adds the extras.
+4. **The back goes where you choose.** Edge or server, serverless or serverful. It fits each host because your app uses only five simple parts: http, comms, storage, memory and identity. Cloudflare, Railway and Hetzner are built in today.
+5. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first.
+6. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load.
+7. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
+8. **Agents work fast and safely.** Small stack, free local runs, many agents at the same time.
 
 ### How easy the five parts are
 
