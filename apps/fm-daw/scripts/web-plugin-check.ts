@@ -6,7 +6,8 @@
 // beside it). Then a bounce of the track, and its sound on the sesh's live line. Then the track back on its FM voice
 // with an effect in its Insert (#5359, FM DAW's own Gain): as loud as dry at Gain 1, half at 0.5, dry again once it's
 // off, and an instrument isn't taken as an effect. Then the bounce with the effect in it (#5551: half at 0.5), and
-// a web plugin track (Test Tone) with Gain in its Insert, heard and bounced at half. Prints what it measured; exit 1 when
+// a web plugin track (Test Tone) with Gain in its Insert, heard and bounced at half, and panned hard left it is silent
+// on the right, live and bounced (#5617). Prints what it measured; exit 1 when
 // any of that fails. A built page: build the app, `bunx vite preview --outDir dist/client`, then `--url` that.
 // Without --url it serves the app on its own dev server, which needs .rustybuns/vite.ts (`bunx rustybuns boundary`
 // here writes it).
@@ -112,9 +113,19 @@ const JOURNEY = `(async () => {
   fmdaw.insert(K, null);
   await wait(200);
   const pBack = await hold();
+  // PAN on a web plugin track (#5617): hard left, it is silent on the right, live and bounced
+  fmdaw.pan(K, -1);
+  await wait(200);
+  key("keydown");
+  await wait(700);
+  const leftLive = fmdaw.state().sides;
+  key("keyup");
+  await wait(600);
+  const leftBounce = await fmdaw.mix(K, 2);
+  fmdaw.pan(K, 0);
   fmdaw.plays(K, null);
   const bounce = { dry: bDry, whole: bWhole, half: bHalf };
-  const plugin = { on: pOn, error: pFxError, dry: pDry, half: pHalf, back: pBack, bDry: pbDry, bHalf: pbHalf };
+  const plugin = { on: pOn, error: pFxError, dry: pDry, half: pHalf, back: pBack, bDry: pbDry, bHalf: pbHalf, leftLive, leftBounce };
   const insert = { track: K, fxOn, fxError, fxSliders, dry, whole, half, refused, refusedHeld, back, bounce, plugin };
   return { track: T, audio: fmdaw.state().audio, started, error, sliders, idle, held, muted, released, asked, unasked, trusted, after, heldOther, bounced, line, insert };
 })()`;
@@ -155,6 +166,8 @@ try {
     ["a web plugin track through Gain at 0.5 is heard at half", r.insert.plugin.dry > 0.02 && near(r.insert.plugin.half / r.insert.plugin.dry, 0.5, 0.1)],
     ["and with its Insert off, dry again", near(r.insert.plugin.back / r.insert.plugin.dry, 1, 0.15)],
     ["its bounce is at half too", r.insert.plugin.bHalf.missed.length === 0 && r.insert.plugin.bDry.l > 0.002 && near(r.insert.plugin.bHalf.l / r.insert.plugin.bDry.l, 0.5, 0.05)],
+    ["a web plugin track panned hard left is heard on the left and silent on the right", r.insert.plugin.leftLive.l > 0.02 && r.insert.plugin.leftLive.r < 0.05 * r.insert.plugin.leftLive.l],
+    ["and its bounce too", r.insert.plugin.leftBounce.l > 0.002 && r.insert.plugin.leftBounce.r < 0.01 * r.insert.plugin.leftBounce.l],
     ["no page errors", noise.length === 0],
   ];
   console.log(JSON.stringify(r));

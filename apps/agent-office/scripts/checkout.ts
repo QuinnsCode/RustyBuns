@@ -19,3 +19,30 @@ export function slowCheckout(js: string) {
     "        return 'git ran out of time and was stopped';\n");
   return js;
 }
+
+// A worker started from 3-day-old code: upstream starts a worktree from origin's copy of the branch the floor's checkout
+// is on. Agents in the floor checkout left it on `load-in-dress-cables`, reset to main; that branch's origin copy was
+// its squash-merged PR's last commit, so `startPoint` saw the two diverged and handed every hire the stale branch, and
+// their PRs undid work merged since (#5600 undid three PRs). Every PR here goes to main, so a worktree starts from
+// origin's default branch (`origin/HEAD`), whatever the floor checkout is on; with no origin/HEAD, upstream's choice.
+
+/** server/worktrees.js: new worktrees start from (and fetch) origin's default branch, not the checkout's branch. */
+export function startFromDefault(js: string) {
+  const rel = "worktrees.js";
+  js = once(js, rel, "            const from = this.currentBranch();\n            const { base, note }",
+    "            const from = this.baseBranch();\n            const { base, note }");
+  js = once(js, rel, "        const from = this.currentBranch();\n        if (!from || !this.hasOrigin())",
+    "        const from = this.baseBranch();\n        if (!from || !this.hasOrigin())");
+  js = once(js, rel, "    /** The branch the project is on, or undefined when HEAD is detached. */\n",
+    "    /** The branch new worktrees start from: origin's default branch, else the one the project is on. */\n" +
+    "    baseBranch() {\n" +
+    "        try {\n" +
+    "            return this.gitSync(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\\//, '') || this.currentBranch();\n" +
+    "        }\n" +
+    "        catch {\n" +
+    "            return this.currentBranch();\n" +
+    "        }\n" +
+    "    }\n" +
+    "    /** The branch the project is on, or undefined when HEAD is detached. */\n");
+  return js;
+}

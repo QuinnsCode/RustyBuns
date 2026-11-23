@@ -4,7 +4,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CHECKOUT_TIMEOUT_MS, slowCheckout } from "../scripts/checkout.ts";
+import { CHECKOUT_TIMEOUT_MS, slowCheckout, startFromDefault } from "../scripts/checkout.ts";
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
@@ -14,7 +14,7 @@ let file = "";
 let mod: { Worktrees: new (dir: string) => { create(slug: string): unknown; gitSync(a: string[]): string }; gitError(e: unknown): string };
 beforePinned(async () => {
   file = path.join(await unpackPinned(), "dist/server/server/worktrees.js");
-  writeFileSync(file, slowCheckout(readFileSync(file, "utf8")));
+  writeFileSync(file, startFromDefault(slowCheckout(readFileSync(file, "utf8"))));
   mod = await import(file);
 });
 
@@ -47,4 +47,34 @@ pinnedTest("a git the office stopped says it ran out of time, not its last progr
   const late = await new Promise((done) => execFile("sleep", ["5"], { timeout: 200 }, done));
   expect(mod.gitError(late)).toBe("git ran out of time and was stopped");
   expect(mod.gitError({ stderr: "fatal: a branch named 'x' already exists\n" })).toBe("fatal: a branch named 'x' already exists");
+});
+
+// The floor checkout was left on a squash-merged branch: origin's copy of it is that PR's last commit, and main moved on.
+pinnedTest("a hire starts from origin/main even when the floor checkout is on an old merged branch", () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "rb-base-"));
+  const run = (cwd: string, ...a: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, stdio: "pipe" }).toString().trim();
+  const origin = path.join(tmp, "origin.git");
+  const repo = path.join(tmp, "floor");
+  run(tmp, "init", "-q", "--bare", "-b", "main", origin);
+  run(tmp, "clone", "-q", origin, repo);
+  const commit = (text: string) => {
+    writeFileSync(path.join(repo, "a.txt"), text);
+    run(repo, "add", ".");
+    run(repo, "commit", "-qm", text);
+  };
+  commit("a\n");
+  run(repo, "push", "-q", "origin", "main");
+  run(repo, "checkout", "-qb", "old-feature");
+  commit("feature\n");
+  run(repo, "push", "-q", "origin", "old-feature");
+  run(repo, "checkout", "-q", "main");
+  commit("merged later\n");
+  run(repo, "push", "-q", "origin", "main");
+  run(repo, "remote", "set-head", "origin", "main");
+  run(repo, "checkout", "-q", "old-feature");
+  run(repo, "reset", "-q", "--hard", "origin/main");
+  const made = new mod.Worktrees(repo).create("sprocket-2");
+  expect(made).toMatchObject({ from: "main", base: run(repo, "rev-parse", "origin/main") });
+  expect(readFileSync(path.join(repo, ".agent-office/worktrees/sprocket-2/a.txt"), "utf8")).toBe("merged later\n");
 });

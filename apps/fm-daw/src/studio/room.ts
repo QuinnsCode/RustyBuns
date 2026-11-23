@@ -67,14 +67,14 @@ export interface StudioDef {
 /**
  * An open-air party's rig, drawn by open-air.ts: the speaker stacks (each a horn bin, a mid-bass horn and a mid-high horn
  * on a sand dolly, its front facing yaw's way as a seat looks), the lighting truss behind the stage with its moving heads
- * and lasers, the generator off to one side, and a seed for the plants out in the dark. The size is the ground you can walk.
+ * and lasers, the lantern poles round the floor, the generator off to one side, and a seed for the plants and rocks out in the dark. The size is the ground you can walk.
  */
 export interface Outdoor {
   stacks: { at: [number, number]; yaw: number }[];
   truss: { at: [number, number]; yaw: number; w: number; h: number };
   generator?: { at: [number, number]; yaw: number };
-  /** The string of bulbs round the dance floor: its corners (x0, z0, x1, z1). */
-  festoon?: [number, number, number, number];
+  /** The carved wooden lantern poles round the dance floor: the corners of the line they stand on (x0, z0, x1, z1). */
+  lanternPoles?: [number, number, number, number];
   seed: number;
 }
 

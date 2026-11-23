@@ -3,13 +3,14 @@
 // return's fader (and the channel's mute stopping its sends too). Then the sesh's desk on FM DAW's page: a track's
 // channel is the track, so its send into Space comes back on the Space return's fader in the bounce.
 import { expect, test } from "bun:test";
-import { deskFor, deskOps, Mixer, Return, RigReturn, seshDesk, SpaceReturn, trackId, UNITY, withChannel, withReturn, withSend, withShape, type Desk } from "../src/mixer.ts";
+import { deskFor, deskOps, Mixer, Return, RigReturn, seshDesk, shapeStage, SpaceReturn, trackId, UNITY, withChannel, withReturn, withSend, withShape, type Desk } from "../src/mixer.ts";
 import { flatEq, type EqDoc } from "../src/engine/eq.ts";
 import { knobTurns, shapeThumbPath, withShapeBand } from "../src/room/desk.ts";
 import { lead, listen, newRoom, plug } from "../src/room/room.ts";
 import { TsEngine } from "../src/engine/engine.ts";
 import { renderProject } from "../src/engine/offline.ts";
-import { P } from "../src/engine/params.ts";
+import { CEILING, P } from "../src/engine/params.ts";
+import { Space } from "../src/engine/space.ts";
 import { apply, decodeOp, type Project } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 
@@ -91,7 +92,34 @@ test("on the sesh's desk, a track's send to the Space return comes back on its f
   expect(seshDesk(down).channels[0].fader).toBeCloseTo(UNITY - 0.25);
 });
 
-test("a return's own Shape plays on what its effect hands back, and the strip knobs keep a band moved in the full editor", () => {
+test("Space's Shape plays in one place: the gear room's desk hears what FM DAW's page and bounce hear, under -1 dBFS", () => {
+  // A loud note into Space with +30 dB low on its Shape: the page plays the Shape inside Space (its wet signal, before
+  // the limiter), and so must the desk's Space return; a Shape after the limiter would boost the tail past the ceiling.
+  const block = 128, n = block * 400, note = new Float32Array(n);
+  for (let i = 0; i < 9600; i++) note[i] = 0.9 * Math.sin((2 * Math.PI * 110 * i) / SR);
+  const boost: EqDoc = [{ kind: "lowShelf", f: 400, g: 30, q: Math.SQRT1_2, slope: 12, on: true }, null, null, null, null, null, null, null];
+  const desk = new Mixer(SR);
+  desk.setReturn(1, new SpaceReturn(SR));
+  desk.set(withShape(withSend(deskFor([{ id: "you", name: "You", source: "player" }]), "you", 1, 1), { aux: 1 }, boost));
+  // the page's path: what the channel sends into aux 1, into Space with the Space return's Shape
+  const page = new Space(SR), eq = shapeStage(null, boost, SR);
+  page.setAmount(1);
+  const ins = new Map<string, Float32Array>(), out = new Float32Array(block * 2), send = new Float32Array(block * 2), wet = new Float32Array(block * 2);
+  let peak = 0, most = 0, off = 0;
+  for (let at = 0; at < n; at += block) {
+    ins.set("you", note.subarray(at, at + block));
+    desk.process(ins, out, block, (bus) => { for (let i = 0; i < block; i++) { send[i * 2] = bus[0][i]; send[i * 2 + 1] = bus[0][i]; } });
+    wet.fill(0);
+    page.process(wet, send, block, eq);
+    if (at < 9600) continue; // the note itself plays dry on the channel; from here on the desk is its Space return alone
+    for (let i = 0; i < block * 2; i++) { peak = Math.max(peak, Math.abs(wet[i])); most = Math.max(most, Math.abs(out[i])); off = Math.max(off, Math.abs(out[i] - wet[i])); }
+  }
+  expect(peak).toBeGreaterThan(0.3);        // the boosted tail is loud
+  expect(most).toBeLessThanOrEqual(CEILING + 1e-6);
+  expect(off).toBeLessThan(1e-4);           // after the note: the desk's Space return is the page's Space, sample for sample
+});
+
+test("a return's own Shape plays on what its effect hands back (Space's on its wet signal), and the strip knobs keep a band moved in the full editor", () => {
   const note = new Float32Array(128 * 300);
   for (let i = 0; i < 4800; i++) note[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR) * (1 - i / 4800);
   const tail = (d: Desk) => {
