@@ -12,7 +12,7 @@
 // people button lists who may play the decks: the leader adds a DJ with one press, anyone else asks.
 import "./panel.css";
 import { peaks, type Grid } from "./analyze.ts";
-import { Booth, changed, farView, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, keyPress, posAt, sayOf, SAY_EVERY_MS, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
+import { Booth, changed, farView, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, keyPress, posAt, sayOf, SAY_EVERY_MS, tubeSayOf, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
 import { Decks, type Beside, type Side, type Track } from "./engine.ts";
 import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
@@ -207,7 +207,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     tubes[side] = t;
     if (!tubeShelf.some((s) => s.id === id)) tubeShelf.push({ id, title: t.title });
     drawList();
-    flash(room ? "YouTube plays on your own speakers: the room hears files you add, not YouTube" : `Deck ${side ? "B" : "A"}: YouTube's player. EQ, filters and scratch need a file`);
+    flash(room ? "The room hears YouTube in each listener's own player, kept on the room's clock: the PA, EQ and filters don't reach it" : `Deck ${side ? "B" : "A"}: YouTube's player. EQ, filters and scratch need a file`);
     if (!title) void tubeTitle(id).then((name) => { if (!name) return; t.title = name; const s = tubeShelf.find((x) => x.id === id); if (s) s.title = name; drawList(); });
     return t.ready.then(() => true, (e: unknown) => { flash(e instanceof Error ? e.message : "YouTube's player didn't load"); dropTube(side); return false; });
   }
@@ -432,7 +432,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (!room) return;
     const t = room.now();
     for (const side of [0, 1] as const) {
-      const d = decks.decks[side], tr = d.track;
+      const d = decks.decks[side], tr = d.track, tube = tubes[side];
+      if (tube) {
+        // a YouTube deck: its video, where it is and its speed, for each listener's page to play (room-tube.ts)
+        if (!tube.isReady()) continue;
+        const v = tube.view(), m = decks.mixer;
+        const next = tubeSayOf(side, { id: tube.id, name: tube.title, len: v.len, pos: v.pos, cue: v.cue, playing: v.playing, rate: tube.rate(), vol: tubeVolume(m.channels[DECK_CHANNEL[side]]!.s, m.xfader, m.curve, m.master) }, t);
+        if (!now && !changed(said[side], next) && t - saidAt[side]! < SAY_EVERY_MS) continue;
+        room.send(next);
+        said[side] = next; saidAt[side] = t;
+        continue;
+      }
       if (!tr && !said[side]?.name) continue;
       if (tr && !wavesOut.has(tr)) wavesOut.set(tr, waveOf(over.get(tr) ?? peaks(tr.mono, 600)));
       const next = sayOf(side, d.state(), tr ? wavesOut.get(tr)! : "", t);
@@ -458,9 +468,9 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   function heard(from: number, e: DeckSay | DeckPress) {
     if (!room) return;
     if (e.t === "press") return void (e.press === "jog" ? jogHere(from, e) : pressHere(e.side, e.press, e.x));
-    if (room.booth.heard(from, e, performance.now(), !!decks.decks[e.side].track)) {
+    if (room.booth.heard(from, e, performance.now(), !!decks.decks[e.side].track || !!tubes[e.side])) {
       // they loaded onto a deck you had: yours comes off
-      decks.decks[e.side].unload();
+      decks.decks[e.side].unload(); dropTube(e.side);
       said[e.side] = null;
       flash(`${room.nameOf(from)} took deck ${e.side ? "B" : "A"}`);
     }

@@ -91,6 +91,16 @@ export function floorLevel(speakers: Speaker[]): number {
   return 1 / Math.sqrt(speakers.reduce((t, s) => t + hearSpeaker(s, ears, speakers.length).gain ** 2, 0));
 }
 
+/**
+ * How loud the set is where `ears` stand, against the floor's middle (1 there and at the stacks, which a limiter holds),
+ * for a sound the PA can't carry (a YouTube deck: room-tube.ts sets each listener's own player by it). 1 in a room with no speakers.
+ */
+export function roomLevel(speakers: Speaker[], ears: Ears): number {
+  if (!speakers.length) return 1;
+  const norm = floorLevel(speakers);
+  return Math.min(1, Math.sqrt(speakers.reduce((t, s) => t + (hearSpeaker(s, ears, speakers.length).gain * norm) ** 2, 0)));
+}
+
 /** The ring of the room around the DJ, as stereo samples, with the direct sound taken out (the speakers play that). */
 function ring(ctx: BaseAudioContext, def: StudioDef): AudioBuffer {
   const dj = def.spots.find((s) => s.kind === "dj");

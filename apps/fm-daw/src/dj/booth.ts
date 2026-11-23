@@ -7,7 +7,9 @@
 // through only from someone with the play grant, as it does a note. The jog wheel goes the same way (a `press` of
 // "jog": the platter touched or let go, and its turns gathered so a scratch sends JOG_SEND_MS apart, not every frame;
 // `JogOut` gathers them, the player runs them through its own `Jog`). Loading onto a deck someone else has is fine
-// while it's stopped, and theirs goes; while it plays, it's theirs.
+// while it's stopped, and theirs goes; while it plays, it's theirs. A YouTube deck says the same, plus its video's id
+// (`tube`) and the volume its channel gives it (`vol`): its sound can't go down the PA, so each listener's page plays
+// the video itself, on the room's clock (room-tube.ts).
 // Pure, no DOM: the World's guards (project.ts), the page and the tests share it.
 import { b64url, unb64url } from "@rustybuns/util/bytes";
 import { bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
@@ -49,6 +51,7 @@ export const DeckSay = obj({
   key: nul(obj({ name: str(4, { min: 1 }), camelot: str(3, { re: /^(1[0-2]|[1-9])[AB]$/ }) })),
   wave: str(Math.ceil((WAVE_BARS * 4) / 3), { min: 0, re: /^[A-Za-z0-9_-]*$/ }),
   cue: SECS, playing: bool(), pos: SECS, rate: num(0.1, 4), at: MS,
+  tube: opt(str(11, { min: 11, re: /^[\w-]{11}$/ })), vol: opt(num(0, 100)),
 });
 export type DeckSay = Of<typeof DeckSay>;
 /** Someone presses a button on `to`'s deck. */
@@ -91,11 +94,21 @@ export function sayOf(side: Side, s: DeckState, wave: string, now: number): Deck
   };
 }
 
+/** What a YouTube deck here says to the room: its title, where the video is, its speed and the volume its channel gives it. */
+export function tubeSayOf(side: Side, v: { id: string; name: string; len: number; pos: number; cue: number; playing: boolean; rate: number; vol: number }, now: number): DeckSay {
+  const top = 6 * 3600, len = Math.min(top, v.len), at = (x: number) => Math.min(top, Math.max(0, x));
+  return {
+    t: "deck", side, name: v.name.slice(0, 120), len, grid: null, key: null, wave: "", cue: at(v.cue), playing: v.playing, pos: at(v.pos),
+    rate: Math.min(4, Math.max(0.1, v.rate)), at: now, tube: v.id, vol: Math.round(Math.min(100, Math.max(0, v.vol))),
+  };
+}
+
 /** Whether a new say is worth sending: the deck changed in a way the room sees, beyond time passing. */
 export function changed(a: DeckSay | null, b: DeckSay): boolean {
   if (!a) return true;
   if (a.name !== b.name || a.playing !== b.playing || Math.abs(a.cue - b.cue) > 0.005 || Math.abs(a.rate - b.rate) > 0.0005) return true;
   if (a.key?.camelot !== b.key?.camelot || a.grid?.bpm !== b.grid?.bpm) return true;
+  if (a.tube !== b.tube || Math.abs((a.vol ?? 0) - (b.vol ?? 0)) >= 3) return true;
   // a jump (a hot cue, a seek, a loop going round): where it is now is not where the last say has it
   const expect = a.playing ? a.pos + ((b.at - a.at) / 1000) * a.rate : a.pos;
   return Math.abs(expect - b.pos) > 0.08;
