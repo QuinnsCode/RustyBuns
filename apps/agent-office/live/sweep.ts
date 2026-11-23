@@ -10,11 +10,12 @@
 //  3. node_modules and build output (`dist`, `target`, `.wrangler/tmp`, only where git ignores them) in worktrees no
 //     worker sits at (kept on send-home because git sees work main lacks). A seated worker may be serving its `dist`, so
 //     the rule needs the office's list of who sits where: the office runs it after each send-home, with the workers it
-//     has; `office:sweep` asks `office-workers list` and skips without it (#3387).
+//     has; `office:sweep` asks `office-workers list` and skips without it (#3387). A merged worker at rest counts as
+//     gone, and each floor sweeps every 30 minutes too (see `sweepEvery`, below).
 //  4. Playwright's browser builds no installed playwright-core names (`prunePlaywright`, manual, dry run first).
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statfsSync } from "node:fs";
 import { lstat, readdir, readFile, readlink, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -171,7 +172,7 @@ export async function sweepFloor(dir: string, live?: string[]): Promise<string> 
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
-      m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody sits at`,
+      m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
     return said.length ? `🧹 Swept ${said.join(" and ")}, ${gb(r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
@@ -411,4 +412,62 @@ export async function listTrees(repo: string): Promise<Tree[]> {
     out.push({ path: dir, kb: sizes.get(dir) ?? 0, days: Math.floor((Date.now() - mtime) / 86_400_000), branch, clean: status === "", unpushed, merged: merged.has(branch) });
   }
   return out.sort((a, b) => b.kb - a.kb);
+}
+
+// --- merged workers still at their desks, and a disk too full to hire on (2026-11-22) ------------------------------
+// The office Mac fell to 5.7 GB free with "go home once merged" off: six workers whose PR had merged sat at their desks
+// ("landed: free to go"), and the sweep above skips every seated worktree, so their 6 GB of node_modules each stayed.
+// A worker at rest whose work landed now counts as an empty desk for node_modules and build output (its code stays),
+// and the sweep runs on a timer, not only after a send-home. A hire under the free-space line says so instead of
+// failing halfway through the checkout.
+
+/** How often a floor sweeps on its own. */
+export const SWEEP_MS = 30 * 60_000;
+
+/** A worker as the floor lists it, as far as the sweep looks. */
+export interface Desk {
+  id: string;
+  worktree?: { path: string };
+}
+
+/**
+ * The worktree paths (absolute, under `dir`) that are still in use: every seated worker's but those `landed` names (at
+ * rest, PR merged, none open: the floor's own `landedWorkers`).
+ */
+export function inUse(dir: string, desks: Desk[], landed: Set<string>): string[] {
+  return desks.flatMap((w) => w.worktree && !landed.has(w.id) ? [path.join(dir, w.worktree.path)] : []);
+}
+
+/**
+ * Sweeps `dir` every `everyMs` with the paths `live()` names in use, saying what it freed through `say`. The first look
+ * waits a full interval, once the floor has its workers and pull requests (with neither, every desk would look empty).
+ */
+export function sweepEvery(dir: string, live: () => string[], say: (line: string) => void, everyMs = SWEEP_MS) {
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    void sweepFloor(dir, live()).then((line) => line && say(line)).finally(() => { busy = false; });
+  }, everyMs);
+  timer.unref?.();
+  return { stop: () => clearInterval(timer) };
+}
+
+/** Below this much free space a hire is refused before its checkout: a worktree here plus `bun install` is about 6 GB. */
+export const HIRE_FREE_GB = 15;
+
+/** Free bytes on the volume `dir` is on (Infinity when it can't be read). */
+export function freeBytes(dir: string): number {
+  try { const s = statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; }
+}
+
+/**
+ * Why a hire in `dir` shouldn't start its checkout, or undefined: under `AGENT_OFFICE_HIRE_FREE_GB` (default 15, 0 turns
+ * it off) free on the disk. Said in full, since the floor and office-queue show it as the hire's error.
+ */
+export function lowDisk(dir: string, free = freeBytes(dir), vars: Record<string, string | undefined> = process.env): string | undefined {
+  const want = Number(vars.AGENT_OFFICE_HIRE_FREE_GB ?? HIRE_FREE_GB);
+  if (!(want > 0) || free >= want * GB) return undefined;
+  return `Only ${gb(free)} free on the disk, under the ${want} GB a hire needs, so no worktree was made. ` +
+    "`office-workers home --merged` frees space (its worktrees go), and so does `bun run office:sweep`";
 }

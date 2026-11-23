@@ -46,3 +46,21 @@ export function startFromDefault(js: string) {
     "    /** The branch the project is on, or undefined when HEAD is detached. */\n");
   return js;
 }
+
+// 2026-11-22: the disk fell to 5.7 GB free and hires failed with "Could not create a git worktree: Updating files: 45%".
+// A checkout that runs out of disk leaves git's `error:`/`fatal:` lines before (or among) its progress, and upstream
+// kept only the last line. A hire now checks the free space first and says so in plain words (`lowDisk`, live/sweep.ts),
+// and a failed git says its own error lines, progress dropped.
+
+/** server/worktrees.js: a hire on a nearly full disk is refused before its checkout, and a git error keeps git's words. */
+export function plainCheckout(js: string) {
+  const rel = "worktrees.js";
+  js = "import { lowDisk as __rbLowDisk } from './rb-sweep.js';\n" + js;
+  js = once(js, rel, "    create(slug, sub, root = this.dir) {\n        try {\n",
+    "    create(slug, sub, root = this.dir) {\n        const low = __rbLowDisk(root);\n        if (low)\n            return low;\n        try {\n");
+  js = once(js, rel, "    return String(e.stderr || e.message || err).trim().split('\\n').filter(Boolean).pop() ?? 'git failed';\n",
+    "    const lines = String(e.stderr || e.message || err).split(/[\\r\\n]+/).map((l) => l.trim()).filter((l) => l && !/^\\S[^:]*: +\\d+% \\(\\d+\\/\\d+\\)/.test(l));\n" +
+    "    const said = lines.filter((l) => /^(fatal|error):/.test(l));\n" +
+    "    return (said.length ? said.slice(-3).join(' · ') : lines.pop()) ?? 'git failed';\n");
+  return js;
+}

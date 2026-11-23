@@ -1,10 +1,10 @@
 // #5523: `git worktree add` on a 10,000-file repo outran upstream's 20 s timeout, and the error was git's progress line.
 import { expect, setDefaultTimeout } from "bun:test";
 import { execFile, execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CHECKOUT_TIMEOUT_MS, slowCheckout, startFromDefault } from "../scripts/checkout.ts";
+import { CHECKOUT_TIMEOUT_MS, plainCheckout, slowCheckout, startFromDefault } from "../scripts/checkout.ts";
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
@@ -14,7 +14,9 @@ let file = "";
 let mod: { Worktrees: new (dir: string) => { create(slug: string): unknown; gitSync(a: string[]): string }; gitError(e: unknown): string };
 beforePinned(async () => {
   file = path.join(await unpackPinned(), "dist/server/server/worktrees.js");
-  writeFileSync(file, startFromDefault(slowCheckout(readFileSync(file, "utf8"))));
+  writeFileSync(file, plainCheckout(startFromDefault(slowCheckout(readFileSync(file, "utf8")))));
+  // the office bundles live/sweep.ts next to it as rb-sweep.js
+  writeFileSync(path.join(path.dirname(file), "rb-sweep.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/sweep.ts"))};\n`);
   mod = await import(file);
 });
 
@@ -47,6 +49,23 @@ pinnedTest("a git the office stopped says it ran out of time, not its last progr
   const late = await new Promise((done) => execFile("sleep", ["5"], { timeout: 200 }, done));
   expect(mod.gitError(late)).toBe("git ran out of time and was stopped");
   expect(mod.gitError({ stderr: "fatal: a branch named 'x' already exists\n" })).toBe("fatal: a branch named 'x' already exists");
+});
+
+// 2026-11-22: a full disk read as "Could not create a git worktree: Updating files: 45%"
+pinnedTest("a full disk is said before the checkout, and a failed checkout keeps git's error, not its progress", () => {
+  const repo = mkdtempSync(path.join(tmpdir(), "rb-full-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: repo });
+  process.env.AGENT_OFFICE_HIRE_FREE_GB = "1000000";
+  try {
+    const made = new mod.Worktrees(repo).create("sprocket-3");
+    expect(made).toEqual(expect.stringMatching(/^Only [\d.]+ GB free on the disk, under the 1000000 GB a hire needs.*office-workers home --merged/));
+    expect(existsSync(path.join(repo, ".agent-office/worktrees/sprocket-3"))).toBe(false);
+  } finally { delete process.env.AGENT_OFFICE_HIRE_FREE_GB; }
+  const stderr = "Preparing worktree (new branch 'office/x')\nUpdating files:  12% (1200/10003)\r" +
+    "error: unable to write file apps/a/b.png: No space left on device\nfatal: cannot create directory at 'apps/c': No space left on device\r" +
+    "Updating files:  45% (4500/10003)\n";
+  expect(mod.gitError({ stderr })).toBe("error: unable to write file apps/a/b.png: No space left on device · fatal: cannot create directory at 'apps/c': No space left on device");
 });
 
 // The floor checkout was left on a squash-merged branch: origin's copy of it is that PR's last commit, and main moved on.

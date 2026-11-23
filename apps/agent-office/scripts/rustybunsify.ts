@@ -27,7 +27,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue, floorGuardSeat } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
-import { slowCheckout, startFromDefault } from "./checkout.ts";
+import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -135,12 +135,15 @@ async function prepare(tag: string) {
   // and a busy floor asks GitHub every few seconds, with a free conditional request, whether anything changed
   await buildLive();
   lap("server bundles (live)");
-  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\nimport { storageGuard as __rbStorage } from './rb-storage.js';\nimport { sweepFloor as __rbSweep } from './rb-sweep.js';\n");
+  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\nimport { mergeTrain as __rbTrain } from './rb-train.js';\nimport { storageGuard as __rbStorage } from './rb-storage.js';\nimport { sweepFloor as __rbSweep, sweepEvery as __rbSweepEvery, inUse as __rbInUse } from './rb-sweep.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
-    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        this.__rbStorage = __rbStorage(this, def.dir, ctx.__rbDataDir);\n        void __rbSweep(def.dir).then((line) => line && console.log(line));\n        // A floor with people on it");
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        this.__rbTrain = __rbTrain(this);\n        this.__rbStorage = __rbStorage(this, def.dir, ctx.__rbDataDir);\n        void __rbSweep(def.dir).then((line) => line && console.log(line));\n" +
+    // every 30 minutes, the workers whose PR merged count as empty desks too (2026-11-22: six of them held 36 GB)
+    "        this.__rbSweepEvery = __rbSweepEvery(def.dir, () => __rbInUse(def.dir, this.workers.list(), new Set(landedWorkers(this.workers.list(), this.github.pulls.items, this.queue?.state().tasks ?? [], (id) => this.ctx.floor(id)?.github.pulls.items).map((l) => l.worker.id))), (line) => ctx.toast(this, line, 'info'));\n" +
+    "        // A floor with people on it");
   // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
   patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
-  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();\n        this.__rbStorage?.stop();");
+  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();\n        this.__rbTrain?.stop();\n        this.__rbStorage?.stop();\n        this.__rbSweepEvery?.stop();");
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
@@ -152,8 +155,9 @@ async function prepare(tag: string) {
     "        return __rbEndIn(w.info.worktree?.path ? path.join(this.trees.dir, w.info.worktree.path) : '').then(() => this.worktrees.sendHome(w.info, cleanup, landed, landedRepos)).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
 
   // 6a2. #5523: a checkout of this repo outran upstream's 20 s `git worktree add` timeout
-  // and a worktree starts from origin/main, not from whatever branch the floor checkout was left on
-  writeFileSync(path.join(srv, "worktrees.js"), startFromDefault(slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8"))));
+  // and a worktree starts from origin/main, not from whatever branch the floor checkout was left on; a hire on a full
+  // disk says so before its checkout, and a failed git keeps its error lines (2026-11-22)
+  writeFileSync(path.join(srv, "worktrees.js"), plainCheckout(startFromDefault(slowCheckout(readFileSync(path.join(srv, "worktrees.js"), "utf8")))));
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
