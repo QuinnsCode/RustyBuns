@@ -3,7 +3,8 @@
 // blender/out/<id>.png to look at), then through auto-rig's voxel rigger, which finds its skeleton and skin
 // weights and writes public/models/<id>.rig.json with the feet marked. Prints one row per beast; a beast
 // whose feet count doesn't match its sheet is a bug in the sheet (a leg merged into the body, or a tail
-// that touches the ground) and the row says so; so is a wing count off from the sheet's `wings`, when it has one.
+// that touches the ground) and the row says so, as it does when an even count doesn't split half on each side
+// ("one-sided": a low tail or talon tip standing in for a lost foot); so is a wing count off from the sheet's `wings`, when it has one.
 //
 // The model loop, with no hand-driven Chrome:
 //   --watch <id>          rebuild on every save of beasts/<id>.json in one warm Blender (no cold start after the first);
@@ -28,7 +29,7 @@ import { join } from "node:path";
 import { int, num, obj, opt } from "@rustybuns/util/guard";
 import { analyze, rigToWire } from "@rustybuns/rig";
 import { loadGlb } from "@rustybuns/rig/model";
-import { feetOf, wingsOf, type BeastRig } from "../src/beasts.ts";
+import { feetOf, feetPaired, wingsOf, type BeastRig } from "../src/beasts.ts";
 import { SHEET_WHO } from "../src/roster.ts";
 import { judge, OUT, shoot } from "./beast-loop.ts";
 import { help } from "../../../scripts/help.ts";
@@ -134,7 +135,8 @@ async function rig(id: string, feet: number, expectWings?: number) {
   // timings are wall-clock: zeroed in the file, so a rebuild of an unchanged beast is byte for byte the same
   const sidecar: BeastRig = { ...rigToWire(r), timings: { voxelize: 0, distance: 0, skeleton: 0, weights: 0 }, tips, feet: found, wings, height: +height.toFixed(4), extent: +extent.toFixed(4) };
   await Bun.write(join(APP, "public", "models", `${id}.rig.json`), JSON.stringify(sidecar));
-  return { joints: r.parents.length, tips: tips.length, feet: found.length, wings: wings.length, ms, ok: found.length === feet && (expectWings === undefined || wings.length === expectWings), tris: model.triangles };
+  const paired = feetPaired(r, found, extent);
+  return { joints: r.parents.length, tips: tips.length, feet: found.length, paired, wings: wings.length, ms, ok: found.length === feet && paired && (expectWings === undefined || wings.length === expectWings), tris: model.triangles };
 }
 
 async function build(id: string): Promise<Built> {
@@ -152,7 +154,7 @@ async function build(id: string): Promise<Built> {
 type Built = { id: string; sheet: ReturnType<typeof Sheet>; notes: string[]; r: Awaited<ReturnType<typeof rig>> };
 const report = (b: Built) => console.log(row(b));
 function row({ id, sheet, notes, r }: Built) {
-  return [...notes.map((n) => `  ${n}`), `${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`].join("\n");
+  return [...notes.map((n) => `  ${n}`), `${r.ok ? "ok " : "!! "}${id.padEnd(14)} ${sheet.archetype.padEnd(10)} ${String(r.tris).padStart(5)} tris  ${String(r.joints).padStart(3)} joints  ${String(r.tips).padStart(2)} tips  feet ${r.feet}/${sheet.feet}${r.paired ? "" : " one-sided"}  wings ${r.wings}${sheet.wings === undefined ? "" : `/${sheet.wings}`}  rigged in ${r.ms.toFixed(0)} ms`].join("\n");
 }
 
 if (flags.has("--watch")) {

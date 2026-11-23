@@ -44,6 +44,15 @@ export function feetOf(rig: RigResult, tips: number[], height: number, frac = 0.
   return tips.filter((t) => rig.joints[t * 3 + 1] < height * frac);
 }
 
+/** Whether the feet stand in pairs: an even count splits half on each side of the centreline (z), none on it.
+ * A count alone can't tell a lost hind foot from the low tail tip that took its place; the sides can.
+ * An odd count (a tripod, a single hopping foot) passes. */
+export function feetPaired(rig: Pick<RigResult, "joints">, feet: number[], extent: number): boolean {
+  if (feet.length % 2) return true;
+  const z = feet.map((t) => rig.joints[t * 3 + 2]! / extent);
+  return z.filter((v) => v > 0.02).length === feet.length / 2 && z.filter((v) => v < -0.02).length === feet.length / 2;
+}
+
 /** Tips that are wings: high up and far out to the side. With `count` (the sheet's `wings`), only that many,
  * the furthest out first: long hair, a hydra's outer heads or a wide horn's tips are high and wide too. Wings
  * folded upright over the back (a sphinx) stay near the centreline, so when the wide rule finds fewer than

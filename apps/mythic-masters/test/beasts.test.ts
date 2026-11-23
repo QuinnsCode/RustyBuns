@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
 import { int, obj, opt } from "@rustybuns/util/guard";
 import { loadGlb } from "@rustybuns/rig/model";
-import { BeastRig, headAndTail, Puppet, wingsOf, type Beast } from "../src/beasts.ts";
+import { BeastRig, feetPaired, headAndTail, Puppet, wingsOf, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, newMatch, type Fighter } from "../src/sim.ts";
 
@@ -24,11 +24,12 @@ async function beast(id: string): Promise<Beast> {
 }
 
 describe("every beast sheet is built and rigged", () => {
-  test.each(ids)("%s: a GLB, and a rig whose feet match the sheet", async (id) => {
+  test.each(ids)("%s: a GLB, and a rig whose feet match the sheet, in pairs", async (id) => {
     const expected = Expected(await Bun.file(SHEETS.get(id)!).json());
     const b = await beast(id);
     expect(b.model.triangles).toBeGreaterThan(100);
     expect(b.sheet.feet.length).toBe(expected.feet);
+    expect(feetPaired(b.rig, b.sheet.feet, b.sheet.extent)).toBe(true);
     if (expected.wings !== undefined) expect(b.sheet.wings.length).toBe(expected.wings);
     expect(b.rig.skinWeight.length).toBe(b.model.positions.length / 3 * 4);
   });
