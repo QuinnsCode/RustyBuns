@@ -1,5 +1,5 @@
 // A deck reads a track's tempo from what the DJ's software wrote (src/dj/tags.ts): each file kind is built here byte
-// by byte, as small as its format allows, and read back; then the collection files a DJ drops on the library.
+// by byte, as small as its format allows, and read back (hot cues too); then the collection files a DJ drops on the library.
 import { expect, test } from "bun:test";
 import { pick, readCollection, readTempo, settle, type Tempo } from "../src/dj/tags.ts";
 
@@ -27,6 +27,13 @@ const geob = (desc: string, payload: Uint8Array) => cat([0], "application/octet-
 const autotags = (bpm: string) => cat([1, 1], `${bpm}\0`, "-3.257\0", "0.000\0");
 /** Two markers: the first beat, 64 beats on to the second, and the tempo held after it. */
 const beatgrid = (first: number, bpm: number) => cat([1, 0], u32be(2), f32(first), u32be(64), f32(first + (64 * 60) / bpm), f32(bpm), [0]);
+/** "Serato Markers2": a colour entry, then hot cues as [index, ms], base64 in lines without padding, the way it writes them. */
+const markers2 = (...cues: [number, number][]) => {
+  const entry = (type: string, data: Uint8Array) => cat(type + "\0", u32be(data.length), data);
+  const inner = cat([1, 1], entry("COLOR", cat([0, 255, 255, 255])), ...cues.map(([i, ms]) => entry("CUE", cat([0, i], u32be(ms), [0, 204, 0, 0, 0, 0], "drop\0"))), [0]);
+  const text = btoa(String.fromCharCode(...inner)).replace(/=+$/, "").replace(/.{72}/g, "$&\n");
+  return cat([1, 1], text, [0]);
+};
 const b64 = (desc: string, payload: Uint8Array) => btoa(String.fromCharCode(...cat("application/octet-stream\0\0", desc + "\0", payload)));
 const chunk = (id: string, kids: Uint8Array[] | Uint8Array) => {
   const body = Array.isArray(kids) ? cat(...kids) : kids;
@@ -47,12 +54,15 @@ const files: [string, Uint8Array, Tempo | null][] = [
   ["an mp3's ID3v2.3 TBPM", id3(3, [["TIT2", text("Night Drive")], ["TBPM", text("128")]]), { bpm: 128, source: "tag" }],
   ["ID3v2.4, a decimal tempo", id3(4, [["TBPM", text("93.5")]]), { bpm: 93.5, source: "tag" }],
   ["the vinyl-emulation program's GEOB grid wins over TBPM", id3(4, [["TBPM", text("126")], ["GEOB", geob("Serato Autotags", autotags("125.98"))], ["GEOB", geob("Serato BeatGrid", beatgrid(0.512, 125.98))]]), { bpm: 125.98, firstBeat: 0.512, source: "grid" }],
+  ["its hot cues: index 0 to 3 onto the deck's four, 4 to 7 left off", id3(4, [["GEOB", geob("Serato Autotags", autotags("125.98"))], ["GEOB", geob("Serato BeatGrid", beatgrid(0.512, 125.98))], ["GEOB", geob("Serato Markers2", markers2([0, 512], [2, 30_250], [5, 60_000]))]]), { bpm: 125.98, firstBeat: 0.512, source: "grid", hot: [0.512, null, 30.25, null] }],
+  ["its hot cues with only a plain tempo", id3(3, [["TBPM", text("120")], ["GEOB", geob("Serato Markers2", markers2([1, 1000]))]]), { bpm: 120, source: "tag", hot: [null, 1, null, null] }],
   ["its auto tags alone: a tempo, no first beat", id3(3, [["GEOB", geob("Serato Autotags", autotags("140.00"))]]), { bpm: 140, source: "grid" }],
   ["the four-deck program's PRIV frame", id3(3, [["PRIV", cat("TRAKTOR4\0", chunk("DMRT", [chunk("ATAD", [chunk("MPBH", f32(124.5, true))])]))]]), { bpm: 124.5, source: "grid" }],
   ["an m4a's tmpo", mp4(atom("tmpo", atom("data", u32be(21), u32be(0), u16be(140)))), { bpm: 140, source: "tag" }],
   ["an m4a's base64 grid", mp4(atom("----", atom("mean", [0, 0, 0, 0], "com.serato.dj"), atom("name", [0, 0, 0, 0], "beatgrid"), atom("data", u32be(1), u32be(0), b64("Serato BeatGrid", beatgrid(0.2, 122))))), { bpm: 122, firstBeat: 0.2, source: "grid" }],
   ["a FLAC's BPM comment", flac("TITLE=x", "BPM=97"), { bpm: 97, source: "tag" }],
-  ["a FLAC's base64 grid", flac("bpm=96", `SERATO_BEATGRID=${b64("Serato BeatGrid", beatgrid(1.25, 174))}`), { bpm: 174, firstBeat: 1.25, source: "grid" }],
+  ["a FLAC's base64 grid and hot cues", flac("bpm=96", `SERATO_BEATGRID=${b64("Serato BeatGrid", beatgrid(1.25, 174))}`, `SERATO_MARKERS_V2=${b64("Serato Markers2", markers2([3, 2500]))}`), { bpm: 174, firstBeat: 1.25, source: "grid", hot: [null, null, null, 2.5] }],
+  ["an m4a's base64 hot cues", mp4(atom("tmpo", atom("data", u32be(21), u32be(0), u16be(140))), atom("----", atom("mean", [0, 0, 0, 0], "com.serato.dj"), atom("name", [0, 0, 0, 0], "markersv2"), atom("data", u32be(1), u32be(0), b64("Serato Markers2", markers2([0, 750]))))), { bpm: 140, source: "tag", hot: [0.75, null, null, null] }],
   ["an Ogg Vorbis TEMPO", ogg("TEMPO=110"), { bpm: 110, source: "tag" }],
   ["a WAV's id3 chunk", wav(id3(3, [["TBPM", text("120")]])), { bpm: 120, source: "tag" }],
   ["an AIFF's ID3 chunk", aiff(id3(4, [["TBPM", text("85")]])), { bpm: 85, source: "tag" }],
@@ -66,33 +76,39 @@ test.each(files)("%s", (_, bytes, want) => {
   expect(round(readTempo(bytes))).toEqual(want);
 });
 
-/** A per-track analysis file: header, the track's path, the beat grid. */
-function analysis(path: string, beats: [number, number, number][]) {
+/** A per-track analysis file: header, the track's path, the beat grid, and a hot cue list of [hot cue (1 is A), ms]. */
+function analysis(path: string, beats: [number, number, number][], hot: [number, number][] = []) {
   const p = Uint8Array.from([...path, "\0"].flatMap((c) => u16be(c.charCodeAt(0)))), ppth = cat("PPTH", u32be(16), u32be(16 + p.length), u32be(p.length), p);
   const pqtz = cat("PQTZ", u32be(24), u32be(24 + beats.length * 8), u32be(0), u32be(0x00800000), u32be(beats.length), ...beats.map(([n, bpm, ms]) => cat(u16be(n), u16be(bpm * 100), u32be(ms))));
-  const body = cat(ppth, pqtz);
+  const pcpt = hot.map(([n, ms]) => cat("PCPT", u32be(28), u32be(56), u32be(n), u32be(1), u32be(0x10000), u16be(0xffff), u16be(0xffff), [1, 0, 0, 0], u32be(ms), u32be(0xffffffff), new Uint8Array(16)));
+  const pcob = cat("PCOB", u32be(24), u32be(24 + pcpt.length * 56), u32be(1), u16be(0), u16be(pcpt.length), u32be(0xffffffff), ...pcpt);
+  const body = cat(ppth, pqtz, pcob);
   return cat("PMAI", u32be(28), u32be(28 + body.length), new Uint8Array(16), body);
 }
 
 test("the collection files a DJ drops fill tempos by file name, first beat and all", () => {
   const fourDeck = `<?xml version="1.0" encoding="UTF-8" standalone="no" ?><NML VERSION="19"><COLLECTION ENTRIES="2">
     <ENTRY TITLE="Night Drive"><LOCATION DIR="/:Users/:dj/:Music/:" FILE="Night Drive.mp3" VOLUME="Mac"></LOCATION><TEMPO BPM="122.000061" BPM_QUALITY="100.000000"></TEMPO>
-      <CUE_V2 NAME="n.n." TYPE="0" START="9000" LEN="0"></CUE_V2><CUE_V2 NAME="AutoGrid" TYPE="4" START="312.5" LEN="0"></CUE_V2></ENTRY>
+      <CUE_V2 NAME="n.n." TYPE="0" START="9000" LEN="0" HOTCUE="1"></CUE_V2><CUE_V2 NAME="far" TYPE="0" START="1000" LEN="0" HOTCUE="6"></CUE_V2><CUE_V2 NAME="AutoGrid" TYPE="4" START="312.5" LEN="0"></CUE_V2></ENTRY>
     <ENTRY TITLE="Dawn"><LOCATION FILE="Dawn &amp; Dusk.flac"></LOCATION><TEMPO BPM="174"></TEMPO></ENTRY>
     <ENTRY TITLE="no tempo"><LOCATION FILE="x.mp3"></LOCATION></ENTRY></COLLECTION></NML>`;
   const club = `<?xml version="1.0" encoding="UTF-8"?><DJ_PLAYLISTS Version="1.0.0"><COLLECTION Entries="1">
-    <TRACK TrackID="1" Name="Sun Up" AverageBpm="128.00" Location="file://localhost/Users/dj/Music/Sun%20Up.mp3"><TEMPO Inizio="0.098" Bpm="128.00" Metro="4/4" Battito="1"/><TEMPO Inizio="60.098" Bpm="127.00" Metro="4/4" Battito="1"/></TRACK>
+    <TRACK TrackID="1" Name="Sun Up" AverageBpm="128.00" Location="file://localhost/Users/dj/Music/Sun%20Up.mp3"><TEMPO Inizio="0.098" Bpm="128.00" Metro="4/4" Battito="1"/><TEMPO Inizio="60.098" Bpm="127.00" Metro="4/4" Battito="1"/><POSITION_MARK Name="" Type="0" Start="0.098" Num="-1"/><POSITION_MARK Name="drop" Type="0" Start="30.098" Num="0" Red="40" Green="226" Blue="20"/><POSITION_MARK Name="" Type="4" Start="45.000" End="46.875" Num="2"/></TRACK>
     </COLLECTION><PLAYLISTS><NODE Type="0" Name="ROOT"><TRACK Key="1"/></NODE></PLAYLISTS></DJ_PLAYLISTS>`;
   const all = (b: Uint8Array) => Object.fromEntries([...readCollection(b)].map(([k, t]) => [k, round(t)]));
-  expect(all(te.encode(fourDeck))).toEqual({ "night drive.mp3": { bpm: 122, firstBeat: 0.313, source: "grid" }, "dawn & dusk.flac": { bpm: 174, firstBeat: undefined, source: "grid" } });
-  expect(all(te.encode(club))).toEqual({ "sun up.mp3": { bpm: 128, firstBeat: 0.098, source: "grid" } });
-  expect(all(analysis("/Contents/dj/Deep Cut.wav", [[1, 120.5, 250], [2, 120.5, 748]]))).toEqual({ "deep cut.wav": { bpm: 120.5, firstBeat: 0.25, source: "grid" } });
+  expect(all(te.encode(fourDeck))).toEqual({ "night drive.mp3": { bpm: 122, firstBeat: 0.313, source: "grid", hot: [null, 9, null, null] }, "dawn & dusk.flac": { bpm: 174, firstBeat: undefined, source: "grid" } });
+  expect(all(te.encode(club))).toEqual({ "sun up.mp3": { bpm: 128, firstBeat: 0.098, source: "grid", hot: [30.098, null, null, null] } });
+  expect(all(analysis("/Contents/dj/Deep Cut.wav", [[1, 120.5, 250], [2, 120.5, 748]], [[1, 250], [3, 64_000]]))).toEqual({ "deep cut.wav": { bpm: 120.5, firstBeat: 0.25, source: "grid", hot: [0.25, null, 64, null] } });
   expect(all(te.encode("<playlist><item>nothing here</item></playlist>"))).toEqual({});
 });
 
 test("a deck takes a software grid, else a dropped collection's, else a tag; and listens only for what it wasn't told", () => {
   const tag: Tempo = { bpm: 128, source: "tag" }, grid: Tempo = { bpm: 127.9, firstBeat: 0.4, source: "grid" }, known: Tempo = { bpm: 127.95, firstBeat: 0.41, source: "grid" };
   expect([pick(tag, known), pick(grid, known), pick(tag, undefined), pick(null, null)]).toEqual([known, grid, tag, null]);
+  // hot cues come along with whichever grid wins, else from the other side
+  const cued: Tempo = { ...tag, hot: [1, null, null, null] };
+  expect(pick(cued, known)).toEqual({ ...known, hot: [1, null, null, null] });
+  expect(settle(cued, () => null)).toEqual({ grid: { bpm: 128, offset: 0 }, from: "tag", hot: [1, null, null, null] });
   let heard = 0;
   const ear = () => { heard++; return { bpm: 64, offset: 0.12 }; };
   expect(settle(grid, ear)).toEqual({ grid: { bpm: 127.9, offset: 0.4 }, from: "grid" });

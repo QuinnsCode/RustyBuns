@@ -1,4 +1,4 @@
-// A track's tempo and first beat, from what the DJ's own software already wrote, so a deck only listens for the beat
+// A track's tempo, first beat and hot cues, from what the DJ's own software already wrote, so a deck only listens for the beat
 // (analyze.ts detectGrid) when nothing did. Pure: bytes in, a checked `Tempo` out; no DOM, no audio.
 //
 // In the file itself (`readTempo`):
@@ -6,33 +6,47 @@
 //   of an AIFF or WAV file;
 // - the vinyl-emulation program's analysis: ID3 GEOB frames described "Serato Autotags" (the BPM as text) and
 //   "Serato BeatGrid" (beat markers, the first one the first beat); in FLAC and Ogg comments SERATO_AUTOTAGS and
-//   SERATO_BEATGRID, in MP4 a `----` atom of mean com.serato.dj, base64 either way;
+//   SERATO_BEATGRID, in MP4 a `----` atom of mean com.serato.dj, base64 either way; its hot cues the CUE entries of
+//   "Serato Markers2" (SERATO_MARKERS_V2, markersv2), itself base64 text inside;
 // - the four-deck program's ID3 PRIV frame of owner TRAKTOR4: nested chunks (a reversed four-letter id, a length and
 //   a child count, little-endian), its BPM a float in the leaf HBPM. Its grid marker lives in a cue list that is
-//   only partly decoded in public, so that grid comes from the collection file instead.
+//   only partly decoded in public, so that grid comes from the collection file instead (#5773). MP3 grid positions are taken
+//   as written: whether they need the ~26 ms encoder delay taken off is open until a real tagged file is checked.
 // From a collection file the DJ drops (`readCollection`), tempos for tracks by file name:
-// - the four-deck program's XML collection: ENTRY > LOCATION FILE, TEMPO BPM, CUE_V2 TYPE="4" START (ms) the grid;
-// - the club-player maker's XML export: TRACK Location (a file:// URL) with TEMPO Inizio (s) and Bpm;
+// - the four-deck program's XML collection: ENTRY > LOCATION FILE, TEMPO BPM, CUE_V2 TYPE="4" START (ms) the grid,
+//   CUE_V2 TYPE="0" HOTCUE n the hot cues;
+// - the club-player maker's XML export: TRACK Location (a file:// URL) with TEMPO Inizio (s) and Bpm, POSITION_MARK
+//   Num n Start (s) the hot cues (Num -1 is the memory cue);
 // - the same program's per-track analysis file (PMAI, big-endian): PPTH the track's path in UTF-16BE, PQTZ the beat
-//   grid (8-byte entries: beat in bar u16, BPM x100 u16, time ms u32).
-import { check, num, obj, oneOf, opt, type Of } from "@rustybuns/util/guard";
+//   grid (8-byte entries: beat in bar u16, BPM x100 u16, time ms u32), PCOB / PCO2 the cue lists (hot cue 1 is A).
+// Only the deck's four hot cues are kept: the programs' hot cues 0 to 3 (A to D).
+import { arr, check, nul, num, obj, oneOf, opt, type Of } from "@rustybuns/util/guard";
 import type { Grid } from "./analyze.ts";
 
+/** The deck's hot cues. */
+const HOTS = 4;
 /** Where a tempo came from: a plain tag, or the beat grid DJ software worked out. */
-export const Tempo = obj({ bpm: num(30, 300), firstBeat: opt(num(0, 6 * 3600)), source: oneOf(["tag", "grid"]) });
+export const Tempo = obj({ bpm: num(30, 300), firstBeat: opt(num(0, 6 * 3600)), source: oneOf(["tag", "grid"]), hot: opt(arr(nul(num(0, 6 * 3600)), HOTS)) });
 export type Tempo = Of<typeof Tempo>;
 /** What a deck says its tempo came from; "ear" is our own beat finder. */
 export type TempoFrom = Tempo["source"] | "ear";
 export const FROM_LABEL: Record<TempoFrom, string> = { tag: "tag", grid: "software grid", ear: "found by ear" };
 
-const tempo = (bpm: number, source: Tempo["source"], firstBeat?: number): Tempo | null =>
-  check(Tempo, { bpm: Math.round(bpm * 100) / 100, firstBeat: firstBeat === undefined ? undefined : Math.max(0, firstBeat), source });
+const tempo = (bpm: number, source: Tempo["source"], firstBeat?: number, hot?: Hot): Tempo | null =>
+  check(Tempo, { bpm: Math.round(bpm * 100) / 100, firstBeat: firstBeat === undefined ? undefined : Math.max(0, firstBeat), source, hot });
+type Hot = (number | null)[] | undefined;
+/** Cues as [slot, seconds] into the deck's four, undefined when none lands; a slot's first cue wins. */
+function hotList(cues: [number, number][]): Hot {
+  const out: (number | null)[] = Array(HOTS).fill(null);
+  for (const [i, t] of cues) if (Number.isInteger(i) && i >= 0 && i < HOTS && Number.isFinite(t) && t >= 0 && out[i] === null) out[i] = t;
+  return out.some((t) => t !== null) ? out : undefined;
+}
 const bpmText = (s: string) => { const m = /\d+(?:[.,]\d+)?/.exec(s); return m ? Number(m[0].replace(",", ".")) : NaN; };
 
 /** The best tempo the file carries: a software grid over a plain tag; null when it carries none. */
 export function readTempo(bytes: Uint8Array): Tempo | null {
-  const found = scan(bytes);
-  return best(found.grid, found.tag);
+  const found = scan(bytes), t = best(found.grid, found.tag);
+  return t && found.hot ? { ...t, hot: found.hot } : t;
 }
 /** A software grid over a plain one; a grid with a first beat over one without. */
 function best(...ts: (Tempo | null | undefined)[]): Tempo | null {
@@ -42,14 +56,16 @@ function best(...ts: (Tempo | null | undefined)[]): Tempo | null {
 
 /** The file's own tempo against one from a collection the DJ dropped: the file's software grid, else the collection's, else the tag. */
 export function pick(file: Tempo | null, known: Tempo | null | undefined): Tempo | null {
-  return best(file?.source === "grid" ? file : null, known, file);
+  const t = best(file?.source === "grid" ? file : null, known, file), hot = t?.hot ?? file?.hot ?? known?.hot;
+  return t && hot ? { ...t, hot } : t;
 }
 
-/** A deck's grid from a tempo it was told, else from the beat finder (`heard`, run only when needed). */
-export function settle(told: Tempo | null, heard: () => Grid | null): { grid: Grid | null; from?: TempoFrom } {
-  if (told?.firstBeat !== undefined) return { grid: { bpm: told.bpm, offset: told.firstBeat }, from: told.source };
+/** A deck's grid from a tempo it was told, else from the beat finder (`heard`, run only when needed); and the hot cues it was told. */
+export function settle(told: Tempo | null, heard: () => Grid | null): { grid: Grid | null; from?: TempoFrom; hot?: (number | null)[] } {
+  const hot = told?.hot ? { hot: told.hot } : {};
+  if (told?.firstBeat !== undefined) return { grid: { bpm: told.bpm, offset: told.firstBeat }, from: told.source, ...hot };
   const h = heard();
-  if (told) return { grid: { bpm: told.bpm, offset: h?.offset ?? 0 }, from: told.source };
+  if (told) return { grid: { bpm: told.bpm, offset: h?.offset ?? 0 }, from: told.source, ...hot };
   return h ? { grid: h, from: "ear" } : { grid: null };
 }
 
@@ -58,7 +74,7 @@ export const fileKey = (path: string) => (path.split(/[\\/:]/).pop() ?? path).tr
 
 // ---- the file's own tags
 
-interface Found { tag?: Tempo | null; grid?: Tempo | null }
+interface Found { tag?: Tempo | null; grid?: Tempo | null; hot?: Hot }
 const ascii = (b: Uint8Array, at: number, n: number) => String.fromCharCode(...b.subarray(at, at + n));
 const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 
@@ -133,6 +149,7 @@ function id3(b: Uint8Array): Found {
       const [desc, q] = id3Text(f, p, enc);
       if (desc === "Serato Autotags") auto = autotags(f.subarray(q)) ?? auto;
       else if (desc === "Serato BeatGrid") grid = beatgrid(f.subarray(q)) ?? grid;
+      else if (desc === "Serato Markers2") found.hot = markers2(f.subarray(q)) ?? found.hot;
     } else if (id === "PRIV") {
       const [owner, p] = id3Text(f, 0, 0);
       if (owner === "TRAKTOR4") found.grid = tempo(nestedBpm(f.subarray(p)) ?? NaN, "grid") ?? found.grid;
@@ -161,6 +178,32 @@ function beatgrid(p: Uint8Array): { bpm?: number; first?: number } | null {
   let bpm = v.getFloat32(at + 4);
   if (n > 1) { const beats = v.getUint32(10), next = v.getFloat32(14); if (next > first && beats > 0) bpm = (beats * 60) / (next - first); }
   return { bpm, first };
+}
+
+/**
+ * "Serato Markers2": version 01 01, then base64 text (in lines, NUL-ended) of version 01 01 and entries: a NUL-ended
+ * type, a u32 length (big-endian), the data. A CUE's data: 00, its index, its position in ms (u32), then colour and name.
+ */
+function markers2(p: Uint8Array): Hot {
+  if (p.length < 3 || p[0] !== 1 || p[1] !== 1) return undefined;
+  let end = 2;
+  while (end < p.length && p[end] !== 0) end++;
+  let t = ascii(p, 2, end - 2).replace(/[^A-Za-z0-9+/]/g, "");
+  if (t.length % 4 === 1) t = t.slice(0, -1);
+  let b: Uint8Array;
+  try { b = Uint8Array.from(atob(t + "=".repeat((4 - (t.length % 4)) % 4)), (c) => c.charCodeAt(0)); } catch { return undefined; }
+  if (b[0] !== 1 || b[1] !== 1) return undefined;
+  const v = view(b), cues: [number, number][] = [];
+  for (let at = 2; at < b.length && b[at] !== 0;) {
+    let z = at;
+    while (z < b.length && b[z] !== 0) z++;
+    if (z + 5 > b.length) break;
+    const type = ascii(b, at, z - at), len = v.getUint32(z + 1), data = z + 5;
+    if (data + len > b.length) break;
+    if (type === "CUE" && len >= 6) cues.push([b[data + 1]!, v.getUint32(data + 2) / 1000]);
+    at = data + len;
+  }
+  return hotList(cues);
 }
 
 /** The four-deck program's PRIV payload: chunks of id (4), length (u32 LE), children (u32 LE); BPM is the float in leaf HBPM. */
@@ -194,6 +237,7 @@ function comments(b: Uint8Array, at: number): Found {
     if (k === "BPM" || k === "TEMPO" || k === "TBPM") found.tag = tempo(bpmText(val), "tag") ?? found.tag;
     else if (k === "SERATO_AUTOTAGS") { const p = fromBase64(val, "Serato Autotags"); if (p) auto = autotags(p) ?? auto; }
     else if (k === "SERATO_BEATGRID") { const p = fromBase64(val, "Serato BeatGrid"); if (p) grid = beatgrid(p) ?? grid; }
+    else if (k === "SERATO_MARKERS_V2") { const p = fromBase64(val, "Serato Markers2"); if (p) found.hot = markers2(p) ?? found.hot; }
   }
   const gridBpm = auto ?? grid?.bpm;
   if (gridBpm !== undefined) found.grid = tempo(gridBpm, "grid", grid?.first);
@@ -263,6 +307,7 @@ function mp4(b: Uint8Array): Found {
           const n = ascii(name, 4, name.length - 4), text = new TextDecoder().decode(data.subarray(8));
           if (n === "autotags") { const p = fromBase64(text, "Serato Autotags"); if (p) auto = autotags(p) ?? auto; }
           if (n === "beatgrid") { const p = fromBase64(text, "Serato BeatGrid"); if (p) grid = beatgrid(p) ?? grid; }
+          if (n === "markersv2") { const p = fromBase64(text, "Serato Markers2"); if (p) found.hot = markers2(p) ?? found.hot; }
         } else if (name && data && /^(BPM|TEMPO)$/i.test(ascii(name, 4, name.length - 4))) found.tag = tempo(bpmText(new TextDecoder().decode(data.subarray(8))), "tag") ?? found.tag;
       }
       at += size;
@@ -298,8 +343,13 @@ export function readCollection(bytes: Uint8Array): Map<string, Tempo> {
     const file = loc.get("FILE"), bpm = Number(t.get("BPM"));
     if (!file) continue;
     let first: number | undefined;
-    for (const c of body.matchAll(/<CUE_V2\b([^>]*)>/g)) { const a = attrs(c[1]!); if (a.get("TYPE") === "4") { first = Number(a.get("START")) / 1000; break; } }
-    const got = tempo(bpm, "grid", Number.isFinite(first) ? first : undefined);
+    const cues: [number, number][] = [];
+    for (const c of body.matchAll(/<CUE_V2\b([^>]*)>/g)) {
+      const a = attrs(c[1]!), type = a.get("TYPE"), at = Number(a.get("START")) / 1000;
+      if (type === "4" && first === undefined) first = at;
+      else if (type === "0" && a.has("HOTCUE")) cues.push([Number(a.get("HOTCUE")), at]);
+    }
+    const got = tempo(bpm, "grid", Number.isFinite(first) ? first : undefined, hotList(cues));
     if (got) out.set(fileKey(file), got);
   }
   for (const m of xml.matchAll(/<TRACK\b([^>]*?)(?:\/>|>([\s\S]*?)<\/TRACK>)/g)) {
@@ -309,7 +359,8 @@ export function readCollection(bytes: Uint8Array): Map<string, Tempo> {
     const bpm = Number(t.get("Bpm") ?? a.get("AverageBpm")), first = t.has("Inizio") ? Number(t.get("Inizio")) : undefined;
     let path = loc;
     try { path = decodeURIComponent(loc); } catch { /* keep it as written */ }
-    const got = tempo(bpm, "grid", Number.isFinite(first) ? first : undefined);
+    const cues = [...(m[2] ?? "").matchAll(/<POSITION_MARK\b([^>]*)>/g)].map((c): [number, number] => { const p = attrs(c[1]!); return [p.get("Type") === "0" ? Number(p.get("Num")) : -1, Number(p.get("Start"))]; });
+    const got = tempo(bpm, "grid", Number.isFinite(first) ? first : undefined, hotList(cues));
     if (got) out.set(fileKey(path), got);
   }
   return out;
@@ -328,6 +379,7 @@ function attrs(s: string): Map<string, string> {
 function analysis(b: Uint8Array): [string, Tempo] | null {
   const v = view(b);
   let path: string | null = null, got: Tempo | null = null;
+  const cues: [number, number][] = [];
   for (let at = v.getUint32(4); at + 12 <= b.length;) {
     const id = ascii(b, at, 4), len = v.getUint32(at + 8);
     if (len < 12 || at + len > b.length) break;
@@ -337,8 +389,18 @@ function analysis(b: Uint8Array): [string, Tempo] | null {
     } else if (id === "PQTZ" && at + 32 <= b.length) {
       const beats = v.getUint32(at + 20);
       if (beats > 0) got = tempo(v.getUint16(at + 26) / 100, "grid", v.getUint32(at + 28) / 1000);
+    } else if ((id === "PCOB" || id === "PCO2") && at + 20 <= b.length && v.getUint32(at + 12) === 1) {
+      // a hot cue list (type 1; 0 is the memory cues): PCPT entries (hot cue u32 at 12, status at 16, ms at 32) or PCP2 (ms at 20)
+      const n = v.getUint16(at + (id === "PCOB" ? 18 : 16)), entry = id === "PCOB" ? "PCPT" : "PCP2", ms = id === "PCOB" ? 32 : 20;
+      for (let e = at + v.getUint32(at + 4), i = 0; i < n && e + 12 <= at + len; i++) {
+        const elen = v.getUint32(e + 8);
+        if (ascii(b, e, 4) !== entry || elen < ms + 4 || e + elen > at + len) break;
+        if (id === "PCO2" || v.getUint32(e + 16) !== 0) cues.push([v.getUint32(e + 12) - 1, v.getUint32(e + ms) / 1000]);
+        e += elen;
+      }
     }
     at += len;
   }
-  return path && got ? [fileKey(path), got] : null;
+  const hot = hotList(cues);
+  return path && got ? [fileKey(path), hot ? { ...got, hot } : got] : null;
 }
