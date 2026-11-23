@@ -28,8 +28,9 @@ Until the last is in, the sections on how the sim plays a module and on playing 
 - **Clock In:** cable any clock (a square, a gate, another module's clock) into Q Steps' Clock and it steps on that instead of its own Rate.
 - **Sends and returns:** Q Bus has two aux buses. Turn a channel's A knob up, cable Send A out to a pedal or one of the rack's machines (Q Spring, Q Tape, Q Bucket), and cable that box's out back into Ret A. The return comes back into the main bus on its own knob, as a desk's return does. A send can also go to another module (into Q Filter, say), and a module's out can go into a return.
 - **Add a module:** N opens the module list. Pick one and it comes to your hands. Hold it in front of the case and click: it goes into the nearest free spot on the row nearest your hands, snapped to the HP grid. A module out of the case has no power, so it plays nothing.
+- **In a sesh:** every studio in `/jam.html` has the same case in its gear wall, cabled from the sesh's patch. Each listener's page plays it on its own audio thread, heard from where its Q Out stands. K at the gear wall opens the module list (N mutes the room there). Once the sesh's clock is known (in a studio, or the gear room in a sesh), Q Steps' own clock follows the band's beat, so everyone hears the same step on the same beat: its Rate rounds to the nearest power of two steps a beat (an eighth to 16). On your own it runs free, at the 555's own rate.
 - **Build sheet:** look at a module (or hold one) and press B. Its sheet has the schematic, the board, the front panel, the parts to order and the files, and one button for the zip. See [Building one](#building-one).
-- **Probes:** `qstudio.addModule(kind)`, `await qstudio.wall()` and `await qstudio.moduleSheet(kind)`. See `bun run probe --list fm-daw`.
+- **Probes:** `qstudio.addModule(kind)`, `await qstudio.wall()` and `await qstudio.moduleSheet(kind)`; in a sesh, `qjam.gearBring(kind)` and `await qjam.wall()`. See `bun run probe --list fm-daw`.
 
 ## The modules
 
@@ -146,14 +147,15 @@ The boards are made to be built, but none has been built yet. What a build takes
 | `src/wall/linear.ts` | A linear board's gains from its netlist: the mixers, and every module's control side. |
 | `src/wall/sims.ts` | Each module as sound, from its board. |
 | `src/wall/wall.ts` | The patch at work: modules in cable order, a sample at a time, the sends' room gear a block at a time. `renderWall` for tests. |
-| `src/room/wall-worklet.ts` | The wall's own audio thread in the gear room: the patch, the keys played and the sesh's tempo. |
+| `src/room/wall-worklet.ts` | The wall's own audio thread, in the gear room and at every studio's gear wall: the patch, the keys played and the sesh's tempo. |
+| `src/room/wall-page.ts` | The thread on a page (`WallLine`: its panner at Q Out, notes, the tempo and the band's beat) and the module list. |
 | `src/room/room.ts` | The modules as room gear (`moduleGear`), the case's rows (`inCase`, where a module lands), and `listen().wall`. |
 | `src/room/models.ts` | The case on its stand and each module's labelled panel. |
 | `packages/gear/src/circuit/mna.ts` | What the solver gained for the wall: several driven inputs (`supplyAt`, `drive`), current sources (`I`, `sourceInto`, `push`), pots folded into resistors (`fixPots`), and carrying a circuit's charge over a rebuild (`adopt`). TypeScript only. |
+| `test/gear-wall.test.ts` | The wall in a sesh: one page patches a voice and brings a module, the other plays the same wall on the same step. |
 | `test/wall.test.ts` | The journey (patch a voice, hear it follow the sequencer, add a module, loop a send through the spring, lose a module's power), and each board doing what its panel says. |
 
 ## Next
 
-- The studios' gear wall (`/jam.html`) draws the case but doesn't play it yet. In a sesh, everyone's page should run the same wall from the shared patch, as the cab's chain does ([#5688](https://github.com/QuinnsCode/RustyBuns/issues/5688)).
 - More modules for the upper row: a bucket-brigade delay ([#5747](https://github.com/QuinnsCode/RustyBuns/issues/5747), BBD stock first) and the transistor ladder filter ([#5748](https://github.com/QuinnsCode/RustyBuns/issues/5748), measured first).
 - A prototype order and build, then the loop the pedals plan: record the built module, play the same patch in the sim, and compare. Whether to order one is the owner's call (a manual run).

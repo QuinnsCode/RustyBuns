@@ -26,6 +26,7 @@ import { AUXES, callStrips } from "../mixer.ts";
 import { auxGear } from "../room/room.ts";
 import { GearScene } from "../room/gear-scene.ts";
 import { GearHands } from "./gear-hands.ts";
+import { WallLine, moduleButtons } from "../room/wall-page.ts";
 import { gearPlace } from "./gear-wall.ts";
 import { Band } from "./band.ts";
 import { LISTENS, type Listen } from "../clock.ts";
@@ -410,6 +411,8 @@ function markPerson(id: number | "me", m: Marks) {
 
 // ---- sound: the FM DAW audio thread, mirroring the sesh's groove ----
 let out: AudioOut | null = null;
+/** The sound wall at the gear wall, on this machine from the sesh's patch (../room/wall-page.ts). */
+let wallLine: WallLine | null = null;
 async function startAudio() {
   if (out) return;
   try {
@@ -436,6 +439,7 @@ async function startAudio() {
     paRoom = new PaRoom(out.ctx, def, out.ctx.destination);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
+    wallLine = await WallLine.start(out.ctx, out.ctx.destination);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
 /** Notes you hold now, by what holds them (a key, a MIDI note), so letting go turns off the right one. */
@@ -546,6 +550,15 @@ function hearGuitars() {
     guitars.level(peer, band.listen !== "now" || mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
     if (rig) guitars.place(peer, ...rig.at); else if (o) guitars.place(peer, o.at[0], o.at[1]);
   }
+}
+/** The sound wall in the gear corner: the sesh's case and cables on this machine's own thread, heard from its Q Out. */
+function hearWall() {
+  if (!wallLine) return;
+  const w = atWall.wall();
+  wallLine.set(w.spec);
+  if (w.at) wallLine.place(...w.at);
+  // the sesh's tempo and the band's beat: Q Steps and Q Keys' clock count the same beats on every page
+  wallLine.tempo(project.bpm, band.synced ? band.beat() : null);
 }
 setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) => { lags = l; }); }, 1000);
 
@@ -984,6 +997,8 @@ function keyDown(code: string, shift = false) {
   if (phase !== "play") return;
   if (code === "KeyV") return toggleCam(jam);
   if (code === "KeyN") return muteAll();
+  if (code === "Escape" && !$("modules").hidden) return openModules(false);
+  if (code === "KeyK" && !jam.me.seat) return openModules(!!$("modules").hidden);
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Tab") {
     if (desk.isOpen()) return desk.close();
@@ -1026,7 +1041,15 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "BracketLeft" || e.code === "BracketRight") overlay.wheels.modPush(0);
 });
 addEventListener("blur", () => { keys.clear(); releaseAll(); });
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && !lane?.isOpen() && !help.isOpen() && !desk.isOpen() && !decks?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+/** K: the sound wall's modules, each a button that brings one to your hands at the gear wall. */
+function openModules(open: boolean) {
+  $("modules").hidden = !open;
+  if (!open) return lock();
+  document.exitPointerLock?.();
+  moduleButtons($("modules-list"), (kind) => { openModules(false); say(atWall.bring(jam, kind)); });
+}
+$("modules-close").addEventListener("click", () => openModules(false));
+document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && $("modules").hidden && !lane?.isOpen() && !help.isOpen() && !desk.isOpen() && !decks?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -1274,6 +1297,7 @@ function frame(now: number) {
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
+  hearWall();
   // a YouTube deck as loud as the PA is where you stand, at your mutes and the leader's
   const tubeAt = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw });
   roomTubes.follow(booth.sides, roomNow(), (peer) => (mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : tubeAt));
@@ -1308,6 +1332,10 @@ const harness = {
   gearClick: () => atWall.click(jam),
   /** Let go of the cable in your hand (G). */
   gearDrop: () => atWall.letGo(),
+  /** A new sound wall module in your hands (K's list), by kind: seq, vco, vcf, vca, env, lfo, mix, out, noise. */
+  gearBring: (kind: string) => atWall.bring(jam, kind),
+  /** The sound wall at the gear wall: what the sesh's patch makes of it and, with the speakers up, what each module is doing. */
+  wall: async () => { const { spec, ...heard } = atWall.wall(), s = await wallLine?.state() ?? null; return { heard: { ...heard, modules: spec.modules.map((m) => m.id), cables: spec.cables }, modules: s?.modules ?? null, load: s?.load ?? null }; },
   /** A box on the wall's floor in studio metres (x, z), to walk up to. */
   gearAt: (id: string) => atWall.at(id),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },

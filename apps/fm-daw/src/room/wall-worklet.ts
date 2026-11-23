@@ -1,7 +1,7 @@
 // The sound wall on its own audio thread (src/wall/wall.ts, WALL.md): the modules in the case and the patch cables
 // between them, run a sample at a time, out of its Q Out modules to both speakers. The page sends the wall whenever
 // the room changes it (`listen().wall.spec`), the keys played and the sesh's tempo for Q Keys, and asks what each
-// module is doing for its probe.
+// module is doing for its probe. In a sesh the beat comes with the tempo, so Q Steps lands on the same step everywhere.
 import { Wall, type WallSpec } from "../wall/wall.ts";
 import { limit } from "../amp/live.ts";
 
