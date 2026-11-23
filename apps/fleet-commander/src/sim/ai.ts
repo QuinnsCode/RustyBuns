@@ -2,10 +2,12 @@
 // doctrine (press, steady, shield) by calling plays from the same playbook you use. The Compact admiral sets its captains'
 // doctrines from its temper and what you are doing: rake its world and a zealot throws hulls in the way, a
 // pragmatist turns every gun on your flagship. Foresight shows you its next call before it makes it.
-import { HULL, alive, flagship, nearestShip, say, ship, type Doctrine, type Ship, type World } from "./world.ts";
+import { HULL, alive, flagship, nearestShip, say, sees, ship, type Doctrine, type Ship, type World } from "./world.ts";
 import { courier, runPlay, wingsOf, type PlayId } from "./plays.ts";
 
 const THINK = 3;
+/** How far from its hiding place an ambusher will chase what it sees. */
+const LEASH = 3200;
 const plays = new WeakMap<World, Map<number, PlayId>>();
 const lastPlays = (w: World) => plays.get(w) ?? plays.set(w, new Map()).get(w)!;
 
@@ -15,12 +17,20 @@ export function captain(w: World, s: Ship) {
   if (s.dead || !s.auto) return;
   const foeSide = s.side === "navy" ? "rim" : "navy";
   const boss = s.boss ? ship(w, s.boss) : undefined;
-  // A captain goes for the enemy flagship unless something else is a lot closer.
-  const near = nearestShip(w, foeSide, s.x, s.z, (o) => o.kind !== "station") || nearestShip(w, foeSide, s.x, s.z);
+  // A captain goes for the enemy flagship unless something else is a lot closer. In the theater it only goes for
+  // what its side can see, and an ambusher only for what comes within LEASH of the post it hides at.
+  const seen = (o?: Ship) => !!o && sees(w, s.side, o.id) && (!s.post || Math.hypot(o.x - s.post.x, o.z - s.post.z) < LEASH);
+  const near = nearestShip(w, foeSide, s.x, s.z, (o) => o.kind !== "station" && seen(o)) || nearestShip(w, foeSide, s.x, s.z, seen);
   const head = foeSide === "navy" ? flagship(w) : undefined;
   const d = (o?: Ship) => (o ? Math.hypot(o.x - s.x, o.z - s.z) : Infinity);
-  const focus = (s.focus && ship(w, s.focus)) || (head && d(near) > d(head) * 0.6 ? head : near);
-  if (!focus) return;
+  const kept = s.focus ? ship(w, s.focus) : undefined;
+  const focus = (seen(kept) && kept) || (head && seen(head) && d(near) > d(head) * 0.6 ? head : near);
+  if (!focus) {
+    // Nothing in sight: back to the hiding place, and wait.
+    s.focus = 0;
+    if (s.post && s.kind !== "station" && (s.order.k !== "move" || s.order.x !== s.post.x)) s.order = { k: "move", x: s.post.x, z: s.post.z };
+    return;
+  }
   s.focus = focus.id;
   // The ship: press closes and broadsides, steady engages at range, shield puts the hull in front of its charge.
   if (s.kind !== "station") {

@@ -44,6 +44,37 @@ These are the bones. Every taste option below changes how they look or are named
 | The radio | Orders to wings are data on the radio (`Pending`: a play or a route, ids and points) and land `COMMS_LAG` (2 s) later; ships on your own bridge obey at once. The same data is what a lockstep game will send. | `send`, `courier` |
 | Drawn route | A play you draw: points to fly through, then an order where the stroke ends. Routes with one group wait for each other at their ends, so two strokes make your own pincer. | `runRoute`, `Wing.route` |
 | Sector | Worlds joined by lanes; one jump a turn; mines pay supply; bases spread and raid; refit spends supply. | `src/sector.ts` |
+| Gravity well | Round a star, a planet or a rift: a hull or craft inside falls along it (up to 1.8x speed at the core, its path bent inward) and nothing enters a body's core. A route drawn round a well is the slingshot. Only in the Theater. | `Well`, `wellAt` |
+| Sensors and the fog | Every hull and wing sees so far (`SENSOR`), and a held strongpoint listens. Rifts hide what is in them from all but scouts and the sensor ship; the star's heat shear from all but the sensor ship. Point blank, anything shows; firing gives a ship away for 4 s. What you lost sight of stays as a last-known ring. | `sensors`, `Veil`, `Field.sees`, `Field.known` |
+| Ping | The sensor ship lights up everything within 4.2k for 8 s, veils and mines too; the Compact hears it from anywhere for 15 s. Every 35 s. | `ping` |
+| Mines | The Compact sows them round what it holds; a hull that touches one takes 520 (much of it past the shields). Point defence clears the ones its side can see. | `Mine`, `mines` |
+| Strongpoint and supply | Hulls inside, none of theirs: the hold swings your way in 20 s. Held, it pays 0.25 supply a second. Supply buys a wing from the flagship's hangar, or thermal sensors (+1 to every sensor). Hold all four for 60 s and the system falls. | `Strongpoint`, `requisition` |
+
+## The Theater (the owner's turn, 2026-11-23)
+
+The owner's direction: "rethink this like a top-down RTS, but with the fighters in gravity well areas". You know the
+Compact is in the system, not where, and you hunt it like a hunted submarine: sensors, scouts and patience. Built:
+
+- **A big board in the fog.** The Pyre system (16k by 10k): a star, three planets, two rifts, four strongpoints, the
+  Compact's home world Hollow at the east edge and its reinforcement lane. Dark until your sensors have been there,
+  dimmed where they were once, clear where they are now. A minimap in the corner; the camera is a free top-down table
+  (screen edges, arrows, the minimap, the middle button), not one riding the flagship.
+- **Point and click.** Drag a box to pick ships and wings; right-click to move or attack; right-drag a route (ships fly
+  routes too, so they can slingshot). The plays, stances and formations work as everywhere else.
+- **Gravity wells.** Falling along a well is faster, so the long way round a planet can beat the straight line; a
+  rift's well is a mild pull and a place to hide.
+- **Scouts and a sensor ship.** Scouts are fast and unarmed, see into rifts, and run from fighters. The sensor ship
+  sees into everything and pings. The star's heat shear (the temperature gradient) is a permanent fog unless you have
+  the sensor ship there or buy thermal sensors.
+- **A defensive Compact.** Fewer guns, deep shields and a thick point-defence screen (the Tidewall bulwark), mines round
+  what it holds (the Sower minelayer keeps sowing), ambushers that wait in the dark at a post and chase only what they
+  see within 3.2k of it.
+- **Hold to win.** Strongpoints pay supply; supply buys wings and sensors. Win by holding every strongpoint for a
+  minute, burning Hollow's base, or breaking every Compact hull.
+
+Next on this line: the Compact hunting you too (its own scouts, decoys that read as hulls), mining your routes, a
+dreadnought in the Theater (the Armada's captains on a big board), a co-op seat per destroyer, and the sector map
+itself as a Theater (real time, not turns).
 
 ## The battle, minute to minute
 
@@ -70,6 +101,7 @@ These are the bones. Every taste option below changes how they look or are named
 | Drawn plays | Routes you draw on the table | Right-drag a route for the picked wings; Shift adds an arm that strikes with the last | **Built** |
 | Playbook | Your own plays | Save a drawn play as a card of its own (its arms by role, relative to the target), plus earned plays that unlock as you win | Next |
 | Armada | A dreadnought, three destroyers with captains, its own wings | The fractal: plays and doctrines now go to captains, who call plays for their own wings | **Built (quick battle)** |
+| Theater | The fleet, two destroyers, the interdictor and a sensor ship, over a whole star system | Fog of war, gravity wells, rifts and heat shear, scouts, pings, mines, strongpoints and supply, box select and a minimap | **Built (first cut)** |
 | Admiral | Several armadas over a sector | One level further: sector plays (a pincer of two fleets on one system, a feint on a mine), battles you can fight or let your captains settle by doctrine | Later |
 
 ## The fractal
@@ -133,7 +165,7 @@ The owner picked these on 2026-11-23; each other option is kept here in case one
 | T5 Fire colours | **White-blue vs orange** | amber vs cyan · plain yellow tracer |
 | T6 Gifts | **Three: Foresight, Fleet Trance, Command Voice** | Foresight only · Trance only · two |
 | T7 Calling plays | **Card bar**, plus drawing routes on the table (the owner: "something cool to being able to draw the plays out too") | radial menu · coach's binder |
-| T8 Camera | **Ride the flagship** | angled RTS · straight down · auto-director |
+| T8 Camera | **Ride the flagship** in the older battles; **angled RTS** in the Theater (the owner, later the same day) | straight down · auto-director |
 
 The code still keeps the sides' ids as `navy` and `rim`; only the words changed.
 

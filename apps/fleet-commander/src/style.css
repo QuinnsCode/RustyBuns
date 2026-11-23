@@ -75,7 +75,21 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--dim); border: 1px 
 
 /* ---- menu, sector, report */
 #menu, #report { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background: radial-gradient(ellipse at center, rgba(2, 6, 12, 0.35), rgba(2, 3, 6, 0.85)); }
-#menu[hidden], #report[hidden], #sector[hidden], #hud[hidden], #intent[hidden] { display: none; }
+#menu[hidden], #report[hidden], #sector[hidden], #hud[hidden], #intent[hidden], #box[hidden], #supply[hidden] { display: none; }
+
+/* The theater: a minimap in the corner, a selection box, supply and the strongpoints. */
+#minimap { display: none; position: absolute; left: 10px; bottom: 10px; width: 250px; height: 156px; border: 1px solid var(--edge); border-radius: 8px; background: #020b12; cursor: crosshair; }
+body.theater #minimap { display: block; }
+body.theater #roster { max-height: calc(100vh - 190px); }
+#box { position: absolute; border: 1px solid rgba(159, 216, 255, 0.9); background: rgba(99, 230, 255, 0.08); pointer-events: none !important; }
+#supply { color: #7dffb0; white-space: nowrap; }
+.ord.buy { position: relative; }
+.ord.buy small { position: absolute; right: 2px; bottom: 0; font-size: 10px; color: #7dffb0; }
+.card.points { display: flex; flex-direction: column; gap: 3px; }
+.card.points .pt { display: grid; grid-template-columns: 1fr 60px; gap: 6px; align-items: center; font-size: 12.5px; }
+.card.points .pt.navy { color: var(--navy); }
+.card.points .pt.rim { color: var(--rim); }
+.meter.hold i { background: linear-gradient(90deg, var(--rim), var(--navy)); }
 #menu h1 { font-family: "Cinzel", serif; font-weight: 800; font-size: clamp(38px, 7vw, 76px); letter-spacing: 0.08em; margin: 0; text-shadow: 0 0 30px rgba(120, 180, 255, 0.45); }
 .kicker { margin: 0; color: var(--navy); letter-spacing: 0.3em; text-transform: uppercase; font-size: 13px; }
 #goal { max-width: 620px; font-size: 18px; color: var(--ink); margin: 6px 0; }
@@ -136,6 +150,8 @@ kbd { font-family: var(--mono); font-size: 11px; color: var(--dim); border: 1px 
   .power { padding: 3px 6px; }
   .power span, .power kbd, .play kbd { display: none; }
   #comms { display: none; }
+  body.theater #minimap { width: 150px; height: 94px; right: 8px; bottom: 190px; left: auto; }
+  body.theater #roster { align-items: flex-start; max-height: none; }
   #deck { left: 6px; right: 6px; bottom: 6px; gap: 4px; }
   #plays, #orders { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; max-width: 100%; }
   .play { width: 66px; flex: none; font-size: 11px; padding: 4px 2px 3px; }

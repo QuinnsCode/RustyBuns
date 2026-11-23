@@ -38,7 +38,7 @@ export function shipModel(kind: ShipKind, side: Side): THREE.Group {
     g.add(wedge(L, W, T, hull));
     const top = wedge(L * 0.62, W * 0.55, T * 0.9, hull); top.position.set(-L * 0.17, T * 0.8, 0); g.add(top);
     const trench = box(L * 0.7, T * 0.4, W * 0.04, dark); trench.position.set(-L * 0.1, T * 1.35, 0); g.add(trench);
-    if (kind !== "frigate") {
+    if (kind !== "frigate" && kind !== "sensor") {
       // The command tower and its bridge bar, with two sensor globes.
       const tower = box(L * 0.09, T * 1.6, W * 0.16, hull); tower.position.set(-L * 0.38, T * 2.2, 0); g.add(tower);
       const bridge = box(L * 0.05, T * 0.35, W * 0.42, dark); bridge.position.set(-L * 0.38, T * 3.05, 0); g.add(bridge);
@@ -48,6 +48,12 @@ export function shipModel(kind: ShipKind, side: Side): THREE.Group {
       for (let i = 0; i < 40; i++) { const k = Math.random(), x = L / 2 - k * L * 0.95, wz = (W / 2) * k * (Math.random() * 1.8 - 0.9); const l = box(1.6, 0.6, 1.6, glow(0xfff1c8)); l.position.set(x, T * 0.6, wz); lights.add(l); }
       g.add(lights);
       engines(g, -L / 2 - 2, kind === "dreadnought" ? [-36, -18, 0, 18, 36] : [-22, 0, 22], T * 0.55, side);
+    } else if (kind === "sensor") {
+      // The sensor ship: a dish on a mast and a long array along the spine.
+      const mast = box(6, 26, 6, dark); mast.position.set(-6, T + 13, 0); g.add(mast);
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(18, 16, 8, 0, Math.PI * 2, 0, Math.PI / 3), hull); dish.position.set(-6, T + 30, 0); dish.rotation.z = -0.6; g.add(dish);
+      const array = box(L * 0.8, 3, 4, glow(0x9fd8ff)); array.position.set(0, T + 1.5, 0); g.add(array);
+      engines(g, -L / 2 - 1, [-6, 6], 3.5, side);
     } else {
       // The interdictor's well projectors: four domes.
       for (const [x, z] of [[-10, -12], [-10, 12], [8, -8], [8, 8]]) { const d = new THREE.Mesh(new THREE.SphereGeometry(6, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark); d.position.set(x, T, z); g.add(d); }
@@ -79,6 +85,20 @@ export function shipModel(kind: ShipKind, side: Side): THREE.Group {
     const spindle = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 70, 10), dark); g.add(spindle);
     for (let i = 0; i < 4; i++) { const spoke = box(150, 5, 5, dark); spoke.rotation.y = (i * Math.PI) / 4; g.add(spoke); }
     const dish = new THREE.Mesh(new THREE.SphereGeometry(22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), hull); dish.position.y = 35; g.add(dish);
+  } else if (kind === "bulwark") {
+    // A round, grown-looking hull: a long swollen body crusted with shield blisters, built to take fire, not give it.
+    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), hull); body.scale.set(95, 30, 52); g.add(body);
+    const keel = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), dark); keel.scale.set(70, 18, 30); keel.position.set(-10, -16, 0); g.add(keel);
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2, blister = new THREE.Mesh(new THREE.SphereGeometry(7, 8, 6), dark);
+      blister.position.set(Math.cos(a) * 70, 18 + Math.sin(i) * 4, Math.sin(a) * 38); g.add(blister);
+    }
+    engines(g, -94, [-16, 16], 9, side);
+  } else if (kind === "minelayer") {
+    // A boxy tender with open racks along each flank.
+    g.add(box(90, 18, 30, hull));
+    for (const z of [-22, 22]) for (let i = 0; i < 5; i++) { const m = new THREE.Mesh(new THREE.OctahedronGeometry(5), glow(0x5a2a10)); m.position.set(-30 + i * 14, 4, z); g.add(m); }
+    engines(g, -48, [-8, 8], 6, side);
   } else {
     g.add(box(120, 20, 40, hull));
   }
@@ -89,6 +109,7 @@ export function shipModel(kind: ShipKind, side: Side): THREE.Group {
 export function craftGeometry(role: Role, side: Side): THREE.BufferGeometry {
   const s = new THREE.Shape();
   if (role === "interceptor") { s.moveTo(9, 0); s.lineTo(-6, 6); s.lineTo(-3, 0); s.lineTo(-6, -6); s.closePath(); }
+  else if (role === "scout") { s.moveTo(11, 0); s.lineTo(-5, 3); s.lineTo(-7, 0); s.lineTo(-5, -3); s.closePath(); }
   else if (role === "bomber") { s.moveTo(7, 0); s.lineTo(2, 5); s.lineTo(-7, 6); s.lineTo(-7, -6); s.lineTo(2, -5); s.closePath(); }
   else { s.moveTo(8, 0); s.lineTo(0, 7); s.lineTo(-7, 4); s.lineTo(-7, -4); s.lineTo(0, -7); s.closePath(); }
   const g = new THREE.ExtrudeGeometry(s, { depth: 2, bevelEnabled: false });
