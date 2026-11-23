@@ -48,6 +48,7 @@ export class StrandedFork extends Schema.TaggedError<StrandedFork>()("StrandedFo
 export class BuildFiles extends Schema.TaggedError<BuildFiles>()("BuildFiles", named) {}
 export class ChecksHold extends Schema.TaggedError<ChecksHold>()("ChecksHold", named) {}
 export class BinaryMoved extends Schema.TaggedError<BinaryMoved>()("BinaryMoved", named) {}
+export class FolderClash extends Schema.TaggedError<FolderClash>()("FolderClash", named) {}
 export class Conflicts extends Schema.TaggedError<Conflicts>()("Conflicts", named) {}
 export class MergeBroken extends Schema.TaggedError<MergeBroken>()("MergeBroken", named) {}
 export class TestsFail extends Schema.TaggedError<TestsFail>()("TestsFail", named) {}
@@ -218,7 +219,7 @@ type Named = { message: string; status: number; reply: unknown };
 export const NAMED = {
   BadInput, BadBranchName, NoHarness, TextOnlyMainOrBranch, NoWriteAccess, OwnerOnly, PersonOnly, BranchProtected, AgentRunBatch,
   RunBranchLocked, AuthorCantSay, AdminsOnly, PolicyFile, NoSuchBranch, NoSuchFile, NoSuchChange, NoSuchConflict, NoSuchHook,
-  BranchExists, FileExists, BranchClosed, BranchMoved, Stacked, StrandedFork, BuildFiles, ChecksHold, BinaryMoved, Conflicts,
+  BranchExists, FileExists, BranchClosed, BranchMoved, Stacked, StrandedFork, BuildFiles, ChecksHold, BinaryMoved, FolderClash, Conflicts,
   MergeBroken, TestsFail, HookHold, HookOff, NothingToMerge, PipelineInvalid, BudgetSpent, AgentsUnavailable, AgentFailed,
   MainProtected, NotYourCollection, NoSuchRepo, NoSuchUser, NotInCrew, NoPushClash, NoSuchCollection, NoSuchRoute, NoGit, PushClash,
   HoldingLines, TooBig, BinaryFile, NoEuStorage,

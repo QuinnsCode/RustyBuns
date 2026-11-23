@@ -128,6 +128,7 @@ export const ERRORS = {
   BuildFiles: [409, "it changes build or deploy files: read them, then merge with build_ok"],
   ChecksHold: [409, "required checks failed or haven't finished"],
   BinaryMoved: [409, "main changed a binary file the branch changed too"],
+  FolderClash: [409, "a branch file and a main folder (or a main file and a branch folder) share a name"],
   Conflicts: [409, "conflicts: settle each one in `resolve` and merge again"],
   MergeBroken: [409, "merged, it wouldn't parse, build or compile"],
   TestsFail: [409, "merged, its tests fail"],
@@ -261,7 +262,7 @@ const FILE_READ = [...REPO,"NoSuchBranch", "NoSuchFile", "TooBig", "BinaryFile"]
 const PICK = [...REPO, "NoWriteAccess", "MainProtected", "PolicyFile", "NoSuchBranch", "BadInput", "StillCopying", "NoGit", "NoSuchCommit", "CommitTooBig", "PickClash", "NothingToPick", "BranchMoved"] as const;
 const FILE_WRITE = [...FILE_READ, "NoWriteAccess", "RunBranchLocked", "MainProtected", "PolicyFile"] as const;
 const MERGE = [...WRITE, "BranchClosed", "BadInput", "PersonOnly", "BranchProtected", "AgentRunBatch", "Stacked", "StrandedFork", "PolicyFile",
-  "BuildFiles", "ChecksHold", "BinaryMoved", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
+  "BuildFiles", "ChecksHold", "BinaryMoved", "FolderClash", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
 /** The tags each operation's own failures carry, by operationId. A reply with any other tag is a bug (test/errors.test.ts). */
 export const OP_ERRORS = {
   start_branch: [...REPO, "NoWriteAccess", "BadBranchName", "NoSuchBranch", "BranchExists"],
