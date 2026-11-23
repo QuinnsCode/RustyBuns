@@ -1029,7 +1029,7 @@ const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
  */
 const buildWorker = (build: string, sandbox: boolean, stage?: string) => Effect.gen(function* () {
   // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
-  const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
+  const command = [...workspacePrebuild(process.cwd(), build), build].join(" && ");
   console.log(`building the worker${sandbox ? " (empty HOME)" : ""}: ${command}`);
   // RUSTYBUNS_STAGE: which stage this build is for, so an app can ship a stage-only part (codeSplitter's office on office-preview).
   let env = withLocalBins(buildEnv({ ...readDevVars(), ...process.env, ...(stage ? { RUSTYBUNS_STAGE: stage } : {}) }), process.cwd());
