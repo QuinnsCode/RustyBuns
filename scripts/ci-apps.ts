@@ -6,6 +6,8 @@
 //                                              every app waits for the hourly ring), whether .claude/ moved
 //                                              (the guard hook tests). With the root commit as base: every app.
 //                                              Each app's tests run in up to LANES time-balanced jobs ("test mythic-masters 2/3")
+//                                              A suite under a minute is one lane, and with no prep or boot it shares a
+//                                              job with up to five others ("test borg+qcrm+...", scripts/ci-group.ts)
 //   bun scripts/ci-apps.ts lanes <app>         that app's lanes as `bun run builder run` lines, to run one locally
 //   --lanes n (or CI_LANES=n)                  lanes per app instead of 3, for every row without its own `shards`
 //   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
@@ -133,14 +135,31 @@ export function laneCommands(test: string, files: { name: string; ms: number }[]
   return shard(files, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
 }
 
-// An app's lanes. A file's weight is its recorded ms (<app dir>/test-times.json, written by scripts/test-times.ts
-// from CI's own logs), or its size when it has none, so a new file still lands somewhere sensible.
-async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
+// An app's test files and their weights. A file's weight is its recorded ms (<app dir>/test-times.json, written by
+// scripts/test-times.ts from CI's own logs), or its size when it has none, so a new file still lands somewhere sensible.
+async function weighed(app: string, test: string): Promise<{ name: string; ms: number }[]> {
   const dir = appDir(app);
   const times = check(rec(num(0, Infinity)), await Bun.file(`${dir}/test-times.json`).json().catch(() => null)) ?? {};
-  const files = testFiles(test, dir).map((name) => ({ name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) }));
-  return laneCommands(test, files, n);
+  return testFiles(test, dir).map((name) => ({ name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) }));
 }
+
+// Every job pays ~28 s of checkout, setup and install before its first test, and most suites take less than a minute
+// (notes/CI_STALL_2026-11-21.md, #5564). A suite under SMALL_MS isn't split into lanes (each lane would pay that again,
+// and a native build too), and one with nothing to build or boot shares a job with up to GROUP - 1 others. Six was the
+// reassessment's pick: at most ~6 min a job, one install.
+export const SMALL_MS = 60_000, GROUP = 6;
+export const oneLane = (a: App, files: { ms: number }[]) => !!a.test && !a.shards && files.reduce((t, f) => t + f.ms, 0) < SMALL_MS;
+export const isSmall = (a: App, files: { ms: number }[]) => oneLane(a, files) && !a.prep && !a.boot;
+/** The small apps, GROUP to a job, in APPS order. */
+export const groups = (apps: string[], size = GROUP) =>
+  Array.from({ length: Math.ceil(apps.length / size) }, (_, i) => apps.slice(i * size, (i + 1) * size));
+
+// An app's lanes (one when its suite is small).
+async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
+  const files = await weighed(app, test);
+  return oneLane(APPS[app] ?? { test }, files) ? [test] : laneCommands(test, files, n);
+}
+const filters = (apps: string[]) => apps.map((n) => `--filter ./${appDir(n)}`).join(" ");
 
 const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : [];
 
@@ -238,13 +257,20 @@ if (cmd === "drop") {
   const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map(appOf).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
-  const include = (await Promise.all(names.map(async (app) => {
-    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app) };
+  const files = new Map(await Promise.all(names.map(async (n) => [n, APPS[n]!.test ? await weighed(n, APPS[n]!.test!) : []] as const)));
+  const small = names.filter((n) => isSmall(APPS[n]!, files.get(n)!));
+  const grouped = groups(small).filter((g) => g.length > 1).map((g) => ({
+    app: g.join("+"), dir: ".", up: "", boot: false, prep: "", cargo: "", shard: "", filters: filters(g),
+    sparse: [...new Set(g.flatMap((n) => sparseDirs(n).split("\n")))].join("\n"), test: `bun scripts/ci-group.ts ${g.map((n) => `${appDir(n)} '${APPS[n]!.test}'`).join(" ")}`,
+  }));
+  const alone = names.filter((n) => !grouped.some((g) => g.app.split("+").includes(n)));
+  const include = (await Promise.all(alone.map(async (app) => {
+    const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app), filters: filters([app]) };
     const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES) : [];
     if (lanes.length < 2) return [{ ...row, test: a.test ?? "", shard: "" }];
     // Boot runs once, with the first lane.
     return lanes.map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
-  }))).flat();
+  }))).flat().concat(grouped);
   out("apps", { include });
   out("any", names.length > 0);
   out("packages", deps || changed.some((f) => f.startsWith("packages/")));
@@ -269,5 +295,5 @@ if (cmd === "drop") {
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
 } else if (import.meta.main) {
-  throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | smoke | drop <all|a,b,c>");
+  throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | lanes <app> | smoke | drop <all|a,b,c>");
 }

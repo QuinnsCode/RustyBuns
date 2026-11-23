@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { APPS, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { appDir } from "./app-dirs.ts";
 
 // A docs-only PR under packages/ used to run every app's suite (PR #5404: 4635 tests for a skill file).
 test("only code under packages/, the lockfile and the apps workflow fan out to every app", () => {
@@ -51,4 +52,31 @@ test("a test lane's sparse checkout is its app, its `with` apps and the apps its
   expect(sparseDirs("agent-office")).toBe("/apps/agent-office/\n/apps/excalibrawl/");
   expect(sparseDirs("geoboxq-shopify")).toBe("/apps/geoboxq-shopify/\n/apps/geoboxq/"); // imports its worker
   expect(sparseDirs("codesplitter")).toContain("/apps/hello-world/"); // the welcome tour digs the folder up
+});
+
+// #5564: each job pays ~28 s before its first test, so the sub-minute suites run six to a job, and none splits into lanes.
+test("a full run puts every sub-minute suite with nothing to build or boot in a job of at most six, and lanes only the long ones", async () => {
+  const root = (await Bun.$`git rev-list --max-parents=0 HEAD`.text()).trim();
+  const line = (await Bun.$`bun ${import.meta.dir}/ci-apps.ts test ${root}`.text()).split("\n").find((l) => l.startsWith("apps="))!;
+  const rows: { app: string; dir: string; test: string; shard: string; filters: string; sparse: string }[] = JSON.parse(line.slice(5)).include;
+  const groups = rows.filter((r) => r.app.includes("+"));
+  expect(groups.length).toBeGreaterThan(1);
+  for (const g of groups) {
+    const apps = g.app.split("+");
+    expect(apps.length).toBeLessThanOrEqual(6);
+    expect(g.dir).toBe(".");
+    for (const a of apps) {
+      expect(APPS[a]!.prep ?? APPS[a]!.boot ?? false).toBe(false);
+      expect(g.test).toContain(`${appDir(a)} '${APPS[a]!.test}'`);
+      expect(g.filters).toContain(`--filter ./${appDir(a)}`);
+      expect(g.sparse).toContain(`/${appDir(a)}/`);
+    }
+  }
+  // Every app with tests is in exactly one job or one set of lanes.
+  const grouped = groups.flatMap((g) => g.app.split("+")), alone = new Set(rows.filter((r) => !r.app.includes("+")).map((r) => r.app));
+  expect(new Set(grouped).size).toBe(grouped.length);
+  for (const a of Object.keys(APPS).filter((n) => APPS[n]!.test || APPS[n]!.boot)) expect([a, grouped.includes(a) !== alone.has(a)]).toEqual([a, true]);
+  // A long suite still gets its lanes; a tiny one with a native build gets one job, not three builds.
+  expect(rows.filter((r) => r.app === "mythic-masters").length).toBe(3);
+  expect(rows.filter((r) => r.app === "auto-rig").length).toBe(1);
 });
