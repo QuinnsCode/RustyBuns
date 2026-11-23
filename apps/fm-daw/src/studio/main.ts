@@ -276,7 +276,7 @@ function thing(s: Spot): THREE.Group {
     const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearLook();
     if (def.outdoor) {
       // out of doors (Desert Gathering) there's no booth: a board on three sawhorses, a sandbag on each one's shelf so
-      // the wind and the bass don't walk it, and a tapestry over the board, hanging down the side the crowd sees
+      // the wind and the bass don't walk it, and a tapestry over the board, hanging to the sand (the sawhorses are only seen by a clip through)
       const pine = surface("ply", "#b08a5a"), sack = surface("fabric", "#9a8a68"), board = t.h - 0.03, back = board - 0.045, shelf = 0.28;
       box(t.w, 0.03, t.d, surface("ply", "#8a6a44"), 0, t.h - 0.015, 0);
       const bag = new THREE.SphereGeometry(1, 14, 10);
@@ -291,9 +291,12 @@ function thing(s: Spot): THREE.Group {
         lie(0.2, 0.15, shelf + 0.125, 0.1 * (i - 1));
         if (i === 1) lie(0.14, 0.19, shelf + 0.25, 0.3);
       });
-      const drop = 0.55, weave = new THREE.MeshStandardMaterial({ map: tapestry(t.w, drop, def.outdoor.seed), roughness: 0.95, side: THREE.DoubleSide });
+      // the cloth falls to the sand down the front and both ends, so the crowd sees only the tapestry (the DJ's side is open)
+      const drop = t.h - 0.01, cloak = (w: number, seed: number) => new THREE.MeshStandardMaterial({ map: tapestry(w, drop, seed), roughness: 0.95, side: THREE.DoubleSide });
+      const weave = cloak(t.w, def.outdoor.seed), ends = cloak(t.d, def.outdoor.seed + 3);
       box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0);
       put(new THREE.Mesh(new THREE.PlaneGeometry(t.w + 0.02, drop), weave), 0, t.h - drop / 2, -t.d / 2 - 0.012).rotation.y = Math.PI;
+      for (const k of [-1, 1]) put(new THREE.Mesh(new THREE.PlaneGeometry(t.d + 0.02, drop), ends), k * (t.w / 2 + 0.012), t.h - drop / 2, 0).rotation.y = k * Math.PI / 2;
     } else {
       box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0);
       box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees

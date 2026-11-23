@@ -43,10 +43,12 @@ export const Studio: Guard<StudioDef> = obj({
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
   outdoor: opt(obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
-    truss: obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) }),
+    mono: opt(bool()),
+    truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
-    lanternPoles: opt((v): [number, number, number, number] => { const [a, b, c, d] = arr(num(-25, 25), 4, { min: 4 })(v); return [a, b, c, d]; }),
+    lanternPoles: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 32)),
     lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
+    carry: opt(bool()),
     seed: int(0, 2 ** 31),
   })),
 });
