@@ -1077,6 +1077,9 @@ function showTitle() {
  * written into the journey in begin(). `burnt` is the journey you burned, for what the Book says over its five. */
 let opening: Pick<Journey, "talk"> | null = null, burnt: Journey | null = null;
 function startOpening() {
+  // the title's New game keeps the keyboard's focus under the tape: a key pressed to skip the tape would press it again
+  // and start Tape 1 over (on a slow machine, over and over, so the tape never ended: the menu-keys test on CI)
+  if (document.activeElement instanceof HTMLElement && document.activeElement.closest("#title")) document.activeElement.blur();
   burnt = journey; journey = null; opening = {}; chosen.length = 0;
   try { localStorage.removeItem(SAVE_KEY); } catch { /* a private window */ }
   talks.length = 0; talking = null; drawTalk();
@@ -1122,6 +1125,7 @@ function begin(picks: readonly string[]): boolean {
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
+  if (director.beat?.id === "abduction") return; // Tape 1 already plays: a second press must not start it over
   if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = esc(LANDING.title.startOver); answerMenu($("#newGame")); return; }
   startOpening();
 });

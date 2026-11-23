@@ -36,6 +36,8 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("Enter");
     await until("Tape 1", () => tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`));
     expect(await tab.eval<boolean>("mythicMasters.journey.state() === null")).toBe(true);
+    // the key that skips the tape must not press New game again under it and start Tape 1 over (CI, where frames are slow)
+    expect(await tab.eval<boolean>(`!document.activeElement?.closest("#title")`)).toBe(true);
     // a key skips it once the tape listens, later on a slow runner: press while it still plays, not once after a timer
     await until("Tape 1 skipped", async () => {
       if (!(await tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`))) return true;
