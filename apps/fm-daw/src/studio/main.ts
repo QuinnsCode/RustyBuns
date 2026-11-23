@@ -50,7 +50,7 @@ import { bassReach, bassSynth } from "./gear-models.ts";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
-import { isMuted, leaders, type GrantServer } from "../grants.ts";
+import { isMuted, leaders, may as mayDo, type GrantServer } from "../grants.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
@@ -67,7 +67,10 @@ import { mountHelp } from "./help.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
-import { mountDecks, type DecksPanel } from "../dj/panel.ts";
+import { mountDecks, type DecksPanel, type Dj } from "../dj/panel.ts";
+import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
+import type { Side } from "../dj/engine.ts";
+import { BoothGear } from "./booth-3d.ts";
 import { openAir } from "./open-air.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
@@ -115,6 +118,7 @@ const camera = new THREE.PerspectiveCamera(56, 1, 0.05, 80);
 camera.rotation.order = "YXZ";
 const std = (c: string, o: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o });
 function buildRoom() {
+  boothGear.clear();
   const { w, d, h } = def.size;
   const made = def.materials ?? { floor: "floorboards", ceiling: "drywall", walls: { back: "drywall", right: "drywall", front: "drywall", left: "drywall" } };
   const floor = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.floor, def.colors.floor));
@@ -153,6 +157,10 @@ function buildRoom() {
   scene.add(gearScene.group);
 }
 const gearScene = new GearScene();
+/** The DJ table's decks as things you touch, and what's on them (src/studio/booth-3d.ts). */
+const boothGear = new BoothGear();
+/** The booth: the decks other DJs in the room have on (src/dj/booth.ts), heard before the decks panel is up too. */
+const booth = new Booth();
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
 /** A spot's instrument or furniture, and its seat. */
@@ -290,6 +298,8 @@ function thing(s: Spot): THREE.Group {
     for (const side of [-1, 1]) {
       const deck = gearModel("deck-media", { look });
       put(deck, side * (0.333 / 2 + 0.03 + 0.329 / 2), top, front - 0.453 / 2);
+      // deck A on the DJ's left: its screen, jog and keys are the booth's (booth-3d.ts)
+      boothGear.add(deck, side < 0 ? 0 : 1);
     }
   } else if (s.kind === "desk") {
     // a mixing console: a steel body, a sloped work surface of channel strips (knobs with coloured caps, a fader
@@ -523,6 +533,9 @@ let net: Net | null = null;
 const live = (e: Live) => net?.live(e);
 function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
 function onLive(from: number, e: Live) {
+  // the booth: what's on someone's decks, or a press on yours
+  if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
+  if (e.t === "press") { if (e.to === myPeer()) decks?.heard(from, e); return; }
   hear(jam, from, e);
   if (e.t === "wear") people();
   if (e.t === "guitar") {
@@ -686,7 +699,7 @@ $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
-  paOn.delete(from); pa?.gone(from);
+  paOn.delete(from); pa?.gone(from); booth.gone(from);
   far.gone(from); deskSync();
   // what they held lets go now, and again when it would have, for a listener a loop behind
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); for (const m of band.heard(from, { t: "off", track, midi, b: band.beat() })) out?.send(m); }
@@ -785,12 +798,65 @@ decksBtn.id = "decks-open"; decksBtn.type = "button"; decksBtn.title = "The DJ d
 // lucide's disc-3 (ISC)
 decksBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M6 12c0-1.7.7-3.2 1.8-4.2"/><circle cx="12" cy="12" r="2"/><path d="M18 12c0 1.7-.7 3.2-1.8 4.2"/></svg><span>Decks</span>';
 document.body.append(decksBtn);
-async function openDecks() {
+/** The decks, made the first time they're wanted: in the room's booth, playing to its PA. */
+async function deckPanel(): Promise<DecksPanel> {
+  if (decks) return decks;
   // the room's sound, when it comes up; if it doesn't (no audio thread here, a browser that refuses it), the decks
   // still play, on an audio context of their own
   await Promise.race([startAudio(), new Promise((r) => setTimeout(r, 1500))]);
-  decks ??= mountDecks({ ctx: out?.ctx ?? new AudioContext({ latencyHint: "interactive" }), onToggle: (open) => { if (open) { lane?.close(); desk.close(); releaseAll(); document.exitPointerLock?.(); } else if (phase === "play") lock(); } });
-  decks.open();
+  decks ??= mountDecks({
+    ctx: out?.ctx ?? new AudioContext({ latencyHint: "interactive" }),
+    onToggle: (open) => { if (open) { lane?.close(); desk.close(); releaseAll(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
+    room: here ? {
+      booth, now: roomNow, send: live,
+      may: () => (may(player).play ? { ok: true } : { ok: false, why: "Listen only: the leader hasn't let you on the decks. DJs, then Ask to play" }),
+      nameOf: (p) => jam.others.get(p)?.name || "Someone",
+      toPa: (stream, name) => void playToRoom(stream, name),
+      djs: () => ({ lead: iLead(), people: djList() }),
+      setDj, ask: raise,
+    } : undefined,
+  });
+  return decks;
+}
+async function openDecks() { (await deckPanel()).open(); }
+/** The room's shared clock now, ms: where a deck is, everywhere, is worked out on it (src/clock.ts). */
+const roomNow = () => band.clock.leaderTime(wall());
+/** Your peer number on the live line, from the World's grants. */
+const myPeer = () => Number(Object.keys(peerIds).find((p) => peerIds[p] === rights.me) ?? 0);
+const mayPlayDecks = (who: string | undefined) => !!who && !!rights.grants && mayDo(rights.grants, status.floor?.state ?? "free", who, false, "play");
+/** Everyone in the room for the DJ list: you first, then each person, and whether they may play the decks. */
+function djList(): Dj[] {
+  const list: Dj[] = rights.me ? [{ id: rights.me, name: name || "You", on: may(player).play, you: true }] : [];
+  for (const [peer, o] of jam.others) { const who = peerIds[peer]; if (who && who !== rights.me) list.push({ id: who, name: o.name || "Someone", on: mayPlayDecks(who), you: false }); }
+  return list;
+}
+/** The leader lets someone play the decks (the play grant), or takes them off; the rest of their grant stays. */
+function setDj(who: string, on: boolean) {
+  const own = rights.grants?.who[who] ?? (status.floor?.state === "free" ? (["play", "edit", "mix"] as const) : []);
+  net?.grant({ t: "grant", who, can: on ? [...new Set([...own, "play" as const])] : own.filter((c) => c !== "play") });
+}
+/** A deck as its screen shows it: from the decks when they're up, else from what the booth heard. */
+function deckView(side: Side): DeckView | null {
+  if (decks) return decks.view(side);
+  const t = booth.sides[side];
+  return t ? farView(t, roomNow(), jam.others.get(t.owner)?.name || "Someone", waveFrom(t.say.wave)) : null;
+}
+/** A click or tap on the DJ table's decks: a key presses (cue held while the button is), the screen or jog opens the decks. */
+let heldCue: Side | null = null;
+function touchDecks(e: MouseEvent): boolean {
+  const seat = spotOf(jam, jam.me.seat);
+  if (seat?.kind !== "dj" && !boothGear.count) return false;
+  const ndc = locked() ? new THREE.Vector2(0, 0) : new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  const hit = boothGear.hit(ndc, camera);
+  if (!hit) return false;
+  if (hit.key === "screen" || hit.key === "jog") { void openDecks(); return true; }
+  const key = hit.key;
+  void deckPanel().then((d) => {
+    if (!d.decks.decks[hit.side].track && !booth.sides[hit.side]) return void d.open();
+    if (key === "cueDown") heldCue = hit.side;
+    d.press(hit.side, key);
+  });
+  return true;
 }
 decksBtn.addEventListener("click", () => void openDecks());
 // ? or the menu: what you can do here (help.ts, from actions.ts), and the key strip by the hint
@@ -845,14 +911,15 @@ canvas.addEventListener("mousedown", (e) => {
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
   if (desk.isOpen()) return desk.close();
-  if (!locked()) return lock();
+  if (!locked()) { if (e.button === 0 && touchDecks(e)) return; return lock(); }
+  if (e.button === 0 && touchDecks(e)) return;
   // at the gear wall a click is the gear's: right-click lets go of a cable
   if (e.button === 2 && !jam.me.seat) return void say(atWall.letGo());
   if (atWall.wants(jam)) return void say(atWall.click(jam));
   sitOrStand();
 });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-addEventListener("mouseup", () => { atWall.turning = null; });
+addEventListener("mouseup", () => { atWall.turning = null; if (heldCue !== null) { decks?.press(heldCue, "cueUp"); heldCue = null; } });
 document.addEventListener("mousemove", (e) => {
   if (!locked()) return;
   if (atWall.turning) return atWall.drag(e.movementY);
@@ -1150,6 +1217,7 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  boothGear.frame(deckView, t);
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
@@ -1226,6 +1294,19 @@ const harness = {
   /** Plug your guitar in (the audio input) or pull it out, as I does; then where every guitar stands. */
   guitar: async () => { await guitar(); return harness.guitars(); },
   /** Your guitar's track (null: out), whose guitars are in and on which track, each call's state and each one's lag. */
+  /**
+   * The DJ booth (src/dj/booth.ts): each deck as its screen shows it (name, who plays it, bpm, key, pos, len, playing,
+   * cue), whose it is (null: yours or free), and the 3D decks on the table. `press`: a key on deck 0 or 1 ("play",
+   * "cueDown", "cueUp", "sync", "hot1".."hot4", "back", "fwd"), here or sent to its player. `demos`: the two demo tracks on.
+   * `tap`: a click at [x, y] on the window, as a mouse or a finger does it; `tapped` says what it touched.
+   */
+  booth: async (o?: { press?: { side: Side; key: "play" | "cueDown" | "cueUp" | "sync" | "hot1" | "hot2" | "hot3" | "hot4" | "back" | "fwd" }; demos?: boolean; tap?: [number, number] }) => {
+    const tapped = o?.tap ? boothGear.hit(new THREE.Vector2((o.tap[0] / innerWidth) * 2 - 1, -(o.tap[1] / innerHeight) * 2 + 1), camera) : undefined;
+    if (o?.tap) { touchDecks(new MouseEvent("mousedown", { clientX: o.tap[0], clientY: o.tap[1] })); await new Promise((r) => setTimeout(r, 50)); if (heldCue !== null) { decks?.press(heldCue, "cueUp"); heldCue = null; } }
+    if (o?.demos) (await deckPanel()).demos();
+    if (o?.press) (await deckPanel()).press(o.press.side, o.press.key);
+    return { ...(o?.tap ? { tapped } : {}), decks: ([0, 1] as const).map((side) => { const v = deckView(side); return { owner: booth.owner(side), ...(v ? { ...v, wave: v.wave.length } : {}) }; }), onTable: boothGear.count, pa: !!myPa };
+  },
   /** The PA: on, a test tone (a 220 Hz hum) played to the whole room, as a DJ's set goes; off, stopped. With no argument, its state. */
   pa: async (on?: boolean) => {
     if (on === true && !myPa) {

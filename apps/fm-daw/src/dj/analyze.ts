@@ -164,3 +164,63 @@ export function clock(s: number): string {
   const t = Math.max(0, s), m = Math.floor(t / 60), r = t - m * 60;
   return `${m}:${r.toFixed(1).padStart(4, "0")}`;
 }
+
+/** A track's key: its home note (0 is C, up in semitones), major or minor, and how DJs write it. */
+export interface Key { tonic: number; minor: boolean; name: string; camelot: string }
+/** The twelve notes as a key is named (flats where a DJ's key chart has them). */
+export const NOTE_NAMES = ["C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"] as const;
+// how strongly each note of the scale is heard in a major and a minor key (Krumhansl and Kessler's listening tests)
+const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+/**
+ * The key's place on the wheel DJs mix by (1 to 12, then B for major, A for minor): one step round, or the same
+ * number with the other letter, is a mix in key. C major is 8B and A minor, its relative minor, 8A.
+ */
+export function camelot(tonic: number, minor: boolean): string {
+  const major = minor ? (tonic + 3) % 12 : tonic;
+  return `${((major * 7 + 7) % 12) + 1}${minor ? "A" : "B"}`;
+}
+
+const pearson = (a: readonly number[], b: readonly number[]) => {
+  const n = a.length, ma = a.reduce((s, x) => s + x, 0) / n, mb = b.reduce((s, x) => s + x, 0) / n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) { const x = a[i]! - ma, y = b[i]! - mb; num += x * y; da += x * x; db += y * y; }
+  return da && db ? num / Math.sqrt(da * db) : 0;
+};
+
+/**
+ * A track's key, from its sound: how loud each of the twelve notes is across the track (every semitone from E2 to
+ * E6 folded into one octave, in slices spread along it), matched against the major and minor key profiles in all
+ * twelve keys; the best fit is the key. Null for silence.
+ */
+export function keyOf(mono: Float32Array, rate: number): Key | null {
+  const step = Math.max(1, Math.floor(rate / 11025)), fs = rate / step, N = 4096, span = N * step;
+  const frames = Math.min(90, Math.floor(mono.length / span));
+  if (frames < 1) return null;
+  const LOW = 40, HIGH = 88, coeff = Array.from({ length: HIGH - LOW + 1 }, (_, i) => 2 * Math.cos((2 * Math.PI * 440 * 2 ** ((LOW + i - 69) / 12)) / fs));
+  const win = Float32Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)));
+  const chroma = new Array<number>(12).fill(0), x = new Float32Array(N);
+  const gap = (mono.length - span) / Math.max(1, frames - 1);
+  for (let f = 0; f < frames; f++) {
+    const from = Math.floor(f * gap);
+    let energy = 0;
+    for (let i = 0; i < N; i++) { let s = 0; for (let k = 0; k < step; k++) s += mono[from + i * step + k] ?? 0; x[i] = (s / step) * win[i]!; energy += x[i]! * x[i]!; }
+    if (energy < 1e-6) continue;
+    const mags = coeff.map((c) => {
+      let s1 = 0, s2 = 0;
+      for (let i = 0; i < N; i++) { const s0 = x[i]! + c * s1 - s2; s2 = s1; s1 = s0; }
+      return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - c * s1 * s2));
+    });
+    const total = mags.reduce((s, m) => s + m, 0) || 1;
+    mags.forEach((m, i) => { chroma[(LOW + i) % 12]! += m / total; });
+  }
+  if (chroma.every((c) => c === 0)) return null;
+  let best = { r: -2, tonic: 0, minor: false };
+  for (let t = 0; t < 12; t++) for (const minor of [false, true]) {
+    const prof = minor ? MINOR : MAJOR, rot = chroma.map((_, i) => prof[(i - t + 12) % 12]!);
+    const r = pearson(chroma, rot);
+    if (r > best.r) best = { r, tonic: t, minor };
+  }
+  return { tonic: best.tonic, minor: best.minor, name: `${NOTE_NAMES[best.tonic]}${best.minor ? "m" : ""}`, camelot: camelot(best.tonic, best.minor) };
+}

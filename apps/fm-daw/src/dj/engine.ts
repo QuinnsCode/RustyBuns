@@ -6,16 +6,18 @@
 // a meter and a cue button for the headphones; then the crossfader, the master level and a limiter so nothing clips.
 // What comes out goes to your speakers and to `stream` (a MediaStream: what the room hears of your set). With one
 // output, `split` cue sends the headphone mix to the left ear and the master to the right, the trick for a laptop.
-import { beatPhase, crossfade, detectGrid, eqDb, faderGain, filterAt, inLoop, loopAt, phaseJump, snap, syncRate, type Grid } from "./analyze.ts";
+import { beatPhase, crossfade, detectGrid, eqDb, faderGain, filterAt, inLoop, keyOf, loopAt, phaseJump, snap, syncRate, type Grid, type Key } from "./analyze.ts";
 
 export type Side = 0 | 1;
-/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), and its grid. */
-export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null }
+/** What a deck has on: the file's name, its sound (mono copy for the waveform and the beat finder), its grid and key. */
+export interface Track { name: string; buffer: AudioBuffer; mono: Float32Array; grid: Grid | null; key: Key | null }
+/** Where another deck is, for sync: its grid, its rate, whether it plays and where (it may be on someone else's machine). */
+export interface Beside { grid: Grid | null; rate: number; playing: boolean; pos: number }
 
 /** A deck's state for the panel and the harness. */
 export interface DeckState {
   name: string | null; playing: boolean; pos: number; length: number; rate: number; pitch: number; range: number;
-  bpm: number | null; grid: Grid | null; cue: number; hot: (number | null)[]; loop: { start: number; end: number; beats: number } | null; synced: boolean;
+  bpm: number | null; grid: Grid | null; key: Key | null; cue: number; hot: (number | null)[]; loop: { start: number; end: number; beats: number } | null; synced: boolean;
 }
 
 class Deck {
@@ -63,6 +65,8 @@ class Deck {
   private stopSrc() { if (this.src) { this.src.onended = null; try { this.src.stop(); } catch { /* not started */ } this.src.disconnect(); this.src = null; } }
 
   load(t: Track) { this.stopSrc(); this.track = t; this.playing = false; this.from = 0; this.cue = t.grid?.offset ?? 0; this.hot = [null, null, null, null]; this.loop = null; this.synced = false; }
+  /** Take the track off (someone else loaded onto this deck in the booth). */
+  unload() { this.stopSrc(); this.track = null; this.playing = false; this.from = 0; this.cue = 0; this.loop = null; this.synced = false; this.cueHeld = false; }
   play() { if (!this.track || this.playing) return; this.playing = true; this.start(); }
   pause() { if (!this.playing) return; this.mark(); this.playing = false; this.stopSrc(); }
   toggle() { if (this.playing) this.pause(); else this.play(); }
@@ -112,10 +116,10 @@ class Deck {
   /** Jump `beats` beats on (back when negative), on the grid. */
   jump(beats: number) { if (!this.track?.grid) return; this.seek(this.pos() + (beats * 60) / this.track.grid.bpm); }
   /** Match the other deck: its tempo now, and (both playing) its beat. */
-  sync(other: Deck) {
-    const g = this.track?.grid, og = other.track?.grid;
+  sync(other: Beside) {
+    const g = this.track?.grid, og = other.grid;
     if (!g || !og) return false;
-    let target = og.bpm * other.rate();
+    let target = og.bpm * other.rate;
     // the same beat at double or half time is in step too: take the nearer
     for (const k of [2, 0.5]) if (Math.abs(target * k - g.bpm) < Math.abs(target - g.bpm)) target *= k;
     const r = syncRate(g.bpm, target);
@@ -124,7 +128,7 @@ class Deck {
     this.mark();
     this.pitch = Math.min(1, Math.max(-1, p / this.range));
     this.applyRate();
-    if (this.playing && other.playing) this.seek(this.pos() + phaseJump(this.pos(), g, beatPhase(other.pos(), og)));
+    if (this.playing && other.playing) this.seek(this.pos() + phaseJump(this.pos(), g, beatPhase(other.pos, og)));
     this.synced = true;
     return true;
   }
@@ -132,7 +136,7 @@ class Deck {
     const g = this.track?.grid ?? null;
     return {
       name: this.track?.name ?? null, playing: this.playing, pos: this.pos(), length: this.track?.buffer.duration ?? 0, rate: this.rate(), pitch: this.pitch, range: this.range,
-      bpm: g ? Math.round(g.bpm * this.rate() * 10) / 10 : null, grid: g, cue: this.cue, hot: [...this.hot], loop: this.loop, synced: this.synced,
+      bpm: g ? Math.round(g.bpm * this.rate() * 10) / 10 : null, grid: g, key: this.track?.key ?? null, cue: this.cue, hot: [...this.hot], loop: this.loop, synced: this.synced,
     };
   }
   stop() { this.stopSrc(); this.playing = false; }
@@ -242,14 +246,14 @@ export class Decks {
   fromSamples(name: string, mono: Float32Array, rate: number): Track {
     const buffer = this.ctx.createBuffer(1, mono.length, rate);
     buffer.copyToChannel(Float32Array.from(mono), 0);
-    return { name, buffer, mono, grid: detectGrid(mono, rate) };
+    return { name, buffer, mono, grid: detectGrid(mono, rate), key: keyOf(mono, rate) };
   }
   /** Decode a file and find its beat, for the library. */
   async decode(name: string, bytes: ArrayBuffer): Promise<Track> {
     const buffer = await this.ctx.decodeAudioData(bytes);
     const mono = new Float32Array(buffer.length);
     for (let c = 0; c < buffer.numberOfChannels; c++) { const d = buffer.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i]! += d[i]! / buffer.numberOfChannels; }
-    return { name, buffer, mono, grid: detectGrid(mono, buffer.sampleRate) };
+    return { name, buffer, mono, grid: detectGrid(mono, buffer.sampleRate), key: keyOf(mono, buffer.sampleRate) };
   }
   /** Put a track already decoded on a deck (the library's). */
   put(side: Side, t: Track) { this.decks[side].load(t); }
@@ -261,7 +265,11 @@ export class Decks {
   setMaster(v: number) { this.masterLevel = Math.min(1, Math.max(0, v)); this.applyMix(); }
   setSplit(on: boolean) { this.split = on; this.applyMix(); }
   setCueBlend(v: number) { this.cueBlend = Math.min(1, Math.max(0, v)); this.applyMix(); }
-  sync(side: Side) { return this.decks[side].sync(this.decks[side === 0 ? 1 : 0]); }
+  /** Sync deck `side` to the other deck here, or to `to` (the other deck, played on someone else's machine). */
+  sync(side: Side, to?: Beside) {
+    const o = this.decks[side === 0 ? 1 : 0];
+    return this.decks[side].sync(to ?? { grid: o.track?.grid ?? null, rate: o.rate(), playing: o.playing, pos: o.pos() });
+  }
   private applyMix() {
     const t = this.ctx.currentTime, [a, b] = crossfade(this.xfader, this.curve), set = (p: AudioParam, v: number) => p.setTargetAtTime(v, t, 0.008);
     set(this.channels[0].xf.gain, a); set(this.channels[1].xf.gain, b);

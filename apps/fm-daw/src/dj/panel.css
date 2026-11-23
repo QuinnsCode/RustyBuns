@@ -6,6 +6,20 @@
 #dj button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; min-width: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid #3a3e45; background: #1e2025; color: inherit; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.04em; cursor: pointer; white-space: nowrap; touch-action: manipulation; user-select: none; }
 #dj button:hover { border-color: #6b707a; }
 #dj button.on { background: #ff6b4a; border-color: #ff6b4a; color: #15171b; }
+#dj header { position: relative; }
+.dj-head-tools { display: flex; gap: 6px; }
+/* the DJ list: who may play the decks, the leader's one press to add the DJ for the night */
+.dj-people { position: absolute; right: 0; top: 44px; z-index: 2; width: min(320px, 90vw); background: #17191d; border: 1px solid #3a3e45; border-radius: 12px; padding: 10px; display: grid; gap: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); }
+.dj-people[hidden] { display: none; }
+.dj-people h3 { margin: 0; font: 600 16px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; }
+.dj-people ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.dj-people li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.dj-people li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-people li small, .dj-people p { color: #9aa0aa; margin: 0; white-space: nowrap; }
+.dj-people p { white-space: normal; }
+/* someone else's deck: its play, cue, sync, hot cues and jumps reach them; the pitch, loops and jog are theirs alone */
+.dj-deck.far { border-style: dashed; }
+.dj-deck.far .dj-pitchcol, .dj-deck.far .dj-loops, .dj-deck.far .dj-jumps button:nth-child(2), .dj-deck.far .dj-jumps button:nth-child(3), .dj-strip.far { opacity: 0.35; pointer-events: none; }
 .dj-zoom { width: 100%; height: 120px; border-radius: 8px; background: #0d0e11; display: block; }
 .dj-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px) minmax(0, 1fr); gap: 12px; }
 .dj-deck { background: #17191d; border: 1px solid #2a2d33; border-radius: 12px; padding: 10px; display: grid; gap: 8px; min-width: 0; }
