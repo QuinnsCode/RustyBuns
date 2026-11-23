@@ -10,10 +10,11 @@
 //       --draft has a fresh `claude -p` write the traits from the pictures when they are still empty: a draft to correct.
 //       A rerun fetches the Commons ones again and keeps the traits you wrote. The pictures are not committed
 //       (refs/.gitignore): the JSON says where each came from, and --refs fetches them again.
-//   bun scripts/beast-refs.ts --closeups <id> [--main]
+//   bun scripts/beast-refs.ts --closeups <id> [--main] [--limb <node>]
 //       blender/out/refs/<id>.now.png: front, side, three-quarter and head close-ups of public/models/<id>.glb, through an
 //       orthographic camera (blender/closeups.py). --main also draws git main's GLB to <id>.main.png at the same scale,
-//       so a change in size shows. One Blender at a time.
+//       so a change in size shows. --limb l_hand (any sheet node) swaps the last two tiles for that limb up close, from
+//       its outer side and from the front, in <id>.<node>.now.png. One Blender at a time.
 //   bun scripts/beast-refs.ts --compare <id> [--out file.html]
 //       One self-contained page (blender/out/refs/<id>.compare.html): the references with their credits, the model
 //       before (git main) and now as close-up strips, and the traits with a tick or a cross each from the last judge
@@ -37,7 +38,7 @@ import { basename, join } from "node:path";
 import { $ } from "bun";
 import { runBlender } from "@rustybuns/cli/blender";
 import { esc } from "@rustybuns/util";
-import { arr, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, int, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { PICKS } from "../src/art.ts";
 import { help } from "../../../scripts/help.ts";
 import { categoryFiles, fetchFile, findCategory, searchFiles, type Credit, type Hit } from "./commons.ts";
@@ -135,17 +136,34 @@ async function mainGlb(id: string): Promise<string | null> {
   return tmp;
 }
 
-/** Renders the close-up strips; answers the PNG paths: { now, main? }. */
-export async function closeups(id: string, o: { main?: boolean } = {}): Promise<{ now: string; main?: string }> {
+const M = num(-100, 100);
+/** The parts of a sheet a limb close-up reads: its nodes ([x, y, z, radius]) and the whole beast's scale and offset. */
+const LimbSheet = obj({ nodes: rec(arr(M, 4, { min: 4 }), 2000), scale: opt(arr(M, 3, { min: 3 })), offset: opt(arr(M, 3, { min: 3 })) });
+
+/** `--focus` for closeups.py: a sheet node (`l_hand`, `l_ffoot`) where the GLB has it, and a frame a few of its radii wide. */
+async function limbFocus(id: string, node: string): Promise<string> {
+  const raw = await Bun.file(join(APP, "beasts", `${id}.json`)).json() as { scale?: unknown };
+  const s = LimbSheet({ ...raw, scale: typeof raw.scale === "number" ? [raw.scale, raw.scale, raw.scale] : raw.scale });
+  const n = s.nodes[node];
+  if (!n) throw new Error(`${id} has no node ${node}: ${Object.keys(s.nodes).filter((k) => k.startsWith("l_")).join(", ")}`);
+  const k = s.scale ?? [1, 1, 1], o = s.offset ?? [0, 0, 0];
+  const at = [0, 1, 2].map((i) => (n[i]! + o[i]!) * k[i]!), size = Math.min(0.9, Math.max(0.2, n[3]! * k[0]! * 8));
+  return [at[0], at[1]! + size * 0.15, at[2], size].map((v) => v!.toFixed(4)).join(",");
+}
+
+/** Renders the close-up strips; answers the PNG paths: { now, main? }. With `limb` (a sheet node) the last two tiles frame it. */
+export async function closeups(id: string, o: { main?: boolean; limb?: string } = {}): Promise<{ now: string; main?: string }> {
   const now = join(APP, "public", "models", `${id}.glb`);
   if (!existsSync(now)) throw new Error(`no public/models/${id}.glb: build it first (bun scripts/beasts.ts ${id})`);
   mkdirSync(refsOut, { recursive: true });
   const before = o.main ? await mainGlb(id) : null;
   if (o.main && !before) console.warn(`git main has no ${id}.glb: drawing only the working tree's`);
-  const res: { now: string; main?: string } = { now: join(refsOut, `${id}.now.png`), ...(before ? { main: join(refsOut, `${id}.main.png`) } : {}) };
+  const tag = o.limb ? `.${o.limb}` : "";
+  const res: { now: string; main?: string } = { now: join(refsOut, `${id}${tag}.now.png`), ...(before ? { main: join(refsOut, `${id}${tag}.main.png`) } : {}) };
+  const focus = o.limb ? ["--focus", await limbFocus(id, o.limb)] : [];
   // one Blender for both builds, so they share one framing (the larger's)
   try {
-    await runBlender({ script: "blender/closeups.py", args: [now, res.now, ...(before ? [before, res.main!] : [])], cwd: APP });
+    await runBlender({ script: "blender/closeups.py", args: [now, res.now, ...(before ? [before, res.main!] : []), ...focus], cwd: APP });
   } finally { if (before) rmSync(before, { force: true }); }
   for (const out of Object.values(res)) for (const v of VIEWS) rmSync(`${out.slice(0, -4)}.${v}.png`, { force: true }); // the single views each strip was made from
   return res;
@@ -303,7 +321,7 @@ if (import.meta.main) {
     console.log(`refs/${id}.json: ${traitRows(r.traits).length ? "traits written (check them against the pictures)" : "fill in the traits from the pictures, or rerun with --draft"}`);
   }
   if (argv.includes("--closeups")) {
-    const r = await closeups(id, { main: argv.includes("--main") });
+    const r = await closeups(id, { main: argv.includes("--main"), limb: val("--limb") });
     for (const p of Object.values(r)) console.log(p);
   }
   if (argv.includes("--candidates")) {

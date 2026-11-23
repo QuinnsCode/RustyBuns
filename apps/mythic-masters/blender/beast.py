@@ -830,6 +830,118 @@ def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0, calf_at=0.
     return ring_loft(name, rings, mat)
 
 
+# --- hands and toes with joints: a finger is bones in a row, each joint a little fuller, the whole curling -------
+
+def chain_tube(name, pts, radii, mat, ref, seg=8):
+    """A smooth tube through `pts`, `radii` round at each, its rings squared to the path and kept from twisting by
+    one reference direction `ref` (the palm's, or up), capped round at both ends."""
+    rings = []
+    for i, c in enumerate(pts):
+        t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        u = ref - t * ref.dot(t)
+        if u.length < 1e-4:
+            u = t.orthogonal()
+        u.normalize()
+        v = t.cross(u)
+        rings.append([c + (u * math.cos(2 * math.pi * j / seg) + v * math.sin(2 * math.pi * j / seg)) * radii[i] for j in range(seg)])
+    o = ring_loft(name, rings, mat)
+    for f in o.data.polygons:
+        f.use_smooth = True
+    return o
+
+
+def digit(name, root, d, toward, length, r, curl, mat, bones=(0.45, 0.32, 0.23)):
+    """A finger or toe from `root` along `d`: `bones` (shares of `length`) in a row, each bending `curl` / their
+    count degrees toward `toward` (the palm, or the ground) at its joint, a knuckle swelling at each joint and the
+    tip rounding off. Returns (the tube, its tip, the last bone's direction)."""
+    axis = Vector(d).cross(Vector(toward))
+    axis = axis.normalized() if axis.length > 1e-4 else Vector(d).orthogonal().normalized()
+    step = math.radians(curl) / len(bones)
+    pts, radii, at, dd = [Vector(root)], [r * 1.05], Vector(root), Vector(d).normalized()
+    for k, share in enumerate(bones):
+        dd = Matrix.Rotation(step, 3, axis) @ dd
+        bone = length * share
+        thin = 1 - 0.13 * k  # each bone a little slimmer than the one before
+        pts += [at + dd * (bone * 0.5), at + dd * bone]
+        radii += [r * 0.9 * thin, r * 1.0 * thin if k < len(bones) - 1 else r * 0.85 * thin]
+        at = at + dd * bone
+    pts.append(at + dd * (r * 0.55))
+    radii.append(r * 0.45)
+    return chain_tube(name, pts, radii, mat, Vector(toward)), at, dd
+
+
+def hand_part(name, at, p, side, mat, nail_mat):
+    """A hand at a wrist: a padded palm `len` * 0.45 long along `dir` (where the fingers point from the knuckles) and
+    `width` across, its inside facing `palm`; `fingers` (4) with three bones each curling `curl` degrees toward the
+    palm (35 at rest, 200 or so round a grip), the middle one longest; a two-bone `thumb` on the inner side, turned
+    across the palm; `claw` long nails on the tips, in `claw_mat`."""
+    m = lambda v: Vector((v[0], v[1], v[2] * side))
+    at = Vector(at) + m(p.get("off", (0, 0, 0)))  # the wrist, moved off the node (behind a grip)
+    d = m(p.get("dir", (0, -1, 0))).normalized()
+    n = m(p.get("palm", (0, 0, -1)))
+    n = (n - d * n.dot(d)).normalized()
+    w = d.cross(n)  # across the knuckles; mirrors with the hand, so the thumb keeps to its own side
+    ln, wd = p["len"], p["width"]
+    thick, palm_len = p.get("thick", wd * 0.42), ln * 0.45
+    rings = []
+    for t, fw, fh in ((0.0, 0.62, 0.75), (0.25, 0.88, 0.95), (0.7, 1.0, 1.0), (1.0, 0.94, 0.8)):
+        c = Vector(at) + d * (palm_len * t) - n * (thick * 0.08 * math.sin(math.pi * t))  # a little cupped
+        rings.append([section(c, w, n, wd * 0.5 * fw, thick * 0.5 * fh, 0.35, 2 * math.pi * j / 12) for j in range(12)])
+    palm = ring_loft(f"{name}_palm", rings, mat)
+    for f in palm.data.polygons:
+        f.use_smooth = True
+    out, nf, curl = [palm], p.get("fingers", 4), p.get("curl", 35)
+    fr = wd / (nf * 2) * 0.95
+    thumb_side = p.get("thumb_side", 1)
+    for j in range(nf):
+        u = 0 if nf == 1 else 2 * j / (nf - 1) - 1  # -1 by the thumb, 1 the little finger
+        length = ln * 0.55 * (1 - 0.14 * u * u - 0.08 * max(u, 0))
+        root = Vector(at) + d * (palm_len * (0.97 - 0.05 * u * u)) + w * (u * wd * 0.37 * -thumb_side)
+        fd = (d + w * (u * 0.06 * -thumb_side)).normalized()
+        tube_, tip, td = digit(f"{name}_f{j}", root, fd, n, length, fr, curl, mat)
+        out.append(tube_)
+        if p.get("claw"):
+            out.append(cone(f"{name}_n{j}", tip - td * (fr * 0.2) - n * (fr * 0.35), td - n * 0.25, p["claw"], fr * 0.55, nail_mat))
+    if p.get("thumb", True):
+        root = Vector(at) + d * (palm_len * 0.28) + w * (thumb_side * wd * 0.42) + n * (thick * 0.25)
+        td0 = (d * 0.6 + w * (thumb_side * 0.5) + n * 0.55).normalized()
+        tube_, tip, td = digit(f"{name}_th", root, td0, n - w * thumb_side * 0.5, ln * 0.4, fr * 1.15, curl * 0.6, mat, bones=(0.55, 0.45))
+        out.append(tube_)
+        if p.get("claw"):
+            out.append(cone(f"{name}_nt", tip - td * (fr * 0.2), td, p["claw"], fr * 0.6, nail_mat))
+    return out
+
+
+def digits_paw(name, base, floor, r, p, side, mat, claw_mat):
+    """A walking paw with real toes: the leg narrows at the wrist (the node) into a foot that slopes down and forward
+    to the knuckles, a heel pad under it, and `toes` (4) of two bones each that rise out of the knuckle and curl
+    `curl` (95) degrees down to the ground, the middle ones longest; each ends in a `claw` hooked out of its tip."""
+    ln, wd, n = p["len"], p["width"], p.get("toes", 4)
+    tall = p.get("tall", 1)
+    knuckle = Vector((base.x + ln * 0.32, floor + r * 0.5 * tall, base.z))
+    rings = []
+    for t, fw, fh in ((0.0, 0.5, 0.85), (0.35, 0.72, 0.8), (0.75, 0.95, 0.68), (1.0, 1.0, 0.58)):
+        c = Vector(base).lerp(knuckle, t)
+        rings.append([section(c, Vector((0, 0, 1)), Vector((0, 1, 0)), wd * 0.5 * fw, r * fh * tall, 0.15, 2 * math.pi * j / 12) for j in range(12)])
+    foot = ring_loft(f"{name}_foot", rings, mat)
+    for f in foot.data.polygons:
+        f.use_smooth = True
+    pad_mat = p.get("pad_mat", "pad" if "pad" in PALETTE else mat)
+    out = [foot, ball(f"{name}_heel", Vector((base.x + ln * 0.08, floor + r * 0.28, base.z)), [ln * 0.2, r * 0.28, wd * 0.3], pad_mat)]
+    tr = wd / (n * 2) * 0.95
+    for j in range(n):
+        u = 0 if n == 1 else 2 * j / (n - 1) - 1
+        root = knuckle + Vector((-ln * 0.1 * u * u, r * 0.08, u * wd * 0.36 * side))
+        d = Vector((1, 0.6, u * 0.22 * side)).normalized()
+        toe, tip, td = digit(f"{name}_t{j}", root, d, Vector((0, -1, 0)), ln * 0.5 * (1 - 0.18 * u * u), tr, p.get("curl", 95), mat, bones=(0.5, 0.5))
+        out.append(toe)
+        out.append(ball(f"{name}_b{j}", tip + Vector((-tr * 0.2, -tr * 0.55, 0)), [tr * 0.9, tr * 0.45, tr * 0.8], pad_mat))  # its toe bean
+        if p.get("claw"):
+            out.append(tube(f"{name}_c{j}", tip + td * (tr * 0.15), (td + Vector((0.5, 0, 0))).normalized(), p["claw"], tr * 0.5, 0, claw_mat,
+                            curve=40, bend=(0, -1, 0), segments=6, rings=4))
+    return out
+
+
 def foot_part(name, at, r, p, side, mat, only=None):
     """A paw, mitten, hoof, talon or web at a node. All lie on the floor `sole` metres under the node's centre
     (default its radius) and run forward, +x. A `mitten` with `skin` joins its dome and heel to the body before `blend`: `only`
@@ -840,6 +952,10 @@ def foot_part(name, at, r, p, side, mat, only=None):
     form = p.get("form", "paw")
     claw_mat = p.get("claw_mat", "claw" if "claw" in PALETTE else mat)  # `claw_mat`, else the palette's `claw`, else the foot's own
     out = []
+    if form == "hand":
+        return hand_part(name, base, p, side, mat, claw_mat)
+    if form == "digits":
+        return digits_paw(name, base, floor, r, p, side, mat, claw_mat)
     if form in ("paw", "hoof"):
         cleft = form == "hoof" and p.get("toes", 1) >= 2
         lobes = [-1, 1] if cleft else [0]

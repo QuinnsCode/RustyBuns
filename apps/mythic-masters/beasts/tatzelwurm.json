@@ -809,115 +809,21 @@
       "depth": 1.1,
       "calf": 0.15,
       "mirror": true,
-      "material": "hide"
+      "material": "hide",
+      "elbow": 0.22
     },
     {
       "kind": "foot",
       "at": "l_foot",
-      "form": "paw",
+      "form": "digits",
       "len": 0.13,
       "width": 0.14300000000000002,
       "toes": 4,
-      "claw": 0,
+      "claw": 0.035,
       "sole": 0.035,
       "mirror": true,
-      "material": "hide"
-    },
-    {
-      "kind": "horn",
-      "at": "l_foot",
-      "off": [
-        0.0975,
-        -0.015,
-        -0.048
-      ],
-      "dir": [
-        1,
-        -0.35,
-        -0.44999999999999996
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_foot",
-      "off": [
-        0.0975,
-        -0.015,
-        -0.016
-      ],
-      "dir": [
-        1,
-        -0.35,
-        -0.15
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_foot",
-      "off": [
-        0.0975,
-        -0.015,
-        0.016
-      ],
-      "dir": [
-        1,
-        -0.35,
-        0.15
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_foot",
-      "off": [
-        0.0975,
-        -0.015,
-        0.048
-      ],
-      "dir": [
-        1,
-        -0.35,
-        0.44999999999999996
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
+      "material": "hide",
+      "claw_mat": "claw"
     },
     {
       "kind": "limb",
@@ -934,115 +840,21 @@
       "depth": 1.1,
       "calf": 0.15,
       "mirror": true,
-      "material": "hide"
+      "material": "hide",
+      "elbow": 0.22
     },
     {
       "kind": "foot",
       "at": "l_bfoot",
-      "form": "paw",
+      "form": "digits",
       "len": 0.14,
       "width": 0.15400000000000003,
       "toes": 4,
-      "claw": 0,
+      "claw": 0.035,
       "sole": 0.035,
       "mirror": true,
-      "material": "hide"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [
-        0.10500000000000001,
-        -0.015,
-        -0.048
-      ],
-      "dir": [
-        1,
-        -0.35,
-        -0.44999999999999996
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [
-        0.10500000000000001,
-        -0.015,
-        -0.016
-      ],
-      "dir": [
-        1,
-        -0.35,
-        -0.15
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [
-        0.10500000000000001,
-        -0.015,
-        0.016
-      ],
-      "dir": [
-        1,
-        -0.35,
-        0.15
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
-    },
-    {
-      "kind": "horn",
-      "at": "l_bfoot",
-      "off": [
-        0.10500000000000001,
-        -0.015,
-        0.048
-      ],
-      "dir": [
-        1,
-        -0.35,
-        0.44999999999999996
-      ],
-      "len": 0.06,
-      "base": 0.014,
-      "curve": 55,
-      "bend": [
-        0,
-        -1,
-        0
-      ],
-      "mirror": true,
-      "material": "claw"
+      "material": "hide",
+      "claw_mat": "claw"
     },
     {
       "kind": "horn",

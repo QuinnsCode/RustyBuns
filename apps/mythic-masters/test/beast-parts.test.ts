@@ -71,6 +71,24 @@ test.skipIf(!findBlender())("an eye sits in a socket: a smaller ball set back, a
   expect(Math.min(...got["brow0"]!.map((v) => v[1]!))).toBeGreaterThan(c[1]!); // over the eye
 });
 
+test.skipIf(!findBlender())("a hand has a palm, four curling fingers and a thumb; a walking paw has toes that reach the ground with claws out of their tips", async () => {
+  const got = await build([
+    { kind: "foot", form: "hand", at: "head", dir: [0, -1, 0], palm: [0, 0, -1], len: 0.2, width: 0.08, curl: 90, claw: 0.01, material: "fur" },
+    { kind: "foot", form: "digits", at: "paw", len: 0.2, width: 0.16, toes: 4, claw: 0.04, sole: 0.08, material: "fur" },
+  ], { head: [0, 1, 0, 0.1], paw: [0, 0.08, 0.3, 0.08] });
+  expect(Object.keys(got).filter((k) => /^foot0_f\d$/.test(k))).toHaveLength(4);
+  expect(got["foot0_th"]).toBeDefined();
+  // curled 90 degrees toward the palm (-z): each finger's tip ends up further toward the palm than its root
+  for (let j = 0; j < 4; j++) {
+    const f = got[`foot0_f${j}`]!;
+    expect(Math.min(...f.map((v) => v[2]!))).toBeLessThan(f[0]![2]! - 0.02);
+  }
+  const toes = Object.keys(got).filter((k) => /^foot1_t\d$/.test(k));
+  expect(toes).toHaveLength(4);
+  for (const t of toes) expect(Math.min(...got[t]!.map((v) => v[1]!))).toBeLessThan(0.03); // down to the floor
+  expect(Object.keys(got).filter((k) => /^foot1_c\d$/.test(k))).toHaveLength(4);
+});
+
 test.skipIf(!findBlender())("a leg whose gaskin slants back keeps every ring facing the same way, with no twist at the knee", async () => {
   // a lion's hind leg: down and forward to the knee, back at 45 degrees to a high hock, upright to the paw
   const nodes = { l_hipj: [-0.6, 0.8, 0.17, 0.05], l_knee: [-0.5, 0.53, 0.2, 0.03], l_hock: [-0.71, 0.3, 0.2, 0.03], l_bfoot: [-0.65, 0.1, 0.18, 0.04] };
