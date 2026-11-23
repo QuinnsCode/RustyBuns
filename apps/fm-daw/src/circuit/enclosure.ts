@@ -5,7 +5,7 @@
 // module's template is its Eurorack panel, from circuits/wall-panels.ts (where its board
 // puts each jack and pot), with the rail screws' holes.
 import { arr, check, num, obj, raw, str } from "@rustybuns/util/guard";
-import { HP, PANEL_H, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
+import { PANEL_H, panelHoles, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
 
 /** The 125B box, outside, in mm: the face is `w` × `h`, the sides are `d` deep. */
 export const BOX_125B = { w: 66, h: 122, d: 39 };
@@ -84,17 +84,6 @@ export function drillSvg(holes: Hole[], title: string, box = BOX_125B): string {
     + `<text x="${m}" y="${m}" font-size="3.5" font-family="sans-serif">${title}. Print at 100%: this line is 50 mm.</text>`
     + `<path d="M${m} ${m + 3}h50" stroke="#000" stroke-width="0.4"/>`
     + rects.join("") + marks.join("") + `</svg>\n`;
-}
-
-/** A Eurorack panel's holes, mm from its top left corner: jacks 6 mm, pots 7 mm, and the 3.2 mm rail screws. */
-export function panelHoles(p: Panel): { name: string; x: number; y: number; drill: number }[] {
-  const w = panelWidth(p.hp), at = (x: number, y: number) => ({ x: w / 2 + x, y: PANEL_H / 2 - y });
-  const screws = [7.5, ...(p.hp >= 10 ? [7.5 + (p.hp - 3) * HP] : [])].flatMap((x) => [{ name: "screw", x, y: 3, drill: 3.2 }, { name: "screw", x, y: PANEL_H - 3, drill: 3.2 }]);
-  return [
-    ...p.jacks.map((j) => ({ name: j.label, ...at(j.x, j.y), drill: 6 })),
-    ...p.knobs.map((k) => ({ name: k.label, ...at(k.x, k.y), drill: 7 })),
-    ...screws,
-  ];
 }
 
 /** The panel as a drilling template, in mm: its outline, each hole with a cross at its centre, and what goes in it. */

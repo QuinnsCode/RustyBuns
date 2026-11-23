@@ -7,6 +7,9 @@
 //   pcb.svg         the board, top view
 //   drill.svg       a pedal's drill template for a 125B box, holes from the board's own knobs;
 //                   a module's front panel (circuits/wall-panels.ts, where its jacks and pots sit)
+// and for a module, also:
+//   schematic.svg   its circuit, for the build sheet
+//   panel/          its front panel as a board of its own (circuits/wall-panel.tsx): gerbers/ and pcb.svg
 // and circuits/<board>.circuit.json (the schematic the sim plays). The box every pedal
 // shares (supply, bias, Level, LED, jacks, footswitch) is circuits/q-box.tsx; what every
 // module shares (Eurorack power, jacks, pots) is circuits/wall-kit.tsx.
@@ -59,7 +62,7 @@ const gerber = folder("gerber", { "circuit-json-to-gerber": "0.0.122" });
 // panels the modules read), since each imports its box or kit.
 const files = readdirSync(circuits).filter((f) => /^(q|wall)-.*\.tsx?$/.test(f));
 for (const f of files) cpSync(join(circuits, f), join(render, f));
-const all = files.filter((f) => f.endsWith(".tsx")).map((f) => f.slice(0, -4)).filter((id) => id !== "q-box" && id !== "wall-kit");
+const all = files.filter((f) => f.endsWith(".tsx")).map((f) => f.slice(0, -4)).filter((id) => id !== "q-box" && id !== "wall-kit" && id !== "wall-panel");
 const asked = process.argv.slice(2).flatMap((a) => a === "wall" ? all.filter((id) => id.startsWith("wall-")) : [a.startsWith("q-") || a.startsWith("wall-") ? a : all.includes(`q-${a}`) ? `q-${a}` : `wall-${a}`]);
 for (const a of asked) if (!all.includes(a)) { console.error(`${a}: no circuits/${a}.tsx (boards: ${all.join(", ")})`); process.exit(1); }
 let failed = 0;
@@ -77,7 +80,7 @@ async function pcb(id: string): Promise<number> {
   run(render, `
 import { Circuit } from "tscircuit";
 import { runAllChecks } from "@tscircuit/checks";
-import { convertCircuitJsonToPcbSvg } from "circuit-to-svg";
+import { convertCircuitJsonToPcbSvg, convertCircuitJsonToSchematicSvg } from "circuit-to-svg";
 import { convertBomRowsToCsv, convertCircuitJsonToBomRows } from "circuit-json-to-bom-csv";
 import { convertCircuitJsonToPickAndPlaceCsv } from "circuit-json-to-pnp-csv";
 import board from "./${id}.tsx";
@@ -91,13 +94,9 @@ await Bun.write(${JSON.stringify(json)}, JSON.stringify(j));
 await Bun.write(${JSON.stringify(join(out, "pcb.svg"))}, convertCircuitJsonToPcbSvg(j));
 await Bun.write(${JSON.stringify(join(out, "bom.csv"))}, convertBomRowsToCsv(await convertCircuitJsonToBomRows({ circuitJson: j })));
 await Bun.write(${JSON.stringify(join(out, "pnp.csv"))}, convertCircuitJsonToPickAndPlaceCsv(j));
+${module ? `await Bun.write(${JSON.stringify(join(out, "schematic.svg"))}, convertCircuitJsonToSchematicSvg(j));` : ""}
 `);
-  run(gerber, `
-import { convertCircuitJsonToGerberFiles } from "circuit-json-to-gerber";
-const files = convertCircuitJsonToGerberFiles(await Bun.file(${JSON.stringify(json)}).json());
-for (const [name, text] of Object.entries(files)) await Bun.write(${JSON.stringify(join(out, "gerbers"))} + "/" + name, text);
-console.log("gerbers", Object.keys(files).join(" "));
-`);
+  gerbers(json, join(out, "gerbers"));
 
   const els = arr(raw, 100_000)(await Bun.file(json).json());
   const Kind = obj({ type: str(80), message: str(2000) });
@@ -116,7 +115,7 @@ console.log("gerbers", Object.keys(files).join(" "));
     // A module's panel parts sit where its panel says (wall-panels.ts), so the template is drawn from that.
     await Bun.write(join(out, "drill.svg"), panelSvg(module));
     console.log(`drill.svg: ${module.hp} HP panel, ${module.jacks.length} jacks, ${module.knobs.length} knobs`);
-    return errors.length;
+    return errors.length + await panelPcb(module.id, join(out, "panel"));
   }
   // Alpha 16 mm board-mount pots: the shaft sits about 7.5 mm from the leg row
   // (check your pot's datasheet before drilling). 3PDT bushing 12 mm, jacks 10 mm, DC jack 12 mm.
@@ -131,6 +130,40 @@ console.log("gerbers", Object.keys(files).join(" "));
   });
   await Bun.write(join(out, "drill.svg"), drillSvg(holes, `${title}, 125B box`));
   console.log(`drill.svg: ${holes.map((h) => `${h.name} ${h.face} (${h.x.toFixed(1)}, ${h.y.toFixed(1)})`).join(", ")}`);
+  return errors.length;
+}
+
+/** The Gerber and drill files for a rendered board's circuit JSON, into `dir`. */
+function gerbers(json: string, dir: string): void {
+  run(gerber, `
+import { convertCircuitJsonToGerberFiles } from "circuit-json-to-gerber";
+const files = convertCircuitJsonToGerberFiles(await Bun.file(${JSON.stringify(json)}).json());
+for (const [name, text] of Object.entries(files)) await Bun.write(${JSON.stringify(dir)} + "/" + name, text);
+console.log("gerbers", Object.keys(files).join(" "));
+`);
+}
+
+/** A module's front panel as a board (circuits/wall-panel.tsx) into `dir`: its Gerbers and pcb.svg. The number of errors. */
+async function panelPcb(id: string, dir: string): Promise<number> {
+  const json = join(scratch, `wall-${id}.panel.json`);
+  mkdirSync(join(dir, "gerbers"), { recursive: true });
+  run(render, `
+import { Circuit } from "tscircuit";
+import { convertCircuitJsonToPcbSvg } from "circuit-to-svg";
+import { panelBoard } from "./wall-panel.tsx";
+import { panel } from "./wall-panels.ts";
+const c = new Circuit();
+c.add(panelBoard(panel(${JSON.stringify(id)})));
+await c.renderUntilSettled();
+const j = c.getCircuitJson();
+await Bun.write(${JSON.stringify(json)}, JSON.stringify(j));
+await Bun.write(${JSON.stringify(join(dir, "pcb.svg"))}, convertCircuitJsonToPcbSvg(j));
+`);
+  gerbers(json, join(dir, "gerbers"));
+  const els = arr(raw, 10_000)(await Bun.file(json).json()), type = (e: unknown) => check(obj({ type: str(80) }), e)?.type ?? "";
+  const errors = els.flatMap((e) => { const k = check(obj({ type: str(80), message: str(2000) }), e); return k && k.type.endsWith("_error") ? [`${k.type}: ${k.message}`] : []; });
+  console.log(`panel: holes ${els.filter((e) => type(e) === "pcb_hole").length}, labels ${els.filter((e) => type(e) === "pcb_silkscreen_text").length}, errors ${errors.length}`);
+  for (const e of errors) console.log("  " + e);
   return errors.length;
 }
 

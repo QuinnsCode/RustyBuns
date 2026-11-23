@@ -2,8 +2,7 @@
 // panel and clear of the case's rails, far enough from the next for a nut or a knob, and every one a part of its own
 // on the board, its jack or pot body inside the board's edges.
 import { expect, test } from "bun:test";
-import { BOARD_H, PANEL_H, PANELS, boardWidth, panelWidth } from "../circuits/wall-panels.ts";
-import { panelHoles } from "../src/circuit/enclosure.ts";
+import { BOARD_H, PANEL_H, PANELS, boardWidth, panelHoles, panelWidth } from "../circuits/wall-panels.ts";
 
 /** The rails cover about 10 mm at the top and bottom of a 3U panel. */
 const RAIL = 10;

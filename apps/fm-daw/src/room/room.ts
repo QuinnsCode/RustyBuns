@@ -295,6 +295,11 @@ export function pedalAt(r: Room): (typeof PEDALS)[number] | null {
   const a = aimed(r), id = heldId(r) ?? (a ? (a.t === "jack" ? a.end[0] : a.id) : null), p = id ? item(r, id) : undefined, g = p && gearOf(p);
   return (g?.kind === "pedal" && PEDALS.find((x) => x.id === g.circuit)) || null;
 }
+/** The sound wall module you look at (a jack or knob on it counts) or hold, as its panel: what B opens a build sheet for. */
+export function moduleAt(r: Room): Panel | null {
+  const a = aimed(r), id = heldId(r) ?? (a ? (a.t === "jack" ? a.end[0] : a.id) : null), p = id ? item(r, id) : undefined, g = p && gearOf(p);
+  return (g?.kind === "module" && PANELS.find((x) => x.id === g.circuit)) || null;
+}
 const nameOf = (r: Room, id: string) => { const p = item(r, id); return (p && gearOf(p)?.name) ?? id; };
 
 // ---- geometry ----

@@ -29,7 +29,8 @@ Until the last is in, the sections on how the sim plays a module and on playing 
 - **Sends and returns:** Q Bus has two aux buses. Turn a channel's A knob up, cable Send A out to a pedal or one of the rack's machines (Q Spring, Q Tape, Q Bucket), and cable that box's out back into Ret A. The return comes back into the main bus on its own knob, as a desk's return does. A send can also go to another module (into Q Filter, say), and a module's out can go into a return.
 - **Add a module:** N opens the module list. Pick one and it comes to your hands. Hold it in front of the case and click: it goes into the nearest free spot on the row nearest your hands, snapped to the HP grid. A module out of the case has no power, so it plays nothing.
 - **In a sesh:** every studio in `/jam.html` has the same case in its gear wall, cabled from the sesh's patch. Each listener's page plays it on its own audio thread, heard from where its Q Out stands. K at the gear wall opens the module list (N mutes the room there). Once the sesh's clock is known (in a studio, or the gear room in a sesh), Q Steps' own clock follows the band's beat, so everyone hears the same step on the same beat: its Rate rounds to the nearest power of two steps a beat (an eighth to 16). On your own it runs free, at the 555's own rate.
-- **Probes:** `qstudio.addModule(kind)` and `await qstudio.wall()`; in a sesh, `qjam.gearBring(kind)` and `await qjam.wall()`. See `bun run probe --list fm-daw`.
+- **Build sheet:** look at a module (or hold one) and press B. Its sheet has the schematic, the board, the front panel, the parts to order and the files, and one button for the zip. See [Building one](#building-one).
+- **Probes:** `qstudio.addModule(kind)`, `await qstudio.wall()` and `await qstudio.moduleSheet(kind)`; in a sesh, `qjam.gearBring(kind)` and `await qjam.wall()`. See `bun run probe --list fm-daw`.
 
 ## The modules
 
@@ -86,6 +87,8 @@ Each module file (`wall-vco.tsx` and so on) brings only its own circuit. Small p
 - `bom.csv` and `pnp.csv`
 - `pcb.svg`
 - `drill.svg`, the front panel's drill template at 100%: jacks 6 mm, pots 7 mm, rail screws 3.2 mm
+- `schematic.svg`, the circuit, for the build sheet
+- `panel/`, the front panel as a board of its own (`circuits/wall-panel.tsx`): `gerbers/` and `pcb.svg`. It is FR4 the panel's size, with the same holes as `drill.svg` (from `panelHoles` in `wall-panels.ts`), the module's name and each label in silkscreen, and no copper.
 
 It also writes `circuits/wall-<id>.circuit.json`, the netlist the sim reads. Every board places, routes and passes DRC with 0 errors:
 
@@ -118,7 +121,10 @@ The set fits one 84 HP row of the case (`test/wall-panels.test.ts` checks it); t
 ## Building one
 
 The boards are made to be built, but none has been built yet. What a build takes:
-- **Per module:** the zip of `gerbers/` to a fab, `bom.csv` and `pnp.csv` for SMD assembly (or hand soldering), and the panel parts soldered by hand: PJ398SM jacks, Alpha 9 mm pots and a 2×5 shrouded header. Panels are 2 mm aluminium blanks drilled from `drill.svg`.
+- **Per module:** B on it in the gear room opens its build sheet; its download (`wall-<id>-kit.zip`) holds everything below and a `build-sheet.txt` in plain words.
+  - `gerbers/` to a fab, with `bom.csv` and `pnp.csv` for SMD assembly (or hand soldering).
+  - `panel/gerbers/` to the same fab: the front panel, 1.6 mm FR4. `drill.svg` is still there for an aluminium blank.
+  - `order.csv`: one row per part to buy, with its quantity, maker and part number (MPN), for a shop's BOM upload. The table is `src/kit/parts.ts`: Yageo 0805 resistors (RT thin film for the 0.1% ones), Samsung ceramics, TI, onsemi, Microchip and Broadcom chips and transistors, and the hand-soldered parts: Thonk PJ398SM jacks, Alpha RD901F-40 9 mm pots and a Würth 2×5 shrouded header. Every part on every module has one (`test/kit.test.ts` checks it). The MPNs are standard parts, not checked against a shop's stock: a shop may offer a twin with another suffix.
 - **Power:** a Eurorack case with a ±12 V supply and ribbon cables. Those aren't on these boards.
 - **Cost:** not worked out here. The boards are 108 mm tall, which is over the cheap 100 × 100 mm price tier the pedal spike quoted ([ANALOG.md](ANALOG.md#what-the-spike-found-4832)), so it takes a fab quote. Prices and the order are the owner's.
 
@@ -151,6 +157,5 @@ The boards are made to be built, but none has been built yet. What a build takes
 
 ## Next
 
-- A module's build sheet (B on it) as a pedal has, and its front panel as fab files (an FR4 panel with the labels in silkscreen), not just a drill template ([#5689](https://github.com/QuinnsCode/RustyBuns/issues/5689)).
 - More modules for the upper row: a bucket-brigade delay ([#5747](https://github.com/QuinnsCode/RustyBuns/issues/5747), BBD stock first) and the transistor ladder filter ([#5748](https://github.com/QuinnsCode/RustyBuns/issues/5748), measured first).
 - A prototype order and build, then the loop the pedals plan: record the built module, play the same patch in the sim, and compare. Whether to order one is the owner's call (a manual run).
