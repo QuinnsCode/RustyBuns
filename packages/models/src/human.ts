@@ -532,7 +532,7 @@ function head(m: Builder, d: Dims, b: Build, o: Outfit) {
   };
   m.tube(ctl(), {
     tone: fur ? undefined : faceTone,
-    seg: 48, step: 0.0042 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
+    seg: 48, step: 0.005 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
     bump: (p) => {
       face(p);
       if (!fur || (p.z > z0 + 0.05 * hs && p.y < Y(0.03))) return;
