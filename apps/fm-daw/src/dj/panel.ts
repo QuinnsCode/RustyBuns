@@ -1,6 +1,7 @@
 // The decks on screen (engine.ts plays them): deck A on the left, deck B on the right, the mixer between, the two
-// zoomed waveforms stacked across the top on one time scale so you can see the kicks line up, and the library under
-// it all: drop files on it (or a deck), or pick them, and send each to A or B. Each deck is a club media player
+// zoomed waveforms stacked across the top on one time scale so you can see the kicks line up, all on one screen (a
+// carousel of the three on a narrow one). Music comes from the header: Add music (or drop files anywhere on it), or a
+// YouTube link sent to A or B (youtube.ts); the library pop-over lists what came this visit, to send to either deck. Each deck is a club media player
 // (player-panel.ts: the screen, the jog wheel in VINYL or CD, a big CUE and PLAY, the tempo fader); the close-up
 // zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts).
 // The mixer is mixer-panel.ts's four channels, master and twin filters. Keys while it's open: Q/P play A/B, W/O cue,
@@ -19,6 +20,7 @@ import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { connectMidiJog, Jog, playerFace } from "./player-panel.ts";
 import { button, el, svg } from "./dom.ts";
+import { TubeDeck, tubeTitle, tubeVolume, videoId } from "./youtube.ts";
 import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
 /** The waveforms' colours: deck A blue, deck B orange, what's played greyed, the cue and the four hot cues. */
@@ -33,6 +35,10 @@ const ICON = {
   plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
   ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
   shield: svg('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+  tube: svg('<path d="M10 7.75a.75.75 0 0 1 1.142-.638l3.664 2.249a.75.75 0 0 1 0 1.278l-3.664 2.25a.75.75 0 0 1-1.142-.64z"/><path d="M12 17v4"/><path d="M8 21h8"/><rect x="2" y="3" width="20" height="14" rx="2"/>'),
+  list: svg('<path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/>'),
+  mixer: svg('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
+  magnet: svg('<path d="m12 15 4 4"/><path d="M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z"/><path d="m5 8 4 4"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -88,6 +94,10 @@ export interface DecksPanel {
   jogs: readonly [Jog, Jog];
   /** The close-up's zoom: an index into ZOOMS (player.ts), and the seconds either side it shows. */
   zoom(i?: number): { at: number; seconds: number };
+  /** A YouTube link (or id) onto deck `side`: true once YouTube's player is ready on it. */
+  tube(side: Side, link: string): Promise<boolean>;
+  /** Each deck's YouTube video, or null: its id, title, where it is, and the volume and speed the deck gives it. */
+  tubes(): ({ id: string; title: string; pos: number; playing: boolean } | null)[];
 }
 
 /** Mount the decks on the page, closed. `ctx` is the page's audio; `onToggle` hears it open and close. */
@@ -113,8 +123,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const tools = el("div", { class: "dj-head-tools" });
   const midiB = button(`${ICON.midi}<span>MIDI</span>`, "Play the jog wheels from a MIDI controller", "dj-midi");
   midiB.addEventListener("click", () => void connectMidiJog(jogs).then((said) => { flash(said); midiB.classList.toggle("on", said.startsWith("MIDI jog")); }));
-  tools.append(midiB, peopleB, closeB);
-  head.append(title, ...(room?.card ? [room.card] : []), tools, people);
+  // the two ways music comes on: a file from this computer, or a YouTube link (played in YouTube's own player)
+  const src = el("div", { class: "dj-src" });
+  const add = button(`${ICON.upload}<span>Add music</span>`, "Add music from this computer (mp3, wav, m4a, ogg, flac): it stays on this computer", "dj-add");
+  const tubeIn = el("input", { type: "url", class: "dj-tube", placeholder: "Paste a YouTube link", "aria-label": "A YouTube link to play on a deck", enterkeyhint: "go" });
+  const tubeA = button(`${ICON.tube}<span>A</span>`, "Play the YouTube link on deck A"), tubeB = button(`${ICON.tube}<span>B</span>`, "Play the YouTube link on deck B");
+  tubeA.addEventListener("click", () => void tubeFrom(0)); tubeB.addEventListener("click", () => void tubeFrom(1));
+  tubeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") void tubeFrom(decks.decks[0].track || tubes[0] ? 1 : 0); });
+  src.append(add, tubeIn, tubeA, tubeB);
+  const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added this visit, to send to A or B", "dj-lib-open");
+  tools.append(libB, midiB, peopleB, closeB);
+  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -127,13 +146,26 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   zoom.addEventListener("wheel", (e) => { if (!e.ctrlKey && !e.metaKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); setZoom(zoomAt + (e.deltaY > 0 ? 1 : -1)); }, { passive: false });
   const zoomBox = el("div", { class: "dj-zoombox" });
   zoomBox.append(zoom, zoomBar);
+  // on a phone or a narrow window the three pieces are a carousel: swipe across, or press A, the mixer or B
+  const tabs = el("nav", { class: "dj-tabs", "aria-label": "Deck A, the mixer, deck B" });
+  const tabBs = (["A", "mixer", "B"] as const).map((t, i) => {
+    const b = button(t === "mixer" ? ICON.mixer : t, t === "mixer" ? "The mixer" : `Deck ${t}`, i === 1 ? "on" : "");
+    b.addEventListener("click", () => { const pane = row.children[i]; if (pane instanceof HTMLElement) row.scrollTo({ left: pane.offsetLeft - row.offsetLeft, behavior: "smooth" }); });
+    tabs.append(b);
+    return b;
+  });
   const row = el("div", { class: "dj-row" });
-  const lib = el("div", { class: "dj-lib" });
-  root.append(head, zoomBox, row, lib);
+  row.addEventListener("scroll", () => { const i = Math.round(row.scrollLeft / Math.max(1, row.clientWidth)); tabBs.forEach((b, j) => b.classList.toggle("on", j === i)); }, { passive: true });
+  const lib = el("div", { class: "dj-lib", role: "dialog", "aria-label": "The library" });
+  lib.hidden = true;
+  libB.addEventListener("click", () => { lib.hidden = !lib.hidden; libB.classList.toggle("on", !lib.hidden); });
+  const count = libB.querySelector(".dj-count")!;
+  const note = el("p", { class: "dj-note", role: "status" });
+  root.append(head, lib, zoomBox, tabs, row, note);
   (o.parent ?? document.body).append(root);
 
   // ---- the mixer (mixer-panel.ts): a deck someone else plays dims its channel
-  const quant = button("Quantize", "Cues and loops land on the beat", "dj-quant on");
+  const quant = button(ICON.magnet, "Quantize: cues and loops land on the beat", "dj-quant on");
   quant.addEventListener("click", () => { decks.quantize = !decks.quantize; });
   const mixer = mountMixer(decks.mixer, { far: (ch) => DECK_CHANNEL.some((c, side) => c === ch && !!far(side as Side)), extra: [quant] });
 
@@ -142,24 +174,53 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const players = ([0, 1] as const).map((side) => playerFace({
     side, deck: decks.decks[side], jog: jogs[side],
     press: (p, x) => press(side, p, x),
-    touch: (on) => { const t = far(side); if (t) jogOut(side, t.owner)?.touch(on, performance.now()); else jogs[side].touch(on); },
-    turn: (part, turns) => { const t = far(side); if (t) jogOut(side, t.owner)?.turn(part, turns, performance.now()); else jogs[side].turn(part, turns); },
+    touch: (on) => { const t = far(side); if (t) jogOut(side, t.owner)?.touch(on, performance.now()); else if (!tubes[side]) jogs[side].touch(on); },
+    turn: (part, turns) => { const t = far(side), tube = tubes[side]; if (t) jogOut(side, t.owner)?.turn(part, turns, performance.now()); else if (tube) tube.turn(turns); else jogs[side].turn(part, turns); },
     theirs: () => (far(side) ? view(side) : null),
+    tube: () => tubes[side]?.view() ?? null,
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
   }));
   row.append(players[0].box, mixer.root, players[1].box);
+  // start on the mixer in the carousel (a no-op when all three fit)
+  requestAnimationFrame(() => { row.scrollLeft = mixer.root.offsetLeft - row.offsetLeft; });
+
+  // ---- YouTube on a deck (youtube.ts): the video plays in YouTube's player on the deck, the deck drives it
+  const tubes: [TubeDeck | null, TubeDeck | null] = [null, null];
+  /** Videos sent to a deck this visit, for the library. */
+  const tubeShelf: { id: string; title: string }[] = [];
+  function dropTube(side: Side) { tubes[side]?.destroy(); tubes[side] = null; players[side].video.hidden = true; players[side].video.replaceChildren(); }
+  async function tubeFrom(side: Side) {
+    const id = videoId(tubeIn.value);
+    if (!id) return flash("That isn't a YouTube link: paste one from the address bar or Share");
+    tubeIn.value = "";
+    await putTube(side, id);
+  }
+  async function putTube(side: Side, id: string, title?: string): Promise<boolean> {
+    if (!canLoad(side)) return false;
+    if (decks.decks[side].track) { decks.decks[side].unload(); room?.booth.sides.splice(side, 1, null); }
+    dropTube(side);
+    const v = players[side].video;
+    v.hidden = false;
+    const t = new TubeDeck(id, v, title ?? tubeShelf.find((s) => s.id === id)?.title ?? "YouTube");
+    tubes[side] = t;
+    if (!tubeShelf.some((s) => s.id === id)) tubeShelf.push({ id, title: t.title });
+    drawList();
+    flash(room ? "YouTube plays on your own speakers: the room hears files you add, not YouTube" : `Deck ${side ? "B" : "A"}: YouTube's player. EQ, filters and scratch need a file`);
+    if (!title) void tubeTitle(id).then((name) => { if (!name) return; t.title = name; const s = tubeShelf.find((x) => x.id === id); if (s) s.title = name; drawList(); });
+    return t.ready.then(() => true, (e: unknown) => { flash(e instanceof Error ? e.message : "YouTube's player didn't load"); dropTube(side); return false; });
+  }
 
   // ---- the library
   const pick = el("input", { type: "file", accept: "audio/*,.xml,.nml,.dat,.ext", multiple: "", hidden: "" });
-  const add = button(`${ICON.upload}<span>Add music</span>`, "Add music from this computer (mp3, wav, m4a, ogg, flac): it stays on this computer", "dj-add");
   add.addEventListener("click", () => pick.click());
   pick.addEventListener("change", () => { for (const f of pick.files ?? []) void fromFile(null, f); pick.value = ""; });
   const list = el("ul", { class: "dj-list" });
-  const note = el("p", { class: "dj-note" });
-  lib.append(add, pick, list, note);
-  lib.addEventListener("dragover", (e) => e.preventDefault());
-  lib.addEventListener("drop", (e) => { e.preventDefault(); for (const f of e.dataTransfer?.files ?? []) void fromFile(null, f); });
+  lib.append(pick, list);
+  for (const t of [lib, head]) {
+    t.addEventListener("dragover", (e) => e.preventDefault());
+    t.addEventListener("drop", (e) => { e.preventDefault(); for (const f of e.dataTransfer?.files ?? []) void fromFile(null, f); });
+  }
   let noteUntil = 0;
   function flash(text: string) { note.textContent = text; noteUntil = performance.now() + 3500; }
 
@@ -181,6 +242,15 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       li.append(n, bpm, toA, toB);
       list.append(li);
     }
+    for (const s of tubeShelf) {
+      const li = el("li", { class: "tube" }, ICON.tube), n = el("span", { title: s.title });
+      n.textContent = s.title;
+      const toA = button("A", "Play on deck A"), toB = button("B", "Play on deck B");
+      toA.addEventListener("click", () => void putTube(0, s.id, s.title)); toB.addEventListener("click", () => void putTube(1, s.id, s.title));
+      li.append(n, el("small", {}, "YouTube"), toA, toB);
+      list.append(li);
+    }
+    count.textContent = String(shelf.length + tubeShelf.length);
     if (!shelf.length) {
       const li = el("li", { class: "none" }, "<span>Add music, or drop files here or on a deck. Your files stay on this computer; the room hears your set as you play it.</span>");
       const demo = button("Demo tracks", "Two short tracks made here, to try the decks");
@@ -201,12 +271,13 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (r && !r.ok) { flash(r.why); return false; }
     return true;
   }
-  function put(side: Side, t: Track) { if (canLoad(side)) { decks.put(side, t); room?.booth.sides.splice(side, 1, null); } }
+  function put(side: Side, t: Track) { if (canLoad(side)) { dropTube(side); decks.put(side, t); room?.booth.sides.splice(side, 1, null); } }
   async function load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track> {
     if (!canLoad(side)) throw new Error(`deck ${side ? "B" : "A"} is busy`);
     flash(`Reading ${name}…`);
     const t = await decks.load(side, name, bytes, known.get(fileKey(name))).catch((e: unknown) => { flash(`Couldn't read ${name}: ${e instanceof Error ? e.message : "not a sound file this browser knows"}`); throw e; });
     shelve(t);
+    dropTube(side);
     room?.booth.sides.splice(side, 1, null);
     flash(t.grid ? `${name}: ${t.grid.bpm} BPM${t.key ? `, ${t.key.camelot} ${t.key.name}` : ""}` : `${name}: no steady beat found, so sync and loops are off for it`);
     return t;
@@ -222,7 +293,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       return;
     }
     // a library add goes on whichever deck is empty, else just into the library
-    const empty = decks.decks.findIndex((d, i) => !d.track && !far(i === 0 ? 0 : 1));
+    const empty = decks.decks.findIndex((d, i) => !d.track && !tubes[i] && !far(i === 0 ? 0 : 1));
     const to = side ?? (empty >= 0 ? (empty as Side) : null);
     if (to === null) {
       const t = await decks.decode(f.name, await f.arrayBuffer(), known.get(fileKey(f.name))).catch(() => null);
@@ -245,6 +316,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     g.clearRect(0, 0, w, h);
     if (!dur) return;
     const at = (pos / dur) * w;
+    // no peaks (a YouTube video): a bar, played and to come
+    if (!p.length) { g.fillStyle = LOOKS_DECK.played; g.fillRect(0, h / 2 - 3, at, 6); g.fillStyle = LOOKS_DECK.wave[side]; g.fillRect(at, h / 2 - 3, w - at, 6); }
     for (let i = 0; i < p.length; i++) {
       const x = (i / p.length) * w, v = p[i]! * (h / 2 - 2);
       g.fillStyle = x < at ? LOOKS_DECK.played : LOOKS_DECK.wave[side];
@@ -305,7 +378,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   }
   /** Do a press on a deck here (yours, or someone in the booth pressed it). */
   function pressHere(side: Side, p: Press, x?: number) {
-    const d = decks.decks[side], hot = hotOf(p);
+    const d = decks.decks[side], hot = hotOf(p), tube = tubes[side];
+    if (tube) { if (p === "sync") flash("Sync needs a beat: a YouTube deck has none, so match it by ear on the pitch fader"); else tube.press(p, x); return; }
     if (!d.track) return;
     if (p === "play") d.toggle();
     else if (p === "cueDown") d.cueDown(decks.quantize);
@@ -342,6 +416,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   function view(side: Side): DeckView {
     const theirs = far(side);
     if (theirs && room) return farView(theirs, room.now(), room.nameOf(theirs.owner), waveIn(theirs.say.wave));
+    const tube = tubes[side];
+    if (tube) return tube.view();
     const s = decks.decks[side].state(), t = decks.decks[side].track;
     return { name: s.name, who: null, bpm: s.bpm, key: s.key ? `${s.key.camelot} ${s.key.name}` : null, pos: s.pos, len: s.length, playing: s.playing, cue: s.cue, wave: t ? (over.get(t) ?? new Float32Array(0)) : new Float32Array(0) };
   }
@@ -429,6 +505,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     jogsOut[0]?.out.tick(now); jogsOut[1]?.out.tick(now);
     zoomLabel.textContent = `±${zoomS()} s`;
     mixer.draw();
+    const m = decks.mixer;
+    for (const side of [0, 1] as const) tubes[side]?.follow(decks.decks[side].rate(), tubeVolume(m.channels[DECK_CHANNEL[side]]!.s, m.xfader, m.curve, m.master));
     quant.classList.toggle("on", decks.quantize);
     if (performance.now() > noteUntil && note.textContent) note.textContent = "";
   }
@@ -461,5 +539,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   if (o.startOpen) open();
   void raf;
   return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), demos, jogs,
-    zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; } };
+    zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; },
+    tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
+    tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)) };
 }

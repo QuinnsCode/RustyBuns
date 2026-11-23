@@ -1,7 +1,8 @@
 // The DJ table in the jam room, as something you touch: each media deck's screen shows what's on it (here or on
 // another DJ's machine: the name, tempo, key, the waveform with the playhead and the cue, time left), its jog turns
 // as the record would and its ring lights while it plays, and a click or tap on its play, cue or hot cue keys
-// presses them (booth.ts says where each key is on the model). The page decides what a press does.
+// presses them (booth.ts says where each key is on the model). Anywhere else on a deck, the mixer or the table is
+// "open": the page opens the whole setup, both decks and the mixer. The page decides what a press does.
 import * as THREE from "three";
 import { clock } from "../dj/analyze.ts";
 import { deckKeyAt, type DeckView, type Press } from "../dj/booth.ts";
@@ -16,10 +17,14 @@ interface Gear { group: THREE.Object3D; side: Side; jog: THREE.Object3D | null; 
 
 export class BoothGear {
   private gear: Gear[] = [];
+  /** The rest of the booth a click opens the decks from: the mixer, the table under it all. */
+  private rest: THREE.Object3D[] = [];
   private ray = new THREE.Raycaster();
 
   /** The room was built again: forget the old decks. */
-  clear() { this.gear = []; }
+  clear() { this.gear = []; this.rest = []; }
+  /** Something else on the DJ table (the mixer, the table itself): a click on it opens the decks. */
+  addRest(o: THREE.Object3D) { this.rest.push(o); }
   /** A media deck model on the table, deck A (DJ's left) or B. */
   add(group: THREE.Object3D, side: Side) {
     const screenPart = group.getObjectByName("part:screen"), jog = group.getObjectByName("part:jog") ?? group.getObjectByName("part:platter") ?? null;
@@ -40,16 +45,15 @@ export class BoothGear {
   get count() { return this.gear.length; }
 
   /** What a click at `ndc` (-1..1 both ways; the middle when the pointer is locked) touches on the decks, or null. */
-  hit(ndc: THREE.Vector2, camera: THREE.Camera): { side: Side; key: Press | "jog" | "screen" } | null {
+  hit(ndc: THREE.Vector2, camera: THREE.Camera): { side: Side; key: Press | "jog" | "screen" | "open" } | null {
     if (!this.gear.length) return null;
     this.ray.setFromCamera(ndc, camera);
-    const got = this.ray.intersectObjects(this.gear.map((g) => g.group), true)[0];
+    const got = this.ray.intersectObjects([...this.gear.map((g) => g.group), ...this.rest], true)[0];
     if (!got || got.distance > 2.2) return null;
     const g = this.gear.find((x) => { let o: THREE.Object3D | null = got.object; while (o) { if (o === x.group) return true; o = o.parent; } return false; });
-    if (!g) return null;
+    if (!g) return { side: 0, key: "open" };
     const local = g.group.worldToLocal(got.point.clone());
-    const key = deckKeyAt(local.x, local.z);
-    return key ? { side: g.side, key } : null;
+    return { side: g.side, key: deckKeyAt(local.x, local.z) ?? "open" };
   }
 
   /** Each frame: the jogs turn and the rings light by what plays; the screens redraw a few times a second. */
