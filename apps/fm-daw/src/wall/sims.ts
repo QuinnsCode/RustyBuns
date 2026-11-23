@@ -9,13 +9,14 @@
 //   - What switches (the oscillators, the LFO, the sequencer's clock and counter, the sample and hold) runs from the numbers its parts set:
 //     the reference current, the integrating capacitor and the comparator's threshold for the VCO, the 555's
 //     resistors and capacitor for the clock, the Schmitt trigger's divider for the LFO. Change a part on the board and
-//     the sound follows.
+//     the sound follows. Q Keys' microcontroller is its firmware's logic (notes, the MIDI clock) into the board's gains.
 // Volts in and volts out, Eurorack's levels: audio +-5 V, 1 V an octave, gates 0 to 10 V.
 import { mulberry32 } from "@rustybuns/util";
 import { Circuit, fixPots, gains, potShare, type Gains, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { netlistOf, readBoard, type Board, type BoardOptions, type BoardPart } from "../circuit/tscircuit.ts";
 import { panel } from "../../circuits/wall-panels.ts";
 import seqBoard from "../../circuits/wall-seq.circuit.json";
+import keysBoard from "../../circuits/wall-keys.circuit.json";
 import vcoBoard from "../../circuits/wall-vco.circuit.json";
 import vcfBoard from "../../circuits/wall-vcf.circuit.json";
 import vcaBoard from "../../circuits/wall-vca.circuit.json";
@@ -26,13 +27,17 @@ import outBoard from "../../circuits/wall-out.circuit.json";
 import noiseBoard from "../../circuits/wall-noise.circuit.json";
 
 /** Each module's board as circuit JSON, by kind: read through `readBoard`, which checks it. */
-const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard]]);
+const BOARDS = new Map<string, unknown>([["seq", seqBoard], ["vco", vcoBoard], ["vcf", vcfBoard], ["vca", vcaBoard], ["env", envBoard], ["lfo", lfoBoard], ["mix", mixBoard], ["out", outBoard], ["noise", noiseBoard], ["keys", keysBoard]]);
 /** Every module kind the wall has. */
 export const KINDS = [...BOARDS.keys()];
 
 /** A TL07x's output swing on +-12 V, and the supplies. */
 export const RAIL = 11;
 const SUPPLIES = { V12: 12, VN12: -12 };
+/** Q Keys' MCP4822: 12 bits at 1 mV a step (its 2.048 V reference, gain 2), and the MIDI clock's 24 ticks a beat. */
+const DAC_STEP = 1e-3, DAC_TOP = 4095, PPQN = 24;
+/** The key at 0 V on Q Keys' pitch out (C2), and the note lengths its Div knob picks, in MIDI clock ticks. */
+const KEYS_BASE = 36, DIVS = [24, 12, 6];
 /** The thermal voltage at the room's 26 C, where the VCO's scale is trimmed: kT/q. */
 const VT = (1.380649e-23 * 299.15) / 1.602176634e-19;
 /** How long the VCO's reset takes (the comparator's slew and the JFET emptying C2): what flattens its top octaves. */
@@ -58,6 +63,10 @@ const VBE = 0.65;
 export interface Sim {
   readonly ins: string[];
   readonly outs: string[];
+  /** A key down (velocity 0 to 1) or up (0): the room's keys and MIDI, for a module that takes them. */
+  note?(midi: number, vel: number): void;
+  /** The sesh's tempo, and the beat it is on now when the band's clock is known. */
+  tempo?(bpm: number, beat: number | null): void;
   step(x: Float64Array, y: Float64Array): void;
   /** Its knobs, 0 to 1 by name (a knob left out stays where it is). */
   knobs(k: Record<string, number>): void;
@@ -71,7 +80,8 @@ export interface Sim {
 function board(id: string): Board {
   const p = panel(id);
   const decouple = ["U1", "U2", "U3", "U4"].flatMap((u) => [`C${u}P`, `C${u}N`]);
-  const chips = id === "seq" ? ["U1", "U2"] : []; // the 555 and the 4017 aren't parts the solver models; their numbers are read off
+  // The 555 and the 4017, and Q Keys' digital side, aren't parts the solver models; their numbers are read off.
+  const chips = id === "seq" ? ["U1", "U2"] : id === "keys" ? ["U1", "U2", "U3", "U4", "JP2", "JP3"] : [];
   return readBoard(BOARDS.get(id), { leaveOut: [...p.jacks.map((j) => j.part), "JP1", "DP1", "DP2", "CP1", "CP2", ...decouple, ...chips] });
 }
 
@@ -482,10 +492,72 @@ class Linear implements Sim {
   gain(from: string, to: string): number { return this.g.gain[this.outs.indexOf(to)]?.[this.ins.indexOf(from)] ?? 0; }
 }
 
+/**
+ * Q Keys: its firmware's logic into its board. The last key held is the pitch, a volt an octave from C2, written to the
+ * DAC as a firmware for a gain of two would (1 mV steps, 12 bits); the gate is high while any key is; the velocity is
+ * the DAC's other half. The clock counts the MIDI clock (the sesh's tempo, 24 ticks a beat) down to the Div knob's
+ * quarter, eighth or sixteenth, high for the first half of each. U5's four gains come from the board, RT1 trimmed as a
+ * builder trims it, until a key an octave up is a volt up.
+ */
+class Keys implements Sim {
+  readonly ins: string[] = [];
+  readonly outs = ["pitch", "gate", "vel", "clock"];
+  private readonly b = board("keys");
+  private readonly trim: number;
+  private pitch = (_v: number) => 0;
+  private gate = (_v: number) => 0;
+  private vel = (_v: number) => 0;
+  private clk = (_v: number) => 0;
+  private div = 12;
+  private held: number[] = [];
+  private code = 0;
+  private velCode = 0;
+  private bpm = 120;
+  private beat = 0;
+  constructor(private readonly sampleRate: number, k: Record<string, number>) {
+    const r = (n: string) => value(this.b, n);
+    // RT1 (between PT and the inverting input) plus R4 against R3: a gain of two when RT1 is R3 less R4.
+    this.trim = Math.min(1, Math.max(0, (r("R3") - r("R4")) / r("RT1")));
+    this.knobs(k);
+  }
+  knobs(k: Record<string, number>) {
+    const b = turned("keys", this.b, { ...knobsOf("keys"), ...k }, { RT1: this.trim });
+    this.pitch = line(gains(netOf(b, ["R3", "R4", "R5", "RT1", "U5A"]), ["DAC_A"], ["PITCH"]));
+    this.gate = line(gains(netOf(b, ["R6", "R7", "R8", "U5B"]), ["GATE5"], ["GATE"]));
+    this.vel = line(gains(netOf(b, ["R9", "R10", "R11", "U5C"]), ["DAC_B"], ["VEL"]));
+    this.clk = line(gains(netOf(b, ["R12", "R13", "R14", "U5D"]), ["CLK5"], ["CLOCK"]));
+    // The Div knob's wiper on the microcontroller's ADC, in thirds.
+    const p = part(b, "RV1"), turn = p.kind === "Pot" ? potShare(p) : 0.5;
+    this.div = DIVS[Math.min(DIVS.length - 1, Math.floor(turn * DIVS.length))];
+  }
+  note(midi: number, vel: number) {
+    this.held = this.held.filter((n) => n !== midi);
+    if (vel > 0) { this.held.push(midi); this.velCode = Math.min(DAC_TOP, Math.round(vel * DAC_TOP)); }
+    const last = this.held.at(-1);
+    if (last !== undefined) this.code = Math.min(DAC_TOP, Math.max(0, Math.round((last - KEYS_BASE) / 12 / 2 / DAC_STEP)));
+  }
+  tempo(bpm: number, beat: number | null) {
+    this.bpm = bpm;
+    if (beat !== null) this.beat = beat;
+  }
+  step(_x: Float64Array, y: Float64Array) {
+    this.beat += this.bpm / 60 / this.sampleRate;
+    const tick = Math.floor(this.beat * PPQN), d = this.div;
+    const on = this.held.length > 0;
+    y[0] = this.pitch(this.code * DAC_STEP);
+    y[1] = this.gate(on ? 5 : 0);
+    y[2] = this.vel(this.velCode * DAC_STEP);
+    y[3] = this.clk((((tick % d) + d) % d) < d / 2 ? 5 : 0);
+  }
+  read() { return { note: this.held.at(-1) ?? -1, pitch: this.pitch(this.code * DAC_STEP), bpm: this.bpm, div: this.div, beat: this.beat }; }
+}
+
+
 /** A module of `kind` at these knobs. */
 export function makeSim(kind: string, sampleRate: number, knobs: Record<string, number> = {}): Sim {
   switch (kind) {
     case "vco": return new Vco(sampleRate, knobs);
+    case "keys": return new Keys(sampleRate, knobs);
     case "lfo": return new Lfo(sampleRate, knobs);
     case "seq": return new Seq(sampleRate, knobs);
     case "env": return new Env(sampleRate, knobs);

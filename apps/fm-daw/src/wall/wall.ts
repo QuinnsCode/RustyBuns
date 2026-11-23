@@ -3,7 +3,8 @@
 // other end, else the input its jack is normalled to, else 0 V) and writes its outputs; modules run in cable order, so
 // a cable carries this sample, and one that loops back (feedback) carries the last. A mixer's send goes out to its
 // gear a block at a time (Q Amp's rig, at line level), so its return comes back a block (2.7 ms at 48 kHz) later.
-// What the wall plays into the room is every Q Out's line out. Pure, no DOM: the gear room's audio thread runs it
+// What the wall plays into the room is every Q Out's line out. The room's keys (and a MIDI keyboard) and the sesh's
+// tempo come in as `note` and `tempo`, for Q Keys. Pure, no DOM: the gear room's audio thread runs it
 // (src/room/wall-worklet.ts), and the tests render it straight.
 import { RigReturn } from "../mixer.ts";
 import type { AmpSettings } from "../amp/messages.ts";
@@ -30,7 +31,17 @@ export class Wall {
   private rets: Ret[] = [];
   /** Each Q Out's out-l and out-r, by node. */
   private outs: [number, number, number][] = [];
+  /** The tempo last sent, for a module that comes into the case after it. */
+  private bpm = 120;
   constructor(readonly sampleRate: number) {}
+
+  /** A key down (velocity 0 to 1) or up (0) on every module that takes keys. */
+  note(midi: number, vel: number): void { for (const n of this.nodes) n.sim.note?.(midi, vel); }
+  /** The sesh's tempo, and the beat it is on now if the band's clock is known (so a clock lands on the band's beats). */
+  tempo(bpm: number, beat: number | null = null): void {
+    this.bpm = bpm;
+    for (const n of this.nodes) n.sim.tempo?.(bpm, beat);
+  }
 
   /** The wall as the room has it now. A module that stays keeps its sound (its oscillator's phase, its filter's charge). */
   set(spec: WallSpec): void {
@@ -39,6 +50,7 @@ export class Wall {
       const old = had.get(m.id);
       if (old && old.kind === m.kind) { old.sim.knobs(m.knobs); return { ...old, from: [] }; }
       const sim = makeSim(m.kind, this.sampleRate, m.knobs);
+      sim.tempo?.(this.bpm, null);
       return { id: m.id, kind: m.kind, sim, x: new Float64Array(sim.ins.length), y: new Float64Array(sim.outs.length), from: [] };
     });
     const at = new Map(nodes.map((n, i) => [n.id, i]));

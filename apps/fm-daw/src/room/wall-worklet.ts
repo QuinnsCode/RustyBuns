@@ -1,6 +1,7 @@
 // The sound wall on its own audio thread (src/wall/wall.ts, WALL.md): the modules in the case and the patch cables
 // between them, run a sample at a time, out of its Q Out modules to both speakers. The page sends the wall whenever
-// the room changes it (`listen().wall.spec`), and asks what each module is doing for its probe.
+// the room changes it (`listen().wall.spec`), the keys played and the sesh's tempo for Q Keys, and asks what each
+// module is doing for its probe.
 import { Wall, type WallSpec } from "../wall/wall.ts";
 import { limit } from "../amp/live.ts";
 
@@ -8,7 +9,7 @@ declare const sampleRate: number;
 declare class AudioWorkletProcessor { readonly port: MessagePort }
 declare function registerProcessor(name: string, ctor: unknown): void;
 
-export type ToWall = { t: "wall"; spec: WallSpec } | { t: "state" };
+export type ToWall = { t: "wall"; spec: WallSpec } | { t: "note"; midi: number; vel: number } | { t: "tempo"; bpm: number; beat: number | null } | { t: "state" };
 export type FromWall = { t: "state"; modules: ReturnType<Wall["state"]>; load: number };
 
 class WallProcessor extends AudioWorkletProcessor {
@@ -22,6 +23,8 @@ class WallProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e: MessageEvent<ToWall>) => {
       const m = e.data;
       if (m.t === "wall") this.wall.set(m.spec);
+      else if (m.t === "note") this.wall.note(m.midi, m.vel);
+      else if (m.t === "tempo") this.wall.tempo(m.bpm, m.beat);
       else this.port.postMessage({ t: "state", modules: this.wall.state(), load: this.load } satisfies FromWall);
     };
   }

@@ -123,6 +123,14 @@ export const PANELS: Panel[] = [
       jack("J4", "out", "Out", "out", 0, -38),
     ],
   },
+  {
+    id: "keys", name: "Q Keys", what: "MIDI to CV and clock", hp: 6,
+    knobs: [knob("RV1", "div", "Div", 0, 34)],
+    jacks: [
+      jack("J1", "pitch", "V/Oct", "out", -6.5, -16), jack("J2", "gate", "Gate", "out", 6.5, -16),
+      jack("J3", "vel", "Vel", "out", -6.5, -38), jack("J4", "clock", "Clock", "out", 6.5, -38),
+    ],
+  },
 ];
 
 export const panel = (id: string): Panel => {
