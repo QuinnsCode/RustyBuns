@@ -23,8 +23,8 @@
 1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it. Wanna do something weird? Do it, your code is your code.
 2. **Write it one time. It runs in four places.** Desktop, edge, server and phone.
 3. **The front is basically a Vite app.** Use any framework on top. Rusty Buns adds the extras.
-4. **The back goes where you choose.** Edge or server, serverless or serverful. It fits each host because your app uses only five simple parts: http, comms, storage, memory and identity. Cloudflare, Railway and Hetzner are built in today, but whatever Alchemy supports is supported!
-5. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first. We also add Effect.ts in because Alchemy uses it so start experimenting with
+4. **The back goes where you choose.** Edge or server, serverless or serverful. It fits each host because your app uses only five simple parts: http, comms, storage, memory and identity. Cloudflare, Railway and Hetzner are built in today. Alchemy supports more, and you can add those yourself.
+5. **Typed from front to back.** One language from the page to the deploy. The compiler finds the errors first. We also add Effect.ts in because Alchemy uses it so start experimenting with it.
 6. **Add systems speed when you need it.** Use Rust in the page or the backend. Or use C, Zig or any library that Bun's FFI can load. Rust just offers the best interop from edge to server to native imo.
 7. **It costs nothing until you say yes.** It runs on your laptop with no cloud account.
 8. **Easy to test.** A full copy of the app is a folder. Make ten copies in one test. Alchemy and Rusty Buns make it easy!
