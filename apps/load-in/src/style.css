@@ -52,6 +52,8 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 .bar-card > b:first-child, .bar-card > div:first-child > b:first-child { font: 400 17px var(--marker); margin-bottom: 2px; }
 .bar-card .pass, .bar-card .warn, .bar-card .trip { font-weight: 700; }
 .bar-card small { color: var(--ink-soft); font-size: 12px; margin-top: 3px; }
+.bar-card .rigs a { color: inherit; text-decoration: underline; pointer-events: auto; }
+.bar-card .rigs b { font-weight: 700; }
 .bar-card > div:first-child { display: grid; gap: 1px; }
 /* A card whose lines change while a form on it keeps its focus (the DJ booth): the lines sit in the card's grid as if loose. */
 .bar-card > div.lines { display: contents; }

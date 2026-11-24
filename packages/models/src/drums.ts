@@ -33,6 +33,9 @@ export interface DrumKit {
   pieces: DrumPiece[];
   /** The kick pedal's beater: turns about x from `rest` to `hit` (radians). */
   beater: { obj: THREE.Object3D; rest: number; hit: number };
+  /** Where the drummer's feet go: the kick pedal's footboard (right foot) and the hi-hat's (left), each a point on its
+   *  top where the ball of the foot presses, +z toward the heel. */
+  pedals: { kick: THREE.Object3D; hat: THREE.Object3D };
   /** The drummer's throne, not yet in `group`: the caller puts it where the seat is. */
   throne: THREE.Group;
   /** Where each mic's cable leaves it, in the kit's frame (the caller runs the cables to its stage box). */
@@ -465,6 +468,7 @@ export function drumKit(opts: DrumKitOptions = {}): DrumKit {
   mesh(new THREE.BoxGeometry(0.11, 0.008, 0.3), steel, group, 0.06, 0.005, pedalZ + 0.17); // base plate
   const board = mesh(new THREE.BoxGeometry(0.075, 0.012, 0.22), chrome, group, 0.06, 0.05, pedalZ + 0.16); board.rotation.x = -0.2;
   mesh(new THREE.BoxGeometry(0.075, 0.016, 0.06), steel, group, 0.06, 0.015, pedalZ + 0.29);
+  const kickPedal = new THREE.Object3D(); kickPedal.position.set(0.06, 0.066, pedalZ + 0.12); kickPedal.rotation.x = -0.2; group.add(kickPedal);
   for (const sx of [-1, 1]) tube(0.006, v3(0.06 + sx * 0.05, 0.01, pedalZ + 0.05), v3(0.06 + sx * 0.05, 0.13, pedalZ + 0.05), steel);
   tube(0.005, v3(0.01, 0.13, pedalZ + 0.05), v3(0.11, 0.13, pedalZ + 0.05), chrome);
   mesh(new THREE.TorusGeometry(0.018, 0.004, 6, 16).rotateY(Math.PI / 2), steel, group, 0.06, 0.13, pedalZ + 0.05);
@@ -598,6 +602,7 @@ export function drumKit(opts: DrumKitOptions = {}): DrumKit {
   };
   const row = (part: DrumPart) => CYMBALS.find((c) => c.part === part)!;
 
+  const hatPedal = new THREE.Object3D();
   // the hi-hats: two cymbals on a stand with its pedal toward the drummer's left foot, the clutch on the top one
   {
     const at = v3(-0.6, 0.95, 0.2), base = at.clone().setY(0);
@@ -617,6 +622,7 @@ export function drumKit(opts: DrumKitOptions = {}): DrumKit {
       mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.024, round), rubber, group, foot.x, 0.012, foot.z);
     }
     mesh(new THREE.BoxGeometry(0.08, 0.01, 0.3), chrome, group, base.x, 0.03, base.z + 0.17).rotation.x = -0.12; // footboard
+    hatPedal.position.set(base.x, 0.04, base.z + 0.13); hatPedal.rotation.x = -0.12; group.add(hatPedal);
     tube(0.0035, base.clone().setY(0.04), v3(base.x, 0.05, base.z + 0.1), steel, group, 6);
     // a pencil mic over the hats on a little arm, a stick holder and a tambourine clamped to the stand
     const arm0 = base.clone().setY(0.78), arm1 = v3(base.x - 0.2, 1.12, base.z - 0.05);
@@ -676,7 +682,7 @@ export function drumKit(opts: DrumKitOptions = {}): DrumKit {
   settle(group, bin);
   for (const m of bin.meshes()) group.add(m);
 
-  return { group, pieces, beater: { obj: beater, rest: 0.42, hit: -0.36 }, throne: throne(look, round), mics };
+  return { group, pieces, beater: { obj: beater, rest: 0.42, hit: -0.36 }, pedals: { kick: kickPedal, hat: hatPedal }, throne: throne(look, round), mics };
 }
 
 /** A drum throne: a thick round seat in vinyl with piping, a threaded spindle, and a double-braced tripod. */

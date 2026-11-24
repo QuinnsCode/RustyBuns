@@ -98,8 +98,10 @@ export function dustUniforms(mask: DustMask): DustUniforms {
  * comes up a little polished. A lamp or a screen under dust shows dimmer and hazier.
  */
 export function dusted<M extends THREE.Material>(m: M, u: DustUniforms, amount = 1): M {
-  const c = m.clone();
-  c.onBeforeCompile = (s) => {
+  // a clone drops the source's own shader hook (the gear kit's wear and grilles): run it first, then lay the dust on
+  const c = m.clone(), own = m.onBeforeCompile.bind(m);
+  c.onBeforeCompile = (s, r) => {
+    own(s, r);
     Object.assign(s.uniforms, u, { dustScale: { value: amount } });
     s.vertexShader = s.vertexShader
       .replace("#include <common>", "#include <common>\nuniform mat4 dustInv;\nvarying vec3 vDustP;")

@@ -3,6 +3,7 @@
 import { expect, test } from "bun:test";
 import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, type Speaker } from "../src/studio/pa-room.ts";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
+import { SYSTEM_IDS, SYSTEMS, stackWidth, type SystemId } from "@rustybuns/gear";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 
 // a stack at the origin facing +z, the floor in front of it
@@ -39,4 +40,22 @@ test("Desert Gathering plays one mono sum from a single wall of stacks behind th
   expect(stereo.map((s) => s.side)).toEqual([0, 0, 1, 1]);
   expect(hearSpeaker(stereo[0], { x: 0, z: 4, yaw: 0 }).pan).toBeLessThan(0);
   expect(paSpeakers(LIVE_ROOM)).toEqual([]);
+});
+
+test("each open-air rig stands shoulder to shoulder, and a narrow horn rig dulls sooner off its axis than a wide one", () => {
+  const rig = (id: SystemId) => paSpeakers({ ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, rig: id } });
+  for (const id of SYSTEM_IDS) {
+    const sp = rig(id), gap = Math.min(...sp.slice(1).map((s, i) => Math.hypot(s.at[0] - sp[i]!.at[0], s.at[1] - sp[i]!.at[1])));
+    expect(gap, id).toBeGreaterThanOrEqual(stackWidth(SYSTEMS[id]));
+    expect(gap, id).toBeLessThan(stackWidth(SYSTEMS[id]) + 0.1);
+  }
+  // 10 m out and 30 degrees off the middle stack's axis, against straight in front of it
+  const [narrow, wide] = (["tri-amp", "synergy"] as const).map((id) => rig(id)[1]!);
+  const off = (s: Speaker) => hearSpeaker(s, { x: s.at[0] + 10 * Math.sin(Math.PI / 6), z: s.at[1] + 10 * Math.cos(Math.PI / 6), yaw: 0 }).cutoff;
+  const on = (s: Speaker) => hearSpeaker(s, { x: s.at[0], z: s.at[1] + 10, yaw: 0 }).cutoff;
+  expect(off(narrow)).toBeLessThan(off(wide));
+  expect(on(narrow)).toBe(on(wide));
+  // 10 m behind a horn stack, facing it: the pattern takes the highs off it
+  const st = rig("dance-stack")[1]!;
+  expect(hearSpeaker(st, { x: st.at[0], z: st.at[1] - 10, yaw: Math.PI }).cutoff).toBe(800);
 });

@@ -100,7 +100,7 @@ const TAIL_RANGES: [(f64, f64); 37] = [
     (0.0, 3.0), // LFO shape
     (0.0, 8.0), // LFO sync
     (0.0, 1.0), // LFO retrigger
-    (0.0, 5.0), // chorus mode, 4 flanger, 5 phaser
+    (0.0, 7.0), // chorus mode, 4 flanger, 5 phaser, 6 rotary, 7 stereo tremolo
     (0.0, 1.0), // supersaw mix: 0 off
     (0.0, 1.0), // wavefolder
     (0.0, 1.0), // send to aux 2
@@ -111,9 +111,27 @@ const LFO_DIVS: [f64; 9] = [0.0, 4.0, 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25,
 const VOWEL_F1: [f64; 5] = [300.0, 570.0, 730.0, 530.0, 270.0];
 const VOWEL_F2: [f64; 5] = [870.0, 840.0, 1090.0, 1840.0, 2290.0];
 const CH_LEN: usize = 4096;
-const CH_RATE: [f64; 6] = [0.0, 0.513, 0.863, 9.75, 0.2, 0.35];
-const CH_MIN: [f64; 5] = [0.0, 1.66, 1.66, 3.22, 0.3];
-const CH_MAX: [f64; 5] = [0.0, 5.35, 5.35, 3.56, 4.0];
+const CH_RATE: [f64; 8] = [0.0, 0.513, 0.863, 9.75, 0.2, 0.35, 0.83, 4.6];
+const CH_MIN: [f64; 7] = [0.0, 1.66, 1.66, 3.22, 0.3, 0.0, 0.2];
+const CH_MAX: [f64; 7] = [0.0, 5.35, 5.35, 3.56, 4.0, 0.0, 1.1];
+/// Mode 6, an organ's rotary speaker at its slow speed: engine.ts ROT_*.
+const ROT_AM: f64 = 0.22;
+const ROT_WET: f64 = 0.85;
+const ROT_DRY: f64 = 0.6;
+/// Mode 7, the stereo tremolo: engine.ts PAN_DEPTH.
+const PAN_DEPTH: f64 = 0.66;
+/// One mic's tap on the rotary's horn at phase `ph`: nearer (shorter delay) is higher and louder (engine.ts `tap`).
+fn rot_tap(buf: &[f64], cb: usize, cw: usize, sr: f64, ph: f64) -> f64 {
+    let s = (TAU * ph).sin();
+    let d = (CH_MIN[6] + (CH_MAX[6] - CH_MIN[6]) * (0.5 + 0.5 * s)) * sr * 0.001;
+    let rp = cw as f64 - d + CH_LEN as f64;
+    let rf = rp.floor();
+    let fr = rp - rf;
+    let ri = rf as usize;
+    let i0 = if ri >= CH_LEN { ri - CH_LEN } else { ri };
+    let i1 = if i0 + 1 == CH_LEN { 0 } else { i0 + 1 };
+    (buf[cb + i0] + (buf[cb + i1] - buf[cb + i0]) * fr) * (1.0 - ROT_AM * (0.5 + 0.5 * s))
+}
 const CH_WET: f64 = 0.8;
 const CH_TONE: f64 = 7000.0;
 /// Flanger (mode 4) and phaser (mode 5): engine.ts FL_*, PH_*.
@@ -684,7 +702,15 @@ impl Engine {
                         let cp = tr.ch_ph;
                         let tri = 1.0 - 4.0 * (cp - 0.5).abs();
                         let mut q = cp + CH_RATE[cm] / sr; q -= q.floor(); tr.ch_ph = q;
-                        if cm == 5 {
+                        if cm == 7 {
+                            let s = (TAU * cp).sin();
+                            ml = mono * (1.0 - PAN_DEPTH * (0.5 + 0.5 * s)) * tr.pan_l;
+                            mr = mono * (1.0 - PAN_DEPTH * (0.5 - 0.5 * s)) * tr.pan_r;
+                        } else if cm == 6 {
+                            let qr = cp + 0.25 - (cp + 0.25).floor();
+                            ml = (mono * ROT_DRY + rot_tap(&self.ch_buf, cb, cw, sr, cp) * ROT_WET) * tr.pan_l;
+                            mr = (mono * ROT_DRY + rot_tap(&self.ch_buf, cb, cw, sr, qr) * ROT_WET) * tr.pan_r;
+                        } else if cm == 5 {
                             let g = ((PI * PH_LO * (PH_HI / PH_LO).powf(0.5 + 0.5 * tri)) / sr).tan();
                             let a = (g - 1.0) / (g + 1.0);
                             let mut y = mono + PH_FB * (tr.ph_y - mono);

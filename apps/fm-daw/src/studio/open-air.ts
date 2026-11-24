@@ -15,9 +15,14 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import { gear, gearLook, type GearLook } from "@rustybuns/models/gear";
+import { van } from "@rustybuns/models/van";
+import { firePit } from "@rustybuns/models/fire";
+import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
+import { SYSTEMS, stackWidth, ampChannels } from "@rustybuns/gear";
+import { rigStacks, roomRig } from "./pa-room.ts";
+import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
-import type { Outdoor, StudioDef } from "./room.ts";
+import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
 
 /** The beams' colours, cycling across the heads: magenta, cyan, amber, violet. */
@@ -39,18 +44,87 @@ export function ridgeAt(a: number, seed: number): number {
 
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
  *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts). */
-export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
-  let y = 0;
-  for (const id of ["sand-dolly", "horn-sub-21", "stack-mid-bass", "stack-mid-high"] as const) {
-    const g = gear(id, { look });
+  let y = 0, lean = 0, k = 0;
+  const size = new THREE.Vector3();
+  for (const id of ids) {
+    const g = gear(id as GearId, { look });
+    new THREE.Box3().setFromObject(g).getSize(size);
+    if (id.startsWith("line-array")) {
+      // a ground-stacked line array: each box rests on the one below at the back, the gap opening at the front, the
+      // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
+      const first = k === 0, aim = LINE_SPLAY[Math.min(k++, LINE_SPLAY.length - 1)]!, hinge = new THREE.Group();
+      if (first) y += size.z * Math.sin(aim);
+      hinge.position.set(0, y, lean - size.z / 2); hinge.rotation.x = aim;
+      g.position.z = size.z / 2;
+      hinge.add(g); st.add(hinge);
+      y += size.y * Math.cos(aim); lean += size.y * Math.sin(aim);
+      continue;
+    }
     g.position.y = y;
     st.add(g);
-    y += new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).y;
+    y += size.y;
   }
   return st;
 }
+/** A ground-stacked line array's aim, bottom box up (radians down from level): the splay its rigging pins set. */
+const LINE_SPLAY = [0.14, 0.07, 0.02];
+
+/** Indoors a DJ table's PA is a club's: an 18" sub on the floor with a powered 12" top on a pole out of its socket,
+ *  the top's horn at about 1.9 m, facing `yaw` from +z. */
+export function clubStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+  const st = new THREE.Group(), sub = gear("sub-18", { look }), top = gear("top-12-powered", { look });
+  st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
+  const socket = sub.getObjectByName("pole")?.position.y ?? GEAR_SIZE_SUB_H, pole = 0.62;
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, pole, 12), look.metal);
+  rod.position.y = socket + pole / 2;
+  top.position.y = socket + pole - 0.05;
+  st.add(sub, rod, top);
+  return st;
+}
+const GEAR_SIZE_SUB_H = 0.7;
+
+/** The full moon's face as you see it, a flat disc (a full moon shows almost no shading at its edge): the pale
+ *  highlands, the dark seas in their places (a big one upper left, a chain upper right, the wide one down the left),
+ *  and one young crater low down with its bright rays, painted once onto a canvas. */
+function moonFace(): THREE.CanvasTexture {
+  const n = 256, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d")!, r = mulberry32(1969), R = n / 2 - 2;
+  g.save(); g.beginPath(); g.arc(n / 2, n / 2, R, 0, Math.PI * 2); g.clip();
+  g.fillStyle = "#ece7d8"; g.fillRect(0, 0, n, n);
+  const sea = (u: number, v: number, rx: number, ry: number, a = 0.62) => {
+    const gr = g.createRadialGradient(u * n, v * n, 0, u * n, v * n, Math.max(rx, ry) * n);
+    gr.addColorStop(0, `rgba(118,118,122,${a})`); gr.addColorStop(0.75, `rgba(132,132,136,${a * 0.6})`); gr.addColorStop(1, "rgba(150,150,150,0)");
+    g.save(); g.translate(u * n, v * n); g.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry)); g.translate(-u * n, -v * n);
+    g.fillStyle = gr; g.beginPath(); g.arc(u * n, v * n, Math.max(rx, ry) * n, 0, Math.PI * 2); g.fill(); g.restore();
+  };
+  sea(0.36, 0.33, 0.14, 0.12); sea(0.58, 0.3, 0.08, 0.08); sea(0.66, 0.43, 0.1, 0.08); sea(0.74, 0.36, 0.05, 0.05, 0.5);
+  sea(0.26, 0.5, 0.11, 0.18, 0.5); sea(0.42, 0.6, 0.08, 0.06, 0.45); sea(0.6, 0.6, 0.06, 0.05, 0.4); sea(0.8, 0.5, 0.04, 0.06, 0.5);
+  // the rayed crater low down, and its rays running out across the highlands
+  const [tx, ty] = [0.48 * n, 0.82 * n];
+  g.strokeStyle = "rgba(255,255,250,0.22)"; g.lineWidth = 1.2;
+  for (let i = 0; i < 14; i++) { const a = r() * Math.PI * 2, l = (0.15 + r() * 0.35) * n; g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + Math.cos(a) * l, ty + Math.sin(a) * l); g.stroke(); }
+  g.fillStyle = "rgba(255,255,252,0.9)"; g.beginPath(); g.arc(tx, ty, 2.2, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(255,255,250,${0.08 + r() * 0.2})`; g.beginPath(); g.arc(r() * n, r() * n, 0.5 + r() * 1.2, 0, Math.PI * 2); g.fill(); }
+  g.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** A soft round glow, bright in the middle and gone at the edge, for the moon's halo. */
+function glowDisc(): THREE.CanvasTexture {
+  const c = document.createElement("canvas"), n = 128;
+  c.width = c.height = n;
+  const g = c.getContext("2d")!, gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  gr.addColorStop(0, "rgba(255,255,255,0.9)"); gr.addColorStop(0.12, "rgba(255,255,255,0.45)"); gr.addColorStop(0.4, "rgba(255,255,255,0.1)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, n, n);
+  return new THREE.CanvasTexture(c);
+}
+
 
 /** How bright lantern `i`'s flame is at time `t` seconds, about 1: a slow breath and a quick flutter, each lantern out of step. */
 export function flameAt(i: number, t: number): number {
@@ -92,7 +166,7 @@ export function headAim(i: number, n: number, t: number): { pan: number; tilt: n
   return { pan: Math.sin(t * 0.6 + ph) * 0.7, tilt: 0.55 + Math.sin(t * 0.43 + ph * 1.7) * 0.3 };
 }
 
-export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality): Look {
+export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality, kit: GearLook = gearLook()): Look {
   const out: Outdoor = def.outdoor ?? { stacks: [], seed: 1 };
   const high = quality === "high";
   // a room's lens stops at 80 m; out here the sky and the dunes are further than that
@@ -117,26 +191,43 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   scene.background = zenith;
   scene.fog = new THREE.Fog(horizon, 60, 200);
 
-  // ---- the sky: a dome shaded from the horizon's glow to the deep blue overhead, stars, the moon
-  const dome = new THREE.SphereGeometry(190, 32, 16), col: number[] = [], p = dome.attributes.position;
+  // ---- the sky: a dome shaded from the horizon's glow to the deep blue overhead, paler round the full moon; the stars
+  // as a full moon leaves them (the faint ones washed out near it, the bright ones in their colours); the moon with
+  // its dark seas and a soft glow round it
+  const moonAt = new THREE.Vector3(-70, 62, -120), moonDir = moonAt.clone().normalize();
+  const dome = new THREE.SphereGeometry(190, 48, 24), col: number[] = [], p = dome.attributes.position, moonSky = new THREE.Color("#3a4a78"), at = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     const k = Math.max(0, Math.min(1, p.getY(i) / 190));
     const c = new THREE.Color("#3a2436").lerp(horizon, Math.min(1, k * 6)).lerp(new THREE.Color("#0b0f26"), Math.min(1, k * 2.5)).lerp(zenith, Math.max(0, k * 1.4 - 0.3));
+    const near = at.fromBufferAttribute(p, i).normalize().angleTo(moonDir);
+    c.lerp(moonSky, 0.55 * Math.exp(-((near / 0.45) ** 2)));
     col.push(c.r, c.g, c.b);
   }
   dome.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   group.add(new THREE.Mesh(dome, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
-  const stars: number[] = [];
-  for (let i = 0; i < 1800; i++) {
-    const a = rnd() * Math.PI * 2, y = 0.08 + rnd() * 0.92, r = Math.sqrt(1 - y * y);
-    stars.push(Math.cos(a) * r * 180, y * 180, Math.sin(a) * r * 180);
+  const TINTS = ["#b8c8ff", "#dfe6ff", "#ffffff", "#fff4dc", "#ffd9a8"].map((h) => new THREE.Color(h));
+  const faint: number[] = [], faintCol: number[] = [], bright: number[] = [], brightCol: number[] = [];
+  for (let i = 0; i < 2600; i++) {
+    const a = rnd() * Math.PI * 2, y = 0.06 + rnd() * 0.94, r = Math.sqrt(1 - y * y), dir = at.set(Math.cos(a) * r, y, Math.sin(a) * r);
+    // brightness: most stars faint, a few bright; the moon's glare and the haze low down put the faint ones out
+    const mag = rnd() ** 2.4, glare = Math.exp(-((dir.angleTo(moonDir) / 0.7) ** 2)), haze = Math.min(1, y / 0.25);
+    const shown = (1 - mag) * haze * (1 - 0.85 * glare);
+    // and none behind the moon's disc (about 2.3 degrees across from here)
+    if (shown < 0.12 || dir.angleTo(moonDir) < 0.05) continue;
+    const tint = TINTS[Math.floor(rnd() * TINTS.length)]!.clone().multiplyScalar(Math.min(1, 0.3 + shown));
+    (mag < 0.97 ? faint : bright).push(dir.x * 180, dir.y * 180, dir.z * 180);
+    (mag < 0.97 ? faintCol : brightCol).push(tint.r, tint.g, tint.b);
   }
-  const starGeo = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(stars, 3));
-  group.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: "#dfe6ff", size: 1.4, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85 })));
-  const moonAt = new THREE.Vector3(-70, 62, -120);
-  const moon = new THREE.Mesh(new THREE.SphereGeometry(6, 24, 16), new THREE.MeshBasicMaterial({ color: "#f6f0da", fog: false }));
-  moon.position.copy(moonAt);
+  for (const [pos, c, size] of [[faint, faintCol, 1.3], [bright, brightCol, 2.4]] as const) {
+    const g = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)).setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
+    group.add(new THREE.Points(g, new THREE.PointsMaterial({ vertexColors: true, size, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.9 })));
+  }
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonFace(), fog: false, toneMapped: false, transparent: true }));
+  moon.position.copy(moonAt); moon.scale.setScalar(12);
   group.add(moon);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowDisc(), color: "#c9d6ff", transparent: true, opacity: 0.5, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  halo.position.copy(moonAt).multiplyScalar(1.02); halo.scale.setScalar(70);
+  group.add(halo);
   const moonlight = new THREE.DirectionalLight("#9fb2e8", 0.9);
   moonlight.position.copy(moonAt).normalize().multiplyScalar(40);
   moonlight.castShadow = high;
@@ -170,8 +261,13 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(sand);
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
-  const look = gearLook();
-  for (const s of out.stacks) group.add(paStack(s.at, s.yaw, look));
+  // the boxes in the photo kit's coats and grilles (the page hands in gear-kit.ts's look), as the gear climb shoots them
+  const look = kit;
+  // ---- the rugs on the sand
+  group.add(rugs(out));
+
+  const rig = roomRig(def);
+  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack));
 
   // ---- the truss, where the party has one: two towers and a span of box truss, the heads hung under it, the lasers on top
   const heads: { yoke: THREE.Group; head: THREE.Group; light: THREE.SpotLight; beam: THREE.Mesh }[] = [];
@@ -268,6 +364,49 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     });
   }
 
+  // ---- the fire pit: a ring of stones, logs leant together over a bed of embers, flames licking up between them
+  let fire: ReturnType<typeof firePit> | null = null;
+  if (out.fire) {
+    fire = firePit(out.seed + 5);
+    const [x, z] = out.fire.at;
+    fire.group.position.set(x, duneAt(x, z, flat), z);
+    group.add(fire.group);
+  }
+
+  // ---- the vans people came in, parked round the edge
+  (out.vans ?? []).forEach((v, i) => {
+    const m = van(out.seed + 31 * i, { awning: v.awning });
+    m.position.set(v.at[0], duneAt(v.at[0], v.at[1], flat), v.at[1]); m.rotation.y = v.yaw;
+    group.add(m);
+  });
+
+  // ---- festoon lights: warm bulbs hanging every 45 cm from a cable that sags between its ties, on wooden posts
+  const bulbs: THREE.Vector3[] = [], cablePts: THREE.Vector3[][] = [];
+  for (const run of out.festoons ?? []) {
+    run.points.forEach(([x, y, z], i) => {
+      if (!run.posts?.[i]) return;
+      const g0 = duneAt(x, z, flat), post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, y + 0.1 - g0, 8), surface("wood", "#6e5236"));
+      post.position.set(x, (y + 0.1 + g0) / 2, z); group.add(post);
+    });
+    for (let i = 0; i + 1 < run.points.length; i++) {
+      const a = new THREE.Vector3(...run.points[i]!), b = new THREE.Vector3(...run.points[i + 1]!), span = a.distanceTo(b), sag = 0.06 * span;
+      const line: THREE.Vector3[] = [];
+      for (let k = 0; k <= 24; k++) { const u = k / 24; line.push(a.clone().lerp(b, u).setY(a.y + (b.y - a.y) * u - 4 * sag * u * (1 - u))); }
+      cablePts.push(line);
+      const n = Math.max(1, Math.round(span / 0.45));
+      for (let k = 0; k < n; k++) { const u = (k + 0.5) / n; bulbs.push(a.clone().lerp(b, u).setY(a.y + (b.y - a.y) * u - 4 * sag * u * (1 - u) - 0.07)); }
+    }
+  }
+  if (bulbs.length) {
+    const cable = new THREE.MeshStandardMaterial({ color: "#151515", roughness: 0.7 });
+    for (const line of cablePts) group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(line), 24, 0.006, 4), cable));
+    const glass = new THREE.MeshStandardMaterial({ color: "#3a2410", emissive: "#ffc070", emissiveIntensity: 3, roughness: 0.3 });
+    const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.045, 10, 8), glass, bulbs.length), m = new THREE.Matrix4();
+    bulbs.forEach((p, i) => lamps.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z)));
+    lamps.userData.looked = true;
+    group.add(lamps);
+  }
+
   // ---- the generator and its jerry cans, off to the side
   if (out.generator) {
     const g = gear("generator-7kva", { look });
@@ -278,6 +417,61 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
       c.position.set(out.generator.at[0] + 1 + i * 0.4, 0, out.generator.at[1] + 0.6); c.rotation.y = rnd() * 0.4;
       group.add(c);
     }
+  }
+
+  // ---- the cables on the sand: the generator's orange feed to a distro behind the wall, power on to the amp rack
+  // beside it, a speaker run from the rack to the back of each stack, and the line from the booth's mixer round the end
+  // of the wall to the rack. Each lies on the sand with a little wander, as a run does when it's been walked on.
+  const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
+  if (out.generator && stacks.length) {
+    const fx = Math.sin(stacks[0]!.yaw), fz = Math.cos(stacks[0]!.yaw), rx = Math.cos(stacks[0]!.yaw), rz = -Math.sin(stacks[0]!.yaw);
+    const mx = stacks.reduce((t, st) => t + st.at[0], 0) / stacks.length, mz = stacks.reduce((t, st) => t + st.at[1], 0) / stacks.length;
+    const back = (d: number, side = 0): [number, number] => [mx - fx * d + rx * side, mz - fz * d + rz * side];
+    const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
+    const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
+    // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box), side by side
+    const racks = Math.max(1, Math.ceil(ampChannels(roomRig(def), stacks.length) / 12));
+    for (let i = 0; i < racks; i++) {
+      const at = back(1.7, -0.6 - i * 0.66), rack = gear("amp-rack-12u", { look });
+      rack.position.set(at[0], 0, at[1]); rack.rotation.y = stacks[0]!.yaw + Math.PI; group.add(rack);
+    }
+    const distro = gear("distro-box", { look }); distro.position.set(distroAt[0], 0, distroAt[1]); distro.rotation.y = stacks[0]!.yaw + Math.PI; group.add(distro);
+    const run = (pts: [number, number][], r: number, color: string, seed: number) => {
+      const wr = mulberry32(seed), path: THREE.Vector3[] = [];
+      pts.forEach(([x, z], i) => {
+        path.push(new THREE.Vector3(x, r, z));
+        const next = pts[i + 1];
+        if (!next) return;
+        // a few points between, nudged sideways: a cable never lies dead straight
+        const len = Math.hypot(next[0] - x, next[1] - z), n = Math.max(1, Math.floor(len / 1.2)), ux = (next[0] - x) / len, uz = (next[1] - z) / len;
+        for (let k = 1; k < n; k++) { const t = k / n, off = (wr() - 0.5) * 0.35; path.push(new THREE.Vector3(x + (next[0] - x) * t - uz * off, r, z + (next[1] - z) * t + ux * off)); }
+      });
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(path), Math.max(16, path.length * 8), r, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.75 }));
+      tube.castShadow = tube.receiveShadow = true;
+      group.add(tube);
+    };
+    const [gx, gz] = out.generator.at;
+    run([[gx + 0.4, gz + 0.2], [(gx + distroAt[0]) / 2, (gz + distroAt[1]) / 2 + 0.8], distroAt], 0.014, "#d2602a", 1);
+    run([distroAt, [(distroAt[0] + rackAt[0]) / 2, distroAt[1] - fz * 0.4], rackAt], 0.008, "#151515", 2);
+    stacks.forEach((st, i) => {
+      const behind: [number, number] = [st.at[0] - fx * 0.55, st.at[1] - fz * 0.55];
+      run([rackAt, [(rackAt[0] + behind[0]) / 2, (rackAt[1] + behind[1]) / 2 - fz * 0.3], behind], 0.0065, "#101010", 10 + i);
+    });
+    if (dj) {
+      const b = thingBox(dj), end: [number, number] = [mx + rx * (span + 0.7), mz + rz * (span + 0.7)];
+      run([[b.cx, b.cz], [b.cx + rx * (span * 0.6), b.cz + rz * (span * 0.6) - fz * 0.4], end, back(1.2, span + 0.4), rackAt], 0.0045, "#0c0c0c", 30);
+    }
+    // the band's monitors: a floor wedge for each player, its sloped grille looking up at them (in front of the keys,
+    // the bass and the mic, beside the kit at the drummer's left), each with its speaker run back to the rack
+    def.spots.filter((sp) => ["keys", "bass", "drums", "booth"].includes(sp.kind) && !sp.made).forEach((sp, i) => {
+      const sx = -Math.sin(sp.yaw), sz = -Math.cos(sp.yaw), rx2 = Math.cos(sp.yaw), rz2 = -Math.sin(sp.yaw), side = sp.kind === "drums";
+      const reach = side ? 0 : sp.thing.ahead + sp.thing.d / 2 + 0.5;
+      const at: [number, number] = side ? [sp.at[0] - rx2 * 1.1, sp.at[1] - rz2 * 1.1] : [sp.at[0] + sx * reach, sp.at[1] + sz * reach];
+      const w = gear("wedge-12", { look });
+      w.position.set(at[0], 0, at[1]); w.rotation.y = side ? sp.yaw + Math.PI / 2 : sp.yaw;
+      group.add(w);
+      run([at, [(at[0] + rackAt[0]) / 2 + rx * 0.6, (at[1] + rackAt[1]) / 2], rackAt], 0.0065, "#101010", 40 + i);
+    });
   }
 
   // ---- the plants and the rocks, round the clearing: one instanced mesh per carving, each copy turned and sized from
@@ -325,7 +519,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   walk();
 
   let frames = 0, fps = 0, since = performance.now(), count = 0;
-  const lights = 2 + heads.length + flames.length;
+  const lights = 2 + heads.length + flames.length + (fire ? 1 : 0);
   return {
     quality,
     render(cam) {
@@ -346,6 +540,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
         l.visible = Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
       });
       for (const l of flames) l.intensity = 12 * flameAt(l.userData.i as number, t);
+      fire?.tick(t);
+      clothTime.value = t;
       if (composer) composer.render(); else renderer.render(scene, cam);
     },
     resize(wpx, hpx) {

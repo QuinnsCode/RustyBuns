@@ -13,7 +13,7 @@ import worker from "../src/worker.ts";
 import { APP, eqosysAvatar, saveEqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
 import { demoProject } from "../src/presets.ts";
-import { decodeServer } from "../src/project.ts";
+import { decodeOp, decodeServer } from "../src/project.ts";
 import { body, hear, newJam, walkTo } from "../src/studio/jam.ts";
 import { LIVE_ROOM, ROOMS } from "../src/studio/rooms/index.ts";
 
@@ -229,6 +229,25 @@ test("the leader moves the room to the console room, everyone walks into it, and
   C.ws.sent = [];
   await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
   expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.studio)).toEqual(["console-room"]);
+
+  // the rig on the sand is the leader's call too: Bo's pick goes nowhere, Ada's goes to everyone, an undo keeps it,
+  // and a rig nobody makes isn't an edit at all
+  A.ws.sent = []; B.ws.sent = []; C.ws.sent = [];
+  await world.webSocketMessage(B.ws, JSON.stringify({ t: "op", op: { t: "rig", id: "synergy" } }));
+  expect(ops(A.ws)).toEqual([]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "rig", id: "synergy" } }));
+  expect(ops(C.ws)).toEqual([{ t: "op", op: { t: "rig", id: "synergy" } }]);
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "replace", project: demoProject() } }));
+  expect(ops(C.ws).map((m) => m?.t === "op" && m.op.t === "replace" && m.op.project.rig)).toEqual(["synergy"]);
+  expect(decodeOp({ t: "rig", id: "wall-of-sound" })).toBeNull();
+
+  // the room Ada built goes with her move to "yours": someone coming in later gets her room, not their own
+  const mine = { ...structuredClone(LIVE_ROOM), id: "adas-room", name: "Ada's room" };
+  await world.webSocketMessage(A.ws, JSON.stringify({ t: "op", op: { t: "studio", id: "yours", built: mine } }));
+  const D = await walkIn(b.login.token, "g".repeat(32));
+  const snap = D.ws.sent.find((m) => m.t === "snapshot")?.project;
+  expect([snap?.studio, snap?.built?.name]).toEqual(["yours", "Ada's room"]);
+  expect(decodeOp({ t: "studio", id: "yours", built: { name: "not a room" } })).toBeNull();
 });
 
 test("Ada invites Bo from her room through eqosys: it lands in his notes, and his lobby lists it as a link into her room", async () => {

@@ -11,6 +11,7 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
+import { stackWidth, system, systemSound, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { thingBox, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
@@ -28,8 +29,27 @@ export const HEAD_BACK = 0.7;
 /** How loud the room's ring is, against the speakers' direct sound at REF_M (it follows the loudest stack's level, square-rooted). */
 export const WET = 0.4;
 
-/** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays ("mono": both, summed). */
-export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono" }
+/** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays ("mono": both,
+ *  summed), and its horizontal pattern in degrees (the full width 6 dB down, from its top's sheet; 90 when left out). */
+export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number }
+
+/** The room's rig, if it has stacks: the outdoor rig asked for, else the horn stack. */
+export function roomRig(def: StudioDef): System {
+  return system(def.outdoor?.rig);
+}
+
+/**
+ * The stacks where they stand for the rig: the room lays them out in a line at one spacing, and a rig whose boxes are
+ * wider or narrower spreads or closes them about the line's middle, so the wall stays shoulder to shoulder.
+ */
+export function rigStacks(def: StudioDef): { at: [number, number]; yaw: number }[] {
+  const stacks = def.outdoor?.stacks ?? [];
+  if (stacks.length < 2) return stacks;
+  const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
+  const gap = Math.min(...stacks.slice(1).map((s, i) => Math.hypot(s.at[0] - stacks[i]!.at[0], s.at[1] - stacks[i]!.at[1])));
+  const k = gap > 1e-6 ? (stackWidth(roomRig(def)) + 0.02) / gap : 1;
+  return stacks.map((s) => ({ at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k], yaw: s.yaw }));
+}
 /** What you hear of one speaker: its level (0 to 1), its delay (s), the air's low-pass (Hz), and its pan (-1 left to 1 right). */
 export interface Heard { gain: number; delay: number; cutoff: number; pan: number; m: number }
 /** Where you are and which way you face (yaw 0 looks down -z, as jam.ts's). */
@@ -45,18 +65,19 @@ const AIR_4K_DB = 10 * Math.log10(Math.E) * AIR[5];
  */
 export function paSpeakers(def: StudioDef): Speaker[] {
   const dj = def.spots.find((s) => s.kind === "dj");
-  const stacks = def.outdoor?.stacks.map((s) => ({ at: s.at, yaw: s.yaw })) ?? [];
+  const spread = def.outdoor ? systemSound(roomRig(def)).coverage.h : undefined;
+  const stacks = rigStacks(def).map((s) => ({ at: s.at, yaw: s.yaw }));
   if (!stacks.length && dj) {
     const b = thingBox(dj), fx = -Math.sin(dj.yaw), fz = -Math.cos(dj.yaw), rx = Math.cos(dj.yaw), rz = -Math.sin(dj.yaw), out = b.hw + 1.2;
     for (const k of [-1, 1]) stacks.push({ at: [b.cx + rx * out * k + fx * 0.5, b.cz + rz * out * k + fz * 0.5], yaw: dj.yaw + Math.PI });
   }
   if (!stacks.length) return [];
-  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const }));
+  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
     const rx = Math.cos(s.yaw), rz = -Math.sin(s.yaw); // the crowd's right, facing the speaker
-    return { at: s.at, yaw: s.yaw, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1 };
+    return { at: s.at, yaw: s.yaw, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread };
   });
 }
 
@@ -73,7 +94,12 @@ export function hearSpeaker(sp: Speaker, ears: Ears, n = 1): Heard {
   // the inverse square law on intensity is one over distance on level
   const gain = Math.min(1, REF_M / m) * throwK * head / Math.sqrt(n);
   // the air: its loss at f grows as f², so it reaches 3 dB at 4 kHz · √(3 / (loss at 4k · m)); behind your head it's duller still
-  const cutoff = clamp(4000 * Math.sqrt(3 / (AIR_4K_DB * m)) * (0.55 + 0.45 * front), 800, 20000);
+  const air = 4000 * Math.sqrt(3 / (AIR_4K_DB * m)) * (0.55 + 0.45 * front);
+  // the horn's pattern: inside it the highs hold; past its edge they fall away (a horn beams its highs, the bass wraps
+  // round), so walking off a narrow rig's axis dulls it sooner than a wide one's
+  const edge = ((sp.spread ?? 90) / 2) * Math.PI / 180, off = Math.acos(clamp(onAxis, -1, 1));
+  const beam = off <= edge ? 20000 : 20000 * (edge / off) ** 3;
+  const cutoff = clamp(Math.min(air, beam), 800, 20000);
   return { gain, delay: m / SOUND_SPEED, cutoff, pan: clamp(right, -1, 1), m };
 }
 
@@ -122,20 +148,30 @@ export class PaRoom {
   /** The room's ring: it starts when the first stack's sound reaches you, at a level that follows it. */
   private wet: { delay: DelayNode; gain: GainNode } | null = null;
   private norm = 1;
+  /** The set after the rig's low end and voicing, or nothing indoors (the input as it is). */
+  private voiced: AudioNode | null = null;
 
   constructor(private ctx: BaseAudioContext, def: StudioDef, to: AudioNode) {
     this.input = new GainNode(ctx);
     const speakers = paSpeakers(def);
     if (!speakers.length) { this.input.connect(to); return; }
+    // the rig's own sound before it reaches any box: its low end (the sub's -10 dB point) and its family's voicing
+    if (def.outdoor) {
+      const rig = systemSound(roomRig(def)), chain: AudioNode[] = [new BiquadFilterNode(ctx, { type: "highpass", frequency: rig.lowCut, Q: 0.7 })];
+      for (const b of rig.voicing) chain.push(new BiquadFilterNode(ctx, { type: "peaking", frequency: b.hz, gain: b.db, Q: b.q }));
+      const voiced = chain.reduce((a, n) => (a.connect(n), n), this.input as AudioNode);
+      this.voiced = voiced;
+    }
+    const from = this.voiced ?? this.input;
     this.norm = floorLevel(speakers);
     // a PA's limiter: up against a stack it's louder than the floor, and it mustn't clip
     const limit = new DynamicsCompressorNode(ctx, { threshold: -3, knee: 0, ratio: 20, attack: 0.003, release: 0.1 });
     limit.connect(to); to = limit;
     const split = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
-    this.input.connect(split);
+    from.connect(split);
     // the mono sum: one channel, so the stereo set mixes down into it (left and right, half each)
     const mono = new GainNode(ctx, { channelCount: 1, channelCountMode: "explicit", channelInterpretation: "speakers" });
-    this.input.connect(mono);
+    from.connect(mono);
     for (const sp of speakers) {
       const gain = new GainNode(ctx, { gain: 0 }), delay = new DelayNode(ctx, { maxDelayTime: 1 }), air = new BiquadFilterNode(ctx, { type: "lowpass", frequency: 20000, Q: 0.5 }), pan = new StereoPannerNode(ctx);
       if (sp.side === "mono") mono.connect(gain); else split.connect(gain, sp.side);
@@ -144,7 +180,7 @@ export class PaRoom {
     }
     const delay = new DelayNode(ctx, { maxDelayTime: 1 }), gain = new GainNode(ctx, { gain: 0 }), conv = new ConvolverNode(ctx, { disableNormalization: true });
     conv.buffer = ring(ctx, def);
-    this.input.connect(delay).connect(conv).connect(gain).connect(to);
+    from.connect(delay).connect(conv).connect(gain).connect(to);
     this.wet = { delay, gain };
   }
 

@@ -3,14 +3,31 @@
 // the very key that goes down (Keys.strike), the others lifted over their neighbours, and the arm reaches there (a
 // two-bone reach from the shoulder, the elbow down and out). At the kit each fist holds a stick whose tip lands on the
 // drum or cymbal that flashes (Kit.strike) and lifts off it as the ring dies. Anywhere else the hands ride the wrists as
-// the character poses them. Plain three.js; the page hands it the spot's keys or kit and the notes sounding there.
+// the character poses them. With a guitar on (figure.ts hangs it), the fretting hand closes round the neck at the fret
+// and the picking hand strums across the strings. At the DJ table each hand's index goes to the control it touches
+// (booth-3d.ts says which), pressing it, then hovers there. Plain three.js; the page hands it the spot's keys or kit and
+// the notes sounding there, or what's touched at the decks.
 import * as THREE from "three";
 import { FINGERS, HAND, HandSolver, PALM, SKIN_TONE, gripFor, handMesh, localQuats, placeHand, type Finger, type HandMesh, type Side, type What } from "@rustybuns/rig/hand";
 import type { Play } from "@rustybuns/models/character";
 import type { Keys, Kit, Part } from "./played.ts";
 
 /** What a seated player's hands aim at: the spot's keys and the notes sounding on them (from `low`, as Keys.press), or its kit. */
-export interface Aim { keys?: Keys; kit?: Kit; notes: number[]; low: number }
+export interface Aim { keys?: Keys; kit?: Kit; notes: number[]; low: number; touch?: Touch }
+/** At the DJ table: where each hand's index finger goes (world space), pressed down on it or hovering, and the table's
+ *  turn in the world (+x along it, +y up, +z toward the DJ). */
+export interface Touch { turn: THREE.Quaternion; right: { at: THREE.Vector3; down: boolean }; left: { at: THREE.Vector3; down: boolean } }
+/** A guitar being played: the model (figure.ts hangs it, standing on its end in its own frame: the neck up +y, the
+ *  strings' face +z), the fret the fretting hand is at, and where the pick is across the strings (-1 to 1). */
+export interface Strum { guitar: THREE.Object3D; fret: number; pick: number }
+
+/** The guitar model's neck (@rustybuns/models/gear `guitar`, metres in its frame): the nut's height, the scale length
+ *  (nut to bridge), the neck's middle off the body's face, and where the pick crosses the strings. */
+export const NECK = { nut: 0.895, scale: 0.64, z: 0.004, pickY: 0.3, face: 0.03 };
+/** How far the fist round the neck reaches past the grip toward the headstock with its index (metres, before the build's scale). */
+const INDEX_SPAN = 0.026;
+/** How far up the neck (its frame's y) a finger frets `fret`: just behind the fret wire, as a player presses. */
+export const fretY = (fret: number) => NECK.nut - NECK.scale * (1 - Math.pow(2, -(Math.max(0.5, fret) - 0.4) / 12));
 
 /** A drumstick: its length (metres), how far of it sticks out past the fist, and its radius where it's held. */
 export const STICK = { length: 0.4, out: 0.33, r: 0.0085 };
@@ -19,7 +36,7 @@ const LIFT = 0.17, HOVER = 0.012;
 /** How fast (per second) a hand moves to where it's aimed, and a finger to its curl: quick, so a hit lands with its note. */
 const MOVE = 40, CURL = 45;
 
-const FIST: What = { kind: "cable", radius: STICK.r }, REST: What = { kind: "rest" };
+const FIST: What = { kind: "cable", radius: STICK.r }, REST: What = { kind: "rest" }, NECK_GRIP: What = { kind: "cable", radius: 0.021 }, PICK: What = { kind: "plug" };
 let solver: HandSolver | null = null;
 const solved = new Map<string, THREE.Quaternion[]>();
 /** A grip's joint turns, solved once for every figure. */
@@ -62,7 +79,7 @@ interface Hand {
 
 export interface Hands {
   /** After the character's own pose: playing `play` with its hands aimed at `aim` (seated at an instrument), or riding its wrists. */
-  pose(o: { play: Play | null; aim: Aim | null; sticks: boolean; t: number }): void;
+  pose(o: { play: Play | null; aim: Aim | null; sticks: boolean; t: number; strum?: Strum | null }): void;
   /** Each finger's tip (world space): the right hand's, then the left's. */
   tips(): { right: Record<Finger, THREE.Vector3>; left: Record<Finger, THREE.Vector3> };
   /** Each stick's tip (world space), right then left. */
@@ -206,14 +223,60 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
       }
     }
     curl(h, want, eCurl);
+    land(h, wrist, eMove);
+  }
+
+  /** A hand over something flat in `turn`'s frame (`world` its wrist's turn): the arm reaches its wrist to `wrist`, and
+   *  next frame the hand tips to within a wrist's bend of its forearm's slope back toward the elbow. */
+  function land(h: Hand, wrist: THREE.Vector3, eMove: number) {
     ease(h, "at", wrist, eMove);
-    reach(h.arm, h.at!, POLE.keys[side]);
+    reach(h.arm, h.at!, POLE.keys[h.arm.side]);
     world.setPosition(h.arm.wrist.getWorldPosition(c));
     put(h, world);
-    // the forearm's slope, back toward the elbow in the keyboard's frame: next frame the hand tips to within a wrist's bend of it
     const fore = h.arm.elbow.getWorldPosition(b).sub(c).applyQuaternion(turn.invert());
     const slope = Math.atan2(-fore.y, Math.hypot(fore.z, fore.x) * Math.sign(fore.z || 1));
     h.pitch += (Math.max(PITCH, slope - WRIST_BEND) - h.pitch) * eMove;
+  }
+
+  const LIFT_ALL: Record<Finger, readonly number[]> = { thumb: LIFTED, index: LIFTED, middle: LIFTED, ring: LIFTED, little: LIFTED };
+  const PRESS_INDEX: Record<Finger, readonly number[]> = { ...LIFT_ALL, index: PRESS };
+  /** At the DJ table: the index on the control it touches, pressed or hovering just over it. */
+  function onTouch(h: Hand, t: Touch, eMove: number, eCurl: number) {
+    const p = h.arm.side > 0 ? t.right : t.left;
+    turn.copy(t.turn);
+    world.makeRotationFromQuaternion(turn).multiply(basis.makeRotationX(h.pitch));
+    const lead = tipAt("index", p.down ? PRESS : LIFTED, tip).multiplyScalar(k);
+    lead.x *= h.arm.side;
+    goal.copy(p.at).addScaledVector(UP, (p.down ? 0 : HOVER * 2) + HAND.bones[HAND.tips.index].radius * k);
+    curl(h, p.down ? PRESS_INDEX : LIFT_ALL, eCurl);
+    land(h, goal.sub(lead.applyMatrix4(world)), eMove);
+  }
+
+  /** With a guitar on: the left hand closed round the neck at the fret, its palm behind the neck and its fingers round
+   *  onto the fretboard; the right a pinch holding the pick over the strings, its palm to them, swung across them. */
+  const gx = v(), gy = v(), gz = v(), gripAt = v();
+  function onGuitar(h: Hand, st: Strum, eMove: number) {
+    st.guitar.updateWorldMatrix(true, false);
+    const m = st.guitar.matrixWorld;
+    gx.setFromMatrixColumn(m, 0).normalize(); gy.setFromMatrixColumn(m, 1).normalize(); gz.setFromMatrixColumn(m, 2).normalize();
+    let w: What;
+    if (h.arm.side < 0) {
+      // the neck runs through the fist: the palm behind it (+y to the strings' face), the fingers down round its edge
+      world.makeBasis(gy, b.copy(gz).negate(), a.copy(gx).negate());
+      gripAt.set(0, PALM.front - 0.021, -0.078).multiplyScalar(k).applyMatrix4(world);
+      goal.set(0, fretY(st.fret) - INDEX_SPAN * k, NECK.z).applyMatrix4(m).sub(gripAt);
+      w = NECK_GRIP;
+    } else {
+      // over the strings by the pickups, the palm to them, the fingers down the body; the pinch swings across the strings
+      world.makeBasis(a.copy(gy).negate(), gz, b.copy(gx).negate());
+      goal.set(0, NECK.pickY, NECK.face + 0.035 * k).applyMatrix4(m).addScaledVector(gx, -0.07 * k + st.pick * 0.045);
+      w = PICK;
+    }
+    ease(h, "at", goal, eMove);
+    reach(h.arm, h.at!, POLE.keys[h.arm.side]);
+    world.setPosition(h.arm.wrist.getWorldPosition(c));
+    h.turns.forEach((q, j) => q.copy(turnsFor(w)[j]));
+    put(h, world);
   }
 
   function onKit(h: Hand, kit: Kit, eMove: number) {
@@ -273,11 +336,13 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
 
   let rings: Record<string, number> = {};
   return {
-    pose({ play, aim, sticks, t }) {
+    pose({ play, aim, sticks, t, strum = null }) {
       const dt = last < 0 ? 1 : Math.min(0.25, Math.max(0, t - last));
       last = t;
       const eMove = 1 - Math.exp(-dt * MOVE), eCurl = 1 - Math.exp(-dt * CURL);
       group.updateMatrixWorld(true);
+      if (strum) { for (const h of list) { h.stick.visible = false; onGuitar(h, strum, eMove); } return; }
+      if (aim?.touch && play === "keys") { for (const h of list) { h.stick.visible = false; onTouch(h, aim.touch, eMove, eCurl); } return; }
       if (aim?.kit && sticks) {
         // a fresh hit goes to the hand on its side, or the other if that one is still on another fresh hit
         const now = aim.kit.rings();

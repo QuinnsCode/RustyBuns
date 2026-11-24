@@ -130,8 +130,16 @@ export class Kit {
     const p = this.parts.get(part);
     if (p) { p.swing = { obj, rest, hit }; obj.rotation.x = rest; }
   }
+  private feet: { kick: THREE.Object3D; hat: THREE.Object3D } | null = null;
+  /** The kit's pedals (drumKit's `pedals`): where the kick foot and the hat foot press. */
+  pedals(p: { kick: THREE.Object3D; hat: THREE.Object3D }) { this.feet = p; }
+  /** Where a foot presses `pedal` (world space), and how hard what it plays rings now; null for a kit with no pedals. */
+  pedal(pedal: "kick" | "hat", out = new THREE.Vector3()): { at: THREE.Vector3; k: number } | null {
+    const o = this.feet?.[pedal];
+    return o ? { at: o.getWorldPosition(out), k: this.parts.get(pedal)?.k ?? 0 } : null;
+  }
   /** How hard each part rings now, 0 to 1. */
-  rings(): Record<string, number> { return Object.fromEntries([...this.parts].map(([p, x]) => [p, Math.round(x.k * 100) / 100])); }
+  rings():Record<string, number> { return Object.fromEntries([...this.parts].map(([p, x]) => [p, Math.round(x.k * 100) / 100])); }
   /** The notes sounding now, as `track:midi` with the part each plays: a note that wasn't sounding last frame is a hit. */
   hear(notes: Map<string, Part>) {
     for (const [n, p] of notes) if (!this.held.has(n)) this.hit(p);
