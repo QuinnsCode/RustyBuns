@@ -1503,6 +1503,8 @@ function synergyHorn(): Build {
   const wz = front - 0.004 - deep * 0.22, wr = W * 0.39;
   for (const y of [wr, -wr]) b.pieces.push(box("knob", [W * 0.4, 0.024, 0.07], [0, h / 2 + y, wz]));
   for (const x of [-1, 1]) for (const y of [0.04, h - 0.04]) b.pieces.push(box("knob", [0.006, 0.05, 0.12], [x * (w / 2 + 0.003), y, -d / 2 + 0.1]));
+  // the touring box's perforated steel grille over the whole mouth, the horn dim behind its holes
+  b.pieces.push(...grilleSlab(W - 0.004, H - 0.004, 0.012, h / 2, front - 0.013, 0.008));
   backAndFeet(b, size, 0.5);
   return b;
 }
@@ -1519,6 +1521,7 @@ function tappedHorn(): Build {
   // the fold's last panel, slanting up from the mouth's floor to the back
   const slant = Math.atan2(mh - t * 2, deep);
   b.pieces.push(box("panel", [w - 2 * t, 0.012, Math.hypot(deep, mh - 2 * t) * 0.98], [0, h - mh / 2, front - deep / 2], { rot: [slant, 0, 0] }));
+  b.pieces.push(...grilleSlab(w - 2 * t - 0.004, mh - t - 0.004, 0.012, h - (mh + t) / 2, front - 0.013, 0.006));
   backAndFeet(b, size, 0.55);
   return b;
 }
@@ -1533,6 +1536,7 @@ function triple21(): Build {
   well(b, "coat", size, deep, t);
   mouth(b, w - 2 * t - 0.02, h - 2 * t - 0.02, deep * 0.94, [0, h / 2, d / 2 - 0.004], 4, "coat");
   for (const k of [-1, 0, 1]) b.pieces.push(disc("knob", 0.05, 0.02, "z", [k * 0.4, h / 2, d / 2 - deep * 0.9], 12));
+  b.pieces.push(...grilleSlab(w - 2 * t - 0.004, h - 2 * t - 0.004, 0.012, h / 2, d / 2 - 0.013, 0.01));
   for (const y of [0.012, h - 0.012]) b.pieces.push(box("shell", [w + 0.004, 0.024, 0.06], [0, y, d / 2 - 0.028], { bevel: 0.008 }));
   for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * 0.75, d * 0.2], s > 0 ? "x" : "-x", 0.16, 0.01));
   backAndFeet(b, size, 0.5);
