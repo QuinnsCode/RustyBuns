@@ -5,13 +5,14 @@
 // Audio once one holds it), then its level (your mute, the room's PA level), into `to`: the room's speakers (pa-room.ts)
 // play it from where they stand, heard from where you stand. You hear your own set from the decks, not from here.
 // Signals go through the sesh's World (`send`), on the lines `pa-out` (the player's side) and `pa-in` (a listener's).
+import { limiter, PEER_DEFAULT } from "./limiter.ts";
 import { otherEnd, tuneOpus, type IceServer, type Line, type RtcServer, type Signal } from "../guitar.ts";
 
 /** Opus's ceiling for a set, bits a second: a stereo mix wants twice a guitar's. */
 export const PA_BITRATE = 256_000;
 
 interface Call { pc: RTCPeerConnection; peer: number; line: Line; early: RTCIceCandidateInit[] }
-interface Heard { tag: HTMLAudioElement; src: MediaStreamAudioSourceNode; gain: GainNode; name: string }
+interface Heard { tag: HTMLAudioElement; src: MediaStreamAudioSourceNode; limit: ReturnType<typeof limiter>; gain: GainNode; name: string }
 
 export class PaLine {
   private mine: MediaStream | null = null;
@@ -22,8 +23,16 @@ export class PaLine {
   private levels = new Map<number, number>();
   /** The room's PA level for every set coming in (0 to 1). */
   private master = 1;
+  /** The listener's ceiling for anyone else's set or mic, dBFS (limiter.ts). */
+  private peerDb = PEER_DEFAULT;
 
   constructor(private ctx: AudioContext, private to: AudioNode, private send: (to: number, line: Line, s: Signal) => void, private ice: () => Promise<IceServer[]>) {}
+
+  /** The loudest anyone else's set may be for you, dBFS: each one through its own limiter before the room's speakers. */
+  ceiling(db: number) {
+    this.peerDb = db;
+    for (const h of this.heard.values()) h.limit.set(db);
+  }
 
   /** Play `stream` to the room: anyone who asks gets a call. Calls already up carry on with the new stream. */
   start(stream: MediaStream) {
@@ -109,15 +118,15 @@ export class PaLine {
   private hear(peer: number, stream: MediaStream) {
     this.drop(peer);
     const tag = new Audio(); tag.muted = true; tag.srcObject = stream; void tag.play().catch(() => {});
-    const src = this.ctx.createMediaStreamSource(stream), gain = new GainNode(this.ctx, { gain: 0 });
-    src.connect(gain).connect(this.to);
-    this.heard.set(peer, { tag, src, gain, name: this.live.get(peer) ?? "" });
+    const src = this.ctx.createMediaStreamSource(stream), limit = limiter(this.ctx, this.peerDb), gain = new GainNode(this.ctx, { gain: 0 });
+    src.connect(limit.node).connect(gain).connect(this.to);
+    this.heard.set(peer, { tag, src, limit, gain, name: this.live.get(peer) ?? "" });
     this.apply(peer);
   }
   private drop(peer: number) {
     const h = this.heard.get(peer);
     if (!h) return;
-    h.src.disconnect(); h.gain.disconnect(); h.tag.srcObject = null;
+    h.src.disconnect(); h.limit.node.disconnect(); h.gain.disconnect(); h.tag.srcObject = null;
     this.heard.delete(peer);
     const c = this.calls.get(key(peer, "pa-in"));
     if (c) this.hang(c);

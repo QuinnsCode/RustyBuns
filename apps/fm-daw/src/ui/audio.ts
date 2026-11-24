@@ -36,7 +36,8 @@ export class AudioOut {
   readonly returns: ChannelMergerNode;
   private inserted = new Set<number>();
   private playing = new Set<number>();
-  private constructor(ctx: AudioContext, node: AudioWorkletNode) {
+  /** @param speakers where the mix plays: the context's speakers, or what `start` was handed in front of them (the jam room's brick wall) */
+  private constructor(ctx: AudioContext, node: AudioWorkletNode, readonly speakers: AudioNode) {
     this.ctx = ctx; this.node = node;
     this.analyser = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
     node.connect(this.analyser);
@@ -90,7 +91,7 @@ export class AudioOut {
     fx.connect(on && this.playing.has(t) ? this.webPost[t]! : this.ret[t]!);
   }
 
-  static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
+  static async start(onMessage: (m: FromWorklet) => void, speakers: (ctx: AudioContext) => AudioNode = (ctx) => ctx.destination): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
     // inputs: yours (a guitar or mic), nothing (it was the page's own plugins, which come back on the returns now), the aux sends of guitars heard on calls (CALL_SENDS), the
@@ -98,9 +99,10 @@ export class AudioOut {
     // and the channel being listened to (mono), for its Shape's spectrum
     const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 5, numberOfOutputs: 3, outputChannelCount: [2, TRACKS, 1] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
-    node.connect(ctx.destination);
+    const to = speakers(ctx);
+    node.connect(to);
     await ctx.resume();
-    const out = new AudioOut(ctx, node);
+    const out = new AudioOut(ctx, node, to);
     // what the player hears lags what we schedule by this much; recording subtracts it
     out.send({ t: "latency", seconds: (ctx.outputLatency || 0) + ctx.baseLatency });
     return out;

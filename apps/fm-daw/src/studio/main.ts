@@ -35,6 +35,7 @@ import { Recorder } from "./take-rec.ts";
 import { b64url } from "@rustybuns/util/bytes";
 import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
+import { brickWall, peerCeilingSetting } from "./limiter.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
@@ -431,6 +432,8 @@ function markPerson(id: number | "me", m: Marks) {
 let out: AudioOut | null = null;
 /** The sound wall at the gear wall, on this machine from the sesh's patch (../room/wall-page.ts). */
 let wallLine: WallLine | null = null;
+/** The loudest anyone else may be for you (Esc menu, kept in this browser): every guitar, set and mic of theirs through its own limiter. */
+const peerDb = peerCeilingSetting($("loudest"), (db) => { guitars?.ceiling(db); pa?.ceiling(db); });
 async function startAudio() {
   if (out) return;
   try {
@@ -442,7 +445,7 @@ async function startAudio() {
       if (recorder.wants(0, myGuitar)) recorder.add(0, myGuitar, m.beat, Float32Array.from(pcm, (v) => v / 32767));
       if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
       else live(Band.slice(myGuitar, m.beat, pcm, b64url));
-    });
+    }, brickWall); // everything this room plays here goes through one brick wall last, always on (limiter.ts)
     // Opus over the World when this browser has WebCodecs (a quarter of PCM's bytes), else PCM
     const opus = await webOpus();
     opusEncoder = opus?.encoder ?? null;
@@ -451,13 +454,15 @@ async function startAudio() {
     takes.forget(); syncTakes(project);
     deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
-    guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig));
+    guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig), out.speakers);
+    guitars.ceiling(peerDb());
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
-    paRoom = new PaRoom(out.ctx, def, out.ctx.destination);
+    paRoom = new PaRoom(out.ctx, def, out.speakers);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
+    pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
-    wallLine = await WallLine.start(out.ctx, out.ctx.destination);
+    wallLine = await WallLine.start(out.ctx, out.speakers);
   } catch (e) { flash = { text: `No sound: ${(e as Error).message}`, until: performance.now() + 4000 }; }
 }
 /** Notes you hold now, by what holds them (a key, a MIDI note), so letting go turns off the right one. */
