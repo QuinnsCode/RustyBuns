@@ -6,8 +6,8 @@ import { type AfterPr, type Gh, NO_CHECKS, type PrState, pass } from "./after.ts
 
 setDefaultTimeout(30_000);
 
-test.each([
-  { token: true, pushed: "#12 merged main in and pushed", comments: [] as string[] },
+test.each<{ token: boolean; pushed: string; comments: string[] }>([
+  { token: true, pushed: "#12 merged main in and pushed", comments: [] },
   { token: false, pushed: "::warning::#12 merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented", comments: [NO_CHECKS] },
 ])("a PR that says merge after #9 waits while #9 is open, then gets main merged in and pushed once #9 lands (token: $token)", ({ token, pushed, comments }) => {
   const root = mkdtempSync(join(tmpdir(), "after-"));
