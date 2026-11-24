@@ -79,6 +79,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
 
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
+  When it says an after-bot head has no checks, the owner runs `bun run kick <n>` (one empty commit on top, pushed).
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
