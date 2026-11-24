@@ -12,9 +12,11 @@ import "./door.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
-import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { defaultAvatar, drawAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
-import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
+import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar, eqosysKept, saveEqosysAvatar } from "../account.ts";
+import { mountWay } from "../way.ts";
+import { characterDialog } from "./character.ts";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
@@ -125,6 +127,19 @@ let lookFrom: "eqosys" | "local" = "local";
   const l = eq.login();
   if (l) void eqosysAvatar(eq.eqosysUrl(), l.token).then((a) => { if (!a) return; look = a; lookFrom = "eqosys"; wear(); door(); });
 }
+/** Your character, a dialog over the room (character.ts, #5819): the one kept on eqosys with your token, or a guest's in this browser. */
+const character = characterDialog({
+  load: async () => { const l = eq.login(); return l ? eqosysKept(eq.eqosysUrl(), l.token) : { avatar: look, saved: true }; },
+  save: async (a) => {
+    const l = eq.login();
+    if (!l) { saveLook(a); return { avatar: a, saved: true }; }
+    const r = await saveEqosysAvatar(eq.eqosysUrl(), l.token, a);
+    if (r) lookFrom = "eqosys";
+    return r;
+  },
+  wear: (a) => { look = a; wear(); door(); },
+});
+mountWay("jam", { character: () => void character.open() });
 
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
@@ -390,8 +405,10 @@ const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
 // ---- people: you, and everyone the live line says is here ----
-interface Drawn { fig: Figure; key: string; x: number; z: number; y: number; yaw: number; speed: number; heading: number }
+interface Drawn { fig: Figure; key: string; avatar: Avatar; x: number; z: number; y: number; yaw: number; speed: number; heading: number }
 const drawn = new Map<number | "me", Drawn>();
+/** The look someone's figure in the room is wearing now, or null when they aren't drawn. */
+const drawnLook = (id: number | "me") => drawn.get(id)?.avatar ?? null;
 /** Whoever is playing, for everyone else to look at (null: nobody is). */
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
@@ -407,7 +424,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
   if (d && d.key !== key) { scene.remove(d.fig.group); d.fig.dispose(); d = undefined; }
-  if (!d) { d = { fig: figure(a, label), key, x, z, y: up, yaw, speed: 0, heading: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
+  if (!d) { d = { fig: figure(a, label), key, avatar: a, x, z, y: up, yaw, speed: 0, heading: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
   // others glide to where their last body said, 10 a second; you are where you are
   const k = snap ? 1 : 1 - Math.exp(-dt * 12);
   const nx = lerp(d.x, x, k), nz = lerp(d.z, z, k);
@@ -1156,12 +1173,14 @@ function openModules(open: boolean) {
 }
 $("modules-close").addEventListener("click", () => openModules(false));
 /** Something over the room has the mouse: a panel, the decks, the help card, the module list. */
-const panelOpen = () => !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
+const panelOpen = () => character.isOpen() || !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
 /** Esc in the menu takes you back into the room; out of it, Esc steps back out of whatever is over the room, one at a time. */
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Escape" || e.repeat) return;
   // the decks and the help card close themselves on Esc
   if (decks?.isOpen() || help.isOpen()) return;
+  // the character dialog closes itself on Esc, back to wherever you were
+  if (character.isOpen()) return;
   if (phase === "menu" && here && !$("door-room").hidden) return play();
   if (phase !== "play") return;
   if (lane?.isOpen()) return lane.close();
@@ -1210,7 +1229,6 @@ function door() {
   roomStudios();
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
-  $("look").hidden = lookFrom === "eqosys";
   $("sign-out").hidden = !signedIn();
   const c = $("me-look");
   const g = c instanceof HTMLCanvasElement ? c.getContext("2d") : null;
@@ -1314,11 +1332,7 @@ $("share").addEventListener("click", () => {
 function menu() { decksBtn.hidden = phase !== "play"; $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
-$("look").addEventListener("click", () => {
-  look = randomAvatar(Math.random);
-  saveLook(look);
-  wear();
-});
+$("look").addEventListener("click", () => void character.open());
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
   keys: keysTable(),
@@ -1462,7 +1476,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam) }),
