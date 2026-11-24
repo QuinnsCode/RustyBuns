@@ -39,11 +39,13 @@ export const CONSOLE_ROOM: StudioDef = {
     { kind: "monitor", at: [2.1, 0.4], yaw: Math.PI + 0.35, w: 0.6, d: 0.5, h: 1.4, color: "#2a2420" },
     // racks of outboard gear down both walls, beside the chair
     { kind: "rack", at: [-3.65, 1.6], yaw: -Q, w: 1.8, d: 0.6, h: 1.3, color: "#2a2a2c", seed: 32 },
+    // and on top of the left rack, a modular synth's case, patched
+    { kind: "modular", at: [-3.55, 1.6], yaw: -Q, w: 0.84, d: 0.16, h: 0.3, y: 1.3, color: "#5a3a22", seed: 37 },
     { kind: "rack", at: [3.65, 1.6], yaw: Q, w: 1.8, d: 0.6, h: 1.3, color: "#2a2a2c", seed: 33 },
     // drum machines and samplers on a table by the right wall
     { kind: "table", at: [3.3, -1.2], yaw: Q, w: 2.0, d: 0.7, h: 0.8, color: "#5a3a22" },
     { kind: "sampler", at: [3.3, -1.8], yaw: Q, w: 0.45, d: 0.35, h: 0.08, y: 0.8, color: "#c8c0b0", seed: 34 },
-    { kind: "sampler", at: [3.3, -1.2], yaw: Q, w: 0.4, d: 0.3, h: 0.07, y: 0.8, color: "#2a2a2c", seed: 35 },
+    { kind: "drumMachine", at: [3.3, -1.2], yaw: Q, w: 0.56, d: 0.3, h: 0.08, y: 0.8, color: "#8c8f90", seed: 35 },
     { kind: "sampler", at: [3.3, -0.6], yaw: Q, w: 0.5, d: 0.35, h: 0.1, y: 0.8, color: "#8a8478", seed: 36 },
     // a rug under the couch, low lamps in the corners and records framed on the back wall
     { kind: "rug", at: [0, 2.6], yaw: 0, w: 3.2, d: 1.8, h: 0.01, color: "#5a2a1e" },

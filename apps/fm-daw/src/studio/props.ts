@@ -294,6 +294,66 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       g.add(glow(box(w * 0.3, 0.004, d * 0.22, -w * 0.25, h + 0.002, -d * 0.25, m("screen", "#a0e0a0")), 0.5));
       break;
     }
+    case "drumMachine": case "modular": {
+      // set down on the floor, it comes on its own black stand (on a desk or a shelf, `y` lifts it there instead)
+      if ((p.y ?? 0) < 0.3) {
+        const rise = 0.72, stand = m("metal", "#1b1c1f");
+        box(w + 0.04, 0.02, d + 0.04, 0, rise - 0.01, 0, stand);
+        for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.025, rise - 0.02, 0.025, x * (w / 2 - 0.01), (rise - 0.02) / 2, z * (d / 2 - 0.01), stand);
+        const on = prop({ ...p, at: [0, 0], yaw: 0, y: rise }, mat);
+        g.add(on);
+        break;
+      }
+      if (p.kind === "drumMachine") {
+        // the early-80s analog drum machine (its front toward -z, as a prop's is): a long box, a sloped panel of small knobs in
+        // columns over the voices at the back, and along the front the sixteen step keys in their four colour groups (red, orange, yellow, cream), a lamp over each
+        box(w, h * 0.55, d, 0, h * 0.275, 0, m("plastic", color));
+        const slope = box(w, h * 0.35, d * 0.62, 0, h * 0.6, d * 0.18, m("plastic", "#1d1c1b"));
+        slope.rotation.x = -0.12;
+        const knobs: Item[] = [];
+        for (let c = 0; c < 12; c++) for (let r = 0; r < 3; r++) knobs.push([0.014, 0.012, 0.014, -w / 2 + 0.05 + c * ((w - 0.1) / 11), h * 0.8, d * 0.36 - r * 0.035, ["#e8e2d0", "#e07a2a", "#d8c040"][r]!]);
+        many("plastic", knobs, 0, "cyl");
+        const groups = ["#c8352a", "#e07a2a", "#e0c040", "#ece4d0"], keys: Item[] = [], lamps: Item[] = [];
+        for (let i = 0; i < 16; i++) {
+          const x = w / 2 - 0.04 - i * ((w - 0.08) / 15); // the first group on the player's left
+          keys.push([0.022, 0.012, 0.03, x, h * 0.56, -d * 0.33, groups[Math.floor(i / 4)]!]);
+          lamps.push([0.005, 0.004, 0.005, x, h * 0.56, -d * 0.18, i % 4 === 0 ? "#ff3a2a" : "#4a1210"]);
+        }
+        many("plastic", keys);
+        many("screen", lamps, 0.6);
+      } else {
+        // a modular synth: a wooden case of two rows of modules in their black and silver panels, knobs and jacks,
+        // and a tangle of coloured patch cables hanging between them
+        const wood = m("wood", color);
+        box(w, 0.025, d, 0, 0.0125, 0, wood); box(w, 0.025, d, 0, h - 0.0125, 0, wood);
+        for (const x of [-w / 2 + 0.0125, w / 2 - 0.0125]) box(0.025, h, d, x, h / 2, 0, wood);
+        const row = (h - 0.06) / 2, panels: Item[] = [], knobs: Item[] = [], jacks: Item[] = [];
+        for (const r of [0, 1]) {
+          let x = -w / 2 + 0.03;
+          while (x < w / 2 - 0.06) {
+            const pw = Math.min(0.03 + Math.floor(rnd() * 4) * 0.02, w / 2 - 0.03 - x), cy = 0.03 + row * (r + 0.5);
+          if (pw < 0.02) break;
+            panels.push([pw - 0.002, row - 0.006, 0.006, x + pw / 2, cy, -d / 2 + 0.003, rnd() < 0.5 ? "#1b1b1d" : "#b9bcc0"]);
+            for (let k = 0; k < Math.round(pw / 0.02); k++) {
+              knobs.push([0.012, 0.012, 0.012, x + 0.012 + k * 0.02, cy + row * 0.18, -d / 2 - 0.006, "#141414"]);
+              jacks.push([0.008, 0.006, 0.008, x + 0.012 + k * 0.02, cy - row * 0.28, -d / 2 - 0.003, "#c9ccd0"]);
+            }
+            x += pw;
+          }
+        }
+        many("plastic", panels); many("plastic", knobs, 0, "ball"); many("metal", jacks, 0, "ball");
+        // the patch cables: sagging arcs from jack to jack, each its own colour
+        for (let i = 0; i < 9; i++) {
+          const a = jacks[Math.floor(rnd() * jacks.length)]!, b = jacks[Math.floor(rnd() * jacks.length)]!;
+          if (a === b) continue;
+          const sag = 0.04 + rnd() * 0.08, mid = new THREE.Vector3((a[3] + b[3]) / 2, Math.min(a[4], b[4]) - sag, -d / 2 - 0.03 - rnd() * 0.02);
+          const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a[3], a[4], -d / 2 - 0.008), mid, new THREE.Vector3(b[3], b[4], -d / 2 - 0.008));
+          const cab = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.0025, 5), m("plastic", pick(["#d8402e", "#e0b02a", "#3a8ad0", "#5ab04a", "#e07ab0", "#f2f2f2"])!));
+          g.add(cab);
+        }
+      }
+      break;
+    }
     case "table": {
       const wood = m("wood", color);
       box(w, 0.04, d, 0, h - 0.02, 0, wood);

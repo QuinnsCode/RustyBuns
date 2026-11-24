@@ -37,9 +37,11 @@ export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
   table: { w: 1.2, d: 0.7, h: 0.75, color: "#6b4a2c" },
   cabinet: { w: 0.5, d: 0.6, h: 1.3, color: "#7a7d82" },
   books: { w: 0.5, d: 0.35, h: 0.4, color: "#7a2e2a" },
+  drumMachine: { w: 0.62, d: 0.3, h: 0.08, color: "#8c8f90" },
+  modular: { w: 0.84, d: 0.16, h: 0.3, color: "#5a3a22" },
 };
 export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
-export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books";
+export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular";
 
 
 /** A studio from the wire or this browser's storage, checked. */
