@@ -32,6 +32,7 @@ jobs:
         with: { bun-version: "1.4.3" }
       - env:
           GH_TOKEN: ${{ secrets.AFTER_TOKEN || github.token }}
+          HAS_AFTER_TOKEN: ${{ secrets.AFTER_TOKEN != '' }}
         run: |
           git config user.name "rustybuns-after"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
