@@ -618,6 +618,26 @@ test("jam room: whoever sits at the keys has their palms on the keys, short arms
   }
 });
 
+test("jam room: people are the realistic human body, a head about an eighth of their height on a real neck, sat on the stool and standing to their full height", () => {
+  for (const seed of [1, 2, 3]) {
+    const fig = figure(randomAvatar(mulberry32(seed)), null), head = new THREE.Vector3();
+    // one skinned body with a head bone (the real hands are skinned meshes of their own)
+    const bodies = fig.group.getObjectsByProperty("type", "SkinnedMesh").filter((m) => m instanceof THREE.SkinnedMesh && m.skeleton.getBoneByName("head"));
+    expect(bodies.length).toBe(1);
+    const top = () => { fig.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(bodies[0]!, true); };
+    fig.pose({ speed: 0, seated: false, play: null, note: false, t: 1 });
+    const standing = top(), tall = standing.max.y;
+    fig.group.getObjectByName("head")!.getWorldPosition(head);
+    // the skull's base sits under the top by about a head's height (a pin head would be a few centimetres)
+    expect(tall - head.y).toBeGreaterThan(0.17);
+    expect(tall - head.y).toBeLessThan(0.3);
+    expect(tall).toBeGreaterThan(1.45);
+    fig.pose({ speed: 0, seated: true, play: null, note: false, t: 2 });
+    expect(top().max.y).toBeLessThan(tall - 0.2);
+    fig.dispose();
+  }
+});
+
 test("grants: the leader lets one play, another plays one track only, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {
   const { bucket, worldEnv } = await edge();
   const room = "humble-jade-heron";
