@@ -8,6 +8,7 @@ import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
+import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -69,6 +70,7 @@ export const Studio: Guard<StudioDef> = obj({
   keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
+    rig: opt(oneOf(SYSTEM_IDS)),
     mono: opt(bool()),
     truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
@@ -126,7 +128,7 @@ export type Edit =
   | { t: "unprop"; index: number }
   | { t: "window"; side: Side; along: number }
   | { t: "moveDoor"; at: [number, number] }
-  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box" };
+  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -152,7 +154,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
   obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
   obj({ t: tag("moveDoor"), at: XZ }),
-  obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)) }),
+  obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -371,7 +373,13 @@ export function edit(def: StudioDef, e: Edit): Built {
     }
     case "moveDoor": next.door = { ...next.door, at: e.at }; break;
     // what stands at the keys and bass seats (gear-models.ts): one of the classic families, the big mono or the box
-    case "instruments": if (e.keys) next.keys = e.keys; if (e.bass) next.bass = e.bass; break;
+    case "instruments": {
+      if (e.rig && !next.outdoor) return no("a rig stands out of doors");
+      if (e.keys) next.keys = e.keys;
+      if (e.bass) next.bass = e.bass;
+      if (e.rig && next.outdoor) next.outdoor = { ...next.outdoor, rig: e.rig };
+      break;
+    }
     case "turn": {
       const sp = next.spots.find((x) => x.id === e.id);
       if (!sp) return no(`there is no spot ${e.id}`);

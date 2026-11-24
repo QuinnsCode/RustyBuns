@@ -1,6 +1,7 @@
 // The studio builder as someone uses it: start from a room, put up a booth, move the drums into it and hear the kit
 // go dry, line the room and hear it tighten, get told why an edit that would break the room can't be done, and
 // keep a studio /jam.html can load back. Then every room the builder ships: buildable, and ringing as it says.
+import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
 import { Edit, edit, furnish, problems, Studio } from "../src/studio/builder.ts";
@@ -108,6 +109,9 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   r = ok(r, { t: "instruments", keys: "combo", bass: "box" });
   expect([r.keys, r.bass]).toEqual(["combo", "box"]);
   expect(check(Edit, { t: "instruments", keys: "theremin" })).toBeNull();
+  // a rig only stands out of doors: indoors it's refused, on the sand the stacks become it
+  expect(edit(r, { t: "instruments", rig: "synergy" })).toMatchObject({ ok: false, why: "a rig stands out of doors" });
+  expect(ok(DESERT_GATHERING, { t: "instruments", rig: "synergy" }).outdoor?.rig).toBe("synergy");
   // the first new wall down: the corner opens back onto the barn
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);

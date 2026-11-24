@@ -16,6 +16,7 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
+import { SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -475,7 +476,8 @@ function renderEdit() {
     <div class="row"><button type="button" id="add-booth">Put up a booth</button></div>
     <h2>Instruments</h2>
     <div class="row"><label>Keys<select id="keys-kind">${POLY_KINDS.map((k) => `<option value="${k}"${k === room.keys ? " selected" : ""}>${esc(KEYS_NAMES[k])}</option>`).join("")}</select></label>
-      <label>Bass<select id="bass-kind"><option value="mono"${room.bass !== "box" ? " selected" : ""}>Big analog mono</option><option value="box"${room.bass === "box" ? " selected" : ""}>Bass-line box</option></select></label></div>
+      <label>Bass<select id="bass-kind"><option value="mono"${room.bass !== "box" ? " selected" : ""}>Big analog mono</option><option value="box"${room.bass === "box" ? " selected" : ""}>Bass-line box</option></select></label>
+      ${room.outdoor ? `<label>Rig<select id="rig-kind">${SYSTEM_IDS.map((id) => `<option value="${id}"${id === (room.outdoor?.rig ?? "dance-stack") ? " selected" : ""}>${esc(SYSTEMS[id].name)}</option>`).join("")}</select></label>` : ""}</div>
     <h2>Gear wall</h2>
     <div class="row"><button type="button" id="turn-gear">Turn it a quarter</button></div>
     <h2>Seats</h2>
@@ -505,6 +507,7 @@ function renderEdit() {
   $("turn-gear").addEventListener("click", () => apply({ t: "moveGear", at: gearPlace(room).at, turns: 1 }));
   $("keys-kind").addEventListener("change", (e) => apply({ t: "instruments", keys: (e.target as HTMLSelectElement).value }));
   $("bass-kind").addEventListener("change", (e) => apply({ t: "instruments", bass: (e.target as HTMLSelectElement).value }));
+  document.getElementById("rig-kind")?.addEventListener("change", (e) => apply({ t: "instruments", rig: (e.target as HTMLSelectElement).value }));
   $("add-booth").addEventListener("click", () => {
     const id = free("booth", (x) => room.walls.some((wl) => wl.booth === x));
     const at = grid().find((p) => edit(room, { t: "booth", id, at: p, w: 2.4, d: 2.4 }).ok);
