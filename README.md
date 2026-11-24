@@ -531,6 +531,18 @@ Qollab is the Durable Object layer below this: a hub for each player, and a part
 
 </details>
 
+### The Q engine: make, play, meet and ship in one kit
+
+The runtime packages, eqosys (the store side), Qollab (the players side), codeSplitter (the editor) and the Rusty Buns CLI (the ship step), named together as one game engine.
+
+<details><summary>More</summary>
+
+[ENGINE.md](ENGINE.md) puts the parts into one picture: what each one holds today, what every Q game has, what is
+still missing (a list of the parts, a check of the game contract, a shared game loop, play beside the code) and the
+order to build it in. A game still owns its own world and ticks, and imports each part directly.
+
+</details>
+
 ### A new game from a template, wired in from the start
 
 One command, or the New game button on the eqosys Studio tab, makes a game with an eqosys sign-in, a Qollab party and a harness that agents can read.
