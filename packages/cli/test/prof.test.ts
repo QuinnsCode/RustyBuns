@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "../src/prof.ts";
+import { boxUrl, captureEdgeProfile, fetchHistory, fetchMem, fetchProfile, secretProblem, workerFromState } from "../src/prof.ts";
 import { history } from "../../shell-bun/src/history.ts";
 import { memWatch } from "../../shell-bun/src/memwatch.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
@@ -85,4 +85,22 @@ test("fetchMem and fetchHistory: the box's /__rb/mem, and its history behind the
     await expect(fetchMem({ url: `http://localhost:${other.port}` })).rejects.toThrow("rssMb");
     await expect(fetchHistory({ url: `http://localhost:${other.port}`, secret: SECRET })).rejects.toThrow("runs.0.from");
   } finally { other.stop(true); }
+});
+
+test("prof --edge: cf's pprof is saved under the Worker's name from state; a cold Worker says to send traffic", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-edgeprof-"));
+  const cfg = { name: "b", state: "project" as const };
+  mkdirSync(join(dir, ".alchemy/state/b/live_me"), { recursive: true });
+  writeFileSync(join(dir, ".alchemy/state/b/live_me/Worker.json"), JSON.stringify({ attr: { url: "https://b-live-me.acme.workers.dev" } }));
+  expect(workerFromState(dir, cfg, "live_me")).toBe("b-live-me");
+  // A stand-in cf: echoes its arguments as the "profile", or fails like Cloudflare does on a Worker with no traffic.
+  const cf = join(dir, "cf.ts");
+  writeFileSync(cf, `const a = process.argv.slice(2); if (a.includes("cold")) { console.error("No recent executions were found for this Worker."); process.exit(1); } process.stdout.write(a.join(" "));`);
+  const outDir = join(dir, "prof");
+  const file = await captureEdgeProfile({ worker: "b-live-me", ms: 5000, type: "heap", version: "latest-deployed", object: { namespace: "ns1", actor: "a".repeat(64) }, outDir, cf: [process.execPath, cf] });
+  expect(file).toMatch(/b-live-me-do-heap-.*\.pprof$/);
+  expect(readFileSync(file, "utf8")).toBe(`workers versions profile latest-deployed --worker b-live-me --duration-ms 5000 --profile-type heap --namespace-id ns1 --actor-id ${"a".repeat(64)}`);
+  await expect(captureEdgeProfile({ worker: "cold", ms: 1000, type: "cpu", version: "latest-deployed", outDir, cf: [process.execPath, cf] }))
+    .rejects.toThrow(/No recent executions[\s\S]*send the Worker traffic/);
+  expect(readdirSync(outDir)).toHaveLength(1);
 });
