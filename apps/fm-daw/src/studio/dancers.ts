@@ -28,6 +28,7 @@ export function floorSpots(def: StudioDef, n: number, seed: number): { x: number
 
 export class Dancers {
   readonly group = new THREE.Group();
+  get count() { return this.people.length; }
   private people: { fig: Figure; at: { x: number; z: number; yaw: number }; phase: number; bounce: number }[] = [];
 
   constructor(def: StudioDef, n = 12) {

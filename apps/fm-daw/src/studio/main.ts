@@ -472,7 +472,7 @@ async function startAudio() {
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
     // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
-    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at);
+    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
@@ -552,6 +552,8 @@ let pa: PaLine | null = null;
 /** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
 let paRoom: PaRoom | null = null;
 let nightAir: NightAir | null = null;
+/** Music on the floor: the band's loop running, or someone's set on the PA. */
+const musicOn = () => transport.playing || paOn.size > 0 || !!myPa;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
 const paOn = new Map<number, string>();
 /** What you're playing to the room, or null. */
@@ -572,7 +574,7 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
   paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
-  nightAir?.listen(jam.me.x, jam.me.z, mutes.room);
+  nightAir?.listen(jam.me.x, jam.me.z, mutes.room, musicOn());
   if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
@@ -1370,7 +1372,7 @@ function frame(now: number) {
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
-  dancers?.tick(t, band.synced ? band.beat() : null);
+  dancers?.tick(t, musicOn() && band.synced ? band.beat() : null);
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }

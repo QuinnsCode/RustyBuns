@@ -1,7 +1,7 @@
 // The desert night under the music (src/studio/night-air.ts): crickets in trains of chirps at their pitch, a few a
 // second, never a clock; the generator's hum louder as you walk up to it, 6 dB down each time the distance doubles.
 import { expect, test } from "bun:test";
-import { chirps, crackle, fireLevel, humLevel } from "../src/studio/night-air.ts";
+import { babble, chirps, crackle, fireLevel, humLevel } from "../src/studio/night-air.ts";
 
 test("crickets chirp in trains near 4.4 kHz, a train every 0.7 to 1 s; the generator's hum falls 6 dB per doubling past 3 m", () => {
   const rate = 48000, c = chirps(rate, 6, 1);
@@ -33,4 +33,12 @@ test("the fire crackles: sharp pops over a quiet roar, loud at the pit and fadin
   for (let i = 0; i < x.length; i++) if (Math.abs(x[i]!) > 0.15 && i - last > 480) { pops++; last = i; }
   expect(pops / 4).toBeGreaterThan(4); // several clear pops a second
   expect(fireLevel(1) / fireLevel(12)).toBeGreaterThan(7); // 18 dB down across the floor
+});
+
+test("between tracks the crowd talks: voices that come and go in phrases, never a steady drone", () => {
+  const SR = 48000, x = babble(SR, 6, 11, 12), w = SR / 10, lv: number[] = [];
+  for (let i = 0; i + w <= x.length; i += w) { let e = 0; for (let k = 0; k < w; k++) e += x[i + k]! ** 2; lv.push(10 * Math.log10(e / w + 1e-12)); }
+  lv.sort((a, b) => a - b);
+  expect(x.every(Number.isFinite)).toBe(true);
+  expect(lv[Math.floor(lv.length * 0.9)]! - lv[Math.floor(lv.length * 0.1)]!).toBeGreaterThan(3);
 });

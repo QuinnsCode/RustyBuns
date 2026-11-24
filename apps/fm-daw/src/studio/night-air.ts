@@ -9,6 +9,9 @@ export function humLevel(m: number): number {
   return 0.05 * Math.min(1, 3 / Math.max(m, 0.1));
 }
 
+/** The crowd's murmur between tracks: about -47 dBFS (its loudest words near -31), under the wind's gusts. */
+const CROWD = 0.06;
+
 /** The fire's crackle at `m` metres: full within 1.5 m (its pops about -23 dBFS, its roar near -48), falling 6 dB each time the distance doubles. */
 export function fireLevel(m: number): number {
   return 0.06 * Math.min(1, 1.5 / Math.max(m, 0.1));
@@ -36,6 +39,35 @@ export function crackle(rate: number, seconds: number, seed: number): Float32Arr
 }
 
 /**
+ * A loop of a crowd talking among themselves, `seconds` long at `rate`: `voices` people, each a buzzy voice (a pulse
+ * at their own pitch, 95 to 230 Hz, wandering a little) through a mouth that opens and shuts in syllables of a fifth
+ * of a second, phrases of a few words with breaths between, everyone softened by the distance (a gentle low-pass).
+ * No words: what a party sounds like across the sand before the next track.
+ */
+export function babble(rate: number, seconds: number, seed: number, voices: number): Float32Array {
+  const out = new Float32Array(Math.round(rate * seconds)), r = mulberry32(seed);
+  for (let v = 0; v < voices; v++) {
+    const f0 = 95 + r() * 135, gain = 0.5 + r() * 0.5;
+    let ph = 0, env = 0, open = 0, until = 0, talking = r() < 0.5, lp = 0, lp2 = 0, drift = 0;
+    for (let i = 0; i < out.length; i++) {
+      if (i >= until) {
+        // the next syllable or pause: talking runs a few syllables, then a breath
+        if (talking && r() < 0.18) { talking = false; until = i + Math.round(rate * (0.4 + r() * 1.4)); open = 0; }
+        else { talking = true; until = i + Math.round(rate * (0.12 + r() * 0.16)); open = 0.4 + r() * 0.6; drift = (r() - 0.5) * 0.25; }
+      }
+      env += ((talking ? open * Math.sin((Math.PI * (until - i)) / Math.max(1, rate * 0.2)) ** 2 : 0) - env) * 0.004;
+      ph += (f0 * (1 + drift)) / rate; ph -= Math.floor(ph);
+      const buzz = (ph < 0.15 ? 1 : 0) - 0.15 + (r() - 0.5) * 0.3; // a narrow pulse and a little breath
+      lp += (buzz - lp) * 0.12; lp2 += (lp - lp2) * 0.12; // two poles near 1 kHz: the far voices' dullness
+      out[i]! += lp2 * env * gain;
+    }
+  }
+  const k = 1 / Math.sqrt(voices);
+  for (let i = 0; i < out.length; i++) out[i]! *= k;
+  return out;
+}
+
+/**
  * A loop of crickets, `seconds` long at `rate`: trains of three or four 4.4 kHz chirps (each 14 ms, 32 ms apart), a
  * train about every 0.8 s with a little drift, so the loop doesn't tick like a clock.
  */
@@ -57,9 +89,10 @@ export class NightAir {
   private out: GainNode;
   private hum: GainNode | null = null;
   private fireGain: GainNode | null = null;
+  private crowd: GainNode | null = null;
   private wasMuted = false;
 
-  constructor(private ctx: BaseAudioContext, to: AudioNode, private generator: [number, number] | undefined, seed: number, private fire?: [number, number]) {
+  constructor(private ctx: BaseAudioContext, to: AudioNode, private generator: [number, number] | undefined, seed: number, private fire?: [number, number], people = 0) {
     this.out = new GainNode(ctx, { gain: 1 });
     this.out.connect(to);
     // the wind: noise through a broad band, swelling in two slow, uneven gusts
@@ -88,6 +121,14 @@ export class NightAir {
       canopy.connect(this.hum).connect(this.out);
       engine.start(); rumble.start();
     }
+    // the crowd talking between tracks (quiet under it all, gone while the music plays)
+    if (people > 0) {
+      const secs = 9.7, buf = ctx.createBuffer(1, Math.round(ctx.sampleRate * secs), ctx.sampleRate);
+      buf.copyToChannel(babble(ctx.sampleRate, secs, seed + 4, Math.min(12, people)) as Float32Array<ArrayBuffer>, 0);
+      this.crowd = new GainNode(ctx, { gain: 0 });
+      const src = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true });
+      src.connect(this.crowd).connect(this.out); src.start();
+    }
     // the fire: its crackle, as loud as you are close to it
     if (fire) {
       const secs = 5.3, buf = ctx.createBuffer(1, Math.round(ctx.sampleRate * secs), ctx.sampleRate);
@@ -100,10 +141,11 @@ export class NightAir {
   }
 
   /** Where you are, and whether the room is muted: the hum follows the distance to the generator. */
-  listen(x: number, z: number, muted: boolean) {
+  listen(x: number, z: number, muted: boolean, music = false) {
     const now = this.ctx.currentTime;
     if (muted !== this.wasMuted) { this.out.gain.setTargetAtTime(muted ? 0 : 1, now, 0.05); this.wasMuted = muted; }
     if (this.hum && this.generator) this.hum.gain.setTargetAtTime(humLevel(Math.hypot(x - this.generator[0], z - this.generator[1])), now, 0.2);
+    if (this.crowd) this.crowd.gain.setTargetAtTime(music ? 0 : CROWD, now, music ? 0.3 : 2);
     if (this.fireGain && this.fire) this.fireGain.gain.setTargetAtTime(fireLevel(Math.hypot(x - this.fire[0], z - this.fire[1])), now, 0.2);
   }
 }
