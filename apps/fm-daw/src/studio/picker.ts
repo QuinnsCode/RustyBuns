@@ -43,8 +43,11 @@ export function wheel<T extends { id: string }>(list: T[], current: string, copi
 }
 
 const wired = new WeakSet<HTMLElement>();
-/** The row scrolls sideways: a mouse wheel turns it, and a mouse drags it (touch already pans it); a drag is never a click. */
-function wire(host: HTMLElement) {
+/**
+ * A row of cards scrolls sideways: a mouse wheel turns it, and a mouse drags it (touch already pans it); a drag is never
+ * a click. The studio cards and every list in the room's menu (rooms, invites, friends, people) are rows like this.
+ */
+export function sideways(host: HTMLElement) {
   if (wired.has(host)) return;
   wired.add(host);
   host.addEventListener("wheel", (e) => {
@@ -90,7 +93,7 @@ function centre(host: HTMLElement, card: HTMLElement) {
 export function studioCards(host: HTMLElement, list: Studio[], current: string, pick?: (id: string) => void) {
   host.replaceChildren();
   host.setAttribute("role", "radiogroup");
-  wire(host);
+  sideways(host);
   const shots = new Map(list.map((s) => [s.id, shot(s.def)]));
   const { cards, start } = wheel(list, current);
   const made = cards.map(({ s, copy }) => {
