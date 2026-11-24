@@ -101,27 +101,46 @@ export function readAt(d: Float32Array, i: number): number {
 
 // ---- the waveform's peak levels
 
-/** One level: `bps` buckets a second, each the peak of its slice. */
-export interface Level { bps: number; p: Float32Array }
+/** One level: `bps` buckets a second, each the peak of its slice, and the peaks of its bass (`lo`) and highs (`hi`). */
+export interface Level { bps: number; p: Float32Array; lo: Float32Array; hi: Float32Array }
 /** The finest level's buckets a second: about a pixel each at the closest zoom on a wide screen. */
 export const FINEST_BPS = 1000;
 /** The close-up's zooms, seconds either side of the playhead. */
 export const ZOOMS = [0.25, 0.5, 1, 2, 3, 4, 8, 16] as const;
 export const ZOOM_START = 4;
+/** Where the bass ends (a two-pole low-pass) and the highs start (a one-pole high-pass), Hz. */
+export const LO_HZ = 150, HI_HZ = 2000;
+/** The highs are quieter than the bass for the same punch (a clap's peak is a kick's third): weighed up this much. */
+export const HI_WEIGHT = 3;
 
-/** A track's peaks at FINEST_BPS, then each level half the last (each bucket the louder of two), down to a few a second. */
+/**
+ * A track's peaks at FINEST_BPS, with the peaks of its bass and highs in each bucket (for the waveform's colours),
+ * then each level half the last (each bucket the louder of two), down to a few a second.
+ */
 export function peakLevels(mono: Float32Array, rate: number): Level[] {
   const per = Math.max(1, Math.round(rate / FINEST_BPS)), n = Math.max(1, Math.ceil(mono.length / per));
   let p = peaks(mono, n, 0, n * per);
-  const out: Level[] = [{ bps: rate / per, p }];
+  let lo = new Float32Array(n), hi = new Float32Array(n);
+  const aLo = 1 - Math.exp((-2 * Math.PI * LO_HZ) / rate), aHi = 1 - Math.exp((-2 * Math.PI * HI_HZ) / rate);
+  let l1 = 0, l2 = 0, h1 = 0;
+  for (let i = 0; i < mono.length; i++) {
+    const x = mono[i]!, b = (i / per) | 0;
+    l1 += (x - l1) * aLo; l2 += (l1 - l2) * aLo; h1 += (x - h1) * aHi;
+    const L = Math.abs(l2), H = Math.abs(x - h1);
+    if (L > lo[b]!) lo[b] = L;
+    if (H > hi[b]!) hi[b] = H;
+  }
+  const out: Level[] = [{ bps: rate / per, p, lo, hi }];
+  const half = (a: Float32Array) => { const h = new Float32Array(Math.ceil(a.length / 2)); for (let i = 0; i < h.length; i++) h[i] = Math.max(a[i * 2]!, a[i * 2 + 1] ?? 0); return h; };
   while (p.length > 8 && out[out.length - 1]!.bps > 4) {
-    const h = new Float32Array(Math.ceil(p.length / 2));
-    for (let i = 0; i < h.length; i++) h[i] = Math.max(p[i * 2]!, p[i * 2 + 1] ?? 0);
-    p = h;
-    out.push({ bps: out[out.length - 1]!.bps / 2, p });
+    p = half(p); lo = half(lo); hi = half(hi);
+    out.push({ bps: out[out.length - 1]!.bps / 2, p, lo, hi });
   }
   return out;
 }
+
+/** Where a bucket sits between all bass (0) and all highs (1): a kick near 0, a clap or a hat near 1. */
+export const toneOf = (lo: number, hi: number) => { const h = hi * HI_WEIGHT; return h / (lo + h + 1e-6); };
 
 /** The level to draw at `pxPerS`: the coarsest whose bars are still no wider than ~2 px (else the finest there is). */
 export function levelFor(levels: Level[], pxPerS: number): Level {
@@ -131,13 +150,26 @@ export function levelFor(levels: Level[], pxPerS: number): Level {
 
 /**
  * The close-up's bars around `pos` (seconds), `span` seconds either side over `w` px: for each bucket in view, its x
- * and width and peak. Bars sit on the track's time, not on the pixels, so they slide past without shimmering.
+ * and width, peak and tone (toneOf). Bars sit on the track's time, not on the pixels, so they slide past without shimmering.
  */
-export function bars(levels: Level[], pos: number, span: number, w: number, out: (x: number, bw: number, v: number) => void): void {
+export function bars(levels: Level[], pos: number, span: number, w: number, out: (x: number, bw: number, v: number, tone: number) => void): void {
   if (!levels.length) return;
   const pxPerS = w / (2 * span), l = levelFor(levels, pxPerS), bw = pxPerS / l.bps;
   const i0 = Math.max(0, Math.floor((pos - span) * l.bps)), i1 = Math.min(l.p.length, Math.ceil((pos + span) * l.bps));
-  for (let i = i0; i < i1; i++) out(w / 2 + (i / l.bps - pos) * pxPerS, bw, l.p[i]!);
+  for (let i = i0; i < i1; i++) out(w / 2 + (i / l.bps - pos) * pxPerS, bw, l.p[i]!, toneOf(l.lo[i]!, l.hi[i]!));
+}
+
+/** The whole track's tone in `n` slices (the overview's colours), from the level nearest `n` slices over `dur` seconds. */
+export function overTone(levels: Level[], n: number, dur: number): Float32Array {
+  const out = new Float32Array(n);
+  if (!levels.length || dur <= 0) return out;
+  const l = levelFor(levels, n / dur), per = (l.p.length / n);
+  for (let k = 0; k < n; k++) {
+    let lo = 0, hi = 0;
+    for (let i = Math.floor(k * per), e = Math.min(l.p.length, Math.ceil((k + 1) * per)); i < e; i++) { if (l.lo[i]! > lo) lo = l.lo[i]!; if (l.hi[i]! > hi) hi = l.hi[i]!; }
+    out[k] = toneOf(lo, hi);
+  }
+  return out;
 }
 
 // ---- the deck's motion: a turntable's motor start and brake
