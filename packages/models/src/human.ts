@@ -16,6 +16,7 @@
 // one attribute per palette. No DOM.
 import * as THREE from "three";
 import { clamp, clamp01, lerp, mulberry32 } from "@rustybuns/util";
+import type { Avatar } from "@rustybuns/util/avatar";
 
 /** How a body is built. Every number but `height` is 0 for the middle of the range. */
 export interface Build {
@@ -1021,3 +1022,33 @@ class Gait {
   }
 }
 
+
+// ---- from an eqosys avatar ---------------------------------------------------------------------------------------------
+
+const AVATAR_BUILD: Record<string, BuildName> = { slim: "slender", round: "heavy", tall: "lanky", short: "stocky" };
+const AVATAR_HAIR: Record<string, HairStyle> = {
+  none: "bald", buzz: "short", short: "short", spiky: "short", mohawk: "short", pompadour: "short", "flat-top": "short", mullet: "short",
+  afro: "curly", curly: "curly", locs: "curly", braids: "curly",
+};
+const AVATAR_HAT: Record<string, Hat> = { cap: "cap", beanie: "beanie", bucket: "bucket" };
+const tint = (c: string, k: number, to = "#000000") => `#${new THREE.Color(c).lerp(new THREE.Color(to), k).getHexString()}`;
+
+/**
+ * A saved avatar (@rustybuns/util/avatar) as this body wears it: its build (and height slider), its skin, hair and its
+ * colour, a hat the body has (a cap, a beanie or a bucket), and its top and trousers. A dress is a curvy build in a tee,
+ * a suit or a lab coat a long-sleeved shirt in its colour. The face maker's parts wait for this body's faces (#5716).
+ */
+export function fromAvatar(a: Avatar): { build: Build; outfit: Outfit; palette: Palette } {
+  const base = BUILDS[a.top === "dress" && a.build !== "round" ? "curvy" : AVATAR_BUILD[a.build] ?? "average"];
+  const build: Build = { ...base, height: base.height * (1 + 0.025 * (a.height ?? 0)) };
+  const top: Top = ["hoodie", "suit", "labcoat"].includes(a.top) ? "shirt" : "tee";
+  const topColor = a.top === "suit" ? "#2e3439" : a.top === "labcoat" ? "#f4f5f5" : a.topColor;
+  const bottom = a.top === "overalls" ? "#3a6bd8" : a.bottomColor;
+  const outfit: Outfit = { top, hair: AVATAR_HAIR[a.hair] ?? "long", hat: AVATAR_HAT[a.hat] ?? "none" };
+  const palette: Palette = {
+    skin: a.skin, lips: tint(a.skin, 0.4, "#8a2f2f"), hair: a.hairColor, brow: tint(a.hairColor, 0.25),
+    top: topColor, topDark: tint(topColor, 0.3), trim: tint(topColor, 0.45), bottom, bottomDark: tint(bottom, 0.25),
+    boot: "#24272c", bootDark: "#17191c", sole: "#f1ede4", hat: tint(topColor, 0.15), hatDark: tint(topColor, 0.4),
+  };
+  return { build, outfit, palette };
+}
