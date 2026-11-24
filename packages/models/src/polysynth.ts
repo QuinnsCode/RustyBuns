@@ -206,7 +206,8 @@ export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind }:
   // the combo's keys are the other way round: black naturals, ivory sharps (each key's colour is its instance colour)
   const reverse = kind === "combo", whiteRest = new THREE.Color(reverse ? "#141414" : "#ffffff");
   const white = new THREE.InstancedMesh(whiteGeo, new THREE.MeshStandardMaterial({ color: reverse ? "#ffffff" : "#e8e3d6", roughness: 0.42 }), whiteAt.length);
-  const black = new THREE.InstancedMesh(blackGeo, new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.32 }), blackAt.length);
+  // the sharps satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown (their dark is the instance colour)
+  const black = new THREE.InstancedMesh(blackGeo, new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 }), blackAt.length);
   white.name = "white-keys"; black.name = "black-keys";
   const m = new THREE.Matrix4(), blackRest = new THREE.Color(reverse ? "#e6e0d0" : "#060607");
   whiteAt.forEach((q, i) => { white.setMatrixAt(i, m.makeTranslation(...q)); white.setColorAt(i, whiteRest); });
