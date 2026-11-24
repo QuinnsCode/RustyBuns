@@ -45,7 +45,7 @@ import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } f
 import { SYSTEMS, system } from "@rustybuns/gear";
 import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
-import { yours } from "./builder.ts";
+import { yours, Studio } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
@@ -95,7 +95,13 @@ const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw
 /** The room this page is in, from its link; null on the front door. */
 const here = fromLink(location.search);
 const pick = here?.studio ?? "";
-const picked = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+// "yours" in a sesh is the room its leader built and sent with the move (kept here by sesh), else the one this browser built
+const SESH_BUILT = (room: string) => `qollab-studio:sesh-built:${room}`;
+function seshBuilt(): StudioDef | null {
+  if (!here) return null;
+  try { const s = localStorage.getItem(SESH_BUILT(here.room)); return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
+}
+const picked = (pick === "yours" ? seshBuilt() ?? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 // ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
 const rigAsked = new URLSearchParams(location.search).get("rig");
 // ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar, tine-ep, combo, strings); the spot's id picks one otherwise
@@ -804,7 +810,15 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); rigOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
+/** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
+function keepBuilt(p: Project) {
+  if (!here || p.studio !== "yours" || !p.built) return;
+  const json = JSON.stringify(p.built);
+  try { if (localStorage.getItem(SESH_BUILT(here.room)) === json) return; localStorage.setItem(SESH_BUILT(here.room), json); } catch { return; }
+  // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
+  if (pick === "yours" && JSON.stringify(def) !== json && !movingTo) { movingTo = location.href; setTimeout(() => location.reload(), 300); }
+}
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
@@ -819,7 +833,9 @@ function moveStudio(id: string): Answer {
   if (!here) return { ok: false, why: "Not in a room" };
   if (!iLead()) return { ok: false, why: "Only the leader moves the room" };
   if (!studios().some((x) => x.id === id)) return { ok: false, why: `No studio ${id}` };
-  player.edit({ t: "studio", id });
+  // your built room goes with the move, so everyone walks into it, not their own
+  const built = id === "yours" ? yours() : null;
+  player.edit(built ? { t: "studio", id, built } : { t: "studio", id });
   return { ok: true };
 }
 /** The room's studio cards in the Esc menu: the leader's to pick, read-only for everyone else. */
