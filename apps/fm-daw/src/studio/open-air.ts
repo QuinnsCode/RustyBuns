@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS, stackWidth } from "@rustybuns/gear";
+import { SYSTEMS, stackWidth, ampChannels } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
@@ -429,7 +429,12 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     const back = (d: number, side = 0): [number, number] => [mx - fx * d + rx * side, mz - fz * d + rz * side];
     const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
     const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
-    const rack = gear("amp-rack-4u", { look }); rack.position.set(rackAt[0], 0, rackAt[1]); rack.rotation.y = stacks[0]!.yaw + Math.PI; group.add(rack);
+    // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box), side by side
+    const racks = Math.max(1, Math.ceil(ampChannels(roomRig(def), stacks.length) / 12));
+    for (let i = 0; i < racks; i++) {
+      const at = back(1.7, -0.6 - i * 0.66), rack = gear("amp-rack-12u", { look });
+      rack.position.set(at[0], 0, at[1]); rack.rotation.y = stacks[0]!.yaw + Math.PI; group.add(rack);
+    }
     const distro = gear("distro-box", { look }); distro.position.set(distroAt[0], 0, distroAt[1]); distro.rotation.y = stacks[0]!.yaw + Math.PI; group.add(distro);
     const run = (pts: [number, number][], r: number, color: string, seed: number) => {
       const wr = mulberry32(seed), path: THREE.Vector3[] = [];
