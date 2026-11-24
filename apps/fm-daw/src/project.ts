@@ -14,7 +14,7 @@ import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
 import { Studio } from "./studio/builder.ts";
 import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
-import { DeckPress, DeckSay } from "./dj/booth.ts";
+import { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
 import { SOUND_MAX_FRAMES } from "./clock.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
@@ -375,8 +375,8 @@ export type Live =
    * stopped (`on` false). `name` is what's on, for the room to read.
    */
   | { t: "pa"; on: boolean; name?: string }
-  /** What's on one of their DJ decks, for the booth (src/dj/booth.ts); or a press on someone else's deck, for its player. */
-  | DeckSay | DeckPress
+  /** What's on one of their DJ decks, for the booth (src/dj/booth.ts); a press on someone else's deck, for its player; or where their mixer's controls sit. */
+  | DeckSay | DeckPress | MixSay
   /**
    * A slice of their guitar's or plugin track's sound for whoever hears it a loop late or at the desk: it starts on beat `b` (the input's
    * latency taken off), into `track` (-1: straight in): base64url of Opus packets (`c: "opus"`, src/studio/opus.ts),
@@ -387,7 +387,7 @@ const MIDI = int(0, 127);
 /** A beat on the shared clock: the leader's time 0 is beat 0, so it is big, never negative. */
 const STAMP = num(0, 1e13);
 const SOUND_CHARS = Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
-const LIVE: Guard<Exclude<Live, DeckSay | DeckPress>>[] = [
+const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8), b: opt(STAMP) }),
   obj({ t: tag("off"), track: TRACK, midi: MIDI, b: opt(STAMP) }),
   obj({ t: tag("bend"), track: TRACK, semis: num(-BEND_RANGE, BEND_RANGE, 0), b: opt(STAMP) }),
@@ -401,7 +401,7 @@ const LIVE: Guard<Exclude<Live, DeckSay | DeckPress>>[] = [
   obj({ t: tag("pa"), on: bool(), name: opt(str(120, { min: 0 })) }),
   obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
-const LIVE_EVENT = (v: unknown): Live => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? check(DeckSay, v) ?? check(DeckPress, v) ?? bad("a live event");
+const LIVE_EVENT = (v: unknown): Live => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? check(DeckSay, v) ?? check(DeckPress, v) ?? check(MixSay, v) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>

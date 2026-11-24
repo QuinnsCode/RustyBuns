@@ -7,9 +7,11 @@
 // (deck-dust.ts), so a well-played deck shows clean prints over its keys and jog. The screens glow warm and hazy.
 // The DJ's hands (fingers.ts) go where the decks say they were touched: a press heard from the room, or a change in what
 // a deck says (it starts or stops, its cue moves, its tempo, a jump in where it plays), so every page sees the same.
+// The mixer's channel faders, crossfader and filter knobs move to what the DJ's mixer says (booth.ts `MixSay`), and a hand
+// goes to whichever control moved: channels 1 and 2 (deck A's) and the crossfader's A side the left, the rest the right.
 import * as THREE from "three";
 import { clock } from "../dj/analyze.ts";
-import { DECK_KEYS, deckKeyAt, type DeckView, type Press } from "../dj/booth.ts";
+import { DECK_KEYS, deckKeyAt, mixMoved, type DeckView, type MixKey, type MixSay, type Press } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { dusted, dustGear, DustMask, dustUniforms, type DustUniforms, type Rim } from "./deck-dust.ts";
 import type { Touch } from "./fingers.ts";
@@ -34,6 +36,13 @@ interface Was { name: string | null; playing: boolean; cue: number; bpm: number 
 
 /** What a DJ's hand goes to on a deck: a key, the tempo fader or the jog. */
 export type Reached = Press | "jog" | "tempo";
+/** The mixer on the table: its moving caps where the model built them, and what its DJ last said of it. */
+interface Mixer { group: THREE.Object3D; parts: Map<string, { o: THREE.Object3D; home: THREE.Vector3; turn: number }>; fader: number; cross: number; say: MixSay | null; t: number }
+/** Where a mixer's EQ knobs sit back from the front, the high's first (mixer-club-4's own frame, metres), and how far
+ *  left of its fader a channel's knobs are. */
+const EQ_Z = [-0.134, -0.112, -0.09, -0.068], EQ_DX = -0.005;
+/** How far a filter's frequency knob turns, end to end (radians): 300 degrees, 12 o'clock in the middle. */
+const KNOB_TURN = (Math.PI * 5) / 3;
 /** How long (seconds) a touched key is held down, and the jog; how long the hand then hovers over it before it goes back
  *  to rest on its jog's rim; and how far (seconds) a deck's place may jump before it was the jog or a seek, not time. */
 const DOWN = 0.22, JOG_DOWN = 0.6, HOVER_S = 1.6, JUMP = 0.25;
@@ -54,13 +63,20 @@ export class BoothGear {
   private rest: THREE.Object3D[] = [];
   /** The rest of the booth that gathers dust: the mixer. */
   private worn: Worn[] = [];
+  /** The mixer, when the table has one with moving caps. */
+  private mixer: Mixer | null = null;
   private ray = new THREE.Raycaster();
 
   /** The room was built again: forget the old decks. */
-  clear() { this.gear = []; this.rest = []; this.worn = []; }
+  clear() { this.gear = []; this.rest = []; this.worn = []; this.mixer = null; }
   /** Something else on the DJ table (the mixer, the table itself): a click on it opens the decks. `dusty`: it wears dust a hand wipes off (the mixer). */
   addRest(o: THREE.Object3D, dusty = false) {
     this.rest.push(o);
+    if (o.getObjectByName("part:cross")) {
+      const parts = new Map(o.children.filter((c) => c.name.startsWith("part:")).map((c) => [c.name.slice(5), { o: c, home: c.position.clone(), turn: c.rotation.y }]));
+      const num = (k: string, d: number) => { const v: unknown = o.userData[k]; return typeof v === "number" ? v : d; };
+      this.mixer = { group: o, parts, fader: num("faderTravel", 0.06), cross: num("crossTravel", 0.045), say: null, t: -1 };
+    }
     if (!dusty) return;
     const w = wear(o, 101 + this.worn.length);
     dustGear(o, w.u);
@@ -107,8 +123,20 @@ export class BoothGear {
     const at = SPOTS[press];
     if (at) g.mask.wipe(at[0], at[1]);
   }
-  /** What each deck (A, B) was last touched on, and when (the page's clock, seconds). */
-  private touched: [{ key: Reached; at: number } | null, { key: Reached; at: number } | null] = [null, null];
+  /** What each hand (deck A's, the left; B's, the right) was last touched on, and when (the page's clock, seconds). */
+  private touched: [{ key: Reached | MixKey; at: number } | null, { key: Reached | MixKey; at: number } | null] = [null, null];
+  /** The DJ's mixer says where its controls sit (heard from the room, or the decks here): the caps go there, and the
+   *  hand on its side to the control that moved, its fingertips wiping the dust there. */
+  mixed(e: MixSay, t: number) {
+    const m = this.mixer;
+    if (!m) return;
+    const moved = mixMoved(m.say, e);
+    m.say = e;
+    if (!moved) return;
+    this.touched[moved.hand] = { key: moved.key, at: t };
+    const w = this.worn.find((x) => x.group === m.group), at = mixSpot(m, moved.key, spotAt, false);
+    if (w && at) w.mask.wipe(at.x, at.z);
+  }
   /** A DJ's hand went to `key` on deck `side` at `t`: heard from the room, a click here, or a deck's change. */
   reached(side: Side, key: Reached | "cueUp" | "screen" | "open", t: number) {
     if (key === "cueUp" || key === "screen" || key === "open") return;
@@ -123,8 +151,10 @@ export class BoothGear {
     for (const g of this.gear) {
       const hand = g.side === 0 ? this.aim.left : this.aim.right, got = this.touched[g.side], ago = got ? t - got.at : Infinity;
       const key = got && ago < HOVER_S ? got.key : null;
-      spotOn(g.group, key, hand.at);
-      hand.down = key !== null && ago < (key === "jog" ? JOG_DOWN : DOWN);
+      // a mixer control: the index on its cap (it slides under it), held down as long as a jog
+      const onMix = key !== null && typeof key === "object" && this.mixer ? mixSpot(this.mixer, key, hand.at) : null;
+      if (!onMix) spotOn(g.group, typeof key === "object" ? null : key, hand.at);
+      hand.down = key !== null && ago < (key === "jog" || onMix ? JOG_DOWN : DOWN);
     }
     this.gear[0]!.group.getWorldQuaternion(this.aim.turn);
     return this.aim;
@@ -150,6 +180,7 @@ export class BoothGear {
   /** Each frame: the jogs turn and the rings light by what plays; the screens redraw a few times a second. */
   frame(view: (side: Side) => DeckView | null, t: number) {
     for (const w of this.worn) w.u.dustInv.value.copy(w.group.matrixWorld).invert();
+    this.slide(t);
     for (const g of this.gear) {
       g.u.dustInv.value.copy(g.group.matrixWorld).invert();
       const v = view(g.side);
@@ -174,6 +205,28 @@ export class BoothGear {
       g.tex.needsUpdate = true;
     }
   }
+  /** The mixer's caps ease toward what it last said (a say comes a few times a second; a cap glides between them). */
+  private slide(t: number) {
+    const m = this.mixer, e = m?.say;
+    if (!m || !e) return;
+    const k = m.t < 0 ? 1 : Math.min(1, (t - m.t) * 14);
+    m.t = t;
+    const ease = (a: number, b: number) => a + (b - a) * k;
+    e.faders.forEach((v, i) => { const p = m.parts.get(`fader-${i + 1}`); if (p) p.o.position.z = ease(p.o.position.z, p.home.z + (0.5 - v) * m.fader); });
+    const x = m.parts.get("cross");
+    if (x) x.o.position.x = ease(x.o.position.x, x.home.x + (e.cross * m.cross) / 2);
+    e.filters.forEach((v, i) => { const p = m.parts.get(`filter-${i + 1}`); if (p) p.o.rotation.y = ease(p.o.rotation.y, p.turn + (0.5 - v) * KNOB_TURN); });
+  }
+}
+
+/** Where a hand's index goes on the mixer for `key`: a cap's top, or an EQ knob's (the mixer's own frame, or world space with `world`), into `out`. */
+function mixSpot(m: Mixer, key: MixKey, out: THREE.Vector3, world = true): THREE.Vector3 | null {
+  const name = "fader" in key ? `fader-${key.fader + 1}` : "cross" in key ? "cross" : "filter" in key ? `filter-${key.filter + 1}` : `fader-${key.eq + 1}`;
+  const p = m.parts.get(name);
+  if (!p) return null;
+  if ("eq" in key) out.set(p.home.x + EQ_DX, p.home.y + 0.013, EQ_Z[key.band] ?? EQ_Z[0]!);
+  else out.set(p.o.position.x, p.home.y + ("filter" in key ? 0.013 : 0.012), p.o.position.z);
+  return world ? m.group.localToWorld(out) : out;
 }
 
 const spotAt = new THREE.Vector3();

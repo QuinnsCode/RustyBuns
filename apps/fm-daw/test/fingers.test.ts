@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { defaultAvatar } from "@rustybuns/util/avatar";
 import { drumKit } from "@rustybuns/models/drums";
 import { gear } from "@rustybuns/models/gear";
+import type { MixSay } from "../src/dj/booth.ts";
 import { BoothGear } from "../src/studio/booth-3d.ts";
 import { figure, handsOn } from "../src/studio/figure.ts";
 import { NECK, fretY } from "../src/studio/fingers.ts";
@@ -177,4 +178,46 @@ test("at the DJ table, a hand goes to what the decks say was touched: play on de
     const jog = at(decks[i]!, "part:platter"), tip = f.hands.tips()[hand].index;
     expect(Math.abs(Math.hypot(tip.x - jog.x, tip.z - jog.z) - 0.09)).toBeLessThan(0.03);
   }
+});
+
+test("at the DJ table, the mixer moves as the DJ's says: channel 2's fader goes up under the left index, the crossfader over to B under the right", () => {
+  const scene = new THREE.Scene(), s = DESERT_GATHERING.spots.find((x) => x.kind === "dj")!, g = new THREE.Group(), b = thingBox(s), booth = new BoothGear();
+  g.position.set(b.cx, 0, b.cz); g.rotation.y = b.turn;
+  scene.add(g);
+  // the mixer and the decks as main.ts lays them out
+  const front = s.thing.d / 2 - 0.08, mixer = gear("mixer-club-4");
+  mixer.position.set(0, s.thing.h, front - 0.358 / 2);
+  g.add(mixer); booth.addRest(mixer, true);
+  for (const side of [0, 1] as const) {
+    const deck = gear("deck-cd");
+    deck.position.set((side ? 1 : -1) * 0.35, s.thing.h, front - 0.405 / 2);
+    g.add(deck); booth.add(deck, side);
+  }
+  const f = figure(defaultAvatar("Pat"), null);
+  f.group.position.set(s.at[0], 0, s.at[1]); f.group.rotation.y = s.yaw;
+  scene.add(f.group);
+  let t = 1;
+  const frames = (n: number) => { for (let i = 0; i < n; i++) { t += 1 / 60; booth.frame(() => null, t); f.pose({ speed: 0, seated: true, play: handsOn("dj", false), note: false, t, aim: { notes: [], low: 0, touch: booth.hands(t) ?? undefined } }); } };
+  const cap = (part: string) => mixer.getObjectByName(part)!;
+  const say = (o: Partial<MixSay> = {}): MixSay => ({ t: "mix", faders: [0.5, 0.5, 0.5, 0.5], cross: 0, filters: [0.6, 0.3], eq: Array(16).fill(0), ...o });
+  // what the mixer said when this page came in: the caps go there, no hand moves
+  booth.mixed(say(), t);
+  frames(10);
+  const was = cap("part:fader-2").position.z;
+  // deck A's channel up: its cap slides away from the DJ, the left index riding it
+  booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5] }), t);
+  frames(20);
+  expect(cap("part:fader-2").position.z).toBeCloseTo(was - 0.03, 3);
+  const top = (part: string) => cap(part).localToWorld(new THREE.Vector3(0, 0.012, 0));
+  expect(f.hands.tips().left.index.distanceTo(top("part:fader-2"))).toBeLessThan(0.02);
+  // the crossfader over to B: the right hand on it, the left still on its fader
+  booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5], cross: 0.8 }), t);
+  frames(20);
+  expect(cap("part:cross").position.x).toBeCloseTo(0.8 * 0.045 / 2, 3);
+  expect(f.hands.tips().right.index.distanceTo(top("part:cross"))).toBeLessThan(0.02);
+  // filter 2 swept down: its knob turns back anticlockwise (seen from above), the right hand on it
+  booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5], cross: 0.8, filters: [0.6, 0.1] }), t);
+  frames(20);
+  expect(cap("part:filter-2").rotation.y).toBeGreaterThan(cap("part:filter-1").rotation.y);
+  expect(f.hands.tips().right.index.distanceTo(cap("part:filter-2").localToWorld(new THREE.Vector3(0, 0.013, 0)))).toBeLessThan(0.02);
 });

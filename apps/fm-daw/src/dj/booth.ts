@@ -9,11 +9,13 @@
 // `JogOut` gathers them, the player runs them through its own `Jog`). Loading onto a deck someone else has is fine
 // while it's stopped, and theirs goes; while it plays, it's theirs. A YouTube deck says the same, plus its video's id
 // (`tube`) and the volume its channel gives it (`vol`): its sound can't go down the PA, so each listener's page plays
-// the video itself, on the room's clock (room-tube.ts).
+// the video itself, on the room's clock (room-tube.ts). The mixer says where its faders and knobs sit (`mix`) when they
+// move, so the 3D mixer and the DJ's hand on it follow on every page (booth-3d.ts).
 // Pure, no DOM: the World's guards (project.ts), the page and the tests share it.
 import { b64url, unb64url } from "@rustybuns/util/bytes";
-import { bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { DeckState, Side } from "./engine.ts";
+import type { MixerState } from "./mixer.ts";
 import type { JogMode, JogPart } from "./player.ts";
 
 /** The waveform the room sees of a deck: this many bars, one byte each. */
@@ -211,4 +213,41 @@ export class JogOut {
     this.send({ part: this.part, turns: this.turns }); this.sent = now;
     this.turns = 0;
   }
+}
+
+/**
+ * The mixer as the room sees it: its four channel faders (0 down to 1 up), the crossfader (-1 A to 1 B), the two filters'
+ * frequency knobs (0 to 1) and each channel's four EQ knobs (high to low, -1 to 1, flat at 0). The DJ's page says it
+ * when it changes, checked every say tick (so a sweep sends at most four a second); every page moves the 3D mixer's caps
+ * to it and the DJ's hand to what moved.
+ */
+export const MixSay = obj({
+  t: tag("mix"), faders: arr(num(0, 1), 4, { min: 4 }), cross: num(-1, 1), filters: arr(num(0, 1), 2, { min: 2 }),
+  eq: arr(num(-1, 1), 16, { min: 16 }),
+});
+export type MixSay = Of<typeof MixSay>;
+const BANDS = ["high", "hiMid", "loMid", "low"] as const;
+const r2 = (n: number) => Math.round(n * 100) / 100;
+/** What the mixer says to the room, from its state (rounded: the caps don't need more). */
+export function mixOf(m: MixerState): MixSay {
+  return {
+    t: "mix", faders: m.channels.slice(0, 4).map((c) => r2(c.fader)), cross: r2(m.xfader), filters: m.filters.map((f) => r2(f.freq)),
+    eq: m.channels.slice(0, 4).flatMap((c) => BANDS.map((b) => r2(c[b]))),
+  };
+}
+
+/** A control on the mixer a hand goes to: a channel's fader (0 to 3), the crossfader, a filter's frequency (0, 1) or a channel's EQ knob. */
+export type MixKey = { fader: number } | { cross: true } | { filter: number } | { eq: number; band: number };
+/** The control that moved most from `a` to `b` (null: none moved), and the hand on it: channels 1 and 2 (deck A's) and the
+ *  crossfader's A side the left (0), 3 and 4 and its B side the right (1). */
+export function mixMoved(a: MixSay | null, b: MixSay): { key: MixKey; hand: Side } | null {
+  if (!a) return null;
+  let best: { key: MixKey; hand: Side } | null = null, most = 0.005;
+  const see = (d: number, key: MixKey, hand: Side) => { if (Math.abs(d) > most) { most = Math.abs(d); best = { key, hand }; } };
+  b.faders.forEach((v, i) => see(v - a.faders[i]!, { fader: i }, i < 2 ? 0 : 1));
+  // the crossfader runs -1 to 1: halve its move to weigh it as a fader's
+  see((b.cross - a.cross) / 2, { cross: true }, b.cross <= 0 ? 0 : 1);
+  b.filters.forEach((v, i) => see(v - a.filters[i]!, { filter: i }, i ? 1 : 0));
+  b.eq.forEach((v, i) => see((v - a.eq[i]!) / 2, { eq: i >> 2, band: i & 3 }, i < 8 ? 0 : 1));
+  return best;
 }

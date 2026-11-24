@@ -235,7 +235,9 @@ export function hands(group: THREE.Group, root: THREE.Object3D, height: number):
     put(h, world);
     const fore = h.arm.elbow.getWorldPosition(b).sub(c).applyQuaternion(turn.invert());
     const slope = Math.atan2(-fore.y, Math.hypot(fore.z, fore.x) * Math.sign(fore.z || 1));
-    h.pitch += (Math.max(PITCH, slope - WRIST_BEND) - h.pitch) * eMove;
+    // slower than the hand moves: the tip's place hangs on the tip, so close in (a mixer's filter knobs, right by the
+    // body) a quick tip set the fingertip twitching 3 cm every few frames
+    h.pitch += (Math.max(PITCH, slope - WRIST_BEND) - h.pitch) * eMove * 0.25;
   }
 
   const LIFT_ALL: Record<Finger, readonly number[]> = { thumb: LIFTED, index: LIFTED, middle: LIFTED, ring: LIFTED, little: LIFTED };

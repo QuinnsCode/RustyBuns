@@ -6,7 +6,7 @@
 // name refuse people the decks (`refused`: they still dance and listen), take whoever is on off at once, and edit the
 // lineup. The World checks every deck command against `mayDeck`; the page only shows it. Pure: World, page, tests.
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
-import type { DeckPress, DeckSay } from "./dj/booth.ts";
+import type { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
 
 /** A person id (src/chat.ts), as the grants key them. */
 const ID = str(64, { re: /^[0-9a-f]{8,64}$/ });
@@ -75,7 +75,7 @@ export const onNow = (s: Spin, now: number): string | null => (s.mode === "lineu
  * `holds`: they already have this very track on this deck, so a say about it lets it play out or stop after their
  * turn (the World forgets what they hold when they're taken off). A say that empties a deck is never refused.
  */
-export function mayDeck(s: Spin, who: string | undefined, o: { lead: boolean; play: boolean; now: number; e: DeckSay | DeckPress; freeSide: boolean; holds?: boolean }): { ok: true } | { ok: false; why: string } {
+export function mayDeck(s: Spin, who: string | undefined, o: { lead: boolean; play: boolean; now: number; e: DeckSay | DeckPress | MixSay; freeSide: boolean; holds?: boolean }): { ok: true } | { ok: false; why: string } {
   if (o.e.t === "deck" && !o.e.name) return { ok: true };
   if (who && s.refused.includes(who)) return { ok: false, why: "The host took you off the decks for tonight" };
   if (o.holds && o.e.t === "deck") return { ok: true };
