@@ -420,7 +420,7 @@ const FLOOR = oneOf(["free", "held", "closed"]);
  * Why a world turned a socket away: every seat in this room is taken, every room is open, the maker
  * closed it, the sesh is private and the code was missing or wrong, or this address got it wrong too often lately.
  */
-export type Full = "room" | "rooms" | "closed" | "code" | "tries";
+export type Full = "room" | "rooms" | "closed" | "code" | "tries" | "blocked";
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
 
@@ -448,7 +448,7 @@ const CLIENT: Guard<ClientMsg>[] = [TakeBytesGuard, obj({ t: tag("init"), projec
 const SERVER: Guard<ServerMsg>[] = [
   TakeBytesGuard,
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
-  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries"]) }),
+  obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries", "blocked"]) }),
   obj({ t: tag("floor"), state: FLOOR, host: bool() }), obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
   obj({ t: tag("rewound"), ago: RUNG, at: int(0, Infinity), project: nul(PROJ) }),
 ];
