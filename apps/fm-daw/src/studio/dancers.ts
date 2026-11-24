@@ -42,12 +42,19 @@ export class Dancers {
 
   /** This frame: `t` seconds, and the groove's `beat` (or none: they keep a slow sway of their own). */
   tick(t: number, beat: number | null) {
-    for (const p of this.people) {
-      const b = beat === null ? t * 1.6 : beat;
-      p.fig.pose({ speed: 0, seated: false, play: null, note: false, t: t + p.phase * 3, beat: b - p.phase });
+    for (const [i, p] of this.people.entries()) {
+      if (beat === null) {
+        // between tracks: standing about, weight shifting, now and then turning to the one beside them to talk
+        p.fig.pose({ speed: 0, seated: false, play: null, note: false, t: t + p.phase * 3, beat: null });
+        p.fig.group.position.y = 0;
+        const chat = Math.max(0, Math.sin(t * 0.21 + i * 1.7) - 0.6) * 2.2; // 0 most of the time, up to about 0.9
+        p.fig.group.rotation.y = p.at.yaw + 0.05 * Math.sin(t * 0.4 + p.phase * 5) + (i % 2 ? 1 : -1) * chat;
+        continue;
+      }
+      p.fig.pose({ speed: 0, seated: false, play: null, note: false, t: t + p.phase * 3, beat: beat - p.phase });
       // a bounce on every beat, and a slow sway side to side over two bars
-      p.fig.group.position.y = p.bounce * Math.abs(Math.sin(Math.PI * (b - p.phase)));
-      p.fig.group.rotation.y = p.at.yaw + 0.12 * Math.sin((Math.PI / 4) * (b - p.phase));
+      p.fig.group.position.y = p.bounce * Math.abs(Math.sin(Math.PI * (beat - p.phase)));
+      p.fig.group.rotation.y = p.at.yaw + 0.12 * Math.sin((Math.PI / 4) * (beat - p.phase));
     }
   }
 
