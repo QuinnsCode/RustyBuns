@@ -2,7 +2,7 @@
 // to scale from its boxes' sizes (a horn's mouth in each), its name and how it's built. The leader's to pick, read-only
 // for everyone else, as the studio cards are; the pick is the sesh's (the project's `rig`), so everyone hears it.
 import { esc } from "@rustybuns/util";
-import { gear, SYSTEM_IDS, SYSTEMS, type SystemId } from "@rustybuns/gear";
+import { gear, SYSTEM_IDS, SYSTEMS, systemSound, type SystemId } from "@rustybuns/gear";
 import { sideways } from "./picker.ts";
 
 /** One stack as a side-on silhouette, bottom to top, scaled so the tallest rig fills the card. */
@@ -29,7 +29,10 @@ export function rigCards(host: HTMLElement, current: SystemId, pick?: (id: Syste
     b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(id === current));
     b.disabled = !pick;
     b.title = s.about;
-    b.innerHTML = `${stackSvg(id)}<b>${esc(s.name)}</b><span class="keys">${esc(s.about)}</span>`;
+    // the sheet's numbers: the top's pattern and its loudest, the stack's low end, and what one stack weighs
+    const snd = systemSound(s), kg = s.stack.reduce((t, b) => t + gear(b).kg, 0);
+    const sheet = `${snd.coverage.h} x ${snd.coverage.v}° · ${snd.maxSpl} dB peak · down to ${snd.lowCut} Hz · ${Math.round(kg)} kg a stack`;
+    b.innerHTML = `${stackSvg(id)}<b>${esc(s.name)}</b><span class="sheet">${esc(sheet)}</span><span class="keys">${esc(s.about)}</span>`;
     if (pick) b.addEventListener("click", () => pick(id));
     host.append(b);
   }
