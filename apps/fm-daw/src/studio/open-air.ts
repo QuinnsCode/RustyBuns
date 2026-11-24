@@ -69,6 +69,45 @@ export function clubStack(at: readonly [number, number], yaw: number, look: Gear
 }
 const GEAR_SIZE_SUB_H = 0.7;
 
+/** The full moon's face as you see it, a flat disc (a full moon shows almost no shading at its edge): the pale
+ *  highlands, the dark seas in their places (a big one upper left, a chain upper right, the wide one down the left),
+ *  and one young crater low down with its bright rays, painted once onto a canvas. */
+function moonFace(): THREE.CanvasTexture {
+  const n = 256, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d")!, r = mulberry32(1969), R = n / 2 - 2;
+  g.save(); g.beginPath(); g.arc(n / 2, n / 2, R, 0, Math.PI * 2); g.clip();
+  g.fillStyle = "#ece7d8"; g.fillRect(0, 0, n, n);
+  const sea = (u: number, v: number, rx: number, ry: number, a = 0.62) => {
+    const gr = g.createRadialGradient(u * n, v * n, 0, u * n, v * n, Math.max(rx, ry) * n);
+    gr.addColorStop(0, `rgba(118,118,122,${a})`); gr.addColorStop(0.75, `rgba(132,132,136,${a * 0.6})`); gr.addColorStop(1, "rgba(150,150,150,0)");
+    g.save(); g.translate(u * n, v * n); g.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry)); g.translate(-u * n, -v * n);
+    g.fillStyle = gr; g.beginPath(); g.arc(u * n, v * n, Math.max(rx, ry) * n, 0, Math.PI * 2); g.fill(); g.restore();
+  };
+  sea(0.36, 0.33, 0.14, 0.12); sea(0.58, 0.3, 0.08, 0.08); sea(0.66, 0.43, 0.1, 0.08); sea(0.74, 0.36, 0.05, 0.05, 0.5);
+  sea(0.26, 0.5, 0.11, 0.18, 0.5); sea(0.42, 0.6, 0.08, 0.06, 0.45); sea(0.6, 0.6, 0.06, 0.05, 0.4); sea(0.8, 0.5, 0.04, 0.06, 0.5);
+  // the rayed crater low down, and its rays running out across the highlands
+  const [tx, ty] = [0.48 * n, 0.82 * n];
+  g.strokeStyle = "rgba(255,255,250,0.22)"; g.lineWidth = 1.2;
+  for (let i = 0; i < 14; i++) { const a = r() * Math.PI * 2, l = (0.15 + r() * 0.35) * n; g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx + Math.cos(a) * l, ty + Math.sin(a) * l); g.stroke(); }
+  g.fillStyle = "rgba(255,255,252,0.9)"; g.beginPath(); g.arc(tx, ty, 2.2, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(255,255,250,${0.08 + r() * 0.2})`; g.beginPath(); g.arc(r() * n, r() * n, 0.5 + r() * 1.2, 0, Math.PI * 2); g.fill(); }
+  g.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** A soft round glow, bright in the middle and gone at the edge, for the moon's halo. */
+function glowDisc(): THREE.CanvasTexture {
+  const c = document.createElement("canvas"), n = 128;
+  c.width = c.height = n;
+  const g = c.getContext("2d")!, gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  gr.addColorStop(0, "rgba(255,255,255,0.9)"); gr.addColorStop(0.12, "rgba(255,255,255,0.45)"); gr.addColorStop(0.4, "rgba(255,255,255,0.1)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, n, n);
+  return new THREE.CanvasTexture(c);
+}
+
 /** How bright lantern `i`'s flame is at time `t` seconds, about 1: a slow breath and a quick flutter, each lantern out of step. */
 export function flameAt(i: number, t: number): number {
   return 0.86 + 0.09 * Math.sin(t * 2.1 + i * 1.7) + 0.05 * Math.sin(t * 9.3 + i * 4.1) * Math.sin(t * 3.7 + i);
@@ -134,26 +173,43 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   scene.background = zenith;
   scene.fog = new THREE.Fog(horizon, 60, 200);
 
-  // ---- the sky: a dome shaded from the horizon's glow to the deep blue overhead, stars, the moon
-  const dome = new THREE.SphereGeometry(190, 32, 16), col: number[] = [], p = dome.attributes.position;
+  // ---- the sky: a dome shaded from the horizon's glow to the deep blue overhead, paler round the full moon; the stars
+  // as a full moon leaves them (the faint ones washed out near it, the bright ones in their colours); the moon with
+  // its dark seas and a soft glow round it
+  const moonAt = new THREE.Vector3(-70, 62, -120), moonDir = moonAt.clone().normalize();
+  const dome = new THREE.SphereGeometry(190, 48, 24), col: number[] = [], p = dome.attributes.position, moonSky = new THREE.Color("#3a4a78"), at = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     const k = Math.max(0, Math.min(1, p.getY(i) / 190));
     const c = new THREE.Color("#3a2436").lerp(horizon, Math.min(1, k * 6)).lerp(new THREE.Color("#0b0f26"), Math.min(1, k * 2.5)).lerp(zenith, Math.max(0, k * 1.4 - 0.3));
+    const near = at.fromBufferAttribute(p, i).normalize().angleTo(moonDir);
+    c.lerp(moonSky, 0.55 * Math.exp(-((near / 0.45) ** 2)));
     col.push(c.r, c.g, c.b);
   }
   dome.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   group.add(new THREE.Mesh(dome, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
-  const stars: number[] = [];
-  for (let i = 0; i < 1800; i++) {
-    const a = rnd() * Math.PI * 2, y = 0.08 + rnd() * 0.92, r = Math.sqrt(1 - y * y);
-    stars.push(Math.cos(a) * r * 180, y * 180, Math.sin(a) * r * 180);
+  const TINTS = ["#b8c8ff", "#dfe6ff", "#ffffff", "#fff4dc", "#ffd9a8"].map((h) => new THREE.Color(h));
+  const faint: number[] = [], faintCol: number[] = [], bright: number[] = [], brightCol: number[] = [];
+  for (let i = 0; i < 2600; i++) {
+    const a = rnd() * Math.PI * 2, y = 0.06 + rnd() * 0.94, r = Math.sqrt(1 - y * y), dir = at.set(Math.cos(a) * r, y, Math.sin(a) * r);
+    // brightness: most stars faint, a few bright; the moon's glare and the haze low down put the faint ones out
+    const mag = rnd() ** 2.4, glare = Math.exp(-((dir.angleTo(moonDir) / 0.7) ** 2)), haze = Math.min(1, y / 0.25);
+    const shown = (1 - mag) * haze * (1 - 0.85 * glare);
+    // and none behind the moon's disc (about 2.3 degrees across from here)
+    if (shown < 0.12 || dir.angleTo(moonDir) < 0.05) continue;
+    const tint = TINTS[Math.floor(rnd() * TINTS.length)]!.clone().multiplyScalar(Math.min(1, 0.3 + shown));
+    (mag < 0.97 ? faint : bright).push(dir.x * 180, dir.y * 180, dir.z * 180);
+    (mag < 0.97 ? faintCol : brightCol).push(tint.r, tint.g, tint.b);
   }
-  const starGeo = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(stars, 3));
-  group.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: "#dfe6ff", size: 1.4, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85 })));
-  const moonAt = new THREE.Vector3(-70, 62, -120);
-  const moon = new THREE.Mesh(new THREE.SphereGeometry(6, 24, 16), new THREE.MeshBasicMaterial({ color: "#f6f0da", fog: false }));
-  moon.position.copy(moonAt);
+  for (const [pos, c, size] of [[faint, faintCol, 1.3], [bright, brightCol, 2.4]] as const) {
+    const g = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)).setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
+    group.add(new THREE.Points(g, new THREE.PointsMaterial({ vertexColors: true, size, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.9 })));
+  }
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonFace(), fog: false, toneMapped: false, transparent: true }));
+  moon.position.copy(moonAt); moon.scale.setScalar(12);
   group.add(moon);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowDisc(), color: "#c9d6ff", transparent: true, opacity: 0.5, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  halo.position.copy(moonAt).multiplyScalar(1.02); halo.scale.setScalar(70);
+  group.add(halo);
   const moonlight = new THREE.DirectionalLight("#9fb2e8", 0.9);
   moonlight.position.copy(moonAt).normalize().multiplyScalar(40);
   moonlight.castShadow = high;
