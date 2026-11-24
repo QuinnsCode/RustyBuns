@@ -81,7 +81,7 @@ pinnedTest("a worker's screen sends upstream's frames, row for row, as it types,
   flush(); // nothing moved: no frame
   term.write(1, 2, "Reading terminal.js", { fg: 4 }); // same text, new colour
   flush();
-  term.scroll(); term.write(5, 0, "done");
+  term.scroll(); term.write(5, 0, "done: 2 files changed, 40 insertions, 15 deletions");
   flush();
   term.resize(30);
   flush();
