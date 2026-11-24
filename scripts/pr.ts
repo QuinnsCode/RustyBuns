@@ -12,6 +12,8 @@
 // free yet) isn't in the PR's checks either, so before calling it a miss it asks Actions for runs on the head SHA (#4240).
 // And a stuck check (#5391): its run finished minutes ago but the check still says running, so the PR can't merge until
 // a new head starts a fresh run (`gh pr update-branch <n> --rebase`).
+// A head that is the after workflow's merge of main (scripts/after.ts, committed as `rustybuns-after`) gets no run at
+// all while after.yml pushes with its own token (#5733): it says so and that any push of your own starts CI.
 import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 const text = (max: number) => opt(str(max, { min: 0 }));
@@ -20,7 +22,7 @@ export const Pr = obj({
   number: num(1, 1e9), title: str(400, { min: 0 }), url: str(400), state: oneOf(["OPEN", "CLOSED", "MERGED"]), isDraft: bool(false), mergeable: str(40, { min: 0, dflt: "" }), mergeStateStatus: str(40, { min: 0, dflt: "" }),
   baseRefName: str(200), headRefName: str(200), headRefOid: str(64),
   statusCheckRollup: arr(obj({ name: text(200), status: text(40), conclusion: text(40), detailsUrl: text(400), workflowName: text(200), startedAt: text(40), completedAt: text(40), context: text(200), state: text(40) }), 500, { drop: true }),
-  commits: arr(obj({ committedDate: str(40) }), 500, { drop: true }),
+  commits: arr(obj({ committedDate: str(40), authors: opt(arr(obj({ name: text(200) }), 20, { drop: true })) }), 500, { drop: true }),
 });
 export type Pr = Of<typeof Pr>;
 export const FIELDS = "number,title,url,state,isDraft,mergeable,mergeStateStatus,baseRefName,headRefName,headRefOid,statusCheckRollup,commits";
@@ -78,6 +80,14 @@ const unattached = (pr: Pr) => !pr.statusCheckRollup.some((c) => CI.test(c.workf
 export const MISS_AFTER = 120;
 export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = []) =>
   pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && unattached(pr) && headRuns(runs) === "none";
+/** The after workflow's git name (after.yml): its merge-main pushes start no checks while it pushes with the workflow's own token (#5733). */
+export const AFTER_BOT = "rustybuns-after";
+/** The head commit is the after workflow's merge of main. */
+export const botHead = (pr: Pr) => (pr.commits.at(-1)?.authors ?? []).some((a) => a.name === AFTER_BOT);
+/** What to do about a head with no run: the after bot's push needs one push of your own; GitHub's own miss needs a new merge-base. */
+const missFix = (pr: Pr) => botHead(pr)
+  ? `the head is the after workflow's merge of main (${AFTER_BOT}), and GitHub starts no checks for a push made with a workflow's own token (#5733). Push one commit of your own on top: git fetch origin && git checkout -B ${pr.headRefName} origin/${pr.headRefName} && git commit --allow-empty -m "Start CI" && git push origin ${pr.headRefName}`
+  : "a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.";
 /** Whether to ask Actions for the head's runs: the rollup has no typecheck or apps check yet, or a check still runs (it may be stuck). */
 export const needRuns = (pr: Pr) => pr.state === "OPEN" && (unattached(pr) || outcomes(pr).some((o) => o.outcome === "pending"));
 
@@ -91,7 +101,7 @@ export function summarize(pr: Pr, now = Date.now(), runs: Runs = []): string[] {
   const queued = unattached(pr) ? runs.filter((r) => CI.test(r.workflowName) && r.status !== "completed") : [];
   if (queued.length) out.push(`  queued  ${queued.map((r) => r.workflowName).join(" | ")}  waiting for a runner, not a miss: don't push`);
   else if (!os.length && pr.mergeStateStatus === "DIRTY") out.push("  no runs: it conflicts with main, and GitHub runs no checks until it merges cleanly. Rebase onto origin/main (only your own commits) and git push --force-with-lease.");
-  else if (!os.length) out.push(missedRun(pr, now, runs) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.` : "  no checks yet");
+  else if (!os.length) out.push(missedRun(pr, now, runs) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: ${missFix(pr)}` : "  no checks yet");
   const jammed = stuck(pr, now, runs), jammedUrls = new Set(jammed.map((o) => o.url));
   for (const [kind, label] of [["pass", "pass"], ["skip", "skip"], ["other", "other"], ["pending", "running"]] as const) {
     const xs = byKind(kind).filter((o) => kind !== "pending" || !jammedUrls.has(o.url));
@@ -99,7 +109,7 @@ export function summarize(pr: Pr, now = Date.now(), runs: Runs = []): string[] {
   }
   if (jammed.length) out.push(`  STUCK   ${jammed.map((o) => o.name).join(" | ")}  its run finished but the check still says running, so the PR can't merge (#5391). A new head clears it: gh pr update-branch ${pr.number} --rebase`);
   for (const o of byKind("fail")) out.push(`  FAIL    ${o.name}${dur(o.seconds)}  ${o.url ?? ""}`.trimEnd());
-  if (os.length && missedRun(pr, now, runs)) out.push("  no typecheck or apps run attached (#2828): rebase onto origin/main and git push --force-with-lease.");
+  if (os.length && missedRun(pr, now, runs)) out.push(`  no typecheck or apps run attached: ${missFix(pr)}`);
   return out;
 }
 

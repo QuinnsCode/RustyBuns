@@ -37,6 +37,15 @@ test("a head minutes old with no typecheck or apps run is the GitHub miss, and a
   expect(settled(pr({ state: "MERGED", statusCheckRollup: [run("typecheck", undefined, "IN_PROGRESS")] }), now)).toBe(true);
 });
 
+test("a head that is the after workflow's merge of main says a push of your own starts CI, not a rebase (#5733)", () => {
+  const at = new Date(now - (MISS_AFTER + 600) * 1000).toISOString();
+  const bot = pr({ statusCheckRollup: [], commits: [{ committedDate: at, authors: [{ name: "rustybuns-after" }] }] });
+  expect(settled(bot, now)).toBe(true);
+  expect(summarize(bot, now)[1]).toContain("git commit --allow-empty");
+  const own = pr({ statusCheckRollup: [], commits: [{ committedDate: at, authors: [{ name: "Ryan Quinn" }] }] });
+  expect(summarize(own, now)[1]).toContain("force-with-lease");
+});
+
 test.each<[string, Runs, ReturnType<typeof headRuns>]>([
   ["queued", [{ workflowName: "apps", status: "queued" }, { workflowName: "typecheck", status: "queued" }], "queued"],
   ["in progress", [{ workflowName: "apps", status: "in_progress" }, { workflowName: "typecheck", status: "queued" }], "running"],
