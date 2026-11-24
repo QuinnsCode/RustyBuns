@@ -90,6 +90,9 @@ export interface Outdoor {
   fire?: { at: [number, number] };
   /** Camper vans parked round the edge (@rustybuns/models/van), nose the way `yaw` faces; `awning` rolls one out. */
   vans?: { at: [number, number]; yaw: number; awning?: boolean }[];
+  /** Festoon lights: runs of warm bulbs on a sagging cable, each run a list of points (x, y, z) it's tied to; `posts`
+   *  stands a wooden pole under every point but the ones tied to something already there (a van, a lantern pole). */
+  festoons?: { points: [number, number, number][]; posts?: boolean[] }[];
   /** The tall carved wooden lantern poles: where each stands, and the way its crook (and the lantern on it) reaches. */
   lanternPoles?: { at: [number, number]; yaw: number }[];
   /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */

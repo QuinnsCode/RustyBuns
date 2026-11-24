@@ -50,6 +50,11 @@ export const DESERT_GATHERING: StudioDef = {
     // a fire pit behind the left bales, out of the floor, where the chill corner gathers
     fire: { at: [-13, 11] },
     // the vans people came in, parked round the back of the floor, one with its awning out over the fire
+    // festoon lights over the chill corners: from the vans' roofs out to wooden posts and across to the bales
+    festoons: [
+      { points: [[-15.4, 2.05, 13.6], [-11.5, 2.6, 13.2], [-9.2, 2.6, 9.6]], posts: [false, true, true] },
+      { points: [[14.6, 2.05, 14.3], [11.8, 2.6, 12.4], [9.4, 2.6, 9.4]], posts: [false, true, true] },
+    ],
     vans: [{ at: [-16.5, 13], yaw: Math.PI / 2 + 0.25, awning: true }, { at: [15.5, 14.5], yaw: -Math.PI / 2 - 0.3 }, { at: [17, 6], yaw: -Math.PI / 2 + 0.15 }],
     // a tall pole at each end of the table, its lantern reaching in over the decks
     lanternPoles: [{ at: [-2.2, TABLE_Z], yaw: Math.PI / 2 }, { at: [2.2, TABLE_Z], yaw: -Math.PI / 2 }],

@@ -74,6 +74,10 @@ export const Studio: Guard<StudioDef> = obj({
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
     fire: opt(obj({ at: XZ })),
     vans: opt(arr(obj({ at: XZ, yaw: num(-7, 7), awning: opt(bool()) }), 8)),
+    festoons: opt(arr(obj({
+      points: arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, 8, { min: 2 }),
+      posts: opt(arr(bool(), 8)),
+    }), 8)),
     lanternPoles: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 32)),
     lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
     carry: opt(bool()),

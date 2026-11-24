@@ -442,6 +442,33 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     group.add(m);
   });
 
+  // ---- festoon lights: warm bulbs hanging every 45 cm from a cable that sags between its ties, on wooden posts
+  const bulbs: THREE.Vector3[] = [], cablePts: THREE.Vector3[][] = [];
+  for (const run of out.festoons ?? []) {
+    run.points.forEach(([x, y, z], i) => {
+      if (!run.posts?.[i]) return;
+      const g0 = duneAt(x, z, flat), post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, y + 0.1 - g0, 8), surface("wood", "#6e5236"));
+      post.position.set(x, (y + 0.1 + g0) / 2, z); group.add(post);
+    });
+    for (let i = 0; i + 1 < run.points.length; i++) {
+      const a = new THREE.Vector3(...run.points[i]!), b = new THREE.Vector3(...run.points[i + 1]!), span = a.distanceTo(b), sag = 0.06 * span;
+      const line: THREE.Vector3[] = [];
+      for (let k = 0; k <= 24; k++) { const u = k / 24; line.push(a.clone().lerp(b, u).setY(a.y + (b.y - a.y) * u - 4 * sag * u * (1 - u))); }
+      cablePts.push(line);
+      const n = Math.max(1, Math.round(span / 0.45));
+      for (let k = 0; k < n; k++) { const u = (k + 0.5) / n; bulbs.push(a.clone().lerp(b, u).setY(a.y + (b.y - a.y) * u - 4 * sag * u * (1 - u) - 0.07)); }
+    }
+  }
+  if (bulbs.length) {
+    const cable = new THREE.MeshStandardMaterial({ color: "#151515", roughness: 0.7 });
+    for (const line of cablePts) group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(line), 24, 0.006, 4), cable));
+    const glass = new THREE.MeshStandardMaterial({ color: "#3a2410", emissive: "#ffc070", emissiveIntensity: 3, roughness: 0.3 });
+    const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.045, 10, 8), glass, bulbs.length), m = new THREE.Matrix4();
+    bulbs.forEach((p, i) => lamps.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z)));
+    lamps.userData.looked = true;
+    group.add(lamps);
+  }
+
   // ---- the generator and its jerry cans, off to the side
   if (out.generator) {
     const g = gear("generator-7kva", { look });
