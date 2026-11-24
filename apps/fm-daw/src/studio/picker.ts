@@ -29,27 +29,94 @@ export function shot(def: StudioDef): SVGSVGElement {
   return svg;
 }
 
+/** How many times the cards repeat on each side of the real list, so the row feels endless without wrapping round. */
+export const COPIES = 7;
+
 /**
- * Draw the cards into `host`: `current` marked, and a click on another calls `pick` (left out: read-only, every card
- * shown but none pressable).
+ * The cards in their row, the way a phone's alarm wheel cheats: the list `copies` times, then the real one (copy 0),
+ * then `copies` more, and the index to start on: the current studio in the real copy (its first studio when none is).
+ */
+export function wheel<T extends { id: string }>(list: T[], current: string, copies = COPIES): { cards: { s: T; copy: number }[]; start: number } {
+  const cards: { s: T; copy: number }[] = [];
+  for (let copy = -copies; copy <= copies; copy++) for (const s of list) cards.push({ s, copy });
+  return { cards, start: copies * list.length + Math.max(0, list.findIndex((s) => s.id === current)) };
+}
+
+const wired = new WeakSet<HTMLElement>();
+/** The row scrolls sideways: a mouse wheel turns it, and a mouse drags it (touch already pans it); a drag is never a click. */
+function wire(host: HTMLElement) {
+  if (wired.has(host)) return;
+  wired.add(host);
+  host.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    host.scrollBy({ left: e.deltaY });
+  }, { passive: false });
+  let drag: { x: number; left: number; moved: boolean } | null = null;
+  host.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button === 0) drag = { x: e.clientX, left: host.scrollLeft, moved: false };
+  });
+  host.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) > 5) { drag.moved = true; host.classList.add("dragging"); }
+    if (drag.moved) host.scrollLeft = drag.left - dx;
+  });
+  const stop = () => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    host.classList.remove("dragging");
+    // the click that ends a drag lands on a card: swallow it
+    if (moved) host.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); }, { capture: true, once: true });
+  };
+  host.addEventListener("pointerup", stop);
+  host.addEventListener("pointerleave", stop);
+}
+
+/** Put `card` in the middle of the row, now if the row is showing, else the first time it shows. */
+function centre(host: HTMLElement, card: HTMLElement) {
+  const go = () => { host.scrollLeft = card.offsetLeft - (host.clientWidth - card.offsetWidth) / 2; };
+  if (host.clientWidth > 0) return go();
+  const seen = new ResizeObserver(() => { if (host.clientWidth > 0 && card.isConnected) { seen.disconnect(); go(); } });
+  seen.observe(host);
+}
+
+/**
+ * Draw the cards into `host` as one sideways row (`wheel`), scrolled to the current studio: it is marked in every copy,
+ * and a click on another card in any copy calls `pick` (left out: read-only, every card shown but none pressable). Only
+ * the real copy is in the tab order and read out; the others are for the eye.
  */
 export function studioCards(host: HTMLElement, list: Studio[], current: string, pick?: (id: string) => void) {
   host.replaceChildren();
   host.setAttribute("role", "radiogroup");
-  for (const s of list) {
+  wire(host);
+  const shots = new Map(list.map((s) => [s.id, shot(s.def)]));
+  const { cards, start } = wheel(list, current);
+  const made = cards.map(({ s, copy }) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "studio-card";
     b.dataset.studio = s.id;
-    b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(s.id === current));
+    b.dataset.copy = String(copy);
+    if (copy === 0) {
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(s.id === current));
+    } else {
+      b.tabIndex = -1;
+      b.setAttribute("aria-hidden", "true");
+      if (s.id === current) b.dataset.current = "";
+    }
     b.disabled = !pick;
     const name = document.createElement("b"), about = document.createElement("small");
     name.textContent = s.name;
     about.textContent = s.about;
     b.title = s.about;
-    b.append(shot(s.def), name, about);
+    const pic = shots.get(s.id);
+    b.append(copy === 0 || !pic ? (pic ?? shot(s.def)) : pic.cloneNode(true), name, about);
     if (pick) b.addEventListener("click", () => { if (s.id !== current) pick(s.id); });
-    host.append(b);
-  }
+    return b;
+  });
+  host.append(...made);
+  centre(host, made[start]);
 }
