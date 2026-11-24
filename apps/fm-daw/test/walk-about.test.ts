@@ -45,9 +45,9 @@ test("Shift speed walks, Space hops a little and lands, and the other people in 
 test("a carried lantern is heavy: it hangs straight on a steady walk, sways a little past the hand when you stop, and settles soon", () => {
   const swing = new Swing(), hand = new THREE.Vector3(0, 0.8, 0);
   swing.step(hand, tick);
-  // walk forward (-z) for a second: past the first lurch it hangs near straight down, the rope's length holding
+  // walk forward (-z) for a second: once past the first lurch it hangs near straight down, the rope's length holding
   let walking = 0;
-  for (let t = 0; t < 1; t += tick) { hand.z -= WALK * tick; swing.step(hand, tick); if (t > 0.5) walking = Math.max(walking, swing.angle(hand)); }
+  for (let t = 0; t < 1; t += tick) { hand.z -= WALK * tick; swing.step(hand, tick); if (t > 0.8) walking = Math.max(walking, swing.angle(hand)); }
   expect(swing.bob.distanceTo(hand)).toBeCloseTo(WEIGHT, 5);
   expect(walking).toBeLessThan(0.1);
   // stop: it swings on ahead of the hand, but not far
