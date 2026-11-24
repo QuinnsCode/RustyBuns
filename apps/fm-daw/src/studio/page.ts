@@ -35,11 +35,28 @@ function apply(raw: unknown): boolean {
   if (!e) { why = "that isn't something the builder can do"; render(); return false; }
   const out = edit(room, e);
   why = out.ok ? "" : out.why;
+  if (out.ok) { undos.push(room); if (undos.length > UNDOS) undos.shift(); redos.length = 0; }
   room = out.def;
   if (out.ok) save();
   render();
   return out.ok;
 }
+
+// ---- undo and redo: every edit that went through, as the room was before it (this page's session only) ----
+const UNDOS = 100, undos: StudioDef[] = [], redos: StudioDef[] = [];
+function undo(back = true) {
+  const from = back ? undos : redos, to = back ? redos : undos, prev = from.pop();
+  if (!prev) return false;
+  to.push(room); room = prev; why = "";
+  if (picked && !room.spots.some((s) => s.id === picked)) picked = room.spots[0]?.id;
+  save(); render();
+  return true;
+}
+window.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || e.target instanceof HTMLInputElement) return;
+  e.preventDefault();
+  undo(!e.shiftKey);
+});
 
 // ---- the plan, from above: +z (the front wall) is at the bottom ----
 
@@ -257,6 +274,8 @@ for (const surface of [plan, canvas] as Element[]) {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); build?.orbit(0, 0, Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 
+const UNDO_ICON = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>`;
+const REDO_ICON = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>`;
 const VIEW_3D = `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`;
 const BLUEPRINT = `<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>`;
 const LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
@@ -268,7 +287,9 @@ let thumbs: Partial<Record<SpotKind, string>> = {};
 /** The tool bar, the catalog under it when placing, and which view shows. */
 function renderTools() {
   const b = (attrs: string, name: string, paths: string, on = false) => `<button type="button" class="tool" ${attrs} aria-label="${esc(name)}" title="${esc(name)}" aria-pressed="${on}">${icon(paths)}</button>`;
-  $("tools").innerHTML = TOOLS.map((t) => b(`data-tool="${t.id}"`, t.name, t.icon, t.id === tool)).join("") + `<span class="sep"></span>`
+  $("tools").innerHTML = TOOLS.map((t) => b(`data-tool="${t.id}"`, t.name, t.icon, t.id === tool)).join("")
+    + b(`data-undo="1"${undos.length ? "" : " disabled"}`, "Undo (Ctrl+Z)", UNDO_ICON) + b(`data-undo="0"${redos.length ? "" : " disabled"}`, "Redo (Ctrl+Shift+Z)", REDO_ICON)
+    + `<span class="sep"></span>`
     + (build ? b(`data-view="3d"`, "3D: your studio cut away, from above", VIEW_3D, view === "3d") : "")
     + b(`data-view="plan"`, "Blueprint: the plan from straight above", BLUEPRINT, view === "plan")
     + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "");
@@ -306,6 +327,7 @@ function swatch(m: Material): string {
 $("tools").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest("button") : null;
   if (!t) return;
+  if (t.dataset.undo) return void undo(t.dataset.undo === "1");
   if (t.dataset.tool) tool = t.dataset.tool as Tool;
   if (t.dataset.view) view = t.dataset.view === "3d" && build ? "3d" : "plan";
   if (t.hasAttribute("data-walls")) walls = walls === "cutaway" ? "down" : walls === "down" ? "up" : "cutaway";
@@ -431,6 +453,7 @@ select.innerHTML = `<option value="">Yours</option>${ROOM_LIST.map((r) => `<opti
 function load(id: string) {
   const r = ROOM_LIST.find((x) => x.id === id);
   if (!r) return false;
+  undos.push(room); redos.length = 0;
   room = structuredClone(r); picked = room.spots[0]?.id; why = ""; save(); render();
   return true;
 }
@@ -445,6 +468,8 @@ const harness = {
   }),
   load,
   edit: (e: unknown) => ({ ok: apply(e), why }),
+  undo: () => undo(true),
+  redo: () => undo(false),
   pick: (id: string) => { picked = id; render(); },
 };
 window.qrooms = harness;
