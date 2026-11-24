@@ -12,7 +12,8 @@ import { footprint } from "./gear-wall.ts";
 import { metreUV, surface, wallSurface } from "./look.ts";
 import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef } from "./room.ts";
 import { prop } from "./props.ts";
-import { paStack } from "./open-air.ts";
+import { firePit, paStack } from "./open-air.ts";
+import { van } from "@rustybuns/models/van";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { cotton, drape, rugs, tapestry } from "./tapestry.ts";
 import { wallMaterial, type Material } from "./sound.ts";
@@ -133,6 +134,9 @@ export class BuildView {
       const rig = roomRig(room);
       for (const st of rigStacks(room)) this.root.add(paStack(st.at, st.yaw, undefined, rig.stack));
       this.root.add(rugs(room.outdoor));
+      // the fire pit and the parked vans, as the room stands them
+      if (room.outdoor.fire) { const f = firePit(room.outdoor.seed + 5).group; f.position.set(room.outdoor.fire.at[0], 0, room.outdoor.fire.at[1]); this.root.add(f); }
+      (room.outdoor.vans ?? []).forEach((v, i) => { const m = van(room.outdoor!.seed + 31 * i, { awning: v.awning }); m.position.set(v.at[0], 0, v.at[1]); m.rotation.y = v.yaw; this.root.add(m); });
     }
     for (const [side, x, z, sw, sd] of room.outdoor ? [] : sides) {
       const toward = side === "front" ? cam.z > d / 2 : side === "back" ? cam.z < -d / 2 : side === "left" ? cam.x < -w / 2 : cam.x > w / 2;
