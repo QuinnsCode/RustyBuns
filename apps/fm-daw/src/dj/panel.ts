@@ -24,7 +24,8 @@ import { mountMixer } from "./mixer-panel.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, overTone, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FAST_TIMES, keyName, keysOf, loadPrefs, NUDGE_MS, savePrefs, TONE_LUT, TONE_STEPS, type Action, type Prefs } from "./prefs.ts";
-import { connectMidiJog, Jog, playerFace } from "./player-panel.ts";
+import { Jog, playerFace } from "./player-panel.ts";
+import { mountMidi, type MidiPanel } from "./midi.ts";
 import { button, el, svg } from "./dom.ts";
 import { TubeDeck, tubeTitle, tubeVolume, videoId } from "./youtube.ts";
 import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
@@ -37,7 +38,6 @@ const ICON = {
   folder: svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>'),
   x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
-  midi: svg('<circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="10" r="1"/><path d="M9 15h6"/>'),
   minus: svg('<path d="M5 12h14"/>'),
   plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
   ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
@@ -107,6 +107,8 @@ export interface DecksPanel {
   demos(): void;
   /** The two players' jog wheels (player-panel.ts). */
   jogs: readonly [Jog, Jog];
+  /** MIDI controllers on the decks (midi.ts): connect, the connections shown, learned pairings. */
+  midi: MidiPanel;
   /** The close-up's zoom: an index into ZOOMS (player.ts), and the seconds either side it shows. */
   zoom(i?: number): { at: number; seconds: number };
   /** A YouTube link (or id) onto deck `side`: true once YouTube's player is ready on it. */
@@ -142,8 +144,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   peopleB.hidden = !room;
   peopleB.addEventListener("click", () => { people.hidden = !people.hidden; drawPeople(); });
   const tools = el("div", { class: "dj-head-tools" });
-  const midiB = button(`${ICON.midi}<span>MIDI</span>`, "Play the jog wheels from a MIDI controller", "dj-midi");
-  midiB.addEventListener("click", () => void connectMidiJog(jogs).then((said) => { flash(said); midiB.classList.toggle("on", said.startsWith("MIDI jog")); }));
+  const midi = mountMidi({ root, jogs: () => jogs, flash: (t) => flash(t) });
   // the two ways music comes on: a file from this computer, or a YouTube link (played in YouTube's own player)
   const src = el("div", { class: "dj-src" });
   const add = button(`${ICON.upload}<span>Add music</span>`, "Add music from this computer (mp3, wav, m4a, ogg, flac): it stays on this computer", "dj-add");
@@ -158,7 +159,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
   prefsBox.hidden = true;
   prefsB.addEventListener("click", () => { prefsBox.hidden = !prefsBox.hidden; prefsB.classList.toggle("on", !prefsBox.hidden); listening = null; drawPrefs(); });
-  tools.append(libB, midiB, prefsB, peopleB, closeB);
+  tools.append(libB, ...midi.buttons, prefsB, peopleB, closeB);
   head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
@@ -756,7 +757,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   closeB.addEventListener("click", close);
   if (o.startOpen) open();
   void raf;
-  return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), waiting: () => ({ names: waiting.map((f) => f.name), reading: reading?.name ?? null }), demos, jogs,
+  return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), waiting: () => ({ names: waiting.map((f) => f.name), reading: reading?.name ?? null }), demos, jogs, midi,
     zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; },
     tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
     tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)),

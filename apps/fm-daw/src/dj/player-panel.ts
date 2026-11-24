@@ -4,14 +4,14 @@
 // out point, clockwise longer), beat jumps, and the tempo column: MT (master tempo, the key held), a button for each
 // tempo range (6 to 100 per cent), the fader, and the START and BRAKE knobs (how long play takes to come up to speed
 // and pause to stop, as a turntable's motor and brake). `Jog` drives the deck
-// from the wheel (player.ts has its arithmetic): pointer, touch, a scroll on the wheel, or a MIDI jog (`connectMidiJog`).
+// from the wheel (player.ts has its arithmetic): pointer, touch, a scroll on the wheel, or a MIDI jog (midi.ts).
 // The wheel is drawn as two rings with a gap between: the top platter, which turns with the record in VINYL, and
 // the side ring; the screen in its middle shows the position marker (a turn every 1.8 s) and how far in the track is.
 import { clock, LOOPS, PITCH_RANGES } from "./analyze.ts";
 import { knob } from "./mixer-panel.ts";
 import type { DeckView, Press } from "./booth.ts";
 import type { Decks, Side } from "./engine.ts";
-import { BEND_HOLD_MS, bendOf, BRAKE_MAX_S, jogAct, midiJog, partAt, PLATTER_R, rampS, RING_IN, START_MAX_S, TURN_S, turnBetween, type JogMode, type JogPart } from "./player.ts";
+import { BEND_HOLD_MS, bendOf, BRAKE_MAX_S, jogAct, partAt, PLATTER_R, rampS, RING_IN, START_MAX_S, TURN_S, turnBetween, type JogMode, type JogPart } from "./player.ts";
 import scratchWorkletUrl from "./scratch-worklet.ts?worker&url";
 import { button, el, slider, svg } from "./dom.ts";
 import { FROM_LABEL } from "./tags.ts";
@@ -406,18 +406,3 @@ export function playerFace(h: PlayerHost) {
   };
 }
 
-/** A MIDI controller's jogs onto the two decks' wheels (player.ts `midiJog` reads its messages). Says what it found. */
-export async function connectMidiJog(jogs: readonly [Jog, Jog]): Promise<string> {
-  if (!("requestMIDIAccess" in navigator)) return "This browser has no MIDI";
-  let access: MIDIAccess;
-  try { access = await navigator.requestMIDIAccess({ sysex: false }); } catch { return "MIDI wasn't allowed"; }
-  const onMsg = (e: MIDIMessageEvent) => {
-    const m = e.data ? midiJog(e.data) : null;
-    if (!m) return;
-    if ("touch" in m) jogs[m.side].touch(m.touch); else jogs[m.side].turn(m.part, m.turns);
-  };
-  const hook = () => { for (const i of access.inputs.values()) i.onmidimessage = onMsg; };
-  hook();
-  access.onstatechange = hook;
-  return access.inputs.size ? `MIDI jog: ${[...access.inputs.values()].map((i) => i.name ?? "a controller").join(", ")}` : "No MIDI controller found: plug one in, it joins when it appears";
-}
