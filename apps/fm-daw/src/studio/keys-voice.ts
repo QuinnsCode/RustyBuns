@@ -6,7 +6,7 @@
 //   drawbar    four sines in parallel at the drawbars' 16', 8', 4' and 2 2/3', on at once and held as long as the key is,
 //              through the rotary speaker at its slow speed (the engine's mod mode 6)
 //   tine-ep    the tine piano: rounder than the slab, a low modulation index that opens with how hard you play, a
-//              slow decay that rings on, and a wide chorus standing in for its stereo tremolo
+//              slow decay that rings on, and its stereo tremolo swinging it side to side (the engine's mod mode 7)
 //   combo      the transistor organ: buzzy and reedy, a sine fed back on itself so it nears a square, on as long as
 //              the key is down
 //   strings    the ensemble: detuned saws through a gentle low-pass, a slow swell in and a long release, the
@@ -31,7 +31,7 @@ export const KEYS_VOICES: Record<PolyKind, number[]> = {
   }),
   "tine-ep": patch({
     ops: { 0: [1, 1, 0.001, 2.6, 0.12, 0.5], 1: [1, 0.2, 0.001, 1.4, 0.05, 0.4], 2: [1.003, 0.7, 0.001, 2.4, 0.1, 0.5], 3: [1, 0.12, 0.001, 0.6, 0, 0.3] },
-    algo: 1, vel: 0.8, velTone: 0.7, gain: 0.4, pan: 0.2, chorus: 2, send: 0.3,
+    algo: 1, vel: 0.8, velTone: 0.7, gain: 0.4, pan: 0.2, chorus: 7, send: 0.3,
   }),
   combo: patch({
     ops: { 0: [1, 0.85, 0.002, 0.1, 1, 0.025], 1: [2, 0.18, 0.002, 0.1, 1, 0.025] },

@@ -33,9 +33,9 @@ test("a room's keys seat is its own family, and a seat named for a section is th
   expect(keysKind(at(BARN, "keys"), "combo", BARN.keys)).toBe("combo");
 });
 
-test("the drawbar organ turns its rotary speaker: each side swells and fades, out of step with the other", () => {
+test.each([["drawbar", "its rotary speaker"], ["tine-ep", "its stereo tremolo"]] as const)("the %s swings through %s: each side swells and fades, out of step with the other", (kind) => {
   const SR = 48000, e = new TsEngine(SR);
-  KEYS_VOICES.drawbar.forEach((v, i) => e.setParam(0, i, v));
+  KEYS_VOICES[kind].forEach((v, i) => e.setParam(0, i, v));
   e.setMaster(1);
   for (const m of [60, 64, 67]) e.noteOn(0, m, m, 0.8);
   const n = SR * 3, out = new Float32Array(n * 2);
