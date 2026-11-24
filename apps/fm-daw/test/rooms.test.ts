@@ -84,6 +84,17 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   expect(edit(r, { t: "addWall", from: [0, 0], to: [0.2, 0] })).toMatchObject({ ok: false, why: "a wall is at least 50 cm long" });
   expect(edit(r, { t: "addWall", from: [-3.5, -1.5], to: [-1.5, -1.5] })).toMatchObject({ ok: false, why: "bass is in a wall" });
   expect(edit(r, { t: "unwall", index: r.walls.findIndex((x) => x.booth) })).toMatchObject({ ok: false, why: expect.stringContaining("take the booth down") });
+  // dress it: a plant at real size, turned a quarter, moved, and taken out again
+  const n = r.props?.length ?? 0;
+  r = ok(r, { t: "addProp", kind: "plant", at: [4.2, -1] });
+  expect(r.props![n]).toMatchObject({ kind: "plant", at: [4.2, -1], w: 0.6, h: 1.4 });
+  r = ok(r, { t: "turnProp", index: n, by: 2 });
+  r = ok(r, { t: "moveProp", index: n, at: [4.2, -1.5] });
+  expect(r.props![n]!.at).toEqual([4.2, -1.5]);
+  expect(r.props![n]!.yaw).toBeCloseTo(Math.PI / 2, 6);
+  expect(edit(r, { t: "moveProp", index: n + 5, at: [0, 0] })).toMatchObject({ ok: false, why: "there is no such thing" });
+  r = ok(r, { t: "unprop", index: n });
+  expect(r.props?.length ?? 0).toBe(n);
   // the first new wall down: the corner opens back onto the barn
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);

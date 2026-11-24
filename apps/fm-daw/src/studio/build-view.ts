@@ -10,11 +10,14 @@ import { gear } from "@rustybuns/models/gear";
 import { bassSynth, keysSynth } from "./gear-models.ts";
 import { footprint } from "./gear-wall.ts";
 import { metreUV, surface, wallSurface } from "./look.ts";
-import { thingBox, wallPieces, type Side, type Spot, type StudioDef } from "./room.ts";
+import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef } from "./room.ts";
+import { prop } from "./props.ts";
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
-export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { side: Side } | { floor: true } | null;
+export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { side: Side } | { floor: true } | null;
+/** The room's look for a prop: what it's made of, from the look's surfaces. */
+const propMat = (name: string, color: string) => surface(name, color);
 /** The outside walls: cut down on the sides toward you, all cut down, or all standing. */
 export type WallsMode = "cutaway" | "down" | "up";
 
@@ -156,6 +159,9 @@ export class BuildView {
     // the way in: a chevron on the floor
     const [dx, dz] = room.door.at, chev = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 3, 1, -Math.PI / 6, Math.PI * 2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: ORANGE }));
     chev.position.set(dx, 0.01, dz); chev.rotation.y = room.door.yaw; this.root.add(chev);
+    // the set dressing, as the jam room draws it (props.ts)
+    // (each in a holder at the origin, so a drag slides the holder)
+    (room.props ?? []).forEach((p, i) => { const holder = new THREE.Group(); holder.add(prop(p, propMat)); add(holder, `prop:${i}`, { prop: i }); });
     // the seats: each instrument on its box, a disc where you sit, a ring round the picked one
     for (const s of room.spots) {
       const g = new THREE.Group(), b = thingBox(s), model = spotModel(s);
@@ -230,9 +236,9 @@ export class BuildView {
     return under;
   }
 
-  /** A small picture of a new seat of `kind`, for the catalog. */
-  thumb(spot: Spot, size = 96): string {
-    const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, 1, 0.05, 50), model = spotModel(spot);
+  /** A small picture of a new seat (or a prop), for the catalog. */
+  thumb(spot: Spot | Prop, size = 96): string {
+    const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, 1, 0.05, 50), model = "id" in spot ? spotModel(spot) : prop({ ...spot, at: [0, 0] }, propMat);
     scene.background = new THREE.Color("#23262c");
     scene.add(new THREE.HemisphereLight("#ffffff", "#40444c", 2), model);
     const dl = new THREE.DirectionalLight("#ffffff", 2); dl.position.set(2, 4, 3); scene.add(dl);

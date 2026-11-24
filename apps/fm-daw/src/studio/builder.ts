@@ -3,7 +3,7 @@
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import { PROP_KINDS, propBlocks, propBox, thingBox, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
+import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
 import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
@@ -23,6 +23,23 @@ const ID = str(32, { re: /^[a-z0-9][a-z0-9-]*$/ });
 const MAT = oneOf(MATERIAL_IDS);
 const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 2, { min: 2 })(v); return [x, z]; };
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
+
+/** What the builder's Decorate tool puts down, each at its real size and in its usual colour (drawn by props.ts). */
+export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
+  shelf: { w: 1.2, d: 0.35, h: 1.9, color: "#5a3a24" },
+  lamp: { w: 0.4, d: 0.4, h: 1.6, color: "#c9a66b" },
+  plant: { w: 0.6, d: 0.6, h: 1.4, color: "#3e6b3a" },
+  rug: { w: 2.4, d: 1.7, h: 0.012, color: "#7a2e2a" },
+  rack: { w: 0.6, d: 0.6, h: 1.2, color: "#1d1d1f" },
+  piano: { w: 1.5, d: 2.0, h: 1.0, color: "#111111" },
+  micStand: { w: 0.5, d: 0.5, h: 1.8, color: "#222222" },
+  table: { w: 1.2, d: 0.7, h: 0.75, color: "#6b4a2c" },
+  cabinet: { w: 0.5, d: 0.6, h: 1.3, color: "#7a7d82" },
+  books: { w: 0.5, d: 0.35, h: 0.4, color: "#7a2e2a" },
+};
+export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
+export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books";
+
 
 /** A studio from the wire or this browser's storage, checked. */
 export const Studio: Guard<StudioDef> = obj({
@@ -87,7 +104,11 @@ export type Edit =
   | { t: "addWall"; from: [number, number]; to: [number, number]; material?: Material }
   | { t: "unwall"; index: number }
   | { t: "door"; index: number }
-  | { t: "turn"; id: string; by: number };
+  | { t: "turn"; id: string; by: number }
+  | { t: "addProp"; kind: DecorKind; at: [number, number]; yaw?: number }
+  | { t: "moveProp"; index: number; at: [number, number] }
+  | { t: "turnProp"; index: number; by: number }
+  | { t: "unprop"; index: number };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -107,6 +128,10 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("unwall"), index: int(0, MAX_WALLS - 1) }),
   obj({ t: tag("door"), index: int(0, MAX_WALLS - 1) }),
   obj({ t: tag("turn"), id: ID, by: int(-7, 7) }),
+  obj({ t: tag("addProp"), kind: oneOf(DECOR_KINDS), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("moveProp"), index: int(0, MAX_PROPS - 1), at: XZ }),
+  obj({ t: tag("turnProp"), index: int(0, MAX_PROPS - 1), by: int(-7, 7) }),
+  obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -296,6 +321,20 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (wl.gaps?.length) delete wl.gaps;
       else if (len < DOORWAY + 0.2) return no("that wall is too short for a doorway");
       else wl.gaps = [[len / 2 - DOORWAY / 2, len / 2 + DOORWAY / 2]];
+      break;
+    }
+    case "addProp": {
+      const props = next.props ??= [];
+      if (props.length >= MAX_PROPS) return no(`a room holds ${MAX_PROPS} things`);
+      props.push({ kind: e.kind, at: e.at, yaw: e.yaw ?? 0, ...DECOR[e.kind]!, seed: props.length * 97 + 13 });
+      break;
+    }
+    case "moveProp": case "turnProp": case "unprop": {
+      const props = next.props ?? [], p = props[e.index];
+      if (!p) return no("there is no such thing");
+      if (e.t === "moveProp") p.at = e.at;
+      else if (e.t === "turnProp") { const yaw = p.yaw + (e.by * Math.PI) / 4; p.yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); }
+      else props.splice(e.index, 1);
       break;
     }
     case "turn": {
