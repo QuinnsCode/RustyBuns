@@ -36,8 +36,8 @@ export interface Opts {
   lean?: boolean;
   /** Draw sliders as faders (needs `skin: "house"`): a slot from `--ui-track` and a cap from `--ui-thumb` (any background, an SVG cap too), `--ui-thumb-w`/`--ui-thumb-h` its size. */
   faders?: boolean;
-  /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"]; needs `show: ["audio"]`. */
-  sounds?: [string, string][];
+  /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"], or ["wild", "Wilds", "The wilds (wind, birds, rain)"] for a short label with the long name as its tooltip; needs `show: ["audio"]`. */
+  sounds?: [id: string, label: string, tip?: string][];
   /** Section titles by id from `SECTIONS` (e.g. { lookX: "Tunnel" }), for a game whose sections mean something else. */
   titles?: Record<string, string>;
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
@@ -321,11 +321,12 @@ export function mountControls(o: Opts) {
     o.onChange?.({ ...s });
   };
   /** One row: [icon] label, the input, then its read-out. Greyed out and inert when the game doesn't have it. */
-  const row = (label: string, input: HTMLInputElement, ic: IconName, off: boolean, out?: HTMLElement) => {
+  const row = (label: string, input: HTMLInputElement, ic: IconName, off: boolean, out?: HTMLElement, tip?: string) => {
     const l = document.createElement("label");
     l.append(Object.assign(document.createElement("span"), { className: "gc-lab" }), input);
     l.firstElementChild!.append(icon(ic, 16), label);
     if (out) l.append(out);
+    if (tip) l.title = tip;
     input.disabled = off;
     if (off && o.lean) return;
     if (off) { l.classList.add("gc-off"); l.title = "Not in this game yet"; } else cur!.live++;
@@ -339,11 +340,11 @@ export function mountControls(o: Opts) {
     syncs.push(() => { i.value = String(get()); out.textContent = text(r, get()); });
     row(label, i, ic, off, out);
   };
-  const flag = (label: string, name: string, ic: IconName, off: boolean, get: () => boolean, put: (v: boolean) => void) => {
+  const flag = (label: string, name: string, ic: IconName, off: boolean, get: () => boolean, put: (v: boolean) => void, tip?: string) => {
     const c = Object.assign(document.createElement("input"), { type: "checkbox", name });
     c.addEventListener("change", () => { put(c.checked); save(); });
     syncs.push(() => { c.checked = get(); });
-    row(label, c, ic, off);
+    row(label, c, ic, off, undefined, tip);
   };
   const slider = (label: string, k: NumKey, ic: IconName, off = false) => {
     if (o.hide?.includes(k)) return;
@@ -353,7 +354,7 @@ export function mountControls(o: Opts) {
     if (o.hide?.includes(k)) return;
     flag(label, k, ic, off, () => s[k], (v) => { s = { ...s, [k]: v }; });
   };
-  const piece = (id: string, label: string) => flag(label, `sound-${id}`, "Volume2", false, () => !s.muted.includes(id), (on) => { s = { ...s, muted: on ? s.muted.filter((m) => m !== id) : [...s.muted.filter((m) => m !== id), id] }; });
+  const piece = (id: string, label: string, tip?: string) => flag(label, `sound-${id}`, "Volume2", false, () => !s.muted.includes(id), (on) => { s = { ...s, muted: on ? s.muted.filter((m) => m !== id) : [...s.muted.filter((m) => m !== id), id] }; }, tip);
   /** The section's optional rows: live when the game enabled them, greyed out otherwise. */
   const more = (id: string) => {
     for (const x of section(id).rows as Extra[]) {
@@ -424,7 +425,7 @@ export function mountControls(o: Opts) {
   slider(o.labels?.sfx ?? "Effects volume", "sfx", "Volume2", !audio);
   check("Effects on", "sfxOn", "Volume2", !audio);
   begin("mix");
-  if (audio) for (const [id, label] of o.sounds ?? []) piece(id, label);
+  if (audio) for (const [id, label, tip] of o.sounds ?? []) piece(id, label, tip);
   more("mix");
   // Folded: what the player left folded, else every section with nothing live in it.
   let folded: string[] | null = null;
