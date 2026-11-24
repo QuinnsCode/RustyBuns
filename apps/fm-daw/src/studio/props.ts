@@ -18,6 +18,18 @@ const BOOKS = ["#7a2e2a", "#2f4a6b", "#c9b27a", "#3e5a3a", "#8a6a3a", "#d8d2c4",
 const TOYS = ["#e0b02a", "#d0452e", "#3a8ad0", "#5ab04a", "#e07ab0"];
 
 /** One prop, ready to add to the scene. */
+/** The drum machine's row of sixteen step lamps (an InstancedMesh, the first step on the player's left). */
+export const STEP_LAMPS = "step-lamps";
+const LAMP_ON = new THREE.Color("#ff3a2a"), LAMP_OFF = new THREE.Color("#4a1210");
+/** Light step `step` (0 to 15) of every drum machine under `root`, the rest dark; null: the downbeats lit, as it sits stopped. */
+export function chaseSteps(root: THREE.Object3D, step: number | null) {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.InstancedMesh) || o.name !== STEP_LAMPS) return;
+    for (let i = 0; i < o.count; i++) o.setColorAt(i, (step === null ? i % 4 === 0 : i === step) ? LAMP_ON : LAMP_OFF);
+    if (o.instanceColor) o.instanceColor.needsUpdate = true;
+  });
+}
+
 export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
   const cache = new Map<string, THREE.Material>();
   const m = (name: string, color: string) => {
@@ -56,6 +68,7 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
     });
     if (k) glow(im, k);
     g.add(im);
+    return im;
   };
   const pick = <T>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
   const { w, d, h, color } = p;
@@ -320,7 +333,8 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
           lamps.push([0.005, 0.004, 0.005, x, h * 0.56, -d * 0.18, i % 4 === 0 ? "#ff3a2a" : "#4a1210"]);
         }
         many("plastic", keys);
-        many("screen", lamps, 0.6);
+        const lit = many("screen", lamps, 0.6);
+        if (lit) lit.name = STEP_LAMPS; // main.ts runs the chase along them while the music plays
       } else {
         // a modular synth: a wooden case of two rows of modules in their black and silver panels, knobs and jacks,
         // and a tangle of coloured patch cables hanging between them

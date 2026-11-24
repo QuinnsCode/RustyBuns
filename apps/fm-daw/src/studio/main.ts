@@ -62,7 +62,7 @@ import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
 import { spinCard } from "./spin-card.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
-import { prop } from "./props.ts";
+import { prop, chaseSteps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
@@ -555,6 +555,8 @@ let pa: PaLine | null = null;
 /** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
 let paRoom: PaRoom | null = null;
 let nightAir: NightAir | null = null;
+let shownStep: number | null = null;
+const hasDrumMachine = (def.props ?? []).some((p) => p.kind === "drumMachine");
 /** Music on the floor: the band's loop running, or someone's set on the PA. */
 const musicOn = () => transport.playing || paOn.size > 0 || !!myPa;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
@@ -1376,6 +1378,9 @@ function frame(now: number) {
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
   dancers?.tick(t, musicOn() && band.synced ? band.beat() : null);
+  // a drum machine on a table runs its chase in sixteenths while the band plays
+  const running = transport.playing && band.synced ? Math.floor(band.beat() * 4) % 16 : null;
+  if (running !== shownStep && hasDrumMachine) { shownStep = running; chaseSteps(scene, running); }
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
