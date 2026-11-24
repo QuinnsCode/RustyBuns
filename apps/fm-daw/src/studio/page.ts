@@ -53,7 +53,7 @@ function el(tag: string, attrs: Record<string, string | number>, text?: string) 
 const tint = (m: Material) => m === "drywall" ? "#e8e2d4" : m === "foam" ? "#858a94" : m === "ceilingTile" ? "#9aa0a8" : MATERIALS[m].color;
 
 function render() {
-  const { w, d } = room.size, pad = Math.max(w, d) * 0.06 + 0.3;
+  const { w, d } = room.size, pad = Math.max(w, d) * 0.1 + 0.6;
   const scale = Math.max(1, Math.max(w, d) / 9);
   plan.setAttribute("viewBox", `${-w / 2 - pad} ${-d / 2 - pad} ${w + 2 * pad} ${d + 2 * pad}`);
   plan.replaceChildren();
@@ -89,6 +89,15 @@ function render() {
   g.append(el("line", { class: "rack", x1: gear[0][0], y1: gear[0][1], x2: gear[1][0], y2: gear[1][1], "stroke-width": 0.16 * scale }));
   g.append(el("text", { x: gear.reduce((t, p) => t + p[0], 0) / 4, y: gear.reduce((t, p) => t + p[1], 0) / 4, "font-size": 0.32 * scale }, "gear"));
   plan.append(g);
+  // the blueprint's dimensions: the width along the top, the depth down the left side, with ticks at the ends
+  const off = 0.32 * scale + 0.2;
+  plan.append(el("line", { class: "dim", x1: -w / 2, y1: -d / 2 - off, x2: w / 2, y2: -d / 2 - off, "stroke-width": 0.02 * scale }));
+  plan.append(el("line", { class: "dim", x1: -w / 2 - off, y1: -d / 2, x2: -w / 2 - off, y2: d / 2, "stroke-width": 0.02 * scale }));
+  for (const [x1, y1, x2, y2] of [[-w / 2, -d / 2 - off - 0.1, -w / 2, -d / 2 - off + 0.1], [w / 2, -d / 2 - off - 0.1, w / 2, -d / 2 - off + 0.1], [-w / 2 - off - 0.1, -d / 2, -w / 2 - off + 0.1, -d / 2], [-w / 2 - off - 0.1, d / 2, -w / 2 - off + 0.1, d / 2]] as const)
+    plan.append(el("line", { class: "dim", x1, y1, x2, y2, "stroke-width": 0.02 * scale }));
+  plan.append(el("text", { class: "dim-text", x: 0, y: -d / 2 - off - 0.12 * scale, "font-size": 0.28 * scale }, `${w.toFixed(1)} m`));
+  const side = el("text", { class: "dim-text", x: -w / 2 - off - 0.12 * scale, y: 0, "font-size": 0.28 * scale, transform: `rotate(-90 ${-w / 2 - off - 0.12 * scale} 0)` }, `${d.toFixed(1)} m`);
+  plan.append(side);
   const [dx, dz] = room.door.at;
   plan.append(el("path", { class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
   for (const sp of room.spots) {
@@ -206,6 +215,10 @@ function move(e: PointerEvent) {
     const dx = to[0] - drawing.from[0], dz = to[1] - drawing.from[1];
     if (Math.abs(dx) < Math.abs(dz) * 0.2) to = [drawing.from[0], to[1]]; else if (Math.abs(dz) < Math.abs(dx) * 0.2) to = [to[0], drawing.from[1]];
     drawing.to = to;
+    // the wall's length by the pointer, as a builder reads it off the tape
+    const meas = $("measure"), box = $("stage").getBoundingClientRect();
+    meas.hidden = false; meas.textContent = `${Math.hypot(to[0] - drawing.from[0], to[1] - drawing.from[1]).toFixed(2)} m`;
+    meas.style.left = `${e.clientX - box.left}px`; meas.style.top = `${e.clientY - box.top}px`;
     if (view === "3d") build?.drawing(drawing.from, to);
     else { plan.querySelector(".drawing")?.remove(); plan.append(el("line", { class: "drawing", x1: drawing.from[0], y1: drawing.from[1], x2: to[0], y2: to[1], "stroke-width": 0.14 })); }
   }
@@ -218,6 +231,7 @@ function up() {
     apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
   } else if (drawing) {
     const w = drawing; drawing = null;
+    $("measure").hidden = true;
     build?.drawing(null);
     if (w.from[0] !== w.to[0] || w.from[1] !== w.to[1]) apply({ t: "addWall", from: w.from, to: w.to }); else render();
   }
