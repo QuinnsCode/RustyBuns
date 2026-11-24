@@ -69,12 +69,10 @@ function* sources(dir: string): Generator<string> {
   }
 }
 
-/** Every `@rustybuns/...` specifier an app's source imports, with how many files import it. */
-function appImports(dir: string): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const f of sources(dir)) {
-    for (const s of specs(readFileSync(f, "utf8"))) out.set(s, (out.get(s) ?? 0) + 1);
-  }
+/** Every `@rustybuns/...` specifier an app's source imports, with the files that import it. */
+function appImports(dir: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const f of sources(dir)) for (const s of specs(readFileSync(f, "utf8"))) out.set(s, [...(out.get(s) ?? []), f]);
   return out;
 }
 
@@ -102,11 +100,16 @@ export function engine(root = ROOT): Part[] {
     }
   }
   const byName = new Map(parts.map((p) => [p.name, p]));
-  const add = (part: Part | undefined, app: string, spec: string, files: number) => {
+  // A file that imports `gear` and `gear/circuit` is one file of gear's, so files are counted once per part.
+  const seen = new Map<User, Set<string>>();
+  const add = (part: Part | undefined, app: string, spec: string, files: string[]) => {
     if (!part) return;
     let u = part.users.find((x) => x.app === app);
     if (!u) part.users.push((u = { app, files: 0, imports: [] }));
-    u.files += files;
+    const mine = seen.get(u) ?? new Set<string>();
+    for (const file of files) mine.add(file);
+    seen.set(u, mine);
+    u.files = mine.size;
     if (!u.imports.includes(`@rustybuns/${spec}`)) u.imports.push(`@rustybuns/${spec}`);
   };
   for (const [app, dir] of existsSync(join(root, "apps")) ? appDirs(root) : []) {
