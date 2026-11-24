@@ -128,3 +128,19 @@
 .dj-b .dj-body { grid-template-columns: 64px minmax(0, 1fr); }
 .dj-pitchcol .dj-pitch { height: 200px; }
 .dj-deck { align-content: start; }
+/* the nudge (a tap each press, the 10x one held), Settings, a locked wheel, and the close-up you can grab */
+.dj-nudge { display: flex; gap: 4px; }
+#dj .dj-nudge button { flex: 1; min-width: 0; touch-action: none; }
+#dj .dj-nudge .dj-fast.on { background: var(--acc); border-color: var(--acc); color: #141416; box-shadow: 0 0 8px var(--acc-glow); }
+.dj-wheel.locked { opacity: 0.55; cursor: not-allowed; }
+.dj-zoom { cursor: grab; touch-action: none; }
+.dj-zoom:active { cursor: grabbing; }
+.dj-prefs { width: min(420px, calc(100vw - 32px)); max-height: min(70vh, 640px); overflow: auto; box-sizing: border-box; }
+.dj-prefs h4 { margin: 4px 0 0; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: #9aa0aa; }
+.dj-prefs-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dj-prefs-row > span:first-child { flex: 1; min-width: 120px; }
+.dj-prefs-ms { width: 72px; background: #0d0e11; color: inherit; border: 1px solid #3a3e45; border-radius: 6px; padding: 4px 6px; font: inherit; }
+.dj-prefs-locks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.dj-prefs-keys { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 3px 8px; align-items: center; }
+.dj-prefs-keys span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+#dj .dj-prefs button.on { background: var(--acc); border-color: var(--acc); color: #141416; }

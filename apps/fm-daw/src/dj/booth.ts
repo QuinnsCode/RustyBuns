@@ -34,7 +34,7 @@ const JOG_MAX_TURNS = 20;
 /** What someone may press on a deck that plays on another machine. `seek` jumps to `x` of the way through. */
 export const PRESSES = ["play", "cueDown", "cueUp", "sync", "hot1", "hot2", "hot3", "hot4", "back", "fwd", "seek"] as const;
 export type Press = (typeof PRESSES)[number];
-const HOTS = ["hot1", "hot2", "hot3", "hot4"] as const;
+export const HOTS = ["hot1", "hot2", "hot3", "hot4"] as const;
 /** Hot cue `press`'s number (0 to 3), or -1 when it isn't one. */
 export const hotOf = (press: Press) => HOTS.findIndex((h) => h === press);
 
@@ -154,16 +154,6 @@ export class Booth {
     const t = this.sides[side];
     return !t || !t.say.playing ? { ok: true } : { ok: false, why: `Deck ${side ? "B" : "A"} is playing ${t.say.name ?? "a track"}: wait for it to stop, or use the other deck` };
   }
-}
-
-/** A key on the keyboard (while the decks are open) as a press: Q/P play, W/O cue, 1 to 4 and 7 to 0 the hot cues. */
-export function keyPress(code: string): { side: Side; press: Press } | null {
-  if (code === "KeyQ" || code === "KeyP") return { side: code === "KeyQ" ? 0 : 1, press: "play" };
-  if (code === "KeyW" || code === "KeyO") return { side: code === "KeyW" ? 0 : 1, press: "cueDown" };
-  const a = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code), b = ["Digit7", "Digit8", "Digit9", "Digit0"].indexOf(code);
-  if (a >= 0) return { side: 0, press: HOTS[a]! };
-  if (b >= 0) return { side: 1, press: HOTS[b]! };
-  return null;
 }
 
 /**
