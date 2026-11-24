@@ -284,6 +284,13 @@ function thing(s: Spot): THREE.Group {
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);
     put(new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.09, 6, 16), surface("metal", "#8e9298")), 0, t.h + 0.07, 0);
     put(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 20), blackSteel), 0, t.h + 0.04, 0).rotation.x = Math.PI / 2;
+    // the pop filter between the mic and the singer (+z): a hoop of black gauze on a gooseneck clamped to the stand
+    const gauze = new THREE.MeshStandardMaterial({ color: "#0d0d0d", roughness: 1, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+    put(new THREE.Mesh(new THREE.CircleGeometry(0.074, 28), gauze), 0, t.h + 0.08, 0.11);
+    put(new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.004, 6, 32), blackSteel), 0, t.h + 0.08, 0.11);
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.03, 12), blackSteel), 0, t.h - 0.2, 0); // the clamp
+    tube(0.004, v(0.01, t.h - 0.2, 0), v(0.07, t.h - 0.06, 0.06), blackSteel);
+    tube(0.004, v(0.07, t.h - 0.06, 0.06), v(0.05, t.h + 0.02, 0.11), blackSteel);
   } else if (s.kind === "bass") {
     // an analog mono synth on an X stand, played like the keys (gear-models.ts)
     const { synth, keys } = bassSynth(s, def.bass);
