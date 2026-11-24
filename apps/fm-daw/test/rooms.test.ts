@@ -63,6 +63,33 @@ test("put up a drum booth, line the barn, and an edit that would break the room 
   expect(problems(r)).toEqual([]);
 });
 
+test("build mode: wall a corner off round the keys, knock a doorway through, turn the keys, and take the wall down again", () => {
+  let r = structuredClone(BARN);
+  expect(heard(r, "keys").space.closed).toBe(false);
+  // two walls from the outside walls meet in the room: the keys' corner is a room of its own
+  r = ok(r, { t: "addWall", from: [1, -7], to: [1, 0] });
+  r = ok(r, { t: "addWall", from: [1, 0], to: [5, 0] });
+  const corner = heard(r, "keys").space;
+  expect(corner.closed).toBe(true);
+  expect(corner.floor).toBeLessThan(r.size.w * r.size.d / 2);
+  // a doorway in the middle of the second wall, and bricked up again
+  const last = r.walls.length - 1;
+  r = ok(r, { t: "door", index: last });
+  expect(r.walls[last]!.gaps).toEqual([[1.55, 2.45]]);
+  expect(ok(r, { t: "door", index: last }).walls[last]!.gaps).toBeUndefined();
+  // a quarter turn is two eighths
+  r = ok(r, { t: "turn", id: "keys", by: 2 });
+  expect(at(r, "keys").yaw).toBeCloseTo(at(BARN, "keys").yaw + Math.PI / 2, 6);
+  // what can't be built says why: a stub of a wall, a wall through a seat, one side of a booth
+  expect(edit(r, { t: "addWall", from: [0, 0], to: [0.2, 0] })).toMatchObject({ ok: false, why: "a wall is at least 50 cm long" });
+  expect(edit(r, { t: "addWall", from: [-3.5, -1.5], to: [-1.5, -1.5] })).toMatchObject({ ok: false, why: "bass is in a wall" });
+  expect(edit(r, { t: "unwall", index: r.walls.findIndex((x) => x.booth) })).toMatchObject({ ok: false, why: expect.stringContaining("take the booth down") });
+  // the first new wall down: the corner opens back onto the barn
+  r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
+  expect(heard(r, "keys").space.closed).toBe(false);
+  expect(check(Studio, JSON.parse(JSON.stringify(r)))).toEqual(JSON.parse(JSON.stringify(r)));
+});
+
 test("the impulse response follows the space: the floor's bounce first, then a tail as long as it rings", () => {
   const rate = 16000;
   const room = impulse(BASEMENT, "keys", rate), booth = impulse(BASEMENT, "drums", rate);

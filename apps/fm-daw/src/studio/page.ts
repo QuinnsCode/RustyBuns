@@ -8,9 +8,10 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, Edit, edit, type Surface, yours, YOURS } from "./builder.ts";
+import { boothMiddle, Edit, edit, newSpot, type Surface, yours, YOURS } from "./builder.ts";
+import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
-import type { Side, StudioDef } from "./room.ts";
+import type { Side, SpotKind, StudioDef } from "./room.ts";
 import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 
@@ -66,15 +67,18 @@ function render() {
     const [x1, z1, x2, z2] = p.wall === "front" ? [a, d / 2, b, d / 2] : p.wall === "back" ? [a, -d / 2, b, -d / 2] : p.wall === "left" ? [-w / 2, a, -w / 2, b] : [w / 2, a, w / 2, b];
     plan.append(el("line", { class: "panel", x1, y1: z1, x2, y2: z2, stroke: tint(p.material), "stroke-width": 0.22 * scale }));
   }
+  // the floor's half-metre grid, as the 3D view has it
+  for (let x = -Math.floor(w / 2 / 0.5) * 0.5; x <= w / 2 + 1e-6; x += 0.5) plan.append(el("line", { class: "grid", x1: x, y1: -d / 2, x2: x, y2: d / 2, "stroke-width": 0.02 * scale }));
+  for (let z = -Math.floor(d / 2 / 0.5) * 0.5; z <= d / 2 + 1e-6; z += 0.5) plan.append(el("line", { class: "grid", x1: -w / 2, y1: z, x2: w / 2, y2: z, "stroke-width": 0.02 * scale }));
   // Inside walls, with their doorways left open.
-  for (const wl of room.walls) {
+  for (const [i, wl] of room.walls.entries()) {
     const [x0, z0] = wl.from, [x1, z1] = wl.to, len = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / len, uz = (z1 - z0) / len;
     const gaps = [...(wl.gaps ?? [])].sort((a, b) => a[0] - b[0]);
     const runs: [number, number][] = [];
     let from = 0;
     for (const [a, b] of gaps) { if (a > from) runs.push([from, a]); from = Math.max(from, b); }
     if (from < len) runs.push([from, len]);
-    const g = el("g", wl.booth ? { "data-booth": wl.booth } : {});
+    const g = el("g", wl.booth ? { "data-booth": wl.booth } : { "data-wall": i });
     for (const [a, b] of runs) g.append(el("line", { class: `wall${wl.booth ? " movable" : ""}`, x1: x0 + ux * a, y1: z0 + uz * a, x2: x0 + ux * b, y2: z0 + uz * b, stroke: tint(wallMaterial(wl)), "stroke-width": 0.14 * scale }));
     plan.append(g);
   }
@@ -97,39 +101,162 @@ function render() {
   select.value = preset()?.id ?? "";
   renderSound();
   renderEdit();
+  renderTools();
+  if (view === "3d") build?.show(room, picked, walls);
 }
 
-// ---- dragging a seat, or a booth by one of its walls ----
+// ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
 
-let drag: { kind: "spot" | "booth" | "gear"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+type Tool = "move" | "wall" | "door" | "booth" | "place" | "turn" | "remove";
+const TOOLS: { id: Tool; name: string; icon: string }[] = [
+  { id: "move", name: "Move: drag a seat, a booth or the gear wall", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
+  { id: "wall", name: "Wall: drag across the floor to put one up", icon: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/>` },
+  { id: "door", name: "Doorway: click a wall to knock one through, again to brick it up", icon: `<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>` },
+  { id: "booth", name: "Booth: click the floor to put up a vocal booth", icon: `<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>` },
+  { id: "place", name: "Place: pick from the catalog, click the floor", icon: `<path d="M5 12h14"/><path d="M12 5v14"/>` },
+  { id: "turn", name: "Turn: click a seat to turn it an eighth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
+  { id: "remove", name: "Remove: click a seat, a wall or a booth", icon: `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>` },
+];
+const icon = (paths: string) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const NAMES: Record<SpotKind, string> = { keys: "keys", drums: "kit", bass: "bass synth", desk: "desk", booth: "mic", couch: "couch", dj: "decks" };
+let tool: Tool = "move", placing: SpotKind = "keys", view: "3d" | "plan" = "3d", walls: WallsMode = "cutaway";
+const canvas = $("view") as HTMLCanvasElement;
+let build: BuildView | null = null;
+try { build = new BuildView(canvas); } catch { view = "plan"; /* no WebGL: the blueprint only */ }
+/** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
+const quarter = (v: number) => Math.round(v * 4) / 4;
+const tenth = (v: number) => Math.round(v * 10) / 10;
+
 function toRoom(e: PointerEvent): number[] {
   const m = plan.getScreenCTM(), p = new DOMPoint(e.clientX, e.clientY), q = m ? p.matrixTransform(m.inverse()) : p;
   return [q.x, q.y];
 }
-const tenth = (v: number) => Math.round(v * 10) / 10;
-plan.addEventListener("pointerdown", (e) => {
-  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear]") : null;
-  if (!g) return;
-  const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), gear = g.getAttribute("data-gear");
-  if (spot) { picked = spot; render(); }
-  const id = spot ?? booth ?? gear;
-  const from = !id ? null : spot ? room.spots.find((x) => x.id === id)?.at : gear ? gearPlace(room).at : boothMiddle(room, id);
-  if (!id || !from) return;
-  const moving = [...plan.querySelectorAll<SVGElement>(spot ? `[data-spot="${CSS.escape(id)}"]` : gear ? "[data-gear]" : `[data-booth="${CSS.escape(id)}"]`)];
-  drag = { kind: spot ? "spot" : gear ? "gear" : "booth", id, from: [...from], at: [...from], g: moving, start: toRoom(e) };
-  plan.setPointerCapture(e.pointerId);
+const pointAt = (e: PointerEvent): number[] | null => (view === "3d" ? build?.toRoom(e) ?? null : toRoom(e));
+function hitAt(e: PointerEvent): Hit {
+  if (view === "3d") return build?.hit(e) ?? null;
+  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall]") : null;
+  if (!g) return null;
+  const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), wall = g.getAttribute("data-wall");
+  return spot ? { spot } : booth ? { booth } : wall !== null ? { wall: Number(wall) } : { gear: true };
+}
+
+let drag: { kind: "spot" | "booth" | "gear"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+let drawing: { from: [number, number]; to: [number, number] } | null = null;
+let orbiting: { x: number; y: number } | null = null;
+
+function down(e: PointerEvent) {
+  if (view === "3d" && (e.button === 2 || e.button === 1)) { orbiting = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch { /* gone */ } return; }
+  if (e.button !== 0) return;
+  const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
+  why = "";
+  if (tool === "move") {
+    if (!h || "wall" in h) return;
+    const id = "spot" in h ? h.spot : "booth" in h ? h.booth : "gear";
+    if ("spot" in h) { picked = h.spot; render(); }
+    const from = "spot" in h ? room.spots.find((x) => x.id === id)?.at : "gear" in h ? gearPlace(room).at : boothMiddle(room, id);
+    if (!from || !p) return;
+    const sel = "spot" in h ? `[data-spot="${CSS.escape(id)}"]` : "gear" in h ? "[data-gear]" : `[data-booth="${CSS.escape(id)}"]`;
+    drag = { kind: "spot" in h ? "spot" : "gear" in h ? "gear" : "booth", id, from: [...from], at: [...from], g: [...plan.querySelectorAll<SVGElement>(sel)], start: p };
+  } else if (tool === "wall") {
+    if (p) { const a: [number, number] = [quarter(p[0]), quarter(p[1])]; drawing = { from: a, to: a }; }
+  } else if (tool === "door") {
+    if (h && "wall" in h) apply({ t: "door", index: h.wall }); else { why = "Click an inside wall to put a doorway in it"; render(); }
+  } else if (tool === "booth") {
+    if (at) apply({ t: "booth", id: free("booth", (x) => room.walls.some((wl) => wl.booth === x)), at, w: 2.4, d: 2.4 });
+  } else if (tool === "place") {
+    if (!at) return;
+    const id = free(placing, (x) => room.spots.some((s) => s.id === x));
+    if (apply({ t: "spot", id, kind: placing, at })) { picked = id; render(); }
+  } else if (tool === "turn") {
+    if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
+  } else if (tool === "remove") {
+    if (h && "spot" in h) { if (apply({ t: "unspot", id: h.spot }) && picked === h.spot) { picked = room.spots[0]?.id; render(); } }
+    else if (h && "booth" in h) apply({ t: "unbooth", id: h.booth });
+    else if (h && "wall" in h) apply({ t: "unwall", index: h.wall });
+  }
+  try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* a pointer that already left */ }
+}
+function move(e: PointerEvent) {
+  if (orbiting && build) { build.orbit(-(e.clientX - orbiting.x) * 0.008, (e.clientY - orbiting.y) * 0.006); orbiting = { x: e.clientX, y: e.clientY }; return; }
+  const p = pointAt(e);
+  if (!p) return;
+  if (drag) {
+    drag.at = [tenth(drag.from[0] + p[0] - drag.start[0]), tenth(drag.from[1] + p[1] - drag.start[1])];
+    const dx = drag.at[0] - drag.from[0], dz = drag.at[1] - drag.from[1];
+    if (view === "3d") build?.nudge(drag.kind === "gear" ? "gear" : `${drag.kind}:${drag.id}`, dx, dz);
+    else for (const g of drag.g) g.setAttribute("transform", `translate(${dx} ${dz})`);
+  } else if (drawing) {
+    // square to the room when it's nearly square: a wall a few degrees off is never what's meant
+    let to: [number, number] = [quarter(p[0]), quarter(p[1])];
+    const dx = to[0] - drawing.from[0], dz = to[1] - drawing.from[1];
+    if (Math.abs(dx) < Math.abs(dz) * 0.2) to = [drawing.from[0], to[1]]; else if (Math.abs(dz) < Math.abs(dx) * 0.2) to = [to[0], drawing.from[1]];
+    drawing.to = to;
+    if (view === "3d") build?.drawing(drawing.from, to);
+    else { plan.querySelector(".drawing")?.remove(); plan.append(el("line", { class: "drawing", x1: drawing.from[0], y1: drawing.from[1], x2: to[0], y2: to[1], "stroke-width": 0.14 })); }
+  }
+}
+function up() {
+  orbiting = null;
+  if (drag) {
+    const d = drag; drag = null;
+    if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
+    apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
+  } else if (drawing) {
+    const w = drawing; drawing = null;
+    build?.drawing(null);
+    if (w.from[0] !== w.to[0] || w.from[1] !== w.to[1]) apply({ t: "addWall", from: w.from, to: w.to }); else render();
+  }
+}
+for (const surface of [plan, canvas] as Element[]) {
+  surface.addEventListener("pointerdown", (e) => down(e as PointerEvent));
+  surface.addEventListener("pointermove", (e) => move(e as PointerEvent));
+  surface.addEventListener("pointerup", () => up());
+  surface.addEventListener("pointercancel", () => up());
+}
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); build?.orbit(0, 0, Math.exp(e.deltaY * 0.0012)); }, { passive: false });
+
+const VIEW_3D = `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`;
+const BLUEPRINT = `<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>`;
+const LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
+const CCW = `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>`;
+const CW = `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>`;
+const WALL_WORDS: Record<WallsMode, string> = { cutaway: "Walls cut away on your side", down: "Walls down", up: "Walls up" };
+let thumbs: Partial<Record<SpotKind, string>> = {};
+
+/** The tool bar, the catalog under it when placing, and which view shows. */
+function renderTools() {
+  const b = (attrs: string, name: string, paths: string, on = false) => `<button type="button" class="tool" ${attrs} aria-label="${esc(name)}" title="${esc(name)}" aria-pressed="${on}">${icon(paths)}</button>`;
+  $("tools").innerHTML = TOOLS.map((t) => b(`data-tool="${t.id}"`, t.name, t.icon, t.id === tool)).join("") + `<span class="sep"></span>`
+    + (build ? b(`data-view="3d"`, "3D: your studio cut away, from above", VIEW_3D, view === "3d") : "")
+    + b(`data-view="plan"`, "Blueprint: the plan from straight above", BLUEPRINT, view === "plan")
+    + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "");
+  $("orbit").innerHTML = view === "3d" ? b(`data-orbit="1"`, "Turn the view left", CCW) + b(`data-orbit="-1"`, "Turn the view right", CW) : "";
+  const cat = $("catalog");
+  cat.hidden = tool !== "place";
+  if (tool === "place") {
+    if (build && !Object.keys(thumbs).length) thumbs = Object.fromEntries(KINDS_ALL.map((k) => [k, build!.thumb(newSpot(`thumb-${k}`, k, [0, 0]))]));
+    cat.innerHTML = KINDS_ALL.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === placing}" title="${esc(NAMES[k])}">${thumbs[k] ? `<img src="${thumbs[k]}" alt="">` : ""}${esc(NAMES[k])}</button>`).join("");
+  }
+  canvas.hidden = view !== "3d"; plan.toggleAttribute("hidden", view !== "plan");
+}
+const KINDS_ALL: SpotKind[] = ["keys", "drums", "bass", "dj", "desk", "booth", "couch"];
+$("tools").addEventListener("click", (e) => {
+  const t = e.target instanceof Element ? e.target.closest("button") : null;
+  if (!t) return;
+  if (t.dataset.tool) tool = t.dataset.tool as Tool;
+  if (t.dataset.view) view = t.dataset.view === "3d" && build ? "3d" : "plan";
+  if (t.hasAttribute("data-walls")) walls = walls === "cutaway" ? "down" : walls === "down" ? "up" : "cutaway";
+  render();
 });
-plan.addEventListener("pointermove", (e) => {
-  if (!drag) return;
-  const p = toRoom(e);
-  drag.at = [tenth(drag.from[0] + p[0] - drag.start[0]), tenth(drag.from[1] + p[1] - drag.start[1])];
-  for (const g of drag.g) g.setAttribute("transform", `translate(${drag.at[0] - drag.from[0]} ${drag.at[1] - drag.from[1]})`);
+$("catalog").addEventListener("click", (e) => {
+  const k = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-kind]")?.dataset.kind : undefined;
+  const kind = check(oneOf(KINDS_ALL), k);
+  if (kind) { placing = kind; renderTools(); }
 });
-plan.addEventListener("pointerup", () => {
-  if (!drag) return;
-  const d = drag; drag = null;
-  if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
-  apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
+$("orbit").addEventListener("click", (e) => {
+  const t = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-orbit]") : null;
+  if (t && build) build.orbit(Number(t.dataset.orbit) * Math.PI / 2);
 });
 
 // ---- what it sounds like ----
@@ -203,7 +330,7 @@ function renderEdit() {
     <h2>Seats</h2>
     <div class="row"><label>Kind<select id="sk">${KINDS.map((k) => `<option>${k}</option>`).join("")}</select></label><button type="button" id="add-spot">Add seat</button>
       ${picked ? `<button type="button" id="del-spot">Take out ${esc(picked)}</button>` : ""}</div>
-    <p class="hint">Drag a seat, a booth by its walls, or the gear wall on the plan to move it.</p>`;
+    <p class="hint">Build with the tools over the view: move, draw walls on the grid, knock doorways through, put up booths, place seats from the catalog, turn and remove them. Right-drag (or the arrows) turns the 3D view, the wheel zooms.</p>`;
   const q = <T extends Element>(sel: string) => [...$("edit").querySelectorAll<T>(sel)];
   for (const i of q<HTMLInputElement>("[data-size]")) i.addEventListener("change", () => {
     const v = (k: string) => Number(q<HTMLInputElement>(`[data-size="${k}"]`)[0].value);

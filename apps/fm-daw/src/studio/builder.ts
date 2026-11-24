@@ -65,7 +65,9 @@ export type Surface = "floor" | "ceiling" | Side;
  * What the builder does: `size` the room, make a `surface` of something, hang a `panel` on an outside wall or take
  * one off, make an inside `wall` of something, add a `spot` (a seat with its instrument), `move` or take one out,
  * put up a `booth` (four walls, glass toward the room and a door), move one or take it down, move the gear wall
- * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio.
+ * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio. Build mode's tools draw an inside wall
+ * (`addWall`, from one point to another, on the floor's grid), knock a doorway through the middle of one or brick it
+ * up again (`door`), take one down (`unwall`), and `turn` a seat an eighth of a turn at a time.
  */
 export type Edit =
   | { t: "size"; w: number; d: number; h: number }
@@ -80,7 +82,11 @@ export type Edit =
   | { t: "moveBooth"; id: string; at: [number, number] }
   | { t: "unbooth"; id: string }
   | { t: "moveGear"; at: [number, number]; turns?: number }
-  | { t: "rename"; name: string; about: string };
+  | { t: "rename"; name: string; about: string }
+  | { t: "addWall"; from: [number, number]; to: [number, number]; material?: Material }
+  | { t: "unwall"; index: number }
+  | { t: "door"; index: number }
+  | { t: "turn"; id: string; by: number };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -96,7 +102,14 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("unbooth"), id: ID }),
   obj({ t: tag("moveGear"), at: XZ, turns: opt(int(-3, 3)) }),
   obj({ t: tag("rename"), name: str(60, { min: 1 }), about: str(400) }),
+  obj({ t: tag("addWall"), from: XZ, to: XZ, material: opt(MAT) }),
+  obj({ t: tag("unwall"), index: int(0, MAX_WALLS - 1) }),
+  obj({ t: tag("door"), index: int(0, MAX_WALLS - 1) }),
+  obj({ t: tag("turn"), id: ID, by: int(-7, 7) }),
 ];
+
+/** The shortest inside wall, and a doorway's width, metres. */
+export const MIN_WALL = 0.5, DOORWAY = 0.9;
 /** A builder edit from the wire, checked. */
 export const Edit: Guard<Edit> = (v) => {
   for (const g of EDITS) { const e = check(g, v); if (e) return e; }
@@ -262,6 +275,35 @@ export function edit(def: StudioDef, e: Edit): Built {
       break;
     }
     case "rename": next.name = e.name; next.about = e.about; break;
+    case "addWall": {
+      if (next.walls.length >= MAX_WALLS) return no(`a room holds ${MAX_WALLS} walls`);
+      if (Math.hypot(e.to[0] - e.from[0], e.to[1] - e.from[1]) < MIN_WALL) return no(`a wall is at least ${MIN_WALL * 100} cm long`);
+      next.walls.push({ from: e.from, to: e.to, ...(e.material === "glass" ? { glass: true } : { material: e.material ?? "drywall" }) });
+      break;
+    }
+    case "unwall": {
+      const wl = next.walls[e.index];
+      if (!wl) return no("there is no such wall");
+      if (wl.booth) return no(`that wall is part of ${wl.booth}: take the booth down instead`);
+      next.walls.splice(e.index, 1);
+      break;
+    }
+    case "door": {
+      const wl = next.walls[e.index];
+      if (!wl) return no("there is no such wall");
+      const len = Math.hypot(wl.to[0] - wl.from[0], wl.to[1] - wl.from[1]);
+      if (wl.gaps?.length) delete wl.gaps;
+      else if (len < DOORWAY + 0.2) return no("that wall is too short for a doorway");
+      else wl.gaps = [[len / 2 - DOORWAY / 2, len / 2 + DOORWAY / 2]];
+      break;
+    }
+    case "turn": {
+      const sp = next.spots.find((x) => x.id === e.id);
+      if (!sp) return no(`there is no spot ${e.id}`);
+      const yaw = sp.yaw + (e.by * Math.PI) / 4;
+      sp.yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+      break;
+    }
   }
   const wrong = problems(next);
   return wrong.length ? no(wrong[0]) : { ok: true, def: next };
