@@ -4,7 +4,7 @@
 // And a tap on the 3D deck finds its key, and a tap anywhere else on the table opens the whole setup.
 import { expect, test } from "bun:test";
 import { camelot, keyOf } from "../src/dj/analyze.ts";
-import { Booth, changed, deckKeyAt, DECK_KEYS, JOG_HELD_MS, JOG_SEND_MS, JogOut, posAt, sayOf, waveFrom, waveOf, type DeckPress, type DeckSay, type JogSent } from "../src/dj/booth.ts";
+import { Booth, changed, deckKeyAt, DECK_KEYS, JOG_HELD_MS, JOG_SEND_MS, JogOut, mixMoved, mixOf, posAt, sayOf, waveFrom, waveOf, type DeckPress, type DeckSay, type JogSent, type MixSay } from "../src/dj/booth.ts";
 import type { DeckState } from "../src/dj/engine.ts";
 import { BoothGear } from "../src/studio/booth-3d.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
@@ -39,7 +39,7 @@ const deck = (o: Partial<DeckState> = {}): DeckState => ({
   keylock: false, ramp: { start: 0, brake: 0 }, loopIn: null, adjust: null, speed: 0, ...o,
 });
 /** A live event from the page, through the World's guard, and out to everyone else. */
-function overTheLine(e: DeckSay | DeckPress) {
+function overTheLine(e: DeckSay | DeckPress | MixSay) {
   const sent = decodeClient(JSON.parse(JSON.stringify({ t: "live", e })));
   if (sent?.t !== "live") throw new Error("the World refused it");
   const got = decodeServer(JSON.parse(JSON.stringify({ t: "live", from: 4, e: sent.e })));
@@ -160,4 +160,29 @@ test("a scratch on the other DJ's deck: the platter held, a second of turns at 6
   expect(overTheLine(jog)).toEqual(jog);
   expect(decodeClient({ t: "live", e: { ...jog, part: "rim" } })).toBeNull();
   expect(decodeClient({ t: "live", e: { ...jog, turns: 500 } })).toBeNull();
+});
+
+test("the DJ's mixer goes over the line as it moves, and the hand on its side goes to what moved", () => {
+  const strip = (fader: number, high = 0) => ({ trim: 0, high, hiMid: 0, loMid: 0, low: 0, send1: 0, send2: 0, fader, filter: 0 as const, cue: false, xf: "off" as const });
+  const filter = (freq: number) => ({ on: false, types: ["lp" as const], freq, res: 0.3, depth: 0, beats: 4, bpm: 120, shape: "sine" as const, follow: "a" as const });
+  const mixer = (o: { faders?: number[]; x?: number; f2?: number; high4?: number } = {}) => mixOf({
+    channels: (o.faders ?? [0.75, 0.75, 0.75, 0.75]).map((v, i) => strip(v, i === 3 ? o.high4 ?? 0 : 0)), filters: [filter(0.6), filter(o.f2 ?? 0.3)],
+    xfader: o.x ?? 0, curve: "smooth", master: 0.8, booth: 0.8, phones: 0.8, cueBlend: 0, split: false,
+  });
+  const was = mixer();
+  // through the World's guard and out to the room as it was said
+  expect(overTheLine(mixer({ faders: [0.75, 0.333333, 0.75, 0.75] }))).toEqual({ ...was, faders: [0.75, 0.33, 0.75, 0.75] });
+  expect(() => overTheLine({ ...was, faders: [2, 0, 0, 0] })).toThrow();
+  expect(() => overTheLine({ ...was, eq: [0] })).toThrow();
+  for (const [moved, key, hand] of [
+    [mixer({ faders: [0.75, 0.2, 0.75, 0.75] }), { fader: 1 }, 0],
+    [mixer({ faders: [0.75, 0.75, 1, 0.75] }), { fader: 2 }, 1],
+    [mixer({ x: -0.6 }), { cross: true }, 0],
+    [mixer({ x: 0.6 }), { cross: true }, 1],
+    [mixer({ f2: 0.1 }), { filter: 1 }, 1],
+    [mixer({ high4: -1 }), { eq: 3, band: 0 }, 1],
+  ] as const) expect(mixMoved(was, moved)).toEqual({ key, hand });
+  // nothing moved, or nothing said before (a page that just came in): no hand goes
+  expect(mixMoved(was, mixer())).toBeNull();
+  expect(mixMoved(null, mixer({ x: 1 }))).toBeNull();
 });

@@ -12,7 +12,7 @@ import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { applySpin, decodeSpinClient, leave as leaveSpin, mayDeck, noSpin, onNow, sanitizeSpin, stepUp, type Spin, type SpinOp, type SpinServer } from "../../src/spin.ts";
-import type { DeckPress, DeckSay } from "../../src/dj/booth.ts";
+import type { DeckPress, DeckSay, MixSay } from "../../src/dj/booth.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
 import { decodeClockClient, type ClockClient, type ClockServer } from "../../src/clock.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, soundIds, type TakeBytes } from "../../src/take.ts";
@@ -344,7 +344,7 @@ export default class World {
       const muted = (msg.e.t === "on" || msg.e.t === "sound") && isMuted(this.grants, seat?.me);
       // where each body stands, so a lantern's carrier who leaves drops it there
       if (seat?.peer && msg.e.t === "body") { if (msg.e.room) this.stood.delete(seat.peer); else this.stood.set(seat.peer, [msg.e.at[0], msg.e.at[2]]); }
-      if (msg.e.t === "deck" || msg.e.t === "press") { if (seat?.peer) this.onDeck(ws, seat, msg.e); return; }
+      if (msg.e.t === "deck" || msg.e.t === "press" || msg.e.t === "mix") { if (seat?.peer) this.onDeck(ws, seat, msg.e); return; }
       if (seat?.peer && !muted && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
@@ -658,12 +658,12 @@ export default class World {
   }
 
   /**
-   * A deck command (what's on a deck, or a press on someone's) goes on only when the spin rules let its sender
+   * A deck command (what's on a deck, a press on someone's, or where their mixer's controls sit) goes on only when the spin rules let its sender
    * (src/spin.ts), checked here and not only in the page. In open decks the first one carrying a track steps them up.
    */
-  private onDeck(ws: RoomSocket, seat: Seat, e: DeckSay | DeckPress) {
+  private onDeck(ws: RoomSocket, seat: Seat, e: DeckSay | DeckPress | MixSay) {
     const who = seat.me, lead = this.may(seat, "lead"), play = this.may(seat, "play");
-    const side = this.deckSides[e.side];
+    const side = e.t === "mix" ? null : this.deckSides[e.side];
     const freeSide = !side || side.peer === seat.peer || !side.playing;
     const holds = e.t === "deck" && !!side && side.peer === seat.peer && side.name === e.name;
     if (!mayDeck(this.spin, who, { lead, play, now: Date.now(), e, freeSide, holds }).ok) return;

@@ -631,6 +631,8 @@ function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (
 function onLive(from: number, e: Live) {
   // the booth: what's on someone's decks, or a press on yours
   if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
+  // their mixer's faders and knobs: the 3D mixer's caps go there, and their hand to what moved
+  if (e.t === "mix") return void boothGear.mixed(e, performance.now() / 1000);
   if (e.t === "press") {
     // whoever's at the table, their hand goes to it on every page
     if (e.press === "jog" ? e.touch : e.press !== "cueUp") boothGear.reached(e.side, e.press, performance.now() / 1000);
@@ -941,7 +943,9 @@ async function deckPanel(): Promise<DecksPanel> {
     ctx: out?.ctx ?? new AudioContext({ latencyHint: "interactive" }),
     onToggle: (open) => { if (open) { lane?.close(); desk.close(); releaseAll(); document.exitPointerLock?.(); } else if (phase === "play") lock(); },
     room: here ? {
-      booth, now: roomNow, send: live,
+      booth, now: roomNow,
+      // your mixer moves the table's too, here as on everyone else's page
+      send: (e) => { if (e.t === "mix") boothGear.mixed(e, performance.now() / 1000); live(e); },
       may: mayDecks,
       nameOf: (p) => jam.others.get(p)?.name || "Someone",
       toPa: (stream, name) => void playToRoom(stream, name),

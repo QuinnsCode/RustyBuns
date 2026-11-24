@@ -17,7 +17,7 @@
 // people button lists who may play the decks: the leader adds a DJ with one press, anyone else asks.
 import "./panel.css";
 import { peaks, type Grid } from "./analyze.ts";
-import { Booth, changed, farView, HOTS, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, posAt, sayOf, SAY_EVERY_MS, tubeSayOf, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
+import { Booth, changed, farView, HOTS, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, mixOf, posAt, sayOf, SAY_EVERY_MS, tubeSayOf, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type MixSay, type Press } from "./booth.ts";
 import { Decks, type Beside, type Side, type Track } from "./engine.ts";
 import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
@@ -65,7 +65,7 @@ export interface DeckRoom {
   booth: Booth;
   /** The room's shared clock now, ms (src/clock.ts: the leader's time). */
   now(): number;
-  send(e: DeckSay | DeckPress): void;
+  send(e: DeckSay | DeckPress | MixSay): void;
   /** Whether you may touch the decks (the play grant), and why not. */
   may(): { ok: true } | { ok: false; why: string };
   /** The name of the player behind a peer number. */
@@ -573,10 +573,15 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const wavesOut = new Map<Track, string>();
   const said: [DeckSay | null, DeckSay | null] = [null, null], saidAt = [0, 0];
   let onPa = false;
+  /** The mixer as last said (at first as it came up, so a mixer nobody touched says nothing). */
+  let saidMix = JSON.stringify(mixOf(decks.mixer.state()));
   /** What's on your decks to the room: on a change, and every SAY_EVERY_MS while a track is on. `now`: right away. */
   function say(now = false) {
     if (!room) return;
     const t = room.now();
+    // the mixer's faders and knobs: on a change only, at most once a say tick (the room's 3D mixer and your hand on it)
+    const mix = mixOf(decks.mixer.state()), mixed = JSON.stringify(mix);
+    if (mixed !== saidMix) { saidMix = mixed; room.send(mix); }
     for (const side of [0, 1] as const) {
       const d = decks.decks[side], tr = d.track, tube = tubes[side];
       if (tube) {
