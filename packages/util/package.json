@@ -37,6 +37,8 @@
     "./http": "./src/http.ts",
     "./keys": "./src/keys.ts",
     "./limits": "./src/limits.ts",
+    "./guest-panel": "./src/guest-panel.ts",
+    "./guests": "./src/guests.ts",
     "./lobby": "./src/lobby.ts",
     "./spaces": "./src/spaces.ts",
     "./matchmaker": "./src/matchmaker.ts",

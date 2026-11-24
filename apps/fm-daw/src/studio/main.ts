@@ -92,6 +92,7 @@ import { clubStack, openAir, subCones } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
 import { gear as gearModel } from "@rustybuns/models/gear";
+import { SKIN } from "../guest-list.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -113,10 +114,7 @@ const rigAsked = new URLSearchParams(location.search).get("rig");
 const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.search).get("keys"));
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
-const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: { theme: {
-  "--ui-bg": "rgba(21, 23, 27, 0.94)", "--ui-ink": "#f4f1ea", "--ui-dim": "#a9adb4", "--ui-line": "#3a3e45", "--ui-soft": "#23262c",
-  "--ui-accent": "#ff6b4a", "--ui-on-accent": "#15171b", "--ui-radius": "14px", "--ui-radius-sm": "8px",
-} } });
+const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
 const signedIn = () => !!eq.login();
 /** A fresh token for /ws, or null: a guest (signed out, or a page eqosys won't send anyone back to). */
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
