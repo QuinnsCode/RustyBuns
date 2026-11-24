@@ -2050,7 +2050,7 @@ function accountPane(pane: HTMLElement) {
 if (PHONE) try { const s = parseSettings(JSON.parse(localStorage.getItem(KEY) ?? "null")); if (s.more.bloom === undefined) localStorage.setItem(KEY, JSON.stringify({ ...s, more: { ...s.more, bloom: false } })); } catch { /* defaults */ }
 const controls = mountControls({
   key: KEY, parent: $("#controls-host"), tabs: true, title: "Settings", bindings: keymap, show: ["audio", "view"],
-  sounds: [["stings", "Music stings"], ["drown", "Drowned-out noises"], ["wild", "The wilds (wind, birds, rain)"], ["quill", "The quill (the book writing itself)"]],
+  sounds: [["stings", "Music stings"], ["drown", "Muffled", "Drowned-out noises"], ["wild", "Wilds", "The wilds (wind, birds, rain)"], ["quill", "Quill", "The quill (the book writing itself)"]],
   hide: ["lookX", "lookY", "invertY", "zoom", "tilt"], labels: { touch: "Camera turn by touch" },
   // Settings > Display: the quality picker heads Rendering (with Bloom); Vision has brightness, shake and reduce motion
   enable: ["bloom", "shake", "reduceMotion"], lean: true, // a row the game doesn't honour isn't shown at all
