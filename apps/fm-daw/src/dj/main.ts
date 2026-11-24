@@ -7,6 +7,7 @@ import type { Side } from "./engine.ts";
 import type { Ch, ChannelKnob, Curve, FilterState, XAssign } from "./mixer.ts";
 import type { JogMode, JogPart } from "./player.ts";
 import type { Press } from "./booth.ts";
+import type { Prefs } from "./prefs.ts";
 
 /** On a narrow screen the decks are a carousel: which piece is in view (0 deck A, 1 the mixer, 2 deck B), or null when all three fit. */
 function carousel(): number | null {
@@ -77,6 +78,11 @@ const harness = {
   /** Hold or let go of the top platter, and turn a part of the wheel, as a hand (or a MIDI jog) does. */
   touch: (side: Side, on: boolean) => panel?.jogs[side].touch(on),
   turn: (side: Side, part: JogPart, turns: number) => panel?.jogs[side].turn(part, turns),
+  /** The nudge: a tap back (-1) or on (1) moves the deck the nudge amount; `hold` the 10x nudge (0 lets go). */
+  nudge: (side: Side, dir: -1 | 1) => panel?.nudge(side, "tap", dir),
+  nudgeHold: (side: Side, dir: -1 | 0 | 1) => panel?.nudge(side, "hold", dir),
+  /** The DJ's settings (prefs.ts: nudgeMs, wave, grab, the locks, keys), changed by `to` when given. */
+  prefs: (to?: Partial<Prefs>) => panel?.prefs(to) ?? null,
   /** Press cue down or let it go (the big CUE button). */
   cue: (side: Side, down: boolean) => panel?.press(side, down ? "cueDown" : "cueUp"),
   /** A knob on deck `side`'s own channel (A is channel 2, B channel 3). */

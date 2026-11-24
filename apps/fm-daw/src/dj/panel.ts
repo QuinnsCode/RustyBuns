@@ -5,19 +5,24 @@
 // (player-panel.ts: the screen, the jog wheel in VINYL or CD, a big CUE and PLAY, the tempo fader); the close-up
 // zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts).
 // The mixer is mixer-panel.ts's four channels, master and twin filters. Keys while it's open: Q/P play A/B, W/O cue,
-// 1 to 4 and 7 to 0 hot cues, the arrows slide the crossfader, Esc closes it. Icons after lucide (ISC), the word as the tooltip.
+// 1 to 4 and 7 to 0 hot cues, A/S and K/L nudge, Z/X and comma/period the 10× nudge held, the arrows slide the
+// crossfader, Esc closes it; Settings (the cog, prefs.ts) changes the keys, the nudge amount, the locks and the waveform.
+// The close-up is coloured by its sound (bass one end of each deck's gradient, highs the other: A blue-green to a
+// whitish purple, B fire), and a press on it grabs that deck's track like a record: drag to scratch, let go to play on.
+// Icons after lucide (ISC), the word as the tooltip.
 // In a room (`room`), the decks are the booth's (booth.ts): a deck someone else loaded shows here as they play it
 // (its waveform, key, tempo, where it is on the room's clock) and its play, cue, sync, hot cues and jumps go to them;
 // yours go out to the room the same way, and your master plays to the room's PA while you have a track on. The
 // people button lists who may play the decks: the leader adds a DJ with one press, anyone else asks.
 import "./panel.css";
 import { peaks, type Grid } from "./analyze.ts";
-import { Booth, changed, farView, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, keyPress, posAt, sayOf, SAY_EVERY_MS, tubeSayOf, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
+import { Booth, changed, farView, HOTS, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut, posAt, sayOf, SAY_EVERY_MS, tubeSayOf, waveFrom, waveOf, type DeckPress, type JogPressed, type DeckSay, type DeckView, type Press } from "./booth.ts";
 import { Decks, type Beside, type Side, type Track } from "./engine.ts";
 import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
-import { bars, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
+import { bars, overTone, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
+import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FAST_TIMES, keyName, keysOf, loadPrefs, NUDGE_MS, savePrefs, TONE_LUT, TONE_STEPS, type Action, type Prefs } from "./prefs.ts";
 import { connectMidiJog, Jog, playerFace } from "./player-panel.ts";
 import { button, el, svg } from "./dom.ts";
 import { TubeDeck, tubeTitle, tubeVolume, videoId } from "./youtube.ts";
@@ -39,6 +44,7 @@ const ICON = {
   list: svg('<path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/>'),
   mixer: svg('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
   magnet: svg('<path d="m12 15 4 4"/><path d="M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z"/><path d="m5 8 4 4"/>'),
+  cog: svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -98,6 +104,10 @@ export interface DecksPanel {
   tube(side: Side, link: string): Promise<boolean>;
   /** Each deck's YouTube video, or null: its id, title, where it is, and the volume and speed the deck gives it. */
   tubes(): ({ id: string; title: string; pos: number; playing: boolean } | null)[];
+  /** The DJ's settings (prefs.ts), changed by `to` when given (and kept in this browser). */
+  prefs(to?: Partial<Prefs>): Prefs;
+  /** A nudge on deck `side`: a tap back or on, or the fast one held (0 lets go). */
+  nudge(side: Side, kind: "tap" | "hold", dir: -1 | 0 | 1): void;
 }
 
 /** Mount the decks on the page, closed. `ctx` is the page's audio; `onToggle` hears it open and close. */
@@ -109,7 +119,9 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   /** Tempos from collection files the DJ dropped, by file name. */
   const known = new Map<string, Tempo>();
   /** Each track's peaks at a few resolutions (player.ts), so the close-up draws a few hundred bars at any zoom. */
-  const fine = new Map<Track, Level[]>(), over = new Map<Track, Float32Array>();
+  const fine = new Map<Track, Level[]>(), over = new Map<Track, Float32Array>(), overTones = new Map<Track, Float32Array>();
+  /** The DJ's settings, kept in this browser. */
+  let prefs = loadPrefs();
   const root = el("section", { id: "dj", role: "dialog", "aria-label": "The decks" });
   root.hidden = true;
   const head = el("header");
@@ -132,8 +144,12 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   tubeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") void tubeFrom(decks.decks[0].track || tubes[0] ? 1 : 0); });
   src.append(add, tubeIn, tubeA, tubeB);
   const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added this visit, to send to A or B", "dj-lib-open");
-  tools.append(libB, midiB, peopleB, closeB);
-  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people);
+  const prefsB = button(ICON.cog, "Settings: the nudge amount, locks, the waveform and the keys", "dj-prefs-open");
+  const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
+  prefsBox.hidden = true;
+  prefsB.addEventListener("click", () => { prefsBox.hidden = !prefsBox.hidden; prefsB.classList.toggle("on", !prefsBox.hidden); listening = null; drawPrefs(); });
+  tools.append(libB, midiB, prefsB, peopleB, closeB);
+  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -144,6 +160,29 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   zoomIn.addEventListener("click", () => setZoom(zoomAt - 1)); zoomOut.addEventListener("click", () => setZoom(zoomAt + 1));
   zoomBar.append(zoomOut, zoomLabel, zoomIn);
   zoom.addEventListener("wheel", (e) => { if (!e.ctrlKey && !e.metaKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); setZoom(zoomAt + (e.deltaY > 0 ? 1 : -1)); }, { passive: false });
+  // a press on a deck's lane of the close-up grabs its track: VINYL holds it under your hand and drags it (a scratch),
+  // SLIDE moves it and lets it play on
+  let held: { id: number; side: Side; x: number; vinyl: boolean } | null = null;
+  zoom.addEventListener("pointerdown", (e) => {
+    if (held || prefs.lockWave) return;
+    const r = zoom.getBoundingClientRect(), side: Side = e.clientY - r.top < r.height / 2 ? 0 : 1, d = decks.decks[side];
+    if (!d.track || far(side) || tubes[side]) return;
+    e.preventDefault();
+    try { zoom.setPointerCapture(e.pointerId); } catch { /* a pointer that has already gone */ }
+    held = { id: e.pointerId, side, x: e.clientX, vinyl: prefs.grab === "vinyl" };
+    if (held.vinyl) jogs[side].touch(true, true);
+  });
+  zoom.addEventListener("pointermove", (e) => {
+    if (!held || e.pointerId !== held.id) return;
+    const r = zoom.getBoundingClientRect(), d = decks.decks[held.side];
+    // the waveform runs right to left as it plays, so dragging it left moves the track on
+    const ds = (-(e.clientX - held.x) * (zoom.width / Math.max(1, r.width))) / (zoom.width / (2 * zoomS() * d.rate()));
+    held.x = e.clientX;
+    if (held.vinyl) jogs[held.side].scrub(ds); else d.seek(d.pos() + ds);
+  });
+  const letGoWave = (e: PointerEvent) => { if (!held || e.pointerId !== held.id) return; if (held.vinyl) jogs[held.side].touch(false); held = null; };
+  zoom.addEventListener("pointerup", letGoWave);
+  zoom.addEventListener("pointercancel", letGoWave);
   const zoomBox = el("div", { class: "dj-zoombox" });
   zoomBox.append(zoom, zoomBar);
   // on a phone or a narrow window the three pieces are a carousel: swipe across, or press A, the mixer or B
@@ -181,7 +220,14 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
     quantize: () => decks.quantize,
+    prefs: () => prefs,
+    nudge: (kind, dir) => nudge(side, kind, dir),
   }));
+  /** A nudge on a deck here: a tap moves it `prefs.nudgeMs`, the fast one held drifts it. Your own decks only. */
+  function nudge(side: Side, kind: "tap" | "hold", dir: -1 | 0 | 1) {
+    if (far(side) || tubes[side]) { if (dir) flash(far(side) ? "The nudge works on your own decks: ask whoever has this one" : "The nudge needs a file: on YouTube, ride the pitch fader"); return; }
+    if (kind === "tap") { if (dir) jogs[side].tapNudge(dir, prefs.nudgeMs); } else jogs[side].holdNudge(dir, prefs.nudgeMs);
+  }
   row.append(players[0].box, mixer.root, players[1].box);
   // start on the mixer in the carousel (a no-op when all three fit)
   requestAnimationFrame(() => { row.scrollLeft = mixer.root.offsetLeft - row.offsetLeft; });
@@ -228,6 +274,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   function shelve(t: Track) {
     if (!fine.has(t)) fine.set(t, peakLevels(t.mono, t.buffer.sampleRate));
     over.set(t, peaks(t.mono, 600));
+    overTones.set(t, overTone(fine.get(t)!, 600, t.buffer.duration));
     if (!shelf.some((s) => s.track === t)) shelf.push({ track: t, overview: over.get(t)! });
     drawList();
   }
@@ -270,6 +317,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   function canLoad(side: Side): boolean {
     const r = room?.booth.mayLoad(side);
     if (r && !r.ok) { flash(r.why); return false; }
+    if (prefs.lockLoad && (decks.decks[side].playing || tubes[side]?.isPlaying())) { flash(`Deck ${side ? "B" : "A"} is playing and loading onto a playing deck is locked (Settings)`); return false; }
     return true;
   }
   function put(side: Side, t: Track) { if (canLoad(side)) { dropTube(side); decks.put(side, t); room?.booth.sides.splice(side, 1, null); } }
@@ -309,9 +357,10 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   // ---- drawing
   function drawOverview(c: HTMLCanvasElement, t: Track | null, pos: number, cue: number, hot: (number | null)[], loop: { start: number; end: number } | null, side: Side) {
     if (!t) { c.getContext("2d")?.clearRect(0, 0, c.width, c.height); return; }
-    drawWave(c, over.get(t) ?? peaks(t.mono, 600), t.buffer.duration, pos, cue, hot, loop, side);
+    drawWave(c, over.get(t) ?? peaks(t.mono, 600), t.buffer.duration, pos, cue, hot, loop, side, overTones.get(t));
   }
-  function drawWave(c: HTMLCanvasElement, p: Float32Array, dur: number, pos: number, cue: number, hot: (number | null)[], loop: { start: number; end: number } | null, side: Side) {
+  function drawWave(c: HTMLCanvasElement, p: Float32Array, dur: number, pos: number, cue: number, hot: (number | null)[], loop: { start: number; end: number } | null, side: Side, tone?: Float32Array) {
+    const lut = prefs.wave === "tone" && tone?.length === p.length ? TONE_LUT[side]! : null;
     const g = c.getContext("2d"); if (!g) return;
     const w = c.width, h = c.height;
     g.clearRect(0, 0, w, h);
@@ -321,7 +370,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (!p.length) { g.fillStyle = LOOKS_DECK.played; g.fillRect(0, h / 2 - 3, at, 6); g.fillStyle = LOOKS_DECK.wave[side]; g.fillRect(at, h / 2 - 3, w - at, 6); }
     for (let i = 0; i < p.length; i++) {
       const x = (i / p.length) * w, v = p[i]! * (h / 2 - 2);
-      g.fillStyle = x < at ? LOOKS_DECK.played : LOOKS_DECK.wave[side];
+      g.fillStyle = x < at ? LOOKS_DECK.played : lut ? lut[Math.round(tone![i]! * (TONE_STEPS - 1))]! : LOOKS_DECK.wave[side];
       g.fillRect(x, h / 2 - v, Math.max(1, w / p.length), v * 2);
     }
     if (loop) { g.fillStyle = "rgba(90, 220, 120, 0.25)"; g.fillRect((loop.start / dur) * w, 0, ((loop.end - loop.start) / dur) * w, h); }
@@ -329,6 +378,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     hot.forEach((v, i) => { if (v == null) return; g.fillStyle = LOOKS_DECK.hot[i]!; g.fillRect((v / dur) * w - 1, 0, 3, 10); });
     g.fillStyle = "#fff"; g.fillRect(at - 1, 0, 2, h);
   }
+  const bins: number[][] = Array.from({ length: TONE_STEPS }, () => []);
   function drawZoom() {
     const g = zoom.getContext("2d"); if (!g) return;
     const w = zoom.width, h = zoom.height, lane = h / 2;
@@ -340,10 +390,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       const s = d.state(), levels = fine.get(t) ?? [];
       // the deck's own seconds, scaled by its rate, so two decks at one tempo show their beats the same distance apart
       const span = zoomS() * s.rate, pxPerS = w / (2 * span), amp = lane / 2 - 3;
-      g.fillStyle = LOOKS_DECK.wave[side as Side];
-      g.beginPath();
-      bars(levels, s.pos, span, w, (x, bw, v) => g.rect(x, mid - v * amp, Math.max(1, bw - (bw > 3 ? 1 : 0)), v * amp * 2));
-      g.fill();
+      // each bar in its colour: one path per step of the deck's gradient (bass one end, highs the other)
+      const tone = prefs.wave === "tone";
+      for (const b of bins) b.length = 0;
+      bars(levels, s.pos, span, w, (x, bw, v, t) => { bins[tone ? Math.round(t * (TONE_STEPS - 1)) : 0]!.push(x, mid - v * amp, Math.max(1, bw - (bw > 3 ? 1 : 0)), v * amp * 2); });
+      bins.forEach((b, k) => {
+        if (!b.length) return;
+        g.fillStyle = tone ? TONE_LUT[side]![k]! : LOOKS_DECK.wave[side as Side];
+        g.beginPath();
+        for (let i = 0; i < b.length; i += 4) g.rect(b[i]!, b[i + 1]!, b[i + 2]!, b[i + 3]!);
+        g.fill();
+      });
       gridLines(g, s.grid, s.pos, span, pxPerS, y0, lane);
       if (s.loop) { g.fillStyle = "rgba(90, 220, 120, 0.2)"; g.fillRect(w / 2 + (s.loop.start - s.pos) * pxPerS, y0, (s.loop.end - s.loop.start) * pxPerS, lane); }
     });
@@ -523,26 +580,82 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   }
   raf = requestAnimationFrame(frame);
 
-  // ---- keys, while it's open
-  const cueKeys = new Set<string>();
+  // ---- keys, while it's open (prefs.ts has the map; Settings changes it)
+  const downKeys = new Set<string>();
+  /** The action waiting for a key in Settings. */
+  let listening: Action | null = null;
   function key(e: KeyboardEvent) {
     if (root.hidden || e.target instanceof HTMLInputElement && e.target.type !== "range") return;
-    const k = keyPress(e.code);
-    let used = true;
-    if (e.code === "Escape") close();
-    else if (k && k.press === "cueDown") { if (!cueKeys.has(e.code)) { cueKeys.add(e.code); press(k.side, "cueDown"); } }
-    else if (k) press(k.side, k.press);
-    else if (e.code === "ArrowLeft" || e.code === "ArrowRight") { decks.cross(decks.xfader + (e.code === "ArrowLeft" ? -0.1 : 0.1)); }
-    else used = false;
-    if (used) { e.preventDefault(); e.stopPropagation(); }
+    if (listening) {
+      if (e.code !== "Escape") setPrefs(bindKey(prefs, listening, e.code));
+      listening = null; drawPrefs();
+      e.preventDefault(); e.stopPropagation();
+      return;
+    }
+    if (e.code === "Escape") { if (!prefsBox.hidden) { prefsBox.hidden = true; prefsB.classList.remove("on"); } else close(); e.preventDefault(); return; }
+    const a = actionOf(prefs, e.code);
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    // a key held down repeats: only the crossfader slides on with it, so a nudge is one move a press
+    if (e.repeat && a !== "xLeft" && a !== "xRight") return;
+    if (a === "xLeft" || a === "xRight") return void decks.cross(decks.xfader + (a === "xLeft" ? -0.1 : 0.1));
+    const da = deckAction(a)!;
+    downKeys.add(e.code);
+    if (da.what === "play") press(da.side, "play");
+    else if (da.what === "cue") press(da.side, "cueDown");
+    else if (da.what.startsWith("hot")) { const h = HOTS[Number(da.what.slice(3)) - 1]; if (h) press(da.side, h); }
+    else if (da.what === "nudgeBack" || da.what === "nudgeOn") nudge(da.side, "tap", da.what === "nudgeBack" ? -1 : 1);
+    else if (da.what === "fastBack" || da.what === "fastOn") nudge(da.side, "hold", da.what === "fastBack" ? -1 : 1);
   }
   function keyUp(e: KeyboardEvent) {
-    if (!cueKeys.delete(e.code)) return;
-    press(e.code === "KeyW" ? 0 : 1, "cueUp");
+    if (!downKeys.delete(e.code)) return;
+    const a = actionOf(prefs, e.code), da = a && deckAction(a);
+    if (!da) return;
+    if (da.what === "cue") press(da.side, "cueUp");
+    else if (da.what === "fastBack" || da.what === "fastOn") nudge(da.side, "hold", 0);
     e.preventDefault(); e.stopPropagation();
   }
   window.addEventListener("keydown", key, true);
   window.addEventListener("keyup", keyUp, true);
+
+  // ---- Settings: the nudge amount, the locks, the waveform, the keys
+  function setPrefs(p: Prefs) { prefs = p; savePrefs(p); }
+  function drawPrefs() {
+    if (prefsBox.hidden) return;
+    prefsBox.replaceChildren(el("h3", {}, "Settings"));
+    const row = (label: string, ...kids: HTMLElement[]) => { const r = el("div", { class: "dj-prefs-row" }), l = el("span"); l.textContent = label; r.append(l, ...kids); return r; };
+    const amt = el("input", { type: "number", min: String(NUDGE_MS.min), max: String(NUDGE_MS.max), step: "1", value: String(prefs.nudgeMs), "aria-label": "Nudge amount, ms a press", class: "dj-prefs-ms" });
+    amt.addEventListener("change", () => { const v = Math.round(Number(amt.value)); setPrefs({ ...prefs, nudgeMs: Number.isFinite(v) ? Math.min(NUDGE_MS.max, Math.max(NUDGE_MS.min, v)) : NUDGE_MS.start }); drawPrefs(); });
+    prefsBox.append(row("Nudge, ms a press", amt), el("p", {}, `The ${FAST_TIMES}× nudge is held: the deck drifts ${FAST_TIMES * prefs.nudgeMs} ms a second while you hold it.`));
+    const pick = <K extends "wave" | "grab">(label: string, k: K, opts: readonly [Prefs[K], string, string][]) => row(label, ...opts.map(([v, word, tip]) => {
+      const b = button(word, tip, prefs[k] === v ? "on" : "");
+      b.addEventListener("click", () => { setPrefs({ ...prefs, [k]: v }); drawPrefs(); });
+      return b;
+    }));
+    prefsBox.append(
+      pick("Waveform", "wave", [["tone", "Sound", "Coloured by its sound: bass one end of the deck's colours, claps and hats the other"], ["plain", "Plain", "One colour a deck"]]),
+      pick("Grab the waveform", "grab", [["vinyl", "Vinyl", "Holds the track under your hand: drag to scratch, let go and it plays on"], ["slide", "Slide", "Drag to move the track; it keeps playing"]]),
+    );
+    const locks = el("div", { class: "dj-prefs-locks" });
+    for (const [k, word, tip] of [["lockPitch", "Pitch faders", "The tempo faders don't move (sync and the keys still do)"], ["lockJog", "Jog wheels", "The jog wheels ignore the mouse and the scroll wheel"], ["lockWave", "Waveform grab", "A press on the close-up does nothing"], ["lockLoad", "Load while playing", "A track can't go onto a playing deck"]] as const) {
+      const b = button(word, `Lock: ${tip}`, prefs[k] ? "on" : "");
+      b.addEventListener("click", () => { setPrefs({ ...prefs, [k]: !prefs[k] }); drawPrefs(); });
+      locks.append(b);
+    }
+    prefsBox.append(el("h4", {}, "Locks"), locks, el("h4", {}, "Keys"));
+    const keys = keysOf(prefs), list = el("div", { class: "dj-prefs-keys" });
+    for (const a of ACTIONS) {
+      const n = el("span"); n.textContent = ACTION_LABEL[a];
+      const b = button(listening === a ? "Press a key…" : keyName(keys[a]), `${ACTION_LABEL[a]}: press, then the key (Esc keeps it)`, listening === a ? "on" : "");
+      b.addEventListener("click", () => { listening = listening === a ? null : a; drawPrefs(); });
+      list.append(n, b);
+    }
+    const reset = button("Reset keys", "Every key back to how it started");
+    reset.addEventListener("click", () => { setPrefs({ ...prefs, keys: {} }); drawPrefs(); });
+    const all = button("Reset all", "Every setting back to how it started");
+    all.addEventListener("click", () => { setPrefs({ ...DEFAULT_PREFS }); drawPrefs(); });
+    prefsBox.append(list, row("", reset, all));
+  }
 
   function open() { if (!root.hidden) return; root.hidden = false; void o.ctx.resume(); o.onToggle?.(true); }
   function close() { if (root.hidden) return; root.hidden = true; o.onToggle?.(false); }
@@ -552,5 +665,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), demos, jogs,
     zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; },
     tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
-    tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)) };
+    tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)),
+    prefs: (to) => { if (to) { setPrefs({ ...prefs, ...to }); drawPrefs(); } return prefs; },
+    nudge };
 }

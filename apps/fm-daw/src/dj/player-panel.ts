@@ -15,6 +15,7 @@ import { BEND_HOLD_MS, bendOf, BRAKE_MAX_S, jogAct, midiJog, partAt, PLATTER_R, 
 import scratchWorkletUrl from "./scratch-worklet.ts?worker&url";
 import { button, el, slider, svg } from "./dom.ts";
 import { FROM_LABEL } from "./tags.ts";
+import { FAST_TIMES, holdBend, tapShift, type Prefs } from "./prefs.ts";
 
 type Deck = Decks["decks"][number];
 
@@ -23,6 +24,10 @@ const ICON = {
   pause: svg('<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>'),
   sync: svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'),
   back: svg('<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>'),
+  nudgeBack: svg('<path d="m15 18-6-6 6-6"/>'),
+  nudgeOn: svg('<path d="m9 18 6-6-6-6"/>'),
+  fastBack: svg('<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>'),
+  fastOn: svg('<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>'),
   fwd: svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>'),
 };
 /** Deck A blue, deck B orange (the waveforms' colours in panel.ts). */
@@ -48,6 +53,8 @@ export class Jog {
   /** How long the ring's nudge holds once it stops: longer for turns that come over the live line in batches. */
   private hold = BEND_HOLD_MS;
   private tps = 0;
+  /** The fast nudge held: back (−1), on (1), or not (0). */
+  held: -1 | 0 | 1 = 0;
   private node: AudioWorkletNode | null = null;
   /** The stretch of the track the scratch voice holds. */
   private win: { track: unknown; start: number; end: number } | null = null;
@@ -58,11 +65,14 @@ export class Jog {
     }).catch(() => { /* no worklet: the platter still moves the track, silently */ });
   }
   setMode(m: JogMode) { if (this.touched) this.touch(false); this.unbend(); this.mode = m; }
-  /** The top platter touched or let go. VINYL: a touch holds the track (it stops under your hand); letting go plays on if it was playing. */
-  touch(on: boolean) {
+  /**
+   * The top platter touched or let go. VINYL: a touch holds the track (it stops under your hand); letting go plays on
+   * if it was playing. `any`: a hand on the waveform, which holds it like a record in either mode.
+   */
+  touch(on: boolean, any = false) {
     const d = this.deck;
     if (on) {
-      if (this.mode !== "vinyl" || this.touched || !d.track || d.adjust) return;
+      if ((this.mode !== "vinyl" && !any) || this.touched || !d.track || d.adjust) return;
       this.touched = true; this.wasPlaying = d.playing;
       d.pause(); this.unbend(); this.voice(d.pos());
       return;
@@ -88,10 +98,26 @@ export class Jog {
       this.lastRing = now; this.hold = hold;
     }
   }
-  /** Each frame: the ring's nudge lets go once it stops moving. */
-  tick(now: number) { if (this.bend !== 1 && now - this.lastRing > this.hold) this.unbend(); }
-  state() { return { mode: this.mode, touched: this.touched, bend: this.bend }; }
-  private unbend() { this.tps = 0; if (this.bend !== 1) { this.bend = 1; this.deck.nudge(1); } }
+  /** The held track dragged `ds` seconds (a hand on the waveform): a scratch. */
+  scrub(ds: number) {
+    const t = this.deck.track;
+    if (!this.touched || !t || !ds) return;
+    const p = Math.min(t.buffer.duration, Math.max(0, this.deck.pos() + ds));
+    this.deck.seek(p); this.voice(p);
+  }
+  /** A tap of the nudge: the track moves `nudgeMs` back or on, playing or not (one press, one move). */
+  tapNudge(dir: -1 | 1, nudgeMs: number) { const d = this.deck; if (d.track && !this.touched) d.seek(d.pos() + tapShift(dir, nudgeMs)); }
+  /** The fast nudge held (back or on) or let go (0): the deck drifts ten nudges a second while it's held. */
+  holdNudge(dir: -1 | 0 | 1, nudgeMs: number) {
+    if (dir === this.held) return;
+    this.held = dir; this.tps = 0;
+    this.bend = holdBend(dir, nudgeMs);
+    this.deck.nudge(this.bend);
+  }
+  /** Each frame: the ring's nudge lets go once it stops moving (a held fast nudge stays). */
+  tick(now: number) { if (!this.held && this.bend !== 1 && now - this.lastRing > this.hold) this.unbend(); }
+  state() { return { mode: this.mode, touched: this.touched, bend: this.bend, held: this.held }; }
+  private unbend() { this.tps = 0; this.held = 0; if (this.bend !== 1) { this.bend = 1; this.deck.nudge(1); } }
   /** The scratch voice to `pos`, sending it a fresh stretch of the track when the platter nears the edge of the last. */
   private voice(pos: number) {
     const n = this.node, t = this.deck.track;
@@ -128,6 +154,10 @@ export interface PlayerHost {
   drop(f: File): void;
   /** Quantize is on: loop points land on the beat. */
   quantize(): boolean;
+  /** The DJ's settings (prefs.ts): the nudge amount and the locks. */
+  prefs(): Prefs;
+  /** A nudge on this deck: a tap (back or on), or the fast one held (0 lets go). */
+  nudge(kind: "tap" | "hold", dir: -1 | 0 | 1): void;
 }
 
 /** A club media player's face for one deck: `box` to put on the page, `draw` each frame. */
@@ -158,6 +188,23 @@ export function playerFace(h: PlayerHost) {
   sync.addEventListener("click", () => h.press("sync"));
   const back = button(ICON.back, "Jump back 4 beats"), fwd = button(ICON.fwd, "Jump on 4 beats");
   back.addEventListener("click", () => h.press("back")); fwd.addEventListener("click", () => h.press("fwd"));
+  // the nudge: a tap moves the track a little (press again for more: it never repeats), the fast one is held
+  const nudge = el("div", { class: "dj-nudge", role: "group", "aria-label": `Deck ${letter} nudge` });
+  const nudgeTitle = (dir: -1 | 1) => `Nudge ${dir < 0 ? "back" : "on"} ${h.prefs().nudgeMs} ms a press (press again for more; the amount is in Settings)`;
+  const fastTitle = (dir: -1 | 1) => `Hold: ${FAST_TIMES}× nudge ${dir < 0 ? "back" : "on"}, the deck drifts while held`;
+  const tapB = ([-1, 1] as const).map((dir) => {
+    const b = button(dir < 0 ? ICON.nudgeBack : ICON.nudgeOn, nudgeTitle(dir));
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); h.nudge("tap", dir); });
+    b.addEventListener("pointerenter", () => { b.title = nudgeTitle(dir); });
+    return b;
+  });
+  const fastB = ([-1, 1] as const).map((dir) => {
+    const b = button(dir < 0 ? ICON.fastBack : ICON.fastOn, fastTitle(dir), "dj-fast");
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); h.nudge("hold", dir); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => h.nudge("hold", 0));
+    return b;
+  });
+  nudge.append(fastB[0]!, tapB[0]!, tapB[1]!, fastB[1]!);
 
   // the pads: hot cues and loops
   const hot = el("div", { class: "dj-hot" });
@@ -194,7 +241,7 @@ export function playerFace(h: PlayerHost) {
     return { r: Math.hypot(x, y) / (r.width / 2), a: Math.atan2(y, x) };
   };
   wheel.addEventListener("pointerdown", (e) => {
-    if (grab) return;
+    if (grab || h.prefs().lockJog) return;
     const p = where(e), part = partAt(p.r);
     if (!part) return;
     e.preventDefault();
@@ -211,7 +258,7 @@ export function playerFace(h: PlayerHost) {
   const letGo = (e: PointerEvent) => { if (!grab || e.pointerId !== grab.id) return; if (grab.part === "top") h.touch(false); grab = null; };
   wheel.addEventListener("pointerup", letGo);
   wheel.addEventListener("pointercancel", letGo);
-  wheel.addEventListener("wheel", (e) => { e.preventDefault(); h.turn("ring", e.deltaY / 600); }, { passive: false });
+  wheel.addEventListener("wheel", (e) => { e.preventDefault(); if (!h.prefs().lockJog) h.turn("ring", e.deltaY / 600); }, { passive: false });
 
   const pitch = slider(`Deck ${letter} pitch`, -1, 1, 0.001, 0, "dj-pitch");
   pitch.addEventListener("input", () => d.setPitch(Number(pitch.value)) /* a vertical range runs min at the top: slower up, faster toward you, as on a club player */);
@@ -233,7 +280,7 @@ export function playerFace(h: PlayerHost) {
   pitchCol.append(mt, ranges, pitch, startK.box, brakeK.box);
 
   const pads = el("div", { class: "dj-pads" });
-  pads.append(hot, loops, manual);
+  pads.append(hot, loops, manual, nudge);
   const jogRow = el("div", { class: "dj-jogrow" });
   jogRow.append(wheel, mode);
   const transport = el("div", { class: "dj-transport" });
@@ -299,6 +346,9 @@ export function playerFace(h: PlayerHost) {
       box.classList.toggle("tube", !!tube);
       mode.textContent = jog.mode === "vinyl" ? "VINYL" : "CD";
       mode.classList.toggle("on", jog.mode === "vinyl");
+      const pr = h.prefs();
+      pitch.disabled = pr.lockPitch; wheel.classList.toggle("locked", pr.lockJog);
+      fastB.forEach((b, i) => b.classList.toggle("on", jog.held === (i ? 1 : -1)));
       if (tube) {
         // a YouTube video: its player on the deck, the pitch fader its speed, the cue and hot cues on its clock
         const s = d.state();

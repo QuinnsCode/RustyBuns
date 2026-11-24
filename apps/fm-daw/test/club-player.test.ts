@@ -2,12 +2,16 @@
 // A, grab the top platter and drag it back (the track stops under the hand, scratches back, plays on when let go),
 // spin the side ring (a nudge that lets go), switch to CD (the platter only nudges now), hold CUE stopped (plays from
 // the mark, back on letting go), and zoom the close-up right in. Then the arithmetic under it: a MIDI jog's messages,
-// and the close-up's bars, which stay a screen's worth at every zoom so it draws at 60 fps on a long track.
+// and the close-up's bars, which stay a screen's worth at every zoom so it draws at 60 fps on a long track. Then the
+// nudge (a tap a press, the 10x one held), a hand on the waveform holding the track like a record, a key of your own
+// from Settings (src/dj/prefs.ts), and the waveform's colours: a kick at the bass end, a clap at the highs.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
-import { bars, midiJog, peakLevels, TICKS_PER_TURN, ZOOMS } from "../src/dj/player.ts";
+import { bars, BEND_MAX, midiJog, peakLevels, TICKS_PER_TURN, toneOf, ZOOMS } from "../src/dj/player.ts";
+import { actionOf, bindKey, DEFAULT_PREFS, Prefs } from "../src/dj/prefs.ts";
+import { check } from "@rustybuns/util/guard";
 
 setDefaultTimeout(120_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -97,6 +101,86 @@ test.skipIf(!hasChrome)("a night on the club players: scratch, nudge, CD mode, c
   const zin = await centre(`.dj-zoombar button[title="Zoom the waveform in"]`);
   await mouse("mousePressed", zin.x, zin.y); await mouse("mouseReleased", zin.x, zin.y);
   expect((await page<{ at: number }>("qdecks.state().zoom")).at).toBe(start.at - 1);
+});
+
+test.skipIf(!hasChrome)("the nudge, a hand on the waveform, and a key of your own", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
+  await load(chrome.cdp, tab, `${vite.url}decks.html`, 0);
+  const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+  const until = async (what: string, expr: string, ms = 30_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
+    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.qdecks?.state()").catch(() => null))}`);
+  };
+  const mouse = (type: string, x: number, y: number) => tab.call("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+  const click = async (sel: string) => { const b = await box(sel); await mouse("mousePressed", b.x, b.y); await mouse("mouseReleased", b.x, b.y); };
+  const box = (sel: string) => page<{ x: number; y: number; w: number; h: number; top: number }>(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width, h: b.height, top: b.y }; })()`);
+  const key = (type: "keyDown" | "keyUp", code: string, autoRepeat = false) => tab.call("Input.dispatchKeyEvent", { type, code, key: code.slice(3).toLowerCase(), autoRepeat });
+  const deck = () => page<Deck & { speed: number }>("qdecks.state().decks[0]");
+
+  const open = await box("#start button");
+  await mouse("mousePressed", open.x, open.y); await mouse("mouseReleased", open.x, open.y);
+  await until("the demo tracks", "qdecks.state()?.decks.every((d) => d.name)");
+  await page("qdecks.prefs({ nudgeMs: 25, keys: {} })");
+
+  // a tap of the nudge moves the stopped track 25 ms on, each press; a key held down is still one press
+  const p0 = (await deck()).pos;
+  await click(".dj-a .dj-nudge button:nth-child(3)"); await click(".dj-a .dj-nudge button:nth-child(3)");
+  expect((await deck()).pos).toBeCloseTo(p0 + 0.05, 3);
+  await key("keyDown", "KeyS"); await key("keyDown", "KeyS", true); await key("keyDown", "KeyS", true); await key("keyUp", "KeyS");
+  expect((await deck()).pos).toBeCloseTo(p0 + 0.075, 3);
+
+  // the 10x nudge held: playing, the deck runs 250 ms a second fast (the jog's most) until it's let go
+  await page("qdecks.play(0)");
+  const fast = await box(".dj-a .dj-nudge button:nth-child(4)");
+  await mouse("mousePressed", fast.x, fast.y);
+  expect((await deck()).rate).toBeCloseTo(1 + BEND_MAX, 3);
+  await mouse("mouseReleased", fast.x, fast.y);
+  expect((await deck()).rate).toBe(1);
+
+  // a hand on deck A's lane of the close-up holds the track; dragged a quarter of the way left it goes on half the
+  // view's span; let go, it plays on
+  const z = await box(".dj-zoom"), seconds = (await page<{ seconds: number }>("qdecks.state().zoom")).seconds;
+  const y = z.top + z.h / 4;
+  await mouse("mousePressed", z.x, y);
+  const before = await deck();
+  expect(before.playing).toBe(false);
+  await mouse("mouseMoved", z.x - z.w / 4, y);
+  expect((await deck()).pos - before.pos).toBeCloseTo(seconds / 2, 1);
+  await mouse("mouseReleased", z.x - z.w / 4, y);
+  expect((await deck()).playing).toBe(true);
+
+  // Settings: nudge back on J instead of A, and J nudges back
+  await page("qdecks.play(0)");
+  await click(".dj-prefs-open");
+  await click(".dj-prefs-keys button:nth-of-type(7)");
+  await key("keyDown", "KeyJ"); await key("keyUp", "KeyJ");
+  expect(await page<Record<string, string>>("qdecks.prefs().keys")).toEqual({ nudgeBackA: "KeyJ" });
+  const p1 = (await deck()).pos;
+  await key("keyDown", "KeyJ"); await key("keyUp", "KeyJ");
+  expect((await deck()).pos).toBeCloseTo(p1 - 0.025, 3);
+});
+
+test("a kick sits at the bass end of the waveform's colours, a clap at the highs", () => {
+  const rate = 48000, n = rate / 4, kick = new Float32Array(n), clap = new Float32Array(n);
+  let seed = 1;
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    seed = (seed * 16807) % 2147483647;
+    kick[i] = Math.sin(2 * Math.PI * 55 * t) * Math.exp(-t * 8) * 0.9;
+    clap[i] = ((seed / 2147483647) * 2 - 1) * Math.exp(-t * 20) * 0.5;
+  }
+  const tone = (m: Float32Array) => { const l = peakLevels(m, rate)[3]!; let sum = 0; for (let i = 0; i < 20; i++) sum += toneOf(l.lo[i]!, l.hi[i]!); return sum / 20; };
+  expect(tone(kick)).toBeLessThan(0.2);
+  expect(tone(clap)).toBeGreaterThan(0.8);
+});
+
+test("a key belongs to one action, and settings from an older page or by hand fall back to the defaults", () => {
+  const p = bindKey(DEFAULT_PREFS, "nudgeBackA", "KeyQ");
+  expect(actionOf(p, "KeyQ")).toBe("nudgeBackA");
+  expect(actionOf(p, "KeyA")).toBeNull(); // the old nudge key is free
+  expect(actionOf(bindKey(p, "playA", "KeyQ"), "KeyQ")).toBe("playA"); // and back again
+  expect(check(Prefs, { nudgeMs: 9999, wave: "neon" })).toBeNull();
+  expect(check(Prefs, {})).toEqual(DEFAULT_PREFS);
 });
 
 test("a MIDI jog's touch and turns, deck by MIDI channel", () => {
