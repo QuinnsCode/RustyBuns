@@ -36,6 +36,13 @@ export function keysSynth(s: Spot, kind?: PolyKind): { synth: MonoSynth & { kind
   return { synth, keys: new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, k.whiteRest, k.blackRest) };
 }
 
+/** A made instrument's family: an FM voice grows as the FM slab, the tine piano, the drawbar or the combo organ, an
+ *  analog one as the poly or the string machine, the seed picking which (the same for everyone in the sesh). */
+export function madeKind(voice: "fm" | "analog", seed: number): PolyKind {
+  const of: readonly PolyKind[] = voice === "fm" ? ["fm-slab", "tine-ep", "drawbar", "combo"] : ["wood-poly", "strings"];
+  return of[(seed >>> 0) % of.length]!;
+}
+
 /** Which family stands at a keys seat: the one asked for, else the spot's id picks (the same for everyone in the room). */
 export const keysKind = (s: Spot, asked?: PolyKind): PolyKind => asked ?? POLY_KINDS[seedOf(s.id) % POLY_KINDS.length]!;
 

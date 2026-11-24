@@ -21,7 +21,7 @@ export interface Spot {
   track?: string;
   /** A made instrument's seat (src/studio/instrument.ts) names its track by number instead. */
   ix?: number;
-  /** A made instrument grows its model from this seed and voice (`synth` in @rustybuns/models) instead of a box. */
+  /** A made instrument grows its model from this seed and voice (a classic family from `polysynth` in @rustybuns/models, gear-models.ts madeKind) instead of a box. */
   made?: { seed: number; voice: "fm" | "analog" };
 }
 

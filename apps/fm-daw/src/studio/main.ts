@@ -46,10 +46,9 @@ import { system } from "@rustybuns/gear";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
-import { synth } from "@rustybuns/models/synth";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
-import { bassReach, bassSynth, keysKind, keysSynth, seedOf } from "./gear-models.ts";
+import { bassReach, bassSynth, keysKind, keysSynth, madeKind, seedOf } from "./gear-models.ts";
 import { baleSeat } from "./bales.ts";
 import { withKeysVoice } from "./keys-voice.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
@@ -779,8 +778,10 @@ function drawMade() {
     c.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); for (const mt of [o.material].flat()) mt.dispose(); } });
   }
   for (const m of project.instruments ?? []) {
-    const s = madeSpot(m), b = thingBox(s), model = synth(m.seed, m.voice).group;
-    // the keys face the seat: the model's front is +z, the seat looks down -z at yaw 0
+    // one of the classic families, picked by its voice and seed (gear-models.ts madeKind), its keys toward the seat:
+    // the model's front is +z, the seat looks down -z at yaw 0
+    const s = madeSpot(m), b = thingBox(s), model = new THREE.Group();
+    model.add(keysSynth(s, madeKind(m.voice, m.seed)).synth.group);
     model.position.set(b.cx, 0, b.cz); model.rotation.y = s.yaw;
     const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.06, 16), std("#2e3439"));
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), std("#8a8f94", { metalness: 0.6 }));

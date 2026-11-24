@@ -26,7 +26,6 @@
     "./gear": "./src/gear.ts",
     "./surfaces": "./src/surfaces.ts",
     "./textures/*": "./textures/*",
-    "./synth": "./src/synth.ts",
     "./monosynth": "./src/monosynth.ts",
     "./polysynth": "./src/polysynth.ts",
     "./drums": "./src/drums.ts",
