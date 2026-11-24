@@ -96,8 +96,8 @@ export class BoothGear {
   }
   /** How clean each deck (A, B) and the mixer are, 0 as found to 1 wiped bare. */
   dust(): { decks: [number, number]; mixer: number | null } {
-    const of = (side: Side) => { const g = this.gear.find((x) => x.side === side); return g ? round3(g.mask.clean) : 0; };
-    return { decks: [of(0), of(1)], mixer: this.worn[0] ? round3(this.worn[0].mask.clean) : null };
+    const of = (side: Side) => { const g = this.gear.find((x) => x.side === side); return g ? round4(g.mask.clean) : 0; };
+    return { decks: [of(0), of(1)], mixer: this.worn[0] ? round4(this.worn[0].mask.clean) : null };
   }
 
   private cast(ndc: THREE.Vector2, camera: THREE.Camera): { hit: Hit; worn: Worn | null; at: THREE.Vector3 } | null {
@@ -132,7 +132,7 @@ export class BoothGear {
 
 /** What a touch on the DJ table lands on: a deck's key, its jog or screen, or "open" (the rest of the table). */
 export type Hit = { side: Side; key: Press | "jog" | "screen" | "open" };
-const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
 /** A deck's screen: the track and who plays it on top, the waveform across the middle, tempo, key and time below. */
 export function drawScreen(g: CanvasRenderingContext2D, v: DeckView | null, side: Side, _t = 0) {
