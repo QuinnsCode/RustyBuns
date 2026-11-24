@@ -4,7 +4,7 @@
 //   fm-slab    the FM electric piano: two pairs, each a sine carrier with a sine on it, one pair at 14:1 for the tine's
 //              bright knock that dies in a tenth of a second, harder hits brighter, a light chorus
 //   drawbar    four sines in parallel at the drawbars' 16', 8', 4' and 2 2/3', on at once and held as long as the key is,
-//              through the scanner-style chorus
+//              through the rotary speaker at its slow speed (the engine's mod mode 6)
 //   tine-ep    the tine piano: rounder than the slab, a low modulation index that opens with how hard you play, a
 //              slow decay that rings on, and a wide chorus standing in for its stereo tremolo
 //   combo      the transistor organ: buzzy and reedy, a sine fed back on itself so it nears a square, on as long as
@@ -27,7 +27,7 @@ export const KEYS_VOICES: Record<PolyKind, number[]> = {
   }),
   drawbar: patch({
     ops: { 0: [0.5, 0.55, 0.003, 0.1, 1, 0.03], 1: [1, 0.8, 0.003, 0.1, 1, 0.03], 2: [2, 0.5, 0.003, 0.1, 1, 0.03], 3: [3, 0.32, 0.003, 0.1, 1, 0.03] },
-    algo: 3, fb: 0.04, vel: 0.1, gain: 0.42, pan: 0.2, chorus: 3, send: 0.25,
+    algo: 3, fb: 0.04, vel: 0.1, gain: 0.42, pan: 0.2, chorus: 6, send: 0.25,
   }),
   "tine-ep": patch({
     ops: { 0: [1, 1, 0.001, 2.6, 0.12, 0.5], 1: [1, 0.2, 0.001, 1.4, 0.05, 0.4], 2: [1.003, 0.7, 0.001, 2.4, 0.1, 0.5], 3: [1, 0.12, 0.001, 0.6, 0, 0.3] },

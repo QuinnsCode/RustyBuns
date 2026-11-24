@@ -76,7 +76,7 @@ export const P = {
   LFO_RETRIG: 56,
   /**
    * Modulation effect: the 80s polysynth bucket-brigade chorus (1 mode I, 2
-   * mode II, 3 both: fast, shallow), 4 a flanger, 5 a phaser; 0 off.
+   * mode II, 3 both: fast, shallow), 4 a flanger, 5 a phaser, 6 an organ's rotary speaker (slow); 0 off.
    */
   CHORUS: 57,
   /**
@@ -129,7 +129,7 @@ export const RANGES: [number, number][] = [
   [0, 3],        // LFO shape
   [0, 8],        // LFO sync: 0 free, else LFO_DIVS[n]
   [0, 1],        // LFO retrigger
-  [0, 5],        // chorus mode, 4 flanger, 5 phaser
+  [0, 6],        // chorus mode, 4 flanger, 5 phaser, 6 rotary
   [0, 1],        // supersaw mix: 0 off
   [0, 1],        // wavefolder
   [0, 1],        // send to aux 2
