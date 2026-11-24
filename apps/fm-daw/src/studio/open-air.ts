@@ -46,15 +46,29 @@ export function ridgeAt(a: number, seed: number): number {
 export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
-  let y = 0;
+  let y = 0, lean = 0, k = 0;
+  const size = new THREE.Vector3();
   for (const id of ids) {
     const g = gear(id as GearId, { look });
+    new THREE.Box3().setFromObject(g).getSize(size);
+    if (id.startsWith("line-array")) {
+      // a line array's boxes hang in a J: each hinged to the one above at the front, the gap opening at the back,
+      // the lowest aimed down most (at the front of the floor) and the top one near level (at the back)
+      const aim = LINE_SPLAY[Math.min(k++, LINE_SPLAY.length - 1)]!, hinge = new THREE.Group();
+      hinge.position.set(0, y, lean + size.z / 2); hinge.rotation.x = aim;
+      g.position.z = -size.z / 2;
+      hinge.add(g); st.add(hinge);
+      y += size.y * Math.cos(aim); lean += size.y * Math.sin(aim);
+      continue;
+    }
     g.position.y = y;
     st.add(g);
-    y += new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).y;
+    y += size.y;
   }
   return st;
 }
+/** A ground-stacked line array's aim, bottom box up (radians down from level): the splay its rigging pins set. */
+const LINE_SPLAY = [0.14, 0.07, 0.02];
 
 /** Indoors a DJ table's PA is a club's: an 18" sub on the floor with a powered 12" top on a pole out of its socket,
  *  the top's horn at about 1.9 m, facing `yaw` from +z. */
