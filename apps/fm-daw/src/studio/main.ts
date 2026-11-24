@@ -378,7 +378,7 @@ const drawn = new Map<number | "me", Drawn>();
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
 // out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
-const dancers = def.outdoor ? new Dancers(def) : null;
+const dancers = def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
 if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
