@@ -261,6 +261,16 @@ and `board()` client with one journey test (two people: one posts, the other rea
 back); (3) Excalibrawl's prompt posts and fight reactions; (4) Fantano's shared reviews and their reactions; (5) report, hide,
 delete and export.
 
+## Guest lists: who may do what, and who let them in
+
+`@rustybuns/util/guests` is a headless guest list any place can keep: one owner, roles with a rank and a list of what
+they allow (the list's own `invite`, `revoke`, `block`, `roles`, plus an app's, such as Qollab Studio's play, edit, mix
+and lead in `apps/fm-daw/src/guest-list.ts`), invites that hand out a role (uses, an end time), revokes (with everyone the
+person brought in, on request), blocks, and a log. You act only on people ranked below you and hand out only roles below
+yours, so a mod can't promote themselves. The keeper (a Durable Object, a World) stores one `GuestList`, reads each
+request with the `GuestAct` guard and runs `act`; a page draws it with `guestPanel` (`@rustybuns/util/guest-panel`), which
+wears the game's eqosys skin, or builds its own look from `guestRows`, `powers` and `invitable`. Not wired into a keeper yet.
+
 ## After "start": seats ([#3878](https://github.com/QuinnsCode/RustyBuns/issues/3878))
 
 Qollab's job ends at "start", and each game then builds its own room. The survey (2026-11-06) of what each one builds:
