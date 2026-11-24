@@ -88,7 +88,7 @@ import { mountDecks, type DecksPanel, type Dj } from "../dj/panel.ts";
 import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
-import { clubStack, openAir } from "./open-air.ts";
+import { clubStack, openAir, subCones } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
 import { gear as gearModel } from "@rustybuns/models/gear";
@@ -401,6 +401,8 @@ function thing(s: Spot): THREE.Group {
 useKit(gearKit(loadQuality()));
 buildRoom();
 const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
+// the subs' cones pump on the beat while the band plays
+const pumpSubs = subCones([scene]);
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
@@ -1416,7 +1418,9 @@ function frame(now: number) {
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
-  dancers?.tick(t, musicOn() && band.synced ? band.beat() : null);
+  const beat = musicOn() && band.synced ? band.beat() : null;
+  dancers?.tick(t, beat);
+  pumpSubs(beat);
   if (moving.length) tickProps(moving, t);
   // a drum machine on a table runs its chase in sixteenths while the band plays
   const running = transport.playing && band.synced ? Math.floor(band.beat() * 4) % 16 : null;
