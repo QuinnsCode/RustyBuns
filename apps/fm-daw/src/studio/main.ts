@@ -1486,5 +1486,7 @@ const harness = {
   studio: (id?: string) => ({ ...(id ? moveStudio(id) : {}), here: pick, sesh: project.studio ?? null, lead: iLead(), studios: studios().map((x) => x.id), moving: movingTo }),
   /** The groove and its click on the shared beat, for everyone (P). */
   groove: (on: boolean) => { playGroove(on); return harness.clock(); },
+  /** A live event as the sesh brings it from `peer` ({ t: 'wear', avatar, name }, { t: 'body', at: [x, 0, z], yaw, seat? }, note on/off): someone else in the room without a server. */
+  live: (peer: number, e: Live) => { onLive(peer, e); return harness.state().others; },
 };
 window.qjam = harness;
