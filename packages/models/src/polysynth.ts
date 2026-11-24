@@ -32,7 +32,7 @@ export const POLY_KEY_FRONT = 0.17;
 
 /** The poly for `seed`; `kind` picks the family (the seed does when left out), `fit` the widest it may be, `keyTop` the
  *  white keys' top above the floor. */
-export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind }: { fit?: number; keyTop?: number; kind?: PolyKind } = {}): MonoSynth & { kind: PolyKind } {
+export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind, bare = false }: { fit?: number; keyTop?: number; kind?: PolyKind; bare?: boolean } = {}): MonoSynth & { kind: PolyKind } {
   const rnd = mulberry32(seed >>> 0);
   const pick = <T>(l: readonly T[]) => l[Math.floor(rnd() * l.length)]!;
   kind ??= POLY_KINDS[seed % POLY_KINDS.length]!;
@@ -188,7 +188,9 @@ export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind }:
     stand: ["#232427", 0.4, 0.7], chrome: ["#d6d8dc", 0.15, 1],
     tabWhite: ["#ece6d8", 0.4, 0], tabBlack: ["#161616", 0.4, 0], tabRed: ["#b8322a", 0.4, 0],
   };
-  const group = part("polysynth", pieces, palette);
+  // `bare`: only the keys, for an instrument the room already stands there (a grand piano prop's keyboard end)
+  const group = bare ? new THREE.Group() : part("polysynth", pieces, palette);
+  group.name = "polysynth";
 
   // ---- the keys: white keys with a gap between, black ones raised, set back, their tops narrower than their feet ----
   const steps = [0, 1, 3, 4, 5];
