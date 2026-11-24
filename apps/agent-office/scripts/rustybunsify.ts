@@ -27,6 +27,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue, floorGuardSeat } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
+import { screenTerminal } from "./screen.ts";
 import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
@@ -270,6 +271,8 @@ async function prepare(tag: string) {
   writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // 12c. a worker whose agent died unheard ends its session, and a prompt typed or told to it wakes it instead of going nowhere (#4663)
   writeFileSync(path.join(srv, "workers/manager.js"), endedManager(readFileSync(path.join(srv, "workers/manager.js"), "utf8")));
+  // 12d. a busy worker's screen is diffed by the rows whose cells changed, not cell by cell four times a second (#5762)
+  writeFileSync(path.join(srv, "workers/terminal.js"), screenTerminal(readFileSync(path.join(srv, "workers/terminal.js"), "utf8")));
   writeFileSync(path.join(srv, "ws/handlers/workers.js"), endedClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
@@ -418,7 +421,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["live/screen.ts", "rb-screen.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
