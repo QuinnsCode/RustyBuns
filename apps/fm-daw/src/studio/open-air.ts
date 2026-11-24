@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS, stackWidth, ampChannels, generatorLoad } from "@rustybuns/gear";
+import { SYSTEMS, stackWidth, ampChannels, generatorLoad, gear as sheet } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
@@ -43,8 +43,10 @@ export function ridgeAt(a: number, seed: number): number {
 }
 
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
- *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts). */
-export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
+ *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts).
+ *  `splay` turns the boxes above the bass (the ones that carry the mids and highs) that much further, on their own axis,
+ *  as a crew fans a side's two tops out across the floor. */
+export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack, splay = 0): THREE.Group {
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
   let y = 0, lean = 0, k = 0;
@@ -64,11 +66,39 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
       continue;
     }
     g.position.y = y;
+    if (splay && isTop(id)) g.rotation.y = splay;
     st.add(g);
     y += size.y;
   }
   return st;
 }
+/** A box that plays the mids and highs (its sheet reaches past 200 Hz), not a bass bin or a sub. */
+function isTop(id: string): boolean {
+  return (sheet(id).speaker?.highCut ?? 0) > 200;
+}
+
+/** The sub block in the middle of the floor: `wide` of the rig's sub box side by side and `high` up, standing at (x, z)
+ *  with its fronts turned `yaw` from +z. The boxes touch, so the block couples as one big sub. */
+export function subBlock(at: readonly [number, number], yaw: number, wide: number, high: number, sub: string, look: GearLook = gearLook()): THREE.Group {
+  const block = new THREE.Group(), [w, h] = [sheet(sub).size.w, sheet(sub).size.h];
+  block.position.set(at[0], 0, at[1]); block.rotation.y = yaw;
+  for (let i = 0; i < wide; i++) for (let j = 0; j < high; j++) {
+    const g = gear(sub as GearId, { look });
+    g.position.set((i - (wide - 1) / 2) * (w + 0.01), j * h, 0);
+    block.add(g);
+  }
+  return block;
+}
+
+/** A DJ's booth monitor: a mid-high horn on a tripod stand at head height, at (x, z), its horn turned `yaw` from +z. */
+export function boothMonitor(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+  const m = new THREE.Group(), stand = gear("stand-tripod", { look, height: 1.3 }), horn = gear("stack-mid-high", { look });
+  m.position.set(at[0], 0, at[1]); m.rotation.y = yaw;
+  horn.position.y = stand.getObjectByName("pole")?.position.y ?? 1.3;
+  m.add(stand, horn);
+  return m;
+}
+
 /** A ground-stacked line array's aim, bottom box up (radians down from level): the splay its rigging pins set. */
 const LINE_SPLAY = [0.14, 0.07, 0.02];
 
@@ -283,7 +313,10 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(rugs(out));
 
   const rig = roomRig(def);
-  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack));
+  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack, s.splay));
+  // the sub block in the middle, and the DJ's monitors either side of the decks
+  if (out.subs) group.add(subBlock(out.subs.at, out.subs.yaw, out.subs.wide, out.subs.high, rig.sub, look));
+  for (const m of out.monitors ?? []) group.add(boothMonitor(m.at, m.yaw, look));
 
   // ---- the truss, where the party has one: two towers and a span of box truss, the heads hung under it, the lasers on top
   const heads: { yoke: THREE.Group; head: THREE.Group; light: THREE.SpotLight; beam: THREE.Mesh }[] = [];
@@ -427,7 +460,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   // 100 kVA trailer (its own big tank) once they'd trip it
   const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
   // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box)
-  const racks = Math.max(1, Math.ceil(ampChannels(roomRig(def), stacks.length) / 12)), set = generatorFor(racks);
+  const channels = ampChannels(roomRig(def), stacks.length) + (out.subs ? out.subs.wide * out.subs.high : 0) + (out.monitors?.length ?? 0) * 2;
+  const racks = Math.max(1, Math.ceil(channels / 12)), set = generatorFor(racks);
   if (out.generator) {
     const g = gear(set, { look });
     g.position.set(out.generator.at[0], 0, out.generator.at[1]); g.rotation.y = out.generator.yaw;

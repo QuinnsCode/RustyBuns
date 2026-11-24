@@ -39,16 +39,32 @@ export function roomRig(def: StudioDef): System {
 }
 
 /**
- * The stacks where they stand for the rig: the room lays them out in a line at one spacing, and a rig whose boxes are
- * wider or narrower spreads or closes them about the line's middle, so the wall stays shoulder to shoulder.
+ * The stacks where they stand for the rig: the room lays each block of stacks (a wall, or one side of the floor) out in
+ * a line at one spacing, and a rig whose boxes are wider or narrower spreads or closes each block about its own middle,
+ * so its columns stay shoulder to shoulder and the gap between the sides stays where the room put it.
  */
-export function rigStacks(def: StudioDef): { at: [number, number]; yaw: number }[] {
+export function rigStacks(def: StudioDef): { at: [number, number]; yaw: number; splay?: number }[] {
   const stacks = def.outdoor?.stacks ?? [];
-  if (stacks.length < 2) return stacks;
-  const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
-  const gap = Math.min(...stacks.slice(1).map((s, i) => Math.hypot(s.at[0] - stacks[i]!.at[0], s.at[1] - stacks[i]!.at[1])));
-  const k = gap > 1e-6 ? (stackWidth(roomRig(def)) + 0.02) / gap : 1;
-  return stacks.map((s) => ({ at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k], yaw: s.yaw }));
+  const w = stackWidth(roomRig(def)) + 0.02;
+  return stackBlocks(stacks).flatMap((block) => {
+    if (block.length < 2) return block;
+    const mx = block.reduce((t, s) => t + s.at[0], 0) / block.length, mz = block.reduce((t, s) => t + s.at[1], 0) / block.length;
+    const gap = Math.min(...block.slice(1).map((s, i) => Math.hypot(s.at[0] - block[i]!.at[0], s.at[1] - block[i]!.at[1])));
+    const k = gap > 1e-6 ? w / gap : 1;
+    return block.map((s) => ({ ...s, at: [mx + (s.at[0] - mx) * k, mz + (s.at[1] - mz) * k] as [number, number] }));
+  });
+}
+/** Stacks further apart than this, metres, stand as separate blocks (the two sides of a floor), not one wall. */
+export const STACK_CLUSTER_M = 2.5;
+/** The stacks in their blocks, in the room's order: a new block starts wherever the next stack is past STACK_CLUSTER_M. */
+export function stackBlocks<S extends { at: [number, number] }>(stacks: readonly S[]): S[][] {
+  const out: S[][] = [];
+  stacks.forEach((s, i) => {
+    const prev = stacks[i - 1];
+    if (prev && Math.hypot(s.at[0] - prev.at[0], s.at[1] - prev.at[1]) <= STACK_CLUSTER_M) out[out.length - 1]!.push(s);
+    else out.push([s]);
+  });
+  return out;
 }
 /** What you hear of one speaker: its level (0 to 1), its delay (s), the air's low-pass (Hz), and its pan (-1 left to 1 right). */
 export interface Heard { gain: number; delay: number; cutoff: number; pan: number; m: number }

@@ -2,9 +2,10 @@
 // trees, creosote and granite boulders stand round it and the ranges close the horizon. The booth is as little as it
 // can be, right on the sand: the decks on a board over three weighted sawhorses, a tapestry over the board and draped
 // down to the ground all round the front and the ends, a tall carved lantern pole at each end with its lantern hung out
-// over the decks. Behind the DJ, the sound: one tight wall of horn-loaded dance stacks (Sound Guy Simulator's desert
-// night, packages/models gear) side by side, every cabinet playing the same mono sum, so the whole floor hears one loud,
-// clear point source. No stage, no truss, no lasers: the moon, the lanterns, and everyone carrying a hand lantern of
+// over the decks. The sound is laid out the way desert crews stand it: a block of bass bins in the middle behind the DJ,
+// and a side of horn-loaded dance stacks (Sound Guy Simulator's desert night, packages/models gear) each side of the
+// floor, two columns shoulder to shoulder, their tops fanned out a little and the side toed in so the horns cross on
+// the floor. A mid-high horn on a stand at each end of the decks is the DJ's monitor. No stage, no truss, no lasers: the moon, the lanterns, and everyone carrying a hand lantern of
 // their own until they sit down to play. The band round the booth, on the sand too. Open sky and loose sand soak up
 // nearly everything, so only a short, dry tail comes back off the ground: what you hear is the stacks. Drawn by
 // open-air.ts.
@@ -15,12 +16,26 @@ import { all, seat } from "./kit.ts";
 const TABLE_W = 3.2;
 /** The booth's table's middle: the DJ stands at z = -8.4 facing +z, the table 55 cm in front. */
 const TABLE_Z = -7.85;
-/** The point source: four stacks shoulder to shoulder (each 1.1 m wide), their fronts in one line 2 m behind the DJ. */
+/** A stack's footprint: the horn bin, 1.1 m wide (pa-room.ts rigStacks closes each side to the rig's own width). */
 const STACK_W = 1.12;
+/** Each side's middle, metres out from the DJ, and how far it's turned in toward the floor's middle. */
+const SIDE_X = 7.4, SIDE_Z = -10, TOE = 0.2;
+/** How far a side's two tops fan apart from its own aim, each way. */
+const SPLAY = 0.12;
+/** One side of the floor (-1 left as the DJ sees the crowd from behind, 1 right): two columns along the side's face. */
+const side = (k: -1 | 1) => {
+  const yaw = -k * TOE, rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return [-1, 1].map((c) => ({ at: [k * SIDE_X + rx * c * STACK_W / 2, SIDE_Z + rz * c * STACK_W / 2] as [number, number], yaw, splay: c * SPLAY }));
+};
+/** A booth monitor at an end of the decks, aimed at the DJ's head. */
+const monitor = (k: -1 | 1) => {
+  const at: [number, number] = [k * 2.05, -8.75];
+  return { at, yaw: Math.atan2(0 - at[0], -8.4 - at[1]) };
+};
 
 export const DESERT_GATHERING: StudioDef = {
   id: "desert-gathering", name: "Desert Gathering",
-  about: "A clearing in the remote Mojave under a full moon, Joshua trees and boulders round it. A minimal booth on the sand: the decks on a board over sawhorses, a tapestry draped to the ground, a tall lantern either side, and behind it one wall of horn-loaded stacks playing mono as a single point source. Everyone carries a hand lantern. Only the sand throws any sound back, so it's dry and loud.",
+  about: "A clearing in the remote Mojave under a full moon, Joshua trees and boulders round it. A minimal booth on the sand: the decks on a board over sawhorses, a tapestry draped to the ground, a tall lantern either side and a horn monitor on a stand at each end. Behind it a block of bass bins in the middle and a side of horn-loaded stacks each side of the floor, toed in. Everyone carries a hand lantern. Only the sand throws any sound back, so it's dry and loud.",
   size: { w: 40, d: 40, h: 20 },
   colors: { floor: "#b8946a", walls: "#10142a", ceiling: "#10142a", trim: "#c8a46a" },
   materials: { floor: "sand", ceiling: "sky", walls: all("sky") },
@@ -44,8 +59,10 @@ export const DESERT_GATHERING: StudioDef = {
   // the backline tent off stage right
   gear: { at: [13.5, -10], yaw: -Math.PI / 2 },
   outdoor: {
-    stacks: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ at: [k * STACK_W, -11] as [number, number], yaw: 0 })),
-    mono: true,
+    stacks: [...side(-1), ...side(1)],
+    // the bins in the middle: three across and two high, right behind the DJ
+    subs: { at: [0, -11], yaw: 0, wide: 3, high: 2 },
+    monitors: [monitor(-1), monitor(1)],
     generator: { at: [-15, -12], yaw: 0.4 },
     // a fire pit behind the left bales, out of the floor, where the chill corner gathers
     fire: { at: [-13, 11] },
