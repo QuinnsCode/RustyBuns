@@ -65,7 +65,7 @@ Each circuit is drawn from a textbook topology or a datasheet's application circ
 - **Bucket brigade, compander and clock** (Q Brigade): Coolaudio's V3208D datasheet ([coolaudio.com/en/products/V3208D](https://www.coolaudio.com/en/products/V3208D): the pinout, 4 to 10 V, VGG at 14/15 VDD, a 10 to 100 kHz two-phase clock, 0.36 V rms swing), onsemi's SA571 datasheet ([onsemi.com/pdf/datasheet/sa571-d.pdf](https://www.onsemi.com/pdf/datasheet/sa571-d.pdf): its basic compressor and basic expander, their gain laws, the internal 10k, 20k, 30k and 140 µA), and the CD4046's VCO and CD4013 flip-flop used as their datasheets have them. The textbook unity-gain Sallen-Key filter either side of the chip.
 - **NE555 and CD4017 datasheets** (Q Steps): the 555's astable equation, f = 1.44 / ((R1 + 2 R2) C), and the 4017 counting eight with Q8 on its reset.
 - **Noise and sample and hold** (Q Hiss): the textbook reverse-biased base-emitter noise source and a JFET track-and-hold, with the clock's edge differentiated into a comparator.
-- **Transistor ladder filter**, US patent 3,475,623 (1969, now expired; a scan is at [till.com](https://www.till.com/articles/moog/US03475623.html)). It is not on the wall yet: the solver can play one, but a four-stage ladder of transistor pairs costs several times what Q Filter does (see [Next](#next)).
+- **Transistor ladder filter**, US patent 3,475,623 (1969, now expired; a scan is at [till.com](https://www.till.com/articles/moog/US03475623.html)). It is not on the wall yet. The solver can play one, but at about ten times what Q Filter costs (see [The ladder, measured](#the-ladder-measured)).
 - **Eurorack mechanics and power**, from Doepfer's A-100 construction details ([doepfer.de/a100_man/a100m_e.htm](https://doepfer.de/a100_man/a100m_e.htm)). Panels are 128.5 mm tall and 1 HP is 5.08 mm, with 84 HP to a row. The 10-pin power header has −12 V on the ribbon's red stripe, ground in the middle and +12 V at the other end.
 - **Footprints**, from KiCad's library: the 3.5 mm jack is `Connector_Audio/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical`, the "Thonkiconn" type (pads S, TN, T at 0, 3.1 and 11.4 mm, bushing at 6.48 mm). The pot is `Potentiometer_THT/Potentiometer_Alpha_RD901F-40-00D_Single_Vertical` (legs 2.5 mm apart, shaft 7.5 mm off the leg row, two mounting tabs). Only their pad positions were taken.
 
@@ -122,6 +122,22 @@ The set fits the case's two 84 HP rows (`test/wall-panels.test.ts` checks it): t
 
 **Speed.** The first voice above, with all eight modules in the case, renders at 3.6× real time on the office Mac, plain TypeScript. In the page it takes about 28% of its own audio thread. Q Filter is the heaviest module at about 2.9 µs a sample, then Q Swell at about 1.5 µs.
 
+### The ladder, measured
+
+Before the transistor ladder low-pass is built as a module ([#5748](https://github.com/QuinnsCode/RustyBuns/issues/5748)), `bun bench/ladder.ts` plays it in Q Filter's place in the first voice, on the voice's own saw. Its ladder: a drive pair on a tail current, four common-base pairs stacked on it with 33 nF across each stage, bases on a bias string, and two followers and a difference amplifier (gain 47) across the top capacitor. Res feeds the output back into the drive pair's other base. Numbers on the office Mac, plain TypeScript (they move by about 20% from run to run with the Mac's load):
+
+| | µs a sample | Against Q Filter | The first voice |
+|---|---|---|---|
+| The voice as it is (Q Filter) | 3.4 to 4.1 for Q Filter | 1× | 3.1 to 3.4× real time |
+| The ladder in the solver | 38 to 46 | 9 to 11× | 0.4 to 0.5× real time |
+| The ladder as its stage equations | 0.2 | a twentieth | about 7× real time |
+
+- **In the solver it doesn't fit.** Ten transistors are twenty junctions for Newton to solve together, about three times a sample. Q Filter has a handful. The voice would no longer keep up with real time, so the page's audio thread would drop out.
+- **What would make it fit: its stage equations.** Each stage's capacitor moves with the difference between its pair's current and the pair's below: C du/dt = (I/2)(tanh(u below / 2VT) − tanh(u / 2VT)). Every number in it is the board's: the tail current from the converter, C, VT, the input and feedback dividers, and the output gain. It is how the wall already plays its switching modules, and it lands 5 to 7% from the solved ladder at 1.4 and 4.7 kHz cutoffs, and 18% at 19 kHz with Res high (its four steps a sample are explicit; more would close that).
+- **A cheaper transistor** would also help: the ladder's base-collector junctions never conduct, so a forward-active transistor (one junction to solve in place of two) halves Newton's ports. That is an estimate (very roughly 1.5 to 2× Q Filter), not measured, and it changes both solvers.
+
+Which one the module plays is the owner's call, and the build follows it ([#5812](https://github.com/QuinnsCode/RustyBuns/issues/5812)).
+
 ## Building one
 
 The boards are made to be built, but none has been built yet. What a build takes:
@@ -162,9 +178,10 @@ The boards are made to be built, but none has been built yet. What a build takes
 | `packages/gear/src/circuit/mna.ts` | What the solver gained for the wall: several driven inputs (`supplyAt`, `drive`), current sources (`I`, `sourceInto`, `push`), pots folded into resistors (`fixPots`), and carrying a circuit's charge over a rebuild (`adopt`). TypeScript only. |
 | `test/gear-wall.test.ts` | The wall in a sesh: one page patches a voice and brings a module, the other plays the same wall on the same step. |
 | `test/wall-bbd.test.ts` | Q Brigade in a patch: a note's echo at the Time knob's delay and as loud as it went in, Repeats, Mod and Time CV. |
+| `bench/ladder.ts` | The transistor ladder's cost: in the solver and as its stage equations, against Q Filter and in the first voice. |
 | `test/wall.test.ts` | The journey (patch a voice, hear it follow the sequencer, add a module, loop a send through the spring, lose a module's power), and each board doing what its panel says. |
 
 ## Next
 
-- More modules for the upper row: the transistor ladder filter ([#5748](https://github.com/QuinnsCode/RustyBuns/issues/5748), measured first).
+- More modules for the upper row: the transistor ladder filter, measured ([above](#the-ladder-measured)) and waiting on how its sim plays it ([#5812](https://github.com/QuinnsCode/RustyBuns/issues/5812)).
 - A prototype order and build, then the loop the pedals plan: record the built module, play the same patch in the sim, and compare. Whether to order one is the owner's call (a manual run).
