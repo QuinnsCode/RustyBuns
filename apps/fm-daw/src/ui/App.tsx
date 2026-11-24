@@ -6,7 +6,9 @@ import { FullCard } from "./Full.tsx";
 import { ChatDock, useChat } from "./Chat.tsx";
 import { LockButton } from "./Lock.tsx";
 import { People } from "./People.tsx";
-import { may, opNeeds, type Can, type GrantServer } from "../grants.ts";
+import { opNeeds, type Can, type GrantServer } from "../grants.ts";
+import { mayHere } from "../guest-list.ts";
+import type { GuestList } from "@rustybuns/util/guests";
 import { WindBack, type Rewound } from "./WindBack.tsx";
 import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
@@ -192,6 +194,8 @@ export function App() {
   const chat = useChat();
   const floor = netStatus.state === "online" ? netStatus.floor : undefined;
   const [grants, setGrants] = useState<GrantServer | null>(null);
+  // the guest list (src/guest-list.ts): someone on it gets their role's grants
+  const [guests, setGuests] = useState<GuestList | null>(null);
   // ---- the desk beyond the tracks (src/mixer.ts): a channel for each player the live line plays sound for, and the
   // aux 2 return over what the sesh's gear room has cabled into it ----
   const [heard, setHeard] = useState<number[]>([]);
@@ -201,7 +205,7 @@ export function App() {
   const heardPlayers = useMemo(() => heard.flatMap((peer): HeardPlayer[] => { const who = grants?.peers[peer]; return who ? [{ peer, who, name: chat.view.names[who] || "Player" }] : []; }), [heard, grants, chat.view.names]);
   const deskPlayers = useMemo(() => [...new Map(heardPlayers.map((h) => [h.who, { who: h.who, name: h.name }])).values()], [heardPlayers]);
   const [deskFeed] = useState(() => new DeskFeed((m) => audioRef.current?.send(m)));
-  const may1 = (c: Can, track?: number) => !floor || (grants ? may(grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c, track) : floor.state === "free" || floor.host);
+  const may1 = (c: Can, track?: number) => !floor || (grants ? mayHere(guests, grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c, track) : floor.state === "free" || floor.host);
   const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
   // a grant of some tracks plays the selected track when it is one of them
   const locked = !may1("play", selected);
@@ -548,6 +552,7 @@ export function App() {
       onStatus: setNetStatus,
       onChat: chat.onChat,
       onGrants: setGrants,
+      onGuests: setGuests,
       onStudio(m) {
         // a bench pedal's board: read here, so the aux 2 return plays its circuit (a new patch object: aux 2 is worked out again)
         if (m.t === "studio-board") { if (boardIn(m.board)) setPatch({ ...studio.current.patch }); return; }
@@ -1159,7 +1164,7 @@ export function App() {
         <span className={`dot ${solo ? "online" : netStatus.state}`} />
         <span>{solo ? "Solo · saved in this browser, never shared" : netStatus.state === "online"
           ? netStatus.peers > 1 ? `Saved · jamming with ${netStatus.peers - 1} other${netStatus.peers > 2 ? "s" : ""}` : roomName() ? "Saved" : "Saved to this machine"
-          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "closed" ? "Closed by its maker" : netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
+          : netStatus.state === "connecting" ? "Connecting…" : netStatus.state === "full" ? `${netStatus.full === "closed" ? "Closed by its maker" : netStatus.full === "blocked" ? "Not let in" : netStatus.full === "code" || netStatus.full === "tries" ? "Private sesh" : "No room"}: playing alone, not saving` : "Not saving (no world)"}</span>
         {roomName() && !solo && <span className="dim" title={netStatus.locked ? "Private: share the link and the code" : "Keep this link: the name is the key to this groove"}>sesh {roomName()}</span>}
         <button className="ghost" onClick={() => setMySetup(saveMine("setup", proj.current))} title="Keep a copy of this groove in this browser to come back to">Save my setup</button>
         <button className="ghost" disabled={!mySetup} onClick={() => { const p = loadMine("setup"); if (p) commit({ t: "replace", project: p }); }}
@@ -1167,7 +1172,8 @@ export function App() {
         {roomName() && (solo
           ? <button className="ghost" onClick={backToSesh} title="Back to the shared groove; your solo project stays saved here">Back to the sesh</button>
           : <button className="ghost" onClick={goSolo} title="Play your own project, apart from the sesh: saved in this browser, never sent">Go solo</button>)}
-        {floor && grants && !solo && netStatus.state === "online" && <People grants={grants} floor={floor.state} chat={chat.view} maker={floor.host} onGrant={(m) => net.current?.grant(m)} />}
+        {floor && grants && !solo && netStatus.state === "online" && <People grants={grants} guests={guests} floor={floor.state} chat={chat.view} maker={floor.host} onGrant={(m) => net.current?.grant(m)}
+          onGuest={(a) => net.current?.guest(a) ?? Promise.resolve({ ok: false, why: "Offline" })} />}
         {allowed.lead && floor && !solo && <>
           {floor.state !== "closed" && <button className={floor.state === "held" ? "ghost on" : "ghost"} aria-pressed={floor.state === "held"}
             title={floor.state === "held" ? "Let everyone edit and play again" : "Only you edit and play into the room (Esc)"}

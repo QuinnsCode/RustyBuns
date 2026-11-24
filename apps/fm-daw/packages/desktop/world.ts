@@ -10,7 +10,9 @@ import { applyLantern, decodeLanternClient, dropLanterns, noLanterns, sanitizeLa
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
-import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { decodeGrantClient, grant, handOn, isMuted, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { act, guestList, GuestList, type GuestAct } from "@rustybuns/util/guests";
+import { decodeGuestClient, listFor, mayHere, STUDIO_ROLES, type GuestServer } from "../../src/guest-list.ts";
 import { applySpin, decodeSpinClient, leave as leaveSpin, mayDeck, noSpin, onNow, sanitizeSpin, stepUp, type Spin, type SpinOp, type SpinServer } from "../../src/spin.ts";
 import type { DeckPress, DeckSay, MixSay } from "../../src/dj/booth.ts";
 import { decodeRtcClient, type RtcClient, type RtcServer } from "../../src/guitar.ts";
@@ -36,7 +38,7 @@ const LIMITS = {
 };
 
 const REFUSED: Record<Full, string> = {
-  room: "this room is full", rooms: "every room is taken", closed: "the maker closed this sesh", code: "this sesh needs its code", tries: "too many wrong codes",
+  room: "this room is full", rooms: "every room is taken", closed: "the maker closed this sesh", code: "this sesh needs its code", tries: "too many wrong codes", blocked: "you can't come in here",
 };
 
 interface Stub { fetch(url: string, init?: RequestInit): Promise<Response> }
@@ -54,7 +56,7 @@ const bounceKey = (room: string) => `sesh/${room}/bounce.wav`;
 export const MAX_BOUNCE_BYTES = 24 * 2 ** 20;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch, who may do what and the wind-back ladder. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, spin: maybe(raw), ladder: raw });
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, boards: raw, grants: raw, spin: maybe(raw), guests: maybe(raw), ladder: raw });
 /** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
 const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
@@ -78,7 +80,12 @@ export interface WorldEnv {
 /** `peer` numbers a socket for the live line; 0 is one that was turned away. `host`: it's the sesh's maker. */
 /** A deck someone's machine plays, as the World last heard it. */
 type DeckHeld = { peer: number; who: string | undefined; name: string; playing: boolean };
-type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string };
+/** `invite`: the code the page brought on ?invite=, run as a join once its hello names the person. */
+type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string; invite?: string };
+/** An invite code as a page brings it. */
+const INVITE = /^[A-Za-z0-9_-]{4,40}$/;
+/** An invite's code: random and too long to guess. */
+const inviteCode = () => crypto.randomUUID().replace(/-/g, "").slice(0, 20);
 /** The maker's browser keeps a random key per sesh and sends it as ?key=; the world keeps only its hash. */
 const KEY = /^[a-z0-9]{16,64}$/;
 const hashKey = async (k: string) =>
@@ -94,7 +101,7 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | SpinServer | RtcServer | ClockServer | LanternServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer | SpinServer | RtcServer | ClockServer | LanternServer | GuestServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
@@ -123,6 +130,8 @@ export default class World {
   /** Who the leader let do what (src/grants.ts), kept beside the groove; the raised hands only live while their people are in. */
   private grants: Grants = noGrants();
   private asks: Record<string, Can> = {};
+  /** The guest list (src/guest-list.ts): who the maker (its owner) and their mods let in, as what, and who's blocked. Made at the maker's first hello. */
+  private guests: GuestList | null = null;
   /** Who may spin (src/spin.ts): the decks' mode, moderators, refused people and lineup, kept beside the grants. */
   private spin: Spin = noSpin();
   /** Which peer last said it has a track on each deck, and whether it plays: the next DJ cues up only on a free one. */
@@ -160,6 +169,7 @@ export default class World {
       this.lock = String((await ctx.storage.get("lock")) ?? "");
       this.grants = sanitizeGrants(await ctx.storage.get("grants"));
       this.spin = sanitizeSpin(await ctx.storage.get("spin"));
+      this.guests = check(GuestList, await ctx.storage.get("guests"));
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
       this.ladder = check(LadderGuard, await ctx.storage.get("ladder")) ?? this.ladder;
       this.ladderTakes = this.offTracks(await this.ladderTakeIds());
@@ -187,7 +197,8 @@ export default class World {
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
     if (room && room !== this.room) { this.room = room; await this.ctx.storage.put("room", room); }
-    const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room, host });
+    const invite = new URL(request.url).searchParams.get("invite") ?? "";
+    const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room, host, ...(INVITE.test(invite) ? { invite } : {}) });
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
@@ -252,6 +263,8 @@ export default class World {
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
       if (b?.grants) { this.grants = sanitizeGrants(b.grants); await this.ctx.storage.put("grants", this.grants); }
       if (b?.spin) { this.spin = sanitizeSpin(b.spin); await this.ctx.storage.put("spin", this.spin); }
+      const gl = check(GuestList, b?.guests);
+      if (gl) { this.guests = gl; await this.ctx.storage.put("guests", gl); }
       const ladder = check(BackupLadder, b?.ladder);
       if (ladder) {
         const snaps: number[] = [];
@@ -325,6 +338,8 @@ export default class World {
       if (lan) { this.onLantern(ws, lan); return; }
       const sp = decodeSpinClient(frame.value);
       if (sp) { void this.onSpin(ws, sp.op); return; }
+      const gc = decodeGuestClient(frame.value);
+      if (gc) { void this.onGuest(ws, gc.a); return; }
       const g = decodeGrantClient(frame.value);
       if (g) { void this.onGrant(ws, g); return; }
       const c = decodeChatClient(frame.value);
@@ -583,6 +598,8 @@ export default class World {
     if (!me) return;
     const was = this.chat;
     if (m.t === "hello") {
+      // blocked: turned away at the door, before the chat or anyone hears they came
+      if (this.guests?.blocked[me]) { this.turnAway(ws); return; }
       this.sockets.attach(ws, { ...seat, me });
       this.chat = rename(this.chat, me, m.name);
       const { lines, names } = this.chat;
@@ -592,6 +609,7 @@ export default class World {
       if (seat.host && this.grants.maker !== me) await this.setGrants({ ...this.grants, maker: me });
       else if (this.host) this.broadcast(this.grantsMsg());
       this.sockets.send(ws, { t: "spin", spin: this.spin });
+      await this.helloGuests(ws, seat, me);
     } else {
       if (m.t === "say") {
         const bucket = this.talk.get(ws) ?? new TokenBucket(CHAT_RATE, CHAT_BURST, Date.now());
@@ -629,7 +647,53 @@ export default class World {
   /** Whether this socket's person may do this now (on this track, for a note: src/grants.ts); null needs nothing. Turned away, nothing. */
   private may(seat: Seat | null | undefined, can: Can | null, track?: number): boolean {
     if (!seat?.peer) return false;
-    return can === null || may(this.grants, this.floor, seat.me, seat.host, can, track);
+    return can === null || mayHere(this.guests, this.grants, this.floor, seat.me, seat.host, can, track);
+  }
+
+  /**
+   * The guest list at a hello: the maker's first one makes it (they own it, with Qollab Studio's roles), an invite the page
+   * brought (?invite=) runs as a join, and the page gets the list as it may see it.
+   */
+  private async helloGuests(ws: RoomSocket, seat: Seat, me: string) {
+    const name = this.chat.names[me] || "Someone";
+    if (seat.host && !this.guests) return this.setGuests(guestList(me, name, STUDIO_ROLES));
+    if (this.guests && seat.invite) {
+      const r = act(this.guests, me, { t: "join", code: seat.invite, name }, Date.now());
+      this.sockets.send(ws, r.ok ? { t: "guest-said", ok: true, list: listFor(r.list, me) } : { t: "guest-said", ok: false, why: r.why });
+      if (r.ok && r.list !== this.guests) return this.setGuests(r.list);
+    }
+    if (this.guests) this.sockets.send(ws, { t: "guests", list: listFor(this.guests, me) });
+  }
+
+  /** One act on the guest list from a named person: the list says whether they may. The asker hears the answer, everyone the new list. */
+  private async onGuest(ws: RoomSocket, a: GuestAct) {
+    const seat = this.sockets.who(ws), me = seat?.me;
+    if (!seat?.peer || !me) return;
+    if (!this.guests) { this.sockets.send(ws, { t: "guest-said", ok: false, why: "This sesh has no maker yet." }); return; }
+    const r = act(this.guests, me, a, Date.now(), a.t === "invite" ? inviteCode() : "");
+    if (!r.ok) { this.sockets.send(ws, { t: "guest-said", ok: false, why: r.why }); return; }
+    await this.setGuests(r.list);
+    this.sockets.send(ws, { t: "guest-said", ok: true, list: listFor(r.list, me) });
+    // blocked: every tab they have in the room goes, and their hello is turned away from now on
+    if (a.t === "block") for (const w of this.sockets.open()) if (this.sockets.who(w)?.me === a.who) this.turnAway(w);
+  }
+
+  private async setGuests(l: GuestList) {
+    if (l !== this.guests) {
+      this.guests = l;
+      this.backupDirty = true;
+      await this.ctx.storage.put("guests", l);
+    }
+    for (const w of this.sockets.open()) {
+      const s = this.sockets.who(w);
+      if (s?.peer && s.me) this.sockets.send(w, { t: "guests", list: listFor(l, s.me) });
+    }
+  }
+
+  /** Sent away with the blocked card. */
+  private turnAway(ws: RoomSocket) {
+    this.sockets.send(ws, { t: "full", why: "blocked" });
+    try { ws.close(CLOSE_FULL, REFUSED.blocked); } catch { /* closing */ }
   }
 
   /** The leader grants, hands on the lead or answers a hand; anyone raises one. Each change reaches everyone. */
@@ -768,7 +832,7 @@ export default class World {
         const snaps: { at: number; project: unknown }[] = [];
         for (const at of this.ladder.snaps) { const p = await s.get(snapKey(at)); if (p) snaps.push({ at, project: p }); }
         const ladder = snaps.length ? { edited: this.ladder.edited, snaps } : undefined;
-        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, spin: this.spin, ladder }));
+        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, boards: this.boards.length ? this.boards : undefined, grants: this.grants, spin: this.spin, guests: this.guests ?? undefined, ladder }));
       } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
@@ -782,7 +846,7 @@ export default class World {
       await s.deleteAlarm();
       await this.dropTakes(new Set());
       this.ladderTakes.clear();
-      for (const k of ["project", "chat", "studio", "boards", "lanterns", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "spin", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "boards", "lanterns", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "spin", "guests", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) for (const k of [backupKey(this.room), bounceKey(this.room)]) await this.bucket.delete(k).catch(() => {});
       this.project = null;
@@ -795,6 +859,7 @@ export default class World {
       this.floor = "free";
       this.lock = "";
       this.grants = noGrants();
+      this.guests = null;
       this.spin = noSpin();
       this.deckSides = [null, null];
       this.asks = {};

@@ -14,6 +14,8 @@ import { decodeRtcServer, type Line, type RtcClient, type RtcServer, type Signal
 import { decodeClockServer, type ClockClient, type ClockServer } from "../clock.ts";
 import { decodeStudioServer, type Board, type StudioClient, type StudioOp, type StudioServer } from "../studio.ts";
 import { decodeLanternServer, type LanternClient, type LanternServer } from "../lanterns.ts";
+import { decodeGuestServer, type GuestClient, type GuestServer } from "../guest-list.ts";
+import type { Acted, GuestAct, GuestList } from "@rustybuns/util/guests";
 
 /** `locked`: the sesh is private (it has a code). */
 export type NetStatus = { state: "connecting" | "online" | "offline" | "full"; peers: number; full?: Full; floor?: FloorState; locked?: boolean };
@@ -36,6 +38,8 @@ export interface Net {
   lock(code: string): void;
   /** A leader grants, hands on or answers; anyone asks. Dropped while offline, like chat. */
   grant(m: GrantClient): void;
+  /** One act on the sesh's guest list, answered by the World (offline: refused). */
+  guest(a: GuestAct): Promise<Acted>;
   /** Who may spin (src/spin.ts): the host's and moderators' calls, or your own ask, step up or down. Dropped while offline. */
   spin(op: SpinOp): void;
   /** Ask for the groove as it was `ago` minutes back, for this page alone; it comes back through onRewound. */
@@ -104,6 +108,8 @@ export function connect(opts: {
   onChat(m: ChatServer): void;
   /** Who may do what, who has a hand up, and who's in (the jam room has no use for it yet). */
   onGrants?(m: GrantServer): void;
+  /** The sesh's guest list as this page may see it (src/guest-list.ts), on hello and on every change. */
+  onGuests?(list: GuestList): void;
   /** The decks' mode, lineup and who's on (src/spin.ts). */
   onSpin?(m: SpinServer): void;
   /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
@@ -128,19 +134,24 @@ export function connect(opts: {
   if (room) { url.searchParams.set("room", room); url.searchParams.set("key", seshKey(room)); }
   const code = savedCode(room);
   if (code) url.searchParams.set("code", code);
+  // a guest list invite (?invite= on the page): the World puts this person on the list once their hello names them
+  const invite = new URLSearchParams(location.search).get("invite");
+  if (invite) url.searchParams.set("invite", invite.slice(0, 40));
+  // the World answers each guest act in the order it came
+  const asked: ((r: Acted) => void)[] = [];
   let peers = 0;
   let floor: FloorState | undefined;
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg | ChatServer | GrantServer | SpinServer | RtcServer | ClockServer | StudioServer | LanternServer, ClientMsg | ChatClient | GrantClient | SpinClient | RtcClient | ClockClient | StudioClient | LanternClient>(() => {
+  const link = connectSocket<ServerMsg | ChatServer | GrantServer | SpinServer | RtcServer | ClockServer | StudioServer | LanternServer | GuestServer, ClientMsg | ChatClient | GrantClient | GuestClient | SpinClient | RtcClient | ClockClient | StudioClient | LanternClient>(() => {
     const t = opts.token?.();
     if (!t) return url;
     const signed = new URL(url);
     signed.searchParams.set("token", t);
     return signed;
   }, {
-    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeSpinServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v) ?? decodeStudioServer(v) ?? decodeLanternServer(v), queue: 200,
+    decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v) ?? decodeSpinServer(v) ?? decodeRtcServer(v) ?? decodeClockServer(v) ?? decodeStudioServer(v) ?? decodeLanternServer(v) ?? decodeGuestServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "op") opts.onOp(m.op);
@@ -157,6 +168,8 @@ export function connect(opts: {
       else if (m.t === "tick" || m.t === "tock") opts.onClock?.(m);
       else if (m.t === "studio-all" || m.t === "studio-op" || m.t === "studio-board") opts.onStudio?.(m);
       else if (m.t === "lanterns") opts.onLanterns?.(m);
+      else if (m.t === "guests") opts.onGuests?.(m.list);
+      else if (m.t === "guest-said") asked.shift()?.(m.ok && m.list ? { ok: true, list: m.list } : { ok: false, why: m.why ?? "That didn't go through." });
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
@@ -166,6 +179,7 @@ export function connect(opts: {
       else opts.onChat(m);
     },
     onClose: (e) => {
+      for (const r of asked.splice(0)) r({ ok: false, why: "The connection dropped: try again." });
       // turned away: stay closed until the player asks again
       if (full) { opts.onStatus({ state: "full", peers: 0, full }); return null; }
       opts.onStatus({ state: "offline", peers: 0 });
@@ -182,6 +196,11 @@ export function connect(opts: {
     floor: (state) => { link.send({ t: "floor", state }); },
     lock: (code) => { link.send({ t: "lock", code }); },
     grant: (m) => { if (link.open) link.send(m); },
+    guest: (a) => {
+      if (!link.open) return Promise.resolve({ ok: false, why: "Offline: try again in a moment." });
+      link.send({ t: "guest", a });
+      return new Promise((r) => asked.push(r));
+    },
     spin: (op) => { if (link.open) link.send({ t: "spin", op }); },
     take: (m) => { link.send(m); },
     rewind: (ago) => { if (link.open) link.send({ t: "rewind", ago }); },

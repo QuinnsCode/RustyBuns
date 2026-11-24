@@ -43,8 +43,10 @@ export async function setup(env: WorldEnv = {}, room = "") {
   };
   const world = new World(ctx, env);
   await ctx.gate;                                                  // the platform holds events until the constructor is done
-  const join = async (headers: Record<string, string> = {}, key = "") => {
-    const r = await world.fetch(new Request(`http://x/ws${key ? `?key=${key}` : ""}`, { headers: { Upgrade: "websocket", "X-User-Id": "u", ...(room ? { "X-Room": room } : {}), ...headers } }));
+  /** `query`: more of the /ws address, as the page sends it (`invite=...`). */
+  const join = async (headers: Record<string, string> = {}, key = "", query = "") => {
+    const q = [key && `key=${key}`, query].filter(Boolean).join("&");
+    const r = await world.fetch(new Request(`http://x/ws${q ? `?${q}` : ""}`, { headers: { Upgrade: "websocket", "X-User-Id": "u", ...(room ? { "X-Room": room } : {}), ...headers } }));
     return { status: r.status, ws: ctx.sockets.at(-1)! };
   };
   const leave = (ws: Sock) => { ws.close(1000); world.webSocketClose(ws); };

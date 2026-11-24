@@ -1,10 +1,14 @@
 // Who's in the sesh and what each may do. A leader toggles each person's play, edit, mix and lead, answers a
 // raised hand Yes or No, and can hand the lead on. Everyone else sees their own grants and raises a hand for
 // what they don't have. The World checks every grant (src/grants.ts); this only shows them and asks.
-import { useLayoutEffect, useRef, useState } from "react";
+// Guest list opens the sesh's guest list (@rustybuns/util/guest-panel, src/guest-list.ts): invites, roles, blocks and its log.
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { guestPanel, type GuestPanel } from "@rustybuns/util/guest-panel";
+import { can as listCan, type Acted, type GuestAct, type GuestList } from "@rustybuns/util/guests";
+import { mayHere, SKIN, STUDIO_PERMS } from "../guest-list.ts";
 import { nameOf, type ChatView } from "../chat.ts";
 import { TRACKS } from "../engine/params.ts";
-import { CANS, leaders, may, playTracks, type Can, type GrantClient, type GrantServer } from "../grants.ts";
+import { CANS, leaders, playTracks, type Can, type GrantClient, type GrantServer } from "../grants.ts";
 import type { Floor } from "../project.ts";
 import { Icon } from "./Chat.tsx";
 
@@ -14,8 +18,11 @@ const TIP: Record<Can, string> = {
   mix: "Work the desk: mutes, solos, EQ, space and squash", lead: "Lead: grant the others, hold the floor, set the code",
 };
 
-export function People(props: { grants: GrantServer; floor: Floor; chat: ChatView; maker: boolean; onGrant(m: GrantClient): void }) {
+export function People(props: {
+  grants: GrantServer; guests: GuestList | null; floor: Floor; chat: ChatView; maker: boolean; onGrant(m: GrantClient): void; onGuest(a: GuestAct): Promise<Acted>;
+}) {
   const [open, setOpen] = useState(false);
+  const [list, setList] = useState(false);
   // the panel opens from the button; where the status bar wraps the button far right on a phone, slide it back on screen
   const panel = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -28,10 +35,11 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
   });
   const { grants, asks, here } = props.grants;
   const you = props.chat.you ?? undefined;
-  const lead = may(grants, props.floor, you, props.maker, "lead");
+  const lead = mayHere(props.guests, grants, props.floor, you, props.maker, "lead");
+  const blocker = !!you && !!props.guests && listCan(props.guests, you, "block");
   const heads = leaders(grants);
   const hands = Object.keys(asks).filter((id) => here.includes(id)).length;
-  const can = (id: string, c: Can) => may(grants, props.floor, id, false, c);
+  const can = (id: string, c: Can) => mayHere(props.guests, grants, props.floor, id, false, c);
   return (
     <span className="people-wrap">
       <button className={hands && lead ? "ghost on" : "ghost"} onClick={() => setOpen(!open)} aria-expanded={open}
@@ -40,8 +48,13 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
       </button>
       {open && (
         <div className="people" ref={panel} role="dialog" aria-label="People in this sesh">
+          {props.guests && you && <button className={list ? "ghost tiny on" : "ghost tiny"} aria-pressed={list} onClick={() => setList(!list)}
+            title="The guest list: invite people in as a role, take them off, block them, and see who did what">Guest list</button>}
+          {list && props.guests && you && <GuestBox me={you} list={props.guests} send={props.onGuest} />}
           {here.map((id) => {
             const mine = id === you, isLead = heads.includes(id), asked = asks[id];
+            // someone on the guest list has their role's grants: the list changes them, not these toggles
+            const listed = !!props.guests?.guests[id];
             return (
               <div className="person" key={id}>
                 <span className="person-name">
@@ -56,7 +69,7 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
                       const now = CANS.filter((x) => x !== "lead" && can(id, x));
                       props.onGrant({ t: "grant", who: id, can: has ? now.filter((x) => x !== c) : [...now, c] });
                     };
-                    return lead && !mine && id !== grants.maker
+                    return lead && !mine && id !== grants.maker && !listed
                       ? <button key={c} className={has ? "ms on" : "ms"} aria-pressed={has} title={TIP[c]} onClick={toggle}>{WORD[c]}</button>
                       : <span key={c} className={has ? "ms on" : "ms"} title={TIP[c]}>{WORD[c]}</span>;
                   })}
@@ -82,6 +95,8 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
                   <button className="ghost" onClick={() => props.onGrant({ t: "answer", who: id, yes: true })}>Yes</button>
                   <button className="ghost" onClick={() => props.onGrant({ t: "answer", who: id, yes: false })}>No</button>
                 </span>}
+                {blocker && !mine && id !== props.guests?.owner && <button className="ghost tiny" title={`Block ${nameOf(props.chat, id)}: they leave now and can't come back`}
+                  onClick={() => void props.onGuest({ t: "block", who: id })}><Icon name="ban" /></button>}
                 {lead && !mine && !isLead && <button className="ghost tiny" title="Hand the lead to them: they lead, you don't"
                   onClick={() => props.onGrant({ t: "handOn", who: id })}>Hand on</button>}
                 {mine && !lead && <span className="person-ask">
@@ -99,4 +114,19 @@ export function People(props: { grants: GrantServer; floor: Floor; chat: ChatVie
       )}
     </span>
   );
+}
+
+/** The guest panel, mounted once and handed each list the World sends. */
+function GuestBox(props: { me: string; list: GuestList; send(a: GuestAct): Promise<Acted> }) {
+  const box = useRef<HTMLDivElement>(null), panel = useRef<GuestPanel | null>(null);
+  const send = useRef(props.send);
+  send.current = props.send;
+  useEffect(() => {
+    if (!box.current) return;
+    const p = guestPanel(box.current, { me: props.me, list: props.list, send: (a) => send.current(a), perms: STUDIO_PERMS, skin: SKIN, title: "Guest list" });
+    panel.current = p;
+    return () => { p.close(); panel.current = null; };
+  }, [props.me]);
+  useEffect(() => { panel.current?.set(props.list); }, [props.list]);
+  return <div className="people-guests" ref={box} />;
 }
