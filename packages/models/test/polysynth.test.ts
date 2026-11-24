@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { POLY_KEY_FRONT, POLY_KINDS, polysynth } from "../src/polysynth.ts";
 import { triangles } from "../src/index.ts";
 
-test.each(POLY_KINDS)("the %s stands on the floor, inside its width, its 61 keys where a seated player reaches", (kind) => {
+test.each([...POLY_KINDS])("the %s stands on the floor, inside its width, its 61 keys where a seated player reaches", (kind) => {
   const keyTop = 0.842, s = polysynth(7, { fit: 1.2, keyTop, kind });
   const box = new THREE.Box3().setFromObject(s.group);
   expect(s.kind).toBe(kind);
