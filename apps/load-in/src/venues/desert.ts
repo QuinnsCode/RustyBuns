@@ -8,7 +8,7 @@
 // fuel in the generator and the jerry cans set down by it (or poured in) have to last until the sun comes up, and the score is how much of
 // the night the wall played. Plain data, no DOM; the page (desert-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
-import { type Area, type CrowdField, type Grid, coverage, coverageThrough, gear as catalog, runHours } from "@rustybuns/gear";
+import { type Area, type CrowdField, type Grid, type System, SYSTEMS, coverage, coverageThrough, gear as catalog, runHours, stackWidth, system } from "@rustybuns/gear";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, jacks } from "../cables/cables.ts";
@@ -18,17 +18,22 @@ import { comingTonight, crowdOf, type CrowdSpot, expected } from "../crowd/crowd
 
 /** Where the four stacks come off the tail lift, each strapped on its dolly: x along the truck's end. */
 const STACK_X = [-2.0, -3.4, -4.8, -6.2];
-/** Dance stack `n` on its sand dolly at (x, z): the 21" horn bin on the board, the mid-bass horn on the bin, the
- * mid-high horn on top, its mouth at about 2 m, over the heads of a full floor. */
-function stackAt(n: number, x: number, z: number) {
-  const g = (id: string) => catalog(id).size.h, bin = g("sand-dolly"), mid = bin + g("horn-sub-21"), high = mid + g("stack-mid-bass");
-  return [
-    { key: `dolly-${n}`, gear: "sand-dolly", x, y: 0, z, rot: 0 },
-    { key: `bin-${n}`, gear: "horn-sub-21", x, y: bin, z, rot: 0 },
-    { key: `midbass-${n}`, gear: "stack-mid-bass", x, y: mid, z, rot: 0 },
-    { key: `top-${n}`, gear: "stack-mid-high", x, y: high, z, rot: 0 },
-  ];
+/** Stack `n` on its sand dolly at (x, z), bottom to top as `rig` builds one (the horn stack: the 21" horn bin on the
+ * board, the mid-bass horn on the bin, the mid-high horn on top, its mouth at about 2 m, over the heads of a full floor).
+ * Keyed by part: `dolly-n`, `bin-n` (the lowest box), `midbass-n` (any between), `top-n`. A rig whose stack comes
+ * without a dolly rides one anyway: nobody carries a 214 kg sub across sand. */
+function stackAt(n: number, x: number, z: number, rig: System = SYSTEMS["dance-stack"]) {
+  const ids = rig.stack[0] === "sand-dolly" ? rig.stack : ["sand-dolly", ...rig.stack];
+  let y = 0;
+  return ids.map((id, i) => {
+    const part = i === 0 ? "dolly" : i === 1 ? "bin" : i === ids.length - 1 ? "top" : "midbass";
+    const item = { key: `${part}-${n}`, gear: id, x, y, z, rot: 0 };
+    y += catalog(id).size.h;
+    return item;
+  });
 }
+/** The stacks as they come off the tail lift. */
+const STACK_Z = 31.3;
 
 export const DESERT: Level = {
   name: "desert",
@@ -43,7 +48,7 @@ export const DESERT: Level = {
   items: [
     { key: "cart", gear: "sand-cart", x: 0, y: 0, z: 31.6, rot: 0 },
     { key: "generator", gear: "generator-7kva", x: 0, y: 0.45, z: 31.6, rot: 0, litres: 15 },
-    ...STACK_X.flatMap((x, n) => stackAt(n + 1, x, 31.3)),
+    ...STACK_X.flatMap((x, n) => stackAt(n + 1, x, STACK_Z)),
     { key: "rack-bins", gear: "amp-rack-4u", x: -8.0, y: 0, z: 31.4, rot: 0 },
     { key: "rack-tops", gear: "amp-rack-4u", x: -8.8, y: 0, z: 31.4, rot: 0 },
     { key: "distro", gear: "distro-box", x: 5.2, y: 0, z: 31.4, rot: 0 },
@@ -62,6 +67,17 @@ export const DESERT: Level = {
     ...Array.from({ length: 12 }, (_, n) => ({ key: `speaker-${n + 1}`, kind: "speaker" as const, lengthM: 5 })),
   ],
 };
+
+/**
+ * Tonight's rig (`?rig=` on the page): the four stacks off the truck become another of the open-air rigs
+ * (@rustybuns/gear systems.ts: synergy horns over tapped horns, the sculpted array on triple 21s, the tri-amp stack),
+ * each heard by its own boxes' sheets. Before the world is made; the rig's id, the horn stack for anything unknown.
+ */
+export function bringRig(id: string | null): string {
+  const rig = system(id), gap = Math.max(STACK_X[0]! - STACK_X[1]!, stackWidth(rig) + 0.1);
+  DESERT.items = [...DESERT.items.filter((i) => !/^(dolly|bin|midbass|top)-\d$/.test(i.key)), ...STACK_X.flatMap((_, n) => stackAt(n + 1, STACK_X[0]! - n * gap, STACK_Z, rig))];
+  return rig.id;
+}
 
 /** Where things are: the dance floor in front of the wall and the crew's camp off to the right. */
 export const ZONES = {
