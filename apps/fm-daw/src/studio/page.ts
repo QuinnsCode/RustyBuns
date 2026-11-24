@@ -13,7 +13,8 @@ import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
 import { ROOM_LIST } from "./rooms/index.ts";
-import { acoustics, BANDS, impulse, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
+import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
+import { surface, wallSurface } from "./look.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -107,18 +108,20 @@ function render() {
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
 
-type Tool = "move" | "wall" | "door" | "booth" | "place" | "turn" | "remove";
+type Tool = "move" | "wall" | "door" | "booth" | "place" | "paint" | "turn" | "remove";
 const TOOLS: { id: Tool; name: string; icon: string }[] = [
   { id: "move", name: "Move: drag a seat, a booth or the gear wall", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
   { id: "wall", name: "Wall: drag across the floor to put one up", icon: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/>` },
   { id: "door", name: "Doorway: click a wall to knock one through, again to brick it up", icon: `<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>` },
   { id: "booth", name: "Booth: click the floor to put up a vocal booth", icon: `<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>` },
   { id: "place", name: "Place: pick from the catalog, click the floor", icon: `<path d="M5 12h14"/><path d="M12 5v14"/>` },
+  { id: "paint", name: "Paint: pick a material, click the floor or a wall", icon: `<rect width="16" height="6" x="2" y="2" rx="2"/><path d="M10 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect width="4" height="6" x="8" y="16" rx="1"/>` },
   { id: "turn", name: "Turn: click a seat to turn it an eighth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
   { id: "remove", name: "Remove: click a seat, a wall or a booth", icon: `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>` },
 ];
 const icon = (paths: string) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 const NAMES: Record<SpotKind, string> = { keys: "keys", drums: "kit", bass: "bass synth", desk: "desk", booth: "mic", couch: "couch", dj: "decks" };
+let painting: Material = "carpet";
 let tool: Tool = "move", placing: SpotKind = "keys", view: "3d" | "plan" = "3d", walls: WallsMode = "cutaway";
 const canvas = $("view") as HTMLCanvasElement;
 let build: BuildView | null = null;
@@ -135,7 +138,14 @@ const pointAt = (e: PointerEvent): number[] | null => (view === "3d" ? build?.to
 function hitAt(e: PointerEvent): Hit {
   if (view === "3d") return build?.hit(e) ?? null;
   const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall]") : null;
-  if (!g) return null;
+  if (!g) {
+    // on the blueprint the floor is the room's rectangle, and an outside wall its edge (within 30 cm of it)
+    const [x, z] = toRoom(e), { w, d } = room.size;
+    if (Math.abs(x) > w / 2 + 0.3 || Math.abs(z) > d / 2 + 0.3) return null;
+    const near: [Side, number][] = [["front", Math.abs(z - d / 2)], ["back", Math.abs(z + d / 2)], ["left", Math.abs(x + w / 2)], ["right", Math.abs(x - w / 2)]];
+    const [side, gap] = near.sort((a, b) => a[1] - b[1])[0]!;
+    return gap < 0.3 ? { side } : { floor: true };
+  }
   const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), wall = g.getAttribute("data-wall");
   return spot ? { spot } : booth ? { booth } : wall !== null ? { wall: Number(wall) } : { gear: true };
 }
@@ -150,7 +160,7 @@ function down(e: PointerEvent) {
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
   why = "";
   if (tool === "move") {
-    if (!h || "wall" in h) return;
+    if (!h || !("spot" in h || "booth" in h || "gear" in h)) return;
     const id = "spot" in h ? h.spot : "booth" in h ? h.booth : "gear";
     if ("spot" in h) { picked = h.spot; render(); }
     const from = "spot" in h ? room.spots.find((x) => x.id === id)?.at : "gear" in h ? gearPlace(room).at : boothMiddle(room, id);
@@ -167,6 +177,11 @@ function down(e: PointerEvent) {
     if (!at) return;
     const id = free(placing, (x) => room.spots.some((s) => s.id === x));
     if (apply({ t: "spot", id, kind: placing, at })) { picked = id; render(); }
+  } else if (tool === "paint") {
+    if (h && "floor" in h) apply({ t: "surface", surface: "floor", material: painting });
+    else if (h && "side" in h) apply({ t: "surface", surface: h.side, material: painting });
+    else if (h && "wall" in h) apply({ t: "wall", index: h.wall, material: painting });
+    else { why = "Click the floor or a wall to paint it"; render(); }
   } else if (tool === "turn") {
     if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
   } else if (tool === "remove") {
@@ -233,7 +248,8 @@ function renderTools() {
     + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "");
   $("orbit").innerHTML = view === "3d" ? b(`data-orbit="1"`, "Turn the view left", CCW) + b(`data-orbit="-1"`, "Turn the view right", CW) : "";
   const cat = $("catalog");
-  cat.hidden = tool !== "place";
+  cat.hidden = tool !== "place" && tool !== "paint";
+  if (tool === "paint") cat.innerHTML = MATERIAL_IDS.map((m) => `<button type="button" data-paint="${m}" aria-pressed="${m === painting}" title="${esc(MATERIALS[m].name)}">${swatch(m)}<span>${esc(MATERIALS[m].name)}</span></button>`).join("");
   if (tool === "place") {
     if (build && !Object.keys(thumbs).length) thumbs = Object.fromEntries(KINDS_ALL.map((k) => [k, build!.thumb(newSpot(`thumb-${k}`, k, [0, 0]))]));
     cat.innerHTML = KINDS_ALL.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === placing}" title="${esc(NAMES[k])}">${thumbs[k] ? `<img src="${thumbs[k]}" alt="">` : ""}${esc(NAMES[k])}</button>`).join("");
@@ -241,6 +257,20 @@ function renderTools() {
   canvas.hidden = view !== "3d"; plan.toggleAttribute("hidden", view !== "plan");
 }
 const KINDS_ALL: SpotKind[] = ["keys", "drums", "bass", "dj", "desk", "booth", "couch"];
+const swatches = new Map<Material, string>();
+/** A material's swatch for the paint catalog: a square of its own painted texture (look.ts), or its colour. */
+function swatch(m: Material): string {
+  let url = swatches.get(m);
+  if (!url) {
+    const img = surface(wallSurface(m), m === "drywall" || m === "plaster" ? "#d9d3c6" : undefined).map?.image, c = document.createElement("canvas");
+    c.width = c.height = 72;
+    const g = c.getContext("2d")!;
+    g.fillStyle = MATERIALS[m].color; g.fillRect(0, 0, 72, 72);
+    if (img instanceof HTMLCanvasElement) g.drawImage(img, 0, 0, img.width / 3, img.height / 3, 0, 0, 72, 72);
+    url = c.toDataURL(); swatches.set(m, url);
+  }
+  return `<img src="${url}" alt="">`;
+}
 $("tools").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest("button") : null;
   if (!t) return;
@@ -253,6 +283,8 @@ $("catalog").addEventListener("click", (e) => {
   const k = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-kind]")?.dataset.kind : undefined;
   const kind = check(oneOf(KINDS_ALL), k);
   if (kind) { placing = kind; renderTools(); }
+  const m = check(oneOf(MATERIAL_IDS), e.target instanceof Element ? e.target.closest<HTMLElement>("[data-paint]")?.dataset.paint : undefined);
+  if (m) { painting = m; renderTools(); }
 });
 $("orbit").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-orbit]") : null;

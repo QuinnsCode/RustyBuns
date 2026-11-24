@@ -56,3 +56,4 @@ a.button { display: inline-block; color: var(--ink); border: 1px solid var(--lin
 #plan .grid { stroke: rgba(255, 255, 255, 0.07); pointer-events: none; }
 #plan .drawing { stroke: var(--hot); stroke-linecap: round; opacity: 0.8; pointer-events: none; }
 #plan[hidden] { display: none; }
+#catalog button span { max-width: 72px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

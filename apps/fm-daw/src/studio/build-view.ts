@@ -14,7 +14,7 @@ import { thingBox, wallPieces, type Side, type Spot, type StudioDef } from "./ro
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
-export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | null;
+export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { side: Side } | { floor: true } | null;
 /** The outside walls: cut down on the sides toward you, all cut down, or all standing. */
 export type WallsMode = "cutaway" | "down" | "up";
 
@@ -108,7 +108,7 @@ export class BuildView {
     // the floor, in metres so its grain is its real size, and the grid over it
     const floor = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2)), surface(room.materials?.floor ?? "floorboards", room.colors.floor));
     floor.receiveShadow = true;
-    this.root.add(floor);
+    add(floor, undefined, { floor: true });
     const lines: number[] = [];
     for (let x = -Math.floor(w / 2 / 0.5) * 0.5; x <= w / 2 + 1e-6; x += 0.5) lines.push(x, 0.003, -d / 2, x, 0.003, d / 2);
     for (let z = -Math.floor(d / 2 / 0.5) * 0.5; z <= d / 2 + 1e-6; z += 0.5) lines.push(-w / 2, 0.003, z, w / 2, 0.003, z);
@@ -123,7 +123,7 @@ export class BuildView {
       const mat = wallLook(room.materials?.walls[side] ?? "plaster");
       const o = new THREE.Mesh(metreUV(new THREE.BoxGeometry(sw, tall, sd)), mat);
       o.position.set(x, tall / 2, z);
-      add(o);
+      add(o, undefined, { side });
       // the wall's top edge, so a cut wall reads as cut
       const cap = new THREE.Mesh(new THREE.BoxGeometry(sw + 0.002, 0.012, sd + 0.002), new THREE.MeshStandardMaterial({ color: "#d8d2c6", roughness: 0.8 }));
       cap.position.set(x, tall + 0.006, z); this.root.add(cap);
@@ -218,10 +218,16 @@ export class BuildView {
   /** What the pointer is over: a seat, a booth, an inside wall, the gear wall, or nothing. */
   hit(e: { clientX: number; clientY: number }): Hit {
     this.ray.setFromCamera(this.ndc(e), this.camera);
+    // the floor only when nothing stands on it there
+    let under: Hit = null;
     for (const h of this.ray.intersectObjects(this.pickables, true)) {
-      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) if (o.userData.hit) return o.userData.hit as Hit;
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) if (o.userData.hit) {
+        const hit = o.userData.hit as Hit;
+        if (hit && "floor" in hit) { under ??= hit; break; }
+        return hit;
+      }
     }
-    return null;
+    return under;
   }
 
   /** A small picture of a new seat of `kind`, for the catalog. */
