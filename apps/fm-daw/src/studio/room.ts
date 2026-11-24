@@ -86,6 +86,8 @@ export interface Outdoor {
   mono?: boolean;
   truss?: { at: [number, number]; yaw: number; w: number; h: number };
   generator?: { at: [number, number]; yaw: number };
+  /** A fire pit in a ring of stones (open-air.ts `firePit`), lit, and heard crackling as you come near (night-air.ts). */
+  fire?: { at: [number, number] };
   /** The tall carved wooden lantern poles: where each stands, and the way its crook (and the lantern on it) reaches. */
   lanternPoles?: { at: [number, number]; yaw: number }[];
   /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */

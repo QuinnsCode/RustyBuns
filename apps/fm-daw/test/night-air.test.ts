@@ -1,7 +1,7 @@
 // The desert night under the music (src/studio/night-air.ts): crickets in trains of chirps at their pitch, a few a
 // second, never a clock; the generator's hum louder as you walk up to it, 6 dB down each time the distance doubles.
 import { expect, test } from "bun:test";
-import { chirps, humLevel } from "../src/studio/night-air.ts";
+import { chirps, crackle, fireLevel, humLevel } from "../src/studio/night-air.ts";
 
 test("crickets chirp in trains near 4.4 kHz, a train every 0.7 to 1 s; the generator's hum falls 6 dB per doubling past 3 m", () => {
   const rate = 48000, c = chirps(rate, 6, 1);
@@ -25,4 +25,12 @@ test("crickets chirp in trains near 4.4 kHz, a train every 0.7 to 1 s; the gener
   expect(hz).toBeLessThan(4800);
   expect(humLevel(1)).toBe(humLevel(3));
   expect(20 * Math.log10(humLevel(12) / humLevel(6))).toBeCloseTo(-6.02, 1);
+});
+
+test("the fire crackles: sharp pops over a quiet roar, loud at the pit and fading as you walk off", () => {
+  const x = crackle(48000, 4, 7);
+  let pops = 0, last = -1;
+  for (let i = 0; i < x.length; i++) if (Math.abs(x[i]!) > 0.15 && i - last > 480) { pops++; last = i; }
+  expect(pops / 4).toBeGreaterThan(4); // several clear pops a second
+  expect(fireLevel(1) / fireLevel(12)).toBeGreaterThan(7); // 18 dB down across the floor
 });

@@ -47,6 +47,8 @@ export const DESERT_GATHERING: StudioDef = {
     stacks: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ at: [k * STACK_W, -11] as [number, number], yaw: 0 })),
     mono: true,
     generator: { at: [-15, -12], yaw: 0.4 },
+    // a fire pit behind the left bales, out of the floor, where the chill corner gathers
+    fire: { at: [-13, 11] },
     // a tall pole at each end of the table, its lantern reaching in over the decks
     lanternPoles: [{ at: [-2.2, TABLE_Z], yaw: Math.PI / 2 }, { at: [2.2, TABLE_Z], yaw: -Math.PI / 2 }],
     // spares on the sand at the booth's front corners, to carry off and set down where you like

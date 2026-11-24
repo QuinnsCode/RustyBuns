@@ -9,6 +9,32 @@ export function humLevel(m: number): number {
   return 0.05 * Math.min(1, 3 / Math.max(m, 0.1));
 }
 
+/** The fire's crackle at `m` metres: full within 1.5 m (its pops about -23 dBFS, its roar near -48), falling 6 dB each time the distance doubles. */
+export function fireLevel(m: number): number {
+  return 0.06 * Math.min(1, 1.5 / Math.max(m, 0.1));
+}
+
+/**
+ * A loop of a wood fire, `seconds` long at `rate`: pops (a sharp click ringing down in a few milliseconds, a bigger
+ * one now and then) scattered unevenly, over a soft breathy roar. The roar is low noise, the pops bright.
+ */
+export function crackle(rate: number, seconds: number, seed: number): Float32Array {
+  const out = new Float32Array(Math.round(rate * seconds)), r = mulberry32(seed);
+  // the roar: noise smoothed twice, a low breath under it all
+  let a = 0, b = 0;
+  for (let i = 0; i < out.length; i++) { a += (r() * 2 - 1 - a) * 0.05; b += (a - b) * 0.05; out[i] = b * 0.9; }
+  // the pops: about twelve a second, in clusters, each a decaying burst of bright noise
+  for (let t = r() * 0.05; t < seconds - 0.05; t += -Math.log(1 - r() * 0.98) / 12) {
+    const at = Math.round(t * rate), big = r() < 0.08, len = Math.round(rate * (big ? 0.012 : 0.004)), amp = (big ? 0.9 : 0.25) * (0.4 + r() * 0.6);
+    let prev = 0;
+    for (let k = 0; k < len && at + k < out.length; k++) {
+      const n = r() * 2 - 1, hp = n - prev; prev = n; // a first difference: the click's bite, no low thud
+      out[at + k]! += hp * amp * Math.exp((-k / len) * 5);
+    }
+  }
+  return out;
+}
+
 /**
  * A loop of crickets, `seconds` long at `rate`: trains of three or four 4.4 kHz chirps (each 14 ms, 32 ms apart), a
  * train about every 0.8 s with a little drift, so the loop doesn't tick like a clock.
@@ -30,9 +56,10 @@ export function chirps(rate: number, seconds: number, seed: number, hz = 4400): 
 export class NightAir {
   private out: GainNode;
   private hum: GainNode | null = null;
+  private fireGain: GainNode | null = null;
   private wasMuted = false;
 
-  constructor(private ctx: BaseAudioContext, to: AudioNode, private generator: [number, number] | undefined, seed: number) {
+  constructor(private ctx: BaseAudioContext, to: AudioNode, private generator: [number, number] | undefined, seed: number, private fire?: [number, number]) {
     this.out = new GainNode(ctx, { gain: 1 });
     this.out.connect(to);
     // the wind: noise through a broad band, swelling in two slow, uneven gusts
@@ -61,6 +88,15 @@ export class NightAir {
       canopy.connect(this.hum).connect(this.out);
       engine.start(); rumble.start();
     }
+    // the fire: its crackle, as loud as you are close to it
+    if (fire) {
+      const secs = 5.3, buf = ctx.createBuffer(1, Math.round(ctx.sampleRate * secs), ctx.sampleRate);
+      buf.copyToChannel(crackle(ctx.sampleRate, secs, seed + 3) as Float32Array<ArrayBuffer>, 0);
+      this.fireGain = new GainNode(ctx, { gain: 0 });
+      this.fireGain.connect(this.out);
+      const src = new AudioBufferSourceNode(ctx, { buffer: buf, loop: true });
+      src.connect(this.fireGain); src.start();
+    }
   }
 
   /** Where you are, and whether the room is muted: the hum follows the distance to the generator. */
@@ -68,5 +104,6 @@ export class NightAir {
     const now = this.ctx.currentTime;
     if (muted !== this.wasMuted) { this.out.gain.setTargetAtTime(muted ? 0 : 1, now, 0.05); this.wasMuted = muted; }
     if (this.hum && this.generator) this.hum.gain.setTargetAtTime(humLevel(Math.hypot(x - this.generator[0], z - this.generator[1])), now, 0.2);
+    if (this.fireGain && this.fire) this.fireGain.gain.setTargetAtTime(fireLevel(Math.hypot(x - this.fire[0], z - this.fire[1])), now, 0.2);
   }
 }

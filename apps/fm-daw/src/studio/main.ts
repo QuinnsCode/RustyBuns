@@ -472,7 +472,7 @@ async function startAudio() {
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
     // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
-    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed);
+    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
