@@ -22,9 +22,9 @@ test.each([...POLY_KINDS])("the %s stands on the floor, inside its width, its ke
   expect(triangles(s.group)).toBeLessThan(20000);
 });
 
-test("a hand on the wheels turns them: the synths have pitch and mod wheels, the organs and the tine piano none", () => {
+test("a hand on the wheels turns them: the poly and the FM slab have pitch and mod wheels, the organs, the tine piano and the string machine none", () => {
   const has = POLY_KINDS.filter((kind) => polysynth(3, { kind }).group.getObjectByName("pitch-wheel"));
-  expect(has).toEqual(["wood-poly", "fm-slab", "strings"]);
+  expect(has).toEqual(["wood-poly", "fm-slab"]);
   const s = polysynth(3, { kind: "wood-poly" }), before = s.group.getObjectByName("pitch-wheel")!.rotation.x;
   turnWheels(s.group, 1, 0.5);
   expect(s.group.getObjectByName("pitch-wheel")!.rotation.x).not.toBe(before);

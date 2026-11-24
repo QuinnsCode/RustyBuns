@@ -59,15 +59,15 @@ export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind, b
   // the well left of the keys: pitch and mod wheels, or the organ's half-moon lever
   const wellX = -w / 2 + cheek + well / 2;
   pieces.push(box("trim", [well - 0.012, 0.005, KEY_D], [wellX, keyTop - 0.006, keyZ]));
-  if (kind === "tine-ep") {
-    // volume and bass on a brushed plate where the wheels would be
+  if (kind === "tine-ep" || kind === "strings") {
+    // volume and tone (bass, or the ensemble's balance) on a brushed plate where the wheels would be
     pieces.push(box("trim", [well - 0.016, 0.004, KEY_D * 0.8], [wellX, keyTop - 0.002, keyZ]));
     for (const dz of [-0.03, 0.03]) pieces.push(piece("knob", new THREE.CylinderGeometry(0.011, 0.012, 0.016, 14), new THREE.Matrix4().makeTranslation(wellX, keyTop + 0.008, keyZ + dz)));
   } else if (organ || kind === "combo") {
     pieces.push(box("trim", [0.034, 0.012, 0.05], [wellX, keyTop + 0.002, keyZ - 0.02], { bevel: 0.004 }));
     pieces.push(box("tab", [0.008, 0.03, 0.014], [wellX, keyTop + 0.02, keyZ - 0.02], { bevel: 0.003, rot: [0, 0, 0.4] }));
   } else for (const dx of [-0.017, 0.017]) pieces.push(box("slot", [0.02, 0.004, 0.07], [wellX + dx, keyTop - 0.002, keyZ - 0.01]));
-  const wheels = kind !== "tine-ep" && !organ && kind !== "combo";
+  const wheels = kind === "wood-poly" || kind === "fm-slab"; // the organs, the tine piano and the string machine had none
 
   // ---- the ends: walnut cheeks (shaped, low at the front, up to the panel) or plain moulded caps ----
   const topY = keyTop + panelH + (wood ? 0.012 : 0.006);
