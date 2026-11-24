@@ -98,7 +98,7 @@ export class BuildView {
   show(room: StudioDef, picked: string | undefined, walls: WallsMode = this.walls) {
     const fresh = this.room?.size.w !== room.size.w || this.room?.size.d !== room.size.d;
     this.room = room; this.picked = picked; this.walls = walls;
-    if (fresh) this.dist = Math.max(room.size.w, room.size.d) * 1.15 + 4;
+    if (fresh) { this.dist = Math.max(room.size.w, room.size.d) * 1.15 + 4; this.target.set(0, 0, 0); }
     this.build();
   }
 
@@ -198,11 +198,25 @@ export class BuildView {
   private placeCamera() {
     // a tall, narrow view (a phone) stands further back, so the whole room still fits across it
     const c = Math.cos(this.pitch), r = this.dist * Math.max(1, 1 / this.camera.aspect) ** 0.8;
-    this.camera.position.set(Math.sin(this.yaw) * c * r, Math.sin(this.pitch) * r, Math.cos(this.yaw) * c * r);
-    this.camera.lookAt(0, 0, 0);
+    const o = this.target;
+    this.camera.position.set(o.x + Math.sin(this.yaw) * c * r, Math.sin(this.pitch) * r, o.z + Math.cos(this.yaw) * c * r);
+    this.camera.lookAt(o);
   }
 
   /** Turn the camera round the room (radians), tilt it, or move in (k < 1) and out. */
+  /** The point on the floor the camera turns round and looks at: the room's middle until a zoom moves it. */
+  private target = new THREE.Vector3();
+  /** Zoom by `k` toward the floor under the pointer (`at`, metres), as a house builder does; the view's middle stays in the room. */
+  zoomAt(k: number, at: [number, number] | null) {
+    if (at && this.room) {
+      const { w, d } = this.room.size, pull = 1 - Math.min(1, k);
+      this.target.x = Math.max(-w / 2, Math.min(w / 2, this.target.x + (at[0] - this.target.x) * pull));
+      this.target.z = Math.max(-d / 2, Math.min(d / 2, this.target.z + (at[1] - this.target.z) * pull));
+    }
+    if (k > 1) this.target.multiplyScalar(Math.max(0, 2 - k)); // zooming out drifts back toward the middle
+    this.orbit(0, 0, k);
+  }
+
   orbit(dyaw: number, dpitch = 0, k = 1) {
     this.yaw += dyaw; this.pitch = Math.min(1.45, Math.max(0.35, this.pitch + dpitch));
     const room = this.room, far = room ? Math.max(room.size.w, room.size.d) * 2.5 + 6 : 40;
