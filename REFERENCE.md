@@ -309,6 +309,7 @@ To redeploy, rsync again, then `docker rm -f my-app` and the same `build` and `r
 | `history [--runs N] [--json]` | the box's runs, newest first, with memory slope, profiles and ceiling restarts; needs `RB_PROF_SECRET` |
 | `triage [--agent claude\|codex] [--print]` | start your coding agent on a problem, with this project's facts in `.rustybuns/triage/` |
 | `skill [add] [--dir d]` | print the agent skill for building with Rusty Buns, or write it to `d/rustybuns/SKILL.md` (default `.claude/skills`; `.agents/skills` for Codex) |
+| `skill mcp <url> [--header "K: V"]`, `skill mcp -- <command>` | turn an MCP server (web or local program) into `.claude/skills/mcp-<name>/SKILL.md`: a 20-40 token line in the agent's context, the server's instructions and tools only when opened; `--print`, `--name`, `--dir`. See [OPS.md](OPS.md#any-mcp-server-as-a-skill) |
 | `smoke [dir] [--keep] [--edge-like]` | does this app run on Rusty Buns? Installs, inits, builds and boots a throwaway copy |
 | `jekyll`, `copy-site <from> <to>` | helpers for a Jekyll or static site's Worker build; `init` wires them in |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
