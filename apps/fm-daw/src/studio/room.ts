@@ -145,7 +145,9 @@ export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "
   // a TV sound stage: a riser you stand on, the lighting grid, bleachers, a camera on its pedestal, a floor wedge, a cyc, a painted flat, the host's desk
   "riser", "grid", "bleachers", "camera", "wedge", "cyc", "flat", "hostDesk",
   // the classics on a desk: a 16-step drum machine and a modular synth's case of patched modules
-  "drumMachine", "modular"] as const;
+  "drumMachine", "modular",
+  // out of doors: a camper van parked up, a fire pit
+  "van", "firePit"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 export interface Prop {
   kind: PropKind;

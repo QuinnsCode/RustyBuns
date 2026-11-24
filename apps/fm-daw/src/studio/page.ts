@@ -8,7 +8,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, DECOR, DECOR_KINDS, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
+import { boothMiddle, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -357,7 +357,7 @@ function renderTools() {
   cat.hidden = tool !== "place" && tool !== "paint" && tool !== "decor";
   if (tool === "decor") {
     if (build && !Object.keys(decorThumbs).length) decorThumbs = Object.fromEntries(DECOR_KINDS.map((k) => [k, build!.thumb({ kind: k, at: [0, 0], yaw: 0, ...DECOR[k]!, seed: 13 })]));
-    cat.innerHTML = DECOR_KINDS.map((k) => `<button type="button" data-decor="${k}" aria-pressed="${k === decorating}" title="${esc(DECOR_NAMES[k])}">${decorThumbs[k] ? `<img src="${decorThumbs[k]}" alt="">` : ""}<span>${esc(DECOR_NAMES[k])}</span></button>`).join("");
+    cat.innerHTML = DECOR_KINDS.filter((k) => room.outdoor || !OUTDOOR_DECOR.includes(k)).map((k) => `<button type="button" data-decor="${k}" aria-pressed="${k === decorating}" title="${esc(DECOR_NAMES[k])}">${decorThumbs[k] ? `<img src="${decorThumbs[k]}" alt="">` : ""}<span>${esc(DECOR_NAMES[k])}</span></button>`).join("");
   }
   if (tool === "paint") cat.innerHTML = MATERIAL_IDS.map((m) => `<button type="button" data-paint="${m}" aria-pressed="${m === painting}" title="${esc(MATERIALS[m].name)}">${swatch(m)}<span>${esc(MATERIALS[m].name)}</span></button>`).join("");
   if (tool === "place") {
@@ -368,7 +368,7 @@ function renderTools() {
 }
 const KEYS_NAMES: Record<(typeof POLY_KINDS)[number], string> = { "wood-poly": "Analog poly", "fm-slab": "FM slab", drawbar: "Drawbar organ", "tine-ep": "Tine piano", combo: "Combo organ", strings: "String machine" };
 const KINDS_ALL: SpotKind[] = ["keys", "drums", "bass", "dj", "desk", "booth", "couch"];
-const DECOR_NAMES: Record<DecorKind, string> = { shelf: "shelf", lamp: "lamp", plant: "plant", rug: "rug", rack: "rack", piano: "grand piano", micStand: "mic stand", table: "table", cabinet: "cabinet", books: "books", drumMachine: "drum machine", modular: "modular", monitor: "monitor", wedge: "floor wedge", riser: "stage riser" };
+const DECOR_NAMES: Record<DecorKind, string> = { shelf: "shelf", lamp: "lamp", plant: "plant", rug: "rug", rack: "rack", piano: "grand piano", micStand: "mic stand", table: "table", cabinet: "cabinet", books: "books", drumMachine: "drum machine", modular: "modular", monitor: "monitor", wedge: "floor wedge", riser: "stage riser", van: "camper van", firePit: "fire pit" };
 let decorThumbs: Partial<Record<DecorKind, string>> = {};
 const swatches = new Map<Material, string>();
 /** A material's swatch for the paint catalog: a square of its own painted texture (look.ts), or its colour. */

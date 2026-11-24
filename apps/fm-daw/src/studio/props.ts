@@ -6,6 +6,8 @@
 // look to light and bloom; shadows are the look's too, so none are set here.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
+import { van } from "@rustybuns/models/van";
+import { firePit } from "@rustybuns/models/fire";
 import type { Prop } from "./room.ts";
 import { speaker } from "./gear-models.ts";
 import { dressing, type Item, type Kit } from "./set-dressing.ts";
@@ -20,6 +22,10 @@ const TOYS = ["#e0b02a", "#d0452e", "#3a8ad0", "#5ab04a", "#e07ab0"];
 /** One prop, ready to add to the scene. */
 /** The drum machine's row of sixteen step lamps (an InstancedMesh, the first step on the player's left). */
 export const STEP_LAMPS = "step-lamps";
+/** Move the props in `props` that move on their own (a fire's flames) to time `t`, seconds. */
+export function tickProps(props: Iterable<THREE.Object3D>, t: number) {
+  for (const o of props) { const tick: unknown = o.userData.tick; if (typeof tick === "function") tick(t); }
+}
 const LAMP_ON = new THREE.Color("#ff3a2a"), LAMP_OFF = new THREE.Color("#4a1210");
 /** Light step `step` (0 to 15) of every drum machine under `root`, the rest dark; null: the downbeats lit, as it sits stopped. */
 export function chaseSteps(root: THREE.Object3D, step: number | null) {
@@ -74,6 +80,9 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
   const { w, d, h, color } = p;
 
   switch (p.kind) {
+    // out of doors: the shared models, at their own size (@rustybuns/models van and fire); the fire's flames move on `userData.tick`
+    case "van": g.add(van(p.seed ?? 1)); break;
+    case "firePit": { const f = firePit(p.seed ?? 1); g.add(f.group); g.userData.tick = f.tick; break; }
     case "shelf": {
       // a wooden case open at the front, a board every 35 cm, each filled with books, a run of records or a toy
       const wood = m("wood", color), t = 0.03, rows = Math.max(1, Math.floor((h - 0.1) / 0.36));

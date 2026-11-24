@@ -112,6 +112,9 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   // a rig only stands out of doors: indoors it's refused, on the sand the stacks become it
   expect(edit(r, { t: "instruments", rig: "synergy" })).toMatchObject({ ok: false, why: "a rig stands out of doors" });
   expect(ok(DESERT_GATHERING, { t: "instruments", rig: "synergy" }).outdoor?.rig).toBe("synergy");
+  // a camper van and a fire pit park only out of doors
+  expect(edit(r, { t: "addProp", kind: "van", at: [0, 0] })).toMatchObject({ ok: false, why: "that stands out of doors" });
+  expect(ok(DESERT_GATHERING, { t: "addProp", kind: "firePit", at: [6, 12] }).props?.at(-1)?.kind).toBe("firePit");
   // the first new wall down: the corner opens back onto the barn
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);

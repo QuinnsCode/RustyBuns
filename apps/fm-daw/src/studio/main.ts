@@ -62,7 +62,7 @@ import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
 import { spinCard } from "./spin-card.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
-import { prop, chaseSteps } from "./props.ts";
+import { prop, chaseSteps, tickProps } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { doorways } from "./doors.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
@@ -185,7 +185,7 @@ function buildRoom() {
   scene.add(doorways(def, h, { wallOf: (wl) => surface(wallSurface(wl.material ?? "drywall"), wl.material ? undefined : def.colors.walls), casing: surface("wood", def.colors.trim), leaf: surface("wood", "#6e5034"), lever: surface("metal", "#b9bcc0"), glass }));
   // a seat on a riser stands on its deck, and so does what's played there
   for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
-  for (const p of def.props ?? []) scene.add(prop(p, surface));
+  for (const p of def.props ?? []) { const o = prop(p, surface); scene.add(o); if (o.userData.tick) moving.push(o); }
   // the gear wall (gear-wall.ts): the sesh's rack, pedal wall and gear, in the gear room's frame where the studio stands it
   const g = gearPlace(def);
   gearScene.group.position.set(g.at[0], 0, g.at[1]);
@@ -204,6 +204,8 @@ addEventListener("pointerdown", () => roomTubes.pressed(), true);
 addEventListener("keydown", () => roomTubes.pressed(), true);
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
+/** Props that move on their own (a fire pit's flames), ticked each frame. */
+const moving: THREE.Object3D[] = [];
 /** Each keyboard's case by spot id: its pitch and mod wheels turn as the one sitting there moves theirs. */
 const wheeled = new Map<string, THREE.Object3D>();
 /** A spot's instrument or furniture, and its seat. */
@@ -1378,6 +1380,7 @@ function frame(now: number) {
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
   dancers?.tick(t, musicOn() && band.synced ? band.beat() : null);
+  if (moving.length) tickProps(moving, t);
   // a drum machine on a table runs its chase in sixteenths while the band plays
   const running = transport.playing && band.synced ? Math.floor(band.beat() * 4) % 16 : null;
   if (running !== shownStep && hasDrumMachine) { shownStep = running; chaseSteps(scene, running); }

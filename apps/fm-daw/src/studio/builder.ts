@@ -44,9 +44,14 @@ export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
   monitor: { w: 0.6, d: 0.5, h: 1.4, color: "#2a2420" },
   wedge: { w: 0.55, d: 0.45, h: 0.32, color: "#161618" },
   riser: { w: 2.4, d: 1.8, h: 0.4, color: "#0c0c0e" },
+  // out of doors only: a camper van and a fire pit
+  van: { w: 1.9, d: 4.9, h: 2.05, color: "#2f6f73" },
+  firePit: { w: 1.2, d: 1.2, h: 0.6, color: "#6d655c" },
 };
+/** The decor that only stands out of doors. */
+export const OUTDOOR_DECOR: readonly DecorKind[] = ["van", "firePit"];
 export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
-export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular" | "monitor" | "wedge" | "riser";
+export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular" | "monitor" | "wedge" | "riser" | "van" | "firePit";
 
 
 /** A studio from the wire or this browser's storage, checked. */
@@ -349,6 +354,7 @@ export function edit(def: StudioDef, e: Edit): Built {
     case "addProp": {
       const props = next.props ??= [];
       if (props.length >= MAX_PROPS) return no(`a room holds ${MAX_PROPS} things`);
+      if (OUTDOOR_DECOR.includes(e.kind) && !next.outdoor) return no("that stands out of doors");
       props.push({ kind: e.kind, at: e.at, yaw: e.yaw ?? 0, ...DECOR[e.kind]!, seed: props.length * 97 + 13 });
       break;
     }
