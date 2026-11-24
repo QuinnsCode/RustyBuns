@@ -18,6 +18,35 @@
 
 **I call it Rusty Buns, but your app needs neither Rust nor Bun.** You need Bun to build the app, but that can be done on a dev server. Your app and your users do not need it. On the edge, the app is a plain Worker which can be TS or even WASM Rust. The desktop file has Bun inside it, so a user installs nothing. Rust is an option for speed, and it has a great interop story from native to client to server. I use Rust and Bun because they connect to everything so well.
 
+### Your app is a sandwich: the meat is yours, the bread is the place it runs
+
+Your business logic is the meat: the rules, the state, the types. It is SUPER MEATY, and you write it one time. Each place your app runs is a different bread around it. Want the page? Brioche. The edge? A pretzel bun. A server, a desktop file, a phone? Rye, a bagel, sourdough. Swap the bread, and the meat does not change.
+
+<table>
+  <tr>
+    <td width="50%"><img alt="The meat: rules, state and types drop onto a plate, with no bread yet" src="docs/sandwich/meat.gif"></td>
+    <td width="50%"><img alt="Swap the bread: the same meat gets brioche, pretzel, rye, bagel and sourdough buns in turn" src="docs/sandwich/swap.gif"></td>
+  </tr>
+  <tr>
+    <td><b>1. The meat.</b> Your app module, in TypeScript. It doesn't know where it runs.</td>
+    <td><b>2. Swap the bread.</b> Each target is a thin layer around the same meat.</td>
+  </tr>
+  <tr>
+    <td><img alt="One meat copies out to five plates, and each gets its own bread" src="docs/sandwich/copy.gif"></td>
+    <td><img alt="A club sandwich: page bread, TypeScript meat, the wire, Rust meat, Worker bread" src="docs/sandwich/club.gif"></td>
+  </tr>
+  <tr>
+    <td><b>3. Bring the bread, copy the sandwich.</b> Add a target once and the meat goes everywhere.</td>
+    <td><b>4. A weird club? Easy.</b> TypeScript meat and Rust meat with the same layers give the same answer.</td>
+  </tr>
+  <tr>
+    <td><img alt="A crusty sourdough labelled the phone takes some sawing, then goes into the bread box" src="docs/sandwich/hard.gif"></td>
+    <td valign="top"><b>5. Some bread is hard to cut.</b> The phone is crusty sourdough: it takes a minute. Cut it once, put it in the bread box, and every sandwich can have it.<br><br>It's your code, so your wild ideas are fair game. Two breads on one sandwich, a third target nobody asked for: stack it.</td>
+  </tr>
+</table>
+
+<sub>Drawn by <code>bun scripts/sandwich-gifs.ts</code> from <code>docs/sandwich/scenes.js</code>.</sub>
+
 ### Why bother with Rusty Buns?
 
 1. **You own your code.** Rusty Buns is a dev dependency, like shadcn or Better Auth. It does not change `src/`. `git rm` removes it. Wanna do something weird? Do it, your code is your code.
@@ -531,7 +560,7 @@ Qollab is the Durable Object layer below this: a hub for each player, and a part
 
 </details>
 
-### The Q engine: make, play, meet and ship in one kit
+### Queng, the Quantum Engine: make, play, meet and ship in one kit
 
 The runtime packages, eqosys (the store side), Qollab (the players side), codeSplitter (the editor) and the Rusty Buns CLI (the ship step), named together as one game engine.
 
@@ -1068,7 +1097,7 @@ A script plays each app for real in Chrome, records it, and cuts short reels fro
 
 <details><summary>More</summary>
 
-`bun scripts/trailers.ts` opens each app at a jump link in headless Chrome on the GPU and runs a script that plays it: keys held, the app's own `__commands` (a skate line, a shot, a set piece), and clicks. It keeps every frame at 60 fps, as a "take" in `~/.cache/rustybuns-trailers`, with a contact sheet of one frame each second. Then it cuts each "reel" from the takes. A reel is a list of cuts of 3 s or less, with a push or punch zoom, slow motion, a shake, a flash or a glitch. Chrome draws the captions and title cards in Lexend, and ffmpeg joins the cuts into a muted MP4 of 1 or 2 MB in `apps/eqosys/public/trailers/`. The takes and the cuts are in `scripts/trailer-plans.ts`. eqosys reads `src/trailers.json`: a tile starts its app's first reel when the pointer rests on it, and an app's page plays all of its reels in turn, with a strip to pick one. With reduced motion or Save-Data turned on, nothing starts by itself.
+`bun scripts/trailers.ts` opens each app at a jump link in headless Chrome on the GPU and runs a script that plays it: keys held, the app's own `__commands` (a skate line, a shot, a set piece), and clicks. It keeps every frame at 60 fps, as a "take" in `~/.cache/rustybuns-trailers`, with a contact sheet of one frame each second. Then it cuts each "reel" from the takes. A reel is a list of cuts of 3 s or less, with a push or punch zoom, slow motion, a shake, a flash or a glitch. A reel can open calm and then burst in: `calmThenBurst` glides through quiet shots in muted colour, then snaps into the action with a zoom, flash and shake. Chrome draws the captions and title cards in Lexend, and ffmpeg joins the cuts into a muted MP4 of 1 or 2 MB in `apps/eqosys/public/trailers/`. The takes and the cuts are in `scripts/trailer-plans.ts`. eqosys reads `src/trailers.json`: a tile starts its app's first reel when the pointer rests on it, and an app's page plays all of its reels in turn, with a strip to pick one. With reduced motion or Save-Data turned on, nothing starts by itself.
 
 </details>
 
