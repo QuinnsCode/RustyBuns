@@ -84,6 +84,8 @@ export interface Outdoor {
   lanternPoles?: { at: [number, number]; yaw: number }[];
   /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */
   lanterns?: [number, number, number][];
+  /** Knotted wool rugs laid on the sand (tapestry.ts `rugMesh`): middle, turn, long side and short side, metres. */
+  rugs?: { at: [number, number]; yaw: number; w: number; d: number }[];
   /** Everyone carries a hand lantern of their own while they're on their feet, and puts it down to sit at a seat. */
   carry?: boolean;
   seed: number;

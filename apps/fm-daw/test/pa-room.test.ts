@@ -55,4 +55,8 @@ test("each open-air rig stands shoulder to shoulder, and a narrow horn rig dulls
   const on = (s: Speaker) => hearSpeaker(s, { x: s.at[0], z: s.at[1] + 10, yaw: 0 }).cutoff;
   expect(off(narrow)).toBeLessThan(off(wide));
   expect(on(narrow)).toBe(on(wide));
+  // 10 m behind a horn stack, facing it: the bins' bass wraps round (their sheet's 6 dB), the horns' highs don't
+  const st = rig("dance-stack")[1]!, ahead = hearSpeaker(st, { x: st.at[0], z: st.at[1] + 10, yaw: 0 }), behind = hearSpeaker(st, { x: st.at[0], z: st.at[1] - 10, yaw: Math.PI });
+  expect(20 * Math.log10(behind.gain / ahead.gain)).toBeCloseTo(-6, 1);
+  expect(behind.cutoff).toBe(800);
 });

@@ -283,3 +283,120 @@ export function cotton(tex: THREE.CanvasTexture, seed: number, metres = true): T
     sheen: 0.3, sheenRoughness: 0.75, sheenColor: new THREE.Color(palette(seed).ground).multiplyScalar(0.6), side: THREE.DoubleSide,
   });
 }
+
+// ---- rugs on the sand: hand-knotted wool, laid where people stand and sit (Desert Gathering's booth, the kit, the bales)
+
+/** A rug's wools: the field, the border's ground, then the knot colours. */
+const RUG_WOOLS: readonly { field: string; border: string; knots: [string, string, string, string] }[] = [
+  { field: "#7d2a22", border: "#26304a", knots: ["#d9ccb0", "#1c1a1c", "#b88a3e", "#3f5f6e"] },
+  { field: "#2c3854", border: "#7a2b24", knots: ["#d8c9a8", "#151517", "#a9742f", "#8a3a2c"] },
+  { field: "#a0673a", border: "#3a2622", knots: ["#e3d6b8", "#1d1716", "#6f2b22", "#47604e"] },
+];
+
+/** A knotted rug `w` by `d` metres as a texture: the field with its dye-lot bands (abrash), a medallion and corner
+ *  spandrels, small motifs scattered in the field, a main border of rosettes between guard stripes, the pile worn thin
+ *  down the middle where it's walked, and sand worked in. Its long side runs along u. */
+export function rug(w: number, d: number, seed: number): THREE.CanvasTexture {
+  const px = 200, c = document.createElement("canvas");
+  c.width = Math.round(w * px); c.height = Math.round(d * px);
+  const g = c.getContext("2d")!, W = c.width, H = c.height, r = mulberry32(seed * 13 + 5), wool = RUG_WOOLS[seed % RUG_WOOLS.length]!;
+  g.fillStyle = wool.field; g.fillRect(0, 0, W, H);
+  // abrash: each new batch of dyed wool a shade off, in bands across the warp
+  for (let x = 0; x < W;) {
+    const band = (0.05 + r() * 0.25) * px;
+    g.globalAlpha = r() * 0.16; g.fillStyle = r() < 0.5 ? "#000" : "#fff"; g.fillRect(x, 0, band, H);
+    x += band;
+  }
+  g.globalAlpha = 1;
+  const bw = Math.min(W, H) * 0.16, inset = bw * 1.15;
+  // the field's small motifs: hooked diamonds on a loose grid
+  const step = 0.16 * px;
+  for (let x = inset + step / 2; x < W - inset; x += step) for (let y = inset + step / 2; y < H - inset; y += step) {
+    if (r() < 0.35) continue;
+    const k = Math.floor(r() * 4), s = step * 0.2;
+    g.fillStyle = wool.knots[k]!; g.globalAlpha = 0.85;
+    g.beginPath(); g.moveTo(x, y - s); g.lineTo(x + s, y); g.lineTo(x, y + s); g.lineTo(x - s, y); g.fill();
+    g.fillRect(x - s * 1.4, y - 1, s * 0.5, 2); g.fillRect(x + s * 0.9, y - 1, s * 0.5, 2);
+  }
+  g.globalAlpha = 1;
+  // the medallion: stepped lozenges one inside the next, and a quarter of one in each corner of the field
+  const lozenge = (cx: number, cy: number, rx: number, ry: number, steps: number) => {
+    for (let i = 0; i < steps; i++) {
+      const k = 1 - i / steps;
+      g.fillStyle = [wool.border, wool.knots[0], wool.knots[2], wool.knots[1], wool.field][i % 5]!;
+      g.beginPath();
+      // a stepped outline, as knots make it: the diamond's edges drawn as stairs
+      const n = 10;
+      for (let j = 0; j <= n * 4; j++) {
+        const q = j / (n * 4), a = q * Math.PI * 2, ex = Math.sign(Math.cos(a)) * Math.abs(Math.cos(a)) ** 1, ey = Math.sign(Math.sin(a)) * Math.abs(Math.sin(a)) ** 1;
+        const sx = Math.round((cx + ex * rx * k) / 4) * 4, sy = Math.round((cy + ey * ry * k) / 4) * 4;
+        j ? g.lineTo(sx, sy) : g.moveTo(sx, sy);
+      }
+      g.fill();
+    }
+  };
+  lozenge(W / 2, H / 2, (W - inset * 2) * 0.26, (H - inset * 2) * 0.36, 5);
+  g.save(); g.beginPath(); g.rect(inset, inset, W - inset * 2, H - inset * 2); g.clip();
+  for (const [cx, cy] of [[inset, inset], [W - inset, inset], [inset, H - inset], [W - inset, H - inset]]) lozenge(cx!, cy!, (W - inset * 2) * 0.16, (H - inset * 2) * 0.24, 3);
+  g.restore();
+  // the borders: an outer guard, the main border of rosettes, an inner guard
+  const frame = (o: number, t: number, color: string) => { g.strokeStyle = color; g.lineWidth = t; g.strokeRect(o + t / 2, o + t / 2, W - 2 * o - t, H - 2 * o - t); };
+  frame(0, bw * 0.18, wool.knots[1]);
+  frame(bw * 0.18, bw * 0.64, wool.border);
+  frame(bw * 0.82, bw * 0.14, wool.knots[0]);
+  frame(bw * 0.96, bw * 0.06, wool.knots[1]);
+  const ros = bw * 0.64, rosR = ros * 0.32, along = (x0: number, y0: number, x1: number, y1: number) => {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / (ros * 1.1)));
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n;
+      g.fillStyle = wool.knots[(i % 2) * 2]!;
+      for (let p = 0; p < 8; p++) { const a = (p / 8) * Math.PI * 2; g.fillRect(x + Math.cos(a) * rosR * 0.7 - 2, y + Math.sin(a) * rosR * 0.7 - 2, 4, 4); }
+      g.fillStyle = wool.knots[3]; g.fillRect(x - rosR * 0.35, y - rosR * 0.35, rosR * 0.7, rosR * 0.7);
+    }
+  };
+  const m = bw * 0.5;
+  along(m, m, W - m, m); along(m, H - m, W - m, H - m); along(m, m, m, H - m); along(W - m, m, W - m, H - m);
+  // the pile: knot by knot speckle, worn thin down the middle (the warp's pale shows through), sand in it
+  for (let i = 0, n = Math.round(W * H / 5); i < n; i++) {
+    const x = r() * W, y = r() * H;
+    g.globalAlpha = 0.08 + r() * 0.1; g.fillStyle = r() < 0.5 ? "#000" : "#fff"; g.fillRect(x, y, 1.5, 1.5);
+  }
+  const wear = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.55);
+  wear.addColorStop(0, "rgba(214,196,160,0.28)"); wear.addColorStop(1, "rgba(214,196,160,0)");
+  g.globalAlpha = 1; g.fillStyle = wear; g.fillRect(0, 0, W, H);
+  g.globalAlpha = 0.16; g.fillStyle = "#b08c62"; g.fillRect(0, 0, W, H);
+  for (let i = 0, n = Math.round(W * H / 30); i < n; i++) { g.globalAlpha = r() * 0.3; g.fillStyle = "#c4a77c"; g.fillRect(r() * W, r() * H, 1, 1); }
+  g.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  return tex;
+}
+
+/** A rug as it lies on the sand: `w` by `d`, a centimetre thick, a few soft rucks where it was kicked, and the white
+ *  cotton fringe at both ends (the warp's ends, knotted off). Its long side along x. */
+export function rugMesh(w: number, d: number, seed: number): THREE.Group {
+  const r = mulberry32(seed * 3 + 11), g = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(w, d, 48, 24).rotateX(-Math.PI / 2), p = geo.attributes.position!;
+  const rucks = Array.from({ length: 2 }, () => ({ x: (r() - 0.5) * w * 0.8, z: (r() - 0.5) * d * 0.8, a: r() * Math.PI, h: 0.008 + r() * 0.012, wide: 0.12 + r() * 0.1 }));
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i);
+    let y = 0.011;
+    for (const k of rucks) { const across = (x - k.x) * Math.cos(k.a) + (z - k.z) * Math.sin(k.a), along = (x - k.x) * -Math.sin(k.a) + (z - k.z) * Math.cos(k.a); y += k.h * Math.exp(-((across / k.wide) ** 2)) * Math.exp(-((along / 0.6) ** 2)); }
+    // the edges curl down to the sand
+    const edge = Math.min(w / 2 - Math.abs(x), d / 2 - Math.abs(z));
+    if (edge < 0.02) y *= Math.max(0.3, edge / 0.02);
+    p.setY(i, y);
+  }
+  geo.computeVertexNormals();
+  const top = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: rug(w, d, seed), roughness: 1, normalMap: weave(0.004), normalScale: new THREE.Vector2(0.5, 0.5) }));
+  top.receiveShadow = true;
+  g.add(top);
+  // the fringe: tassels of warp along both short ends, lying on the sand at a slant
+  const pos: number[] = [];
+  for (const side of [-1, 1]) for (let z = -d / 2 + 0.01; z < d / 2; z += 0.012) {
+    const len = 0.05 + r() * 0.03, lean = (r() - 0.5) * 0.03, x0 = side * w / 2;
+    pos.push(x0, 0.006, z, x0 + side * len, 0.002, z + lean);
+  }
+  g.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)), new THREE.LineBasicMaterial({ color: "#d9d0bc" })));
+  return g;
+}

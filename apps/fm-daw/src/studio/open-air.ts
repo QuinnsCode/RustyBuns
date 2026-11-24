@@ -18,6 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
 import { SYSTEMS } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
+import { rugMesh } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import type { Outdoor, StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -173,6 +174,9 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
   const look = gearLook();
+  // ---- the rugs on the sand
+  (out.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, out.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; group.add(m); });
+
   const rig = roomRig(def);
   for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack));
 

@@ -49,7 +49,8 @@ import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
-import { bassReach, bassSynth, keysKind, keysSynth } from "./gear-models.ts";
+import { bassReach, bassSynth, keysKind, keysSynth, seedOf } from "./gear-models.ts";
+import { baleSeat } from "./bales.ts";
 import { withKeysVoice } from "./keys-voice.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
@@ -334,6 +335,9 @@ function thing(s: Spot): THREE.Group {
     box(t.w, 0.2, 0.06, surface("steel", "#2a2c30"), 0, 0.1, -t.d * 0.42, deck);
     many(new THREE.BoxGeometry(0.03, 0.01, 0.004), surface("screen", "#5ad06a"), leds, deck).userData.glow = 0.6;
     box(t.w, 0.05, 0.09, surface("tolex", "#1d1b19"), 0, t.h - 0.025, t.d / 2 - 0.045);
+  } else if (s.kind === "couch" && def.outdoor) {
+    // out of doors the couch is straw bales: a row to sit on, a row laid flat behind, two high (bales.ts)
+    inFront.add(baleSeat(t.w, t.d, seedOf(s.id)));
   } else {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, t.d), m), 0, t.h / 2, 0);
     if (s.kind === "couch") put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.5, 0.2), m), 0, t.h + 0.25, t.d / 2 - 0.1);

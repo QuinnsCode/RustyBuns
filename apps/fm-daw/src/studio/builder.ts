@@ -49,6 +49,7 @@ export const Studio: Guard<StudioDef> = obj({
     lanternPoles: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 32)),
     lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
     carry: opt(bool()),
+    rugs: opt(arr(obj({ at: XZ, yaw: num(-7, 7), w: num(0.5, 6), d: num(0.5, 6) }), 16)),
     seed: int(0, 2 ** 31),
   })),
 });

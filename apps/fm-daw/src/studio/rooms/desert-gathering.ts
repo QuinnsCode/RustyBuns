@@ -48,6 +48,13 @@ export const DESERT_GATHERING: StudioDef = {
     // spares on the sand at the booth's front corners, to carry off and set down where you like
     lanterns: [[-1.9, 0, -7.1], [-2.15, 0, -6.8], [1.9, 0, -7.1], [2.15, 0, -6.8]],
     carry: true,
+    // rugs on the sand: a big one where the DJ stands and the sawhorses stand, one under the kit, one at each bale
+    rugs: [
+      { at: [0, -8.25], yaw: 0, w: 3.6, d: 2.4 },
+      { at: [-4.8, -10.1], yaw: 0.12, w: 2.4, d: 1.8 },
+      { at: [-11, 7.4], yaw: 0.8, w: 2.6, d: 1.7 },
+      { at: [11, 7.4], yaw: -0.8, w: 2.6, d: 1.7 },
+    ],
     seed: 4242,
   },
 };
