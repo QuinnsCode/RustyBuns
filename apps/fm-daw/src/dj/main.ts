@@ -36,7 +36,7 @@ const harness = {
   state: () => {
     if (!panel) return null;
     const m = panel.decks.mixer;
-    return { open: panel.isOpen(), library: panel.library(), waiting: panel.waiting(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), zoom: panel.zoom(), tubes: panel.tubes(), carousel: carousel() };
+    return { open: panel.isOpen(), library: panel.library(), waiting: panel.waiting(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), zoom: panel.zoom(), coasting: panel.coasting(), tubes: panel.tubes(), carousel: carousel() };
   },
   /** Load a file's bytes onto a deck as a dropped file would: its tempo and where that came from (tag, software grid, ear). */
   load: async (side: Side, name: string, bytes: number[]) => { const t = await start().load(side, name, Uint8Array.from(bytes).buffer); return { bpm: t.grid?.bpm ?? null, firstBeat: t.grid?.offset ?? null, from: t.from ?? null }; },
@@ -75,6 +75,8 @@ const harness = {
     j.touch(false);
     return pos;
   },
+  /** Grab deck `side`'s lane of the close-up and let go with the hand moving `pxPerSec` (CSS px a second, leftward negative moves the track on): it coasts and slows to a stop (state().coasting), or stops dead when slow. */
+  flick: (side: Side, pxPerSec: number) => panel?.flick(side, pxPerSec),
   /** Hold or let go of the top platter, and turn a part of the wheel, as a hand (or a MIDI jog) does. */
   touch: (side: Side, on: boolean) => panel?.jogs[side].touch(on),
   turn: (side: Side, part: JogPart, turns: number) => panel?.jogs[side].turn(part, turns),
