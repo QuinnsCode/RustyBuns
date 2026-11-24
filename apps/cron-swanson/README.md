@@ -9,7 +9,7 @@ tags. Its engine, **bacron**, ticks on each minute boundary and fires on time to
 **What it is:** your alarms and reminders in one place, there to pester you: water, sweeps, rent, the furnace filter.
 It also holds the jobs that run on a timer for other apps (nightly backups, weekly check-ins, yearly renewals).
 
-**Use:** not online right now. Run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
+**Use:** https://rustybuns-production.up.railway.app (signs in with eqosys; only the owner's account gets in). Or run it yourself: `bun install --frozen-lockfile` at the repo root, then `cd apps/cron-swanson && bun run dev` and open http://localhost:8790.
 
 **How to use:** the screen is your alarms as glowing piano-roll notes on tracks, grouped into busses by how often they come
 round (every few minutes, daily, weekly, monthly, yearly), with time running left to right. A playhead sweeps across;
@@ -99,7 +99,8 @@ Install the ntfy app, subscribe to a topic with a long random name, and set `CRO
 repo's own `packages/`), not the whole repo's 4 GB.
 
 1. New service from this GitHub repo. Leave **Root Directory** empty: the Dockerfile copies the whole repo.
-2. Settings, **Config-as-code**, Railway Config File: `/apps/cron-swanson/railway.json`. Railway only reads the
+2. Settings, **Config-as-code**, Railway Config File: `/apps/cron-swanson/railway.json`, and under **Build** set Builder to
+   **Dockerfile**, Dockerfile Path `apps/cron-swanson/Dockerfile` (left on Railpack it fails: "No start command"). Railway only reads the
    root's `railway.json` on its own, so without this it never finds the Dockerfile or the health check.
 3. A volume mounted at `/data` (jobs and runs live in `/data/cron-swanson.sqlite`).
 4. The variables `CRON_SWANSON_OWNER` (your eqosys email) and `CRON_SWANSON_TOKEN` (a long random string, for
