@@ -24,6 +24,8 @@ export type System = {
   /** What it's called on the sand: by what it is, never a maker's name. */
   name: string;
   about: string;
+  /** How a crew stands it up in the field, from the family's own setup guides: where the boxes go, how they're aimed and fed. */
+  setup: string;
   /** One stack, bottom to top (catalog ids; `sand-dolly` rolls it). */
   stack: readonly string[];
   /** The box that sets the pattern (the top) and the one that sets the low end (the sub). */
@@ -37,30 +39,35 @@ export const SYSTEMS: Record<SystemId, System> = {
   "dance-stack": {
     id: "dance-stack", name: "Horn stack",
     about: "Horn-loaded all the way down: folded 21-inch bins, a horn-loaded 15-inch mid-bass and a mid-high horn. Punchy, forward, and it throws.",
+    setup: "A stack each side of the floor: bass bins on the ground, the mid-bass on them and the mid-high horn on top, each stack toed in so the horns cross in the middle. An active crossover splits four ways, an amp channel per band, the bands lined up in time.",
     stack: ["sand-dolly", "horn-sub-21", "stack-mid-bass", "stack-mid-high"], top: "stack-mid-high", sub: "horn-sub-21",
     voicing: [{ hz: 110, db: 2.5, q: 1 }, { hz: 2500, db: 1.5, q: 0.9 }],
   },
   synergy: {
     id: "synergy", name: "Synergy horns",
     about: "Three ways summed in one pyramid horn, so each box is a single point, over tapped-horn 18s. Flat, coherent and very low.",
+    setup: "Each box is one point covering 60 degrees, so a side is one or two boxes splayed to just meet; they stand on the subs or hang over them. The tapped horns stand side by side on the ground, where each one doubled adds 3 dB. A processor per side, its presets from the sheet.",
     stack: ["sand-dolly", "tapped-horn-18", "synergy-horn"], top: "synergy-horn", sub: "tapped-horn-18",
     voicing: [{ hz: 45, db: 1, q: 0.8 }],
   },
   sculpted: {
     id: "sculpted", name: "Sculpted array",
     about: "Moulded three-way shells, round horns in one curved body, on hybrid-horn triple 21s. A deep, smooth floor and a sweet, open top.",
+    setup: "Shells stacked two or three high with their own brackets, the lower ones angled down at the front of the floor; the triple 21s in a line on the sand in front of the booth. A system controller and matched amps for the whole rig: the family doesn't run on anything else.",
     stack: ["triple-21-sub", "sculpted-3way"], top: "sculpted-3way", sub: "triple-21-sub",
     voicing: [{ hz: 50, db: 2, q: 0.8 }, { hz: 400, db: -1, q: 1 }, { hz: 10000, db: 1.5, q: 0.7 }],
   },
   "tri-amp": {
     id: "tri-amp", name: "Tri-amp stack",
     about: "The old touring way: narrow horn tops, two horn-loaded 10s and a waveguide, over horn-loaded 2 x 15 bass. Mid-forward and long-throwing.",
+    setup: "Bass bins on the ground, tops on them, two or three stacks a side for a big floor, every box tri-amped: three amp channels a box from a crossover in the rack. Narrow tops, so the stacks are aimed box by box at their part of the floor.",
     stack: ["sand-dolly", "tri-amp-bass", "tri-amp-top"], top: "tri-amp-top", sub: "tri-amp-bass",
     voicing: [{ hz: 1600, db: 3, q: 1.2 }, { hz: 12000, db: -2, q: 0.8 }],
   },
   "line-array": {
     id: "line-array", name: "Line array",
     about: "Today's festival rig, ground-stacked: three powered line array boxes on two 18-inch subs. Very wide and even across the floor, clean, with a little lift up top.",
+    setup: "Subs on the ground, the array stood on them on a stacking frame, the pins between boxes set so the top box aims at the back of the floor and the bottom one at the front. Every box is powered: a mains feed and a signal line to each, daisy-chained down the stack.",
     stack: ["sub-18", "sub-18", "line-array-10", "line-array-10", "line-array-10"], top: "line-array-10", sub: "sub-18",
     voicing: [{ hz: 70, db: 1.5, q: 0.9 }, { hz: 9000, db: 1, q: 0.7 }],
   },

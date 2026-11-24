@@ -62,11 +62,11 @@ export function rigCards(host: HTMLElement, def: StudioDef, current: SystemId, p
     b.type = "button"; b.className = "studio-card rig-card"; b.dataset.rig = id;
     b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(id === current));
     b.disabled = !pick;
-    b.title = s.about;
+    b.title = `${s.about}\n\nHow it's set up: ${s.setup}`;
     // the sheet's numbers: the top's pattern and its loudest, the stack's low end, and what one stack weighs
     const snd = systemSound(s), kg = s.stack.reduce((t, b) => t + gear(b).kg, 0);
     const sheet = `${snd.coverage.h} x ${snd.coverage.v}° · ${snd.maxSpl} dB peak · down to ${snd.lowCut} Hz · ${Math.round(kg)} kg a stack`;
-    b.innerHTML = `<span class="rig-pics">${stackSvg(id)}<img src="${coverageMap(def, id)}" alt="" title="Mids and highs over the floor, from above: the wall along the top"></span><b>${esc(s.name)}</b><span class="sheet">${esc(sheet)}</span><span class="keys">${esc(s.about)}</span>`;
+    b.innerHTML = `<span class="rig-pics">${stackSvg(id)}<img src="${coverageMap(def, id)}" alt="" title="Mids and highs over the floor, from above: the wall along the top"></span><b>${esc(s.name)}</b><span class="sheet">${esc(sheet)}</span><span class="keys">${esc(s.about)}</span><span class="setup"><b>Set up:</b> ${esc(s.setup)}</span>`;
     if (pick) b.addEventListener("click", () => pick(id));
     host.append(b);
   }
