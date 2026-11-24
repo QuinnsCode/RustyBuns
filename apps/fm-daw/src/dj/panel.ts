@@ -117,6 +117,29 @@ export interface DecksPanel {
   prefs(to?: Partial<Prefs>): Prefs;
   /** A nudge on deck `side`: a tap back or on, or the fast one held (0 lets go). */
   nudge(side: Side, kind: "tap" | "hold", dir: -1 | 0 | 1): void;
+  /** Let go of deck `side`'s close-up with the hand moving `pxPerSec` (CSS px, rightward positive) as a flick does. */
+  flick(side: Side, pxPerSec: number): void;
+  /** Whether each deck's waveform is still coasting from a flick. */
+  coasting(): [boolean, boolean];
+}
+
+/** How far back the hand's speed is read when it lets go of the close-up, ms. */
+const FLICK_WINDOW_MS = 70;
+/** A let-go slower than this (CSS px a second) stops dead, as a slow drag always has. */
+const FLICK_MIN_PX_S = 200;
+/** The coast's friction: its speed falls to 1/e every this many seconds (a hard flick settles in about 0.7 s). */
+const FLICK_TAU_S = 0.15;
+/** The coast ends below this speed, CSS px a second. */
+const FLICK_END_PX_S = 30;
+/** A flicked deck coasting: its speed in CSS px a second (rightward positive), how, and when it last moved. */
+interface Coast { v: number; vinyl: boolean; last: number }
+
+/** The hand's speed (CSS px a second, rightward positive) over the last FLICK_WINDOW_MS of its moves, let go at `now`: 0 when it had stopped. */
+export function flickSpeed(trail: readonly { t: number; x: number }[], now: number): number {
+  const last = trail[trail.length - 1];
+  if (!last || now - last.t > FLICK_WINDOW_MS) return 0;
+  const first = trail.find((p) => last.t - p.t <= FLICK_WINDOW_MS) ?? last, dt = last.t - first.t;
+  return dt < 8 ? 0 : ((last.x - first.x) / dt) * 1000;
 }
 
 /** Mount the decks on the page, closed. `ctx` is the page's audio; `onToggle` hears it open and close. */
@@ -172,28 +195,73 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   zoom.addEventListener("wheel", (e) => { if (!e.ctrlKey && !e.metaKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); setZoom(zoomAt + (e.deltaY > 0 ? 1 : -1)); }, { passive: false });
   // a press on a deck's lane of the close-up grabs its track: VINYL holds it under your hand and drags it (a scratch),
   // SLIDE moves it and lets it play on
-  let held: { id: number; side: Side; x: number; vinyl: boolean } | null = null;
+  let held: { id: number; side: Side; x: number; vinyl: boolean; trail: { t: number; x: number }[] } | null = null;
+  /** Seconds of track a hand's `px` (CSS pixels, rightward) across the close-up moves deck `side`: back when positive. */
+  const pxToTrack = (side: Side, px: number) => (-px * 2 * zoomS() * decks.decks[side].rate()) / Math.max(1, zoom.getBoundingClientRect().width);
   zoom.addEventListener("pointerdown", (e) => {
     if (held || prefs.lockWave) return;
     const r = zoom.getBoundingClientRect(), side: Side = e.clientY - r.top < r.height / 2 ? 0 : 1, d = decks.decks[side];
     if (!d.track && !far(side) && !tubes[side]) return loadInto(side);
+    stopCoast(side);
     if (!d.track || far(side) || tubes[side]) return;
     e.preventDefault();
     try { zoom.setPointerCapture(e.pointerId); } catch { /* a pointer that has already gone */ }
-    held = { id: e.pointerId, side, x: e.clientX, vinyl: prefs.grab === "vinyl" };
+    held = { id: e.pointerId, side, x: e.clientX, vinyl: prefs.grab === "vinyl", trail: [{ t: e.timeStamp, x: e.clientX }] };
     if (held.vinyl) jogs[side].touch(true, true);
   });
   zoom.addEventListener("pointermove", (e) => {
     if (!held || e.pointerId !== held.id) return;
-    const r = zoom.getBoundingClientRect(), d = decks.decks[held.side];
+    const d = decks.decks[held.side];
     // the waveform runs right to left as it plays, so dragging it left moves the track on
-    const ds = (-(e.clientX - held.x) * (zoom.width / Math.max(1, r.width))) / (zoom.width / (2 * zoomS() * d.rate()));
+    const ds = pxToTrack(held.side, e.clientX - held.x);
     held.x = e.clientX;
+    held.trail.push({ t: e.timeStamp, x: e.clientX });
+    while (held.trail.length > 2 && e.timeStamp - held.trail[0]!.t > FLICK_WINDOW_MS) held.trail.shift();
     if (held.vinyl) jogs[held.side].scrub(ds); else d.seek(d.pos() + ds);
   });
-  const letGoWave = (e: PointerEvent) => { if (!held || e.pointerId !== held.id) return; if (held.vinyl) jogs[held.side].touch(false); held = null; };
+  const letGoWave = (e: PointerEvent) => {
+    if (!held || e.pointerId !== held.id) return;
+    const h = held;
+    held = null;
+    flick(h.side, e.type === "pointerup" ? flickSpeed(h.trail, e.timeStamp) : 0, h.vinyl);
+  };
   zoom.addEventListener("pointerup", letGoWave);
   zoom.addEventListener("pointercancel", letGoWave);
+  // a flicked waveform coasts on like a record with weight, slowing to a stop: VINYL through the held platter (so it
+  // sounds like a released record spinning down), SLIDE on top of the deck's own play
+  const coasts: [Coast | null, Coast | null] = [null, null];
+  let coastFrame = 0;
+  /** Let go of deck `side`'s close-up with the hand moving `pxPerSec` (rightward positive): coast on, or let go as before. */
+  function flick(side: Side, pxPerSec: number, vinyl: boolean) {
+    stopCoast(side);
+    if (Math.abs(pxPerSec) < FLICK_MIN_PX_S || !decks.decks[side].track || (vinyl && !jogs[side].touched)) { if (vinyl) jogs[side].touch(false); return; }
+    coasts[side] = { v: pxPerSec, vinyl, last: performance.now() };
+    if (!coastFrame) coastFrame = requestAnimationFrame(coastStep);
+  }
+  /** Stop deck `side`'s coast where it is (a new grab, or a jog, play or cue on that deck). */
+  function stopCoast(side: Side) {
+    const c = coasts[side];
+    if (!c) return;
+    coasts[side] = null;
+    if (c.vinyl) jogs[side].touch(false);
+    if (!coasts[0] && !coasts[1] && coastFrame) { cancelAnimationFrame(coastFrame); coastFrame = 0; }
+  }
+  function coastStep(now: number) {
+    coastFrame = 0;
+    for (const side of [0, 1] as const) {
+      const c = coasts[side], d = decks.decks[side];
+      if (!c) continue;
+      const dt = Math.min(0.05, Math.max(0, (now - c.last) / 1000));
+      c.last = now;
+      const t = d.track;
+      if (!t || (c.vinyl && !jogs[side].touched)) { stopCoast(side); continue; }
+      const ds = pxToTrack(side, c.v * dt), to = d.pos() + ds;
+      if (c.vinyl) jogs[side].scrub(ds); else d.seek(to);
+      c.v *= Math.exp(-dt / FLICK_TAU_S);
+      if (Math.abs(c.v) < FLICK_END_PX_S || (ds < 0 && to <= 0) || (ds > 0 && to >= t.buffer.duration)) stopCoast(side);
+    }
+    if ((coasts[0] || coasts[1]) && !coastFrame) coastFrame = requestAnimationFrame(coastStep);
+  }
   // each lane's load button, down the close-up's left edge: A (fire) on top, B (blue) under it
   const lanes = el("div", { class: "dj-lanes" });
   for (const side of [0, 1] as const) {
@@ -235,8 +303,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const players = ([0, 1] as const).map((side) => playerFace({
     side, deck: decks.decks[side], jog: jogs[side],
     press: (p, x) => press(side, p, x),
-    touch: (on) => { const t = far(side); if (t) jogOut(side, t.owner)?.touch(on, performance.now()); else if (!tubes[side]) jogs[side].touch(on); },
-    turn: (part, turns) => { const t = far(side), tube = tubes[side]; if (t) jogOut(side, t.owner)?.turn(part, turns, performance.now()); else if (tube) tube.turn(turns); else jogs[side].turn(part, turns); },
+    touch: (on) => { stopCoast(side); const t = far(side); if (t) jogOut(side, t.owner)?.touch(on, performance.now()); else if (!tubes[side]) jogs[side].touch(on); },
+    turn: (part, turns) => { stopCoast(side); const t = far(side), tube = tubes[side]; if (t) jogOut(side, t.owner)?.turn(part, turns, performance.now()); else if (tube) tube.turn(turns); else jogs[side].turn(part, turns); },
     theirs: () => (far(side) ? view(side) : null),
     tube: () => tubes[side]?.view() ?? null,
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
@@ -248,6 +316,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   }));
   /** A nudge on a deck here: a tap moves it `prefs.nudgeMs`, the fast one held drifts it. Your own decks only. */
   function nudge(side: Side, kind: "tap" | "hold", dir: -1 | 0 | 1) {
+    stopCoast(side);
     if (far(side) || tubes[side]) { if (dir) flash(far(side) ? "The nudge works on your own decks: ask whoever has this one" : "The nudge needs a file: on YouTube, ride the pitch fader"); return; }
     if (kind === "tap") { if (dir) jogs[side].tapNudge(dir, prefs.nudgeMs); } else jogs[side].holdNudge(dir, prefs.nudgeMs);
   }
@@ -526,6 +595,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   /** Do a press on a deck here (yours, or someone in the booth pressed it). */
   function pressHere(side: Side, p: Press, x?: number) {
     const d = decks.decks[side], hot = hotOf(p), tube = tubes[side];
+    stopCoast(side);
     if (tube) { if (p === "sync") flash("Sync needs a beat: a YouTube deck has none, so match it by ear on the pitch fader"); else tube.press(p, x); return; }
     if (!d.track) return;
     if (p === "play") d.toggle();
@@ -761,5 +831,13 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
     tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)),
     prefs: (to) => { if (to) { setPrefs({ ...prefs, ...to }); drawPrefs(); } return prefs; },
-    nudge };
+    nudge,
+    flick: (side, pxPerSec) => {
+      stopCoast(side);
+      if (!decks.decks[side].track || far(side) || tubes[side]) return;
+      const vinyl = prefs.grab === "vinyl";
+      if (vinyl) jogs[side].touch(true, true);
+      flick(side, pxPerSec, vinyl);
+    },
+    coasting: () => [!!coasts[0], !!coasts[1]] };
 }

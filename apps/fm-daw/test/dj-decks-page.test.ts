@@ -131,3 +131,39 @@ test.skipIf(!hasChrome)("loading tracks: deck B's upload button, a drop on lane 
   expect(s.library.indexOf("01 one.wav")).toBeLessThan(s.library.indexOf("02 two.wav"));
   expect(s.waiting.names).toEqual([]);
 });
+
+test.skipIf(!hasChrome)("a flick of deck A's close-up coasts on and slows to a stop; a drag let go still stops dead; a new press stops the coast", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
+  await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
+  const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+  for (const end = Date.now() + 30_000; !(await page("!!window.qdecks?.start()?.decks.every((d) => d.length)").catch(() => false)); await Bun.sleep(100)) if (Date.now() > end) throw new Error("no demo tracks");
+  await page(`(window.hand = ${HAND}, true)`);
+  type Seen = { moved: number; coasting: boolean; touched: boolean }[];
+  for (const grab of ["vinyl", "slide"]) {
+    // a hard flick left (on): it keeps going after the hand lets go, then settles inside a second and lets go of the platter
+    const flick = await page<Seen>(`hand("${grab}", 8, -30, 0)`);
+    expect(flick[0]!.coasting).toBe(true);
+    expect(flick[2]!.moved).toBeGreaterThan(flick[0]!.moved);
+    expect(flick.at(-1)!).toMatchObject({ coasting: false, touched: false });
+    expect(flick.at(-1)!.moved).toBeCloseTo(flick.at(-3)!.moved, 3);
+    // the same drag, held still before letting go: no coast, the deck stays where the hand left it
+    const still = await page<Seen>(`hand("${grab}", 8, -30, 150)`);
+    expect(still.every((s) => !s.coasting && Math.abs(s.moved) < 1e-6)).toBe(true);
+  }
+  // a fresh press on the lane catches a coasting deck at once
+  expect(await page<boolean>(`(async () => { qdecks.flick(0, -3000); await new Promise((k) => setTimeout(k, 80)); const z = document.querySelector(".dj-zoom"), r = z.getBoundingClientRect(), at = { pointerId: 8, clientX: r.left + 100, clientY: r.top + 5, bubbles: true }; z.dispatchEvent(new PointerEvent("pointerdown", at)); const c = qdecks.state().coasting[0]; z.dispatchEvent(new PointerEvent("pointerup", at)); return c; })()`)).toBe(false);
+});
+
+/** A hand on deck A's lane of the close-up: down, `moves` drags of `dx` px 10 ms apart, `rest` ms still, up; then deck A over the next 1.2 s. */
+const HAND = `async (grab, moves, dx, rest) => {
+  qdecks.prefs({ grab });
+  const z = document.querySelector(".dj-zoom"), r = z.getBoundingClientRect(), y = r.top + r.height / 4, wait = (ms) => new Promise((k) => setTimeout(k, ms));
+  let x = r.left + r.width * 0.8;
+  const fire = (type) => z.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+  fire("pointerdown");
+  for (let i = 0; i < moves; i++) { await wait(10); x += dx; fire("pointermove"); }
+  await wait(rest); fire("pointerup");
+  const at = () => qdecks.state().decks[0].pos, p0 = at(), seen = [];
+  for (let t = 0; t < 1200; t += 100) { await wait(100); seen.push({ moved: at() - p0, coasting: qdecks.state().coasting[0], touched: qdecks.state().players[0].touched }); }
+  return seen;
+}`;
