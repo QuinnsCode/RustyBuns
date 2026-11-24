@@ -826,7 +826,7 @@ function roomStudios() {
   studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
   // out of doors, the rig too: the leader's to change, for everyone (rig-cards.ts)
   $("rigs").hidden = $("rigs-title").hidden = !def.outdoor;
-  if (def.outdoor) rigCards($("rigs"), roomRig(def).id, lead ? (id) => player.edit({ t: "rig", id }) : undefined);
+  if (def.outdoor) rigCards($("rigs"), def, roomRig(def).id, lead ? (id) => player.edit({ t: "rig", id }) : undefined);
 }
 /** The sesh's rig isn't the one standing here: reload onto it, as a studio move does (the stacks and the PA are built once). */
 function rigOver(p: Project) {
