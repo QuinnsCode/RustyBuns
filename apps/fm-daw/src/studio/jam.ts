@@ -263,6 +263,8 @@ export function snapshot(j: Jam, p: Project | null) {
     room: j.def.id,
     you: { x: r(m.x), z: r(m.z), y: r(m.y), yaw: r(m.yaw), pitch: r(m.pitch), seat: m.seat, cam: m.cam, plays: s && p ? trackFor(s, p) : -1 },
     near: nearSpot(j)?.id ?? null,
+    // the dressing, by its index in the room's props: what it is, where it stands and how big (#5843: walk to each)
+    props: (j.def.props ?? []).map((p) => ({ kind: p.kind, at: p.at, w: p.w, d: p.d })),
     spots: j.def.spots.map((x) => ({ id: x.id, kind: x.kind, at: x.at, by: sitter(j, x.id), track: p ? trackFor(x, p) : -1 })),
     others: [...j.others].map(([peer, o]) => ({ peer, name: o.name, at: o.at.map(r), yaw: r(o.yaw), seat: o.seat, dressed: !!o.avatar, playing: [...o.held] })),
   };
