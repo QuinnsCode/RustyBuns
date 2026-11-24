@@ -5,7 +5,7 @@ import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
 import { Edit, edit, furnish, problems, Studio } from "../src/studio/builder.ts";
-import type { StudioDef } from "../src/studio/room.ts";
+import { doorLeaves, type StudioDef } from "../src/studio/room.ts";
 import { BARN, BASEMENT, ROOM_LIST, ROOMS } from "../src/studio/rooms/index.ts";
 import { type Acoustics, acoustics, impulse } from "../src/studio/sound.ts";
 import { cameraPose, keyNote, nearSpot, newJam, RADIUS, sit, solids, stand, walkTo, type Jam } from "../src/studio/jam.ts";
@@ -119,6 +119,17 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);
   expect(check(Studio, JSON.parse(JSON.stringify(r)))).toEqual(JSON.parse(JSON.stringify(r)));
+});
+
+test("a 3 m loading bay rolls its shutter up out of the way: you walk straight through it, where a studio door's leaf stands in the doorway", () => {
+  const r = structuredClone(BARN);
+  r.walls.push({ from: [-5, 0], to: [5, 0], gaps: [[1, 4], [7, 7.9]] });
+  const { w, d } = r.size, solid = solids(r);
+  const free = (x: number, z: number) => { const p = { x, z }; pushOut(p, solid, w / 2, d / 2, RADIUS); return Math.hypot(p.x - x, p.z - z) < 1e-6; };
+  // the bay's middle, from one side of the wall to the other
+  for (let z = -1; z <= 1; z += 0.1) expect({ z, free: free(-2.5, z) }).toEqual({ z, free: true });
+  // the 90 cm door beside it swings its one leaf into the room
+  expect(doorLeaves(r).filter((l) => Math.abs(l.cz) < 1).map((l) => Math.round(l.cx * 10) / 10)).toEqual([2.2]);
 });
 
 test("the impulse response follows the space: the floor's bounce first, then a tail as long as it rings", () => {

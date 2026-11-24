@@ -1,10 +1,10 @@
 // The doorways in a studio's drawn walls: the wall carried on over each one at door height, a casing round it, and a
 // studio door (two for a wide opening) standing most of the way open on its hinges: solid, a small window at eye
-// height, a steel lever each side. The jam room draws them full height; the builder's cutaway (`cut` lower than the
+// height, a steel lever each side; a loading bay wider than that gets a roller shutter, rolled up. The jam room draws them full height; the builder's cutaway (`cut` lower than the
 // door) draws each door only as high as its walls and lays its swing on the floor, as a house plan shows a door.
 import * as THREE from "three";
 import { metreUV } from "./look.ts";
-import { DOOR_OPEN, DOOR_SINGLE, hasDoor, type StudioDef, type Wall } from "./room.ts";
+import { DOOR_OPEN, DOOR_SINGLE, hasDoor, hasRoller, type StudioDef, type Wall } from "./room.ts";
 
 export interface DoorLook { wallOf: (wl: Wall) => THREE.Material; casing: THREE.Material; leaf: THREE.Material; lever: THREE.Material; glass: THREE.Material }
 /** How far a door stands open (radians from shut), and the widest opening that takes one door rather than two. */
@@ -20,12 +20,26 @@ export function doorways(def: StudioDef, h: number, look: DoorLook, cut = Infini
     if (len < 0.01) continue;
     const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
     for (const [ga, gb] of wl.gaps ?? []) {
-      const gw = gb - ga;
-      if (!hasDoor(gw)) continue;
+      const gw = gb - ga, roller = hasRoller(gw);
+      if (!hasDoor(gw) && !roller) continue;
       const g = new THREE.Group(); g.position.set(x0 + ux * ga, 0, z0 + uz * ga); g.rotation.y = -Math.atan2(uz, ux); out.add(g);
       const piece = (bw: number, bh: number, bd: number, x: number, y: number, z: number, m: THREE.Material, to = g) => {
         const b = new THREE.Mesh(metreUV(new THREE.BoxGeometry(bw, bh, bd)), m); b.position.set(x, y, z); to.add(b); return b;
       };
+      if (roller) {
+        // a loading bay: the shutter rolled up into its drum on the room side, steel guide channels down each jamb, and
+        // the shutter's bottom rail with its pull handle hanging just under the drum
+        const bayH = Math.min(h - 0.45, 3.2), top = Math.min(bayH, cut);
+        if (cut > bayH) {
+          piece(gw, Math.min(h, cut) - bayH, 0.12, gw / 2, (Math.min(h, cut) + bayH) / 2, 0, look.wallOf(wl)); // over the bay
+          const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, gw + 0.1, 20).rotateZ(Math.PI / 2), look.lever);
+          drum.position.set(gw / 2, bayH + 0.2, 0.28); g.add(drum);
+          piece(gw + 0.1, 0.08, 0.04, gw / 2, bayH - 0.2, 0.1, look.lever); // the bottom rail
+          piece(0.16, 0.03, 0.04, gw / 2, bayH - 0.26, 0.12, look.lever); // its handle
+        }
+        for (const x of [0.04, gw - 0.04]) piece(0.08, top, 0.12, x, top / 2, 0.08, look.lever);
+        continue;
+      }
       if (cut > doorH) {
         piece(gw, Math.min(h, cut) - doorH, 0.12, gw / 2, (Math.min(h, cut) + doorH) / 2, 0, look.wallOf(wl)); // over the door
         piece(gw, 0.05, 0.16, gw / 2, doorH - 0.025, 0, look.casing);

@@ -122,8 +122,11 @@ type Mark = { name: string; at: THREE.Vector3Tuple; out: THREE.Vector3Tuple };
  * pieces' UVs (a screen's 0..1) instead of laying metre UVs on. */
 type Part = { name: string; at: THREE.Vector3Tuple; rot?: number; pieces: Piece[]; ownUv?: boolean };
 /** What a model with moving parts says about them, on its group's userData: the tonearm's turns about its bearing
- * (radians: at the rest, the outer groove, the inner groove) and the mixer's fader and crossfader throws (and a deck tempo fader's), metres. */
-export type GearData = { arm?: { rest: number; outer: number; inner: number }; faderTravel?: number; crossTravel?: number; tempoTravel?: number; bite?: number };
+ * (radians: at the rest, the outer groove, the inner groove), the mixer's fader and crossfader throws (and a deck tempo fader's), metres, and a
+ * sub's cone throw. */
+export type GearData = { arm?: { rest: number; outer: number; inner: number }; faderTravel?: number; crossTravel?: number; tempoTravel?: number; bite?: number;
+  /** How far a woofer's cone (`part:cone`, the dish and dust cap) pushes out on a hit, metres: move it along its own z. */
+  coneThrow?: number };
 type Build = { pieces: Piece[]; marks: Mark[]; parts?: Part[]; data?: GearData };
 
 // ---- pieces ---------------------------------------------------------------------------------------------------
@@ -553,7 +556,12 @@ function sub(): Build {
     { at: [0, y0 + 0.07, front], w: w - 0.12, h: 0.05, r: 0.012, deep: 0.25, lip: 0.01, walls: "knob" },
   ]], grip(-1), grip(1)]);
   b.pieces.push(...grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
-  b.pieces.push(...cone(0.2, 0.06, new THREE.Matrix4().makeTranslation(0, cy, front - 0.004)));
+  // the woofer: its surround and basket fixed to the baffle, the dish and dust cap a part that moves in and out with
+  // the kick (`coneThrow`), set back far enough that at its furthest it still clears the grille
+  const throw_ = 0.006, [dish, surround, cap, rim] = cone(0.2, 0.06, new THREE.Matrix4()), cz = front - 0.004 - throw_;
+  for (const p of [surround, rim]) { p.geo.translate(0, cy, cz); b.pieces.push(p); }
+  b.parts = [{ name: "cone", at: [0, cy, cz], pieces: [dish, cap] }];
+  b.data = { coneThrow: throw_ };
   grillePlate(b, new THREE.Matrix4().makeTranslation(w / 2 - 0.07, h - 0.06, d / 2 + 0.001));
   grilleScrews(b, w - 0.016, fh - 0.01, new THREE.Matrix4().makeTranslation(0, yc, d / 2 + 0.001), 4);
   // Rigging: a steel plate on each side, towards the front, with three pin holes, bolted through the box, its safe

@@ -2,6 +2,8 @@
 // the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from: one mono point source.
 import { expect, test } from "bun:test";
 import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, type Speaker } from "../src/studio/pa-room.ts";
+import { clubStack, subCones } from "../src/studio/open-air.ts";
+import { GEAR_SIZES } from "@rustybuns/models/gear";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { SYSTEM_IDS, SYSTEMS, stackWidth, type SystemId } from "@rustybuns/gear";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
@@ -58,4 +60,16 @@ test("each open-air rig stands shoulder to shoulder, and a narrow horn rig dulls
   // 10 m behind a horn stack, facing it: the pattern takes the highs off it
   const st = rig("dance-stack")[1]!;
   expect(hearSpeaker(st, { x: st.at[0], z: st.at[1] - 10, yaw: Math.PI }).cutoff).toBe(800);
+});
+
+test("a club stack's sub pumps on the beat, settles between beats, rests when the band stops, and never pokes through its grille", () => {
+  const st = clubStack([0, 0], 0), pump = subCones([st]), cone = st.getObjectByName("part:cone")!, rest = cone.position.z;
+  const front = GEAR_SIZES["sub-18"][2] / 2 - 0.014; // the grille's back face
+  pump(8);
+  expect(cone.position.z - rest).toBeCloseTo(st.getObjectByName("sub-18")!.userData.coneThrow, 6);
+  expect(cone.position.z).toBeLessThan(front);
+  pump(8.5);
+  expect(cone.position.z - rest).toBeLessThan(0.0001);
+  pump(null);
+  expect(cone.position.z).toBe(rest);
 });

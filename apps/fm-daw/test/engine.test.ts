@@ -127,6 +127,13 @@ test("rust matches ts on the analog voice too (Night Shift's womp bass: saws, fi
 test("rust matches ts on the new voices (ladder, vowel, pulses and PWM, synced LFOs, chorus: Wobble Lab)",
   () => compare("cdylib, wobble", () => createNativeEngine(SR), wobbleLab()), HEAVY);
 
+test("rust matches ts on the rotary speaker (mod mode 6) and the stereo tremolo (mod mode 7)", () => {
+  const p = demoProject();
+  // the pad through the rotary, the bass through the tremolo
+  const tracks = p.tracks.map((t, i) => (i === 6 || i === 5 ? { ...t, params: t.params.map((v, k) => (k === P.CHORUS ? (i === 6 ? 6 : 7) : v)) } : t));
+  return compare("cdylib, rotary + tremolo", () => createNativeEngine(SR), { ...p, tracks });
+}, HEAVY);
+
 test("every sound in the bank speaks and stays under the ceiling", () => {
   for (const s of SOUNDS) {
     const e = new TsEngine(SR);

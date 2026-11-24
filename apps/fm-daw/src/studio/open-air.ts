@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS, stackWidth, ampChannels } from "@rustybuns/gear";
+import { SYSTEMS, stackWidth, ampChannels, generatorLoad } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
@@ -85,6 +85,22 @@ export function clubStack(at: readonly [number, number], yaw: number, look: Gear
   return st;
 }
 const GEAR_SIZE_SUB_H = 0.7;
+
+/** The generator an open-air rig's `racks` amp racks need: the 7 kVA set while they'd run flat out on it, else the 100 kVA one. */
+export const generatorFor = (racks: number): "generator-7kva" | "generator-100kva" =>
+  generatorLoad("generator-7kva", Array.from({ length: racks }, () => "amp-rack-12u")).trips ? "generator-100kva" : "generator-7kva";
+
+/** How far a sub's cone stands out at `beat` (0 to 1): kicked out on each beat and settling back within it; null (the band
+ *  stopped) leaves it at rest. */
+export const conePush = (beat: number | null) => (beat === null ? 0 : Math.exp(-(beat - Math.floor(beat)) * 9));
+/** Every sub cone (gear.ts `part:cone`) under `roots`, and a frame call that pumps them all to `conePush(beat)`. */
+export function subCones(roots: THREE.Object3D[]): (beat: number | null) => void {
+  const cones: { o: THREE.Object3D; home: number; reach: number }[] = [];
+  for (const r of roots) r.traverse((o) => {
+    if (o.name === "part:cone" && typeof o.parent?.userData.coneThrow === "number") cones.push({ o, home: o.position.z, reach: o.parent.userData.coneThrow });
+  });
+  return (beat) => { const k = conePush(beat); for (const c of cones) c.o.position.z = c.home + c.reach * k; };
+}
 
 /** The full moon's face as you see it, a flat disc (a full moon shows almost no shading at its edge): the pale
  *  highlands, the dark seas in their places (a big one upper left, a chain upper right, the wide one down the left),
@@ -407,12 +423,16 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     group.add(lamps);
   }
 
-  // ---- the generator and its jerry cans, off to the side
+  // ---- the generator, off to the side: a 7 kVA set and its jerry cans while it can run the amps flat out, the
+  // 100 kVA trailer (its own big tank) once they'd trip it
+  const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
+  // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box)
+  const racks = Math.max(1, Math.ceil(ampChannels(roomRig(def), stacks.length) / 12)), set = generatorFor(racks);
   if (out.generator) {
-    const g = gear("generator-7kva", { look });
+    const g = gear(set, { look });
     g.position.set(out.generator.at[0], 0, out.generator.at[1]); g.rotation.y = out.generator.yaw;
     group.add(g);
-    for (let i = 0; i < 3; i++) {
+    if (set === "generator-7kva") for (let i = 0; i < 3; i++) {
       const c = gear("jerry-can-20l", { look });
       c.position.set(out.generator.at[0] + 1 + i * 0.4, 0, out.generator.at[1] + 0.6); c.rotation.y = rnd() * 0.4;
       group.add(c);
@@ -422,15 +442,13 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   // ---- the cables on the sand: the generator's orange feed to a distro behind the wall, power on to the amp rack
   // beside it, a speaker run from the rack to the back of each stack, and the line from the booth's mixer round the end
   // of the wall to the rack. Each lies on the sand with a little wander, as a run does when it's been walked on.
-  const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
   if (out.generator && stacks.length) {
     const fx = Math.sin(stacks[0]!.yaw), fz = Math.cos(stacks[0]!.yaw), rx = Math.cos(stacks[0]!.yaw), rz = -Math.sin(stacks[0]!.yaw);
     const mx = stacks.reduce((t, st) => t + st.at[0], 0) / stacks.length, mz = stacks.reduce((t, st) => t + st.at[1], 0) / stacks.length;
     const back = (d: number, side = 0): [number, number] => [mx - fx * d + rx * side, mz - fz * d + rz * side];
     const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
     const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
-    // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box), side by side
-    const racks = Math.max(1, Math.ceil(ampChannels(roomRig(def), stacks.length) / 12));
+    // the amp racks side by side
     for (let i = 0; i < racks; i++) {
       const at = back(1.7, -0.6 - i * 0.66), rack = gear("amp-rack-12u", { look });
       rack.position.set(at[0], 0, at[1]); rack.rotation.y = stacks[0]!.yaw + Math.PI; group.add(rack);
