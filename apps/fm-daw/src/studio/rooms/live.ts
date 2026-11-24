@@ -26,6 +26,7 @@ export const LIVE_ROOM: StudioDef = {
     { id: "couch", kind: "couch", label: "the couch", at: [-2.6, -3.8], yaw: Math.PI, thing: { w: 2, d: 0.8, h: 0.45, ahead: -0.15, color: "#6b4a2c" } },
   ],
   door: { at: [-0.4, 2.5], yaw: 0 },
+  keys: "wood-poly",
   // the gear wall in the front right corner: the rack on the brick, the pedal wall facing the band
   gear: { at: [3.25, 1.5], yaw: Math.PI },
 };

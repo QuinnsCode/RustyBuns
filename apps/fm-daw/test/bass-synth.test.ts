@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { randomAvatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
+import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { bassReach, bassSynth } from "../src/studio/gear-models.ts";
 import { monoSteal, withMonoBass } from "../src/studio/mono-bass.ts";
 import { figure, handsOn } from "../src/studio/figure.ts";
@@ -50,4 +51,32 @@ test("the bass track is a mono ladder bass with glide: a new note takes over the
   expect(p.tracks.filter((x, i) => i !== trackFor(bass, p)).map((x) => x.params)).toEqual(demoProject().tracks.filter((_, i) => i !== trackFor(bass, p)).map((x) => x.params));
   const holding = new Map([["kb:KeyA", { track: 5 }], ["kb:KeyS", { track: 6 }]]);
   expect(monoSteal(holding, 5)).toEqual(["kb:KeyA"]);
+});
+
+test("out in the desert the bass seat is the bass-line box: a note lights its button, the hands are on them, the track squelches", () => {
+  const seat = DESERT_GATHERING.spots.find((s) => s.kind === "bass")!, kind = DESERT_GATHERING.bass!;
+  const { synth, keys } = bassSynth(seat, kind);
+  expect(synth.group.name).toBe("bassbox");
+  expect(synth.count).toBe(13);
+  // any note folds into its one octave: an A two octaves up still lights the A
+  const p = withMonoBass(demoProject(), kind), tr = trackFor(seat, p), low = lowC(p.tracks[tr].root);
+  keys.press([low + 9 + 24], low);
+  expect(keys.down).toEqual({ whites: [5], blacks: [] });
+  const c = new THREE.Color();
+  synth.keys.white.getColorAt(5, c);
+  expect(c.getHex()).toBe(LIT.getHex());
+  const reach = bassReach(seat, kind)!, fig = figure(randomAvatar(mulberry32(4)), null);
+  fig.pose({ speed: 0, seated: true, play: "keys", note: false, t: 1, reach });
+  fig.group.updateMatrixWorld(true);
+  fig.group.traverse((o) => {
+    if (o.name !== "hand") return;
+    const at = fig.group.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+    expect(Math.abs(-at.z - reach.ahead)).toBeLessThan(0.05);
+  });
+  fig.dispose();
+  // the diode ladder, the resonance up, a slide
+  const t = p.tracks[tr].params;
+  expect([t[P.MODE], t[P.FILTER]]).toEqual([1, 3]);
+  expect(t[P.RES]).toBeGreaterThan(0.6);
+  expect(t[P.GLIDE]).toBeGreaterThan(0);
 });

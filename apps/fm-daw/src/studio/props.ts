@@ -6,6 +6,8 @@
 // look to light and bloom; shadows are the look's too, so none are set here.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
+import { van } from "@rustybuns/models/van";
+import { firePit } from "@rustybuns/models/fire";
 import type { Prop } from "./room.ts";
 import { speaker } from "./gear-models.ts";
 import { dressing, type Item, type Kit } from "./set-dressing.ts";
@@ -18,6 +20,22 @@ const BOOKS = ["#7a2e2a", "#2f4a6b", "#c9b27a", "#3e5a3a", "#8a6a3a", "#d8d2c4",
 const TOYS = ["#e0b02a", "#d0452e", "#3a8ad0", "#5ab04a", "#e07ab0"];
 
 /** One prop, ready to add to the scene. */
+/** The drum machine's row of sixteen step lamps (an InstancedMesh, the first step on the player's left). */
+export const STEP_LAMPS = "step-lamps";
+/** Move the props in `props` that move on their own (a fire's flames) to time `t`, seconds. */
+export function tickProps(props: Iterable<THREE.Object3D>, t: number) {
+  for (const o of props) { const tick: unknown = o.userData.tick; if (typeof tick === "function") tick(t); }
+}
+const LAMP_ON = new THREE.Color("#ff3a2a"), LAMP_OFF = new THREE.Color("#4a1210");
+/** Light step `step` (0 to 15) of every drum machine under `root`, the rest dark; null: the downbeats lit, as it sits stopped. */
+export function chaseSteps(root: THREE.Object3D, step: number | null) {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.InstancedMesh) || o.name !== STEP_LAMPS) return;
+    for (let i = 0; i < o.count; i++) o.setColorAt(i, (step === null ? i % 4 === 0 : i === step) ? LAMP_ON : LAMP_OFF);
+    if (o.instanceColor) o.instanceColor.needsUpdate = true;
+  });
+}
+
 export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
   const cache = new Map<string, THREE.Material>();
   const m = (name: string, color: string) => {
@@ -56,11 +74,15 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
     });
     if (k) glow(im, k);
     g.add(im);
+    return im;
   };
   const pick = <T>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
   const { w, d, h, color } = p;
 
   switch (p.kind) {
+    // out of doors: the shared models, at their own size (@rustybuns/models van and fire); the fire's flames move on `userData.tick`
+    case "van": g.add(van(p.seed ?? 1)); break;
+    case "firePit": { const f = firePit(p.seed ?? 1); g.add(f.group); g.userData.tick = f.tick; break; }
     case "shelf": {
       // a wooden case open at the front, a board every 35 cm, each filled with books, a run of records or a toy
       const wood = m("wood", color), t = 0.03, rows = Math.max(1, Math.floor((h - 0.1) / 0.36));
@@ -292,6 +314,67 @@ export function prop(p: Prop, mat: Mat = plainMat): THREE.Group {
       for (let i = 0; i < 4; i++) for (let k = 0; k < 4; k++) pads.push([s * 0.85, 0.01, s * 0.85, w * 0.18 + (i - 1.5) * s, h + 0.005, (k - 1.5) * s + d * 0.05, rnd() < 0.2 ? "#d04030" : "#3a3a3a"]);
       many("plastic", pads);
       g.add(glow(box(w * 0.3, 0.004, d * 0.22, -w * 0.25, h + 0.002, -d * 0.25, m("screen", "#a0e0a0")), 0.5));
+      break;
+    }
+    case "drumMachine": case "modular": {
+      // set down on the floor, it comes on its own black stand (on a desk or a shelf, `y` lifts it there instead)
+      if ((p.y ?? 0) < 0.3) {
+        const rise = 0.72, stand = m("metal", "#1b1c1f");
+        box(w + 0.04, 0.02, d + 0.04, 0, rise - 0.01, 0, stand);
+        for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(0.025, rise - 0.02, 0.025, x * (w / 2 - 0.01), (rise - 0.02) / 2, z * (d / 2 - 0.01), stand);
+        const on = prop({ ...p, at: [0, 0], yaw: 0, y: rise }, mat);
+        g.add(on);
+        break;
+      }
+      if (p.kind === "drumMachine") {
+        // the early-80s analog drum machine (its front toward -z, as a prop's is): a long box, a sloped panel of small knobs in
+        // columns over the voices at the back, and along the front the sixteen step keys in their four colour groups (red, orange, yellow, cream), a lamp over each
+        box(w, h * 0.55, d, 0, h * 0.275, 0, m("plastic", color));
+        const slope = box(w, h * 0.35, d * 0.62, 0, h * 0.6, d * 0.18, m("plastic", "#1d1c1b"));
+        slope.rotation.x = -0.12;
+        const knobs: Item[] = [];
+        for (let c = 0; c < 12; c++) for (let r = 0; r < 3; r++) knobs.push([0.014, 0.012, 0.014, -w / 2 + 0.05 + c * ((w - 0.1) / 11), h * 0.8, d * 0.36 - r * 0.035, ["#e8e2d0", "#e07a2a", "#d8c040"][r]!]);
+        many("plastic", knobs, 0, "cyl");
+        const groups = ["#c8352a", "#e07a2a", "#e0c040", "#ece4d0"], keys: Item[] = [], lamps: Item[] = [];
+        for (let i = 0; i < 16; i++) {
+          const x = w / 2 - 0.04 - i * ((w - 0.08) / 15); // the first group on the player's left
+          keys.push([0.022, 0.012, 0.03, x, h * 0.56, -d * 0.33, groups[Math.floor(i / 4)]!]);
+          lamps.push([0.005, 0.004, 0.005, x, h * 0.56, -d * 0.18, i % 4 === 0 ? "#ff3a2a" : "#4a1210"]);
+        }
+        many("plastic", keys);
+        const lit = many("screen", lamps, 0.6);
+        if (lit) lit.name = STEP_LAMPS; // main.ts runs the chase along them while the music plays
+      } else {
+        // a modular synth: a wooden case of two rows of modules in their black and silver panels, knobs and jacks,
+        // and a tangle of coloured patch cables hanging between them
+        const wood = m("wood", color);
+        box(w, 0.025, d, 0, 0.0125, 0, wood); box(w, 0.025, d, 0, h - 0.0125, 0, wood);
+        for (const x of [-w / 2 + 0.0125, w / 2 - 0.0125]) box(0.025, h, d, x, h / 2, 0, wood);
+        const row = (h - 0.06) / 2, panels: Item[] = [], knobs: Item[] = [], jacks: Item[] = [];
+        for (const r of [0, 1]) {
+          let x = -w / 2 + 0.03;
+          while (x < w / 2 - 0.06) {
+            const pw = Math.min(0.03 + Math.floor(rnd() * 4) * 0.02, w / 2 - 0.03 - x), cy = 0.03 + row * (r + 0.5);
+          if (pw < 0.02) break;
+            panels.push([pw - 0.002, row - 0.006, 0.006, x + pw / 2, cy, -d / 2 + 0.003, rnd() < 0.5 ? "#1b1b1d" : "#b9bcc0"]);
+            for (let k = 0; k < Math.round(pw / 0.02); k++) {
+              knobs.push([0.012, 0.012, 0.012, x + 0.012 + k * 0.02, cy + row * 0.18, -d / 2 - 0.006, "#141414"]);
+              jacks.push([0.008, 0.006, 0.008, x + 0.012 + k * 0.02, cy - row * 0.28, -d / 2 - 0.003, "#c9ccd0"]);
+            }
+            x += pw;
+          }
+        }
+        many("plastic", panels); many("plastic", knobs, 0, "ball"); many("metal", jacks, 0, "ball");
+        // the patch cables: sagging arcs from jack to jack, each its own colour
+        for (let i = 0; i < 9; i++) {
+          const a = jacks[Math.floor(rnd() * jacks.length)]!, b = jacks[Math.floor(rnd() * jacks.length)]!;
+          if (a === b) continue;
+          const sag = 0.04 + rnd() * 0.08, mid = new THREE.Vector3((a[3] + b[3]) / 2, Math.min(a[4], b[4]) - sag, -d / 2 - 0.03 - rnd() * 0.02);
+          const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(a[3], a[4], -d / 2 - 0.008), mid, new THREE.Vector3(b[3], b[4], -d / 2 - 0.008));
+          const cab = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.0025, 5), m("plastic", pick(["#d8402e", "#e0b02a", "#3a8ad0", "#5ab04a", "#e07ab0", "#f2f2f2"])!));
+          g.add(cab);
+        }
+      }
       break;
     }
     case "table": {

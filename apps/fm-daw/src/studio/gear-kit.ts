@@ -9,7 +9,8 @@
 // plastic's grain on it. `low` quality loads nothing: the gear in flat colour, the room left to look.ts's painting.
 // Browser only (import.meta.glob).
 import * as THREE from "three";
-import { surface as kitSurface, type SurfaceName } from "@rustybuns/models/surfaces";
+import { gearSurfaces, surface as kitSurface, type SurfaceName } from "@rustybuns/models/surfaces";
+import { gearLook, type GearLook } from "@rustybuns/models/gear";
 import { roomMaterial, type Quality } from "./look.ts";
 import { MATERIALS } from "./sound.ts";
 
@@ -86,6 +87,17 @@ function average(t: THREE.Texture): THREE.Color | null {
 function tintTo(m: THREE.MeshStandardMaterial, want: THREE.Color) {
   const avg = m.map && average(m.map);
   if (avg) m.color.setRGB(Math.min(2, want.r / Math.max(avg.r, 0.02)), Math.min(2, want.g / Math.max(avg.g, 0.02)), Math.min(2, want.b / Math.max(avg.b, 0.02)));
+}
+
+/** The gear models' own look made of the photo kit (packages/models gearSurfaces: textured coats, perforated grilles,
+ *  brushed metal), the bundled maps standing in for its textures/ folder; flat colours at `low`. One per page. */
+let kitLook: GearLook | null = null;
+export function gearKitLook(quality: Quality): GearLook {
+  if (quality === "low") return gearLook();
+  if (kitLook) return kitLook;
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier((u) => URLS.get(u) ?? u);
+  return (kitLook = gearSurfaces({ base: "kit/", quality: "high", loader: new THREE.TextureLoader(manager) }).look);
 }
 
 /** A maker for look.ts (`useKit`): a gear or room surface by look.ts's name and colour, or null for anything else. */

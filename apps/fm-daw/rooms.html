@@ -11,7 +11,14 @@
 </header>
 <main>
   <section id="plan-box">
-    <svg id="plan" role="img" aria-label="The room from above"></svg>
+    <div id="tools" role="toolbar" aria-label="Build tools"></div>
+    <div id="catalog" hidden></div>
+    <div id="stage">
+      <canvas id="view" aria-label="Your studio in 3D, cut away so you can see in"></canvas>
+      <svg id="plan" role="img" aria-label="The room from above" hidden></svg>
+      <div id="orbit"></div>
+      <div id="measure" hidden></div>
+    </div>
     <p id="why" role="status"></p>
   </section>
   <aside id="side">

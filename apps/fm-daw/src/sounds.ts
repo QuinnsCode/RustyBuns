@@ -4,6 +4,8 @@
 // own and both engines play them alike. Loading one keeps the track's pan.
 import { P } from "./engine/params.ts";
 import { patch } from "./presets.ts";
+import { KEYS_VOICES } from "./studio/keys-voice.ts";
+import { BOX_BASS, MONO_BASS } from "./studio/mono-bass.ts";
 
 export interface Sound { name: string; group: "Bass" | "Lead" | "Keys and pads" | "Minimal"; params: number[] }
 
@@ -101,6 +103,15 @@ export const SOUNDS: Sound[] = [
     ops: { 0: [1, 1, 0.002, 0.3, 0, 0.15] },
     analog: { detune: 0.2, sub: 0, cutoff: 0.5, res: 0.3, fenv: [0.2, 0.001, 0.2], wave: 0.3 },
     chorus: 1, gain: 0.3, send: 0.85 })),
+  // the classics that stand in the jam room (src/studio/keys-voice.ts, mono-bass.ts), to put on any track
+  S("Analog poly", "Keys and pads", KEYS_VOICES["wood-poly"]),
+  S("FM electric piano", "Keys and pads", KEYS_VOICES["fm-slab"]),
+  S("Tine piano", "Keys and pads", KEYS_VOICES["tine-ep"]),
+  S("Drawbar organ", "Keys and pads", KEYS_VOICES.drawbar),
+  S("Combo organ", "Keys and pads", KEYS_VOICES.combo),
+  S("String machine", "Keys and pads", KEYS_VOICES.strings),
+  S("Big mono bass", "Bass", MONO_BASS),
+  S("Bass-line box", "Bass", BOX_BASS),
 ];
 
 /** A sound on a track: its patch, with the track's pan kept. */

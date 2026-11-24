@@ -32,6 +32,14 @@
 #menu .studio-card[aria-checked="true"]:disabled, #menu .studio-card[data-current]:disabled { opacity: 1; }
 .studio-card svg { width: 100%; aspect-ratio: 4 / 3; background: #15171b; border-radius: 6px; }
 .studio-card b { font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
+#menu .studios > .rig-card { flex-basis: 190px; }
+.rig-card .rig-pics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.rig-card svg { aspect-ratio: 6 / 7; width: 100%; }
+.rig-card img { width: 100%; aspect-ratio: 6 / 7; object-fit: cover; border-radius: 6px; image-rendering: auto; }
+.rig-card .keys { font-size: 12px; line-height: 1.3; margin: 0; }
+.rig-card .setup { font-size: 11px; line-height: 1.3; margin: 0; opacity: .78; }
+.rig-card .setup b { font: inherit; font-weight: 700; color: inherit; }
+.rig-card .sheet { font: 600 13px/1.2 "Barlow Condensed", sans-serif; color: var(--hot); }
 @media (max-width: 480px) { #menu .studios > .studio-card { flex-basis: 136px; } }
 #invites a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--hot); border-radius: 10px; color: var(--ink); text-decoration: none; }
 #invites span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
