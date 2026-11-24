@@ -55,6 +55,20 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
   return st;
 }
 
+/** Indoors a DJ table's PA is a club's: an 18" sub on the floor with a powered 12" top on a pole out of its socket,
+ *  the top's horn at about 1.9 m, facing `yaw` from +z. */
+export function clubStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+  const st = new THREE.Group(), sub = gear("sub-18", { look }), top = gear("top-12-powered", { look });
+  st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
+  const socket = sub.getObjectByName("pole")?.position.y ?? GEAR_SIZE_SUB_H, pole = 0.62;
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, pole, 12), look.metal);
+  rod.position.y = socket + pole / 2;
+  top.position.y = socket + pole - 0.05;
+  st.add(sub, rod, top);
+  return st;
+}
+const GEAR_SIZE_SUB_H = 0.7;
+
 /** How bright lantern `i`'s flame is at time `t` seconds, about 1: a slow breath and a quick flutter, each lantern out of step. */
 export function flameAt(i: number, t: number): number {
   return 0.86 + 0.09 * Math.sin(t * 2.1 + i * 1.7) + 0.05 * Math.sin(t * 9.3 + i * 4.1) * Math.sin(t * 3.7 + i);

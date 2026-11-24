@@ -82,7 +82,7 @@ import { mountDecks, type DecksPanel, type Dj } from "../dj/panel.ts";
 import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
-import { openAir, paStack } from "./open-air.ts";
+import { clubStack, openAir } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
@@ -148,7 +148,8 @@ function buildRoom() {
   // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
   if (!def.outdoor) scene.add(floor, ceil);
   // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
-  if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(paStack(sp.at, sp.yaw));
+  // indoors, a club's sub-and-top either side of the decks (out of doors the rig is open-air.ts's)
+  if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(clubStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
   for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
