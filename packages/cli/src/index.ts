@@ -79,6 +79,7 @@ import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { skillCommand } from "./skill.ts";
+import { mcpSkillCommand } from "./mcp-skill.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -1491,6 +1492,13 @@ try {
     case "history": await historyCommand(rest); break;
     case "triage": await triageCommand(rest); break;
     case "skill": {
+      if (rest[0] === "mcp") {
+        let m;
+        try { m = await mcpSkillCommand(rest.slice(1)); } catch (e) { throw new UsageError({ message: e instanceof Error ? e.message : String(e) }); }
+        if (!m.path) { console.log(m.text); break; }
+        console.log(`${m.changed ? "wrote" : "up to date:"} ${m.path}: ${m.tools} tools, ~${m.descriptionTokens} tokens in every context, ~${m.bodyTokens} when opened`);
+        break;
+      }
       let r;
       try { r = skillCommand(rest); } catch (e) { throw new UsageError({ message: e instanceof Error ? e.message : String(e) }); }
       console.log(r.path ? `${r.changed ? "wrote" : "up to date:"} ${r.path}` : r.text);
@@ -1694,6 +1702,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              and a playbook: it asks what went wrong, digs in, and drafts the issue
   skill [add] [--dir D]      the agent skill for building with Rusty Buns: print it, or add it to
                              D/rustybuns/SKILL.md (default .claude/skills; .agents/skills for Codex)
+  skill mcp <url | -- cmd>   an MCP server as a skill: its instructions and tools in D/mcp-<name>/SKILL.md,
+                             ~20-40 tokens in context until opened (--header "K: V", --name, --dir, --print)
   --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and

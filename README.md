@@ -1033,15 +1033,17 @@ Tokens by model, code lines that landed for each percent of the plan, and the co
 
 </details>
 
-### Agent skills: one for building with Rusty Buns, one for each app
+### Agent skills: one for building with Rusty Buns, one for each app, one for each MCP server
 
-`rustybuns skill add` puts a skill in your project that teaches your coding agent how to build with Rusty Buns.
+`rustybuns skill add` puts a skill in your project that teaches your coding agent how to build with Rusty Buns. `rustybuns skill mcp` turns any MCP server into a cheap skill.
 
 <details><summary>More</summary>
 
 The skill ships inside `@rustybuns/cli` (`skills/rustybuns/SKILL.md`). It covers the command loop (init, dev, plan, deploy, build), the five primitives, and the habits this repo's agents work by: check what comes in with a guard, one operation behind every door, import the shared helpers, effects at the edges, a TypeScript twin for any Rust, and tests of behaviour. `rustybuns skill` prints it. `rustybuns skill add` writes it to `.claude/skills/rustybuns/`, and `--dir .agents/skills` writes it for Codex. Run it again after an upgrade to bring it up to date.
 
 In this repo the same file loads as the `rustybuns` skill. The `rustybuns-apps` skill sends an agent to `bun run brief <app>`, which builds an app's brief from the app's own README, notes, scripts, tests, port and page handle. That way there is no skill file for each app that can go out of date.
+
+`rustybuns skill mcp <url>` (or `rustybuns skill mcp -- <command>` for a stdio server) turns an MCP server into a skill. A loaded server puts every tool's schema in the agent's context on every turn. The skill puts one line there, about 20 to 40 tokens, and the server's instructions and tool list load only when the agent opens it. It writes `.claude/skills/mcp-<name>/SKILL.md` and prints both token counts. `--header "Authorization: Bearer …"` reaches a server behind a sign-in, `--print` only shows the file, and running it again after the server changes brings the skill up to date. An app built on `@rustybuns/ops` writes its skill straight from its operations with `ops.skill` ([OPS.md](OPS.md)).
 
 </details>
 
