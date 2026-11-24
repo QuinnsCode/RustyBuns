@@ -4,7 +4,7 @@
 // file under .rustybuns/prof/ for DevTools or speedscope. `rustybuns mem` reads
 // the box's /__rb/mem, and `rustybuns history` its /__rb/history (same secret).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { sharedStateBase } from "./state.ts";
@@ -74,4 +74,56 @@ export async function fetchHistory(o: { url: string; secret: string; fetch?: typ
   if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json"))
     throw new Error(`${o.url} has no /__rb/history (status ${res.status}): the box has no ${PROF_SECRET}, or was built before \`rustybuns history\`. Set it and deploy again.`);
   return HistoryReply(await res.json()).runs;
+}
+
+/** The deployed Worker's script name: the state's `attr.name`, else the first label of its workers.dev URL. */
+export function workerFromState(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "state">, stage: string): string | null {
+  const shared = cfg.state === "project" ? null : sharedStateBase(projectDir);
+  const file = join(shared ? join(shared, "state") : join(projectDir, ".alchemy", "state"), cfg.name, stage, "Worker.json");
+  if (!existsSync(file)) return null;
+  const s: unknown = JSON.parse(readFileSync(file, "utf8"));
+  const attr = s && typeof s === "object" && "attr" in s ? s.attr : null;
+  const name = attr && typeof attr === "object" && "name" in attr ? attr.name : null;
+  if (typeof name === "string" && name) return name;
+  const url = stateUrl(projectDir, cfg, stage, "Worker");
+  const host = url ? new URL(url).hostname : "";
+  return host.endsWith(".workers.dev") ? host.split(".")[0]! : null;
+}
+
+export interface EdgeProfile {
+  worker: string;
+  /** 1000 to 50000 (Cloudflare's limits). */
+  ms: number;
+  type: "cpu" | "heap";
+  /** `latest-deployed`, a version id, or 8+ characters of one. */
+  version: string;
+  /** A Durable Object: its namespace id and the 64-hex object id. The Worker must be the one that owns the namespace. */
+  object?: { namespace: string; actor: string };
+}
+
+/** The `cf` line for Cloudflare's on-demand profiler (developers.cloudflare.com/workers/observability/profiling-in-production/). */
+export function edgeProfileArgs(p: EdgeProfile): string[] {
+  return ["workers", "versions", "profile", p.version, "--worker", p.worker, "--duration-ms", String(p.ms), "--profile-type", p.type,
+    ...(p.object ? ["--namespace-id", p.object.namespace, "--actor-id", p.object.actor] : [])];
+}
+
+/**
+ * Capture a profile of the live Worker (or one Durable Object) with `cf`, save the pprof under
+ * `outDir`, return its path. `cf` signs in on its own; the Worker must be taking traffic meanwhile,
+ * since the profiler samples an isolate that's already running.
+ */
+export async function captureEdgeProfile(p: EdgeProfile & { outDir: string; cf?: string[] }): Promise<string> {
+  const cf = p.cf ?? ["cf"];
+  if (!p.cf && !Bun.which("cf")) throw new Error("rustybuns prof --edge runs Cloudflare's `cf` CLI, and it isn't on PATH. Install it and sign in: https://developers.cloudflare.com/cf/get-started/");
+  mkdirSync(p.outDir, { recursive: true });
+  const file = join(p.outDir, `${p.worker}${p.object ? "-do" : ""}-${p.type}-${new Date().toISOString().replace(/[:.]/g, "-")}.pprof`);
+  const proc = Bun.spawn([...cf, ...edgeProfileArgs(p)], { stdout: Bun.file(file), stderr: "pipe" });
+  const [code, err] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+  if (code !== 0) {
+    rmSync(file, { force: true });
+    const why = err.trim().split("\n").slice(-3).join("\n") || `exit ${code}`;
+    const hint = /no recent executions|no loaded isolate/i.test(why) ? "\nthe profiler samples a running isolate: send the Worker traffic while it captures, and try again." : "";
+    throw new Error(`cf couldn't profile ${p.worker}: ${why}${hint}`);
+  }
+  return file;
 }
