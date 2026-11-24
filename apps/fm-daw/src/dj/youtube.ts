@@ -121,7 +121,7 @@ export class TubeDeck {
     } else if (p === "cueUp") { if (this.cueHeld) { this.cueHeld = false; this.pause(); this.seek(this.cue); } }
     else if (hot >= 0) { const at = this.hot[hot]; if (at == null) this.hot[hot] = this.pos(); else this.seek(at); }
     else if (p === "back" || p === "fwd") this.seek(this.pos() + (p === "back" ? -2 : 2));
-    else if (p === "seek" && x !== undefined) this.seek(x * this.len());
+    else if (p === "seek" && x !== undefined && !this.playing) this.seek(x * this.len());
   }
   /** The jog: a turn moves the video along (1.8 s a turn, as the platter). */
   turn(turns: number) { this.seek(this.pos() + turns * 1.8); }

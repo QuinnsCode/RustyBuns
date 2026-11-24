@@ -160,6 +160,31 @@ test.skipIf(!hasChrome)("a flick of deck A's close-up coasts on and slows to a s
   expect(await page<boolean>(`(async () => { qdecks.flick(0, -3000); await new Promise((k) => setTimeout(k, 80)); const z = document.querySelector(".dj-zoom"), r = z.getBoundingClientRect(), at = { pointerId: 8, clientX: r.left + 100, clientY: r.top + 5, bubbles: true }; z.dispatchEvent(new PointerEvent("pointerdown", at)); const c = qdecks.state().coasting[0]; z.dispatchEvent(new PointerEvent("pointerup", at)); return c; })()`)).toBe(false);
 });
 
+test.skipIf(!hasChrome)("deck A's overview: paused, a click puts the track there and a drag scrubs it; playing, a press leaves it be", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
+  await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
+  const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+  for (const end = Date.now() + 30_000; !(await page("!!window.qdecks?.start()?.decks.every((d) => d.length)").catch(() => false)); await Bun.sleep(100)) if (Date.now() > end) throw new Error("no demo tracks");
+  // a hand on deck A's overview at each fraction of its width in turn (down on the first, up after the last); deck A's spot after
+  await page(`(window.over = async (...xs) => {
+    const c = document.querySelector(".dj-a .dj-over"), r = c.getBoundingClientRect(), y = r.top + r.height / 2;
+    const fire = (type, f) => c.dispatchEvent(new PointerEvent(type, { pointerId: 9, clientX: r.left + r.width * f, clientY: y, bubbles: true, cancelable: true }));
+    xs.forEach((f, i) => fire(i ? "pointermove" : "pointerdown", f));
+    fire("pointerup", xs.at(-1));
+    await new Promise((k) => setTimeout(k, 50));
+    const d = qdecks.state().decks[0];
+    return d.pos / d.length;
+  }, true)`);
+  expect(await page<number>("over(0.5)")).toBeCloseTo(0.5, 1);
+  expect(await page<number>("over(0.2, 0.4, 0.7)")).toBeCloseTo(0.7, 1);
+  await page("qdecks.play(0)");
+  for (const end = Date.now() + 5000; !(await page<boolean>("qdecks.state().decks[0].playing")); await Bun.sleep(50)) if (Date.now() > end) throw new Error("deck A never played");
+  const before = await page<number>("qdecks.state().decks[0].pos / qdecks.state().decks[0].length");
+  const after = await page<number>("over(0.1, 0.2)");
+  expect(Math.abs(after - before)).toBeLessThan(0.05);
+  await tab.close();
+});
+
 /** A hand on deck A's lane of the close-up: down, `moves` drags of `dx` px 10 ms apart, `rest` ms still, up; then deck A over the next 2.5 s. */
 const HAND = `async (grab, moves, dx, rest) => {
   qdecks.prefs({ grab });

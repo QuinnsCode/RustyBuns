@@ -192,11 +192,37 @@ export function playerFace(h: PlayerHost) {
   // a YouTube video's player sits here while one is on (the panel fills it)
   const video = el("div", { class: "dj-video" });
   video.hidden = true;
-  const overview = el("canvas", { class: "dj-over", width: "600", height: "56", "aria-label": `Deck ${letter}: the whole track, click to jump` });
+  // the overview: paused, click to put the track there or drag across it to scrub; playing, it only shows (so a
+  // stray click mid-set can't throw the track somewhere)
+  const overview = el("canvas", { class: "dj-over", width: "600", height: "56" });
+  const playing = () => h.theirs()?.playing ?? h.tube()?.playing ?? d.playing;
+  let scrub: { id: number; x: number } | null = null;
+  const scrubTo = (e: PointerEvent) => {
+    const r = overview.getBoundingClientRect(), x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    if (scrub && Math.abs(x - scrub.x) * r.width < 1) return;
+    if (scrub) scrub.x = x;
+    h.press("seek", x);
+  };
   overview.addEventListener("pointerdown", (e) => {
-    const r = overview.getBoundingClientRect();
-    h.press("seek", Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)));
+    if (playing()) return;
+    e.preventDefault();
+    try { overview.setPointerCapture(e.pointerId); } catch { /* a pointer that has already gone */ }
+    scrub = { id: e.pointerId, x: -1 };
+    scrubTo(e);
   });
+  overview.addEventListener("pointermove", (e) => { if (scrub?.id === e.pointerId) scrubTo(e); });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"] as const) overview.addEventListener(ev, (e) => { if (scrub?.id === e.pointerId) scrub = null; });
+  let wasPlaying: boolean | null = null;
+  /** The overview says what a press does: scrub while paused, nothing while playing. */
+  const overviewMode = () => {
+    const on = playing();
+    if (on === wasPlaying) return;
+    wasPlaying = on;
+    if (on) scrub = null;
+    overview.classList.toggle("live", on);
+    const say = on ? `Deck ${letter}: the whole track (pause to scrub or jump)` : `Deck ${letter}: the whole track, click to jump or drag to scrub`;
+    overview.title = say; overview.setAttribute("aria-label", say);
+  };
 
   // the big two: cue and play
   const play = button(ICON.play, `Play / pause (${side ? "P" : "Q"})`, "dj-play");
@@ -367,6 +393,7 @@ export function playerFace(h: PlayerHost) {
       const theirs = h.theirs(), tube = theirs ? null : h.tube(), v = theirs ?? tube;
       box.classList.toggle("far", !!theirs);
       box.classList.toggle("tube", !!tube);
+      overviewMode();
       mode.textContent = jog.mode === "vinyl" ? "VINYL" : "CD";
       mode.classList.toggle("on", jog.mode === "vinyl");
       const pr = h.prefs();
