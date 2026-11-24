@@ -39,6 +39,12 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   never ran. It runs tests, so with the valve shut: `bun run builder run . bun scripts/test-bites.ts --lines`.
 - Before `gh pr create`, commit and run `bun scripts/preflight.ts` (the guard hook turns the create away until it has run on HEAD): it lists open PRs that change your files and how Mervin's board merges your branch after them (#3118), and names any file your branch puts back to an older copy main has since changed (a worktree reset onto a newer main, #5687): take main's copy unless you meant the revert. Paste the `Merge after #N` line it prints into the PR body (the guard turns the create away without it): the `after` workflow (`scripts/after.ts`, #5344) merges main into your branch and pushes once those land, or comments and tags you if main no longer merges clean. A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker.
 - After pushing, `bun run pr <n>` (below) waits for the checks. On failure, fix that and rerun only its test.
+- Claude Code's `/ship` and `/steward` (2.1.330+) keep tending a PR until it merges: they fix red checks, merge main in
+  when it conflicts and answer review comments. They never merge. Only a line the owner types starts one. Open the PR
+  our way first (preflight, the `Merge after` line). `/ship` won't push to this public repo from a worker, and the PR
+  body it writes leaves out issue numbers. Then `/steward` only watches, and `/ship` runs `/code-review` here first.
+  Both follow `.claude/skills/steward/SKILL.md`, and so does the cloud PR Steward. A PR with a `claude-pr-steward-*` or
+  `claude-ship-*` label is held by a watch: don't push to it or loop on it, and `scripts/after.ts` steps aside too.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
   commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.
   `gh workflow run <file> --ref <branch>` runs green but never attaches to the PR's checks. If it happens again,

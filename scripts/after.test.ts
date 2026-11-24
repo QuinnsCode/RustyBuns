@@ -30,7 +30,7 @@ test("a PR that says merge after #9 waits while #9 is open, then gets main merge
     ok(root, "clone", "-q", origin, ci);
 
     const states: Record<number, PrState> = { 9: "OPEN" };
-    const pr: AfterPr = { number: 12, headRefName: "mine", body: "Does a thing.\n\nMerge after #9\n", author: { login: "someone" }, isCrossRepository: false };
+    const pr: AfterPr = { number: 12, headRefName: "mine", body: "Does a thing.\n\nMerge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
     const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: () => { throw new Error("no conflict expected"); }, setBody: (_, b) => { pr.body = b; } };
     const git = (...a: string[]) => run(ci, ...a);
 
@@ -48,4 +48,13 @@ test("a PR that says merge after #9 waits while #9 is open, then gets main merge
     expect(pr.body).toContain("Merged main in after #9");
     expect(pass(gh, git)).toEqual([]);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", () => {
+  const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [{ name: "claude-pr-steward-is-working" }] };
+  const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: () => { throw new Error("no comment"); }, setBody: () => { throw new Error("no body change"); } };
+  const git = () => { throw new Error("no git"); };
+  expect(pass(gh, git)).toEqual(["#12 skipped: a Claude watch holds it (claude-pr-steward-is-working) and merges main in itself"]);
+  pr.labels = [{ name: "bug" }];
+  expect(pass(gh, git)).toEqual(["#12 waits on #9"]);
 });
