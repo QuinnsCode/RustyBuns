@@ -123,7 +123,7 @@ let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
 // the keys track sounds like the instrument at the keys seat (keys-voice.ts)
 const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made);
-let project: Project = withKeysVoice(withMonoBass(demoProject(), def.bass), keysSpot ? keysKind(keysSpot, keysAsked) : null);
+let project: Project = withKeysVoice(withMonoBass(demoProject(), def.bass), keysSpot ? keysKind(keysSpot, keysAsked, def.keys) : null);
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
 
@@ -258,7 +258,7 @@ function thing(s: Spot): THREE.Group {
   } else if (s.kind === "keys") {
     // a classic 61-key instrument from the spot's id: a wood-cheeked analog poly, a digital FM slab or a red drawbar
     // organ (@rustybuns/models/polysynth, gear-models.ts), its keys where a seated player's palms go
-    const { synth, keys } = keysSynth(s, keysAsked);
+    const { synth, keys } = keysSynth(s, keysKind(s, keysAsked, def.keys));
     inFront.add(synth.group);
     played.set(s.id, { keys });
   } else if (s.kind === "booth") {

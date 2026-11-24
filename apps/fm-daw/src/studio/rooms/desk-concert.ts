@@ -28,6 +28,7 @@ export const DESK_CONCERT: StudioDef = {
     seat("vocal", "booth", [0, -1], Math.PI, "the mic"),
   ],
   door: { at: [0, 2.1], yaw: 0 },
+  keys: "tine-ep",
   props: [
     // shelves floor to ceiling along the back and down the left, packed with books, records and toys
     { kind: "shelf", at: [0, -2.34], yaw: Math.PI, w: 5.9, d: 0.32, h: 2.3, color: "#7a5636", seed: 11 },

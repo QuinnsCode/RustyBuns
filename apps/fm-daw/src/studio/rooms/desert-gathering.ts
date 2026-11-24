@@ -39,6 +39,8 @@ export const DESERT_GATHERING: StudioDef = {
   door: { at: [0, 15], yaw: 0 },
   // out here the bass is the little silver bass-line box on its stand, squelching
   bass: "box",
+  // and the keys a string machine, for the long pads
+  keys: "strings",
   // the backline tent off stage right
   gear: { at: [13.5, -10], yaw: -Math.PI / 2 },
   outdoor: {

@@ -49,7 +49,16 @@ export function madeKind(voice: "fm" | "analog", seed: number): PolyKind {
 }
 
 /** Which family stands at a keys seat: the one asked for, else the spot's id picks (the same for everyone in the room). */
-export const keysKind = (s: Spot, asked?: PolyKind): PolyKind => asked ?? POLY_KINDS[seedOf(s.id) % POLY_KINDS.length]!;
+export function keysKind(s: Spot, asked?: PolyKind, room?: PolyKind): PolyKind {
+  if (asked) return asked;
+  // a seat named for a section takes that section's instrument
+  const by = (re: RegExp) => re.test(s.id) || re.test(s.label);
+  if (by(/piano/i)) return "tine-ep";
+  if (by(/violin|cello|string/i)) return "strings";
+  if (by(/brass|horn/i)) return "wood-poly";
+  if (by(/organ/i)) return "drawbar";
+  return room ?? POLY_KINDS[seedOf(s.id) % POLY_KINDS.length]!;
+}
 
 /** Where a seated player's palms go at the bass synth: just over the near half of its white keys (as `keysReach`). */
 export function bassReach(s: Spot, kind: BassKind = "mono"): Reach | null {

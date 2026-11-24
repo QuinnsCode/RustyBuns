@@ -7,6 +7,7 @@ import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type S
 import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
+import { POLY_KINDS } from "@rustybuns/models/polysynth";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -59,6 +60,7 @@ export const Studio: Guard<StudioDef> = obj({
   }), MAX_PROPS)),
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
   bass: opt(oneOf(["mono", "box"] as const)),
+  keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
     mono: opt(bool()),

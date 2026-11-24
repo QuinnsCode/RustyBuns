@@ -30,6 +30,7 @@ export const CONSOLE_ROOM: StudioDef = {
     seat("vocal", "booth", [-0.9, -1.4], Math.PI, "the mic"),
   ],
   door: { at: [-3, 3.6], yaw: 0 },
+  keys: "wood-poly",
   props: [
     // the console, on the desk in front of the chair
     { kind: "console", at: [0, 0.55], yaw: 0, w: 2.7, d: 0.8, h: 0.3, y: 0.8, color: "#5a3a22", seed: 31 },

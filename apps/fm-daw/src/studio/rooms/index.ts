@@ -44,6 +44,7 @@ export const BASEMENT: StudioDef = {
     seat("couch", "couch", [1.8, 3.6], Math.PI),
   ],
   door: { at: [0, 3.8], yaw: 0 },
+  keys: "combo",
   // the rack down the right wall by the drum booth
   gear: { at: [0.5, -2.75], yaw: -Math.PI / 2 },
 };
@@ -58,6 +59,7 @@ export const STONE_ROOM: StudioDef = {
   walls: [],
   spots: [seat("drums", "drums", [-1.2, 1.3], 0), seat("vocal", "booth", [0, 1.6], Math.PI, "the mic")],
   door: { at: [1.5, 3], yaw: 0 },
+  keys: "tine-ep",
   gear: { at: [-0.75, -0.5], yaw: 0 },
 };
 
@@ -76,6 +78,7 @@ export const BARN: StudioDef = {
     seat("desk", "desk", [-3, 4.5], 0),
   ],
   door: { at: [-1, 6], yaw: 0 },
+  keys: "drawbar",
   gear: { at: [2, -5.25], yaw: -Math.PI / 2 },
 };
 

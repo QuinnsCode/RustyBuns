@@ -3,6 +3,7 @@
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
 import type { SystemId } from "@rustybuns/gear";
+import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
 export type SpotKind = "keys" | "drums" | "bass" | "desk" | "booth" | "couch" | "dj";
@@ -65,6 +66,9 @@ export interface StudioDef {
   outdoor?: Outdoor;
   /** What stands at the bass seat: the big analog mono (the default) or the little silver bass-line `box` (gear-models.ts). */
   bass?: "mono" | "box";
+  /** What stands at the keys seat (a seat named for its section, piano, strings or brass, takes that section's instead):
+   *  one of polysynth's classic families (gear-models.ts keysKind). The seat's id picks one when left out. */
+  keys?: PolyKind;
 }
 
 /**
