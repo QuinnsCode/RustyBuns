@@ -244,6 +244,7 @@ function thing(s: Spot): THREE.Group {
     const kit = new Kit();
     for (const p of dk.pieces) kit.add(p.part, p.obj, p.flash, p.cymbal);
     kit.swing("kick", dk.beater.obj, dk.beater.rest, dk.beater.hit);
+    kit.pedals(dk.pedals);
     played.set(s.id, { kit });
     const throne = dk.throne;
     throne.rotation.y = b.turn;
@@ -425,7 +426,13 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.fig.group.position.set(d.x, floor + d.y, d.z);
   if (!seat) dust.walker(id, d.x, floor, d.z, d.yaw, moved, d.speed, d.y);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat, def.bass) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  const guitar = guitarLevel(id);
+  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing, guitar !== null), note: playing, t, guitar, reach: seat ? keysReach(seat) ?? bassReach(seat, def.bass) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+}
+/** How hard someone's guitar is played now (0 to 1), or null when they have none in (a mic in the booth isn't one). */
+function guitarLevel(id: number | "me"): number | null {
+  const has = id === "me" ? myGuitar !== null && myInput === "guitar" : plugged.has(id) && !mics.has(id);
+  return has ? guitars?.loudness(id) ?? 0 : null;
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
@@ -625,6 +632,8 @@ function onLive(from: number, e: Live) {
   // the booth: what's on someone's decks, or a press on yours
   if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
   if (e.t === "press") {
+    // whoever's at the table, their hand goes to it on every page
+    if (e.press === "jog" ? e.touch : e.press !== "cueUp") boothGear.reached(e.side, e.press, performance.now() / 1000);
     // a press on one of my decks: it plays here, and their fingers leave prints in the dust on it
     if (e.to !== myPeer()) return;
     decks?.heard(from, e);
@@ -1000,6 +1009,7 @@ function touchDecks(e: MouseEvent): boolean {
   const hit = boothGear.touch(ndc, camera);
   if (!hit) return false;
   const key = hit.key;
+  boothGear.reached(hit.side, key, performance.now() / 1000);
   void deckPanel().then((d) => {
     d.open();
     if (key === "screen" || key === "jog" || key === "open" || (!d.decks.decks[hit.side].track && !booth.sides[hit.side])) return;
@@ -1347,6 +1357,7 @@ function notesAt(s: Spot) {
 }
 /** What a seated player's fingers and sticks land on (fingers.ts): the spot's keys and the notes on them, or its kit. */
 function aimAt(s: Spot): Aim | null {
+  if (s.kind === "dj") { const touch = boothGear.hands(performance.now() / 1000); return touch ? { notes: [], low: 0, touch } : null; }
   const p = played.get(s.id);
   if (!p) return null;
   const n = notesAt(s);

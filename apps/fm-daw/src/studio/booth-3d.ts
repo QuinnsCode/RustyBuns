@@ -5,11 +5,14 @@
 // "open": the page opens the whole setup, both decks and the mixer. The page decides what a press does.
 // The gear is found, not new: dust lies over the decks and the mixer, and a hand wipes it where it touches
 // (deck-dust.ts), so a well-played deck shows clean prints over its keys and jog. The screens glow warm and hazy.
+// The DJ's hands (fingers.ts) go where the decks say they were touched: a press heard from the room, or a change in what
+// a deck says (it starts or stops, its cue moves, its tempo, a jump in where it plays), so every page sees the same.
 import * as THREE from "three";
 import { clock } from "../dj/analyze.ts";
 import { DECK_KEYS, deckKeyAt, type DeckView, type Press } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { dusted, dustGear, DustMask, dustUniforms, type DustUniforms, type Rim } from "./deck-dust.ts";
+import type { Touch } from "./fingers.ts";
 
 /** How the screens look: deck A fire, B blue, as on the decks panel. */
 const INK = { bg: "#07080a", text: "#f1efe9", dim: "#8a8f98", wave: ["#ff9a3c", "#4aa8ff"], played: "#3a3d44", cue: "#ffd23c", head: "#ffffff" } as const;
@@ -25,7 +28,17 @@ const JOG: [number, number, number, number] = [0, 0.045, 0.055, 0.088];
 
 /** Gear the dust lies on: its own mask and what its materials read. */
 interface Worn { group: THREE.Object3D; mask: DustMask; u: DustUniforms }
-interface Gear extends Worn { side: Side; jog: THREE.Object3D | null; ring: THREE.Mesh[]; screen: CanvasRenderingContext2D | null; tex: THREE.CanvasTexture | null; drawn: string }
+interface Gear extends Worn { side: Side; jog: THREE.Object3D | null; ring: THREE.Mesh[]; screen: CanvasRenderingContext2D | null; tex: THREE.CanvasTexture | null; drawn: string; was: Was; seen: number }
+/** What a deck said last frame, kept here (a view may be the deck's own, changing under it). */
+interface Was { name: string | null; playing: boolean; cue: number; bpm: number | null; pos: number; any: boolean }
+
+/** What a DJ's hand goes to on a deck: a key, the tempo fader or the jog. */
+export type Reached = Press | "jog" | "tempo";
+/** How long (seconds) a touched key is held down, and the jog; how long the hand then hovers over it before it goes back
+ *  to rest on its jog's rim; and how far (seconds) a deck's place may jump before it was the jog or a seek, not time. */
+const DOWN = 0.22, JOG_DOWN = 0.6, HOVER_S = 1.6, JUMP = 0.25;
+/** Where a hand rests on the jog, its fingertips on the rim nearest the DJ (the deck's own frame, metres). */
+const REST_AT: [number, number, number] = [0, 0.065, 0.045 + 0.088];
 
 /** A worn copy of `group`'s top: its size from the model (gear() writes it), else a deck's. */
 function wear(group: THREE.Object3D, seed: number, rims: readonly Rim[] = []): Worn {
@@ -71,7 +84,7 @@ export class BoothGear {
       glass = quad.material = dusted(new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: "#f0e2c6" }), worn.u, 0.35);
     }
     dustGear(group, worn.u, glass);
-    this.gear.push({ ...worn, side, jog, ring, screen, tex, drawn: "" });
+    this.gear.push({ ...worn, side, jog, ring, screen, tex, drawn: "", was: { name: null, playing: false, cue: 0, bpm: null, pos: 0, any: false }, seen: -1 });
   }
   get count() { return this.gear.length; }
 
@@ -93,6 +106,28 @@ export class BoothGear {
     }
     const at = SPOTS[press];
     if (at) g.mask.wipe(at[0], at[1]);
+  }
+  /** What each deck (A, B) was last touched on, and when (the page's clock, seconds). */
+  private touched: [{ key: Reached; at: number } | null, { key: Reached; at: number } | null] = [null, null];
+  /** A DJ's hand went to `key` on deck `side` at `t`: heard from the room, a click here, or a deck's change. */
+  reached(side: Side, key: Reached | "cueUp" | "screen" | "open", t: number) {
+    if (key === "cueUp" || key === "screen" || key === "open") return;
+    // the keys a deck has no model spot for are under the jog's hand: sync rides the tempo, the rest move the record
+    this.touched[side] = { key: key === "sync" ? "tempo" : key === "back" || key === "fwd" || key === "seek" ? "jog" : key, at: t };
+  }
+  private aim: Touch = { turn: new THREE.Quaternion(), right: { at: new THREE.Vector3(), down: false }, left: { at: new THREE.Vector3(), down: false } };
+  /** Where the DJ's hands go at `t`: deck A's touches the left hand, B's the right, each pressing a fresh touch, hovering
+   *  over it a moment, then back on its jog's rim. Null with no decks drawn. */
+  hands(t: number): Touch | null {
+    if (this.gear.length < 2) return null;
+    for (const g of this.gear) {
+      const hand = g.side === 0 ? this.aim.left : this.aim.right, got = this.touched[g.side], ago = got ? t - got.at : Infinity;
+      const key = got && ago < HOVER_S ? got.key : null;
+      spotOn(g.group, key, hand.at);
+      hand.down = key !== null && ago < (key === "jog" ? JOG_DOWN : DOWN);
+    }
+    this.gear[0]!.group.getWorldQuaternion(this.aim.turn);
+    return this.aim;
   }
   /** How clean each deck (A, B) and the mixer are, 0 as found to 1 wiped bare. */
   dust(): { decks: [number, number]; mixer: number | null } {
@@ -118,6 +153,17 @@ export class BoothGear {
     for (const g of this.gear) {
       g.u.dustInv.value.copy(g.group.matrixWorld).invert();
       const v = view(g.side);
+      // what changed on it since last frame is a hand on it: play, the cue, the tempo, or a jump the record made
+      const w = g.was;
+      if (v && w.any && v.name === w.name) {
+        const dt = g.seen < 0 ? 0 : t - g.seen;
+        if (v.playing !== w.playing) this.reached(g.side, "play", t);
+        else if (Math.abs(v.cue - w.cue) > 0.005) this.reached(g.side, "cueDown", t);
+        else if (v.bpm !== null && w.bpm !== null && Math.abs(v.bpm - w.bpm) > 0.05) this.reached(g.side, "tempo", t);
+        else if (Math.abs(v.pos - w.pos - (w.playing ? dt : 0)) > JUMP + dt) this.reached(g.side, "jog", t);
+      }
+      w.any = !!v; g.seen = t;
+      if (v) { w.name = v.name; w.playing = v.playing; w.cue = v.cue; w.bpm = v.bpm; w.pos = v.pos; }
       if (g.jog) g.jog.rotation.y = v ? -(v.pos * RPS * Math.PI * 2) % (Math.PI * 2) : 0;
       for (const m of g.ring) { const mat = m.material; if (mat instanceof THREE.MeshStandardMaterial) mat.emissiveIntensity = v?.playing ? 1.4 : 0.15; }
       if (!g.screen || !g.tex) continue;
@@ -128,6 +174,23 @@ export class BoothGear {
       g.tex.needsUpdate = true;
     }
   }
+}
+
+const spotAt = new THREE.Vector3();
+/** Where a hand's index goes on a deck-cd model for `key` (null: its rest on the jog's rim), world space, into `out`. */
+function spotOn(deck: THREE.Object3D, key: Reached | null, out: THREE.Vector3) {
+  const part = key === "play" || key === "cueDown" ? deck.getObjectByName(key === "play" ? "part:play" : "part:cue") : key === "tempo" ? deck.getObjectByName("part:tempo") : null;
+  if (part) {
+    // the cap's top
+    out.set(0, key === "tempo" ? 0.011 : 0.008, 0);
+    part.localToWorld(out);
+    return out;
+  }
+  const at = key && key !== "jog" && key !== "tempo" ? SPOTS[key] : null;
+  // a hot cue: on its pad, up the deck's slope; the jog and the rest: on the platter's rim nearest the DJ
+  if (at) spotAt.set(at[0], 0.088 + 0.004, at[1]);
+  else spotAt.set(...REST_AT);
+  return out.copy(deck.localToWorld(spotAt));
 }
 
 /** What a touch on the DJ table lands on: a deck's key, its jog or screen, or "open" (the rest of the table). */

@@ -27,7 +27,7 @@ const BITRATE = 128_000;
  * One guitar's sound here: its dry input, the amp, its level (your mute times its channel on the desk), its aux sends
  * taken after that level, and where it stands (yours isn't placed).
  */
-interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; shape: AudioWorkletNode; gain: GainNode; sends: GainNode[]; pan: PannerNode | null; limit: ReturnType<typeof limiter> | null; settings: string; asked: AmpSettings | null; level: number; strip: Strip; tag: HTMLAudioElement | null; tap: MediaStreamAudioDestinationNode | null }
+interface Chain { src: MediaStreamAudioSourceNode | null; amp: AudioWorkletNode; shape: AudioWorkletNode; gain: GainNode; sends: GainNode[]; pan: PannerNode | null; limit: ReturnType<typeof limiter> | null; settings: string; asked: AmpSettings | null; level: number; strip: Strip; tag: HTMLAudioElement | null; tap: MediaStreamAudioDestinationNode | null; meter: AnalyserNode }
 /** A channel as a call plays it (src/desk.ts `callStrip`): its level, each aux send 0 to 1, and its Shape (left out: flat). */
 export interface Strip { level: number; sends: number[]; eq?: EqDoc }
 const PLAIN: Strip = { level: 1, sends: [] };
@@ -322,11 +322,23 @@ export class GuitarLine {
     // a remote stream plays into Web Audio only once a media element holds it too (Chrome); the element stays silent
     let tag: HTMLAudioElement | null = null;
     if (who !== "me") { tag = new Audio(); tag.muted = true; tag.srcObject = stream; void tag.play().catch(() => {}); }
-    const src = ctx.createMediaStreamSource(stream);
+    const src = ctx.createMediaStreamSource(stream), meter = new AnalyserNode(ctx, { fftSize: 256 });
     src.connect(amp);
-    const c: Chain = { src, amp, shape, gain, sends, pan, limit, settings: "", asked: null, level: 1, strip: PLAIN, tag, tap: null };
+    // how hard it's played, before any amp or fader: what a player's strumming hand follows on every page
+    src.connect(meter);
+    const c: Chain = { src, amp, shape, gain, sends, pan, limit, settings: "", asked: null, level: 1, strip: PLAIN, tag, tap: null, meter };
     this.chains.set(who, c);
     this.play(c, this.strips.get(who) ?? PLAIN);
+  }
+
+  /** How hard `who`'s guitar is played now, 0 to 1 (its dry input's loudness; 0 with no sound in yet). */
+  loudness(who: Who): number {
+    const c = this.chains.get(who);
+    if (!c) return 0;
+    c.meter.getFloatTimeDomainData(LOUD);
+    let sum = 0;
+    for (let i = 0; i < LOUD.length; i++) sum += LOUD[i]! * LOUD[i]!;
+    return Math.min(1, Math.sqrt(sum / LOUD.length) * 4);
   }
 
   private drop(who: Who) {
@@ -336,10 +348,12 @@ export class GuitarLine {
     this.loads.delete(who);
     c.amp.port.onmessage = null;
     for (const t of c.tap?.stream.getTracks() ?? []) t.stop();
-    c.src?.disconnect(); c.amp.disconnect(); c.shape.disconnect(); c.gain.disconnect(); c.limit?.node.disconnect(); c.pan?.disconnect();
+    c.src?.disconnect(); c.meter.disconnect(); c.amp.disconnect(); c.shape.disconnect(); c.gain.disconnect(); c.limit?.node.disconnect(); c.pan?.disconnect();
     for (const s of c.sends) s.disconnect();
     if (c.tag) c.tag.srcObject = null;
   }
 }
 
+/** The one buffer every loudness reading fills (an AnalyserNode's fftSize 256). */
+const LOUD = new Float32Array(256);
 const key = (peer: number, line: Line) => `${peer}:${line}`;
