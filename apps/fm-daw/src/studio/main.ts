@@ -72,6 +72,7 @@ import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
 import { PaRoom, paSpeakers, roomLevel, roomRig } from "./pa-room.ts";
 import { NightAir } from "./night-air.ts";
+import { turnWheels } from "@rustybuns/models/monosynth";
 import { Dancers } from "./dancers.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
@@ -200,6 +201,8 @@ addEventListener("pointerdown", () => roomTubes.pressed(), true);
 addEventListener("keydown", () => roomTubes.pressed(), true);
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
+/** Each keyboard's case by spot id: its pitch and mod wheels turn as the one sitting there moves theirs. */
+const wheeled = new Map<string, THREE.Object3D>();
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
   const g = new THREE.Group(), b = thingBox(s), t = s.thing, m = std(t.color);
@@ -270,6 +273,7 @@ function thing(s: Spot): THREE.Group {
     const { synth, keys } = keysSynth(s, keysKind(s, keysAsked, def.keys));
     inFront.add(synth.group);
     played.set(s.id, { keys });
+    wheeled.set(s.id, synth.group);
   } else if (s.kind === "booth") {
     tube(0.012, v(0, 0.03, 0), v(0, t.h, 0), blackSteel);
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);
@@ -280,6 +284,7 @@ function thing(s: Spot): THREE.Group {
     const { synth, keys } = bassSynth(s, def.bass);
     inFront.add(synth.group);
     played.set(s.id, { keys });
+    wheeled.set(s.id, synth.group);
   } else if (s.kind === "dj") {
     // the decks (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
     // and a media deck either side, every front edge in one line toward the DJ (+z)
@@ -1386,6 +1391,9 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  // your hand on the wheels: the keyboard you sit at turns its pitch and mod wheels with the overlay's
+  const atKeys = jam.me.seat ? wheeled.get(jam.me.seat) : undefined;
+  if (atKeys) turnWheels(atKeys, overlay.wheels.pitch, overlay.wheels.mod);
   boothGear.frame(deckView, t);
   lit.frame(jam, camera.position, t, palmOf);
   dust.frame(dt);

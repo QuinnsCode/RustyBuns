@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { POLY_KEY_FRONT, POLY_KINDS, polysynth } from "../src/polysynth.ts";
 import { triangles } from "../src/index.ts";
+import { turnWheels } from "../src/monosynth.ts";
 
 test.each([...POLY_KINDS])("the %s stands on the floor, inside its width, its keys (61, or the string machine's 49) where a seated player reaches", (kind) => {
   const keyTop = 0.842, s = polysynth(7, { fit: 1.2, keyTop, kind });
@@ -19,4 +20,12 @@ test.each([...POLY_KINDS])("the %s stands on the floor, inside its width, its ke
     expect(z + s.keys.whiteLen / 2).toBeCloseTo(POLY_KEY_FRONT, 4);
   }
   expect(triangles(s.group)).toBeLessThan(20000);
+});
+
+test("a hand on the wheels turns them: the synths have pitch and mod wheels, the organs and the tine piano none", () => {
+  const has = POLY_KINDS.filter((kind) => polysynth(3, { kind }).group.getObjectByName("pitch-wheel"));
+  expect(has).toEqual(["wood-poly", "fm-slab", "strings"]);
+  const s = polysynth(3, { kind: "wood-poly" }), before = s.group.getObjectByName("pitch-wheel")!.rotation.x;
+  turnWheels(s.group, 1, 0.5);
+  expect(s.group.getObjectByName("pitch-wheel")!.rotation.x).not.toBe(before);
 });

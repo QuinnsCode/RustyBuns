@@ -20,7 +20,7 @@
 // the mono synth is (`MonoSynth`): one mesh per material slot, and the keys as two InstancedMeshes to press and light.
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { type MonoSynth, into, piece } from "./monosynth.ts";
+import { type MonoSynth, addWheels, into, piece } from "./monosynth.ts";
 import { type Palette, type Piece, box, loft, R, part } from "./shapes.ts";
 
 export const POLY_KINDS = ["wood-poly", "fm-slab", "drawbar", "tine-ep", "combo", "strings"] as const;
@@ -66,10 +66,8 @@ export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind, b
   } else if (organ || kind === "combo") {
     pieces.push(box("trim", [0.034, 0.012, 0.05], [wellX, keyTop + 0.002, keyZ - 0.02], { bevel: 0.004 }));
     pieces.push(box("tab", [0.008, 0.03, 0.014], [wellX, keyTop + 0.02, keyZ - 0.02], { bevel: 0.003, rot: [0, 0, 0.4] }));
-  } else for (const dx of [-0.017, 0.017]) {
-    pieces.push(piece("rubber", new THREE.CylinderGeometry(0.03, 0.03, 0.014, 20).rotateZ(Math.PI / 2), new THREE.Matrix4().makeTranslation(wellX + dx, keyTop - 0.012, keyZ - 0.01)));
-    pieces.push(box("slot", [0.02, 0.004, 0.07], [wellX + dx, keyTop - 0.002, keyZ - 0.01]));
-  }
+  } else for (const dx of [-0.017, 0.017]) pieces.push(box("slot", [0.02, 0.004, 0.07], [wellX + dx, keyTop - 0.002, keyZ - 0.01]));
+  const wheels = kind !== "tine-ep" && !organ && kind !== "combo";
 
   // ---- the ends: walnut cheeks (shaped, low at the front, up to the panel) or plain moulded caps ----
   const topY = keyTop + panelH + (wood ? 0.012 : 0.006);
@@ -190,6 +188,7 @@ export function polysynth(seed: number, { fit = Infinity, keyTop = 0.82, kind, b
   };
   // `bare`: only the keys, for an instrument the room already stands there (a grand piano prop's keyboard end)
   const group = bare ? new THREE.Group() : part("polysynth", pieces, palette);
+  if (!bare && wheels) addWheels(group, palette, [wellX - 0.017, wellX + 0.017], keyTop - 0.012, keyZ - 0.01, 0.03, 0.014);
   group.name = "polysynth";
 
   // ---- the keys: white keys with a gap between, black ones raised, set back, their tops narrower than their feet ----
