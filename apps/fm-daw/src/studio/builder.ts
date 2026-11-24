@@ -74,7 +74,9 @@ export const Studio: Guard<StudioDef> = obj({
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
-    stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
+    stacks: arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)) }), 16),
+    subs: opt(obj({ at: XZ, yaw: num(-7, 7), wide: int(1, 6), high: int(1, 3) })),
+    monitors: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 4)),
     rig: opt(oneOf(SYSTEM_IDS)),
     mono: opt(bool()),
     truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),

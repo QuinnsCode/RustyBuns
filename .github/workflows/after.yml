@@ -32,6 +32,8 @@ jobs:
         with: { bun-version: "1.4.3" }
       - env:
           GH_TOKEN: ${{ secrets.AFTER_TOKEN || github.token }}
+          # Whether the secret is set (never its value): with it, a bot head that got no CI gets an empty commit that starts it;
+          # without it, a comment with the one-push fix (#5837).
           HAS_AFTER_TOKEN: ${{ secrets.AFTER_TOKEN != '' }}
         run: |
           git config user.name "rustybuns-after"
