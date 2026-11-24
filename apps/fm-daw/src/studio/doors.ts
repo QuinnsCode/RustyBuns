@@ -9,6 +9,8 @@ import type { StudioDef, Wall } from "./room.ts";
 export interface DoorLook { wallOf: (wl: Wall) => THREE.Material; casing: THREE.Material; leaf: THREE.Material; lever: THREE.Material; glass: THREE.Material }
 /** How far a door stands open (radians from shut), and the widest opening that takes one door rather than two. */
 const OPEN = 1.25, SINGLE = 1.2;
+/** The plan's swing arc, drawn in the builder's orange. */
+const SWING = new THREE.MeshBasicMaterial({ color: "#c98a3a", transparent: true, opacity: 0.7, side: THREE.DoubleSide });
 
 export function doorways(def: StudioDef, h: number, look: DoorLook, cut = Infinity): THREE.Group {
   const out = new THREE.Group(), doorH = Math.min(2.1, h - 0.15), tall = Math.min(doorH, cut);
@@ -38,7 +40,7 @@ export function doorways(def: StudioDef, h: number, look: DoorLook, cut = Infini
         if (tall > 1.1) for (const z of [-0.01, 0.06]) piece(0.13, 0.018, 0.02, sx * (lw - 0.12), 1.02, z, look.lever, hinge);
         if (cut < doorH) {
           // the plan's swing: a thin arc on the floor from shut to open
-          const arc = new THREE.Mesh(new THREE.RingGeometry(lw - 0.012, lw, 24, 1, 0, OPEN).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#c98a3a", transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+          const arc = new THREE.Mesh(new THREE.RingGeometry(lw - 0.012, lw, 24, 1, 0, OPEN).rotateX(-Math.PI / 2), SWING);
           arc.position.set(right ? gw - 0.05 : 0.05, 0.008, 0.06);
           if (right) arc.scale.x = -1;
           g.add(arc);

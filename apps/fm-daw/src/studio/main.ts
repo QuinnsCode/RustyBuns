@@ -841,7 +841,8 @@ function keepBuilt(p: Project) {
   const json = JSON.stringify(p.built);
   try { if (localStorage.getItem(key) !== json) localStorage.setItem(key, json); } catch { /* still walk into it */ }
   // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
-  if (pick === "yours" && JSON.stringify(def) !== json && !movingTo) { movingTo = location.href; setTimeout(() => location.reload(), 300); }
+  // against the room as built, before any ?rig= the sesh's rig cards put on it, or a rig pick would reload for ever
+  if (pick === "yours" && JSON.stringify(picked) !== json && !movingTo) { movingTo = location.href; setTimeout(() => location.reload(), 300); }
 }
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
