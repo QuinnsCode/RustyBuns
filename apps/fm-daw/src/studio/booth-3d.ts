@@ -8,8 +8,8 @@ import { clock } from "../dj/analyze.ts";
 import { deckKeyAt, type DeckView, type Press } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 
-/** How the screens look: deck A blue, B orange, as on the decks panel. */
-const INK = { bg: "#07080a", text: "#f1efe9", dim: "#8a8f98", wave: ["#4aa8ff", "#ff9a3c"], played: "#3a3d44", cue: "#ffd23c", head: "#ffffff" } as const;
+/** How the screens look: deck A fire, B blue, as on the decks panel. */
+const INK = { bg: "#07080a", text: "#f1efe9", dim: "#8a8f98", wave: ["#ff9a3c", "#4aa8ff"], played: "#3a3d44", cue: "#ffd23c", head: "#ffffff" } as const;
 /** The record's turn, revolutions a second at the deck's own rate (33 1/3 rpm). */
 const RPS = 33.333 / 60;
 

@@ -1,14 +1,15 @@
 // The decks on screen (engine.ts plays them): deck A on the left, deck B on the right, the mixer between, the two
 // zoomed waveforms stacked across the top on one time scale so you can see the kicks line up, all on one screen (a
-// carousel of the three on a narrow one). Music comes from the header: Add music (or drop files anywhere on it), or a
+// carousel of the three on a narrow one). Music comes from each deck's upload button (on its player and its lane of the
+// close-up), the header's Add music and Folder (PRELOAD tracks read ahead), a file dropped on a deck or lane, or a
 // YouTube link sent to A or B (youtube.ts); the library pop-over lists what came this visit, to send to either deck. Each deck is a club media player
 // (player-panel.ts: the screen, the jog wheel in VINYL or CD, a big CUE and PLAY, the tempo fader); the close-up
 // zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts).
 // The mixer is mixer-panel.ts's four channels, master and twin filters. Keys while it's open: Q/P play A/B, W/O cue,
 // 1 to 4 and 7 to 0 hot cues, A/S and K/L nudge, Z/X and comma/period the 10× nudge held, the arrows slide the
 // crossfader, Esc closes it; Settings (the cog, prefs.ts) changes the keys, the nudge amount, the locks and the waveform.
-// The close-up is coloured by its sound (bass one end of each deck's gradient, highs the other: A blue-green to a
-// whitish purple, B fire), and a press on it grabs that deck's track like a record: drag to scratch, let go to play on.
+// The close-up is coloured by its sound (bass one end of each deck's gradient, highs the other: A fire, B blue-green to a
+// whitish purple), and a press on it grabs that deck's track like a record: drag to scratch, let go to play on.
 // Icons after lucide (ISC), the word as the tooltip.
 // In a room (`room`), the decks are the booth's (booth.ts): a deck someone else loaded shows here as they play it
 // (its waveform, key, tempo, where it is on the room's clock) and its play, cue, sync, hot cues and jumps go to them;
@@ -28,11 +29,12 @@ import { button, el, svg } from "./dom.ts";
 import { TubeDeck, tubeTitle, tubeVolume, videoId } from "./youtube.ts";
 import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
-/** The waveforms' colours: deck A blue, deck B orange, what's played greyed, the cue and the four hot cues. */
-const LOOKS_DECK = { wave: ["#4aa8ff", "#ff9a3c"] as const, played: "#5b5f68", cue: "#ffd23c", hot: ["#ff4a6a", "#4affa0", "#4ab8ff", "#d84aff"] };
+/** The waveforms' colours: deck A fire, deck B blue, what's played greyed, the cue and the four hot cues. */
+const LOOKS_DECK = { wave: ["#ff9a3c", "#4aa8ff"] as const, played: "#5b5f68", cue: "#ffd23c", hot: ["#ff4a6a", "#4affa0", "#4ab8ff", "#d84aff"] };
 
 const ICON = {
   upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>'),
+  folder: svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>'),
   x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
   midi: svg('<circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="10" r="1"/><path d="M9 15h6"/>'),
@@ -47,6 +49,11 @@ const ICON = {
   cog: svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
+
+/** A sound file by its name, for a folder's tracks (the rest of a folder is cover art, playlists and notes). */
+const AUDIO = /\.(mp3|wav|m4a|aac|mp4|ogg|oga|opus|flac|aiff?|webm)$/i;
+/** How many of a folder's tracks are read ahead into the library; the rest are read when one is sent to a deck. */
+export const PRELOAD = 12;
 
 /** A track in the library: what's been loaded this visit, decoded once. */
 interface Shelf { track: Track; overview: Float32Array }
@@ -94,6 +101,8 @@ export interface DecksPanel {
   /** Load bytes (a file, or a fetched URL) onto a deck, and into the library. */
   load(side: Side, name: string, bytes: ArrayBuffer): Promise<Track>;
   library(): string[];
+  /** A folder's tracks not read yet (PRELOAD read ahead, the rest when sent to a deck), and the one being read. */
+  waiting(): { names: string[]; reading: string | null };
   /** The two demo tracks, one on each deck. */
   demos(): void;
   /** The two players' jog wheels (player-panel.ts). */
@@ -142,7 +151,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const tubeA = button(`${ICON.tube}<span>A</span>`, "Play the YouTube link on deck A"), tubeB = button(`${ICON.tube}<span>B</span>`, "Play the YouTube link on deck B");
   tubeA.addEventListener("click", () => void tubeFrom(0)); tubeB.addEventListener("click", () => void tubeFrom(1));
   tubeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") void tubeFrom(decks.decks[0].track || tubes[0] ? 1 : 0); });
-  src.append(add, tubeIn, tubeA, tubeB);
+  const addDir = button(`${ICON.folder}<span>Folder</span>`, `Add a folder of music: every track in it goes in the library, the first ${PRELOAD} read ahead so they load at once`, "dj-add-dir");
+  src.append(add, addDir, tubeIn, tubeA, tubeB);
   const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added this visit, to send to A or B", "dj-lib-open");
   const prefsB = button(ICON.cog, "Settings: the nudge amount, locks, the waveform and the keys", "dj-prefs-open");
   const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
@@ -166,6 +176,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   zoom.addEventListener("pointerdown", (e) => {
     if (held || prefs.lockWave) return;
     const r = zoom.getBoundingClientRect(), side: Side = e.clientY - r.top < r.height / 2 ? 0 : 1, d = decks.decks[side];
+    if (!d.track && !far(side) && !tubes[side]) return loadInto(side);
     if (!d.track || far(side) || tubes[side]) return;
     e.preventDefault();
     try { zoom.setPointerCapture(e.pointerId); } catch { /* a pointer that has already gone */ }
@@ -183,8 +194,19 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const letGoWave = (e: PointerEvent) => { if (!held || e.pointerId !== held.id) return; if (held.vinyl) jogs[held.side].touch(false); held = null; };
   zoom.addEventListener("pointerup", letGoWave);
   zoom.addEventListener("pointercancel", letGoWave);
+  // each lane's load button, down the close-up's left edge: A (fire) on top, B (blue) under it
+  const lanes = el("div", { class: "dj-lanes" });
+  for (const side of [0, 1] as const) {
+    const b = button(`${ICON.upload}<span>${side ? "B" : "A"}</span>`, `Load a track onto deck ${side ? "B" : "A"}`, `dj-lane-load dj-lane-${side ? "b" : "a"}`);
+    b.addEventListener("click", () => loadInto(side));
+    lanes.append(b);
+  }
+  // a file dropped on a lane goes on that lane's deck
+  const laneAt = (y: number): Side => (y - zoom.getBoundingClientRect().top < zoom.getBoundingClientRect().height / 2 ? 0 : 1);
+  zoom.addEventListener("dragover", (e) => e.preventDefault());
+  zoom.addEventListener("drop", (e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer?.files[0]; if (f) void fromFile(laneAt(e.clientY), f); });
   const zoomBox = el("div", { class: "dj-zoombox" });
-  zoomBox.append(zoom, zoomBar);
+  zoomBox.append(zoom, lanes, zoomBar);
   // on a phone or a narrow window the three pieces are a carousel: swipe across, or press A, the mixer or B
   const tabs = el("nav", { class: "dj-tabs", "aria-label": "Deck A, the mixer, deck B" });
   const tabBs = (["A", "mixer", "B"] as const).map((t, i) => {
@@ -219,6 +241,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     tube: () => tubes[side]?.view() ?? null,
     paintOverview: (c, v) => { if (v) drawWave(c, v.wave, v.len, v.pos, v.cue, [], null, side); else { const s = decks.decks[side].state(); drawOverview(c, decks.decks[side].track, s.pos, s.cue, s.hot, s.loop, side); } },
     drop: (f) => void fromFile(side, f),
+    upload: () => loadInto(side),
     quantize: () => decks.quantize,
     prefs: () => prefs,
     nudge: (kind, dir) => nudge(side, kind, dir),
@@ -262,14 +285,61 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const pick = el("input", { type: "file", accept: "audio/*,.xml,.nml,.dat,.ext", multiple: "", hidden: "" });
   add.addEventListener("click", () => pick.click());
   pick.addEventListener("change", () => { for (const f of pick.files ?? []) void fromFile(null, f); pick.value = ""; });
+  // one track straight onto a deck: its upload button, or a press on its empty lane
+  const pickOne = el("input", { type: "file", accept: "audio/*", hidden: "" });
+  let pickTo: Side = 0;
+  function loadInto(side: Side) { pickTo = side; pickOne.click(); }
+  pickOne.addEventListener("change", () => { const f = pickOne.files?.[0]; if (f) void fromFile(pickTo, f); pickOne.value = ""; });
+  // a whole folder: every track in the library, the first PRELOAD read ahead (the empty decks get the first ones)
+  const pickDir = el("input", { type: "file", webkitdirectory: "", multiple: "", hidden: "" });
+  addDir.addEventListener("click", () => pickDir.click());
+  pickDir.addEventListener("change", () => { void fromFolder([...(pickDir.files ?? [])]); pickDir.value = ""; });
   const list = el("ul", { class: "dj-list" });
-  lib.append(pick, list);
+  lib.append(pick, pickOne, pickDir, list);
   for (const t of [lib, head]) {
     t.addEventListener("dragover", (e) => e.preventDefault());
     t.addEventListener("drop", (e) => { e.preventDefault(); for (const f of e.dataTransfer?.files ?? []) void fromFile(null, f); });
   }
   let noteUntil = 0;
   function flash(text: string) { note.textContent = text; noteUntil = performance.now() + 3500; }
+
+  /** A folder's tracks not read yet, and the one being read now. */
+  const waiting: File[] = [];
+  let reading: File | null = null, readAhead = 0, preloading = false;
+  async function fromFolder(files: File[]) {
+    const path = (f: File) => f.webkitRelativePath || f.name;
+    files.sort((a, b) => path(a).localeCompare(path(b), undefined, { numeric: true }));
+    // the DJ software's collection first, so the tracks get its tempos as they're read
+    for (const f of files) if (/\.(xml|nml)$/i.test(f.name)) await fromFile(null, f);
+    const have = new Set([...shelf.map((s) => s.track.name), ...waiting.map((f) => f.name)]);
+    const tracks = files.filter((f) => (AUDIO.test(f.name) || f.type.startsWith("audio/")) && !have.has(f.name));
+    if (!tracks.length) return flash("No music in that folder (mp3, wav, m4a, ogg, flac, aiff)");
+    waiting.push(...tracks);
+    readAhead = 0;
+    lib.hidden = false; libB.classList.add("on");
+    flash(`${tracks.length} track${tracks.length === 1 ? "" : "s"} from the folder${tracks.length > PRELOAD ? `: reading the first ${PRELOAD}, the rest when you send one to a deck` : ""}`);
+    drawList();
+    void preload();
+  }
+  /** Read the folder's tracks into the library one at a time, PRELOAD of them, in the background. */
+  async function preload() {
+    if (preloading) return;
+    preloading = true;
+    while (waiting.length && readAhead < PRELOAD) {
+      reading = waiting.shift()!; readAhead++;
+      drawList();
+      await fromFile(null, reading).catch(() => {});
+    }
+    reading = null; preloading = false;
+    drawList();
+  }
+  /** A folder track not read yet, sent to a deck: read it now, onto that deck. */
+  function sendWaiting(side: Side, f: File) {
+    const i = waiting.indexOf(f);
+    if (i >= 0) waiting.splice(i, 1);
+    drawList();
+    void fromFile(side, f);
+  }
 
   function shelve(t: Track) {
     if (!fine.has(t)) fine.set(t, peakLevels(t.mono, t.buffer.sampleRate));
@@ -298,8 +368,20 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       li.append(n, el("small", {}, "YouTube"), toA, toB);
       list.append(li);
     }
-    count.textContent = String(shelf.length + tubeShelf.length);
-    if (!shelf.length) {
+    for (const f of reading ? [reading, ...waiting] : waiting) {
+      const li = el("li", { class: "waiting" }), n = el("span", { title: f.webkitRelativePath || f.name }), what = el("small");
+      n.textContent = f.name;
+      what.textContent = f === reading ? "reading…" : "not read yet";
+      li.append(n, what);
+      if (f !== reading) {
+        const toA = button("A", "Load on deck A"), toB = button("B", "Load on deck B");
+        toA.addEventListener("click", () => sendWaiting(0, f)); toB.addEventListener("click", () => sendWaiting(1, f));
+        li.append(toA, toB);
+      }
+      list.append(li);
+    }
+    count.textContent = String(shelf.length + tubeShelf.length + waiting.length + (reading ? 1 : 0));
+    if (!shelf.length && !waiting.length && !reading) {
       const li = el("li", { class: "none" }, "<span>Add music, or drop files here or on a deck. Your files stay on this computer; the room hears your set as you play it.</span>");
       const demo = button("Demo tracks", "Two short tracks made here, to try the decks");
       demo.addEventListener("click", () => demos());
@@ -386,7 +468,14 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     decks.decks.forEach((d, side) => {
       const t = d.track, y0 = side * lane, mid = y0 + lane / 2, theirs = far(side === 0 ? 0 : 1);
       if (theirs) { const v = view(side === 0 ? 0 : 1); gridLines(g, theirs.say.grid, v.pos, zoomS() * theirs.say.rate, w / (2 * zoomS() * theirs.say.rate), y0, lane); return; }
-      if (!t) return;
+      if (!t) {
+        if (tubes[side]) return;
+        g.font = '500 22px "IBM Plex Mono", ui-monospace, monospace'; g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillStyle = LOOKS_DECK.wave[side as Side]; g.globalAlpha = 0.55;
+        g.fillText(`Deck ${side ? "B" : "A"}: press here or drop a track`, w / 2, mid);
+        g.globalAlpha = 1;
+        return;
+      }
       const s = d.state(), levels = fine.get(t) ?? [];
       // the deck's own seconds, scaled by its rate, so two decks at one tempo show their beats the same distance apart
       const span = zoomS() * s.rate, pxPerS = w / (2 * span), amp = lane / 2 - 3;
@@ -662,7 +751,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   closeB.addEventListener("click", close);
   if (o.startOpen) open();
   void raf;
-  return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), demos, jogs,
+  return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), waiting: () => ({ names: waiting.map((f) => f.name), reading: reading?.name ?? null }), demos, jogs,
     zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; },
     tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
     tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)),

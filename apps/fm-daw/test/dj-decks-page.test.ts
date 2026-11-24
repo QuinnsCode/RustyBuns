@@ -94,3 +94,40 @@ test.skipIf(!hasChrome)("deck A: loop in and out, the jog stretching the loop, m
   expect(stopped.pos - before.pos).toBeGreaterThan(0.4);
   expect(stopped.pos - before.pos).toBeLessThan(0.8);
 });
+
+test.skipIf(!hasChrome)("loading tracks: deck B's upload button, a drop on lane A, then a folder into the library", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
+  await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
+  const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
+  const until = async (what: string, expr: string, ms = 30_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
+    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("({ decks: qdecks.state()?.decks.map((d) => d.name), library: qdecks.state()?.library, waiting: qdecks.state()?.waiting })").catch(() => null))}`);
+  };
+  await until("the decks", "!!window.qdecks");
+  await page("qdecks.start()");
+  await until("the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
+  // a second of clicks as a WAV file, the way a file from this computer comes in
+  await page(`(window.wav = (name) => {
+    const rate = 22050, n = rate, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+    const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 5512 < 400 ? Math.sin(i * 0.3) * 12000 : 0, true);
+    return new File([b], name, { type: "audio/wav" });
+  }, window.give = (input, files) => { const dt = new DataTransfer(); for (const f of files) dt.items.add(f); input.files = dt.files; input.dispatchEvent(new Event("change")); }, true)`);
+
+  // deck B's upload button, then the file it asks for: onto B
+  await page(`(document.querySelector(".dj-b .dj-load").click(), give(document.querySelector('#dj input[type=file]:not([multiple])'), [wav("bee.wav")]), true)`);
+  await until("bee.wav on deck B", `qdecks.state().decks[1].name === "bee.wav"`);
+  // a file dropped on the close-up's top lane: onto A
+  await page(`(() => { const z = document.querySelector(".dj-zoom"), r = z.getBoundingClientRect(), dt = new DataTransfer(); dt.items.add(wav("ay.wav")); z.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, clientX: r.left + 50, clientY: r.top + 5, bubbles: true, cancelable: true })); return true; })()`);
+  await until("ay.wav on deck A", `qdecks.state().decks[0].name === "ay.wav"`);
+
+  // a folder: its tracks read into the library (both decks are full, so they wait there), the cover art left out
+  await page(`(give(document.querySelector("#dj input[webkitdirectory]"), [wav("02 two.wav"), wav("01 one.wav"), new File(["x"], "cover.jpg", { type: "image/jpeg" }), wav("03 three.wav")]), true)`);
+  await until("the folder in the library", `["01 one.wav", "02 two.wav", "03 three.wav"].every((n) => qdecks.state().library.includes(n)) && !qdecks.state().waiting.reading`);
+  const s = await page<{ library: string[]; waiting: { names: string[] } }>("qdecks.state()");
+  expect(s.library).not.toContain("cover.jpg");
+  expect(s.library.indexOf("01 one.wav")).toBeLessThan(s.library.indexOf("02 two.wav"));
+  expect(s.waiting.names).toEqual([]);
+});

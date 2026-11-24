@@ -20,6 +20,7 @@ import { FAST_TIMES, holdBend, tapShift, type Prefs } from "./prefs.ts";
 type Deck = Decks["decks"][number];
 
 const ICON = {
+  upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>'),
   play: svg('<polygon points="6 3 20 12 6 21 6 3"/>'),
   pause: svg('<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>'),
   sync: svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'),
@@ -30,8 +31,8 @@ const ICON = {
   fastOn: svg('<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>'),
   fwd: svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>'),
 };
-/** Deck A blue, deck B orange (the waveforms' colours in panel.ts). */
-const LOOK = { deck: ["#4aa8ff", "#ff9a3c"] as const, cue: "#ffd23c" };
+/** Deck A fire, deck B blue (the waveforms' colours in panel.ts). */
+const LOOK = { deck: ["#ff9a3c", "#4aa8ff"] as const, cue: "#ffd23c" };
 /** Seconds of track either side of the platter's place sent to the scratch voice at a time. */
 const WINDOW_S = 12;
 
@@ -152,6 +153,8 @@ export interface PlayerHost {
   paintOverview(c: HTMLCanvasElement, v: DeckView | null): void;
   /** A file dropped on the player. */
   drop(f: File): void;
+  /** The deck's upload button: pick a track from this computer onto it. */
+  upload(): void;
   /** Quantize is on: loop points land on the beat. */
   quantize(): boolean;
   /** The DJ's settings (prefs.ts): the nudge amount and the locks. */
@@ -167,7 +170,9 @@ export function playerFace(h: PlayerHost) {
   const name = el("div", { class: "dj-name" }, letter);
   const info = el("div", { class: "dj-info" });
   const top = el("div", { class: "dj-top" });
-  top.append(name, info);
+  const upload = button(ICON.upload, `Load a track onto deck ${letter} from this computer`, "dj-load");
+  upload.addEventListener("click", () => h.upload());
+  top.append(upload, name, info);
   // a YouTube video's player sits here while one is on (the panel fills it)
   const video = el("div", { class: "dj-video" });
   video.hidden = true;

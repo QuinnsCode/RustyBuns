@@ -1,4 +1,4 @@
-/* The decks (panel.ts): a dark booth over the room, deck A blue on the left, deck B orange on the right, the mixer
+/* The decks (panel.ts): a dark booth over the room, deck A fire on the left, deck B blue on the right, the mixer
    (mixer.css) between. On a wide screen it all fits one screen with no scrolling, the close-up and the two platters as
    big as the height allows; under 900px the three pieces are a carousel (swipe, or the A / mixer / B tabs). Labels never wrap. */
 #dj { --gap: 8px; position: fixed; inset: 8px; z-index: 40; overflow: hidden; background: rgba(15, 16, 19, 0.98); color: #f1efe9; border: 1px solid #2c2f35; border-radius: 12px; padding: 8px 10px; font: 13px/1.3 "IBM Plex Sans", system-ui, sans-serif; display: flex; flex-direction: column; gap: var(--gap); }
@@ -39,6 +39,15 @@
 /* the close-up, both decks on one time scale, and its zoom */
 .dj-zoombox { position: relative; flex: none; }
 .dj-zoom { width: 100%; height: clamp(100px, 18vh, 200px); border-radius: 8px; background: #0d0e11; display: block; touch-action: pan-y; }
+/* each lane's load button down the close-up's left edge: A (fire) on top, B (blue) under it */
+.dj-lanes { position: absolute; left: 6px; top: 0; bottom: 0; display: grid; grid-template-rows: 1fr 1fr; padding: 4px 0; gap: 4px; pointer-events: none; }
+#dj .dj-lane-load { pointer-events: auto; align-self: center; min-height: 28px; padding: 0 6px; background: rgba(13, 14, 17, 0.8); }
+#dj .dj-lane-a { color: #ffb36b; border-color: #6b4326; }
+#dj .dj-lane-b { color: #7cc0ff; border-color: #264a6b; }
+.dj-top { align-items: center; }
+#dj .dj-load { min-height: 26px; min-width: 26px; padding: 0 4px; flex: none; }
+.dj-a .dj-load { color: #ffb36b; }
+.dj-b .dj-load { color: #7cc0ff; }
 .dj-zoombar { position: absolute; right: 6px; top: 6px; display: flex; align-items: center; gap: 4px; background: rgba(13, 14, 17, 0.8); border-radius: 8px; padding: 2px; }
 #dj .dj-zoombar button { min-height: 26px; min-width: 26px; padding: 0 4px; }
 .dj-zoombar span { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; color: #c9ccd2; min-width: 52px; text-align: center; white-space: nowrap; }
@@ -56,8 +65,8 @@
 .dj-deck.tube .dj-loops, .dj-deck.tube .dj-sync { opacity: 0.35; pointer-events: none; }
 .dj-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .dj-name { font: 600 18px/1.1 "Barlow Condensed", sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; max-width: 62%; }
-.dj-a .dj-name { color: #7cc0ff; }
-.dj-b .dj-name { color: #ffb36b; }
+.dj-a .dj-name { color: #ffb36b; }
+.dj-b .dj-name { color: #7cc0ff; }
 .dj-info { font: 500 12px "IBM Plex Mono", ui-monospace, monospace; color: #c9ccd2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; text-align: right; }
 .dj-over { width: 100%; height: 40px; background: #0d0e11; border-radius: 6px; cursor: pointer; display: block; flex: none; }
 .dj-video { flex: none; width: 100%; aspect-ratio: 16 / 9; max-height: 26vh; border-radius: 8px; overflow: hidden; background: #000; }
