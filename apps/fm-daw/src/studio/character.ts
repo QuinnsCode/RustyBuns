@@ -16,27 +16,34 @@ export function characterDialog(o: { load: () => Promise<Kept | null>; save: (a:
   dialog.className = "qs-ch";
   dialog.setAttribute("aria-label", "Your character");
   const box = document.createElement("div");
-  box.className = "character";
   dialog.append(box);
   document.body.append(dialog);
   // the room's keys (walk, play, Esc into the room) stay out of it while it's open
   for (const t of ["keydown", "keyup"] as const) dialog.addEventListener(t, (e) => { if (e.key !== "Escape") e.stopPropagation(); });
-  let picker: Picker | null = null;
+  let picker: Picker | null = null, opened = 0;
   const close = () => { if (!dialog.open) return; dialog.close(); };
-  // closed by Esc, Save or Cancel: let go of the picker's GPU context so the room has it back
-  dialog.addEventListener("close", () => { picker?.dispose(); picker = null; });
+  const drop = () => { picker?.dispose(); picker = null; };
+  // closed by Esc, Save or Cancel: let go of the picker's GPU context so the room has it back (the close event comes a
+  // task later, so one opened again in between keeps its new picker)
+  dialog.addEventListener("close", () => { if (!dialog.open) drop(); });
   dialog.addEventListener("click", (e) => { if (e.target === dialog) close(); });
   return {
     async open() {
       if (dialog.open) return;
       document.exitPointerLock?.();
+      drop();
       box.textContent = "";
       dialog.showModal();
+      const mine = ++opened;
       const { mountPicker } = await import("@rustybuns/models/picker");
-      if (!dialog.open) return;
-      const p = await mountPicker(box, { load: o.load, save: o.save, cancel: close, saved: (a) => { o.wear(a); close(); } });
-      // closed while it loaded: nothing to keep
-      if (!dialog.open) p?.dispose(); else picker = p;
+      if (!dialog.open || mine !== opened) return;
+      // its own holder, so a stale one cleared on dispose takes nothing of the next
+      const holder = document.createElement("div");
+      holder.className = "character";
+      box.replaceChildren(holder);
+      const p = await mountPicker(holder, { load: o.load, save: o.save, cancel: close, saved: (a) => { o.wear(a); close(); } });
+      // closed (or closed and opened again) while it loaded: nothing to keep
+      if (!dialog.open || mine !== opened) p?.dispose(); else picker = p;
     },
     close,
     isOpen: () => dialog.open,

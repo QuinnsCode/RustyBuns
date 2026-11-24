@@ -308,6 +308,7 @@ export async function mountPicker(box: HTMLElement, o: PickerOptions) {
   /** The close look at the face: true, false, or null to follow the tab. */
   const closeUp = (on: boolean | null) => { zoom = on; show(); return state(); };
   const dispose = () => {
+    if (!live) return;
     live = false; sized.disconnect();
     fig?.dispose(); renderer.dispose(); renderer.forceContextLoss();
     box.textContent = "";
