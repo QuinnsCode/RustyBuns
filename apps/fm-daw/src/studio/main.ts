@@ -42,7 +42,8 @@ import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, key
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
-import { system } from "@rustybuns/gear";
+import { SYSTEMS, system } from "@rustybuns/gear";
+import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -69,7 +70,7 @@ import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
-import { PaRoom, paSpeakers, roomLevel } from "./pa-room.ts";
+import { PaRoom, paSpeakers, roomLevel, roomRig } from "./pa-room.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
@@ -792,7 +793,7 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); rigOver(p); }
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
@@ -816,6 +817,18 @@ function roomStudios() {
   const lead = iLead();
   $("studios-note").hidden = lead;
   studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
+  // out of doors, the rig too: the leader's to change, for everyone (rig-cards.ts)
+  $("rigs").hidden = $("rigs-title").hidden = !def.outdoor;
+  if (def.outdoor) rigCards($("rigs"), roomRig(def).id, lead ? (id) => player.edit({ t: "rig", id }) : undefined);
+}
+/** The sesh's rig isn't the one standing here: reload onto it, as a studio move does (the stacks and the PA are built once). */
+function rigOver(p: Project) {
+  if (!def.outdoor || !here || !p.rig || p.rig === roomRig(def).id || movingTo) return;
+  const to = new URL(location.href);
+  to.searchParams.set("rig", p.rig);
+  movingTo = to.toString();
+  flash = { text: `Bringing out the ${SYSTEMS[p.rig].name.toLowerCase()}`, until: performance.now() + 2000 };
+  setTimeout(() => location.replace(to.toString()), 300);
 }
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----

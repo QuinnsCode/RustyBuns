@@ -10,6 +10,7 @@ import { ClipGuard, MAX_CLIPS, MAX_TAKES, MIN_CLIP_FRAMES, TAKE_RATE, TakeBytesG
 import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
 import { RUNG, type Rung } from "./rewind.ts";
 import { DeckPress, DeckSay } from "./dj/booth.ts";
 import { SOUND_MAX_FRAMES } from "./clock.ts";
@@ -60,9 +61,10 @@ export interface TrackDoc {
  * instruments: the ones made in the jam room (src/studio/made.ts), each a seat at its track; only there when there are some.
  * desk: the players' channels and the aux 2 return on the sesh's desk (src/desk.ts); only there once one was moved.
  * studio: the jam room's studio (src/studio/rooms/), by id; the leader moves the sesh to another, and everyone walks into it. Only there once set.
+ * rig: the open-air rig on the sand (@rustybuns/gear systems.ts), the leader's to change; only there once set.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -92,6 +94,8 @@ export type Op =
   | { t: "desk"; player?: Channel; aux2?: SeshDesk["aux2"]; space?: SeshDesk["space"] }
   /** The leader moves the sesh to this studio (a room id, or "yours": each person's own built one). */
   | { t: "studio"; id: string }
+  /** The leader brings another open-air rig to the sand (@rustybuns/gear systems.ts): its boxes and their sound, for everyone. */
+  | { t: "rig"; id: SystemId }
   | { t: "replace"; project: Project };
 
 /** The room's level at its lowest, dB: silence. */
@@ -188,10 +192,11 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
+const rigOf = (v: unknown): { rig?: SystemId } => { const id = check(oneOf(SYSTEM_IDS), v); return id ? { rig: id } : {}; };
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -201,7 +206,7 @@ export function sanitize(x: unknown): Project | null {
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
   const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig) };
 }
 
 /** desk only when something on it was moved, so a groove nobody mixed players in reads as it did. */
@@ -323,6 +328,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID }),
+  obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -526,12 +532,14 @@ export function apply(p: Project, op: Op): Project {
     }
     case "studio":
       return op.id === p.studio ? p : { ...p, studio: op.id };
+    case "rig":
+      return op.id === p.rig ? p : { ...p, rig: op.id };
     case "replace": {
       // an undo or a loaded groove keeps the room where the leader put it: moving it is the leader's alone
       const next = sanitize(op.project);
       if (!next) return p;
-      const { studio: _, ...rest } = next;
-      return { ...rest, ...studioOf(p.studio) };
+      const { studio: _, rig: __, ...rest } = next;
+      return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig) };
     }
     default:
       return p;
