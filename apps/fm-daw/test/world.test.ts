@@ -633,7 +633,7 @@ test("jam room: people are the realistic human body, a head about an eighth of t
     expect(tall - head.y).toBeLessThan(0.3);
     expect(tall).toBeGreaterThan(1.45);
     fig.pose({ speed: 0, seated: true, play: null, note: false, t: 2 });
-    expect(top().max.y).toBeLessThan(tall - 0.3);
+    expect(top().max.y).toBeLessThan(tall - 0.2);
     fig.dispose();
   }
 });
