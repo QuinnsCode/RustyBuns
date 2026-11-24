@@ -193,16 +193,24 @@ let orbiting: { x: number; y: number } | null = null;
 // two fingers on the 3D view: pinch to move in and out, slide sideways to turn round the room (a phone's right-drag)
 const touches = new Map<number, { x: number; y: number }>();
 let pinch: { dist: number; x: number } | null = null;
+/** A one-click tool's touch, held until the finger lifts (null once a second finger makes it a pinch). */
+let tap: PointerEvent | null = null;
 const spread = () => { const [a, b] = [...touches.values()]; return a && b ? { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2 } : null; };
 
 function down(e: PointerEvent) {
   if (view === "3d" && e.pointerType === "touch") {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touches.size === 2) { pinch = spread(); drag = null; drawing = null; build?.drawing(null); return; }
+    if (touches.size === 2) { pinch = spread(); tap = null; drag = null; drawing = null; build?.drawing(null); $("measure").hidden = true; return; }
     if (touches.size > 2) return;
   }
   if (view === "3d" && (e.button === 2 || e.button === 1)) { orbiting = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch { /* gone */ } return; }
   if (e.button !== 0) return;
+  // a finger's tap on a one-click tool waits until it lifts: it may be the first of a pinch
+  if (e.pointerType === "touch" && tool !== "move" && tool !== "wall") { tap = e; return; }
+  act(e);
+}
+/** The tool's work for a press at `e`. */
+function act(e: PointerEvent) {
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
   why = "";
   if (tool === "move") {
@@ -286,6 +294,7 @@ function move(e: PointerEvent) {
 }
 function up(e?: PointerEvent) {
   if (e) touches.delete(e.pointerId);
+  if (tap && e && tap.pointerId === e.pointerId && !pinch) { const t = tap; tap = null; act(t); return; }
   if (pinch) { if (touches.size < 2) pinch = null; return; }
   orbiting = null;
   if (drag) {

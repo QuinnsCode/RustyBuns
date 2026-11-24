@@ -105,6 +105,8 @@ export class BuildView {
   private build() {
     const room = this.room!, { w, d, h } = room.size;
     if (this.outline) { this.preview.remove(this.outline); this.outline = null; } this.hovered = null;
+    // free what the last build made (the shared surfaces stay: look.ts caches them)
+    this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh || (o as THREE.LineSegments).isLineSegments) (o as THREE.Mesh).geometry.dispose(); });
     this.root.clear(); this.pickables = []; this.keyed.clear();
     this.placeCamera();
     const add = (o: THREE.Object3D, key?: string, hit?: Hit) => {
@@ -205,7 +207,19 @@ export class BuildView {
     this.yaw += dyaw; this.pitch = Math.min(1.45, Math.max(0.35, this.pitch + dpitch));
     const room = this.room, far = room ? Math.max(room.size.w, room.size.d) * 2.5 + 6 : 40;
     this.dist = Math.min(far, Math.max(3, this.dist * k));
-    if (this.room) this.build();
+    if (!this.room) return;
+    // turning only needs a rebuild when a different outside wall comes between you and the room (it's cut down)
+    const before = this.facing();
+    this.placeCamera();
+    if (this.facing() !== before) this.build(); else this.draw();
+  }
+
+  /** Which outside walls stand between the camera and the room, as a key. */
+  private facing(): string {
+    const r = this.room, c = this.camera.position;
+    if (!r) return "";
+    const { w, d } = r.size;
+    return [c.z > d / 2, c.z < -d / 2, c.x < -w / 2, c.x > w / 2].map(Number).join("");
   }
 
   /** Slide a seat, a booth or the gear wall by (dx, dz) while it is dragged (`spot:<id>`, `booth:<id>`, `gear`). */
