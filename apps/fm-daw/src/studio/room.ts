@@ -138,6 +138,35 @@ export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw:
   return runs.map(([a, b]) => ({ cx: x0 + ux * (a + b) / 2, cz: z0 + uz * (a + b) / 2, hw: (b - a) / 2, hd: thick / 2, turn }));
 }
 
+/** How far a doorway's door stands open (radians from shut), and the widest opening one door fills (two past it). */
+export const DOOR_OPEN = 1.25, DOOR_SINGLE = 1.2;
+/** The doorways that get a door: 0.5 to 2.4 m wide. */
+export const hasDoor = (gw: number) => gw >= 0.5 && gw <= 2.4;
+/** Every open door's leaf as a box on the floor (doors.ts draws them), so nobody walks through one. */
+export function doorLeaves(def: StudioDef): { cx: number; cz: number; hw: number; hd: number; turn: number }[] {
+  const out: { cx: number; cz: number; hw: number; hd: number; turn: number }[] = [];
+  for (const w of def.walls) {
+    const [x0, z0] = w.from, [x1, z1] = w.to, len = Math.hypot(x1 - x0, z1 - z0);
+    if (len < 0.01) continue;
+    const ux = (x1 - x0) / len, uz = (z1 - z0) / len, turn = -Math.atan2(uz, ux);
+    // a point in the wall's frame (x along it from `ga`, z off its face) out into the room
+    const at = (ga: number, x: number, z: number) => [x0 + ux * ga + Math.cos(turn) * x + Math.sin(turn) * z, z0 + uz * ga - Math.sin(turn) * x + Math.cos(turn) * z] as const;
+    for (const [ga, gb] of w.gaps ?? []) {
+      const gw = gb - ga;
+      if (!hasDoor(gw)) continue;
+      const leaves = gw > DOOR_SINGLE ? 2 : 1, lw = (gw - 0.1) / leaves;
+      for (let k = 0; k < leaves; k++) {
+        const sx = k === 1 ? -1 : 1, hx = k === 1 ? gw - 0.05 : 0.05, a = sx * DOOR_OPEN;
+        // the leaf's middle: from its hinge, half its width along the swung leaf
+        const mx = (sx * lw) / 2, mz = 0.025, lx = hx + Math.cos(a) * mx + Math.sin(a) * mz, lz = 0.06 - Math.sin(a) * mx + Math.cos(a) * mz;
+        const [cx, cz] = at(ga, lx, lz);
+        out.push({ cx, cz, hw: lw / 2, hd: 0.03, turn: turn + a });
+      }
+    }
+  }
+  return out;
+}
+
 /** Set dressing: what fills a room besides its seats. Drawn by src/studio/props.ts; it doesn't change how the room sounds. */
 export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "monitor", "stairs", "balcony", "window", "piano", "micStand", "panel", "frames", "sampler", "table",
   // an office's clutter: a desk with its screen and papers, a cubicle's edge, books stacked on the floor, cables, what's left on a desk, a filing cabinet

@@ -4,11 +4,11 @@
 // door) draws each door only as high as its walls and lays its swing on the floor, as a house plan shows a door.
 import * as THREE from "three";
 import { metreUV } from "./look.ts";
-import type { StudioDef, Wall } from "./room.ts";
+import { DOOR_OPEN, DOOR_SINGLE, hasDoor, type StudioDef, type Wall } from "./room.ts";
 
 export interface DoorLook { wallOf: (wl: Wall) => THREE.Material; casing: THREE.Material; leaf: THREE.Material; lever: THREE.Material; glass: THREE.Material }
 /** How far a door stands open (radians from shut), and the widest opening that takes one door rather than two. */
-const OPEN = 1.25, SINGLE = 1.2;
+const OPEN = DOOR_OPEN, SINGLE = DOOR_SINGLE;
 /** The plan's swing arc, drawn in the builder's orange. */
 const SWING = new THREE.MeshBasicMaterial({ color: "#c98a3a", transparent: true, opacity: 0.7, side: THREE.DoubleSide });
 
@@ -21,7 +21,7 @@ export function doorways(def: StudioDef, h: number, look: DoorLook, cut = Infini
     const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
     for (const [ga, gb] of wl.gaps ?? []) {
       const gw = gb - ga;
-      if (gw < 0.5 || gw > 2.4) continue;
+      if (!hasDoor(gw)) continue;
       const g = new THREE.Group(); g.position.set(x0 + ux * ga, 0, z0 + uz * ga); g.rotation.y = -Math.atan2(uz, ux); out.add(g);
       const piece = (bw: number, bh: number, bd: number, x: number, y: number, z: number, m: THREE.Material, to = g) => {
         const b = new THREE.Mesh(metreUV(new THREE.BoxGeometry(bw, bh, bd)), m); b.position.set(x, y, z); to.add(b); return b;

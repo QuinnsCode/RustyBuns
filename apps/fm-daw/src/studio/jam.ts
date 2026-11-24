@@ -5,7 +5,7 @@ import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
 import type { Live, Project } from "../project.ts";
 import { QWERTY } from "../ui/input.ts";
-import { floorAt, propBlocks, propBox, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { doorLeaves, floorAt, propBlocks, propBox, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
 import { pushOut as walkOut, type Rect } from "./walk.ts";
 import { gearSolids } from "./gear-wall.ts";
 
@@ -49,7 +49,7 @@ export function sitter(j: Jam, id: string): "me" | number | null {
 /** The parked vans' footprints (a little over the body, for the mirrors). */
 const vanSolids = (def: StudioDef): Rect[] => (def.outdoor?.vans ?? []).map((v) => ({ cx: v.at[0], cz: v.at[1], hw: 1.0, hd: 2.5, turn: v.yaw }));
 export function solids(def: StudioDef): Rect[] {
-  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox), ...(def.props ?? []).filter(propBlocks).map(propBox), ...gearSolids(def), ...vanSolids(def)];
+  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox), ...(def.props ?? []).filter(propBlocks).map(propBox), ...gearSolids(def), ...vanSolids(def), ...doorLeaves(def)];
 }
 const pushOut = (def: StudioDef, p: { x: number; z: number }) => walkOut(p, solids(def), def.size.w / 2, def.size.d / 2, RADIUS);
 
