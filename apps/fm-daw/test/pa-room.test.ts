@@ -53,10 +53,10 @@ test("each open-air rig stands shoulder to shoulder, and a narrow horn rig dulls
     expect(gap, id).toBeGreaterThanOrEqual(stackWidth(SYSTEMS[id]));
     expect(gap, id).toBeLessThan(stackWidth(SYSTEMS[id]) + 0.1);
   }
-  // 10 m out and 30 degrees off the middle stack's axis, against straight in front of it
+  // 10 m out and 30 degrees off a stack's own axis (the sides are toed in), against straight in front of it
   const [narrow, wide] = (["tri-amp", "synergy"] as const).map((id) => rig(id)[1]!);
-  const off = (s: Speaker) => hearSpeaker(s, { x: s.at[0] + 10 * Math.sin(Math.PI / 6), z: s.at[1] + 10 * Math.cos(Math.PI / 6), yaw: 0 }).cutoff;
-  const on = (s: Speaker) => hearSpeaker(s, { x: s.at[0], z: s.at[1] + 10, yaw: 0 }).cutoff;
+  const out = (s: Speaker, a: number) => hearSpeaker(s, { x: s.at[0] + 10 * Math.sin(s.yaw + a), z: s.at[1] + 10 * Math.cos(s.yaw + a), yaw: 0 }).cutoff;
+  const off = (s: Speaker) => out(s, Math.PI / 6), on = (s: Speaker) => out(s, 0);
   expect(off(narrow)).toBeLessThan(off(wide));
   expect(on(narrow)).toBe(on(wide));
   // 10 m behind a horn stack, facing it: the pattern takes the highs off it

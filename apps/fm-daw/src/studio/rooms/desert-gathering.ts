@@ -35,7 +35,7 @@ const monitor = (k: -1 | 1) => {
 
 export const DESERT_GATHERING: StudioDef = {
   id: "desert-gathering", name: "Desert Gathering",
-  about: "A clearing in the remote Mojave under a full moon, Joshua trees and boulders round it. A minimal booth on the sand: the decks on a board over sawhorses, a tapestry draped to the ground, a tall lantern either side and a horn monitor on a stand at each end. Behind it a block of bass bins in the middle and a side of horn-loaded stacks each side of the floor, toed in. Everyone carries a hand lantern. Only the sand throws any sound back, so it's dry and loud.",
+  about: "A clearing in the remote Mojave under a full moon, Joshua trees and boulders round it. A minimal booth on the sand: the decks on a board over sawhorses, a tapestry draped to the ground, a lantern and a horn monitor either side. Bass bins in the middle, a side of horn stacks each side of the floor. Everyone carries a hand lantern. Only the sand throws sound back: dry and loud.",
   size: { w: 40, d: 40, h: 20 },
   colors: { floor: "#b8946a", walls: "#10142a", ceiling: "#10142a", trim: "#c8a46a" },
   materials: { floor: "sand", ceiling: "sky", walls: all("sky") },
