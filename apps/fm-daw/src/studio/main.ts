@@ -49,7 +49,9 @@ import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
-import { bassReach, bassSynth } from "./gear-models.ts";
+import { bassReach, bassSynth, keysKind, keysSynth } from "./gear-models.ts";
+import { withKeysVoice } from "./keys-voice.ts";
+import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
@@ -93,6 +95,8 @@ const pick = here?.studio ?? "";
 const picked = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 // ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
 const rigAsked = new URLSearchParams(location.search).get("rig");
+// ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar); the spot's id picks one otherwise
+const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.search).get("keys"));
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: { theme: {
@@ -116,7 +120,9 @@ let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
-let project: Project = withMonoBass(demoProject());
+// the keys track sounds like the instrument at the keys seat (keys-voice.ts)
+const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made);
+let project: Project = withKeysVoice(withMonoBass(demoProject()), keysSpot ? keysKind(keysSpot, keysAsked) : null);
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
 
@@ -248,31 +254,11 @@ function thing(s: Spot): THREE.Group {
       cable([[a.x, a.y, a.z], [a.x, a.y - 0.08, a.z - 0.02], [drop.x, Math.max(0.05, a.y * 0.3), drop.z], [drop.x, 0.004, drop.z - 0.05], [(drop.x + 0.95) / 2, 0.004, -0.72 + i * 0.012], ...plug(i)]);
     });
   } else if (s.kind === "keys") {
-    // a stage synth: a textured plastic case with walnut cheeks, a sloped steel panel of knobs and a small screen
-    // behind the keys, on a black steel X stand
-    const top = t.h;
-    box(t.w - 0.08, 0.1, t.d, surface("plastic", t.color), 0, top - 0.05, 0);
-    for (const x of [-t.w / 2 + 0.02, t.w / 2 - 0.02]) box(0.04, 0.13, t.d, surface("ply", "#5b3a24"), x, top - 0.035, 0);
-    const panel = box(t.w - 0.08, 0.02, t.d * 0.36, surface("steel", "#26282c"), 0, top + 0.02, -t.d * 0.3);
-    panel.rotation.x = 0.18;
-    const knobs: [number, number, number][] = [];
-    for (let i = 0; i < 14; i++) knobs.push([-t.w / 2 + 0.22 + i * 0.065, 0.02, (i % 2 ? 0.03 : -0.03)]);
-    many(new THREE.CylinderGeometry(0.012, 0.013, 0.022, 14), knob, knobs, panel);
-    const screen = box(0.16, 0.004, 0.05, surface("screen", "#7ab8d8"), t.w / 2 - 0.22, 0.012, 0, panel);
-    screen.userData.glow = 1;
-    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them; the black
-    // ones satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown; their near-black is each key's
-    // own colour (Keys), so a pressed one can light up
-    const white = std("#e2ddd0", { roughness: 0.45 }), black = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 });
-    const n = 29, lay = layout(n), kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
-    const whites = lay.whites.map((_, i): [number, number, number] => [x0 + i * kw, top + 0.011, z]);
-    const blacks = lay.after.map((i): [number, number, number] => [x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
-    const wk = many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
-    const bk = many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
-    played.set(s.id, { keys: new Keys(wk, whites, bk, blacks, lay, t.d * 0.5, t.d * 0.3, undefined, new THREE.Color("#040405")) });
-    const legH = top - 0.1;
-    for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
-    for (const x of [-0.42, 0.42]) for (const y of [0.02, legH]) tube(0.018, v(x, y, -0.22), v(x, y, 0.22), blackSteel);
+    // a classic 61-key instrument from the spot's id: a wood-cheeked analog poly, a digital FM slab or a red drawbar
+    // organ (@rustybuns/models/polysynth, gear-models.ts), its keys where a seated player's palms go
+    const { synth, keys } = keysSynth(s, keysAsked);
+    inFront.add(synth.group);
+    played.set(s.id, { keys });
   } else if (s.kind === "booth") {
     tube(0.012, v(0, 0.03, 0), v(0, t.h, 0), blackSteel);
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);

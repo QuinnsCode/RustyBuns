@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { gear, gearLook, type GearLook } from "@rustybuns/models/gear";
 import { MONO_KEY_FRONT, MONO_KEY_TOP, monosynth, type MonoSynth } from "@rustybuns/models/monosynth";
+import { POLY_KEY_FRONT, POLY_KINDS, polysynth, type PolyKind } from "@rustybuns/models/polysynth";
 import { Keys, layout } from "./played.ts";
 import type { Reach, Spot } from "./room.ts";
 
@@ -23,6 +24,20 @@ export function bassSynth(s: Spot): { synth: MonoSynth; keys: Keys } {
   const keys = new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, undefined, k.blackRest);
   return { synth, keys };
 }
+
+/**
+ * The keys seat's synth (@rustybuns/models/polysynth): a classic 61-key poly, FM slab or drawbar organ, picked by the
+ * spot's id (or `kind`), its white keys where the stage synth's were (their top 2.2 cm over the spot's thing, their near
+ * edge 0.43 of its depth toward the seat), so `keysReach` still puts a seated player's palms on them.
+ */
+export function keysSynth(s: Spot, kind?: PolyKind): { synth: MonoSynth & { kind: PolyKind }; keys: Keys } {
+  const t = s.thing, synth = polysynth(seedOf(s.id), { fit: t.w + 0.1, keyTop: t.h + 0.022, kind: keysKind(s, kind) }), k = synth.keys;
+  synth.group.position.z = t.d * 0.43 - POLY_KEY_FRONT;
+  return { synth, keys: new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, undefined, k.blackRest) };
+}
+
+/** Which family stands at a keys seat: the one asked for, else the spot's id picks (the same for everyone in the room). */
+export const keysKind = (s: Spot, asked?: PolyKind): PolyKind => asked ?? POLY_KINDS[seedOf(s.id) % POLY_KINDS.length]!;
 
 /** Where a seated player's palms go at the bass synth: just over the near half of its white keys (as `keysReach`). */
 export function bassReach(s: Spot): Reach | null {

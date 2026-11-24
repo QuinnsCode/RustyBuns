@@ -40,7 +40,7 @@ const WOODS = ["#4a2a16", "#5a3420", "#3e2414", "#64391f"];
 const CAPS = ["#c9ccd0", "#d8c9a0", "#b8bcc2"];
 
 /** A piece from any geometry: positions only, every triangle its own corners, flat normals (as `part` merges them). */
-function piece(slot: string, geo: THREE.BufferGeometry, m?: THREE.Matrix4): Piece {
+export function piece(slot: string, geo: THREE.BufferGeometry, m?: THREE.Matrix4): Piece {
   for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
   if (geo.index) geo = geo.toNonIndexed();
   if (m) geo.applyMatrix4(m);
@@ -48,7 +48,7 @@ function piece(slot: string, geo: THREE.BufferGeometry, m?: THREE.Matrix4): Piec
   return { geo, slot };
 }
 /** A piece built in `frame` (the panel's), moved out into the synth's. */
-const into = (p: Piece, frame: THREE.Matrix4): Piece => { p.geo.applyMatrix4(frame); p.geo.computeVertexNormals(); return p; };
+export const into = (p: Piece, frame: THREE.Matrix4): Piece => { p.geo.applyMatrix4(frame); p.geo.computeVertexNormals(); return p; };
 
 /** The mono synth for `seed`. `fit`: the widest it may be (metres); the keys narrow a little to fit. */
 export function monosynth(seed: number, { fit = Infinity }: { fit?: number } = {}): MonoSynth {

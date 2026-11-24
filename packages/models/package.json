@@ -28,6 +28,7 @@
     "./textures/*": "./textures/*",
     "./synth": "./src/synth.ts",
     "./monosynth": "./src/monosynth.ts",
+    "./polysynth": "./src/polysynth.ts",
     "./drums": "./src/drums.ts",
     "./flora": "./src/flora.ts",
     "./character": "./src/character.ts",
