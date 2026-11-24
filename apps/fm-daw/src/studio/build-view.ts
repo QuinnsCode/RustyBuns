@@ -14,7 +14,7 @@ import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef }
 import { prop } from "./props.ts";
 import { paStack } from "./open-air.ts";
 import { rigStacks, roomRig } from "./pa-room.ts";
-import { cotton, drape, rugMesh, tapestry } from "./tapestry.ts";
+import { cotton, drape, rugs, tapestry } from "./tapestry.ts";
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
@@ -130,7 +130,7 @@ export class BuildView {
     if (room.outdoor) {
       const rig = roomRig(room);
       for (const st of rigStacks(room)) this.root.add(paStack(st.at, st.yaw, undefined, rig.stack));
-      (room.outdoor.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, room.outdoor!.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; this.root.add(m); });
+      this.root.add(rugs(room.outdoor));
     }
     for (const [side, x, z, sw, sd] of room.outdoor ? [] : sides) {
       const toward = side === "front" ? cam.z > d / 2 : side === "back" ? cam.z < -d / 2 : side === "left" ? cam.x < -w / 2 : cam.x > w / 2;

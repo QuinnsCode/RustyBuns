@@ -420,3 +420,10 @@ export function rugMesh(w: number, d: number, seed: number): THREE.Group {
   g.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)), new THREE.LineBasicMaterial({ color: "#d9d0bc" })));
   return g;
 }
+
+/** An open-air room's rugs where it lays them (room.ts Outdoor `rugs`), each from the room's seed. */
+export function rugs(out: { rugs?: { at: [number, number]; yaw: number; w: number; d: number }[]; seed: number }): THREE.Group {
+  const g = new THREE.Group();
+  (out.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, out.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; g.add(m); });
+  return g;
+}

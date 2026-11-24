@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
 import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
-import { clothTime, rugMesh } from "./tapestry.ts";
+import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -246,7 +246,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   // the boxes in the photo kit's coats and grilles (the page hands in gear-kit.ts's look), as the gear climb shoots them
   const look = kit;
   // ---- the rugs on the sand
-  (out.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, out.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; group.add(m); });
+  group.add(rugs(out));
 
   const rig = roomRig(def);
   for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack));
