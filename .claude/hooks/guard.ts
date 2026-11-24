@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { basename, dirname, relative, resolve } from "node:path";
 import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
 import { blockers } from "../../scripts/after.ts";
+import { firstTry, hireTask, thin } from "./thin-hire.ts";
 import { type Of, obj, opt, or, raw, rec, str } from "../../packages/util/src/guard.ts";
 
 /** What Claude Code sends a PreToolUse hook on stdin: the tool, its arguments, and where it runs. */
@@ -369,6 +370,9 @@ export function check(input: HookInput, branchOf: BranchOf = gitBranch): string 
 
 if (import.meta.main) {
   const input = HookInput(JSON.parse(await Bun.stdin.text()));
+  const hire = hireTask(input.tool_name, input.tool_input ?? {});
+  const short = hire && thin(hire.task, hire.issue);
+  if (short && hire && firstTry(hire.task)) { console.error(`Turned away once by .claude/hooks/thin-hire.ts: ${short}.`); process.exit(2); }
   if (input.tool_name === "Bash") {
     const cwd = input.cwd ?? process.cwd();
     const shut = valveOf((() => { try { return readFileSync(valveFile(), "utf8"); } catch { return ""; } })()) === "off";

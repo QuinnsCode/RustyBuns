@@ -60,6 +60,15 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   only in input, write one table. When you touch a test file, delete tests there for cases nobody can reach.
 - No native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
 
+## Hiring a worker: what the task says
+
+From the office's own runs ([notes/TASK_SPECS.md](notes/TASK_SPECS.md), `bun scripts/task-specs.ts`):
+- Point the worker at an issue, or write down what the task must and must not do, a file to start in, and how to check the work.
+  One-line tasks merged 60% of the time and needed the owner 2.1 times per run. Tasks with their decisions written down merged 77%
+  and needed the owner 0.7 times. A task under 50 words with no issue is turned away once (`.claude/hooks/thin-hire.ts`); sent again, it goes through.
+- A new job gets a fresh worker. Runs past 12 hours, or steered 10 or more times, merge far less often (64% and 53%) and cost
+  up to four times as much per merge. Rehire with a sharper task rather than steering on.
+
 ## One call, not a loop: the tools for the chores
 
 Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts and names the chores agents do by hand;
