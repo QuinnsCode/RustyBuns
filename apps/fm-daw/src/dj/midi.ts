@@ -71,7 +71,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
   const fakes = new Set<string>();
   /** Every controller seen this visit, and whether it's still here. */
   const seen = new Map<string, boolean>();
-  let shown = false, armed: string | null = null, driving = false;
+  let frame = 0, shown = false, armed: string | null = null, driving = false;
   /** Buttons held down by a controller, so a CC stream presses once. */
   const down = new Set<string>();
 
@@ -109,6 +109,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     for (const [name, was] of seen) if (was && !now.has(name)) { seen.set(name, false); flash(`${name} unplugged`); }
     for (const name of now) if (!seen.get(name)) { if (seen.has(name)) flash(`${name} is back`); seen.set(name, true); }
     paintButton();
+    paint();
   }
 
   async function connect(): Promise<string> {
@@ -193,13 +194,14 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     shown = on; armed = null;
     layer.hidden = !on;
     showB.classList.toggle("on", on);
-    if (on) requestAnimationFrame(paint);
+    if (on) paint(); // now, then each frame: a hidden tab may not give frames
   }
 
   /** The tags: each learned pairing on its control, the jogs' own layout on each wheel, and the hint with the controllers. */
   function paint() {
     if (!shown) return;
-    requestAnimationFrame(paint);
+    cancelAnimationFrame(frame); // one loop, however often it's called
+    frame = requestAnimationFrame(paint);
     const box = root.getBoundingClientRect();
     const ox = box.left + root.clientLeft, oy = box.top + root.clientTop;
     const cs = controlsIn(root);
@@ -249,6 +251,7 @@ export function mountMidi(o: { root: HTMLElement; jogs: () => readonly [Jog, Jog
     delete map[device][key];
     if (!Object.keys(map[device]).length) delete map[device];
     saveMap(map);
+    paint();
     return true;
   }
 

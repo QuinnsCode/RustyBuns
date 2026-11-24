@@ -52,7 +52,7 @@ test.skipIf(!hasChrome)("a controller: the jog out of the box, tags that move no
   const boxes = `[...document.querySelectorAll(".dj-deck *, .mx *")].map((e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].join(); })`;
   const before = await page<string[]>(boxes);
   await page("qdecks.midi.show(true)");
-  await Bun.sleep(100);
+  await until("the jogs' tags", "document.querySelectorAll('.dj-midi-tag').length === 2");
   expect(await page<string[]>(boxes)).toEqual(before);
   expect(await page<string[]>("[...document.querySelectorAll('.dj-midi-tag')].map((t) => t.textContent)")).toEqual(["DDJ-400 · CC 33/34, Note 54 ch1", "DDJ-400 · CC 33/34, Note 54 ch2"]);
 
