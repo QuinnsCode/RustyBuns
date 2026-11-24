@@ -45,7 +45,7 @@
 /* the phone's tabs: hidden while all three fit */
 .dj-tabs { display: none; }
 /* deck A, the mixer, deck B: the rest of the height */
-.dj-row { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px) minmax(0, 1fr); gap: var(--gap); }
+.dj-row { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 500px) minmax(0, 1fr); gap: var(--gap); }
 .dj-row > * { min-height: 0; }
 .dj-deck { background: #17191d; border: 1px solid #2a2d33; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow: hidden; }
 .dj-deck.over { border-color: #ff6b4a; }

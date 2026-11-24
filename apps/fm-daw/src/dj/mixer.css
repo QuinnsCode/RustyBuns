@@ -1,70 +1,119 @@
-/* The Qone mixer's face (mixer-panel.ts): grey, with one orange (between a cloud's orange and rust) for everything lit, and a glow on it for a dark booth; NIGHT turns the face down and the glow up. Four channel strips and the master, the twin filters at the bottom left and right, the crossfader between them. Labels never wrap. */
-.mx { --face: #1c1d20; --strip: #17181b; --edge: #2b2d31; --ink: #c9cbcf; --dim: #7c7f86; background: linear-gradient(#1f2023, #141518); border: 1px solid var(--edge); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 #2e3034; }
-.mx.night { --face: #0e0f10; --strip: #0b0b0c; --edge: #1d1e20; --ink: #9a9ca1; --dim: #55585e; --acc-glow: rgba(238, 106, 31, 0.9); background: #0b0b0c; }
-.mx-strips { flex: none; display: grid; grid-template-columns: repeat(4, minmax(64px, 1fr)) minmax(68px, 1.1fr); gap: 4px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.mx-strip { display: grid; gap: 3px; justify-items: center; align-content: start; padding: 4px 2px; border-radius: 8px; background: var(--strip); border: 1px solid var(--edge); min-width: 64px; }
+/* The Qone mixer's face (mixer-panel.ts), after a real four-channel club mixer: a slate metal face with white print,
+   black knurled knobs, round rubber buttons whose rings light in one orange (between a cloud's orange and rust), dot
+   LEDs, flip switches and a sunken crossfader; the master and monitor section on a black panel at the right. NIGHT
+   turns the face down and the glow up. Labels never wrap. */
+.mx { --slate: #555a62; --slate2: #474b52; --print: #eef0f2; --ink: #eef0f2; --dim: #d5d8dc; --line: rgba(238, 240, 242, 0.55); --panel: #121315; container: mx / inline-size; background: linear-gradient(170deg, var(--slate), var(--slate2)); border: 1px solid #2b2d31; border-radius: 10px; padding: 8px 6px; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.4); }
+.mx.night { --slate: #2a2c30; --slate2: #222327; --print: #a9acb1; --ink: #a9acb1; --dim: #8d9096; --line: rgba(169, 172, 177, 0.35); --panel: #0b0b0c; --acc-glow: rgba(238, 106, 31, 0.95); }
+/* filter 1 | the four channels over the crossfader | filter 2 | the black panel */
+.mx-face { display: grid; grid-template-columns: minmax(56px, 0.95fr) minmax(0, 4fr) minmax(56px, 0.95fr) minmax(60px, 1fr); grid-template-areas: "f1 mid f2 out"; gap: 6px; align-items: stretch; flex: 1 0 0; }
+.mx-f1 { grid-area: f1; }
+.mx-f2 { grid-area: f2; }
+.mx-mid { grid-area: mid; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mx-out { grid-area: out; }
+.mx-strips { flex: 1 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* a channel: no box, a printed line between it and the next */
+.mx-strip { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 0 2px; min-width: 0; }
+.mx-strip + .mx-strip { border-left: 1px solid var(--line); }
 .mx-strip.far { opacity: 0.35; pointer-events: none; }
-.mx-masterstrip { background: var(--face); }
-.mx-num { font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--ink); white-space: nowrap; }
-.mx-num small { margin-left: 3px; font-size: 11px; color: var(--dim); }
-.mx-brand { color: var(--acc); letter-spacing: 0.14em; text-shadow: 0 0 6px var(--acc-glow); }
-.mx-sub { display: inline-flex; color: var(--dim); margin-top: 2px; }
-/* a knob: a grey cap that turns, its orange line points at the value; hovered, it glows and its label reads the value */
-.mx-knob { display: grid; justify-items: center; gap: 1px; }
+.mx-num { font: italic 600 18px/1 "Barlow Condensed", sans-serif; color: var(--print); white-space: nowrap; }
+.mx-num small { margin-left: 2px; font-size: 11px; font-style: normal; color: var(--dim); }
+.mx-brand { font: italic 700 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.04em; color: var(--print); white-space: nowrap; }
+.mx-silk { display: inline-flex; align-items: center; gap: 3px; font: 600 12px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--print); white-space: nowrap; }
+/* a knob: black and knurled, a white line on its cap; hovered, it glows and its label reads the value */
+.mx-knob { display: grid; justify-items: center; gap: 2px; }
 .mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
 .mx-knob span:empty { display: none; }
 .mx-knob.read span { display: inline-flex; color: var(--acc); text-shadow: 0 0 5px var(--acc-glow); font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0; }
-.mx-dial { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #2d2f33, #0c0d0f 70%); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; transition: box-shadow 0.12s; }
+.mx-dial { position: relative; width: 26px; height: 26px; border-radius: 50%; background: repeating-conic-gradient(#0d0e10 0 7deg, #26282b 7deg 14deg); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.55); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; transition: box-shadow 0.12s; }
 .mx-knob:hover .mx-dial, .mx-dial:focus-visible { box-shadow: 0 0 0 1px var(--acc), 0 0 10px var(--acc-glow); }
-.mx-s .mx-dial { width: 22px; height: 22px; }
-.mx-l .mx-dial { width: 42px; height: 42px; }
-.mx-cap { width: 74%; height: 74%; border-radius: 50%; position: relative; background: linear-gradient(#5d6066, #3a3c41); box-shadow: inset 0 -3px 4px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.6); }
-.mx-cap b { position: absolute; left: calc(50% - 1px); top: 2px; width: 2px; height: 38%; border-radius: 1px; background: var(--acc); box-shadow: 0 0 4px var(--acc-glow); }
-.mx-pair { display: flex; gap: 2px; }
-/* the small push buttons: assigns, cue, filter types; lit ones glow */
-#dj .mx button { min-height: 24px; min-width: 22px; padding: 0 4px; border-radius: 5px; font-size: 12px; gap: 3px; background: #25272b; border-color: #383a3f; color: var(--ink); }
+.mx-strip .mx-m .mx-dial { width: 30px; height: 30px; }
+.mx-s .mx-dial { width: 20px; height: 20px; }
+.mx-l .mx-dial { width: 44px; height: 44px; }
+.mx-cap { width: 76%; height: 76%; border-radius: 50%; position: relative; background: radial-gradient(circle at 50% 32%, #3b3d42, #141517 68%); box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12), 0 0 0 1px #000; }
+.mx-cap b { position: absolute; left: calc(50% - 1px); top: 1px; width: 2px; height: 42%; border-radius: 1px; background: #f4f5f6; }
+.mx-knob:hover .mx-cap b, .mx-knob.read .mx-cap b { background: var(--acc); box-shadow: 0 0 4px var(--acc-glow); }
+/* the printed scale round the mixer's knobs: white dashes from -135 to +135 degrees */
+.mx .mx-m .mx-dial::before, .mx .mx-l .mx-dial::before { content: ""; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none; background: repeating-conic-gradient(from -136deg, var(--print) 0 5deg, transparent 5deg 27deg); -webkit-mask: radial-gradient(circle, transparent 62%, #000 64%), conic-gradient(from 135deg, transparent 0 90deg, #000 90deg); -webkit-mask-composite: source-in; mask: radial-gradient(circle, transparent 62%, #000 64%), conic-gradient(from 135deg, transparent 0 90deg, #000 90deg); mask-composite: intersect; }
+.mx .mx-m, .mx .mx-l { padding-top: 4px; }
+.mx-pair { display: flex; gap: 3px; }
+/* the buttons: plain ones dark, round rubber ones with a ring that lights */
+#dj .mx button { min-height: 22px; min-width: 22px; padding: 0 4px; border-radius: 5px; font-size: 11px; gap: 2px; background: #1b1c1f; border-color: #0c0d0e; color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
 #dj .mx button:hover { border-color: var(--acc); box-shadow: 0 0 6px var(--acc-glow); }
 #dj .mx button.on { background: var(--acc); border-color: var(--acc); color: #141416; box-shadow: 0 0 8px var(--acc-glow); }
-.mx-assign { display: flex; gap: 2px; align-items: center; }
-.mx-assign span { display: inline-flex; color: var(--dim); }
-#dj .mx-x button { padding: 0 2px; min-width: 16px; font-size: 10px; }
-/* the long-throw faders and the LED meters (grey, then orange, the top segments hottest) */
-.mx-faderrow { display: flex; gap: 4px; align-items: stretch; height: 104px; }
-.mx-fader { writing-mode: vertical-lr; direction: rtl; height: 104px; width: 26px; margin: 0; accent-color: #9a9da3; }
-.mx-meter { width: 7px; background: #0a0a0b; border-radius: 2px; position: relative; overflow: hidden; height: 104px; }
-.mx-meter i { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, #8d9096 0 60%, #ee6a1f 60% 88%, #ff3d1a 88%); box-shadow: 0 0 6px var(--acc-glow); }
-.mx-meter::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(to top, transparent 0 5px, #0a0a0b 5px 7px); }
-.mx-lr { display: flex; gap: 4px; }
-.mx-tall { height: 96px; }
-/* the bottom row: filter 1, the crossfader, filter 2 */
-.mx-bottom { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 0.9fr) minmax(0, 1fr); gap: 8px; align-items: start; }
-.mx-filter { display: grid; gap: 4px; background: var(--strip); border: 1px solid var(--edge); border-radius: 10px; padding: 6px; min-width: 0; }
-.mx-fhead { display: flex; gap: 2px; flex-wrap: nowrap; }
-#dj .mx-fhead button { padding: 0 3px; font-size: 11px; flex: 1; }
-.mx-fon span { font-size: 12px; }
-.mx-curve { width: 100%; height: 34px; background: #0b0b0c; border-radius: 6px; display: block; }
-.mx-fknobs, .mx-lfo { display: flex; gap: 6px; align-items: center; justify-content: center; }
-.mx-lfo-tag { display: inline-flex; align-items: center; gap: 1px; color: var(--ink); font: 600 12px "Barlow Condensed", sans-serif; }
-/* the LFO's lamp pulses with its swing */
-.mx-lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc-glow); opacity: 0.1; flex: none; }
-#dj .mx-lfo button { font-size: 11px; }
-.mx-xmid { display: grid; gap: 8px; align-content: center; min-height: 100%; }
-.mx-xrow { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; font: 600 15px "Barlow Condensed", sans-serif; color: var(--dim); }
-.mx-xfade { width: 100%; accent-color: var(--acc); }
-.mx-opts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
-@media (max-width: 560px) {
-  .mx-strips { grid-template-columns: repeat(5, 64px); }
-  .mx-bottom { grid-template-columns: 1fr 1fr; }
-  .mx-xmid { grid-column: 1 / -1; order: 3; }
+#dj .mx .mx-rb { width: 32px; height: 32px; min-height: 0; min-width: 0; padding: 0; border-radius: 50%; border: 2px solid #0b0b0c; background: radial-gradient(circle at 50% 35%, #36383d, #18191c 70%); box-shadow: 0 0 0 2px #2c2e32, 0 2px 4px rgba(0, 0, 0, 0.6); color: #e8eaec; font-size: 10px; }
+#dj .mx .mx-rb.on { background: radial-gradient(circle at 50% 35%, #3a3c41, #18191c 70%); border-color: #18191c; color: #fff; box-shadow: 0 0 0 2px var(--acc), 0 0 12px 2px var(--acc-glow), 0 2px 4px rgba(0, 0, 0, 0.6); }
+#dj .mx .mx-rb:hover:not(.on) { box-shadow: 0 0 0 2px #6b4a35, 0 2px 4px rgba(0, 0, 0, 0.6); }
+/* a flip switch: a lever in a dark slot over its three positions, each position's print a button */
+.mx-flip { position: relative; display: grid; grid-template-columns: repeat(3, auto); justify-content: center; column-gap: 1px; padding-top: 11px; }
+#dj .mx .mx-flip button { min-height: 0; min-width: 0; height: 12px; padding: 0 2px; border: 0; border-radius: 2px; background: none; box-shadow: none; color: var(--print); font-size: 9px; letter-spacing: 0.04em; }
+#dj .mx .mx-flip button.on { background: none; color: var(--print); box-shadow: none; }
+#dj .mx .mx-flip button:hover { color: var(--acc); }
+.mx-flip::before { content: ""; position: absolute; top: 2px; left: calc(50% - 15px); width: 30px; height: 8px; border-radius: 4px; background: #0d0e10; box-shadow: inset 0 1px 2px #000, 0 1px 0 rgba(255, 255, 255, 0.15); pointer-events: none; }
+.mx-lever { position: absolute; top: 1px; left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #f4f5f6, #8c9097 70%); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); pointer-events: none; transition: left 0.08s; }
+.mx-lever[data-at="0"] { left: calc(50% - 15px); }
+.mx-lever[data-at="2"] { left: calc(50% + 5px); }
+/* the long faders: a black slot with printed ticks either side, a black cap with a white line */
+.mx-faderrow { display: flex; gap: 3px; align-items: stretch; flex: 1 0 132px; }
+.mx input[type="range"] { -webkit-appearance: none; appearance: none; margin: 0; background: transparent; cursor: pointer; }
+.mx-fader { writing-mode: vertical-lr; direction: rtl; height: auto; width: 24px; background: linear-gradient(#050506, #050506) center / 4px calc(100% - 10px) no-repeat, repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 12px) left 5px / 4px calc(100% - 10px) no-repeat, repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 12px) right 5px / 4px calc(100% - 10px) no-repeat !important; }
+.mx-fader::-webkit-slider-runnable-track { background: transparent; }
+.mx-fader::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 12px; border-radius: 2px; background: linear-gradient(#2b2d31 0 42%, #f4f5f6 42% 58%, #121315 58%); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.7); }
+.mx-fader::-moz-range-thumb { width: 22px; height: 12px; border: 0; border-radius: 2px; background: linear-gradient(#2b2d31 0 42%, #f4f5f6 42% 58%, #121315 58%); }
+/* the LEDs: round, green, blue from 0 dB, red at the top; the unlit ones dim; mixer-panel.ts clips the lit ones to the level */
+.mx-meter { position: relative; width: 8px; height: 100%; }
+.mx-meter::before, .mx-meter i { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, #39e05a 0 55%, #4f86ff 55% 82%, #ff3434 82%); -webkit-mask: radial-gradient(circle, #000 2.6px, transparent 3.2px) center bottom / 8px calc(100% / 11) repeat-y; mask: radial-gradient(circle, #000 2.6px, transparent 3.2px) center bottom / 8px calc(100% / 11) repeat-y; }
+.mx-meter::before { opacity: 0.22; }
+.mx-meter i { clip-path: inset(100% 0 0 0); filter: drop-shadow(0 0 3px rgba(120, 200, 255, 0.5)); }
+.mx-lr { display: flex; gap: 6px; height: 120px; flex: none; }
+.mx-lrtag { display: flex; gap: 8px; font: 600 10px/1 "Barlow Condensed", sans-serif; color: var(--dim); margin-top: -2px; }
+/* the twin filter columns, framed in print like the hardware's: the LFO on top, the filter under it */
+.mx-filter { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mx-fpart { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; }
+.mx-fpart:last-child { flex: 1; justify-content: space-between; }
+.mx-lforow { display: flex; gap: 2px; }
+.mx-lamp { width: 7px; height: 7px; border-radius: 50%; background: #ff3a2a; box-shadow: 0 0 8px rgba(255, 58, 42, 0.9); opacity: 0.1; flex: none; margin-left: 2px; }
+#dj .mx .mx-follow { font-size: 10px; padding: 0 3px; }
+#dj .mx .mx-tap { width: 36px; height: 36px; flex-direction: column; gap: 0; font-size: 9px; line-height: 1; }
+.mx-types { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+#dj .mx .mx-fon { flex-direction: column; gap: 0; }
+.mx-fon span { font-size: 10px; }
+.mx-curve { width: 100%; height: 30px; background: #070708; border-radius: 4px; display: block; box-shadow: inset 0 1px 3px #000, 0 1px 0 rgba(255, 255, 255, 0.15); }
+/* the black panel: the stereo LEDs, master and booth, then the headphones */
+.mx-out { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; background: var(--panel); border-radius: 6px; box-shadow: inset 0 0 0 1px #000; min-width: 0; --dim: #c9ccd1; --print: #eef0f2; }
+.mx.night .mx-out { --dim: #8d9096; --print: #a9acb1; }
+.mx-rule { width: 70%; border-top: 1px solid rgba(238, 240, 242, 0.35); margin: 2px 0; }
+.mx-jack { position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle, #000 0 30%, #9da1a8 34% 52%, #2c2e32 56%); color: transparent; }
+.mx-jack svg { position: absolute; }
+.mx-opts { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; margin-top: auto; }
+/* the crossfader, in its sunken bed under the channels */
+.mx-xbed { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 6px 8px; margin-top: auto; background: linear-gradient(#3c4046, #464a51); border-radius: 6px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.15); font: italic 700 16px "Barlow Condensed", sans-serif; color: var(--print); }
+.mx-xfade { width: 100%; height: 24px; background: linear-gradient(#050506, #050506) center / calc(100% - 12px) 4px no-repeat !important; }
+.mx-xfade::-webkit-slider-runnable-track { background: transparent; }
+.mx-xfade::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 24px; border-radius: 2px; background: linear-gradient(to right, #2b2d31 0 42%, #f4f5f6 42% 58%, #121315 58%); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.7); }
+.mx-xfade::-moz-range-thumb { width: 14px; height: 24px; border: 0; border-radius: 2px; background: linear-gradient(to right, #2b2d31 0 42%, #f4f5f6 42% 58%, #121315 58%); }
+/* a narrow mixer (a phone, a small laptop): the channels across the top, the two filters side by side under them
+   (each laid out across rather than down), and the black panel along the bottom */
+@container mx (max-width: 470px) {
+  .mx-face { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "mid mid" "f1 f2" "out out"; }
+  .mx-out { flex-flow: row wrap; justify-content: center; align-items: center; gap: 8px; }
+  .mx-lr { height: 66px; }
+  .mx-rule { display: none; }
+  .mx-opts { margin-top: 0; }
+  .mx-filter { flex-direction: row; gap: 4px; }
+  .mx-fpart { flex: 1; flex-flow: row wrap; justify-content: center; }
+  .mx-fpart:last-child { justify-content: center; }
+  .mx-types { flex-direction: row; }
+  .mx-curve { flex-basis: 100%; }
 }
 /* a short screen (a laptop's 720 lines): the band labels go (the knobs keep their order, HI to LOW; hover one and its
-   label comes back with its value, the words are in the tooltips) and the faders shorten, so the filters stay in view */
+   label comes back with its value, the words are in the tooltips) and the faders shorten */
 @media (max-height: 820px) and (min-width: 900px) {
   .mx-strip .mx-knob:not(.mx-l):not(.read) span { display: none; }
-  .mx-faderrow, .mx-fader, .mx-meter { height: 64px; }
-  .mx-curve { height: 26px; }
-  .mx-filter { gap: 3px; }
-  .mx-tall { height: 58px; }
-  .mx-strip { gap: 2px; }
-  .mx { gap: 6px; }
+  .mx-faderrow { flex-basis: 88px; }
+  .mx-strip .mx-m .mx-dial { width: 26px; height: 26px; }
+  .mx-lr { height: 88px; }
+  .mx-strip, .mx-fpart { gap: 3px; }
+  .mx-filter { gap: 6px; }
+  .mx-types { gap: 5px; }
+  #dj .mx .mx-rb { width: 28px; height: 28px; }
 }
