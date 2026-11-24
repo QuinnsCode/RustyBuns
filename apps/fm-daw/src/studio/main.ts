@@ -72,6 +72,7 @@ import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
 import { PaRoom, paSpeakers, roomLevel, roomRig } from "./pa-room.ts";
 import { NightAir } from "./night-air.ts";
+import { Dancers } from "./dancers.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
@@ -370,6 +371,9 @@ const drawn = new Map<number | "me", Drawn>();
 /** Whoever is playing, for everyone else to look at (null: nobody is). */
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
+// out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
+const dancers = def.outdoor ? new Dancers(def) : null;
+if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
 /** Where someone's right palm is drawn now (a carried lantern hangs from it), or null when they aren't drawn. */
@@ -1342,6 +1346,7 @@ function frame(now: number) {
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
+  dancers?.tick(t, band.synced ? band.beat() : null);
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
