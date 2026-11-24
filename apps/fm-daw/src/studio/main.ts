@@ -71,6 +71,7 @@ import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
 import { PaRoom, paSpeakers, roomLevel, roomRig } from "./pa-room.ts";
+import { NightAir } from "./night-air.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
@@ -454,6 +455,8 @@ async function startAudio() {
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
+    // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
+    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
@@ -532,6 +535,7 @@ async function guitar() {
 let pa: PaLine | null = null;
 /** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
 let paRoom: PaRoom | null = null;
+let nightAir: NightAir | null = null;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
 const paOn = new Map<number, string>();
 /** What you're playing to the room, or null. */
@@ -552,6 +556,7 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
   paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
+  nightAir?.listen(jam.me.x, jam.me.z, mutes.room);
   if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
