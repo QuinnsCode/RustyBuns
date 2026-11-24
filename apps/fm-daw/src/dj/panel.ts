@@ -607,7 +607,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     else if (p === "sync") { if (!decks.sync(side, beside(side))) flash("Both decks need a track with a beat to sync"); }
     else if (hot >= 0) d.hotCue(hot, decks.quantize);
     else if (p === "back" || p === "fwd") d.jump(p === "back" ? -4 : 4);
-    else if (p === "seek" && x !== undefined) d.seek(x * d.track.buffer.duration);
+    else if (p === "seek" && x !== undefined && !d.playing) d.seek(x * d.track.buffer.duration);
     say(true);
   }
   // the jog wheel on a deck someone else plays: gathered here (JogOut), run there through its Jog
