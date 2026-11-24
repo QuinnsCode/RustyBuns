@@ -87,7 +87,7 @@ import { BoothGear } from "./booth-3d.ts";
 import { clubStack, openAir } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
-import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
+import { gear as gearModel } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -283,7 +283,7 @@ function thing(s: Spot): THREE.Group {
   } else if (s.kind === "dj") {
     // the decks (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
     // and a media deck either side, every front edge in one line toward the DJ (+z)
-    const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearLook();
+    const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearKitLook(loadQuality());
     if (def.outdoor) {
       // out of doors (Desert Gathering) there's no booth: a board on three sawhorses, a sandbag on each one's shelf so
       // the wind and the bass don't walk it, and a tapestry over the board, hanging to the sand (the sawhorses are only seen by a clip through)
