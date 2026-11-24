@@ -40,6 +40,40 @@ ops.skill("crm", ctx, "Drive the CRM.");             // a SKILL.md for agents wi
 
 `risk` is `read`, `write` or `danger`; views mark `danger` destructive so a client asks a person first.
 
+## Any MCP server as a skill
+
+Think of an MCP server as a toolbox. When an agent loads the toolbox, it reads the label on every tool, on every
+turn, whether it needs them or not. A skill is a note on the shelf: "Tracker: the team's issues". The agent reads that
+one line, and opens the toolbox only when a task calls for it. A note costs 20 to 40 tokens. A full toolbox can cost
+thousands.
+
+`rustybuns skill mcp` writes that note for any MCP server, not only ones built with `@rustybuns/ops`:
+
+```sh
+rustybuns skill mcp https://example.com/mcp                     # a server on the web
+rustybuns skill mcp https://example.com/mcp --header "Authorization: Bearer $TOKEN"   # one behind a sign-in
+rustybuns skill mcp --name tracker -- bunx some-mcp-server       # a server that runs as a local program
+rustybuns skill mcp https://example.com/mcp --print              # just show the file
+```
+
+It asks the server for its instructions and its full tool list, then writes `.claude/skills/mcp-<name>/SKILL.md`
+(`--dir .agents/skills` for Codex). It prints how many tools it found and what the skill costs:
+
+```
+wrote .claude/skills/mcp-tracker/SKILL.md: 2 tools, ~13 tokens in every context, ~150 when opened
+```
+
+The file has three parts:
+
+- **The line the agent always sees:** the server's name and the first sentence of its instructions (or its first
+  tool names), at most 30 words.
+- **What the server says:** its own instructions, word for word.
+- **Its tools:** one line each, with its arguments (`q, limit?`: `?` means optional). A tool that deletes things
+  says "Ask the person first."
+
+Run it again after the server adds or changes tools; it rewrites the file only when something changed. Keep the
+server connected too: the skill tells the agent which tools to call, and the server still runs them.
+
 ## cli2skill
 
 [cli2skill](https://openskillindex.com/skills/openclaw-skills-cli2skill) turns a CLI's `--help` into a
