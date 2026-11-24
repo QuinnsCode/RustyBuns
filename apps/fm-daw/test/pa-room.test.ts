@@ -1,7 +1,7 @@
 // The PA heard from the floor (src/studio/pa-room.ts): level by the inverse square law, the speed of sound's delay,
 // the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from: one mono point source.
 import { expect, test } from "bun:test";
-import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, type Speaker } from "../src/studio/pa-room.ts";
+import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, stackBlocks, type Speaker } from "../src/studio/pa-room.ts";
 import { clubStack, subCones } from "../src/studio/open-air.ts";
 import { GEAR_SIZES } from "@rustybuns/models/gear";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
@@ -30,17 +30,19 @@ test("a speaker behind you is quieter and duller than the same one in front", ()
   expect(hearSpeaker(stack, { x: 0, z: -10, yaw: 0 }).gain).toBeLessThan(behind.gain);
 });
 
-test("Desert Gathering plays one mono sum from a single wall of stacks behind the decks; stereo stacks play their side; a room without decks has no PA", () => {
+test("Desert Gathering stands a side of two stacks each side of the floor, toed in, each playing its side of the set; the sub block sits between them; mono sums them; a room without decks has no PA", () => {
   const sp = paSpeakers(DESERT_GATHERING), dj = DESERT_GATHERING.spots.find((s) => s.kind === "dj")!;
-  expect(sp.map((s) => s.side)).toEqual(["mono", "mono", "mono", "mono"]);
-  // one point source: shoulder to shoulder, under 5 m end to end, all behind the DJ
-  const xs = sp.map((s) => s.at[0]);
-  expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(5);
+  expect(stackBlocks(sp).map((b) => b.length)).toEqual([2, 2]);
+  expect(sp.map((s) => s.side)).toEqual([0, 0, 1, 1]);
+  // facing the stacks from the floor, the left side is on your left, and each side is aimed in across the floor
+  expect(hearSpeaker(sp[0]!, { x: 0, z: 4, yaw: 0 }).pan).toBeLessThan(0);
+  for (const s of sp) expect(Math.sin(s.yaw) * s.at[0]).toBeLessThan(0);
   expect(sp.every((s) => s.at[1] < dj.at[1])).toBe(true);
-  // the same rig in stereo: the left pair plays the left of the set, and on the floor it's on your left
-  const stereo = paSpeakers({ ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, mono: false } });
-  expect(stereo.map((s) => s.side)).toEqual([0, 0, 1, 1]);
-  expect(hearSpeaker(stereo[0], { x: 0, z: 4, yaw: 0 }).pan).toBeLessThan(0);
+  const subs = DESERT_GATHERING.outdoor!.subs!;
+  expect(subs.at[0]).toBeGreaterThan(Math.max(...sp.filter((s) => s.at[0] < 0).map((s) => s.at[0])));
+  expect(subs.at[0]).toBeLessThan(Math.min(...sp.filter((s) => s.at[0] > 0).map((s) => s.at[0])));
+  const mono = paSpeakers({ ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, mono: true } });
+  expect(mono.map((s) => s.side)).toEqual(["mono", "mono", "mono", "mono"]);
   expect(paSpeakers(LIVE_ROOM)).toEqual([]);
 });
 
@@ -51,10 +53,10 @@ test("each open-air rig stands shoulder to shoulder, and a narrow horn rig dulls
     expect(gap, id).toBeGreaterThanOrEqual(stackWidth(SYSTEMS[id]));
     expect(gap, id).toBeLessThan(stackWidth(SYSTEMS[id]) + 0.1);
   }
-  // 10 m out and 30 degrees off the middle stack's axis, against straight in front of it
+  // 10 m out and 30 degrees off a stack's own axis (the sides are toed in), against straight in front of it
   const [narrow, wide] = (["tri-amp", "synergy"] as const).map((id) => rig(id)[1]!);
-  const off = (s: Speaker) => hearSpeaker(s, { x: s.at[0] + 10 * Math.sin(Math.PI / 6), z: s.at[1] + 10 * Math.cos(Math.PI / 6), yaw: 0 }).cutoff;
-  const on = (s: Speaker) => hearSpeaker(s, { x: s.at[0], z: s.at[1] + 10, yaw: 0 }).cutoff;
+  const out = (s: Speaker, a: number) => hearSpeaker(s, { x: s.at[0] + 10 * Math.sin(s.yaw + a), z: s.at[1] + 10 * Math.cos(s.yaw + a), yaw: 0 }).cutoff;
+  const off = (s: Speaker) => out(s, Math.PI / 6), on = (s: Speaker) => out(s, 0);
   expect(off(narrow)).toBeLessThan(off(wide));
   expect(on(narrow)).toBe(on(wide));
   // 10 m behind a horn stack, facing it: the pattern takes the highs off it

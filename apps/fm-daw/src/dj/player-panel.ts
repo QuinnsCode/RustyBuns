@@ -163,12 +163,28 @@ export interface PlayerHost {
   nudge(kind: "tap" | "hold", dir: -1 | 0 | 1): void;
 }
 
+/** The tempo fader as a percent of its range: 0%, +3.2%, -12.0%, +100% (six characters at most). */
+const pct = (s: { pitch: number; range: number }) => {
+  const p = s.pitch * s.range;
+  return p ? `${p > 0 ? "+" : ""}${p.toFixed(Math.abs(p) >= 99.95 ? 0 : 1)}%` : "0%";
+};
+
 /** A club media player's face for one deck: `box` to put on the page, `draw` each frame. */
 export function playerFace(h: PlayerHost) {
   const { side, deck: d, jog } = h, letter = side ? "B" : "A";
   const box = el("div", { class: `dj-deck dj-${side ? "b" : "a"}` });
   const name = el("div", { class: "dj-name" }, letter);
+  // the info line: each reading in a zone of its own width, so none moves as the numbers change and the eye can
+  // always come back to the same spot
   const info = el("div", { class: "dj-info" });
+  const cell = (k: string, title: string) => el("span", { class: `dj-i dj-i-${k}`, title });
+  const iBpm = cell("bpm", "Tempo"), iKey = cell("key", "Key: Camelot, then its name"), iPct = cell("pct", "The tempo fader"), iPos = cell("pos", "Played"), iLeft = cell("left", "Left to play");
+  info.append(iBpm, iKey, iPct, iPos, iLeft);
+  /** The readings; where the tempo came from (a tag, a grid, by ear) goes in the tempo's tooltip. */
+  const setInfo = (bpm: string, key: string, pct: string, pos: string, left: string, from = "") => {
+    iBpm.textContent = bpm; iKey.textContent = key; iPct.textContent = pct; iPos.textContent = pos; iLeft.textContent = left;
+    iBpm.title = from ? `Tempo: ${from}` : "Tempo";
+  };
   const top = el("div", { class: "dj-top" });
   const upload = button(ICON.upload, `Load a track onto deck ${letter} from this computer`, "dj-load");
   upload.addEventListener("click", () => h.upload());
@@ -282,7 +298,9 @@ export function playerFace(h: PlayerHost) {
   const startK = knob({ label: "START", title: `Deck ${letter} start: how long play takes to come up to speed, a turntable's motor (0 to ${START_MAX_S} s)`, min: 0, max: 1, reset: 0, size: "s", get: () => d.ramp.start, put: (v) => d.setRamp("start", v), show: (v) => secs(rampS(v, START_MAX_S)) });
   const brakeK = knob({ label: "BRAKE", title: `Deck ${letter} brake: how long pause takes to stop, the pitch falling with it (0 to ${BRAKE_MAX_S} s)`, min: 0, max: 1, reset: 0, size: "s", get: () => d.ramp.brake, put: (v) => d.setRamp("brake", v), show: (v) => secs(rampS(v, BRAKE_MAX_S)) });
   const pitchCol = el("div", { class: "dj-pitchcol" });
-  pitchCol.append(mt, ranges, pitch, startK.box, brakeK.box);
+  // the tempo fader's percent, right under it, in a zone of its own width
+  const pitchRead = el("output", { class: "dj-pitchread", title: `Deck ${letter} tempo fader` });
+  pitchCol.append(mt, ranges, pitch, pitchRead, startK.box, brakeK.box);
 
   const pads = el("div", { class: "dj-pads" });
   pads.append(hot, loops, manual, nudge);
@@ -358,8 +376,8 @@ export function playerFace(h: PlayerHost) {
         // a YouTube video: its player on the deck, the pitch fader its speed, the cue and hot cues on its clock
         const s = d.state();
         name.textContent = `QDJ ${letter}  ${tube.name ?? "YouTube"}`;
-        info.textContent = `${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(tube.pos)}  -${clock(Math.max(0, tube.len - tube.pos))}  · YouTube`;
-        info.title = "";
+        setInfo("", "", pct(s), clock(tube.pos), `-${clock(Math.max(0, tube.len - tube.pos))}`);
+        pitchRead.textContent = pct(s);
         play.innerHTML = tube.playing ? ICON.pause : ICON.play;
         play.classList.toggle("on", tube.playing);
         cue.classList.toggle("on", tube.cueHeld);
@@ -373,8 +391,9 @@ export function playerFace(h: PlayerHost) {
       }
       if (v) {
         // someone else's deck: what they said, where it is now on the room's clock; their buttons go to them
-        name.textContent = `QDJ ${letter}  ${v.name ?? ""}`;
-        info.textContent = `${v.bpm ?? "--"} BPM  ${v.key ?? ""}   ${clock(v.pos)}  -${clock(v.len - v.pos)}   ${v.who ?? ""}`;
+        name.textContent = `QDJ ${letter}  ${v.name ?? ""}${v.who ? `  · ${v.who}` : ""}`;
+        setInfo(`${v.bpm ?? "--"} BPM`, v.key ?? "", "", clock(v.pos), `-${clock(v.len - v.pos)}`);
+        pitchRead.textContent = "";
         play.innerHTML = v.playing ? ICON.pause : ICON.play;
         play.classList.toggle("on", v.playing);
         sync.classList.remove("on");
@@ -384,8 +403,9 @@ export function playerFace(h: PlayerHost) {
       }
       const s = d.state(), t = d.track;
       name.textContent = `QDJ ${letter}  ${s.name ?? "Drop a track here"}`;
-      info.textContent = t ? `${s.bpm ?? "--"} BPM  ${s.key ? `${s.key.camelot} ${s.key.name}` : ""}  ${s.pitch ? `${s.pitch > 0 ? "+" : ""}${(s.pitch * s.range).toFixed(1)}%` : "0%"}   ${clock(s.pos)}  -${clock(s.length - s.pos)}${t.from && s.bpm ? `  · ${FROM_LABEL[t.from]}` : ""}` : "";
-      info.title = t?.from && s.bpm ? `Tempo: ${FROM_LABEL[t.from]}` : "";
+      if (t) setInfo(`${s.bpm == null ? "--" : s.bpm.toFixed(1)} BPM`, s.key ? `${s.key.camelot} ${s.key.name}` : "", pct(s), clock(s.pos), `-${clock(s.length - s.pos)}`, t.from && s.bpm ? FROM_LABEL[t.from] : "");
+      else setInfo("", "", "", "", "");
+      pitchRead.textContent = pct(s);
       play.innerHTML = s.playing ? ICON.pause : ICON.play;
       play.classList.toggle("on", s.playing);
       cue.classList.toggle("on", d.cueHeld);

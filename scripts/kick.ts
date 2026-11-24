@@ -9,11 +9,9 @@
 //
 //   bun run kick 5840            push the empty commit, print its sha
 //   bun run kick 5840 --dry-run  say what it would push, push nothing
-import { sh } from "./after.ts";
+import { KICK_MESSAGE, sh } from "./after.ts";
 import { help } from "./help.ts";
 import { bool, check, obj, oneOf, str } from "../packages/util/src/guard.ts";
-
-export const MESSAGE = "Start CI (after-bot push started no checks)";
 
 const View = obj({ headRefName: str(200), state: oneOf(["OPEN", "CLOSED", "MERGED"]), isCrossRepository: bool(false) });
 
@@ -43,7 +41,7 @@ export function kick(pr: number, dry: boolean): string {
   run(["git", "fetch", "-q", "--no-tags", "origin", `+refs/heads/${branch}:${ref}`]);
   try {
     const head = run(["git", "rev-parse", ref]);
-    const sha = run(["git", "commit-tree", `${ref}^{tree}`, "-p", ref, "-m", MESSAGE]);
+    const sha = run(["git", "commit-tree", `${ref}^{tree}`, "-p", ref, "-m", KICK_MESSAGE]);
     if (dry) return `would push ${sha.slice(0, 9)} on ${branch} (head ${head.slice(0, 9)}); nothing pushed`;
     run(["git", "push", "-q", "origin", `${sha}:refs/heads/${branch}`]);
     return `pushed ${sha.slice(0, 9)} on ${branch}; checks: bun run pr ${pr}`;
