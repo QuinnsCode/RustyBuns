@@ -10,6 +10,10 @@
 // Runs in after.yml on every push to main and hourly, in a checkout with full history. Forks are skipped (no push).
 // `--dry` says what it would do and changes nothing.
 //
+// Without the AFTER_TOKEN secret (after.yml sets HAS_AFTER_TOKEN, never the value) its push is made with the workflow's
+// own token, which starts no checks (#5733). Then it comments on the PR with the one command that starts them and
+// prints a `::warning::` line so the run summary shows it.
+//
 // A PR that Claude Code's `/ship` or `/steward` watch, or the cloud PR Steward, holds (a `claude-pr-steward-*` or
 // `claude-ship-*` label) is left alone: that watch merges main in and pushes itself, and two pushers race. Its line
 // stays as it is, so a pass after the label goes picks it up.
@@ -108,9 +112,12 @@ export function blockers(body: string): number[] {
 /** The body with its `Merge after` line's words swapped for `to` (the PR numbers stay). */
 export const marked = (body: string, to: string) => body.replace(LINE, (all) => all.replace(/^merge after/i, to));
 
-/** One pass over the open PRs; answers one line per PR it looked at. */
+/** What a PR is told when the runner's push starts no checks (#5733). */
+export const NO_CHECKS = 'main is merged in, but this push starts no checks (#5733). Push one commit of your own on top: `git commit --allow-empty -m "Start CI" && git push`';
+
+/** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
 export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, ...opts }, dry = o.dry;
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, ...opts }, { dry, token } = o;
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -138,7 +145,11 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
       if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${named} landed)`, "origin/main").code === 0) {
         must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
-        out.push(`#${pr.number} merged main in and pushed`);
+        if (token) out.push(`#${pr.number} merged main in and pushed`);
+        else {
+          gh.comment(pr.number, `${NO_CHECKS}\n\n${flagMark(must("rev-parse", "HEAD").trim())}`);
+          out.push(`::warning::#${pr.number} merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented`);
+        }
       } else {
         const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
         git("merge", "--abort");
@@ -184,7 +195,8 @@ if (import.meta.main) {
   const lines = pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.
-  if (!opts.dry && lines.some((l) => / and pushed$/.test(l))) {
+  // Without the token the push already commented, and there is nothing more a pass could do.
+  if (!opts.dry && opts.token && lines.some((l) => / merged main in and pushed/.test(l))) {
     await Bun.sleep(FOLLOW_UP * 1000);
     const again = pass(ghCli, git, { ...opts, checkAfter: FOLLOW_UP }).filter((l) => / head [0-9a-f]{7} /.test(l));
     if (again.length) console.log(`follow-up check:\n${again.join("\n")}`);
