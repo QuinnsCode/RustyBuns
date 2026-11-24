@@ -142,6 +142,8 @@ export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw:
 export const DOOR_OPEN = 1.25, DOOR_SINGLE = 1.2;
 /** The doorways that get a door: 0.5 to 2.4 m wide. */
 export const hasDoor = (gw: number) => gw >= 0.5 && gw <= 2.4;
+/** A loading bay past that (up to 6 m): a roller shutter, rolled up into its drum over the opening, so it leaves no footprint. */
+export const hasRoller = (gw: number) => gw > 2.4 && gw <= 6;
 /** Every open door's leaf as a box on the floor (doors.ts draws them), so nobody walks through one. */
 export function doorLeaves(def: StudioDef): { cx: number; cz: number; hw: number; hd: number; turn: number }[] {
   const out: { cx: number; cz: number; hw: number; hd: number; turn: number }[] = [];
