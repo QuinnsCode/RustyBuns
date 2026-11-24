@@ -46,8 +46,10 @@ export function sitter(j: Jam, id: string): "me" | number | null {
   return null;
 }
 
+/** The parked vans' footprints (a little over the body, for the mirrors). */
+const vanSolids = (def: StudioDef): Rect[] => (def.outdoor?.vans ?? []).map((v) => ({ cx: v.at[0], cz: v.at[1], hw: 1.0, hd: 2.5, turn: v.yaw }));
 export function solids(def: StudioDef): Rect[] {
-  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox), ...(def.props ?? []).filter(propBlocks).map(propBox), ...gearSolids(def)];
+  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox), ...(def.props ?? []).filter(propBlocks).map(propBox), ...gearSolids(def), ...vanSolids(def)];
 }
 const pushOut = (def: StudioDef, p: { x: number; z: number }) => walkOut(p, solids(def), def.size.w / 2, def.size.d / 2, RADIUS);
 

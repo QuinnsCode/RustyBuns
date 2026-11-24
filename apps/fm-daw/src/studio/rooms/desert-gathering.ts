@@ -49,6 +49,8 @@ export const DESERT_GATHERING: StudioDef = {
     generator: { at: [-15, -12], yaw: 0.4 },
     // a fire pit behind the left bales, out of the floor, where the chill corner gathers
     fire: { at: [-13, 11] },
+    // the vans people came in, parked round the back of the floor, one with its awning out over the fire
+    vans: [{ at: [-16.5, 13], yaw: Math.PI / 2 + 0.25, awning: true }, { at: [15.5, 14.5], yaw: -Math.PI / 2 - 0.3 }, { at: [17, 6], yaw: -Math.PI / 2 + 0.15 }],
     // a tall pole at each end of the table, its lantern reaching in over the decks
     lanternPoles: [{ at: [-2.2, TABLE_Z], yaw: Math.PI / 2 }, { at: [2.2, TABLE_Z], yaw: -Math.PI / 2 }],
     // spares on the sand at the booth's front corners, to carry off and set down where you like

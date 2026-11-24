@@ -15,6 +15,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
+import { van } from "@rustybuns/models/van";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
 import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
@@ -418,6 +419,13 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     fire.group.position.set(x, duneAt(x, z, flat), z);
     group.add(fire.group);
   }
+
+  // ---- the vans people came in, parked round the edge
+  (out.vans ?? []).forEach((v, i) => {
+    const m = van(out.seed + 31 * i, { awning: v.awning });
+    m.position.set(v.at[0], duneAt(v.at[0], v.at[1], flat), v.at[1]); m.rotation.y = v.yaw;
+    group.add(m);
+  });
 
   // ---- the generator and its jerry cans, off to the side
   if (out.generator) {
