@@ -621,8 +621,10 @@ test("jam room: whoever sits at the keys has their palms on the keys, short arms
 test("jam room: people are the realistic human body, a head about an eighth of their height on a real neck, sat on the stool and standing to their full height", () => {
   for (const seed of [1, 2, 3]) {
     const fig = figure(randomAvatar(mulberry32(seed)), null), head = new THREE.Vector3();
-    expect(fig.group.getObjectsByProperty("type", "SkinnedMesh").length).toBe(1);
-    const top = () => { fig.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(fig.group.getObjectsByProperty("type", "SkinnedMesh")[0]!, true); };
+    // one skinned body with a head bone (the real hands are skinned meshes of their own)
+    const bodies = fig.group.getObjectsByProperty("type", "SkinnedMesh").filter((m) => m instanceof THREE.SkinnedMesh && m.skeleton.getBoneByName("head"));
+    expect(bodies.length).toBe(1);
+    const top = () => { fig.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(bodies[0]!, true); };
     fig.pose({ speed: 0, seated: false, play: null, note: false, t: 1 });
     const standing = top(), tall = standing.max.y;
     fig.group.getObjectByName("head")!.getWorldPosition(head);
