@@ -257,6 +257,12 @@ function move(e: PointerEvent) {
     if (pinch && now && build) { build.orbit(-(now.x - pinch.x) * 0.008, 0, pinch.dist / Math.max(now.dist, 1)); pinch = now; return; }
   }
   if (orbiting && build) { build.orbit(-(e.clientX - orbiting.x) * 0.008, (e.clientY - orbiting.y) * 0.006); orbiting = { x: e.clientX, y: e.clientY }; return; }
+  // nothing in hand: outline what's under the pointer in 3D, so you know what a click will take
+  if (!drag && !drawing && view === "3d" && build) {
+    const h = build.hit(e), over = h && !("floor" in h) && !("side" in h);
+    build.hover(over ? h : null);
+    canvas.style.cursor = over && tool === "move" ? "grab" : "";
+  }
   const p = pointAt(e);
   if (!p) return;
   if (drag) {

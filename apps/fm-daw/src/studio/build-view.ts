@@ -99,6 +99,7 @@ export class BuildView {
 
   private build() {
     const room = this.room!, { w, d, h } = room.size;
+    if (this.outline) { this.preview.remove(this.outline); this.outline = null; } this.hovered = null;
     this.root.clear(); this.pickables = []; this.keyed.clear();
     this.placeCamera();
     const add = (o: THREE.Object3D, key?: string, hit?: Hit) => {
@@ -202,9 +203,26 @@ export class BuildView {
     if (o) { o.position.set(dx, 0, dz); o.updateMatrixWorld(true); this.draw(); }
   }
 
+  private outline: THREE.Box3Helper | null = null;
+  private hovered: string | null = null;
+  /** Outline what the pointer is over (a hit's key: `spot:<id>`, `prop:<i>`, `wall:<i>`, `booth:<id>`, `gear`, `door`), or nothing. */
+  hover(hit: Hit) {
+    const key = !hit ? null : "spot" in hit ? `spot:${hit.spot}` : "prop" in hit ? `prop:${hit.prop}` : "wall" in hit ? `wall:${hit.wall}` : "booth" in hit ? `booth:${hit.booth}` : "gear" in hit ? "gear" : "door" in hit ? "door" : null;
+    if (key === this.hovered) return;
+    this.hovered = key;
+    if (this.outline) { this.preview.remove(this.outline); this.outline.dispose(); this.outline = null; }
+    const o = key ? this.keyed.get(key) : null;
+    if (o) {
+      const box = new THREE.Box3().setFromObject(o).expandByScalar(0.03);
+      this.outline = new THREE.Box3Helper(box, ORANGE);
+      this.preview.add(this.outline);
+    }
+    this.draw();
+  }
+
   /** The wall being drawn, from `a` to `b`, or none. */
   drawing(a: [number, number] | null, b?: [number, number]) {
-    this.preview.clear();
+    this.preview.clear(); this.outline = null; this.hovered = null;
     if (a && b && Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.01) {
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]), tall = this.walls === "up" ? (this.room?.size.h ?? 2.6) : 1.15;
       const o = new THREE.Mesh(new THREE.BoxGeometry(len, tall, 0.12), new THREE.MeshStandardMaterial({ color: ORANGE, transparent: true, opacity: 0.55 }));
