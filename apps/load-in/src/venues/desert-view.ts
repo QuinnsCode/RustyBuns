@@ -44,10 +44,17 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
   const floor = desertFloor({ color: "#c8a97a", seed: 11 });
   floor.map.repeat.set(240 / 3, 240 / 3); floor.bump.repeat.copy(floor.map.repeat);
   slab({ x0: -120, x1: 120, z0: -120, z1: 120 }, -0.02, 0.02, mat(0xffffff, { map: floor.map, bumpMap: floor.bump, bumpScale: 1.2, roughness: 1 }));
-  slab({ x0: -1.4, x1: 1.4, z0: 24, z1: 120 }, -0.015, 0.02, mat(0xb39466));
+  // the truck's track: the same sand, darker where the tyres packed it
+  const track = desertFloor({ color: "#a98a5e", seed: 12 });
+  track.map.repeat.set(2.8 / 3, 96 / 3);
+  slab({ x0: -1.4, x1: 1.4, z0: 24, z1: 120 }, -0.015, 0.02, mat(0xffffff, { map: track.map, roughness: 1 }));
+  // and the dunes round the clearing, the same sand over their backs
+  const duneSand = desertFloor({ color: "#b89a6c", seed: 13 });
+  duneSand.map.repeat.set(6, 3);
+  const duneMat = mat(0xffffff, { map: duneSand.map, roughness: 1 });
   for (let k = 0; k < 14; k++) {
     const a = (k / 14) * Math.PI * 2, r = 44 + 6 * Math.sin(k * 2.3);
-    const dune = new THREE.Mesh(new THREE.SphereGeometry(9 + 4 * Math.cos(k * 1.7), 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xb89a6c));
+    const dune = new THREE.Mesh(new THREE.SphereGeometry(9 + 4 * Math.cos(k * 1.7), 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), duneMat);
     dune.scale.y = 0.3;
     dune.position.set(Math.cos(a) * r, -0.5, Math.sin(a) * r);
     g.add(dune);
