@@ -314,7 +314,7 @@ function thing(s: Spot): THREE.Group {
     const front = t.d / 2 - 0.08;
     const mixer = gearModel("mixer-club-4", { look });
     put(mixer, 0, top, front - 0.358 / 2);
-    boothGear.addRest(mixer);
+    boothGear.addRest(mixer, true);
     for (const side of [-1, 1]) {
       const deck = gearModel("deck-cd", { look });
       put(deck, side * (0.32 / 2 + 0.03 + 0.32 / 2), top, front - 0.405 / 2);
@@ -592,7 +592,13 @@ function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (
 function onLive(from: number, e: Live) {
   // the booth: what's on someone's decks, or a press on yours
   if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
-  if (e.t === "press") { if (e.to === myPeer()) decks?.heard(from, e); return; }
+  if (e.t === "press") {
+    // a press on one of my decks: it plays here, and their fingers leave prints in the dust on it
+    if (e.to !== myPeer()) return;
+    decks?.heard(from, e);
+    if (e.press === "jog" ? e.touch : e.press !== "cueUp") boothGear.pressed(e.side, e.press);
+    return;
+  }
   hear(jam, from, e);
   if (e.t === "wear") people();
   if (e.t === "guitar") {
@@ -931,7 +937,7 @@ function touchDecks(e: MouseEvent): boolean {
   const seat = spotOf(jam, jam.me.seat);
   if (seat?.kind !== "dj" && !boothGear.count) return false;
   const ndc = locked() ? new THREE.Vector2(0, 0) : new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  const hit = boothGear.hit(ndc, camera);
+  const hit = boothGear.touch(ndc, camera);
   if (!hit) return false;
   const key = hit.key;
   void deckPanel().then((d) => {
@@ -1371,7 +1377,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam) }),
