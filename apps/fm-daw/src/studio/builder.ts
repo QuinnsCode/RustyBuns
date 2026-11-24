@@ -58,6 +58,7 @@ export const Studio: Guard<StudioDef> = obj({
     kind: oneOf(PROP_KINDS), at: XZ, yaw: num(-7, 7), w: num(0.02, 40), d: num(0.01, 50), h: num(0.01, 20), y: opt(num(0, 20)), color: COLOR, seed: opt(int(0, 2 ** 31)),
   }), MAX_PROPS)),
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+  bass: opt(oneOf(["mono", "box"] as const)),
   outdoor: opt(obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
     mono: opt(bool()),

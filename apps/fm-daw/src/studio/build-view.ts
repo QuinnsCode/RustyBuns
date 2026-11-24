@@ -26,14 +26,14 @@ const CUT = 0.18, ORANGE = new THREE.Color("#ff6b4a");
 const wallLook = (m: Material) => surface(wallSurface(m), m === "drywall" || m === "plaster" ? "#d9d3c6" : undefined);
 
 /** A seat's instrument or furniture, its front toward +z, centred on its thing's box (as the jam room draws it). */
-export function spotModel(s: Spot): THREE.Group {
+export function spotModel(s: Spot, bass?: StudioDef["bass"]): THREE.Group {
   const g = new THREE.Group(), t = s.thing;
   const fabric = surface("fabric", t.color), steel = surface("steel", "#1b1c1f"), ply = surface("ply", "#2a2420");
   const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
     const o = new THREE.Mesh(metreUV(new THREE.BoxGeometry(w, h, d)), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o;
   };
   if (s.kind === "keys") g.add(keysSynth(s).synth.group);
-  else if (s.kind === "bass") g.add(bassSynth(s).synth.group);
+  else if (s.kind === "bass") g.add(bassSynth(s, bass).synth.group);
   else if (s.kind === "drums") g.add(drumKit({ shell: t.color, quality: "low" }).group);
   else if (s.kind === "booth") g.add(gear("mic-stand"));
   else if (s.kind === "dj") {
@@ -164,7 +164,7 @@ export class BuildView {
     (room.props ?? []).forEach((p, i) => { const holder = new THREE.Group(); holder.add(prop(p, propMat)); add(holder, `prop:${i}`, { prop: i }); });
     // the seats: each instrument on its box, a disc where you sit, a ring round the picked one
     for (const s of room.spots) {
-      const g = new THREE.Group(), b = thingBox(s), model = spotModel(s);
+      const g = new THREE.Group(), b = thingBox(s), model = spotModel(s, room.bass);
       model.position.set(b.cx, 0, b.cz); model.rotation.y = b.turn;
       g.add(model);
       const seat = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: s.id === this.picked ? ORANGE : new THREE.Color("#c9ccd2"), transparent: true, opacity: 0.7 }));

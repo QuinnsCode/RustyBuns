@@ -11,11 +11,19 @@ export const MONO_BASS = patch({
   vel: 0.5, velTone: 0.3, gain: 0.5, send: 0,
 });
 
-/** The groove with its bass track (the first named bass) on the mono bass patch. */
-export function withMonoBass(p: Project): Project {
+/** The bass-line box's: one saw through the diode ladder, the resonance high and the cutoff low, a short sharp filter
+ *  decay so each note squelches, a quick slide from note to note and the drive that makes it bite. */
+export const BOX_BASS = patch({
+  ops: { 0: [1, 1, 0.002, 0.3, 0.6, 0.06] },
+  analog: { detune: 0, sub: 0, cutoff: 0.22, res: 0.72, fenv: [0.62, 0.001, 0.16], glide: 0.09, drive: 0.45, filter: 3 },
+  vel: 0.6, velTone: 0.55, gain: 0.95, send: 0,
+});
+
+/** The groove with its bass track (the first named bass) on the bass seat's patch: the mono's, or the box's. */
+export function withMonoBass(p: Project, kind: "mono" | "box" = "mono"): Project {
   const i = p.tracks.findIndex((t) => t.kind === "synth" && t.name.toLowerCase().includes("bass"));
   if (i < 0) return p;
-  return { ...p, tracks: p.tracks.map((t, k) => (k === i ? { ...t, params: MONO_BASS.slice() } : t)) };
+  return { ...p, tracks: p.tracks.map((t, k) => (k === i ? { ...t, params: (kind === "box" ? BOX_BASS : MONO_BASS).slice() } : t)) };
 }
 
 /** What a new note on `track` takes over from: the notes you hold on that track (by what holds them), to let up first. */

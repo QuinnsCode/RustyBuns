@@ -123,7 +123,7 @@ let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
 // the keys track sounds like the instrument at the keys seat (keys-voice.ts)
 const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made);
-let project: Project = withKeysVoice(withMonoBass(demoProject()), keysSpot ? keysKind(keysSpot, keysAsked) : null);
+let project: Project = withKeysVoice(withMonoBass(demoProject(), def.bass), keysSpot ? keysKind(keysSpot, keysAsked) : null);
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
 
@@ -267,7 +267,7 @@ function thing(s: Spot): THREE.Group {
     put(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 20), blackSteel), 0, t.h + 0.04, 0).rotation.x = Math.PI / 2;
   } else if (s.kind === "bass") {
     // an analog mono synth on an X stand, played like the keys (gear-models.ts)
-    const { synth, keys } = bassSynth(s);
+    const { synth, keys } = bassSynth(s, def.bass);
     inFront.add(synth.group);
     played.set(s.id, { keys });
   } else if (s.kind === "dj") {
@@ -395,7 +395,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   d.fig.group.position.set(d.x, floor + d.y, d.z);
   if (!seat) dust.walker(id, d.x, floor, d.z, d.yaw, moved, d.speed, d.y);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat, def.bass) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);

@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { gear, gearLook, type GearLook } from "@rustybuns/models/gear";
 import { MONO_KEY_FRONT, MONO_KEY_TOP, monosynth, type MonoSynth } from "@rustybuns/models/monosynth";
 import { POLY_KEY_FRONT, POLY_KINDS, polysynth, type PolyKind } from "@rustybuns/models/polysynth";
+import { BOX_KEY_FRONT, bassbox } from "@rustybuns/models/bassbox";
 import { Keys, layout } from "./played.ts";
 import type { Reach, Spot } from "./room.ts";
 
@@ -14,14 +15,18 @@ export const seedOf = (id: string) => [...id].reduce((h, c) => Math.imul(h, 31) 
 /** How far (metres) in front of the seat the bass synth's keys start: as near as the stage synth's, in a seated reach. */
 const EDGE = 0.3;
 /** How far the synth sits nearer the seat than the spot's thing (a rig's box stood further out than keys need). */
-const pull = (s: Spot) => Math.max(0, s.thing.ahead - MONO_KEY_FRONT - EDGE);
+const pull = (s: Spot, front = MONO_KEY_FRONT, edge = EDGE) => Math.max(0, s.thing.ahead - front - edge);
+/** The box's stand goes all the way under it, so it stands further out than the mono's keys, clear of the stool. */
+const BOX_EDGE = 0.42;
+/** What stands at a bass seat: the big analog mono, or the little silver bass-line box. */
+export type BassKind = "mono" | "box";
 
 /** The bass seat's mono synth, on the spot's thing (pulled in toward the seat until its keys are in reach) with its keys toward the seat (+z in the thing's frame), and
  *  its keys to press. It may run a little past the spot's old box either side: the rig it replaces was narrower. */
-export function bassSynth(s: Spot): { synth: MonoSynth; keys: Keys } {
-  const synth = monosynth(seedOf(s.id), { fit: s.thing.w + 0.12 }), k = synth.keys;
-  synth.group.position.z = pull(s);
-  const keys = new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, undefined, k.blackRest);
+export function bassSynth(s: Spot, kind: BassKind = "mono"): { synth: MonoSynth; keys: Keys } {
+  const box = kind === "box", synth = box ? bassbox(seedOf(s.id), { keyTop: MONO_KEY_TOP }) : monosynth(seedOf(s.id), { fit: s.thing.w + 0.12 }), k = synth.keys;
+  synth.group.position.z = box ? pull(s, BOX_KEY_FRONT, BOX_EDGE) : pull(s);
+  const keys = new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, k.whiteRest, k.blackRest);
   return { synth, keys };
 }
 
@@ -47,8 +52,10 @@ export function madeKind(voice: "fm" | "analog", seed: number): PolyKind {
 export const keysKind = (s: Spot, asked?: PolyKind): PolyKind => asked ?? POLY_KINDS[seedOf(s.id) % POLY_KINDS.length]!;
 
 /** Where a seated player's palms go at the bass synth: just over the near half of its white keys (as `keysReach`). */
-export function bassReach(s: Spot): Reach | null {
+export function bassReach(s: Spot, kind: BassKind = "mono"): Reach | null {
   if (s.kind !== "bass") return null;
+  // the box's buttons are short: the palms go over them nearer their front edge
+  if (kind === "box") return { ahead: s.thing.ahead - pull(s, BOX_KEY_FRONT, BOX_EDGE) - BOX_KEY_FRONT + 0.03, up: MONO_KEY_TOP + 0.06 };
   return { ahead: s.thing.ahead - pull(s) - MONO_KEY_FRONT + 0.07, up: MONO_KEY_TOP + 0.06 };
 }
 

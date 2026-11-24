@@ -63,6 +63,8 @@ export interface StudioDef {
   gear?: GearPlace;
   /** Out under the sky instead of in a room (open-air.ts): no walls or ceiling drawn, the ground running to the horizon. */
   outdoor?: Outdoor;
+  /** What stands at the bass seat: the big analog mono (the default) or the little silver bass-line `box` (gear-models.ts). */
+  bass?: "mono" | "box";
 }
 
 /**

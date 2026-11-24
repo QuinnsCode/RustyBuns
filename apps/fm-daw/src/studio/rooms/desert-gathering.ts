@@ -37,6 +37,8 @@ export const DESERT_GATHERING: StudioDef = {
     seat("chill-right", "couch", [11, 8], -Math.PI * 0.75, "the bales"),
   ].map((s) => s.kind === "couch" ? { ...s, thing: { ...s.thing, color: "#c9a55a" } } : s.kind === "dj" ? { ...s, thing: { ...s.thing, w: TABLE_W } } : s),
   door: { at: [0, 15], yaw: 0 },
+  // out here the bass is the little silver bass-line box on its stand, squelching
+  bass: "box",
   // the backline tent off stage right
   gear: { at: [13.5, -10], yaw: -Math.PI / 2 },
   outdoor: {
