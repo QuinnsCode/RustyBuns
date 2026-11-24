@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { desertFloor } from "@rustybuns/models/ground";
 import { van } from "@rustybuns/models/van";
+import { firePit } from "@rustybuns/models/fire";
 import { esc } from "@rustybuns/util";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
@@ -101,6 +102,10 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     g.add(tent);
     tents.push(body);
   }
+  // the campers' fire, between the two rows of tents
+  const fire = firePit(7);
+  fire.group.position.set((c.x0 + c.x1) / 2, 0, (c.z0 + c.z1) / 2);
+  g.add(fire.group);
   // the campers' vans, parked past the tents, one with its awning out
   for (const [k, z] of [10.5, 15.5].entries()) {
     const v = van(40 + k, { awning: k === 0 });
@@ -201,6 +206,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     },
     update() {
       const w = getWorld(), cs = getCables(), sig = signature(w, cs), now = performance.now();
+      fire.tick(now / 1000);
       const map = heard, moods = crowdOf(w) && map ? regions(crowdOf(w)!, (zone) => ({ soundcheck: null, full: mean(cellsIn(map, zone)) }), TARGET, SPREAD) : [];
       // The floor moves on how each part of it hears the wall: forward, back from the stacks, or off into the night.
       const crowd = move(w, moods);

@@ -31,6 +31,7 @@
     "./bassbox": "./src/bassbox.ts",
     "./ground": "./src/ground.ts",
     "./van": "./src/van.ts",
+    "./fire": "./src/fire.ts",
     "./drums": "./src/drums.ts",
     "./flora": "./src/flora.ts",
     "./character": "./src/character.ts",
