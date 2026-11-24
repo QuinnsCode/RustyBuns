@@ -2,11 +2,14 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AfterPr, type Gh, type PrState, pass } from "./after.ts";
+import { type AfterPr, type Gh, NO_CHECKS, type PrState, pass } from "./after.ts";
 
 setDefaultTimeout(30_000);
 
-test("a PR that says merge after #9 waits while #9 is open, then gets main merged in and pushed once #9 lands", () => {
+test.each([
+  { token: true, pushed: "#12 merged main in and pushed", comments: [] as string[] },
+  { token: false, pushed: "::warning::#12 merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented", comments: [NO_CHECKS] },
+])("a PR that says merge after #9 waits while #9 is open, then gets main merged in and pushed once #9 lands (token: $token)", ({ token, pushed, comments }) => {
   const root = mkdtempSync(join(tmpdir(), "after-"));
   try {
     const run = (cwd: string, ...a: string[]) => {
@@ -31,10 +34,11 @@ test("a PR that says merge after #9 waits while #9 is open, then gets main merge
 
     const states: Record<number, PrState> = { 9: "OPEN" };
     const pr: AfterPr = { number: 12, headRefName: "mine", body: "Does a thing.\n\nMerge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [] };
-    const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: () => { throw new Error("no conflict expected"); }, setBody: (_, b) => { pr.body = b; } };
+    const said: string[] = [];
+    const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: (_, text) => { said.push(text); }, setBody: (_, b) => { pr.body = b; } };
     const git = (...a: string[]) => run(ci, ...a);
 
-    expect(pass(gh, git)).toEqual(["#12 waits on #9"]);
+    expect(pass(gh, git, { token })).toEqual(["#12 waits on #9"]);
 
     // #9 lands on main.
     ok(dev, "checkout", "-q", "main");
@@ -42,11 +46,12 @@ test("a PR that says merge after #9 waits while #9 is open, then gets main merge
     ok(dev, "push", "-q", "origin", "main");
     states[9] = "MERGED";
 
-    expect(pass(gh, git)).toEqual(["#12 merged main in and pushed"]);
+    expect(pass(gh, git, { token })).toEqual([pushed]);
     const files = ok(origin, "ls-tree", "--name-only", "mine").split("\n");
     expect(files).toEqual(["a.ts", "mine.ts", "theirs.ts"]);
     expect(pr.body).toContain("Merged main in after #9");
-    expect(pass(gh, git)).toEqual([]);
+    expect(pass(gh, git, { token })).toEqual([]);
+    expect(said).toEqual(comments);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

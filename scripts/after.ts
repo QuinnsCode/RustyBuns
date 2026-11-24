@@ -10,6 +10,10 @@
 // Runs in after.yml on every push to main and hourly, in a checkout with full history. Forks are skipped (no push).
 // `--dry` says what it would do and changes nothing.
 //
+// Without the AFTER_TOKEN secret (after.yml sets HAS_AFTER_TOKEN, never the value) its push is made with the workflow's
+// own token, which starts no checks (#5733). Then it comments on the PR with the one command that starts them and
+// prints a `::warning::` line so the run summary shows it.
+//
 // A PR that Claude Code's `/ship` or `/steward` watch, or the cloud PR Steward, holds (a `claude-pr-steward-*` or
 // `claude-ship-*` label) is left alone: that watch merges main in and pushes itself, and two pushers race. Its line
 // stays as it is, so a pass after the label goes picks it up.
@@ -50,8 +54,11 @@ export function blockers(body: string): number[] {
 /** The body with its `Merge after` line's words swapped for `to` (the PR numbers stay). */
 export const marked = (body: string, to: string) => body.replace(LINE, (all) => all.replace(/^merge after/i, to));
 
-/** One pass over the open PRs; answers one line per PR it looked at. */
-export function pass(gh: Gh, git: Git, dry = false): string[] {
+/** What a PR is told when the runner's push starts no checks (#5733). */
+export const NO_CHECKS = 'main is merged in, but this push starts no checks (#5733). Push one commit of your own on top: `git commit --allow-empty -m "Start CI" && git push`';
+
+/** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
+export function pass(gh: Gh, git: Git, { dry = false, token = false }: { dry?: boolean; token?: boolean } = {}): string[] {
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -74,7 +81,11 @@ export function pass(gh: Gh, git: Git, dry = false): string[] {
       if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${named} landed)`, "origin/main").code === 0) {
         must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
-        out.push(`#${pr.number} merged main in and pushed`);
+        if (token) out.push(`#${pr.number} merged main in and pushed`);
+        else {
+          gh.comment(pr.number, NO_CHECKS);
+          out.push(`::warning::#${pr.number} merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented`);
+        }
       } else {
         const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
         git("merge", "--abort");
@@ -109,6 +120,8 @@ export const ghCli: Gh = {
 
 if (import.meta.main) {
   help(import.meta.path);
-  const lines = pass(ghCli, (...a) => sh(["git", ...a]), process.argv.includes("--dry"));
+  const lines = pass(ghCli, (...a) => sh(["git", ...a]), {
+    dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true",
+  });
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after");
 }
