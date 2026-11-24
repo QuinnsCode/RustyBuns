@@ -27,7 +27,10 @@ const PLAYED: SpotKind[] = ["keys", "bass"];
 export const ACTIONS: Action[] = [
   { key: "WASD", does: "Walk (or the left stick)", icon: "move", where: "walk", table: "Walk" },
   { key: "Mouse", does: "Look (or the right stick)", icon: "eye", where: "walk", table: "Look" },
-  { key: "Space", does: "Sit at the instrument or seat in front of you", icon: "armchair", where: "walk", strip: 1, short: "sit", table: "Sit at a spot, stand up" },
+  { key: "Shift", does: "Hold to speed walk", icon: "footprints", where: "walk", table: "Speed walk" },
+  { key: "Space", does: "Hop", icon: "arrow-up", where: "walk", strip: 3, short: "hop", table: "Hop; seated, stand up" },
+  { key: "E", does: "Sit at the instrument or seat in front of you (or click it)", icon: "armchair", where: "walk", strip: 1, short: "sit", table: "Sit at a spot" },
+  { key: "V", does: "First person, or over the shoulder", icon: "switch-camera", where: "walk", strip: 4, short: "camera" },
   { key: "I", does: "Plug in your guitar (in the vocal booth, your mic)", icon: "guitar", where: "walk", strip: 2, short: "guitar" },
   { key: "K", does: "A new sound wall module in your hands, for the gear wall's case", icon: "circuit-board", where: "walk" },
   { key: "Q", does: "Picture quality, high or low", icon: "monitor", where: "walk" },
@@ -41,7 +44,7 @@ export const ACTIONS: Action[] = [
   { key: "[ / ]", does: "Mod wheel: vibrato", icon: "waves", where: "seat", at: PLAYED },
   { key: "I", does: "Plug in your mic: your voice, straight to everyone", icon: "mic", where: "seat", at: ["booth"], strip: 1, short: "mic" },
   { key: "Space", does: "Stand up", icon: "armchair", where: "seat", strip: 9, short: "stand up" },
-  { key: "Enter", does: "The groove and its click, for everyone", icon: "play", where: "desk", strip: 1, short: "groove" },
+  { key: "P", does: "Play or stop the groove and its click, for everyone (at an instrument P is a note: sit at the desk)", icon: "play", where: "desk", strip: 1, short: "groove" },
   { key: "C", does: "Hear the band a loop late, as it comes, or (the leader) at the desk", icon: "headphones", where: "desk", strip: 2, short: "how you hear it" },
   { key: "R", does: "Rec: one loop of a plugged-in guitar or mic (yours, or the one you look at) as a take on its track", icon: "circle-dot", where: "desk" },
   { key: "H", does: "Raise your hand to play", icon: "hand", where: "desk" },
@@ -50,7 +53,7 @@ export const ACTIONS: Action[] = [
   { key: "M", does: "Speakers up", icon: "volume-2", where: "desk" },
   { key: "V", does: "Over the shoulder or first person", icon: "switch-camera", where: "desk" },
   { key: "?", does: "This card", icon: "circle-help", where: "desk", strip: 8, short: "help" },
-  { key: "Esc", does: "The menu: who's here, the studio (the leader switches it), the invite link", icon: "door-open", where: "desk", strip: 9, short: "menu", table: "Let go of the mouse: the menu" },
+  { key: "Esc", does: "Back out of whatever is open; in the room, the menu: who's here, the studio (the leader switches it), the invite link. The sound plays on", icon: "door-open", where: "desk", strip: 9, short: "back", table: "Back out: a panel, then the menu, then the room" },
 ];
 
 /** Things you'd look for here that aren't built in the jam room yet: where they are today, and the issue. */

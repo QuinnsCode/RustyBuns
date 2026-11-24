@@ -12,7 +12,7 @@ test("the card and the key strip follow you from the door to a seat to the desk"
   const j = newJam(LIVE_ROOM), kind = () => spotOf(j, j.me.seat)?.kind ?? null;
 
   // Walking in: the strip says sit, plug in your guitar, help and the menu; the card opens on Walking.
-  expect(keysOf(strip(kind()))).toEqual(["Space", "I", "?", "Esc"]);
+  expect(keysOf(strip(kind()))).toEqual(["E", "I", "Space", "V", "?", "Esc"]);
   const walking = card(kind());
   expect(walking[0]).toMatchObject({ where: "walk", here: true });
   expect(walking.filter((g) => g.here)).toHaveLength(1);
@@ -39,7 +39,7 @@ test("the card and the key strip follow you from the door to a seat to the desk"
   stand(j);
   for (const [x, z] of [[1, -0.8], [3.6, -0.8], [3.6, -2.2], [1.8, -3.2], [0.3, -3.2]]) walkTo(j, x, z);   // through the control room's door, round behind the desk
   expect(sit(j, "desk")).toEqual({ ok: true });
-  expect(keysOf(strip(kind()))).toEqual(["Enter", "C", "?", "Space", "Esc"]);
+  expect(keysOf(strip(kind()))).toEqual(["P", "C", "?", "Space", "Esc"]);
   expect(card(kind())[0]).toMatchObject({ where: "desk", here: true });
 
   // The menu's keys table is the same list: every key once, the seated ones marked.

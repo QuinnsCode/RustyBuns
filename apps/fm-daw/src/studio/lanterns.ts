@@ -28,6 +28,42 @@ export type Answer = { ok: true } | { ok: false; why: string };
 /** Where a lantern is now, for drawing and the harness: `by` who carries it ("me", someone's peer number) or null. */
 export interface LanternPlace { i: number; x: number; y: number; z: number; yaw: number; by: "me" | number | null }
 
+/** How far a lantern's handle top is above its foot (lanternModel's rope loop), and how far its weight hangs under the handle. */
+export const HANDLE = 0.435, WEIGHT = 0.3;
+
+/**
+ * A carried lantern on its rope handle: a weight WEIGHT metres under the hand. The hand moves (an arm's swing, a turn,
+ * a hop, a stop) and the weight lags, swings past and settles under it again. Verlet: the weight keeps its last step's
+ * motion (a little lost to the air), falls, and is put back at the handle's length from the hand.
+ */
+export class Swing {
+  readonly bob = new THREE.Vector3();
+  private prev = new THREE.Vector3();
+  private fresh = true;
+  /** How much of its motion the weight keeps each 60th of a second: lower settles sooner. */
+  static KEEP = 0.97;
+  /** Hang it straight under `hand`, still. */
+  reset(hand: THREE.Vector3) { this.bob.set(hand.x, hand.y - WEIGHT, hand.z); this.prev.copy(this.bob); this.fresh = false; }
+  /** One step of `dt` seconds with the hand at `hand`: the weight's new place. */
+  step(hand: THREE.Vector3, dt: number): THREE.Vector3 {
+    // first time, or the carrier jumped across the room (a seat, a new body): hang it still
+    if (this.fresh || this.bob.distanceToSquared(hand) > 1) { this.reset(hand); return this.bob; }
+    if (dt <= 0) return this.bob;
+    // a long frame is a few short ones, so a slow machine swings the same
+    const n = Math.min(8, Math.ceil(dt * 120)), h = dt / n, keep = Math.pow(Swing.KEEP, h * 60);
+    for (let k = 0; k < n; k++) {
+      const vx = (this.bob.x - this.prev.x) * keep, vy = (this.bob.y - this.prev.y) * keep, vz = (this.bob.z - this.prev.z) * keep;
+      this.prev.copy(this.bob);
+      this.bob.set(this.bob.x + vx, this.bob.y + vy - 9.8 * h * h, this.bob.z + vz);
+      const dx = this.bob.x - hand.x, dy = this.bob.y - hand.y, dz = this.bob.z - hand.z, d = Math.hypot(dx, dy, dz) || 1;
+      this.bob.set(hand.x + (dx / d) * WEIGHT, hand.y + (dy / d) * WEIGHT, hand.z + (dz / d) * WEIGHT);
+    }
+    return this.bob;
+  }
+  /** How far it hangs off straight down, radians. */
+  angle(hand: THREE.Vector3) { return Math.acos(Math.max(-1, Math.min(1, (hand.y - this.bob.y) / WEIGHT))); }
+}
+
 /** Where a carried lantern hangs: out in the carrier's right hand, its handle in the hand, its foot about knee high. */
 export function inHand(def: StudioDef, x: number, z: number, yaw: number): { x: number; y: number; z: number } {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -141,8 +177,9 @@ export class LanternsHere {
     return this.near(jam) !== null ? "F or tap: pick up the lantern" : "";
   }
 
-  /** Each frame: every lantern where it is, its flame and its pool, and the real lights on the nearest few. */
-  frame(jam: Jam, eye: THREE.Vector3, t: number) { this.drawn?.frame(this.def, [...this.places(jam), ...this.hands(jam)], eye, t); }
+  /** Each frame: every lantern where it is, its flame and its pool, and the real lights on the nearest few. `hand`:
+   *  where a carrier's right palm is drawn now (null: not drawn), for a carried one to hang and swing from. */
+  frame(jam: Jam, eye: THREE.Vector3, t: number, hand?: (by: "me" | number) => THREE.Vector3 | null) { this.drawn?.frame(this.def, [...this.places(jam), ...this.hands(jam)], eye, t, hand); }
 
   state(jam: Jam) {
     const at = (p: LanternPlace) => ({ ...p, x: round(p.x), y: round(p.y), z: round(p.z), yaw: round(p.yaw) });
@@ -189,7 +226,12 @@ function poolTexture(): THREE.Texture {
 
 /** The lanterns in a scene: one mesh set each (made the first time its number is drawn), a pool under each, and LIT real lights handed to the nearest. */
 class LanternsDrawn {
-  private items: { g: THREE.Group; flame: THREE.Mesh; panes: THREE.Mesh; pool: THREE.Mesh }[] = [];
+  private items: { g: THREE.Group; flame: THREE.Mesh; panes: THREE.Mesh; pool: THREE.Mesh; swing: Swing; by: "me" | number | null }[] = [];
+  private last = -1;
+  private pivot = new THREE.Vector3();
+  private up = new THREE.Vector3();
+  private turn = new THREE.Quaternion();
+  private spin = new THREE.Quaternion();
   private lights: THREE.PointLight[] = [];
   private m = lanternModel();
   private wood = surface("wood", "#8a6844");
@@ -215,21 +257,35 @@ class LanternsDrawn {
       const pool = new THREE.Mesh(this.poolGeo, this.poolMat.clone());
       pool.renderOrder = 2;
       this.scene.add(g, pool);
-      this.items.push({ g, flame, panes, pool });
+      this.items.push({ g, flame, panes, pool, swing: new Swing(), by: null });
     }
     return this.items[i]!;
   }
 
-  frame(def: StudioDef, places: LanternPlace[], eye: THREE.Vector3, t: number) {
+  frame(def: StudioDef, places: LanternPlace[], eye: THREE.Vector3, t: number, hand?: (by: "me" | number) => THREE.Vector3 | null) {
+    const dt = this.last < 0 ? 0 : Math.min(0.1, Math.max(0, t - this.last));
+    this.last = t;
+    const Y = new THREE.Vector3(0, 1, 0);
     // a hand lantern whose carrier sat down or left is put away
     const shown = new Set(places.map((p) => p.i));
     this.items.forEach((it, i) => { it.g.visible = it.pool.visible = shown.has(i); });
-    for (const p of places) {
+    places = places.map((q) => {
+      let p = q;
       const it = this.item(p.i);
-      // a carried one swings a little as it's walked
-      const sway = p.by === null ? 0 : Math.sin(t * 3.1 + p.i) * 0.05;
-      it.g.position.set(p.x, p.y, p.z);
-      it.g.rotation.set(0, p.yaw + p.i * 0.7, sway);
+      // a carried one hangs from its carrier's palm on its handle and swings there (Swing); set down, it stands
+      if (it.by !== p.by) { it.by = p.by; it.swing = new Swing(); }
+      if (p.by === null) {
+        it.g.position.set(p.x, p.y, p.z);
+        it.g.rotation.set(0, p.yaw + p.i * 0.7, 0);
+      } else {
+        const palm = hand?.(p.by);
+        if (palm) this.pivot.copy(palm); else this.pivot.set(p.x, p.y + HANDLE, p.z);
+        const bob = it.swing.step(this.pivot, dt);
+        this.up.subVectors(this.pivot, bob).normalize();
+        it.g.quaternion.multiplyQuaternions(this.turn.setFromUnitVectors(Y, this.up), this.spin.setFromAxisAngle(Y, p.yaw + p.i * 0.7));
+        it.g.position.copy(this.pivot).addScaledVector(this.up, -HANDLE);
+        p = { ...p, x: it.g.position.x, y: it.g.position.y, z: it.g.position.z };
+      }
       const f = flameAt(p.i + 40, t);
       it.flame.scale.set(1, 0.85 + 0.3 * f, 1);
       (it.panes.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.5 * f;
@@ -239,7 +295,8 @@ class LanternsDrawn {
       it.pool.position.set(p.x, ground + 0.015, p.z);
       it.pool.scale.set(size, 1, size);
       (it.pool.material as THREE.MeshBasicMaterial).opacity = (0.5 * f) / (1 + up * 0.6);
-    }
+      return p;
+    });
     const nearest = [...places].sort((a, b) => Math.hypot(a.x - eye.x, a.z - eye.z) - Math.hypot(b.x - eye.x, b.z - eye.z));
     this.lights.forEach((l, k) => {
       const p = nearest[k];
