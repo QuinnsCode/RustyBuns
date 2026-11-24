@@ -6,14 +6,20 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { check, obj, opt, raw, str } from "../../packages/util/src/guard.ts";
 
 export const WORDS = 50;
 
+/** The parts of a Bash call or a hire_worker call that say what is being hired. */
+const Call = obj({ command: opt(str(1e6)), prompt: opt(str(1e6)), issue: opt(raw) });
+
 /** The task a hire sends, and whether it names an issue; null when the call isn't a hire. */
-export function hireTask(tool: string, input: Record<string, unknown>): { task: string; issue: boolean } | null {
-  if (tool === "mcp__agent-office__hire_worker") return { task: String(input.prompt ?? ""), issue: input.issue !== undefined };
+export function hireTask(tool: string, input: unknown): { task: string; issue: boolean } | null {
+  const c = check(Call, input);
+  if (!c) return null;
+  if (tool === "mcp__agent-office__hire_worker") return { task: c.prompt ?? "", issue: c.issue !== undefined };
   if (tool !== "Bash") return null;
-  const cmd = String(input.command ?? "");
+  const cmd = c.command ?? "";
   if (!/\boffice-workers\s+hire\b/.test(cmd)) return null;
   const doc = cmd.match(/<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*?)\n\s*\1\s*(?:\n|$)/);
   const flag = cmd.match(/--prompt[ =](?:"((?:[^"\\]|\\.)*)"|'([^']*)')/);
