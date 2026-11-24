@@ -47,7 +47,7 @@ import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } f
 import { SYSTEMS, system } from "@rustybuns/gear";
 import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
-import { yours, Studio } from "./builder.ts";
+import { fromBuilt, yours, Studio } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
@@ -105,7 +105,8 @@ function seshBuilt(): StudioDef | null {
   if (!here) return null;
   try { const s = localStorage.getItem(SESH_BUILT(here.room)); return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
 }
-const picked = (pick === "yours" ? seshBuilt() ?? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+// a harness's builtLink (qrooms.enter()) brings its room along in the link, ahead of the sesh's and this browser's
+const picked = (pick === "yours" ? fromBuilt(location.search) ?? seshBuilt() ?? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 // ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
 const rigAsked = new URLSearchParams(location.search).get("rig");
 // ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar, tine-ep, combo, strings); the spot's id picks one otherwise

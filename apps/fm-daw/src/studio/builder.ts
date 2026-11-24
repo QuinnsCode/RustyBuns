@@ -102,6 +102,24 @@ export function yours(): StudioDef | null {
   try { const s = localStorage.getItem(YOURS); return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
 }
 
+/**
+ * The harness's way into a room you built (#5843): a probe's fresh browser has none of the page's storage, so
+ * /rooms.html's `qrooms.enter()` hands out this link with the room in `built`. Only `?studio=yours` reads it, and
+ * nothing a player clicks makes one: without `built`, "yours" is this browser's room as always.
+ */
+export function builtLink(origin: string, def: StudioDef, room = "built-room"): string {
+  const u = new URL("/jam.html", origin);
+  u.searchParams.set("room", room);
+  u.searchParams.set("studio", "yours");
+  u.searchParams.set("built", JSON.stringify(def));
+  return u.href;
+}
+/** The room a `builtLink` carries, if it still checks out. */
+export function fromBuilt(search: string): StudioDef | null {
+  const s = new URLSearchParams(search).get("built");
+  try { return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
+}
+
 export type Surface = "floor" | "ceiling" | Side;
 /**
  * What the builder does: `size` the room, make a `surface` of something, hang a `panel` on an outside wall or take
