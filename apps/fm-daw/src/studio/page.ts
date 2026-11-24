@@ -145,7 +145,7 @@ function renderSound() {
     <div class="bands">${BANDS.map((b) => `<span>${b < 1000 ? b : `${b / 1000}k`}</span>`).join("")}</div>
     <p class="hint">${ac.space.volume.toFixed(0)} m³ of air.</p>
     <div class="row"><button class="go" id="clap" type="button">Clap at ${esc(spot?.id ?? "the middle")}</button>
-      <a class="button" id="walk" href="/jam.html?studio=${preset() ? encodeURIComponent(room.id) : "yours"}">Walk in</a></div>`;
+      <a class="button" id="walk" href="/jam.html?studio=${preset() ? encodeURIComponent(room.id) : "yours"}">Enter</a></div>`;
   $("clap").addEventListener("click", () => clap());
 }
 
