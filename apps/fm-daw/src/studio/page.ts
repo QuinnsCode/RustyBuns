@@ -190,7 +190,17 @@ let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door"; id: string; from:
 let drawing: { from: [number, number]; to: [number, number] } | null = null;
 let orbiting: { x: number; y: number } | null = null;
 
+// two fingers on the 3D view: pinch to move in and out, slide sideways to turn round the room (a phone's right-drag)
+const touches = new Map<number, { x: number; y: number }>();
+let pinch: { dist: number; x: number } | null = null;
+const spread = () => { const [a, b] = [...touches.values()]; return a && b ? { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2 } : null; };
+
 function down(e: PointerEvent) {
+  if (view === "3d" && e.pointerType === "touch") {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) { pinch = spread(); drag = null; drawing = null; build?.drawing(null); return; }
+    if (touches.size > 2) return;
+  }
   if (view === "3d" && (e.button === 2 || e.button === 1)) { orbiting = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch { /* gone */ } return; }
   if (e.button !== 0) return;
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
@@ -241,6 +251,11 @@ function down(e: PointerEvent) {
   try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* a pointer that already left */ }
 }
 function move(e: PointerEvent) {
+  if (touches.has(e.pointerId)) {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const now = spread();
+    if (pinch && now && build) { build.orbit(-(now.x - pinch.x) * 0.008, 0, pinch.dist / Math.max(now.dist, 1)); pinch = now; return; }
+  }
   if (orbiting && build) { build.orbit(-(e.clientX - orbiting.x) * 0.008, (e.clientY - orbiting.y) * 0.006); orbiting = { x: e.clientX, y: e.clientY }; return; }
   const p = pointAt(e);
   if (!p) return;
@@ -263,7 +278,9 @@ function move(e: PointerEvent) {
     else { plan.querySelector(".drawing")?.remove(); plan.append(el("line", { class: "drawing", x1: drawing.from[0], y1: drawing.from[1], x2: to[0], y2: to[1], "stroke-width": 0.14 })); }
   }
 }
-function up() {
+function up(e?: PointerEvent) {
+  if (e) touches.delete(e.pointerId);
+  if (pinch) { if (touches.size < 2) pinch = null; return; }
   orbiting = null;
   if (drag) {
     const d = drag; drag = null;
@@ -279,8 +296,8 @@ function up() {
 for (const surface of [plan, canvas] as Element[]) {
   surface.addEventListener("pointerdown", (e) => down(e as PointerEvent));
   surface.addEventListener("pointermove", (e) => move(e as PointerEvent));
-  surface.addEventListener("pointerup", () => up());
-  surface.addEventListener("pointercancel", () => up());
+  surface.addEventListener("pointerup", (e) => up(e as PointerEvent));
+  surface.addEventListener("pointercancel", (e) => up(e as PointerEvent));
 }
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); build?.orbit(0, 0, Math.exp(e.deltaY * 0.0012)); }, { passive: false });
