@@ -1,8 +1,9 @@
 /* The Qone mixer's face (mixer-panel.ts), after a real four-channel club mixer: a slate metal face with white print,
    black knurled knobs, round rubber buttons whose rings light in one orange (between a cloud's orange and rust), dot
    LEDs, flip switches and a sunken crossfader; the master and monitor section on a black panel at the right. NIGHT
-   turns the face down and the glow up. Labels never wrap. */
-.mx { --slate: #555a62; --slate2: #474b52; --print: #eef0f2; --ink: #eef0f2; --dim: #d5d8dc; --line: rgba(238, 240, 242, 0.55); --panel: #121315; container: mx / inline-size; background: linear-gradient(170deg, var(--slate), var(--slate2)); border: 1px solid #2b2d31; border-radius: 10px; padding: 8px 6px; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.4); }
+   turns the face down and the glow up. Labels never wrap, and nothing on the face ever moves: a knob's value floats
+   over its label in a see-through panel, and a button whose words change keeps one width. */
+.mx { --slate: #555a62; --slate2: #474b52; --print: #eef0f2; --ink: #eef0f2; --dim: #d5d8dc; --line: rgba(238, 240, 242, 0.55); --panel: #121315; container: mx / inline-size; background: linear-gradient(170deg, var(--slate), var(--slate2)); border: 1px solid #2b2d31; border-radius: 10px; padding: 8px 6px; min-width: 0; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.4); }
 .mx.night { --slate: #2a2c30; --slate2: #222327; --print: #a9acb1; --ink: #a9acb1; --dim: #8d9096; --line: rgba(169, 172, 177, 0.35); --panel: #0b0b0c; --acc-glow: rgba(238, 106, 31, 0.95); }
 /* filter 1 | the four channels over the crossfader | filter 2 | the black panel */
 .mx-face { display: grid; grid-template-columns: minmax(56px, 0.95fr) minmax(0, 4fr) minmax(56px, 0.95fr) minmax(60px, 1fr); grid-template-areas: "f1 mid f2 out"; gap: 6px; align-items: stretch; flex: 1 0 0; }
@@ -19,11 +20,13 @@
 .mx-num small { margin-left: 2px; font-size: 11px; font-style: normal; color: var(--dim); }
 .mx-brand { font: italic 700 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.04em; color: var(--print); white-space: nowrap; }
 .mx-silk { display: inline-flex; align-items: center; gap: 3px; font: 600 12px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.06em; color: var(--print); white-space: nowrap; }
-/* a knob: black and knurled, a white line on its cap; hovered, it glows and its label reads the value */
-.mx-knob { display: grid; justify-items: center; gap: 2px; }
+/* a knob: black and knurled, a white line on its cap; hovered, it glows and its value floats over its label in a
+   see-through panel, out of the flow, so no knob, strip or column moves */
+.mx-knob { position: relative; display: grid; justify-items: center; gap: 2px; }
 .mx-knob span { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; color: var(--dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 1px; }
 .mx-knob span:empty { display: none; }
-.mx-knob.read span { display: inline-flex; color: var(--acc); text-shadow: 0 0 5px var(--acc-glow); font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0; }
+.mx-read { position: absolute; left: 50%; bottom: -3px; z-index: 3; transform: translateX(-50%); padding: 2px 5px; border-radius: 4px; background: rgba(8, 9, 10, 0.55); border: 1px solid rgba(238, 240, 242, 0.16); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); font: 500 10px/1 "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--acc); text-shadow: 0 0 5px var(--acc-glow); white-space: nowrap; pointer-events: none; visibility: hidden; }
+.mx-knob.read .mx-read { visibility: visible; }
 .mx-dial { position: relative; width: 26px; height: 26px; border-radius: 50%; background: repeating-conic-gradient(#0d0e10 0 7deg, #26282b 7deg 14deg); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.55); display: grid; place-items: center; cursor: ns-resize; touch-action: none; outline: none; transition: box-shadow 0.12s; }
 .mx-knob:hover .mx-dial, .mx-dial:focus-visible { box-shadow: 0 0 0 1px var(--acc), 0 0 10px var(--acc-glow); }
 .mx-strip .mx-m .mx-dial { width: 30px; height: 30px; }
@@ -72,8 +75,10 @@
 .mx-fpart:last-child { flex: 1; justify-content: space-between; }
 .mx-lforow { display: flex; gap: 2px; }
 .mx-lamp { width: 7px; height: 7px; border-radius: 50%; background: #ff3a2a; box-shadow: 0 0 8px rgba(255, 58, 42, 0.9); opacity: 0.1; flex: none; margin-left: 2px; }
-#dj .mx .mx-follow { font-size: 10px; padding: 0 3px; }
-#dj .mx .mx-tap { width: 36px; height: 36px; flex-direction: column; gap: 0; font-size: 9px; line-height: 1; }
+/* TAP / DECK A / DECK B and the beats (½ to 16) keep one width, the tap's tempo its digits' width */
+#dj .mx .mx-follow { font-size: 10px; padding: 0 3px; width: 42px; }
+#dj .mx .mx-beats { width: 22px; padding: 0; }
+#dj .mx .mx-tap { width: 36px; height: 36px; flex-direction: column; gap: 0; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; }
 .mx-types { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 #dj .mx .mx-fon { flex-direction: column; gap: 0; }
 .mx-fon span { font-size: 10px; }
@@ -106,9 +111,9 @@
   .mx-curve { flex-basis: 100%; }
 }
 /* a short screen (a laptop's 720 lines): the band labels go (the knobs keep their order, HI to LOW; hover one and its
-   label comes back with its value, the words are in the tooltips) and the faders shorten */
+   value floats under it, the words are in the tooltips) and the faders shorten */
 @media (max-height: 820px) and (min-width: 900px) {
-  .mx-strip .mx-knob:not(.mx-l):not(.read) span { display: none; }
+  .mx-strip .mx-knob:not(.mx-l) span { display: none; }
   .mx-faderrow { flex-basis: 88px; }
   .mx-strip .mx-m .mx-dial { width: 26px; height: 26px; }
   .mx-lr { height: 88px; }

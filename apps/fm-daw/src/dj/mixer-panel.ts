@@ -7,7 +7,8 @@
 // is its LFO (depth, shape, beats a round, its tempo from deck A, deck B or TAP, a lamp pulsing with it), the
 // resonance, the curve, the HPF / BPF / LPF buttons, the big sweep and the filter's on button. The black panel: the
 // stereo LEDs, master, booth, then the headphones (split cue, cue/master mix, level) and NIGHT. Hover a knob and its
-// label reads its value (dB, Hz, Q). Knobs turn by a drag up or down (Shift for fine), by the wheel and by the arrow
+// value floats over its label in a see-through panel (dB, Hz, Q); nothing on the face moves when a readout or a
+// button's words change. Knobs turn by a drag up or down (Shift for fine), by the wheel and by the arrow
 // keys; a double-click puts one back to where it starts. A narrow mixer (a phone, a small laptop) puts the two filter
 // columns side by side under the channels.
 import "./mixer.css";
@@ -55,8 +56,9 @@ const TYPE_TITLE: Record<FilterType, string> = { hp: "High-pass: cuts the lows b
 export function knob(o: { label: string; title: string; min: number; max: number; reset: number; size?: "s" | "m" | "l"; get: () => number; put: (v: number) => void; show?: (v: number) => string }) {
   const box = el("div", { class: `mx-knob mx-${o.size ?? "m"}` });
   const dial = el("div", { class: "mx-dial", role: "slider", tabindex: "0", title: o.title, "aria-label": o.title, "aria-valuemin": String(o.min), "aria-valuemax": String(o.max) }, '<i class="mx-cap"><b></b></i>');
-  const label = el("span", {}, o.label);
-  box.append(dial, label);
+  // the label never changes; the value floats over it in its own see-through panel, so nothing round it moves
+  const label = el("span", {}, o.label), readout = el("output", { class: "mx-read", "aria-hidden": "true" });
+  box.append(dial, label, readout);
   let hover = false;
   box.addEventListener("pointerenter", () => { hover = true; shown = NaN; });
   box.addEventListener("pointerleave", () => { hover = false; shown = NaN; });
@@ -80,7 +82,7 @@ export function knob(o: { label: string; title: string; min: number; max: number
       const v = o.get(), read = (hover || drag) && o.show;
       if (v === shown) return;
       shown = v;
-      if (read) label.textContent = o.show!(v); else label.innerHTML = o.label;
+      if (read) readout.textContent = o.show!(v);
       box.classList.toggle("read", !!read);
       (dial.firstElementChild as HTMLElement).style.transform = `rotate(${-135 + ((v - o.min) / span) * 270}deg)`;
       dial.setAttribute("aria-valuenow", v.toFixed(2));
