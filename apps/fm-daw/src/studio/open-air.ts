@@ -395,6 +395,17 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
       const b = thingBox(dj), end: [number, number] = [mx + rx * (span + 0.7), mz + rz * (span + 0.7)];
       run([[b.cx, b.cz], [b.cx + rx * (span * 0.6), b.cz + rz * (span * 0.6) - fz * 0.4], end, back(1.2, span + 0.4), rackAt], 0.0045, "#0c0c0c", 30);
     }
+    // the band's monitors: a floor wedge for each player, its sloped grille looking up at them (in front of the keys,
+    // the bass and the mic, beside the kit at the drummer's left), each with its speaker run back to the rack
+    def.spots.filter((sp) => ["keys", "bass", "drums", "booth"].includes(sp.kind) && !sp.made).forEach((sp, i) => {
+      const sx = -Math.sin(sp.yaw), sz = -Math.cos(sp.yaw), rx2 = Math.cos(sp.yaw), rz2 = -Math.sin(sp.yaw), side = sp.kind === "drums";
+      const reach = side ? 0 : sp.thing.ahead + sp.thing.d / 2 + 0.5;
+      const at: [number, number] = side ? [sp.at[0] - rx2 * 1.1, sp.at[1] - rz2 * 1.1] : [sp.at[0] + sx * reach, sp.at[1] + sz * reach];
+      const w = gear("wedge-12", { look });
+      w.position.set(at[0], 0, at[1]); w.rotation.y = side ? sp.yaw + Math.PI / 2 : sp.yaw;
+      group.add(w);
+      run([at, [(at[0] + rackAt[0]) / 2 + rx * 0.6, (at[1] + rackAt[1]) / 2], rackAt], 0.0065, "#101010", 40 + i);
+    });
   }
 
   // ---- the plants and the rocks, round the clearing: one instanced mesh per carving, each copy turned and sized from
