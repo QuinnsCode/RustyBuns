@@ -327,6 +327,56 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 101, maxSpl: 136, ratedWatts: 1600, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 38, highCut: 120, rearLoss: 4 },
   },
+  // ---- Desert Gathering's other rigs (systems.ts): our own boxes, each in a well-known family, its numbers from that
+  // family's published spec sheets (or, where the sheet is long out of print, typical of the class). ----
+  // The synergy horn: three ways summed in one pyramid horn, 50 x 50 degrees; 100 dB (2.83 V, 1 m), 127 dB
+  // continuous and 133 peak, -10 dB at 37 Hz; 28 x 28 x 25.5 in, 60 kg, 4 ohms, 1000 W continuous.
+  {
+    id: "synergy-horn",
+    what: "synergy horn, three ways in one horn",
+    size: box(0.711, 0.711, 0.648),
+    kg: 60,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 100, maxSpl: 133, ratedWatts: 1000, ohms: 4, coverage: { h: 50, v: 50 }, lowCut: 37, highCut: 20000, rearLoss: 24 },
+  },
+  // The tapped horn: one 18" driving both ends of a folded horn; 105 dB half space, 134 continuous and 140 peak, 29 Hz
+  // at -10 dB; 1016 x 734 x 572 mm, 72.5 kg, 4 ohms, wants about 3.4 kW.
+  {
+    id: "tapped-horn-18",
+    what: '18" tapped horn sub',
+    size: box(0.734, 1.016, 0.572),
+    kg: 72.5,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 105, maxSpl: 140, ratedWatts: 1700, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 29, highCut: 120, rearLoss: 5 },
+  },
+  // The sculpted family's triple 21: a hybrid horn bandpass, 105 dB 1 W / 1 m, 146 dB peak, 29-95 Hz +/- 3 dB,
+  // 1479 x 696 x 1218 mm, 214 kg, 6 kW AES.
+  {
+    id: "triple-21-sub",
+    what: "triple 21\" hybrid horn sub",
+    size: box(1.479, 0.696, 1.218),
+    kg: 214,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 105, maxSpl: 146, ratedWatts: 6000, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
+  },
+  // The tri-amp horn stack, the old touring way: a top with two horn-loaded 10" mids (bullet phase plugs) and a 1"
+  // waveguide, high-Q (about 35 x 25 degrees), over a bass of two horn-loaded 15"s. Typical of the class's sheets.
+  {
+    id: "tri-amp-top",
+    what: "tri-amp horn top",
+    size: box(0.76, 0.76, 0.9),
+    kg: 78,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 108, maxSpl: 138, ratedWatts: 1000, ohms: 8, coverage: { h: 35, v: 25 }, lowCut: 150, highCut: 19000, rearLoss: 26 },
+  },
+  {
+    id: "tri-amp-bass",
+    what: 'tri-amp horn bass, 2 x 15"',
+    size: box(0.76, 0.76, 0.9),
+    kg: 82,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 104, maxSpl: 136, ratedWatts: 1200, ohms: 4, coverage: { h: 120, v: 90 }, lowCut: 42, highCut: 160, rearLoss: 8 },
+  },
   {
     // A stage's amps: three 4-channel DSP amps in a 12U rack on casters. Mains at show level is about an eighth of the
     // rated output (music's crest factor) over class-D efficiency: ~5 kW from ~36 kW of channels.

@@ -15,7 +15,9 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
-import { gear, gearLook, type GearLook } from "@rustybuns/models/gear";
+import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
+import { SYSTEMS } from "@rustybuns/gear";
+import { rigStacks, roomRig } from "./pa-room.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import type { Outdoor, StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -39,12 +41,12 @@ export function ridgeAt(a: number, seed: number): number {
 
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
  *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts). */
-export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
+export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack): THREE.Group {
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
   let y = 0;
-  for (const id of ["sand-dolly", "horn-sub-21", "stack-mid-bass", "stack-mid-high"] as const) {
-    const g = gear(id, { look });
+  for (const id of ids) {
+    const g = gear(id as GearId, { look });
     g.position.y = y;
     st.add(g);
     y += new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3()).y;
@@ -171,7 +173,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
   const look = gearLook();
-  for (const s of out.stacks) group.add(paStack(s.at, s.yaw, look));
+  const rig = roomRig(def);
+  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack));
 
   // ---- the truss, where the party has one: two towers and a span of box truss, the heads hung under it, the lasers on top
   const heads: { yoke: THREE.Group; head: THREE.Group; light: THREE.SpotLight; beam: THREE.Mesh }[] = [];

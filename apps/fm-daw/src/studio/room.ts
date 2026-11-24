@@ -2,6 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
+import type { SystemId } from "@rustybuns/gear";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
 export type SpotKind = "keys" | "drums" | "bass" | "desk" | "booth" | "couch" | "dj";
@@ -70,8 +71,11 @@ export interface StudioDef {
  * has one, the tall lantern poles, the generator off to one side, and a seed for the plants and rocks out in the dark.
  * The size is the ground you can walk.
  */
+export type { SystemId };
 export interface Outdoor {
   stacks: { at: [number, number]; yaw: number }[];
+  /** Which rig the stacks are (@rustybuns/gear systems.ts): the horn stack when left out. `?rig=` on the page tries another. */
+  rig?: SystemId;
   /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
   mono?: boolean;
   truss?: { at: [number, number]; yaw: number; w: number; h: number };

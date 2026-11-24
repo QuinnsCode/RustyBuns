@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer, and a club media player and a four-channel analog club mixer with twin filters; and, outside the catalog, a studio's stompbox (`stompbox`). Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, the desert rigs' horn boxes (a synergy horn, a tapped horn, a triple-21 sub, a tri-amp top and bass), and a DJ booth's media player deck, direct-drive turntable and four-channel mixer, and a club media player and a four-channel analog club mixer with twin filters; and, outside the catalog, a studio's stompbox (`stompbox`). Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -72,6 +72,12 @@ export const GEAR_SIZES = {
   "arc-sub-18": [1.2, 0.5, 0.75],
   "amp-rack-12u": [0.6, 1.05, 0.75],
   "generator-100kva": [1.3, 2.0, 3.6],
+  // Desert Gathering's other rigs (packages/gear systems.ts): sizes from the makers' sheets, or typical of the class
+  "synergy-horn": [0.711, 0.711, 0.648],
+  "tapped-horn-18": [0.734, 1.016, 0.572],
+  "triple-21-sub": [1.479, 0.696, 1.218],
+  "tri-amp-top": [0.76, 0.76, 0.9],
+  "tri-amp-bass": [0.76, 0.76, 0.9],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
@@ -1431,9 +1437,9 @@ function mixerClub4(): Build {
 // ---- the festival's systems (#5029 step 9) ----------------------------------------------------------------------
 
 /** A horn's mouth flaring back from the front face: `w` by `h`, `deep` into the box, squarer as `p` grows. */
-function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tuple, p = 6) {
+function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tuple, p = 6, slot: GearSlot = "panel") {
   const m = new THREE.Matrix4().makeTranslation(...at);
-  b.pieces.push(lathe("panel", [[-deep, w * 0.1, h * 0.1], [-deep * 0.6, w * 0.24, h * 0.26], [-deep * 0.25, w * 0.4, h * 0.41], [0, w / 2, h / 2]], { p, seg: 24, m }));
+  b.pieces.push(lathe(slot, [[-deep, w * 0.1, h * 0.1], [-deep * 0.6, w * 0.24, h * 0.26], [-deep * 0.25, w * 0.4, h * 0.41], [0, w / 2, h / 2]], { p, seg: 24, m }));
   b.pieces.push(disc("knob", Math.min(w, h) * 0.1, 0.01, "z", [at[0], at[1], at[2] - deep], 12));
 }
 
@@ -1441,14 +1447,14 @@ function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tu
  * A horn-loaded box of the dance stack: a black cabinet whose front is a well (its walls run the full depth) filled by
  * its horn mouths, the maker's purple plate on the top rail, bar handles on the sides and the speaker jacks on the back.
  */
-function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number][], deep: number): Build {
+function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number, p?: number][], deep: number, { badge = true, skin = "paint" as GearSlot } = {}): Build {
   const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, t = 0.04, front = d / 2;
-  b.pieces.push(box("paint", [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
-  for (const s of [-1, 1]) b.pieces.push(box("paint", [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
-  for (const y of [t / 2, h - t / 2]) b.pieces.push(box("paint", [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
+  b.pieces.push(box(skin, [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
+  for (const s of [-1, 1]) b.pieces.push(box(skin, [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
+  for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
   b.pieces.push(box("knob", [w - 2 * t, h - 2 * t, 0.01], [0, h / 2, front - deep]));
-  for (const [x, y, mw, mh] of mouths) mouth(b, mw, mh, deep * 0.92, [x, y, front - 0.004]);
-  b.pieces.push(box("badge", [0.15, 0.026, 0.004], [w / 2 - t - 0.1, h - t / 2, front + 0.001]));
+  for (const [x, y, mw, mh, p] of mouths) mouth(b, mw, mh, deep * 0.92, [x, y, front - 0.004], p, skin === "paint" ? "panel" : skin);
+  if (badge) b.pieces.push(box("badge", [0.15, 0.026, 0.004], [w / 2 - t - 0.1, h - t / 2, front + 0.001]));
   for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * 0.6, -d * 0.1], s > 0 ? "x" : "-x", 0.18, 0.012));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
   plate(b, w * 0.3, h * 0.2, [0, h * 0.45, -d / 2 - 0.004]);
@@ -1459,6 +1465,95 @@ function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number
 const midHigh = () => hornCab("stack-mid-high", [[-0.09, 0.25, 0.47, 0.41], [0.245, 0.25, 0.17, 0.2]], 0.32);
 const midBass = () => hornCab("stack-mid-bass", [[0, 0.375, 0.66, 0.66]], 0.42);
 const hornSub = () => hornCab("horn-sub-21", [[0, 0.46, 1.01, 0.5]], 0.55);
+
+// ---- the other rigs on the sand (Qollab Studio's Desert Gathering, packages/gear systems.ts) -------------------------
+
+/** A wall's well, `w` by `h` on a box's front, `deep` into it: the box's back behind it and four walls round it. */
+function well(b: Build, skin: GearSlot, [w, h, d]: readonly number[], deep: number, t: number) {
+  const front = d / 2;
+  b.pieces.push(box(skin, [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
+  for (const s of [-1, 1]) b.pieces.push(box(skin, [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
+  for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
+}
+
+/** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side and the grab. */
+function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6) {
+  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.18, 0.012));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
+  plate(b, w * 0.3, Math.min(0.2, h * 0.2), [0, h * 0.45, -d / 2 - 0.004]);
+  jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
+  mark(b, "grab", [w / 2 + 0.012, h * handleY, 0], [1, 0, 0]);
+}
+
+/**
+ * The synergy horn: one square box, 71 cm a side, whose whole front is a single pyramid horn in a textured black coat.
+ * The tweeter's compression driver sits at the throat; the four mids fire into the horn's walls through small ports
+ * part way up it, and the two 12" woofers through slots near its mouth, so all three ways leave from one point (the
+ * box that sums as one source, 50 x 50 degrees). Flying points at the corners.
+ */
+function synergyHorn(): Build {
+  const size = GEAR_SIZES["synergy-horn"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.022, deep = d * 0.78, front = d / 2;
+  well(b, "coat", size, deep, t);
+  const W = w - 2 * t, H = h - 2 * t;
+  b.pieces.push(lathe("coat", [[-deep * 0.97, W * 0.035, H * 0.035], [-deep * 0.6, W * 0.2, H * 0.2], [-deep * 0.3, W * 0.35, H * 0.35], [0, W / 2, H / 2]], { p: 7, seg: 32, m: new THREE.Matrix4().makeTranslation(0, h / 2, front - 0.004) }));
+  b.pieces.push(disc("knob", 0.022, 0.012, "z", [0, h / 2, front - deep * 0.95], 12));
+  // the mids' ports: one in each wall, part way up the horn (walls at a fifth of the width there)
+  const mz = front - 0.004 - deep * 0.6, mr = W * 0.2 - 0.002;
+  for (const [x, y, axis] of [[mr, 0, "x"], [-mr, 0, "x"], [0, mr, "y"], [0, -mr, "y"]] as const) b.pieces.push(disc("knob", 0.03, 0.02, axis, [x, h / 2 + y, mz], 12));
+  // the woofers' slots near the mouth, top and bottom walls
+  const wz = front - 0.004 - deep * 0.22, wr = W * 0.39;
+  for (const y of [wr, -wr]) b.pieces.push(box("knob", [W * 0.4, 0.024, 0.07], [0, h / 2 + y, wz]));
+  for (const x of [-1, 1]) for (const y of [0.04, h - 0.04]) b.pieces.push(box("knob", [0.006, 0.05, 0.12], [x * (w / 2 + 0.003), y, -d / 2 + 0.1]));
+  backAndFeet(b, size, 0.5);
+  return b;
+}
+
+/**
+ * A tapped horn with one 18": a tall black box, its mouth a wide well across the top of the front, the folded horn's
+ * last slanted panel showing inside it; the rest of the front is flat. Loud for its size down to about 30 Hz.
+ */
+function tappedHorn(): Build {
+  const size = GEAR_SIZES["tapped-horn-18"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.02, mh = 0.34, deep = d * 0.8, front = d / 2;
+  b.pieces.push(box("coat", [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
+  b.pieces.push(box("coat", [w, h - mh, deep], [0, (h - mh) / 2, front - deep / 2], { bevel: 0.004 }));
+  for (const s of [-1, 1]) b.pieces.push(box("coat", [t, mh, deep], [s * (w / 2 - t / 2), h - mh / 2, front - deep / 2], { bevel: 0.005 }));
+  b.pieces.push(box("coat", [w - 2 * t, t, deep], [0, h - t / 2, front - deep / 2], { bevel: 0.005 }));
+  // the fold's last panel, slanting up from the mouth's floor to the back
+  const slant = Math.atan2(mh - t * 2, deep);
+  b.pieces.push(box("panel", [w - 2 * t, 0.012, Math.hypot(deep, mh - 2 * t) * 0.98], [0, h - mh / 2, front - deep / 2], { rot: [slant, 0, 0] }));
+  backAndFeet(b, size, 0.55);
+  return b;
+}
+
+/**
+ * The sculpted family's triple 21: a wide, low hybrid-horn bass bin (three 21" drivers loading a bandpass horn), a
+ * black coat with the family's teal moulding across its top and bottom lips, and one long, rounded mouth across the
+ * front. 214 kg: it goes on with a forklift or six people.
+ */
+function triple21(): Build {
+  const size = GEAR_SIZES["triple-21-sub"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.07, deep = 0.5;
+  well(b, "coat", size, deep, t);
+  mouth(b, w - 2 * t - 0.02, h - 2 * t - 0.02, deep * 0.94, [0, h / 2, d / 2 - 0.004], 4, "coat");
+  for (const k of [-1, 0, 1]) b.pieces.push(disc("knob", 0.05, 0.02, "z", [k * 0.4, h / 2, d / 2 - deep * 0.9], 12));
+  for (const y of [0.012, h - 0.012]) b.pieces.push(box("shell", [w + 0.004, 0.024, 0.06], [0, y, d / 2 - 0.028], { bevel: 0.008 }));
+  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * 0.75, d * 0.2], s > 0 ? "x" : "-x", 0.18, 0.012));
+  backAndFeet(b, size, 0.5);
+  return b;
+}
+
+/**
+ * The tri-amp horn top: a deep birch box in black, two 10" mid drivers each loaded by its own short round horn with a
+ * bullet phase plug in its throat, side by side over the low half of the front; a 1" waveguide over them. Narrow and
+ * long-throwing, the old touring way (sheets for this class: high-Q, about 35 x 25 degrees).
+ */
+function triAmpTop(): Build {
+  const b = hornCab("tri-amp-top", [[-0.18, 0.27, 0.34, 0.34, 2], [0.18, 0.27, 0.34, 0.34, 2], [0, 0.6, 0.46, 0.2, 8]], 0.5, { badge: false, skin: "coat" });
+  const front = GEAR_SIZES["tri-amp-top"][2] / 2;
+  for (const x of [-0.18, 0.18]) b.pieces.push(lathe("knob", [[-0.44, 0.05, 0.05], [-0.36, 0.04, 0.04], [-0.28, 0.02, 0.02], [-0.24, 0.004, 0.004]], { p: 2, seg: 16, m: new THREE.Matrix4().makeTranslation(x, 0.27, front) }));
+  return b;
+}
+/** Its bass: two 15" horn-loaded side by side, square mouths, the same black birch. */
+const triAmpBass = () => hornCab("tri-amp-bass", [[-0.185, 0.38, 0.35, 0.66, 6], [0.185, 0.38, 0.35, 0.66, 6]], 0.55, { badge: false, skin: "coat" });
 
 /**
  * The sculpted three-way: one moulded teal shell, round in plan and swelling at the waist like a pebble on end, with
@@ -1657,6 +1752,11 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "arc-sub-18": arcSub,
   "amp-rack-12u": ampRack12,
   "generator-100kva": siteGenerator,
+  "synergy-horn": synergyHorn,
+  "tapped-horn-18": tappedHorn,
+  "triple-21-sub": triple21,
+  "tri-amp-top": triAmpTop,
+  "tri-amp-bass": triAmpBass,
 };
 
 type Slots = [GearSlot, THREE.BufferGeometry][];

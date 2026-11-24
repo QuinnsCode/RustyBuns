@@ -41,7 +41,8 @@ import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
-import { floorAt, keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
+import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { system } from "@rustybuns/gear";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -89,7 +90,10 @@ const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw
 /** The room this page is in, from its link; null on the front door. */
 const here = fromLink(location.search);
 const pick = here?.studio ?? "";
-const def = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+const picked = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+// ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
+const rigAsked = new URLSearchParams(location.search).get("rig");
+const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: { theme: {
   "--ui-bg": "rgba(21, 23, 27, 0.94)", "--ui-ink": "#f4f1ea", "--ui-dim": "#a9adb4", "--ui-line": "#3a3e45", "--ui-soft": "#23262c",
