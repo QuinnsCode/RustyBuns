@@ -123,7 +123,8 @@ let flash = { text: "", until: 0 };
 let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
 // the keys track sounds like the instrument at the keys seat (keys-voice.ts)
-const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made);
+// (the seat that plays the keys track: a room's violins or brass seats play their own)
+const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made && (s.id === "keys" || /keys/i.test(s.track ?? ""))) ?? def.spots.find((s) => s.kind === "keys" && !s.made);
 let project: Project = withKeysVoice(withMonoBass(demoProject(), def.bass), keysSpot ? keysKind(keysSpot, keysAsked, def.keys) : null);
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
@@ -257,8 +258,8 @@ function thing(s: Spot): THREE.Group {
       cable([[a.x, a.y, a.z], [a.x, a.y - 0.08, a.z - 0.02], [drop.x, Math.max(0.05, a.y * 0.3), drop.z], [drop.x, 0.004, drop.z - 0.05], [(drop.x + 0.95) / 2, 0.004, -0.72 + i * 0.012], ...plug(i)]);
     });
   } else if (s.kind === "keys") {
-    // a classic 61-key instrument from the spot's id: a wood-cheeked analog poly, a digital FM slab or a red drawbar
-    // organ (@rustybuns/models/polysynth, gear-models.ts), its keys where a seated player's palms go
+    // one of the classic families (@rustybuns/models/polysynth: an analog poly, an FM slab, a drawbar or combo organ, a
+    // tine piano, a string machine), the room's or its section's (gear-models.ts keysKind), its keys where the palms go
     const { synth, keys } = keysSynth(s, keysKind(s, keysAsked, def.keys));
     inFront.add(synth.group);
     played.set(s.id, { keys });

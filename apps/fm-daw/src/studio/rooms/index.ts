@@ -59,7 +59,6 @@ export const STONE_ROOM: StudioDef = {
   walls: [],
   spots: [seat("drums", "drums", [-1.2, 1.3], 0), seat("vocal", "booth", [0, 1.6], Math.PI, "the mic")],
   door: { at: [1.5, 3], yaw: 0 },
-  keys: "tine-ep",
   gear: { at: [-0.75, -0.5], yaw: 0 },
 };
 
