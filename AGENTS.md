@@ -45,6 +45,8 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   body it writes leaves out issue numbers. Then `/steward` only watches, and `/ship` runs `/code-review` here first.
   Both follow `.claude/skills/steward/SKILL.md`, and so does the cloud PR Steward. A PR with a `claude-pr-steward-*` or
   `claude-ship-*` label is held by a watch: don't push to it or loop on it, and `scripts/after.ts` steps aside too.
+- A head committed by `rustybuns-after` (the after workflow's merge of main) gets no checks at all while after.yml
+  pushes with its own token (#5733): push one commit of your own on top (an empty one is fine here); `bun run pr` says so.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
   commit doesn't help; rebase onto `origin/main` and `git push --force-with-lease` (new head and merge-base) does.
   `gh workflow run <file> --ref <branch>` runs green but never attaches to the PR's checks. If it happens again,
