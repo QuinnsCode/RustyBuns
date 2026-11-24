@@ -5,6 +5,7 @@
 // once per world and then `key` and `update`, as it does the park's view.
 import * as THREE from "three";
 import { desertFloor } from "@rustybuns/models/ground";
+import { van } from "@rustybuns/models/van";
 import { esc } from "@rustybuns/util";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
@@ -99,6 +100,12 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     tent.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)), lineMat));
     g.add(tent);
     tents.push(body);
+  }
+  // the campers' vans, parked past the tents, one with its awning out
+  for (const [k, z] of [10.5, 15.5].entries()) {
+    const v = van(40 + k, { awning: k === 0 });
+    v.position.set(c.x1 + 2, 0, z); v.rotation.y = -Math.PI / 2 + (k ? 0.2 : -0.1);
+    g.add(v);
   }
 
   // The sky: stars on a dome inside the camera's 60 m reach, and the full moon low over the dunes.
