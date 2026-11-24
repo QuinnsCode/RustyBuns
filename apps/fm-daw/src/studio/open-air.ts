@@ -19,7 +19,6 @@ import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/ge
 import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugMesh } from "./tapestry.ts";
-import { gearKitLook } from "./gear-kit.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -149,7 +148,7 @@ export function headAim(i: number, n: number, t: number): { pan: number; tilt: n
   return { pan: Math.sin(t * 0.6 + ph) * 0.7, tilt: 0.55 + Math.sin(t * 0.43 + ph * 1.7) * 0.3 };
 }
 
-export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality): Look {
+export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, def: StudioDef, quality: Quality, kit: GearLook = gearLook()): Look {
   const out: Outdoor = def.outdoor ?? { stacks: [], seed: 1 };
   const high = quality === "high";
   // a room's lens stops at 80 m; out here the sky and the dunes are further than that
@@ -244,8 +243,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(sand);
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
-  // the boxes in the photo kit's coats and grilles (gear-kit.ts), as the gear climb shoots them
-  const look = gearKitLook(quality);
+  // the boxes in the photo kit's coats and grilles (the page hands in gear-kit.ts's look), as the gear climb shoots them
+  const look = kit;
   // ---- the rugs on the sand
   (out.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, out.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; group.add(m); });
 

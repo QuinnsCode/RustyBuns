@@ -65,7 +65,7 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
-import { gearKit } from "./gear-kit.ts";
+import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
@@ -359,7 +359,7 @@ function thing(s: Spot): THREE.Group {
 }
 useKit(gearKit(loadQuality()));
 buildRoom();
-const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality()) : dress(renderer, scene, camera, def, loadQuality());
+const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
