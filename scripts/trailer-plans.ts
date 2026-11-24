@@ -6,7 +6,11 @@
 export type Step = ({ js: string } | { key: string; hold?: number; up?: boolean } | { click: [number, number] } | { move: [number, number] } | { sweep: [number, number, number, number]; ms: number }) & { at?: number; after?: number };
 /** One recording: where it opens (`url` for a server other than the app's), CSS to hide what a trailer shouldn't show, then `secs` of play. */
 export interface Take { name: string; path: string; /** The window, for a page laid out for a bigger screen (scaled down to the reel). */ size?: [number, number]; url?: string; wait?: number; css?: string; setup?: Step[]; steps?: Step[]; secs: number }
-/** A piece of a take, 3 s or less: `fx` are push (a slow zoom), punch (a fast one), slow, fast, shake, flash, glitch, mono, dark. */
+/**
+ * A piece of a take, 3 s or less: `fx` are push (a slow zoom), punch (a fast one), slow, fast, shake, flash, glitch, mono, dark,
+ * calm (a slow sideways glide in muted colour: the quiet before) and burst (a snap-zoom, flash, shake and colour split: busting in).
+ * `calmThenBurst` below lays them out the way a reel opens: two or three calm shots, then it busts in.
+ */
 export type Cut = { take: string; at: number; len?: number; fx?: string[]; say?: string; sub?: string } | { card: string; kicker?: string; line?: string; code?: string; len?: number; end?: boolean };
 export interface Reel { name: string; title: string; cuts: Cut[]; crf?: number }
 export interface Stage { /** The app folder it runs from, when not the key (a reel about a part of another app). */ app?: string; serve?: unknown; takes: Take[]; reels: Reel[] }
@@ -33,6 +37,33 @@ const taps = (keys: string[], secs: number, every: number, from = 0.3): Step[] =
 const press = (text: string): string => `[...document.querySelectorAll("button,a,[role=button]")].find((e) => e.textContent.trim().toLowerCase().startsWith(${JSON.stringify(text.toLowerCase())}))?.click()`;
 const mm = (name: string, q: string, secs: number): Take => ({ name, path: `/?${q}`, wait: 8000, secs, css: noHud() });
 
+/** A reel's opening: the calm shots glide in muted colour, then the first burst shot busts in (any app's reel can use it). */
+const calmThenBurst = (calm: Cut[], burst: Cut[]): Cut[] => [
+  ...calm.map((c): Cut => ("take" in c ? { ...c, fx: ["calm", ...(c.fx ?? [])] } : c)),
+  ...burst.map((c, i): Cut => (i === 0 && "take" in c ? { ...c, fx: ["burst", ...(c.fx ?? []).filter((f) => f !== "flash")] } : c)),
+];
+
+// Qollab Studio's jam room with a band in it: three people dressed and seated (qjam.live, the events a sesh brings), so a
+// take shows what meeting up there looks like without a server. `__band.play()` has them press keys on their tracks.
+const BAND = `
+const looks = [
+  { skin: "#a8693f", hair: "locs", hairColor: "#16191c", hat: "headphones", eyes: "happy", mouth: "grin", glasses: "none", top: "hoodie", topColor: "#3a6bd8", bottomColor: "#2e3439", build: "tall" },
+  { skin: "#f7d6b8", hair: "mohawk", hairColor: "#c23a6b", hat: "none", eyes: "wide", mouth: "tongue", glasses: "shades", top: "tee", topColor: "#16191c", bottomColor: "#3a4a6b", build: "slim" },
+  { skin: "#7a4a2c", hair: "afro", hairColor: "#4a2f1d", hat: "none", eyes: "wink", mouth: "smile", glasses: "round", top: "hawaiian", topColor: "#2f8f5a", bottomColor: "#e8e0cc", build: "round" },
+];
+const names = ["Ava", "Mo", "Jun"];
+const spots = qjam.state().spots.filter((s) => s.kind !== "desk" && s.kind !== "couch").slice(0, 3);
+spots.forEach((p, i) => { qjam.live(i + 2, { t: "wear", avatar: looks[i], name: names[i] }); qjam.live(i + 2, { t: "body", at: [p.at[0], 0, p.at[1]], yaw: 0, seat: p.id }); });
+let n = 0;
+window.__band = { play() { n++; spots.forEach((p, i) => { const track = p.track ?? i, midi = 48 + ((n * 5 + i * 7) % 24); qjam.live(i + 2, { t: "on", track, midi, vel: 100 }); setTimeout(() => qjam.live(i + 2, { t: "off", track, midi }), 180); }); } };`;
+/** One of Qollab Studio's rooms (/jam.html?studio=<id>) with the band in it, seen first person: walk in and look round while they play. */
+const studioTake = (id: string, secs = 10, name = id): Take => ({ name, path: `/jam.html?room=trailer&studio=${id}`, wait: 7000, secs, css: noHud(), setup: [{ js: "await qjam.start?.()", after: 6000 }, { js: BAND, after: 1200 }, { js: "qjam.cam(); qjam.look(-0.5, -0.1)", after: 300 }], steps: [
+  { at: 0, key: "KeyW", hold: 1800 }, ...Array.from({ length: 12 }, (_, i): Step => ({ at: 0.2 + i * 0.35, js: `qjam.look(${(-0.5 + i * 0.09).toFixed(2)}, -0.1)` })),
+  ...Array.from({ length: Math.floor((secs - 0.5) / 0.25) }, (_, i): Step => ({ at: 0.5 + i * 0.25, js: "__band.play()" })),
+  { at: secs * 0.6, key: "KeyW", hold: 1200 },
+] });
+const STUDIOS = ["desert-gathering", "live-room", "scoring-hall", "basement", "stone-room", "barn", "desk-concert", "orchestra-room", "console-room", "sound-stage"] as const;
+
 export const STAGES: Record<string, Stage> = {
   "mythic-masters": {
     takes: [
@@ -44,19 +75,23 @@ export const STAGES: Record<string, Stage> = {
     ],
     // The captions are the Book's own lines (src/demand.ts): it keeps the ledger of the cryptids it wants.
     reels: [
-      { name: "the-ledger", title: "The ledger", crf: 29, cuts: [
-        { card: "Sign here", kicker: "The Book", line: "Three cryptids up front, the rest on account.", len: 2 },
-        { take: "stadium", at: 0.4, len: 2.4, fx: ["push"], say: "Jackalope", sub: "vs the Jersey Devil" },
-        { take: "stadium", at: 3, len: 2, fx: ["punch", "flash"] },
-        { take: "volcano", at: 0.5, len: 2.2, fx: ["push"], say: "Hodag" },
-        { take: "volcano", at: 6.2, len: 2.2, fx: ["slow", "shake"] },
-        { take: "barrens", at: 2, len: 2.4, fx: ["push"], say: "Squonk", sub: "Pine Barrens" },
-        { take: "stadium", at: 8.2, len: 2, fx: ["punch", "glitch"] },
-        { take: "volcano", at: 12, len: 2, fx: ["shake"] },
-        { take: "barrens", at: 15.8, len: 2, fx: ["punch", "flash"] },
-        { take: "stadium", at: 19.4, len: 2.6, fx: ["slow", "flash", "shake"], say: "Bind it" },
-        { take: "world", at: 2, len: 2.6, fx: ["push"], say: "Walk the world", sub: "64 regions" },
-        { card: "Mythic Masters", kicker: "Item 4: something with wings", line: "Name unknown. Your problem. Bring it.", end: true, len: 2.4 },
+      // The pitch in one line, then a lead-up that gets faster and louder until somebody finally asks why.
+      { name: "catch-them", title: "Catch the cryptids", crf: 29, cuts: [
+        { card: "Catch the cryptids", kicker: "Mythic Masters", line: "Save the Earth.", len: 2 },
+        { take: "world", at: 2, len: 2.6, fx: ["push"], say: "Track them down", sub: "64 regions of real wild" },
+        { take: "stadium", at: 0.4, len: 2.2, fx: ["push"], say: "Jackalope" },
+        { take: "volcano", at: 0.5, len: 2, fx: ["push"], say: "Hodag" },
+        { take: "barrens", at: 2, len: 1.8, fx: ["push"], say: "Squonk" },
+        { take: "stadium", at: 8.2, len: 1.4, fx: ["punch", "flash"] },
+        { take: "volcano", at: 6.2, len: 1.2, fx: ["shake"] },
+        { take: "barrens", at: 15.8, len: 1, fx: ["punch", "glitch"] },
+        { take: "volcano", at: 12, len: 0.8, fx: ["punch", "flash"] },
+        { take: "stadium", at: 19.4, len: 2.4, fx: ["slow", "flash", "shake"], say: "Catch them all" },
+        { take: "faceoff", at: 0.3, len: 2.2, fx: ["slow", "dark"] },
+        { card: "But why?", len: 1.4 },
+        { take: "world", at: 6, len: 2, fx: ["slow", "dark", "mono"] },
+        { card: "Because a creepy book told us to.", kicker: "The Book", len: 2.4 },
+        { card: "Mythic Masters", kicker: "Catch the cryptids. Save the Earth.", line: "Don't ask the Book questions.", end: true, len: 2.4 },
       ] },
       { name: "stadium", title: "The Cryptid Cup", cuts: [
         { take: "stadium", at: 0.3, len: 2.4, fx: ["push"], say: "The Cryptid Cup" },
@@ -136,12 +171,6 @@ export const STAGES: Record<string, Stage> = {
         { take: "second", at: 10, len: 2.4, fx: ["punch"] },
         { card: "Alien Disc Golf", kicker: "Planet Earth", end: true },
       ] },
-      { name: "the-drift", title: "The drift", cuts: [
-        { take: "sea", at: 0.3, len: 2.6, fx: ["push"], say: "Land in the sea" },
-        { take: "sea", at: 4, len: 2.6, fx: ["slow"], say: "The current takes you" },
-        { take: "drive", at: 6, len: 2.4, fx: ["push"] },
-        { card: "Alien Disc Golf", kicker: "Mind the water", end: true },
-      ] },
       { name: "long-drive", title: "Long drive", cuts: [
         { take: "second", at: 0.3, len: 2.6, fx: ["push"], say: "Wind up" },
         { take: "second", at: 2.8, len: 2.6, fx: ["slow", "shake"], say: "Let it fly" },
@@ -150,36 +179,7 @@ export const STAGES: Record<string, Stage> = {
       ] },
     ],
   },
-  "delayed-reaction": {
-    takes: [
-      { name: "dub", path: "/?level=5&stem=dub", wait: 6000, secs: 20, setup: [{ js: `document.querySelector("#scenario")?.click()`, after: 2500 }], steps: taps(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"], 20, 0.45) },
-      { name: "everything", path: "/?level=5", wait: 6000, secs: 20, setup: [{ js: `document.querySelector("#scenario")?.click()`, after: 2500 }], steps: taps(["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"], 20, 0.38) },
-    ],
-    reels: [
-      { name: "the-vortex", title: "The vortex", crf: 34, cuts: [
-        { take: "everything", at: 0.2, len: 2.2, fx: ["push"], say: "Listen" },
-        { take: "everything", at: 2.4, len: 2, fx: ["punch", "flash"], say: "React" },
-        { take: "dub", at: 3, len: 2.2, fx: ["push"] },
-        { take: "everything", at: 6.5, len: 2.4, fx: ["slow"], say: "Late is on time" },
-        { take: "dub", at: 8, len: 2, fx: ["punch", "glitch"] },
-        { take: "everything", at: 10, len: 2, fx: ["push", "flash"] },
-        { card: "Delayed Reaction", kicker: "Rhythm, through the delay vortex", end: true },
-      ] },
-      { name: "drop", title: "The drop", crf: 34, cuts: [
-        { take: "dub", at: 0.5, len: 2.4, fx: ["push"], say: "Wait for it" },
-        { take: "dub", at: 4, len: 2.2, fx: ["punch", "flash"] },
-        { take: "everything", at: 7, len: 2.4, fx: ["slow", "glitch"] },
-        { take: "dub", at: 9, len: 2, fx: ["shake"] },
-        { card: "Delayed Reaction", kicker: "Four lanes, one beat", end: true },
-      ] },
-      { name: "colors", title: "Colors", crf: 34, cuts: [
-        { take: "everything", at: 1, len: 2.6, fx: ["push"] },
-        { take: "everything", at: 4.4, len: 2.4, fx: ["push"] },
-        { take: "everything", at: 8.6, len: 2.6, fx: ["slow"] },
-        { card: "Delayed Reaction", end: true },
-      ] },
-    ],
-  },
+  // Delayed Reaction has no reels while its look is being redone (owner, 2026-11-23).
   "splat-spray": {
     takes: [
       { name: "scan", path: "/", wait: 7000, secs: 16, css: noHud(), setup: [{ js: press("Solo training"), after: 5000 }], steps: [[200, 220, 760, 300], [760, 360, 180, 260], [300, 160, 700, 420], [820, 200, 240, 400], [240, 300, 720, 180], [600, 420, 300, 150]].map((sweep, i): Step => ({ at: 0.3 + i * 2.6, sweep: sweep as [number, number, number, number], ms: 2300 })) },
@@ -192,12 +192,6 @@ export const STAGES: Record<string, Stage> = {
         { take: "scan", at: 6, len: 2.4, fx: ["slow"], say: "Fewest scans wins" },
         { take: "scan", at: 11, len: 2.4, fx: ["push", "flash"] },
         { card: "Super Spy Splat Shot", kicker: "Scan, then pick", end: true },
-      ] },
-      { name: "scan", title: "Scan", cuts: [
-        { take: "scan", at: 1, len: 2.6, fx: ["push"] },
-        { take: "scan", at: 8.5, len: 2.6, fx: ["slow"], say: "Everything moves" },
-        { take: "scan", at: 13, len: 2.4, fx: ["punch"] },
-        { card: "Super Spy Splat Shot", end: true },
       ] },
     ],
   },
@@ -214,57 +208,65 @@ export const STAGES: Record<string, Stage> = {
         { take: "round", at: 18, len: 2, fx: ["punch"] },
         { card: "Hippo Tycoon", kicker: "Solo, couch, LAN or online", end: true },
       ] },
-      { name: "greedy", title: "Greedy", cuts: [
-        { take: "round", at: 6, len: 2.4, fx: ["push"] },
-        { take: "round", at: 10, len: 2.4, fx: ["slow"], say: "*cough*" },
-        { take: "round", at: 16.5, len: 2.4, fx: ["punch", "shake"] },
-        { card: "Hippo Tycoon", kicker: "Stay away from the sludge", end: true },
-      ] },
-      { name: "geyser", title: "The geyser", cuts: [
-        { take: "round", at: 3, len: 2.6, fx: ["push"] },
-        { take: "round", at: 13, len: 2.4, fx: ["push"], say: "Most oil wins" },
-        { card: "Hippo Tycoon", end: true },
-      ] },
     ],
   },
   "fm-daw": {
     takes: [
+      ...STUDIOS.map((id) => studioTake(id)),
       { name: "gear-room", path: "/studio.html", wait: 7000, secs: 20, css: noHud(), setup: [{ js: press("Walk in"), after: 3000 }], steps: [
         { at: 0, js: "qstudio.look?.(0.4, -0.1)" }, { at: 0.2, key: "KeyW", hold: 2500 }, { at: 3, js: "qstudio.look?.(-0.5, -0.15)" }, { at: 5, key: "KeyD", hold: 1500 }, { at: 8, js: "qstudio.look?.(1.6, -0.2)" }, { at: 9, key: "KeyW", hold: 3000 }, { at: 13, js: "qstudio.look?.(2.8, -0.25)" }, { at: 14, key: "KeyA", hold: 2000 }, { at: 17, js: "qstudio.look?.(3.6, -0.1)" },
       ] },
       { name: "amp", path: "/amp.html", wait: 7000, secs: 16, setup: [{ js: press("Plug in"), after: 1500 }, { js: "await qamp.stage?.(true)", after: 3000 }], steps: [{ at: 2, js: "qamp.pedal?.('q-fuzz')" }, { at: 7, js: "qamp.board?.(true)" }, { at: 12, js: "qamp.board?.(false)" }] },
-      { name: "decks", path: "/decks.html", wait: 6000, secs: 16, setup: [{ js: "qdecks.start()", after: 3000 }], steps: [{ at: 0.3, js: "qdecks.play('a')" }, { at: 2, js: "qdecks.play('b'); qdecks.sync('b')" }, { at: 4, js: "await qdecks.scratch('a', 1.5)" }, { at: 7, js: "qdecks.cross(0.8)" }, { at: 9, js: "qdecks.loop('b', 4)" }, { at: 12, js: "qdecks.cross(-0.6)" }] },
-      { name: "jam", path: "/jam.html", wait: 7000, secs: 18, css: noHud() + "#menu{display:none !important}", setup: [{ js: "await qjam.start?.()", after: 4000 }], steps: [{ at: 0, js: "qjam.walkTo?.(1.5, 1.5)" }, { at: 6, js: "qjam.sit?.()" }, ...taps(["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH"], 18, 0.3, 8)] },
+      // A pedal's build sheet: the tscircuit board behind it, from schematic to the files a fab house takes.
+      { name: "sheet", path: "/studio.html", wait: 7000, secs: 16, setup: [{ js: press("Walk in"), after: 3000 }, { js: "const s = qstudio.state(); const p = (s.items ?? []).find((i) => /drive|fuzz|pedal/i.test(JSON.stringify(i))); qstudio.sheet(p?.id ?? 'q-drive')", after: 2500 }], steps: [
+        { at: 0, js: "qstudio.sheetTab('schematic')" }, { at: 4, js: "qstudio.sheetTab('pcb')" }, { at: 8, js: "qstudio.sheetTab('parts')" }, { at: 11, js: "qstudio.sheetTab('files')" }, { at: 13.5, js: "await qstudio.sheetBand?.()" },
+      ] },
     ],
-    // Qollab Studio: FM DAW's rooms (the gear room, the jam room), Q Amp and the decks.
+    // Qollab Studio (FM DAW): meet up in a studio you walk into, sit at an instrument and play together. Some gear is
+    // a real circuit you can order as a board; the rest is modelled as closely as we can.
     reels: [
       { name: "the-studio", title: "Qollab Studio", crf: 29, cuts: [
-        { card: "A studio you walk into", kicker: "Qollab Studio", line: "With your band, from anywhere.", len: 2 },
-        { take: "gear-room", at: 0.3, len: 2.6, fx: ["push"], say: "The gear room" },
-        { take: "gear-room", at: 3.4, len: 2.2, fx: ["push"] },
+        { card: "Meet up. Plug in. Play.", kicker: "Qollab Studio", line: "A studio you walk into with your band, from anywhere.", len: 2.2 },
+        { take: "desert-gathering", at: 0.4, len: 2.2, fx: ["push"], say: "Desert Gathering" },
+        { take: "live-room", at: 1, len: 1.4, fx: ["punch"], say: "The live room" },
+        { take: "scoring-hall", at: 1, len: 1.4, fx: ["push"], say: "The scoring hall" },
+        { take: "basement", at: 1, len: 1.4, fx: ["punch"], say: "The basement" },
+        { take: "stone-room", at: 1, len: 1.2, fx: ["push"], say: "The stone room" },
+        { take: "barn", at: 1, len: 1.2, fx: ["punch"], say: "The barn" },
+        { take: "desk-concert", at: 1, len: 1.2, fx: ["push"], say: "The desk concert" },
+        { take: "orchestra-room", at: 1, len: 1.2, fx: ["punch"], say: "The orchestra room" },
+        { take: "console-room", at: 1, len: 1.2, fx: ["push"], say: "The console room" },
+        { take: "sound-stage", at: 1, len: 1.4, fx: ["punch", "flash"], say: "The sound stage" },
+        { take: "basement", at: 7, len: 2.2, fx: ["push"], say: "Play together", sub: "MIDI, keys, synths, VSTs" },
+        { take: "gear-room", at: 3.4, len: 2, fx: ["push"], say: "Real gear on the wall" },
+        { take: "amp", at: 8.4, len: 1.6, fx: ["punch", "flash"] },
+        { take: "sheet", at: 4.3, len: 2.2, fx: ["push"], say: "Real circuits", sub: "order the pedal you played" },
+        { take: "live-room", at: 7, len: 2, fx: ["push"], say: "Live, together", sub: "everyone hears the same beat" },
+        { card: "Learn. Practice. Perform.", kicker: "Qollab Studio", len: 1.8 },
+        { card: "PLAY.", len: 1.2 },
+        { card: "Qollab Studio", kicker: "Meet up and jam", line: "MIDI, keys, synths, VSTs, audio and a DAW, live together.", end: true, len: 2.4 },
+      ] },
+      { name: "every-room", title: "Every room", cuts: [
+        { card: "Pick a room", kicker: "Qollab Studio", line: "Ten studios. Bring the band.", len: 1.8 },
+        { take: "desert-gathering", at: 3, len: 2, fx: ["push"], say: "Desert Gathering", sub: "under the stars" },
+        { take: "scoring-hall", at: 3, len: 1.8, fx: ["push"], say: "The scoring hall", sub: "room for an orchestra" },
+        { take: "basement", at: 3, len: 1.8, fx: ["push"], say: "The basement", sub: "a dead-dry drum booth" },
+        { take: "stone-room", at: 3, len: 1.8, fx: ["push"], say: "The stone room", sub: "big boomy drums" },
+        { take: "barn", at: 3, len: 1.8, fx: ["push"], say: "The barn" },
+        { take: "console-room", at: 3, len: 1.8, fx: ["push"], say: "The console room" },
+        { take: "sound-stage", at: 3, len: 1.8, fx: ["push"], say: "The sound stage" },
+        { take: "live-room", at: 6.5, len: 2.2, fx: ["punch"], say: "Or build your own" },
+        { card: "Qollab Studio", kicker: "Every room sounds like itself", end: true },
+      ] },
+      { name: "real-gear", title: "Real gear", cuts: [
+        { card: "Some of this gear is real", kicker: "Qollab Studio", line: "Circuits you can order. The rest modelled as closely as we can.", len: 2.2 },
+        { take: "gear-room", at: 0.3, len: 2.4, fx: ["push"], say: "Walk the gear room" },
         { take: "amp", at: 2, len: 2, fx: ["punch"], say: "Amps simulated", sub: "part by part" },
-        { take: "gear-room", at: 6.6, len: 2.4, fx: ["push"], say: "Pedals on the wall" },
-        { take: "amp", at: 8.4, len: 2, fx: ["punch", "flash"] },
-        { take: "jam", at: 1, len: 2.6, fx: ["push"], say: "The jam room" },
-        { take: "jam", at: 6.5, len: 2.4, fx: ["push"], say: "Sit at a seat, play its track" },
-        { take: "decks", at: 2, len: 2.2, fx: ["push"], say: "Two decks and a mixer" },
-        { take: "tscircuit/sheet", at: 4.5, len: 2.4, fx: ["push"], say: "Real boards", sub: "order the pedal you played" },
-        { take: "gear-room", at: 16.5, len: 2.4, fx: ["push"], say: "Clear amps", sub: "so the tubes show" },
-        { take: "jam", at: 11, len: 2.4, fx: ["punch"] },
-        { card: "Qollab Studio", kicker: "Play, mix and jam together", line: "Everyone hears the same beat.", end: true, len: 2.4 },
-      ] },
-      { name: "gear-room", title: "The gear room", cuts: [
-        { take: "gear-room", at: 0.3, len: 2.6, fx: ["push"], say: "Walk in" },
-        { take: "gear-room", at: 5, len: 2.4, fx: ["push"] },
-        { take: "gear-room", at: 16.5, len: 2.6, fx: ["push"], say: "Cable it up" },
-        { take: "amp", at: 2, len: 2.2, fx: ["punch"] },
-        { card: "Qollab Studio", kicker: "The gear room", end: true },
-      ] },
-      { name: "jam", title: "The jam room", cuts: [
-        { take: "jam", at: 0.5, len: 2.6, fx: ["push"], say: "Your avatar, your seat" },
-        { take: "jam", at: 6.5, len: 2.6, fx: ["push"] },
-        { take: "jam", at: 12, len: 2.6, fx: ["punch"], say: "Jam live" },
-        { card: "Qollab Studio", kicker: "The jam room", end: true },
+        { take: "sheet", at: 0.2, len: 2, fx: ["push"], say: "The schematic" },
+        { take: "sheet", at: 4.3, len: 2, fx: ["punch"], say: "The board" },
+        { take: "sheet", at: 11.3, len: 2, fx: ["push"], say: "Ready to fab" },
+        { take: "basement", at: 8, len: 2.2, fx: ["push"], say: "Then play it with the band" },
+        { card: "Qollab Studio", kicker: "Education, practice, performance", line: "Or just play.", end: true },
       ] },
     ],
   },
@@ -294,13 +296,6 @@ export const STAGES: Record<string, Stage> = {
   geoboxq: {
     takes: [{ size: [1280, 720], name: "home", path: "/", wait: 5000, secs: 12, steps: [{ at: 2, js: "scrollBy({ top: 500, behavior: 'smooth' })" }, { at: 7, js: "scrollBy({ top: 500, behavior: 'smooth' })" }] }],
     reels: [
-      { name: "fits", title: "What fits", cuts: [
-        { card: "Which box?", kicker: "GeoBoxQ", line: "Add your boxes and products. It tells you which box they all fit in.", len: 2.2 },
-        { take: "home", at: 0.3, len: 2.6, fx: ["push"], say: "Your boxes" },
-        { take: "home", at: 3, len: 2.6, fx: ["push"], say: "Your products" },
-        { take: "home", at: 8, len: 2.6, fx: ["punch"], say: "Fits in Small" },
-        { card: "GeoBoxQ", kicker: "A packing helper for qCRM", end: true },
-      ] },
       { name: "pack", title: "Pack it", cuts: [
         { take: "home", at: 2.5, len: 2.6, fx: ["push"] },
         { take: "home", at: 9, len: 2.6, fx: ["push"], say: "Even a box in a box" },
@@ -346,49 +341,13 @@ export const STAGES: Record<string, Stage> = {
   },
   // Qollab is eqosys's rooms and parties: its reel is cut from eqosys's pages and Qollab Studio's rooms.
   qollab: { app: "eqosys", takes: [], reels: [
-    { name: "rooms", title: "Rooms in one call", cuts: [
-      { card: "Play together", kicker: "Qollab", line: "Rooms, seats, parties, presence and saves.", len: 1.8 },
-      { take: "eqosys/library", at: 0.3, len: 2.4, fx: ["push"], say: "A party code", sub: "read it out, any game" },
-      { take: "fm-daw/jam", at: 1, len: 2.6, fx: ["push"], say: "Walk into the same room" },
-      { take: "eqosys/friends", at: 0.5, len: 2.2, fx: ["punch"], say: "Who's online, and where" },
-      { take: "two-fronts/orbit", at: 3, len: 1.6, fx: ["flash"] },
-      { take: "fm-daw/jam", at: 9, len: 2.4, fx: ["push"], say: "Jam live", sub: "everyone hears the same beat" },
-      { card: "One call", kicker: "For game makers", code: "const p = eqosys().party();\nconst code = await p.make();   // \"KXT7RP\"\np.onStart(({ room, seat }) => game.join(room, seat));", len: 3 },
-      { card: "Qollab", kicker: "Realtime rooms on Cloudflare", line: "Built into eqosys.", end: true },
-    ] },
     { name: "parties", title: "Parties", cuts: [
       { take: "eqosys/library", at: 0.3, len: 2.4, fx: ["punch"], say: "Start a party" },
       { take: "eqosys/friends", at: 0.5, len: 2.4, fx: ["push"], say: "Friends join from anywhere" },
-      { take: "fm-daw/jam", at: 5, len: 2.4, fx: ["push"], say: "Same room, every page" },
+      { take: "fm-daw/basement", at: 5, len: 2.4, fx: ["push"], say: "Same room, every page" },
       { card: "Qollab", kicker: "Parties for any game", end: true },
     ] },
   ] },
-  // tscircuit boards as real pedals: the gear room's build sheets and Q Amp's board view (fm-daw).
-  tscircuit: {
-    app: "fm-daw",
-    takes: [
-      { name: "sheet", path: "/studio.html", wait: 7000, secs: 16, setup: [{ js: press("Walk in"), after: 3000 }, { js: "const s = qstudio.state(); const p = (s.items ?? []).find((i) => /drive|fuzz|pedal/i.test(JSON.stringify(i))); qstudio.sheet(p?.id ?? 'q-drive')", after: 2500 }], steps: [
-        { at: 0, js: "qstudio.sheetTab('schematic')" }, { at: 4, js: "qstudio.sheetTab('pcb')" }, { at: 8, js: "qstudio.sheetTab('parts')" }, { at: 11, js: "qstudio.sheetTab('files')" }, { at: 13.5, js: "await qstudio.sheetBand?.()" },
-      ] },
-    ],
-    reels: [
-      { name: "pedals", title: "Boards you play, then order", cuts: [
-        { card: "Draw it in tscircuit", kicker: "Q Drive", line: "Hear it as a pedal. Then order the board.", len: 2 },
-        { take: "sheet", at: 0.2, len: 2.6, fx: ["push"], say: "The schematic" },
-        { take: "sheet", at: 4.3, len: 2.6, fx: ["punch"], say: "The board" },
-        { take: "sheet", at: 8.2, len: 2.4, fx: ["push"], say: "The parts list" },
-        { take: "sheet", at: 11.3, len: 2.4, fx: ["push"], say: "Gerbers, ready to fab" },
-        { take: "fm-daw/amp", at: 2, len: 2.2, fx: ["punch"], say: "Simulated part by part" },
-        { card: "tscircuit pedals", kicker: "Qollab Studio", line: "Every pedal on the wall is a real 9 V board.", end: true },
-      ] },
-      { name: "build-sheet", title: "The build sheet", cuts: [
-        { take: "sheet", at: 1, len: 2.4, fx: ["push"] },
-        { take: "sheet", at: 5, len: 2.4, fx: ["push"], say: "PCB" },
-        { take: "sheet", at: 9, len: 2.2, fx: ["punch"], say: "BOM" },
-        { card: "tscircuit pedals", end: true },
-      ] },
-    ],
-  },
   codesplitter: {
     serve: { live: "https://codesplitter.notryanquinn.workers.dev/" },
     takes: [{ size: [1280, 720], name: "home", path: "/", wait: 6000, secs: 14, steps: [2, 5, 8, 11].map((t): Step => ({ at: t, js: "scrollBy({ top: 600, behavior: 'smooth' })" })) }],
@@ -420,23 +379,6 @@ export const STAGES: Record<string, Stage> = {
     ],
     // The captions are the Thunder Marines' radio (content/radio.json).
     reels: [
-      { name: "not-cuddly", title: "Not cuddly", crf: 29, cuts: [
-        { card: "Doren, the forest moon", kicker: "Thunder Marines", line: "Orders: clear out a few knee-high locals.", len: 2.2 },
-        { take: "forest", at: 0.3, len: 2.4, fx: ["push"], say: "Something in the ferns is humming" },
-        { take: "horde", at: 0.4, len: 2.6, fx: ["punch"], say: "They are not cuddly", sub: "Do not attempt to cuddle" },
-        { take: "horde", at: 3, len: 2.2, fx: ["slow", "shake"] },
-        { take: "orbit", at: 3, len: 2.2, fx: ["push", "flash"], say: "Meanwhile, in orbit" },
-        { take: "city", at: 11, len: 2.4, fx: ["shake"], say: "That club has a nail in it", sub: "On purpose" },
-        { take: "horde", at: 8.6, len: 1.8, fx: ["punch", "glitch"] },
-        { take: "orbit", at: 9.6, len: 1.8, fx: ["shake"] },
-        { take: "desert", at: 14, len: 2.2, fx: ["punch"], say: "Two eyes in the ferns", sub: "then six. then none, which is worse" },
-        { take: "city", at: 15, len: 2.4, fx: ["slow", "flash"], say: "Call down the strike" },
-        { take: "beach", at: 9.2, len: 2.2, fx: ["push"] },
-        { take: "beach", at: 16, len: 1.8, fx: ["shake", "flash"] },
-        { take: "orbit", at: 20, len: 2.2, fx: ["punch"] },
-        { take: "horde", at: 15.2, len: 2.4, fx: ["push"], say: "If you hear giggling", sub: "it's already too late" },
-        { card: "Two Fronts", kicker: "Thunderwooka Saga", line: "The Wooka came with a furry ferocity unseen by the likes of man.", end: true, len: 2.4 },
-      ] },
       { name: "orbit", title: "The orbit", cuts: [
         { take: "orbit", at: 0.5, len: 2.6, fx: ["push"] },
         { take: "orbit", at: 4, len: 2.2, fx: ["punch"], say: "Hold the orbit" },
@@ -498,14 +440,6 @@ export const STAGES: Record<string, Stage> = {
         { take: "newsreel", at: 11.2, len: 2.6, fx: ["push"] },
         { card: "Git Recon", kicker: "A shooter in a real repo", line: "Home to HEAD by six.", end: true, len: 2.2 },
       ] },
-      { name: "boot-camp", title: "Boot camp", cuts: [
-        { take: "kitchen", at: 0.3, len: 2.4, fx: ["push"] },
-        { take: "kitchen", at: 2.3, len: 2.2, fx: ["slow", "flash"], say: "Your stop" },
-        { take: "kitchen", at: 5, len: 1.8, fx: ["shake"] },
-        { take: "kitchen", at: 9, len: 2.4, fx: ["push"], say: "0 of 6 merged", sub: "the clock is running" },
-        { take: "kitchen", at: 15, len: 2, fx: ["fast", "punch"] },
-        { card: "Git Recon", kicker: "Boot camp: the kitchen floor", end: true },
-      ] },
       { name: "newsreel", title: "Newsreel", cuts: [
         { take: "newsreel", at: 0, len: 2.4, fx: ["mono", "push"] },
         { take: "newsreel", at: 4, len: 2.4, fx: ["mono", "punch"] },
@@ -513,13 +447,6 @@ export const STAGES: Record<string, Stage> = {
         { take: "newsreel", at: 9.2, len: 2.2, fx: ["mono", "punch"] },
         { take: "newsreel", at: 13, len: 2.6, fx: ["mono", "shake"] },
         { card: "A message from Command", kicker: "Git Recon", line: "Your branch needs you.", end: true },
-      ] },
-      { name: "outtakes", title: "Outtakes", cuts: [
-        { take: "credits", at: 2.5, len: 2.4, fx: ["push"], say: "Blooper reel" },
-        { take: "credits", at: 6, len: 2.6, fx: ["push"] },
-        { take: "credits", at: 9.5, len: 2.6, fx: ["punch"], say: "Somebody dropped the prop" },
-        { take: "credits", at: 13, len: 2.4, fx: ["push"] },
-        { card: "Git Recon", kicker: "Thank you for your service", end: true },
       ] },
       { name: "drop-in", title: "Drop in", cuts: [
         { take: "kitchen", at: 1.2, len: 1.6, fx: ["punch"] },
@@ -541,47 +468,32 @@ export const STAGES: Record<string, Stage> = {
         { seconds: 1.6, push: 1, jets: true }, { seconds: 1.3, ollie: true, trick: "tre flip", jets: true }, { seconds: 1.4, push: 1, jets: true, fan: true }, { seconds: 1.3, ollie: true, manual: "tail", steer: 1 },
         { seconds: 1.4, push: 1, jets: true }, { seconds: 1.4, ollie: true, trick: "double kickflip" }, { seconds: 1.4, push: 1, jets: true }, { seconds: 1.4, ollie: true, trick: "laser flip", steer: -1 }, { seconds: 2, push: 1, jets: true },
       ] }) }] })),
+      // A slow roll with no tricks, steering gently past the park's ramps: the calm before the burst.
+      ...[["cruise-yosemite", "yosemite-falls", "creek%20halfpipe"], ["cruise-canyon", "grand-canyon", "vert"], ["cruise-arches", "arches", "vert"]].map(([name, level, spawn]): Take => ({ name, path: `/?level=${level}&spawn=${spawn}&nosweep`, css: noHud(), secs: 9, steps: [{ at: 0.5, js: run("skate_line", { moves: [
+        { seconds: 1.2, push: 0.6 }, { seconds: 2, push: 0.25, steer: 0.35 }, { seconds: 2, push: 0.25, steer: -0.3 }, { seconds: 2.5, push: 0.2 },
+      ] }) }] })),
       ...[["rail", "el-capitan"], ["rail-teton", "grand-teton"]].map(([name, level]): Take => ({ name, path: `/?level=${level}&spawn=rail&nosweep`, css: noHud(), secs: 12, steps: [{ at: 0.5, js: run("skate_line", { moves: [
         { seconds: 1.2, push: 1 }, { seconds: 0.4, ollie: true }, { seconds: 2.5, push: 0.3 }, { seconds: 1.2, ollie: true, trick: "kickflip" }, { seconds: 1.5, push: 1 }, { seconds: 0.4, ollie: true }, { seconds: 2, push: 0.3 },
       ] }) }] })),
     ],
     reels: [
-      { name: "national-parks", title: "Shred the parks", crf: 29, cuts: [
-        { take: "vert-capitan", at: 0.2, len: 2.4, fx: ["push"], say: "El Capitan" },
-        { take: "halfpipe", at: 2, len: 2.2, fx: ["punch"] },
-        { take: "halfpipe", at: 3.6, len: 2.6, fx: ["slow", "flash"], say: "Tre flip", sub: "off the creek halfpipe" },
-        { take: "vert-capitan", at: 3, len: 2.2, fx: ["punch"] },
-        { take: "vert-capitan", at: 4, len: 2.4, fx: ["slow", "shake"] },
-        { take: "vert-capitan", at: 5.4, len: 2.2, fx: ["slow", "flash"], say: "Jets on" },
-        { take: "vert-canyon", at: 0.6, len: 2.4, fx: ["punch", "flash"], say: "Grand Canyon" },
-        { take: "rail", at: 1, len: 2.6, fx: ["push"], say: "Grind it" },
-        { take: "vert-arches", at: 5, len: 2.4, fx: ["slow"], say: "Arches" },
-        { take: "halfpipe", at: 9, len: 2.6, fx: ["slow", "shake"], say: "360 hardflip" },
-        { take: "rail-teton", at: 1.5, len: 2.2, fx: ["push"], say: "Grand Teton" },
-        { take: "vert-capitan", at: 7.2, len: 2.2, fx: ["push"] },
+      // The quiet park first (a slow roll past the ramps, nobody doing anything), then it busts in shredding.
+      { name: "shred-the-parks", title: "Shred the parks", crf: 29, cuts: calmThenBurst([
+        { take: "cruise-yosemite", at: 1, len: 2.8, say: "Yosemite Falls", sub: "a quiet evening at the park" },
+        { take: "cruise-canyon", at: 1.5, len: 2.6, say: "Grand Canyon" },
+        { take: "cruise-arches", at: 1.5, len: 2.4, say: "Arches" },
+      ], [
+        { take: "halfpipe", at: 3.6, len: 2.4, fx: ["slow"], say: "Tre flip" },
+        { take: "vert-capitan", at: 3, len: 1.6, fx: ["punch", "shake"] },
+        { take: "vert-canyon", at: 0.6, len: 1.6, fx: ["punch", "flash"] },
+        { take: "rail", at: 1, len: 2, fx: ["push"], say: "Grind it" },
+        { take: "vert-capitan", at: 5.4, len: 2, fx: ["slow", "flash"], say: "Jets on" },
+        { take: "vert-arches", at: 5, len: 1.4, fx: ["punch", "glitch"] },
+        { take: "halfpipe", at: 9, len: 2.4, fx: ["slow", "shake"], say: "360 hardflip" },
+        { take: "rail-teton", at: 1.5, len: 1.6, fx: ["punch"] },
+        { take: "vert-capitan", at: 7.2, len: 1.8, fx: ["fast", "shake"] },
         { card: "Skate Tech Park", kicker: "Fingerboard National Parks", line: "Every national park in America, on a board with jets.", end: true, len: 2.4 },
-      ] },
-      { name: "send-it", title: "Send it", cuts: [
-        { take: "halfpipe", at: 2, len: 2.2, fx: ["push"] },
-        { take: "halfpipe", at: 3.6, len: 2.6, fx: ["slow", "flash"], say: "Tre flip" },
-        { take: "vert-capitan", at: 4, len: 2.4, fx: ["punch"] },
-        { take: "halfpipe", at: 9, len: 2.6, fx: ["slow", "shake"], say: "360 hardflip" },
-        { card: "Skate Tech Park", kicker: "Send it", end: true },
-      ] },
-      { name: "vert", title: "Vert", cuts: [
-        { take: "vert-capitan", at: 0.2, len: 2.4, fx: ["push"], say: "Find the tallest wall" },
-        { take: "vert-capitan", at: 3, len: 2.6, fx: ["slow", "flash"] },
-        { take: "vert-arches", at: 2.6, len: 2.4, fx: ["punch"], say: "Jets on" },
-        { take: "vert-canyon", at: 0.8, len: 2.4, fx: ["slow", "shake"] },
-        { card: "Skate Tech Park", kicker: "Vert", end: true },
-      ] },
-      { name: "rails", title: "Rails", cuts: [
-        { take: "rail", at: 0.5, len: 2.6, fx: ["push"], say: "Sky rails" },
-        { take: "rail", at: 3, len: 2.4, fx: ["slow"] },
-        { take: "rail-teton", at: 1, len: 2.6, fx: ["push"], say: "Kickflip in" },
-        { take: "rail-teton", at: 4, len: 2.2, fx: ["punch", "flash"] },
-        { card: "Skate Tech Park", kicker: "Grind every park", end: true },
-      ] },
+      ]) },
       { name: "parks", title: "The parks", cuts: [
         { take: "halfpipe", at: 0.3, len: 2.6, fx: ["push"], say: "Yosemite Falls" },
         { take: "vert-capitan", at: 0.3, len: 2.6, fx: ["push"], say: "El Capitan" },

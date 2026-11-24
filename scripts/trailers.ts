@@ -137,12 +137,16 @@ function look(fx: string[], len: number): string {
   // A push in: 0 to 18% over the cut; a punch is the same in a quarter second, then held.
   if (fx.includes("push")) f.push(`scale=w='trunc(${W}*(1+0.18*t/${len})/2)*2':h='trunc(${H}*(1+0.18*t/${len})/2)*2':eval=frame,crop=${W}:${H}`);
   if (fx.includes("punch")) f.push(`scale=w='trunc(${W}*(1+0.22*min(t/0.25,1))/2)*2':h='trunc(${H}*(1+0.22*min(t/0.25,1))/2)*2':eval=frame,crop=${W}:${H}`);
+  // Calm: the quiet before. A slow sideways glide across a frame 8% too big, the colour pulled down.
+  if (fx.includes("calm")) f.push(`scale=${Math.round(W * 1.08)}:${Math.round(H * 1.08)},crop=${W}:${H}:x='${(W * 0.08).toFixed(0)}*t/${len}':y=${(H * 0.04).toFixed(0)}`);
+  // Burst: busting in. A 30% snap-zoom in a tenth of a second that settles back to 12%, shaken hard.
+  if (fx.includes("burst")) f.push(`scale=w='trunc(${W}*(1.12+0.18*max(0,1-t/0.5))/2)*2':h='trunc(${H}*(1.12+0.18*max(0,1-t/0.5))/2)*2':eval=frame,crop=${W}:${H}:x='(in_w-${W})/2+${(W * 0.025).toFixed(0)}*sin(t*83)*exp(-t*3)':y='(in_h-${H})/2+${(H * 0.025).toFixed(0)}*cos(t*61)*exp(-t*3)'`, "rgbashift=rh=-9:bh=9:enable='lt(t,0.2)'");
   if (fx.includes("shake")) f.push(`scale=${Math.round(W * 1.08)}:${Math.round(H * 1.08)},crop=${W}:${H}:x='${(W * 0.04).toFixed(0)}+${(W * 0.03).toFixed(0)}*sin(t*71)*exp(-t*2.5)':y='${(H * 0.04).toFixed(0)}+${(H * 0.03).toFixed(0)}*cos(t*53)*exp(-t*2.5)'`);
   if (fx.includes("glitch")) f.push("rgbashift=rh=-7:bh=7:gv=3:enable='lt(t,0.35)'");
   if (fx.includes("mono")) f.push("hue=s=0.15");
-  f.push(fx.includes("mono") ? "eq=contrast=1.25" : "eq=contrast=1.08:saturation=1.22", "vignette=PI/5");
+  f.push(fx.includes("mono") ? "eq=contrast=1.25" : fx.includes("calm") ? "eq=contrast=0.96:saturation=0.7:brightness=0.02" : fx.includes("burst") ? "eq=contrast=1.18:saturation=1.45" : "eq=contrast=1.08:saturation=1.22", "vignette=PI/5");
   f.push(`scale=${OUT_W}:${OUT_H}`);
-  if (fx.includes("flash")) f.push("fade=in:st=0:d=0.18:color=white");
+  if (fx.includes("flash") || fx.includes("burst")) f.push("fade=in:st=0:d=0.18:color=white");
   if (fx.includes("dark")) f.push("fade=in:st=0:d=0.3:color=black");
   f.push(`fps=${FPS}`, "format=yuv420p");
   return f.join(",");

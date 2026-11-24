@@ -475,7 +475,7 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
 }
 
 /** What the clips show of what's built here, besides the apps: eqosys itself, Qollab's rooms, tscircuit boards as pedals. */
-const MADE = [["eqosys", "eqosys", "One account for every game"], ["qollab", "Qollab", "Rooms, parties and saves in one call"], ["tscircuit", "Pedals from tscircuit", "Boards you play, then order"]] as const;
+const MADE = [["eqosys", "eqosys", "One account for every game"], ["qollab", "Qollab", "Rooms, parties and saves in one call"]] as const;
 function MadeHere() {
   const made = MADE.flatMap(([id, name, line]) => { const c = clipsOf(id)[0]; return c ? [{ id, name, line, c }] : []; });
   return made.length ? (
