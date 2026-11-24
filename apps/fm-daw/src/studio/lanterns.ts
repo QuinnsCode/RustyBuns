@@ -32,32 +32,54 @@ export interface LanternPlace { i: number; x: number; y: number; z: number; yaw:
 export const HANDLE = 0.435, WEIGHT = 0.3;
 
 /**
- * A carried lantern on its rope handle: a weight WEIGHT metres under the hand. The hand moves (an arm's swing, a turn,
- * a hop, a stop) and the weight lags, swings past and settles under it again. Verlet: the weight keeps its last step's
- * motion (a little lost to the air), falls, and is put back at the handle's length from the hand.
+ * A carried lantern on its rope handle: a heavy weight WEIGHT metres under the hand. The hand moves (an arm's swing, a
+ * turn, a hop, a stop) and the weight lags, swings a little past and settles under it again. Verlet: the weight keeps
+ * most of its swing about the hand (the grip soaks up the rest, so a steady walk carries it straight), falls, is
+ * pulled back toward straight down by the carrier's wrist, and is put back at the handle's length from the hand, never
+ * more than MAX off straight down. Heavy: it sways, it doesn't flail.
  */
 export class Swing {
   readonly bob = new THREE.Vector3();
   private prev = new THREE.Vector3();
+  private was = new THREE.Vector3();
+  private at = new THREE.Vector3();
   private fresh = true;
-  /** How much of its motion the weight keeps each 60th of a second: lower settles sooner. */
-  static KEEP = 0.97;
+  /** How much of its swing about the hand the weight keeps each 60th of a second: lower settles sooner. */
+  static KEEP = 0.9;
+  /** How hard the carrier's wrist pulls it back under the hand (per second squared per metre off). */
+  static WRIST = 60;
+  /** The most it ever hangs off straight down, radians. */
+  static MAX = 0.4;
   /** Hang it straight under `hand`, still. */
-  reset(hand: THREE.Vector3) { this.bob.set(hand.x, hand.y - WEIGHT, hand.z); this.prev.copy(this.bob); this.fresh = false; }
+  reset(hand: THREE.Vector3) { this.bob.set(hand.x, hand.y - WEIGHT, hand.z); this.prev.copy(this.bob); this.was.copy(hand); this.fresh = false; }
   /** One step of `dt` seconds with the hand at `hand`: the weight's new place. */
   step(hand: THREE.Vector3, dt: number): THREE.Vector3 {
     // first time, or the carrier jumped across the room (a seat, a new body): hang it still
     if (this.fresh || this.bob.distanceToSquared(hand) > 1) { this.reset(hand); return this.bob; }
     if (dt <= 0) return this.bob;
     // a long frame is a few short ones, so a slow machine swings the same
-    const n = Math.min(8, Math.ceil(dt * 120)), h = dt / n, keep = Math.pow(Swing.KEEP, h * 60);
+    const n = Math.min(8, Math.ceil(dt * 120)), h = dt / n, keep = Math.pow(Swing.KEEP, h * 60), pull = Swing.WRIST * h * h;
+    const rim = WEIGHT * Math.sin(Swing.MAX);
+    const hx = (hand.x - this.was.x) / n, hy = (hand.y - this.was.y) / n, hz = (hand.z - this.was.z) / n;
     for (let k = 0; k < n; k++) {
-      const vx = (this.bob.x - this.prev.x) * keep, vy = (this.bob.y - this.prev.y) * keep, vz = (this.bob.z - this.prev.z) * keep;
+      // the hand moves on a share of the frame; the weight keeps the hand's step and most of its own swing about it
+      const at = this.at.set(this.was.x + hx * (k + 1), this.was.y + hy * (k + 1), this.was.z + hz * (k + 1));
+      const vx = hx + (this.bob.x - this.prev.x - hx) * keep, vy = hy + (this.bob.y - this.prev.y - hy) * keep, vz = hz + (this.bob.z - this.prev.z - hz) * keep;
       this.prev.copy(this.bob);
-      this.bob.set(this.bob.x + vx, this.bob.y + vy - 9.8 * h * h, this.bob.z + vz);
-      const dx = this.bob.x - hand.x, dy = this.bob.y - hand.y, dz = this.bob.z - hand.z, d = Math.hypot(dx, dy, dz) || 1;
-      this.bob.set(hand.x + (dx / d) * WEIGHT, hand.y + (dy / d) * WEIGHT, hand.z + (dz / d) * WEIGHT);
+      const ox = this.bob.x - at.x, oz = this.bob.z - at.z;
+      this.bob.set(this.bob.x + vx - ox * pull, this.bob.y + vy - 9.8 * h * h, this.bob.z + vz - oz * pull);
+      let dx = this.bob.x - at.x, dy = this.bob.y - at.y, dz = this.bob.z - at.z;
+      // past the cap (or above the hand): held on the cone's rim, and the swing out that way is spent
+      const out = Math.hypot(dx, dz);
+      if (dy > 0 || out > rim * Math.hypot(dx, dy, dz) / WEIGHT) {
+        const r = out || 1;
+        dx = (dx / r) * rim; dz = (dz / r) * rim; dy = -WEIGHT * Math.cos(Swing.MAX);
+        this.prev.set(at.x - hx + dx, at.y - hy + dy, at.z - hz + dz);
+      }
+      const d = Math.hypot(dx, dy, dz) || 1;
+      this.bob.set(at.x + (dx / d) * WEIGHT, at.y + (dy / d) * WEIGHT, at.z + (dz / d) * WEIGHT);
     }
+    this.was.copy(hand);
     return this.bob;
   }
   /** How far it hangs off straight down, radians. */
