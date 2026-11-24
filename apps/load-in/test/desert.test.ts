@@ -9,8 +9,8 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { SAND, WALK, holdOut, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, bringRig, desertState, heat, score, wrap } from "../src/venues/desert.ts";
-import { SYSTEM_IDS, SYSTEMS, gear as catalog, stackWidth } from "@rustybuns/gear";
+import { CAMP_LIMIT, DANCE_FLOOR, DESERT, DESERT_RIGS, GEN_QUIET, bringRig, desertState, heat, score, wrap } from "../src/venues/desert.ts";
+import { SYSTEMS, gear as catalog, stackWidth } from "@rustybuns/gear";
 
 setDefaultTimeout(60_000);
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
@@ -193,7 +193,7 @@ test("the dance floor's crowd spot covers the floor the wall is scored on, and h
 
 test("another rig for the night: each of the open-air rigs comes off the truck as four stacks on sand dollies, side by side", () => {
   try {
-    for (const id of SYSTEM_IDS) {
+    for (const id of DESERT_RIGS) {
       expect(bringRig(id)).toBe(id);
       const w = newWorld(DESERT), rig = SYSTEMS[id];
       for (let n = 1; n <= 4; n++) {
@@ -205,5 +205,8 @@ test("another rig for the night: each of the open-air rigs comes off the truck a
       const xs = [1, 2, 3, 4].map((n) => at(w, `bin-${n}`).x);
       for (let k = 1; k < 4; k++) expect(xs[k - 1]! - xs[k]!).toBeGreaterThanOrEqual(stackWidth(rig));
     }
+    // a powered rig wants more cables than the truck's case holds: the horn stack comes instead
+    expect(DESERT_RIGS).not.toContain("line-array");
+    expect(bringRig("line-array")).toBe("dance-stack");
   } finally { bringRig("dance-stack"); }
 });

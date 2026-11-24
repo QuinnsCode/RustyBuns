@@ -10,10 +10,12 @@
 //   sculpted     moulded three-way shells on hybrid-horn triple 21s: deep, smooth sub, a sweet, open top, 60 x 50.
 //   tri-amp      the old touring stack: high-Q horn tops (two horn-loaded 10"s and a waveguide) over horn-loaded 2 x 15s:
 //                mid-forward and narrow (35 x 25), the top end rolled off a little.
+//   line-array   today's festival rig on the ground: three powered line array boxes stacked on two 18" subs: very wide
+//                (110 degrees) and even across the floor, clean, a little lift up top.
 import { gear, type SpeakerSpec } from "./catalog.ts";
 import type { EqBand } from "./feedback.ts";
 
-export const SYSTEM_IDS = ["dance-stack", "synergy", "sculpted", "tri-amp"] as const;
+export const SYSTEM_IDS = ["dance-stack", "synergy", "sculpted", "tri-amp", "line-array"] as const;
 export type SystemId = (typeof SYSTEM_IDS)[number];
 
 
@@ -56,7 +58,16 @@ export const SYSTEMS: Record<SystemId, System> = {
     stack: ["sand-dolly", "tri-amp-bass", "tri-amp-top"], top: "tri-amp-top", sub: "tri-amp-bass",
     voicing: [{ hz: 1600, db: 3, q: 1.2 }, { hz: 12000, db: -2, q: 0.8 }],
   },
+  "line-array": {
+    id: "line-array", name: "Line array",
+    about: "Today's festival rig, ground-stacked: three powered line array boxes on two 18-inch subs. Very wide and even across the floor, clean, with a little lift up top.",
+    stack: ["sub-18", "sub-18", "line-array-10", "line-array-10", "line-array-10"], top: "line-array-10", sub: "sub-18",
+    voicing: [{ hz: 70, db: 1.5, q: 0.9 }, { hz: 9000, db: 1, q: 0.7 }],
+  },
 };
+
+/** A rig whose boxes all take a speaker cable from an amp (none needs its own mains and signal line). */
+export const passive = (s: System): boolean => s.stack.every((b) => b === "sand-dolly" || (gear(b).jacks["speaker-in"] ?? 0) > 0);
 
 /** A rig by id, or the dance stack for anything else (a stale link, a typo). */
 export function system(id: string | null | undefined): System {

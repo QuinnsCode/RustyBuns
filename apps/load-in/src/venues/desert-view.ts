@@ -9,8 +9,8 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, tonightRig, type Score, type Show } from "./desert.ts";
-import { SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, tonightRig, DESERT_RIGS, type Score, type Show } from "./desert.ts";
+import { SYSTEMS } from "@rustybuns/gear";
 import { playing } from "./park.ts";
 import { cellsIn, mean } from "./dive-bar.ts";
 import { comingTonight, crowdOf, letIn, move, regions } from "../crowd/crowd.ts";
@@ -224,7 +224,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
         // tonight's rig, and the others to bring instead (the level starts over with them: `?rig=`)
-        + `<span class="rigs">Rig: ${SYSTEM_IDS.map((id) => id === tonightRig() ? `<b>${SYSTEMS[id].name}</b>` : `<a href="?level=desert&rig=${id}">${SYSTEMS[id].name}</a>`).join(" · ")}</span>`
+        + `<span class="rigs">Rig: ${DESERT_RIGS.map((id) => id === tonightRig() ? `<b>${SYSTEMS[id].name}</b>` : `<a href="?level=desert&rig=${id}">${SYSTEMS[id].name}</a>`).join(" · ")}</span>`
         + `<small>F push the cart or a stack's dolly, G tape the joints near you, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
     },
     doors() {

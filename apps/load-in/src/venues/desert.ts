@@ -8,7 +8,7 @@
 // fuel in the generator and the jerry cans set down by it (or poured in) have to last until the sun comes up, and the score is how much of
 // the night the wall played. Plain data, no DOM; the page (desert-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
-import { type Area, type CrowdField, type Grid, type System, type SystemId, SYSTEMS, coverage, coverageThrough, gear as catalog, runHours, stackWidth, system } from "@rustybuns/gear";
+import { type Area, type CrowdField, type Grid, type System, type SystemId, SYSTEM_IDS, SYSTEMS, coverage, passive, coverageThrough, gear as catalog, runHours, stackWidth, system } from "@rustybuns/gear";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, jacks } from "../cables/cables.ts";
@@ -76,8 +76,11 @@ export const DESERT: Level = {
 let tonight: SystemId = "dance-stack";
 /** The rig on the truck tonight. */
 export const tonightRig = (): SystemId => tonight;
+/** The rigs the desert's truck can bring: the passive ones, fed from the amp racks it carries (a powered rig wants a
+ *  mains feed and a signal line to every box, more than the case holds). */
+export const DESERT_RIGS = SYSTEM_IDS.filter((id) => passive(SYSTEMS[id]));
 export function bringRig(id: string | null): string {
-  const rig = system(id);
+  const rig = system(DESERT_RIGS.find((r) => r === id) ?? null);
   tonight = rig.id;
   const gap = Math.max(STACK_X[0]! - STACK_X[1]!, stackWidth(rig) + 0.1);
   DESERT.items = [...DESERT.items.filter((i) => !/^(dolly|bin|midbass|top)-\d$/.test(i.key)), ...STACK_X.flatMap((_, n) => stackAt(n + 1, STACK_X[0]! - n * gap, STACK_Z, rig))];
