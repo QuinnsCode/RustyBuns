@@ -620,7 +620,7 @@ test("jam room: whoever sits at the keys has their palms on the keys, short arms
 
 test("jam room: people are the realistic human body, a head about an eighth of their height on a real neck, sat on the stool and standing to their full height", () => {
   for (const seed of [1, 2, 3]) {
-    const fig = figure(randomAvatar(mulberry32(seed)), "Pat"), head = new THREE.Vector3();
+    const fig = figure(randomAvatar(mulberry32(seed)), null), head = new THREE.Vector3();
     expect(fig.group.getObjectsByProperty("type", "SkinnedMesh").length).toBe(1);
     const top = () => { fig.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(fig.group.getObjectsByProperty("type", "SkinnedMesh")[0]!, true); };
     fig.pose({ speed: 0, seated: false, play: null, note: false, t: 1 });
