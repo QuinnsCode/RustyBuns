@@ -12,6 +12,9 @@ import { footprint } from "./gear-wall.ts";
 import { metreUV, surface, wallSurface } from "./look.ts";
 import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef } from "./room.ts";
 import { prop } from "./props.ts";
+import { paStack } from "./open-air.ts";
+import { rigStacks, roomRig } from "./pa-room.ts";
+import { cotton, drape, rugMesh, tapestry } from "./tapestry.ts";
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
@@ -26,7 +29,7 @@ const CUT = 0.18, ORANGE = new THREE.Color("#ff6b4a");
 const wallLook = (m: Material) => surface(wallSurface(m), m === "drywall" || m === "plaster" ? "#d9d3c6" : undefined);
 
 /** A seat's instrument or furniture, its front toward +z, centred on its thing's box (as the jam room draws it). */
-export function spotModel(s: Spot, bass?: StudioDef["bass"], keys?: StudioDef["keys"]): THREE.Group {
+export function spotModel(s: Spot, bass?: StudioDef["bass"], keys?: StudioDef["keys"], cloth?: number): THREE.Group {
   const g = new THREE.Group(), t = s.thing;
   const fabric = surface("fabric", t.color), steel = surface("steel", "#1b1c1f"), ply = surface("ply", "#2a2420");
   const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
@@ -38,7 +41,9 @@ export function spotModel(s: Spot, bass?: StudioDef["bass"], keys?: StudioDef["k
   else if (s.kind === "booth") g.add(gear("mic-stand"));
   else if (s.kind === "dj") {
     box(t.w, 0.04, t.d, ply, 0, t.h - 0.02, 0);
-    box(t.w - 0.04, t.h - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (t.h - 0.04) / 2, -t.d / 2 + 0.02);
+    // out of doors (`cloth`, the room's seed) the table wears its block-printed cloths to the sand, as the jam room has it
+    if (cloth !== undefined) g.add(new THREE.Mesh(drape(t.w, t.d, t.h, cloth), cotton(tapestry({ end: t.d, front: t.w }, t.h - 0.008, cloth), cloth)));
+    else box(t.w - 0.04, t.h - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (t.h - 0.04) / 2, -t.d / 2 + 0.02);
     const front = t.d / 2 - 0.08, mixer = gear("mixer-club-4");
     mixer.position.set(0, t.h, front - 0.18); g.add(mixer);
     for (const k of [-1, 1]) { const deck = gear("deck-cd"); deck.position.set(k * 0.35, t.h, front - 0.2); g.add(deck); }
@@ -121,7 +126,13 @@ export class BuildView {
     // the outside walls: a wall between you and the room is cut down to a skirting (in cutaway)
     const cam = this.camera.position, T = 0.14;
     const sides: [Side, number, number, number, number][] = [["front", 0, d / 2 + T / 2, w + 2 * T, T], ["back", 0, -d / 2 - T / 2, w + 2 * T, T], ["left", -w / 2 - T / 2, 0, T, d], ["right", w / 2 + T / 2, 0, T, d]];
-    for (const [side, x, z, sw, sd] of sides) {
+    // out of doors there are no walls: the rig's stacks and the rugs stand on the sand instead
+    if (room.outdoor) {
+      const rig = roomRig(room);
+      for (const st of rigStacks(room)) this.root.add(paStack(st.at, st.yaw, undefined, rig.stack));
+      (room.outdoor.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, room.outdoor!.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; this.root.add(m); });
+    }
+    for (const [side, x, z, sw, sd] of room.outdoor ? [] : sides) {
       const toward = side === "front" ? cam.z > d / 2 : side === "back" ? cam.z < -d / 2 : side === "left" ? cam.x < -w / 2 : cam.x > w / 2;
       const tall = this.walls === "up" || (this.walls === "cutaway" && !toward) ? h : CUT;
       const mat = wallLook(room.materials?.walls[side] ?? "plaster");
@@ -166,7 +177,7 @@ export class BuildView {
     (room.props ?? []).forEach((p, i) => { const holder = new THREE.Group(); holder.add(prop(p, propMat)); add(holder, `prop:${i}`, { prop: i }); });
     // the seats: each instrument on its box, a disc where you sit, a ring round the picked one
     for (const s of room.spots) {
-      const g = new THREE.Group(), b = thingBox(s), model = spotModel(s, room.bass, room.keys);
+      const g = new THREE.Group(), b = thingBox(s), model = spotModel(s, room.bass, room.keys, room.outdoor?.seed);
       model.position.set(b.cx, 0, b.cz); model.rotation.y = b.turn;
       g.add(model);
       const seat = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: s.id === this.picked ? ORANGE : new THREE.Color("#c9ccd2"), transparent: true, opacity: 0.7 }));
