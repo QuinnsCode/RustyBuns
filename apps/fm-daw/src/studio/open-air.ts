@@ -52,11 +52,12 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
     const g = gear(id as GearId, { look });
     new THREE.Box3().setFromObject(g).getSize(size);
     if (id.startsWith("line-array")) {
-      // a line array's boxes hang in a J: each hinged to the one above at the front, the gap opening at the back,
-      // the lowest aimed down most (at the front of the floor) and the top one near level (at the back)
-      const aim = LINE_SPLAY[Math.min(k++, LINE_SPLAY.length - 1)]!, hinge = new THREE.Group();
-      hinge.position.set(0, y, lean + size.z / 2); hinge.rotation.x = aim;
-      g.position.z = -size.z / 2;
+      // a ground-stacked line array: each box rests on the one below at the back, the gap opening at the front, the
+      // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
+      const first = k === 0, aim = LINE_SPLAY[Math.min(k++, LINE_SPLAY.length - 1)]!, hinge = new THREE.Group();
+      if (first) y += size.z * Math.sin(aim);
+      hinge.position.set(0, y, lean - size.z / 2); hinge.rotation.x = aim;
+      g.position.z = size.z / 2;
       hinge.add(g); st.add(hinge);
       y += size.y * Math.cos(aim); lean += size.y * Math.sin(aim);
       continue;

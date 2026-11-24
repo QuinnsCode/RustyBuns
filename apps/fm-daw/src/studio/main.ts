@@ -818,9 +818,12 @@ const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_
 function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
 /** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
 function keepBuilt(p: Project) {
-  if (!here || p.studio !== "yours" || !p.built) return;
+  if (!here) return;
+  const key = SESH_BUILT(here.room);
+  // the sesh has no build of its own now: forget the old one, so "yours" is this browser's room again
+  if (p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
   const json = JSON.stringify(p.built);
-  try { if (localStorage.getItem(SESH_BUILT(here.room)) === json) return; localStorage.setItem(SESH_BUILT(here.room), json); } catch { return; }
+  try { if (localStorage.getItem(key) !== json) localStorage.setItem(key, json); } catch { /* still walk into it */ }
   // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
   if (pick === "yours" && JSON.stringify(def) !== json && !movingTo) { movingTo = location.href; setTimeout(() => location.reload(), 300); }
 }
