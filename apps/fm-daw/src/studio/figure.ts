@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
-import { fromAvatar, human } from "@rustybuns/models/human";
+import { fromAvatar, human, playArm, seatOf, sit } from "@rustybuns/models/human";
 import type { Play } from "@rustybuns/models/character";
 import type { Reach, SpotKind } from "./room.ts";
 import { hands as wearHands, type Aim, type Hands } from "./fingers.ts";
@@ -75,18 +75,7 @@ interface Arm { s: number; shoulder: THREE.Object3D; elbow: THREE.Object3D; wris
 
 /** The stand-in arms' pose while seated or playing (the old character's): rotation x swings an arm forward, z out to its side. */
 function armPose(arm: Arm, t: number, play: Play | null) {
-  const s = arm.s;
-  let sx: number, sz: number, ex: number, wx = 0;
-  if (play === "keys") {
-    const tap = Math.max(0, Math.sin(t * 11 + (s > 0 ? 0 : 1.9)));
-    sx = 0.75; sz = s * 0.12; ex = 1.75 - tap * 0.12; wx = -0.75 + tap * 0.25;
-  } else if (play === "sticks") {
-    const hit = Math.pow(Math.max(0, Math.sin(t * 9 + (s > 0 ? 0 : Math.PI))), 3);
-    sx = 0.9 + (1 - hit) * 0.45; sz = s * 0.3; ex = 0.9 - hit * 0.6; wx = -0.4 + hit * 0.5;
-  } else if (play === "strings") {
-    if (s < 0) { sx = 0.75; sz = -0.75; ex = 0.55 + Math.sin(t * 2) * 0.05; wx = -0.3; }
-    else { const strum = Math.sin(t * 12); sx = 0.55; sz = -0.45; ex = 1.05 + strum * 0.18; wx = strum * 0.25; }
-  } else { sx = 0.35; sz = s * 0.12; ex = 0.9; }
+  const { sx, sz, ex, wx } = playArm(arm.s, t, play);
   arm.shoulder.rotation.set(sx, 0, sz);
   arm.elbow.rotation.set(ex, 0, 0);
   arm.wrist.rotation.set(wx, 0, 0);
@@ -105,9 +94,8 @@ export function figure(a: Avatar, name: string | null): Figure {
   const tag = name === null ? null : nameTag(name || "Someone");
   if (tag) group.add(tag);
 
-  // seated: shins straight down, thighs level, the hip joints a shin and an ankle (9 cm a 1.75 m body) over the floor,
-  // the thighs (about 8 cm under the joint) on the seat
-  const k = body.height / 1.75, shin = bn.footR.position.length(), seatHip = shin + 0.09 * k, sitOn = seatHip - 0.08 * k;
+  // seated: the thighs on the seat
+  const sitOn = seatOf(body).seat;
 
   // the stand-in arms, in the old character's frame, hung off the chest
   const frame = new THREE.Object3D();
@@ -139,18 +127,7 @@ export function figure(a: Avatar, name: string | null): Figure {
     const dt = last < 0 ? 0 : clamp(o.t - last, 0, 0.25);
     last = o.t;
     body.pose(o.seated ? { speed: 0 } : { speed: o.speed, heading: o.heading ?? 0, crouch: o.crouch ?? 0 }, dt);
-    if (o.seated) {
-      bn.hips.position.set(0, seatHip, 0);
-      bn.hips.quaternion.identity();
-      for (const [n, s] of [["R", -1], ["L", 1]] as const) {
-        bn[`thigh${n}`].quaternion.setFromEuler(e.set(-(Math.PI / 2 - 0.05), 0, s * 0.12));
-        bn[`shin${n}`].quaternion.setFromEuler(e.set(Math.PI / 2 - 0.05, 0, -s * 0.12));
-        bn[`foot${n}`].quaternion.setFromEuler(e.set(0, s * 0.15, 0));
-      }
-      bn.spine.quaternion.setFromEuler(e.set(o.play ? 0.08 : 0.02, 0, 0));
-      bn.chest.quaternion.setFromEuler(e.set(o.play ? 0.06 : 0.02, 0, 0));
-      bn.neck.quaternion.identity(); bn.head.quaternion.identity();
-    }
+    if (o.seated) sit(body, !!o.play);
     // look: turn the neck toward the point, as far as a neck goes, easing there rather than snapping
     const walk = o.seated ? 0 : Math.min(1, o.speed / 1.4);
     let wantYaw = Math.sin((o.t + seed % 10) * 0.4) * 0.12 * (1 - walk), wantPitch = o.play ? -0.12 : 0;

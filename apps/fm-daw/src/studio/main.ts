@@ -728,7 +728,7 @@ function muteForAll(peer: number, on: boolean) { const who = peerIds[peer]; if (
 /** The people list on the room's page: each one with your mute, and the leader's mute for everyone. */
 function people() {
   const list = $("people"), lead = iLead();
-  $("mute-room").textContent = mutes.room ? "Unmute the room" : "Mute the room";
+  $("mute-room").textContent = mutes.room ? "Unmute room" : "Mute room";
   list.replaceChildren();
   for (const [peer, o] of jam.others) {
     const li = document.createElement("li"), n = document.createElement("span");
@@ -754,12 +754,12 @@ function people() {
   }
   $("people-none").hidden = jam.others.size > 0;
   const me = marksOf(rights.me ?? undefined);
-  $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead this sesh: answer a raised hand here." : me.listen ? (me.hand === "play" ? "Listen only. Your hand is up: the leader answers Yes or No." : "Listen only: the leader hasn't let you play yet.") : "You may play.";
+  $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead" : me.listen ? (me.hand === "play" ? "Hand up" : "Listening") : "You play";
   $("raise").hidden = !lastGrants || !me.listen || me.hand === "play";
 }
 $("mute-room").addEventListener("click", () => muteAll());
 $("raise").addEventListener("click", () => raise());
-$("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in your guitar" : `Unplug your ${myInput}`; }));
+$("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in" : "Unplug"; }));
 function onGone(from: number) {
   mutes.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
@@ -819,7 +819,7 @@ function moveStudio(id: string): Answer {
 function roomStudios() {
   if (!here) return;
   const lead = iLead();
-  $("studios-note").textContent = lead ? "Pick one and everyone in the room walks into it." : `You're in ${def.name}. The leader picks the studio.`;
+  $("studios-note").hidden = lead;
   studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
 }
 
@@ -1131,7 +1131,7 @@ function door() {
   invited.textContent = here ? `You're invited to ${here.name || here.room}.` : "";
   $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
   if (here) $("room-title").textContent = here.name || here.room;
-  $("room-studio-name").textContent = `${def.name}.`;
+  $("room-studio-name").textContent = def.name;
   $("room-about").textContent = def.about ?? "";
   roomStudios();
   $("me-name").textContent = name;
@@ -1171,7 +1171,7 @@ $("invite").addEventListener("click", () => {
   if (!here) return;
   const b = $("invite");
   void navigator.clipboard?.writeText(inviteLink(location.origin, here.room, here.studio, here.name)).then(
-    () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy invite link"; }, 1600); },
+    () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Invite"; }, 1600); },
     () => { flash = { text: "Copy didn't work: the link is in the address bar", until: performance.now() + 2500 }; });
 });
 if (here) saveRecent(remember(loadRecent(), { room: here.room, name: here.name, studio: here.studio, mine: false, at: Date.now() }));

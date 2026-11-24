@@ -111,12 +111,11 @@ export function studioCards(host: HTMLElement, list: Studio[], current: string, 
       if (s.id === current) b.dataset.current = "";
     }
     b.disabled = !pick;
-    const name = document.createElement("b"), about = document.createElement("small");
+    const name = document.createElement("b");
     name.textContent = s.name;
-    about.textContent = s.about;
     b.title = s.about;
     const pic = shots.get(s.id);
-    b.append(copy === 0 || !pic ? (pic ?? shot(s.def)) : pic.cloneNode(true), name, about);
+    b.append(copy === 0 || !pic ? (pic ?? shot(s.def)) : pic.cloneNode(true), name);
     if (pick) b.addEventListener("click", () => { if (s.id !== current) pick(s.id); });
     return b;
   });
