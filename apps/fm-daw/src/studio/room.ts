@@ -2,6 +2,8 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
+import type { SystemId } from "@rustybuns/gear";
+import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
 export type SpotKind = "keys" | "drums" | "bass" | "desk" | "booth" | "couch" | "dj";
@@ -20,7 +22,7 @@ export interface Spot {
   track?: string;
   /** A made instrument's seat (src/studio/instrument.ts) names its track by number instead. */
   ix?: number;
-  /** A made instrument grows its model from this seed and voice (`synth` in @rustybuns/models) instead of a box. */
+  /** A made instrument grows its model from this seed and voice (a classic family from `polysynth` in @rustybuns/models, gear-models.ts madeKind) instead of a box. */
   made?: { seed: number; voice: "fm" | "analog" };
 }
 
@@ -62,6 +64,11 @@ export interface StudioDef {
   gear?: GearPlace;
   /** Out under the sky instead of in a room (open-air.ts): no walls or ceiling drawn, the ground running to the horizon. */
   outdoor?: Outdoor;
+  /** What stands at the bass seat: the big analog mono (the default) or the little silver bass-line `box` (gear-models.ts). */
+  bass?: "mono" | "box";
+  /** What stands at the keys seat (a seat named for its section, piano, strings or brass, takes that section's instead):
+   *  one of polysynth's classic families (gear-models.ts keysKind). The seat's id picks one when left out. */
+  keys?: PolyKind;
 }
 
 /**
@@ -70,16 +77,28 @@ export interface StudioDef {
  * has one, the tall lantern poles, the generator off to one side, and a seed for the plants and rocks out in the dark.
  * The size is the ground you can walk.
  */
+export type { SystemId };
 export interface Outdoor {
   stacks: { at: [number, number]; yaw: number }[];
+  /** Which rig the stacks are (@rustybuns/gear systems.ts): the horn stack when left out. `?rig=` on the page tries another. */
+  rig?: SystemId;
   /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
   mono?: boolean;
   truss?: { at: [number, number]; yaw: number; w: number; h: number };
   generator?: { at: [number, number]; yaw: number };
+  /** A fire pit in a ring of stones (open-air.ts `firePit`), lit, and heard crackling as you come near (night-air.ts). */
+  fire?: { at: [number, number] };
+  /** Camper vans parked round the edge (@rustybuns/models/van), nose the way `yaw` faces; `awning` rolls one out. */
+  vans?: { at: [number, number]; yaw: number; awning?: boolean }[];
+  /** Festoon lights: runs of warm bulbs on a sagging cable, each run a list of points (x, y, z) it's tied to; `posts`
+   *  stands a wooden pole under every point but the ones tied to something already there (a van, a lantern pole). */
+  festoons?: { points: [number, number, number][]; posts?: boolean[] }[];
   /** The tall carved wooden lantern poles: where each stands, and the way its crook (and the lantern on it) reaches. */
   lanternPoles?: { at: [number, number]; yaw: number }[];
   /** Lanterns anyone can pick up and carry (src/studio/lanterns.ts): where each one starts (x, y, z: y the top it stands on). */
   lanterns?: [number, number, number][];
+  /** Knotted wool rugs laid on the sand (tapestry.ts `rugMesh`): middle, turn, long side and short side, metres. */
+  rugs?: { at: [number, number]; yaw: number; w: number; d: number }[];
   /** Everyone carries a hand lantern of their own while they're on their feet, and puts it down to sit at a seat. */
   carry?: boolean;
   seed: number;
@@ -119,12 +138,45 @@ export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw:
   return runs.map(([a, b]) => ({ cx: x0 + ux * (a + b) / 2, cz: z0 + uz * (a + b) / 2, hw: (b - a) / 2, hd: thick / 2, turn }));
 }
 
+/** How far a doorway's door stands open (radians from shut), and the widest opening one door fills (two past it). */
+export const DOOR_OPEN = 1.25, DOOR_SINGLE = 1.2;
+/** The doorways that get a door: 0.5 to 2.4 m wide. */
+export const hasDoor = (gw: number) => gw >= 0.5 && gw <= 2.4;
+/** Every open door's leaf as a box on the floor (doors.ts draws them), so nobody walks through one. */
+export function doorLeaves(def: StudioDef): { cx: number; cz: number; hw: number; hd: number; turn: number }[] {
+  const out: { cx: number; cz: number; hw: number; hd: number; turn: number }[] = [];
+  for (const w of def.walls) {
+    const [x0, z0] = w.from, [x1, z1] = w.to, len = Math.hypot(x1 - x0, z1 - z0);
+    if (len < 0.01) continue;
+    const ux = (x1 - x0) / len, uz = (z1 - z0) / len, turn = -Math.atan2(uz, ux);
+    // a point in the wall's frame (x along it from `ga`, z off its face) out into the room
+    const at = (ga: number, x: number, z: number) => [x0 + ux * ga + Math.cos(turn) * x + Math.sin(turn) * z, z0 + uz * ga - Math.sin(turn) * x + Math.cos(turn) * z] as const;
+    for (const [ga, gb] of w.gaps ?? []) {
+      const gw = gb - ga;
+      if (!hasDoor(gw)) continue;
+      const leaves = gw > DOOR_SINGLE ? 2 : 1, lw = (gw - 0.1) / leaves;
+      for (let k = 0; k < leaves; k++) {
+        const sx = k === 1 ? -1 : 1, hx = k === 1 ? gw - 0.05 : 0.05, a = sx * DOOR_OPEN;
+        // the leaf's middle: from its hinge, half its width along the swung leaf
+        const mx = (sx * lw) / 2, mz = 0.025, lx = hx + Math.cos(a) * mx + Math.sin(a) * mz, lz = 0.06 - Math.sin(a) * mx + Math.cos(a) * mz;
+        const [cx, cz] = at(ga, lx, lz);
+        out.push({ cx, cz, hw: lw / 2, hd: 0.03, turn: turn + a });
+      }
+    }
+  }
+  return out;
+}
+
 /** Set dressing: what fills a room besides its seats. Drawn by src/studio/props.ts; it doesn't change how the room sounds. */
 export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "monitor", "stairs", "balcony", "window", "piano", "micStand", "panel", "frames", "sampler", "table",
   // an office's clutter: a desk with its screen and papers, a cubicle's edge, books stacked on the floor, cables, what's left on a desk, a filing cabinet
   "officeDesk", "cubicle", "books", "cables", "clutter", "cabinet",
   // a TV sound stage: a riser you stand on, the lighting grid, bleachers, a camera on its pedestal, a floor wedge, a cyc, a painted flat, the host's desk
-  "riser", "grid", "bleachers", "camera", "wedge", "cyc", "flat", "hostDesk"] as const;
+  "riser", "grid", "bleachers", "camera", "wedge", "cyc", "flat", "hostDesk",
+  // the classics on a desk: a 16-step drum machine and a modular synth's case of patched modules
+  "drumMachine", "modular",
+  // out of doors: a camper van parked up, a fire pit
+  "van", "firePit"] as const;
 export type PropKind = (typeof PROP_KINDS)[number];
 export interface Prop {
   kind: PropKind;

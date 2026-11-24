@@ -32,9 +32,17 @@ const VOWEL_F2 = [870, 840, 1090, 1840, 2290];
 // signal added on the left and subtracted on the right. Per mode: LFO Hz and
 // the delay's sweep in ms (the figures published for the 80s polysynth circuit).
 const CH_LEN = 4096; // a power of two past 5.35 ms at 384 kHz
-const CH_RATE = [0, 0.513, 0.863, 9.75, 0.2, 0.35];
-const CH_MIN = [0, 1.66, 1.66, 3.22, 0.3];
-const CH_MAX = [0, 5.35, 5.35, 3.56, 4];
+const CH_RATE = [0, 0.513, 0.863, 9.75, 0.2, 0.35, 0.83, 4.6];
+const CH_MIN = [0, 1.66, 1.66, 3.22, 0.3, 0, 0.2];
+const CH_MAX = [0, 5.35, 5.35, 3.56, 4, 0, 1.1];
+// Mode 6, the rotary speaker an organ plays through, at its slow (chorale) speed: a horn 15 cm from its shaft turning
+// 0.83 times a second, heard by two mics either side, so each hears it come toward and go away a quarter turn apart.
+// Coming toward a mic it's higher (the delay shortens: 0.2..1.1 ms, about its radius over the speed of sound) and
+// louder; going away, lower and quieter. The cabinet's lows (the drum) are left to the dry path.
+const ROT_AM = 0.22, ROT_WET = 0.85, ROT_DRY = 0.6;
+// Mode 7, the suitcase piano's stereo tremolo: the sound swung from one side to the other 4.6 times a second, each side
+// dipping to a third at the bottom of its swing.
+const PAN_DEPTH = 0.66;
 const CH_WET = 0.8;
 const CH_TONE = 7000; // Hz: the wet path's one-pole low-pass, the bucket brigade's darkness
 // Mode 4, the flanger: the same delay line swept shorter (0.3..4 ms) and fed
@@ -620,7 +628,24 @@ export class TsEngine implements FmEngine {
             const cp = this.chPh[t];
             const tri = 1 - 4 * Math.abs(cp - 0.5);
             let q = cp + CH_RATE[cm] / sr; q -= Math.floor(q); this.chPh[t] = q;
-            if (cm === 5) {
+            if (cm === 7) {
+              const s = Math.sin(2 * Math.PI * cp);
+              ml = mono * (1 - PAN_DEPTH * (0.5 + 0.5 * s)) * this.panL[t];
+              mr = mono * (1 - PAN_DEPTH * (0.5 - 0.5 * s)) * this.panR[t];
+            } else if (cm === 6) {
+              // the rotary speaker: one tap per mic, a quarter turn apart, each swinging in pitch and loudness
+              const lo = CH_MIN[6] * sr * 0.001, sw = (CH_MAX[6] - CH_MIN[6]) * sr * 0.001;
+              const tap = (ph: number) => {
+                const s = Math.sin(2 * Math.PI * ph), rp = this.chW - (lo + sw * (0.5 + 0.5 * s)) + CH_LEN;
+                const ri = Math.floor(rp), fr = rp - ri;
+                const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
+                // nearest the mic (shortest delay, s = -1) it's loudest
+                return (this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr) * (1 - ROT_AM * (0.5 + 0.5 * s));
+              };
+              const qr = cp + 0.25 - Math.floor(cp + 0.25);
+              ml = (mono * ROT_DRY + tap(cp) * ROT_WET) * this.panL[t];
+              mr = (mono * ROT_DRY + tap(qr) * ROT_WET) * this.panR[t];
+            } else if (cm === 5) {
               // phaser
               const g = Math.tan((Math.PI * PH_LO * Math.pow(PH_HI / PH_LO, 0.5 + 0.5 * tri)) / sr);
               const a = (g - 1) / (g + 1);

@@ -30,6 +30,7 @@ export const SOUND_STAGE: StudioDef = {
     seat("desk", "desk", [-0.5, 1.75], 0, "the floor mix desk"),
   ],
   door: { at: [-7.4, 1.5], yaw: -Math.PI / 2 },
+  keys: "fm-slab",
   gear: { at: [-5.25, 5.25], yaw: Math.PI / 2 },
   props: [
     // the band riser and the cyc behind it

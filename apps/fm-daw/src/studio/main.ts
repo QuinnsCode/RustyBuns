@@ -41,14 +41,18 @@ import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
 import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
-import { floorAt, keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
+import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { SYSTEMS, system } from "@rustybuns/gear";
+import { rigCards } from "./rig-cards.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
-import { yours } from "./builder.ts";
+import { yours, Studio } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
-import { synth } from "@rustybuns/models/synth";
 import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
-import { bassReach, bassSynth } from "./gear-models.ts";
+import { bassReach, bassSynth, keysKind, keysSynth, madeKind, seedOf } from "./gear-models.ts";
+import { baleSeat } from "./bales.ts";
+import { withKeysVoice } from "./keys-voice.ts";
+import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
@@ -58,15 +62,19 @@ import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
 import { spinCard } from "./spin-card.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
-import { prop } from "./props.ts";
-import { tapestry } from "./tapestry.ts";
+import { prop, chaseSteps, tickProps } from "./props.ts";
+import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
+import { doorways } from "./doors.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
-import { gearKit } from "./gear-kit.ts";
+import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
-import { PaRoom, paSpeakers, roomLevel } from "./pa-room.ts";
+import { PaRoom, paSpeakers, roomLevel, roomRig } from "./pa-room.ts";
+import { NightAir } from "./night-air.ts";
+import { turnWheels } from "@rustybuns/models/monosynth";
+import { Dancers } from "./dancers.ts";
 import { RoomTubes } from "../dj/room-tube.ts";
 import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, type Lag } from "../guitar.ts";
 import { mountLane } from "./lane.tsx";
@@ -78,10 +86,10 @@ import { mountDecks, type DecksPanel, type Dj } from "../dj/panel.ts";
 import { Booth, farView, waveFrom, type DeckView } from "../dj/booth.ts";
 import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
-import { openAir, paStack } from "./open-air.ts";
+import { clubStack, openAir } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
 import { Dust } from "./dust.ts";
-import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
+import { gear as gearModel } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
@@ -89,7 +97,18 @@ const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw
 /** The room this page is in, from its link; null on the front door. */
 const here = fromLink(location.search);
 const pick = here?.studio ?? "";
-const def = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+// "yours" in a sesh is the room its leader built and sent with the move (kept here by sesh), else the one this browser built
+const SESH_BUILT = (room: string) => `qollab-studio:sesh-built:${room}`;
+function seshBuilt(): StudioDef | null {
+  if (!here) return null;
+  try { const s = localStorage.getItem(SESH_BUILT(here.room)); return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
+}
+const picked = (pick === "yours" ? seshBuilt() ?? yours() : ROOMS[pick]) ?? LIVE_ROOM;
+// ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
+const rigAsked = new URLSearchParams(location.search).get("rig");
+// ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar, tine-ep, combo, strings); the spot's id picks one otherwise
+const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.search).get("keys"));
+const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: { theme: {
   "--ui-bg": "rgba(21, 23, 27, 0.94)", "--ui-ink": "#f4f1ea", "--ui-dim": "#a9adb4", "--ui-line": "#3a3e45", "--ui-soft": "#23262c",
@@ -112,7 +131,10 @@ let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
-let project: Project = withMonoBass(demoProject());
+// the keys track sounds like the instrument at the keys seat (keys-voice.ts)
+// (the seat that plays the keys track: a room's violins or brass seats play their own)
+const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made && (s.id === "keys" || /keys/i.test(s.track ?? ""))) ?? def.spots.find((s) => s.kind === "keys" && !s.made);
+let project: Project = withKeysVoice(withMonoBass(demoProject(), def.bass), keysSpot ? keysKind(keysSpot, keysAsked, def.keys) : null);
 const keys = new Set<string>();
 const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }, { id: "cam", label: "Camera", button: 3 }]);
 
@@ -137,7 +159,8 @@ function buildRoom() {
   // out under the sky (open-air.ts draws the ground to the horizon): no floor, ceiling or outside walls here
   if (!def.outdoor) scene.add(floor, ceil);
   // a room with decks but no PA of its own gets a stack either side of the DJ table (pa-room.ts); open air draws its own
-  if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(paStack(sp.at, sp.yaw));
+  // indoors, a club's sub-and-top either side of the decks (out of doors the rig is open-air.ts's)
+  if (!def.outdoor) for (const sp of paSpeakers(def)) scene.add(clubStack(sp.at, sp.yaw));
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
   const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
   for (const wall of [...(def.outdoor ? [] : outside).map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
@@ -158,9 +181,11 @@ function buildRoom() {
       }
     }
   }
+  // every doorway in a drawn wall: the wall over it, a casing, and a studio door standing open (doors.ts)
+  scene.add(doorways(def, h, { wallOf: (wl) => surface(wallSurface(wl.material ?? "drywall"), wl.material ? undefined : def.colors.walls), casing: surface("wood", def.colors.trim), leaf: surface("wood", "#6e5034"), lever: surface("metal", "#b9bcc0"), glass }));
   // a seat on a riser stands on its deck, and so does what's played there
   for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
-  for (const p of def.props ?? []) scene.add(prop(p, surface));
+  for (const p of def.props ?? []) { const o = prop(p, surface); scene.add(o); if (o.userData.tick) moving.push(o); }
   // the gear wall (gear-wall.ts): the sesh's rack, pedal wall and gear, in the gear room's frame where the studio stands it
   const g = gearPlace(def);
   gearScene.group.position.set(g.at[0], 0, g.at[1]);
@@ -179,6 +204,10 @@ addEventListener("pointerdown", () => roomTubes.pressed(), true);
 addEventListener("keydown", () => roomTubes.pressed(), true);
 /** Each instrument's keys or drums, by spot id, to show what's played on them. */
 const played = new Map<string, { keys?: Keys; kit?: Kit }>();
+/** Props that move on their own (a fire pit's flames), ticked each frame. */
+const moving: THREE.Object3D[] = [];
+/** Each keyboard's case by spot id: its pitch and mod wheels turn as the one sitting there moves theirs. */
+const wheeled = new Map<string, THREE.Object3D>();
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
   const g = new THREE.Group(), b = thingBox(s), t = s.thing, m = std(t.color);
@@ -245,45 +274,34 @@ function thing(s: Spot): THREE.Group {
       cable([[a.x, a.y, a.z], [a.x, a.y - 0.08, a.z - 0.02], [drop.x, Math.max(0.05, a.y * 0.3), drop.z], [drop.x, 0.004, drop.z - 0.05], [(drop.x + 0.95) / 2, 0.004, -0.72 + i * 0.012], ...plug(i)]);
     });
   } else if (s.kind === "keys") {
-    // a stage synth: a textured plastic case with walnut cheeks, a sloped steel panel of knobs and a small screen
-    // behind the keys, on a black steel X stand
-    const top = t.h;
-    box(t.w - 0.08, 0.1, t.d, surface("plastic", t.color), 0, top - 0.05, 0);
-    for (const x of [-t.w / 2 + 0.02, t.w / 2 - 0.02]) box(0.04, 0.13, t.d, surface("ply", "#5b3a24"), x, top - 0.035, 0);
-    const panel = box(t.w - 0.08, 0.02, t.d * 0.36, surface("steel", "#26282c"), 0, top + 0.02, -t.d * 0.3);
-    panel.rotation.x = 0.18;
-    const knobs: [number, number, number][] = [];
-    for (let i = 0; i < 14; i++) knobs.push([-t.w / 2 + 0.22 + i * 0.065, 0.02, (i % 2 ? 0.03 : -0.03)]);
-    many(new THREE.CylinderGeometry(0.012, 0.013, 0.022, 14), knob, knobs, panel);
-    const screen = box(0.16, 0.004, 0.05, surface("screen", "#7ab8d8"), t.w / 2 - 0.22, 0.012, 0, panel);
-    screen.userData.glow = 1;
-    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them; the black
-    // ones satin with a weak, tight sheen, so a lamp nearby doesn't lift them to brown; their near-black is each key's
-    // own colour (Keys), so a pressed one can light up
-    const white = std("#e2ddd0", { roughness: 0.45 }), black = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.32, specularIntensity: 0.28, envMapIntensity: 0.18 });
-    const n = 29, lay = layout(n), kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
-    const whites = lay.whites.map((_, i): [number, number, number] => [x0 + i * kw, top + 0.011, z]);
-    const blacks = lay.after.map((i): [number, number, number] => [x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
-    const wk = many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
-    const bk = many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
-    played.set(s.id, { keys: new Keys(wk, whites, bk, blacks, lay, t.d * 0.5, t.d * 0.3, undefined, new THREE.Color("#040405")) });
-    const legH = top - 0.1;
-    for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
-    for (const x of [-0.42, 0.42]) for (const y of [0.02, legH]) tube(0.018, v(x, y, -0.22), v(x, y, 0.22), blackSteel);
+    // one of the classic families (@rustybuns/models/polysynth: an analog poly, an FM slab, a drawbar or combo organ, a
+    // tine piano, a string machine), the room's or its section's (gear-models.ts keysKind), its keys where the palms go
+    const { synth, keys } = keysSynth(s, keysKind(s, keysAsked, def.keys));
+    inFront.add(synth.group);
+    played.set(s.id, { keys });
+    wheeled.set(s.id, synth.group);
   } else if (s.kind === "booth") {
     tube(0.012, v(0, 0.03, 0), v(0, t.h, 0), blackSteel);
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.03, 24), blackSteel), 0, 0.015, 0);
     put(new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.09, 6, 16), surface("metal", "#8e9298")), 0, t.h + 0.07, 0);
     put(new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 20), blackSteel), 0, t.h + 0.04, 0).rotation.x = Math.PI / 2;
+    // the pop filter between the mic and the singer (+z): a hoop of black gauze on a gooseneck clamped to the stand
+    const gauze = new THREE.MeshStandardMaterial({ color: "#0d0d0d", roughness: 1, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+    put(new THREE.Mesh(new THREE.CircleGeometry(0.074, 28), gauze), 0, t.h + 0.08, 0.11);
+    put(new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.004, 6, 32), blackSteel), 0, t.h + 0.08, 0.11);
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.03, 12), blackSteel), 0, t.h - 0.2, 0); // the clamp
+    tube(0.004, v(0.01, t.h - 0.2, 0), v(0.07, t.h - 0.06, 0.06), blackSteel);
+    tube(0.004, v(0.07, t.h - 0.06, 0.06), v(0.05, t.h + 0.02, 0.11), blackSteel);
   } else if (s.kind === "bass") {
     // an analog mono synth on an X stand, played like the keys (gear-models.ts)
-    const { synth, keys } = bassSynth(s);
+    const { synth, keys } = bassSynth(s, def.bass);
     inFront.add(synth.group);
     played.set(s.id, { keys });
+    wheeled.set(s.id, synth.group);
   } else if (s.kind === "dj") {
     // the decks (Sound Guy Simulator's, packages/models gear): a 95 cm table, a four-channel mixer in the middle
     // and a media deck either side, every front edge in one line toward the DJ (+z)
-    const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearLook();
+    const cloth = 0.004, top = t.h + (def.outdoor ? cloth : 0), look = gearKitLook(loadQuality());
     if (def.outdoor) {
       // out of doors (Desert Gathering) there's no booth: a board on three sawhorses, a sandbag on each one's shelf so
       // the wind and the bass don't walk it, and a tapestry over the board, hanging to the sand (the sawhorses are only seen by a clip through)
@@ -301,12 +319,11 @@ function thing(s: Spot): THREE.Group {
         lie(0.2, 0.15, shelf + 0.125, 0.1 * (i - 1));
         if (i === 1) lie(0.14, 0.19, shelf + 0.25, 0.3);
       });
-      // the cloth falls to the sand down the front and both ends, so the crowd sees only the tapestry (the DJ's side is open)
-      const drop = t.h - 0.01, cloak = (w: number, seed: number) => new THREE.MeshStandardMaterial({ map: tapestry(w, drop, seed), roughness: 0.95, side: THREE.DoubleSide });
-      const weave = cloak(t.w, def.outdoor.seed), ends = cloak(t.d, def.outdoor.seed + 3);
-      boothGear.addRest(box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0));
-      put(new THREE.Mesh(new THREE.PlaneGeometry(t.w + 0.02, drop), weave), 0, t.h - drop / 2, -t.d / 2 - 0.012).rotation.y = Math.PI;
-      for (const k of [-1, 1]) put(new THREE.Mesh(new THREE.PlaneGeometry(t.d + 0.02, drop), ends), k * (t.w / 2 + 0.012), t.h - drop / 2, 0).rotation.y = k * Math.PI / 2;
+      // three block-printed cloths over the board, down the front and both ends to pool on the sand, so the crowd sees
+      // only cloth (the DJ's side is open); the folds are in the sheet, the weave in its normal map (tapestry.ts)
+      const seed = def.outdoor.seed;
+      boothGear.addRest(put(new THREE.Mesh(new THREE.BoxGeometry(t.w + 0.02, cloth, t.d + 0.02), cotton(tabletop(t.w, t.d, seed), seed, false)), 0, t.h + cloth / 2, 0));
+      put(new THREE.Mesh(drape(t.w, t.d, t.h, seed), cotton(tapestry({ end: t.d, front: t.w }, t.h - 0.008, seed), seed, true, t.h - 0.008)), 0, 0, 0);
     } else {
       boothGear.addRest(box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0));
       box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
@@ -346,6 +363,9 @@ function thing(s: Spot): THREE.Group {
     box(t.w, 0.2, 0.06, surface("steel", "#2a2c30"), 0, 0.1, -t.d * 0.42, deck);
     many(new THREE.BoxGeometry(0.03, 0.01, 0.004), surface("screen", "#5ad06a"), leds, deck).userData.glow = 0.6;
     box(t.w, 0.05, 0.09, surface("tolex", "#1d1b19"), 0, t.h - 0.025, t.d / 2 - 0.045);
+  } else if (s.kind === "couch" && def.outdoor) {
+    // out of doors the couch is straw bales: a row to sit on, a row laid flat behind, two high (bales.ts)
+    inFront.add(baleSeat(t.w, t.d, seedOf(s.id)));
   } else {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, t.d), m), 0, t.h / 2, 0);
     if (s.kind === "couch") put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.5, 0.2), m), 0, t.h + 0.25, t.d / 2 - 0.1);
@@ -365,7 +385,7 @@ function thing(s: Spot): THREE.Group {
 }
 useKit(gearKit(loadQuality()));
 buildRoom();
-const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality()) : dress(renderer, scene, camera, def, loadQuality());
+const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(), gearKitLook(loadQuality())) : dress(renderer, scene, camera, def, loadQuality());
 /** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
@@ -375,6 +395,9 @@ const drawn = new Map<number | "me", Drawn>();
 /** Whoever is playing, for everyone else to look at (null: nobody is). */
 let watched: THREE.Vector3 | null = null;
 // step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
+// out of doors, a crowd on the dance floor facing the stacks, dancing to the groove (dancers.ts)
+const dancers = def.outdoor ? new Dancers(def, loadQuality() === "low" ? 6 : 12) : null; // fewer on a phone
+if (dancers) scene.add(dancers.group);
 const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
 const palm = new THREE.Vector3();
 /** Where someone's right palm is drawn now (a carried lantern hangs from it), or null when they aren't drawn. */
@@ -404,7 +427,7 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
   if (!seat) dust.walker(id, d.x, floor, d.z, d.yaw, moved, d.speed, d.y);
   d.fig.group.rotation.y = d.yaw;
   const guitar = guitarLevel(id);
-  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing, guitar !== null), note: playing, t, guitar, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing, guitar !== null), note: playing, t, guitar, reach: seat ? keysReach(seat) ?? bassReach(seat, def.bass) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 /** How hard someone's guitar is played now (0 to 1), or null when they have none in (a mic in the booth isn't one). */
 function guitarLevel(id: number | "me"): number | null {
@@ -467,6 +490,8 @@ async function startAudio() {
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
+    // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
+    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
@@ -545,6 +570,11 @@ async function guitar() {
 let pa: PaLine | null = null;
 /** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
 let paRoom: PaRoom | null = null;
+let nightAir: NightAir | null = null;
+let shownStep: number | null = null;
+const hasDrumMachine = (def.props ?? []).some((p) => p.kind === "drumMachine");
+/** Music on the floor: the band's loop running, or someone's set on the PA. */
+const musicOn = () => transport.playing || paOn.size > 0 || !!myPa;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
 const paOn = new Map<number, string>();
 /** What you're playing to the room, or null. */
@@ -565,6 +595,7 @@ let mySource: MediaStreamAudioSourceNode | null = null;
 function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
   paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
+  nightAir?.listen(jam.me.x, jam.me.z, mutes.room, musicOn());
   if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
@@ -795,8 +826,10 @@ function drawMade() {
     c.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); for (const mt of [o.material].flat()) mt.dispose(); } });
   }
   for (const m of project.instruments ?? []) {
-    const s = madeSpot(m), b = thingBox(s), model = synth(m.seed, m.voice).group;
-    // the keys face the seat: the model's front is +z, the seat looks down -z at yaw 0
+    // one of the classic families, picked by its voice and seed (gear-models.ts madeKind), its keys toward the seat:
+    // the model's front is +z, the seat looks down -z at yaw 0
+    const s = madeSpot(m), b = thingBox(s), model = new THREE.Group();
+    model.add(keysSynth(s, madeKind(m.voice, m.seed)).synth.group);
     model.position.set(b.cx, 0, b.cz); model.rotation.y = s.yaw;
     const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.06, 16), std("#2e3439"));
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), std("#8a8f94", { metalness: 0.6 }));
@@ -807,7 +840,19 @@ function drawMade() {
 let lane: LaneModel | null = null;
 /** What you hear: the room's level (the remote's master fader, src/remote/) on the jam room's own. */
 const masterMsg = (p: Project) => ({ t: "master" as const, gain: dbToGain(START_DB) * roomGain(p) });
-function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); walkOver(p); }
+function groove(p: Project) { const was = project.master; project = p; out?.send(loadMsg(p)); syncTakes(p); deskSync(); if (p.master !== was) out?.send(masterMsg(p)); drawMade(); lane?.refresh(); keepBuilt(p); walkOver(p); rigOver(p); }
+/** The sesh's built room: kept for this sesh, and walked into again when it isn't the one standing here. */
+function keepBuilt(p: Project) {
+  if (!here) return;
+  const key = SESH_BUILT(here.room);
+  // the sesh has no build of its own now: forget the old one, so "yours" is this browser's room again
+  if (p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
+  const json = JSON.stringify(p.built);
+  try { if (localStorage.getItem(key) !== json) localStorage.setItem(key, json); } catch { /* still walk into it */ }
+  // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
+  // against the room as built, before any ?rig= the sesh's rig cards put on it, or a rig pick would reload for ever
+  if (pick === "yours" && JSON.stringify(picked) !== json && !movingTo) { movingTo = location.href; setTimeout(() => location.reload(), 300); }
+}
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
@@ -822,7 +867,9 @@ function moveStudio(id: string): Answer {
   if (!here) return { ok: false, why: "Not in a room" };
   if (!iLead()) return { ok: false, why: "Only the leader moves the room" };
   if (!studios().some((x) => x.id === id)) return { ok: false, why: `No studio ${id}` };
-  player.edit({ t: "studio", id });
+  // your built room goes with the move, so everyone walks into it, not their own
+  const built = id === "yours" ? yours() : null;
+  player.edit(built ? { t: "studio", id, built } : { t: "studio", id });
   return { ok: true };
 }
 /** The room's studio cards in the Esc menu: the leader's to pick, read-only for everyone else. */
@@ -831,6 +878,18 @@ function roomStudios() {
   const lead = iLead();
   $("studios-note").hidden = lead;
   studioCards($("studios"), studios(), here.studio, lead ? (id) => void moveStudio(id) : undefined);
+  // out of doors, the rig too: the leader's to change, for everyone (rig-cards.ts)
+  $("rigs").hidden = $("rigs-title").hidden = !def.outdoor;
+  if (def.outdoor) rigCards($("rigs"), def, roomRig(def).id, lead ? (id) => player.edit({ t: "rig", id }) : undefined);
+}
+/** The sesh's rig isn't the one standing here: reload onto it, as a studio move does (the stacks and the PA are built once). */
+function rigOver(p: Project) {
+  if (!def.outdoor || !here || !p.rig || p.rig === roomRig(def).id || movingTo) return;
+  const to = new URL(location.href);
+  to.searchParams.set("rig", p.rig);
+  movingTo = to.toString();
+  flash = { text: `Bringing out the ${SYSTEMS[p.rig].name.toLowerCase()}`, until: performance.now() + 2000 };
+  setTimeout(() => location.replace(to.toString()), 300);
 }
 
 // ---- an agent in the browser plays here too: WebMCP tools (and the Cmd/Ctrl+K palette) named studio_* ----
@@ -1339,6 +1398,11 @@ function frame(now: number) {
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
     step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
+  dancers?.tick(t, musicOn() && band.synced ? band.beat() : null);
+  if (moving.length) tickProps(moving, t);
+  // a drum machine on a table runs its chase in sixteenths while the band plays
+  const running = transport.playing && band.synced ? Math.floor(band.beat() * 4) % 16 : null;
+  if (running !== shownStep && hasDrumMachine) { shownStep = running; chaseSteps(scene, running); }
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
@@ -1362,6 +1426,9 @@ function frame(now: number) {
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
+  // your hand on the wheels: the keyboard you sit at turns its pitch and mod wheels with the overlay's
+  const atKeys = jam.me.seat ? wheeled.get(jam.me.seat) : undefined;
+  if (atKeys) turnWheels(atKeys, overlay.wheels.pitch, overlay.wheels.mod);
   boothGear.frame(deckView, t);
   lit.frame(jam, camera.position, t, palmOf);
   dust.frame(dt);

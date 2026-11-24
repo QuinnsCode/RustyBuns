@@ -99,8 +99,8 @@ export function PatchEditor(props: {
           <Slider label="Velocity" index={P.VEL} value={p[P.VEL]} onChange={(v) => onParam(P.VEL, v)} />
           <Slider label="Vel tone" index={P.VEL_TONE} value={p[P.VEL_TONE]} onChange={(v) => onParam(P.VEL_TONE, v)} />
           <Slider label="Send" index={P.SEND} value={p[P.SEND]} onChange={(v) => onParam(P.SEND, v)} />
-          <Choice label="Mod" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II", "Flange", "Phase"]} onPick={(v) => onParam(P.CHORUS, v)}
-            title="I, II and I+II: the 80s polysynth bucket-brigade chorus (slow, faster, a fast shallow shimmer). Flange: a short swept delay fed back. Phase: four swept allpasses" />
+          <Choice label="Mod" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II", "Flange", "Phase", "Rotary", "Tremolo"]} onPick={(v) => onParam(P.CHORUS, v)}
+            title="I, II and I+II: the 80s polysynth bucket-brigade chorus (slow, faster, a fast shallow shimmer). Flange: a short swept delay fed back. Phase: four swept allpasses. Rotary: an organ's spinning speaker horn at its slow speed. Tremolo: the sound swung side to side, as an electric piano's" />
         </fieldset>
       </div>
     </section>

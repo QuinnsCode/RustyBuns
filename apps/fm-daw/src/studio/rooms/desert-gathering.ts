@@ -37,17 +37,37 @@ export const DESERT_GATHERING: StudioDef = {
     seat("chill-right", "couch", [11, 8], -Math.PI * 0.75, "the bales"),
   ].map((s) => s.kind === "couch" ? { ...s, thing: { ...s.thing, color: "#c9a55a" } } : s.kind === "dj" ? { ...s, thing: { ...s.thing, w: TABLE_W } } : s),
   door: { at: [0, 15], yaw: 0 },
+  // out here the bass is the little silver bass-line box on its stand, squelching
+  bass: "box",
+  // and the keys a string machine, for the long pads
+  keys: "strings",
   // the backline tent off stage right
   gear: { at: [13.5, -10], yaw: -Math.PI / 2 },
   outdoor: {
     stacks: [-1.5, -0.5, 0.5, 1.5].map((k) => ({ at: [k * STACK_W, -11] as [number, number], yaw: 0 })),
     mono: true,
     generator: { at: [-15, -12], yaw: 0.4 },
+    // a fire pit behind the left bales, out of the floor, where the chill corner gathers
+    fire: { at: [-13, 11] },
+    // the vans people came in, parked round the back of the floor, one with its awning out over the fire
+    // festoon lights over the chill corners: from the vans' roofs out to wooden posts and across to the bales
+    festoons: [
+      { points: [[-15.4, 2.05, 13.6], [-11.5, 2.6, 13.2], [-9.2, 2.6, 9.6]], posts: [false, true, true] },
+      { points: [[14.6, 2.05, 14.3], [11.8, 2.6, 12.4], [9.4, 2.6, 9.4]], posts: [false, true, true] },
+    ],
+    vans: [{ at: [-16.5, 13], yaw: Math.PI / 2 + 0.25, awning: true }, { at: [15.5, 14.5], yaw: -Math.PI / 2 - 0.3 }, { at: [17, 6], yaw: -Math.PI / 2 + 0.15 }],
     // a tall pole at each end of the table, its lantern reaching in over the decks
     lanternPoles: [{ at: [-2.2, TABLE_Z], yaw: Math.PI / 2 }, { at: [2.2, TABLE_Z], yaw: -Math.PI / 2 }],
     // spares on the sand at the booth's front corners, to carry off and set down where you like
     lanterns: [[-1.9, 0, -7.1], [-2.15, 0, -6.8], [1.9, 0, -7.1], [2.15, 0, -6.8]],
     carry: true,
+    // rugs on the sand: a big one where the DJ stands and the sawhorses stand, one under the kit, one at each bale
+    rugs: [
+      { at: [0, -8.25], yaw: 0, w: 3.6, d: 2.4 },
+      { at: [-4.8, -10.1], yaw: 0.12, w: 2.4, d: 1.8 },
+      { at: [-11, 7.4], yaw: 0.8, w: 2.6, d: 1.7 },
+      { at: [11, 7.4], yaw: -0.8, w: 2.6, d: 1.7 },
+    ],
     seed: 4242,
   },
 };

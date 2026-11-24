@@ -31,7 +31,7 @@ import * as amphi from "./venues/amphitheatre.ts";
 import { type AmphitheatreView, amphitheatreView } from "./venues/amphitheatre-view.ts";
 import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
-import { DESERT, desertState, wrap } from "./venues/desert.ts";
+import { DESERT, bringRig, desertState, wrap } from "./venues/desert.ts";
 import { type DesertView, desertView } from "./venues/desert-view.ts";
 import * as fest from "./venues/festival.ts";
 import { type FestivalView, festivalView } from "./venues/festival-view.ts";
@@ -73,6 +73,8 @@ const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
 const asked = new URLSearchParams(location.search).get("level");
+// ?rig= brings another open-air rig to the desert (venues/desert.ts bringRig)
+if (new URLSearchParams(location.search).has("rig")) bringRig(new URLSearchParams(location.search).get("rig"));
 let world: World = newWorld(asked ? levelFrom(asked) : bookedRung(tour).level);
 /** Whether tonight's show at the booked gig has been settled into the tour. */
 let settled = false;

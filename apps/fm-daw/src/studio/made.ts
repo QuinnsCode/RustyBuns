@@ -1,5 +1,5 @@
 // A made instrument, as the sesh keeps it beside the groove: which FM DAW track it plays, where it stands in the
-// jam room and the seed its model grows from (`synth` in @rustybuns/models). One guard, read by the World, the page
+// jam room and the seed its model grows from (`polysynth` in @rustybuns/models). One guard, read by the World, the page
 // and an agent's tools alike. Imports only guards, so project.ts can take it without a cycle.
 import { arr, int, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
 import { TRACKS } from "../engine/params.ts";

@@ -1,9 +1,10 @@
 // The studio builder as someone uses it: start from a room, put up a booth, move the drums into it and hear the kit
 // go dry, line the room and hear it tighten, get told why an edit that would break the room can't be done, and
 // keep a studio /jam.html can load back. Then every room the builder ships: buildable, and ringing as it says.
+import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
-import { Edit, edit, problems, Studio } from "../src/studio/builder.ts";
+import { Edit, edit, furnish, problems, Studio } from "../src/studio/builder.ts";
 import type { StudioDef } from "../src/studio/room.ts";
 import { BARN, BASEMENT, ROOM_LIST, ROOMS } from "../src/studio/rooms/index.ts";
 import { type Acoustics, acoustics, impulse } from "../src/studio/sound.ts";
@@ -61,6 +62,63 @@ test("put up a drum booth, line the barn, and an edit that would break the room 
   r = ok(r, { t: "unbooth", id: "drum-booth" });
   expect(heard(r, "drums").space.closed).toBe(false);
   expect(problems(r)).toEqual([]);
+});
+
+test("build mode: wall a corner off round the keys, knock a doorway through, turn the keys, and take the wall down again", () => {
+  let r = structuredClone(BARN);
+  expect(heard(r, "keys").space.closed).toBe(false);
+  // two walls from the outside walls meet in the room: the keys' corner is a room of its own
+  r = ok(r, { t: "addWall", from: [1, -7], to: [1, 0] });
+  r = ok(r, { t: "addWall", from: [1, 0], to: [5, 0] });
+  const corner = heard(r, "keys").space;
+  expect(corner.closed).toBe(true);
+  expect(corner.floor).toBeLessThan(r.size.w * r.size.d / 2);
+  // a doorway in the middle of the second wall, and bricked up again
+  const last = r.walls.length - 1;
+  r = ok(r, { t: "door", index: last });
+  expect(r.walls[last]!.gaps).toEqual([[1.55, 2.45]]);
+  expect(ok(r, { t: "door", index: last }).walls[last]!.gaps).toBeUndefined();
+  // a quarter turn is two eighths
+  r = ok(r, { t: "turn", id: "keys", by: 2 });
+  expect(at(r, "keys").yaw).toBeCloseTo(at(BARN, "keys").yaw + Math.PI / 2, 6);
+  // what can't be built says why: a stub of a wall, a wall through a seat, one side of a booth
+  expect(edit(r, { t: "addWall", from: [0, 0], to: [0.2, 0] })).toMatchObject({ ok: false, why: "a wall is at least 50 cm long" });
+  expect(edit(r, { t: "addWall", from: [-3.5, -1.5], to: [-1.5, -1.5] })).toMatchObject({ ok: false, why: "bass is in a wall" });
+  expect(edit(r, { t: "unwall", index: r.walls.findIndex((x) => x.booth) })).toMatchObject({ ok: false, why: expect.stringContaining("take the booth down") });
+  // dress it: a plant at real size, turned a quarter, moved, and taken out again
+  const n = r.props?.length ?? 0;
+  r = ok(r, { t: "addProp", kind: "plant", at: [4.2, -1] });
+  expect(r.props![n]).toMatchObject({ kind: "plant", at: [4.2, -1], w: 0.6, h: 1.4 });
+  r = ok(r, { t: "turnProp", index: n, by: 2 });
+  r = ok(r, { t: "moveProp", index: n, at: [4.2, -1.5] });
+  expect(r.props![n]!.at).toEqual([4.2, -1.5]);
+  expect(r.props![n]!.yaw).toBeCloseTo(Math.PI / 2, 6);
+  expect(edit(r, { t: "moveProp", index: n + 5, at: [0, 0] })).toMatchObject({ ok: false, why: "there is no such thing" });
+  r = ok(r, { t: "unprop", index: n });
+  expect(r.props?.length ?? 0).toBe(n);
+  // a window in the back wall, facing in; none too near a corner; the way in moved along the front
+  const w0 = r.props?.length ?? 0;
+  r = ok(r, { t: "window", side: "back", along: -2 });
+  expect(r.props![w0]).toMatchObject({ kind: "window", at: [-2, -r.size.d / 2 + 0.06], y: 1 });
+  expect(r.props![w0]!.yaw).toBeCloseTo(Math.PI, 6);
+  expect(edit(r, { t: "window", side: "back", along: r.size.w / 2 - 0.3 })).toMatchObject({ ok: false, why: "a window needs 80 cm of wall either side of it" });
+  r = ok(r, { t: "moveDoor", at: [-3, 6] });
+  expect(r.door.at).toEqual([-3, 6]);
+  expect(edit(r, { t: "moveDoor", at: [30, 0] })).toMatchObject({ ok: false, why: "the way in is outside the room" });
+  // what stands at the keys and the bass: a combo organ and the bass-line box
+  r = ok(r, { t: "instruments", keys: "combo", bass: "box" });
+  expect([r.keys, r.bass]).toEqual(["combo", "box"]);
+  expect(check(Edit, { t: "instruments", keys: "theremin" })).toBeNull();
+  // a rig only stands out of doors: indoors it's refused, on the sand the stacks become it
+  expect(edit(r, { t: "instruments", rig: "synergy" })).toMatchObject({ ok: false, why: "a rig stands out of doors" });
+  expect(ok(DESERT_GATHERING, { t: "instruments", rig: "synergy" }).outdoor?.rig).toBe("synergy");
+  // a camper van and a fire pit park only out of doors
+  expect(edit(r, { t: "addProp", kind: "van", at: [0, 0] })).toMatchObject({ ok: false, why: "that stands out of doors" });
+  expect(ok(DESERT_GATHERING, { t: "addProp", kind: "firePit", at: [6, 12] }).props?.at(-1)?.kind).toBe("firePit");
+  // the first new wall down: the corner opens back onto the barn
+  r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
+  expect(heard(r, "keys").space.closed).toBe(false);
+  expect(check(Studio, JSON.parse(JSON.stringify(r)))).toEqual(JSON.parse(JSON.stringify(r)));
 });
 
 test("the impulse response follows the space: the floor's bounce first, then a tail as long as it rings", () => {
@@ -136,5 +194,16 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
     // the dressing builds, and its lamps and screens glow for the look to light
     const glows = (room.props ?? []).map((p) => prop(p)).flatMap((g) => g.children).filter((o) => o.userData.glow);
     if (!room.outdoor) expect({ id, glows: glows.length > 0 }).toEqual({ id, glows: true }); // out of doors the rig is the light (open-air.ts)
+  }
+});
+
+test("Furnish dresses a room as a working studio, every piece one the builder could have put there, and it rings less", () => {
+  for (const r of ROOM_LIST.filter((x) => !x.outdoor)) {
+    const f = furnish(r), kinds = f.done.flatMap((e) => (e.t === "addProp" ? [e.kind] : []));
+    expect(kinds, r.id).toContain("lamp");
+    if (r.spots.some((s) => s.kind === "drums")) expect(kinds, r.id).toContain("rug");
+    expect(problems(f.def), r.id).toEqual([]);
+    expect(check(Studio, JSON.parse(JSON.stringify(f.def))), r.id).toEqual(JSON.parse(JSON.stringify(f.def)));
+    expect(acoustics(f.def, f.def.spots[0]).mid, r.id).toBeLessThanOrEqual(acoustics(r, r.spots[0]).mid + 1e-9);
   }
 });

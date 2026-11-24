@@ -18,6 +18,8 @@ export interface MonoKeys {
   whiteLen: number; blackLen: number;
   /** A black key's resting colour (the instance colour an app keeps it at). */
   blackRest: THREE.Color;
+  /** A white key's resting colour, when it isn't the material's own (the combo organ's black naturals). */
+  whiteRest?: THREE.Color;
   /** How many white keys, from C (37 keys: 22, three octaves C to C; 44: 26, C up to G). */
   whites: number;
 }
@@ -40,15 +42,44 @@ const WOODS = ["#4a2a16", "#5a3420", "#3e2414", "#64391f"];
 const CAPS = ["#c9ccd0", "#d8c9a0", "#b8bcc2"];
 
 /** A piece from any geometry: positions only, every triangle its own corners, flat normals (as `part` merges them). */
-function piece(slot: string, geo: THREE.BufferGeometry, m?: THREE.Matrix4): Piece {
+export function piece(slot: string, geo: THREE.BufferGeometry, m?: THREE.Matrix4): Piece {
   for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
   if (geo.index) geo = geo.toNonIndexed();
   if (m) geo.applyMatrix4(m);
   geo.computeVertexNormals();
   return { geo, slot };
 }
+/**
+ * The pitch and mod wheels at `xs` (left, right), turning on x about (y, z): ridged rubber, the pitch wheel with a
+ * pale centre mark. Named "pitch-wheel" and "mod-wheel"; `turnWheels` sets them from where the player's wheels are.
+ */
+export function addWheels(group: THREE.Group, palette: Palette, xs: readonly [number, number], y: number, z: number, r: number, w: number) {
+  xs.forEach((x, i) => {
+    const geo = new THREE.CylinderGeometry(r, r, w, 48, 1).rotateZ(Math.PI / 2), p = geo.attributes.position!;
+    // the grip: fine ridges round the rim
+    for (let k = 0; k < p.count; k++) {
+      const yy = p.getY(k), zz = p.getZ(k), rr = Math.hypot(yy, zz);
+      if (rr < r * 0.9) continue;
+      const s = Math.round(Math.atan2(zz, yy) / (Math.PI / 24)) % 2 ? 0.94 : 1;
+      p.setY(k, yy * s); p.setZ(k, zz * s);
+    }
+    const parts = [piece("rubber", geo)];
+    if (i === 0) parts.push(box("ink", [w * 0.9, 0.003, 0.004], [0, r + 0.0005, 0]));
+    const g = part(i === 0 ? "pitch-wheel" : "mod-wheel", parts, palette);
+    g.position.set(x, y, z);
+    group.add(g);
+  });
+}
+
+/** Turn `group`'s wheels: `pitch` -1..1 (rolled toward the player for down), `mod` 0..1 (from fully back, about 70 degrees). */
+export function turnWheels(group: THREE.Object3D, pitch: number, mod: number) {
+  const p = group.getObjectByName("pitch-wheel"), m = group.getObjectByName("mod-wheel");
+  if (p) p.rotation.x = -pitch * 0.55;
+  if (m) m.rotation.x = 0.6 - mod * 1.2;
+}
+
 /** A piece built in `frame` (the panel's), moved out into the synth's. */
-const into = (p: Piece, frame: THREE.Matrix4): Piece => { p.geo.applyMatrix4(frame); p.geo.computeVertexNormals(); return p; };
+export const into = (p: Piece, frame: THREE.Matrix4): Piece => { p.geo.applyMatrix4(frame); p.geo.computeVertexNormals(); return p; };
 
 /** The mono synth for `seed`. `fit`: the widest it may be (metres); the keys narrow a little to fit. */
 export function monosynth(seed: number, { fit = Infinity }: { fit?: number } = {}): MonoSynth {
@@ -70,13 +101,8 @@ export function monosynth(seed: number, { fit = Infinity }: { fit?: number } = {
   pieces.push(box("case", [w - CHEEK * 2, backH, hingeZ + d / 2], [0, base + bedH + backH / 2, (hingeZ - d / 2) / 2]));
   const wellX = -w / 2 + CHEEK + WELL / 2;
   pieces.push(box("trim", [WELL - 0.01, 0.006, KEY_D], [wellX, keyTop - 0.004, keyZ]));
-  // pitch and mod: two rubber wheels turning on x, standing out of slots in the well
-  for (const [i, dx] of [[0, -0.02], [1, 0.02]] as const) {
-    const wheel = new THREE.CylinderGeometry(0.032, 0.032, 0.016, 20).rotateZ(Math.PI / 2);
-    pieces.push(piece("rubber", wheel, new THREE.Matrix4().makeTranslation(wellX + dx, keyTop - 0.01, keyZ - 0.005)));
-    pieces.push(box("slot", [0.022, 0.004, 0.075], [wellX + dx, keyTop - 0.0005, keyZ - 0.005]));
-    if (i === 0) pieces.push(box("ink", [0.016, 0.003, 0.004], [wellX + dx, keyTop + 0.021, keyZ - 0.005])); // the pitch wheel's centre mark
-  }
+  // pitch and mod: two rubber wheels turning on x, standing out of slots in the well (their own parts, so they turn)
+  for (const dx of [-0.02, 0.02]) pieces.push(box("slot", [0.022, 0.004, 0.075], [wellX + dx, keyTop - 0.0005, keyZ - 0.005]));
 
   // ---- the wooden cheeks: low at the front, along the keybed, then up the panel's rake and down the back ----
   const topZ = hingeZ - Math.cos(rake) * panelL, topY = hingeY + Math.sin(rake) * panelL;
@@ -153,6 +179,7 @@ export function monosynth(seed: number, { fit = Infinity }: { fit?: number } = {
     slot: ["#030303", 0.9, 0], rubber: ["#1a1a1a", 0.9, 0], stand: ["#232427", 0.4, 0.7], lamp: ["#ff3a2a", 0.3, 0, 1.4],
   };
   const group = part("monosynth", pieces, palette);
+  addWheels(group, palette, [wellX - 0.02, wellX + 0.02], keyTop - 0.01, keyZ - 0.005, 0.032, 0.016);
 
   // ---- the keys: white ones with a gap between each, the black ones raised and set back ----
   const steps = [0, 1, 3, 4, 5]; // a white key (in its octave) with a black one just to its right

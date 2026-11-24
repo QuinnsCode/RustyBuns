@@ -3,10 +3,12 @@
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import { PROP_KINDS, propBlocks, propBox, thingBox, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
+import { PROP_KINDS, propBlocks, propBox, thingBox, type Prop, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
 import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
+import { POLY_KINDS } from "@rustybuns/models/polysynth";
+import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
@@ -23,6 +25,34 @@ const ID = str(32, { re: /^[a-z0-9][a-z0-9-]*$/ });
 const MAT = oneOf(MATERIAL_IDS);
 const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 2, { min: 2 })(v); return [x, z]; };
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
+
+/** What the builder's Decorate tool puts down, each at its real size and in its usual colour (drawn by props.ts). */
+export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
+  shelf: { w: 1.2, d: 0.35, h: 1.9, color: "#5a3a24" },
+  lamp: { w: 0.4, d: 0.4, h: 1.6, color: "#c9a66b" },
+  plant: { w: 0.6, d: 0.6, h: 1.4, color: "#3e6b3a" },
+  rug: { w: 2.4, d: 1.7, h: 0.012, color: "#7a2e2a" },
+  rack: { w: 0.6, d: 0.6, h: 1.2, color: "#1d1d1f" },
+  piano: { w: 1.5, d: 2.0, h: 1.0, color: "#111111" },
+  micStand: { w: 0.5, d: 0.5, h: 1.8, color: "#222222" },
+  table: { w: 1.2, d: 0.7, h: 0.75, color: "#6b4a2c" },
+  cabinet: { w: 0.5, d: 0.6, h: 1.3, color: "#7a7d82" },
+  books: { w: 0.5, d: 0.35, h: 0.4, color: "#7a2e2a" },
+  drumMachine: { w: 0.62, d: 0.3, h: 0.08, color: "#8c8f90" },
+  modular: { w: 0.84, d: 0.16, h: 0.3, color: "#5a3a22" },
+  // a studio monitor on its stand, a floor wedge, and a stage riser to stand the band on
+  monitor: { w: 0.6, d: 0.5, h: 1.4, color: "#2a2420" },
+  wedge: { w: 0.55, d: 0.45, h: 0.32, color: "#161618" },
+  riser: { w: 2.4, d: 1.8, h: 0.4, color: "#0c0c0e" },
+  // out of doors only: a camper van and a fire pit
+  van: { w: 1.9, d: 4.9, h: 2.05, color: "#2f6f73" },
+  firePit: { w: 1.2, d: 1.2, h: 0.6, color: "#6d655c" },
+};
+/** The decor that only stands out of doors. */
+export const OUTDOOR_DECOR: readonly DecorKind[] = ["van", "firePit"];
+export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
+export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular" | "monitor" | "wedge" | "riser" | "van" | "firePit";
+
 
 /** A studio from the wire or this browser's storage, checked. */
 export const Studio: Guard<StudioDef> = obj({
@@ -41,14 +71,24 @@ export const Studio: Guard<StudioDef> = obj({
     kind: oneOf(PROP_KINDS), at: XZ, yaw: num(-7, 7), w: num(0.02, 40), d: num(0.01, 50), h: num(0.01, 20), y: opt(num(0, 20)), color: COLOR, seed: opt(int(0, 2 ** 31)),
   }), MAX_PROPS)),
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+  bass: opt(oneOf(["mono", "box"] as const)),
+  keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
     stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
+    rig: opt(oneOf(SYSTEM_IDS)),
     mono: opt(bool()),
     truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),
     generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+    fire: opt(obj({ at: XZ })),
+    vans: opt(arr(obj({ at: XZ, yaw: num(-7, 7), awning: opt(bool()) }), 8)),
+    festoons: opt(arr(obj({
+      points: arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, 8, { min: 2 }),
+      posts: opt(arr(bool(), 8)),
+    }), 8)),
     lanternPoles: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 32)),
     lanterns: opt(arr((v): [number, number, number] => { const [x, y, z] = arr(num(-25, 25), 3, { min: 3 })(v); return [x, y, z]; }, MAX_LANTERNS)),
     carry: opt(bool()),
+    rugs: opt(arr(obj({ at: XZ, yaw: num(-7, 7), w: num(0.5, 6), d: num(0.5, 6) }), 16)),
     seed: int(0, 2 ** 31),
   })),
 });
@@ -65,7 +105,9 @@ export type Surface = "floor" | "ceiling" | Side;
  * What the builder does: `size` the room, make a `surface` of something, hang a `panel` on an outside wall or take
  * one off, make an inside `wall` of something, add a `spot` (a seat with its instrument), `move` or take one out,
  * put up a `booth` (four walls, glass toward the room and a door), move one or take it down, move the gear wall
- * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio.
+ * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio. Build mode's tools draw an inside wall
+ * (`addWall`, from one point to another, on the floor's grid), knock a doorway through the middle of one or brick it
+ * up again (`door`), take one down (`unwall`), and `turn` a seat an eighth of a turn at a time.
  */
 export type Edit =
   | { t: "size"; w: number; d: number; h: number }
@@ -80,7 +122,18 @@ export type Edit =
   | { t: "moveBooth"; id: string; at: [number, number] }
   | { t: "unbooth"; id: string }
   | { t: "moveGear"; at: [number, number]; turns?: number }
-  | { t: "rename"; name: string; about: string };
+  | { t: "rename"; name: string; about: string }
+  | { t: "addWall"; from: [number, number]; to: [number, number]; material?: Material }
+  | { t: "unwall"; index: number }
+  | { t: "door"; index: number }
+  | { t: "turn"; id: string; by: number }
+  | { t: "addProp"; kind: DecorKind; at: [number, number]; yaw?: number }
+  | { t: "moveProp"; index: number; at: [number, number] }
+  | { t: "turnProp"; index: number; by: number }
+  | { t: "unprop"; index: number }
+  | { t: "window"; side: Side; along: number }
+  | { t: "moveDoor"; at: [number, number] }
+  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -96,7 +149,21 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("unbooth"), id: ID }),
   obj({ t: tag("moveGear"), at: XZ, turns: opt(int(-3, 3)) }),
   obj({ t: tag("rename"), name: str(60, { min: 1 }), about: str(400) }),
+  obj({ t: tag("addWall"), from: XZ, to: XZ, material: opt(MAT) }),
+  obj({ t: tag("unwall"), index: int(0, MAX_WALLS - 1) }),
+  obj({ t: tag("door"), index: int(0, MAX_WALLS - 1) }),
+  obj({ t: tag("turn"), id: ID, by: int(-7, 7) }),
+  obj({ t: tag("addProp"), kind: oneOf(DECOR_KINDS), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("moveProp"), index: int(0, MAX_PROPS - 1), at: XZ }),
+  obj({ t: tag("turnProp"), index: int(0, MAX_PROPS - 1), by: int(-7, 7) }),
+  obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
+  obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
+  obj({ t: tag("moveDoor"), at: XZ }),
+  obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
 ];
+
+/** The shortest inside wall, and a doorway's width, metres. */
+export const MIN_WALL = 0.5, DOORWAY = 0.9;
 /** A builder edit from the wire, checked. */
 export const Edit: Guard<Edit> = (v) => {
   for (const g of EDITS) { const e = check(g, v); if (e) return e; }
@@ -262,7 +329,95 @@ export function edit(def: StudioDef, e: Edit): Built {
       break;
     }
     case "rename": next.name = e.name; next.about = e.about; break;
+    case "addWall": {
+      if (next.walls.length >= MAX_WALLS) return no(`a room holds ${MAX_WALLS} walls`);
+      if (Math.hypot(e.to[0] - e.from[0], e.to[1] - e.from[1]) < MIN_WALL) return no(`a wall is at least ${MIN_WALL * 100} cm long`);
+      next.walls.push({ from: e.from, to: e.to, ...(e.material === "glass" ? { glass: true } : { material: e.material ?? "drywall" }) });
+      break;
+    }
+    case "unwall": {
+      const wl = next.walls[e.index];
+      if (!wl) return no("there is no such wall");
+      if (wl.booth) return no(`that wall is part of ${wl.booth}: take the booth down instead`);
+      next.walls.splice(e.index, 1);
+      break;
+    }
+    case "door": {
+      const wl = next.walls[e.index];
+      if (!wl) return no("there is no such wall");
+      const len = Math.hypot(wl.to[0] - wl.from[0], wl.to[1] - wl.from[1]);
+      if (wl.gaps?.length) delete wl.gaps;
+      else if (len < DOORWAY + 0.2) return no("that wall is too short for a doorway");
+      else wl.gaps = [[len / 2 - DOORWAY / 2, len / 2 + DOORWAY / 2]];
+      break;
+    }
+    case "addProp": {
+      const props = next.props ??= [];
+      if (props.length >= MAX_PROPS) return no(`a room holds ${MAX_PROPS} things`);
+      if (OUTDOOR_DECOR.includes(e.kind) && !next.outdoor) return no("that stands out of doors");
+      props.push({ kind: e.kind, at: e.at, yaw: e.yaw ?? 0, ...DECOR[e.kind]!, seed: props.length * 97 + 13 });
+      break;
+    }
+    case "moveProp": case "turnProp": case "unprop": {
+      const props = next.props ?? [], p = props[e.index];
+      if (!p) return no("there is no such thing");
+      if (e.t === "moveProp") p.at = e.at;
+      else if (e.t === "turnProp") { const yaw = p.yaw + (e.by * Math.PI) / 4; p.yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); }
+      else props.splice(e.index, 1);
+      break;
+    }
+    case "window": {
+      // a window 1.4 by 1.2 m, its sill a metre up, set in the outside wall `side` at `along` metres from its middle,
+      // facing into the room (a prop's front faces -z before its turn)
+      const props = next.props ??= [], { w, d } = next.size, len = e.side === "front" || e.side === "back" ? w : d;
+      if (props.length >= MAX_PROPS) return no(`a room holds ${MAX_PROPS} things`);
+      if (Math.abs(e.along) > len / 2 - 0.8) return no("a window needs 80 cm of wall either side of it");
+      const at: [number, number] = e.side === "front" ? [e.along, d / 2 - 0.06] : e.side === "back" ? [e.along, -d / 2 + 0.06] : e.side === "left" ? [-w / 2 + 0.06, e.along] : [w / 2 - 0.06, e.along];
+      const yaw = e.side === "front" ? 0 : e.side === "back" ? Math.PI : e.side === "left" ? -Math.PI / 2 : Math.PI / 2;
+      props.push({ kind: "window", at, yaw, w: 1.4, d: 0.1, h: 1.2, y: 1, color: "#e8e2d4" });
+      break;
+    }
+    case "moveDoor": next.door = { ...next.door, at: e.at }; break;
+    // what stands at the keys and bass seats (gear-models.ts): one of the classic families, the big mono or the box
+    case "instruments": {
+      if (e.rig && !next.outdoor) return no("a rig stands out of doors");
+      if (e.keys) next.keys = e.keys;
+      if (e.bass) next.bass = e.bass;
+      if (e.rig && next.outdoor) next.outdoor = { ...next.outdoor, rig: e.rig };
+      break;
+    }
+    case "turn": {
+      const sp = next.spots.find((x) => x.id === e.id);
+      if (!sp) return no(`there is no spot ${e.id}`);
+      const yaw = sp.yaw + (e.by * Math.PI) / 4;
+      sp.yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+      break;
+    }
   }
   const wrong = problems(next);
   return wrong.length ? no(wrong[0]) : { ok: true, def: next };
+}
+
+/**
+ * Dress a studio the way a working one usually is, as edits the builder does one by one (each that wouldn't fit is
+ * left out): a rug under the kit, a lamp in each free corner, a plant either side of the way in, a shelf of records
+ * along the back wall and a rack of outboard gear by the desk, and absorbers on any wall that's still bare.
+ */
+export function furnish(def: StudioDef): { def: StudioDef; done: Edit[] } {
+  const { w, d } = def.size, want: Edit[] = [];
+  for (const s of def.spots.filter((x) => x.kind === "drums")) { const b = thingBox(s); want.push({ t: "addProp", kind: "rug", at: [b.cx, b.cz], yaw: s.yaw }); }
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) want.push({ t: "addProp", kind: "lamp", at: [x * (w / 2 - 0.45), z * (d / 2 - 0.45)] });
+  const [dx, dz] = def.door.at;
+  for (const k of [-1, 1]) want.push({ t: "addProp", kind: "plant", at: [dx + k * 1.1, Math.max(-d / 2 + 0.5, Math.min(d / 2 - 0.5, dz - 0.2))] });
+  want.push({ t: "addProp", kind: "shelf", at: [0, -d / 2 + 0.3], yaw: Math.PI });
+  for (const s of def.spots.filter((x) => x.kind === "desk")) { const b = thingBox(s); want.push({ t: "addProp", kind: "rack", at: [b.cx + b.hw + 0.5, b.cz], yaw: s.yaw }); }
+  const mats = def.materials ?? PLAIN;
+  for (const side of SIDES) {
+    const bare = !(def.panels ?? []).some((p) => p.wall === side) && !["foam", "panel", "curtain", "carpet"].includes(mats.walls[side]);
+    if (bare) want.push({ t: "panel", wall: side, material: "panel", m2: Math.round((side === "front" || side === "back" ? w : d) * 0.8) });
+  }
+  let now = def;
+  const done: Edit[] = [];
+  for (const e of want) { const r = edit(now, e); if (r.ok) { now = r.def; done.push(e); } }
+  return { def: now, done };
 }

@@ -4,11 +4,16 @@
 // the sky runs the night through to sunrise, or goes dark at the hour the fuel runs out. main.ts calls `desertView`
 // once per world and then `key` and `update`, as it does the park's view.
 import * as THREE from "three";
+import { desertFloor } from "@rustybuns/models/ground";
+import { van } from "@rustybuns/models/van";
+import { firePit } from "@rustybuns/models/fire";
+import { esc } from "@rustybuns/util";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, type Score, type Show } from "./desert.ts";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, tonightRig, DESERT_RIGS, type Score, type Show } from "./desert.ts";
+import { SYSTEMS } from "@rustybuns/gear";
 import { playing } from "./park.ts";
 import { cellsIn, mean } from "./dive-bar.ts";
 import { comingTonight, crowdOf, letIn, move, regions } from "../crowd/crowd.ts";
@@ -38,11 +43,21 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     return mesh;
   };
   // Sand out to the dunes, the truck's track in from the end of the road.
-  slab({ x0: -120, x1: 120, z0: -120, z1: 120 }, -0.02, 0.02, mat(0xc8a97a));
-  slab({ x0: -1.4, x1: 1.4, z0: 24, z1: 120 }, -0.015, 0.02, mat(0xb39466));
+  // the floor itself: a walked-on desert, packed silt, gravel and broken ripples at their real size (@rustybuns/models ground.ts)
+  const floor = desertFloor({ color: "#c8a97a", seed: 11 });
+  floor.map.repeat.set(240 / 3, 240 / 3); floor.bump.repeat.copy(floor.map.repeat);
+  slab({ x0: -120, x1: 120, z0: -120, z1: 120 }, -0.02, 0.02, mat(0xffffff, { map: floor.map, bumpMap: floor.bump, bumpScale: 1.2, roughness: 1 }));
+  // the truck's track: the same sand, darker where the tyres packed it
+  const track = desertFloor({ color: "#a98a5e", seed: 12 });
+  track.map.repeat.set(2.8 / 3, 96 / 3);
+  slab({ x0: -1.4, x1: 1.4, z0: 24, z1: 120 }, -0.015, 0.02, mat(0xffffff, { map: track.map, roughness: 1 }));
+  // and the dunes round the clearing, the same sand over their backs
+  const duneSand = desertFloor({ color: "#b89a6c", seed: 13 });
+  duneSand.map.repeat.set(6, 3);
+  const duneMat = mat(0xffffff, { map: duneSand.map, roughness: 1 });
   for (let k = 0; k < 14; k++) {
     const a = (k / 14) * Math.PI * 2, r = 44 + 6 * Math.sin(k * 2.3);
-    const dune = new THREE.Mesh(new THREE.SphereGeometry(9 + 4 * Math.cos(k * 1.7), 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xb89a6c));
+    const dune = new THREE.Mesh(new THREE.SphereGeometry(9 + 4 * Math.cos(k * 1.7), 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), duneMat);
     dune.scale.y = 0.3;
     dune.position.set(Math.cos(a) * r, -0.5, Math.sin(a) * r);
     g.add(dune);
@@ -52,15 +67,50 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     new THREE.EdgesGeometry(new THREE.BoxGeometry(f.x1 - f.x0, 0.001, f.z1 - f.z0)), new THREE.LineBasicMaterial({ color: 0xf2c230 }));
   edge.position.set((f.x0 + f.x1) / 2, 0.015, (f.z0 + f.z1) / 2);
   g.add(edge);
-  // The camp: a cluster of dome tents.
-  const tentMat = mat(0x3f6f8f), loudMat = mat(0xd0503c), tents: THREE.Mesh[] = [];
+  // The camp: a cluster of dome tents, each a nylon flysheet over two crossing poles, a zipped door panel, guy lines out
+  // to stakes in the sand. The flysheet goes red when the camp is over its limit.
+  const tentMat = mat(0x3f6f8f, { roughness: 0.7 }), loudMat = mat(0xd0503c, { roughness: 0.7 }), tents: THREE.Mesh[] = [];
+  const poleMat = mat(0x2a2a2c, { metalness: 0.6, roughness: 0.4 }), doorMat = mat(0x2b3f52, { roughness: 0.8 }), lineMat = new THREE.LineBasicMaterial({ color: 0x8c8678 });
   const c = ZONES.camp;
   for (let k = 0; k < 6; k++) {
-    const t = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), tentMat);
-    t.position.set(c.x0 + 1.5 + (k % 3) * 3.5, 0, c.z0 + 2 + Math.floor(k / 3) * 6);
-    t.scale.y = 0.9;
-    g.add(t);
-    tents.push(t);
+    const tent = new THREE.Group(), r = 1.15, h = 1.05;
+    tent.position.set(c.x0 + 1.5 + (k % 3) * 3.5, 0, c.z0 + 2 + Math.floor(k / 3) * 6);
+    tent.rotation.y = (k * 0.9) % 1.4 - 0.7;
+    // the flysheet: a dome pulled tight between its poles, so it sags a little between them
+    const fly = new THREE.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), p = fly.attributes.position!;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x), sag = 1 - 0.06 * Math.abs(Math.sin(2 * a));
+      p.setXYZ(i, x * sag, (y / r) * h * (0.94 + 0.06 * Math.abs(Math.cos(2 * a))), z * sag);
+    }
+    fly.computeVertexNormals();
+    const body = new THREE.Mesh(fly, tentMat);
+    tent.add(body);
+    // the two poles crossing over the top, corner to corner
+    for (const turn of [Math.PI / 4, -Math.PI / 4]) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(r * 1.005, 0.012, 6, 32, Math.PI), poleMat);
+      arc.rotation.y = turn; arc.scale.y = h / r;
+      tent.add(arc);
+    }
+    // the door: a darker zipped panel on the front, and the zip down its middle
+    const door = new THREE.Mesh(new THREE.CircleGeometry(0.42, 16, 0, Math.PI), doorMat);
+    door.position.set(0, 0.01, r * 0.93); door.rotation.x = -0.25; door.scale.y = 1.6;
+    tent.add(door);
+    // guy lines from the pole ends out to stakes
+    const pts: number[] = [];
+    for (let q = 0; q < 4; q++) { const a = Math.PI / 4 + (q * Math.PI) / 2; pts.push(Math.cos(a) * r * 0.75, h * 0.62, Math.sin(a) * r * 0.75, Math.cos(a) * (r + 0.7), 0.02, Math.sin(a) * (r + 0.7)); }
+    tent.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)), lineMat));
+    g.add(tent);
+    tents.push(body);
+  }
+  // the campers' fire, between the two rows of tents
+  const fire = firePit(7);
+  fire.group.position.set((c.x0 + c.x1) / 2, 0, (c.z0 + c.z1) / 2);
+  g.add(fire.group);
+  // the campers' vans, parked past the tents, one with its awning out
+  for (const [k, z] of [10.5, 15.5].entries()) {
+    const v = van(40 + k, { awning: k === 0 });
+    v.position.set(c.x1 + 2, 0, z); v.rotation.y = -Math.PI / 2 + (k ? 0.2 : -0.1);
+    g.add(v);
   }
 
   // The sky: stars on a dome inside the camera's 60 m reach, and the full moon low over the dunes.
@@ -156,6 +206,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     },
     update() {
       const w = getWorld(), cs = getCables(), sig = signature(w, cs), now = performance.now();
+      fire.tick(now / 1000);
       const map = heard, moods = crowdOf(w) && map ? regions(crowdOf(w)!, (zone) => ({ soundcheck: null, full: mean(cellsIn(map, zone)) }), TARGET, SPREAD) : [];
       // The floor moves on how each part of it hears the wall: forward, back from the stacks, or off into the night.
       const crowd = move(w, moods);
@@ -186,6 +237,8 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
+        // tonight's rig, and the others to bring instead (the level starts over with them: `?rig=`)
+        + `<span class="rigs">Rig: ${DESERT_RIGS.map((id) => id === tonightRig() ? `<b title="${esc(SYSTEMS[id].setup)}">${SYSTEMS[id].name}</b>` : `<a href="?level=desert&rig=${id}" title="${esc(SYSTEMS[id].setup)}">${SYSTEMS[id].name}</a>`).join(" · ")}</span>`
         + `<small>F push the cart or a stack's dolly, G tape the joints near you, H heat map, B bass map, Q / E turn, R / V tilt, [ ] fader, Enter show time</small>`;
     },
     doors() {
