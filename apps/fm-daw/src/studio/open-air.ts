@@ -16,11 +16,11 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "@rustybuns/util";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS } from "@rustybuns/gear";
+import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { rugMesh } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
-import type { Outdoor, StudioDef } from "./room.ts";
+import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
 
 /** The beams' colours, cycling across the heads: magenta, cyan, amber, violet. */
@@ -284,6 +284,45 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
       const c = gear("jerry-can-20l", { look });
       c.position.set(out.generator.at[0] + 1 + i * 0.4, 0, out.generator.at[1] + 0.6); c.rotation.y = rnd() * 0.4;
       group.add(c);
+    }
+  }
+
+  // ---- the cables on the sand: the generator's orange feed to a distro behind the wall, power on to the amp rack
+  // beside it, a speaker run from the rack to the back of each stack, and the line from the booth's mixer round the end
+  // of the wall to the rack. Each lies on the sand with a little wander, as a run does when it's been walked on.
+  const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
+  if (out.generator && stacks.length) {
+    const fx = Math.sin(stacks[0]!.yaw), fz = Math.cos(stacks[0]!.yaw), rx = Math.cos(stacks[0]!.yaw), rz = -Math.sin(stacks[0]!.yaw);
+    const mx = stacks.reduce((t, st) => t + st.at[0], 0) / stacks.length, mz = stacks.reduce((t, st) => t + st.at[1], 0) / stacks.length;
+    const back = (d: number, side = 0): [number, number] => [mx - fx * d + rx * side, mz - fz * d + rz * side];
+    const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
+    const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
+    const rack = gear("amp-rack-4u", { look }); rack.position.set(rackAt[0], 0, rackAt[1]); rack.rotation.y = stacks[0]!.yaw + Math.PI; group.add(rack);
+    const distro = gear("distro-box", { look }); distro.position.set(distroAt[0], 0, distroAt[1]); distro.rotation.y = stacks[0]!.yaw + Math.PI; group.add(distro);
+    const run = (pts: [number, number][], r: number, color: string, seed: number) => {
+      const wr = mulberry32(seed), path: THREE.Vector3[] = [];
+      pts.forEach(([x, z], i) => {
+        path.push(new THREE.Vector3(x, r, z));
+        const next = pts[i + 1];
+        if (!next) return;
+        // a few points between, nudged sideways: a cable never lies dead straight
+        const len = Math.hypot(next[0] - x, next[1] - z), n = Math.max(1, Math.floor(len / 1.2)), ux = (next[0] - x) / len, uz = (next[1] - z) / len;
+        for (let k = 1; k < n; k++) { const t = k / n, off = (wr() - 0.5) * 0.35; path.push(new THREE.Vector3(x + (next[0] - x) * t - uz * off, r, z + (next[1] - z) * t + ux * off)); }
+      });
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(path), Math.max(16, path.length * 8), r, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.75 }));
+      tube.castShadow = tube.receiveShadow = true;
+      group.add(tube);
+    };
+    const [gx, gz] = out.generator.at;
+    run([[gx + 0.4, gz + 0.2], [(gx + distroAt[0]) / 2, (gz + distroAt[1]) / 2 + 0.8], distroAt], 0.014, "#d2602a", 1);
+    run([distroAt, [(distroAt[0] + rackAt[0]) / 2, distroAt[1] - fz * 0.4], rackAt], 0.008, "#151515", 2);
+    stacks.forEach((st, i) => {
+      const behind: [number, number] = [st.at[0] - fx * 0.55, st.at[1] - fz * 0.55];
+      run([rackAt, [(rackAt[0] + behind[0]) / 2, (rackAt[1] + behind[1]) / 2 - fz * 0.3], behind], 0.0065, "#101010", 10 + i);
+    });
+    if (dj) {
+      const b = thingBox(dj), end: [number, number] = [mx + rx * (span + 0.7), mz + rz * (span + 0.7)];
+      run([[b.cx, b.cz], [b.cx + rx * (span * 0.6), b.cz + rz * (span * 0.6) - fz * 0.4], end, back(1.2, span + 0.4), rackAt], 0.0045, "#0c0c0c", 30);
     }
   }
 
