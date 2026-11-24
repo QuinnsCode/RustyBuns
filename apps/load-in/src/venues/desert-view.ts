@@ -4,6 +4,7 @@
 // the sky runs the night through to sunrise, or goes dark at the hour the fuel runs out. main.ts calls `desertView`
 // once per world and then `key` and `update`, as it does the park's view.
 import * as THREE from "three";
+import { desertFloor } from "@rustybuns/models/ground";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
@@ -38,7 +39,10 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     return mesh;
   };
   // Sand out to the dunes, the truck's track in from the end of the road.
-  slab({ x0: -120, x1: 120, z0: -120, z1: 120 }, -0.02, 0.02, mat(0xc8a97a));
+  // the floor itself: a walked-on desert, packed silt, gravel and broken ripples at their real size (@rustybuns/models ground.ts)
+  const floor = desertFloor({ color: "#c8a97a", seed: 11 });
+  floor.map.repeat.set(240 / 3, 240 / 3); floor.bump.repeat.copy(floor.map.repeat);
+  slab({ x0: -120, x1: 120, z0: -120, z1: 120 }, -0.02, 0.02, mat(0xffffff, { map: floor.map, bumpMap: floor.bump, bumpScale: 1.2, roughness: 1 }));
   slab({ x0: -1.4, x1: 1.4, z0: 24, z1: 120 }, -0.015, 0.02, mat(0xb39466));
   for (let k = 0; k < 14; k++) {
     const a = (k / 14) * Math.PI * 2, r = 44 + 6 * Math.sin(k * 2.3);
