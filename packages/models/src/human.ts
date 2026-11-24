@@ -17,6 +17,7 @@
 import * as THREE from "three";
 import { clamp, clamp01, lerp, mulberry32 } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
+import type { Play } from "./character.ts";
 
 /** How a body is built. Every number but `height` is 0 for the middle of the range. */
 export interface Build {
@@ -1051,4 +1052,66 @@ export function fromAvatar(a: Avatar): { build: Build; outfit: Outfit; palette: 
     boot: "#24272c", bootDark: "#17191c", sole: "#f1ede4", hat: tint(topColor, 0.15), hatDark: tint(topColor, 0.4),
   };
   return { build, outfit, palette };
+}
+
+// ---- sitting and playing ------------------------------------------------------------------------------------------------
+
+/** How a body sits: its hip joints' height over the floor (shins straight down, thighs level), and the underside of its
+ *  thighs (what rests on a seat), in metres. */
+export function seatOf(h: Human): { hip: number; seat: number } {
+  const k = h.height / 1.75, hip = h.bones.footR.position.length() + 0.09 * k;
+  return { hip, seat: hip - 0.08 * k };
+}
+
+/** Sits a posed body (after `pose({ speed: 0 })`): thighs level, shins down, leaning in a little more when it plays. */
+export function sit(h: Human, playing: boolean) {
+  const bn = h.bones;
+  bn.hips.position.set(0, seatOf(h).hip, 0);
+  bn.hips.quaternion.identity();
+  for (const [n, s] of [["R", -1], ["L", 1]] as const) {
+    bn[`thigh${n}`].quaternion.setFromEuler(e1.set(-(Math.PI / 2 - 0.05), 0, s * 0.12));
+    bn[`shin${n}`].quaternion.setFromEuler(e1.set(Math.PI / 2 - 0.05, 0, -s * 0.12));
+    bn[`foot${n}`].quaternion.setFromEuler(e1.set(0, s * 0.15, 0));
+  }
+  bn.spine.quaternion.setFromEuler(e1.set(playing ? 0.08 : 0.02, 0, 0));
+  bn.chest.quaternion.setFromEuler(e1.set(playing ? 0.06 : 0.02, 0, 0));
+  bn.neck.quaternion.identity(); bn.head.quaternion.identity();
+}
+
+/**
+ * An arm's pose while seated or playing, `s` 1 for the right arm and -1 the left, in the frame of an arm facing -z (the
+ * old character's): the shoulder's swing forward (x) and out to its side (z), the elbow's and the wrist's bend.
+ */
+export function playArm(s: number, t: number, play: Play | null): { sx: number; sz: number; ex: number; wx: number } {
+  if (play === "keys") {
+    const tap = Math.max(0, Math.sin(t * 11 + (s > 0 ? 0 : 1.9)));
+    return { sx: 0.75, sz: s * 0.12, ex: 1.75 - tap * 0.12, wx: -0.75 + tap * 0.25 };
+  }
+  if (play === "sticks") {
+    const hit = Math.pow(Math.max(0, Math.sin(t * 9 + (s > 0 ? 0 : Math.PI))), 3);
+    return { sx: 0.9 + (1 - hit) * 0.45, sz: s * 0.3, ex: 0.9 - hit * 0.6, wx: -0.4 + hit * 0.5 };
+  }
+  if (play === "strings") {
+    if (s < 0) return { sx: 0.75, sz: -0.75, ex: 0.55 + Math.sin(t * 2) * 0.05, wx: -0.3 };
+    const strum = Math.sin(t * 12);
+    return { sx: 0.55, sz: -0.45, ex: 1.05 + strum * 0.18, wx: strum * 0.25 };
+  }
+  return { sx: 0.35, sz: s * 0.12, ex: 0.9, wx: 0 };
+}
+
+const HALF = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+/** Puts both of a body's arms in `playArm`'s pose (its own hands, no fingers: a preview, not the room). */
+export function playArms(h: Human, t: number, play: Play | null) {
+  for (const [s, n] of [[1, "R"], [-1, "L"]] as const) {
+    const p = playArm(s, t, play);
+    // the arm frame faces -z, the body +z: the same turn seen from behind is a half turn, the turn, and a half turn back
+    for (const [bone, x, z] of [[h.bones[`arm${n}`], p.sx, p.sz], [h.bones[`fore${n}`], p.ex, 0], [h.bones[`hand${n}`], p.wx, 0]] as const)
+      bone.quaternion.copy(HALF).multiply(q1.setFromEuler(e1.set(x, 0, z))).multiply(HALF);
+  }
+}
+
+/** Whether the body has an avatar's hair or hat itself (true), or wears the nearest it has until it grows one. */
+export function wearsAsIs(part: "hair" | "hat", v: string): boolean {
+  if (v === "none") return true;
+  return part === "hair" ? (AVATAR_HAIR[v] ?? "long") === v : AVATAR_HAT[v] === v;
 }

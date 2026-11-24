@@ -97,9 +97,15 @@ export function defaultAvatar(name: string): Avatar {
 
 type Ctx = { [k: string]: any };
 
+/** Where `drawAvatar` puts the middle of the face, in hundredths of the figure's height above its feet (a taller leg
+ *  slider puts it higher): what a face-only preview centres on. */
+export function faceY(a: Avatar): number {
+  return (a.build === "tall" ? 30 : a.build === "short" ? 16 : 24) + (a.height ?? 0) * 1.5 + 44;
+}
+
 /** The avatar head to toe on a 2D canvas context at (x, y) (its feet, centred), `h` tall: the editor's preview. `star` spreads arms and legs like the old anatomy drawing: the little one in a profile's header. */
 export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, star = false) {
-  const u = h / 100, w = a.build === "round" ? 34 : a.build === "slim" ? 24 : 28, legH = (a.build === "tall" ? 30 : a.build === "short" ? 16 : 24) + (a.height ?? 0) * 1.5;
+  const u = h / 100, w = a.build === "round" ? 34 : a.build === "slim" ? 24 : 28, legH = faceY(a) - 44;
   const box = (px: number, py: number, pw: number, ph: number, c: string, r = 0) => { g.fillStyle = c; g.beginPath(); g.roundRect(x + px * u, y + py * u, pw * u, ph * u, r * u); g.fill(); };
   const headY = -(legH + 26 + 36), cy = headY + 18;
   // A limb hung from a pivot, swung `turn` radians: its own colour, then a hand or shoe at the end.

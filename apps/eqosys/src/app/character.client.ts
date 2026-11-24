@@ -1,15 +1,18 @@
-// The character picker on the Me tab (#4987, #5009): your figure (@rustybuns/models' character) large on a framed
+// The character picker on the Me tab (#4987, #5009): your figure (@rustybuns/models' human, the body Qollab Studio's
+// rooms dress from your avatar, #5802) large on a framed
 // stage, turning slowly, drag to spin (a "Drag to turn" hint until you do), with the poses to try under it and a button
 // for a close look at the face. Four tabs of choices: Face (its shape, eyes, brows, nose, mouth, cheeks, facial hair,
 // glasses, skin, and sliders to size and move them; the camera comes in close on the head), Hair, Clothes and Body
 // (build and height). Someone new (signed up, or signed in without one: ?new=1) is welcomed to it, with a Later link. Shuffle and Save sit right under the tabs, so they're in sight at every size. It reads and saves through GET and PUT
 // /me/avatar (avatar.ts) with the session cookie. Its own module script, on the Me tab alone, so three.js loads only
-// here. `window.__character` is its handle: `bun run probe eqosys "/?tab=account" --js "__character.state()"`.
+// here. The body has no face maker yet (#5716), so the Face tab shows yours in 2D beside it, and the hair and hats it
+// wears as the nearest it has say "soon". `window.__character` is its handle: `bun run probe eqosys "/?tab=account" --js "__character.state()"`.
 import * as THREE from "three";
 import { createElement, MoveHorizontal, PersonStanding, Save, Scissors, Shirt, Shuffle, Smile, ZoomIn, ZoomOut } from "lucide";
-import { AvatarReply, FACE, PARTS, randomAvatar, TUNE, TUNE_STEPS, type Avatar } from "@rustybuns/util/avatar";
+import { AvatarReply, drawAvatar, FACE, faceY, PARTS, randomAvatar, TUNE, TUNE_STEPS, type Avatar } from "@rustybuns/util/avatar";
 import { getJson } from "@rustybuns/util/http";
-import { character, type Character, type Play } from "@rustybuns/models/character";
+import type { Play } from "@rustybuns/models/character";
+import { fromAvatar, human, playArms, seatOf, sit, wearsAsIs, type Human } from "@rustybuns/models/human";
 
 const OPTIONS = { ...PARTS, ...FACE };
 type Part = keyof typeof OPTIONS;
@@ -76,14 +79,36 @@ export async function mountCharacter(box: HTMLElement) {
   scene.add(shadow);
   const turntable = new THREE.Group();
   scene.add(turntable);
-  // a stool for the seated poses, its top at the height character() sits at
+  // a stool for the seated poses, its top where the body's thighs rest
   const stool = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: "#6b4a2c", roughness: 0.8 });
   const put = (m: THREE.Mesh, x: number, y: number, z: number) => { m.position.set(x, y, z); stool.add(m); };
   put(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.04, 24), wood), 0, 0.43, 0.04);
   for (const [x, z] of [[-0.14, -0.09], [0.14, -0.09], [-0.14, 0.17], [0.14, 0.17]] as const) put(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.42, 8), wood), x, 0.21, z);
   turntable.add(stool);
-  let fig: Character | null = null;
-  const dress = () => { if (fig) { turntable.remove(fig.group); fig.dispose(); } fig = character(avatar); turntable.add(fig.group); stool.scale.y = fig.seat / 0.45; };
+  // the body faces +z: turned half round, it faces the camera as the old figure did
+  let fig: Human | null = null;
+  const dress = () => {
+    if (fig) { turntable.remove(fig.root); fig.dispose(); }
+    const { build, outfit, palette } = fromAvatar(avatar);
+    fig = human(build, outfit, palette);
+    fig.root.rotation.y = Math.PI;
+    turntable.add(fig.root);
+    stool.scale.y = seatOf(fig).seat / 0.45;
+    drawFacePreview();
+  };
+
+  // the face as it is in 2D (the body's own faces are #5716): on the Face tab, in the stage's corner
+  const facePreview = el("canvas", "ch-face", stage);
+  facePreview.width = facePreview.height = 192;
+  facePreview.setAttribute("role", "img");
+  function drawFacePreview() {
+    const g = facePreview.getContext("2d");
+    if (!g) return;
+    const size = facePreview.width, u = size / 60;
+    g.clearRect(0, 0, size, size);
+    drawAvatar(g, avatar, size / 2, size / 2 + (faceY(avatar) - 2) * u, 100 * u);
+    facePreview.setAttribute("aria-label", "Your face. On the 3D body soon.");
+  }
   dress();
 
   // drag to spin, and it keeps turning slowly when let go; on the Face tab it turns only a little, to show the face
@@ -101,7 +126,8 @@ export async function mountCharacter(box: HTMLElement) {
   const fit = () => { const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
   new ResizeObserver(fit).observe(stage);
   fit();
-  // the camera eases between the whole figure and a close look at the face
+  // the camera eases between the whole figure and a close look at the head and shoulders (a life-size head: the head bone
+  // is its base, the face about 10 cm over it)
   const eye = new THREE.Vector3(0, 0.9, -3.6), aim = new THREE.Vector3(0, 0.7, 0), headAt = new THREE.Vector3();
   let last = performance.now();
   function isClose() { return zoom ?? (tab === "face" || tab === "hair"); }
@@ -116,12 +142,16 @@ export async function mountCharacter(box: HTMLElement) {
     const seated = pose === "sit" || pose === "keys" || pose === "sticks";
     stool.visible = seated && !close;
     const play: Play | null = !close && (pose === "keys" || pose === "sticks" || pose === "strings") ? pose : null;
-    fig?.pose({ t: now / 1000, speed: !close && pose === "walk" ? 1.4 : 0, seated: seated && !close, play, note: play !== null && Math.sin(now / 600) > 0.2 });
     if (fig) {
-      fig.head.getWorldPosition(headAt);
+      const sat = seated && !close;
+      fig.pose({ speed: !close && pose === "walk" ? 1.4 : 0 }, dt);
+      if (sat) sit(fig, play !== null);
+      if (sat || play) playArms(fig, now / 1000, play);
+      fig.root.updateMatrixWorld(true);
+      fig.bones.head.getWorldPosition(headAt);
       const h = fig.height + 0.25, k = Math.min(1, dt * 4);
-      eye.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y + 0.01, -0.95) : new THREE.Vector3(0, h * 0.62, -h * 2.4 - 0.4), k);
-      aim.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y - 0.03, 0) : new THREE.Vector3(0, h * 0.46, 0), k);
+      eye.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y + 0.1, -1.7) : new THREE.Vector3(0, h * 0.62, -h * 2.4 - 0.4), k);
+      aim.lerp(close ? new THREE.Vector3(headAt.x * 0.3, headAt.y + 0.04, 0) : new THREE.Vector3(0, h * 0.46, 0), k);
     }
     camera.position.copy(eye); camera.lookAt(aim);
     renderer.render(scene, camera);
@@ -141,6 +171,8 @@ export async function mountCharacter(box: HTMLElement) {
     tabButtons.push(b);
     const panel = el("div", "ch-panel", rows);
     panel.setAttribute("role", "tabpanel");
+    if (name === "face") el("p", "ch-soon", panel).textContent = "Faces on the 3D body are coming. Until then, the one you make here shows in the corner and on your 2D card.";
+    if (name === "hair") el("p", "ch-soon", panel).textContent = "Styles marked soon show as the nearest the 3D body has for now.";
     panels.set(name, panel);
     for (const r of t.rows as Row[]) {
       if (r.length === 3) {
@@ -155,6 +187,7 @@ export async function mountCharacter(box: HTMLElement) {
         const b = el("button", COLOUR.has(part) ? "ch-swatch" : "ch-chip", list);
         b.type = "button"; b.dataset.value = v;
         if (COLOUR.has(part)) { b.style.background = v; b.title = v; b.setAttribute("aria-label", `${label} ${v}`); } else b.textContent = word(v);
+        if ((part === "hair" || part === "hat") && !wearsAsIs(part, v)) { b.dataset.soon = ""; b.title = `${word(v)}: the 3D body wears the nearest it has until it grows this one`; }
         b.addEventListener("click", () => pick(part, v));
         bs.push(b);
       }
@@ -182,6 +215,7 @@ export async function mountCharacter(box: HTMLElement) {
   function show() {
     for (const b of tabButtons) b.setAttribute("aria-selected", String(b.dataset.value === tab));
     for (const [name, p] of panels) p.hidden = name !== tab;
+    facePreview.hidden = tab !== "face";
     for (const [part, bs] of buttons) for (const b of bs) {
       const on = b.dataset.value === avatar[part];
       b.setAttribute("aria-pressed", String(on));

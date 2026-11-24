@@ -313,6 +313,10 @@ const HOME_CSS = `
 .home .ch-zoom{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2.75rem;height:2.75rem;border-radius:50%;cursor:pointer;
  border:1px solid var(--rim);background:color-mix(in oklab,var(--paper) 85%,transparent);color:var(--ink)}
 .home .ch-zoom[aria-pressed=true]{border-color:var(--acc)}
+.home .ch-stage canvas.ch-face{position:absolute;left:.6rem;top:.6rem;width:clamp(4.5rem,24%,7.5rem);height:auto;aspect-ratio:1;border-radius:16px;pointer-events:none;
+ border:1px solid var(--rim);background:color-mix(in oklab,var(--paper) 85%,transparent)}.home .ch-face[hidden]{display:none}
+.home .ch-soon{margin:0;font-size:.85rem;opacity:.75}
+.home .ch-chip[data-soon]::after{content:"soon";margin-left:.4rem;font-size:.7rem;font-weight:600;opacity:.65;text-transform:uppercase;letter-spacing:.04em}
 .home .ch-poses{display:flex;gap:.4rem;overflow-x:auto;justify-content:safe center;padding:.15rem;scrollbar-width:thin}
 .home .ch-poses .ch-chip{min-height:2.4rem}
 .home .ch-later{margin-left:.4rem;font-weight:500;font-size:.95rem;color:var(--acc)}
