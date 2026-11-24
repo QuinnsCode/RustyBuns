@@ -6,7 +6,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+// the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
+setDefaultTimeout(240_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 // The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
@@ -24,7 +25,12 @@ afterAll(() => { chrome?.stop(); vite?.stop(); });
 
 test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as const)("the room's menu on %s: every group a sideways row", async (_, w, h) => {
   const tab = await openTab(chrome.cdp, { w, h });
-  await load(chrome.cdp, tab, `${vite.url}jam.html?room=menu-rows&studio=desert-gathering`, 0);
+  // a tab left drawing its room starves the next one of CPU, so each case closes its own
+  try { await rows(tab, w); } finally { await tab.close(); }
+});
+
+async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
+  await load(chrome.cdp, tab, `${vite.url}jam.html?room=menu-rows&studio=desert-gathering&quality=low`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
   for (const end = Date.now() + 30_000; Date.now() < end; await Bun.sleep(50)) if (await page(`!!window.qjam && document.getElementById("studios").clientWidth > 0`)) break;
 
@@ -53,4 +59,4 @@ test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as
   await Bun.sleep(400);
   expect(await page<number>(`document.getElementById("people").scrollLeft`)).toBeLessThan(wheeled);
   expect(await page<number>("document.documentElement.scrollWidth")).toBe(w);
-});
+}
