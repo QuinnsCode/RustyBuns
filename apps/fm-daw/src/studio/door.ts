@@ -10,10 +10,15 @@ import type { HubFriend, HubNote } from "@rustybuns/util/eqosys";
 
 /** A studio as the pickers show it: its id, name, a line on what it is, and the room itself (for its shot). */
 export interface Studio { id: string; name: string; about: string; def: StudioDef }
-/** The studios a room can be in: the builder's rooms, and the one you built in /rooms.html (?studio=yours) when there is one. */
+/** The studio the pickers show first (the owner's pick): the desert gathering. */
+export const FIRST_STUDIO = "desert-gathering";
+/**
+ * The studios a room can be in, as the pickers list them: the builder's rooms with the desert gathering first, and the
+ * one you built in /rooms.html (?studio=yours) when there is one.
+ */
 export function studios(): Studio[] {
-  const mine = yours();
-  return [...ROOM_LIST.map((r) => ({ id: r.id, name: r.name, about: r.about ?? "", def: r })),
+  const mine = yours(), rooms = [...ROOM_LIST].sort((a, b) => Number(b.id === FIRST_STUDIO) - Number(a.id === FIRST_STUDIO));
+  return [...rooms.map((r) => ({ id: r.id, name: r.name, about: r.about ?? "", def: r })),
     ...(mine ? [{ id: "yours", name: "The one you built", about: "Your own room, from the studio builder.", def: mine }] : [])];
 }
 

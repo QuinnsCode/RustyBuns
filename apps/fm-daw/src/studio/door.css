@@ -22,16 +22,20 @@
 #people { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 #people li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #people span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.studios { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+/* the studio cards: one sideways row, the list repeated each side (picker.ts wheel) so it feels endless */
+.studios { position: relative; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; min-width: 0; max-width: 100%; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; padding: 2px 0; cursor: grab; }
+.studios::-webkit-scrollbar { display: none; }
+.studios.dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+#menu .studios > .studio-card { flex: 0 0 150px; scroll-snap-align: center; }
 #menu .studio-card { display: grid; gap: 4px; align-content: start; text-align: left; padding: 8px; min-height: 0; white-space: normal; background: #23262c; color: var(--ink); border: 1px solid #3a3e45; cursor: pointer; }
 #menu .studio-card:hover:not(:disabled) { border-color: var(--hot); }
-#menu .studio-card[aria-checked="true"] { border-color: var(--hot); box-shadow: inset 0 0 0 1px var(--hot); }
+#menu .studio-card[aria-checked="true"], #menu .studio-card[data-current] { border-color: var(--hot); box-shadow: inset 0 0 0 1px var(--hot); }
 #menu .studio-card:disabled { cursor: default; opacity: 0.75; }
-#menu .studio-card[aria-checked="true"]:disabled { opacity: 1; }
+#menu .studio-card[aria-checked="true"]:disabled, #menu .studio-card[data-current]:disabled { opacity: 1; }
 .studio-card svg { width: 100%; aspect-ratio: 4 / 3; background: #15171b; border-radius: 6px; }
 .studio-card b { font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
 .studio-card small { color: var(--dim); font: 400 12px/1.35 "IBM Plex Sans", system-ui, sans-serif; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-@media (max-width: 480px) { .studios { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { #menu .studios > .studio-card { flex-basis: 136px; } }
 #invites { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 #invites a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--hot); border-radius: 10px; color: var(--ink); text-decoration: none; }
 #invites span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
