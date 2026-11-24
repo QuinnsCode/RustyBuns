@@ -16,6 +16,6 @@ test("the keys track plays the voice of the instrument at the room's keys seat, 
   }
   // a room with no keys seat keeps the groove as it is
   expect(withKeysVoice(before, null)).toBe(before);
-  // the three families don't share a voice
-  expect(new Set(POLY_KINDS.map((k) => KEYS_VOICES[k].join())).size).toBe(3);
+  // no two families share a voice
+  expect(new Set(POLY_KINDS.map((k) => KEYS_VOICES[k].join())).size).toBe(POLY_KINDS.length);
 });

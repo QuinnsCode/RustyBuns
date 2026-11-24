@@ -33,7 +33,7 @@ export function bassSynth(s: Spot): { synth: MonoSynth; keys: Keys } {
 export function keysSynth(s: Spot, kind?: PolyKind): { synth: MonoSynth & { kind: PolyKind }; keys: Keys } {
   const t = s.thing, synth = polysynth(seedOf(s.id), { fit: t.w + 0.1, keyTop: t.h + 0.022, kind: keysKind(s, kind) }), k = synth.keys;
   synth.group.position.z = t.d * 0.43 - POLY_KEY_FRONT;
-  return { synth, keys: new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, undefined, k.blackRest) };
+  return { synth, keys: new Keys(k.white, k.whiteAt, k.black, k.blackAt, layout(k.whites), k.whiteLen, k.blackLen, k.whiteRest, k.blackRest) };
 }
 
 /** Which family stands at a keys seat: the one asked for, else the spot's id picks (the same for everyone in the room). */

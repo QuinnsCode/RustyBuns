@@ -96,7 +96,7 @@ const pick = here?.studio ?? "";
 const picked = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 // ?rig= tries another of the open-air rigs (@rustybuns/gear systems.ts) on the same sand: the boxes and their sound
 const rigAsked = new URLSearchParams(location.search).get("rig");
-// ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar); the spot's id picks one otherwise
+// ?keys= tries another family at the keys seat (wood-poly, fm-slab, drawbar, tine-ep, combo, strings); the spot's id picks one otherwise
 const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.search).get("keys"));
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);

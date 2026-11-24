@@ -18,6 +18,8 @@ export interface MonoKeys {
   whiteLen: number; blackLen: number;
   /** A black key's resting colour (the instance colour an app keeps it at). */
   blackRest: THREE.Color;
+  /** A white key's resting colour, when it isn't the material's own (the combo organ's black naturals). */
+  whiteRest?: THREE.Color;
   /** How many white keys, from C (37 keys: 22, three octaves C to C; 44: 26, C up to G). */
   whites: number;
 }
