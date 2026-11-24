@@ -57,15 +57,40 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     new THREE.EdgesGeometry(new THREE.BoxGeometry(f.x1 - f.x0, 0.001, f.z1 - f.z0)), new THREE.LineBasicMaterial({ color: 0xf2c230 }));
   edge.position.set((f.x0 + f.x1) / 2, 0.015, (f.z0 + f.z1) / 2);
   g.add(edge);
-  // The camp: a cluster of dome tents.
-  const tentMat = mat(0x3f6f8f), loudMat = mat(0xd0503c), tents: THREE.Mesh[] = [];
+  // The camp: a cluster of dome tents, each a nylon flysheet over two crossing poles, a zipped door panel, guy lines out
+  // to stakes in the sand. The flysheet goes red when the camp is over its limit.
+  const tentMat = mat(0x3f6f8f, { roughness: 0.7 }), loudMat = mat(0xd0503c, { roughness: 0.7 }), tents: THREE.Mesh[] = [];
+  const poleMat = mat(0x2a2a2c, { metalness: 0.6, roughness: 0.4 }), doorMat = mat(0x2b3f52, { roughness: 0.8 }), lineMat = new THREE.LineBasicMaterial({ color: 0x8c8678 });
   const c = ZONES.camp;
   for (let k = 0; k < 6; k++) {
-    const t = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), tentMat);
-    t.position.set(c.x0 + 1.5 + (k % 3) * 3.5, 0, c.z0 + 2 + Math.floor(k / 3) * 6);
-    t.scale.y = 0.9;
-    g.add(t);
-    tents.push(t);
+    const tent = new THREE.Group(), r = 1.15, h = 1.05;
+    tent.position.set(c.x0 + 1.5 + (k % 3) * 3.5, 0, c.z0 + 2 + Math.floor(k / 3) * 6);
+    tent.rotation.y = (k * 0.9) % 1.4 - 0.7;
+    // the flysheet: a dome pulled tight between its poles, so it sags a little between them
+    const fly = new THREE.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), p = fly.attributes.position!;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), a = Math.atan2(z, x), sag = 1 - 0.06 * Math.abs(Math.sin(2 * a));
+      p.setXYZ(i, x * sag, (y / r) * h * (0.94 + 0.06 * Math.abs(Math.cos(2 * a))), z * sag);
+    }
+    fly.computeVertexNormals();
+    const body = new THREE.Mesh(fly, tentMat);
+    tent.add(body);
+    // the two poles crossing over the top, corner to corner
+    for (const turn of [Math.PI / 4, -Math.PI / 4]) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(r * 1.005, 0.012, 6, 32, Math.PI), poleMat);
+      arc.rotation.y = turn; arc.scale.y = h / r;
+      tent.add(arc);
+    }
+    // the door: a darker zipped panel on the front, and the zip down its middle
+    const door = new THREE.Mesh(new THREE.CircleGeometry(0.42, 16, 0, Math.PI), doorMat);
+    door.position.set(0, 0.01, r * 0.93); door.rotation.x = -0.25; door.scale.y = 1.6;
+    tent.add(door);
+    // guy lines from the pole ends out to stakes
+    const pts: number[] = [];
+    for (let q = 0; q < 4; q++) { const a = Math.PI / 4 + (q * Math.PI) / 2; pts.push(Math.cos(a) * r * 0.75, h * 0.62, Math.sin(a) * r * 0.75, Math.cos(a) * (r + 0.7), 0.02, Math.sin(a) * (r + 0.7)); }
+    tent.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)), lineMat));
+    g.add(tent);
+    tents.push(body);
   }
 
   // The sky: stars on a dome inside the camera's 60 m reach, and the full moon low over the dunes.
