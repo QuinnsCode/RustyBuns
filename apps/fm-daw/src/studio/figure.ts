@@ -25,7 +25,9 @@ export interface Figure {
    *  a player sets a stool's height and pulls it in, so its hands land there whatever its build. `sticks`: a drumstick in
    *  each hand (sat at the kit). `aim`: the spot's keys or kit and what sounds there, for its fingers and stick tips to land on
    *  (fingers.ts). */
-  pose(o: { speed: number; seated: boolean; play: Play | null; note: boolean; t: number; look?: THREE.Vector3 | null; beat?: number | null; reach?: Reach | null; sticks?: boolean; aim?: Aim | null }): void;
+  pose(o: { speed: number; heading?: number; crouch?: number; seated: boolean; play: Play | null; note: boolean; t: number; look?: THREE.Vector3 | null; beat?: number | null; reach?: Reach | null; sticks?: boolean; aim?: Aim | null }): void;
+  /** Where its right palm is in the room after the last pose: what a carried lantern hangs from. */
+  handAt(out: THREE.Vector3): THREE.Vector3;
   /** Its real hands (fingers.ts): where each fingertip and stick tip is. */
   hands: Hands;
   /** How solid the head (and its hair and hat) is drawn, 0 to 1: your own, seen up close beside it, so you see past it.
@@ -133,10 +135,10 @@ export function figure(a: Avatar, name: string | null): Figure {
   let last = -1, yaw = 0, pitch = 0;
   const at = new THREE.Vector3(), target = new THREE.Vector3();
   /** The body for this frame, before the real hands: walking or sat, the head turned to `look`, nodding on `beat`. */
-  const place = (o: { t: number; speed: number; seated: boolean; play: Play | null; look?: THREE.Vector3 | null; beat?: number | null }) => {
+  const place = (o: { t: number; speed: number; heading?: number; crouch?: number; seated: boolean; play: Play | null; look?: THREE.Vector3 | null; beat?: number | null }) => {
     const dt = last < 0 ? 0 : clamp(o.t - last, 0, 0.25);
     last = o.t;
-    body.pose({ speed: o.seated ? 0 : o.speed }, dt);
+    body.pose(o.seated ? { speed: 0 } : { speed: o.speed, heading: o.heading ?? 0, crouch: o.crouch ?? 0 }, dt);
     if (o.seated) {
       bn.hips.position.set(0, seatHip, 0);
       bn.hips.quaternion.identity();
@@ -191,11 +193,12 @@ export function figure(a: Avatar, name: string | null): Figure {
   return {
     group,
     hands: real,
-    pose({ speed, seated, play, note: _note, t, look = null, beat = null, reach = null, sticks: holding = false, aim = null }) {
+    handAt: (out) => handNodes[0]!.getWorldPosition(out),
+    pose({ speed, heading, crouch, seated, play, note: _note, t, look = null, beat = null, reach = null, sticks: holding = false, aim = null }) {
       const p = seated && play && reach ? palm(play, t) : null;
       const up = p && reach ? clamp(reach.up - p.up, -SHIFT, SHIFT) : 0, ahead = p && reach ? clamp(reach.ahead - p.ahead, -SHIFT, SHIFT) : 0;
       seatShift.position.set(0, seated ? SEAT - sitOn + up : 0, -ahead);
-      place({ t, speed, seated, play, look, beat });
+      place({ t, speed, heading, crouch, seated, play, look, beat });
       group.updateMatrixWorld(true);
       real.pose({ play, aim: seated ? aim : null, sticks: holding, t });
       if (seated || play) leadBody();

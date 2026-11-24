@@ -9,7 +9,10 @@ import { floorAt, propBlocks, propBox, thingBox, wallPieces, type Spot, type Stu
 import { pushOut as walkOut, type Rect } from "./walk.ts";
 import { gearSolids } from "./gear-wall.ts";
 
-export const WALK = 2.2;           // metres a second
+export const WALK = 1.45;          // metres a second: an easy walk
+export const BRISK = 2.7;          // Shift held: a speed walk
+/** A hop (Space, walking): how fast you leave the ground (m/s), and how hard you come back down. About 25 cm up. */
+export const HOP = { up: 2.2, g: 9.8 };
 export const RADIUS = 0.3;         // your body, for walls and furniture
 export const SIT_REACH = 1.4;      // how close to a seat you have to be to sit
 export const EYE_STAND = 1.65, EYE_SIT = 1.2;
@@ -20,15 +23,18 @@ const sitPitch = (s: Spot | null) => (s?.kind === "drums" ? KIT_PITCH : SIT_PITC
 export const BODY_HZ = 10;
 
 export type Cam = "shoulder" | "first";
-export interface Me { x: number; z: number; yaw: number; pitch: number; seat: string | null; cam: Cam }
+/** `y` how far off the floor a hop has you, `vy` how fast you rise (down: less than 0). `walkCam`: the camera you
+ *  walk with (V), back when you stand up; a seat always puts you in first person. */
+export interface Me { x: number; z: number; y: number; vy: number; yaw: number; pitch: number; seat: string | null; cam: Cam; walkCam: Cam }
 /** Someone else in the room, from their live line: where they are, their seat, who they look like, the notes they hold. */
-export interface Other { at: [number, number]; yaw: number; seat: string | null; avatar: Avatar | null; name: string; held: Set<string> }
+export interface Other { at: [number, number]; hop: number; yaw: number; seat: string | null; avatar: Avatar | null; name: string; held: Set<string> }
 /** `away`: who on the live line is in the sesh's gear room (src/room/), not this room: they have no body here. */
 export interface Jam { def: StudioDef; me: Me; others: Map<number, Other>; away: Set<number> }
-export interface Input { forward: number; right: number; turn: number }
+/** `brisk`: Shift held, a speed walk. */
+export interface Input { forward: number; right: number; turn: number; brisk?: boolean }
 
 export function newJam(def: StudioDef): Jam {
-  return { def, me: { x: def.door.at[0], z: def.door.at[1], yaw: def.door.yaw, pitch: 0, seat: null, cam: "shoulder" }, others: new Map(), away: new Set() };
+  return { def, me: { x: def.door.at[0], z: def.door.at[1], y: 0, vy: 0, yaw: def.door.yaw, pitch: 0, seat: null, cam: "shoulder", walkCam: "shoulder" }, others: new Map(), away: new Set() };
 }
 
 export const spotOf = (j: Jam, id: string | null) => (id ? j.def.spots.find((s) => s.id === id) ?? null : null);
@@ -50,12 +56,25 @@ export function step(j: Jam, dt: number, i: Input) {
   const m = j.me;
   m.yaw += i.turn;
   if (m.seat) return;
+  if (m.y > 0 || m.vy > 0) {
+    m.vy -= HOP.g * dt;
+    m.y += m.vy * dt;
+    if (m.y <= 0) { m.y = 0; m.vy = 0; }
+  }
   const len = Math.hypot(i.forward, i.right);
   if (len === 0) return;
-  const k = (WALK * dt) / Math.max(1, len), fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw);
+  const k = ((i.brisk ? BRISK : WALK) * dt) / Math.max(1, len), fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw);
   m.x += (fx * i.forward - fz * i.right) * k;
   m.z += (fz * i.forward + fx * i.right) * k;
   pushOut(j.def, m);
+}
+
+/** Space, walking: a little hop, from the floor only (no hopping again in the air). False when it can't. */
+export function hop(j: Jam): boolean {
+  const m = j.me;
+  if (m.seat || m.y > 0 || m.vy !== 0) return false;
+  m.vy = HOP.up;
+  return true;
 }
 
 /** Walk straight to (x, z), tick by tick, for probes and tests; the seconds it took. */
@@ -91,16 +110,16 @@ export function sit(j: Jam, id: string): Answer {
   if (who === "me") return { ok: true };
   if (who !== null) return { ok: false, why: `${j.others.get(who)?.name || "Someone"} is at ${s.label}` };
   if (Math.hypot(s.at[0] - j.me.x, s.at[1] - j.me.z) > SIT_REACH) return { ok: false, why: `Walk up to ${s.label} first` };
-  Object.assign(j.me, { x: s.at[0], z: s.at[1], yaw: s.yaw, pitch: sitPitch(s), seat: id, cam: "first" });
+  Object.assign(j.me, { x: s.at[0], z: s.at[1], y: 0, vy: 0, yaw: s.yaw, pitch: sitPitch(s), seat: id, cam: "first" });
   return { ok: true };
 }
 
-/** Stand up a step back from the seat, and the camera goes back over your shoulder. */
+/** Stand up a step back from the seat, and the camera goes back to the one you walk with (V). */
 export function stand(j: Jam) {
   const s = spotOf(j, j.me.seat);
   if (!s) return;
   j.me.seat = null;
-  j.me.cam = "shoulder";
+  j.me.cam = j.me.walkCam;
   j.me.pitch = 0;
   j.me.x -= -Math.sin(s.yaw) * 0.6;
   j.me.z -= -Math.cos(s.yaw) * 0.6;
@@ -108,7 +127,7 @@ export function stand(j: Jam) {
 }
 
 /** V: over the shoulder or first person, standing or sitting. */
-export function toggleCam(j: Jam) { j.me.cam = j.me.cam === "first" ? "shoulder" : "first"; }
+export function toggleCam(j: Jam) { j.me.cam = j.me.cam === "first" ? "shoulder" : "first"; if (!j.me.seat) j.me.walkCam = j.me.cam; }
 
 /** Is (x, z) somewhere a camera can't be: outside the room, or inside a wall (glass too, or you'd see the room from the next one)? */
 function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
@@ -134,7 +153,7 @@ export const SIT_EYE = { back: 0.04, up: 0.15 };
  * draw your own head (1 solid): close to the camera, seated beside your shoulder, it fades so the keys and the kit show through.
  */
 export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number; head: number } {
-  const p = pose(j), m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND, lift = floorAt(j.def, m.x, m.z);
+  const p = pose(j), m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND, lift = floorAt(j.def, m.x, m.z) + (m.seat ? 0 : m.y);
   // up on a riser, the camera rides up with you
   return { ...p, at: [p.at[0], p.at[1] + lift, p.at[2]], head: headFade(Math.hypot(p.at[0] - m.x, p.at[1] - eye, p.at[2] - m.z)) };
 }
@@ -175,12 +194,12 @@ function pose(j: Jam): { at: [number, number, number]; yaw: number; pitch: numbe
 export function body(j: Jam): Live {
   const m = j.me, r = (v: number) => Math.round(v * 100) / 100;
   const yaw = Math.atan2(Math.sin(m.yaw), Math.cos(m.yaw));
-  return { t: "body", at: [r(m.x), 0, r(m.z)], yaw: r(yaw), ...(m.seat ? { seat: m.seat } : {}) };
+  return { t: "body", at: [r(m.x), m.seat ? 0 : r(m.y), r(m.z)], yaw: r(yaw), ...(m.seat ? { seat: m.seat } : {}) };
 }
 
 function other(j: Jam, from: number): Other {
   let o = j.others.get(from);
-  if (!o) j.others.set(from, (o = { at: [j.def.door.at[0], j.def.door.at[1]], yaw: j.def.door.yaw, seat: null, avatar: null, name: "", held: new Set() }));
+  if (!o) j.others.set(from, (o = { at: [j.def.door.at[0], j.def.door.at[1]], hop: 0, yaw: j.def.door.yaw, seat: null, avatar: null, name: "", held: new Set() }));
   return o;
 }
 
@@ -192,6 +211,7 @@ export function hear(j: Jam, from: number, e: Live) {
   if (e.t === "body") {
     const o = other(j, from);
     o.at = [e.at[0], e.at[2]];
+    o.hop = Math.max(0, e.at[1] ?? 0);
     o.yaw = e.yaw;
     o.seat = e.seat && spotOf(j, e.seat) ? e.seat : null;
     return;
@@ -239,7 +259,7 @@ export function snapshot(j: Jam, p: Project | null) {
   const m = j.me, r = (v: number) => Math.round(v * 100) / 100, s = spotOf(j, m.seat);
   return {
     room: j.def.id,
-    you: { x: r(m.x), z: r(m.z), yaw: r(m.yaw), pitch: r(m.pitch), seat: m.seat, cam: m.cam, plays: s && p ? trackFor(s, p) : -1 },
+    you: { x: r(m.x), z: r(m.z), y: r(m.y), yaw: r(m.yaw), pitch: r(m.pitch), seat: m.seat, cam: m.cam, plays: s && p ? trackFor(s, p) : -1 },
     near: nearSpot(j)?.id ?? null,
     spots: j.def.spots.map((x) => ({ id: x.id, kind: x.kind, at: x.at, by: sitter(j, x.id), track: p ? trackFor(x, p) : -1 })),
     others: [...j.others].map(([peer, o]) => ({ peer, name: o.name, at: o.at.map(r), yaw: r(o.yaw), seat: o.seat, dressed: !!o.avatar, playing: [...o.held] })),

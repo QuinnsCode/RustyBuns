@@ -37,7 +37,7 @@ import { OpusOut, webOpus, type MakeEncoder } from "./opus.ts";
 import { FarSound } from "./plugin-line.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
-import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
+import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
@@ -79,6 +79,7 @@ import type { Side } from "../dj/engine.ts";
 import { BoothGear } from "./booth-3d.ts";
 import { openAir, paStack } from "./open-air.ts";
 import { LanternsHere } from "./lanterns.ts";
+import { Dust } from "./dust.ts";
 import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 
 const CONTROLS = "qollab-studio:controls";
@@ -367,28 +368,45 @@ const picture = def.outdoor ? openAir(renderer, scene, camera, def, loadQuality(
 function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
 // ---- people: you, and everyone the live line says is here ----
-interface Drawn { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }
+interface Drawn { fig: Figure; key: string; x: number; z: number; y: number; yaw: number; speed: number; heading: number }
 const drawn = new Map<number | "me", Drawn>();
 /** Whoever is playing, for everyone else to look at (null: nobody is). */
 let watched: THREE.Vector3 | null = null;
-function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, yaw: number, seat: Spot | null, playing: boolean, dt: number, t: number, snap: boolean) {
+// step dust off the floor: thick on an open-air room's sand, a faint scuff indoors
+const dust = new Dust(scene, def.outdoor ? 1.6 : 0.6, `#${new THREE.Color(def.colors.floor).lerp(new THREE.Color("#d8cbb4"), 0.6).getHexString()}`);
+const palm = new THREE.Vector3();
+/** Where someone's right palm is drawn now (a carried lantern hangs from it), or null when they aren't drawn. */
+const palmOf = (by: number | "me") => drawn.get(by)?.fig.handAt(palm) ?? null;
+/** `up`: how far off the floor a hop has them. */
+function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, up: number, yaw: number, seat: Spot | null, playing: boolean, dt: number, t: number, snap: boolean) {
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
   if (d && d.key !== key) { scene.remove(d.fig.group); d.fig.dispose(); d = undefined; }
-  if (!d) { d = { fig: figure(a, label), key, x, z, yaw, speed: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
+  if (!d) { d = { fig: figure(a, label), key, x, z, y: up, yaw, speed: 0, heading: 0 }; scene.add(d.fig.group); drawn.set(id, d); }
   // others glide to where their last body said, 10 a second; you are where you are
   const k = snap ? 1 : 1 - Math.exp(-dt * 12);
   const nx = lerp(d.x, x, k), nz = lerp(d.z, z, k);
-  d.speed = lerp(d.speed, dt > 0 ? Math.hypot(nx - d.x, nz - d.z) / dt : 0, 0.3);
+  const moved = Math.hypot(nx - d.x, nz - d.z);
+  d.speed = lerp(d.speed, dt > 0 ? moved / dt : 0, 0.3);
+  // which way the feet go, from the way it faces (0 ahead, pi/2 its left): a sidestep steps sideways, backing up backs up
+  if (moved > 1e-4) {
+    const fx = -Math.sin(d.yaw), fz = -Math.cos(d.yaw), mx = (nx - d.x) / moved, mz = (nz - d.z) / moved;
+    const want = Math.atan2(fz * mx - fx * mz, fx * mx + fz * mz);
+    d.heading += Math.atan2(Math.sin(want - d.heading), Math.cos(want - d.heading)) * (1 - Math.exp(-dt * 10));
+  }
   d.x = nx; d.z = nz;
+  d.y = seat ? 0 : snap ? up : lerp(d.y, up, k);
   d.yaw += Math.atan2(Math.sin(yaw - d.yaw), Math.cos(yaw - d.yaw)) * k;
-  d.fig.group.position.set(d.x, floorAt(jam.def, d.x, d.z), d.z);
+  const floor = floorAt(jam.def, d.x, d.z);
+  d.fig.group.position.set(d.x, floor + d.y, d.z);
+  if (!seat) dust.walker(id, d.x, floor, d.z, d.yaw, moved, d.speed, d.y);
   d.fig.group.rotation.y = d.yaw;
-  d.fig.pose({ speed: d.speed, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
+  d.fig.pose({ speed: d.y > 0.02 ? 0 : d.speed, heading: d.heading, crouch: 0, seated: !!seat, play: seat && played.get(seat.id)?.keys ? "keys" : handsOn(seat?.kind, playing), note: playing, t, reach: seat ? keysReach(seat) ?? bassReach(seat) : null, sticks: seat?.kind === "drums", aim: seat ? aimAt(seat) : null, look: watched && Math.hypot(watched.x - d.x, watched.z - d.z) > 0.4 ? watched : null });
 }
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
   if (d) { scene.remove(d.fig.group); d.fig.dispose(); drawn.delete(id); }
+  dust.forget(id);
   const b = badges.get(id);
   if (b?.sprite) dropBadge(b.sprite);
   badges.delete(id);
@@ -645,7 +663,7 @@ function deskSync() {
 }
 /** What the audio thread last said: the beat it is on, whether it follows the clock, sound that came too late, the groove. */
 let transport = { abs: 0, synced: false, late: 0, playing: false };
-/** Enter, or anyone's Play on the live line: the groove and its click, on the shared beat, for everyone. */
+/** P, or anyone's Play on the live line: the groove and its click, on the shared beat, for everyone. */
 function playGroove(on: boolean, tell = true) {
   if (on && !transport.playing) { out?.send({ t: "metro", on: true }); out?.send({ t: "play", countIn: 0 }); }
   else if (!on) out?.send({ t: "stop" });
@@ -1006,17 +1024,20 @@ function keyDown(code: string, shift = false) {
     if (jam.me.seat && lane?.open()) return;
     return desk.open();
   }
-  if (code === "Space") return sitOrStand();
+  // Space hops (seated, it stands you up); E sits you at the spot in front of you
+  if (code === "Space") return void (jam.me.seat ? sitOrStand() : hop(jam));
   if (code === "KeyH") return raise();
   if (code === "KeyJ" && !jam.me.seat) return void openDecks();
   if (code === "KeyI") return void guitar();
   if (code === "KeyR") return record();
-  if (code === "Enter") return playGroove(!transport.playing);
+  // P plays the groove, but at an instrument P is a note (A to ')
+  if (code === "KeyP" && !(jam.me.seat && keyNote(jam, project, code, octave))) return playGroove(!transport.playing);
   if (code === "KeyC") return void setListen();
   if (code === "KeyF" && !atWall.wants(jam) && lit.wants(jam)) return void say(lit.use(jam));
   if (!jam.me.seat && code === "KeyF") return void say(atWall.click(jam));
   if (!jam.me.seat && code === "KeyG") return void say(atWall.letGo());
   if (!jam.me.seat && (code === "KeyQ" || code === "KeyE") && atWall.turn(code === "KeyQ" ? -1 : 1)) return;
+  if (code === "KeyE" && !jam.me.seat) return sitOrStand();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
@@ -1049,7 +1070,33 @@ function openModules(open: boolean) {
   moduleButtons($("modules-list"), (kind) => { openModules(false); say(atWall.bring(jam, kind)); });
 }
 $("modules-close").addEventListener("click", () => openModules(false));
-document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play" && $("modules").hidden && !lane?.isOpen() && !help.isOpen() && !desk.isOpen() && !decks?.isOpen()) { phase = "menu"; releaseAll(); menu(); } });
+/** Something over the room has the mouse: a panel, the decks, the help card, the module list. */
+const panelOpen = () => !$("modules").hidden || !!lane?.isOpen() || help.isOpen() || desk.isOpen() || !!decks?.isOpen();
+/** Esc in the menu takes you back into the room; out of it, Esc steps back out of whatever is over the room, one at a time. */
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Escape" || e.repeat) return;
+  // the decks and the help card close themselves on Esc
+  if (decks?.isOpen() || help.isOpen()) return;
+  if (phase === "menu" && here && !$("door-room").hidden) return play();
+  if (phase !== "play") return;
+  if (lane?.isOpen()) return lane.close();
+  if (desk.isOpen()) return desk.close();
+  // the mouse was let go some other way (tabbing away): Esc now is the menu
+  if (!locked() && $("modules").hidden) { phase = "menu"; releaseAll(); menu(); }
+}, true);
+// Esc while the mouse is held lets it go: the menu, over the room that carries on behind it. Tabbing away or to another
+// window lets go of it too, but that isn't leaving: you stay in the room, the sound plays on, and a click takes the
+// mouse back. Which it was shows a moment later: Esc leaves the page focused and in view.
+document.addEventListener("pointerlockchange", () => {
+  if (locked() || phase !== "play" || panelOpen()) return;
+  releaseAll();
+  setTimeout(() => {
+    if (locked() || phase !== "play" || panelOpen() || document.visibilityState !== "visible" || !document.hasFocus()) return;
+    phase = "menu"; menu();
+  }, 150);
+});
+/** In the room without the mouse (back from another tab): a quiet word, not the menu. */
+const away = () => phase === "play" && !locked() && !panelOpen() && matchMedia("(pointer: fine)").matches;
 // a MIDI keyboard plays wherever you sit, note for note (the kit takes its notes as the home row's drums, in order)
 void startMidi({
   on(note, vel) {
@@ -1210,10 +1257,10 @@ function hint(): string {
     if (!may(player).play) return `At ${s.label}, listen only: ${rights.asked === "play" ? "your hand is up" : "H raises your hand to play"}. Space stands up`;
     if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Tab opens the instrument's panel. Space stands up`;
     if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}), arrows bend, / the keys. Tab opens the instrument's panel. Space stands up`;
-    return `At ${s.label}. Space stands up, V camera`;
+    return `At ${s.label}. Space stands up, V camera, P the groove`;
   }
   const near = nearSpot(jam), gear = atWall.hint(jam);
-  return gear || lit.hint(jam) || (near ? `Space or click: sit at ${near.label}` : "");
+  return gear || lit.hint(jam) || (near ? `E or click: sit at ${near.label}` : "");
 }
 
 /** The notes sounding at a spot, as `track:midi`: whoever sits there holds them. */
@@ -1267,7 +1314,7 @@ function frame(now: number) {
     if (gp.pressed.has("sit")) sitOrStand();
     if (gp.pressed.has("cam")) toggleCam(jam);
     const on = (c: string) => (keys.has(c) && !jam.me.seat ? 1 : 0);
-    step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX });
+    step(jam, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX, brisk: keys.has("ShiftLeft") || keys.has("ShiftRight") });
   }
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
@@ -1278,7 +1325,7 @@ function frame(now: number) {
   const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
   watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
   if (c.boom > 0.7 || first) {
-    drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, spotOf(jam, jam.me.seat), holding.size > 0, dt, t, true);
+    drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.y, jam.me.yaw, spotOf(jam, jam.me.seat), holding.size > 0, dt, t, true);
     drawn.get("me")?.fig.fade(first ? 0 : c.head);
     // your own badge would hang just over the camera in first person
     if (!first) markPerson("me", marksOf(rights.me ?? undefined));
@@ -1288,12 +1335,13 @@ function frame(now: number) {
   for (const [peer, o] of jam.others) {
     if (!o.avatar && !o.name) continue;
     const seat = spotOf(jam, o.seat);
-    drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, seat, o.held.size > 0, dt, t, false);
+    drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], o.hop, seat ? seat.yaw : o.yaw, seat, o.held.size > 0, dt, t, false);
     markPerson(peer, marksOf(peerIds[peer]));
   }
   showPlayed(dt, t);
   boothGear.frame(deckView, t);
-  lit.frame(jam, camera.position, t);
+  lit.frame(jam, camera.position, t, palmOf);
+  dust.frame(dt);
   gearScene.sync(atWall.reach(jam), atWall.aim(jam));
   overlay.frame(phase === "play" && jam.me.seat ? keyMap(jam, project, octave) : null, holding.keys(), dt, t);
   hearGuitars();
@@ -1304,7 +1352,7 @@ function frame(now: number) {
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
-  $("hint").textContent = now < flash.until ? flash.text : roomTubes.note() ?? hint();
+  $("hint").textContent = now < flash.until ? flash.text : away() ? "Click to look around. Esc: the menu" : roomTubes.note() ?? hint();
   help.frame(phase === "play");
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
@@ -1366,8 +1414,8 @@ const harness = {
   play: (code: string, ms = 150) => { const n = keyNote(jam, project, code, octave); if (!n) return null; noteOn(`probe:${code}`, n, 0.8); setTimeout(() => noteOff(`probe:${code}`), ms); return n; },
   /** The picture quality, kept for next time: the page loads again with it. */
   quality: (q: Quality) => setQuality(q),
-  /** Press (down true) or let go of a key: KeyA plays the seat's lowest note. */
-  key: (code: string, down = true) => (down ? keyDown(code) : noteOff(`kb:${code}`)),
+  /** Press (down true) or let go of a key: KeyA plays the seat's lowest note; held, W walks and Shift speed walks. */
+  key: (code: string, down = true) => { if (down) { keys.add(code); keyDown(code); } else { keys.delete(code); noteOff(`kb:${code}`); } },
   /** Mute a peer for you (on left out: the other way round), the whole room, or (the leader) a peer for everyone. */
   mute: (peer: number, on?: boolean) => { mutePerson(peer, on); return harness.state().muted; },
   muteRoom: (on?: boolean) => { muteAll(on); return harness.state().muted; },
@@ -1425,7 +1473,7 @@ const harness = {
   listen: (l: Listen) => { setListen(l); return harness.clock(); },
   /** The studio: this page's and the sesh's, and every one the picker shows; with an id, the leader moves the sesh there. */
   studio: (id?: string) => ({ ...(id ? moveStudio(id) : {}), here: pick, sesh: project.studio ?? null, lead: iLead(), studios: studios().map((x) => x.id), moving: movingTo }),
-  /** The groove and its click on the shared beat, for everyone (Enter). */
+  /** The groove and its click on the shared beat, for everyone (P). */
   groove: (on: boolean) => { playGroove(on); return harness.clock(); },
 };
 window.qjam = harness;
