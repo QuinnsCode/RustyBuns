@@ -87,7 +87,7 @@ test.skipIf(!hasChrome)("a controller: the jog out of the box, tags that move no
 
   // the tag's x forgets the fader; the controller pulled out shows gone
   await page("qdecks.midi.show(true)");
-  await until("the fader's tag", "document.querySelectorAll('.dj-midi-forget').length === 2");
+  await until("the three learned tags", "document.querySelectorAll('.dj-midi-forget').length === 3");
   await page(`[...document.querySelectorAll('.dj-midi-forget')].find((b) => b.title.includes("CC 19")).click()`);
   expect(Object.keys((await midi()).mappings["DDJ-400"]!)).toEqual(["cc:1:7", "note:0:11"]);
   await page(`qdecks.midi.plug("DDJ-400", false)`);
