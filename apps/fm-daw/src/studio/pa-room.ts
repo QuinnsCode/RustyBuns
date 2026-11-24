@@ -11,7 +11,7 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { gear, stackWidth, system, systemSound, type System } from "@rustybuns/gear";
+import { stackWidth, system, systemSound, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { thingBox, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
@@ -31,12 +31,7 @@ export const WET = 0.4;
 
 /** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays ("mono": both,
  *  summed), and its horizontal pattern in degrees (the full width 6 dB down, from its top's sheet; 90 when left out). */
-export interface Speaker {
-  at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number;
-  /** How loud it is straight behind, against in front (BACK when left out): a rig's from its sub's rear loss, since
-   *  behind a stack only the bass wraps round (the highs are cut by the pattern). */
-  back?: number;
-}
+export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number }
 
 /** The room's rig, if it has stacks: the outdoor rig asked for, else the horn stack. */
 export function roomRig(def: StudioDef): System {
@@ -70,20 +65,19 @@ const AIR_4K_DB = 10 * Math.log10(Math.E) * AIR[5];
  */
 export function paSpeakers(def: StudioDef): Speaker[] {
   const dj = def.spots.find((s) => s.kind === "dj");
-  const rig = def.outdoor ? roomRig(def) : null, spread = rig ? systemSound(rig).coverage.h : undefined;
-  const back = rig ? 10 ** (-gear(rig.sub).speaker!.rearLoss / 20) : undefined;
+  const spread = def.outdoor ? systemSound(roomRig(def)).coverage.h : undefined;
   const stacks = rigStacks(def).map((s) => ({ at: s.at, yaw: s.yaw }));
   if (!stacks.length && dj) {
     const b = thingBox(dj), fx = -Math.sin(dj.yaw), fz = -Math.cos(dj.yaw), rx = Math.cos(dj.yaw), rz = -Math.sin(dj.yaw), out = b.hw + 1.2;
     for (const k of [-1, 1]) stacks.push({ at: [b.cx + rx * out * k + fx * 0.5, b.cz + rz * out * k + fz * 0.5], yaw: dj.yaw + Math.PI });
   }
   if (!stacks.length) return [];
-  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread, back }));
+  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
     const rx = Math.cos(s.yaw), rz = -Math.sin(s.yaw); // the crowd's right, facing the speaker
-    return { at: s.at, yaw: s.yaw, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread, back };
+    return { at: s.at, yaw: s.yaw, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread };
   });
 }
 
@@ -92,7 +86,7 @@ export function hearSpeaker(sp: Speaker, ears: Ears, n = 1): Heard {
   const dx = ears.x - sp.at[0], dz = ears.z - sp.at[1], flat = Math.hypot(dx, dz), m = Math.hypot(flat, HORN_Y - EAR_Y);
   // the throw: how far off the speaker's axis you stand, from on axis (1) to straight behind it (BACK)
   const onAxis = flat > 1e-6 ? (dx * Math.sin(sp.yaw) + dz * Math.cos(sp.yaw)) / flat : 1;
-  const rear = sp.back ?? BACK, throwK = rear + (1 - rear) * ((1 + onAxis) / 2) ** 2;
+  const throwK = BACK + (1 - BACK) * ((1 + onAxis) / 2) ** 2;
   // your head: the speaker's direction against the way you face, and to your right
   const fx = -Math.sin(ears.yaw), fz = -Math.cos(ears.yaw), rx = Math.cos(ears.yaw), rz = -Math.sin(ears.yaw);
   const ahead = flat > 1e-6 ? (-dx * fx - dz * fz) / flat : 1, right = flat > 1e-6 ? (-dx * rx - dz * rz) / flat : 0;
