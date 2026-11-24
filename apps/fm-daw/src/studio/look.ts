@@ -130,18 +130,42 @@ const rough = (blotches: number, dots: number): Paint => (g, n, rnd, base) => {
   speckle(g, n, rnd, dots, 0.1, 1.3);
 };
 /** Sand the wind has combed: soft ripples running across the tile, light on one face and shaded on the other, and grains. */
+/** A desert floor that people have walked on: packed silt in soft patches, wind ripples only in short broken runs
+ *  (a few centimetres apart and barely raised), gravel scattered through it, each stone lit on top and shadowed under,
+ *  and the scuffs of feet. */
 const ripples: Paint = (g, n, rnd, base) => {
   g.fillStyle = css(base); g.fillRect(0, 0, n, n);
-  blotch(g, n, rnd, 30, 0.05);
-  const bands = 12, wave = n / bands;
-  for (let k = 0; k < bands; k++) for (const [dy, shade, a] of [[0, 0.72, 0.5], [wave * 0.22, 1.18, 0.35]] as const) {
-    g.strokeStyle = css(base, shade); g.globalAlpha = a; g.lineWidth = wave * 0.22;
-    g.beginPath();
-    for (let x = 0; x <= n; x += 8) { const y = k * wave + dy + Math.sin((x / n) * Math.PI * 4 + k) * wave * 0.3; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
-    g.stroke();
+  blotch(g, n, rnd, 40, 0.07);
+  // wind ripples: ~7 cm apart (the tile is 3 m), in patches the feet haven't reached
+  const wave = n / 42;
+  for (let p = 0; p < 9; p++) {
+    const cx = rnd() * n, cy = rnd() * n, R = n * (0.06 + rnd() * 0.1), bend = rnd() * 6;
+    for (let k = -R; k < R; k += wave) {
+      const run = Math.sqrt(Math.max(0, R * R - k * k));
+      for (const [dy, shade, a] of [[0, 0.82, 0.22], [wave * 0.3, 1.1, 0.16]] as const) {
+        g.strokeStyle = css(base, shade); g.globalAlpha = a * (0.5 + rnd() * 0.5); g.lineWidth = wave * 0.28;
+        g.beginPath();
+        for (let x = -run; x <= run; x += 6) { const y = cy + k + dy + Math.sin((x / n) * Math.PI * 2 * bend) * wave * 0.5; if (x > -run) g.lineTo(cx + x, y); else g.moveTo(cx + x, y); }
+        g.stroke();
+      }
+    }
+  }
+  // scuffs: dragged heels, darker where the crust broke
+  for (let i = 0; i < 70; i++) {
+    const x = rnd() * n, y = rnd() * n, a = rnd() * Math.PI, l = n * (0.008 + rnd() * 0.02);
+    g.globalAlpha = 0.08 + rnd() * 0.1; g.strokeStyle = css(base, 0.75); g.lineWidth = n * 0.006; g.lineCap = "round";
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  g.lineCap = "butt";
+  // gravel: grit everywhere, a few pebbles, each with its shadow on the far side from the moon
+  for (let i = 0; i < 9000; i++) {
+    const x = rnd() * n, y = rnd() * n, big = rnd() < 0.06, r = big ? 1.6 + rnd() * 3 : 0.5 + rnd() * 1.1, tone = 0.55 + rnd() * 0.75;
+    g.globalAlpha = big ? 0.55 : 0.4;
+    g.fillStyle = "rgba(0,0,0,0.6)"; g.beginPath(); g.ellipse(x + r * 0.35, y + r * 0.45, r, r * 0.8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = css(base, tone); g.beginPath(); g.ellipse(x, y, r, r * 0.78, rnd() * 3, 0, Math.PI * 2); g.fill();
   }
   g.globalAlpha = 1;
-  speckle(g, n, rnd, 60000, 0.14, 1.1);
+  speckle(g, n, rnd, 60000, 0.12, 1.1);
 };
 /** Folds hanging straight down: light and shade across the tile, in bands. */
 const folds: Paint = (g, n, rnd, base) => {
@@ -186,7 +210,7 @@ const LOOKS: Record<string, { paint: Paint; metres: number; rough: number; metal
   ceilingTile: { paint: tiles(4, 0.7, 7), metres: 2.4, rough: 0.95, bump: 1.4 },
   fabric: { paint: rough(20, 50000), metres: 0.6, rough: 0.95, bump: 0.8 },
   grille: { paint: grille, metres: 0.25, rough: 0.9, bump: 0.6, n: 256 },
-  sand: { paint: ripples, metres: 3, rough: 1, bump: 1.6 },
+  sand: { paint: ripples, metres: 3, rough: 1, bump: 1.2 },
 };
 const painted = new Map<string, Painted>();
 function paint(name: string, base: THREE.Color): Painted | null {

@@ -59,7 +59,7 @@ import { spinCard } from "./spin-card.ts";
 import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
-import { tapestry } from "./tapestry.ts";
+import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
 import { gearKit } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
@@ -300,12 +300,11 @@ function thing(s: Spot): THREE.Group {
         lie(0.2, 0.15, shelf + 0.125, 0.1 * (i - 1));
         if (i === 1) lie(0.14, 0.19, shelf + 0.25, 0.3);
       });
-      // the cloth falls to the sand down the front and both ends, so the crowd sees only the tapestry (the DJ's side is open)
-      const drop = t.h - 0.01, cloak = (w: number, seed: number) => new THREE.MeshStandardMaterial({ map: tapestry(w, drop, seed), roughness: 0.95, side: THREE.DoubleSide });
-      const weave = cloak(t.w, def.outdoor.seed), ends = cloak(t.d, def.outdoor.seed + 3);
-      boothGear.addRest(box(t.w + 0.02, cloth, t.d + 0.02, weave, 0, t.h + cloth / 2, 0));
-      put(new THREE.Mesh(new THREE.PlaneGeometry(t.w + 0.02, drop), weave), 0, t.h - drop / 2, -t.d / 2 - 0.012).rotation.y = Math.PI;
-      for (const k of [-1, 1]) put(new THREE.Mesh(new THREE.PlaneGeometry(t.d + 0.02, drop), ends), k * (t.w / 2 + 0.012), t.h - drop / 2, 0).rotation.y = k * Math.PI / 2;
+      // three block-printed cloths over the board, down the front and both ends to pool on the sand, so the crowd sees
+      // only cloth (the DJ's side is open); the folds are in the sheet, the weave in its normal map (tapestry.ts)
+      const seed = def.outdoor.seed;
+      boothGear.addRest(put(new THREE.Mesh(new THREE.BoxGeometry(t.w + 0.02, cloth, t.d + 0.02), cotton(tabletop(t.w, t.d, seed), seed, false)), 0, t.h + cloth / 2, 0));
+      put(new THREE.Mesh(drape(t.w, t.d, t.h, seed), cotton(tapestry({ end: t.d, front: t.w }, t.h - 0.008, seed), seed)), 0, 0, 0);
     } else {
       boothGear.addRest(box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0));
       box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
