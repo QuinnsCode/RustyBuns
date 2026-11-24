@@ -123,7 +123,7 @@ function render() {
   const side = el("text", { class: "dim-text", x: -w / 2 - off - 0.12 * scale, y: 0, "font-size": 0.28 * scale, transform: `rotate(-90 ${-w / 2 - off - 0.12 * scale} 0)` }, `${d.toFixed(1)} m`);
   plan.append(side);
   const [dx, dz] = room.door.at;
-  plan.append(el("path", { class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
+  plan.append(el("path", { "data-door": 1, class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
   for (const sp of room.spots) {
     const g = el("g", { "data-spot": sp.id });
     g.append(el("circle", { class: `spot${sp.id === picked ? " on" : ""}`, cx: sp.at[0], cy: sp.at[1], r: 0.32 * scale, "stroke-width": 0.06 * scale }));
@@ -141,11 +141,12 @@ function render() {
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
 
-type Tool = "move" | "wall" | "door" | "booth" | "place" | "decor" | "paint" | "turn" | "remove";
+type Tool = "move" | "wall" | "door" | "window" | "booth" | "place" | "decor" | "paint" | "turn" | "remove";
 const TOOLS: { id: Tool; name: string; icon: string }[] = [
-  { id: "move", name: "Move: drag a seat, a booth, a piece of furniture or the gear wall", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
+  { id: "move", name: "Move: drag a seat, a booth, a piece of furniture, the gear wall or the way in", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
   { id: "wall", name: "Wall: drag across the floor to put one up", icon: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/>` },
   { id: "door", name: "Doorway: click a wall to knock one through, again to brick it up", icon: `<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>` },
+  { id: "window", name: "Window: click an outside wall to put a window in it", icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/><path d="M3 12h18"/>` },
   { id: "booth", name: "Booth: click the floor to put up a vocal booth", icon: `<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>` },
   { id: "place", name: "Place: pick from the catalog, click the floor", icon: `<path d="M5 12h14"/><path d="M12 5v14"/>` },
   { id: "decor", name: "Decorate: pick a piece from the catalog, click the floor", icon: `<path d="M8 2h8l4 10H4L8 2Z"/><path d="M12 12v6"/><path d="M8 22v-2c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2H8Z"/>` },
@@ -171,7 +172,7 @@ function toRoom(e: PointerEvent): number[] {
 const pointAt = (e: PointerEvent): number[] | null => (view === "3d" ? build?.toRoom(e) ?? null : toRoom(e));
 function hitAt(e: PointerEvent): Hit {
   if (view === "3d") return build?.hit(e) ?? null;
-  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop]") : null;
+  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop], [data-door]") : null;
   if (!g) {
     // on the blueprint the floor is the room's rectangle, and an outside wall its edge (within 30 cm of it)
     const [x, z] = toRoom(e), { w, d } = room.size;
@@ -181,10 +182,11 @@ function hitAt(e: PointerEvent): Hit {
     return gap < 0.3 ? { side } : { floor: true };
   }
   const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), wall = g.getAttribute("data-wall"), piece = g.getAttribute("data-prop");
+  if (g.hasAttribute("data-door")) return { door: true };
   return spot ? { spot } : booth ? { booth } : wall !== null ? { wall: Number(wall) } : piece !== null ? { prop: Number(piece) } : { gear: true };
 }
 
-let drag: { kind: "spot" | "booth" | "gear" | "prop"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
 let drawing: { from: [number, number]; to: [number, number] } | null = null;
 let orbiting: { x: number; y: number } | null = null;
 
@@ -194,7 +196,12 @@ function down(e: PointerEvent) {
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
   why = "";
   if (tool === "move") {
-    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h)) return;
+    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h || "door" in h)) return;
+    if ("door" in h) {
+      if (!p) return;
+      drag = { kind: "door", id: "door", from: [...room.door.at], at: [...room.door.at], g: [...plan.querySelectorAll<SVGElement>("[data-door]")], start: p };
+      return;
+    }
     const id = "spot" in h ? h.spot : "booth" in h ? h.booth : "prop" in h ? String(h.prop) : "gear";
     if ("spot" in h) { picked = h.spot; render(); }
     const from = "spot" in h ? room.spots.find((x) => x.id === id)?.at : "gear" in h ? gearPlace(room).at : "prop" in h ? room.props?.[h.prop]?.at : boothMiddle(room, id);
@@ -205,6 +212,10 @@ function down(e: PointerEvent) {
     if (p) { const a: [number, number] = [quarter(p[0]), quarter(p[1])]; drawing = { from: a, to: a }; }
   } else if (tool === "door") {
     if (h && "wall" in h) apply({ t: "door", index: h.wall }); else { why = "Click an inside wall to put a doorway in it"; render(); }
+  } else if (tool === "window") {
+    const on = h && "side" in h ? h.at ?? p : null;
+    if (h && "side" in h && on) apply({ t: "window", side: h.side, along: tenth(h.side === "front" || h.side === "back" ? on[0] : on[1]) });
+    else { why = "Click an outside wall to put a window in it"; render(); }
   } else if (tool === "booth") {
     if (at) apply({ t: "booth", id: free("booth", (x) => room.walls.some((wl) => wl.booth === x)), at, w: 2.4, d: 2.4 });
   } else if (tool === "place") {
@@ -236,7 +247,7 @@ function move(e: PointerEvent) {
   if (drag) {
     drag.at = [tenth(drag.from[0] + p[0] - drag.start[0]), tenth(drag.from[1] + p[1] - drag.start[1])];
     const dx = drag.at[0] - drag.from[0], dz = drag.at[1] - drag.from[1];
-    if (view === "3d") build?.nudge(drag.kind === "gear" ? "gear" : `${drag.kind}:${drag.id}`, dx, dz);
+    if (view === "3d") build?.nudge(drag.kind === "gear" || drag.kind === "door" ? drag.kind : `${drag.kind}:${drag.id}`, dx, dz);
     else for (const g of drag.g) g.setAttribute("transform", `translate(${dx} ${dz})`);
   } else if (drawing) {
     // square to the room when it's nearly square: a wall a few degrees off is never what's meant
@@ -257,7 +268,7 @@ function up() {
   if (drag) {
     const d = drag; drag = null;
     if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
-    apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : d.kind === "prop" ? { t: "moveProp", index: Number(d.id), at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
+    apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : d.kind === "prop" ? { t: "moveProp", index: Number(d.id), at: d.at } : d.kind === "door" ? { t: "moveDoor", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
   } else if (drawing) {
     const w = drawing; drawing = null;
     $("measure").hidden = true;
@@ -468,6 +479,8 @@ const harness = {
   }),
   load,
   edit: (e: unknown) => ({ ok: apply(e), why }),
+  /** What the 3D view has under (x, y), pixels from its top left corner, and where that is on the floor. */
+  hit: (x: number, y: number) => { const r = canvas.getBoundingClientRect(), e = { clientX: r.left + x, clientY: r.top + y }; return { hit: build?.hit(e) ?? null, floor: build?.toRoom(e) ?? null }; },
   undo: () => undo(true),
   redo: () => undo(false),
   pick: (id: string) => { picked = id; render(); },

@@ -95,6 +95,15 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   expect(edit(r, { t: "moveProp", index: n + 5, at: [0, 0] })).toMatchObject({ ok: false, why: "there is no such thing" });
   r = ok(r, { t: "unprop", index: n });
   expect(r.props?.length ?? 0).toBe(n);
+  // a window in the back wall, facing in; none too near a corner; the way in moved along the front
+  const w0 = r.props?.length ?? 0;
+  r = ok(r, { t: "window", side: "back", along: -2 });
+  expect(r.props![w0]).toMatchObject({ kind: "window", at: [-2, -r.size.d / 2 + 0.06], y: 1 });
+  expect(r.props![w0]!.yaw).toBeCloseTo(Math.PI, 6);
+  expect(edit(r, { t: "window", side: "back", along: r.size.w / 2 - 0.3 })).toMatchObject({ ok: false, why: "a window needs 80 cm of wall either side of it" });
+  r = ok(r, { t: "moveDoor", at: [-3, 6] });
+  expect(r.door.at).toEqual([-3, 6]);
+  expect(edit(r, { t: "moveDoor", at: [30, 0] })).toMatchObject({ ok: false, why: "the way in is outside the room" });
   // the first new wall down: the corner opens back onto the barn
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);

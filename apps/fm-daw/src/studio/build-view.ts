@@ -15,7 +15,7 @@ import { prop } from "./props.ts";
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
-export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { side: Side } | { floor: true } | null;
+export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { side: Side; at?: [number, number] } | { floor: true } | null;
 /** The room's look for a prop: what it's made of, from the look's surfaces. */
 const propMat = (name: string, color: string) => surface(name, color);
 /** The outside walls: cut down on the sides toward you, all cut down, or all standing. */
@@ -158,7 +158,8 @@ export class BuildView {
     add(gearG, "gear", { gear: true });
     // the way in: a chevron on the floor
     const [dx, dz] = room.door.at, chev = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 3, 1, -Math.PI / 6, Math.PI * 2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: ORANGE }));
-    chev.position.set(dx, 0.01, dz); chev.rotation.y = room.door.yaw; this.root.add(chev);
+    chev.position.set(dx, 0.01, dz); chev.rotation.y = room.door.yaw;
+    const doorG = new THREE.Group(); doorG.add(chev); add(doorG, "door", { door: true });
     // the set dressing, as the jam room draws it (props.ts)
     // (each in a holder at the origin, so a drag slides the holder)
     (room.props ?? []).forEach((p, i) => { const holder = new THREE.Group(); holder.add(prop(p, propMat)); add(holder, `prop:${i}`, { prop: i }); });
@@ -175,6 +176,8 @@ export class BuildView {
       }
       add(g, `spot:${s.id}`, { spot: s.id });
     }
+    // where everything is now, before the next frame draws it: a click right after an edit picks what's there
+    this.scene.updateMatrixWorld(true);
     this.draw();
   }
 
@@ -196,7 +199,7 @@ export class BuildView {
   /** Slide a seat, a booth or the gear wall by (dx, dz) while it is dragged (`spot:<id>`, `booth:<id>`, `gear`). */
   nudge(key: string, dx: number, dz: number) {
     const o = this.keyed.get(key);
-    if (o) { o.position.set(dx, 0, dz); this.draw(); }
+    if (o) { o.position.set(dx, 0, dz); o.updateMatrixWorld(true); this.draw(); }
   }
 
   /** The wall being drawn, from `a` to `b`, or none. */
@@ -230,6 +233,8 @@ export class BuildView {
       for (let o: THREE.Object3D | null = h.object; o; o = o.parent) if (o.userData.hit) {
         const hit = o.userData.hit as Hit;
         if (hit && "floor" in hit) { under ??= hit; break; }
+        // an outside wall says where on it the pointer is (a window goes there)
+        if (hit && "side" in hit) return { side: hit.side, at: [h.point.x, h.point.z] };
         return hit;
       }
     }

@@ -109,7 +109,9 @@ export type Edit =
   | { t: "addProp"; kind: DecorKind; at: [number, number]; yaw?: number }
   | { t: "moveProp"; index: number; at: [number, number] }
   | { t: "turnProp"; index: number; by: number }
-  | { t: "unprop"; index: number };
+  | { t: "unprop"; index: number }
+  | { t: "window"; side: Side; along: number }
+  | { t: "moveDoor"; at: [number, number] };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -133,6 +135,8 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("moveProp"), index: int(0, MAX_PROPS - 1), at: XZ }),
   obj({ t: tag("turnProp"), index: int(0, MAX_PROPS - 1), by: int(-7, 7) }),
   obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
+  obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
+  obj({ t: tag("moveDoor"), at: XZ }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -338,6 +342,18 @@ export function edit(def: StudioDef, e: Edit): Built {
       else props.splice(e.index, 1);
       break;
     }
+    case "window": {
+      // a window 1.4 by 1.2 m, its sill a metre up, set in the outside wall `side` at `along` metres from its middle,
+      // facing into the room (a prop's front faces -z before its turn)
+      const props = next.props ??= [], { w, d } = next.size, len = e.side === "front" || e.side === "back" ? w : d;
+      if (props.length >= MAX_PROPS) return no(`a room holds ${MAX_PROPS} things`);
+      if (Math.abs(e.along) > len / 2 - 0.8) return no("a window needs 80 cm of wall either side of it");
+      const at: [number, number] = e.side === "front" ? [e.along, d / 2 - 0.06] : e.side === "back" ? [e.along, -d / 2 + 0.06] : e.side === "left" ? [-w / 2 + 0.06, e.along] : [w / 2 - 0.06, e.along];
+      const yaw = e.side === "front" ? 0 : e.side === "back" ? Math.PI : e.side === "left" ? -Math.PI / 2 : Math.PI / 2;
+      props.push({ kind: "window", at, yaw, w: 1.4, d: 0.1, h: 1.2, y: 1, color: "#e8e2d4" });
+      break;
+    }
+    case "moveDoor": next.door = { ...next.door, at: e.at }; break;
     case "turn": {
       const sp = next.spots.find((x) => x.id === e.id);
       if (!sp) return no(`there is no spot ${e.id}`);

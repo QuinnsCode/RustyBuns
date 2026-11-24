@@ -62,3 +62,4 @@ a.button { display: inline-block; color: var(--ink); border: 1px solid var(--lin
 #plan .dim-text { fill: var(--dim); }
 #plan .prop { fill: rgba(255, 255, 255, 0.06); stroke: #8a8f98; cursor: grab; }
 .tool:disabled { opacity: 0.35; cursor: default; }
+#plan .door { cursor: grab; }
