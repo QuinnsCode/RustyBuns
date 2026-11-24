@@ -1449,9 +1449,7 @@ function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tu
  */
 function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number, p?: number][], deep: number, { badge = true, skin = "paint" as GearSlot } = {}): Build {
   const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, t = 0.04, front = d / 2;
-  b.pieces.push(box(skin, [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
-  for (const s of [-1, 1]) b.pieces.push(box(skin, [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
-  for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
+  well(b, skin, GEAR_SIZES[id], deep, t);
   b.pieces.push(box("knob", [w - 2 * t, h - 2 * t, 0.01], [0, h / 2, front - deep]));
   for (const [x, y, mw, mh, p] of mouths) mouth(b, mw, mh, deep * 0.92, [x, y, front - 0.004], p, skin === "paint" ? "panel" : skin);
   if (badge) b.pieces.push(box("badge", [0.15, 0.026, 0.004], [w / 2 - t - 0.1, h - t / 2, front + 0.001]));
@@ -1468,17 +1466,18 @@ const hornSub = () => hornCab("horn-sub-21", [[0, 0.46, 1.01, 0.5]], 0.55);
 
 // ---- the other rigs on the sand (Qollab Studio's Desert Gathering, packages/gear systems.ts) -------------------------
 
-/** A wall's well, `w` by `h` on a box's front, `deep` into it: the box's back behind it and four walls round it. */
+/** A horn box's shell, `w` by `h` by `d`, open at the front: a back panel and four walls the full depth, one piece
+ * each, so no seam runs round the box (its front is the well `deep` into it that the horn mouths fill). */
 function well(b: Build, skin: GearSlot, [w, h, d]: readonly number[], deep: number, t: number) {
-  const front = d / 2;
-  b.pieces.push(box(skin, [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
-  for (const s of [-1, 1]) b.pieces.push(box(skin, [t, h, deep], [s * (w / 2 - t / 2), h / 2, front - deep / 2], { bevel: 0.006 }));
-  for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t, t, deep], [0, y, front - deep / 2], { bevel: 0.006 }));
+  const back = Math.max(t, d - deep);
+  b.pieces.push(box(skin, [w - 2 * t, h - 2 * t, back], [0, h / 2, -d / 2 + back / 2]));
+  for (const s of [-1, 1]) b.pieces.push(box(skin, [t, h, d], [s * (w / 2 - t / 2), h / 2, 0], { bevel: 0.008 }));
+  for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t + 0.002, t, d], [0, y, 0], { bevel: 0.006 }));
 }
 
 /** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side and the grab. */
 function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6) {
-  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.18, 0.012));
+  for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.16, 0.01));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
   plate(b, w * 0.3, Math.min(0.2, h * 0.2), [0, h * 0.45, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
@@ -1514,10 +1513,9 @@ function synergyHorn(): Build {
  */
 function tappedHorn(): Build {
   const size = GEAR_SIZES["tapped-horn-18"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.02, mh = 0.34, deep = d * 0.8, front = d / 2;
-  b.pieces.push(box("coat", [w, h, d - deep], [0, h / 2, -deep / 2], { bevel: 0.01 }));
-  b.pieces.push(box("coat", [w, h - mh, deep], [0, (h - mh) / 2, front - deep / 2], { bevel: 0.004 }));
-  for (const s of [-1, 1]) b.pieces.push(box("coat", [t, mh, deep], [s * (w / 2 - t / 2), h - mh / 2, front - deep / 2], { bevel: 0.005 }));
-  b.pieces.push(box("coat", [w - 2 * t, t, deep], [0, h - t / 2, front - deep / 2], { bevel: 0.005 }));
+  well(b, "coat", size, deep, t);
+  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, 0.02], [0, (h - mh + t) / 2, front - 0.01]));
+  b.pieces.push(box("coat", [w - 2 * t, h - mh - t, deep], [0, (h - mh + t) / 2, front - deep / 2 - 0.01]));
   // the fold's last panel, slanting up from the mouth's floor to the back
   const slant = Math.atan2(mh - t * 2, deep);
   b.pieces.push(box("panel", [w - 2 * t, 0.012, Math.hypot(deep, mh - 2 * t) * 0.98], [0, h - mh / 2, front - deep / 2], { rot: [slant, 0, 0] }));
@@ -1536,7 +1534,7 @@ function triple21(): Build {
   mouth(b, w - 2 * t - 0.02, h - 2 * t - 0.02, deep * 0.94, [0, h / 2, d / 2 - 0.004], 4, "coat");
   for (const k of [-1, 0, 1]) b.pieces.push(disc("knob", 0.05, 0.02, "z", [k * 0.4, h / 2, d / 2 - deep * 0.9], 12));
   for (const y of [0.012, h - 0.012]) b.pieces.push(box("shell", [w + 0.004, 0.024, 0.06], [0, y, d / 2 - 0.028], { bevel: 0.008 }));
-  for (const s of [-1, 1]) b.pieces.push(...handle("metal", [s * w / 2, h * 0.75, d * 0.2], s > 0 ? "x" : "-x", 0.18, 0.012));
+  for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * 0.75, d * 0.2], s > 0 ? "x" : "-x", 0.16, 0.01));
   backAndFeet(b, size, 0.5);
   return b;
 }
