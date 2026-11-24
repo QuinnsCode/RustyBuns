@@ -35,6 +35,7 @@ function run(cmd: string[]): string {
 
 export function kick(pr: number, dry: boolean): string {
   const view = check(View, JSON.parse(run(["gh", "pr", "view", String(pr), "--json", "headRefName,state,isCrossRepository"])));
+  if (!view) throw new Error(`gh pr view ${pr}: not the shape expected`);
   if (view.state !== "OPEN") throw new Error(`#${pr} is ${view.state.toLowerCase()}, not open`);
   if (view.isCrossRepository) throw new Error(`#${pr} comes from a fork; its branch isn't ours to push`);
   if (view.headRefName === "main") throw new Error(`#${pr}'s head is main`);
