@@ -36,7 +36,7 @@ const harness = {
   state: () => {
     if (!panel) return null;
     const m = panel.decks.mixer;
-    return { open: panel.isOpen(), library: panel.library(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), zoom: panel.zoom(), tubes: panel.tubes(), carousel: carousel() };
+    return { open: panel.isOpen(), library: panel.library(), waiting: panel.waiting(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), zoom: panel.zoom(), tubes: panel.tubes(), carousel: carousel() };
   },
   /** Load a file's bytes onto a deck as a dropped file would: its tempo and where that came from (tag, software grid, ear). */
   load: async (side: Side, name: string, bytes: number[]) => { const t = await start().load(side, name, Uint8Array.from(bytes).buffer); return { bpm: t.grid?.bpm ?? null, firstBeat: t.grid?.offset ?? null, from: t.from ?? null }; },

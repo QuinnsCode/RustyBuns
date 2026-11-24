@@ -98,12 +98,12 @@ export const holdBend = (dir: -1 | 0 | 1, ms: number) => 1 + dir * Math.min(BEND
 // ---- the waveform's colours
 
 /**
- * Each deck's gradient from bass to highs, as [stop 0..1, r, g, b]: deck A from a blue-green (the kick, the bass) to
- * a whitish purple (the clap, the hats); deck B fire, from deep red through orange and yellow to near white.
+ * Each deck's gradient from bass to highs, as [stop 0..1, r, g, b]: deck A fire, from deep red through orange and
+ * yellow to near white; deck B from a blue-green (the kick, the bass) to a whitish purple (the clap, the hats).
  */
 export const TONE_STOPS: readonly (readonly (readonly [number, number, number, number])[])[] = [
-  [[0, 18, 196, 160], [0.45, 70, 130, 255], [0.75, 170, 140, 255], [1, 238, 226, 255]],
   [[0, 170, 18, 8], [0.35, 255, 80, 16], [0.7, 255, 196, 52], [1, 255, 246, 214]],
+  [[0, 18, 196, 160], [0.45, 70, 130, 255], [0.75, 170, 140, 255], [1, 238, 226, 255]],
 ];
 /** Deck `side`'s colour at `t` (0 all bass, 1 all highs). */
 export function toneRgb(side: Side, t: number): [number, number, number] {
