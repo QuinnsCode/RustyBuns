@@ -6,11 +6,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eqosys, hub, type HubNote } from "@rustybuns/util/eqosys";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
-import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { cleanAvatar, PARTS, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import World from "../packages/desktop/world.ts";
 import worker from "../src/worker.ts";
-import { APP, eqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
+import { APP, eqosysAvatar, saveEqosysAvatar, SIGN_IN_FROM } from "../src/account.ts";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent } from "../src/studio/door.ts";
 import { demoProject } from "../src/presets.ts";
 import { decodeServer } from "../src/project.ts";
@@ -38,6 +38,8 @@ const fake = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   if (u.pathname === "/me/avatar") {
     const who = tokens.get(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!who) return new Response("sign in", { status: 401 });
+    // a PUT keeps it, if it reads as one (eqosys's Avatar guard)
+    if (req.method === "PUT") { const a = cleanAvatar(await req.json().catch(() => null)); if (!a) return new Response("send an avatar", { status: 400 }); people[who]!.look = a; }
     return Response.json({ avatar: people[who]!.look, saved: true });
   }
   if (u.pathname === "/api/hub") {
@@ -136,8 +138,14 @@ test("two friends: Ada signs in and makes a room she leads, Bo joins from her li
   const ada = browser(), bo = browser();
   const a = await signIn(ada, "eq_ada");
   expect(a.login.name).toBe("Ada");
+  const kept = await eqosysAvatar(EQ, a.login.token);
+  expect(kept).toEqual(people.eq_ada!.look as Avatar);
+  // she changes her hair in the Character dialog: Save puts it on eqosys with her token, and that is the one she wears
+  const hair = PARTS.hair.find((x) => x !== kept!.hair)!;
+  expect((await saveEqosysAvatar(EQ, a.login.token, { ...kept!, hair }))?.avatar.hair).toBe(hair);
   const adaLook = await eqosysAvatar(EQ, a.login.token);
-  expect(adaLook).toEqual(people.eq_ada!.look as Avatar);
+  expect(adaLook?.hair).toBe(hair);
+  expect(await saveEqosysAvatar(EQ, "not-a-token", adaLook!)).toBeNull();
 
   // Make a room: a name and a studio, kept in her rooms as hers, and she walks in first, so the sesh is hers to lead
   const id = roomId("Friday jam!", mulberry32(1));

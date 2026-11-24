@@ -24,8 +24,9 @@ export function doors(here: Here, search: string): { to: Here; href: string; lab
   return ORDER.filter((p) => p !== here).map((to) => ({ to, href: to === "character" ? PLACES[to].page : PLACES[to].page + tail, label: PLACES[to].label, title: PLACES[to].title }));
 }
 
-/** Draws the row of doors along the top of the page, once. */
-export function mountWay(here: Here) {
+/** Draws the row of doors along the top of the page, once. With `character`, the Character door opens it over the page
+ * (the jam room's dialog, #5819) rather than leaving for eqosys. */
+export function mountWay(here: Here, o: { character?: () => void } = {}) {
   if (document.getElementById("qs-way")) return;
   const nav = document.createElement("nav");
   nav.id = "qs-way";
@@ -38,6 +39,8 @@ export function mountWay(here: Here) {
   for (const d of [{ el: current, at: ORDER.indexOf(here) }, ...doors(here, location.search).map((d) => {
     const a = document.createElement("a");
     a.href = d.href; a.textContent = d.label; a.title = d.title; a.dataset.to = d.to;
+    const open = o.character;
+    if (d.to === "character" && open) { a.title = "Your character"; a.addEventListener("click", (e) => { e.preventDefault(); open(); }); }
     return { el: a, at: ORDER.indexOf(d.to) };
   })].sort((a, b) => a.at - b.at)) {
     d.el.style.cssText = `white-space:nowrap;padding:7px 12px;border-radius:999px;text-decoration:none;color:#f4f1ea;${d.el === current ? "background:#0f766e" : ""}`;
