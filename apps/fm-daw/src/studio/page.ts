@@ -8,7 +8,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
+import { boothMiddle, builtLink, DECOR, DECOR_KINDS, OUTDOOR_DECOR, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -542,6 +542,8 @@ const harness = {
   undo: () => undo(true),
   redo: () => undo(false),
   pick: (id: string) => { picked = id; render(); },
+  /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
+  enter: (sesh?: string) => builtLink(location.origin, room, sesh),
 };
 window.qrooms = harness;
 render();

@@ -246,18 +246,20 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     if (c.vinyl) jogs[side].touch(false);
     if (!coasts[0] && !coasts[1] && coastFrame) { cancelAnimationFrame(coastFrame); coastFrame = 0; }
   }
-  function coastStep(now: number) {
+  function coastStep() {
+    const now = performance.now();
     coastFrame = 0;
     for (const side of [0, 1] as const) {
       const c = coasts[side], d = decks.decks[side];
       if (!c) continue;
-      const dt = Math.min(0.05, Math.max(0, (now - c.last) / 1000));
+      // friction on the clock, not the frame rate: the distance a decaying speed covers over dt, however long dt was
+      const dt = Math.max(0, (now - c.last) / 1000), fade = Math.exp(-dt / FLICK_TAU_S);
       c.last = now;
       const t = d.track;
       if (!t || (c.vinyl && !jogs[side].touched)) { stopCoast(side); continue; }
-      const ds = pxToTrack(side, c.v * dt), to = d.pos() + ds;
+      const ds = pxToTrack(side, c.v * FLICK_TAU_S * (1 - fade)), to = d.pos() + ds;
       if (c.vinyl) jogs[side].scrub(ds); else d.seek(to);
-      c.v *= Math.exp(-dt / FLICK_TAU_S);
+      c.v *= fade;
       if (Math.abs(c.v) < FLICK_END_PX_S || (ds < 0 && to <= 0) || (ds > 0 && to >= t.buffer.duration)) stopCoast(side);
     }
     if ((coasts[0] || coasts[1]) && !coastFrame) coastFrame = requestAnimationFrame(coastStep);

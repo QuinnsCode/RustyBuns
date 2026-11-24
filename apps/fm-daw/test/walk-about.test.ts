@@ -42,18 +42,20 @@ test("Shift speed walks, Space hops a little and lands, and the other people in 
   expect(hop(me)).toBe(false);
 });
 
-test("a carried lantern trails the hand as you walk, swings past it when you stop, and settles back under it", () => {
+test("a carried lantern is heavy: it hangs straight on a steady walk, sways a little past the hand when you stop, and settles soon", () => {
   const swing = new Swing(), hand = new THREE.Vector3(0, 0.8, 0);
   swing.step(hand, tick);
-  // walk forward (-z) for a second: the weight hangs back, behind the hand
-  for (let t = 0; t < 1; t += tick) { hand.z -= WALK * tick; swing.step(hand, tick); }
-  // the rope's length always holds
+  // walk forward (-z) for a second: once past the first lurch it hangs near straight down, the rope's length holding
+  let walking = 0;
+  for (let t = 0; t < 1; t += tick) { hand.z -= WALK * tick; swing.step(hand, tick); if (t > 0.8) walking = Math.max(walking, swing.angle(hand)); }
   expect(swing.bob.distanceTo(hand)).toBeCloseTo(WEIGHT, 5);
-  // stop: it swings on ahead of the hand
-  let ahead = 0;
-  for (let t = 0; t < 0.6; t += tick) { swing.step(hand, tick); ahead = Math.max(ahead, hand.z - swing.bob.z); }
+  expect(walking).toBeLessThan(0.1);
+  // stop: it swings on ahead of the hand, but not far
+  let ahead = 0, most = 0;
+  for (let t = 0; t < 0.6; t += tick) { swing.step(hand, tick); ahead = Math.max(ahead, hand.z - swing.bob.z); most = Math.max(most, swing.angle(hand)); }
   expect(ahead).toBeGreaterThan(0.03);
-  // and a few seconds on it hangs still, straight down
-  for (let t = 0; t < 5; t += tick) swing.step(hand, tick);
+  expect(most).toBeLessThanOrEqual(Swing.MAX + 1e-6);
+  // and within a second and a half it hangs still, straight down
+  for (let t = 0; t < 0.9; t += tick) swing.step(hand, tick);
   expect(swing.angle(hand)).toBeLessThan(0.05);
 });

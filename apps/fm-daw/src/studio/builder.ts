@@ -74,7 +74,9 @@ export const Studio: Guard<StudioDef> = obj({
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
-    stacks: arr(obj({ at: XZ, yaw: num(-7, 7) }), 16),
+    stacks: arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)) }), 16),
+    subs: opt(obj({ at: XZ, yaw: num(-7, 7), wide: int(1, 6), high: int(1, 3) })),
+    monitors: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 4)),
     rig: opt(oneOf(SYSTEM_IDS)),
     mono: opt(bool()),
     truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),
@@ -98,6 +100,24 @@ export const YOURS = "qollab-studio:built";
 /** The studio you built, if this browser has one that still checks out. */
 export function yours(): StudioDef | null {
   try { const s = localStorage.getItem(YOURS); return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
+}
+
+/**
+ * The harness's way into a room you built (#5843): a probe's fresh browser has none of the page's storage, so
+ * /rooms.html's `qrooms.enter()` hands out this link with the room in `built`. Only `?studio=yours` reads it, and
+ * nothing a player clicks makes one: without `built`, "yours" is this browser's room as always.
+ */
+export function builtLink(origin: string, def: StudioDef, room = "built-room"): string {
+  const u = new URL("/jam.html", origin);
+  u.searchParams.set("room", room);
+  u.searchParams.set("studio", "yours");
+  u.searchParams.set("built", JSON.stringify(def));
+  return u.href;
+}
+/** The room a `builtLink` carries, if it still checks out. */
+export function fromBuilt(search: string): StudioDef | null {
+  const s = new URLSearchParams(search).get("built");
+  try { return s ? check(Studio, JSON.parse(s)) : null; } catch { return null; }
 }
 
 export type Surface = "floor" | "ceiling" | Side;

@@ -79,7 +79,13 @@ export interface StudioDef {
  */
 export type { SystemId };
 export interface Outdoor {
-  stacks: { at: [number, number]; yaw: number }[];
+  /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
+   *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor. */
+  stacks: { at: [number, number]; yaw: number; splay?: number }[];
+  /** The sub block in the middle, between the sides: the rig's sub box `wide` across and `high` up, its front facing yaw's way. */
+  subs?: { at: [number, number]; yaw: number; wide: number; high: number };
+  /** The DJ's booth monitors: a mid-high horn on a tripod stand at each end of the decks, aimed at the DJ. */
+  monitors?: { at: [number, number]; yaw: number }[];
   /** Which rig the stacks are (@rustybuns/gear systems.ts): the horn stack when left out. `?rig=` on the page tries another. */
   rig?: SystemId;
   /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
