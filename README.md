@@ -560,7 +560,7 @@ Qollab is the Durable Object layer below this: a hub for each player, and a part
 
 </details>
 
-### The Q engine: make, play, meet and ship in one kit
+### Queng, the Quantum Engine: make, play, meet and ship in one kit
 
 The runtime packages, eqosys (the store side), Qollab (the players side), codeSplitter (the editor) and the Rusty Buns CLI (the ship step), named together as one game engine.
 

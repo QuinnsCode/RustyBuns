@@ -1,9 +1,9 @@
-# The Q engine
+# Queng, the Quantum Engine
 
 **One kit to make a web game and ship it to every screen. Players get an account, friends, parties and saves. Makers get an
 editor where agents work beside them.**
 
-"Q engine" is a working name. This guide puts the parts we already have into one picture, names what is still missing,
+Queng (say "kweng") is short for Quantum Engine. This guide puts the parts we already have into one picture, names what is still missing,
 and gives the order to build it in. It is a plan: each step below is its own PR.
 
 ## The picture
