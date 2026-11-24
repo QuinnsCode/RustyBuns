@@ -19,6 +19,7 @@ import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/ge
 import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugMesh } from "./tapestry.ts";
+import { gearKitLook } from "./gear-kit.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -243,7 +244,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(sand);
 
   // ---- the stacks: bin, mid-bass horn, mid-high horn, on a sand dolly
-  const look = gearLook();
+  // the boxes in the photo kit's coats and grilles (gear-kit.ts), as the gear climb shoots them
+  const look = gearKitLook(quality);
   // ---- the rugs on the sand
   (out.rugs ?? []).forEach((rg, i) => { const m = rugMesh(rg.w, rg.d, out.seed + i * 7); m.position.set(rg.at[0], 0, rg.at[1]); m.rotation.y = rg.yaw; group.add(m); });
 
