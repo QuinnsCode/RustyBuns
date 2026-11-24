@@ -367,7 +367,7 @@ function renderTools() {
 }
 const KEYS_NAMES: Record<(typeof POLY_KINDS)[number], string> = { "wood-poly": "Analog poly", "fm-slab": "FM slab", drawbar: "Drawbar organ", "tine-ep": "Tine piano", combo: "Combo organ", strings: "String machine" };
 const KINDS_ALL: SpotKind[] = ["keys", "drums", "bass", "dj", "desk", "booth", "couch"];
-const DECOR_NAMES: Record<DecorKind, string> = { shelf: "shelf", lamp: "lamp", plant: "plant", rug: "rug", rack: "rack", piano: "grand piano", micStand: "mic stand", table: "table", cabinet: "cabinet", books: "books", drumMachine: "drum machine", modular: "modular" };
+const DECOR_NAMES: Record<DecorKind, string> = { shelf: "shelf", lamp: "lamp", plant: "plant", rug: "rug", rack: "rack", piano: "grand piano", micStand: "mic stand", table: "table", cabinet: "cabinet", books: "books", drumMachine: "drum machine", modular: "modular", monitor: "monitor", wedge: "floor wedge", riser: "stage riser" };
 let decorThumbs: Partial<Record<DecorKind, string>> = {};
 const swatches = new Map<Material, string>();
 /** A material's swatch for the paint catalog: a square of its own painted texture (look.ts), or its colour. */

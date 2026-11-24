@@ -39,9 +39,13 @@ export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
   books: { w: 0.5, d: 0.35, h: 0.4, color: "#7a2e2a" },
   drumMachine: { w: 0.62, d: 0.3, h: 0.08, color: "#8c8f90" },
   modular: { w: 0.84, d: 0.16, h: 0.3, color: "#5a3a22" },
+  // a studio monitor on its stand, a floor wedge, and a stage riser to stand the band on
+  monitor: { w: 0.6, d: 0.5, h: 1.4, color: "#2a2420" },
+  wedge: { w: 0.55, d: 0.45, h: 0.32, color: "#161618" },
+  riser: { w: 2.4, d: 1.8, h: 0.4, color: "#0c0c0e" },
 };
 export const DECOR_KINDS = Object.keys(DECOR) as DecorKind[];
-export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular";
+export type DecorKind = "shelf" | "lamp" | "plant" | "rug" | "rack" | "piano" | "micStand" | "table" | "cabinet" | "books" | "drumMachine" | "modular" | "monitor" | "wedge" | "riser";
 
 
 /** A studio from the wire or this browser's storage, checked. */
