@@ -64,6 +64,7 @@ import { handsUp, marks, words, type Marks } from "./hands.ts";
 import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
 import { cotton, drape, tabletop, tapestry } from "./tapestry.ts";
+import { doorways } from "./doors.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, wallSurface, type Quality } from "./look.ts";
 import { gearKit, gearKitLook } from "./gear-kit.ts";
 import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
@@ -180,39 +181,8 @@ function buildRoom() {
       }
     }
   }
-  // every doorway in a drawn wall: the wall carried on over it at door height, a casing round it, and a door (two for a
-  // wide one) standing open on its hinges, a studio's: solid, a small window at eye height, a steel lever
-  const leafMat = surface("wood", "#6e5034"), casing = surface("wood", def.colors.trim), lever = surface("metal", "#b9bcc0");
-  const doorH = Math.min(2.1, h - 0.15);
-  for (const wl of def.walls) {
-    const [x0, z0] = wl.from, [x1, z1] = wl.to, len = Math.hypot(x1 - x0, z1 - z0);
-    if (len < 0.01) continue;
-    const ux = (x1 - x0) / len, uz = (z1 - z0) / len, turn = -Math.atan2(uz, ux), wallMat = surface(wallSurface(wl.material ?? "drywall"), wl.material ? undefined : def.colors.walls);
-    for (const [ga, gb] of wl.gaps ?? []) {
-      const gw = gb - ga;
-      if (gw < 0.5 || gw > 2.4) continue;
-      const g = new THREE.Group(); g.position.set(x0 + ux * ga, 0, z0 + uz * ga); g.rotation.y = turn; scene.add(g);
-      const piece = (bw: number, bh: number, bd: number, x: number, y: number, z: number, m: THREE.Material) => {
-        const b = new THREE.Mesh(metreUV(new THREE.BoxGeometry(bw, bh, bd)), m); b.position.set(x, y, z); g.add(b); return b;
-      };
-      piece(gw, h - doorH, 0.12, gw / 2, (h + doorH) / 2, 0, wallMat); // over the door
-      for (const x of [0.025, gw - 0.025]) piece(0.05, doorH, 0.16, x, doorH / 2, 0, casing);
-      piece(gw, 0.05, 0.16, gw / 2, doorH - 0.025, 0, casing);
-      // one door under 1.2 m, a pair over it, each swung most of the way open to the same side
-      const leaves = gw > 1.2 ? 2 : 1, lw = (gw - 0.1) / leaves;
-      for (let k = 0; k < leaves; k++) {
-        const hinge = new THREE.Group(), right = k === 1;
-        hinge.position.set(right ? gw - 0.05 : 0.05, 0, 0.06); hinge.rotation.y = right ? -1.25 : 1.25; g.add(hinge);
-        const leaf = new THREE.Mesh(metreUV(new THREE.BoxGeometry(lw, doorH - 0.06, 0.05)), leafMat);
-        const sx = right ? -1 : 1;
-        leaf.position.set((sx * lw) / 2, (doorH - 0.06) / 2, 0.025); hinge.add(leaf);
-        // the vision panel: a small window at eye height in a dark frame
-        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 0.054), glass); pane.position.set((sx * lw) / 2, 1.45, 0.025); hinge.add(pane);
-        // the lever, both faces
-        for (const z of [-0.01, 0.06]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.018, 0.02), lever); l.position.set(sx * (lw - 0.12), 1.02, z); hinge.add(l); }
-      }
-    }
-  }
+  // every doorway in a drawn wall: the wall over it, a casing, and a studio door standing open (doors.ts)
+  scene.add(doorways(def, h, { wallOf: (wl) => surface(wallSurface(wl.material ?? "drywall"), wl.material ? undefined : def.colors.walls), casing: surface("wood", def.colors.trim), leaf: surface("wood", "#6e5034"), lever: surface("metal", "#b9bcc0"), glass }));
   // a seat on a riser stands on its deck, and so does what's played there
   for (const s of def.spots) { const t = thing(s); t.position.y = floorAt(def, s.at[0], s.at[1]); scene.add(t); }
   for (const p of def.props ?? []) scene.add(prop(p, surface));

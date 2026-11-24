@@ -13,6 +13,7 @@ import { metreUV, surface, wallSurface } from "./look.ts";
 import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef } from "./room.ts";
 import { prop } from "./props.ts";
 import { firePit, paStack } from "./open-air.ts";
+import { doorways } from "./doors.ts";
 import { van } from "@rustybuns/models/van";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { cotton, drape, rugs, tapestry } from "./tapestry.ts";
@@ -165,6 +166,9 @@ export class BuildView {
       g.traverse((c) => { c.castShadow = c.receiveShadow = true; });
       holder.add(g);
     });
+    // the doors in those walls, as tall as the walls are cut, their swing on the floor below the door's height (doors.ts)
+    const cutH = this.walls === "up" ? h : this.walls === "down" ? CUT : Math.min(h, 1.15);
+    this.root.add(doorways(room, h, { wallOf: (wl) => wallLook(wallMaterial(wl)), casing: surface("wood", room.colors.trim), leaf: surface("wood", "#6e5034"), lever: surface("metal", "#b9bcc0"), glass: new THREE.MeshPhysicalMaterial({ color: "#bcd6e6", roughness: 0.05, transparent: true, opacity: 0.35 }) }, cutH));
     // the gear wall's corner, a pad on the floor with its rack along the long side
     const fp = footprint(room), shape = new THREE.Shape(fp.map(([x, z]) => new THREE.Vector2(x, -z)));
     const pad = new THREE.Mesh(new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: "#c98a3a", transparent: true, opacity: 0.28, depthWrite: false }));
