@@ -9,14 +9,18 @@
 //
 // Runs in after.yml on every push to main and hourly, in a checkout with full history. Forks are skipped (no push).
 // `--dry` says what it would do and changes nothing.
+//
+// A PR that Claude Code's `/ship` or `/steward` watch, or the cloud PR Steward, holds (a `claude-pr-steward-*` or
+// `claude-ship-*` label) is left alone: that watch merges main in and pushes itself, and two pushers race. Its line
+// stays as it is, so a pass after the label goes picks it up.
 
 import { arr, bool, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 
-/** One row of `gh pr list --json number,headRefName,body,author,isCrossRepository`. */
+/** One row of `gh pr list --json number,headRefName,body,author,isCrossRepository,labels`. */
 export const AfterPr = obj({
   number: int(1, Infinity), headRefName: str(Infinity), body: str(Infinity, { min: 0 }),
-  author: obj({ login: str(Infinity) }), isCrossRepository: bool(),
+  author: obj({ login: str(Infinity) }), isCrossRepository: bool(), labels: arr(obj({ name: str(Infinity) }), Infinity),
 });
 export type AfterPr = Of<typeof AfterPr>;
 export type PrState = "OPEN" | "MERGED" | "CLOSED";
@@ -31,6 +35,9 @@ export interface Gh {
 
 /** Runs git in the checkout: exit code and output. */
 export type Git = (...args: string[]) => { code: number; out: string };
+
+/** The labels a Claude Code watch or the cloud PR Steward puts on a PR it holds. */
+export const WATCHED = /^claude-(?:pr-steward|ship)-/;
 
 const LINE = /^merge after (#\d+(?:(?:,\s*|\s+and\s+|\s+)#\d+)*)/im;
 
@@ -54,6 +61,8 @@ export function pass(gh: Gh, git: Git, dry = false): string[] {
   for (const pr of gh.open()) {
     const after = blockers(pr.body);
     if (!after.length) continue;
+    const held = pr.labels.find((l) => WATCHED.test(l.name));
+    if (held) { out.push(`#${pr.number} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
     if (pr.isCrossRepository) { out.push(`#${pr.number} skipped: a fork's branch can't be pushed to`); continue; }
     const waiting = after.filter((n) => gh.state(n) === "OPEN");
     if (waiting.length) { out.push(`#${pr.number} waits on ${waiting.map((n) => `#${n}`).join(", ")}`); continue; }
@@ -89,7 +98,7 @@ const ghRun = (args: string[], stdin?: string) => {
 };
 
 export const ghCli: Gh = {
-  open: () => arr(AfterPr, Infinity)(JSON.parse(ghRun(["pr", "list", "--state", "open", "--limit", "200", "--json", "number,headRefName,body,author,isCrossRepository"]))),
+  open: () => arr(AfterPr, Infinity)(JSON.parse(ghRun(["pr", "list", "--state", "open", "--limit", "200", "--json", "number,headRefName,body,author,isCrossRepository,labels"]))),
   state: (n) => {
     const s = ghRun(["pr", "view", String(n), "--json", "state", "--jq", ".state"]).trim();
     return s === "MERGED" || s === "CLOSED" ? s : "OPEN";
