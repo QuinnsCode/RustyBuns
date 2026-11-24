@@ -568,7 +568,8 @@ The runtime packages, eqosys (the store side), Qollab (the players side), codeSp
 
 [ENGINE.md](ENGINE.md) puts the parts into one picture: what each one holds today, what every Q game has, what is
 still missing (a list of the parts, a check of the game contract, a shared game loop, play beside the code) and the
-order to build it in. A game still owns its own world and ticks, and imports each part directly.
+order to build it in. A game still owns its own world and ticks, and imports each part directly. `bun run engine`
+lists every part with its one-line doc and the apps that import it, so a part nobody uses shows up.
 
 </details>
 

@@ -45,6 +45,9 @@ Each module is plain TypeScript. A game imports only what it needs. No module ru
 | Fast paths | `@rustybuns/native` (a Rust library, with a TypeScript path when it is missing) |
 | Bug reports | `@rustybuns/util/report` (from inside the game into this repo) |
 
+Run `bun run engine` for the full list with users: every package and util module, one line each, with the apps that
+import it (`bun run engine util/eqosys` for one part and all its users, `--json` for the list).
+
 ### eqosys (the store side)
 
 Sign-in for every game (`@rustybuns/util/eqosys`, an ES256 token checked by `@rustybuns/util/token`), the library,
