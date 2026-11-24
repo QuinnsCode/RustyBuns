@@ -433,7 +433,7 @@ let out: AudioOut | null = null;
 /** The sound wall at the gear wall, on this machine from the sesh's patch (../room/wall-page.ts). */
 let wallLine: WallLine | null = null;
 /** The loudest anyone else may be for you (Esc menu, kept in this browser): every guitar, set and mic of theirs through its own limiter. */
-const peerDb = peerCeilingSetting($("loudest"), (db) => { guitars?.ceiling(db); pa?.ceiling(db); });
+const peerDb = peerCeilingSetting($("loudest"), (db) => { guitars?.ceiling(db); pa?.ceiling(db); out?.send({ t: "peerCeiling", db }); });
 async function startAudio() {
   if (out) return;
   try {
@@ -454,6 +454,7 @@ async function startAudio() {
     takes.forget(); syncTakes(project);
     deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
+    out.send({ t: "peerCeiling", db: peerDb() }); // slices heard a loop late or at the desk, on the audio thread
     guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig), out.speakers);
     guitars.ceiling(peerDb());
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);

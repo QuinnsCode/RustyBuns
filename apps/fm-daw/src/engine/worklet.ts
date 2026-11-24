@@ -18,6 +18,7 @@ import { AmpInserts } from "../amp/insert.ts";
 import type { TrackAmp } from "../amp/track-amp.ts";
 import { Mixer, RigReturn, shapeStage, trackId } from "../mixer.ts";
 import type { FromWorklet, ToWorklet } from "./messages.ts";
+import { clipCurve, dbGain, shaped } from "../studio/limiter.ts";
 import type { Lane } from "../project.ts";
 import type { ShapeAt } from "../desk.ts";
 
@@ -82,6 +83,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private remotes = new Map<string, { line: RemoteLine; peer: number; track: number }>();
   private wasm: Exports | null = null;
   private far = new Float32Array(256);
+  /** The listener's ceiling on everyone else's slices, as the jam room's per-person limiter's curve (null: as they come). */
+  private peerCurve: Float32Array | null = null;
   /** The sesh's desk beyond its tracks: the players' channels (by live-line number) and the aux 2 return, with its bus from the engine. */
   private desk = new Mixer(sampleRate);
   private deskOf = new Map<number, string>();
@@ -205,6 +208,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "sound": this.hearSound(m.peer, m.track, m.at, m.pcm); break;
       case "desk": this.setDesk(m); break;
       case "quiet": this.quiet(m.peer, m.track); break;
+      case "peerCeiling": this.peerCurve = m.db === null ? null : clipCurve(dbGain(m.db)); break;
       case "listen": this.listen(m.at); break;
       case "send": this.sending = m.on; this.sendLatency = m.inLatency; this.input.reset(); break;
       case "pluginSend":
@@ -223,6 +227,8 @@ class FmProcessor extends AudioWorkletProcessor {
     let r = this.remotes.get(key);
     if (!r) { r = { line: this.newRemote(), peer, track }; this.remotes.set(key, r); }
     r.line.setNominal(this.nominal());
+    const c = this.peerCurve;
+    if (c) for (let i = 0; i < pcm.length; i++) pcm[i] = shaped(c, pcm[i]);
     r.line.push(at, pcm);
   }
   /** Their sound into `track` stopped (every track's, with none): what's buffered goes. */

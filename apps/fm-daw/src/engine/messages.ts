@@ -77,6 +77,8 @@ export type ToWorklet =
   | { t: "sound"; peer: number; track: number; at: number; pcm: Float32Array }
   /** Their sound stopped (unplugged, left): drop what's buffered, into `track` or (none) every track. */
   | { t: "quiet"; peer: number; track?: number }
+  /** The loudest anyone else's slices may be here, dBFS, through the jam room's per-person limiter (src/studio/limiter.ts); null: as they come. */
+  | { t: "peerCeiling"; db: number | null }
   /**
    * Send plugin track `track`'s own sound to the sesh in stamped slices (`on`), or stop: this page's plugin plays it.
    * `web`: a plugin in the page (src/ui/wam.ts), whose sound is the track's channel of the fourth input.
