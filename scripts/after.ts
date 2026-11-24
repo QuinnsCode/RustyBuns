@@ -87,7 +87,7 @@ export function pass(gh: Gh, git: Git, dry = false): string[] {
   return out;
 }
 
-const sh = (cmd: string[], stdin?: string) => {
+export const sh = (cmd: string[], stdin?: string) => {
   const r = Bun.spawnSync(cmd, { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin), stdout: "pipe", stderr: "pipe" });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 };

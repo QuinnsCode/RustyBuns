@@ -23,6 +23,7 @@
     "releases": "bun scripts/releases.ts",
     "pushes": "bun scripts/pushes.ts",
     "pr": "bun scripts/pr.ts",
+    "kick": "bun scripts/kick.ts",
     "issue": "bun scripts/issue.ts",
     "rings": "bun scripts/rings.ts",
     "climbs": "bun scripts/climbs.ts",
