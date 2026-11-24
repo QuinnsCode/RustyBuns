@@ -22,7 +22,7 @@ const office = () => {
 
 test("a new page script moves page; a changed server bundle makes it stale; the same bytes rewritten change nothing", () => {
   const { pub, srv, bin } = office();
-  const r = officeReload(pub, srv, bin, true, () => {});
+  const r = officeReload(pub, srv, bin, true, () => {}, 0);
   const before = r.state();
   expect(before.stale).toBe(false);
   writeFileSync(path.join(srv, "rb-triage.js"), "server one");
@@ -40,7 +40,7 @@ test("a new page script moves page; a changed server bundle makes it stale; the 
 
 test("a changed workers' MCP bundle sets workers, not stale", () => {
   const { pub, srv, bin } = office();
-  const r = officeReload(pub, srv, bin, true, () => {});
+  const r = officeReload(pub, srv, bin, true, () => {}, 0);
   expect(r.state()).toMatchObject({ stale: false, workers: false });
   writeFileSync(path.join(bin, "rb-triage.js"), "mcp one");
   expect(r.state().workers).toBe(false);
@@ -68,7 +68,7 @@ test("mama's source list is our code, not the build or the tests", () => {
 
 test("swap names the page scripts that can be swapped in place; the skin, chunks and rb-reload stay fixed", () => {
   const { pub, srv, bin } = office();
-  const r = officeReload(pub, srv, bin, true, () => {});
+  const r = officeReload(pub, srv, bin, true, () => {}, 0);
   const before = r.state();
   expect(before.swap).toEqual({ "rb-ester": "rb-ester-aaa.js" });
   writeFileSync(path.join(pub, "assets/rb-ester-bbb.js"), "two");
@@ -80,4 +80,14 @@ test("swap names the page scripts that can be swapped in place; the skin, chunks
   const after = r.state();
   expect(after.fixed).not.toBe(swapped.fixed);
   expect(Object.keys(after.swap)).toEqual(["rb-ester"]);
+});
+
+test("every page's poll inside the TTL gets one look at the folders; the next look after it sees the change", async () => {
+  const { pub, srv, bin } = office();
+  const r = officeReload(pub, srv, bin, true, () => {}, 50);
+  const before = r.state();
+  writeFileSync(path.join(srv, "rb-triage.js"), "server two");
+  expect(r.state()).toBe(before);
+  await new Promise((done) => setTimeout(done, 60));
+  expect(r.state().stale).toBe(true);
 });

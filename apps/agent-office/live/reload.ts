@@ -12,13 +12,6 @@ import type { ReloadState } from "./replies.ts";
 
 const SCRIPT = /^(rb-(?!chunk-|reload-)[a-z]+)-\w+\.js$/;
 
-/** The `rb-<name>-<hash>.js` page scripts in `dir`, by name. */
-export function swappable(dir: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const f of existsSync(dir) ? readdirSync(dir) : []) { const m = SCRIPT.exec(f); if (m) out[m[1]!] = f; }
-  return out;
-}
-
 /** A hash of every file in `dir` whose name starts with `rb-` (or is in `extra`), by name and content; re-read only when its size or mtime moves. */
 export function fingerprint(dir: string, extra: string[] = []) {
   const seen = new Map<string, { key: string; hash: string }>();
@@ -33,19 +26,33 @@ export function fingerprint(dir: string, extra: string[] = []) {
   };
 }
 
+/** How long one look at the folders answers every page's poll (each open page asks every 2.5 s; #5762). */
+export const RELOAD_TTL_MS = 2000;
+
 /** `pub` is dist/public, `srv` the server bundles, `bin` the dir holding bin/rb-triage.js; `restart` is what a restart does (SIGTERM, in the office). */
-export function officeReload(pub: string, srv: string, bin: string, canRestart: boolean, restart: () => void) {
+export function officeReload(pub: string, srv: string, bin: string, canRestart: boolean, restart: () => void, ttl = RELOAD_TTL_MS) {
   const assets = path.join(pub, "assets");
   const page = fingerprint(assets);
   const skin = fingerprint(path.join(pub, "druids"), ["druids.js"]);
-  // names are hashed, so the file name stands for a script's content; everything else under assets/rb- is fixed
-  const fixed = () => Bun.hash(page().split(",").filter((f) => f && !SCRIPT.test(f.split(":")[0]!)).join(",") + skin()).toString(36);
   const server = fingerprint(srv);
   const mcp = fingerprint(bin);
   const boot = `${Date.now().toString(36)}-${process.pid}`;
   const started = server(), mcpStarted = mcp();
+  const look = (): ReloadState => {
+    const p = page(), k = skin();
+    // names are hashed, so the file name stands for a script's content; everything else under assets/rb- is fixed
+    const files = p.split(",").filter(Boolean), swap: Record<string, string> = {};
+    for (const f of files) { const name = f.slice(0, f.lastIndexOf(":")), m = SCRIPT.exec(name); if (m) swap[m[1]!] = name; }
+    const fixed = Bun.hash(files.filter((f) => !SCRIPT.test(f.slice(0, f.lastIndexOf(":")))).join(",") + k).toString(36);
+    return { boot, page: Bun.hash(p + k).toString(36), swap, fixed, stale: server() !== started, workers: mcp() !== mcpStarted, canRestart };
+  };
+  let last: { at: number; state: ReloadState } | undefined;
   return {
-    state: (): ReloadState => ({ boot, page: Bun.hash(page() + skin()).toString(36), swap: swappable(assets), fixed: fixed(), stale: server() !== started, workers: mcp() !== mcpStarted, canRestart }),
+    state: (): ReloadState => {
+      const now = Date.now();
+      if (!last || now - last.at >= ttl) last = { at: now, state: look() };
+      return last.state;
+    },
     restart: () => (canRestart ? (setTimeout(restart, 200), true) : false),
   };
 }

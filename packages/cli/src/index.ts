@@ -70,7 +70,7 @@ import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimat
 import { callDrain, drainFlags, oldCodeNote } from "./drain.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { runTests, testFlags } from "./test-run.ts";
-import { PROF_SECRET, boxUrl, stateUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
+import { PROF_SECRET, boxUrl, stateUrl, fetchHistory, fetchMem, fetchProfile, secretProblem, workerFromState, captureEdgeProfile } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
@@ -1278,6 +1278,7 @@ async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: 
 
 /** `rustybuns prof`: sample the deployed box's CPU, save the .cpuprofile here and print its hottest frames. */
 async function prof(args: string[]) {
+  if (args.includes("--edge")) return edgeProf(args);
   const json = args.includes("--json"), say = json ? console.error : console.log;
   const seconds = intFlag(args, "seconds", 1, 60, 10), top = intFlag(args, "top", 1, 1000, 10);
   const { cfg, url, secret } = await boxTarget("prof", args, true, say);
@@ -1286,6 +1287,28 @@ async function prof(args: string[]) {
   const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), top);
   if (json) return console.log(JSON.stringify({ url, file, seconds, summary }, null, 2));
   console.log(`saved ${file}\n\n${formatProfileSummary(summary)}\n\nfor the flame graph, open it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
+}
+
+/** `rustybuns prof --edge`: a CPU or heap profile of the live Worker (or one Durable Object) through Cloudflare's profiler and `cf`. */
+async function edgeProf(args: string[]) {
+  const json = args.includes("--json"), say = json ? console.error : console.log;
+  const cfg = await loadConfig();
+  if (!edgeOn(cfg) || !cfg.worker) throw new Error("rustybuns prof --edge profiles the Worker, and this config has no edge Worker. Without --edge it profiles the box.");
+  const stage = alchemyStage(args);
+  const worker = flag(args, "worker") ?? workerFromState(process.cwd(), cfg, stage);
+  if (!worker) throw new Error(`no Worker in the Alchemy state for stage ${stage}. Deploy first, or pass --worker <script name>.`);
+  const namespace = flag(args, "namespace-id"), actor = flag(args, "actor-id");
+  if (!namespace !== !actor) throw new UsageError({ message: "a Durable Object needs both --namespace-id and --actor-id" });
+  const p = {
+    worker, ms: intFlag(args, "seconds", 1, 50, 10) * 1000, type: args.includes("--heap") ? "heap" as const : "cpu" as const,
+    version: flag(args, "version") ?? "latest-deployed", ...(namespace && actor ? { object: { namespace, actor } } : {}),
+  };
+  say(`profiling ${worker}${p.object ? ` (Durable Object ${actor!.slice(0, 8)}...)` : ""} ${p.type} for ${p.ms / 1000}s: send it traffic meanwhile...`);
+  const file = await captureEdgeProfile({ ...p, outDir: join(".rustybuns", "prof") });
+  if (json) return console.log(JSON.stringify({ file, ...p }, null, 2));
+  console.log(`saved ${file}\n\nfor the flame graph, drop it on https://www.speedscope.app, or \`go tool pprof -http=: ${file}\`.` +
+    (cfg.worker.builtMain && !cfg.worker.sourceMaps ? "\nnames point at the built bundle: set worker.sourceMaps: true and deploy to see your source." : "") +
+    (p.type === "heap" ? "\nheap is what was allocated during the capture (a sample every 512 kB), not what's still held." : ""));
 }
 
 /** `rustybuns mem`: the deployed box's memory, and how fast it's growing. */
@@ -1658,6 +1681,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
        [--url U] [--json]    save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools or
                              speedscope) and print its hottest functions (--json: as JSON);
                              needs a RB_PROF_SECRET secret binding (boxOnly: true)
+  prof --edge [--heap]      the live Worker's CPU (or allocations) for N seconds (at most 50), through
+       [--worker W] [--version V]  Cloudflare's profiler and the cf CLI: a .pprof in .rustybuns/prof/;
+       [--namespace-id N --actor-id A]  one Durable Object. Send the Worker traffic while it runs
   mem [--url U] [--json]     the deployed box's memory: RSS, heap, peak and the MB/h slope
   history [--runs N] [--json]
                              the box's runs, one per boot or deploy, newest first: memory slope,
