@@ -16,7 +16,7 @@ import { defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns
 import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
-import { studioCards } from "./picker.ts";
+import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, CALL_SENDS, START_DB, dbToGain } from "../ui/audio.ts";
@@ -1372,6 +1372,8 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// the menu's lists are sideways rows of cards, like the studios: a wheel or a drag scrolls them, touch swipes
+for (const id of ["rooms", "invites", "friends", "people"]) { $(id).classList.add("cards"); sideways($(id)); }
 menu();
 
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----

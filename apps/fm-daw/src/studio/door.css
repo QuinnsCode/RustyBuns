@@ -13,20 +13,17 @@
 #menu .me canvas { width: 72px; height: 99px; flex: none; background: #23262c; border-radius: 10px; }
 #menu .me b { font: 600 24px/1.1 "Barlow Condensed", sans-serif; }
 #menu .me p { margin: 2px 0 0; }
-#rooms { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 #rooms a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid #3a3e45; border-radius: 10px; color: var(--ink); text-decoration: none; }
 #rooms a:hover { border-color: var(--hot); }
 #rooms span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #rooms small { color: var(--dim); white-space: nowrap; }
 #rooms .none { color: var(--dim); font-size: 13px; }
 @media (max-width: 480px) { #menu { padding: 16px; } #menu h1 { font-size: 28px; } }
-#people { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
-#people li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 #people span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the studio cards: one sideways row, the list repeated each side (picker.ts wheel) so it feels endless */
-.studios { position: relative; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; min-width: 0; max-width: 100%; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; padding: 2px 0; cursor: grab; }
-.studios::-webkit-scrollbar { display: none; }
-.studios.dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+.studios, #menu .cards { position: relative; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; min-width: 0; max-width: 100%; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; padding: 2px 0; cursor: grab; }
+.studios::-webkit-scrollbar, #menu .cards::-webkit-scrollbar { display: none; }
+.studios.dragging, #menu .cards.dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
 #menu .studios > .studio-card { flex: 0 0 150px; scroll-snap-align: center; }
 #menu .studio-card { display: grid; gap: 4px; align-content: start; text-align: left; padding: 8px; min-height: 0; white-space: normal; background: #23262c; color: var(--ink); border: 1px solid #3a3e45; cursor: pointer; }
 #menu .studio-card:hover:not(:disabled) { border-color: var(--hot); }
@@ -37,13 +34,20 @@
 .studio-card b { font: 600 18px/1.1 "Barlow Condensed", sans-serif; }
 .studio-card small { color: var(--dim); font: 400 12px/1.35 "IBM Plex Sans", system-ui, sans-serif; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 480px) { #menu .studios > .studio-card { flex-basis: 136px; } }
-#invites { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 #invites a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--hot); border-radius: 10px; color: var(--ink); text-decoration: none; }
 #invites span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #invites small, #friends small { color: var(--dim); white-space: nowrap; }
-#friends { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
-#friends li, #invites li { display: flex; align-items: center; gap: 8px; min-width: 0; }
-#invites a { flex: 1; min-width: 0; }
 #friends span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #friends-none a { color: var(--hot); }
 #friends button { flex: none; }
+/* every other list in the menu is a sideways row of cards too (picker.ts sideways): rooms, invites, people, friends */
+#menu .cards { list-style: none; margin: 0; padding: 2px 0; }
+#menu .cards > li { flex: 0 0 180px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px; background: #23262c; border: 1px solid #3a3e45; border-radius: 10px; }
+#menu .cards > li:has(> a:only-child) { padding: 0; background: none; border: 0; }
+#menu .cards > li > a { flex: 1; flex-direction: column; align-items: flex-start; background: #23262c; }
+#menu .cards > li.none { flex-basis: 100%; background: none; border: 0; padding: 0; }
+#menu #invites > li > a { border-color: var(--hot); }
+#menu .cards button { width: 100%; justify-content: center; }
+@media (max-width: 480px) { #menu .cards > li { flex-basis: 150px; } }
+/* a button the page hides stays hidden, whatever its own display (.ghost is inline-flex) */
+#menu [hidden] { display: none !important; }
