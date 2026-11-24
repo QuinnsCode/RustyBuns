@@ -369,3 +369,27 @@ export function edit(def: StudioDef, e: Edit): Built {
   const wrong = problems(next);
   return wrong.length ? no(wrong[0]) : { ok: true, def: next };
 }
+
+/**
+ * Dress a studio the way a working one usually is, as edits the builder does one by one (each that wouldn't fit is
+ * left out): a rug under the kit, a lamp in each free corner, a plant either side of the way in, a shelf of records
+ * along the back wall and a rack of outboard gear by the desk, and absorbers on any wall that's still bare.
+ */
+export function furnish(def: StudioDef): { def: StudioDef; done: Edit[] } {
+  const { w, d } = def.size, want: Edit[] = [];
+  for (const s of def.spots.filter((x) => x.kind === "drums")) { const b = thingBox(s); want.push({ t: "addProp", kind: "rug", at: [b.cx, b.cz], yaw: s.yaw }); }
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) want.push({ t: "addProp", kind: "lamp", at: [x * (w / 2 - 0.45), z * (d / 2 - 0.45)] });
+  const [dx, dz] = def.door.at;
+  for (const k of [-1, 1]) want.push({ t: "addProp", kind: "plant", at: [dx + k * 1.1, Math.max(-d / 2 + 0.5, Math.min(d / 2 - 0.5, dz - 0.2))] });
+  want.push({ t: "addProp", kind: "shelf", at: [0, -d / 2 + 0.3], yaw: Math.PI });
+  for (const s of def.spots.filter((x) => x.kind === "desk")) { const b = thingBox(s); want.push({ t: "addProp", kind: "rack", at: [b.cx + b.hw + 0.5, b.cz], yaw: s.yaw }); }
+  const mats = def.materials ?? PLAIN;
+  for (const side of SIDES) {
+    const bare = !(def.panels ?? []).some((p) => p.wall === side) && !["foam", "panel", "curtain", "carpet"].includes(mats.walls[side]);
+    if (bare) want.push({ t: "panel", wall: side, material: "panel", m2: Math.round((side === "front" || side === "back" ? w : d) * 0.8) });
+  }
+  let now = def;
+  const done: Edit[] = [];
+  for (const e of want) { const r = edit(now, e); if (r.ok) { now = r.def; done.push(e); } }
+  return { def: now, done };
+}

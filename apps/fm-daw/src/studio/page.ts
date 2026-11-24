@@ -8,7 +8,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
 import { esc } from "@rustybuns/util";
 import { check, oneOf } from "@rustybuns/util/guard";
-import { boothMiddle, DECOR, DECOR_KINDS, type DecorKind, Edit, edit, newSpot, type Surface, yours, YOURS } from "./builder.ts";
+import { boothMiddle, DECOR, DECOR_KINDS, type DecorKind, Edit, edit, furnish, newSpot, type Surface, yours, YOURS } from "./builder.ts";
 import { BuildView, type Hit, type WallsMode } from "./build-view.ts";
 import { footprint, gearPlace } from "./gear-wall.ts";
 import type { Side, SpotKind, StudioDef } from "./room.ts";
@@ -308,6 +308,14 @@ for (const surface of [plan, canvas] as Element[]) {
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); build?.orbit(0, 0, Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 
+const SOFA_ICON = `<path d="M20 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M2 16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z"/><path d="M4 18v2"/><path d="M20 18v2"/><path d="M12 4v9"/>`;
+/** Furnish the room in one go (builder.ts furnish), one step to undo. */
+function furnishRoom(): number {
+  const f = furnish(room);
+  if (!f.done.length) { why = "There's no room left to furnish"; render(); return 0; }
+  undos.push(room); redos.length = 0; room = f.def; why = ""; save(); render();
+  return f.done.length;
+}
 const UNDO_ICON = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>`;
 const REDO_ICON = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>`;
 const VIEW_3D = `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`;
@@ -322,6 +330,7 @@ let thumbs: Partial<Record<SpotKind, string>> = {};
 function renderTools() {
   const b = (attrs: string, name: string, paths: string, on = false) => `<button type="button" class="tool" ${attrs} aria-label="${esc(name)}" title="${esc(name)}" aria-pressed="${on}">${icon(paths)}</button>`;
   $("tools").innerHTML = TOOLS.map((t) => b(`data-tool="${t.id}"`, t.name, t.icon, t.id === tool)).join("")
+    + b(`data-furnish="1"`, "Furnish: dress the room as a working studio (a rug under the kit, lamps, plants, a shelf, a rack, absorbers)", SOFA_ICON)
     + b(`data-undo="1"${undos.length ? "" : " disabled"}`, "Undo (Ctrl+Z)", UNDO_ICON) + b(`data-undo="0"${redos.length ? "" : " disabled"}`, "Redo (Ctrl+Shift+Z)", REDO_ICON)
     + `<span class="sep"></span>`
     + (build ? b(`data-view="3d"`, "3D: your studio cut away, from above", VIEW_3D, view === "3d") : "")
@@ -362,6 +371,7 @@ $("tools").addEventListener("click", (e) => {
   const t = e.target instanceof Element ? e.target.closest("button") : null;
   if (!t) return;
   if (t.dataset.undo) return void undo(t.dataset.undo === "1");
+  if (t.dataset.furnish) return void furnishRoom();
   if (t.dataset.tool) tool = t.dataset.tool as Tool;
   if (t.dataset.view) view = t.dataset.view === "3d" && build ? "3d" : "plan";
   if (t.hasAttribute("data-walls")) walls = walls === "cutaway" ? "down" : walls === "down" ? "up" : "cutaway";
@@ -504,6 +514,7 @@ const harness = {
   edit: (e: unknown) => ({ ok: apply(e), why }),
   /** What the 3D view has under (x, y), pixels from its top left corner, and where that is on the floor. */
   hit: (x: number, y: number) => { const r = canvas.getBoundingClientRect(), e = { clientX: r.left + x, clientY: r.top + y }; return { hit: build?.hit(e) ?? null, floor: build?.toRoom(e) ?? null }; },
+  furnish: () => furnishRoom(),
   undo: () => undo(true),
   redo: () => undo(false),
   pick: (id: string) => { picked = id; render(); },

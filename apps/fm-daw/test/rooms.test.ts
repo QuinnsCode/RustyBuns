@@ -3,7 +3,7 @@
 // keep a studio /jam.html can load back. Then every room the builder ships: buildable, and ringing as it says.
 import { expect, test } from "bun:test";
 import { check } from "@rustybuns/util/guard";
-import { Edit, edit, problems, Studio } from "../src/studio/builder.ts";
+import { Edit, edit, furnish, problems, Studio } from "../src/studio/builder.ts";
 import type { StudioDef } from "../src/studio/room.ts";
 import { BARN, BASEMENT, ROOM_LIST, ROOMS } from "../src/studio/rooms/index.ts";
 import { type Acoustics, acoustics, impulse } from "../src/studio/sound.ts";
@@ -183,5 +183,16 @@ test("the new studios: walk in at the door, round the furniture to every seat, s
     // the dressing builds, and its lamps and screens glow for the look to light
     const glows = (room.props ?? []).map((p) => prop(p)).flatMap((g) => g.children).filter((o) => o.userData.glow);
     if (!room.outdoor) expect({ id, glows: glows.length > 0 }).toEqual({ id, glows: true }); // out of doors the rig is the light (open-air.ts)
+  }
+});
+
+test("Furnish dresses a room as a working studio, every piece one the builder could have put there, and it rings less", () => {
+  for (const r of ROOM_LIST.filter((x) => !x.outdoor)) {
+    const f = furnish(r), kinds = f.done.flatMap((e) => (e.t === "addProp" ? [e.kind] : []));
+    expect(kinds, r.id).toContain("lamp");
+    if (r.spots.some((s) => s.kind === "drums")) expect(kinds, r.id).toContain("rug");
+    expect(problems(f.def), r.id).toEqual([]);
+    expect(check(Studio, JSON.parse(JSON.stringify(f.def))), r.id).toEqual(JSON.parse(JSON.stringify(f.def)));
+    expect(acoustics(f.def, f.def.spots[0]).mid, r.id).toBeLessThanOrEqual(acoustics(r, r.spots[0]).mid + 1e-9);
   }
 });
