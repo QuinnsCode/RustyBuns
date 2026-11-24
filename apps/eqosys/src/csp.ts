@@ -5,7 +5,7 @@ import { qlaveUrl } from "./qollab/qlave.ts";
 
 /** The policy, with `script` as script-src and `connect` as connect-src. The type is eqosys's own (Glass.tsx). */
 export const pageCsp = (script: string, connect = "'self'") =>
-  `default-src 'none'; img-src 'self'; script-src ${script}; connect-src ${connect}; style-src 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'`;
+  `default-src 'none'; img-src 'self'; media-src 'self'; script-src ${script}; connect-src ${connect}; style-src 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'`;
 
 /** /spaces' connect-src: eqosys, and Qlave's origin over https and its socket (http and ws for a local Qlave). */
 export function spacesConnect(conf: { QLAVE_URL?: string }) {

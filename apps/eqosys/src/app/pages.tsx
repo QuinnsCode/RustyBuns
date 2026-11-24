@@ -18,6 +18,7 @@ import type { Load } from "../scale.ts";
 import { SCALE_CSS, Scale } from "./Scale.tsx";
 import { STUDIO_CSS, Studios } from "./Studio.tsx";
 import type { Studio } from "../studios.ts";
+import { clipsOf } from "../trailers.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -377,6 +378,14 @@ const HOME_CSS = `
 @media(min-width:60rem){.home.detail.game-page{padding-inline:clamp(0rem,6vw - 2rem,8rem)}
  .game-page .pane{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr);gap:1.6rem 2.2rem;align-items:center;padding:1.6rem}
  .game-page .pane .shot{aspect-ratio:16/9}.game-page .words{padding-right:.6rem}.home.detail.game-page h1{font-size:clamp(2.2rem,1rem + 2vw,3.4rem)}}
+/* The clips (trailers.client.ts): a video over the still once it plays; on an app's page a strip of them to pick from. */
+.home .shot .clip{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s}.home .shot .clip.on{opacity:1}
+.game-page .reel{display:grid;gap:.7rem;min-width:0}
+.game-page .picks{display:flex;gap:.6rem;overflow-x:auto;padding-bottom:.3rem;scrollbar-width:thin}
+.game-page .picks button{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;justify-content:space-between;gap:.15rem .5rem;width:9.5rem;padding:0 0 .35rem;border:0;border-radius:10px;background:none;color:var(--ink);font:inherit;font-size:.78rem;text-align:left;cursor:pointer}
+.game-page .picks img{grid-column:1/-1;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;outline:2px solid transparent;outline-offset:2px;transition:outline-color .2s}
+.game-page .picks button[aria-pressed=true] img{outline-color:var(--acc)}.game-page .picks span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-page .picks small{color:var(--mut)}
+.home .made h2{margin:0 0 .6rem}
 .home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 `;
 
@@ -438,7 +447,7 @@ type Used = Member["apps"][number] | undefined;
 
 /** An app's screenshot (public/cards/<id>.jpg), or its drawn key art when it has none. */
 const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
-  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" width={640} height={360} loading={eager ? undefined : "lazy"} fetchPriority={eager ? "high" : undefined} decoding="async" draggable={false} /> : <Art id={app.id} />}</span>
+  <span className="shot" data-clip={clipsOf(app.id)[0]?.src}>{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" width={640} height={360} loading={eager ? undefined : "lazy"} fetchPriority={eager ? "high" : undefined} decoding="async" draggable={false} /> : <Art id={app.id} />}</span>
 );
 const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url = playOf(app); return url ? (small
   ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardFor(app).name}`}><Out /></a>
@@ -459,6 +468,21 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
       </span>
     </section>
   );
+}
+
+/** What the clips show of what's built here, besides the apps: eqosys itself, Qollab's rooms, tscircuit boards as pedals. */
+const MADE = [["eqosys", "eqosys", "One account for every game"], ["qollab", "Qollab", "Rooms, parties and saves in one call"], ["tscircuit", "Pedals from tscircuit", "Boards you play, then order"]] as const;
+function MadeHere() {
+  const made = MADE.flatMap(([id, name, line]) => { const c = clipsOf(id)[0]; return c ? [{ id, name, line, c }] : []; });
+  return made.length ? (
+    <section className="cat made" aria-label="Made here">
+      <h2>Made here</h2>
+      <div className="shelf">{made.map(({ id, name, line, c }) => (
+        <div key={id} className="glass game"><span className="shot" data-clip={c.src}><img src={c.still} alt="" width={640} height={360} loading="lazy" decoding="async" draggable={false} /></span>
+          <span className="cap"><span className="name"><b>{name}</b></span><small>{line}</small></span></div>
+      ))}</div>
+    </section>
+  ) : null;
 }
 
 /** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
@@ -581,6 +605,7 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
             </details>
           ) : null;
         })}
+        <MadeHere />
       </div>
     </div>
   );
@@ -604,13 +629,19 @@ export function SpacesPage({ t0 }: { t0: number }) {
 
 /** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
 export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
-  const c = cardFor(app), t = tally(app, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
+  const c = cardFor(app), t = tally(app, unlocks), m = app.maturity ?? "alpha", url = playOf(app), clips = clipsOf(app.id);
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home detail game-page">
         <a className="back" href="/">&larr; Library</a>
         <section className="pane">
-          <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" /> : <Art id={app.id} />}</span>
+          <div className="reel">
+          <span className="shot" data-reel={clips.length ? "" : undefined}>{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" /> : <Art id={app.id} />}</span>
+          {clips.length > 1 && <div className="picks" aria-label="Clips">{clips.map((c) => (
+            <button key={c.file} type="button" data-pick={c.src} aria-pressed="false" title={c.title}><img src={c.still} alt="" loading="lazy" width={160} height={90} /><span>{c.title}</span><small>{Math.round(c.secs)}s</small></button>
+          ))}</div>}
+          {clips.length === 1 && <button hidden type="button" data-pick={clips[0]!.src} />}
+          </div>
           <div className="words">
           {c.kicker && <span className="kick">{c.kicker}</span>}
           <h1>{c.name}</h1>

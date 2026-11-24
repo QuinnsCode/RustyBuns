@@ -1050,6 +1050,16 @@ A scene that the game selects becomes a memory when it plays to its end. The gam
 
 </details>
 
+### Trailers cut from real play
+
+A script plays each app for real in Chrome, records it, and cuts short reels from it with zooms, slow motion and captions. eqosys plays a reel when you rest the pointer on a tile.
+
+<details><summary>More</summary>
+
+`bun scripts/trailers.ts` opens each app at a jump link in headless Chrome on the GPU and runs a script that plays it: keys held, the app's own `__commands` (a skate line, a shot, a set piece), and clicks. It keeps every frame at 60 fps, as a "take" in `~/.cache/rustybuns-trailers`, with a contact sheet of one frame each second. Then it cuts each "reel" from the takes. A reel is a list of cuts of 3 s or less, with a push or punch zoom, slow motion, a shake, a flash or a glitch. Chrome draws the captions and title cards in Lexend, and ffmpeg joins the cuts into a muted MP4 of 1 or 2 MB in `apps/eqosys/public/trailers/`. The takes and the cuts are in `scripts/trailer-plans.ts`. eqosys reads `src/trailers.json`: a tile starts its app's first reel when the pointer rests on it, and an app's page plays all of its reels in turn, with a strip to pick one. With reduced motion or Save-Data turned on, nothing starts by itself.
+
+</details>
+
 ### Every screen, from a small phone to an open foldable, checked by a robot
 
 One command opens each web app on seven phones and a desktop, and draws a board of screenshots with each place where a layout broke.

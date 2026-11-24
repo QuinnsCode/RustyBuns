@@ -1,0 +1,279 @@
+{
+  "alien-disc-golf": [
+    {
+      "file": "alien-disc-golf-fore.mp4",
+      "title": "Fore",
+      "secs": 15.8
+    },
+    {
+      "file": "alien-disc-golf-the-drift.mp4",
+      "title": "The drift",
+      "secs": 9.2
+    },
+    {
+      "file": "alien-disc-golf-long-drive.mp4",
+      "title": "Long drive",
+      "secs": 9.2
+    }
+  ],
+  "codesplitter": [
+    {
+      "file": "codesplitter-split-apart.mp4",
+      "title": "Split apart",
+      "secs": 13.2
+    },
+    {
+      "file": "codesplitter-helpers.mp4",
+      "title": "The helpers",
+      "secs": 8.8
+    }
+  ],
+  "delayed-reaction": [
+    {
+      "file": "delayed-reaction-the-vortex.mp4",
+      "title": "The vortex",
+      "secs": 14.4
+    },
+    {
+      "file": "delayed-reaction-drop.mp4",
+      "title": "The drop",
+      "secs": 10.6
+    },
+    {
+      "file": "delayed-reaction-colors.mp4",
+      "title": "Colors",
+      "secs": 9.2
+    }
+  ],
+  "eqosys": [
+    {
+      "file": "eqosys-one-account.mp4",
+      "title": "One account, every game",
+      "secs": 25.4
+    },
+    {
+      "file": "eqosys-the-easy-parts.mp4",
+      "title": "The easy parts",
+      "secs": 12.4
+    }
+  ],
+  "fm-daw": [
+    {
+      "file": "fm-daw-the-studio.mp4",
+      "title": "Qollab Studio",
+      "secs": 30
+    },
+    {
+      "file": "fm-daw-gear-room.mp4",
+      "title": "The gear room",
+      "secs": 11.4
+    },
+    {
+      "file": "fm-daw-jam.mp4",
+      "title": "The jam room",
+      "secs": 9.4
+    }
+  ],
+  "geoboxq": [
+    {
+      "file": "geoboxq-fits.mp4",
+      "title": "What fits",
+      "secs": 11.6
+    },
+    {
+      "file": "geoboxq-pack.mp4",
+      "title": "Pack it",
+      "secs": 6.8
+    }
+  ],
+  "git-recon": [
+    {
+      "file": "git-recon-war-for-main.mp4",
+      "title": "The war for main",
+      "secs": 34.6
+    },
+    {
+      "file": "git-recon-boot-camp.mp4",
+      "title": "Boot camp",
+      "secs": 12.4
+    },
+    {
+      "file": "git-recon-newsreel.mp4",
+      "title": "Newsreel",
+      "secs": 13.8
+    },
+    {
+      "file": "git-recon-outtakes.mp4",
+      "title": "Outtakes",
+      "secs": 11.6
+    },
+    {
+      "file": "git-recon-drop-in.mp4",
+      "title": "Drop in",
+      "secs": 9.8
+    }
+  ],
+  "hippo-tycoon": [
+    {
+      "file": "hippo-tycoon-oil-rush.mp4",
+      "title": "Oil rush",
+      "secs": 12.4
+    },
+    {
+      "file": "hippo-tycoon-greedy.mp4",
+      "title": "Greedy",
+      "secs": 8.8
+    },
+    {
+      "file": "hippo-tycoon-geyser.mp4",
+      "title": "The geyser",
+      "secs": 6.6
+    }
+  ],
+  "mythic-masters": [
+    {
+      "file": "mythic-masters-the-ledger.mp4",
+      "title": "The ledger",
+      "secs": 26.8
+    },
+    {
+      "file": "mythic-masters-stadium.mp4",
+      "title": "The Cryptid Cup",
+      "secs": 10.8
+    },
+    {
+      "file": "mythic-masters-volcano.mp4",
+      "title": "Volcano",
+      "secs": 10.6
+    },
+    {
+      "file": "mythic-masters-pine-barrens.mp4",
+      "title": "Pine Barrens",
+      "secs": 11.4
+    },
+    {
+      "file": "mythic-masters-faceoff.mp4",
+      "title": "Face-off",
+      "secs": 10.8
+    }
+  ],
+  "park-hide-seek": [
+    {
+      "file": "park-hide-seek-find-the-campers.mp4",
+      "title": "Find the campers",
+      "secs": 19.8
+    },
+    {
+      "file": "park-hide-seek-hide.mp4",
+      "title": "Hide",
+      "secs": 9
+    },
+    {
+      "file": "park-hide-seek-seek.mp4",
+      "title": "Seek",
+      "secs": 9
+    }
+  ],
+  "qcrm": [
+    {
+      "file": "qcrm-contacts.mp4",
+      "title": "Your contacts",
+      "secs": 13.4
+    },
+    {
+      "file": "qcrm-automate.mp4",
+      "title": "Automate it",
+      "secs": 9.2
+    }
+  ],
+  "qollab": [
+    {
+      "file": "qollab-rooms.mp4",
+      "title": "Rooms in one call",
+      "secs": 17.6
+    },
+    {
+      "file": "qollab-parties.mp4",
+      "title": "Parties",
+      "secs": 8.8
+    }
+  ],
+  "skate-tech-park": [
+    {
+      "file": "skate-tech-park-national-parks.mp4",
+      "title": "Shred the parks",
+      "secs": 30.8
+    },
+    {
+      "file": "skate-tech-park-send-it.mp4",
+      "title": "Send it",
+      "secs": 11.4
+    },
+    {
+      "file": "skate-tech-park-vert.mp4",
+      "title": "Vert",
+      "secs": 11.4
+    },
+    {
+      "file": "skate-tech-park-rails.mp4",
+      "title": "Rails",
+      "secs": 11.4
+    },
+    {
+      "file": "skate-tech-park-parks.mp4",
+      "title": "The parks",
+      "secs": 14.6
+    }
+  ],
+  "splat-spray": [
+    {
+      "file": "splat-spray-i-spy.mp4",
+      "title": "I spy",
+      "secs": 13
+    },
+    {
+      "file": "splat-spray-scan.mp4",
+      "title": "Scan",
+      "secs": 9.2
+    }
+  ],
+  "tscircuit": [
+    {
+      "file": "tscircuit-pedals.mp4",
+      "title": "Boards you play, then order",
+      "secs": 15.8
+    },
+    {
+      "file": "tscircuit-build-sheet.mp4",
+      "title": "The build sheet",
+      "secs": 8.6
+    }
+  ],
+  "two-fronts": [
+    {
+      "file": "two-fronts-not-cuddly.mp4",
+      "title": "Not cuddly",
+      "secs": 33.2
+    },
+    {
+      "file": "two-fronts-orbit.mp4",
+      "title": "The orbit",
+      "secs": 13.2
+    },
+    {
+      "file": "two-fronts-the-horde.mp4",
+      "title": "Be the horde",
+      "secs": 15
+    },
+    {
+      "file": "two-fronts-hold-the-line.mp4",
+      "title": "Hold the line",
+      "secs": 13.2
+    },
+    {
+      "file": "two-fronts-radio.mp4",
+      "title": "Radio chatter",
+      "secs": 10.6
+    }
+  ]
+}
