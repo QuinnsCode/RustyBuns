@@ -193,10 +193,10 @@ let orbiting: { x: number; y: number } | null = null;
 
 // two fingers on the 3D view: pinch to move in and out, slide sideways to turn round the room (a phone's right-drag)
 const touches = new Map<number, { x: number; y: number }>();
-let pinch: { dist: number; x: number } | null = null;
+let pinch: { dist: number; x: number; y: number } | null = null;
 /** A one-click tool's touch, held until the finger lifts (null once a second finger makes it a pinch). */
 let tap: PointerEvent | null = null;
-const spread = () => { const [a, b] = [...touches.values()]; return a && b ? { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2 } : null; };
+const spread = () => { const [a, b] = [...touches.values()]; return a && b ? { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null; };
 
 function down(e: PointerEvent) {
   if (view === "3d" && e.pointerType === "touch") {
@@ -263,7 +263,12 @@ function move(e: PointerEvent) {
   if (touches.has(e.pointerId)) {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const now = spread();
-    if (pinch && now && build) { build.orbit(-(now.x - pinch.x) * 0.008, 0, pinch.dist / Math.max(now.dist, 1)); pinch = now; return; }
+    if (pinch && now && build) {
+      // the spread zooms toward the floor between the fingers; sliding them sideways turns
+      build.orbit(-(now.x - pinch.x) * 0.008);
+      build.zoomAt(pinch.dist / Math.max(now.dist, 1), build.toRoom({ clientX: now.x, clientY: now.y }));
+      pinch = now; return;
+    }
   }
   if (orbiting && build) { build.orbit(-(e.clientX - orbiting.x) * 0.008, (e.clientY - orbiting.y) * 0.006); orbiting = { x: e.clientX, y: e.clientY }; return; }
   // nothing in hand: outline what's under the pointer in 3D, so you know what a click will take
