@@ -822,7 +822,7 @@ export function human(build: Build | BuildName, outfit: Outfit, palette: Palette
   for (const n of BONES) {
     const bone = (bones[n] = new THREE.Bone());
     bone.name = n;
-    const p = PARENT[n], at = d.joints[n], from = p ? d.joints[p] : [0, 0, 0];
+    const p = PARENT[n], at = d.joints[n], from: V3 = p ? d.joints[p] : [0, 0, 0];
     bone.position.set(at[0] - from[0], at[1] - from[1], at[2] - from[2]);
     if (p) bones[p].add(bone);
   }
