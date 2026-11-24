@@ -7,6 +7,7 @@ import { camelot, keyOf } from "../src/dj/analyze.ts";
 import { Booth, changed, deckKeyAt, DECK_KEYS, JOG_HELD_MS, JOG_SEND_MS, JogOut, posAt, sayOf, waveFrom, waveOf, type DeckPress, type DeckSay, type JogSent } from "../src/dj/booth.ts";
 import type { DeckState } from "../src/dj/engine.ts";
 import { BoothGear } from "../src/studio/booth-3d.ts";
+import { gear as gearModel, gearLook } from "@rustybuns/models/gear";
 import * as THREE from "three";
 import { decodeClient, decodeServer } from "../src/project.ts";
 
@@ -103,6 +104,34 @@ test("a click anywhere on the DJ table opens the decks; a key on a deck still pr
   };
   expect([tap(deckAt[0] + k.play[0], k.play[1]), tap(deckAt[1] + k.play[0], k.play[1]), tap(0, 0), tap(0.58, 0.25), tap(deckAt[0] + 0.15, 0.21), tap(3, 3)])
     .toEqual([{ side: 0, key: "play" }, { side: 1, key: "play" }, { side: 0, key: "open" }, { side: 0, key: "open" }, { side: 0, key: "open" }, null]);
+});
+
+test("clean prints: a DJ presses PLAY on the real deck model and that deck's dust wipes there, for good", () => {
+  // the two decks and the mixer as the jam room sets them on the table, looked down on from where the DJ stands
+  const gear = new BoothGear(), table = new THREE.Group(), look = gearLook();
+  const decks = ([-0.35, 0.35] as const).map((x) => { const d = gearModel("deck-cd", { look }); d.position.set(x, 0.95, 0); table.add(d); return d; });
+  const mixer = gearModel("mixer-club-4", { look });
+  mixer.position.set(0, 0.95, 0); table.add(mixer);
+  table.updateMatrixWorld(true);
+  decks.forEach((d, side) => gear.add(d, side === 0 ? 0 : 1));
+  gear.addRest(mixer, true);
+  // each deck has its own dust, not the other's or the mixer's
+  const playKey = (d: THREE.Object3D) => d.getObjectByName("part:play")?.children.find((o) => o instanceof THREE.Mesh);
+  expect(playKey(decks[0]!)?.material).not.toBe(playKey(decks[1]!)?.material);
+  expect(gear.dust()).toEqual({ decks: [0, 0], mixer: 0 });
+  const play = new THREE.Vector3(-0.35 - 0.1295, 1.1, 0.175), cam = new THREE.PerspectiveCamera(50, 1, 0.01, 10);
+  cam.position.copy(play).add(new THREE.Vector3(0, 0.5, 0)); cam.lookAt(play); cam.updateMatrixWorld(true);
+  const press = () => gear.touch(new THREE.Vector2(0, 0), cam);
+  expect(press()).toEqual({ side: 0, key: "play" });
+  const once = gear.dust().decks[0];
+  expect(once).toBeGreaterThan(0);
+  for (let i = 0; i < 20; i++) press();
+  // a well-played PLAY: cleaner still; deck B and the mixer as dusty as they were
+  expect(gear.dust().decks[0]).toBeGreaterThan(once);
+  expect(gear.dust()).toMatchObject({ decks: [expect.any(Number), 0], mixer: 0 });
+  // someone in the room pressing B's cue (heard over the sesh) leaves their prints on B
+  gear.pressed(1, "cueDown");
+  expect(gear.dust().decks[1]).toBeGreaterThan(0);
 });
 
 test("a scratch on the other DJ's deck: the platter held, a second of turns at 60 a frame sent in batches, let go", () => {
