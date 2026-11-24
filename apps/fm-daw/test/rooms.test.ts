@@ -104,6 +104,10 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   r = ok(r, { t: "moveDoor", at: [-3, 6] });
   expect(r.door.at).toEqual([-3, 6]);
   expect(edit(r, { t: "moveDoor", at: [30, 0] })).toMatchObject({ ok: false, why: "the way in is outside the room" });
+  // what stands at the keys and the bass: a combo organ and the bass-line box
+  r = ok(r, { t: "instruments", keys: "combo", bass: "box" });
+  expect([r.keys, r.bass]).toEqual(["combo", "box"]);
+  expect(check(Edit, { t: "instruments", keys: "theremin" })).toBeNull();
   // the first new wall down: the corner opens back onto the barn
   r = ok(r, { t: "unwall", index: r.walls.findIndex((x) => x.from[0] === 1 && x.from[1] === -7) });
   expect(heard(r, "keys").space.closed).toBe(false);

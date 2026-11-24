@@ -15,6 +15,7 @@ import type { Side, SpotKind, StudioDef } from "./room.ts";
 import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
+import { POLY_KINDS } from "@rustybuns/models/polysynth";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -359,6 +360,7 @@ function renderTools() {
   }
   canvas.hidden = view !== "3d"; plan.toggleAttribute("hidden", view !== "plan");
 }
+const KEYS_NAMES: Record<(typeof POLY_KINDS)[number], string> = { "wood-poly": "Analog poly", "fm-slab": "FM slab", drawbar: "Drawbar organ", "tine-ep": "Tine piano", combo: "Combo organ", strings: "String machine" };
 const KINDS_ALL: SpotKind[] = ["keys", "drums", "bass", "dj", "desk", "booth", "couch"];
 const DECOR_NAMES: Record<DecorKind, string> = { shelf: "shelf", lamp: "lamp", plant: "plant", rug: "rug", rack: "rack", piano: "grand piano", micStand: "mic stand", table: "table", cabinet: "cabinet", books: "books", drumMachine: "drum machine", modular: "modular" };
 let decorThumbs: Partial<Record<DecorKind, string>> = {};
@@ -466,6 +468,9 @@ function renderEdit() {
     <h2>Booths</h2>
     <ul>${booths.map((b) => `<li><span>${esc(b)}</span><button type="button" class="x" data-unbooth="${esc(b)}" aria-label="Take down" title="Take down">${X}</button></li>`).join("")}</ul>
     <div class="row"><button type="button" id="add-booth">Put up a booth</button></div>
+    <h2>Instruments</h2>
+    <div class="row"><label>Keys<select id="keys-kind">${POLY_KINDS.map((k) => `<option value="${k}"${k === room.keys ? " selected" : ""}>${esc(KEYS_NAMES[k])}</option>`).join("")}</select></label>
+      <label>Bass<select id="bass-kind"><option value="mono"${room.bass !== "box" ? " selected" : ""}>Big analog mono</option><option value="box"${room.bass === "box" ? " selected" : ""}>Bass-line box</option></select></label></div>
     <h2>Gear wall</h2>
     <div class="row"><button type="button" id="turn-gear">Turn it a quarter</button></div>
     <h2>Seats</h2>
@@ -493,6 +498,8 @@ function renderEdit() {
   });
   document.getElementById("del-spot")?.addEventListener("click", () => { if (picked && apply({ t: "unspot", id: picked })) { picked = room.spots[0]?.id; render(); } });
   $("turn-gear").addEventListener("click", () => apply({ t: "moveGear", at: gearPlace(room).at, turns: 1 }));
+  $("keys-kind").addEventListener("change", (e) => apply({ t: "instruments", keys: (e.target as HTMLSelectElement).value }));
+  $("bass-kind").addEventListener("change", (e) => apply({ t: "instruments", bass: (e.target as HTMLSelectElement).value }));
   $("add-booth").addEventListener("click", () => {
     const id = free("booth", (x) => room.walls.some((wl) => wl.booth === x));
     const at = grid().find((p) => edit(room, { t: "booth", id, at: p, w: 2.4, d: 2.4 }).ok);

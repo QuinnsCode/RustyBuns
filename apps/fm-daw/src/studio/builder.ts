@@ -115,7 +115,8 @@ export type Edit =
   | { t: "turnProp"; index: number; by: number }
   | { t: "unprop"; index: number }
   | { t: "window"; side: Side; along: number }
-  | { t: "moveDoor"; at: [number, number] };
+  | { t: "moveDoor"; at: [number, number] }
+  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box" };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -141,6 +142,7 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("unprop"), index: int(0, MAX_PROPS - 1) }),
   obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
   obj({ t: tag("moveDoor"), at: XZ }),
+  obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)) }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -358,6 +360,8 @@ export function edit(def: StudioDef, e: Edit): Built {
       break;
     }
     case "moveDoor": next.door = { ...next.door, at: e.at }; break;
+    // what stands at the keys and bass seats (gear-models.ts): one of the classic families, the big mono or the box
+    case "instruments": if (e.keys) next.keys = e.keys; if (e.bass) next.bass = e.bass; break;
     case "turn": {
       const sp = next.spots.find((x) => x.id === e.id);
       if (!sp) return no(`there is no spot ${e.id}`);
