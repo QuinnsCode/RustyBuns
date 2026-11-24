@@ -18,7 +18,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
 import { SYSTEMS, stackWidth } from "@rustybuns/gear";
 import { rigStacks, roomRig } from "./pa-room.ts";
-import { rugMesh } from "./tapestry.ts";
+import { clothTime, rugMesh } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
 import { metreUV, surface, type Look, type Quality } from "./look.ts";
@@ -462,6 +462,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
         l.visible = Math.sin(t * 0.25) > -0.3; // they go out now and then, and come back
       });
       for (const l of flames) l.intensity = 12 * flameAt(l.userData.i as number, t);
+      clothTime.value = t;
       if (composer) composer.render(); else renderer.render(scene, cam);
     },
     resize(wpx, hpx) {

@@ -275,13 +275,33 @@ export function drape(w: number, d: number, h: number, seed: number): THREE.Buff
 }
 
 /** The cloth's material: cotton has no shine, only a soft sheen at grazing angles, and a weave you see up close. */
-export function cotton(tex: THREE.CanvasTexture, seed: number, metres = true): THREE.MeshPhysicalMaterial {
+export function cotton(tex: THREE.CanvasTexture, seed: number, metres = true, drop = 0): THREE.MeshPhysicalMaterial {
   // the sheet's u and v are metres and the canvas covers the whole sheet, so scale them back to 0..1, v downward
   if (metres) { tex.repeat.set(PX / tex.image.width, -PX / tex.image.height); tex.offset.set(0, 1); }
-  return new THREE.MeshPhysicalMaterial({
+  const m = new THREE.MeshPhysicalMaterial({
     map: tex, normalMap: weave(), normalScale: new THREE.Vector2(0.25, 0.25), roughness: 0.95,
     sheen: 0.3, sheenRoughness: 0.75, sheenColor: new THREE.Color(palette(seed).ground).multiplyScalar(0.6), side: THREE.DoubleSide,
   });
+  if (metres && drop > 0) sway(m, OVER + drop);
+  return m;
+}
+
+/** The night's wind on the cloth, in seconds: open-air.ts sets it each frame. */
+export const clothTime = { value: 0 };
+/**
+ * The drop sways a centimetre or so in the wind, in slow travelling waves along the table, nothing at the top where
+ * it's pinned over the board and nothing where it lies on the sand past `hem` (metres down the sheet, its v). In the
+ * vertex shader, so it costs no work on the page.
+ */
+function sway(m: THREE.Material, hem: number) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.clothTime = clothTime;
+    sh.vertexShader = "uniform float clothTime;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      float hang = smoothstep(${OVER.toFixed(3)}, ${(OVER + 0.45).toFixed(3)}, uv.y) * (1.0 - smoothstep(${(hem - 0.08).toFixed(3)}, ${hem.toFixed(3)}, uv.y));
+      float gust = 0.55 + 0.45 * sin(clothTime * 0.31 + position.x * 0.4);
+      transformed += objectNormal * hang * gust * 0.011 * sin(clothTime * 1.4 - position.x * 2.3 - position.z * 1.9);`);
+  };
+  m.customProgramCacheKey = () => `cloth-sway-${hem.toFixed(3)}`;
 }
 
 // ---- rugs on the sand: hand-knotted wool, laid where people stand and sit (Desert Gathering's booth, the kit, the bales)

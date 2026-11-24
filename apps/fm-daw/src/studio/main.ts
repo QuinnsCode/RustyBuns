@@ -297,7 +297,7 @@ function thing(s: Spot): THREE.Group {
       // only cloth (the DJ's side is open); the folds are in the sheet, the weave in its normal map (tapestry.ts)
       const seed = def.outdoor.seed;
       boothGear.addRest(put(new THREE.Mesh(new THREE.BoxGeometry(t.w + 0.02, cloth, t.d + 0.02), cotton(tabletop(t.w, t.d, seed), seed, false)), 0, t.h + cloth / 2, 0));
-      put(new THREE.Mesh(drape(t.w, t.d, t.h, seed), cotton(tapestry({ end: t.d, front: t.w }, t.h - 0.008, seed), seed)), 0, 0, 0);
+      put(new THREE.Mesh(drape(t.w, t.d, t.h, seed), cotton(tapestry({ end: t.d, front: t.w }, t.h - 0.008, seed), seed, true, t.h - 0.008)), 0, 0, 0);
     } else {
       boothGear.addRest(box(t.w, 0.04, t.d, surface("ply", "#2a2420"), 0, top - 0.02, 0));
       box(t.w - 0.04, top - 0.04, 0.02, surface("fabric", "#0c0c0e"), 0, (top - 0.04) / 2, -t.d / 2 + 0.02); // the skirt the crowd sees
