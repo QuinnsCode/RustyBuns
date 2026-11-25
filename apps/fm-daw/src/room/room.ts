@@ -25,11 +25,11 @@ export type Face = "front" | "back" | "left" | "right" | "top";
 export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face; label?: string }
 /** A knob 0 to 1 (the patch's range); `circuit` is its 0 to 10 name in the amp or pedal it drives. */
 export interface KnobDef { name: string; label: string; at: Vec3; face: Face; dflt: number }
-export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk" | "module";
+export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk" | "module" | "pa";
 /** The loop machines (Q Amp's Q Bucket, Q Tape, Q Spring) as boxes of their own. */
 export type MachineKind = LoopSpec["kind"];
 /** A piece of studio gear: its size (w, h, d in metres, standing on its bottom face), jacks and knobs, and the circuit or machine it runs. */
-export interface GearDef { id: string; name: string; kind: Kind; size: Vec3; kg: number; jacks: JackDef[]; knobs: KnobDef[]; circuit?: string; loop?: MachineKind }
+export interface GearDef { id: string; name: string; kind: Kind; size: Vec3; kg: number; jacks: JackDef[]; knobs: KnobDef[]; circuit?: string; loop?: MachineKind; pa?: string }
 
 const AMP_KNOBS: (keyof Knobs)[] = ["gain", "bass", "mid", "treble", "master", "noise"];
 const LABEL: Record<keyof Knobs, string> = { gain: "Gain", bass: "Bass", mid: "Middle", treble: "Treble", master: "Master", noise: "Noise", rate: "Rate", depth: "Depth" };
@@ -122,6 +122,30 @@ const DESK: GearDef = {
   knobs: [],
 };
 
+/**
+ * A small PA for the setup lesson (src/studio/lessons.ts): a vocal mic, a little mixer and two powered tops, each the
+ * @rustybuns/gear catalog box named in `pa` (Sound Guy Simulator's), with its jacks by the catalog's names so the
+ * catalog's switch-on check reads the patch as it is. A Power knob stands in for each switch: up is on.
+ */
+const POWER: KnobDef = { name: "power", label: "Power", at: [0, 0, 0], face: "back", dflt: 0 };
+export const PA_GEAR: GearDef[] = [
+  { id: "pa-mic", name: "vocal mic", kind: "pa", pa: "mic-dynamic", size: [0.06, 0.2, 0.06], kg: 0.3, jacks: [{ name: "xlr-out", dir: "out", at: [0, 0.02, 0.03], face: "front" }], knobs: [] },
+  {
+    id: "pa-mixer", name: "small mixer", kind: "pa", pa: "mixer-small", size: [0.4, 0.1, 0.35], kg: 4,
+    jacks: [
+      { name: "xlr-in-1", dir: "in", at: [-0.15, 0.06, -0.175], face: "back" },
+      { name: "xlr-out-1", dir: "out", at: [0.08, 0.06, -0.175], face: "back" },
+      { name: "xlr-out-2", dir: "out", at: [0.15, 0.06, -0.175], face: "back" },
+    ],
+    knobs: [{ ...POWER, at: [-0.05, 0.06, -0.175] }],
+  },
+  {
+    id: "pa-top", name: "powered speaker", kind: "pa", pa: "top-12-powered", size: [0.37, 0.6, 0.36], kg: 18,
+    jacks: [{ name: "xlr-in", dir: "in", at: [-0.08, 0.15, -0.18], face: "back" }],
+    knobs: [{ ...POWER, at: [0.08, 0.15, -0.18] }],
+  },
+];
+
 /** Every piece of gear the studio has, by id. */
 export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries([
   { id: "guitar", name: "Guitar", kind: "guitar", size: [0.34, 1.0, 0.06], kg: 3.5, jacks: [{ name: "out", dir: "out", at: [0.12, 0.07, 0.03], face: "front" }], knobs: [] } satisfies GearDef,
@@ -134,6 +158,7 @@ export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries
   DESK,
   ...PANELS.map(moduleGear),
   { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0, 0.165, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
+  ...PA_GEAR,
 ].map((g) => [g.id, g]));
 
 // ---- bench pedals: tscircuit boards dropped in the room (../circuit/bench.ts) ----
@@ -575,6 +600,23 @@ export function bringModule(r: Room, kind: string): Answer {
   if (!act(r, { t: "bring", id: `${kind}-${n}`, gear: g.id, at: [r.you.x, 0, r.you.z], turn: r.you.yaw })) return no("the room is full");
   r.heldTurn = 0;
   return OK;
+}
+
+/**
+ * Boxes onto the floor a step in front of you, side by side and facing you (a lesson's kit): each `bring` and `put` a
+ * step the World passes on like any box. Ones already in the room stay where they are. False with your hands full.
+ */
+export function bringKit(r: Room, kit: { id: string; gear: string }[]): boolean {
+  if (hand(r)) return false;
+  const b = r.bounds ?? BAY, ids = new Set(r.studio.patch.placed.map((p) => p.id)), fx = -Math.sin(r.you.yaw), fz = -Math.cos(r.you.yaw);
+  const pad = 0.4, fit = (v: number, lo: number, hi: number) => Math.min(hi - pad, Math.max(lo + pad, v));
+  kit.forEach((k, i) => {
+    if (ids.has(k.id)) return;
+    const side = (i - (kit.length - 1) / 2) * 0.55, x = fit(r.you.x + fx * 1.1 - fz * side, b.x0, b.x1), z = fit(r.you.z + fz * 1.1 + fx * side, b.z0, b.z1);
+    const turn = r.you.yaw;   // a box's front is +z turned by `turn`; you look down -z turned by yaw: so it faces you
+    if (act(r, { t: "bring", id: k.id, gear: k.gear, at: [x, 0, z], turn })) act(r, { t: "put", at: [x, 0, z], turn });
+  });
+  return true;
 }
 
 /** Turn what you hold by a 15 degree step (Q and E): -1 left, 1 right. */

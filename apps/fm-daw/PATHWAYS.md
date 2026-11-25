@@ -8,7 +8,7 @@ of these walks shorter or less broken. When a step changes, change its line here
 
 | Path | Who | Door | Works end to end today? |
 |---|---|---|---|
-| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | No: help for keys only, no guided setup |
+| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
 | [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | `/` | Yes, one loop at a time (no song mode yet) |
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | `/jam.html` | Yes, sign in to invite link to playing together |
 | [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Into the room, yes; out to the internet, no |
@@ -30,13 +30,13 @@ the rig you planned in path 5 is the PA your set plays through in path 4.
 4. Finish, and the lesson's rig stays as their own room to keep playing in.
 
 **Works today:**
+- Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
 - Sound Guy Simulator (`apps/load-in`) already teaches load-in, cabling and aiming speakers as a game, level by level.
 
-**Missing:** no guided lessons in Qollab Studio itself. The help card says which key does what, not how to set
-anything up ([#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)). Lessons should reuse Sound Guy Simulator's step checks (`next.ts`, `assists.ts`) rather than write new ones.
+**Missing:** lessons past the first three (gain-staging a desk, why a room rings), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
 
 ## 2. Make a track (the DAW)
 

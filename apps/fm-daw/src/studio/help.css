@@ -27,3 +27,27 @@
 /* narrow: clear of the lane's Tab button at the bottom right */
 @media (max-width: 900px) { #keystrip { left: 12px; transform: none; max-width: calc(100% - 120px); justify-content: flex-start; } }
 @media (max-width: 480px) { .help-card { padding: 14px; } .help-card h2 { font-size: 24px; } #keystrip { gap: 4px 10px; font-size: 12px; } }
+/* The setup lessons (lessons.ts): a row of three on the card, and the lesson you're in at the top left (lesson-card.ts). */
+.help-learn { margin-top: 10px; }
+.help-lessons { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.help-lesson { display: grid; grid-template-columns: 20px 1fr; gap: 2px 8px; text-align: left; background: #24272c; color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; padding: 10px 12px; cursor: pointer; min-height: 44px; font: 14px/1.3 "IBM Plex Sans", system-ui, sans-serif; }
+.help-lesson:hover, .help-lesson:focus-visible { border-color: var(--hot); }
+.help-lesson svg { color: var(--hot); grid-row: span 2; }
+.help-lesson span { color: var(--dim); font-size: 13px; }
+#lesson { position: absolute; top: 56px; left: 16px; width: min(360px, calc(100% - 32px)); background: rgba(21, 23, 27, 0.86); border: 1px solid #3a3e45; border-radius: 12px; padding: 10px 12px; pointer-events: auto; font-size: 14px; line-height: 1.3; color: var(--ink); z-index: 5; }
+#lesson[hidden] { display: none; }
+#lesson header { display: grid; grid-template-columns: 20px 1fr 36px; gap: 8px; align-items: center; }
+#lesson header b { font: 600 19px/1.1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
+#lesson header svg { color: var(--hot); }
+.lesson-x { background: transparent; color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer; }
+#lesson ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+#lesson li { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; color: var(--dim); }
+#lesson li.done { color: var(--dim); text-decoration: line-through; text-decoration-color: #555; }
+#lesson li.done svg { color: #6fcf8e; }
+#lesson li.next { color: var(--ink); font-weight: 600; }
+#lesson li.next svg { color: var(--hot); }
+.lesson-why, .lesson-done { margin: 8px 0 0; display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; padding: 8px; border-radius: 8px; }
+.lesson-why { background: rgba(255, 107, 74, 0.14); }
+.lesson-why svg { color: var(--hot); }
+.lesson-done { display: block; background: rgba(111, 207, 142, 0.14); }
+@media (max-width: 480px) { #lesson { top: 68px; left: 12px; width: calc(100% - 24px); font-size: 13px; } }

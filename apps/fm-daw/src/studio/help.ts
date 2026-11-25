@@ -3,6 +3,7 @@
 import "./help.css";
 import { icon } from "../amp/icons.ts";
 import { NOT_YET, card, strip, type Action } from "./actions.ts";
+import { LESSONS, type LessonId } from "./lessons.ts";
 import type { SpotKind } from "./room.ts";
 
 const SEEN = "qs-help-seen";
@@ -18,8 +19,11 @@ const kbd = (k: string) => el("kbd", undefined, k);
 
 export type Help = ReturnType<typeof mountHelp>;
 
-/** Mounts the card (closed) and the strip; `seat` says where you sit now (null: walking), `onToggle` hears it open or close. */
-export function mountHelp(o: { parent: HTMLElement; hint: HTMLElement; seat: () => SpotKind | null; onToggle?: (open: boolean) => void }) {
+/**
+ * Mounts the card (closed) and the strip; `seat` says where you sit now (null: walking), `onToggle` hears it open or
+ * close, and `learn` starts a setup lesson (lessons.ts) from the card's "Learn to set it up" row.
+ */
+export function mountHelp(o: { parent: HTMLElement; hint: HTMLElement; seat: () => SpotKind | null; onToggle?: (open: boolean) => void; learn?: (id: LessonId) => void }) {
   const box = el("section"), panel = el("div", "help-card"), bar = el("div");
   box.id = "help"; box.hidden = true;
   box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "What you can do here");
@@ -57,8 +61,21 @@ export function mountHelp(o: { parent: HTMLElement; hint: HTMLElement; seat: () 
     later.append(lt, ul);
     const ok = el("button", "help-ok", "Got it");
     ok.type = "button"; ok.addEventListener("click", () => close());
-    panel.replaceChildren(head, groups, ...(NOT_YET.length ? [later] : []), ok);
+    panel.replaceChildren(head, ...(o.learn ? [learnRow(o.learn)] : []), groups, ...(NOT_YET.length ? [later] : []), ok);
     drawnFor = String(seat);
+  }
+  /** The three setup lessons as buttons: one starts it at the gear wall and closes the card. */
+  function learnRow(learn: (id: LessonId) => void) {
+    const sec = el("section", "help-learn"), t = el("h3", undefined, "Learn to set it up"), row = el("div", "help-lessons");
+    for (const l of LESSONS) {
+      const b = el("button", "help-lesson");
+      b.type = "button"; b.dataset.lesson = l.id;
+      b.append(icon("graduation-cap"), el("b", undefined, l.title), el("span", undefined, l.blurb));
+      b.addEventListener("click", () => { close(); learn(l.id); });
+      row.append(b);
+    }
+    sec.append(t, row);
+    return sec;
   }
   function line(a: Action) {
     const li = el("li");
