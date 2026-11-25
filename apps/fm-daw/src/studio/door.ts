@@ -113,3 +113,15 @@ export function friendOrder(friends: readonly HubFriend[], app: string): (HubFri
   return friends.map((f) => ({ ...f, here: f.presence.some((p) => p.app === app) }))
     .sort((a, b) => Number(b.here) - Number(a.here) || (a.name || a.id).localeCompare(b.name || b.id));
 }
+
+const SETUP = "qollab-studio:setup";
+/**
+ * The studio this browser makes its rooms in: picked once on the front door (the first room you make), then used
+ * without asking; Settings changes it. Null before that, with no storage, or when it names a studio that's gone.
+ */
+export function loadSetup(): string | null {
+  try { const id = localStorage.getItem(SETUP); return id && studios().some((s) => s.id === id) ? id : null; } catch { return null; }
+}
+export function saveSetup(id: string) {
+  try { localStorage.setItem(SETUP, id); } catch { /* private window: asked again next visit */ }
+}
