@@ -1,19 +1,20 @@
 // Qollab Studio as one place: your character on eqosys, the lobby, the jam room, and the rooms off it (the gear room,
-// Q Amp, the FM DAW desk, the remote). Each page draws the same row of doors (`mountWay`), and a door carries the room you came from
+// Q Amp, the speaker plans, the FM DAW desk, the remote). Each page draws the same row of doors (`mountWay`), and a door carries the room you came from
 // (?room, ?studio, ?name), so the jam room's door brings you back into the same sesh. Pure up to `mountWay`.
 import { EQOSYS } from "./account.ts";
 
-export type Here = "character" | "jam" | "gear" | "amp" | "desk" | "remote";
+export type Here = "character" | "jam" | "gear" | "amp" | "speakers" | "desk" | "remote";
 /** Each place, its page and the word on its door. The lobby and the jam room are one page (jam.html): no ?room is the lobby. */
 export const PLACES: Record<Here, { page: string; label: string; title: string }> = {
   character: { page: `${EQOSYS}/?tab=account`, label: "Character", title: "Your character, on eqosys" },
   jam: { page: "/jam.html", label: "Jam room", title: "Qollab Studio: the jam room (the lobby when you're not in a room)" },
   gear: { page: "/studio.html", label: "Gear room", title: "Qollab Studio: the gear room, amps and pedals to cable" },
   amp: { page: "/amp.html", label: "Q Amp", title: "Qollab Studio: Q Amp, the amp as circuits" },
+  speakers: { page: "/speakers.html", label: "Speakers", title: "Qollab Studio: speaker boxes from their build plans, the walls and the sound" },
   desk: { page: "/", label: "Desk", title: "Qollab Studio: the FM DAW desk" },
   remote: { page: "/remote.html", label: "Remote", title: "Qollab Studio: the remote, one screen for a phone (master faders and the instrument you're at)" },
 };
-const ORDER: Here[] = ["character", "jam", "gear", "amp", "desk", "remote"];
+const ORDER: Here[] = ["character", "jam", "gear", "amp", "speakers", "desk", "remote"];
 const KEEP = ["room", "studio", "name"];
 
 /** The doors from `here`: every other place, carrying the room in `search` along (never to eqosys, which needs none). */

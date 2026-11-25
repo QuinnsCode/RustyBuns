@@ -1,0 +1,59 @@
+:root {
+  --ink: #eceef1; --dim: #9aa1ab; --hot: #ff6b4a; --warn: #ffb000;
+  --edge: rgba(255, 255, 255, 0.16); --glass: rgba(255, 255, 255, 0.05);
+  --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #0b0c0f; color: var(--ink); font: 14px/1.45 var(--body); }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+
+.sp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; gap: 14px; padding: 14px 16px 24px; max-width: 1400px; margin: 0 auto; }
+.sp-tabs { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.sp-tab { flex: none; border: 1px solid var(--edge); background: var(--glass); border-radius: 999px; padding: 7px 14px; cursor: pointer; white-space: nowrap; font: 600 15px/1 var(--silk); letter-spacing: 0.04em; }
+.sp-tab.on { border-color: var(--hot); background: rgba(255, 107, 74, 0.14); color: #fff; }
+
+.sp-view { position: relative; min-height: 420px; border-radius: 18px; background: radial-gradient(120% 90% at 50% 20%, #23262d, #101115 70%); overflow: hidden; }
+.sp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.sp-tools { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-field { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(10, 11, 14, 0.78); border: 1px solid var(--edge); backdrop-filter: blur(6px); }
+.sp-field > span { font: 600 13px/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.sp-select { background: #15171b; border: 1px solid var(--edge); border-radius: 8px; padding: 4px 6px; max-width: 13em; }
+.sp-range { width: 110px; accent-color: var(--hot); }
+.sp-num { font: 500 14px/1 var(--mono); min-width: 1.2em; text-align: center; }
+.icon-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--edge); background: var(--glass); cursor: pointer; }
+.icon-btn:hover { border-color: var(--hot); }
+
+.sp-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sp-title { margin: 0; font: 700 28px/1.05 var(--silk); letter-spacing: 0.02em; }
+.sp-what, .sp-from { margin: 0; color: var(--dim); }
+.sp-from { font-size: 12px; }
+.sp-sound { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sp-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--hot); background: var(--hot); color: #160806; font-weight: 600; cursor: pointer; }
+.sp-btn.ghost { background: var(--glass); border-color: var(--edge); color: var(--ink); }
+.sp-btn.on { box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.35); }
+.sp-btn.ghost.on { border-color: var(--hot); color: #fff; }
+.sp-chip { margin-left: auto; font: 500 12px/1 var(--mono); color: var(--dim); border: 1px solid var(--edge); border-radius: 999px; padding: 5px 9px; }
+
+.sp-chart { width: 100%; height: auto; background: var(--glass); border-radius: 14px; }
+.sp-chart .grid { stroke: rgba(255, 255, 255, 0.07); }
+.sp-chart .grid.zero { stroke: rgba(255, 255, 255, 0.2); }
+.sp-chart .tick { fill: var(--dim); font: 10px var(--mono); }
+.sp-chart .mode { stroke: rgba(255, 176, 0, 0.35); stroke-dasharray: 2 3; }
+.sp-chart .cone { fill: none; stroke: rgba(255, 255, 255, 0.45); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.sp-chart .box { fill: none; stroke: var(--hot); stroke-width: 2.4; }
+
+.sp-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0; }
+.sp-facts dt { font: 600 12px/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.sp-facts dd { margin: 3px 0 0; font: 500 15px/1.2 var(--mono); }
+.sp-side h2 { margin: 6px 0 0; font: 600 16px/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.sp-walls, .sp-cuts { width: 100%; border-collapse: collapse; font: 12.5px/1.4 var(--mono); }
+.sp-walls th, .sp-cuts th { text-align: left; color: var(--dim); font-weight: 500; border-bottom: 1px solid var(--edge); padding: 4px 6px; }
+.sp-walls td, .sp-cuts td { padding: 4px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+
+@media (max-width: 860px) {
+  .sp { grid-template-columns: 1fr; }
+  .sp-view { min-height: 340px; }
+}
