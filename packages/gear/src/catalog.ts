@@ -286,8 +286,8 @@ const list: Gear[] = [
   {
     id: "stack-mid-high",
     what: "dance stack mid-high horn",
-    size: box(0.75, 0.5, 0.7),
-    kg: 52,
+    size: box(0.484, 0.975, 0.51),
+    kg: 48,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 108, maxSpl: 139, ratedWatts: 600, ohms: 8, coverage: { h: 50, v: 25 }, lowCut: 180, highCut: 20000, rearLoss: 28 },
   },
