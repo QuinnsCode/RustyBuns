@@ -62,12 +62,13 @@ test("look at Q Drive on the pedal wall, open its build sheet with your swap, an
 
 test("change Q Drive's gain resistor in Q Amp: it still plays, you hear more gain, and the kit's bom.csv and order.csv carry your value", async () => {
   const drive = PEDALS.find((p) => p.id === "drive")!;
-  // R2 is the gain leg: the mids get 1 + Drive / R2, so 4.7k down a step to 2.2k is about 6 dB more.
+  // R2 is the gain leg: above its corner the gain is 1 + Drive / R2, so 4.7k down a step to 2.2k is about 6.5 dB more
+  // (its corner with C2 moves up, from 720 Hz to 1.5 kHz, so the low mids get less of it).
   expect(sockets("drive").find((s) => s.id === "R2")).toMatchObject({ kind: "res", ohms: 4700 });
   const mine: Swaps = { R2: "0.47" };
   expect(swapWontPlay(drive, mine)).toEqual([]);
-  const mids = async (s?: Swaps) => { const b = await toleranceBand(drive.net(5, s), { runs: 0 }); return b.sim[b.hz.indexOf(905)]!; };
-  const more = (await mids(mine)) - (await mids());
+  const highMids = async (s?: Swaps) => { const b = await toleranceBand(drive.net(5, s), { runs: 0 }); return b.sim[b.hz.indexOf(3620)]!; };
+  const more = (await highMids(mine)) - (await highMids());
   expect(more).toBeGreaterThan(4);
   expect(more).toBeLessThan(8);
 
