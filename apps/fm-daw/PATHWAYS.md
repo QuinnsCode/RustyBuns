@@ -6,14 +6,16 @@ a path through the same pieces: the desk (FM DAW), the 3D rooms, the DJ decks, t
 where they come in, the steps they take, what works today and what is missing. Work on Qollab Studio should make one
 of these walks shorter or less broken. When a step changes, change its line here.
 
+Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
+
 | Path | Who | Door | Works end to end today? |
 |---|---|---|---|
-| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | No: help for keys only, no guided setup |
-| [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | `/` | Yes, one loop at a time (no song mode yet) |
-| [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | `/jam.html` | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Into the room, yes; out to the internet, no |
-| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | `/rooms.html` | Partly: room acoustics and a rig pick, no coverage map or gear list |
-| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | `/amp.html`, the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
+| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | Learn the setup: `/studio.html`, the gear room (plug the guitar into an amp); the jam room's `?` card | No: help for keys only, no guided setup |
+| [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | Make a track: `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
+| [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
+| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Into the room, yes; out to the internet, no |
+| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Partly: room acoustics and a rig pick, no coverage map or gear list |
+| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
 
 All six share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
 move from one path to the next without starting over: the pedal you built in path 6 is gear on the floor in path 3,
@@ -136,5 +138,9 @@ power plan, a printable plan): [#5863](https://github.com/QuinnsCode/RustyBuns/i
 
 ## The front door
 
-Today the doors are separate pages, and a newcomer lands on whichever link they were sent. The paths only feel like
-one product when the front door names all six and each one opens on its first step. That door is [#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860).
+`/door.html` names all six paths, each a card with a Lucide icon, a short name and a line on what you do there, and
+each card opens on that path's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only the jam
+room asks you to sign in; the rest work signed out. Every page has a way back: **Paths** first in the row of doors
+along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
+(`mountBack`). `qdoor.state()` for probes; `test/front-door.test.ts` walks every card to its first step and back at
+phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.
