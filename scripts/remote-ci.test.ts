@@ -145,8 +145,9 @@ test("Bob's battery at 13% kills a running suite's whole tree, and it reads cut 
   await Bun.write(`${dir}/runs/slot-1.json`, "{}");
   const job = Bun.spawn(["sh", "-c", jobScript("slot-1", "apps/x", `sh -c '${nap}; echo done'`)], { cwd: dir, stdout: "ignore", stderr: "ignore" });
   const running = async () => (await Bun.$`pgrep -f ${nap}`.quiet().nothrow().text()).split("\n").filter(Boolean);
-  for (let i = 0; (await running()).length < 2 && i < 100; i++) await Bun.sleep(50);
-  expect((await running()).length).toBe(2); // the child shell and its sleep
+  // the job's shell and its pipe's fork, the child shell, and its sleep
+  for (let i = 0; (await running()).length < 4 && i < 100; i++) await Bun.sleep(50);
+  expect((await running()).length).toBeGreaterThanOrEqual(2);
   expect(await cutOff(dir, DRAIN(14))).toEqual([]);
   expect(await cutOff(dir, DRAIN(13))).toEqual(["slot-1"]);
   expect(outcome(await job.exited)).toBe("cut off");

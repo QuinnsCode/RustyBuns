@@ -185,16 +185,16 @@ const SLOT = /^slot-[\w-]+$/;
 // Taking a dead run's lock back ends what that run left running first: anything whose command line names the slot's
 // folder (wrangler, workerd and esbuild from its node_modules, a hung `git-receive-pack '.../slot-3'`) or that sits in
 // it (its `bun test`), and everything those started (a test's Chrome and its helpers, wherever they sit). They outlived
-// their runs on Bob by days (#5337). $P is the slot's real path (lsof reports cwds resolved).
-const END_TREE = `{ pgrep -f -- "$P(/|'|[[:space:]]|$)"; `
-  + `lsof -a -d cwd -Fpn 2>/dev/null | awk -v P="$P" '/^p/ { p = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == P || index(n, P "/") == 1) print p }'; `
+// their runs on Bob by days (#5337). $P is the slot's path as command lines name it, $R its real path (lsof reports cwds resolved).
+const END_TREE = `{ pgrep -f -- "$P(/|'|[[:space:]]|$)"; pgrep -f -- "$R(/|'|[[:space:]]|$)"; `
+  + `lsof -a -d cwd -Fpn 2>/dev/null | awk -v P="$R" '/^p/ { p = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == P || index(n, P "/") == 1) print p }'; `
   + `echo --; ps -Ao pid=,ppid=; } 2>/dev/null | awk -v me=$$ 'x { pp[$1] = $2; next } $0 == "--" { x = 1; next } { k[$1] = 1 } `
   + `END { do { c = 0; for (p in pp) if (!(p in k) && (pp[p] in k)) { k[p] = 1; c = 1 } } while (c); for (p in k) if (p != me) print p }' | xargs kill -9 2>/dev/null; `;
-const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN}); do P="$(pwd -P)/\${l#locks/}"; ${END_TREE}rmdir "$l"; done; `;
+const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN}); do P="$PWD/\${l#locks/}" R="$(pwd -P)/\${l#locks/}"; ${END_TREE}rmdir "$l"; done; `;
 // Bob's battery at CUT_PCT: every held slot is marked cut first (so what dies exits CUT, and nothing new starts there),
 // then its whole tree is killed and its run record goes. The lock stays for its run to give back (or REAP after STALE_MIN):
 // freeing it here could hand a slot to a new claim that the old run's release then frees under it.
-export const CUT_SCRIPT = `for l in locks/slot-*; do [ -d "$l" ] || continue; s="\${l#locks/}"; P="$(pwd -P)/$s"; : > "runs/$s.cut"; `
+export const CUT_SCRIPT = `for l in locks/slot-*; do [ -d "$l" ] || continue; s="\${l#locks/}"; P="$PWD/$s" R="$(pwd -P)/$s"; : > "runs/$s.cut"; `
   + `${END_TREE}rm -f "runs/$s.json" "runs/$s.log"; echo "$s"; done`;
 /** `serve`'s battery watcher, one reading: cut off every running suite in `dir` when `pmset` says CUT_PCT or under. The slots cut. */
 export async function cutOff(dir: string, pmset: string): Promise<string[]> {
