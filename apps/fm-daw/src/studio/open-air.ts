@@ -18,8 +18,8 @@ import { mulberry32 } from "@rustybuns/util";
 import { van } from "@rustybuns/models/van";
 import { firePit } from "@rustybuns/models/fire";
 import { gear, gearLook, type GearId, type GearLook } from "@rustybuns/models/gear";
-import { SYSTEMS, stackWidth, ampChannels, generatorLoad, gear as sheet } from "@rustybuns/gear";
-import { rigStacks, roomRig } from "./pa-room.ts";
+import { SYSTEMS, stackWidth, behindStacks, isTop, LINE_PINS, powerPlan, gear as sheet } from "@rustybuns/gear";
+import { rigPlan, rigStacks, roomRig } from "./pa-room.ts";
 import { clothTime, rugs } from "./tapestry.ts";
 import { barrel, boulder, creosote, joshua, pear } from "@rustybuns/models/flora";
 import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
@@ -45,8 +45,8 @@ export function ridgeAt(a: number, seed: number): number {
 /** A dance stack (packages/models gear): a horn bin, a mid-bass horn and a mid-high horn on a sand dolly, standing at
  *  (x, z) with its front turned `yaw` from +z. Desert Gathering's, and the pair a room with decks but no PA gets (pa-room.ts).
  *  `splay` turns the boxes above the bass (the ones that carry the mids and highs) that much further, on their own axis,
- *  as a crew fans a side's two tops out across the floor. */
-export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack, splay = 0): THREE.Group {
+ *  as a crew fans a side's two tops out across the floor; a line array's boxes tip down by `pins` (@rustybuns/gear LINE_PINS). */
+export function paStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook(), ids: readonly string[] = SYSTEMS["dance-stack"].stack, splay = 0, pins: readonly number[] = LINE_PINS): THREE.Group {
   const st = new THREE.Group();
   st.position.set(at[0], 0, at[1]); st.rotation.y = yaw;
   let y = 0, lean = 0, k = 0;
@@ -57,7 +57,7 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
     if (id.startsWith("line-array")) {
       // a ground-stacked line array: each box rests on the one below at the back, the gap opening at the front, the
       // lowest aimed down most (at the front of the floor, on a wedge so its nose clears the sub) and the top one near level
-      const first = k === 0, aim = LINE_SPLAY[Math.min(k++, LINE_SPLAY.length - 1)]!, hinge = new THREE.Group();
+      const first = k === 0, aim = pins[Math.min(k++, pins.length - 1)] ?? 0, hinge = new THREE.Group();
       if (first) y += size.z * Math.sin(aim);
       hinge.position.set(0, y, lean - size.z / 2); hinge.rotation.x = aim;
       g.position.z = size.z / 2;
@@ -71,10 +71,6 @@ export function paStack(at: readonly [number, number], yaw: number, look: GearLo
     y += size.y;
   }
   return st;
-}
-/** A box that plays the mids and highs (its sheet reaches past 200 Hz), not a bass bin or a sub. */
-function isTop(id: string): boolean {
-  return (sheet(id).speaker?.highCut ?? 0) > 200;
 }
 
 /** The sub block in the middle of the floor: `wide` of the rig's sub box side by side and `high` up, standing at (x, z)
@@ -99,9 +95,6 @@ export function boothMonitor(at: readonly [number, number], yaw: number, look: G
   return m;
 }
 
-/** A ground-stacked line array's aim, bottom box up (radians down from level): the splay its rigging pins set. */
-const LINE_SPLAY = [0.14, 0.07, 0.02];
-
 /** Indoors a DJ table's PA is a club's: an 18" sub on the floor with a powered 12" top on a pole out of its socket,
  *  the top's horn at about 1.9 m, facing `yaw` from +z. */
 export function clubStack(at: readonly [number, number], yaw: number, look: GearLook = gearLook()): THREE.Group {
@@ -115,10 +108,6 @@ export function clubStack(at: readonly [number, number], yaw: number, look: Gear
   return st;
 }
 const GEAR_SIZE_SUB_H = 0.7;
-
-/** The generator an open-air rig's `racks` amp racks need: the 7 kVA set while they'd run flat out on it, else the 100 kVA one. */
-export const generatorFor = (racks: number): "generator-7kva" | "generator-100kva" =>
-  generatorLoad("generator-7kva", Array.from({ length: racks }, () => "amp-rack-12u")).trips ? "generator-100kva" : "generator-7kva";
 
 /** How far a sub's cone stands out at `beat` (0 to 1): kicked out on each beat and settling back within it; null (the band
  *  stopped) leaves it at rest. */
@@ -313,7 +302,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   group.add(rugs(out));
 
   const rig = roomRig(def);
-  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack, s.splay));
+  for (const s of rigStacks(def)) group.add(paStack(s.at, s.yaw, look, rig.stack, s.splay, s.pins));
   // the sub block in the middle, and the DJ's monitors either side of the decks
   if (out.subs) group.add(subBlock(out.subs.at, out.subs.yaw, out.subs.wide, out.subs.high, rig.sub, look));
   for (const m of out.monitors ?? []) group.add(boothMonitor(m.at, m.yaw, look));
@@ -459,9 +448,8 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   // ---- the generator, off to the side: a 7 kVA set and its jerry cans while it can run the amps flat out, the
   // 100 kVA trailer (its own big tank) once they'd trip it
   const stacks = rigStacks(def), dj = def.spots.find((sp) => sp.kind === "dj");
-  // the amps: a 12-channel rack for every twelve channels the rig takes (one a way of every passive box)
-  const channels = ampChannels(roomRig(def), stacks.length) + (out.subs ? out.subs.wide * out.subs.high : 0) + (out.monitors?.length ?? 0) * 2;
-  const racks = Math.max(1, Math.ceil(channels / 12)), set = generatorFor(racks);
+  // the amps (a 12-channel rack for every twelve channels the rig takes) and the set, as @rustybuns/gear plans the rig's power
+  const power = powerPlan(rigPlan(def)!), racks = Math.max(1, power.racks), set = power.generator;
   if (out.generator) {
     const g = gear(set, { look });
     g.position.set(out.generator.at[0], 0, out.generator.at[1]); g.rotation.y = out.generator.yaw;
@@ -479,7 +467,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   if (out.generator && stacks.length) {
     const fx = Math.sin(stacks[0]!.yaw), fz = Math.cos(stacks[0]!.yaw), rx = Math.cos(stacks[0]!.yaw), rz = -Math.sin(stacks[0]!.yaw);
     const mx = stacks.reduce((t, st) => t + st.at[0], 0) / stacks.length, mz = stacks.reduce((t, st) => t + st.at[1], 0) / stacks.length;
-    const back = (d: number, side = 0): [number, number] => [mx - fx * d + rx * side, mz - fz * d + rz * side];
+    const back = (d: number, side = 0) => behindStacks(stacks, d, side);
     const span = Math.max(...stacks.map((st) => (st.at[0] - mx) * rx + (st.at[1] - mz) * rz)) + stackWidth(roomRig(def)) / 2;
     const rackAt = back(1.7, -0.6), distroAt = back(1.7, 0.9);
     // the amp racks side by side

@@ -8,13 +8,14 @@ import { footprint, inFootprint } from "./gear-wall.ts";
 import { MAX_LANTERNS } from "../lanterns.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { SYSTEM_IDS, type SystemId } from "@rustybuns/gear";
+import { GENERATOR_IDS, MAX_PIN, SYSTEM_IDS, type GeneratorId, type SystemId } from "@rustybuns/gear";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
 export const MAX_WALLS = 32;
 export const MAX_PANELS = 12;
 export const MAX_PROPS = 160;
+export const MAX_STACKS = 16;
 /** How close two seats can be, and a seat to the outside walls, metres. */
 export const SEAT_ROOM = 0.8;
 export const WALL_ROOM = 0.3;
@@ -25,6 +26,8 @@ const ID = str(32, { re: /^[a-z0-9][a-z0-9-]*$/ });
 const MAT = oneOf(MATERIAL_IDS);
 const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 2, { min: 2 })(v); return [x, z]; };
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
+/** A line array's pins, bottom box up: radians down from level. */
+const PINS = arr(num(0, MAX_PIN), 3, { min: 1 });
 
 /** What the builder's Decorate tool puts down, each at its real size and in its usual colour (drawn by props.ts). */
 export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
@@ -74,13 +77,13 @@ export const Studio: Guard<StudioDef> = obj({
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
   outdoor: opt(obj({
-    stacks: arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)) }), 16),
+    stacks: arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS) }), MAX_STACKS),
     subs: opt(obj({ at: XZ, yaw: num(-7, 7), wide: int(1, 6), high: int(1, 3) })),
     monitors: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 4)),
     rig: opt(oneOf(SYSTEM_IDS)),
     mono: opt(bool()),
     truss: opt(obj({ at: XZ, yaw: num(-7, 7), w: num(2, 40), h: num(2, 12) })),
-    generator: opt(obj({ at: XZ, yaw: num(-7, 7) })),
+    generator: opt(obj({ at: XZ, yaw: num(-7, 7), set: opt(oneOf(GENERATOR_IDS)) })),
     fire: opt(obj({ at: XZ })),
     vans: opt(arr(obj({ at: XZ, yaw: num(-7, 7), awning: opt(bool()) }), 8)),
     festoons: opt(arr(obj({
@@ -127,7 +130,10 @@ export type Surface = "floor" | "ceiling" | Side;
  * put up a `booth` (four walls, glass toward the room and a door), move one or take it down, move the gear wall
  * (`moveGear`, its middle and a quarter turn at a time), `rename` the studio. Build mode's tools draw an inside wall
  * (`addWall`, from one point to another, on the floor's grid), knock a doorway through the middle of one or brick it
- * up again (`door`), take one down (`unwall`), and `turn` a seat an eighth of a turn at a time.
+ * up again (`door`), take one down (`unwall`), and `turn` a seat an eighth of a turn at a time. Out of doors the PA
+ * tool puts a `stack` of the rig's boxes down (facing the floor's middle unless told), moves it (`moveStack`), aims
+ * it (`aimStack`: its yaw, its tops' splay, a line array's pins) or takes it away (`unstack`), and `generator` picks
+ * the set that feeds the rig ("auto": the smallest that holds).
  */
 export type Edit =
   | { t: "size"; w: number; d: number; h: number }
@@ -153,7 +159,12 @@ export type Edit =
   | { t: "unprop"; index: number }
   | { t: "window"; side: Side; along: number }
   | { t: "moveDoor"; at: [number, number] }
-  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId };
+  | { t: "instruments"; keys?: (typeof POLY_KINDS)[number]; bass?: "mono" | "box"; rig?: SystemId }
+  | { t: "stack"; at: [number, number]; yaw?: number }
+  | { t: "moveStack"; index: number; at: [number, number] }
+  | { t: "aimStack"; index: number; yaw?: number; splay?: number; pins?: number[] }
+  | { t: "unstack"; index: number }
+  | { t: "generator"; set: GeneratorId | "auto" };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
   obj({ t: tag("size"), w: num(SIZE.w[0], SIZE.w[1]), d: num(SIZE.d[0], SIZE.d[1]), h: num(SIZE.h[0], SIZE.h[1]) }),
@@ -180,6 +191,11 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("window"), side: oneOf(SIDES), along: num(-25, 25) }),
   obj({ t: tag("moveDoor"), at: XZ }),
   obj({ t: tag("instruments"), keys: opt(oneOf(POLY_KINDS)), bass: opt(oneOf(["mono", "box"] as const)), rig: opt(oneOf(SYSTEM_IDS)) }),
+  obj({ t: tag("stack"), at: XZ, yaw: opt(num(-7, 7)) }),
+  obj({ t: tag("moveStack"), index: int(0, MAX_STACKS - 1), at: XZ }),
+  obj({ t: tag("aimStack"), index: int(0, MAX_STACKS - 1), yaw: opt(num(-7, 7)), splay: opt(num(-1, 1)), pins: opt(PINS) }),
+  obj({ t: tag("unstack"), index: int(0, MAX_STACKS - 1) }),
+  obj({ t: tag("generator"), set: oneOf([...GENERATOR_IDS, "auto"] as const) }),
 ];
 
 /** The shortest inside wall, and a doorway's width, metres. */
@@ -248,6 +264,7 @@ export function problems(def: StudioDef): string[] {
     if (Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1]) < SEAT_ROOM) out.push(`${a.id} and ${b.id} are on top of each other`);
   }
   if (!inRoom(def.door.at, WALL_ROOM)) out.push("the way in is outside the room");
+  def.outdoor?.stacks.forEach((st, i) => { if (!inRoom(st.at, 0.5)) out.push(`stack ${i + 1} is off the ground`); });
   out.push(...gearProblems(def));
   return out;
 }
@@ -404,6 +421,34 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.keys) next.keys = e.keys;
       if (e.bass) next.bass = e.bass;
       if (e.rig && next.outdoor) next.outdoor = { ...next.outdoor, rig: e.rig };
+      break;
+    }
+    case "stack": case "moveStack": case "aimStack": case "unstack": {
+      const out = next.outdoor;
+      if (!out) return no("a PA stack stands out of doors");
+      if (e.t === "stack") {
+        if (out.stacks.length >= MAX_STACKS) return no(`a rig is at most ${MAX_STACKS} stacks`);
+        // facing the floor's middle unless told
+        out.stacks.push({ at: e.at, yaw: e.yaw ?? Math.atan2(-e.at[0], -e.at[1]) });
+        break;
+      }
+      const st = out.stacks[e.index];
+      if (!st) return no("there is no such stack");
+      if (e.t === "moveStack") st.at = e.at;
+      else if (e.t === "unstack") out.stacks.splice(e.index, 1);
+      else {
+        if (e.yaw !== undefined) st.yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw));
+        if (e.splay !== undefined) st.splay = e.splay;
+        if (e.pins) st.pins = e.pins;
+      }
+      break;
+    }
+    case "generator": {
+      const out = next.outdoor;
+      if (!out) return no("a generator stands out of doors");
+      // a rig with none yet gets one in the back left corner, off the floor
+      const g = out.generator ??= { at: [-next.size.w / 2 + 2, -next.size.d / 2 + 2], yaw: 0 };
+      if (e.set === "auto") delete g.set; else g.set = e.set;
       break;
     }
     case "turn": {
