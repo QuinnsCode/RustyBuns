@@ -75,7 +75,7 @@ export function roundLines(r: Report): string[] {
   if (!calls || !r.turns) return [];
   const per = calls / r.turns, ctx = (r.usage.input + r.usage.cacheRead + r.usage.cacheWrite) / r.turns;
   const out = [`Tool calls per reply: ${per.toFixed(2)} (${k(calls)} calls over ${k(r.turns)} replies), each reply re-reading ${k(Math.round(ctx))} of context.`];
-  if (per < BATCH) out.push("  Send independent reads, greps, briefs and checks together in one reply: each extra reply pays for the whole context again.");
+  if (per < BATCH) out.push("  Put independent reads, greps, briefs and checks in one mcp__repo__execute program: each extra reply pays for the whole context again.");
   return out;
 }
 
