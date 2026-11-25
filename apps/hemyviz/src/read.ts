@@ -29,8 +29,8 @@ function publicUrl(v: unknown): string | undefined {
   } catch { return undefined; }
 }
 
-const first = <T>(keys: readonly string[], from: Record<string, unknown>, pick: (v: unknown) => T | undefined): T | undefined => {
-  for (const k of keys) { const v = pick(from[k]); if (v !== undefined) return v; }
+const first = <T>(keys: readonly string[], get: (k: string) => unknown, pick: (v: unknown) => T | undefined): T | undefined => {
+  for (const k of keys) { const v = pick(get(k)); if (v !== undefined) return v; }
   return undefined;
 };
 
@@ -52,8 +52,8 @@ export function resourceOf(fqn: string, row: unknown, updatedAt: number): Resour
     mode: local ? "local" : "live",
     updatedAt: Math.max(0, Math.round(updatedAt)),
   };
-  const name = first(ATTR_NAME, attr, (v) => plain(v, 200));
-  const url = first(ATTR_URL, attr, publicUrl);
+  const name = first(ATTR_NAME, (k) => attr[k], (v) => plain(v, 200));
+  const url = first(ATTR_URL, (k) => attr[k], publicUrl);
   if (name) r.name = name;
   if (url) r.url = url;
   return r;

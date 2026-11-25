@@ -420,7 +420,7 @@ window.hemyviz = {
   pick: (name: string) => { const b = st.scene?.blocks.find((x) => x.id === name || x.r.fqn === name); st.selected = b?.id ?? null; panel(); st.dirty = true; return b ? { id: b.id, reach: b.reach, status: b.r.status } : null; },
   /** All fifteen views, as the links that open them. */
   views: () => DIMS.flatMap((d) => MODES.map((m) => `?dim=${d}&mode=${m}${st.demo ? "&demo" : ""}`)),
-} satisfies Record<string, unknown>;
+};
 
 readColors();
 if (st.demo) st.fleet = demoFleet();
