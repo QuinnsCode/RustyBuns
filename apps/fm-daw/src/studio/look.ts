@@ -1175,7 +1175,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
   const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
   // low lights only the LOW_CANS nearest the middle, a little brighter: every lit material's shader carries every light,
-  // and software GL took ~37 s to compile a room's 16 (#5916); the other cans still glow
+  // and software GL took ~37 s to compile a room's 16 (#5919); the other cans still glow
   const lit = new Set(high ? spots : [...spots].sort((a, b) => Math.hypot(...a) - Math.hypot(...b)).slice(0, LOW_CANS));
   const boost = high ? 1 : Math.min(2, spots.length / lit.size);
   for (const spot of spots) {

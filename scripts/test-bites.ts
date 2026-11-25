@@ -173,7 +173,7 @@ export function addedLines(diff: string): Map<string, number[]> {
 }
 
 /** True when every file the working tree changes since the merge-base is a test: then `base` with those tests copied over
- *  is the working tree itself, and every one of them passes there without running it (a refactor of the tests, #5916). */
+ *  is the working tree itself, and every one of them passes there without running it (a refactor of the tests, #5919). */
 export async function onlyTests(repo: string, base: string): Promise<boolean> {
   const changed = await $`git diff --name-only ${await fork(repo, base)}`.cwd(repo).text();
   const fresh = await $`git ls-files --others --exclude-standard`.cwd(repo).text();

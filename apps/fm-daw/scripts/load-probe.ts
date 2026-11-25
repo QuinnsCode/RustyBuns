@@ -1,7 +1,7 @@
 // Where a Qollab Studio page's load goes in headless Chrome: when DOMContentLoaded and load fire, whether a look into the
 // page is answered or held, the requests still open, the shader programs it links (by the material's name where it has
 // one), and the functions that held the main thread. CI's runners draw in SwiftShader, so ask for it here to see what
-// CI sees (#5916: the front door spent ~37 s compiling shaders before its load event).
+// CI sees (#5919: the front door spent ~37 s compiling shaders before its load event).
 //   CHROME_GL=software bun scripts/load-probe.ts [path]        default jam.html?quality=low
 //   bun run builder run apps/fm-daw env CHROME_GL=software bun scripts/load-probe.ts
 import { join } from "node:path";
