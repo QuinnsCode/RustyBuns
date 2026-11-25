@@ -32,4 +32,6 @@ bun story.ts https://borg-postgres.<you>.workers.dev   # the same checks against
 
 ## What's next for thick borg
 
+Postgres in a Durable Object, one per preview with no Neon, is a local spike in [do/](do/README.md): a new database in about 0.3 s, a branch in one call. It needs a smaller PGlite build before it can deploy.
+
 The other stories in #856 (leave a PaaS for a box, go all-edge on D1, Lambda + DynamoDB, Mongo, Better Auth, one sync engine) get an app each, as this one did. A Hetzner box run of this story is next.

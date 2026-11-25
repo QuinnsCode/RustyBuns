@@ -1,0 +1,13 @@
+// Local spike only (`wrangler dev`): stock PGlite needs 128 MB of WASM memory, a whole DO's limit, so this
+// doesn't deploy as is. See README.md.
+{
+  "name": "pg-do-spike",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-01",
+  // No nodejs_compat: with it, Emscripten takes its Node path (process.binding, fs).
+  // PGlite builds `new URL("./pglite.wasm", import.meta.url)` even when handed the module.
+  "define": { "import.meta.url": "\"file:///bundle/worker.js\"" },
+  "rules": [{ "type": "Data", "globs": ["**/*.data"], "fallthrough": true }],
+  "durable_objects": { "bindings": [{ "name": "PG", "class_name": "Pg" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Pg"] }]
+}
