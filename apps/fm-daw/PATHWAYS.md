@@ -91,7 +91,7 @@ and its crossfader side open). Nothing is uploaded. A YouTube deck plays in YouT
 recording; the button says so.
 
 **Missing:** the listen link: people outside the sesh hearing the set live, no sign-in and no seat
-([#5862](https://github.com/QuinnsCode/RustyBuns/issues/5862) priced it; it waits on the owner's yes). There is no saved
+([#5878](https://github.com/QuinnsCode/RustyBuns/issues/5878): priced, waits on the owner's yes). There is no saved
 library either (tracks load each visit), and MIDI learn is checked only with fed messages, not a real controller.
 
 ## 5. Plan a sound system (CAD for speakers)
