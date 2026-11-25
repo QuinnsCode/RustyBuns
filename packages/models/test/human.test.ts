@@ -35,6 +35,32 @@ test("sat on its seat with its feet down, then hands up and forward for the keys
   }
 });
 
+test("two people of one build don't share a face, one person keeps theirs, and each eye has a coloured iris round a pupil", () => {
+  const outfit = { top: "tee", hair: "short", hat: "none" } as const;
+  const a = human("average", outfit, {}, 3), again = human("average", outfit, {}, 3), b = human("average", outfit, {}, 4);
+  const pos = (h: ReturnType<typeof human>) => h.mesh.geometry.getAttribute("position");
+  expect(pos(again)).toBe(pos(a));
+  expect(pos(b)).not.toBe(pos(a));
+  // the faces differ where a face is (above the chin, in front), not just in a number somewhere
+  const pa = pos(a), pb = pos(b);
+  expect(pb.count).toBe(pa.count);
+  let moved = 0;
+  for (let i = 0; i < pa.count; i++) if (pa.getY(i) > a.height - 0.2 && pa.getZ(i) > 0.06 && Math.abs(pa.getZ(i) - pb.getZ(i)) > 0.001) moved++;
+  expect(moved).toBeGreaterThan(50);
+  // the eye colour comes from the seed unless the palette names one
+  const painted = (h: ReturnType<typeof human>, hex: string) => {
+    const c = h.mesh.geometry.getAttribute("color"), want = new THREE.Color(hex);
+    let n = 0;
+    for (let i = 0; i < c.count; i++) if (Math.abs(c.getX(i) - want.r) + Math.abs(c.getY(i) - want.g) + Math.abs(c.getZ(i) - want.b) < 1e-4) n++;
+    return n;
+  };
+  const blue = human("average", outfit, { iris: "#3366cc", pupil: "#010203" }, 3);
+  expect(painted(blue, "#3366cc")).toBeGreaterThan(20);
+  expect(painted(blue, "#010203")).toBeGreaterThan(20);
+  expect(painted(a, "#3366cc")).toBe(0);
+  for (const h of [a, again, b, blue]) h.dispose();
+});
+
 test("the hair and hats marked soon are the ones it wears as something else", () => {
   for (const [part, key] of [["hair", "hair"], ["hat", "hat"]] as const) {
     for (const v of PARTS[part]) {
