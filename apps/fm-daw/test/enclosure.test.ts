@@ -94,6 +94,10 @@ test.skipIf(!hasChrome)("pick a plan, swap the walls, brace them, pull it apart 
     expect(["rust", "ts"]).toContain(boxed.engine);
     const knock = await page<{ peak: number }>("qspeakers.render('knock')");
     expect(knock.peak).toBeGreaterThan(0.01);
+    // The cabinet leaves as a GLB, for Blender or any 3D tool.
+    const file = await page<{ bytes: number; glb: string }>("qspeakers.glb()");
+    expect(file.glb).toBe("glTF");
+    expect(file.bytes).toBeGreaterThan(10_000);
     expect(tab.noise.filter((n) => !n.includes("fm_daw.wasm"))).toEqual([]);
     await tab.close();
   }

@@ -50,7 +50,9 @@ const engineChip = h("span", "sp-chip", "TypeScript");
 const listenBtn = h("button", "sp-btn", icon("play"), "Listen");
 const flatBtn = h("button", "sp-btn ghost", icon("waves"), "No box");
 const knockBtn = h("button", "sp-btn ghost", icon("hand"), "Knock");
-for (const b of [listenBtn, flatBtn, knockBtn]) b.type = "button";
+const glbBtn = h("button", "sp-btn ghost", icon("download"), "GLB");
+for (const b of [listenBtn, flatBtn, knockBtn, glbBtn]) b.type = "button";
+glbBtn.title = "Download this cabinet as it stands (apart or assembled) as a GLB, to open in Blender or any 3D tool";
 listenBtn.title = "A bass loop through this box"; flatBtn.title = "The same loop with no box: what the box takes away"; knockBtn.title = "Knock on the walls: each one rings at its own mode";
 
 const label = (text: string, ...kids: Node[]) => h("label", "sp-field", h("span", "", text), ...kids);
@@ -59,7 +61,7 @@ tools.append(
   label("Braces", iconButton("arrow-up-down", "One brace fewer", () => setBraces(braces - 1)), braceOut, iconButton("arrow-up", "One more brace", () => setBraces(braces + 1))),
   label("Apart", icon("box", 16), explodeIn),
 );
-const sound = h("div", "sp-sound", listenBtn, flatBtn, knockBtn, engineChip);
+const sound = h("div", "sp-sound", listenBtn, flatBtn, knockBtn, glbBtn, engineChip);
 view.append(canvas, tools);
 side.append(title, what, sound, chart, facts, h("h2", "", "Walls"), walls, h("h2", "", "Cut list"), cuts, from);
 app.append(tabs, view, side);
@@ -254,6 +256,25 @@ flatBtn.addEventListener("click", () => void play("flat"));
 knockBtn.addEventListener("click", () => void play("knock"));
 matSel.addEventListener("change", () => setMaterial(matSel.value));
 explodeIn.addEventListener("input", () => setExplode(Number(explodeIn.value)));
+glbBtn.addEventListener("click", () => void download());
+
+/** The cabinet as it stands, as GLB bytes: three's exporter, loaded only when asked. */
+async function glb(): Promise<ArrayBuffer> {
+  if (!model) throw new Error("no cabinet yet");
+  const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
+  const out = await new GLTFExporter().parseAsync(model, { binary: true });
+  if (!(out instanceof ArrayBuffer)) throw new Error("the exporter gave JSON, not a GLB");
+  return out;
+}
+
+async function download() {
+  const bytes = await glb(), a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
+  a.download = `${current.id}-${mat}${explode > 0 ? "-apart" : ""}.glb`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return { name: a.download, bytes: bytes.byteLength };
+}
 
 // --- actions ---
 function pick(id: string) {
@@ -306,6 +327,8 @@ function parity() {
 
 const api = {
   state, pick, material: setMaterial, braces: setBraces, explode: setExplode, parity,
+  /** The cabinet as a GLB: its size in bytes and the meshes in it (no download). */
+  glb: async () => { const b = await glb(); return { bytes: b.byteLength, glb: new TextDecoder().decode(new Uint8Array(b, 0, 4)) }; },
   /** Plays (or stops) the loop through the box, with no box, or the knock; what was rendered, and whether the audio runs. */
   listen: (kind: "box" | "flat" | "knock" = "box") => play(kind),
   /** Renders without playing: peak and rms of the loop through the box (or flat, or the knock). */
