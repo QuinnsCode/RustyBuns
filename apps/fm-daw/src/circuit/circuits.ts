@@ -82,7 +82,7 @@ export function sockets(board: BoardId): Socket[] {
   const out: Socket[] = [], pairs = new Map<string, string[]>();
   for (const p of readBoard(BOARDS[board]).parts) {
     if (p.kind === "C") out.push({ id: p.name, kind: "cap", parts: [p.name], farads: p.farads });
-    else if (p.kind === "R" && !/^RV/.test(p.name)) out.push({ id: p.name, kind: "res", parts: [p.name], ohms: p.ohms });
+    else if (p.kind === "R" && !p.name.startsWith("RV")) out.push({ id: p.name, kind: "res", parts: [p.name], ohms: p.ohms });
     else if (p.kind === "D") {
       const key = [p.a, p.k].sort().join("|");
       const group = pairs.get(key);
