@@ -183,6 +183,9 @@ export function gearModel(g: GearDef): GearModel {
       cap.position.set(x, h + 0.01, 0.1);
       group.add(slot, cap);
     }
+  } else if (g.kind === "pa") {
+    // the setup lesson's small PA: Sound Guy Simulator's own boxes (a condenser's body stands in for the vocal mic)
+    group.add(shared(gear(g.pa === "mic-dynamic" ? "mic-condenser" : g.pa === "mixer-small" ? "mixer-small" : "top-12-powered"), g.size));
   } else {
     // the shared guitar, stood on its end
     group.add(shared(gear("guitar"), g.size));
