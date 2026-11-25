@@ -172,6 +172,14 @@ export function addedLines(diff: string): Map<string, number[]> {
   return out;
 }
 
+/** True when every file the working tree changes since the merge-base is a test: then `base` with those tests copied over
+ *  is the working tree itself, and every one of them passes there without running it (a refactor of the tests, #5916). */
+export async function onlyTests(repo: string, base: string): Promise<boolean> {
+  const changed = await $`git diff --name-only ${await fork(repo, base)}`.cwd(repo).text();
+  const fresh = await $`git ls-files --others --exclude-standard`.cwd(repo).text();
+  return `${changed}\n${fresh}`.split("\n").filter(Boolean).every((p) => /\.test\.tsx?$/.test(p));
+}
+
 /** The lines each changed source file (not a test) adds since the merge-base with `base`, by file. */
 export async function changedSource(repo: string, base: string): Promise<Map<string, number[]>> {
   const diff = await $`git diff -U0 --no-color --diff-filter=AM ${await fork(repo, base)} -- ${"*.ts"} ${"*.tsx"} ${":!*.test.ts"} ${":!*.test.tsx"}`.cwd(repo).text();
@@ -237,12 +245,16 @@ if (import.meta.main) {
     console.log(`no *.test.ts added or edited since ${base}`);
     process.exit(0);
   }
-  const passing = await passesOnBase(repo, base, files);
+  // the run on the base and the coverage run on this tree don't touch each other: side by side, not one after the other
+  const tests = await onlyTests(repo, base);
+  const [passing, unrun] = await Promise.all([
+    tests ? files : passesOnBase(repo, base, files),
+    process.argv.includes("--lines") ? unrunLines(repo, base, files) : undefined,
+  ]);
+  if (tests) console.log(`only tests changed since ${base}: they pass there as here, so none was run on it`);
   for (const f of passing) console.log(`${f}: passes on ${base} too, proves nothing`);
   console.log(`${files.length - passing.length} of ${files.length} test files fail on ${base}`);
-  let unrun: Map<string, number[] | "unloaded"> | undefined;
-  if (process.argv.includes("--lines")) {
-    unrun = await unrunLines(repo, base, files);
+  if (unrun) {
     console.log(unrun.size ? "changed lines these tests never ran:" : "these tests ran every changed source line");
     for (const [file, lines] of unrun) console.log(`  ${file}: ${lines === "unloaded" ? "never loaded" : ranges(lines)}`);
   }

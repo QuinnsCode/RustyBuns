@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
 setDefaultTimeout(240_000);
@@ -31,10 +31,7 @@ test.skipIf(!hasChrome)("music against the crowd, and one person's level, from t
     const url = `${vite.url}jam.html?room=levels&studio=desert-gathering&quality=low`;
     await load(chrome.cdp, tab, url, 0);
     const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-    const until = async (what: string, expr: string) => {
-      for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) if (await page<boolean>(expr)) return;
-      throw new Error(`never: ${what}`);
-    };
+    const until = (what: string, expr: string) => pageUntil(tab, expr, what, 60_000);
     await until("the room", "!!window.qjam && !!window.qjam.state().me.wearing");
     await page("qjam.start()");
     await until("the speakers", "qjam.state().audio");

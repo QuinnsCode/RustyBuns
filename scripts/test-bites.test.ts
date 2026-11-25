@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { addedLines, changedTests, mutate, passesOnBase, ranges, survivors, unrunLines } from "./test-bites.ts";
+import { addedLines, changedTests, mutate, onlyTests, passesOnBase, ranges, survivors, unrunLines } from "./test-bites.ts";
 
 setDefaultTimeout(30_000);
 
@@ -25,6 +25,12 @@ test("a branch's new tests: the one that fails on the old code bites, the one th
   expect(await passesOnBase(repo, base, files)).toEqual(["nothing.test.ts"]);
   expect((await git("worktree", "list")).text().trim().split("\n")).toHaveLength(1);
   expect(readdirSync(repo).sort()).toEqual([".git", "add.ts", "bites.test.ts", "nothing.test.ts"]);
+
+  // a fix with its tests has source to bite on; tidying only the tests after it has none, so nothing is run on the base
+  expect(await onlyTests(repo, base)).toBe(false);
+  const fixed = (await git("rev-parse", "HEAD")).text().trim();
+  writeFileSync(join(repo, "nothing.test.ts"), t("expect(add(3, 0)).toBe(3);"));
+  expect(await onlyTests(repo, fixed)).toBe(true);
 });
 
 test("a fix in a workspace package, tested from an app: the base run uses the base's package, and --lines finds what nobody ran", async () => {

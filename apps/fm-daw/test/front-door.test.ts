@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 import { DOOR, PATHS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
@@ -24,10 +24,7 @@ beforeAll(async () => {
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
-const until = async (tab: Tab, ready: string) => {
-  for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) if (await tab.eval<boolean>(ready).catch(() => false)) return;
-  throw new Error(`never ready: ${ready}`);
-};
+const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 60_000);
 interface Door { paths: { id: string; name: string; href: string; oneLine: boolean }[]; overflowX: boolean }
 
 /** Each path's first step as its page shows it, signed out, and the way back home on that page. */
@@ -57,6 +54,10 @@ test.skipIf(!hasChrome)("the door names six paths at phone and desktop sizes, an
 
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   try {
+    // the paths are what's checked, not the picture: this browser keeps low quality, as Q would, so the jam room
+    // isn't drawn on high in software GL (83 s to load on the builder, past the wait below)
+    await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
+    await tab.eval(`localStorage.setItem("qollab-studio:quality", "low")`);
     for (const p of PATHS) {
       await load(chrome.cdp, tab, `${vite.url}${DOOR.slice(1)}`, 0);
       await until(tab, "!!window.qdoor");

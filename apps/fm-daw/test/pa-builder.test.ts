@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(240_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -24,10 +24,7 @@ beforeAll(async () => {
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
-const until = async (tab: Tab, ready: string) => {
-  for (const end = Date.now() + 30_000; Date.now() < end; await Bun.sleep(50)) if (await tab.eval<boolean>(ready)) return;
-  throw new Error(`never ready: ${ready}`);
-};
+const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 30_000, 50);
 
 type Pa = { stacks: { at: [number, number]; yaw: number }[]; coverage: { mean: number; even: number } | null; power: { ok: boolean; why: string[]; generator: string; racks: number } | null };
 
