@@ -36,12 +36,13 @@ const harness = {
   state: () => {
     if (!panel) return null;
     const m = panel.decks.mixer;
-    return { open: panel.isOpen(), library: panel.library(), waiting: panel.waiting(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), midi: panel.midi.state(), zoom: panel.zoom(), coasting: panel.coasting(), tubes: panel.tubes(), carousel: carousel() };
+    return { open: panel.isOpen(), library: panel.library(), waiting: panel.waiting(), ...panel.decks.state(), meters: { channels: m.channels.map((_, i) => m.level(i as Ch)), master: m.masterLevels() }, players: panel.jogs.map((j) => j.state()), midi: panel.midi.state(), zoom: panel.zoom(), coasting: panel.coasting(), tubes: panel.tubes(), shelf: panel.shelf(), carousel: carousel() };
   },
   /** Load a file's bytes onto a deck as a dropped file would: its tempo and where that came from (tag, software grid, ear). */
   load: async (side: Side, name: string, bytes: number[]) => { const t = await start().load(side, name, Uint8Array.from(bytes).buffer); return { bpm: t.grid?.bpm ?? null, firstBeat: t.grid?.offset ?? null, from: t.from ?? null }; },
   /** A YouTube link (or id) onto a deck: resolves true once YouTube's player is ready on it (needs the network). */
   tube: (side: Side, link: string) => start().tube(side, link),
+  addTube: (link: string) => start().addTube(link),
   /** A press on a deck as its buttons do it (a YouTube deck's too): play, cueDown, cueUp, hot1..4, back, fwd, sync. */
   press: (side: Side, p: Press) => panel?.press(side, p),
   play: (side: Side) => panel?.decks.decks[side].toggle(),

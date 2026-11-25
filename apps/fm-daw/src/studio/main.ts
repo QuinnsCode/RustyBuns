@@ -58,6 +58,7 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { monoSteal, withMonoBass } from "./mono-bass.ts";
 import { Overlay, bendEvent, keyMap } from "./overlay.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
+import { heard as heardAt, loadLevels, peerLevel, saveLevels, setPeer } from "./levels.ts";
 import { isMuted, leaders, may as mayDo, type GrantServer } from "../grants.ts";
 import { check } from "@rustybuns/util/guard";
 import { mayCue, runs as runsDecks, Spin, type SpinServer } from "../spin.ts";
@@ -484,6 +485,43 @@ let out: AudioOut | null = null;
 let wallLine: WallLine | null = null;
 /** The loudest anyone else may be for you (Esc menu, kept in this browser): every guitar, set and mic of theirs through its own limiter. */
 const peerDb = peerCeilingSetting($("loudest"), (db) => { guitars?.ceiling(db); pa?.ceiling(db); out?.send({ t: "peerCeiling", db }); });
+/** Music against the crowd, and each person (levels.ts): the two in front of the brick wall, each line at its person's. */
+const levels = loadLevels();
+let bus: { wall: AudioNode; music: GainNode; crowd: GainNode } | null = null;
+/** The brick wall last, with the music bus and the crowd bus into it: the room's mix goes to music, as everything does unless it's crowd. */
+function roomBuses(ctx: AudioContext): AudioNode {
+  const wall = brickWall(ctx), music = new GainNode(ctx, { gain: levels.music }), crowd = new GainNode(ctx, { gain: levels.crowd });
+  music.connect(wall); crowd.connect(wall);
+  bus = { wall, music, crowd };
+  return music;
+}
+/** Set MUSIC or CROWD (0..1), kept in this browser; 0 is silence. */
+function setLevel(which: "music" | "crowd", v: number) {
+  levels[which] = Math.min(1, Math.max(0, Number.isFinite(v) ? v : 1));
+  saveLevels(levels);
+  const g = bus?.[which].gain;
+  if (g && out) g.setTargetAtTime(levels[which], out.ctx.currentTime, 0.02);
+  const el = $(`level-${which}`);
+  if (el instanceof HTMLInputElement && Number(el.value) !== levels[which]) el.value = String(levels[which]);
+}
+for (const which of ["music", "crowd"] as const) {
+  const el = $(`level-${which}`);
+  if (el instanceof HTMLInputElement) { el.value = String(levels[which]); el.addEventListener("input", () => setLevel(which, Number(el.value))); }
+}
+/** One person's level for you (0..1), as their slider on the people list sets it. */
+function setPersonLevel(peer: number, v: number) {
+  setPeer(levels, peer, v);
+  const el = document.querySelector(`#people input[data-peer="${peer}"]`);
+  if (el instanceof HTMLInputElement && Number(el.value) !== peerLevel(levels, peer)) el.value = String(peerLevel(levels, peer));
+}
+/** Muted for you, the whole room for you, or by the leader for everyone. */
+const shut = (peer: number) => mutes.room || mutes.peers.has(peer) || leaderMuted(peer);
+/** Someone's set on the PA: their level (the music bus does the rest). */
+const paLevel = (peer: number) => (shut(peer) ? 0 : peerLevel(levels, peer));
+/** Someone's guitar or mic on a call: straight to the wall, so at their level and its side's (a mic is crowd). */
+const callLevel = (peer: number) => (band.listen !== "now" || shut(peer) ? 0 : heardAt(levels, peer, 1, mics.has(peer)));
+/** Someone's YouTube deck, a player of its own off the page's audio: as loud as the PA where you stand, at their level and music's. */
+const tubeLevel = (peer: number, at: number) => (shut(peer) ? 0 : heardAt(levels, peer, at));
 async function startAudio() {
   if (out) return;
   try {
@@ -495,7 +533,7 @@ async function startAudio() {
       if (recorder.wants(0, myGuitar)) recorder.add(0, myGuitar, m.beat, Float32Array.from(pcm, (v) => v / 32767));
       if (opusOut && !opusOut.broken) opusOut.slice(m.beat, pcm);
       else live(Band.slice(myGuitar, m.beat, pcm, b64url));
-    }, brickWall); // everything this room plays here goes through one brick wall last, always on (limiter.ts)
+    }, roomBuses); // everything this room plays here goes through one brick wall last, always on (limiter.ts), music or crowd
     // Opus over the World when this browser has WebCodecs (a quarter of PCM's bytes), else PCM
     const opus = await webOpus();
     opusEncoder = opus?.encoder ?? null;
@@ -505,13 +543,13 @@ async function startAudio() {
     deskFeed.reset(); deskSync();
     out.send(masterMsg(project));
     out.send({ t: "peerCeiling", db: peerDb() }); // slices heard a loop late or at the desk, on the audio thread
-    guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig), out.speakers);
+    guitars = new GuitarLine(out.ctx, (to, line, sig) => net?.rtc(to, line, sig), bus?.wall ?? out.speakers);
     guitars.ceiling(peerDb());
     guitars.sendsTo(out.node, CALL_SENDS, AUXES);
     for (const peer of plugged.keys()) guitars.ask(peer);
     paRoom = new PaRoom(out.ctx, def, out.speakers);
     // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
-    if (def.outdoor) nightAir = new NightAir(out.ctx, out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
+    if (def.outdoor) nightAir = new NightAir(out.ctx, bus?.crowd ?? out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
@@ -616,7 +654,7 @@ function hearGuitars() {
   // a set on the PA follows your mutes and the leader's, as a guitar does
   paRoom?.listen(jam.me.x, jam.me.z, jam.me.yaw);
   nightAir?.listen(jam.me.x, jam.me.z, mutes.room, musicOn());
-  if (pa) for (const peer of paOn.keys()) pa.level(peer, mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
+  if (pa) for (const peer of paOn.keys()) pa.level(peer, paLevel(peer));
   if (!guitars) return;
   guitars.listen(jam.me.x, jam.me.z, jam.me.yaw);
   // each guitar's chain at its channel on the sesh's desk: its level, and its sends into the audio thread's aux buses
@@ -629,7 +667,7 @@ function hearGuitars() {
     const o = jam.others.get(peer);
     guitars.set(peer, rig?.settings ?? guitarSettings(project.tracks[track]?.amp));
     // a loop late or at the desk their guitar comes in stamped slices (the audio thread plays it); the call is for "now"
-    guitars.level(peer, band.listen !== "now" || mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : 1);
+    guitars.level(peer, callLevel(peer));
     if (rig) guitars.place(peer, ...rig.at); else if (o) guitars.place(peer, o.at[0], o.at[1]);
   }
 }
@@ -800,7 +838,12 @@ function people() {
     const b = document.createElement("button");
     b.type = "button"; b.className = "ghost"; b.textContent = mutes.peers.has(peer) ? "Unmute" : "Mute";
     b.addEventListener("click", () => mutePerson(peer));
-    li.append(n, b);
+    // their level for you, beside the mute
+    const vol = document.createElement("input");
+    vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.01"; vol.className = "person-level"; vol.dataset.peer = String(peer);
+    vol.value = String(peerLevel(levels, peer)); vol.title = `${o.name || "Someone"}'s volume, for you`; vol.setAttribute("aria-label", vol.title);
+    vol.addEventListener("input", () => setPersonLevel(peer, Number(vol.value)));
+    li.append(n, vol, b);
     if (lead) {
       const all = document.createElement("button"), was = leaderMuted(peer);
       all.type = "button"; all.className = "ghost"; all.textContent = was ? "Unmute for everyone" : "Mute for everyone";
@@ -824,7 +867,7 @@ $("mute-room").addEventListener("click", () => muteAll());
 $("raise").addEventListener("click", () => raise());
 $("guitar").addEventListener("click", () => void guitar().then(() => { $("guitar").textContent = myGuitar === null ? "Plug in" : "Unplug"; }));
 function onGone(from: number) {
-  mutes.peers.delete(from);
+  mutes.peers.delete(from); levels.peers.delete(from);
   plugged.delete(from); mics.delete(from); lags.delete(from); guitars?.gone(from); recorder.unplugged(from);
   paOn.delete(from); pa?.gone(from); booth.gone(from);
   far.gone(from); deskSync();
@@ -1461,7 +1504,7 @@ function frame(now: number) {
   hearWall();
   // a YouTube deck as loud as the PA is where you stand, at your mutes and the leader's
   const tubeAt = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw });
-  roomTubes.follow(booth.sides, roomNow(), (peer) => (mutes.room || mutes.peers.has(peer) || leaderMuted(peer) ? 0 : tubeAt));
+  roomTubes.follow(booth.sides, roomNow(), (peer) => tubeLevel(peer, tubeAt));
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
@@ -1484,7 +1527,18 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
-    gear: atWall.state(jam), lanterns: lit.state(jam) }),
+    gear: atWall.state(jam), lanterns: lit.state(jam), levels: harness.levels() }),
+  /** What you hear (levels.ts): MUSIC and CROWD as set and as their buses play, each person's level, and each of their lines as heard now. */
+  levels: () => {
+    const at = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw }), peers = [...jam.others.keys()];
+    const each = (f: (p: number) => number) => Object.fromEntries(peers.map((p) => [p, Math.round(f(p) * 1000) / 1000]));
+    return {
+      music: levels.music, crowd: levels.crowd, buses: bus ? { music: bus.music.gain.value, crowd: bus.crowd.gain.value } : null,
+      people: each((p) => peerLevel(levels, p)), pa: each(paLevel), calls: each(callLevel), tubes: each((p) => tubeLevel(p, at)),
+    };
+  },
+  /** Set MUSIC or CROWD (0..1), or one person's level by peer number. */
+  level: (which: "music" | "crowd" | number, v: number) => { if (typeof which === "number") setPersonLevel(which, v); else setLevel(which, v); return harness.levels(); },
   /** F or a click on the lanterns: take the nearest (or lantern `i`) within reach, or set yours down in front of you. */
   lantern: (i?: number) => lit.use(jam, i),
   /** A lanterns message as the World sends it ({ t: "lanterns", lanterns: { room, moved }, you }), to see one carried with no World. */
