@@ -98,14 +98,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "plug", "violet"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns) plug (the bronze phase plug in a mid horn's throat) and violet (its cabinets' dark violet paint). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat) and violet (its cabinets' dark violet paint). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -117,7 +117,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x9a9e96, 0.55), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
   };
 }
 
@@ -1530,18 +1530,49 @@ function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number
   return b;
 }
 
+/** A ring of a built horn: `z`, half sizes `a` by `c` round (0, `y`), its corners cut back `k` (an eight-sided ring). */
+type Facet = [z: number, a: number, c: number, k: number, y?: number];
+
 /**
- * A painted horn set into a dance-stack box's front, as in the photos of stacks at festivals: a pale lining (`horn`)
- * that runs in straight from a rounded-square mouth `w` by `h` and rolls over in a lip at the face, a flange out to its
- * cell `cw` by `ch` (the box's baffle round the horn, in `skin`), and the driver's dark throat at the back. `plug` puts
- * the bronze axe-head of a phase plug in the throat: wide and flat, `plugY` below the horn's middle.
+ * A horn built of flat panels, as one is from ply or glass-fibre sheet: eight flat walls (four sides and four corner
+ * chamfers) from ring to ring, creased where they meet, so the panels read as panels and not a smooth lathe. Faces look
+ * forward (into the horn, as you see it from the front), or back with `out` (the outside of a horn standing free).
  */
-function paleHorn(b: Build, skin: GearSlot, [x, y, z]: THREE.Vector3Tuple, w: number, h: number, cw: number, ch: number, deep: number, { plug = false, plugY = 0, p = 5 } = {}) {
-  const m = new THREE.Matrix4().makeTranslation(x, y, z), a = w / 2, c = h / 2;
-  // straight walls from the throat, bending out over the last few centimetres into a rolled lip
-  const flare = Array.from({ length: 11 }, (_, i): [number, number, number] => { const s = i / 10, r = 0.1 + 0.62 * s + 0.28 * s ** 7; return [-deep * (1 - s), a * r, c * r]; });
-  b.pieces.push(lathe("horn", flare, { p, seg: 32, m }));
-  b.pieces.push(lathe(skin, [[0, a, c], [0.002, a + 0.006, c + 0.006], [0, cw / 2, ch / 2]], { p: 24, seg: 32, m }));
+function facets(slot: GearSlot, rings: Facet[], m: THREE.Matrix4, out = false): Piece {
+  const ring = ([z, a, c, k, y = 0]: Facet) => [[a, -c + k], [a, c - k], [a - k, c], [-a + k, c], [-a, c - k], [-a, -c + k], [-a + k, -c], [a - k, -c]]
+    .map(([u, v]) => new THREE.Vector3(u, v + y, z));
+  const rows = rings.map(ring), pos: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a));
+    pos.push(...((n.z >= 0) !== out ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  };
+  for (let i = 0; i + 1 < rows.length; i++) for (let j = 0; j < 8; j++) {
+    const k = (j + 1) % 8, [a, b] = [rows[i], rows[i + 1]];
+    tri(a[j], a[k], b[k]); tri(a[j], b[k], b[j]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.applyMatrix4(m);
+  return { geo: toCreasedNormals(geo, 0.3), slot };
+}
+
+/**
+ * A painted horn set into a dance-stack box's front, as in the photos of stacks at festivals: a pale lining built of
+ * flat panels (`facets`) that runs in straight from a chamfered mouth `w` by `h` and rolls over in a lip at the face,
+ * dusty and dark (`grime`) over its back two thirds where hands and rags never reach, a flange out to its cell `cw` by `ch`
+ * (the box's baffle round the horn, in `skin`), and the driver's dark throat at the back. `plug` puts the bronze
+ * axe-head of a phase plug in the throat: wide and flat, `plugY` below the horn's middle.
+ */
+function paleHorn(b: Build, skin: GearSlot, [x, y, z]: THREE.Vector3Tuple, w: number, h: number, cw: number, ch: number, deep: number, { plug = false, plugY = 0 } = {}) {
+  const m = new THREE.Matrix4().makeTranslation(x, y, z), a = w / 2, c = h / 2, lip = Math.min(0.01, cw / 2 - a, ch / 2 - c) * 0.9;
+  // straight walls from the throat, bending out over the last few centimetres, then a rolled lip at the face
+  const flare = Array.from({ length: 9 }, (_, i): Facet => {
+    const s = i / 8, r = 0.1 + 0.62 * s + 0.28 * s ** 7, ra = a * r, rc = c * r;
+    return [-deep * (1 - s) - 0.012 * s, ra, rc, Math.min(ra, rc) * 0.3];
+  });
+  const k = Math.min(a, c) * 0.3;
+  b.pieces.push(facets("grime", flare.slice(0, 6), m), facets("horn", [...flare.slice(5), [-0.004, a + lip * 0.6, c + lip * 0.6, k], [0, a + lip, c + lip, k]], m));
+  b.pieces.push(facets(skin, [[0, a + lip, c + lip, k], [-0.002, cw / 2, ch / 2, 0.004]], m));
   b.pieces.push(disc("knob", Math.min(a, c) * 0.13, 0.01, "z", [x, y, z - deep], 16));
   if (plug) b.pieces.push(lathe("plug", [[-deep * 0.95, a * 0.04, c * 0.05], [-deep * 0.8, a * 0.24, c * 0.09], [-deep * 0.64, a * 0.33, c * 0.07], [-deep * 0.52, a * 0.27, c * 0.035],
     [-deep * 0.45, a * 0.1, c * 0.01], [-deep * 0.42, a * 0.01, c * 0.004]], { p: 2.4, seg: 24, m: new THREE.Matrix4().makeTranslation(x, y - plugY, z) }));
@@ -1569,28 +1600,47 @@ function frustum(slot: GearSlot, outer: number[], inner: number[], zf: number, d
  * (`paleHorn`), bar handles on the sides and the speaker jacks on the back; `fill` sets the horns into the front.
  */
 function stackBox(id: GearId, deep: number, fill: (b: Build, front: number) => void): Build {
-  const size = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] };
+  const size = GEAR_SIZES[id], [w, h, d] = size, b: Build = { pieces: [], marks: [] };
   well(b, "violet", size, deep, 0.035);
-  fill(b, size[2] / 2);
-  backAndFeet(b, size, 0.55);
+  fill(b, d / 2);
+  backAndFeet(b, size, 0.55, false);
+  // recessed handles, a dark pocket in each side with the grip bar across its top
+  for (const s of [-1, 1]) {
+    b.pieces.push(box("knob", [0.004, 0.07, 0.2], [s * (w / 2 + 0.001), h * 0.55, -d * 0.1]));
+    b.pieces.push(box("metal", [0.008, 0.012, 0.19], [s * (w / 2 - 0.001), h * 0.55 + 0.026, -d * 0.1], { bevel: 0.003 }));
+  }
   return b;
 }
 
-/** A row of angled fins across a slot `w` wide and `h` tall, centred on (0, y), its front at z `f`: a top's mid-bass
- * port, read in the photos as a row of slanted teeth over a dark slot. */
+/** A row of slanted fins across a slot `w` wide and `h` tall, centred on (0, y), its front at z `f`: a top's mid-bass
+ * port, read in the photos as a row of teeth over a dark slot with a bar across them. */
 function fins(b: Build, w: number, h: number, y: number, f: number) {
   b.pieces.push(box("knob", [w, h, 0.01], [0, y, f - 0.14]));
-  for (let k = 0; k < 11; k++) b.pieces.push(box("violet", [0.012, h - 0.01, 0.1], [-w / 2 + (k + 0.5) * (w / 11), y, f - 0.06], { rot: [0, 0.75, 0] }));
+  for (let k = 0; k < 13; k++) b.pieces.push(box("violet", [0.016, h - 0.006, 0.11], [-w / 2 + (k + 0.5) * (w / 13), y, f - 0.06], { bevel: 0.003, rot: [0, 0.6, 0.12] }));
+  b.pieces.push(box("violet", [w, 0.016, 0.018], [0, y + 0.004, f - 0.01], { bevel: 0.005 }));
   b.pieces.push(box("violet", [w, 0.014, 0.12], [0, y - h / 2 + 0.007, f - 0.06], { bevel: 0.003 }));
 }
 
+/** The high horn: a pale flared box standing in a top's mid horn, its walls running back to meet the mid horn's throat
+ * at (0, `y0`, `z0`) and opening to a mouth `w` by `h` at (0, `y1`, `z1`), lined inside, a dark driver at its back. */
+function highHorn(b: Build, y0: number, z0: number, y1: number, z1: number, w: number, h: number) {
+  const m = new THREE.Matrix4(), t = 0.007;
+  const rings = Array.from({ length: 5 }, (_, i): Facet => {
+    const s = i / 4, r = 0.18 + 0.72 * s + 0.1 * s ** 3, a = (w / 2) * r, c = (h / 2) * Math.max(r, 0.35);
+    return [z0 + (z1 - z0) * s, a, c, Math.min(a, c) * 0.2, y0 + (y1 - y0) * s];
+  });
+  b.pieces.push(facets("horn", rings, m), facets("horn", rings.map(([z, a, c, k, y]): Facet => [z, a + t, c + t, k, y]), m, true));
+  const [z, a, c, k, y] = rings[4];
+  b.pieces.push(facets("horn", [[z, a, c, k, y], [z + 0.002, a + t, c + t, k, y]], m));
+  b.pieces.push(box("knob", [w * 0.22, h * 0.45, 0.05], [0, y0, z0 - 0.02], { bevel: 0.006 }));
+}
+
 /** The top: a big pale mid horn with an axe-head phase plug low in its throat and a small high horn set into its top
- * half, over a row of angled fins, as the stack at the field (refs 3). */
+ * half, over a row of slanted fins, as the stack at the field (refs 3). */
 const midHigh = () => stackBox("stack-mid-high", 0.36, (b, f) => {
   const iw = GEAR_SIZES["stack-mid-high"][0] - 0.07, fh = 0.085, hy = 0.035 + fh + 0.19;
   paleHorn(b, "violet", [0, hy, f - 0.002], 0.64, 0.355, iw, 0.38, 0.34, { plug: true, plugY: 0.04 });
-  // the high horn, a pale box-shaped flare standing in the mid horn's upper throat
-  paleHorn(b, "horn", [0, hy + 0.06, f - 0.1], 0.26, 0.1, 0.27, 0.11, 0.16, { p: 10 });
+  highHorn(b, hy + 0.012, f - 0.31, hy + 0.045, f - 0.085, 0.25, 0.085);
   fins(b, iw, fh, 0.035 + fh / 2, f);
 });
 
@@ -1610,14 +1660,25 @@ const midBass = () => stackBox("stack-mid-bass", 0.4, (b, f) => {
  * column of four round ports beside it.
  */
 const hornSub = () => stackBox("horn-sub-21", 0.55, (b, f) => {
-  const [w, h] = GEAR_SIZES["horn-sub-21"], t = 0.035, deep = 0.5, gx0 = -0.16, gx1 = 0.02, px1 = 0.13, y0 = 0.09, y1 = h - 0.09, zb = f - deep;
-  b.pieces.push(frustum("violet", [-w / 2 + t, w / 2 - t, t, h - t], [gx0, px1, y0, y1], f, deep));
-  // the grille: half a cylinder of perforated steel standing out of the throat, the woofers dark behind it
-  b.pieces.push(box("knob", [gx1 - gx0, y1 - y0, 0.01], [(gx0 + gx1) / 2, h / 2, zb - 0.005]));
-  b.pieces.push(rod("mesh", [(gx0 + gx1) / 2, y0, zb], [(gx0 + gx1) / 2, y1, zb], (gx1 - gx0) / 2, 16));
-  // the port column: a flat panel with four round holes down it
+  const [w, h] = GEAR_SIZES["horn-sub-21"], e = 0.06, deep = 0.5, gx0 = -0.17, gx1 = 0.02, px1 = 0.12, y0 = e + 0.02, y1 = h - e - 0.02, zb = f - deep;
+  // thick rounded front edges round the mouth, the walls closing in from the sides far more than from top and bottom
+  for (const s of [-1, 1]) b.pieces.push(box("violet", [e, h, 0.06], [s * (w / 2 - e / 2), h / 2, f - 0.03], { bevel: 0.022 }));
+  for (const y of [e / 2, h - e / 2]) b.pieces.push(box("violet", [w - 0.02, e, 0.06], [0, y, f - 0.03], { bevel: 0.022 }));
+  b.pieces.push(frustum("violet", [-w / 2 + e, w / 2 - e, e, h - e], [gx0, px1, y0, y1], f - 0.03, deep - 0.03));
+  // the drivers dark behind the grille: two cones stacked up the throat
+  const gx = (gx0 + gx1) / 2, gr = (gx1 - gx0) / 2;
+  b.pieces.push(box("knob", [gx1 - gx0, y1 - y0, 0.01], [gx, h / 2, zb - 0.06]));
+  for (const y of [h / 2 - 0.16, h / 2 + 0.16]) b.pieces.push(...cone(gr * 0.85, 0.05, new THREE.Matrix4().makeTranslation(gx, y, zb - 0.045), 16));
+  // the grille: a half-round of perforated steel bulging out of the throat, on a flat frame
+  b.pieces.push(rod("mesh", [gx, y0, zb - gr * 0.25], [gx, y1, zb - gr * 0.25], gr, 18));
+  for (const y of [y0, y1]) b.pieces.push(box("knob", [gx1 - gx0 + 0.01, 0.012, gr * 1.2], [gx, y, zb + gr * 0.2], { bevel: 0.003 }));
+  // the port column: a flat panel with four round holes down it, each with a rolled lip
   b.pieces.push(box("violet", [px1 - gx1, y1 - y0, 0.02], [(gx1 + px1) / 2, h / 2, zb - 0.01]));
-  for (let k = 0; k < 4; k++) b.pieces.push(disc("knob", 0.036, 0.004, "z", [(gx1 + px1) / 2, y0 + (k + 0.5) * ((y1 - y0) / 4), zb + 0.001], 16));
+  for (let k = 0; k < 4; k++) {
+    const py = y0 + (k + 0.5) * ((y1 - y0) / 4), pm = new THREE.Matrix4().makeTranslation((gx1 + px1) / 2, py, zb + 0.001);
+    b.pieces.push(disc("knob", 0.034, 0.004, "z", [(gx1 + px1) / 2, py, zb + 0.001], 16));
+    b.pieces.push(lathe("violet", [[0, 0.034, 0.034], [0.008, 0.038, 0.038], [0.004, 0.044, 0.044], [0, 0.046, 0.046]], { seg: 16, m: pm }));
+  }
 });
 
 // ---- the other rigs on the sand (Qollab Studio's Desert Gathering, packages/gear systems.ts) -------------------------
@@ -1631,9 +1692,9 @@ function well(b: Build, skin: GearSlot, [w, h, d]: readonly number[], deep: numb
   for (const y of [t / 2, h - t / 2]) b.pieces.push(box(skin, [w - 2 * t + 0.002, t, d], [0, y, 0], { bevel: 0.006 }));
 }
 
-/** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side and the grab. */
-function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6) {
-  for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.16, 0.01));
+/** The back of a passive box: a plate with the speaker jacks, rubber feet, a bar handle each side (unless `bars` is off) and the grab. */
+function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6, bars = true) {
+  if (bars) for (const s of [-1, 1]) b.pieces.push(...handle("knob", [s * w / 2, h * handleY, -d * 0.1], s > 0 ? "x" : "-x", 0.16, 0.01));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [0.05, 0.012, 0.05], [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.05)], 0.004));
   plate(b, w * 0.3, Math.min(0.2, h * 0.2), [0, h * 0.45, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.06, h * 0.45, -d / 2 - 0.008], [w * 0.12, 0, 0]);
