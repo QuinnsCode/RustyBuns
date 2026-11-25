@@ -21,7 +21,7 @@
 // XP goes to the beast that ends the fight (`award`, the one place a later round swaps for the game's own rule);
 // "at pace" is your lead after every keeper so far and one den a section, with the other two starters behind it at
 // the level they began; a fight lost by one beast goes on with the next against the foe's health as it was left.
-import { gainXp, START_LEVEL as START, PARTY_FIRST, PARTY_MAX, SECTIONS, atLevel, baseLevel, sections, sectionLevel, STARTERS, type Member } from "../src/journey.ts";
+import { shareXp, START_LEVEL as START, PARTY_FIRST, PARTY_MAX, SECTIONS, atLevel, baseLevel, sections, sectionLevel, STARTERS, type Member } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { creature, type Creature } from "../src/roster.ts";
 import { bot } from "../src/bot.ts";
@@ -60,8 +60,8 @@ export interface Stone { n: number; k: number; keeper: string; wilds: string[]; 
 export const stones = (road = route()): Stone[] =>
   road.flatMap((n) => sections(region(n)).map((s) => ({ n, k: s.k, keeper: s.keeper, wilds: s.wilds, level: s.level, boss: s.k === SECTIONS - 1 })));
 
-/** Who earns a won fight's XP. Today: the beast that ended it, all of it (main.ts `gainXp(me, ...)`). */
-export function award(party: Member[], finisher: number, foeLevel: number) { gainXp(party[finisher]!, foeLevel); }
+/** Who earns a won fight's XP, as the game gives it (`shareXp`): the beast that ended it all, the rest half. */
+export function award(party: Member[], finisher: number, foeLevel: number) { shareXp(party, party[finisher]!, foeLevel); }
 const member = (id: string, level: number): Member => ({ id, level, xp: 0 });
 /** A den's wild one in region n: the middle roll of `wildLevel`. */
 const denLevel = (n: number) => wildLevel(n, 0.5);

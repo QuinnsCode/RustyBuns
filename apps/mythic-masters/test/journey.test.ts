@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, OWN_MAX, PARTY_MAX, release, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, BOOK_PAGE, bookSays } from "../src/journey.ts";
+import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, shareXp, loadJourney, mythicOf, newJourney, nextUp, OWN_MAX, PARTY_MAX, release, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, BOOK_PAGE, bookSays } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { creature, ROSTER } from "../src/roster.ts";
 import { denHolds as holdsOf, holds } from "../src/net/dens.ts";
@@ -98,6 +98,14 @@ describe("the journey", () => {
     while (rest(j, 0));
     expect(j.party).toHaveLength(1); // the line-up keeps one
     expect(gainXp(j.party[0]!, 10)).toBeGreaterThan(0);
+  });
+
+  test("a win's XP: the beast that fought gets all of it, the rest of the line-up half (#5387)", () => {
+    const j = newJourney(["jackalope", "hodag", "agropelter"])!;
+    const [a, b, c] = j.party as [typeof j.party[0], typeof j.party[0], typeof j.party[0]];
+    for (const m of j.party) { m.level = 50; m.xp = 0; } // far from the next level, so the XP stays readable
+    expect(shareXp(j.party, b, 8)).toEqual([0, 0, 0]);
+    expect([a.xp, b.xp, c.xp]).toEqual([40, 80, 40]);
   });
 
   test("sections clear in order and write their pages; the save comes back as it went, and a broken one is no journey", () => {

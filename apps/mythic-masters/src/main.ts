@@ -49,7 +49,7 @@ import { CHOICES, type Choice, choose, looksOf, qualityNote, startChoice } from 
 import { music as score, SCORE, type Cue } from "./music.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, ready, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
+import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, shareXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, menuLineOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type MenuWord, type Outcome } from "./demand.ts";
@@ -1859,7 +1859,9 @@ function tripOver(m: Match, bound: boolean, how: string) {
   let went: "party" | "journal" | "full" | null = null;
   if (won) {
     tally(j, false);
-    const ups = gainXp(me, t.foe.level), had = slots(j);
+    // the beast that fought gets all the XP, the rest of the line-up half (before a bind adds the new one)
+    const grew = shareXp(j.party, me, t.foe.level), ups = grew[t.slot]!, had = slots(j);
+    const watched = j.party.filter((o, i) => o !== me && grew[i]).map((o) => `${esc(creature(o.id).name)} to ${o.level}`);
     wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") { clearSection(j, t.region.n, t.k); behindYou = sectionCleared(j, t.region.n, t.k, Date.now()); }
@@ -1867,6 +1869,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (bound) { const sec = sections(t.region)[t.k]; went = bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name); lines.push(boundLine(esc(foe.name), t.foe.level, went)); }
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
+    if (grew.length > 1) lines.push(`The rest of the line-up watched and gets half the XP${watched.length ? `: ${watched.join(", ")}` : ""}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
       const sec = sections(t.region)[t.k]!;
       lines.push(`<span class="page">${icon("book-open")}<b>${esc(sec.name)}</b> ${esc(sec.lore)}</span>`);
