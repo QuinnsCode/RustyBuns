@@ -308,7 +308,7 @@ if (import.meta.main) {
     tests ? files : passesOnBase(repo, base, files, { by, late, each }),
     process.argv.includes("--lines") ? unrunLines(repo, base, files, by, unlined) : undefined,
   ]);
-  if (unlined.length) console.log(`out of time: ${unlined.length} not run for --lines (their lines read as never loaded): ${unlined.join(", ")}`);
+  if (unlined.length) console.log(`out of time: ${unlined.length} not run for --lines (their lines count as not loaded): ${unlined.join(", ")}`);
   if (tests) {
     console.log(`only tests changed since ${base}: they pass there as here, so none was run on it`);
     for (const f of passing) each(f, true);
