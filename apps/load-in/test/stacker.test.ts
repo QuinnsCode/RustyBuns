@@ -1,7 +1,7 @@
 // The stack builder's model (src/stacker/plan.ts): what "Just do it" builds, gravity when you drop a box, the warnings
 // a bad stack gets, the stage plan's coverage, and a save that comes back wrong.
 import { describe, expect, test } from "bun:test";
-import { RIGS, TARGET, cover, justDoIt, readDesign, settle, sizeFor, stats, wallFor, type Box } from "../src/stacker/plan.ts";
+import { EVEN, RIGS, TARGET, cover, justDoIt, readDesign, settle, sizeFor, sources, stats, wallFor, type Box } from "../src/stacker/plan.ts";
 
 describe("stack builder", () => {
   test("Just do it: every rig, sized for a 25 m floor, makes the targets and stands up", () => {
@@ -42,8 +42,22 @@ describe("stack builder", () => {
     expect(c.back).toBeGreaterThanOrEqual(TARGET.high - 3);
     const mid = c.low[Math.floor(c.nz / 2) * c.nx + Math.floor(c.nx / 2)]!;
     expect(mid).toBeGreaterThan(c.bass); // the middle of the floor is the power alley
+    // gear's floor numbers: the horn stacks spread wide, the bar pair stays even
+    expect(c.tops.even).toBeGreaterThan(EVEN.tops);
+    expect(cover(justDoIt("bar-pair")).tops.even).toBeLessThanOrEqual(EVEN.tops);
     // with nothing placed, nothing plays
-    expect(cover({ ...d, plan: { ...d.plan, placed: [] } }).median).toBeLessThan(0);
+    expect(cover({ ...d, plan: { ...d.plan, placed: [] } }).tops.mean).toBeLessThan(0);
+  });
+
+  test("a line array stands as one column, each box tipped down by its pin, the bins playing where they stand", () => {
+    const d = justDoIt("line-array"), src = sources(d), lines = src.filter((s) => s.speaker.highCut > 200);
+    expect(lines.length).toBeGreaterThanOrEqual(6); // three or more a side
+    expect(lines.every((s) => s.pitch < 0)).toBe(true);
+    // the bottom box aims lowest, and every box sits higher than the one under it
+    const left = lines.slice(0, lines.length / 2);
+    expect(left[0]!.pitch).toBeLessThan(left[1]!.pitch);
+    expect(left.every((s, i) => i === 0 || s.pos.y > left[i - 1]!.pos.y)).toBe(true);
+    expect(src.length).toBe(d.stacks[0]!.boxes.length * 2); // every box plays, both sides
   });
 
   test("a save that comes back wrong is refused, or loses only what doesn't fit", () => {
