@@ -27,7 +27,7 @@ export function plotsData(r: Report) {
       const w = resolve(b.at);
       return {
         id: b.id, title: b.title, text: b.text, status: b.status, owner: !!b.owner, game: !!b.game,
-        col: w ? road.indexOf(w.region) : -1, level: w?.level ?? null, where: w?.label ?? b.at,
+        col: w?.region === undefined ? -1 : road.indexOf(w.region), level: w?.level ?? null, where: w?.label ?? b.at,
         opens: b.opens ?? "", needs: b.needs ?? [], fights: b.fights ?? [],
       };
     }).sort((x, y) => x.col - y.col || (x.level ?? 0) - (y.level ?? 0));
