@@ -24,7 +24,7 @@ const isLine = (id: string) => id.startsWith("line-array");
  * The stack's boxes that play over the floor, each a source where it stands in the column (its middle's height from
  * the boxes under it) and aimed as the stack is: its yaw, the tops' splay, a line array box tipped down by its pin.
  */
-export function stackSources(sys: System, st: StackPlace): Source[] {
+export function stackSources(sys: Pick<System, "stack">, st: StackPlace): Source[] {
   const out: Source[] = [];
   let y = 0, k = 0;
   for (const id of sys.stack) {
