@@ -84,6 +84,10 @@ test("a test near its limit warns, and fails only in a file the PR changed", () 
   expect(slow("test/x.test.ts:\n(pass) y [4000.00ms]\n", "bun test --timeout 5000 test", new Set(), join(root, "apps/b"), root)[0]!.line)
     .toStartWith("::warning file=apps/b/test/x.test.ts,title=slow test::y took 4.0 s of its 5.0 s limit (80%).");
   expect(slow("ci-group: apps/b\ntest/x.test.ts:\n(fail) y [5001.00ms]\n", "bun scripts/ci-group.ts apps/b 'bun test test'", new Set(["apps/b/test/x.test.ts"]), root, root)[0]!.fail).toBe(true);
+  // On GitHub Actions bun wraps each file in ::group::, and its closing list repeats a failure with no header.
+  const actions = "::group::test/room.test.ts:\n(fail) room > walks in [239000.00ms]\n::endgroup::\n\n1 tests failed:\n(fail) room > walks in [239000.00ms]\n";
+  expect(slow(actions, "bun test", changed, join(root, "apps/a"), root).map((v) => v.line.split("::")[1]))
+    .toEqual(["error file=apps/a/test/room.test.ts,title=slow test"]);
 });
 
 test("a run past its budget is killed, process tree and all, and exits 124", async () => {

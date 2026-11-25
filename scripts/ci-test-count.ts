@@ -44,14 +44,19 @@ export const notice = (t: TestCount) => `::notice title=tests::${t.pass} pass, $
 
 const TEST_FILE = /[._](test|spec)\.[cm]?[jt]sx?$/;
 
+/** The test file a line of bun's output starts: "test/a.test.ts:", or on GitHub Actions "::group::test/a.test.ts:". */
+function header(line: string): string | undefined {
+  const m = line.match(/^(?:::group::)?(\S.*):\s*$/);
+  return m && TEST_FILE.test(m[1]!) ? normalize(m[1]!) : undefined;
+}
+
 /** The test files bun printed a header for, in order, and the last one. */
 export function reported(out: string): { seen: Set<string>; last?: string } {
   const seen = new Set<string>();
   let last: string | undefined;
-  for (const m of strip(out).matchAll(/^(\S.*):\s*$/gm)) {
-    if (!TEST_FILE.test(m[1]!)) continue;
-    last = normalize(m[1]!);
-    seen.add(last);
+  for (const line of strip(out).split("\n")) {
+    const h = header(line);
+    if (h) seen.add(last = h);
   }
   return { seen, last };
 }
@@ -85,15 +90,17 @@ export function hung(out: string, files: string[], minutes: number, parallel: bo
 export type Timing = { file: string; test: string; ms: number };
 
 /** Each test bun timed, under the file header it printed: "(pass) grp > name [1205.70ms]". A `ci-group: <dir>` line
- * starts another app, whose headers are relative to that dir. */
+ * starts another app, whose headers are relative to that dir. A file ends at `::endgroup::` and at bun's closing
+ * "1 tests failed:" list, which repeats the failures with no header. */
 export function timings(out: string): Timing[] {
   const got: Timing[] = [];
   let dir = "", file = "";
   for (const line of strip(out).split("\n")) {
     const at = line.indexOf(MARK);
     if (at >= 0) { dir = line.slice(at + MARK.length).trim(); file = ""; continue; }
-    const h = line.match(/^(\S.*):\s*$/);
-    if (h && TEST_FILE.test(h[1]!)) { file = normalize(join(dir, h[1]!)); continue; }
+    const h = header(line);
+    if (h) { file = normalize(join(dir, h)); continue; }
+    if (/^::endgroup::|^\d+ tests? (failed|skipped|todo):?\s*$/.test(line)) { file = ""; continue; }
     const t = line.match(/^\((?:pass|fail)\) (.+) \[([\d.]+)ms\]\s*$/);
     if (t && file) got.push({ file, test: t[1]!, ms: Number(t[2]) });
   }
