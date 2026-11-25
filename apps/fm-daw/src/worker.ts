@@ -15,7 +15,9 @@ import { whoIs } from "@rustybuns/util/token";
 import { APP, EQOSYS } from "./account.ts";
 import { browserIce, STUN, type IceReply } from "./guitar.ts";
 import { privateJson } from "@rustybuns/util/http";
-export { World, Lobby, Profile };
+import Listen from "./listen.ts";
+import { setFromPath } from "./dj/live-wire.ts";
+export { World, Lobby, Profile, Listen };
 
 const mintGate = new RoomMintGate();
 // A few sign-ups a minute from one address (each one a new key, so the gate counts them all).
@@ -27,6 +29,9 @@ const profileGate = new RoomMintGate(10);
 const KEY = /^[0-9a-f]{32,64}$/;
 // Relay passes a minute from one address: a page asks once when it opens, and again only after half a day.
 const iceGate = new RoomMintGate(6);
+// Listen links one address goes live on a minute (one per DJ; a few for a DJ trying tabs), and listeners it opens.
+const liveGate = new RoomMintGate(3);
+const earGate = new RoomMintGate(30);
 /** How long a relay pass lasts. A call set up on it stays up; a page asks again before it runs out. */
 export const ICE_TTL_S = 86_400;
 
@@ -36,6 +41,8 @@ interface Env extends WorldEnv {
   LOBBY: NonNullable<WorldEnv["LOBBY"]>;
   /** One per person: their name and chat layout (src/profile.ts). */
   PROFILE: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** One per live set: relays the DJ's stream to its listen link (src/listen.ts). */
+  LISTEN: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** Where eqosys is (a test's or a local one); unset, the live one. */
   EQOSYS_URL?: string;
   /** Bearer token for GET /signups. Unset, the list can't be read from outside. */
@@ -117,6 +124,14 @@ export default {
       const out = new Response(r.body, r);
       if (req.method === "GET") for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
       return out;
+    }
+    const set = setFromPath(url.pathname);
+    if (set) {
+      // the page at /listen/<id>; its socket at /listen/<id>/ws (?dj=<key> for the DJ going live)
+      if (!url.pathname.endsWith("/ws")) return env.ASSETS.fetch(new Request(new URL("/listen.html", url), req));
+      const dj = url.searchParams.has("dj");
+      if (ip && !(dj ? liveGate : earGate).allow(ip, dj ? set : crypto.randomUUID(), Date.now())) return new Response("try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
+      return env.LISTEN.get(env.LISTEN.idFromName(set)).fetch(req);
     }
     if (seshFromPath(url.pathname)) return env.ASSETS.fetch(new Request(new URL("/", url), req));
     if (url.pathname === "/me" && (req.method === "GET" || req.method === "PUT")) {

@@ -46,6 +46,24 @@ function pickType(): string {
   return "";
 }
 
+/** The tracks coming in, tick by tick: a deck brought in, or a new track on a deck already in. REC and going live both
+ *  keep their track list with one. */
+export class CueWatch {
+  /** What each deck had in the mix at the last tick (null: not heard). */
+  private inMix: [string | null, string | null] = [null, null];
+  reset() { this.inMix = [null, null]; }
+  /** The tracks newly heard now, `at` seconds into the set. */
+  tick(decks: readonly [OnAir, OnAir], xfader: number, curve: Curve, at: number): Cue[] {
+    const out: Cue[] = [];
+    decks.forEach((d, i) => {
+      const side = i as 0 | 1, name = heard(d, xfader, curve) ? d.name : null;
+      if (name && name !== this.inMix[side]) out.push({ at, side, name, ...(d.tube ? { tube: true } : {}) });
+      this.inMix[side] = name;
+    });
+    return out;
+  }
+}
+
 /** One take at a time. `start` begins recording `stream`; `tick` (a few times a second) notes each deck coming in. */
 export class SetRecorder {
   private rec: MediaRecorder | null = null;
@@ -53,8 +71,7 @@ export class SetRecorder {
   private t0 = 0;
   private started = new Date();
   private cues: Cue[] = [];
-  /** What each deck had in the mix at the last tick (null: not heard). */
-  private inMix: [string | null, string | null] = [null, null];
+  private watch = new CueWatch();
 
   get on(): boolean { return !!this.rec; }
   /** Seconds since the take started (0 when not recording). */
@@ -67,17 +84,12 @@ export class SetRecorder {
     this.chunks = [];
     this.rec.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
     this.rec.start(1000);
-    this.t0 = now; this.started = new Date(); this.cues = []; this.inMix = [null, null];
+    this.t0 = now; this.started = new Date(); this.cues = []; this.watch.reset();
   }
 
   /** Each deck now: a track newly heard (a deck brought in, or a new track on a deck already in) goes on the list. */
   tick(decks: readonly [OnAir, OnAir], xfader: number, curve: Curve, now = performance.now()) {
-    if (!this.rec) return;
-    decks.forEach((d, i) => {
-      const side = i as 0 | 1, name = heard(d, xfader, curve) ? d.name : null;
-      if (name && name !== this.inMix[side]) this.cues.push({ at: this.seconds(now), side, name, ...(d.tube ? { tube: true } : {}) });
-      this.inMix[side] = name;
-    });
+    if (this.rec) this.cues.push(...this.watch.tick(decks, xfader, curve, this.seconds(now)));
   }
 
   /** Stop: the take, once the last of the sound is written. */

@@ -18,6 +18,8 @@ export default defineConfig({
     LOBBY: { type: "durable_object", className: "Lobby" },
     // Online only: one per person, their chat name and chat layout (src/profile.ts).
     PROFILE: { type: "durable_object", className: "Profile" },
+    // Online only: one per live set, relaying the DJ's stream to its listen link (src/listen.ts, #5878).
+    LISTEN: { type: "durable_object", className: "Listen" },
     // Every sesh's groove, copied out of its World, so a reset Durable Object gets it back.
     BACKUP: { type: "r2", bucketName: "fm-daw-seshes", protect: true },
     // Rooms open at once, seshes kept at all (the storage cap), and players in one room.
@@ -25,6 +27,8 @@ export default defineConfig({
     MAX_ROOMS: { type: "var", value: "50" },
     MAX_SESHES: { type: "var", value: "2000" },
     ROOM_SEATS: { type: "var", value: "16" },
+    // Listeners one live set takes at once (src/listen.ts).
+    LISTEN_EARS: { type: "var", value: "200" },
     // Reads the sign-up list (GET /signups with "Authorization: Bearer <token>"). Missing, nobody can.
     SIGNUPS_TOKEN: { type: "secret", op: "op://fm-daw/signups/password", optional: true },
     // Cloudflare Realtime's TURN key, so two players behind strict networks still hear each other's guitar (GET /ice,

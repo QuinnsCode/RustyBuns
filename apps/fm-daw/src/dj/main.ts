@@ -57,6 +57,9 @@ const harness = {
     const bpm = windows.map(([a, b]) => detectGrid(mono.slice(Math.round(a * buf.sampleRate), Math.round(b * buf.sampleRate)), buf.sampleRate)?.bpm ?? null);
     return { type: take.type, bytes: take.audio.size, seconds: take.seconds, decoded: buf.duration, cues: take.cues, list: take.list, name: take.name, bpm };
   },
+  /** Go live on this browser's listen link (true once streaming), or stop; `liveState` reads the link and listeners. */
+  live: (on: boolean, name?: string) => start().live(on, name),
+  liveState: () => panel?.liveState() ?? null,
   loop: (side: Side, beats: number | null) => panel?.decks.decks[side].setLoop(beats),
   hot: (side: Side, i: number) => panel?.decks.decks[side].hotCue(i, true),
   pitch: (side: Side, p: number) => panel?.decks.decks[side].setPitch(p),
