@@ -646,7 +646,7 @@ export class MoveFx {
    * wide as it sweeps (sim `sweep`). It fades in while the swing still turns to follow, and its rim flares near white the
    * moment it locks (sim LUNGE.lock), the beat to step out of it; it flashes on the live frames and is gone after. */
   private arc(f: Fighter, o: Fighter, i: number) {
-    const phase = f.onGround ? swingPhase(f) : null, act = f.act;
+    const phase = f.onGround ? swingPhase(f, o) : null, act = f.act;
     let a = this.arcs[i];
     if (!phase || !act) { if (a) a.fill.visible = a.rim.visible = false; return; }
     const { reach, ahead } = sweep(f, o, act.move.slot), inner = f.b.radius, outer = reach - o.b.radius, half = Math.acos(ahead);

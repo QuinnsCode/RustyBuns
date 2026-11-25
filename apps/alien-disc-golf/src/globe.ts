@@ -1,4 +1,4 @@
-// The planet in three.js: a dark globe with Natural Earth coastlines, wind drawn as streaks that ride the
+// The planet in three.js: a globe of dark land and real-looking sea (ocean.ts) with Natural Earth coastlines, wind drawn as streaks that ride the
 // chosen level of NOAA's grid, the hole's tee, basket and fairway, the throw's still-air ghost line, and the
 // disc with its trail. The camera orbits (drag) and eases towards whatever it's told to look at.
 import * as THREE from "three";
@@ -8,6 +8,7 @@ import type { Country } from "./countries.ts";
 import { arc, destination, toLatLon, toVec, type LatLon } from "./geo.ts";
 import { sampleWind, type WindLevel } from "./grib2.ts";
 import { BASKET_KM } from "./course.ts";
+import { PlanetSkin } from "./ocean.ts";
 import { DISC_KM, EARTH_KM } from "./geo.ts";
 
 const PARTICLES = 3200;
@@ -23,6 +24,7 @@ export class Globe {
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private sphere: THREE.Mesh;
+  private skin: PlanetSkin;
   private outlines: THREE.LineSegments | null = null;
   private streaks: THREE.LineSegments;
   private streakPos: Float32Array;
@@ -73,7 +75,8 @@ export class Globe {
     this.scene.add(sun);
     this.scene.add(stars(this.rnd));
 
-    this.sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 72, 48), new THREE.MeshPhongMaterial({ color: 0x0c1c30, specular: 0x1a3a5c, shininess: 18 }));
+    this.skin = new PlanetSkin(sun.position);
+    this.sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), this.skin.material);
     this.scene.add(this.sphere);
     const glow = new THREE.Mesh(new THREE.SphereGeometry(1.035, 48, 32), new THREE.MeshBasicMaterial({ color: 0x3fa9c9, transparent: true, opacity: 0.08, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.scene.add(glow);
@@ -164,6 +167,7 @@ export class Globe {
         pts.push(a.x, a.y, a.z, b.x, b.y, b.z);
       }
     }
+    this.skin.setLand(list);
     if (this.outlines) this.scene.remove(this.outlines);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
@@ -244,6 +248,7 @@ export class Globe {
       if (dir.distanceTo(this.want) < 0.002) this.want = null;
     }
     this.controls.update();
+    this.skin.tick(dt, this.camera.position.length());
     this.advect(dt);
     this.renderer.render(this.scene, this.camera);
   }

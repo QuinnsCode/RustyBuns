@@ -187,7 +187,7 @@ pub fn walk_fighter(m: &Match, f: &Fighter, h: &mut impl Sink) {
     h.num(f.buf.map_or(-1.0, |b| key(b.0)));
     h.num(f.buf.map_or(0.0, |b| b.1));
     h.flag(f.hop);
-    for x in [f.ring, f.spin, f.orbit, f.bearing, f.red, f.hurt] {
+    for x in [f.ring, f.spin, f.orbit, f.bearing, f.red, f.hurt, f.heat] {
         h.num(x);
     }
     h.flag(f.fresh);
@@ -277,7 +277,7 @@ pub fn load_fighter(m: &mut Match, side: usize, s: &[f64]) -> Result<(), String>
     let buf_key = r.index(KEYS.len(), "buffered key")?;
     let buf_left = r.num()?;
     let hop = r.flag()?;
-    let (ring, spin, orbit, bearing, red, hurt) = (r.num()?, r.num()?, r.num()?, r.num()?, r.num()?, r.num()?);
+    let (ring, spin, orbit, bearing, red, hurt, heat) = (r.num()?, r.num()?, r.num()?, r.num()?, r.num()?, r.num()?, r.num()?);
     let (fresh, drop) = (r.flag()?, r.num()?);
     let team = r.index(2, "team")?.ok_or("fighter: team")?;
     let down = r.flag()?;
@@ -342,6 +342,7 @@ pub fn load_fighter(m: &mut Match, side: usize, s: &[f64]) -> Result<(), String>
     f.hop = hop;
     (f.team, f.down) = (team, down);
     (f.ring, f.spin, f.orbit, f.bearing, f.red, f.hurt, f.fresh, f.drop) = (ring, spin, orbit, bearing, red, hurt, fresh, drop);
+    f.heat = heat;
     f.marks = Marks {
         dot,
         dot_per,

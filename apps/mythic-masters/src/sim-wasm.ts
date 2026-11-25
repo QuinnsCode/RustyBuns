@@ -25,7 +25,7 @@ export function walkFighter(m: Match, f: Fighter, n: Sink) {
   n(STATES.indexOf(f.state)); n(f.t); n(f.stun); n(f.clipped); flag(f.flying); flag(f.onGround); n(f.airJumps); flag(f.rise); flag(f.exhausted); n(f.invuln);
   n(f.buf ? key(f.buf.k) : -1); n(f.buf ? f.buf.left : 0);
   flag(f.hop);
-  n(f.ring); n(f.spin); n(f.orbit); n(f.bearing); n(f.red); n(f.hurt);
+  n(f.ring); n(f.spin); n(f.orbit); n(f.bearing); n(f.red); n(f.hurt); n(f.heat);
   flag(f.fresh); n(f.drop); n(f.team); flag(f.down);
   const k = f.marks;
   n(k.dot); n(k.dotPer); n(k.dotField ? FIELDS.indexOf(k.dotField) : -1); n(k.chill); n(k.root);
@@ -106,7 +106,7 @@ export function readInto(m: Match, s: ArrayLike<number>): Spans {
     const bk = n(), left = n();
     f.buf = bk < 0 ? null : { k: KEYS[bk] as NonNullable<Fighter["buf"]>["k"], left };
     f.hop = flag();
-    f.ring = n(); f.spin = n(); f.orbit = n(); f.bearing = n(); f.red = n(); f.hurt = n();
+    f.ring = n(); f.spin = n(); f.orbit = n(); f.bearing = n(); f.red = n(); f.hurt = n(); f.heat = n();
     f.fresh = flag(); f.drop = n(); f.team = n() ? 1 : 0; f.down = flag();
     const k = f.marks;
     k.dot = n(); k.dotPer = n();

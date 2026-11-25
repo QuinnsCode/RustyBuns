@@ -214,6 +214,11 @@
         "line": "A small business site on the built-in CMS: its words and news posts are JSON files you edit as forms and translate, with no code to touch."
       },
       {
+        "app": "hemyviz",
+        "name": "hemyviz",
+        "line": "Your Alchemy deployments, drawn live: every stack, every stage, every resource, in 2D, 2.5D and 3D, five ways each."
+      },
+      {
         "app": "load-in",
         "name": "Sound Guy Simulator",
         "line": "A first-person sound-crew sim on real numbers: carry the gear at its real weight, bowl out rolls of cable that weigh what cable weighs, wire power and signal, and aim the speakers, from a garage to an arena."
