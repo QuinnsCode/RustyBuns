@@ -8,6 +8,8 @@ import type { Gear } from "@rustybuns/gear";
 import type { Netlist } from "@rustybuns/gear/circuit";
 import { Rig } from "@rustybuns/gear/circuit";
 import { Bad } from "@rustybuns/util/guard";
+import type { PedalDef } from "./amps.ts";
+import type { Swaps } from "./circuits.ts";
 import { boardPots, netlistOf, readBoard, type Board, type BoardOptions, type BoardPot } from "./tscircuit.ts";
 
 /** A board that plays: the box, its knobs, and its netlist at any turn of them (0 to 1 by pot name). */
@@ -46,6 +48,24 @@ function tryPlay(net: Netlist): string | number {
   return peak;
 }
 
+/**
+ * Why a circuit won't play at each of its knob turns (none: it plays). `at(t)` is its netlist with every knob at `t`
+ * (0, 0.5 and 1; just 0 with `knobs` false). A circuit that solves but puts nothing out of OUT doesn't play either.
+ */
+export function wontPlay(at: (t: number) => Netlist, knobs = true): string[] {
+  const why: string[] = [];
+  let loudest = 0;
+  for (const t of knobs ? [0, 0.5, 1] : [0]) {
+    let n: Netlist;
+    try { n = at(t); } catch (e) { return [errText(e)]; }
+    const played = tryPlay(n);
+    if (typeof played === "number") loudest = Math.max(loudest, played);
+    else why.push(knobs ? `with every knob at ${t * 10}: ${played}` : played);
+  }
+  if (why.length) return [...new Set(why)];
+  return loudest < 1e-4 ? ["nothing comes out of OUT: is it joined to IN, and does each supply net have its volts (the bench's supplies)?"] : [];
+}
+
 /** A tscircuit board's JSON as a pedal, or why it isn't one. `name` defaults to the board's file name, if the caller has one. */
 export function bench(json: unknown, o: BoardOptions & { name?: string } = {}): Bench {
   let board: Board;
@@ -58,17 +78,8 @@ export function bench(json: unknown, o: BoardOptions & { name?: string } = {}): 
   for (const want of [o.input ?? "IN", o.output ?? "OUT"]) if (!names.has(want)) why.push(`no net called ${want}: wire the jack to net.${want}`);
   if (why.length) return { ok: false, why };
   // Every knob at one turn: down, centred, up. A pedal has to play at all three.
-  let loudest = 0;
-  for (const t of [0, 0.5, 1]) {
-    let n: Netlist;
-    try { n = net(Object.fromEntries(knobs.map((k) => [k.name, t]))); } catch (e) { return { ok: false, why: [errText(e)] }; }
-    const played = tryPlay(n);
-    if (typeof played === "number") loudest = Math.max(loudest, played);
-    else why.push(knobs.length ? `with every knob at ${t * 10}: ${played}` : played);
-    if (!knobs.length) break;
-  }
-  if (why.length) return { ok: false, why: [...new Set(why)] };
-  if (loudest < 1e-4) return { ok: false, why: ["nothing comes out of OUT: is it joined to IN, and does each supply net have its volts (the bench's supplies)?"] };
+  why.push(...wontPlay((t) => net(Object.fromEntries(knobs.map((k) => [k.name, t]))), knobs.length > 0));
+  if (why.length) return { ok: false, why };
   const name = o.name?.trim() || "Bench pedal";
   const mm = board.mm ?? { w: 60, h: 45 };
   const gear: Gear = {
@@ -81,3 +92,6 @@ export function bench(json: unknown, o: BoardOptions & { name?: string } = {}): 
   };
   return { ok: true, pedal: { gear, knobs, net } };
 }
+
+/** Why one of the app's pedals won't play with the player's parts in it (none: it plays), its knob down, centred and up. */
+export const swapWontPlay = (def: PedalDef, swaps: Swaps): string[] => wontPlay((t) => def.net(t * 10, swaps));

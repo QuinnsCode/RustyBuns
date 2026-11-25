@@ -2,8 +2,9 @@
 // pedal that's on, or the amp's first tube stage), drawn by tscircuit
 // (`bun scripts/boards.ts`), with the parts that bend the signal glowing with it.
 // The diode pairs and capacitors are sockets, the way kit builders socket parts
-// to try them: click one, pick another part, and hear it while you play.
-import { BOARDS, CAP_STEPS, CLIPPERS, capValue, farads, sockets, type BoardId, type Socket, type Swaps } from "../circuit/circuits.ts";
+// to try them, and each fixed resistor takes another value: click one, pick another
+// part, and hear it while you play (once the bench has found it still plays).
+import { BOARDS, STEPS, CLIPPERS, stepValue, farads, ohms, sockets, type BoardId, type Socket, type Swaps } from "../circuit/circuits.ts";
 import "./board.css";
 import { h } from "./dom.ts";
 import { icon } from "./icons.ts";
@@ -25,8 +26,12 @@ const isBoard = (b: string): b is BoardId => Object.hasOwn(BOARDS, b);
 export function holding(s: Socket, swaps: Swaps): string {
   const v = swaps[s.id];
   if (s.kind === "clipper") return v && Object.hasOwn(CLIPPERS, v) ? CLIPPERS[v as keyof typeof CLIPPERS].label : CLIPPERS.silicon.label;
-  return farads(capValue(s.farads, CAP_STEPS.some((x) => x === v) ? Number(v) : 1));
+  return valueAt(s, STEPS.some((x) => x === v) ? Number(v) : 1);
 }
+
+/** A capacitor's or resistor's printed value at one of `STEPS`. */
+const valueAt = (s: Exclude<Socket, { kind: "clipper" }>, step: number): string =>
+  s.kind === "cap" ? farads(stepValue(s.farads, step)) : `${ohms(stepValue(s.ohms, step))}Ω`;
 
 /** Crops an SVG to what's drawn on it (tscircuit leaves a wide margin), less its background. */
 function fit(svg: SVGSVGElement | null): void {
@@ -91,7 +96,7 @@ export class BoardView {
     if (o.pcb !== this.pcb || o.schematic !== this.schematic || board !== this.board) { this.pcb = o.pcb ?? null; this.schematic = o.schematic ?? null; this.drawn = ""; }
     this.sockets = swaps && isBoard(board) ? sockets(board) : [];
     const changed = swaps ? this.sockets.filter((s) => swaps[s.id] !== undefined).length : 0;
-    this.hint.textContent = swaps ? (changed ? `your version · ${changed} part${changed > 1 ? "s" : ""} swapped` : "click a diode or capacitor to swap it") : "set by the amp · switch a pedal on to swap parts";
+    this.hint.textContent = swaps ? (changed ? `your version · ${changed} part${changed > 1 ? "s" : ""} changed` : "click a diode, capacitor or resistor to change it") : "set by the amp · switch a pedal on to swap parts";
     if (o.hint) this.hint.textContent = o.hint;
     this.reset.hidden = !swaps || this.readOnly;
     this.reset.disabled = !changed;
@@ -164,8 +169,8 @@ export class BoardView {
     };
     const items = s.kind === "clipper"
       ? Object.entries(CLIPPERS).map(([id, c]) => item(c.label, c.note, id, (now ?? "silicon") === id))
-      : CAP_STEPS.map((step) => item(farads(capValue(s.farads, Number(step))), step === "1" ? "stock" : Number(step) < 1 ? "smaller" : "bigger", step, (now ?? "1") === step));
-    this.menu.replaceChildren(h("div", "socket-head", s.kind === "clipper" ? `Clipper ${s.parts.join(" ")}` : `Capacitor ${s.id}`), ...items);
+      : STEPS.map((step) => item(valueAt(s, Number(step)), step === "1" ? "stock" : Number(step) < 1 ? "smaller" : "bigger", step, (now ?? "1") === step));
+    this.menu.replaceChildren(h("div", "socket-head", s.kind === "clipper" ? `Clipper ${s.parts.join(" ")}` : `${s.kind === "cap" ? "Capacitor" : "Resistor"} ${s.id}`), ...items);
     // Under the part, inside the view.
     const box = g.getBoundingClientRect(), view = this.el.getBoundingClientRect();
     this.menu.hidden = false;

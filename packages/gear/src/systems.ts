@@ -76,9 +76,8 @@ export const SYSTEMS: Record<SystemId, System> = {
 /** How many amp channels a passive box takes: one a way, as each family's sheet wires it (the three-way tops tri-amped,
  *  the horn stack's mid-high horn two ways); one for a box left out. A powered box brings its own amps: none. */
 const WAYS: Record<string, number> = { "stack-mid-high": 2, "synergy-horn": 3, "sculpted-3way": 3, "tri-amp-top": 3 };
-/** The amp channels one box takes: none for a powered box or a dolly, else one a way. */
+/** The amp channels one box takes: one a way of a passive box, none for a powered box or a dolly. */
 export const boxChannels = (id: string): number => (id === "sand-dolly" || !(gear(id).jacks["speaker-in"] ?? 0) ? 0 : WAYS[id] ?? 1);
-
 /** The amp channels `stacks` stacks of rig `s` take, from its passive boxes. */
 export function ampChannels(s: System, stacks: number): number {
   return s.stack.reduce((n, b) => n + boxChannels(b), 0) * stacks;

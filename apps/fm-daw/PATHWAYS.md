@@ -6,14 +6,16 @@ a path through the same pieces: the desk (FM DAW), the 3D rooms, the DJ decks, t
 where they come in, the steps they take, what works today and what is missing. Work on Qollab Studio should make one
 of these walks shorter or less broken. When a step changes, change its line here.
 
+Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
+
 | Path | Who | Door | Works end to end today? |
 |---|---|---|---|
-| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | No: help for keys only, no guided setup |
-| [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | `/` | Yes, one loop at a time (no song mode yet) |
-| [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | `/jam.html` | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Yes: into the room, to a file, and out of your sound card to any stream app; no link of our own |
-| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | `/rooms.html` | Partly: room acoustics and a rig pick, no coverage map or gear list |
-| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | `/amp.html`, the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
+| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | Learn the setup: `/studio.html`, the gear room (plug the guitar into an amp); the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
+| [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | Make a track: `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
+| [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
+| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, and out of your sound card to any stream app; no link of our own |
+| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Partly: room acoustics and a rig pick, no coverage map or gear list |
+| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, change parts, download a kit with your parts; nothing built yet |
 
 All six share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
 move from one path to the next without starting over: the pedal you built in path 6 is gear on the floor in path 3,
@@ -30,13 +32,13 @@ the rig you planned in path 5 is the PA your set plays through in path 4.
 4. Finish, and the lesson's rig stays as their own room to keep playing in.
 
 **Works today:**
+- Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
 - Sound Guy Simulator (`apps/load-in`) already teaches load-in, cabling and aiming speakers as a game, level by level.
 
-**Missing:** no guided lessons in Qollab Studio itself. The help card says which key does what, not how to set
-anything up ([#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)). Lessons should reuse Sound Guy Simulator's step checks (`next.ts`, `assists.ts`) rather than write new ones.
+**Missing:** lessons past the first three (gain-staging a desk, why a room rings), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
 
 ## 2. Make a track (the DAW)
 
@@ -112,14 +114,22 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2, in part: an open-air room picks one of five rigs (`@rustybuns/gear` `SYSTEMS`); the rig cards (`rig-cards.ts`) draw each to scale.
-- Step 3, in part: ring time and a clap at each seat; the gear package has `coverage` and each box's spec sheet.
+- Step 2: an open-air room picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
+  scale). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
+  tops and sets a line array's pins (#5863).
+- Step 3: the Coverage button draws the PA's mids and highs over the floor on the blueprint (`src/studio/coverage.ts`),
+  and the PA panel gives the floor's level and how even it is. It is `@rustybuns/gear`'s `coverage` of the very boxes
+  `pa-room.ts` plays the set from (`paSources`), so the map is what you hear on Walk in. Ring time and a clap at each seat.
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
-- Step 5: `@rustybuns/gear` works out amps, breakers and generator load (Sound Guy Simulator uses it).
-- Sound Guy Simulator already has aiming and a coverage heat map on the floor in several venues.
+- Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
+  breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
+- Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
+  and the power plan (`gearList`); **Plan drawing** saves the blueprint with the coverage map on it as an SVG.
+- `window.qrooms`: `pa()`, `level(x, z)`, `pickStack(i)`, `showMap()`, `download("list" | "plan")`; the journey is
+  `test/pa-builder.test.ts`.
 
-**Missing:** placing and aiming stacks by hand in the builder, the coverage map there, and step 6 (gear list,
-power plan, a printable plan): [#5863](https://github.com/QuinnsCode/RustyBuns/issues/5863).
+**Missing** ([#5883](https://github.com/QuinnsCode/RustyBuns/issues/5883)): stacks you place indoors (a room's PA is still a stack either side of the decks), the delay from far
+stacks on the map, and the coverage map in the 3D view.
 
 ## 6. Build the circuit (tscircuit to your hands)
 
@@ -128,21 +138,31 @@ power plan, a printable plan): [#5863](https://github.com/QuinnsCode/RustyBuns/i
 **The walk:**
 1. Play it: Q Amp (`/amp.html`) and the pedal wall, the sound wall in the gear room (`/studio.html`). Each pedal and
    module is a real circuit solved as you play ([CIRCUITS.md](CIRCUITS.md), [WALL.md](WALL.md)).
-2. Change it: swap parts (clipping diodes, caps) and hear the change.
+2. Change it: open the board view, click a part and pick another: a clipper's diodes, a capacitor's or a resistor's
+   value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
+   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
-   number for every part), the front panel and a plain-words build sheet (`src/kit/`).
+   number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
+   carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
+   sheet says so.
 5. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
 6. Close the loop: record the built board, play the same riff through the sim, compare.
 
 **Works today:** steps 1 to 4. Step 5 is by hand with the files from step 4.
 
 **Missing:**
-- Editing a board happens in the repo (`circuits/<board>.tsx`, then `bun scripts/boards.ts <board>`), not in the app ([#5864](https://github.com/QuinnsCode/RustyBuns/issues/5864)). tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
+  `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
 - No board has been built yet, so step 6 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).
 
 ## The front door
 
-Today the doors are separate pages, and a newcomer lands on whichever link they were sent. The paths only feel like
-one product when the front door names all six and each one opens on its first step. That door is [#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860).
+`/door.html` names all six paths, each a card with a Lucide icon, a short name and a line on what you do there, and
+each card opens on that path's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only the jam
+room asks you to sign in; the rest work signed out. Every page has a way back: **Paths** first in the row of doors
+along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
+(`mountBack`). `qdoor.state()` for probes; `test/front-door.test.ts` walks every card to its first step and back at
+phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.
