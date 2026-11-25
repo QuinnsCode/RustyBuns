@@ -23,7 +23,7 @@ import { cotton, drape, rugs, tapestry } from "./tapestry.ts";
 import { wallMaterial, type Material } from "./sound.ts";
 
 /** What the pointer is over. */
-export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { side: Side; at?: [number, number] } | { floor: true } | null;
+export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { stack: number } | { side: Side; at?: [number, number] } | { floor: true } | null;
 /** The room's look for a prop: what it's made of, from the look's surfaces. */
 const propMat = (name: string, color: string) => surface(name, color);
 /** The outside walls: cut down on the sides toward you, all cut down, or all standing. */
@@ -136,7 +136,7 @@ export class BuildView {
     // out of doors there are no walls: the rig's stacks and the rugs stand on the sand instead
     if (room.outdoor) {
       const rig = roomRig(room);
-      for (const st of rigStacks(room)) this.root.add(paStack(st.at, st.yaw, undefined, rig.stack));
+      for (const [i, st] of rigStacks(room).entries()) add(new THREE.Group().add(paStack(st.at, st.yaw, undefined, rig.stack, st.splay, st.pins)), `stack:${i}`, { stack: i });
       this.root.add(rugs(room.outdoor));
       // the fire pit and the parked vans, as the room stands them
       if (room.outdoor.fire) { const f = firePit(room.outdoor.seed + 5).group; f.position.set(room.outdoor.fire.at[0], 0, room.outdoor.fire.at[1]); this.root.add(f); }
@@ -262,7 +262,7 @@ export class BuildView {
   private hovered: string | null = null;
   /** Outline what the pointer is over (a hit's key: `spot:<id>`, `prop:<i>`, `wall:<i>`, `booth:<id>`, `gear`, `door`), or nothing. */
   hover(hit: Hit) {
-    const key = !hit ? null : "spot" in hit ? `spot:${hit.spot}` : "prop" in hit ? `prop:${hit.prop}` : "wall" in hit ? `wall:${hit.wall}` : "booth" in hit ? `booth:${hit.booth}` : "gear" in hit ? "gear" : "door" in hit ? "door" : null;
+    const key = !hit ? null : "spot" in hit ? `spot:${hit.spot}` : "prop" in hit ? `prop:${hit.prop}` : "wall" in hit ? `wall:${hit.wall}` : "booth" in hit ? `booth:${hit.booth}` : "gear" in hit ? "gear" : "door" in hit ? "door" : "stack" in hit ? `stack:${hit.stack}` : null;
     if (key === this.hovered) return;
     this.hovered = key;
     if (this.outline) { this.preview.remove(this.outline); this.outline.dispose(); this.outline = null; }
