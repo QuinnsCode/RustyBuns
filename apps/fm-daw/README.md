@@ -4,7 +4,7 @@
 
 **Live:** https://fm-daw.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
-**Six ways in** (Qollab Studio's customer paths: learn the setup, make a track, jam with friends, DJ and stream, plan a sound system, build the circuit): [PATHWAYS.md](PATHWAYS.md).
+**Six ways in** (Qollab Studio's customer paths: learn the setup, make a track, jam with friends, DJ and stream, plan a sound system, build the circuit): [PATHWAYS.md](PATHWAYS.md). The front door, https://fm-daw.notryanquinn.workers.dev/door.html, names all six and opens each on its first step; every page's **Paths** button (the house, on the decks and the builder) brings you back to it.
 
 ## Use it
 

@@ -2,10 +2,12 @@
 // Q Amp, the FM DAW desk, the remote). Each page draws the same row of doors (`mountWay`), and a door carries the room you came from
 // (?room, ?studio, ?name), so the jam room's door brings you back into the same sesh. Pure up to `mountWay`.
 import { EQOSYS } from "./account.ts";
+import { DOOR, DOOR_OPEN, iconSvg } from "./paths.ts";
 
-export type Here = "character" | "jam" | "gear" | "amp" | "desk" | "remote";
+export type Here = "paths" | "character" | "jam" | "gear" | "amp" | "desk" | "remote";
 /** Each place, its page and the word on its door. The lobby and the jam room are one page (jam.html): no ?room is the lobby. */
 export const PLACES: Record<Here, { page: string; label: string; title: string }> = {
+  paths: { page: DOOR, label: "Paths", title: "Qollab Studio's front door: the six paths" },
   character: { page: `${EQOSYS}/?tab=account`, label: "Character", title: "Your character, on eqosys" },
   jam: { page: "/jam.html", label: "Jam room", title: "Qollab Studio: the jam room (the lobby when you're not in a room)" },
   gear: { page: "/studio.html", label: "Gear room", title: "Qollab Studio: the gear room, amps and pedals to cable" },
@@ -13,15 +15,15 @@ export const PLACES: Record<Here, { page: string; label: string; title: string }
   desk: { page: "/", label: "Desk", title: "Qollab Studio: the FM DAW desk" },
   remote: { page: "/remote.html", label: "Remote", title: "Qollab Studio: the remote, one screen for a phone (master faders and the instrument you're at)" },
 };
-const ORDER: Here[] = ["character", "jam", "gear", "amp", "desk", "remote"];
+const ORDER: Here[] = ["paths", "character", "jam", "gear", "amp", "desk", "remote"];
 const KEEP = ["room", "studio", "name"];
 
-/** The doors from `here`: every other place, carrying the room in `search` along (never to eqosys, which needs none). */
+/** The doors from `here`: every other place, carrying the room in `search` along (never to eqosys or the front door, which need none). */
 export function doors(here: Here, search: string): { to: Here; href: string; label: string; title: string }[] {
   const q = new URLSearchParams(search), keep = new URLSearchParams();
   for (const k of KEEP) { const v = q.get(k); if (v) keep.set(k, v); }
   const tail = keep.size ? `?${keep}` : "";
-  return ORDER.filter((p) => p !== here).map((to) => ({ to, href: to === "character" ? PLACES[to].page : PLACES[to].page + tail, label: PLACES[to].label, title: PLACES[to].title }));
+  return ORDER.filter((p) => p !== here).map((to) => ({ to, href: to === "character" || to === "paths" ? PLACES[to].page : PLACES[to].page + tail, label: PLACES[to].label, title: PLACES[to].title }));
 }
 
 /** Draws the row of doors along the top of the page, once. With `character`, the Character door opens it over the page
@@ -47,4 +49,31 @@ export function mountWay(here: Here, o: { character?: () => void } = {}) {
     nav.append(d.el);
   }
   document.body.append(nav);
+}
+
+/** The way back to the front door alone, for a page with no row of doors (the decks, the studio builder): a round
+ * door button in a corner, out of the way of the page's own header (`corner`: bottom-left, or top-left while the
+ * decks' start button is all there is). Given `into`, it moves to the front of that element once the page draws it
+ * (the decks' header), so it never sits over a control. */
+export function mountBack(o: { corner?: "top" | "bottom"; into?: string } = {}) {
+  if (document.getElementById("qs-back")) return;
+  const a = document.createElement("a");
+  a.id = "qs-back"; a.href = DOOR; a.title = PLACES.paths.title; a.setAttribute("aria-label", PLACES.paths.title);
+  a.innerHTML = iconSvg(DOOR_OPEN, 18);
+  const look = "display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:999px;background:rgba(21,23,27,.82);color:#f4f1ea;";
+  const y = o.corner === "top" ? "top:calc(10px + env(safe-area-inset-top))" : "bottom:calc(10px + env(safe-area-inset-bottom))";
+  a.style.cssText = `position:fixed;left:calc(10px + env(safe-area-inset-left));${y};z-index:60;box-shadow:0 2px 8px rgba(0,0,0,.35);${look}`;
+  document.body.append(a);
+  const sel = o.into;
+  if (!sel) return;
+  const settle = () => {
+    const host = document.querySelector(sel);
+    if (!host) return false;
+    a.style.cssText = look;
+    host.prepend(a);
+    return true;
+  };
+  if (settle()) return;
+  const watch = new MutationObserver(() => { if (settle()) watch.disconnect(); });
+  watch.observe(document.body, { childList: true, subtree: true });
 }
