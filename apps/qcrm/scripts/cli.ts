@@ -48,8 +48,9 @@ export async function cli(argv: string[], o: { url: string; key?: string; org?: 
     if (!args.org) {
       // The key's own org: one call to get_me.
       const me: unknown = await (await send(new Request(`${o.url}/api/me`, { headers }))).json().catch(() => null);
-      const orgs: unknown = me && typeof me === "object" ? Reflect.get(me, "orgs") : null;
-      const first: unknown = Array.isArray(orgs) && orgs[0] && typeof orgs[0] === "object" ? Reflect.get(orgs[0], "id") : null;
+      const orgs: unknown = me && typeof me === "object" && "orgs" in me ? me.orgs : null;
+      const org: unknown = Array.isArray(orgs) ? orgs[0] : null;
+      const first: unknown = org && typeof org === "object" && "id" in org ? org.id : null;
       if (typeof first !== "string") { io.err("no org: set QCRM_ORG or pass --org (is QCRM_KEY set?)"); return 1; }
       args.org = first;
     }

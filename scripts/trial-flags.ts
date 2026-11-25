@@ -66,7 +66,7 @@ export function parseDenials(ndjson: string, tag: string): Denials {
     if (!msg.includes(tag)) continue;
     const m = msg.match(/Sandbox: (.+?)\(\d+\) deny\(\d+\) ([\w*-]+)(?: (.+?))?(?:\n|$)/);
     if (!m) continue;
-    const [, proc, op, target = ""] = m as unknown as [string, string, string, string?];
+    const [, proc = "", op = "", target = ""] = m;
     if (op.startsWith("network-outbound")) {
       if (/^(localhost|127\.|::1|\[::1\])/.test(target) || target.startsWith("/")) continue;
       // the kernel hides the address ("remote:*:443"), and sometimes logs none at all

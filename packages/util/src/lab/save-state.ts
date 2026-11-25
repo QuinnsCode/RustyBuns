@@ -45,7 +45,7 @@ function sameShape<S extends object>(like: S, v: unknown): v is S {
   if (kind(v) !== kind(like) || typeof v !== "object" || v === null) return false;
   for (const [k, want] of Object.entries(like)) {
     if (want === undefined) continue;
-    const got: unknown = Reflect.get(v, k);
+    const got: unknown = Object.getOwnPropertyDescriptor(v, k)?.value;
     // null is how a sim says "none yet"; a save made later may hold one where `like` has none, or the other way.
     if (got !== null && want !== null && kind(got) !== kind(want)) return false;
   }
@@ -63,7 +63,7 @@ export function firstDiff(a: unknown, b: unknown, path = ""): string | null {
   }
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const k of keys) {
-    const d = firstDiff(Reflect.get(a, k), Reflect.get(b, k), path ? `${path}.${k}` : k);
+    const d = firstDiff(Object.getOwnPropertyDescriptor(a, k)?.value, Object.getOwnPropertyDescriptor(b, k)?.value, path ? `${path}.${k}` : k);
     if (d) return d;
   }
   return null;

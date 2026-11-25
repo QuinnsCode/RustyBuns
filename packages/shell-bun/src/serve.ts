@@ -221,7 +221,7 @@ const inside = (root: string, p: string) => p === root || p.startsWith(root.ends
 
 export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   installCloudflareGlobals();
-  const headers = { ...ISOLATION, ...(opts.headers ?? {}) };
+  const headers = { ...ISOLATION, ...opts.headers };
   const wsRoutes = new Map<string, SocketHandlers>();
   const live: Socket[] = [];
   let handler: FetchHandler<Env> | null = null;
@@ -391,7 +391,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     const req = new Request(raw, { headers: h });
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket" && wsRoutes.has(url.pathname)) {
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the wrapper is set right after the upgrade, before any frame arrives
       const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Bun's types want a Response back; after upgrade() the socket has taken the request
       return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
     }
 
@@ -412,7 +414,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
         if (res.status === 101 && client) {
           // The subprotocol the far end chose (desktop.server's socket), echoed so the browser accepts it.
           const proto = res.headers?.get("sec-websocket-protocol");
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the wrapper is set right after the upgrade, before any frame arrives
           const ok = srv.upgrade(raw, { headers: proto ? { "Sec-WebSocket-Protocol": proto } : undefined, data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Bun's types want a Response back; after upgrade() the socket has taken the request
           return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
         }
         return withHeaders(res);

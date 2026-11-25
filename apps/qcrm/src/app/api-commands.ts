@@ -25,14 +25,14 @@ function askFor(t: Tool, inputs: string[], required: string[]): Ask {
   return { kind: "json", keys: inputs };
 }
 
-const described = (schema: object | undefined) => { const d: unknown = schema && Reflect.get(schema, "description"); return typeof d === "string" && d ? d : null; };
+const described = (schema: object | undefined) => { const d: unknown = schema && "description" in schema ? schema.description : undefined; return typeof d === "string" && d ? d : null; };
 
 /** The answer: JSON when it is, the text otherwise; a failure throws its message, as the palette shows errors. */
 async function answer(res: Response): Promise<unknown> {
   const text = await res.text();
   let out: unknown = text;
   try { out = JSON.parse(text); } catch { /* a download or plain text */ }
-  if (!res.ok) throw new Error(typeof out === "object" && out && "error" in out ? String(Reflect.get(out, "error")) : `${res.status}`);
+  if (!res.ok) throw new Error(typeof out === "object" && out && "error" in out ? String(out.error) : `${res.status}`);
   return out;
 }
 

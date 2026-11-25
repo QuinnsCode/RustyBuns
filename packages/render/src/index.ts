@@ -91,6 +91,7 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
   // its APIs: its classes by value, the rest (location, history, events...) forwarded live.
   // Both are walked by property name (whatever this happy-dom has), so they're read and written through Reflect.
   const g: object = globalThis;
+  // oxlint-disable-next-line anti-slop/no-reflect-get -- happy-dom's window is walked by property name, whatever this version has
   const from = (k: string): unknown => Reflect.get(window, k);
   const dom = (k: string) => !(k in g) || /Event|^Node|^HTML|^SVG|^Element|^Document|^DOM|^Mutation|^Text$|^Comment$|^Range$|^Selection$|^Storage$|^FormData$/.test(k);
   const lower = new Set<string>();

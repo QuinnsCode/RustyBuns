@@ -211,7 +211,7 @@ describe("safe paths at night", () => {
     expect(heard[4]!.heart).toBeGreaterThan(heard[3]!.heart);
     // One of the six closing in: the hush grows with it, even heard from a fire's edge, and the heart races on the path.
     const near = [far, HUSH_R * 0.75, HUSH_R * 0.25, 2].map((d) => darkSounds(true, false, 0, 0, d));
-    expect(near.map((n) => n.near)).toEqual([...near.map((n) => n.near)].sort((a, b) => a - b));
+    expect(near.map((n) => n.near)).toEqual(near.map((n) => n.near).sort((a, b) => a - b));
     expect(near[0]!.near).toBe(0);
     expect(near[3]!.near).toBe(1);
     expect(near[3]!.heart).toBe(1);
