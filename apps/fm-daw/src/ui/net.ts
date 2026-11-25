@@ -134,6 +134,9 @@ export function connect(opts: {
   if (room) { url.searchParams.set("room", room); url.searchParams.set("key", seshKey(room)); }
   const code = savedCode(room);
   if (code) url.searchParams.set("code", code);
+  // this page's own name for itself, made once: every reconnect brings it, so the World gives back the same peer number
+  // and nobody hears this page leave over a blip. The PA's call, a DJ's decks and the music here carry on through it.
+  url.searchParams.set("tab", crypto.randomUUID().replace(/-/g, ""));
   // a guest list invite (?invite= on the page): the World puts this person on the list once their hello names them
   const invite = new URLSearchParams(location.search).get("invite");
   if (invite) url.searchParams.set("invite", invite.slice(0, 40));

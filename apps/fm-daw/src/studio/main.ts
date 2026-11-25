@@ -145,6 +145,8 @@ let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let octave = 0;
 let status: NetStatus = { state: "connecting", peers: 0 };
+/** The room's line in a word, quiet: a drop isn't a stop, the music here plays on while the socket finds its way back. */
+const netWords = (s: NetStatus) => s.state === "online" ? `${s.peers} in the sesh` : s.state === "offline" ? "Reconnecting, the music plays on" : s.state === "connecting" ? "Connecting" : "Not let in";
 // the keys track sounds like the instrument at the keys seat (keys-voice.ts)
 // (the seat that plays the keys track: a room's violins or brass seats play their own)
 const keysSpot = def.spots.find((s) => s.kind === "keys" && !s.made && (s.id === "keys" || /keys/i.test(s.track ?? ""))) ?? def.spots.find((s) => s.kind === "keys" && !s.made);
@@ -1467,7 +1469,7 @@ function frame(now: number) {
   help.frame(phase === "play");
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
+  $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
