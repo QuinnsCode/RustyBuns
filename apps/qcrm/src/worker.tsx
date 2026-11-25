@@ -26,6 +26,7 @@ const deskSecret = (db: AppEnv["DB"]) => (secret ??= (async () => {
 })());
 let secret: Promise<string> | undefined;
 const e = async (req?: Request): Promise<AppEnv> => {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Cloudflare's runtime types and ours describe the same object differently
   const base = env as unknown as AppEnv;
   if (!req) return base;
   // eqosys sends a sign-in back only to qcrm.qntbr.com's callback, so the dev server and the desktop don't offer it.

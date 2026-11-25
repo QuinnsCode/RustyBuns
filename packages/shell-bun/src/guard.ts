@@ -29,6 +29,9 @@ const range = (lo: number, hi: number) => hi === Infinity ? (lo === -Infinity ? 
  */
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** One field of a value nothing has checked yet: `v[k]` when `v` is a plain object, else undefined. Check what comes back. */
+export const field = (v: unknown, k: string): unknown => (isRecord(v) ? v[k] : undefined);
+
 /** Anything, as `unknown`: a field passed on for something further in to check. */
 export const raw: Guard<unknown> = (v) => v;
 

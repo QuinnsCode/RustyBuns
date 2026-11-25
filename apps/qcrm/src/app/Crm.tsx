@@ -68,7 +68,7 @@ function namesFor(org: string, entity: "contacts" | "companies"): Promise<NameLo
 }
 /** The directory's arrays as rows, each cell checked: a string or nothing. */
 function directoryRows(d: unknown) {
-  const fields: unknown = d && typeof d === "object" ? Reflect.get(d, "fields") : null, rows: unknown = d && typeof d === "object" ? Reflect.get(d, "rows") : null;
+  const fields: unknown = d && typeof d === "object" && "fields" in d ? d.fields : null, rows: unknown = d && typeof d === "object" && "rows" in d ? d.rows : null;
   if (!Array.isArray(fields) || !Array.isArray(rows)) return [];
   const at = (r: unknown[], k: string) => { const v = r[fields.indexOf(k)]; return typeof v === "string" ? v : null; };
   return rows.filter(Array.isArray).map((r: unknown[]) => ({ id: at(r, "id") ?? "", first_name: at(r, "first_name"), last_name: at(r, "last_name"), name: at(r, "name"), email: at(r, "email") ?? at(r, "domain") }))
@@ -650,7 +650,7 @@ function Files({ org, entity, id, canAdd }: { org: string; entity: string; id: s
     if (!file) return;
     setMsg("");
     const res = await fetch(`/api/orgs/${org}/files?entity=${entity}&id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type || "application/octet-stream" }, credentials: "same-origin" });
-    if (!res.ok) { const b: unknown = await res.json().catch(() => null), e: unknown = b && typeof b === "object" ? Reflect.get(b, "error") : null; setMsg(typeof e === "string" ? e : `${res.status}`); }
+    if (!res.ok) { const b: unknown = await res.json().catch(() => null), e: unknown = b && typeof b === "object" && "error" in b ? b.error : null; setMsg(typeof e === "string" ? e : `${res.status}`); }
     await load();
   };
   const drop = async (f: Row) => { try { await api(`/orgs/${org}/files/${f.id}`, { method: "DELETE" }); await load(); } catch (e) { setMsg((e as Error).message); } };

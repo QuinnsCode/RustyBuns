@@ -280,7 +280,7 @@ export async function gitHttp(req: Request, namespaces: LocalArtifacts[]): Promi
   const m = /^\/__rb\/git\/([^/]+)\/([^/]+)\.git(\/.*)$/.exec(url.pathname);
   const ns = m && namespaces.find((n) => n.namespace === m[1]);
   if (!m || !ns || !NAME.test(m[2]!)) return new Response("not found", { status: 404 });
-  const [, , repo, rest] = m as unknown as [string, string, string, string];
+  const [, , repo = "", rest = ""] = m;
   const write = rest === "/git-receive-pack" || url.searchParams.get("service") === "git-receive-pack";
 
   const h = req.headers.get("authorization") ?? "";

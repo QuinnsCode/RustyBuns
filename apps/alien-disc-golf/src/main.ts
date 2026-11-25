@@ -587,6 +587,6 @@ addCommands([
   { name: "golf_splash", title: "Splash into the sea", group: "Swim", description: "Drop the disc in the sea at lat, lon and start the swim.",
     inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat, lon } = check(SplashArgs, a) ?? SplashArgs({}); golfApi.splash(lat, lon); return golfApi.state(); } },
   { name: "golf_sea_view", title: "Toggle sea view", group: "Swim", description: "Show or hide the sea-current view.", inputSchema: { type: "object", properties: { on: { type: "boolean" } } },
-    execute: (a) => { golfApi.seaView(!(typeof a === "object" && a && Reflect.get(a, "on") === false)); } },
+    execute: (a) => { golfApi.seaView(!(typeof a === "object" && a && "on" in a && a.on === false)); } },
 ]);
 mountPalette({ button: true });

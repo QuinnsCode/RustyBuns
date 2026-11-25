@@ -16,7 +16,7 @@ import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIE
 import { Mirror } from "../net/mirror.ts";
 import { cleanZone, levelOf, MODES as MODE_IDS, NEXT_ROUND } from "../net/room.ts";
 import { LanReply, type FromWorld, type RosterEntry } from "../net/wire.ts";
-import { arr, check, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { field as arg, arr, check, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
@@ -1264,7 +1264,6 @@ if (import.meta.env.DEV) Object.assign(window, { __recon: { get current() { retu
 // The page's commands (@rustybuns/util/commands): WebMCP tools for an agent in the browser, window.__commands for a
 // harness, and the Cmd/Ctrl+K palette for a person. Unlike __recon they ship in every build. No corner button: the
 // gun list and the touch fire button hold the bottom-right.
-const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
 const numArg = (a: unknown, k: string) => { const v = arg(a, k); return typeof v === "number" && Number.isFinite(v) ? v : undefined; };
 const playing = () => {
   if (!current) throw new Error("not in a level: recon_start one first (recon_levels lists them)");

@@ -15,6 +15,7 @@ let base = 0;
 /** A byte offset into the shared memory as a native pointer. */
 const at = (offset: number) => (base + offset) as Pointer;
 
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- this file runs in a Worker, but the app is typed with the DOM's lib, where self is a Window
 const post = (r: Reply) => (self as unknown as Worker).postMessage(r);
 
 self.onmessage = async (e: MessageEvent<Job>) => {

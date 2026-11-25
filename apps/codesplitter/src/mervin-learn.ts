@@ -9,14 +9,14 @@ export interface AnswerRow { path_hash: string; answer: "main" | "branch" | "bot
 
 /** How often each extension and path ended in a card on this repo. */
 export async function fightRows(env: Env, owner: string, repo: string): Promise<FightRow[]> {
-  const r = await env.DB.prepare("SELECT ext, path_hash, COUNT(*) AS fights FROM mervin_events WHERE owner = ? AND repo = ? AND outcome = 'asked' GROUP BY ext, path_hash").bind(owner, repo).all();
-  return (r.results ?? []) as unknown as FightRow[];
+  const r = await env.DB.prepare("SELECT ext, path_hash, COUNT(*) AS fights FROM mervin_events WHERE owner = ? AND repo = ? AND outcome = 'asked' GROUP BY ext, path_hash").bind(owner, repo).all<FightRow>();
+  return r.results ?? [];
 }
 
 /** The card answers given per path, written ones left out: a text isn't a choice that repeats. */
 export async function answerRows(env: Env, owner: string, repo: string): Promise<AnswerRow[]> {
-  const r = await env.DB.prepare("SELECT path_hash, answer, COUNT(*) AS n FROM mervin_events WHERE owner = ? AND repo = ? AND outcome = 'asked' AND answer != '' AND answer != 'written' GROUP BY path_hash, answer").bind(owner, repo).all();
-  return (r.results ?? []) as unknown as AnswerRow[];
+  const r = await env.DB.prepare("SELECT path_hash, answer, COUNT(*) AS n FROM mervin_events WHERE owner = ? AND repo = ? AND outcome = 'asked' AND answer != '' AND answer != 'written' GROUP BY path_hash, answer").bind(owner, repo).all<AnswerRow>();
+  return r.results ?? [];
 }
 
 /** A path's card answer repeats when this many answers agree and make up this share of its answers. */
