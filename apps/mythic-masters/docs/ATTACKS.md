@@ -90,6 +90,16 @@ Might and Focus still scale it (touch from Might against Guard, the rest from Fo
 Light stays quick (the jab string). Strong becomes a **charge**: tap it for today's heavy, hold it to wind up a slower, bigger
 slam (1x to 1.6x). The launcher stays quick and keeps being everyone's way back to the ledge and their anti-air.
 
+### The fencing step
+
+Most of a fight is footwork: one presses straight in, the other steps aside, and the swing comes round after them. A dash
+across the line to the foe is a **sidestep** (sim `STEP`). One clean sidestep still gets out of a heavy that has locked its
+aim. But each sidestep chained soon after the last goes 0.6 times as far, and its dodge frames shrink with it, so a third in
+a row is a short shuffle. The pursuer gains while the other keeps stepping: walking straight in on them is up to 25% faster,
+and a heavy aimed at them keeps turning to follow for more of its wind-up. Stepping only wins once. Stop for a beat (about
+three quarters of a second a step) and the next sidestep is whole again. A dash straight in or back never fades, and nor
+does one out of a ranged move the foe is casting: a painted shape is there to be read and dodged.
+
 ## Slots and energy
 
 Six slots stay, renamed where it helps: light, strong, launcher (touch), **special** (cheap ranged), **big** (the heavy
