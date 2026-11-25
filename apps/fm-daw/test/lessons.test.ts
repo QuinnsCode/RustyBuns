@@ -113,7 +113,7 @@ test("patch a sound wall voice: VCO into the filter's CV is caught, then a shut 
 });
 
 test("set up a PA for a small room: placed, aimed, cabled, and a thump from the wrong switch-on order", async () => {
-  const { lessons, jam, hands, g, go, click, turn, now } = await walkIn();
+  const { lessons, jam, hands, g, go, click, now } = await walkIn();
   // into the room's middle, facing the back wall: the kit lands on the floor in front of you
   const b = hands.room.bounds!, mid = { x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 };
   go([mid.x, mid.z + 1.5]);
