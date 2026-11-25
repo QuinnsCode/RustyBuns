@@ -53,8 +53,12 @@ export type HostKind = "desktop" | "box";
 /** Data dir expression, server port/hostname and the launch tail for each host kind. */
 function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
   const box = host === "box";
+  const keepsLogin = !box && hasEqosysLogin();
   return {
     box,
+    // The page's eqosys sign-in in the OS store, at /__rb/login behind the launch token (#5886).
+    loginImport: keepsLogin ? `import { eqosysLogin } from "@rustybuns/util/secrets";\n` : "",
+    login: keepsLogin ? `, login: eqosysLogin(${JSON.stringify(c.name)}, { fallbackDir: dataDir })` : "",
     dataDir: box
       ? `process.env.DATA_DIR ?? ${JSON.stringify(`/var/lib/${c.name}`)}`
       // Absolute, so a relative one ("./data", from the cwd) still lands when desktop.server's
@@ -67,6 +71,11 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
 writeDesktopFile(dataDir, shell.url, token);
 await openBrowser({ url: shell.url, token, code: shell.launchCode(), window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
   };
+}
+
+/** Whether the app can reach @rustybuns/util/secrets, so its desktop host keeps the page's eqosys sign-in in the OS store. */
+export function hasEqosysLogin(cwd = process.cwd()): boolean {
+  try { Bun.resolveSync("@rustybuns/util/secrets", cwd); return true; } catch { return false; }
 }
 
 // At launch the host checks the RustyBuns it was built with (RB_RUSTYBUNS)
@@ -217,7 +226,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, edgeLike${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, hostRequest, type Fields, type GuestState } from "@rustybuns/shell-bun";
+${reflectMetadataImport()}${h.loginImport}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, edgeLike${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, hostRequest, type Fields, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -301,7 +310,7 @@ if (guests.join !== undefined && guests.join.length < JOIN_MIN && !LOOPBACK.test
   process.exit(1);
 }
 const token = ${h.token};
-const shell = serve<Fields>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
+const shell = serve<Fields>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen}${h.login},
   public: ${JSON.stringify(d.publicPaths ?? [])},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
@@ -604,7 +613,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits, edgeLike, recycling, restartHost, watchEnvAtImport${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""}, type Fields } from "@rustybuns/shell-bun";
+${h.loginImport}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits, edgeLike, recycling, restartHost, watchEnvAtImport${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""}, type Fields } from "@rustybuns/shell-bun";
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -672,7 +681,7 @@ const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter${webmcpOn(c, h.box) ? ",\n  head: WEBMCP_TAG" : ""}${h.listen},${artifacts.length || openPaths.length ? `
+  reporter: stdoutReporter${webmcpOn(c, h.box) ? ",\n  head: WEBMCP_TAG" : ""}${h.listen}${h.login},${artifacts.length || openPaths.length ? `
   // Routes that bring their own auth skip the host cookie: Artifacts git remotes (a repo token) and desktopOpenPaths (an MCP client's OAuth).
   open: {${artifacts.length ? `
     "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]),` : ""}${openPaths.map((p) => `

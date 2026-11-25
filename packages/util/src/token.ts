@@ -11,6 +11,11 @@ export const STUDIOS_MAX = 8;
 
 /** What an app keeps of a sign-in: who, the token its Worker checks, and the one-use refresh token beside it. */
 export const Login = obj({ name: str(200), email: str(320), token: str(8192), refresh: opt(str(100)) });
+/** What is kept of a sign-in between visits (a page's vault, a desktop app's OS store): no access token, which lives in memory for its ten minutes. */
+export const KeptLogin = obj({ name: str(200), email: str(320), refresh: opt(str(100)) });
+export type KeptLogin = Of<typeof KeptLogin>;
+/** The request a desktop host signs a DPoP proof for, with the key it keeps for its page (POST /__rb/login/proof). */
+export const ProofAsk = obj({ htm: str(10), url: str(2000) });
 export type Login = Of<typeof Login>;
 
 /**

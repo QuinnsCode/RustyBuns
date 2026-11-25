@@ -11,8 +11,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hex } from "./bytes.ts";
-import { check } from "./guard.ts";
-import { Login } from "./token.ts";
+import { check, obj, oneOf, str, type Of } from "./guard.ts";
+import { dpopProof, EC, KeptLogin, ProofAsk } from "./token.ts";
 
 export interface Secrets {
   get(account: string): Promise<string | null>;
@@ -150,22 +150,56 @@ export function osSecrets(
   return file;
 }
 
+/** The host's DPoP key for its page, as the OS store keeps it. */
+const DpopKey = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: str(100), y: str(100), d: str(100) });
+
 /**
  * A desktop app's eqosys sign-in, kept in the OS store (service "eqosys", one entry per app) instead of a webview's
- * localStorage: the Bun side's twin of the iOS kit's `KeychainStore`. `load` gives null for nothing kept or a kept
- * value that isn't a `Login` any more; `save(null)` signs out.
+ * storage: the Bun side's twin of the iOS kit's `KeychainStore`. Who signed in and the refresh token, never the access
+ * token, and beside them (`<app>.dpop`) the key that refresh token is bound to: the host signs each DPoP proof for its
+ * page (`prove`), so the private key never reaches the webview, and a restart on a new port keeps both.
+ * The host's own page reaches it through shell-bun's `serve({ login })` (#5886). `load` gives null for nothing kept or
+ * a kept value that isn't a login any more; `save` and `prove` take the page's body unchecked and throw on a wrong
+ * one; `save(null)` signs out and lets the key go.
  */
 export function eqosysLogin(app: string, opts: { fallbackDir?: string; platform?: string; secrets?: Secrets } = {}) {
   const s = opts.secrets ?? osSecrets("eqosys", opts);
+  const keyAt = word(`${app}.dpop`);
+  let key: Promise<CryptoKeyPair> | null = null;
+  const made = async (): Promise<CryptoKeyPair> => {
+    let jwk: Of<typeof DpopKey> | null = null;
+    try { jwk = check(DpopKey, JSON.parse((await s.get(keyAt)) || "null")); } catch { /* none kept */ }
+    if (!jwk) {
+      const pair = await crypto.subtle.generateKey(EC, true, ["sign", "verify"]);
+      jwk = DpopKey(await crypto.subtle.exportKey("jwk", pair.privateKey));
+      await s.set(keyAt, JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d }));
+    }
+    const { d: _, ...pub } = jwk;
+    return {
+      privateKey: await crypto.subtle.importKey("jwk", jwk, EC, false, ["sign"]),
+      publicKey: await crypto.subtle.importKey("jwk", pub, EC, true, ["verify"]),
+    };
+  };
   return {
-    async load(): Promise<Login | null> {
+    async load(): Promise<KeptLogin | null> {
       const raw = await s.get(word(app));
       if (!raw) return null;
-      try { return check(Login, JSON.parse(raw)); } catch { return null; }
+      try { return check(KeptLogin, JSON.parse(raw)); } catch { return null; }
     },
-    async save(login: Login | null): Promise<void> {
-      if (login) await s.set(word(app), asciiJson(Login(login)));
-      else await s.remove(app);
+    async save(login: unknown): Promise<void> {
+      if (login === null) {
+        key = null;
+        await s.remove(app);
+        await s.remove(keyAt);
+        return;
+      }
+      const l = KeptLogin(login);
+      await s.set(word(app), asciiJson({ name: l.name, email: l.email, ...(l.refresh ? { refresh: l.refresh } : {}) }));
+    },
+    async prove(ask: unknown): Promise<string> {
+      const { htm, url } = ProofAsk(ask);
+      const k = await (key ??= made().catch((err) => { key = null; throw err; }));
+      return dpopProof(k, htm, url);
     },
   };
 }

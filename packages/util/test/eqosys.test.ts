@@ -1,6 +1,6 @@
 // A player goes to eqosys and comes back: the handoff's secrets stay in the tab, the code is traded for a login, and a return that didn't start here is refused.
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { checkDpop, newKey, sign } from "../src/token.ts";
+import { checkDpop, dpopProof, EC, newKey, sign } from "../src/token.ts";
 import { memoryVault, type Vault } from "../src/vault.ts";
 import { eqosys } from "../src/eqosys.ts";
 
@@ -140,5 +140,23 @@ test("nothing of a sign-in is left in localStorage: a reload gets it back from t
   await reloaded.ready;
   expect(reloaded.fresh(reloaded.login()!)).toBe(true);
   expect(proofs.length).toBe(2); // the exchange and the renewal, both signed by the one page key
+  expect(new Set(proofs).size).toBe(1);
+});
+
+test("on a desktop host the host signs the proofs, so a restart on a new origin renews with the same key", async () => {
+  const hostKey = await crypto.subtle.generateKey(EC, false, ["sign", "verify"]);
+  const held = memoryVault();
+  const host: Vault = { ...held, prove: (htm, url) => dpopProof(hostKey, htm, url) };
+  const eq = client(host);
+  await eq.signIn();
+  address = `https://game.example/play?code=eq_1&state=${new URL(went).searchParams.get("state")}`; g.location = loc();
+  expect((await eq.finishSignIn())?.login?.name).toBe("Ada");
+  expect((await held.load()).key).toBeNull(); // the page made no key of its own
+
+  g.localStorage = store(); // a new port is a new origin: nothing of the page's own storage comes along
+  const restarted = client(host);
+  await restarted.ready;
+  expect(restarted.fresh(restarted.login()!)).toBe(true);
+  expect(proofs.length).toBe(2);
   expect(new Set(proofs).size).toBe(1);
 });

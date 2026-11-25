@@ -19,6 +19,12 @@
 //
 // Pairing: POST /__rb/pair from the host's own page mints a five-minute launch
 // code, so a phone that reaches this host through an HTTPS tunnel can sign in.
+//
+// Sign-in: with `login` set (a desktop build: `eqosysLogin` from @rustybuns/util/secrets), the host's own page
+// reads, keeps and clears its eqosys sign-in at /__rb/login, which lives in the OS store with the DPoP key the host
+// signs the page's proofs with (POST /__rb/login/proof: the host's port, so the page's origin, changes each launch), and every page served
+// carries a <meta name="rb-login"> so `eqosys()` uses it (#5886). Only the host's own page: the launch cookie, and
+// no other origin, guest or public reader.
 
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
@@ -157,6 +163,16 @@ export interface ServeOptions<Env> {
    * token, not the host's cookie).
    */
   open?: Record<string, (req: Request) => Response | Promise<Response>>;
+  /** Where the host keeps its page's sign-in (the OS store); served only with `token` set. `save` checks the page's body and throws on a wrong one; null clears it. */
+  login?: LoginStore;
+}
+
+/** A sign-in kept for the host's own page: `eqosysLogin(app)` in @rustybuns/util/secrets. */
+export interface LoginStore {
+  load(): Promise<unknown>;
+  save(login: unknown): Promise<void>;
+  /** A DPoP proof for the request the page names ({ htm, url }), signed with the key the host keeps for it. */
+  prove(ask: unknown): Promise<string>;
 }
 
 export interface GuestOptions {
@@ -213,6 +229,9 @@ export interface BunShell<Env> {
 /** POST here from the host's own page: a launch code for another device (a phone, through a tunnel). */
 const PAIR_PATH = "/__rb/pair";
 const PAIR_TTL_MS = 5 * 60_000;
+/** The host's own page keeps its sign-in here (HOST_LOGIN_PATH in @rustybuns/util/vault). */
+const LOGIN_PATH = "/__rb/login";
+const LOGIN_TAG = `<meta name="rb-login" content="${LOGIN_PATH}">`;
 
 /** Equal-length compare that does not short-circuit on the first differing byte. */
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length > 0 && x.length === y.length && timingSafeEqual(x, y); };
@@ -231,7 +250,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   // Under `run desktop --watch` pages reload themselves when the host is swapped (reload.ts).
   const watching = !!process.env["RB_WATCH"] && !!opts.token;
   const boot = crypto.randomUUID();
-  const head = [opts.head, watching ? RELOAD_TAG : ""].filter(Boolean).join("") || undefined;
+  // Only behind the launch token: a host with no gate has no "own page" to keep it for.
+  const keeps = opts.token ? opts.login : undefined;
+  const head = [opts.head, watching ? RELOAD_TAG : "", keeps ? LOGIN_TAG : ""].filter(Boolean).join("") || undefined;
   const withHeaders = (res: Response) => {
     const h = new Headers(res.headers);
     for (const [k, v] of Object.entries(headers)) if (!h.has(k)) h.set(k, v);
@@ -300,6 +321,32 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (pass && given !== null && same(given, pass)) return "guest";
     }
     return new Response("forbidden", { status: 403 });
+  };
+
+  // The sign-in is the host's own page's alone: a fetch from it says same-origin, a write carries its Origin.
+  const keptLogin = async (req: Request, url: URL, who: Principal, store: LoginStore): Promise<Response> => {
+    const origin = req.headers.get("origin"), site = req.headers.get("sec-fetch-site");
+    const own = who === "host" && (origin === null ? req.method === "GET" : ownOrigin(req, origin)) && (site === null || site === "same-origin");
+    if (!own) return new Response("forbidden", { status: 403 });
+    const fresh = { "cache-control": "no-store" };
+    try {
+      if (url.pathname !== LOGIN_PATH) {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        const ask: unknown = await req.json().catch(() => undefined);
+        let proof: string;
+        try { proof = await store.prove(ask); } catch { return new Response("not a request", { status: 400 }); }
+        return new Response(proof, { headers: { ...fresh, "content-type": "text/plain" } });
+      }
+      if (req.method === "GET") return Response.json({ login: await store.load() }, { headers: fresh });
+      if (req.method === "DELETE") { await store.save(null); return new Response(null, { status: 204, headers: fresh }); }
+      if (req.method !== "PUT") return new Response("method not allowed", { status: 405 });
+      const body: unknown = await req.json().catch(() => undefined);
+      try { await store.save(body ?? undefined); } catch { return new Response("not a sign-in", { status: 400 }); }
+      return new Response(null, { status: 204, headers: fresh });
+    } catch (err) {
+      rep?.escaped("login", err, { path: LOGIN_PATH });
+      return new Response("the OS store did not answer", { status: 503 });
+    }
   };
 
   let headerRules: HeaderRule[] = [];
@@ -383,6 +430,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (raw.method !== "POST" || who !== "host" || origin === null || !ownOrigin(raw, origin)) return new Response("forbidden", { status: 403 });
       return Response.json({ code: mintCode(PAIR_TTL_MS), ttlMs: PAIR_TTL_MS });
     }
+    if (keeps && (url.pathname === LOGIN_PATH || url.pathname === LOGIN_PATH + "/proof")) return keptLogin(raw, url, who, keeps);
     if (watching && url.pathname === RELOAD_PATH) return Response.json({ boot }, { headers: { "cache-control": "no-store" } });
     // Vouch the principal to the handler; never trust the client's copy.
     const h = new Headers(raw.headers);
