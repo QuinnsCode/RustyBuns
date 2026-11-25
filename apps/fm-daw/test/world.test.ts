@@ -17,7 +17,7 @@ import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { keysReach } from "../src/studio/room.ts";
 import { figure, handsOn, type Figure } from "../src/studio/figure.ts";
 import * as THREE from "three";
-import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, toggleCam, trackFor, walkTo } from "../src/studio/jam.ts";
+import { BOOM, ORBIT, blendShot, body, cameraPose, orbitPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, toggleCam, trackFor, walkTo } from "../src/studio/jam.ts";
 import { laneModel } from "../src/studio/lane-model.ts";
 import { deskModel } from "../src/studio/desk-model.ts";
 import { seshDesk } from "../src/mixer.ts";
@@ -548,6 +548,14 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   const corner = cameraPose(amy);
   expect(corner.boom).toBeLessThan(BOOM);
   expect(Math.max(Math.abs(corner.at[0]) - LIVE_ROOM.size.w / 2, Math.abs(corner.at[2]) - LIVE_ROOM.size.d / 2)).toBeLessThan(0);
+  // Esc in the corner: the camera circles her a whole lap without leaving the room, looking down at her, and flies
+  // back in to end on her own view
+  for (let s = 0; s < ORBIT.lap; s += ORBIT.lap / 24) {
+    const o = orbitPose(amy, amy.me.yaw, s);
+    expect(Math.max(Math.abs(o.at[0]) - LIVE_ROOM.size.w / 2, Math.abs(o.at[2]) - LIVE_ROOM.size.d / 2)).toBeLessThan(0);
+    expect(o.pitch).toBeLessThan(0);
+  }
+  expect(blendShot(orbitPose(amy, amy.me.yaw, 7), corner, 1)).toEqual(corner);
   expect(sit(amy, "keys")).toEqual({ ok: false, why: "Walk up to the keys first" });
   walkTo(amy, keys.at[0], keys.at[1] + 1);
   expect(nearSpot(amy)?.id).toBe("keys");

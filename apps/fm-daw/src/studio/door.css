@@ -1,6 +1,11 @@
 /* Qollab Studio's front door (jam.html): sign in, the lobby, a room's card. One card, every screen size, labels that never wrap. */
 /* see-through, so the room carries on behind the menu */
 #menu { max-height: calc(100% - 32px); overflow-y: auto; background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+/* under the row of rooms (way.ts) and clear of a phone's notch, and as wide as the screen allows: wide on a desktop
+   and on a phone on its side, edge to edge on a phone held upright */
+#menu { --way: calc(60px + env(safe-area-inset-top, 0px)); top: var(--way); transform: translateX(-50%); width: min(1240px, calc(100% - 64px)); max-height: calc(100% - var(--way) - 16px - env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 600px) { #menu { width: calc(100% - 16px); } }
+@media (max-height: 520px) and (orientation: landscape) { #menu { --way: calc(52px + env(safe-area-inset-top, 0px)); width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); padding: 14px 18px; } }
 #menu h2 { margin: 18px 0 8px; font: 600 22px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
 #menu .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; }
 #menu button, #menu a.ghost, #menu input, #menu select { font: 600 18px "Barlow Condensed", sans-serif; border-radius: 10px; padding: 9px 16px; white-space: nowrap; min-height: 44px; }
