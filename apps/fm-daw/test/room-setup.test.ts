@@ -26,9 +26,11 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
   // its own browser context: a fresh browser's storage, not another test's
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
   const page = async <T>(expr: string): Promise<T> => tab.eval<T>(`(async () => (${expr}))()`);
+  // each look has its own deadline: a main thread busy drawing a room holds an evaluate back, and the step should say so
   const until = async (expr: string) => {
     for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
-      try { if (await page<boolean>(expr)) return; } catch { /* mid-navigation */ }
+      const look = page<boolean>(expr).catch(() => false); // mid-navigation
+      if (await Promise.race([look, Bun.sleep(5_000).then(() => false)])) return;
     }
     throw new Error(`never: ${expr}`);
   };
@@ -50,6 +52,9 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
   try {
     // first visit: asked, and the pick is the room's studio
     await frontDoor();
+    // the invite link a room is made with carries no ?quality, so this browser keeps "low" the way Q does: rooms drawn in
+    // software GL at high quality held CI's runner past the test's time
+    await page(`(localStorage.setItem("qollab-studio:quality", "low"), 1)`);
     expect(await door()).toEqual({ asked: true, kept: "", setup: null });
     await page(`(document.querySelector('#room-studio [data-studio="console-room"][data-copy="0"]').click(), 1)`);
     expect(await make("first jam")).toBe("console-room");

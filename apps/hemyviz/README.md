@@ -27,6 +27,7 @@ every two seconds, so leave it open during a deploy and watch the blocks go blue
 | Kinds | Grouped by resource type, most common first | — |
 | Blast | What a destroy takes with it, and what it keeps (retain/protect) in its own zone | everything that depends on it, all the way down |
 
+- **The look:** a 90s 3D file browser. Each app is a coloured plate and keeps that colour in every mode. Each resource is a block with its primitive drawn on top: a bolt for a Worker, a drum for a database, a key for KV, and so on (`src/icons.ts`). Names sit on the floor, and the block you pick stands in a beam of light. The sun button switches between an off-black and an off-white ground.
 - Click a block for its panel: type, status, stage, name and URL, when it changed, what feeds it and what it feeds
   (click those to hop along). Hover for a quick card. **Find** dims everything that doesn't match.
 - The stack menu picks one stack (all its stages) or one stage. The URL keeps the view: `?dim=3d&mode=blast&stack=eqosys`.
@@ -52,6 +53,7 @@ a `name` and `url` from a short list of fields that are public anyway (`src/read
 | `src/layout.ts` | Fleet + mode -> scene: blocks, zones, links, legend. Pure and deterministic |
 | `src/project.ts` | The three cameras and box faces (pure math, no canvas) |
 | `src/page.ts` | One canvas draws every view; `window.hemyviz` is the probe handle |
+| `src/icons.ts` | The icon for each primitive, matched on the resource type |
 | `src/demo.ts` | The demo fleet |
 
 Every dimension draws the same scene through a different camera, so a new mode is one function in `layout.ts` and
