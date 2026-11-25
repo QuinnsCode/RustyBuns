@@ -10,12 +10,12 @@ html, body { margin: 0; min-height: 100%; background: #0b0c0f; color: var(--ink)
 button, select, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
 
-.sp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; gap: 14px; padding: 14px 16px 24px; max-width: 1400px; margin: 0 auto; }
+.sp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; align-items: start; gap: 14px; padding: 60px 16px 24px; max-width: 1400px; margin: 0 auto; }
 .sp-tabs { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 .sp-tab { flex: none; border: 1px solid var(--edge); background: var(--glass); border-radius: 999px; padding: 7px 14px; cursor: pointer; white-space: nowrap; font: 600 15px/1 var(--silk); letter-spacing: 0.04em; }
 .sp-tab.on { border-color: var(--hot); background: rgba(255, 107, 74, 0.14); color: #fff; }
 
-.sp-view { position: relative; min-height: 420px; border-radius: 18px; background: radial-gradient(120% 90% at 50% 20%, #23262d, #101115 70%); overflow: hidden; }
+.sp-view { position: sticky; top: 60px; height: min(72vh, 640px); min-height: 360px; border-radius: 18px; background: radial-gradient(120% 90% at 50% 20%, #23262d, #101115 70%); overflow: hidden; }
 .sp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 .sp-tools { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .sp-field { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(10, 11, 14, 0.78); border: 1px solid var(--edge); backdrop-filter: blur(6px); }
@@ -55,5 +55,5 @@ button, select, input { font: inherit; color: inherit; }
 
 @media (max-width: 860px) {
   .sp { grid-template-columns: 1fr; }
-  .sp-view { min-height: 340px; }
+  .sp-view { position: relative; top: 0; height: 56vh; min-height: 300px; }
 }

@@ -18,7 +18,7 @@ import { instantiateFm, type Exports } from "../engine/wasm.ts";
 import { RustBox, rustCurve } from "./rust.ts";
 
 const FREQS = logFreqs(10, 2000, 240);
-const LO = 10, HI = 2000, TOP = 10, BOTTOM = -30;
+const LO = 10, HI = 2000, TOP = 10, BOTTOM = -40;
 
 let current: Plan = PLANS[0];
 let mat = current.material, braces = current.braces, explode = 0;
@@ -58,7 +58,7 @@ listenBtn.title = "A bass loop through this box"; flatBtn.title = "The same loop
 const label = (text: string, ...kids: Node[]) => h("label", "sp-field", h("span", "", text), ...kids);
 tools.append(
   label("Walls", matSel),
-  label("Braces", iconButton("arrow-up-down", "One brace fewer", () => setBraces(braces - 1)), braceOut, iconButton("arrow-up", "One more brace", () => setBraces(braces + 1))),
+  label("Braces", iconButton("minus", "One brace fewer", () => setBraces(braces - 1)), braceOut, iconButton("plus", "One more brace", () => setBraces(braces + 1))),
   label("Apart", icon("box", 16), explodeIn),
 );
 const sound = h("div", "sp-sound", listenBtn, flatBtn, knockBtn, glbBtn, engineChip);
@@ -108,7 +108,8 @@ function frame() {
     camera.updateProjectionMatrix();
   }
   if (idle && !dragging) yaw += 0.003;
-  const [sw, sh, sd] = current.size, r = Math.max(sw, sh, sd) * (2.6 + explode * 1.2), y = sh / 2;
+  // Back off on a view narrower than it is tall, so the whole cabinet fits across it too.
+  const [sw, sh, sd] = current.size, r = (Math.max(sw, sh, sd) * (2.6 + explode * 1.2)) / Math.min(1, camera.aspect), y = sh / 2;
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * r, y + Math.sin(pitch) * r, Math.cos(yaw) * Math.cos(pitch) * r);
   camera.lookAt(0, y, 0);
   renderer.render(scene, camera);
@@ -144,7 +145,7 @@ function drawChart(d: Design) {
     t.textContent = f >= 1000 ? `${f / 1000}k` : String(f);
     chart.append(t);
   }
-  for (const db of [10, 0, -10, -20, -30]) {
+  for (const db of [10, 0, -10, -20, -30, -40]) {
     chart.append(svg("line", { x1: 30, x2: 630, y1: y(db), y2: y(db), class: db === 0 ? "grid zero" : "grid" }));
     const t = svg("text", { x: 26, y: y(db) + 4, class: "tick", "text-anchor": "end" });
     t.textContent = String(db);
@@ -207,6 +208,10 @@ function knockOf(d: Design, sr: number): Float32Array {
   const top = Math.max(...d.walls.map((w) => w.leak));
   new BoxFilter({ ...d, series: [], walls: d.walls.map((w) => ({ ...w, leak: -(0.8 * w.leak) / top })) }, sr).process(out);
   out[0] -= 1;
+  // One click through a narrow band-pass comes out faint: level it so the ring, not the loudness, is what differs.
+  let peak = 0;
+  for (const v of out) peak = Math.max(peak, Math.abs(v));
+  if (peak > 0) for (let i = 0; i < out.length; i++) out[i] *= 0.8 / peak;
   return out;
 }
 

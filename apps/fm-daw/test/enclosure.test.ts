@@ -92,8 +92,13 @@ test.skipIf(!hasChrome)("pick a plan, swap the walls, brace them, pull it apart 
     const boxed = await page<{ rms: number; engine: string }>("qspeakers.render('box')"), flat = await page<{ rms: number }>("qspeakers.render('flat')");
     expect(boxed.rms).toBeLessThan(flat.rms);
     expect(["rust", "ts"]).toContain(boxed.engine);
-    const knock = await page<{ peak: number }>("qspeakers.render('knock')");
-    expect(knock.peak).toBeGreaterThan(0.01);
+    // Knocked at the same level, aluminium walls keep ringing where birch dies away.
+    const knock = () => page<{ peak: number; rms: number }>("qspeakers.render('knock')");
+    const birch = await knock();
+    await page("qspeakers.material('aluminium')");
+    const metal = await knock();
+    expect(metal.peak).toBeCloseTo(birch.peak, 1);
+    expect(metal.rms).toBeGreaterThan(birch.rms * 2);
     // The cabinet leaves as a GLB, for Blender or any 3D tool.
     const file = await page<{ bytes: number; glb: string }>("qspeakers.glb()");
     expect(file.glb).toBe("glTF");
