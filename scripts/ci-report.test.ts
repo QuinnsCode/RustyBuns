@@ -56,6 +56,9 @@ test("a test failing on 3+ PRs in a day opens one issue, and not again while it 
   expect(more).toEqual([]);
   expect(issue!.title).toBe(`CI: ${shelf} failed on 3 PRs on 2026-11-16`);
   expect(issue!.body).toContain("#1, #2, #3");
+  // Mervin reads the record back from the body: the test, its PRs and the check it turns red
+  const { blockerOf } = await import("../apps/agent-office/ester/blockers.ts");
+  expect(blockerOf({ number: 9, body: issue!.body })).toEqual({ test: shelf, prs: [1, 2, 3], checks: ["test playground"], issue: 9 });
   expect(issuesFor(big, [{ number: 9, state: "OPEN", body: issue!.body }])).toEqual([]);
   expect(issuesFor(big, [{ number: 9, state: "CLOSED", body: issue!.body }])).toEqual([]);
   // Closed on an earlier day and failing again: a new issue.

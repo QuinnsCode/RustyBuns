@@ -25,10 +25,17 @@
 // it, it comments once per head with the one-push fix (an `<!-- after:unchecked <sha> -->` marker) and prints a
 // `::warning::` line. A head someone else pushed is theirs, and it stops looking. After a pass that pushed, it waits
 // FOLLOW_UP and checks again, so a miss shows in minutes rather than at the next hourly run.
+//
+// A blocker (one test red on PR after PR, a `ci-blocker` issue: apps/agent-office/ester/blockers.ts) held its PRs red
+// until its fix landed. Once its issue closes (the fix's `Fixes #N` closes it), each open PR it names gets main merged
+// in the same way, so its checks rerun on the fix, and a `<!-- after:unblocked #N -->` comment so it happens once.
+// Issues closed more than UNBLOCK_DAYS ago are left alone. Merging then goes on in each PR's `Merge after` order as it
+// goes green, as before.
 
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 import { AFTER_BOT, RUN_FIELDS, Runs, headRuns } from "./pr.ts";
+import { BLOCKER_LABEL, blockerOf } from "../apps/agent-office/ester/blockers.ts";
 
 /** One row of `gh pr list --json number,headRefName,body,author,isCrossRepository,labels`. */
 export const AfterPr = obj({
@@ -55,7 +62,16 @@ export interface Gh {
   head(n: number): Head;
   /** The workflow runs on a SHA, queued ones included. */
   runs(sha: string): Runs;
+  /** The blocker issues closed lately (`gh issue list --label ci-blocker --state closed`). */
+  closedBlockers(): ClosedIssue[];
 }
+
+/** One closed blocker issue: its number, body (the blocker record) and when it closed. */
+export const ClosedIssue = obj({ number: int(1, Infinity), body: str(Infinity, { min: 0 }), closedAt: str(40) });
+export type ClosedIssue = Of<typeof ClosedIssue>;
+/** How long after a blocker's issue closes its held PRs still get main merged in. */
+export const UNBLOCK_DAYS = 3;
+const unblockMark = (issue: number) => `<!-- after:unblocked #${issue} -->`;
 
 /** How long a bot head may sit with no CI run before a pass starts it or flags it, and how long after its own push a pass looks again. */
 export const CHECK_AFTER = 300, FOLLOW_UP = 180;
@@ -124,7 +140,8 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     if (r.code !== 0) throw new Error(`git ${a.join(" ")}: ${r.out.trim()}`);
     return r.out;
   };
-  for (const pr of gh.open()) {
+  const prs = gh.open();
+  for (const pr of prs) {
     const after = blockers(pr.body), merged = !after.length && MERGED_LINE.test(pr.body);
     if (!after.length && !merged) continue;
     const held = pr.labels.find((l) => WATCHED.test(l.name));
@@ -140,26 +157,65 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     if (dry) { out.push(`#${pr.number} would merge main in`); continue; }
     const named = after.map((n) => `#${n}`).join(", ");
     try {
-      must("fetch", "-q", "origin", "main", pr.headRefName);
-      must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
-      if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${named} landed)`, "origin/main").code === 0) {
-        must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
+      const files = mergeMain(pr, named);
+      if (!files) {
         gh.setBody(pr.number, marked(pr.body, "Merged main in after"));
-        if (token) out.push(`#${pr.number} merged main in and pushed`);
-        else {
-          gh.comment(pr.number, `${NO_CHECKS}\n\n${flagMark(must("rev-parse", "HEAD").trim())}`);
-          out.push(`::warning::#${pr.number} merged main in and pushed, but the push starts no checks without AFTER_TOKEN (#5733): commented`);
-        }
+        pushed(pr, "");
       } else {
-        const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
-        git("merge", "--abort");
         gh.comment(pr.number, `@${pr.author.login} ${named} landed, and main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push; the runner (scripts/after.ts) won't try again.`);
         gh.setBody(pr.number, marked(pr.body, "Main conflicts after"));
         out.push(`#${pr.number} conflicts with main in ${files.join(", ")}: commented`);
       }
     } catch (e) { out.push(`#${pr.number} failed: ${e instanceof Error ? e.message : String(e)}`); }
   }
+
+  // A blocker's fix landed (its issue closed): the PRs it held get main merged in, so their checks rerun on the fix.
+  const open = new Map(prs.map((p) => [p.number, p]));
+  for (const issue of gh.closedBlockers()) {
+    if (o.now - Date.parse(issue.closedAt) > UNBLOCK_DAYS * 86_400_000) continue;
+    const b = blockerOf(issue);
+    for (const n of b?.prs ?? []) {
+      const pr = open.get(n);
+      if (!pr) continue;
+      const held = pr.labels.find((l) => WATCHED.test(l.name));
+      if (held) { out.push(`#${n} skipped: a Claude watch holds it (${held.name}) and merges main in itself`); continue; }
+      if (pr.isCrossRepository) continue;
+      try {
+        if (gh.head(n).comments.some((c) => c.body.includes(unblockMark(issue.number)))) continue;
+        if (dry) { out.push(`#${n} would merge main in: blocker #${issue.number} is fixed`); continue; }
+        const files = mergeMain(pr, `the fix for #${issue.number}`);
+        if (!files) pushed(pr, `${unblockMark(issue.number)}\nThe test that held this PR red (${b!.test}) is fixed on main (#${issue.number} closed), so main is merged in and its checks rerun on the fix.`, ` after blocker #${issue.number}`);
+        else {
+          gh.comment(pr.number, `${unblockMark(issue.number)}\n@${pr.author.login} the test that held this PR red is fixed on main (#${issue.number}), but main no longer merges clean into this branch. A person must choose in:\n\n${files.map((f) => `- \`${f}\``).join("\n")}\n\nMerge main in (or rebase) and push.`);
+          out.push(`#${n} conflicts with main in ${files.join(", ")} after blocker #${issue.number}: commented`);
+        }
+      } catch (e) { out.push(`#${n} failed: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+  }
   return out;
+
+  /** Merges main into the PR's branch and pushes: null when it did, else the files that conflict (nothing pushed). */
+  function mergeMain(pr: AfterPr, why: string): string[] | null {
+    must("fetch", "-q", "origin", "main", pr.headRefName);
+    must("checkout", "-q", "-B", `after-${pr.number}`, `origin/${pr.headRefName}`);
+    if (git("merge", "--no-edit", "-m", `Merge main into ${pr.headRefName} (after ${why} landed)`, "origin/main").code === 0) {
+      must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
+      return null;
+    }
+    const files = must("diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
+    git("merge", "--abort");
+    return files;
+  }
+  /** Says a push happened: with the token its checks run; without, one comment with the fix (and `note`, if any). */
+  function pushed(pr: AfterPr, note: string, tail = "") {
+    if (token) {
+      if (note) gh.comment(pr.number, note);
+      out.push(`#${pr.number} merged main in and pushed${tail}`);
+      return;
+    }
+    gh.comment(pr.number, `${note ? `${note}\n\n` : ""}${NO_CHECKS}\n\n${flagMark(must("rev-parse", "HEAD").trim())}`);
+    out.push(`::warning::#${pr.number} merged main in and pushed${tail}, but the push starts no checks without AFTER_TOKEN (#5733): commented`);
+  }
 }
 
 export const sh = (cmd: string[], stdin?: string) => {
@@ -186,6 +242,7 @@ export const ghCli: Gh = {
     return h;
   },
   runs: (sha) => check(Runs, JSON.parse(ghRun(["run", "list", "--commit", sha, "--json", RUN_FIELDS, "-L", "50"]))) ?? [],
+  closedBlockers: () => arr(ClosedIssue, Infinity, { drop: true })(JSON.parse(ghRun(["issue", "list", "--label", BLOCKER_LABEL, "--state", "closed", "--limit", "20", "--json", "number,body,closedAt"]))),
 };
 
 if (import.meta.main) {
@@ -193,7 +250,7 @@ if (import.meta.main) {
   const git: Git = (...a) => sh(["git", ...a]);
   const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true" };
   const lines = pass(ghCli, git, opts);
-  console.log(lines.length ? lines.join("\n") : "no open PR says merge after");
+  console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.
   // Without the token the push already commented, and there is nothing more a pass could do.
   if (!opts.dry && opts.token && lines.some((l) => / merged main in and pushed/.test(l))) {
