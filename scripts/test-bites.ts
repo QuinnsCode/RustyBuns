@@ -14,6 +14,9 @@
 // tree, and the changed tests run against each. A flip no test notices is printed as a survivor: a line the tests run
 // but don't check. A report too: some flips change nothing anyone could see.
 //
+// A test file whose diff only touches comments, blank lines or its `setDefaultTimeout(n)` has nothing new in it to bite:
+// it is skipped and counted. No new file starts after `--minutes` (default 12, inside CI's 20); the ones left are named.
+//
 //   bun scripts/test-bites.ts                 against origin/main
 //   bun scripts/test-bites.ts --base <ref>    against another ref
 //   bun scripts/test-bites.ts --lines         and the changed lines they never ran
@@ -87,14 +90,51 @@ async function scratchTree<T>(repo: string, ref: string, files: string[], use: (
   }
 }
 
-/** Runs `files` (from the working tree of `repo`) on `base`'s source and returns the ones that pass there. */
-export async function passesOnBase(repo: string, base: string, files: string[]): Promise<string[]> {
+/** How long a run may go before it stops starting files: past it, the files left are named, not run. */
+export type Budget = { by?: number; late?: string[]; each?: (file: string, passes: boolean) => void };
+
+/** Runs `files` (from the working tree of `repo`) on `base`'s source and returns the ones that pass there. A file not
+ *  started by `budget.by` (epoch ms) goes in `budget.late`; `budget.each` hears each result as it lands. */
+export async function passesOnBase(repo: string, base: string, files: string[], budget: Budget = {}): Promise<string[]> {
   if (!files.length) return [];
   return scratchTree(repo, base, files, async (scratch) => {
     const passing: string[] = [];
-    for (const file of files) if (await testsPass(scratch, [file])) passing.push(file);
+    for (const file of files) {
+      if (Date.now() > (budget.by ?? Infinity)) { budget.late?.push(file); continue; }
+      const passes = await testsPass(scratch, [file]);
+      if (passes) passing.push(file);
+      budget.each?.(file, passes);
+    }
     return passing;
   });
+}
+
+/** A changed line that can't change what a test checks: blank, a comment, or a `setDefaultTimeout(n)` call. */
+const inertLine = (line: string) => {
+  const s = line.trim();
+  return !s || /^(\/\/|\/\*|\*)/.test(s) || /^setDefaultTimeout\(\s*[\d_]+\s*\);?\s*(\/\/.*)?$/.test(s);
+};
+
+/** The files in a `git diff -U0` whose added and removed lines are all inert (`inertLine`): no test body changed in
+ *  them, so there is nothing new in them to bite, and running them on the base only spends time (#5925). */
+export function inertFiles(diff: string): Set<string> {
+  const live = new Set<string>(), all = new Set<string>();
+  let file = "", inHunk = false;
+  for (const line of diff.split("\n")) {
+    const head = line.match(/^diff --git a\/.* b\/(.*)$/);
+    if (head) { file = head[1]!; all.add(file); inHunk = false; continue; }
+    if (line.startsWith("@@")) { inHunk = true; continue; }
+    if (!inHunk || !file) continue;
+    if ((line.startsWith("+") || line.startsWith("-")) && !inertLine(line.slice(1))) live.add(file);
+  }
+  return new Set([...all].filter((f) => !live.has(f)));
+}
+
+/** Which of `files` change since the merge-base with `base` only in inert lines. A file git doesn't track yet is new: never inert. */
+export async function inertTests(repo: string, base: string, files: string[]): Promise<string[]> {
+  if (!files.length) return [];
+  const inert = inertFiles(await $`git diff -U0 --no-color ${await fork(repo, base)} -- ${files}`.cwd(repo).text());
+  return files.filter((f) => inert.has(f));
 }
 
 /** True when every one of `tests` passes in `root`; a run that outlives `ms` (a flip can loop forever) is a failure. */
@@ -187,7 +227,7 @@ export async function changedSource(repo: string, base: string): Promise<Map<str
 }
 
 /** Changed source lines (not tests) that `tests` never ran, by file; a file they never loaded maps to "unloaded". */
-export async function unrunLines(repo: string, base: string, tests: string[]): Promise<Map<string, number[] | "unloaded">> {
+export async function unrunLines(repo: string, base: string, tests: string[], by = Infinity): Promise<Map<string, number[] | "unloaded">> {
   const out = new Map<string, number[] | "unloaded">();
   if (!tests.length) return out;
   const added = await changedSource(repo, base);
@@ -196,6 +236,7 @@ export async function unrunLines(repo: string, base: string, tests: string[]): P
   const scratch = mkdtempSync(join(tmpdir(), "test-lines-"));
   try {
     for (const [cwd, group] of Map.groupBy(tests, (t) => home(repo, t))) {
+      if (Date.now() > by) break; // what wasn't run reads as never loaded: a report, not a gate
       const dir = join(scratch, String(hits.size));
       await $`bun test --coverage --coverage-reporter=lcov --coverage-dir=${dir} ${group.map((t) => "./" + relative(cwd, join(repo, t)))}`.cwd(cwd).quiet().nothrow();
       const lcov = Bun.file(join(dir, "lcov.info"));
@@ -237,23 +278,36 @@ if (import.meta.main) {
   const at = process.argv.indexOf("--base");
   const base = at > 0 ? process.argv[at + 1] ?? "origin/main" : "origin/main";
   const repo = (await $`git rev-parse --show-toplevel`.text()).trim();
-  const files = await changedTests(repo, base);
+  const edited = await changedTests(repo, base);
   const f = process.argv.indexOf("--facts");
   const factsAt = f > 0 ? process.argv[f + 1] : undefined;
+  const inert = await inertTests(repo, base, edited);
+  const files = edited.filter((t) => !inert.includes(t));
+  if (inert.length) console.log(`skipped: only timeouts/comments changed in ${inert.length} test file${inert.length === 1 ? "" : "s"}`);
   if (!files.length) {
     if (factsAt) await Bun.write(factsAt, JSON.stringify({ tests: 0, failOnBase: 0, changed: 0, unrun: 0 }));
-    console.log(`no *.test.ts added or edited since ${base}`);
+    console.log(edited.length ? "no test body changed: nothing to run" : `no *.test.ts added or edited since ${base}`);
     process.exit(0);
   }
+  // CI's job has 20 minutes: past the budget no new file starts, and each result is printed as it lands, so a run cut
+  // short still says what it checked
+  const mi = process.argv.indexOf("--minutes");
+  const by = Date.now() + (mi > 0 ? Number(process.argv[mi + 1]) || 12 : 12) * 60_000;
+  const late: string[] = [];
+  const each = (file: string, passes: boolean) => passes && console.log(`${file}: passes on ${base} too, proves nothing`);
   // the run on the base and the coverage run on this tree don't touch each other: side by side, not one after the other
   const tests = await onlyTests(repo, base);
   const [passing, unrun] = await Promise.all([
-    tests ? files : passesOnBase(repo, base, files),
-    process.argv.includes("--lines") ? unrunLines(repo, base, files) : undefined,
+    tests ? files : passesOnBase(repo, base, files, { by, late, each }),
+    process.argv.includes("--lines") ? unrunLines(repo, base, files, by) : undefined,
   ]);
-  if (tests) console.log(`only tests changed since ${base}: they pass there as here, so none was run on it`);
-  for (const f of passing) console.log(`${f}: passes on ${base} too, proves nothing`);
-  console.log(`${files.length - passing.length} of ${files.length} test files fail on ${base}`);
+  if (tests) {
+    console.log(`only tests changed since ${base}: they pass there as here, so none was run on it`);
+    for (const f of passing) each(f, true);
+  }
+  if (late.length) console.log(`out of time: ${late.length} not run on ${base}: ${late.join(", ")}`);
+  const checked = files.length - late.length;
+  console.log(`${checked - passing.length} of ${checked} test files fail on ${base}`);
   if (unrun) {
     console.log(unrun.size ? "changed lines these tests never ran:" : "these tests ran every changed source line");
     for (const [file, lines] of unrun) console.log(`  ${file}: ${lines === "unloaded" ? "never loaded" : ranges(lines)}`);
@@ -262,7 +316,7 @@ if (import.meta.main) {
     const added = await changedSource(repo, base);
     const missed = [...(unrun ?? added)].reduce((n, [file, lines]) => n + (lines === "unloaded" ? added.get(file)?.length ?? 0 : lines.length), 0);
     const changed = [...added.values()].reduce((n, l) => n + l.length, 0);
-    await Bun.write(factsAt, JSON.stringify({ tests: files.length, failOnBase: files.length - passing.length, changed, unrun: missed }));
+    await Bun.write(factsAt, JSON.stringify({ tests: checked, failOnBase: checked - passing.length, changed, unrun: missed }));
   }
   const m = process.argv.indexOf("--mutate");
   if (m > 0) {
