@@ -114,14 +114,22 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2, in part: an open-air room picks one of five rigs (`@rustybuns/gear` `SYSTEMS`); the rig cards (`rig-cards.ts`) draw each to scale.
-- Step 3, in part: ring time and a clap at each seat; the gear package has `coverage` and each box's spec sheet.
+- Step 2: an open-air room picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
+  scale). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
+  tops and sets a line array's pins (#5863).
+- Step 3: the Coverage button draws the PA's mids and highs over the floor on the blueprint (`src/studio/coverage.ts`),
+  and the PA panel gives the floor's level and how even it is. It is `@rustybuns/gear`'s `coverage` of the very boxes
+  `pa-room.ts` plays the set from (`paSources`), so the map is what you hear on Walk in. Ring time and a clap at each seat.
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
-- Step 5: `@rustybuns/gear` works out amps, breakers and generator load (Sound Guy Simulator uses it).
-- Sound Guy Simulator already has aiming and a coverage heat map on the floor in several venues.
+- Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
+  breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
+- Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
+  and the power plan (`gearList`); **Plan drawing** saves the blueprint with the coverage map on it as an SVG.
+- `window.qrooms`: `pa()`, `level(x, z)`, `pickStack(i)`, `showMap()`, `download("list" | "plan")`; the journey is
+  `test/pa-builder.test.ts`.
 
-**Missing:** placing and aiming stacks by hand in the builder, the coverage map there, and step 6 (gear list,
-power plan, a printable plan): [#5863](https://github.com/QuinnsCode/RustyBuns/issues/5863).
+**Missing** ([#5883](https://github.com/QuinnsCode/RustyBuns/issues/5883)): stacks you place indoors (a room's PA is still a stack either side of the decks), the delay from far
+stacks on the map, and the coverage map in the 3D view.
 
 ## 6. Build the circuit (tscircuit to your hands)
 

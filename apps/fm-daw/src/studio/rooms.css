@@ -63,3 +63,11 @@ a.button { display: inline-block; color: var(--ink); border: 1px solid var(--lin
 #plan .prop { fill: rgba(255, 255, 255, 0.06); stroke: #8a8f98; cursor: grab; }
 .tool:disabled { opacity: 0.35; cursor: default; }
 #plan .door { cursor: grab; }
+#plan .stack { fill: #0d0e10; stroke: #ffd27a; cursor: grab; }
+#plan .stack.on { stroke: var(--hot); }
+#plan .aim { stroke: #ffd27a; stroke-linecap: round; pointer-events: none; }
+#plan .heat { pointer-events: none; image-rendering: pixelated; }
+#plan .mid { fill: none; stroke: var(--ink); pointer-events: none; }
+#pa .bad { color: var(--hot); }
+#pa ul.why { margin: 4px 0; padding-left: 18px; }
+#pa input[type="range"] { width: 100%; }
