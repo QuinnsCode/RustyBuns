@@ -4,6 +4,8 @@
 
 **Live:** https://fm-daw.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+**Six ways in** (Qollab Studio's customer paths: learn the setup, make a track, jam with friends, DJ and stream, plan a sound system, build the circuit): [PATHWAYS.md](PATHWAYS.md).
+
 ## Use it
 
 **What it is:** a music maker in the browser: drums and synths you play, record and loop.

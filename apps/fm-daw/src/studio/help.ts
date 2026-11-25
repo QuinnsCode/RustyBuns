@@ -57,7 +57,7 @@ export function mountHelp(o: { parent: HTMLElement; hint: HTMLElement; seat: () 
     later.append(lt, ul);
     const ok = el("button", "help-ok", "Got it");
     ok.type = "button"; ok.addEventListener("click", () => close());
-    panel.replaceChildren(head, groups, later, ok);
+    panel.replaceChildren(head, groups, ...(NOT_YET.length ? [later] : []), ok);
     drawnFor = String(seat);
   }
   function line(a: Action) {
