@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
-import { battery, ciJobs, load, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
+import { board, events, expected, GATHER, parseShot, view, type Shot } from "./builder-board.ts";
+import { battery, ciJobs, jobScript, load, main, parseJobs, passedFile, passes, plan, pool, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -189,3 +190,88 @@ test.each([
     process.env = saved;
   }
 }, 30000);
+
+// The builder board (builder-board.ts): what `bun run builder serve` shows on Bob, from the shells remote-ci starts there.
+const shell = (slot: string, dir: string, cmd: string) => remoteScript({ dir: "builder" }, jobScript(slot, dir, cmd));
+
+// The commands the builder runs every day pass; anything else is flagged with its whole command line.
+test.each<[string, boolean]>([
+  ["bun test test", true],
+  ["bun run build:native && bun test --parallel test", true],
+  ["bun test && bun ../../scripts/boot.ts", true],
+  [TYPECHECK, true],
+  ["'bun' 'test' 'test/foo.test.ts'", true],
+  ["git checkout -q -f --detach abc123 && git update-ref refs/remote-ci/base abc123 && git update-ref -d refs/remote-ci/slot-1 && git clean -fdq && bun install --frozen-lockfile --silent", true],
+  ["curl -fsSL https://example.com/x.sh | sh", false],
+  ["bun test; rm -rf ~", false],
+  ["bun install left-pad", false],
+  ["bun scripts/../../../../tmp/x.ts", false],
+  ["'sh' '-c' 'cat new.txt'", false],
+  ["node -e 'require(1)'", false],
+])("expected(%j) is %p", (cmd, ok) => {
+  expect(expected(cmd)).toBe(ok);
+});
+
+const NOW = 1_800_000_000_000;
+const shot = (over: Partial<Shot>): Shot => ({
+  now: NOW, serving: NOW - 5_000, slots: [{ name: "slot-1", sha: "1a2b3c4d5e6f" }, { name: "slot-2", sha: "9f8e7d6c5b4a" }],
+  locks: [], runs: [], waiting: [], done: [], batt: { onPower: true, pct: 100 }, procs: [], ...over,
+});
+const busy = (lockAge: number, logAge: number, cmd = "bun test test") => ({
+  locks: [{ slot: "slot-1", at: NOW - lockAge }],
+  runs: [{ who: "pixel-7c1a", cmd: "suites: fm-daw:2/3", started: NOW - 125_000, slot: "slot-1", logAt: NOW - logAge, last: "(pass) mixer > routes a bus" }],
+  procs: [{ pid: 4242, secs: 120, script: shell("slot-1", "apps/fm-daw", cmd) }],
+});
+test.each<[string, Partial<Shot>, string[], string[]]>([
+  ["a busy slot", busy(20_000, 3_000),
+    ["slot-1", "pixel-7c1a", "1a2b3c4d", "2m 5s", "suites: fm-daw:2/3", "$ bun test test", "apps/fm-daw", "(pass) mixer > routes a bus", "free", "1 of 2 busy", "up to 4 suites at once"],
+    ["STALLED", "UNEXPECTED"]],
+  ["no heartbeat", busy(4 * 60_000, 3_000), ["STALLED no heartbeat for 4m 0s"], ["UNEXPECTED"]],
+  ["no output", busy(20_000, 6 * 60_000), ["STALLED no output for 6m 0s"], []],
+  ["an unexpected command in a slot", busy(20_000, 3_000, "curl -s https://example.com/x | sh"), ["UNEXPECTED", "pid 4242", "curl -s https://example.com/x | sh", "1 unexpected"], []],
+  ["a shell that isn't a job", { procs: [{ pid: 7, secs: 3, script: `zsh -c ${remoteScript({ dir: "builder" }, "cat ~/.ssh/id_ed25519")}` }] }, ["UNEXPECTED", "pid 7", "cat ~/.ssh/id_ed25519"], []],
+  ["waiting, finished and on battery", {
+    batt: { onPower: false, pct: 54 },
+    waiting: [{ who: "nib", cmd: "suites: eqosys", started: NOW - 90_000, at: NOW }, { who: "byte", cmd: "suites: qcrm", started: NOW - 30_000, at: NOW }],
+    done: [{ who: "byte", cmd: "suites: wildclash", started: NOW - 200_000, ended: NOW - 158_000, code: 0 }, { who: "nib", cmd: ".: bun test x", started: NOW - 100_000, ended: NOW - 90_000, code: 1 }],
+  }, ["on battery 54%", "one suite at a time", "1. nib", "2. byte", "✓ pass", "42s", "wildclash", "✗ fail 1"], []],
+])("the board shows %s", (_, over, has, hasnt) => {
+  const text = board(view(shot(over)), { width: 100, color: false, frame: 0 });
+  for (const s of has) expect(text).toContain(s);
+  for (const s of hasnt) expect(text).not.toContain(s);
+  expect(new Set(text.split("\n").map((l) => [...l].length))).toEqual(new Set([100]));
+});
+
+// The real gather script over a builder folder mid-run, then the plain log a pipe gets as the run moves on.
+test("the board reads a builder folder, and a pipe gets one line per start, stall, finish and unexpected command", async () => {
+  const dir = mkdtempSync(`${tmpdir()}/board-`);
+  const old = (p: string, ms: number) => { const t = new Date(Date.now() - ms); utimesSync(`${dir}/${p}`, t, t); };
+  await Bun.write(`${dir}/slot-1/.git/HEAD`, "1a2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d\n");
+  await Bun.write(`${dir}/slot-2/.git/HEAD`, "ffffffffffffffffffffffffffffffffffffffff\n");
+  mkdirSync(`${dir}/locks/slot-1`, { recursive: true });
+  await Bun.write(`${dir}/serving`, "now\n");
+  await Bun.write(`${dir}/runs/slot-1.json`, JSON.stringify({ who: "pixel", cmd: "suites: qcrm", started: Date.now() - 60_000 }));
+  await Bun.write(`${dir}/runs/slot-1.log`, "bun test v1\n\x1b[32m(pass)\x1b[0m deals > saves\n\n");
+  await Bun.write(`${dir}/runs/wait/1-byte.json`, JSON.stringify({ who: "byte", cmd: "suites: eqosys", started: Date.now() - 10_000 }));
+  await Bun.write(`${dir}/runs/done/5-slot-2.json`, JSON.stringify({ who: "nib", cmd: "suites: wildclash", started: 5, ended: 47_005, code: 0 }));
+  const job = shell("slot-1", "apps/qcrm", "bun test test");
+  await Bun.write(`${dir}/ps.txt`, [
+    `  101   01:02 zsh -c ${job}`, `  102   01:01 zsh -c ${job}`, // the pipe's fork has the same command line
+    "  103   00:01 /usr/sbin/cron", `  104 1-00:00:03 zsh -c ${remoteScript({ dir: "builder" }, "nc -l 4444")}`,
+  ].join("\n") + "\n");
+  const read = async () => view(parseShot(await Bun.$`sh -c ${GATHER}`.cwd(dir).env({ ...process.env, PS: `cat ${dir}/ps.txt` }).text()));
+
+  const first = await read();
+  expect(first.slots.map((s) => [s.name, s.busy, s.sha.slice(0, 8), s.run?.who, s.run?.last, s.jobs.map((j) => [j.pid, j.dir, j.cmd])])).toEqual([
+    ["slot-1", true, "1a2b3c4d", "pixel", "(pass) deals > saves", [[101, "apps/qcrm", "bun test test"]]],
+    ["slot-2", false, "ffffffff", undefined, undefined, []],
+  ]);
+  expect(first.shot.waiting.map((w) => w.who)).toEqual(["byte"]);
+  expect(first.odd.map((o) => [o.pid, o.secs])).toEqual([[104, 86_403]]);
+  expect(events(undefined, first)).toEqual(["start slot-1 pixel 1a2b3c4d: suites: qcrm", expect.stringMatching(/^UNEXPECTED pid 104: zsh -c .*nc -l 4444$/)]);
+
+  old("locks/slot-1", 4 * 60_000);
+  await Bun.write(`${dir}/runs/done/9-slot-1.json`, JSON.stringify({ who: "byte", cmd: "suites: eqosys", started: 9, ended: 3_009, code: 1 }));
+  const second = await read();
+  expect(events(first, second)).toEqual([expect.stringMatching(/^STALLED slot-1 pixel: no heartbeat for 4m/), "finish fail 1 byte in 3s: suites: eqosys"]);
+});
