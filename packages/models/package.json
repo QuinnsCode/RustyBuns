@@ -29,6 +29,7 @@
     "./monosynth": "./src/monosynth.ts",
     "./polysynth": "./src/polysynth.ts",
     "./bassbox": "./src/bassbox.ts",
+    "./speaker": "./src/speaker.ts",
     "./ground": "./src/ground.ts",
     "./van": "./src/van.ts",
     "./fire": "./src/fire.ts",

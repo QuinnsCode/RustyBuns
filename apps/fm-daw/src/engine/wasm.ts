@@ -53,6 +53,10 @@ export interface Exports {
   fm_remote_push(r: number, beat: number, buf: number, len: number): void;
   fm_remote_mix(r: number, out: number, frames: number, beat0: number, bpf: number, gain: number): void;
   fm_remote_late(r: number): number;
+  fm_box_new(sr: number, plan: number, len: number): number;
+  fm_box_free(b: number): void;
+  fm_box_process(b: number, buf: number, frames: number): void;
+  fm_box_curve(plan: number, len: number, freqs: number, out: number, n: number): number;
   fm_alloc_f64(len: number): number;
   fm_dealloc_f64(p: number, len: number): void;
   fm_alloc(len: number): number;

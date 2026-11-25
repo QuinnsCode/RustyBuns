@@ -20,6 +20,7 @@
 //! the wasm build leaves them out.
 
 pub mod circuit;
+pub mod enclosure;
 pub mod eq;
 pub mod remote;
 #[cfg(not(target_arch = "wasm32"))]
