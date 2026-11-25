@@ -40,7 +40,7 @@ export type Reached = Press | "jog" | "tempo";
 interface Mixer { group: THREE.Object3D; parts: Map<string, { o: THREE.Object3D; home: THREE.Vector3; turn: number }>; fader: number; cross: number; say: MixSay | null; t: number }
 /** Where a mixer's EQ knobs sit back from the front, the high's first (mixer-club-4's own frame, metres), and how far
  *  left of its fader a channel's knobs are. */
-const EQ_Z = [-0.134, -0.112, -0.09, -0.068], EQ_DX = -0.005;
+const EQ_Z = [-0.1272, -0.1057, -0.0835, -0.0599], EQ_DX = -0.0039;
 /** How far a filter's frequency knob turns, end to end (radians): 300 degrees, 12 o'clock in the middle. */
 const KNOB_TURN = (Math.PI * 5) / 3;
 /** How long (seconds) a touched key is held down, and the jog; how long the hand then hovers over it before it goes back
@@ -181,6 +181,7 @@ export class BoothGear {
   frame(view: (side: Side) => DeckView | null, t: number) {
     for (const w of this.worn) w.u.dustInv.value.copy(w.group.matrixWorld).invert();
     this.slide(t);
+    this.meters(view);
     for (const g of this.gear) {
       g.u.dustInv.value.copy(g.group.matrixWorld).invert();
       const v = view(g.side);
@@ -203,6 +204,19 @@ export class BoothGear {
       g.drawn = key;
       drawScreen(g.screen, v, g.side, t);
       g.tex.needsUpdate = true;
+    }
+  }
+  /** The channel meters light while their deck plays (deck A is channel 2, B channel 3, as on the decks page), as high
+   *  as the channel's fader lets it through, bouncing on the deck's beat; channels 1 and 4 have nothing in them. */
+  private meters(view: (side: Side) => DeckView | null) {
+    const m = this.mixer;
+    if (!m) return;
+    for (let i = 0; i < 4; i++) {
+      const p = m.parts.get(`meter-${i + 1}`);
+      if (!p) continue;
+      const v = i === 1 ? view(0) : i === 2 ? view(1) : null, fader = m.say?.faders[i] ?? 0.8;
+      const beat = v?.playing ? (v.pos * (v.bpm ?? 120)) / 60 : 0;
+      p.o.scale.y = v?.playing ? Math.max(0.02, fader * (0.7 + 0.3 * Math.exp(-4 * (beat % 1)))) : 0.0001;
     }
   }
   /** The mixer's caps ease toward what it last said (a say comes a few times a second; a cap glides between them). */

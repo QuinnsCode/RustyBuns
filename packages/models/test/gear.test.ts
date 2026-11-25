@@ -21,7 +21,8 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   const box = new THREE.Box3().setFromObject(g), size = box.getSize(new THREE.Vector3()).toArray();
   size.forEach((s, i) => expect(Math.abs(s - GEAR_SIZES[id][i]) / GEAR_SIZES[id][i]).toBeLessThan(0.1));
   expect(Math.abs(box.min.y)).toBeLessThan(0.005);
-  expect(triangles(g)).toBeLessThan(5000);
+  // the DJ table's mixer is seen from 40 cm under the DJ's hands, every control of the decks page's Qone face on it
+  expect(triangles(g)).toBeLessThan(id === "mixer-club-4" ? 6500 : 5000);
 
   const jacks = gearJacks(g);
   expect([...jacks.keys()].sort()).toEqual(jackNames(book.get(id)!).sort());
@@ -134,7 +135,9 @@ test("a stompbox builds at the size asked, its jacks out of each end and its foo
 test("the club pair moves as a DJ plays it: the mixer's faders, meters, crossfader and filters, the player's platter and ring apart", () => {
   const mixer = gear("mixer-club-4"), parts = gearParts(mixer);
   for (const name of ["fader-1", "fader-2", "fader-3", "fader-4", "meter-1", "meter-2", "meter-3", "meter-4", "cross", "filter-1", "filter-2"]) expect(parts.has(name), name).toBe(true);
-  expect(mixer.userData).toMatchObject({ faderTravel: 0.06, crossTravel: 0.045 });
+  // laid out as the decks page's Qone mixer: long faders, the crossfader under the four channels, the black master panel at the right
+  expect(mixer.userData.faderTravel).toBeGreaterThan(0.08);
+  expect(mixer.userData.crossTravel).toBeGreaterThan(0.1);
   // a meter full is a bar running back from its front end along the face; the filters sit either side of the crossfader
   mixer.updateMatrixWorld(true);
   const bar = new THREE.Box3().setFromObject(parts.get("meter-1")!);
@@ -143,6 +146,8 @@ test("the club pair moves as a DJ plays it: the mixer's faders, meters, crossfad
   const [f1, f2, cross] = ["filter-1", "filter-2", "cross"].map((n) => parts.get(n)!.position);
   expect(f1!.x).toBeLessThan(cross!.x - 0.05);
   expect(f2!.x).toBeGreaterThan(cross!.x + 0.05);
+  expect(cross!.z).toBeGreaterThan(parts.get("fader-1")!.position.z);
+  expect(f2!.x).toBeLessThan(0.16 - 0.04);
 
   const deck = gear("deck-cd"), dp = gearParts(deck);
   for (const name of ["platter", "ring", "screen", "cue", "play", "tempo"]) expect(dp.has(name), name).toBe(true);

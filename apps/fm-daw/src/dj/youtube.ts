@@ -5,7 +5,7 @@
 // volume. The EQ, the filters, the scratch and the room's PA can't reach it. In a room the deck says its video, where
 // it is and its speed on the booth's line (booth.ts), and each listener's page plays the same video (room-tube.ts).
 // Nothing is hosted here.
-import { obj, str } from "@rustybuns/util/guard";
+import { arr, check, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { faderGain } from "./analyze.ts";
 import { dbGain, trimDb, xfGain, type ChannelState, type Curve } from "./mixer.ts";
@@ -35,6 +35,25 @@ export function tubeVolume(ch: ChannelState, xfader: number, curve: Curve, maste
 const OEmbed = obj({ title: str(300) });
 /** A video's title, from YouTube's oEmbed (null offline or when it's private). */
 export const tubeTitle = async (id: string) => (await getJson(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}`, OEmbed))?.title ?? null;
+
+/** The most YouTube links the library keeps. */
+export const SHELF_MAX = 200;
+/** A YouTube link in the library: its video id and the title YouTube gave it. Only links, kept in this browser. */
+const Shelved = obj({ id: str(11), title: str(300) });
+export type Shelved = Of<typeof Shelved>;
+const ShelfList = arr(Shelved, SHELF_MAX, { drop: true });
+const SHELF_KEY = "qdjs:youtube";
+/** The YouTube links this browser's library keeps, newest first (none in a private window). */
+export function loadShelf(): Shelved[] {
+  try { const s = localStorage.getItem(SHELF_KEY); return (s && check(ShelfList, JSON.parse(s))) || []; } catch { return []; }
+}
+export function saveShelf(list: readonly Shelved[]) { try { localStorage.setItem(SHELF_KEY, JSON.stringify(list.slice(0, SHELF_MAX))); } catch { /* private window: this visit only */ } }
+/** `item` at the top of the library, once (a link added again moves up, keeping the title it had when `item` has none better). */
+export function shelveTube(list: readonly Shelved[], item: Shelved): Shelved[] {
+  const had = list.find((x) => x.id === item.id);
+  const title = item.title === "YouTube" && had ? had.title : item.title;
+  return [{ id: item.id, title }, ...list.filter((x) => x.id !== item.id)].slice(0, SHELF_MAX);
+}
 
 /** The part of YouTube's IFrame player the deck uses (https://developers.google.com/youtube/iframe_api_reference). */
 interface YtPlayer {
