@@ -14,16 +14,20 @@ let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();
 beforeAll(async () => {
   if (!hasChrome) return;
+  const t = Date.now();
   const app = join(import.meta.dir, "..");
   if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
     const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
     if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
   }
   [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
+  console.log(`room-setup: chrome and vite up in ${Date.now() - t} ms`);
 });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
 test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after, and Settings changes it", async () => {
+  const t0 = Date.now();
+  const step = (what: string) => console.log(`room-setup ${((Date.now() - t0) / 1000).toFixed(1)}s: ${what}`);
   // its own browser context: a fresh browser's storage, not another test's
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
   const page = async <T>(expr: string): Promise<T> => tab.eval<T>(`(async () => (${expr}))()`);
@@ -34,17 +38,22 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
     void tab.call("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/html" }], body: blank });
   });
   await tab.call("Fetch.enable", { patterns: [{ urlPattern: "*jam.html?room=*", resourceType: "Document" }] });
+  step("tab open, room loads caught");
   // each look has its own deadline: a busy main thread holds an evaluate back, and the step should say so
   const until = async (expr: string) => {
     for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
       const look = page<boolean>(expr).catch(() => false); // mid-navigation
-      if (await Promise.race([look, Bun.sleep(5_000).then(() => false)])) return;
+      const got = await Promise.race([look, Bun.sleep(5_000).then(() => "held" as const)]);
+      if (got === true) return;
+      if (got === "held") step(`a look held 5 s: ${expr.slice(0, 60)}`);
     }
     throw new Error(`never: ${expr}`);
   };
   const frontDoor = async () => {
     await load(chrome.cdp, tab, `${vite.url}jam.html?quality=low`, 0);
+    step("front door loaded");
     await until(`!!window.qjam && !document.getElementById("door-lobby").hidden`);
+    step("front door ready");
   };
   const door = () => page<{ asked: boolean; kept: string; setup: string | null }>(`({
     asked: document.getElementById("room-studio").offsetParent !== null,
@@ -54,7 +63,9 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
   /** Make a room on the front door and follow its link: the studio the link names. */
   const make = async (name: string) => {
     await page(`(() => { document.getElementById("room-name").value = ${JSON.stringify(name)}; document.getElementById("make").requestSubmit(); return 1; })()`);
+    step(`made ${name}`);
     await until(`new URLSearchParams(location.search).has("room")`);
+    step(`at ${name}'s link`);
     return page<string>(`new URLSearchParams(location.search).get("studio")`);
   };
   try {
@@ -82,5 +93,8 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
     await frontDoor();
     expect(await page<string>(`document.getElementById("setup-studio").value`)).toBe("desert-gathering");
     expect(await make("third jam")).toBe("desert-gathering");
-  } finally { await tab.close(); }
+  } finally {
+    if (tab.noise.length) console.log(`room-setup noise:\n  ${tab.noise.slice(0, 30).join("\n  ")}`);
+    await tab.close();
+  }
 });
