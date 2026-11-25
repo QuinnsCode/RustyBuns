@@ -1,9 +1,9 @@
 // A token eqosys signed is good for ten minutes on its signature alone; eqosys's own routes also ask whether it still stands.
 // Deleting the account ends it at once, a native app signing out ends that app's, and signing out everywhere ends them all.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { newKey } from "@rustybuns/util/token";
+import { dpopProof, EC, newKey, thumbprint } from "@rustybuns/util/token";
 import { mintRefresh, signOutEverywhere } from "../src/members.ts";
-import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
+import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
 const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
@@ -64,4 +64,24 @@ test("a game page keeps a refresh token: it renews without a bounce, stays a pag
   const native = await mintRefresh(conf, got.user.id, "park-hide-seek");
   expect((await call("/do/logout", { form: {}, cookie: up.cookie })).to).toBe("/login");
   expect([(await renew(next.refresh_token)).res.status, (await renew(native)).res.status]).toEqual([400, 200]);
+});
+
+test("a page's refresh token is bound to its key: copied out of the page it spends nowhere, and the page renews with its proof", async () => {
+  const key = await crypto.subtle.generateKey(EC, false, ["sign", "verify"]), thief = await crypto.subtle.generateKey(EC, false, ["sign", "verify"]);
+  const proof = (k: CryptoKeyPair, path: string) => dpopProof(k, "POST", ORIGIN + path);
+  const a = await asks("park-hide-seek", PARK);
+  const up = await call("/do/signup", { form: { ...a.form, name: "Ed", email: "ed@example.com", password: PASSWORD } });
+  const got = await (await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier, keep: true }, dpop: await proof(key, "/api/exchange") })).res.json() as { refresh: string; user: { id: string } };
+  const renew = async (refresh_token: string, k?: CryptoKeyPair) =>
+    (await call("/oauth/token", { form: { grant_type: "refresh_token", client_id: "park-hide-seek", refresh_token }, origin: PARK, ...(k ? { dpop: await proof(k, "/oauth/token") } : {}) })).res;
+
+  // the page renews with its own proof, and the next token is bound to the same key
+  const mine = await renew(got.refresh, key);
+  expect(mine.status).toBe(200);
+  const next = (await mine.json() as { refresh_token: string }).refresh_token;
+  expect((await renew(next, key)).status).toBe(200);
+  // copied out of the page: with no proof, or with the copier's own key, it spends nowhere
+  const jkt = await thumbprint(await crypto.subtle.exportKey("jwk", key.publicKey) as { crv: string; kty: string; x: string; y: string });
+  const bound = () => mintRefresh(conf, got.user.id, "park-hide-seek", Date.now(), true, jkt);
+  expect([(await renew(await bound())).status, (await renew(await bound(), thief)).status]).toEqual([400, 400]);
 });

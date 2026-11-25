@@ -16,7 +16,7 @@ import { isQollab, qollab } from "./qollab/routes.ts";
 import { makeSpace, SPACE_NAME, studioAdd, studioRemove } from "./qollab/space.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
-import { oauth } from "./oauth.ts";
+import { oauth, provedBy } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
 import { recordDeploy } from "./deploys.ts";
@@ -167,7 +167,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
     if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, await cors(req, conf));
     const token = await sign(conf, issuer(req, conf), traded.who);
-    const refresh = token && body.keep ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), true) : undefined;
+    // A page that sends a DPoP proof gets a refresh token bound to its key: no use to anyone who copies it out of the page.
+    const refresh = token && body.keep ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), true, await provedBy(req, issuer(req, conf))) : undefined;
     return json({ ...traded.who, token, ...(refresh ? { refresh } : {}) }, 200, await cors(req, conf));
   }
 

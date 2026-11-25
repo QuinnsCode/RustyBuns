@@ -13,10 +13,11 @@ export const QCRM = "https://qcrm.qntbr.com", PARK = "https://park-hide-seek.not
 export async function boot(extra: Partial<Env> = {}) {
   const conf: Env = { DB: d1(":memory:") as never, BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, SUPER_ADMIN_EMAIL: ADMIN, ...extra };
   await applyD1Migrations(conf.DB as never, join(import.meta.dir, "../migrations"));
-  const call = async (path: string, init: { form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string; bearer?: string; cf?: { country: string } } = {}) => {
+  const call = async (path: string, init: { form?: Record<string, string>; json?: unknown; cookie?: string; origin?: string; bearer?: string; dpop?: string; cf?: { country: string } } = {}) => {
     const headers = new Headers({ origin: init.origin ?? ORIGIN });
     if (init.cookie) headers.set("cookie", init.cookie);
     if (init.bearer) headers.set("authorization", `Bearer ${init.bearer}`);
+    if (init.dpop) headers.set("dpop", init.dpop);
     let body: BodyInit | undefined;
     if (init.form) body = new URLSearchParams(init.form);
     if (init.json !== undefined) { body = JSON.stringify(init.json); headers.set("content-type", "application/json"); }
