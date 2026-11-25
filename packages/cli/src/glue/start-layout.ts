@@ -15,7 +15,7 @@ export function startLayout(viteConfig: string): { builtMain: string; assets: st
   // No preset: NITRO_PRESET picks "standard", whose .output/server/index.mjs exports { fetch }.
   // (A preset in the config wins over the variable, so it only steers apps that set none.)
   if (!preset) return { builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " };
-  if (/^cloudflare/.test(preset) || preset === "standard") return { builtMain: ".output/server/index.mjs", assets: ".output/public", env: "" };
+  if (preset?.startsWith("cloudflare") || preset === "standard") return { builtMain: ".output/server/index.mjs", assets: ".output/public", env: "" };
   return { builtMain: ".output/server/index.mjs", assets: ".output/public", env: "",
     warn: `its Nitro preset "${preset}" starts a server of its own, which the desktop can't mount. Remove the preset (or set it per deploy, with NITRO_PRESET) and it builds one that can.` };
 }

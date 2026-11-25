@@ -4,6 +4,7 @@
 // widget's own origin; viewer.ts falls back to running prepare() in the page when a CSP refuses blob: workers.
 import { prepare } from "./image.ts";
 
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- this file runs in a Worker, but the app is typed with the DOM's lib, where self is a Window
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 scope.onmessage = async (e: MessageEvent<{ id: number; file: Blob }>) => {
   const { id, file } = e.data;

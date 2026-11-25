@@ -1,8 +1,12 @@
 // The studio builder (/rooms.html): start from one of the rooms, then size it, change what its floor, ceiling and
 // walls are made of, hang panels on its walls, put up booths and drag seats and booths around on the plan. The side
 // shows how long the space at the picked seat rings, Clap plays a clap through that seat's impulse response, and
-// Walk in opens the room in /jam.html. Every change goes through the builder's edits (builder.ts), so the room is
-// never left half built. Your room is kept in this browser. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id).
+// Walk in opens the room in /jam.html. Out of doors the PA tool puts the rig's stacks down; Move drags them, Turn aims
+// them, and the PA panel turns, splays and pins the picked one, shows the coverage map over the floor (coverage.ts: the
+// boxes the jam room plays from), checks the amps, breakers and generator (@rustybuns/gear powerPlan) and hands out the
+// gear list and the plan drawing. Every change goes through the builder's edits (builder.ts), so the room is never left
+// half built. Your room is kept in this browser. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id),
+// pa(), level(x, z), download("list" | "plan").
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
@@ -16,7 +20,9 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
+import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
+import { paSpeakers, rigPlan, rigStacks, roomRig } from "./pa-room.ts";
+import { floorMap, heatCanvas, mapAt, type FloorMap } from "./coverage.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -27,6 +33,8 @@ const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch"] as const;
 let room: StudioDef = yours() ?? structuredClone(ROOM_LIST[0]);
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
+/** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map shows. */
+let stackPicked: number | null = null, showMap = false;
 
 function save() { try { localStorage.setItem(YOURS, JSON.stringify(room)); } catch { /* private window: the room lives until reload */ } }
 const preset = () => ROOM_LIST.find((r) => r.id === room.id && JSON.stringify(r) === JSON.stringify(room));
@@ -87,6 +95,12 @@ function render() {
     const [x1, z1, x2, z2] = p.wall === "front" ? [a, d / 2, b, d / 2] : p.wall === "back" ? [a, -d / 2, b, -d / 2] : p.wall === "left" ? [-w / 2, a, -w / 2, b] : [w / 2, a, w / 2, b];
     plan.append(el("line", { class: "panel", x1, y1: z1, x2, y2: z2, stroke: tint(p.material), "stroke-width": 0.22 * scale }));
   }
+  // the PA's coverage over the floor, under the grid, and a ring at the floor's middle it's coloured against
+  const map = paMap();
+  if (showMap && map) {
+    plan.append(el("image", { class: "heat", href: heatCanvas(map.grid, map.ref).toDataURL(), x: -w / 2, y: -d / 2, width: w, height: d, preserveAspectRatio: "none", opacity: 0.85 }));
+    plan.append(el("circle", { class: "mid", cx: map.middle[0], cy: map.middle[1], r: 0.4 * scale, "stroke-width": 0.05 * scale }));
+  }
   // the floor's half-metre grid, as the 3D view has it
   for (let x = -Math.floor(w / 2 / 0.5) * 0.5; x <= w / 2 + 1e-6; x += 0.5) plan.append(el("line", { class: "grid", x1: x, y1: -d / 2, x2: x, y2: d / 2, "stroke-width": 0.02 * scale }));
   for (let z = -Math.floor(d / 2 / 0.5) * 0.5; z <= d / 2 + 1e-6; z += 0.5) plan.append(el("line", { class: "grid", x1: -w / 2, y1: z, x2: w / 2, y2: z, "stroke-width": 0.02 * scale }));
@@ -126,6 +140,18 @@ function render() {
   plan.append(side);
   const [dx, dz] = room.door.at;
   plan.append(el("path", { "data-door": 1, class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
+  // the rig's stacks, each its footprint turned its way, and a line out along where its tops aim
+  if (room.outdoor) {
+    const rig = roomRig(room), sw = stackWidth(rig), sd = Math.max(...rig.stack.map((b) => sheet(b).size.d));
+    rigStacks(room).forEach((st, i) => {
+      const g = el("g", { "data-stack": i }), turned = el("g", { transform: `rotate(${(-st.yaw * 180) / Math.PI} ${st.at[0]} ${st.at[1]})` });
+      turned.append(el("rect", { class: `stack${i === stackPicked ? " on" : ""}`, x: st.at[0] - sw / 2, y: st.at[1] - sd / 2, width: sw, height: sd, "stroke-width": 0.06 * scale }));
+      g.append(turned);
+      const a = st.yaw + (st.splay ?? 0);
+      g.append(el("line", { class: "aim", x1: st.at[0], y1: st.at[1], x2: st.at[0] + Math.sin(a) * 1.6 * scale, y2: st.at[1] + Math.cos(a) * 1.6 * scale, "stroke-width": 0.06 * scale }));
+      plan.append(g);
+    });
+  }
   for (const sp of room.spots) {
     const g = el("g", { "data-spot": sp.id });
     g.append(el("circle", { class: `spot${sp.id === picked ? " on" : ""}`, cx: sp.at[0], cy: sp.at[1], r: 0.32 * scale, "stroke-width": 0.06 * scale }));
@@ -136,6 +162,7 @@ function render() {
   $("about").textContent = room.about ?? "";
   select.value = preset()?.id ?? "";
   renderSound();
+  renderPa();
   renderEdit();
   renderTools();
   if (view === "3d") build?.show(room, picked, walls);
@@ -143,7 +170,7 @@ function render() {
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
 
-type Tool = "move" | "wall" | "door" | "window" | "booth" | "place" | "decor" | "paint" | "turn" | "remove";
+type Tool = "move" | "wall" | "door" | "window" | "booth" | "place" | "decor" | "paint" | "pa" | "turn" | "remove";
 const TOOLS: { id: Tool; name: string; icon: string }[] = [
   { id: "move", name: "Move: drag a seat, a booth, a piece of furniture, the gear wall or the way in", icon: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>` },
   { id: "wall", name: "Wall: drag across the floor to put one up", icon: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/>` },
@@ -153,7 +180,8 @@ const TOOLS: { id: Tool; name: string; icon: string }[] = [
   { id: "place", name: "Place: pick from the catalog, click the floor", icon: `<path d="M5 12h14"/><path d="M12 5v14"/>` },
   { id: "decor", name: "Decorate: pick a piece from the catalog, click the floor", icon: `<path d="M8 2h8l4 10H4L8 2Z"/><path d="M12 12v6"/><path d="M8 22v-2c0-1.1.9-2 2-2h4a2 2 0 0 1 2 2v2H8Z"/>` },
   { id: "paint", name: "Paint: pick a material, click the floor or a wall", icon: `<rect width="16" height="6" x="2" y="2" rx="2"/><path d="M10 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect width="4" height="6" x="8" y="16" rx="1"/>` },
-  { id: "turn", name: "Turn: click a seat or a piece to turn it an eighth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
+  { id: "pa", name: "PA: click the ground to stand a stack of the rig there, facing the floor's middle", icon: `<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/><circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>` },
+  { id: "turn", name: "Turn: click a seat or a piece to turn it an eighth, a stack a twelfth (Shift: back)", icon: `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>` },
   { id: "remove", name: "Remove: click a seat, a piece, a wall or a booth", icon: `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>` },
 ];
 const icon = (paths: string) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -174,7 +202,7 @@ function toRoom(e: PointerEvent): number[] {
 const pointAt = (e: PointerEvent): number[] | null => (view === "3d" ? build?.toRoom(e) ?? null : toRoom(e));
 function hitAt(e: PointerEvent): Hit {
   if (view === "3d") return build?.hit(e) ?? null;
-  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop], [data-door]") : null;
+  const g = e.target instanceof Element ? e.target.closest("[data-spot], [data-booth], [data-gear], [data-wall], [data-prop], [data-door], [data-stack]") : null;
   if (!g) {
     // on the blueprint the floor is the room's rectangle, and an outside wall its edge (within 30 cm of it)
     const [x, z] = toRoom(e), { w, d } = room.size;
@@ -185,10 +213,11 @@ function hitAt(e: PointerEvent): Hit {
   }
   const spot = g.getAttribute("data-spot"), booth = g.getAttribute("data-booth"), wall = g.getAttribute("data-wall"), piece = g.getAttribute("data-prop");
   if (g.hasAttribute("data-door")) return { door: true };
+  if (g.hasAttribute("data-stack")) return { stack: Number(g.getAttribute("data-stack")) };
   return spot ? { spot } : booth ? { booth } : wall !== null ? { wall: Number(wall) } : piece !== null ? { prop: Number(piece) } : { gear: true };
 }
 
-let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
+let drag: { kind: "spot" | "booth" | "gear" | "prop" | "door" | "stack"; id: string; from: number[]; at: number[]; g: SVGElement[]; start: number[] } | null = null;
 let drawing: { from: [number, number]; to: [number, number] } | null = null;
 let orbiting: { x: number; y: number } | null = null;
 
@@ -216,7 +245,14 @@ function act(e: PointerEvent) {
   const p = pointAt(e), h = hitAt(e), at = (p ? [tenth(p[0]), tenth(p[1])] : null) as [number, number] | null;
   why = "";
   if (tool === "move") {
-    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h || "door" in h)) return;
+    if (!h || !("spot" in h || "booth" in h || "gear" in h || "prop" in h || "door" in h || "stack" in h)) return;
+    if ("stack" in h) {
+      const st = rigStacks(room)[h.stack];
+      stackPicked = h.stack; render();
+      if (!st || !p) return;
+      drag = { kind: "stack", id: String(h.stack), from: [...st.at], at: [...st.at], g: [...plan.querySelectorAll<SVGElement>(`[data-stack="${h.stack}"]`)], start: p };
+      return;
+    }
     if ("door" in h) {
       if (!p) return;
       drag = { kind: "door", id: "door", from: [...room.door.at], at: [...room.door.at], g: [...plan.querySelectorAll<SVGElement>("[data-door]")], start: p };
@@ -249,14 +285,19 @@ function act(e: PointerEvent) {
     else if (h && "side" in h) apply({ t: "surface", surface: h.side, material: painting });
     else if (h && "wall" in h) apply({ t: "wall", index: h.wall, material: painting });
     else { why = "Click the floor or a wall to paint it"; render(); }
+  } else if (tool === "pa") {
+    if (!room.outdoor) { why = "Stacks you place stand out of doors: start from an open-air room"; render(); }
+    else if (at && apply({ t: "stack", at })) { stackPicked = room.outdoor.stacks.length - 1; render(); }
   } else if (tool === "turn") {
-    if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
+    if (h && "stack" in h) { const st = room.outdoor?.stacks[h.stack]; stackPicked = h.stack; if (st) apply({ t: "aimStack", index: h.stack, yaw: st.yaw + (e.shiftKey ? -1 : 1) * Math.PI / 12 }); }
+    else if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
     else if (h && "prop" in h) apply({ t: "turnProp", index: h.prop, by: e.shiftKey ? -1 : 1 });
   } else if (tool === "remove") {
     if (h && "spot" in h) { if (apply({ t: "unspot", id: h.spot }) && picked === h.spot) { picked = room.spots[0]?.id; render(); } }
     else if (h && "booth" in h) apply({ t: "unbooth", id: h.booth });
     else if (h && "wall" in h) apply({ t: "unwall", index: h.wall });
     else if (h && "prop" in h) apply({ t: "unprop", index: h.prop });
+    else if (h && "stack" in h && apply({ t: "unstack", index: h.stack })) { stackPicked = null; render(); }
   }
   try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* a pointer that already left */ }
 }
@@ -307,6 +348,9 @@ function up(e?: PointerEvent) {
   if (drag) {
     const d = drag; drag = null;
     if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
+    // a stack moves by what it was dragged: where the room stood it, not where its block drew it
+    const stored = d.kind === "stack" ? room.outdoor?.stacks[Number(d.id)]?.at : undefined;
+    if (stored) return void apply({ t: "moveStack", index: Number(d.id), at: [tenth(stored[0] + d.at[0] - d.from[0]), tenth(stored[1] + d.at[1] - d.from[1])] });
     apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : d.kind === "prop" ? { t: "moveProp", index: Number(d.id), at: d.at } : d.kind === "door" ? { t: "moveDoor", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
   } else if (drawing) {
     const w = drawing; drawing = null;
@@ -337,6 +381,7 @@ const REDO_ICON = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 
 const VIEW_3D = `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`;
 const BLUEPRINT = `<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>`;
 const LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
+const WAVES = `<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>`;
 const CCW = `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>`;
 const CW = `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>`;
 const WALL_WORDS: Record<WallsMode, string> = { cutaway: "Walls cut away on your side", down: "Walls down", up: "Walls up" };
@@ -351,7 +396,8 @@ function renderTools() {
     + `<span class="sep"></span>`
     + (build ? b(`data-view="3d"`, "3D: your studio cut away, from above", VIEW_3D, view === "3d") : "")
     + b(`data-view="plan"`, "Blueprint: the plan from straight above", BLUEPRINT, view === "plan")
-    + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "");
+    + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "")
+    + (paSpeakers(room).length ? b(`data-map="1"`, "Coverage: how loud the PA is over the floor, on the blueprint", WAVES, showMap) : "");
   $("orbit").innerHTML = view === "3d" ? b(`data-orbit="1"`, "Turn the view left", CCW) + b(`data-orbit="-1"`, "Turn the view right", CW) : "";
   const cat = $("catalog");
   cat.hidden = tool !== "place" && tool !== "paint" && tool !== "decor";
@@ -391,6 +437,7 @@ $("tools").addEventListener("click", (e) => {
   if (t.dataset.furnish) return void furnishRoom();
   if (t.dataset.tool) tool = t.dataset.tool as Tool;
   if (t.dataset.view) view = t.dataset.view === "3d" && build ? "3d" : "plan";
+  if (t.dataset.map) { showMap = !showMap; if (showMap) view = "plan"; }
   if (t.hasAttribute("data-walls")) walls = walls === "cutaway" ? "down" : walls === "down" ? "up" : "cutaway";
   render();
 });
@@ -423,6 +470,79 @@ function renderSound() {
     <div class="row"><button class="go" id="clap" type="button">Clap at ${esc(spot?.id ?? "the middle")}</button>
       <a class="button" id="walk" href="/jam.html?studio=${preset() ? encodeURIComponent(room.id) : "yours"}">Enter</a></div>`;
   $("clap").addEventListener("click", () => clap());
+}
+
+// ---- the PA: the picked stack's aim, the coverage, the power, and what to take away ----
+
+/** The coverage map of the room as it stands, kept until the room changes. */
+let mapFor: { room: StudioDef; map: FloorMap | null } | null = null;
+function paMap(): FloorMap | null {
+  if (mapFor?.room !== room) mapFor = { room, map: floorMap(room) };
+  return mapFor.map;
+}
+const deg = (r: number) => Math.round((r * 180) / Math.PI), rad = (d: number) => (d * Math.PI) / 180;
+const kw = (w: number) => `${(w / 1000).toFixed(1)} kW`;
+
+function renderPa() {
+  const host = $("pa"), map = paMap();
+  if (!map) { host.innerHTML = ""; return; }
+  const rp = rigPlan(room), power = rp ? powerPlan(rp) : null, stacks = room.outdoor?.stacks ?? [];
+  if (stackPicked !== null && !stacks[stackPicked]) stackPicked = null;
+  const st = stackPicked !== null ? stacks[stackPicked] : undefined, line = roomRig(room).stack.filter((b) => b.startsWith("line-array")).length;
+  const pins = st?.pins ?? [0.14, 0.07, 0.02];
+  host.innerHTML = `<h2>PA</h2>
+    <div class="big">${map.stats.mean.toFixed(0)} dB <small>over the floor, ${map.stats.even.toFixed(1)} dB from its quiet tenth to its loud</small></div>
+    <p class="hint">Quietest ${map.stats.min.toFixed(0)} dB, loudest ${map.stats.max.toFixed(0)} dB at ear height, mids and highs. ${showMap ? "The map is against the ring on the floor: gold louder, orange within 3 dB, teal 9 down, blue past 15." : "Coverage (the waves over the view) draws it on the blueprint."}</p>
+    ${room.outdoor ? `${st ? `<h2>Stack ${stackPicked! + 1}</h2>
+      <div class="row"><label>Aim, degrees<input type="range" min="-180" max="180" step="1" data-aim="yaw" value="${deg(st.yaw)}"></label></div>
+      <div class="row"><label>Splay of its tops, degrees<input type="range" min="-30" max="30" step="1" data-aim="splay" value="${deg(st.splay ?? 0)}"></label></div>
+      ${line ? `<div class="row">${Array.from({ length: line }, (_, k) => `<label>Pin ${k + 1}, down<input type="number" min="0" max="17" step="0.5" data-pin="${k}" value="${deg(pins[k] ?? 0)}"></label>`).join("")}</div>` : ""}
+      <div class="row"><button type="button" id="unstack">Take stack ${stackPicked! + 1} away</button></div>` : `<p class="hint">Pick a stack on the plan to aim it; the PA tool stands a new one.</p>`}
+    <h2>Power</h2>
+    <div class="row"><label>Generator<select id="gen-set"><option value="auto"${power?.auto ? " selected" : ""}>The smallest that holds</option>${GENERATOR_IDS.map((g) => `<option value="${g}"${!power?.auto && power?.generator === g ? " selected" : ""}>${esc(sheet(g).what)}</option>`).join("")}</select></label></div>
+    ${power ? `<p class="${power.ok ? "hint" : "bad"}">${power.ok ? "Holds" : "Fails"}: ${power.channels} amp channels on ${power.racks} rack${power.racks === 1 ? "" : "s"}, ${kw(power.feed.watts)} of the ${esc(sheet(power.generator).what)}'s ${kw(power.feed.limit)} at show level.</p>
+      ${power.why.length || power.warn.length ? `<ul class="why">${power.why.map((w) => `<li class="bad">${esc(w)}</li>`).join("")}${power.warn.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}` : ""}
+    <h2>Take it away</h2>
+    <div class="row"><button type="button" id="dl-list">Gear list</button><button type="button" id="dl-plan">Plan drawing</button></div>` : `<p class="hint">Indoors the PA is a stack either side of the decks; stacks you place stand out of doors.</p>`}`;
+  const q = <T extends Element>(sel: string) => [...host.querySelectorAll<T>(sel)];
+  for (const i of q<HTMLInputElement>("[data-aim]")) i.addEventListener("change", () => { if (stackPicked !== null) apply({ t: "aimStack", index: stackPicked, [i.dataset.aim!]: rad(Number(i.value)) }); });
+  for (const i of q<HTMLInputElement>("[data-pin]")) i.addEventListener("change", () => {
+    if (stackPicked === null) return;
+    const next = [...pins]; next[Number(i.dataset.pin)] = rad(Math.max(0, Math.min(17, Number(i.value))));
+    apply({ t: "aimStack", index: stackPicked, pins: next.slice(0, line) });
+  });
+  document.getElementById("unstack")?.addEventListener("click", () => { if (stackPicked !== null && apply({ t: "unstack", index: stackPicked })) { stackPicked = null; render(); } });
+  document.getElementById("gen-set")?.addEventListener("change", (e) => apply({ t: "generator", set: (e.target as HTMLSelectElement).value }));
+  document.getElementById("dl-list")?.addEventListener("click", () => download("list"));
+  document.getElementById("dl-plan")?.addEventListener("click", () => download("plan"));
+}
+
+/** The plan as a drawing that stands on its own: the blueprint with its styles written in, the coverage map on it. */
+function planSvg(): string {
+  const was = showMap;
+  showMap = true; render();
+  const css = getComputedStyle(plan), v = (n: string) => css.getPropertyValue(n).trim();
+  const rules = [...document.styleSheets].flatMap((sh) => { try { return [...sh.cssRules]; } catch { return []; } })
+    .map((r) => r.cssText).filter((t) => t.startsWith("#plan ")).map((t) => t.replace(/^#plan /, "").replace(/var\((--[\w-]+)\)/g, (_, n: string) => v(n)));
+  const out = plan.cloneNode(true) as SVGSVGElement;
+  out.removeAttribute("hidden"); out.setAttribute("xmlns", SVG);
+  const style = document.createElementNS(SVG, "style");
+  style.textContent = `svg { background: ${v("--card")}; font-family: sans-serif; }\n${rules.join("\n")}`;
+  out.prepend(style);
+  showMap = was; render();
+  return new XMLSerializer().serializeToString(out);
+}
+
+/** The gear list (with the power plan) or the plan drawing, saved as a file; what was saved, for the harness. */
+function download(what: "list" | "plan"): { name: string; text: string } | null {
+  const rp = rigPlan(room);
+  if (!rp) return null;
+  const name = `${room.id}-${what === "list" ? "gear-list.txt" : "plan.svg"}`, text = what === "list" ? gearListText(gearList(rp), room.name) : planSvg();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: what === "list" ? "text/plain" : "image/svg+xml" }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return { name, text };
 }
 
 let ctx: AudioContext | null = null;
@@ -539,6 +659,21 @@ const harness = {
   /** What the 3D view has under (x, y), pixels from its top left corner, and where that is on the floor. */
   hit: (x: number, y: number) => { const r = canvas.getBoundingClientRect(), e = { clientX: r.left + x, clientY: r.top + y }; return { hit: build?.hit(e) ?? null, floor: build?.toRoom(e) ?? null }; },
   furnish: () => furnishRoom(),
+  /** The PA: its stacks where they stand, the coverage over the floor, the power plan, the picked stack. */
+  pa: () => {
+    const map = paMap(), rp = rigPlan(room);
+    return {
+      stacks: rigStacks(room), picked: stackPicked, map: showMap,
+      coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
+      power: rp ? powerPlan(rp) : null,
+    };
+  },
+  /** The coverage map's level at (x, z) on the floor, dB. */
+  level: (x: number, z: number) => { const m = paMap(); return m ? +mapAt(m, x, z).toFixed(1) : null; },
+  pickStack: (i: number | null) => { stackPicked = i; render(); },
+  /** Show the coverage map on the blueprint, or not. */
+  showMap: (on = true) => { showMap = on; if (on) view = "plan"; render(); },
+  download: (what: "list" | "plan") => download(what),
   undo: () => undo(true),
   redo: () => undo(false),
   pick: (id: string) => { picked = id; render(); },

@@ -89,6 +89,7 @@ function fetcher(env: Env, c: Caller, dispatch: (r: Request) => Promise<Response
 }
 
 /** RpcTarget where the runtime has it (the edge); undefined under Bun, where an object is enough. */
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- cloudflare:workers has no types in this app; only the class it uses is named
 const rpcBase = import("cloudflare:workers").then((m) => (m as unknown as { RpcTarget: new () => object }).RpcTarget, () => undefined);
 
 const shown = (s: Row) => ({ ...s, enabled: !!s.enabled });

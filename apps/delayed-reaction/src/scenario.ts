@@ -38,7 +38,7 @@ export const setupOf = (s: Scenario): Setup | null => setupNamed(s.setup);
 /** The level's chart with the scenario's tempo, delay and hint (a setup's tempo, delay and length first), and no call whose
  *  wall would land after the song. */
 export function chartOf(s: Scenario): Chart {
-  const d = setupOf(s), over = { ...(d ? { bpm: d.bpm, delay: d.delay, bars: d.bars } : {}) };
+  const d = setupOf(s), over = (d ? { bpm: d.bpm, delay: d.delay, bars: d.bars } : {});
   if (s.bpm) over.bpm = s.bpm;
   if (s.delay) over.delay = s.delay;
   const c = makeChart(s.level, undefined, over), end = c.bars * 4 - 1;

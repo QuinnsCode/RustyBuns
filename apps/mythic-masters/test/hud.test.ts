@@ -35,7 +35,7 @@ describe("fight HUD skins", () => {
     const v = viewOf(m, mem, { ...extras, you: 0 }), meUp = !m.f[0]!.down, me = meUp ? 0 : 1;
     expect(v.sides.map((s) => s.id)).toEqual([m.f[me]!.c.id, m.f[foeOf(m, me)]!.c.id]);
     expect(v.crew.map((c) => c.name).sort()).toEqual(m.f.filter((_, k) => k !== me && k !== foeOf(m, me)).map((f) => f.c.name).sort());
-    expect(v.crew.map((c) => c.ours)).toEqual([...v.crew.map((c) => c.ours)].sort((a, b) => Number(b) - Number(a)));
+    expect(v.crew.map((c) => c.ours)).toEqual(v.crew.map((c) => c.ours).sort((a, b) => Number(b) - Number(a)));
     for (const c of v.crew) expect(c.down).toBe(m.f.find((f) => f.c.name === c.name)!.down);
     // One on one: the two fighters in order, no strip.
     const one = fight(), solo = viewOf(one.m, one.mem, extras);

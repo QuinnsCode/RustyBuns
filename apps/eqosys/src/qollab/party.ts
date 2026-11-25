@@ -168,7 +168,7 @@ export class Party {
     for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) if (!apart(who.id, m.from.id)) this.sockets.send(server, { t: "say", ...m });
     // Someone who arrives after the start is handed the same room.
     if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who, url.searchParams.get("code") ?? ""));
-    const seated: ResponseInit & { webSocket: unknown } = { status: 101, webSocket: Reflect.get(response, "webSocket"), headers: { [SEATED]: "1" } };
+    const seated: ResponseInit & { webSocket: unknown } = { status: 101, webSocket: "webSocket" in response ? response.webSocket : undefined, headers: { [SEATED]: "1" } };
     return new Response(null, seated);
   }
 

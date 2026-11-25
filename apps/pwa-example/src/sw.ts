@@ -12,6 +12,7 @@ declare const FILES: string[];
 interface Extendable extends Event { waitUntil(p: Promise<unknown>): void }
 interface Fetching extends Extendable { request: Request; respondWith(r: Promise<Response>): void }
 interface Worker { skipWaiting(): Promise<void>; clients: { claim(): Promise<void> }; location: Location; addEventListener(t: string, f: (e: never) => void): void }
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- this file runs as a service worker, but the app is typed with the DOM's lib
 const sw = self as unknown as Worker;
 
 const PREFIX = "pocket-dice-";

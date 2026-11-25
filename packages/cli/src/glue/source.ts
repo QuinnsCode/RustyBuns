@@ -10,7 +10,7 @@ export interface SourceLayout { dir: string; aliases: Record<string, string>; ig
 export function sourceLayout(root: string, cfg?: Partial<RustyBunsConfig>): SourceLayout {
   const inf = infer(root);
   const dir = cfg?.source?.dir ?? inf.srcDir;
-  const aliases = { "@": dir, ...inf.aliases, ...(cfg?.source?.aliases ?? {}) };
+  const aliases = { "@": dir, ...inf.aliases, ...cfg?.source?.aliases };
   const ignore = [/node_modules/, /(^|\/)(dist|\.rustybuns)\//, /\.test\.[tj]sx?$/, /\.d\.ts$/, /\/scripts\//, ...(cfg?.source?.ignore ?? []).map((g) => new RegExp(g))];
   return { dir, aliases, ignore, from: cfg?.source?.dir ? "config" : inf.srcDirSource, inf };
 }

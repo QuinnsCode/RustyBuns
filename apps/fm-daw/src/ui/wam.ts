@@ -9,7 +9,7 @@
 // A plugin is code. One from another site runs in this page with everything the page can do, and a groove is shared:
 // a friend's track can name any address. So a module from another site loads only after this player says its site
 // is fine, on this computer (`trust`); until then the track is silent and says why.
-import { check, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { check, field, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 import type { ParamChange, PluginChoice, PluginEvent, PluginParam, TrackPlugin } from "../plugin-track.ts";
 
 /** The modules FM DAW carries itself: no site to trust, and there with no network. `effect`: one for a track's Insert. */
@@ -48,7 +48,7 @@ export interface WamClass { createInstance(groupId: string, ctx: unknown): Promi
 const has = <K extends string>(v: unknown, ...keys: K[]): v is { [P in K]: unknown } => (typeof v === "object" || typeof v === "function") && v !== null && keys.every((k) => k in v);
 const isClass = (v: unknown): v is WamClass => has(v, "createInstance") && typeof v.createInstance === "function";
 const NODE = ["connect", "getParameterInfo", "getParameterValues", "setParameterValues", "scheduleEvents", "destroy"] as const;
-const isInstance = (v: unknown): v is WamInstance => has(v, "audioNode") && has(v.audioNode, ...NODE) && NODE.every((k) => typeof Reflect.get(Object(v.audioNode), k) === "function");
+const isInstance = (v: unknown): v is WamInstance => has(v, "audioNode") && has(v.audioNode, ...NODE) && NODE.every((k) => typeof field(v.audioNode, k) === "function");
 
 /** A slider's number on the desk: a WAM names its sliders with text, a track keeps numbers (FNV-1a of the name). */
 export function paramId(name: string): number {

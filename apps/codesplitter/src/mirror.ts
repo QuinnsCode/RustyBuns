@@ -753,7 +753,7 @@ async function keepDeps(dir: string, path: string, branch: string, source: strin
 }
 
 /** The folders (outside a folder mirror's own) its dependency tree holds, from the tree itself. */
-async function depsList(lg: LocalGit, r: Row, branch: string) {
+async function depsList(lg: LocalGit, r: Parameters<typeof crewSynced>[1], branch: string) {
   const dir = await syncedDir(lg, r), pkgs: string[] = [];
   const files = await git(["ls-tree", "-r", "--name-only", depsRef(branch)], dir);
   for (const f of files.out.split("\n")) if (f.endsWith("/package.json")) pkgs.push(f.slice(0, -"/package.json".length));
@@ -782,13 +782,18 @@ export function upstreamLag(m: { url: string; state: string; ahead: number; behi
   return { who, behind, ahead, line, says };
 }
 
+/** The columns mirrorStatus reads. */
+type StatusRow = Parameters<typeof crewSynced>[1] & Pick<Row, "mirror_primary" | "mirror_pull_only" | "mirror_path" | "branch" | "mirror_url" | "mirror_down_since"> & {
+  mirror_state: string | null; mirror_error: string | null; mirror_clash: string | null; mirror_synced_at: number | null; mirror_next_at: number | null;
+};
+
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
-  const r = await repoRow(env, owner, repo, "artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit", { mirrored: true });
+  const r = await repoRow<StatusRow>(env, owner, repo, "artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit", { mirrored: true });
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
-  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], await syncedDir(lg, r as unknown as Row));
+  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], await syncedDir(lg, r));
   const [ahead, behind] = counts.code ? [0, 0] : counts.out.trim().split(/\s+/).map(Number);
   const state = (r.mirror_state ?? "ok") as State, pullOnly = !!r.mirror_pull_only, url = String(r.mirror_url);
   return {
@@ -807,7 +812,7 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     // A folder mirror (folder-mirror.ts): the folder of upstream it mirrors, and the branch its work goes up as.
     path: (r.mirror_path ?? null) as string | null, sends: r.mirror_path ? sendBranch(repo) : null,
     // The workspace packages outside the folder it depends on, read-only at refs/folder-deps/<branch>.
-    deps: r.mirror_path ? await depsList(lg, r as unknown as Row, branch) : [],
+    deps: r.mirror_path ? await depsList(lg, r, branch) : [],
   };
 }
 

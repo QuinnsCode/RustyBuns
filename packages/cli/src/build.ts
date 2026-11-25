@@ -195,7 +195,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
     "X-User-Name": "${process.env.USER ?? process.env.USERNAME ?? \"wanderer\"}",
     "X-World-Slug": "local",
     "X-World-Owner": "local",
-    ...(d.identity ?? {}),
+    ...d.identity,
   };
   const bindings = c.bindings ?? {};
   const hasWorld = d.world !== false;

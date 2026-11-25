@@ -14,7 +14,7 @@
 
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { arr, check, int, maybe, obj, raw, str } from "@rustybuns/util/guard";
+import { arr, check, field, int, maybe, obj, raw, str } from "@rustybuns/util/guard";
 import { GENERATED, taskFiles } from "@rustybuns/util/overlap";
 import { stillBusy } from "../codesplitter/hint.ts";
 
@@ -181,7 +181,7 @@ export async function hireClash(floor: GuardFloor, body: unknown, exec: Run = ru
 }
 
 /** Whether the request said to go ahead, or to wait. */
-export const flagOf = (body: unknown, k: "anyway" | "hold") => typeof body === "object" && body !== null && k in body && Reflect.get(body, k) === true;
+export const flagOf = (body: unknown, k: "anyway" | "hold") => field(body, k) === true;
 
 // --- asked again when the queue seats a task (#4956) ---
 

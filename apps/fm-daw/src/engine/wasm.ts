@@ -67,7 +67,9 @@ const CHUNK = 512;
 
 export async function instantiateFm(bytes: BufferSource): Promise<Exports> {
   // bytes in -> { module, instance } out (the Module overload returns a bare Instance)
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   const { instance } = (await WebAssembly.instantiate(bytes, {})) as unknown as WebAssembly.WebAssemblyInstantiatedSource;
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   return instance.exports as unknown as Exports;
 }
 

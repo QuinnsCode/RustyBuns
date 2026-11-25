@@ -288,7 +288,7 @@ function serversIn(parent: string, prefix: string, keep: (name: string) => boole
     if (n.startsWith(".") || n === "node_modules" || !keep(n)) continue;
     const pkg = readJson(join(d, "package.json"));
     if (!pkg) continue;
-    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
     const fw = SERVER_DEPS.filter((x) => deps[x]);
     const start = String(pkg.scripts?.start ?? "");
     if (!fw.length && !/^(node|bun|tsx|ts-node)\s/.test(start)) continue;
@@ -395,7 +395,7 @@ const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-serve
 
 export function infer(root = process.cwd()): Inferred {
   const pkg = readPackageJson(root) ?? {};
-  const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   const staticBuild = inferStaticBuild(pkg.scripts ?? {});
   const vite = inferVite(root, staticBuild.config);
   let stack = stackOf(deps, vite.plugins);
@@ -403,7 +403,7 @@ export function infer(root = process.cwd()): Inferred {
   // config here, or vite at the workspace root, still makes it a vite app.
   if (stack === "unknown") {
     const ws = workspaceRoot(root), top = ws ? readPackageJson(ws) ?? {} : {};
-    const viaRoot = { ...(top.dependencies ?? {}), ...(top.devDependencies ?? {}) }["vite"];
+    const viaRoot = { ...top.dependencies, ...top.devDependencies }["vite"];
     if (vite.configPath || viaRoot) stack = stackOf({ ...deps, vite: viaRoot ?? "*" }, vite.plugins);
   }
   const framework = (inits(stack, vite.plugins, deps) ? stack : "unknown") as Framework;

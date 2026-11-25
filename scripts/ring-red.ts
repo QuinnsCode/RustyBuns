@@ -211,7 +211,7 @@ async function pass(dry: boolean): Promise<void> {
       + `the PR's work can come back with its fix.\n\nOpened by scripts/ring-red.ts (#4491).\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
     const out = dry ? "(dry: no revert opened)" : await openRevert(repo, blame, title, body);
     await say(`Revert of ${blame.sha.slice(0, 7)}: ${out}`);
-    if (blame.pr && /^https:/.test(out)) await say(`The ${RING} ring stayed red ${GRACE_MIN} min, so this PR's squash commit is being reverted: ${out}`, blame.pr);
+    if (blame.pr && out.startsWith("https:")) await say(`The ${RING} ring stayed red ${GRACE_MIN} min, so this PR's squash commit is being reverted: ${out}`, blame.pr);
     return;
   }
   if (!("red" in r)) return void console.log(r.why);

@@ -83,6 +83,7 @@ export const simModule = (mod: WebAssembly.Module | null | undefined): WebAssemb
   mod && WebAssembly.Module.exports(mod).some((x) => x.name === "sim_step") ? mod : null;
 
 export function instantiateSim(mod: WebAssembly.Module): NativeSim {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   const e = new WebAssembly.Instance(mod, {}).exports as unknown as SimExports;
   if (typeof e.sim_step !== "function" || !e.memory) throw new Error("not the hippo_sim module");
   const f64 = (ptr: number, len: number) => new Float64Array(e.memory.buffer, ptr, len);

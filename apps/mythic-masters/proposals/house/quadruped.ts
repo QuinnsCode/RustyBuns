@@ -95,7 +95,7 @@ export function quadruped(o: Quad) {
   ];
   const built: Built = { nodes, k, head: h };
   if (o.trait) parts.push(...o.trait(built));
-  const pal = { ...palette(o.pal), ...(o.extra ?? {}) };
+  const pal = { ...palette(o.pal), ...o.extra };
   return {
     feet: 4, wings: 0, root: "belly", material: "hide", belly: "belly", belly_turn: -0.3, blend: o.blend ?? s(0.018),
     eyes: fc.eyes, dense: { ...DENSE, accent: 0.7 },

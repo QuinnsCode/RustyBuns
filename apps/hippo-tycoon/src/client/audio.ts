@@ -22,8 +22,7 @@ export class Sound {
   unlock() {
     if (this.ctx) { void this.ctx.resume(); return; }
     try {
-      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AC();
+      this.ctx = new AudioContext();
       this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination);
       this.music = this.ctx.createGain(); this.music.connect(this.master);
       this.effects = this.ctx.createGain(); this.effects.connect(this.master);

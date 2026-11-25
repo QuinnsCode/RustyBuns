@@ -253,6 +253,7 @@ async function saveDesign(req: Request, env: Env, org: string, url: URL, origin:
 /** One served object: from the edge cache when it is there, else R2, then into the cache. WebGL needs the CORS header. */
 async function serve(req: Request, env: Env, key: string): Promise<Response> {
   if (!servable(key)) return new Response("not found", { status: 404, headers: cors(null) });
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- caches.default is Cloudflare's; the app is typed with the DOM's lib, which doesn't have it
   const cache = typeof caches !== "undefined" ? (caches as unknown as { default?: Cache }).default : undefined;
   const hit = await cache?.match(req);
   if (hit) return hit;
