@@ -11,13 +11,13 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { arr, check, int, obj, str } from "@rustybuns/util/guard";
 import { trimLog } from "../../../scripts/pr.ts";
+import { BLOCKER_LABEL, blockerMark } from "../ester/blockers.ts";
 
 export const BY = "Ester";
 export const WINDOW_MS = 6 * 3600_000;
 export const EVERY_MS = 10 * 60_000;
 export const WORKFLOWS = { pr: "apps.yml", hourly: "desktop-hourly.yml" } as const;
 /** The label Mervin and scripts/after.ts find blocker issues by (#5934). */
-export const BLOCKER_LABEL = "ci-blocker";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const Runs = arr(obj({ databaseId: int(1, Number.MAX_SAFE_INTEGER), headBranch: text(300), createdAt: text(40), url: text(400) }), 200, { drop: true });
@@ -93,7 +93,7 @@ Log:
 ${s.lines.join("\n")}
 \`\`\`
 
-Workers whose PR is red only on this test are told to wait for its fix rather than rerun the check.`;
+Workers whose PR is red only on this test are told to wait for its fix rather than rerun the check.\n\n${blockerMark({ test: s.test, prs: s.prs, checks: s.checks })}`;
 const brief = (s: Spread, issue: number) => `CI issue #${issue}: the test \`${s.test}\` fails on ${s.prs.map((n) => `#${n}`).join(", ")}${s.hourly ? " and the hourly run" : ""}.
 Read AGENTS.md, then the issue with \`bun run issue ${issue} --full\`: it links the failed runs and the log lines.
 Reproduce it on the builder (\`bun run builder run apps/<app> bun test <file>\`) and fix the cause in one small PR from main. Don't skip, loosen or quarantine the test.
