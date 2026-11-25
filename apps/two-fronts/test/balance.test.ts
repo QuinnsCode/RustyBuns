@@ -4,7 +4,7 @@ import { ATTACKER_HANDICAP, HUMAN_HANDICAP, forHuman, handicapped } from "../src
 import { DUG_IN, KEEP_WALLS, dugIn, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
 
 // Whole battles: slow, and a CI runner is slower than a laptop. The win-rate balance itself is `bun scripts/balance.ts`.
-setDefaultTimeout(240_000);
+setDefaultTimeout(30_000);
 
 test("the defender's ground: dug in near a post of theirs, behind walls at the keep; the attacker has neither", () => {
   const b = startBattle(specFor("shield", 1, "marines", null));

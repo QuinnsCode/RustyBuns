@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // vite serves the game cold, then plays a wild fight in headless Chrome
 
 type Prompt = { chance: number; ink: number; note: string } | null;
 

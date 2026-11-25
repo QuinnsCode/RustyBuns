@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // the jam room in software GL, at laptop and phone sizes
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 // The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.

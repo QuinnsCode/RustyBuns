@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Wall } from "../src/wall/wall.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const SR = 48000;
 const cable = (a: string, ja: string, b: string, jb: string) => ({ from: [a, ja] as [string, string], to: [b, jb] as [string, string] });

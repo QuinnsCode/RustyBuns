@@ -8,7 +8,7 @@ import { riff } from "../src/circuit/riff.ts";
 import { rigSpec } from "../src/amp/live.ts";
 import type { AmpSettings } from "../src/amp/messages.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const SR = 48000;
 
 /** Where a burst's energy arrives, in seconds after `from`: the centre of the squared output's mass. */

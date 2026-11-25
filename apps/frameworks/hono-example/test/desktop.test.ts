@@ -2,7 +2,7 @@ import { setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { counterJourney } from "../../../../scripts/counter.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 
 // The sample-app contract (FRAMEWORKS.md): build the dev host, count 0, two posts through the
 // form, count 2, restart, still 2.

@@ -6,7 +6,7 @@ import { riff } from "../src/circuit/riff.ts";
 import { STAGE, compile, heard, type Cable, type Patch } from "../src/circuit/patch.ts";
 import { FULL_SCALE, applySettings } from "../src/amp/live.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const SR = 48000;
 
 /** What the speakers put out for a patch, as the page does it: compile, then the rig, muted when nothing gets through. */

@@ -6,7 +6,7 @@ import { findBlender, runBlender } from "@rustybuns/cli/blender";
 
 // A sheet's head parts as the builder lays them (#4291): a slanted almond eye (`r` as [x, y, z], `rot`) and a
 // wolf's ear that narrows to a point (`point`), the pair mirrored. Needs Blender (CI has none, so there it skips).
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // builds parts in headless Blender (skipped on CI)
 const APP = join(import.meta.dir, "..");
 
 const PY = `

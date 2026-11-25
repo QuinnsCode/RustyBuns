@@ -9,7 +9,7 @@ import { fakeGitHub } from "../../../packages/util/test/fake-gh.ts";
 import { read, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 type Board = { items: { number: number; train?: Card }[] };
 type GitHub = Floor["github"] & { merge(n: number, method: string, deleteBranch: boolean, auto: boolean): Promise<string | undefined> };

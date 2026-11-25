@@ -13,7 +13,7 @@ import { Space } from "../src/engine/space.ts";
 import { CEILING } from "../src/engine/params.ts";
 import { renderProject } from "../src/engine/offline.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 test("a groove tiles across the loop and puts its fill in the last bar", () => {
   const roller = GROOVES[0];

@@ -7,7 +7,7 @@ import { bench } from "../src/circuit/bench.ts";
 import { applySettings } from "../src/amp/live.ts";
 import board from "../circuits/bench-drive.circuit.json";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const SR = 48000;
 
 test("a drawn drive pedal becomes gear with a knob per pot, and plays in front of the amp", () => {

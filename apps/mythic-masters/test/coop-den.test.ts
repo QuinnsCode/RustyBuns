@@ -15,7 +15,7 @@ import { REGIONS } from "../src/regions.ts";
 import { tsSim, type Live } from "../src/sim-wasm.ts";
 import { coopTeams } from "../src/versus.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const party = serveParty(0);
 afterAll(() => party.stop());
 

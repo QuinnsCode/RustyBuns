@@ -12,7 +12,7 @@ import { cellsIn, master, mean } from "../src/venues/dive-bar.ts";
 import { CAMP_LIMIT, DANCE_FLOOR, DESERT, DESERT_RIGS, GEN_QUIET, bringRig, desertState, heat, score, wrap } from "../src/venues/desert.ts";
 import { SYSTEMS, gear as catalog, stackWidth } from "@rustybuns/gear";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
 /** Walk to (x, z) however long it takes: 30 m of sand with a 45 kg bin is more than walkTo's two minutes. */
 function go(w: World, c: Cables, x: number, z: number) {

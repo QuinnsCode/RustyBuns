@@ -4,7 +4,7 @@ import { fps, gate, parseMode, pixelRatio, type State } from "../power/policy.ts
 import { read, unpackPinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const at = (s: Partial<State>): number => fps({ mode: "auto", focused: true, idleMs: 0, onBattery: false, ...s });
 

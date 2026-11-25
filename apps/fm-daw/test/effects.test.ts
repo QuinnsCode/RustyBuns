@@ -9,7 +9,7 @@ import { riff } from "../src/circuit/riff.ts";
 import { applySettings } from "../src/amp/live.ts";
 import type { AmpSettings } from "../src/amp/messages.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // solves every pedal's circuit into an amp, sample by sample
 const SR = 48000;
 const sine = (hz: number, seconds: number, amp = 1) => Float32Array.from({ length: SR * seconds }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / SR));
 const pedal = (id: string): PedalDef => {

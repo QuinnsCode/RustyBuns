@@ -4,7 +4,7 @@ import { blenderVersion, findBlender, runBlender, warmBlender } from "@rustybuns
 
 // The warm Blender (#3941): a build through it is byte for byte a cold one, and the MCP in front of it answers
 // load, stats and render and refuses what it shouldn't. Needs Blender (CI has none, so there it skips).
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // cold and warm headless Blender builds (skipped on CI)
 const APP = join(import.meta.dir, "..");
 const GLB = join(APP, "public", "models", "jackalope.glb");
 const sha = async () => new Bun.CryptoHasher("sha256").update(await Bun.file(GLB).bytes()).digest("hex");

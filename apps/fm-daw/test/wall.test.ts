@@ -7,7 +7,7 @@ import { bringModule, inCase, item, listen, lookAt, newRoom, pickUp, putDown, us
 import { renderWall } from "../src/wall/wall.ts";
 import { PANELS } from "../circuits/wall-panels.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const click = (r: Room, id: string, part?: string) => { lookAt(r, id, part); return use(r); };
 const cable = (r: Room, a: string, ja: string, b: string, jb: string) => [click(r, a, ja), click(r, b, jb)];

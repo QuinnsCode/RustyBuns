@@ -8,7 +8,7 @@ import { HUNT, ServerMsg, circleAt, dropOk, type Msg, type View } from "../src/h
 import { resolve, step, wrap, type Body } from "../src/hunt/sim.ts";
 import { loadZoneData, zoneById, type Zone } from "../src/zones/zone.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // two players play a whole online round in real time
 const ZONE = "el-capitan", LAG = 50;
 
 const env: Record<string, unknown> = {};

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 
 // TanStack Start on the desktop, end to end: build the dev host, start it on an empty HOME, add a note
 // through a server route, find it in the server-rendered page, quit, start again and find it still there.

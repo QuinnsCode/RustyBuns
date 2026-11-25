@@ -5,7 +5,7 @@ import { TOKENS } from "@rustybuns/ui";
 import { chromePath, launchChrome, load, openTab } from "../../../scripts/chrome.ts";
 import { skinServer } from "./skin-server.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // every eqosys surface in headless Chrome
 
 const server = await skinServer();
 let chrome: Awaited<ReturnType<typeof launchChrome>> | undefined;

@@ -8,7 +8,7 @@ import { CHECKOUT_TIMEOUT_MS, plainCheckout, slowCheckout, startFromDefault } fr
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // the first run downloads upstream's pinned release; git worktree add on a 10,000-file repo
 
 let file = "";
 let mod: { Worktrees: new (dir: string) => { create(slug: string): unknown; gitSync(a: string[]): string }; gitError(e: unknown): string };

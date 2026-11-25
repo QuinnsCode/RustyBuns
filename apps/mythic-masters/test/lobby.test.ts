@@ -10,7 +10,7 @@ import { chromePath, freePort, launchChrome, load, openTab, startVite, type Tab 
 import { APP } from "../src/account.ts";
 import { serveEdge } from "../scripts/edge.ts";
 
-setDefaultTimeout(150_000);
+setDefaultTimeout(150_000); // two pages and a party server in headless Chrome (skipped on CI)
 /** What eqosys's /api/exchange hands back that this test uses. */
 const Exchanged = obj({ user: obj({ id: str(200) }), token: str(4096), refresh: str(100) });
 const stops: (() => unknown)[] = [];

@@ -11,7 +11,7 @@ import { floorGuardBin, floorGuardClicks, floorGuardHooks, floorGuardQueue } fro
 import { unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 let workerHandlers: Record<string, (ctx: unknown, c: unknown, msg: unknown) => void>;
 let officeWorkers: (ctx: unknown, req: unknown, res: unknown, url: URL) => Promise<void>;

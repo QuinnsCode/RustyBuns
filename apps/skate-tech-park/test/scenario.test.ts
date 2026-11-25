@@ -5,7 +5,7 @@ import { LEVELS } from "../src/levels/index.ts";
 import { DT, IDLE, start, step } from "../src/sim.ts";
 import { linkOf, scenarioOf, spotFor } from "../src/scenario.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // builds the park behind each scenario link
 
 test("a link carries the scenario and the page reads it back", () => {
   const link = linkOf({ level: "el-capitan", spawn: "vert", quality: "low", controls: "touch", weak: true, fps: true });

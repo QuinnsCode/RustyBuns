@@ -4,7 +4,7 @@ import path from "node:path";
 import { dropSecrets, secretName } from "../live/env.ts";
 import { unpackPinned, pinnedTest } from "./pinned.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 test("secret-shaped names are secrets; the everyday ones aren't", () => {
   for (const n of ["CLOUDFLARE_API_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "OP_SERVICE_ACCOUNT_TOKEN", "OP_SESSION_my", "AWS_SECRET_ACCESS_KEY",

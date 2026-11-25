@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // builds a page and walks a tutorial in headless Chrome
 
 const built = await Bun.build({ entrypoints: [join(import.meta.dir, "tutorial-page.ts")], target: "browser" });
 const script = await built.outputs[0]!.text();

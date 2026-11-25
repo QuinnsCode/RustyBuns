@@ -6,7 +6,7 @@ import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { level } from "./parks.ts";
 
-setDefaultTimeout(60000);
+setDefaultTimeout(30_000);
 
 const FRONT_DOORS = [["yosemite-falls", "Visitor Center Gap", "Falls Trail"], ["old-faithful", "Visitor Center Gap", "Geyser Trail"], ["mariposa-grove", "Welcome Center Gap", "Grove Trail"]] as const;
 

@@ -12,7 +12,7 @@ import { launchChrome, load, openTab, type Chrome, type Tab } from "../../../scr
 import { tsRoller, wasmRoller } from "../src/roller.ts";
 import { checkAssetLinks } from "../scripts/twa.ts";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(30_000);
 const app = join(import.meta.dir, "..");
 const dist = join(app, "dist/ui");
 

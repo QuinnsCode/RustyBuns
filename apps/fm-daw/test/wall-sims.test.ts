@@ -7,7 +7,7 @@ import type { AmpSettings } from "../src/amp/messages.ts";
 import { renderWall, type WallSpec } from "../src/wall/wall.ts";
 import { Linear, makeSim } from "../src/wall/sims.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 /** `seconds` of one module, its inputs from `drive(t)`: every output's peak over the last half, and ten samples of each. */
 function run(kind: string, knobs: Record<string, number>, drive: (t: number) => number[], seconds = 0.2, sampleRate = 48000) {

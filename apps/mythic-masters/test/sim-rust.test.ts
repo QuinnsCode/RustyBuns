@@ -9,7 +9,7 @@ import { ROSTER } from "../src/roster.ts";
 import { hashMatch, tsSim, wasmSim } from "../src/sim-wasm.ts";
 import { ARENA, type Match } from "../src/sim.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // runs every pairing of the roster through TS, wasm and the Rust binary
 
 const bits = new Float64Array(1), word = new BigInt64Array(bits.buffer);
 const ulps = (a: number, b: number) => { bits[0] = a; const x = word[0]!; bits[0] = b; const y = word[0]!; return Number(x > y ? x - y : y - x); };

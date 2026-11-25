@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { runGenomeStress } from "./genome";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // native and wasm workers run 300,000 iterations each
 
 test("native + wasm workers hammering one shared genome keep every invariant", async () => {
   const r = await runGenomeStress({ native: 3, wasm: 3, iters: 300_000, genes: 32 });

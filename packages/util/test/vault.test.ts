@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
 import { checkDpop, newKey, sign } from "../src/token.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // builds a page and signs in in headless Chrome
 
 const built = await Bun.build({ entrypoints: [join(import.meta.dir, "vault-page.ts")], target: "browser" });
 const script = await built.outputs[0]!.text();

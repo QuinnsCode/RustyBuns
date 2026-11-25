@@ -1,6 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { CAMPAIGN } from "../src/sim/campaign.ts";
 import { APPROACH, BARRAGE_AFTER, BOAT_IN, CRAWL_MAX, Director, DROP, GAG, HOME, LANDING_SQUAD, RAMP, SHELLS, SQUAD, SWEEP } from "../src/sim/director.ts";

@@ -10,7 +10,7 @@ import { decodeCurrents, paddleToward, startSwim, SWIM_S, swimOver, swimStep } f
 import { levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, syntheticWind } from "../src/flight.ts";
 import { bearing, distanceKm, type LatLon } from "../src/geo.ts";
 
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // nine holes played to the scorecard in headless Chrome, twice
 const SEED = 7, SPEED = 4;
 // A swim steps at most 0.1 s a frame, so on software WebGL its clock runs near real time whatever the speed.
 const SWIM_MS = SWIM_S * 1000 + 10_000;

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeSim } from "../src/wall/sims.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const dir = join(import.meta.dir, "../firmware/keys");
 

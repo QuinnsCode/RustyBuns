@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite, until } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // makes and walks into rooms in software GL, from a fresh browser
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();

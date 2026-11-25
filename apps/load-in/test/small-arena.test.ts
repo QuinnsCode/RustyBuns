@@ -7,7 +7,7 @@ import { master } from "../src/venues/dive-bar.ts";
 import { CLEAR, CROWD, SMALL_ARENA, arenaState, calc, check, fly, hang, hangsOf, point, pin, score, scores, show, unhang } from "../src/venues/small-arena.ts";
 import { letIn } from "../src/crowd/crowd.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const item = (w: World, key: string) => w.items.find((i) => i.key === key)!;
 

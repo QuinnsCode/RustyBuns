@@ -7,7 +7,7 @@ import { join } from "node:path";
 import host, { _reset } from "../desktop/host.ts";
 import { chromePath, glFlags, launchChrome, load, openTab, startVite, type Chrome } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the app cold, then draws a 3D model in headless Chrome
 
 type Sample = { loaded: boolean; error: string | null; turn: number };
 const root = mkdtempSync(join(tmpdir(), "meshy-first-"));

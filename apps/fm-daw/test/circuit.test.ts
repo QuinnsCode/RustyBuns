@@ -18,7 +18,7 @@ import qDrive from "../circuits/q-drive.circuit.json";
 import qFuzz from "../circuits/q-fuzz.circuit.json";
 import qSqueeze from "../circuits/q-squeeze.circuit.json";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // solves every circuit board's netlist sample by sample
 const SR = 48000;
 const sine = (hz: number, seconds: number, amp = 1) => Float32Array.from({ length: SR * seconds }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / SR));
 /** Fails naming `what` and the value when it falls outside lo..hi. */

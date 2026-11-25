@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { SCENES } from "../src/swarm-story.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 // The story, walked the way a person walks it: open the page and click Next through every scene. The stage is
 // bundled and loaded in a real page (Bun.WebView), so this needs a browser; where there is none it skips.

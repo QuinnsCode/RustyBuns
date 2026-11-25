@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the game cold, then plays boot camp in headless Chrome
 
 type Coach = { learned: boolean; running: boolean; step: number; of: number; title: string | null };
 

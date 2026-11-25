@@ -10,7 +10,7 @@ import { AppPage, Home } from "../src/app/pages.tsx";
 import { APPS } from "../src/apps.ts";
 import type { Studio } from "../src/studios.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // every page at desktop and phone size in headless Chrome
 
 const me = { id: "1", email: "a@example.com", name: "Ada" } as never;
 // A studio as the Studio tab shows it: a long name, a few people, and a shelf with every kind of door.

@@ -6,7 +6,7 @@ import { issueMatcher, lastDeploys, prOf } from "./bridge-lib.ts";
 import { logDeploy } from "../packages/cli/src/report-deploy.ts";
 import { serve } from "./bridge.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // the bridge's scan reads every app under apps/
 
 const dir = mkdtempSync(join(tmpdir(), "bridge-"));
 const tiersFile = join(dir, "tiers.json");

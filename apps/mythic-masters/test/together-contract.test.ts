@@ -4,7 +4,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath } from "../../../scripts/chrome.ts";
 import { noise, settle, stride, together, until } from "./together-kit.ts";
 
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // two pages walk the open world together in headless Chrome
 
 test.skipIf(!chromePath())("a contract read after a jump goes nowhere until a friend the room trusts walks up", () => together(async ({ open }) => {
   const a = await open("hodag");

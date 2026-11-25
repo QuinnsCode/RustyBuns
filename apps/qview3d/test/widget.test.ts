@@ -13,7 +13,7 @@ import { designKey } from "../src/layout.ts";
 import { putOrg, putProduct } from "../src/settings.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // builds the widget as a deploy does and drives the demo shop in headless Chrome
 
 const root = join(import.meta.dir, "..");
 const dir = mkdtempSync(join(tmpdir(), "qview3d-widget-"));

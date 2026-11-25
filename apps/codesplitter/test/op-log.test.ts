@@ -3,7 +3,7 @@ import { storage } from "@rustybuns/shell-bun";
 import { FileDurableObject, KEEP_SNAPS, SNAP_EVERY } from "../src/file-do.ts";
 import { replay, type Applied } from "../src/lines.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 /** The file DO over the sqlite twin, its log reads recorded. */
 async function file(s = storage(":memory:")) {

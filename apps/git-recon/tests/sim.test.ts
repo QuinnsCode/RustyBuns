@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 
 // Every level is mapped (paths searched and cut) in a few tests, and one walks every path: slow on CI.
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, styleOf, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";

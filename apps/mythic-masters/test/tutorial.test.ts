@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(400_000);
+setDefaultTimeout(400_000); // every step of the fight tutorial in headless Chrome (about 143 s on CI)
 
 type Coach = { learned: boolean; running: boolean; step: number; of: number; title: string | null };
 

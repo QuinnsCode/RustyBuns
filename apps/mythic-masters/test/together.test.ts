@@ -10,7 +10,7 @@ import { chromePath } from "../../../scripts/chrome.ts";
 import { Online } from "../src/net/online.ts";
 import { board, CI, look, noise, stride, together, until, walk, type Look } from "./together-kit.ts";
 
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // two pages walk the open world together in headless Chrome
 
 test.skipIf(!chromePath())("two friends walk one world: see each other, the same hour, leave and come back", () => together(async ({ open, url, drop, up }) => {
   // A walks 300 m off along the trail before B comes in: B's Start lands them beside A, not at their own save's spot.

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createServer, type ViteDevServer } from "vite";
 import { nudged } from "../src/nudge.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // starts vite and rebuilds a beast in Blender (skipped without it)
 const APP = join(import.meta.dir, "..");
 const read = (p: string) => readFileSync(join(APP, p));
 

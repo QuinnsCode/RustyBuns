@@ -9,7 +9,7 @@ import type { AmpSettings, ChainSlot, ToPart } from "../src/amp/messages.ts";
 import { Head, Ring } from "../src/amp/ring.ts";
 import { partsFor } from "../src/amp/threads.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const SR = 48000, BLOCK = 128;
 
 test("working the knobs while the riff plays: rebuilds only what moved, never past -1 dBFS", () => {

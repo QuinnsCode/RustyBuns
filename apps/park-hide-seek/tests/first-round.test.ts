@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // vite serves the game cold, then plays the tutorial round in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 beforeAll(async () => { [chrome, vite] = await Promise.all([launchChrome(), startVite(join(import.meta.dir, ".."))]); });

@@ -16,7 +16,7 @@ import { isRecord } from "@rustybuns/util/guard";
 // The sweep then sends an empty body to every operation whose spec names a required field: each must refuse it.
 // Checked: types, required fields, enums and the success status. A reply field an object's spec doesn't name is a fault
 // too (`unnamed`), unless the spec leaves that object open (`loose`, or additionalProperties).
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const root = mkdtempSync(join(tmpdir(), "codesplitter-contract-"));
 writeFileSync(join(root, "gitconfig"), "[user]\n\tname = Ana Real\n\temail = ana@example.com\n[init]\n\tdefaultBranch = main\n");
 process.env.GIT_CONFIG_GLOBAL = join(root, "gitconfig");

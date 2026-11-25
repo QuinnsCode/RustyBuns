@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { START_LEVEL, SECTIONS } from "../src/journey.ts";
 import { levels, lineup, pace, route, stones } from "../scripts/levels.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 test("the levels card: five checks on the road from region 1, each a rate with its points, and a total out of 5", () => {
   const road = route(), all = stones(road), at = pace(road);
