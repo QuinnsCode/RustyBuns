@@ -1,0 +1,188 @@
+<title>Mythic Masters Plot Lines</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a night ledger in the Book's rust hand. A lane chart up top shows where every thread runs down the road
+   (regions as columns, threads as rows), then one card per thread with its beats in road order and Keep / Maybe / Cut
+   on the thread and on each beat the game doesn't play yet. Written by scripts/plots.ts (bun run plots <dir>). */
+:root{
+  --night:#12100f; --leaf:#1d1917; --leaf-hi:#28221f; --rule:#3a2f29;
+  --ink:#eee2cf; --muted:#a89a88; --rust:#d2693c; --rust-dim:#7a3c22; --lamp:#f0b44c; --moss:#93c27a; --sky:#73b4d8; --cut:#c98a7a;
+  --display:"IM Fell English",Georgia,serif; --sc:"IM Fell English SC",Georgia,serif; --body:"Alegreya Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+body{background:var(--night);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--night)}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 80px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(2.3rem,6.5vw,3.8rem);line-height:1.02;margin:0;color:var(--rust);text-wrap:balance}
+h1 em{color:var(--ink);font-style:italic}
+.lede{color:var(--muted);max-width:70ch;margin:.6rem 0 0}
+.how{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:18px}
+.how div{background:var(--leaf);border:1px solid var(--rule);border-radius:4px;padding:10px 12px;min-width:0}
+.how b{font-family:var(--sc);font-weight:400;font-size:1.2rem;display:block}
+.how p{margin:0;font-size:.92rem}
+.k-main{color:var(--rust)}.k-sub{color:var(--lamp)}.k-side{color:var(--moss)}.k-unlock{color:var(--sky)}
+.lanes{margin-top:22px;background:var(--leaf);border:1px solid var(--rule);border-radius:4px;padding:12px 10px 8px;overflow-x:auto}
+.lanes h2{font-family:var(--display);font-weight:400;font-size:1.5rem;margin:0 4px 2px}
+.lanes p{margin:0 4px 6px;color:var(--muted);font-size:.9rem}
+.lanes svg{display:block;min-width:760px;width:100%;height:auto}
+.lanes text{font-family:var(--mono);font-size:10.5px;fill:var(--ink)}
+.lanes .rg{fill:var(--muted)}
+.lanes g.row{cursor:pointer}
+.lanes g.row:hover rect,.lanes g.row:focus rect{fill:var(--leaf-hi)}
+.lanes g.row:focus{outline:none}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 4px 0;font-size:.82rem;color:var(--muted)}
+.key svg{display:inline-block;min-width:0;width:12px;height:12px;vertical-align:-1px;margin-right:4px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--night);border-bottom:1px solid var(--rule);margin-top:22px;padding-block:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+input[type=search]{flex:1 1 200px;min-width:0;background:var(--leaf);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:7px 10px;font:inherit}
+select,button{font:inherit;color:var(--ink);background:var(--leaf-hi);border:1px solid var(--rule);border-radius:4px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--rust-dim)}
+:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+.prog{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+.prog b{color:var(--moss);font-weight:500}
+.status{font-size:.85rem;color:var(--lamp);flex-basis:100%}
+section.grp{margin-top:34px}
+.grp h2{font-family:var(--sc);font-weight:400;font-size:clamp(1.7rem,4vw,2.3rem);margin:0;line-height:1.1}
+.grp>p{margin:2px 0 12px;color:var(--muted);max-width:75ch}
+.list{display:grid;gap:14px}
+.tc{background:var(--leaf);border:1px solid var(--rule);border-radius:4px;padding:14px 16px;display:grid;gap:10px;min-width:0}
+.tc.p-keep{border-color:#4d6b3f}
+.tc.p-cut{opacity:.62}
+.head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;min-width:0}
+.head h3{font-family:var(--display);font-weight:400;font-size:1.65rem;line-height:1.1;margin:0;text-wrap:balance}
+.chip{font-size:.74rem;border:1px solid var(--rule);border-radius:3px;padding:0 6px;color:var(--muted);white-space:nowrap;font-family:var(--body)}
+.chip.game{color:var(--moss);border-color:#3f5733}
+.chip.own{color:var(--lamp);border-color:#6b4b22}
+.chip.link{color:var(--lamp);border-color:#6b4b22;cursor:pointer;background:transparent;padding:0 6px}
+.pitch{margin:0;font-size:1.05rem;max-width:75ch}
+.road{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:3px}
+.road span{height:8px;border-radius:2px;background:var(--leaf-hi)}
+.road span.on{background:var(--c)}
+.road span.done{box-shadow:inset 0 0 0 2px var(--c);background:var(--c)}
+.roadlab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+ol.beats{list-style:none;margin:0;padding:0;display:grid;gap:0;border-top:1px solid var(--rule)}
+ol.beats li{display:grid;grid-template-columns:14px 1fr;gap:2px 10px;padding:9px 0;border-bottom:1px solid var(--rule);min-width:0}
+ol.beats li.p-cut{opacity:.55}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:7px;border:2px solid var(--c);box-sizing:border-box}
+.dot.built{background:var(--c)}
+.dot.approved{background:linear-gradient(90deg,var(--c) 50%,transparent 50%)}
+.bt{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;min-width:0}
+.bt b{font-weight:700}
+.where{font-family:var(--mono);font-size:.76rem;color:var(--muted)}
+.bx{grid-column:2;margin:0;font-size:.95rem;max-width:78ch;min-width:0}
+.bx .extra{color:var(--muted);font-style:italic}
+.brow{grid-column:2;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.picks{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.picks.small button{font-size:.78rem;padding:1px 8px}
+.pk[aria-pressed=true][data-p=keep]{color:var(--moss);border-color:#4d6b3f}
+.pk[aria-pressed=true][data-p=maybe]{color:var(--lamp);border-color:#6b4b22}
+.pk[aria-pressed=true][data-p=cut]{color:var(--cut);border-color:#6a3a30}
+textarea{width:100%;box-sizing:border-box;background:var(--night);color:var(--ink);border:1px solid var(--rule);border-radius:4px;font:inherit;font-size:.9rem;padding:6px 8px;resize:vertical}
+.brow textarea{flex:1 1 240px;min-width:0}
+.foot{display:grid;gap:8px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Mythic Masters <em>plot lines</em></h1>
+    <p class="lede">Every storyline in the story bible, down the road from the Pine Barrens to the Ozarks: the Book's ledger, the three factions, Gary's tapes, the last bearer, the believers' letters, the evenings and the tools. Threads marked <span class="chip game">in the game</span> are read from the game itself. Pick Keep, Maybe or Cut on each thread, and on any beat the game doesn't play yet, and leave a note; I'll write and build from the keeps.</p>
+    <div class="how">
+      <div><b class="k-main">Main</b><p>The Book's ledger, region to region.</p></div>
+      <div><b class="k-sub">Sub</b><p>A thread over several regions: a faction, a person, a mystery.</p></div>
+      <div><b class="k-side">Side</b><p>One place, one evening.</p></div>
+      <div><b class="k-unlock">Unlock</b><p>What opens the next thing: a road, a slot, a tool.</p></div>
+    </div>
+  </header>
+
+  <div class="lanes">
+    <h2>Where each thread runs</h2>
+    <p>Regions in road order across, threads down. A dot is a beat (filled: the game plays it, half: approved, ring: an idea); faint arcs are beats that wait on another thread. Click a thread to jump to it.</p>
+    <svg id="lanes" viewBox="0 0 960 520" role="img" aria-label="Lane chart of every thread across the regions"></svg>
+  </div>
+
+  <div class="bar" role="region" aria-label="Filters">
+    <input id="q" type="search" placeholder="Search threads and beats" aria-label="Search threads and beats">
+    <select id="show" aria-label="Show"><option value="all">All threads</option><option value="written">Written, not in the game yet</option><option value="game">In the game</option><option value="open">Not picked yet</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="cut">Cut</option></select>
+    <span class="prog" id="prog">Loading…</span>
+    <span class="status" id="status" hidden></span>
+  </div>
+  <main id="main"><p class="lede">Loading the plot lines…</p></main>
+</div>
+
+<script>
+(function(){
+var DATA=null,P={},db=null,q="",show="all",BEAT={};var $=function(i){return document.getElementById(i)};
+var KC={main:"#d2693c",sub:"#f0b44c",side:"#93c27a",unlock:"#73b4d8"};
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function status(m){$("status").textContent=m||"";$("status").hidden=!m}
+function save(key,patch){var st=Object.assign({},P[key]||{},patch,{at:new Date().toISOString()});P[key]=st;render();
+  if(!db){status("Picks can't sync in this view; open the page signed in to keep them.");return}
+  db.doc("picks/"+key).set(st).catch(function(e){status("Couldn't save that pick ("+(e&&e.code||"error")+"). Try again in a moment.")})}
+function jump(id){var t=$(id);if(!t)return;t.scrollIntoView({behavior:"smooth",block:"start"});var b=t.querySelector("button");b&&b.focus({preventScroll:true})}
+function picks(key,small){var pk=(P[key]||{}).pick||"",ps=el("div","picks"+(small?" small":""));
+  [["keep","Keep"],["maybe","Maybe"],["cut","Cut"]].forEach(function(o){var b=el("button","pk",o[1]);b.type="button";b.dataset.p=o[0];b.setAttribute("aria-pressed",pk===o[0]);b.onclick=function(){save(key,{pick:pk===o[0]?"":o[0]})};ps.appendChild(b)});return ps}
+function note(key,label,ph){var ta=document.createElement("textarea");ta.id="n_"+key;ta.rows=1;ta.placeholder=ph;ta.value=(P[key]||{}).note||"";ta.setAttribute("aria-label",label);ta.onchange=function(){save(key,{note:ta.value})};return ta}
+
+function lanes(){var svg=$("lanes"),ns="http://www.w3.org/2000/svg",R=DATA.regions,items=DATA.items;
+  var L=236,W=960,top=96,rh=27,cw=(W-L-8)/R.length,H=top+items.length*rh+8;svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.textContent="";
+  function mk(t,a,p){var e=document.createElementNS(ns,t);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e}
+  R.forEach(function(name,i){var x=L+i*cw+cw/2;mk("line",{x1:L+i*cw,x2:L+i*cw,y1:top-6,y2:H-4,stroke:"#3a2f29","stroke-width":1});
+    var t=mk("text",{x:x,y:top-12,transform:"rotate(-32 "+x+" "+(top-12)+")",class:"rg"});t.textContent=(i+1)+" "+(name.length>24?name.slice(0,23)+"…":name)});
+  var pos={};items.forEach(function(m,r){var y=top+r*rh+rh/2,byCol={};m.beats.forEach(function(b){(byCol[b.col]=byCol[b.col]||[]).push(b)});
+    Object.keys(byCol).forEach(function(c){var bs=byCol[c],n=bs.length,step=Math.min(10,(cw-14)/Math.max(1,n-1));bs.forEach(function(b,i){pos[b.id]=[L+c*cw+cw/2+(i-(n-1)/2)*step,y]})})});
+  var arcs=mk("g",{});
+  items.forEach(function(m,r){var y=top+r*rh+rh/2,c=KC[m.g],pk=(P["t-"+m.id]||{}).pick||"";
+    var g=mk("g",{class:"row",tabindex:"0",role:"link","aria-label":m.title+", "+m.g});
+    mk("rect",{x:0,y:top+r*rh,width:W,height:rh,fill:"transparent"},g);
+    var lab=mk("text",{x:8,y:y+4,fill:pk==="cut"?"#a89a88":c,style:"fill:"+(pk==="cut"?"#a89a88":c)},g);lab.textContent=(pk==="keep"?"+ ":pk==="cut"?"x ":pk==="maybe"?"? ":"")+(m.title.length>30?m.title.slice(0,29)+"…":m.title);
+    var xs=m.beats.map(function(b){return pos[b.id][0]});if(xs.length>1)mk("line",{x1:Math.min.apply(0,xs),x2:Math.max.apply(0,xs),y1:y,y2:y,stroke:c,"stroke-opacity":".45","stroke-width":2},g);
+    m.beats.forEach(function(b){var p=pos[b.id];var d=mk("circle",{cx:p[0],cy:p[1],r:4.2,stroke:c,"stroke-width":1.6,fill:b.status==="built"?c:b.status==="approved"?"#7a5a3a":"#12100f"},g);mk("title",{},d).textContent=b.title+" ("+b.status+")"});
+    g.onclick=function(){jump("t_"+m.id)};g.onkeydown=function(e){if(e.key==="Enter")jump("t_"+m.id)}});
+  items.forEach(function(m){m.beats.forEach(function(b){b.needs.forEach(function(n){var a=pos[n],z=pos[b.id];if(!a||!z||BEAT[n].arc===m.id)return;
+    var mx=(a[0]+z[0])/2+18,my=(a[1]+z[1])/2;mk("path",{d:"M"+a[0]+","+a[1]+" Q"+mx+","+my+" "+z[0]+","+z[1],fill:"none",stroke:"#eee2cf","stroke-opacity":".22","stroke-width":1},arcs)})})})}
+
+function match(m){if(!q)return true;var s=m.title+" "+m.pitch+" "+m.g;m.beats.forEach(function(b){s+=" "+b.title+" "+b.text+" "+b.where+" "+b.opens+" "+b.fights.join(" ")});return s.toLowerCase().indexOf(q)>=0}
+function keep(m){var p=(P["t-"+m.id]||{}).pick||"";if(show==="game"&&!m.game)return false;if(show==="written"&&m.game)return false;if(show==="open"&&p)return false;
+  if(["keep","maybe","cut"].indexOf(show)>=0&&p!==show)return false;return match(m)}
+
+function beatRow(b,c){var key="b-"+b.id,pk=(P[key]||{}).pick||"",li=el("li",pk?"p-"+pk:"");li.id="b_"+b.id;li.style.setProperty("--c",c);
+  li.appendChild(el("span","dot "+b.status));var bt=el("div","bt");bt.appendChild(el("b",null,b.title));
+  bt.appendChild(el("span","where",b.where+(b.level?" · level "+b.level:"")));bt.appendChild(el("span","chip",b.status));
+  if(b.owner)bt.appendChild(el("span","chip own","owner writes"));li.appendChild(bt);
+  var p=el("p","bx",b.text);if(b.opens){p.appendChild(document.createTextNode(" "));p.appendChild(el("span","extra","Opens: "+b.opens+"."))}li.appendChild(p);
+  var row=el("div","brow"),has=false;
+  b.needs.forEach(function(n){var t=BEAT[n];if(!t)return;has=true;var x=el("button","chip link","after: "+t.title);x.type="button";x.onclick=function(){jump("b_"+n)};row.appendChild(x)});
+  b.fights.forEach(function(f){has=true;row.appendChild(el("span","chip",f))});
+  if(b.status!=="built"){has=true;row.appendChild(picks(key,true));row.appendChild(note(key,"Note on "+b.title,"Note on this beat"))}
+  if(has)li.appendChild(row);return li}
+
+function card(m){var key="t-"+m.id,pk=(P[key]||{}).pick||"",c=KC[m.g],a=el("article","tc"+(pk?" p-"+pk:""));a.id="t_"+m.id;
+  var h=el("div","head");var k=el("span","chip k-"+m.g,m.g);h.appendChild(k);h.appendChild(el("h3",null,m.title));
+  var built=m.beats.filter(function(b){return b.status==="built"}).length;h.appendChild(el("span","chip",built+" of "+m.beats.length+" built"));
+  if(m.game)h.appendChild(el("span","chip game","in the game"));a.appendChild(h);
+  a.appendChild(el("p","pitch",m.pitch));
+  var rd=el("div","road");rd.style.setProperty("--n",DATA.regions.length);rd.style.setProperty("--c",c);rd.setAttribute("aria-hidden","true");
+  DATA.regions.forEach(function(r,i){var bs=m.beats.filter(function(b){return b.col===i}),s=el("span",bs.length?(bs.every(function(b){return b.status==="built"})?"on done":"on"):"");s.title=r+": "+bs.length+" beats";if(bs.length&&!bs.every(function(b){return b.status==="built"}))s.style.opacity=".55";rd.appendChild(s)});
+  var rw=el("div");rw.appendChild(rd);var rl=el("div","roadlab");rl.appendChild(el("span",null,DATA.regions[0]));rl.appendChild(el("span",null,DATA.regions[DATA.regions.length-1]));rw.appendChild(rl);a.appendChild(rw);
+  var ol=el("ol","beats");m.beats.forEach(function(b){ol.appendChild(beatRow(b,c))});a.appendChild(ol);
+  if(m.ties.length){var t=el("div","head");t.appendChild(el("span","where","waits on"));m.ties.forEach(function(id){var o=DATA.items.filter(function(x){return x.id===id})[0];if(!o)return;var b=el("button","chip link",o.title);b.type="button";b.onclick=function(){jump("t_"+id)};t.appendChild(b)});a.appendChild(t)}
+  var f=el("div","foot");f.appendChild(picks(key,false));f.appendChild(note(key,"Note on "+m.title,"Your note on this thread: what to change, merge, cut, or a twist (saved when you click away)"));a.appendChild(f);
+  return a}
+
+function render(){if(!DATA)return;var all=DATA.items,k=0,mb=0,c=0,bk=0,bt=0;
+  all.forEach(function(m){var p=(P["t-"+m.id]||{}).pick;if(p==="keep")k++;else if(p==="maybe")mb++;else if(p==="cut")c++;
+    m.beats.forEach(function(b){if(b.status==="built")return;bt++;if((P["b-"+b.id]||{}).pick)bk++})});
+  var pr=$("prog");pr.textContent="";pr.append(el("b",null,k)," keep · "+mb+" maybe · "+c+" cut · "+(all.length-k-mb-c)+" threads to pick · "+bk+" of "+bt+" new beats picked");
+  var y=window.scrollY,ae=document.activeElement&&document.activeElement.id,main=$("main");main.textContent="";var any=false;
+  DATA.groups.forEach(function(g){var items=all.filter(function(m){return m.g===g.key&&keep(m)});if(!items.length)return;any=true;
+    var s=el("section","grp");s.appendChild(el("h2","k-"+g.key,g.title));s.appendChild(el("p",null,g.blurb));var l=el("div","list");items.forEach(function(m){l.appendChild(card(m))});s.appendChild(l);main.appendChild(s)});
+  if(!any)main.appendChild(el("p","lede","Nothing matches that."));lanes();if(ae&&$(ae))$(ae).focus({preventScroll:true});window.scrollTo(0,y)}
+
+$("q").oninput=function(e){q=e.target.value.trim().toLowerCase();render()};$("show").onchange=function(e){show=e.target.value;render()};
+fetch("plots.json").then(function(r){return r.json()}).then(function(d){DATA=d;d.items.forEach(function(m){m.beats.forEach(function(b){BEAT[b.id]={title:b.title,arc:m.id}})});render()}).catch(function(){$("main").textContent="The plot lines didn't load. Reload the page."});
+var timer=setTimeout(function(){if(!db)status("Picks aren't syncing here; open the page signed in to keep them.")},10000);
+if(window.claude&&window.claude.use){window.claude.use("db").then(function(d){if(!d){clearTimeout(timer);status("Picks can't sync in this view (sign in to keep them).");return}db=d;
+  db.collection("picks").limit(500).onSnapshot(function(s){clearTimeout(timer);var o={};s.docs.forEach(function(x){if(x.exists)o[x.id]=x.data()||{}});P=o;render()},function(e){clearTimeout(timer);status("Couldn't load picks ("+(e&&e.code||"error")+").")})})}
+})();
+</script>
