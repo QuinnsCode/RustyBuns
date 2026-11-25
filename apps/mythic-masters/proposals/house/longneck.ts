@@ -96,7 +96,7 @@ export function longneck(o: LongNeck) {
   return {
     feet: 4, wings: 0, root: "belly", material: "hide", belly: "belly", belly_turn: -0.3, blend: o.blend ?? s(0.028),
     eyes: fc.eyes, dense: DENSE,
-    palette: { ...palette(o.pal), ...(o.extra ?? {}) }, hide: hide(o.skin.pattern, o.pal.body, o.skin),
+    palette: { ...palette(o.pal), ...o.extra }, hide: hide(o.skin.pattern, o.pal.body, o.skin),
     nodes, links, blobs: [...blobs, ...h.blobs], parts,
     check: { headOverNeck: f4(W / nt), eye: fc.share, legThin: f4(fLeg.low / fLeg.radii[0]!), foot: o.footSize ?? 1.5 },
   };

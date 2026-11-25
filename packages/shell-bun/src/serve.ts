@@ -221,7 +221,7 @@ const inside = (root: string, p: string) => p === root || p.startsWith(root.ends
 
 export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   installCloudflareGlobals();
-  const headers = { ...ISOLATION, ...(opts.headers ?? {}) };
+  const headers = { ...ISOLATION, ...opts.headers };
   const wsRoutes = new Map<string, SocketHandlers>();
   const live: Socket[] = [];
   let handler: FetchHandler<Env> | null = null;

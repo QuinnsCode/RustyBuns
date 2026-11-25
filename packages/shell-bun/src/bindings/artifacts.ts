@@ -139,7 +139,7 @@ export class LocalArtifacts {
    */
   async import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }) {
     const { source, target } = params;
-    if (!/^https:\/\//.test(source.url)) throw new ArtifactsError("INVALID_INPUT", "source.url must be https");
+    if (!source.url.startsWith("https://")) throw new ArtifactsError("INVALID_INPUT", "source.url must be https");
     const name = target.name, p = this.path(name);
     if (existsSync(p) || this.busy.has(name)) throw new ArtifactsError("ALREADY_EXISTS", name);
     this.busy.set(name, "IMPORT_IN_PROGRESS");

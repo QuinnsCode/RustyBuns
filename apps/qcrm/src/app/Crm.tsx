@@ -19,7 +19,7 @@ type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "en
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string; plan?: string; created_at?: number }[]; superAdmin?: boolean }
 
 const api = async (path: string, init: RequestInit = {}) => {
-  const res = await fetch("/api" + path, { ...init, headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) }, credentials: "same-origin" });
+  const res = await fetch("/api" + path, { ...init, headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers }, credentials: "same-origin" });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
   // A demo past its hour (410) or past today's demos (429 from /demo): the page swaps to the sign-up card.
   if (res.status === 410 || (res.status === 429 && path === "/demo")) window.dispatchEvent(new CustomEvent("qcrm-demo-over", { detail: { msg: (body as any)?.error, again: res.status === 410 } }));
@@ -238,7 +238,7 @@ export function Crm() {
       <Commands me={me} org={current.id} role={role} setView={setView} setOrg={setOrg} setIntent={setIntent} />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
-        {current.plan === "demo" && /^demo-/.test(me.user.email) && current.created_at && <DemoClock ends={current.created_at + DEMO_HOUR} onEnd={() => setOver({ msg: "Your demo hour is up. Make an account to keep going.", again: true })} />}
+        {current.plan === "demo" && me.user.email.startsWith("demo-") && current.created_at && <DemoClock ends={current.created_at + DEMO_HOUR} onEnd={() => setOver({ msg: "Your demo hour is up. Make an account to keep going.", again: true })} />}
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
         {ITEMS.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}

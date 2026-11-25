@@ -186,7 +186,7 @@ export function trimDiff(name: string, src: string): { diff: string; saved: numb
   lines.forEach((l, i) => {
     if (/^\s*```/.test(l)) fence = !fence;
     if (i > 0 && front && l === "---") front = false;
-    if (fence || (front && !/^description:/.test(l)) || /^\s*(\||#|```|---)/.test(l) || !l.trim()) return;
+    if (fence || (front && !l.startsWith("description:")) || /^\s*(\||#|```|---)/.test(l) || !l.trim()) return;
     const t = trimLine(l);
     if (t === l) return;
     saved += Math.round((l.length - t.length) / 4);
