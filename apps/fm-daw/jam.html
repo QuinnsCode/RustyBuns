@@ -63,6 +63,10 @@
       <h2 id="rigs-title" hidden>Rig</h2>
       <div id="rigs" class="studios" aria-label="Rig" hidden></div>
       <h2>Who's here</h2>
+      <div class="levels" role="group" aria-label="What you hear">
+        <label class="level" title="Music: the band, the DJ's set, the room's videos, guitars, the sound wall"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><input id="level-music" type="range" min="0" max="1" step="0.01" aria-label="Music"></label>
+        <label class="level" title="Crowd: people's mics, the dancers, the night air, the generator"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><input id="level-crowd" type="range" min="0" max="1" step="0.01" aria-label="Crowd"></label>
+      </div>
       <p class="row"><span id="me-may"></span><button id="raise" type="button" class="ghost" hidden>Raise hand</button><button id="mute-room" type="button" class="ghost">Mute room</button><label for="loudest">Loudest</label><select id="loudest"></select></p>
       <ul id="people"></ul>
       <p id="people-none" class="keys">Just you</p>

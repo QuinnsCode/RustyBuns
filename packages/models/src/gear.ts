@@ -98,12 +98,13 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (the dance stack's maker plate), ink (the white print on a control face); and a hung line array box's own:
- * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels). */
+ * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
+ * lit key's orange, the Qone mixer's one accent). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -114,6 +115,7 @@ export function gearLook(): GearLook {
     chrome: std(0xd8dade, 0.15, 1), knob: std(0x0c0c0c, 0.5), light: new THREE.MeshBasicMaterial({ color: 0x45e06a }),
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
+    glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
   };
 }
 
@@ -1358,85 +1360,142 @@ function deckCd(): Build {
   return b;
 }
 
-/** The four-channel analog club mixer with twin filters (`mixer-club-4`): a dark steel case, the face plate screwed
- * down over it and printed in white; per channel a gain, four EQ knobs with coloured caps, two aux sends, the filter
- * assign and cue keys with their lamps, an LED meter and a long fader; the mic and return strip down the left, master,
- * booth, the master meters and the phones down the right; along the front the two filters (a big frequency knob, a
- * resonance knob and three type keys each) either side of the crossfader. The headphone sockets in the front edge,
- * the inputs, outs and ground post behind. */
+/** The four-channel analog club mixer with twin filters (`mixer-club-4`), laid out as the Qone mixer's face on the DJ
+ * decks page (apps/fm-daw `src/dj/mixer-panel.ts`), so the mixer on the table is the one the DJ plays: a slate steel
+ * face printed in white over a dark case. Left to right: FILTER 1's column, the four channels, FILTER 2's column, the
+ * black master panel. Each channel top to bottom: two aux sends, trim, four EQ knobs, the filter flip (1 OFF 2), the
+ * crossfader flip (X OFF Y), a round CUE button, its number, then the LED dots beside a long fader; the crossfader in
+ * its sunken bed under the four. Each filter column is its LFO (depth, shape and beats, the DECK key lit orange, the
+ * tap knob, resonance), then the filter (its curve's screen, HPF / BPF / LPF, the big sweep, the on button). The
+ * black panel: QONE, the stereo LEDs, master, booth, split cue, the phones' mix and level and their socket. Positions
+ * are the page's, scaled: a pixel there is 0.645 mm across and 0.673 mm deep here. */
 function mixerClub4(): Build {
   const [w, h, d] = GEAR_SIZES["mixer-club-4"], b: Build = { pieces: [], marks: [], parts: [] }, foot = 0.008, face = h - 0.017;
-  b.pieces.push(box("panel", [w, face - 0.002 - foot, d], [0, foot + (face - 0.002 - foot) / 2, 0], { bevel: 0.004 }));
-  b.pieces.push(box("paint", [w - 0.006, 0.0022, d - 0.006], [0, face - 0.0011, 0], { bevel: 0.0008 }));
-  for (const x of [-1, 1]) for (const z of [-0.17, 0, 0.17]) b.pieces.push(...screw([x * (w / 2 - 0.0065), face + 0.0004, z], "y", 0.0018, "chrome", 6));
+  // the page's mixer (its face 496 x 532 px, its middle at 640, 434 in a 1280 x 720 shot) to this model's frame
+  const X = (px: number) => (px - 640) * (w / 496), Z = (py: number) => (py - 434) * (d / 532);
+  b.pieces.push(box("paint", [w, face - 0.002 - foot, d], [0, foot + (face - 0.002 - foot) / 2, 0], { bevel: 0.004 }));
+  b.pieces.push(box("panel", [w - 0.006, 0.0022, d - 0.006], [0, face - 0.0011, 0], { bevel: 0.0008 }));
+  for (const x of [-1, 1]) for (const z of [-0.17, 0, 0.17]) b.pieces.push(...screw([x * (w / 2 - 0.0035), face + 0.0004, z], "y", 0.0016, "chrome", 6));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.012, foot, "y", [x * (w / 2 - 0.03), foot / 2, z * (d / 2 - 0.035)], 8));
-  const ink = face + 0.0003, say = (text: string, x: number, z: number, size = 0.0026) => b.pieces.push(...print(text, x, ink, z, size));
-  /** A knob: a black ribbed body, its cap in `cap`'s colour, the white pointer printed across the cap. */
-  const knob = (x: number, z: number, r: number, cap: GearSlot): Piece[] => [
-    loft("knob", [R(0, r * 1.12), R(0.011, r * 0.92), R(0.011, 0)], { seg: 8, caps: false, m: new THREE.Matrix4().makeTranslation(x, face, z) }),
-    disc(cap, r * 0.78, 0.0016, "y", [x, face + 0.0115, z], 6), ...print("I", x, face + 0.0124, z - r * 0.38, r * 0.7),
-  ];
-  const keyAt = (x: number, z: number, lamp: GearSlot | null, sw = 0.013, sd = 0.007) => {
-    b.pieces.push(box("knob", [sw, 0.004, sd], [x, face + 0.002, z]));
-    if (lamp) b.pieces.push(box(lamp, [sw * 0.6, 0.0008, 0.0016], [x, face + 0.0042, z - sd * 0.25]));
+  const ink = face + 0.0003, say = (text: string, x: number, z: number, size = 0.0026, y = ink) => b.pieces.push(...print(text, x, y, z, size));
+  /** A flat `w` by `dz` patch lying face up at (x, y, z), turned `a` about +y: print, a lit dot, a tick (two triangles). */
+  const flat = (slot: GearSlot, w: number, dz: number, x: number, y: number, z: number, a = 0): Piece => {
+    const geo = new THREE.PlaneGeometry(w, dz).rotateX(-Math.PI / 2).rotateY(a).translate(x, y, z).toNonIndexed();
+    geo.deleteAttribute("uv");
+    return { geo, slot };
   };
-  /** An LED meter: a dark strip from the front end `z0` back `len`, its scale printed beside it. */
-  const meter = (x: number, z0: number, len: number) => {
-    b.pieces.push(box("knob", [0.005, 0.0008, len + 0.004], [x, face + 0.0004, z0 - len / 2]));
-    for (let k = 0; k <= 6; k++) b.pieces.push(...print("-", x - 0.0055, ink, z0 - (k / 6) * len, 0.004));
+  /** A black knurled knob, its white pointer printed across the top; `scale` lays the EQ's dashed scale round it. */
+  const knob = (x: number, z: number, r: number, scale = false, y = face): Piece[] => {
+    const out: Piece[] = [
+      loft("knob", [R(0, r * 1.08), R(r * 1.25, r * 0.88), R(r * 1.25, 0)], { seg: 10, caps: false, m: new THREE.Matrix4().makeTranslation(x, y, z) }),
+      flat("ink", r * 0.16, r * 0.75, x, y + r * 1.25 + 0.0003, z - r * 0.42),
+    ];
+    if (scale) for (let k = 0; k <= 4; k++) {
+      const a = -0.75 * Math.PI + (k / 4) * 1.5 * Math.PI;
+      out.push(flat("ink", 0.0005, r * 0.3, x + Math.sin(a) * r * 1.5, y + 0.0003, z - Math.cos(a) * r * 1.5, -a));
+    }
+    return out;
   };
-  const CH = [-0.07875, -0.02625, 0.02625, 0.07875], EQ: [string, GearSlot][] = [["HI", "shell"], ["MID", "lid"], ["MID", "body"], ["LO", "badge"]];
-  const fz = 0.07, travel = 0.06, mz = -0.032, mLen = 0.092;
+  /** A round rubber button, its rim in `ring` (the orange glow when lit). */
+  const button = (x: number, z: number, r: number, ring: GearSlot = "knob") => b.pieces.push(
+    disc(ring, r, 0.0016, "y", [x, face + 0.0008, z], 9), disc("rubber", r * 0.8, 0.0045, "y", [x, face + 0.0022, z], 9));
+  /** A small square key: black, or lit. */
+  const key = (x: number, z: number, sw: number, sd: number, slot: GearSlot = "knob") => b.pieces.push(box(slot, [sw, 0.0035, sd], [x, face + 0.0017, z]));
+  /** A flip switch: a short slot, the lever standing in it, and its three words over it. */
+  const flip = (x: number, z: number, words: string) => {
+    b.pieces.push(box("knob", [0.012, 0.0008, 0.0026], [x, face + 0.0004, z]), box("chrome", [0.0028, 0.005, 0.0028], [x, face + 0.0025, z]));
+    say(words, x, z + 0.0045, 0.0022);
+  };
+  /** A column of LED dots from the front end `z0` back `len`: green, blue from 0 dB near the top, red at the top. */
+  const dots = (x: number, z0: number, len: number, n: number) => {
+    for (let k = 0; k < n; k++) b.pieces.push(flat(k >= n - 2 ? "body" : k >= n - 4 ? "shell" : "light", 0.0018, 0.0018, x, face + 0.0004, z0 - (k / (n - 1)) * len));
+  };
+  /** A box outlined in thin white print, as the page frames the filter columns. */
+  const frame = (x0: number, z0: number, x1: number, z1: number) => {
+    const t = 0.0005;
+    b.pieces.push(flat("ink", x1 - x0, t, (x0 + x1) / 2, ink, z0), flat("ink", x1 - x0, t, (x0 + x1) / 2, ink, z1));
+    b.pieces.push(flat("ink", t, z1 - z0, x0, ink, (z0 + z1) / 2), flat("ink", t, z1 - z0, x1, ink, (z0 + z1) / 2));
+  };
+
+  // the four channels
+  const CH = [501, 569, 637, 705].map(X), fz0 = Z(640), fz1 = Z(475), travel = (fz0 - fz1) * 0.82, fz = (fz0 + fz1) / 2;
   CH.forEach((x, i) => {
-    const kx = x - 0.005;
-    b.pieces.push(...knob(kx, -0.16, 0.0065, "metal"));
-    EQ.forEach(([name, cap], k) => { b.pieces.push(...knob(kx, -0.134 + k * 0.022, 0.0072, cap)); if (i === 0) say(name, -0.1325 + 0.021, -0.134 + k * 0.022, 0.0024); });
-    for (const k of [0, 1]) b.pieces.push(...knob(kx, -0.044 + k * 0.02, 0.0062, "chrome"));
-    keyAt(kx, -0.008, "lid"); keyAt(kx, 0.01, "light");
-    // the channel's meter, and its lit bar a part over it: origin at the front end, the bar up its +y (back along the face)
-    meter(x + 0.019, mz, mLen);
-    b.parts!.push({ name: `meter-${i + 1}`, at: [x + 0.019, face + 0.0012, mz], rot: -Math.PI / 2, pieces: [box("light", [0.003, mLen, 0.0006], [0, mLen / 2, 0.0003])] });
-    // the fader: its slot, a scale, its number under it, the cap a part at mid travel
-    b.pieces.push(box("knob", [0.0035, 0.0012, travel + 0.012], [x, face + 0.0006, fz]));
-    for (let k = 0; k <= 10; k++) b.pieces.push(...print("-", x - 0.011, ink, fz - travel / 2 + k * (travel / 10), k % 5 ? 0.004 : 0.008));
-    say(String(i + 1), x + 0.012, fz + travel / 2 + 0.002, 0.006);
-    b.parts!.push({ name: `fader-${i + 1}`, at: [x, face, fz], pieces: [box("knob", [0.012, 0.012, 0.018], [0, 0.006, 0], { bevel: 0.0025 }), box("ink", [0.0105, 0.0006, 0.0014], [0, 0.0121, 0])] });
+    for (const s of [-1, 1]) b.pieces.push(...knob(x + s * X(651) - s * X(640), Z(185), 0.0052));
+    b.pieces.push(...knob(x, Z(214), 0.0068));
+    for (const py of [245, 277, 310, 345]) b.pieces.push(...knob(x, Z(py), 0.0068));
+    flip(x, Z(366), "1 OFF 2"); flip(x, Z(391), "X OFF Y");
+    button(x, Z(429), 0.0085);
+    say(String(i + 1), x, Z(456), 0.008);
+    // the LED dots, their lit bar a part over them: origin at the front end, the bar up its +y (back along the face)
+    const mx = x - X(653) + X(640);
+    dots(mx, fz0, fz0 - fz1, 11);
+    b.parts!.push({ name: `meter-${i + 1}`, at: [mx, face + 0.0012, fz0], rot: -Math.PI / 2, pieces: [box("light", [0.0022, fz0 - fz1, 0.0006], [0, (fz0 - fz1) / 2, 0.0003])] });
+    // the fader: its slot, a scale, the cap a part at mid travel
+    const fx = x + X(646) - X(640);
+    b.pieces.push(box("knob", [0.0025, 0.0012, fz0 - fz1 + 0.006], [fx, face + 0.0006, fz]));
+    for (let k = 0; k <= 10; k++) say("-", fx + 0.0075, fz0 - k * ((fz0 - fz1) / 10), k % 5 ? 0.003 : 0.005);
+    b.parts!.push({ name: `fader-${i + 1}`, at: [fx, face, fz], pieces: [box("knob", [0.014, 0.012, 0.009], [0, 0.006, 0], { bevel: 0.002 }), box("ink", [0.0125, 0.0006, 0.0012], [0, 0.0121, 0])] });
   });
-  say("GAIN", -0.1325 + 0.021, -0.16, 0.0024); say("AUX", -0.1325 + 0.021, -0.034, 0.0024);
-  say("CUE", -0.1325 + 0.021, 0.01, 0.0024);
-  // the mic and return strip down the left
-  [-0.16, -0.134, -0.112, -0.07].forEach((z, k) => b.pieces.push(...knob(-0.1325, z, 0.0065, k === 3 ? "metal" : k === 1 ? "shell" : k === 2 ? "badge" : "metal")));
-  keyAt(-0.1325, -0.045, "light");
-  say("MIC", -0.1325, -0.171, 0.003); say("RTN", -0.1325, -0.082, 0.003);
-  // master, booth, the master meters and the phones down the right
-  b.pieces.push(...knob(0.1325, -0.158, 0.0085, "body"), ...knob(0.1325, -0.124, 0.0072, "chrome"));
-  say("MASTER", 0.1325, -0.171, 0.0026); say("BOOTH", 0.1325, -0.137, 0.0026);
-  for (const dx of [-0.006, 0.006]) { meter(0.1325 + dx, -0.03, 0.07); b.pieces.push(box("light", [0.003, 0.0006, 0.042], [0.1325 + dx, face + 0.0014, -0.03 - 0.021])); }
-  b.pieces.push(...knob(0.1325, 0.0, 0.0068, "metal"), ...knob(0.1325, 0.026, 0.0068, "metal"));
-  say("PHONES", 0.1325, 0.04, 0.0024);
-  // the twin filters along the front either side of the crossfader: frequency (a part that turns), resonance, three types
-  for (const [n, s] of [[1, -1], [2, 1]] as const) {
-    const fx = s * 0.115;
-    b.parts!.push({ name: `filter-${n}`, at: [fx, face, 0.138], pieces: knob(0, 0, 0.0115, "chrome").map((p) => (p.geo.translate(0, -face, 0), p)) });
-    b.pieces.push(...knob(s * 0.078, 0.132, 0.0068, "metal"));
-    for (let k = 0; k < 3; k++) keyAt(s * 0.115 + (k - 1) * 0.018, 0.163, "light", 0.012, 0.006);
-    say("FREQ", fx, 0.122, 0.0024); say("RES", s * 0.078, 0.12, 0.0024); say(String(n), s * 0.145, 0.138, 0.005);
+  // the crossfader in its sunken bed under the four, X to the left and Y to the right
+  const cz = Z(675), cx = X(603), ct = X(712) - X(524);
+  b.pieces.push(box("knob", [X(738) - X(468), 0.0008, Z(692) - Z(658)], [cx, face + 0.0003, cz], { bevel: 0.0008 }));
+  b.pieces.push(box("rubber", [ct + 0.012, 0.0012, 0.0025], [cx, face + 0.0009, cz]));
+  say("X", X(510), cz, 0.006, face + 0.0012); say("Y", X(726), cz, 0.006, face + 0.0012);
+  b.pieces.push(...knob(X(486), cz, 0.004, false, face + 0.0008));
+  b.parts!.push({ name: "cross", at: [cx, face, cz], pieces: [box("knob", [0.007, 0.012, 0.014], [0, 0.006, 0], { bevel: 0.002 }), box("ink", [0.0012, 0.0006, 0.0125], [0, 0.0121, 0])] });
+
+  // the two filter columns, each its LFO over the filter
+  for (const [n, px] of [[1, 429], [2, 777]] as const) {
+    const fx = X(px), half = X(px + 31) - fx;
+    frame(fx - half, Z(176), fx + half, Z(372)); frame(fx - half, Z(380), fx + half, Z(692));
+    say("LFO", fx, Z(189), 0.0035);
+    b.pieces.push(...knob(fx, Z(213), 0.006, true)); say("DEPTH", fx, Z(236), 0.0022);
+    key(fx - 0.008, Z(253), 0.0095, 0.0085); key(fx + 0.008, Z(253), 0.0095, 0.0085);
+    key(fx, Z(279), 0.026, 0.009, "glow"); say(`DECK ${n === 1 ? "A" : "B"}`, fx, Z(279), 0.0028, face + 0.0036);
+    b.pieces.push(...knob(fx, Z(307), 0.0072));
+    b.pieces.push(...knob(fx, Z(340), 0.006, true)); say("RES", fx, Z(361), 0.0024);
+    // the curve's little screen, its line lit
+    b.pieces.push(box("knob", [2 * half - 0.004, 0.0008, Z(416) - Z(386)], [fx, face + 0.0004, Z(401)]));
+    b.pieces.push(flat("light", 2 * half - 0.012, 0.0008, fx, face + 0.0009, Z(405)));
+    // HPF, BPF, LPF: filter 1 starts on low-pass, filter 2 on high-pass, as the page does
+    ["HPF", "BPF", "LPF"].forEach((t, k) => { button(fx, Z(461 + k * 32.5), 0.0085, (n === 1 ? k === 2 : k === 0) ? "glow" : "knob"); say(t, fx, Z(461 + k * 32.5), 0.0022, face + 0.0047); });
+    // the big sweep (a part that turns about +y), its scale round it
+    b.parts!.push({ name: `filter-${n}`, at: [fx, face, Z(593)], pieces: knob(0, 0, 0.0125).map((p) => (p.geo.translate(0, -face, 0), p)) });
+    for (let k = 0; k <= 8; k++) {
+      const a = -0.75 * Math.PI + (k / 8) * 1.5 * Math.PI;
+      b.pieces.push(flat("ink", 0.0005, 0.004, fx + Math.sin(a) * 0.0195, ink, Z(593) - Math.cos(a) * 0.0195, -a));
+    }
+    say("FREQ", fx, Z(624), 0.0026);
+    button(fx, Z(672), 0.0095); say(String(n), fx, Z(672), 0.004, face + 0.0047);
   }
-  const cz = 0.155, ct = 0.045;
-  b.pieces.push(box("knob", [ct + 0.012, 0.0012, 0.0035], [0, face + 0.0006, cz]));
-  for (const s of [-1, 1]) say(s < 0 ? "A" : "B", s * (ct / 2 + 0.012), cz, 0.004);
-  b.parts!.push({ name: "cross", at: [0, face, cz], pieces: [box("knob", [0.018, 0.012, 0.012], [0, 0.006, 0], { bevel: 0.0025 }), box("ink", [0.0014, 0.0006, 0.0105], [0, 0.0121, 0])] });
-  // the front edge: two headphone sockets at the right
+
+  // the black master panel down the right
+  const ox = X(849), oh = X(882) - X(816);
+  b.pieces.push(box("knob", [oh, 0.0012, Z(692) - Z(176)], [ox, face + 0.0006, Z(434)], { bevel: 0.0008 }));
+  const top = face + 0.0012, sayT = (t: string, x: number, z: number, s = 0.0024) => say(t, x, z, s, top + 0.0003);
+  sayT("QONE", ox, Z(195), 0.006);
+  for (const px of [842, 856]) for (let k = 0; k < 11; k++) b.pieces.push(flat(k >= 9 ? "body" : k >= 7 ? "shell" : "light", 0.0018, 0.0018, X(px), top + 0.0004, Z(298) - (k / 10) * (Z(298) - Z(212))));
+  sayT("L", X(842), Z(309)); sayT("R", X(856), Z(309));
+  b.pieces.push(...knob(ox, Z(334), 0.0075, true, top)); sayT("MASTER", ox, Z(356), 0.0022);
+  b.pieces.push(...knob(ox, Z(382), 0.0068, true, top)); sayT("BOOTH", ox, Z(404), 0.0022);
+  b.pieces.push(flat("ink", oh - 0.006, 0.0005, ox, top + 0.0003, Z(418)));
+  b.pieces.push(disc("knob", 0.0098, 0.0016, "y", [ox, top + 0.0008, Z(440)], 10), disc("rubber", 0.0078, 0.0045, "y", [ox, top + 0.0022, Z(440)], 10));
+  b.pieces.push(...knob(ox, Z(470), 0.0045, false, top)); sayT("MIX", ox, Z(487), 0.0022);
+  b.pieces.push(...knob(ox, Z(508), 0.0045, false, top)); sayT("LEVEL", ox, Z(525), 0.0022);
+  b.pieces.push(disc("chrome", 0.0085, 0.003, "y", [ox, top + 0.0015, Z(551)], 10), disc("knob", 0.0045, 0.0035, "y", [ox, top + 0.0018, Z(551)], 8));
+  key(X(832), Z(675), 0.011, 0.011); key(X(862), Z(675), 0.011, 0.011, "glow");
+
+  // the front edge: the two headphone sockets at the right
   const fr = d / 2 + 0.001;
   b.pieces.push(disc("metal", 0.0085, 0.004, "z", [w / 2 - 0.04, 0.04, fr], 12), disc("knob", 0.0045, 0.005, "z", [w / 2 - 0.04, 0.04, fr], 10));
   b.pieces.push(disc("metal", 0.0055, 0.004, "z", [w / 2 - 0.065, 0.04, fr], 10), disc("knob", 0.0028, 0.005, "z", [w / 2 - 0.065, 0.04, fr], 8));
   const back = -d / 2;
-  jacks(b, numbered("phono-in", 4), "back", [-0.15, 0.055, back - 0.002], [0.026, 0, 0], 0.0065, 8);
-  jacks(b, numbered("rca-in", 4), "back", [-0.15, 0.03, back - 0.002], [0.026, 0, 0], 0.0065, 8);
-  jacks(b, numbered("xlr-out", 4), "back", [0.03, 0.042, back - 0.002], [0.03, 0, 0], 0.011);
+  jacks(b, numbered("phono-in", 4), "back", [-0.15, 0.055, back - 0.002], [0.026, 0, 0], 0.0065, 6);
+  jacks(b, numbered("rca-in", 4), "back", [-0.15, 0.03, back - 0.002], [0.026, 0, 0], 0.0065, 6);
+  jacks(b, numbered("xlr-out", 4), "back", [0.03, 0.042, back - 0.002], [0.03, 0, 0], 0.011, 8);
   b.pieces.push(disc("chrome", 0.006, 0.014, "z", [-0.03, 0.055, back - 0.006], 10));
   jacks(b, ["ground-in-1", "ground-in-2"], "back", [-0.03, 0.055, back - 0.012], [0, 0, 0], 0.004, 8);
-  jacks(b, ["power-in"], "back", [-0.03, 0.026, back - 0.002], [0, 0, 0], 0.012);
+  jacks(b, ["power-in"], "back", [-0.03, 0.026, back - 0.002], [0, 0, 0], 0.012, 8);
   b.data = { faderTravel: travel, crossTravel: ct };
   mark(b, "grab", [0, h, 0]);
   return b;

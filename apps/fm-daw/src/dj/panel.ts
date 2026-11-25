@@ -2,7 +2,7 @@
 // zoomed waveforms stacked across the top on one time scale so you can see the kicks line up, all on one screen (a
 // carousel of the three on a narrow one). Music comes from each deck's upload button (on its player and its lane of the
 // close-up), the header's Add music and Folder (PRELOAD tracks read ahead), a file dropped on a deck or lane, or a
-// YouTube link sent to A or B (youtube.ts); the library pop-over lists what came this visit, to send to either deck. Each deck is a club media player
+// YouTube link sent to A or B (youtube.ts), or pasted anywhere on the decks; the library pop-over lists what came this visit and the YouTube links kept from before, to send to either deck. Each deck is a club media player
 // (player-panel.ts: the screen, the jog wheel in VINYL or CD, a big CUE and PLAY, the tempo fader); the close-up
 // zooms from a quarter second to sixteen either side of the playhead, drawn from peak levels (player.ts).
 // The mixer is mixer-panel.ts's four channels, master and twin filters. Keys while it's open: Q/P play A/B, W/O cue,
@@ -27,7 +27,7 @@ import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FA
 import { Jog, playerFace } from "./player-panel.ts";
 import { mountMidi, type MidiPanel } from "./midi.ts";
 import { button, el, svg } from "./dom.ts";
-import { TubeDeck, tubeTitle, tubeVolume, videoId } from "./youtube.ts";
+import { loadShelf, saveShelf, shelveTube, TubeDeck, tubeTitle, tubeVolume, videoId, type Shelved } from "./youtube.ts";
 import { fileKey, FROM_LABEL, readCollection, settle, type Tempo } from "./tags.ts";
 
 /** The waveforms' colours: deck A fire, deck B blue, what's played greyed, the cue and the four hot cues. */
@@ -115,6 +115,10 @@ export interface DecksPanel {
   tube(side: Side, link: string): Promise<boolean>;
   /** Each deck's YouTube video, or null: its id, title, where it is, and the volume and speed the deck gives it. */
   tubes(): ({ id: string; title: string; pos: number; playing: boolean } | null)[];
+  /** The YouTube links in the library, newest first (kept in this browser). */
+  shelf(): readonly Shelved[];
+  /** A YouTube link added as a paste or Enter adds it: into the library, onto an empty deck if there is one. */
+  addTube(link: string): Promise<boolean>;
   /** The DJ's settings (prefs.ts), changed by `to` when given (and kept in this browser). */
   prefs(to?: Partial<Prefs>): Prefs;
   /** A nudge on deck `side`: a tap back or on, or the fast one held (0 lets go). */
@@ -174,10 +178,17 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const tubeIn = el("input", { type: "url", class: "dj-tube", placeholder: "Paste a YouTube link", "aria-label": "A YouTube link to play on a deck", enterkeyhint: "go" });
   const tubeA = button(`${ICON.tube}<span>A</span>`, "Play the YouTube link on deck A"), tubeB = button(`${ICON.tube}<span>B</span>`, "Play the YouTube link on deck B");
   tubeA.addEventListener("click", () => void tubeFrom(0)); tubeB.addEventListener("click", () => void tubeFrom(1));
-  tubeIn.addEventListener("keydown", (e) => { if (e.key === "Enter") void tubeFrom(decks.decks[0].track || tubes[0] ? 1 : 0); });
+  // Enter: into the library, and onto an empty deck if there is one (never over a deck that's in use)
+  tubeIn.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const id = videoId(tubeIn.value);
+    if (!id) return flash("That isn't a YouTube link: paste one from the address bar or Share");
+    tubeIn.value = "";
+    void addTube(id);
+  });
   const addDir = button(`${ICON.folder}<span>Folder</span>`, `Add a folder of music: every track in it goes in the library, the first ${PRELOAD} read ahead so they load at once`, "dj-add-dir");
   src.append(add, addDir, tubeIn, tubeA, tubeB);
-  const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added this visit, to send to A or B", "dj-lib-open");
+  const libB = button(`${ICON.list}<span class="dj-count">0</span>`, "The library: what you've added (YouTube links stay for next time), to send to A or B", "dj-lib-open");
   const prefsB = button(ICON.cog, "Settings: the nudge amount, locks, the waveform and the keys", "dj-prefs-open");
   const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
   prefsBox.hidden = true;
@@ -329,8 +340,34 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
 
   // ---- YouTube on a deck (youtube.ts): the video plays in YouTube's player on the deck, the deck drives it
   const tubes: [TubeDeck | null, TubeDeck | null] = [null, null];
-  /** Videos sent to a deck this visit, for the library. */
-  const tubeShelf: { id: string; title: string }[] = [];
+  /** The YouTube links in the library, newest first, kept in this browser for the next set. */
+  let tubeShelf: Shelved[] = loadShelf();
+  const keepTube = (item: Shelved) => { tubeShelf = shelveTube(tubeShelf, item); saveShelf(tubeShelf); };
+  /** A link's title from YouTube, onto its library row and its deck once it comes. */
+  const titleTube = (id: string) => void tubeTitle(id).then((name) => {
+    if (!name) return;
+    keepTube({ id, title: name });
+    for (const t of tubes) if (t?.id === id) t.title = name;
+    drawList();
+  });
+  /** A link pasted or typed: into the library, and onto an empty deck if there is one. */
+  async function addTube(id: string) {
+    const had = tubeShelf.find((x) => x.id === id);
+    keepTube({ id, title: had?.title ?? "YouTube" });
+    if (!had) titleTube(id);
+    drawList();
+    const empty = ([0, 1] as const).find((i) => !decks.decks[i].track && !tubes[i] && !far(i));
+    if (empty === undefined) { flash("In the library: both decks are in use, send it to A or B from there"); return; }
+    await putTube(empty, id, had?.title);
+  }
+  // a YouTube link pasted anywhere on the decks (not into a box) goes in too
+  document.addEventListener("paste", (e) => {
+    if (root.hidden || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const id = videoId(e.clipboardData?.getData("text") ?? "");
+    if (!id) return;
+    e.preventDefault();
+    void addTube(id);
+  });
   function dropTube(side: Side) { tubes[side]?.destroy(); tubes[side] = null; players[side].video.hidden = true; players[side].video.replaceChildren(); }
   async function tubeFrom(side: Side) {
     const id = videoId(tubeIn.value);
@@ -346,10 +383,10 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     v.hidden = false;
     const t = new TubeDeck(id, v, title ?? tubeShelf.find((s) => s.id === id)?.title ?? "YouTube");
     tubes[side] = t;
-    if (!tubeShelf.some((s) => s.id === id)) tubeShelf.push({ id, title: t.title });
+    keepTube({ id, title: t.title });
     drawList();
     flash(room ? "The room hears YouTube in each listener's own player, kept on the room's clock: the PA, EQ and filters don't reach it" : `Deck ${side ? "B" : "A"}: YouTube's player. EQ, filters and scratch need a file`);
-    if (!title) void tubeTitle(id).then((name) => { if (!name) return; t.title = name; const s = tubeShelf.find((x) => x.id === id); if (s) s.title = name; drawList(); });
+    if (!title && t.title === "YouTube") titleTube(id);
     return t.ready.then(() => true, (e: unknown) => { flash(e instanceof Error ? e.message : "YouTube's player didn't load"); dropTube(side); return false; });
   }
 
@@ -437,7 +474,9 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       n.textContent = s.title;
       const toA = button("A", "Play on deck A"), toB = button("B", "Play on deck B");
       toA.addEventListener("click", () => void putTube(0, s.id, s.title)); toB.addEventListener("click", () => void putTube(1, s.id, s.title));
-      li.append(n, el("small", {}, "YouTube"), toA, toB);
+      const forget = button(ICON.x, "Take this link out of the library", "dj-forget");
+      forget.addEventListener("click", () => { tubeShelf = tubeShelf.filter((x) => x.id !== s.id); saveShelf(tubeShelf); drawList(); });
+      li.append(n, el("small", {}, "YouTube"), toA, toB, forget);
       list.append(li);
     }
     for (const f of reading ? [reading, ...waiting] : waiting) {
@@ -453,7 +492,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       list.append(li);
     }
     count.textContent = String(shelf.length + tubeShelf.length + waiting.length + (reading ? 1 : 0));
-    if (!shelf.length && !waiting.length && !reading) {
+    if (!shelf.length && !tubeShelf.length && !waiting.length && !reading) {
       const li = el("li", { class: "none" }, "<span>Add music, or drop files here or on a deck. Your files stay on this computer; the room hears your set as you play it.</span>");
       const demo = button("Demo tracks", "Two short tracks made here, to try the decks");
       demo.addEventListener("click", () => demos());
@@ -832,6 +871,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   return { decks, press, heard, view, open, close, isOpen: () => !root.hidden, load: (side, name, bytes) => load(side, name, bytes), library: () => shelf.map((s) => s.track.name), waiting: () => ({ names: waiting.map((f) => f.name), reading: reading?.name ?? null }), demos, jogs, midi,
     zoom: (i) => { if (i !== undefined) setZoom(i); return { at: zoomAt, seconds: zoomS() }; },
     tube: (side, link) => { const id = videoId(link); return id ? putTube(side, id) : Promise.resolve(false); },
+    shelf: () => tubeShelf,
+    addTube: async (link) => { const id = videoId(link); if (!id) return false; await addTube(id); return true; },
     tubes: () => tubes.map((t) => (t ? { id: t.id, title: t.title, pos: t.pos(), playing: t.isPlaying() } : null)),
     prefs: (to) => { if (to) { setPrefs({ ...prefs, ...to }); drawPrefs(); } return prefs; },
     nudge,
