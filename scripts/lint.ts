@@ -10,7 +10,9 @@
 //
 // Fix a finding rather than adding it to the allowance. A rule that is wrong for this repo gets
 // turned off in .oxlintrc.json with a line saying why.
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { arr, int, obj, opt, rec, str } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 
@@ -64,9 +66,13 @@ export function compare(now: Allowance, allowed: Allowance, all: Finding[]): str
 }
 
 // Through bun, not the bin's `node` shebang: CI has no Node new enough to load the .ts plugin.
+// The report goes to a file: through a pipe, oxlint exits before the end is written (cut JSON on Linux CI).
 function lint(paths: string[]): Finding[] {
-  const run = Bun.spawnSync([process.execPath, `${ROOT}node_modules/oxlint/bin/oxlint`, "--format=json", ...(paths.length ? paths : ["."])], { cwd: ROOT });
-  const out = run.stdout.toString();
+  const dir = mkdtempSync(join(tmpdir(), "lint-"));
+  const file = join(dir, "report.json");
+  const run = Bun.spawnSync([process.execPath, `${ROOT}node_modules/oxlint/bin/oxlint`, "--format=json", ...(paths.length ? paths : ["."])], { cwd: ROOT, stdout: Bun.file(file) });
+  const out = readFileSync(file, "utf8");
+  rmSync(dir, { recursive: true });
   if (!out.trim()) { console.error(run.stderr.toString() || "oxlint printed nothing"); process.exit(2); }
   return findings(JSON.parse(out));
 }
