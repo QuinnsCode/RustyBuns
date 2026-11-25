@@ -38,17 +38,20 @@ type Spec = {
  * over 6 mm ones, the same on every face, faded out as the grains shrink under a pixel), `scuff` the strength of the
  * dull and polished patches and the fine sideways scratches gear gets from sliding into trucks, `matte` the least
  * roughness the coat ever has, `speck` the strength of a sprayed polyurea coat's granules: raised grains about a
- * millimetre across, some paler and some darker than the coat, seen only up close (gone once a pixel covers one). */
-export type Wear = { chip: number; metal?: number; stipple?: number; scuff?: number; matte?: number; speck?: number };
+ * millimetre across, some paler and some darker than the coat, seen only up close (gone once a pixel covers one),
+ * `fleck` how far those granules' colour stands off the coat (1, the default, for a black shell's salt-and-pepper;
+ * a painted panel's grains are near its own colour, and its 2.5 mm clumps fade faster than its grains). */
+export type Wear = { chip: number; metal?: number; stipple?: number; scuff?: number; matte?: number; speck?: number; fleck?: number };
 
 /** Each surface's folder under textures/ and how it is laid on. */
 export const SURFACES = {
   /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
    * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
   grille: { tile: 0.05, tint: 0x3a3d41, roughness: 0.55, metalness: 0.45, alpha: true, normalScale: 0.6, backing: 0.4, wear: { chip: 0x6c7076, scuff: 0.5, matte: 0.42 } },
-  /** A hung line array box's grille: the same perforated steel, but black and backed nearly solid, so the drivers
-   * behind it stay out of sight, as through a real box's foam-lined grille, with a little steel sheen at a low light. */
-  mesh: { dir: "grille", tile: 0.05, tint: 0x16171a, roughness: 0.55, metalness: 0.5, alpha: true, normalScale: 0.7, backing: 0.93, wear: { chip: 0x45484d, scuff: 0.2, matte: 0.42 } },
+  /** A hung line array box's grille: the same perforated steel in a matte dark grey, backed nearly solid, so its hole
+   * grid shows darker than the steel but the drivers behind it stay out of sight, as through a real box's foam-lined
+   * grille, with a little steel sheen at a low light. */
+  mesh: { dir: "grille", tile: 0.05, tint: 0x2c2e32, roughness: 0.6, metalness: 0.45, alpha: true, normalScale: 0.7, backing: 0.88, wear: { chip: 0x45484d, scuff: 0.2, matte: 0.42 } },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -67,7 +70,7 @@ export const SURFACES = {
   /** A line array box's shell: matte dark-grey sprayed polyurea, an even pebble with millimetre granules in it, worn at the edges (no blotches, no gloss on the top). */
   coat: { dir: "plastic", tile: 0.35, tint: 0x8c8c8c, roughness: 1, metalness: 0, color: true, normalScale: 0.45, wear: { chip: 0x6a6866, stipple: 1.4, scuff: 0.45, matte: 0.82, speck: 1 } },
   /** A line array box's side cheeks: an olive-grey pebble-coat panel (flat colour, no photo map), set off against the black shell. */
-  cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1 } },
+  cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
@@ -159,7 +162,7 @@ export function wornShader(shader: Shader, backing: number, wear?: Wear): Shader
   diffuseColor.a *= mix(${glsl(backing)}, 1.0, texture2D(alphaMap, vAlphaMapUv).g);
 #endif`);
   if (wear) {
-    const { chip, metal, stipple = 0, scuff = 0, matte = 0, speck = 0 } = wear;
+    const { chip, metal, stipple = 0, scuff = 0, matte = 0, speck = 0, fleck = 1 } = wear;
     v = put(put(v, "#include <common>", "#include <common>\nvarying vec3 vWearPos;"), "#include <begin_vertex>", "#include <begin_vertex>\nvWearPos = transformed;");
     f = put(f, "#include <common>", `#include <common>${NOISE}`);
     // The edge: how fast the normal turns per metre on screen (1 / the round's radius), from 7 cm rounds (none) to
@@ -181,14 +184,14 @@ export function wornShader(shader: Shader, backing: number, wear?: Wear): Shader
   * smoothstep(0.58, 0.72, wNoise(vWearPos * vec3(30.0, 60.0, 30.0) + 11.0)) * wNear * ${glsl(scuff)};
   // the coat's grain: fine grains and coarser ones under them, each gone once it is smaller than a pixel or two
   float wFine = 1.0 - smoothstep(0.0007, 0.0016, wPx), wCoarse = 1.0 - smoothstep(0.002, 0.0045, wPx);
-  float wGrit = ${glsl(speck)} * (1.0 - smoothstep(0.0008, 0.002, wPx)), wFleck = ${glsl(speck)} * (1.0 - smoothstep(0.0018, 0.0045, wPx));
+  float wGrit = ${glsl(speck)} * (1.0 - smoothstep(0.0008, 0.002, wPx)), wFleck = ${glsl(speck * fleck * fleck)} * (1.0 - smoothstep(0.0018, 0.0045, wPx));
   float wGrain = wGrainAt(vWearPos, wFine, wCoarse, wGrit);
   // the granules' colour: paler flecks and darker ones in the same coat, a millimetre across up close and, where a
   // pixel covers a millimetre or more (a face seen at a slant, a step back), the clumps of them 2.5 mm across
   float wLite = smoothstep(0.66, 0.76, wNoise(vWearPos * 1000.0 + 21.0)) * wGrit + smoothstep(0.68, 0.8, wNoise(vWearPos * 400.0 + 61.0)) * wFleck * 0.7;
   float wDark = (1.0 - smoothstep(0.22, 0.32, wNoise(vWearPos * 1000.0 + 37.0))) * wGrit + (1.0 - smoothstep(0.2, 0.32, wNoise(vWearPos * 400.0 + 83.0))) * wFleck * 0.7;
-  diffuseColor.rgb *= 1.0 + wPatch * 0.1 + wGrain * ${glsl(stipple * 0.3)} - wDark * 0.45;
-  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 2.4 + 0.035, clamp(wLite, 0.0, 1.0) * 0.6);
+  diffuseColor.rgb *= 1.0 + wPatch * 0.1 + wGrain * ${glsl(stipple * 0.3)} - wDark * ${glsl(0.45 * fleck)};
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 2.4 + 0.035, clamp(wLite, 0.0, 1.0) * ${glsl(0.6 * fleck)});
   diffuseColor.rgb = mix(diffuseColor.rgb, ${rgb(chip)}, clamp(wChip + wScratch * 0.07, 0.0, 1.0));`);
     f = put(f, "#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
   roughnessFactor = clamp(max(roughnessFactor, ${glsl(matte)}) * (1.0 + wPatch * 0.2) - wChip * 0.25 - wScratch * 0.15 - wSmear * 0.06, 0.08, 1.0);`);
