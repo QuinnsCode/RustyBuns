@@ -151,7 +151,7 @@ const show = (a: Achievement, at: number | null): Shown =>
 /** One person's unlocks in every app (or just `app`), as app id -> achievement id -> when. */
 export async function unlocksOf(conf: Env, userId: string, app?: string) {
   const { results } = await conf.DB.prepare(`SELECT app, achievement, at FROM unlocks WHERE user_id = ?${app ? " AND app = ?" : ""}`)
-    .bind(...[userId, ...(app ? [app] : [])]).all<{ app: string; achievement: string; at: number }>();
+    .bind(userId, ...(app ? [app] : [])).all<{ app: string; achievement: string; at: number }>();
   const out = new Map<string, Map<string, number>>();
   for (const r of results) {
     let m = out.get(r.app);

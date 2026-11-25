@@ -1,6 +1,6 @@
 // The live socket (/api/live) between the arena and the page: one type, sent by arena.ts and read by
 // app/viewer.ts. Its own file so the page can import the check without the Durable Object.
-import { arr, bool, Bad, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, bool, Bad, field, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import type { Op, SkeletonEl } from "./engine/types.ts";
 
 // A replay (GET /api/matches/<id>) and the list of them (GET /api/matches), read by this site's viewer and by the
@@ -14,7 +14,6 @@ const points = (v: unknown): [number, number][] => pairs(v).map(([x, y]) => [x!,
 const Box = obj({ id: text(200), type: oneOf(["rectangle", "ellipse", "diamond"]), x: at, y: at, width: at, height: at, ...style });
 const Linear = obj({ id: text(200), type: oneOf(["line", "arrow"]), x: at, y: at, points, ...style });
 const Text = obj({ id: text(200), type: oneOf(["text"]), x: at, y: at, text: text(10_000), fontSize: opt(num(0, 1000)), ...style });
-const field = (v: unknown, k: string): unknown => (typeof v === "object" && v !== null ? Reflect.get(v, k) : undefined);
 /** One shape, by its type. */
 const Element: Guard<SkeletonEl> = (v) => { const t = field(v, "type"); return t === "line" || t === "arrow" ? Linear(v) : t === "text" ? Text(v) : Box(v); };
 /** An update's fields: never its id or type (engine/ops.ts drops those before it logs one). */

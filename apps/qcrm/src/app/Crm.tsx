@@ -19,7 +19,7 @@ type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "en
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string; plan?: string; created_at?: number }[]; superAdmin?: boolean }
 
 const api = async (path: string, init: RequestInit = {}) => {
-  const res = await fetch("/api" + path, { ...init, headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) }, credentials: "same-origin" });
+  const res = await fetch("/api" + path, { ...init, headers: { ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers }, credentials: "same-origin" });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
   // A demo past its hour (410) or past today's demos (429 from /demo): the page swaps to the sign-up card.
   if (res.status === 410 || (res.status === 429 && path === "/demo")) window.dispatchEvent(new CustomEvent("qcrm-demo-over", { detail: { msg: (body as any)?.error, again: res.status === 410 } }));
@@ -68,7 +68,7 @@ function namesFor(org: string, entity: "contacts" | "companies"): Promise<NameLo
 }
 /** The directory's arrays as rows, each cell checked: a string or nothing. */
 function directoryRows(d: unknown) {
-  const fields: unknown = d && typeof d === "object" ? Reflect.get(d, "fields") : null, rows: unknown = d && typeof d === "object" ? Reflect.get(d, "rows") : null;
+  const fields: unknown = d && typeof d === "object" && "fields" in d ? d.fields : null, rows: unknown = d && typeof d === "object" && "rows" in d ? d.rows : null;
   if (!Array.isArray(fields) || !Array.isArray(rows)) return [];
   const at = (r: unknown[], k: string) => { const v = r[fields.indexOf(k)]; return typeof v === "string" ? v : null; };
   return rows.filter(Array.isArray).map((r: unknown[]) => ({ id: at(r, "id") ?? "", first_name: at(r, "first_name"), last_name: at(r, "last_name"), name: at(r, "name"), email: at(r, "email") ?? at(r, "domain") }))
@@ -238,7 +238,7 @@ export function Crm() {
       <Commands me={me} org={current.id} role={role} setView={setView} setOrg={setOrg} setIntent={setIntent} />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
-        {current.plan === "demo" && /^demo-/.test(me.user.email) && current.created_at && <DemoClock ends={current.created_at + DEMO_HOUR} onEnd={() => setOver({ msg: "Your demo hour is up. Make an account to keep going.", again: true })} />}
+        {current.plan === "demo" && me.user.email.startsWith("demo-") && current.created_at && <DemoClock ends={current.created_at + DEMO_HOUR} onEnd={() => setOver({ msg: "Your demo hour is up. Make an account to keep going.", again: true })} />}
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
         {ITEMS.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
@@ -650,7 +650,7 @@ function Files({ org, entity, id, canAdd }: { org: string; entity: string; id: s
     if (!file) return;
     setMsg("");
     const res = await fetch(`/api/orgs/${org}/files?entity=${entity}&id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "content-type": file.type || "application/octet-stream" }, credentials: "same-origin" });
-    if (!res.ok) { const b: unknown = await res.json().catch(() => null), e: unknown = b && typeof b === "object" ? Reflect.get(b, "error") : null; setMsg(typeof e === "string" ? e : `${res.status}`); }
+    if (!res.ok) { const b: unknown = await res.json().catch(() => null), e: unknown = b && typeof b === "object" && "error" in b ? b.error : null; setMsg(typeof e === "string" ? e : `${res.status}`); }
     await load();
   };
   const drop = async (f: Row) => { try { await api(`/orgs/${org}/files/${f.id}`, { method: "DELETE" }); await load(); } catch (e) { setMsg((e as Error).message); } };

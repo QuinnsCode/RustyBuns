@@ -98,7 +98,7 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: 
 
 /** What a step is spent on. */
 export function stepKind(step: string): "checkout" | "setup" | "install" | "test" | "other" {
-  if (/^Post /.test(step) || /^Complete job$/.test(step)) return "other";
+  if (step.startsWith("Post ") || /^Complete job$/.test(step)) return "other";
   if (/actions\/checkout/.test(step)) return "checkout";
   if (/bun install/.test(step)) return "install";
   if (/^Set up job$|setup-bun|rust-toolchain|rust-cache|setup-buildx|ghaction-github-runtime/.test(step)) return "setup";
@@ -113,7 +113,7 @@ export function splitOf(j: { name: string; started_at?: string; completed_at?: s
   const k = { checkout: 0, setup: 0, install: 0, test: 0, other: 0 };
   for (const s of j.steps) k[stepKind(s.name)] += span(s.started_at, s.completed_at);
   const gap = span(j.started_at, j.completed_at) - sum(Object.values(k));
-  if (gap > 0) k[/^test /.test(j.name) ? "test" : "other"] += gap;
+  if (gap > 0) k[j.name.startsWith("test ") ? "test" : "other"] += gap;
   return k;
 }
 
@@ -372,7 +372,7 @@ async function failures(rows: Row[], using: Map<string, Set<string>>, logs: bool
   const fails: Fail[] = [];
   await Promise.all(rows.flatMap((row) => row.jobs.filter((j) => j.conclusion === "failure" && j.name !== "apps").map(async (j) => {
     const touched = touchedBy(j.name, await filesOf(row), using);
-    const tests = logs && /^test /.test(j.name) ? failsOf(await getLog(j.id)) : [];
+    const tests = logs && j.name.startsWith("test ") ? failsOf(await getLog(j.id)) : [];
     fails.push({ job: j.name, suite: suiteOf(j.name), row, at: j.completed_at ?? j.created_at, touched, tests });
   })));
   const by = new Map<string, Fail[]>();
@@ -468,17 +468,17 @@ async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: 
   say(`**Checkout depth.** The jobs with \`fetch-depth: 0\` (plan, scripts, containers-plan, containers) check out in ${Math.round(60 * pct(coDeep, 0.5))} s at the median against ${Math.round(60 * pct(coShallow, 0.5))} s for the shallow ones (the test jobs are already shallow). Making them shallow (plan needs only the merge-base: \`fetch-depth: 1\` plus \`git fetch --depth=200 origin main\`, or \`filter: blob:none\`) saves about **${Math.round(coSave)} job-min** (${share(coSave, total)}).\n`);
 
   const over = (j: Job) => kind(j, "checkout") + kind(j, "setup") + kind(j, "install");
-  const tests = done.filter((j) => /^test /.test(j.name));
-  const small = new Set(jobs.filter((e) => /^test /.test(e.n) && !/ \d+\/\d+$/.test(e.n) && pct(e.d, 0.5) < 1).map((e) => e.n));
+  const tests = done.filter((j) => j.name.startsWith("test "));
+  const small = new Set(jobs.filter((e) => e.n.startsWith("test ") && !/ \d+\/\d+$/.test(e.n) && pct(e.d, 0.5) < 1).map((e) => e.n));
   const smallOver = sum(tests.filter((j) => small.has(j.name)).map(over));
   say(`**Per-job overhead.** Checkout, setup and install are ${share(sum(done.map(over)), total)} of all job-minutes: each job pays ~${Math.round(60 * pct(done.map(over), 0.5))} s before its first test. ${small.size} app suites finish in under a minute at the median; run them six to a job (one checkout and install for six apps) and they keep five sixths of ${Math.round(smallOver)} overhead job-min: **${Math.round((smallOver * 5) / 6)} job-min** saved, and ${small.size - Math.ceil(small.size / 6)} fewer jobs in the queue per full run.\n`);
 
   // Runs that tested every app because packages/ or the lockfile moved: which apps actually import what changed?
   const appsRuns = rows.filter((r) => r.wf === "apps.yml" && r.run.status === "completed");
-  const nTest = (r: Row) => new Set(r.jobs.filter((j) => ran(j) && /^test /.test(j.name)).map((j) => suiteOf(j.name))).size;
+  const nTest = (r: Row) => new Set(r.jobs.filter((j) => ran(j) && j.name.startsWith("test ")).map((j) => suiteOf(j.name))).size;
   const most = Math.max(0, ...appsRuns.map(nTest));
   const full = appsRuns.filter((r) => most > 5 && nTest(r) >= 0.8 * most);
-  const testMin = (r: Row) => sum(r.jobs.filter((j) => ran(j) && /^test /.test(j.name)).map((j) => span(j.started_at, j.completed_at)));
+  const testMin = (r: Row) => sum(r.jobs.filter((j) => ran(j) && j.name.startsWith("test ")).map((j) => span(j.started_at, j.completed_at)));
   const why = new Map<string, number>();
   let scoped = 0, known = 0;
   for (const r of full) {
@@ -488,7 +488,7 @@ async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: 
     const reachOf = reach(files, using);
     const shared = files.filter((f) => /^(packages\/[^/]+\/|bun\.lock$|package\.json$|\.github\/workflows\/apps\.yml$|scripts\/ci-apps\.ts$)/.test(f)).map((f) => f.match(/^packages\/[^/]+/)?.[0] ?? f);
     for (const s of new Set(shared)) why.set(s, (why.get(s) ?? 0) + 1);
-    if (reachOf !== "all") scoped += sum(r.jobs.filter((j) => ran(j) && /^test /.test(j.name) && !reachOf.has(suiteOf(j.name).slice(5))).map((j) => span(j.started_at, j.completed_at)));
+    if (reachOf !== "all") scoped += sum(r.jobs.filter((j) => ran(j) && j.name.startsWith("test ") && !reachOf.has(suiteOf(j.name).slice(5))).map((j) => span(j.started_at, j.completed_at)));
   }
   const fullMin = sum(full.map(testMin));
   say(`**Every app on a shared change.** ${full.length} of ${appsRuns.length} apps runs tested ${Math.round(0.8 * most)}+ of ${most} apps and spent ${Math.round(fullMin)} job-min on test jobs, ${share(fullMin, sum(appsRuns.map(testMin)))} of all test job-min. What set them off (${known} with a known PR): ${[...why].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k} ${n}${k.startsWith("packages/") ? ` (${using.get(k.slice(9))?.size ?? 0} importing apps)` : ""}`).join(", ")}. Testing only the apps that import a changed package (and still every app for the lockfile, the workflow and ci-apps.ts) saves **${Math.round(scoped)} job-min**; a nightly all-apps run catches what the import graph misses.\n`);
@@ -497,7 +497,7 @@ async function suggestions(rows: Row[], jobs: ReturnType<typeof perJob>, fails: 
   const caught = new Map<string, number>(), noise = new Map<string, number>();
   for (const f of fails) if (f.touched !== undefined) { const m = f.touched ? caught : noise; m.set(f.suite, (m.get(f.suite) ?? 0) + 1); }
   const suites = new Map<string, { min: number; runs: Set<number> }>();
-  for (const r of rows) for (const j of r.jobs.filter((j) => ran(j) && j.completed_at && /^test /.test(j.name))) {
+  for (const r of rows) for (const j of r.jobs.filter((j) => ran(j) && j.completed_at && j.name.startsWith("test "))) {
     const s = suites.get(suiteOf(j.name)) ?? { min: 0, runs: new Set() };
     s.min += span(j.started_at, j.completed_at); s.runs.add(r.run.id);
     suites.set(suiteOf(j.name), s);
@@ -519,7 +519,7 @@ async function rings(rows: Row[], fails: Fail[], using: Map<string, Set<string>>
   const by = new Map<string, { min: number; fanMin: number; runs: Set<number>; ok: Job[]; okAt: string }>();
   await Promise.all(rows.filter((r) => r.wf === "apps.yml" && r.pr).map(async (row) => {
     const files = await filesOf(row);
-    for (const j of row.jobs.filter((j) => ran(j) && j.completed_at && /^test /.test(j.name))) {
+    for (const j of row.jobs.filter((j) => ran(j) && j.completed_at && j.name.startsWith("test "))) {
       const n = suiteOf(j.name), d = span(j.started_at, j.completed_at);
       const s = by.get(n) ?? { min: 0, fanMin: 0, runs: new Set(), ok: [], okAt: "" };
       s.min += d; s.runs.add(row.run.id);

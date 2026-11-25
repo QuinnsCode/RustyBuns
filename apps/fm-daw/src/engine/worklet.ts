@@ -240,7 +240,7 @@ class FmProcessor extends AudioWorkletProcessor {
   /** Where the shared clock says this block is heard, abs beats; NaN with no clock. */
   private gridNow(): number {
     if (!Number.isFinite(this.gridBeat)) return NaN;
-    const t = Reflect.get(globalThis, "currentTime");
+    const g: object = globalThis, t = "currentTime" in g ? g.currentTime : undefined;
     const now = typeof t === "number" ? t : this.frames / sampleRate;
     return gridBeatAt(this.gridBeat, this.gridCtx, now, this.seq.bpm);
   }

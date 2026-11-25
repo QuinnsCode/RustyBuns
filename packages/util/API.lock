@@ -16,6 +16,7 @@ class Bad extends Error
 type Guard<T> = (v: unknown) => T
 type Of<G> = G extends Guard<infer T> ? T : never
 const isRecord = (v: unknown): v is Record<string, unknown> =>
+const field = (v: unknown, k: string): unknown =>
 const raw: Guard<unknown>
 const str = (max = 1000, o: { min?: number; re?: RegExp; dflt?: string } = {}): Guard<string> =>
 const num = (lo: number, hi: number, dflt?: number): Guard<number> =>

@@ -121,7 +121,7 @@ export async function homeSettled(capMs = HOME_WAIT_MS, say?: (n: number) => voi
   const n = goingHome.size;
   if (!n) return 0;
   say?.(n);
-  await Promise.race([Promise.allSettled([...goingHome]), Bun.sleep(capMs)]);
+  await Promise.race([Promise.allSettled(goingHome), Bun.sleep(capMs)]);
   return n;
 }
 

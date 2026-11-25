@@ -14,7 +14,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 /** The string at a dotted path in the copy, or an error naming the path and the file. */
 function lineOf(copy: unknown, path: string, file: string): string {
   let at: unknown = copy;
-  for (const k of path.split(".")) at = at !== null && typeof at === "object" && !Array.isArray(at) ? Reflect.get(at, k) : undefined;
+  for (const k of path.split(".")) at = at !== null && typeof at === "object" && !Array.isArray(at) ? Object.getOwnPropertyDescriptor(at, k)?.value : undefined;
   if (typeof at !== "string") throw new Error(`${file} has no line "${path}" (index.html asks for it with data-copy)`);
   return at;
 }

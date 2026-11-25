@@ -15,7 +15,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { type Bindings, keyName, loadPad, mountControls, parseSettings, volumeOf } from "@rustybuns/game-controls";
 import { ACTIONS, actionOf, keymap, KEY, moveKeys, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
-import { check, obj, str } from "@rustybuns/util/guard";
+import { field as arg, check, obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
@@ -2619,7 +2619,6 @@ Object.assign(window, {
 // The page's commands outside the gallery (which adds its own beast_ and gallery_ ones, gallery-agent.ts): WebMCP tools
 // for an agent in the browser, window.__commands for a harness, the Cmd/Ctrl+K palette for a person. No corner button:
 // the world map and the touch buttons hold the bottom-right.
-const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
 const numArg = (a: unknown, k: string) => { const v = arg(a, k); return typeof v === "number" && Number.isFinite(v) ? v : undefined; };
 const idArg = (a: unknown, k: string) => {
   const v = arg(a, k), c = ROSTER.find((r) => r.id === v);

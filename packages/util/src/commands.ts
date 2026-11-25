@@ -16,6 +16,7 @@
 //
 // Like codeSplitter's, what a page offers can depend on where it is: add a route's commands when it opens and call
 // the returned off() when it closes. A command added under a name already taken replaces the older one.
+import { field } from "./guard.ts";
 
 /** A command's arguments, as a JSON Schema object: what WebMCP hands the agent. */
 export interface InputSchema { type: "object" | (string & {}); properties: Record<string, object | undefined>; required?: readonly string[]; additionalProperties?: boolean }
@@ -75,12 +76,12 @@ const offs = new Map<string, AbortController>();
 const watchers = new Set<() => void>();
 
 interface ModelContext { registerTool(tool: object, opts: { signal: AbortSignal }): unknown; unregisterTool?(name: string): unknown }
-const isMc = (v: unknown): v is ModelContext => typeof v === "object" && v !== null && typeof Reflect.get(v, "registerTool") === "function";
+const isMc = (v: unknown): v is ModelContext => typeof v === "object" && v !== null && "registerTool" in v && typeof v.registerTool === "function";
 const g: object = globalThis;
 /** The browser's agent, if it has one. */
 export function modelContext(): ModelContext | null {
-  const doc: unknown = Reflect.get(g, "document"), nav: unknown = Reflect.get(g, "navigator");
-  const mc: unknown = (doc && Reflect.get(doc, "modelContext")) ?? (nav && Reflect.get(nav, "modelContext"));
+  const doc: unknown = "document" in g ? g.document : undefined, nav: unknown = "navigator" in g ? g.navigator : undefined;
+  const mc: unknown = field(doc, "modelContext") ?? field(nav, "modelContext");
   return isMc(mc) ? mc : null;
 }
 
@@ -92,7 +93,7 @@ function register(c: Command) {
   const tool = { name: c.name, title: c.title, description: c.description, inputSchema: c.inputSchema ?? NONE, ...(c.annotations && { annotations: c.annotations }), execute: (a: unknown) => runCommand(c.name, a) };
   // Some builds answer with a handle to unregister, some take the signal, some only unregisterTool(name).
   void Promise.resolve().then(() => mc.registerTool(tool, { signal: off.signal })).then((h) => {
-    off.signal.addEventListener("abort", () => { try { if (h && typeof Reflect.get(h, "unregister") === "function") Reflect.get(h, "unregister").call(h); else mc.unregisterTool?.(c.name); } catch { /* already gone */ } });
+    off.signal.addEventListener("abort", () => { try { if (typeof h === "object" && h !== null && "unregister" in h && typeof h.unregister === "function") h.unregister(); else mc.unregisterTool?.(c.name); } catch { /* already gone */ } });
   }).catch(() => { /* a build that wants another tool shape: window.__commands and the palette still have it */ });
 }
 
@@ -158,7 +159,7 @@ const inOrder = (hay: string, w: string) => { let k = 0; for (const ch of hay) i
 export function askArgs(c: Pick<Command, "inputSchema">, line: string): { [arg: string]: string | number } {
   const [key, prop] = Object.entries(c.inputSchema?.properties ?? {})[0] ?? [];
   if (!key) return {};
-  const type = prop && Reflect.get(prop, "type");
+  const type = field(prop, "type");
   return { [key]: type === "number" || type === "integer" ? Number(line) : line };
 }
 

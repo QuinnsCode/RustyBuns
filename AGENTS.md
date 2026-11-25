@@ -77,6 +77,11 @@ Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts a
 these are the tools for the big ones. Each prints a short answer meant for a context window, so use them over the raw command.
 Ask a script `--help` before reading its source: it prints the script's top comment (`help(import.meta.path)` from `scripts/help.ts`; give a new script one).
 
+Many calls per reply, few replies. Every reply re-reads the whole context (about 150k here), and 9 in 10 replies carry a
+single tool call. When calls don't depend on each other (outlines, greps, briefs, `bun run pr --no-wait`, the files you
+will edit), send them together in one reply, and give each a narrow output. Chain dependent steps in one Bash line
+with `&&`. Dexter prints the calls-per-reply figure; aim for 2 or more while exploring.
+
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
   When it says an after-bot head has no checks, the owner runs `bun run kick <n>` (one empty commit on top, pushed).

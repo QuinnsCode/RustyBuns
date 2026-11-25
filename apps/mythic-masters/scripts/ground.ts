@@ -23,7 +23,7 @@ const picked = argv.filter((a, i) => !a.startsWith("--") && i !== asAt + 1);
 
 async function blender(...args: string[]): Promise<string> {
   const { out } = await runBlender({ script: "blender/ground.py", args, cwd: APP });
-  return out.split("\n").filter((l) => /^ground /.test(l)).join("\n");
+  return out.split("\n").filter((l) => l.startsWith("ground ")).join("\n");
 }
 
 if (!flags.has("--sheet-only")) {

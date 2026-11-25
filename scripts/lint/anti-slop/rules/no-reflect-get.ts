@@ -19,6 +19,8 @@ export const noReflectGetRule = defineRule({
     return {
       CallExpression(node) {
         if (node.callee.type === "Super" || node.callee.type === "V8IntrinsicExpression") return;
+        // Ours: `Reflect.get(target, key, receiver)` is how a Proxy `get` trap forwards; only the receiver form does that.
+        if (node.arguments.length === 3) return;
         if (isGlobalReflectMethodCall(context.sourceCode, node.callee, "get")) {
           context.report({ node, messageId: "reflectGet" });
         }
