@@ -64,6 +64,9 @@ export interface StudioDef {
   gear?: GearPlace;
   /** Out under the sky instead of in a room (open-air.ts): no walls or ceiling drawn, the ground running to the horizon. */
   outdoor?: Outdoor;
+  /** Indoors, the PA stacks you placed (the builder's PA tool) and their rig, as an open-air party's are. With none, a
+   *  room with decks plays from a club stack either side of them (pa-room.ts paSpeakers). Out of doors `outdoor` holds them. */
+  pa?: RoomPa;
   /** What stands at the bass seat: the big analog mono (the default) or the little silver bass-line `box` (gear-models.ts). */
   bass?: "mono" | "box";
   /** What stands at the keys seat (a seat named for its section, piano, strings or brass, takes that section's instead):
@@ -78,6 +81,8 @@ export interface StudioDef {
  * The size is the ground you can walk.
  */
 export type { SystemId };
+/** The PA part of a rig, indoors or out: its stacks, which rig they are, and whether they play mono. */
+export type RoomPa = Pick<Outdoor, "stacks" | "rig" | "mono">;
 export interface Outdoor {
   /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
    *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor; `pins`

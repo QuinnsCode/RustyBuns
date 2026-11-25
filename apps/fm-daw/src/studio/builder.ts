@@ -28,6 +28,8 @@ const XZ = (v: unknown): [number, number] => { const [x, z] = arr(num(-25, 25), 
 const COLOR = str(9, { re: /^#[0-9a-f]{6}$/i });
 /** A line array's pins, bottom box up: radians down from level. */
 const PINS = arr(num(0, MAX_PIN), 3, { min: 1 });
+/** A rig's stacks, indoors or out (room.ts Outdoor stacks). */
+const STACKS = arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS) }), MAX_STACKS);
 
 /** What the builder's Decorate tool puts down, each at its real size and in its usual colour (drawn by props.ts). */
 export const DECOR: Record<string, Pick<Prop, "w" | "d" | "h" | "color">> = {
@@ -76,8 +78,9 @@ export const Studio: Guard<StudioDef> = obj({
   gear: opt(obj({ at: XZ, yaw: num(-7, 7) })),
   bass: opt(oneOf(["mono", "box"] as const)),
   keys: opt(oneOf(POLY_KINDS)),
+  pa: opt(obj({ stacks: STACKS, rig: opt(oneOf(SYSTEM_IDS)), mono: opt(bool()) })),
   outdoor: opt(obj({
-    stacks: arr(obj({ at: XZ, yaw: num(-7, 7), splay: opt(num(-1, 1)), pins: opt(PINS) }), MAX_STACKS),
+    stacks: STACKS,
     subs: opt(obj({ at: XZ, yaw: num(-7, 7), wide: int(1, 6), high: int(1, 3) })),
     monitors: opt(arr(obj({ at: XZ, yaw: num(-7, 7) }), 4)),
     rig: opt(oneOf(SYSTEM_IDS)),
@@ -264,7 +267,7 @@ export function problems(def: StudioDef): string[] {
     if (Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1]) < SEAT_ROOM) out.push(`${a.id} and ${b.id} are on top of each other`);
   }
   if (!inRoom(def.door.at, WALL_ROOM)) out.push("the way in is outside the room");
-  def.outdoor?.stacks.forEach((st, i) => { if (!inRoom(st.at, 0.5)) out.push(`stack ${i + 1} is off the ground`); });
+  (def.outdoor ?? def.pa)?.stacks.forEach((st, i) => { if (!inRoom(st.at, 0.5)) out.push(`stack ${i + 1} is off the ground`); });
   out.push(...gearProblems(def));
   return out;
 }
@@ -417,15 +420,14 @@ export function edit(def: StudioDef, e: Edit): Built {
     case "moveDoor": next.door = { ...next.door, at: e.at }; break;
     // what stands at the keys and bass seats (gear-models.ts): one of the classic families, the big mono or the box
     case "instruments": {
-      if (e.rig && !next.outdoor) return no("a rig stands out of doors");
       if (e.keys) next.keys = e.keys;
       if (e.bass) next.bass = e.bass;
-      if (e.rig && next.outdoor) next.outdoor = { ...next.outdoor, rig: e.rig };
+      if (e.rig) (next.outdoor ?? (next.pa ??= { stacks: [] })).rig = e.rig;
       break;
     }
     case "stack": case "moveStack": case "aimStack": case "unstack": {
-      const out = next.outdoor;
-      if (!out) return no("a PA stack stands out of doors");
+      // out of doors the party's rig; indoors the room's own PA, made with its first stack
+      const out = next.outdoor ?? (next.pa ??= { stacks: [] });
       if (e.t === "stack") {
         if (out.stacks.length >= MAX_STACKS) return no(`a rig is at most ${MAX_STACKS} stacks`);
         // facing the floor's middle unless told

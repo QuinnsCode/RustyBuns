@@ -109,8 +109,8 @@ test("build mode: wall a corner off round the keys, knock a doorway through, tur
   r = ok(r, { t: "instruments", keys: "combo", bass: "box" });
   expect([r.keys, r.bass]).toEqual(["combo", "box"]);
   expect(check(Edit, { t: "instruments", keys: "theremin" })).toBeNull();
-  // a rig only stands out of doors: indoors it's refused, on the sand the stacks become it
-  expect(edit(r, { t: "instruments", rig: "synergy" })).toMatchObject({ ok: false, why: "a rig stands out of doors" });
+  // a rig indoors is the room's own PA (its stacks placed with the PA tool); on the sand the party's stacks become it
+  expect(ok(r, { t: "instruments", rig: "synergy" }).pa?.rig).toBe("synergy");
   expect(ok(DESERT_GATHERING, { t: "instruments", rig: "synergy" }).outdoor?.rig).toBe("synergy");
   // a camper van and a fire pit park only out of doors
   expect(edit(r, { t: "addProp", kind: "van", at: [0, 0] })).toMatchObject({ ok: false, why: "that stands out of doors" });
