@@ -287,7 +287,7 @@ impl Bot {
             return c.i;
         }
 
-        if swing_phase(o) == Some(Phase::Locked)
+        if swing_phase(o, Some(me)) == Some(Phase::Locked)
             && o.act.as_ref().is_some_and(|a| o.t < frames(&a.mv, a.tired).startup)
             && me.on_ground
             && !me.exhausted

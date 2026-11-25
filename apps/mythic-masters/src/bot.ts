@@ -146,7 +146,7 @@ export function bot(side: number, seed: number): Bot {
 
     // A heavy swing that has stopped turning to follow: step out of its sweep, to the side we're already on, and its
     // whiff leaves it open (its recovery is the punish).
-    if (swingPhase(o) === "locked" && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround && !me.exhausted && me.stamina >= me.b.dashCost) {
+    if (swingPhase(o, me) === "locked" && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround && !me.exhausted && me.stamina >= me.b.dashCost) {
       const { reach, ahead } = sweep(o, me, o.act.move.slot), kx = cos(o.yaw), kz = sin(o.yaw);
       const inSweep = d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
       if (inSweep && rnd() < SIDESTEP[me.c.archetype]) {

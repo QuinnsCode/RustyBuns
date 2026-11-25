@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play } from "../scripts/tune.ts";
 import { creature, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, CORNERED, COST, footprint, frames, HANG, IDLE, LUNGE, foeOf, newMatch, newTeamMatch, ORBIT, RED, step, warning, type Area, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, CORNERED, COST, footprint, frames, HANG, IDLE, LUNGE, foeOf, newMatch, newTeamMatch, ORBIT, RED, step, swingPhase, warning, type Area, type Fighter, type Input, type Match } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 import { atLevel } from "../src/journey.ts";
@@ -288,6 +288,57 @@ describe("squaring up", () => {
       return t;
     };
     expect(flipTime(tank)).toBeGreaterThan(flipTime(skirmisher) * 2);
+  });
+});
+
+describe("the fencing step", () => {
+  type Dash = "side" | "back";
+  /** `them` walks straight at the hare (or stands: `act`), which starts 2 m clear and dashes square across the line between
+   * them, left and right in turn (or straight back), once every 15 ticks; how far each dash carried it. */
+  function steps(them: Creature, dirs: Dash[], act: (m: Match) => Input = chase) {
+    const m = newMatch(hare, them), [f, o] = m.f;
+    f.pos.x = o.pos.x - (f.b.radius + o.b.radius + 2);
+    const out: number[] = [];
+    let s = 1;
+    for (const d of dirs) {
+      const at = { x: f.pos.x, z: f.pos.z }, a = Math.atan2(o.pos.z - f.pos.z, o.pos.x - f.pos.x);
+      if (d === "side") s = -s;
+      step(m, [hold(d === "side" ? { mx: -Math.sin(a) * s, mz: Math.cos(a) * s, dash: true } : { mx: -Math.cos(a), mz: -Math.sin(a), dash: true }), act(m)]);
+      for (let k = 0; k < 14; k++) step(m, [IDLE, act(m)]);
+      out.push(Math.hypot(f.pos.x - at.x, f.pos.z - at.z));
+    }
+    return { m, f, o, out };
+  }
+  function chase(m: Match): Input {
+    const [f, o] = m.f, a = Math.atan2(f.pos.z - o.pos.z, f.pos.x - o.pos.x);
+    return hold({ mx: Math.cos(a), mz: Math.sin(a) });
+  }
+
+  test("each sidestep chained onto the last carries less; rested, it carries whole again; a dash straight back never fades", () => {
+    const { m, f, o, out } = steps(tank, ["side", "side", "side"]);
+    expect(out[1]!).toBeLessThan(out[0]! * 0.8);
+    expect(out[2]!).toBeLessThan(out[1]! * 0.85);
+    for (let k = 0; k < 4 * 60; k++) step(m, [IDLE, IDLE]);
+    const at = { ...f.pos }, a = Math.atan2(o.pos.z - f.pos.z, o.pos.x - f.pos.x);
+    step(m, [hold({ mx: Math.sin(a), mz: -Math.cos(a), dash: true }), IDLE]);
+    for (let k = 0; k < 14; k++) step(m, [IDLE, IDLE]);
+    expect(Math.hypot(f.pos.x - at.x, f.pos.z - at.z)).toBeCloseTo(out[0]!, 1);
+    expect(steps(tank, ["side", "side", "back"]).out[2]).toBeCloseTo(out[0]!, 1);
+  });
+
+  test("the pursuer walking straight in gains on a foe who keeps sidestepping, and a heavy at it keeps turning to follow", () => {
+    // The tank walks in while the hare steps aside or backs off: it is quicker on the stepping one.
+    const pace = (dirs: Dash[]) => { const { o } = steps(tank, dirs); return Math.hypot(o.vel.x, o.vel.z); };
+    expect(pace(["side", "side", "side"])).toBeGreaterThan(pace(["back", "back", "back"]) * 1.1);
+    // The bruiser winds up a heavy right after the hare's steps: against a hare that kept stepping it tracks longer.
+    const tracking = (dirs: Dash[]) => {
+      const { m, f, o } = steps(bruiser, dirs);
+      let n = 0;
+      step(m, [IDLE, hold({ heavy: true })]);
+      for (let k = 0; k < frames(o.moves.heavy).startup; k++) { if (swingPhase(o, f) === "tracking") n++; step(m, [IDLE, IDLE]); }
+      return n;
+    };
+    expect(tracking(["side", "side", "side"])).toBeGreaterThan(tracking(["back", "back", "back"]) + 4);
   });
 });
 
