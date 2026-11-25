@@ -55,6 +55,10 @@ test("a fix in a workspace package, tested from an app: the base run uses the ba
   const unrun = (await unrunLines(repo, base, files)).get("packages/lib/index.ts");
   // Line 1 ran; Bun marks the never-called function by its declaration or its body (2-4).
   expect(Array.isArray(unrun) && unrun.length > 0 && unrun.every((n) => n >= 2 && n <= 4)).toBe(true);
+  // out of time: no file starts, each is named, and what it would have run reads as never loaded
+  const late: string[] = [];
+  expect((await unrunLines(repo, base, files, Date.now() - 1, late)).get("packages/lib/index.ts")).toBe("unloaded");
+  expect(late).toEqual(files);
 });
 
 test("reads the new side of a -U0 diff", () => {
