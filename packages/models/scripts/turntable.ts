@@ -7,7 +7,7 @@
 //   bun packages/models/scripts/turntable.ts --label round-2                every id, the material kit, into docs/gear-refs/shots/round-2/
 //   bun packages/models/scripts/turntable.ts --label round-0 --plain     the flat colours (`gearLook()`, the `low` quality look)
 //   bun packages/models/scripts/turntable.ts --only sub-18,wedge-12       just these ids
-  bun packages/models/scripts/turntable.ts --only dance-stack --hdri kloofendal_overcast_puresky   the whole stack (bins, mid-bass, tops) outdoors
+//   bun packages/models/scripts/turntable.ts --only dance-stack --hdri kloofendal_overcast_puresky   the whole stack (bins, mid-bass, tops) outdoors
 //   bun packages/models/scripts/turntable.ts --size 1024 --out /tmp/x     bigger, somewhere else
 //   bun packages/models/scripts/turntable.ts --js "turntable.ao.enabled = false"   runs this in the page first (try a light or a material)
 //   bun packages/models/scripts/turntable.ts --hdri music_hall_01         another Poly Haven HDRI (`--hdri none`: three's RoomEnvironment, offline)
