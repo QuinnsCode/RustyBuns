@@ -56,10 +56,8 @@ export const ACTIONS: Action[] = [
   { key: "Esc", does: "Back out of whatever is open; in the room, the menu: who's here, the studio (the leader switches it), the invite link. The sound plays on", icon: "door-open", where: "desk", strip: 9, short: "back", table: "Back out: a panel, then the menu, then the room" },
 ];
 
-/** Things you'd look for here that aren't built in the jam room yet: where they are today, and the issue. */
-export const NOT_YET: { what: string; today: string; issue: number }[] = [
-  { what: "Pedals, amps and cables", today: "In the gear room for now (Gear room, top of the page)", issue: 5393 },
-];
+/** Things you'd look for here that aren't built in the jam room yet: where they are today, and the issue. Empty hides the card's section. */
+export const NOT_YET: { what: string; today: string; issue: number }[] = [];
 
 /** Where a seat puts you: nowhere (walking), at the desk, or at an instrument or seat. */
 export const whereAt = (seat: SpotKind | null): Where => (seat === null ? "walk" : seat === "desk" ? "desk" : "seat");

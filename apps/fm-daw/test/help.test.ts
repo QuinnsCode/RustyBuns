@@ -2,7 +2,7 @@
 // down, then over to the desk. The card and the key strip follow where you are, and Tab (the instrument's panel) is on
 // both the moment you sit. The menu's keys table reads the same list.
 import { expect, test } from "bun:test";
-import { NOT_YET, card, keysTable, strip } from "../src/studio/actions.ts";
+import { card, keysTable, strip } from "../src/studio/actions.ts";
 import { newJam, sit, spotOf, stand, walkTo } from "../src/studio/jam.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/index.ts";
 
@@ -16,8 +16,6 @@ test("the card and the key strip follow you from the door to a seat to the desk"
   const walking = card(kind());
   expect(walking[0]).toMatchObject({ where: "walk", here: true });
   expect(walking.filter((g) => g.here)).toHaveLength(1);
-  // what isn't here yet is said, with where it is today
-  expect(NOT_YET.map((n) => n.what)).toContain("Pedals, amps and cables");
 
   // Up to the keys and sit: Tab is the first key on the strip, and the card opens on the seated group with Tab in it.
   walkTo(j, 2.6, 1.4);
