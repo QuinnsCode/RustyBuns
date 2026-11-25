@@ -18,6 +18,7 @@ runs it and reports. When every suite of a commit is green, the Worker posts the
 | `POST /extend` | `{ lease, seconds? }` | `{ ok }`, 409 when the lease ran out |
 | `POST /report` | `{ lease, ok, log }` | `{ ok }`, 409 when the lease ran out |
 | `GET /jobs?sha=` | | each suite's state, runner, tries and log tail |
+| `GET /queue` | | every queued and leased job in lease order: sha, branch, suite, runner, lease end |
 
 The shapes are guards in [src/api.ts](src/api.ts); the runner's side is [src/runner.ts](src/runner.ts).
 
