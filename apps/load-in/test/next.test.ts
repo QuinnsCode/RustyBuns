@@ -1,9 +1,10 @@
 // The garage's first minute, as a new player plays it, with the Next line (src/next.ts) read at every step: it points
-// at the cab out on the driveway, follows you in with it, sends you to the road case for a cable, then to each switch.
+// at the cab out on the driveway, follows you in with it, sends you to the cable case for a cable, then to each switch.
+// Till the cab is in your hands the screen shows only the Next line (`begun`: no score card yet).
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
 import { newCables, plug, takeCable, walkWith } from "../src/cables/cables.ts";
-import { idlePrompt, nextStep } from "../src/next.ts";
+import { begun, idlePrompt, nextStep } from "../src/next.ts";
 import { strike } from "../src/strike.ts";
 import { DIVE_BAR } from "../src/venues/dive-bar.ts";
 
@@ -12,17 +13,19 @@ test("the Next line walks a new player through the garage's first minute", () =>
   // The centre prompt, looking at nothing: quiet while there's setting up to do, so it never argues with the Next line.
   const prompt = () => idlePrompt(w, c, on, { doors: false, open: false });
   expect(prompt()).toBe("");
+  expect(begun(w, c)).toBe(false);
 
   expect(next()).toEqual({ text: "Bring the guitar speaker cabinet in", key: "cab-4x12" });
   walkWith(w, c, 0.9, 8.6);
   w.you.yaw = 0;
   expect(pickUp(w, "cab-4x12")).toEqual({ ok: true });
+  expect(begun(w, c)).toBe(true);
   expect(next()?.text).toBe("Carry the guitar speaker cabinet inside");
   walkWith(w, c, -0.4, 1.4);
   expect(next()?.text).toBe("Set it down where it goes: F");
   expect(putDown(w)).toEqual({ ok: true });
 
-  expect(next()).toEqual({ text: "Take a cable from the road case: F", key: "case" });
+  expect(next()).toEqual({ text: "Take a cable from the cable case: F", key: "case" });
   walkWith(w, c, -1.6, 3.2);
   expect(takeCable(w, c, "power")).toEqual({ ok: true });
   expect(next()?.text).toBe("Plug it in: look at a jack and press F");

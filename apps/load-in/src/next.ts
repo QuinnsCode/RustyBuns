@@ -10,6 +10,21 @@ import { strikeState, striking } from "./strike.ts";
 
 export type Next = { text: string; key?: string };
 
+/** What the crew calls a piece, the same on the Next line, the arrow and its stencil: the case with the cables is the
+ * "cable case" (stencil CABLES), any other road case the "backline case" (stencil BACKLINE), the rest by catalog name. */
+export function callName(w: World, c: Cables, key: string): string {
+  const i = w.items.find((x) => x.key === key);
+  if (!i) return "";
+  if (i.gear === "road-case-m") return key === c.caseKey ? "cable case" : "backline case";
+  return gear(i.gear).what;
+}
+
+/** Started: something in your hands, a piece moved from where the level left it, or a cable plugged in. Till then the
+ * screen shows only the Next line. (The cords coiled by the door at the start are not a start.) */
+export function begun(w: World, c: Cables): boolean {
+  return !!w.held || !!inHand(c) || c.runs.some((r) => "plug" in r.a || "plug" in r.b) || w.items.some((i) => { const s = w.level.items.find((k) => k.key === i.key); return !s || Math.hypot(i.x - s.x, i.z - s.z) > 0.3; });
+}
+
 type At = { w: World; c: Cables; on: Switches };
 
 const outside = (w: World, z: number) => !w.level.outdoor && z > w.level.room.z1;
@@ -22,11 +37,11 @@ const switchedOff = ({ w, c, on }: At) => {
 
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
-  { job: ({ w }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${gear(h.gear).what} inside` : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w) },
+  { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w) },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
-  { job: (s) => `Bring the ${gear(outdoors(s)!.gear).what} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
-  { job: "Take a cable from the road case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
-  { job: (s) => `Switch on the ${gear(switchedOff(s)!.gear).what}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
+  { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
+  { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
+  { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
 ];
 
 export function nextStep(w: World, c: Cables, on: Switches): Next | null {
