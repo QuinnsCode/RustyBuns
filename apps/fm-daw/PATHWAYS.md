@@ -14,7 +14,7 @@ Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts
 | [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | Make a track: `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
 | [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, out of your sound card to any stream app, and a listen link of our own |
-| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Partly: room acoustics and a rig pick, no coverage map or gear list |
+| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Yes: stacks indoors or out, coverage, delay, power, gear list |
 | [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, change parts, download a kit with your parts; nothing built yet |
 
 All six share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
@@ -124,22 +124,23 @@ what power, before the truck is loaded.
 
 **Works today:**
 - Step 1: the studio builder (`/rooms.html`, `src/studio/builder.ts`): size, materials, panels, booths, seats.
-- Step 2: an open-air room picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
+- Step 2: a room, indoors or out, picks one of five rigs (`@rustybuns/gear` `SYSTEMS`; the rig cards, `rig-cards.ts`, draw each to
   scale). The PA tool stands a stack on the ground, Move drags it, Turn aims it, and the PA panel turns it, splays its
-  tops and sets a line array's pins (#5863).
-- Step 3: the Coverage button draws the PA's mids and highs over the floor on the blueprint (`src/studio/coverage.ts`),
+  tops and sets a line array's pins (#5863). Indoors the stacks are the room's own `pa` (with none, a club stack
+  stands either side of the decks), drawn in the builder and on Walk in, with the same power check and gear list (#5883).
+- Step 3: the Coverage button draws the PA's mids and highs over the floor, on the blueprint or the 3D view's floor (`src/studio/coverage.ts`),
   and the PA panel gives the floor's level and how even it is. It is `@rustybuns/gear`'s `coverage` of the very boxes
-  `pa-room.ts` plays the set from (`paSources`), so the map is what you hear on Walk in. Ring time and a clap at each seat.
+  `pa-room.ts` plays the set from (`paSources`), so the map is what you hear on Walk in. The Delay button marks where the far stacks land late on the blueprint
+  (`pa-room.ts` `arrivals`, from `hearSpeaker`'s delay): amber past 10 ms (a smear), red past 30 (an echo, a delay tower's
+  place), the ms written across the floor. Ring time and a clap at each seat.
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
 - Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
   breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
 - Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
   and the power plan (`gearList`); **Plan drawing** saves the blueprint with the coverage map on it as an SVG.
-- `window.qrooms`: `pa()`, `level(x, z)`, `pickStack(i)`, `showMap()`, `download("list" | "plan")`; the journey is
+- `window.qrooms`: `pa()`, `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
-**Missing** ([#5883](https://github.com/QuinnsCode/RustyBuns/issues/5883)): stacks you place indoors (a room's PA is still a stack either side of the decks), the delay from far
-stacks on the map, and the coverage map in the 3D view.
 
 ## 6. Build the circuit (tscircuit to your hands)
 
