@@ -10,7 +10,7 @@
 // command line holds the whole script); a process started some other way is outside it.
 import { took, Record as RunGuard } from "./builder-bar.ts";
 import { check } from "../packages/util/src/guard.ts";
-import { battery, plan, PUSH_MS, REMOTE_PATH, STALE_MIN, type Battery, type RunRecord } from "./remote-ci.ts";
+import { battery, CUT_CHECK, GATE, plan, PUSH_MS, REMOTE_PATH, STALE_MIN, type Battery, type RunRecord } from "./remote-ci.ts";
 
 /** One pass over the builder folder, as `@kind ...` lines. Run in the folder; `PS` swaps the process list (tests). */
 export const GATHER = String.raw`mt() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
@@ -112,7 +112,8 @@ const one = (w: string[]): boolean => {
 export const expected = (cmd: string): boolean => { const cs = commands(cmd.trim()); return !!cs && cs.every(one); };
 
 export type Kind = { kind: "job"; slot: string; dir: string; cmd: string; ok: boolean } | { kind: "house" } | { kind: "unexpected"; cmd: string };
-const JOB = /^L="\$PWD\/runs\/(slot-[\w-]+)\.log"; \{ cd '(slot-[\w-]+)(?:\/([^']*))?' && ([\s\S]*?); echo \$\? > "\$L\.\$\$"; \} 2>&1 \| tee -a "\$L"; c=\$\(cat "\$L\.\$\$"\); rm -f "\$L\.\$\$"; exit "\$\{c:-1\}"$/;
+const lit = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const JOB = new RegExp(String.raw`^L="\$PWD/runs/(slot-[\w-]+)\.log"; ${lit(GATE)}\{ cd '(slot-[\w-]+)(?:\/([^']*))?' && ([\s\S]*?); echo \$\? > "\$L\.\$\$"; \} 2>&1 \| tee -a "\$L"; c=\$\(cat "\$L\.\$\$"\); rm -f "\$L\.\$\$"; ${lit(CUT_CHECK)}exit "\$\{c:-1\}"$`);
 const HOUSE = [
   /^mkdir -p locks runs\/done /, // claim
   /(^printf '%s' |^rm -f runs\/'slot-[\w-]+'\.json ).*rmdir locks\/'slot-[\w-]+'$/, // release
@@ -209,7 +210,8 @@ export function board(v: View, look: Look): string {
   const live = shot.serving && shot.now - shot.serving < 2 * 60_000;
   const p = plan("off", true, shot.batt, 4);
   const power = shot.batt.onPower ? paint("green", "on power") : paint(shot.batt.pct < 20 ? "red" : "yellow", `on battery ${shot.batt.pct}%`);
-  const cap = p.where === "wait" ? paint("red", "runs wait until he is charged") : p.cap === 1 ? paint("yellow", "one suite at a time per run") : `up to ${p.cap} suites at once per run`;
+  const each = p.cap === 1 ? "one suite at a time per run" : `up to ${p.cap} suites at once per run`;
+  const cap = p.where === "wait" ? paint("red", "runs wait until he is charged") : shot.batt.onPower ? each : paint("yellow", each);
   const clock = new Date(shot.now).toTimeString().slice(0, 8);
   const head = box(look.title ?? "builder", "pink", [
     `${paint("gray", "power ")} ${power} ${paint("dim", "·")} ${cap}`,

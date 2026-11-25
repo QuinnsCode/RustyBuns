@@ -104,15 +104,20 @@ export function battery(pmset: string): Battery {
   return { onPower: !draining, pct };
 }
 
-// Where a run goes: the builder (with how many suites at once), here, or wait for him. A builder draining under 20% counts as off.
+// Bob on battery (the owner's rule, 2026-11-24): up to BATTERY_CAP suites at once; under LOW_PCT no new suite starts
+// (a run already going finishes); at CUT_PCT `serve` cuts every running suite off (`cutOff`), and the run waits and starts over.
+export const BATTERY_CAP = 3, LOW_PCT = 20, CUT_PCT = 13;
+export const cutNow = (b: Battery) => !b.onPower && b.pct <= CUT_PCT;
+
+// Where a run goes: the builder (with how many suites at once), here, or wait for him. A builder draining under LOW_PCT counts as off.
 export type Plan = { where: "bob" | "here" | "wait"; cap: number; why?: string };
 export function plan(v: Valve, up: boolean, batt: Battery, cap: number): Plan {
-  const low = up && !batt.onPower && batt.pct < 20;
+  const low = up && !batt.onPower && batt.pct < LOW_PCT;
   if (!up || low) {
     const why = low ? `builder is on battery at ${batt.pct}%` : "Bob isn't taking runs (on him: bun run builder serve)";
     return v === "off" ? { where: "wait", cap, why: `valve shut, waiting for Bob (${why})` } : { where: "here", cap, why };
   }
-  if (!batt.onPower) return { where: "bob", cap: 1, why: `builder is on battery (${batt.pct}%): one suite at a time` };
+  if (!batt.onPower) { const n = Math.min(cap, BATTERY_CAP); return { where: "bob", cap: n, why: `builder is on battery (${batt.pct}%): ${n} suite${n === 1 ? "" : "s"} at a time` }; }
   return { where: "bob", cap };
 }
 
@@ -158,7 +163,15 @@ export type RunRecord = { who: string; cmd: string; started: number; ended?: num
 const KEEP = 10;
 const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; `;
 // The command's own exit code, not tee's, without pipefail (dash has none): each ssh shell has its own $$.
-const teed = (cmd: string) => `{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; exit "\${c:-1}"`;
+// A slot `serve` cut off has runs/<slot>.cut: nothing starts there, and what it killed exits CUT, not as a failure.
+// Under LOW_PCT on battery nothing new starts either (plain sh, no tools but pmset: `p` is the number before the first %).
+/** What a job or setup answers when Bob's battery stopped it: wait and start over, like LOST. */
+export const CUT = 253;
+export const GATE = `[ -e "\${L%.log}.cut" ] && exit ${CUT}; b=$(pmset -g batt 2>/dev/null); case "$b" in *"Battery Power"*) p=\${b%%\\%*}; p=\${p##*[!0-9]}; [ "\${p:-100}" -lt ${LOW_PCT} ] && exit ${CUT};; esac; `;
+export const CUT_CHECK = `[ -e "\${L%.log}.cut" ] && exit ${CUT}; `;
+/** How a suite's or run's exit code reads: a cut-off or a lost Bob is neither a pass nor a fail. */
+export const outcome = (code: number) => code === CUT ? "cut off" : code === LOST ? "lost" : code ? "failed" : "passed";
+const teed = (cmd: string) => `${GATE}{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; ${CUT_CHECK}exit "\${c:-1}"`;
 /** The script one suite runs in a slot over ssh, its output teed to the slot's log. */
 export const jobScript = (slot: string, dir: string, cmd: string) => LOG(slot) + teed(`cd ${q(`${slot}/${dir}`)} && ${cmd}`);
 /** What `remote` hands ssh for a script. */
@@ -171,18 +184,30 @@ export const remoteScript = (b: Pick<Builder, "dir">, script: string) => `${REMO
 const SLOT = /^slot-[\w-]+$/;
 // Taking a dead run's lock back ends what that run left running first: anything whose command line names the slot's
 // folder (wrangler, workerd and esbuild from its node_modules, a hung `git-receive-pack '.../slot-3'`) or that sits in
-// it (its `bun test`). They outlived their runs on Bob by days (#5337).
-const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN}); do P="$PWD/\${l#locks/}"; `
-  + `pkill -9 -f -- "$P(/|'|[[:space:]]|$)" 2>/dev/null; `
-  + `lsof -a -d cwd -Fpn 2>/dev/null | awk -v P="$P" '/^p/ { p = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == P || index(n, P "/") == 1) print p }' | xargs kill -9 2>/dev/null; `
-  + `rmdir "$l"; done; `;
+// it (its `bun test`), and everything those started (a test's Chrome and its helpers, wherever they sit). They outlived
+// their runs on Bob by days (#5337). $P is the slot's path as command lines name it, $R its real path (lsof reports cwds resolved).
+const END_TREE = `{ pgrep -f -- "$P(/|'|[[:space:]]|$)"; pgrep -f -- "$R(/|'|[[:space:]]|$)"; `
+  + `lsof -a -d cwd -Fpn 2>/dev/null | awk -v P="$R" '/^p/ { p = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == P || index(n, P "/") == 1) print p }'; `
+  + `echo --; ps -Ao pid=,ppid=; } 2>/dev/null | awk -v me=$$ 'x { pp[$1] = $2; next } $0 == "--" { x = 1; next } { k[$1] = 1 } `
+  + `END { do { c = 0; for (p in pp) if (!(p in k) && (pp[p] in k)) { k[p] = 1; c = 1 } } while (c); for (p in k) if (p != me) print p }' | xargs kill -9 2>/dev/null; `;
+const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STALE_MIN}); do P="$PWD/\${l#locks/}" R="$(pwd -P)/\${l#locks/}"; ${END_TREE}rmdir "$l"; done; `;
+// Bob's battery at CUT_PCT: every held slot is marked cut first (so what dies exits CUT, and nothing new starts there),
+// then its whole tree is killed and its run record goes. The lock stays for its run to give back (or REAP after STALE_MIN):
+// freeing it here could hand a slot to a new claim that the old run's release then frees under it.
+export const CUT_SCRIPT = `for l in locks/slot-*; do [ -d "$l" ] || continue; s="\${l#locks/}"; P="$PWD/$s" R="$(pwd -P)/$s"; : > "runs/$s.cut"; `
+  + `${END_TREE}rm -f "runs/$s.json" "runs/$s.log"; echo "$s"; done`;
+/** `serve`'s battery watcher, one reading: cut off every running suite in `dir` when `pmset` says CUT_PCT or under. The slots cut. */
+export async function cutOff(dir: string, pmset: string): Promise<string[]> {
+  if (!cutNow(battery(pmset))) return [];
+  return (await Bun.$`sh -c ${CUT_SCRIPT}`.cwd(dir).quiet().nothrow().text()).split("\n").filter(Boolean);
+}
 export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string; batt: Battery }> {
   const write = rec ? `printf '%s' ${q(JSON.stringify(rec))} > "runs/$d.json"; : > "runs/$d.log"; ` : "";
   const wait = rec ? `runs/wait/${rec.started}-${rec.who.replace(/[^\w.-]/g, "_")}.json` : "";
   // a lock is a folder; anything else there is junk (a heartbeat's touch after release once left a file at locks/slot-1, and
   // every claim after it read rmdir's complaint as its slot name and ran nowhere, over and over, for hours: 2026-11-22)
   const script = `mkdir -p locks runs/done runs/wait && find runs/wait -type f -mmin +1 -exec rm -f {} + 2>/dev/null; find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; ${REAP}`
-    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}${wait && `rm -f ${wait}; `}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; `
+    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { rm -f "runs/$d.cut"; ${write}${wait && `rm -f ${wait}; `}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; `
     + `${wait && `printf '%s' ${q(JSON.stringify(rec))} > ${wait}; `}exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);
@@ -200,7 +225,7 @@ export function release(b: Builder, slot: string, rec?: RunRecord) {
   const done = rec ? `printf '%s' ${q(JSON.stringify(rec))} > runs/${id}.json; mv -f runs/${s}.log runs/${id}.log 2>/dev/null; rm -f runs/${s}.json; `
     + `ls -t runs/done/*.json 2>/dev/null | tail -n +${KEEP + 1} | while read -r f; do rm -f "$f" "${"$"}{f%.json}.log"; done; `
     : `rm -f runs/${s}.json runs/${s}.log; `;
-  return stream(remote(b, `${done}rmdir locks/${s}`), "release", true);
+  return stream(remote(b, `${done}rm -f runs/${s}.cut; rmdir locks/${s}`), "release", true);
 }
 
 // One push to the builder at a time from this Mac: each is a git pack-objects of up to 440 MB, and seven at once
@@ -247,6 +272,7 @@ export async function load(b: Builder, slot: string, sha: string, cwd: string) {
 /** The file `bun run builder serve` keeps fresh in Bob's builder folder while he takes runs, and how often. */
 export const SERVING = "serving";
 const SERVE_BEAT_MS = 20_000;
+const CUT_EVERY_MS = 15_000;
 /** An ssh exit that means the connection, not the command: Bob went away. */
 const LOST = 255;
 
@@ -427,6 +453,8 @@ async function serve(): Promise<number> {
   const beat = () => Bun.write(file, `${new Date().toISOString()}\n`);
   await beat();
   const timer = setInterval(beat, SERVE_BEAT_MS);
+  // His battery, his watcher: a client's ssh may be gone by the time he drains, so the cut-off happens here (CUT_PCT).
+  const cut = Bun.which("pmset") ? setInterval(async () => { await cutOff(dir, await Bun.$`pmset -g batt`.quiet().nothrow().text()); }, CUT_EVERY_MS) : undefined;
   const awake = Bun.which("caffeinate") ? Bun.spawn(["caffeinate", "-i", "-w", String(process.pid)], { stdout: "ignore", stderr: "ignore" }) : null;
   console.log(`taking runs (${dir}); Ctrl-C to stop: runs already going finish, new ones wait for the next serve`);
   // What he is doing, live: a board on a terminal, one line per event when piped (scripts/builder-board.ts).
@@ -436,6 +464,7 @@ async function serve(): Promise<number> {
   const { GATHER, show } = await import("./builder-board.ts");
   await show(() => Bun.$`sh -c ${GATHER}`.cwd(dir).quiet().nothrow().text(), stop.signal, { every: 1000, title: `${(await Bun.$`hostname -s`.quiet().nothrow().text()).trim() || "builder"} · taking runs · Ctrl-C to stop` });
   clearInterval(timer);
+  clearInterval(cut);
   awake?.kill();
   await Bun.$`rm -f ${file}`.quiet().nothrow();
   console.log("not taking runs");
@@ -516,12 +545,14 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
     cmd: argv[0] === "run" ? `${argv[1]}: ${argv.slice(2).join(" ")}` : `suites: ${jobs.map((j) => j.label).join(", ")}` };
   for (;;) {
     const r = await attempt();
-    if (r !== LOST) return r;
-    if (at) { console.error("the builder went away mid-run"); return NOT_RUN; }
-    console.log("lost Bob mid-run: waiting for him again, then running it from the start");
+    if (r !== LOST && r !== CUT) return r;
+    const gone = r === CUT ? `cut off: Bob's battery fell to ${CUT_PCT}%` : "lost Bob mid-run";
+    if (at) { console.error(gone); return NOT_RUN; }
+    console.log(`${gone}: waiting for him again, then running it from the start`);
   }
 
-  /** Wait for Bob and a slot, then run: the run's code, or LOST when Bob went away under it (nothing to blame on the code). */
+  /** Wait for Bob and a slot, then run: the run's code, or LOST when Bob went away under it, or CUT when his battery
+   *  stopped it (nothing to blame on the code either way). */
   async function attempt(): Promise<number> {
     let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
     for (let said = ""; ; ) {
@@ -543,7 +574,7 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
     // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
     // only a lock that is still there is kept fresh: a touch after release would leave a file where the lock was
     const beat = setInterval(() => { remote(b, `[ -d locks/${q(slot)} ] && touch locks/${q(slot)}`); }, HEARTBEAT_MS);
-    const finish = (code: number) => { clearInterval(beat); return code === LOST ? release(b, slot) : release(b, slot, { ...rec, ended: Date.now(), code }); };
+    const finish = (code: number) => { clearInterval(beat); return code === LOST || code === CUT ? release(b, slot) : release(b, slot, { ...rec, ended: Date.now(), code }); };
     const giveBack = () => { finish(130).finally(() => process.exit(130)); };
     process.once("SIGINT", giveBack);
     process.once("SIGTERM", giveBack);
@@ -553,15 +584,17 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
       const setup = await load(b, slot, sent, cwd);
       // a push that failed or hung, or a setup whose ssh dropped, is Bob going away, not the branch
       if (setup === PUSH_FAILED || setup === LOST) return (code = LOST);
+      if (setup === CUT) return (code = CUT);
       if (setup) return (code = setup);
       console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
       const t0 = performance.now();
       const codes: number[] = [];
       const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, jobScript(slot, j.dir, j.cmd)), j.label)).code; codes.push(c); return c; });
+      if (codes.includes(CUT)) return (code = CUT);
       if (codes.includes(LOST)) return (code = LOST);
       // every base-ref run, targeted or whole, is what the dial learns from; a one-off `run` isn't the branch's test
       if (tier !== undefined && !at) await recordVerdict({ who, tier, passed: !worst, at: Date.now() }).catch(() => {});
-      console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
+      console.log(`${outcome(worst)} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
       if (all && !worst) {
         // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.
         const head = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();

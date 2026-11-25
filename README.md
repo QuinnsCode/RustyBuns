@@ -969,7 +969,7 @@ The laptop you work on stays fast. Heavy tests and native builds go to a builder
 
 `bun run builder run apps/<app> bun test test/foo.test.ts` sends the working tree to the builder and runs the command there. `bun run builder origin/main` runs each suite that you touched. When GitHub Actions is down, `bun run builder all` runs everything that the required checks run on your committed branch and records a pass, and `bun run builder passed` lists what is ready to merge.
 
-A valve in the agents' guard hook sends `bun test`, `bun run build`, `vite build` and `cargo build` to the builder, and waits while it is off. On battery it runs one suite at a time, and it waits below 20%. It also runs a full sweep twice a day, and its runs show in its own menu bar. Setup: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
+A valve in the agents' guard hook sends `bun test`, `bun run build`, `vite build` and `cargo build` to the builder, and waits while it is off. On battery it runs up to three suites at once, starts none below 20%, and at 13% stops them all; a stopped run waits and starts over. It also runs a full sweep twice a day, and its runs show in its own menu bar. Setup: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 
 </details>
 

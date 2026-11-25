@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, utimesSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
 import { board, events, expected, GATHER, parseShot, view, type Shot } from "./builder-board.ts";
-import { battery, ciJobs, jobScript, load, main, parseJobs, passedFile, passes, plan, pool, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
+import { battery, ciJobs, cutOff, jobScript, load, main, outcome, parseJobs, passedFile, passes, plan, pool, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -15,8 +15,10 @@ test.each<[Valve, boolean, string, string, number]>([
   ["off", true, AC, "bob", 4],
   ["off", false, "", "wait", 4],
   ["off", true, "", "bob", 4], // a Linux builder: no pmset
-  ["off", true, DRAIN(60), "bob", 1],
-  ["off", true, DRAIN(15), "wait", 4],
+  ["off", true, DRAIN(50), "bob", 3], // on battery: up to three at once
+  ["off", true, DRAIN(19), "wait", 4], // under 20%: nothing new starts
+  ["off", true, DRAIN(12), "wait", 4], // past the cut-off too
+  ["on", true, DRAIN(12), "here", 4],
   ["on", true, DRAIN(15), "here", 4],
   ["off", true, "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t12%; charging; 1:30 remaining", "bob", 4],
 ])("valve %s, Bob up %s: %#", (v, up, pmset, where, cap) => {
@@ -134,6 +136,27 @@ test("a run waits until Bob serves, takes back a dead run's slot and ends what i
   }
 }, 30000);
 
+// At 13% on battery, `serve`'s watcher cuts every running suite off: its shell, what that started and what that started
+// are all gone, and the run reads "cut off" (it waits for Bob and starts over), not "failed". Nothing new starts in that slot.
+test("Bob's battery at 13% kills a running suite's whole tree, and it reads cut off, not failed", async () => {
+  const dir = realpathSync(mkdtempSync(`${tmpdir()}/cut-`)), nap = `sleep ${(60 + Math.random()).toFixed(4)}`;
+  mkdirSync(`${dir}/slot-1/apps/x`, { recursive: true });
+  mkdirSync(`${dir}/locks/slot-1`, { recursive: true });
+  await Bun.write(`${dir}/runs/slot-1.json`, "{}");
+  const job = Bun.spawn(["sh", "-c", jobScript("slot-1", "apps/x", `sh -c '${nap}; echo done'`)], { cwd: dir, stdout: "ignore", stderr: "ignore" });
+  const running = async () => (await Bun.$`pgrep -f ${nap}`.quiet().nothrow().text()).split("\n").filter(Boolean);
+  // the job's shell and its pipe's fork, the child shell, and its sleep
+  for (let i = 0; (await running()).length < 4 && i < 100; i++) await Bun.sleep(50);
+  expect((await running()).length).toBeGreaterThanOrEqual(2);
+  expect(await cutOff(dir, DRAIN(14))).toEqual([]);
+  expect(await cutOff(dir, DRAIN(13))).toEqual(["slot-1"]);
+  expect(outcome(await job.exited)).toBe("cut off");
+  expect(await running()).toEqual([]);
+  expect(readdirSync(`${dir}/runs`)).toEqual(["slot-1.cut"]);
+  const next = await Bun.$`sh -c ${jobScript("slot-1", "apps/x", "echo nope")}`.cwd(dir).quiet().nothrow();
+  expect([outcome(next.exitCode), next.stdout.toString()]).toEqual(["cut off", ""]);
+}, 15000);
+
 // A push packs what the slot's refs don't reach. Once a run's commit stays there, the next run one commit on sends
 // just that commit, not all the history since the slot was set up (seven 200 MB packs at once restarted the office Mac).
 test("after a run the slot keeps its commit, so the next push packs only what is new", async () => {
@@ -234,7 +257,7 @@ test.each<[string, Partial<Shot>, string[], string[]]>([
     batt: { onPower: false, pct: 54 },
     waiting: [{ who: "nib", cmd: "suites: eqosys", started: NOW - 90_000, at: NOW }, { who: "byte", cmd: "suites: qcrm", started: NOW - 30_000, at: NOW }],
     done: [{ who: "byte", cmd: "suites: wildclash", started: NOW - 200_000, ended: NOW - 158_000, code: 0 }, { who: "nib", cmd: ".: bun test x", started: NOW - 100_000, ended: NOW - 90_000, code: 1 }],
-  }, ["on battery 54%", "one suite at a time", "1. nib", "2. byte", "✓ pass", "42s", "wildclash", "✗ fail 1"], []],
+  }, ["on battery 54%", "up to 3 suites at once", "1. nib", "2. byte", "✓ pass", "42s", "wildclash", "✗ fail 1"], []],
 ])("the board shows %s", (_, over, has, hasnt) => {
   const text = board(view(shot(over)), { width: 100, color: false, frame: 0 });
   for (const s of has) expect(text).toContain(s);
