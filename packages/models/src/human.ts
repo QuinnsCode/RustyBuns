@@ -569,7 +569,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
   };
   m.tube(ctl(), {
     tone: fur ? undefined : faceTone,
-    seg: 56, step: 0.0038 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
+    seg: 52, step: 0.0044 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
     bump: (p) => {
       face(p);
       if (!fur || (p.z > z0 + 0.05 * hs && p.y < Y(0.03))) return;
@@ -597,7 +597,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     // toward the outer corner, the bottom is flatter, and both close to a point at the corners.
     const edge = (u: number) => { const w = Math.sqrt(Math.max(0, 1 - (u / 0.92) ** 2)); return [0.36 * w ** 0.8 + 0.04 * u, -0.42 * w ** 1.2 + 0.03 * u] as const; };
     m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
-      seg: 48, step: r * 0.05, capTop: r * 0.05, m: em, skin: B.head,
+      seg: 32, step: r * 0.08, capTop: r * 0.05, m: em, skin: B.head,
       // up is -z here (the ball is built looking along y, then turned to look forward)
       bump: (p) => {
         const up = -p.z / r, [hi, lo] = edge((p.x / r) * s);
