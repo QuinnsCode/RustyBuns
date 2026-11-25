@@ -264,7 +264,8 @@ test.each<[string, Partial<Shot>, string[], string[], SwarmQueue?]>([
     { ...swarmJob, sha: "b".repeat(40), suite: "eqosys", tries: 1 },
   ] }],
   ["a swarm that doesn't answer", {}, ["the test swarm didn't answer"], [], null],
-])("the board shows %s", (_, over, has, hasnt, swarm) => {
+])("the board shows %s", (...row) => {
+  const [, over, has, hasnt, swarm] = row; // a rest param: five named ones would make bun pass the 4-item rows a `done`
   const text = board({ ...view(shot(over)), ...(swarm === undefined ? {} : { swarm }) }, { width: 100, color: false, frame: 0 });
   for (const s of has) expect(text).toContain(s);
   for (const s of hasnt) expect(text).not.toContain(s);
