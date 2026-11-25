@@ -5,7 +5,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { walkBudget, type Row } from "../scripts/walk-budget.ts";
 
-setDefaultTimeout(1_200_000);
+setDefaultTimeout(1_200_000); // opt-in (MM_BUDGET): a 90 s walk at two sizes on a real GPU
 const r1 = (x: number) => +x.toFixed(1);
 
 /** Per viewport: the worst each number may be. Frame times in ms (a 60 Hz frame is 16.7), load in seconds, heap in MB

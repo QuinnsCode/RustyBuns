@@ -7,7 +7,7 @@ import type { ParkLevel } from "../src/levels/park.ts";
 import { ride } from "../scripts/ride.ts";
 import { build, sample } from "./parks.ts";
 
-setDefaultTimeout(60000);
+setDefaultTimeout(60_000); // builds and rides a sample of parks with the chase camera on
 
 for (const e of sample(LEVELS)) {
   test(`${e.id}: the first spawn's tour stays finite, inside the walls, with the camera holding the board`, async () => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { counterJourney } from "../../../../scripts/counter.ts";
 
 // Next builds are slow: `opennextjs-cloudflare build` runs `next build`, then bundles the Worker.
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // next build, then the Worker bundle
 
 // The sample-app contract (FRAMEWORKS.md): build the dev host (which runs the OpenNext build),
 // count 0, two posts through the form, count 2, restart, still 2.

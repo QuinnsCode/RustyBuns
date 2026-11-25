@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHECKS, formatResults, LIMITS, runBorg, type Result, type Target } from "../src/suite.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const app = join(import.meta.dir, "..");
 const token = "borg-local-token";
 

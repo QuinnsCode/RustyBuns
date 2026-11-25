@@ -17,7 +17,7 @@ import { createNativeEngine } from "../src/engine/native.ts";
 import { renderPattern } from "../src/engine/sequencer.ts";
 import { renderProject } from "../src/engine/offline.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 useWorklet();
 
 /** A plucked low E, as a guitar's pickup gives it: loud, then dying away. */

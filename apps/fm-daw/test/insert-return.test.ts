@@ -10,7 +10,7 @@ import { bounceFrames, renderProject, type BounceInserts } from "../src/engine/o
 import { TsEngine } from "../src/engine/engine.ts";
 import { bounceInserts } from "../src/ui/plugins.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 useWorklet();
 
 const GAIN = { path: "builtin:gain", index: 0, name: "Gain (web)", web: true, values: [] };

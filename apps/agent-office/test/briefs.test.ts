@@ -5,7 +5,7 @@ import { PULLS_FOLLOW_UP, pullsFollowUpClient, pullsFollowUpServer } from "../sc
 import { askOf, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 let pkg = "";
 beforePinned(async () => { pkg = await unpackPinned(); });

@@ -1,6 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { rollTake, SET_PIECES, stageTake, type SetPieceId } from "../src/sim/rewatch.ts";
 

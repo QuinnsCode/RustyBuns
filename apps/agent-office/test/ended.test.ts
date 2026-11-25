@@ -6,7 +6,7 @@ import { endedClicks, endedManager } from "../scripts/ended.ts";
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 type Handler = (ctx: unknown, c: unknown, msg: unknown) => void;
 let WorkerManager: { prototype: object };

@@ -7,7 +7,7 @@ import { cellAt, createStream, LOAD_R } from "../src/world/stream.ts";
 import { buildWorld, CELL, cell, heightAt, refine, TICK_R, wildsNear, groundFrom } from "../src/world/world.ts";
 import { REGIONS } from "../src/regions.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const file = (p: string) => new URL(`../public/${p}`, import.meta.url);
 
 describe("streaming the world", () => {

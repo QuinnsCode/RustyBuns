@@ -13,7 +13,7 @@ import { renderPattern } from "../src/engine/sequencer.ts";
 import type { ShapeAt } from "../src/desk.ts";
 import type { ToWorklet } from "../src/engine/messages.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 useWorklet();
 
 const rms = (x: ArrayLike<number>) => { let n = 0; for (let i = 0; i < x.length; i++) n += x[i] * x[i]; return Math.sqrt(n / x.length); };

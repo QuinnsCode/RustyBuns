@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 
 // Each level is mapped and a raid is played out on the defend ones: slow on CI.
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 import { LEVELS } from "../src/levels/levels.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../src/sim/campaign.ts";
 import { gateDir, mapRepo, reachable } from "../src/sim/codemap.ts";

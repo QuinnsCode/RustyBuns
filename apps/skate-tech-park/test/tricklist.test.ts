@@ -7,7 +7,7 @@ import { IDLE, start, step } from "../src/sim.ts";
 import { TRICKS, type Flick } from "../src/tricks.ts";
 import { build, sample } from "./parks.ts";
 
-setDefaultTimeout(60000);
+setDefaultTimeout(60_000); // builds parks and rides the trick list in each
 
 /** One ollie-and-flick from a spawn: what the sim scored, and whether the rider fell. */
 function tryTrick(l: ParkLevel, trick: Flick) {

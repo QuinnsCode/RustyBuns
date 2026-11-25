@@ -4,7 +4,7 @@ import { GITHUB_HOSTS, REGISTRIES, hostList } from "../src/egress.ts";
 
 // Opt-in (#1732): builds the real deploy-sandbox/ci.Dockerfile and runs it behind the egress gate as CI_RUNNER
 // has it in production. Needs Docker and the network, so: CI_IMAGE_TEST=1 bun test test/ci-image.test.ts
-setDefaultTimeout(600_000);
+setDefaultTimeout(600_000); // opt-in: builds the CI Docker image and clones and installs over the network
 
 test.skipIf(!process.env.CI_IMAGE_TEST)("the check image clones from GitHub, installs from npm, and is turned away anywhere else", async () => {
   const b: ContainerBinding = { name: "CI_RUNNER", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", context: "deploy-sandbox", maxInstances: 1, instanceType: "basic",

@@ -5,7 +5,7 @@ import { findBlender, runBlender } from "@rustybuns/cli/blender";
 // `bun run beasts` twice gives the same GLBs: the decimator used to land vertices a float apart, and in another
 // order, from one run to the next. Needs Blender (CI has none, so there it skips); rebuilds the one sheet,
 // which is what the checked-in file already is.
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // builds a beast in headless Blender twice (skipped on CI)
 const APP = join(import.meta.dir, "..");
 
 async function build(id: string): Promise<string> {

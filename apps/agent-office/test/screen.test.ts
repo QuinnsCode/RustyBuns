@@ -6,7 +6,7 @@ import path from "node:path";
 import { screenTerminal } from "../scripts/screen.ts";
 import { beforePinned, pinnedTest, unpackPinned } from "./pinned.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // the first run downloads and unpacks upstream's pinned release
 
 type Snapshot = (term: unknown, last: string[]) => unknown;
 let ours: { flushScreens(workers: unknown[], events: unknown, check: (w: unknown) => void): void };

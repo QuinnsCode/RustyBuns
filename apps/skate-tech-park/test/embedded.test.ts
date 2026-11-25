@@ -7,7 +7,7 @@ import { DT, IDLE, start, step } from "../src/sim.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { level } from "./parks.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 /** Put a rider on the first segment of a run of chained rails, steering to hold the balance, and say which segments the grind rode in order. */
 function grindRun(lv: Level, rails: Rail[]) {

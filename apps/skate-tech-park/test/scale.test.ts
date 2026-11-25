@@ -8,7 +8,7 @@ import { Chase, FOV } from "../src/render/chase.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { build } from "./parks.ts";
 
-setDefaultTimeout(60000);
+setDefaultTimeout(30_000);
 
 test("the chase camera sits behind and above a rider going down the park, and the view widens with speed", async () => {
   const level = await build(LEVELS[0]!), p = level.spawns[0]!;

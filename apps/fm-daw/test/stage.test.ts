@@ -4,7 +4,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { ConsoleChannel, lineCheck } from "../src/circuit/stage.ts";
 import { flatEq } from "../src/engine/eq.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const SR = 48000;
 const rms = (b: Float32Array, from: number) => {
   let s = 0;

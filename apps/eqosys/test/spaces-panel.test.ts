@@ -13,7 +13,7 @@ import { handle } from "../src/handle.ts";
 import { Space } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 
 const built = await Bun.build({ entrypoints: [join(import.meta.dir, "spaces-page.ts")], target: "browser" });
 const script = await built.outputs[0]!.text();

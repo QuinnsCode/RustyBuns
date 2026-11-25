@@ -14,7 +14,7 @@ import { clearCrowd, letIn } from "../src/crowd/crowd.ts";
 import { CROWD, DAY_HOURS, PARK, PASS, SPILL_LIMIT, blow, load, parkState, pour, score, show, windFor, windText } from "../src/venues/park.ts";
 import { setDial } from "../src/assists.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // a whole park load-in stepped through the sim (about 25 s on CI)
 const DEG = Math.PI / 180;
 
 /** Walk to `key`, take it (lift it, or push it if it rolls), and set it down at (x, z) turned to `rot`. */

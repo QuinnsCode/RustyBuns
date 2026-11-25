@@ -9,7 +9,7 @@ import { musicLevel, phrase, SCORE, sting, type Cue } from "../src/music.ts";
 import { choose, looksOf, startChoice } from "../src/display.ts";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // vite serves the game cold, then walks every Settings tab in headless Chrome
 
 const CUES = Object.keys(SCORE) as Cue[];
 const bars = (cue: Cue, seed: number, lift = false) => Array.from({ length: 8 }, (_, b) => phrase(cue, b, seed, lift));

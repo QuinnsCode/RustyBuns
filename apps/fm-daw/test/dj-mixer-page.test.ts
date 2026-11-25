@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the decks page cold, then plays audio in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();

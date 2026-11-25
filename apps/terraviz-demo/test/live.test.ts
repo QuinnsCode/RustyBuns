@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // the shared desktop host and a class tour on two globes (skipped on CI)
 const clone = join(homedir(), "rustybuns-demos/terraviz/clones/zyra-project__terraviz");
 const have = existsSync(join(clone, ".rustybuns/dev/desktop.js")) && !process.env.CI;
 

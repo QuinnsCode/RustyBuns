@@ -10,7 +10,7 @@ import {
   AMPHITHEATRE, POINTS, TOWERS, TOWER_ROW, aim, calc, check, delay, floorAt, fly, hang, pin, rowAt, score, shade, subs, towers, wantDelay,
 } from "../src/venues/amphitheatre.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 /** At a point's controller in the wing (clear of the hang): hang `n` boxes, pin them, `dress` the hang, check and fly. */
 function rigPoint(w: World, key: string, n: number, pins: { tilt: number; splays: number[] } | null, dress = () => {}) {

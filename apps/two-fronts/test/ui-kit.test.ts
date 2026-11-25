@@ -2,7 +2,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the game cold, then starts a war in headless Chrome
 
 test.skipIf(!chromePath())("open the game, pick a war from the kit dialog, start it and a fleet", async () => {
   const vite = await startVite(new URL("..", import.meta.url).pathname);

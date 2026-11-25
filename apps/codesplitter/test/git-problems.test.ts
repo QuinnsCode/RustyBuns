@@ -6,7 +6,7 @@ import { buildLucide } from "../src/lucide-subset.ts";
 import { SCENES } from "../src/swarm-story.ts";
 import { local } from "./app-kit.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 // The journey: open the landing page on #/demos, follow the link to "We got git problems with agent swarm", and
 // the rush-hour station starts playing. The app is the real worker (local()); the static files the build copies

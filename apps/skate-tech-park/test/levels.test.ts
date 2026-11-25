@@ -8,7 +8,7 @@ import { IDLE, start, step } from "../src/sim.ts";
 import { drive } from "./lines.ts";
 import { build, level } from "./parks.ts";
 
-setDefaultTimeout(60000);
+setDefaultTimeout(30_000);
 const ids = ["el-capitan", "mariposa-grove", "half-dome", "old-faithful", "glacier-point"];
 const parks = (await Promise.all(ids.map((id) => level(id)))) as ParkLevel[];
 const park = (id: string) => parks.find((l) => l.id === id)!;

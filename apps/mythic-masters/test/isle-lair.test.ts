@@ -9,7 +9,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 import { PACKS } from "../src/packs.ts";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(180_000); // vite serves the game cold, then walks the isle into a lair fight in headless Chrome
 
 type Isle = { id: string; places: { name: string; x: number; z: number }[] } | null;
 

@@ -11,7 +11,7 @@ import { DIMS, WORDS32 } from "../src/engine/layout.ts";
 import * as twin from "../src/engine/twin.ts";
 import { raceOnHost } from "../src/actions/race.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const WASM = join(import.meta.dir, "..", "public", "pixel_rag.wasm");
 const wasm = existsSync(WASM) ? new Uint8Array(await Bun.file(WASM).arrayBuffer()) : null;
 const native = await nativeLib();

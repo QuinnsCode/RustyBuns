@@ -4,7 +4,7 @@ import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { EXTERNAL, external, mark } from "../external/server.ts";
 import { read, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 let pkg = "";
 beforePinned(async () => { pkg = await unpackPinned(); });

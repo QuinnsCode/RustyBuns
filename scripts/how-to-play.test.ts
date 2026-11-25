@@ -5,7 +5,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "./chrome.ts";
 
-setDefaultTimeout(600_000);
+setDefaultTimeout(600_000); // starts each game's vite and opens its landing in headless Chrome
 
 const GAMES = [
   ["mythic-masters", "mm"], ["two-fronts", "tf"], ["alien-disc-golf", "golf"], ["skate-tech-park", "skate"],

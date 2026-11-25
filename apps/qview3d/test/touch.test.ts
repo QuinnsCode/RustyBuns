@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { freePort, launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(90_000);
+setDefaultTimeout(90_000); // real touch gestures on a 3D cap in headless Chrome
 
 // The demo shop as `bun run dev` serves it (the widget from source), on a port of its own.
 let dev: ReturnType<typeof Bun.spawn>, chrome: Awaited<ReturnType<typeof launchChrome>>;

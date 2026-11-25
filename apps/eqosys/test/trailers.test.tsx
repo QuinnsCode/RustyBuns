@@ -9,7 +9,7 @@ import { AppPage, Home } from "../src/app/pages.tsx";
 import { APPS } from "../src/apps.ts";
 import { clipsOf } from "../src/trailers.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // builds the page and plays video clips in headless Chrome
 
 const app = APPS.find((a) => clipsOf(a.id).length > 1)!;
 const me = { id: "1", email: "a@example.com", name: "Ada" } as never;

@@ -6,7 +6,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { newKey, peek, sign } from "@rustybuns/util/token";
 import { chromePath, launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the game cold, then runs two pages in headless Chrome
 
 const CODE = "PRTY7K";
 const signer = { EQOSYS_SIGNING_KEY: await newKey() };

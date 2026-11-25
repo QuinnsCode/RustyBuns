@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();

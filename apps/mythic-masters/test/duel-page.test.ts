@@ -6,7 +6,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 import { serveParty } from "../scripts/party.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // two pages fight a duel in headless Chrome (skipped on CI)
 
 type Duel = { status: string; seats: { you: 0 | 1; names: (string | null)[] } | null; round: number | null; on: boolean; mine: 0 | 1; tick: number | null; over: boolean | null; sum: number | null; screen: string | null };
 

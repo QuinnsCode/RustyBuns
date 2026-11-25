@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { addedLines, changedTests, mutate, onlyTests, passesOnBase, ranges, survivors, unrunLines } from "./test-bites.ts";
+import { addedLines, changedTests, inertFiles, mutate, onlyTests, passesOnBase, ranges, survivors, unrunLines } from "./test-bites.ts";
 
 setDefaultTimeout(30_000);
 
@@ -92,4 +92,21 @@ test("mutate flips one operator, outside quotes, comments and imports", () => {
     ["const s = \"done\";", undefined],
   ];
   for (const [line, want] of rows) expect(mutate(line)).toBe(want);
+});
+
+test("a test file whose diff only touches timeouts, comments or blank lines is skipped; any other line runs it", () => {
+  const diff = (minus: string, plus: string) => `diff --git a/x.test.ts b/x.test.ts\n--- a/x.test.ts\n+++ b/x.test.ts\n@@ -3 +3 @@\n-${minus}\n+${plus}\n`;
+  const cases: [string, string, boolean][] = [
+    ["setDefaultTimeout(60_000);", "setDefaultTimeout(30_000);", true],
+    ["setDefaultTimeout(60_000);", "setDefaultTimeout(60_000); // builds the page in headless Chrome", true],
+    ["// old words", "// new words", true],
+    [" * a doc line", " * another", true],
+    ["", "", true],
+    ["expect(add(2, 2)).toBe(4);", "expect(add(2, 2)).toBe(5);", false],
+    ["setDefaultTimeout(60_000);", "setDefaultTimeout(ms);", false],
+    ["// a comment", "const x = 1; // a comment", false],
+  ];
+  for (const [minus, plus, inert] of cases) expect(inertFiles(diff(minus, plus)).has("x.test.ts")).toBe(inert);
+  // two files in one diff: only the one with no test body changed is inert
+  expect([...inertFiles(diff("// a", "// b") + diff("a()", "b()").replaceAll("x.test.ts", "y.test.ts"))]).toEqual(["x.test.ts"]);
 });

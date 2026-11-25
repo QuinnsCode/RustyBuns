@@ -3,7 +3,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath } from "../../../scripts/chrome.ts";
 import { noise, settle, stride, together, until } from "./together-kit.ts";
 
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // two pages walk the open world and fight one den in headless Chrome
 
 test.skipIf(!chromePath())("two friends at one lair fight the one creature there", () => together(async ({ open }) => {
   const a = await open("hodag");

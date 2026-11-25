@@ -13,7 +13,7 @@ import { pack, sum, unpack, type DuelOut, type Pick, type RoomKind } from "../sr
 import { tsSim, type Live } from "../src/sim-wasm.ts";
 import { coopTeams } from "../src/versus.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // two pages fight a whole duel through the real Worker and Duel room
 const party = serveParty(0);
 afterAll(() => party.stop());
 

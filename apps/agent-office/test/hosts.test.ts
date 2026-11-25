@@ -5,7 +5,7 @@ import path from "node:path";
 import { allowedHosts, guardHost, hostName } from "../live/hosts.ts";
 import { unpackPinned, pinnedTest } from "./pinned.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 test("hostName drops the port, the brackets and a trailing dot", () => {
   expect(hostName("LocalHost:4600")).toBe("localhost");

@@ -10,7 +10,7 @@ import { letIn } from "../src/crowd/crowd.ts";
 import { setDial } from "../src/assists.ts";
 import { doors } from "../src/clock.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 /** Which boxes go up where: four on each main, two on each side hang and each tower. */
 const PLAN: Record<string, number[]> = {

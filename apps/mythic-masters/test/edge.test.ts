@@ -13,7 +13,7 @@ import { Online } from "../src/net/online.ts";
 import { decodeServer, type ServerMsg } from "../src/net/party.ts";
 import { serveEdge, wranglerPath, type Edge } from "../scripts/edge.ts";
 
-setDefaultTimeout(90_000);
+setDefaultTimeout(90_000); // wrangler dev starts workerd for the Worker and its Region
 const edges: Edge[] = [];
 const stops: (() => unknown)[] = [];
 afterAll(async () => { for (const s of stops) s(); for (const e of edges) await e.stop(); });

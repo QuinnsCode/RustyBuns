@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // a jam room with a DJ set and a mic in software GL, its audio measured
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();

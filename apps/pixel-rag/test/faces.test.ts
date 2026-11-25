@@ -17,7 +17,7 @@ import { askFace, findFaces, indexFaces, sameFaces, type Face, type Pixels } fro
 import { faceLane } from "../src/faces/lanes.ts";
 import { nativeInfer } from "../src/faces/native.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 const DIR = join(import.meta.dir, "..", "public", "faces");
 const names = readdirSync(DIR).filter((f) => f.endsWith(".jpg")).sort();
 const found: { wasm: Face[]; native: Face[] | null } = { wasm: [], native: null };

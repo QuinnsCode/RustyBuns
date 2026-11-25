@@ -10,7 +10,7 @@ import { type Cables, newCables, walkWith } from "../src/cables/cables.ts";
 import { letIn } from "../src/crowd/crowd.ts";
 import { FENCE_LIMIT, FESTIVAL, COMPOUND, NEAR_DB, STAGE_KEYS, type StageKey, crowdSpot, face, feeder, festivalState, lift, master, mixSpot, onStage, phase, rig, run, show, snake, subs } from "../src/venues/festival.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 const at = (w: World, k: string) => w.items.find((i) => i.key === k)!;
 function go(w: World, c: Cables, x: number, z: number) {
   for (let k = 0; k < 8 && Math.hypot(x - w.you.x, z - w.you.z) > 0.05; k++) walkWith(w, c, x, z);

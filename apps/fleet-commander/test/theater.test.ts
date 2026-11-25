@@ -5,7 +5,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { BUY, requisition, sensors, theater, theaterBrains } from "../src/sim/theater.ts";
 import { alive, step, type Ship, type World } from "../src/sim/world.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const run = (w: World, seconds: number) => { for (let i = 0; i < seconds * 10 && !w.outcome; i++) step(w, theaterBrains); };
 const named = (w: World, name: string) => w.ships.find((s) => s.name === name)!;

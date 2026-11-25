@@ -17,7 +17,7 @@ import { APPS } from "../src/apps.ts";
 import { ACHIEVEMENTS } from "../src/achievements.ts";
 import { asks, boot, PARK, PASSWORD } from "./kit.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(60_000); // does one task four ways in headless Chrome, screenshots included
 const W = 1280, H = 800, GENRE = "Games";
 const tokens = (x: unknown) => Math.ceil((typeof x === "string" ? x : JSON.stringify(x)).length / 4);
 const want = APPS.filter((a) => a.genre === GENRE && ACHIEVEMENTS[a.id]).map((a) => a.id).sort();

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Mirror, open, type MirrorNode } from "@rustybuns/render";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 
 // The desktop app end to end: build the binary, start it on an empty HOME, sign up, make a contact, run a
 // script, quit, start it again on the same data and find the account and the rows still there.

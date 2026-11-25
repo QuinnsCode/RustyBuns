@@ -10,7 +10,7 @@ import { chromePath, launchChrome, load, openTab, startVite } from "../../../scr
 import { instantiateFm, type Exports } from "../src/engine/wasm.ts";
 import { RustBox, rustCurve } from "../src/speakers/rust.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // draws and plays every plan's cabinet, in Rust and in headless Chrome
 const app = join(import.meta.dir, "..");
 const wasmPath = join(app, "public", "fm_daw.wasm");
 const rust: Exports | null = existsSync(wasmPath) ? await instantiateFm(readFileSync(wasmPath)) : null;

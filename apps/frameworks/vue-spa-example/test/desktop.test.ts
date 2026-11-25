@@ -2,7 +2,7 @@ import { setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { counterJourney } from "../../../../scripts/counter.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(30_000);
 
 // A client-only Vue app: the shell is served behind the token, and its "use server" counter
 // action counts to 2 through /__rb/action and survives a restart.

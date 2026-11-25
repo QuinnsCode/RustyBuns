@@ -14,7 +14,7 @@ import { DEMO_ADMIN, local } from "../src/local.ts";
 import { decodePicture, type Picture } from "../src/print-render.ts";
 import { withDpi } from "../src/print-sheet.ts";
 
-setDefaultTimeout(90_000);
+setDefaultTimeout(30_000);
 
 const dir = mkdtempSync(join(tmpdir(), "qview3d-print-"));
 const events: string[] = [];

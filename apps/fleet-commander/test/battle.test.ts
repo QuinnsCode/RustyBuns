@@ -6,7 +6,7 @@ import { landsAt, runFleetPlay, runPlay, send, wingsOf } from "../src/sim/plays.
 import { armada, battle } from "../src/sim/scenarios.ts";
 import { COMMS_LAG, alive, flagship, step, usePower, type World } from "../src/sim/world.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(30_000);
 
 const run = (w: World, seconds: number, each?: (w: World) => void) => { for (let i = 0; i < seconds * 10 && !w.outcome; i++) { each?.(w); step(w, brains); } };
 const rim = (w: World, kind: string) => w.ships.find((s) => s.side === "rim" && s.kind === kind && !s.dead)!;

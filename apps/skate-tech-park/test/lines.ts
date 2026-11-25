@@ -35,7 +35,7 @@ const GAPS = [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "ve
 
 /** Registers the per-park journeys for part `n` of PARTS: every PARTS-th park, in the picker's order. */
 export async function parkJourneys(n: number) {
-  setDefaultTimeout(60000);
+  setDefaultTimeout(60_000); // builds and rides every park in a shard
   const ids = LEVELS.filter((e) => e.id !== "plaza").filter((_, i) => i % PARTS === n).map((e) => e.id);
   const parks = (await Promise.all(LEVELS.filter((e) => ids.includes(e.id)).map((e) => build(e)))) as ParkLevel[];
   const park = (id: string) => parks.find((l) => l.id === id)!;

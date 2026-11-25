@@ -7,7 +7,7 @@ import { FIT_KNOBS, TONE_PARTS, distance, eValue, features, fit, probe, render, 
 
 // Each fit is a CMA-ES search over whole renders: the three-take tone stack takes 64 s on the arm Mac runner and
 // 121-143 s on the Intel one (#5498), so the limit leaves room for the slowest runner, not the median.
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // each fit is a CMA-ES search over whole renders (121-143 s on the Intel runner)
 
 test("parts round to values you can buy, and step along the E24 series", () => {
   for (const [v, steps, want] of [

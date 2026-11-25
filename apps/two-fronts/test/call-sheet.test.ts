@@ -6,7 +6,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the game cold, then plays a turn with two fights in headless Chrome
 // A war whose invasion takes its sector, so the turn ends in a deploy.
 const SEED = 1;
 

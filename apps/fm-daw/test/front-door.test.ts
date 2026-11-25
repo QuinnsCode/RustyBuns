@@ -8,7 +8,7 @@ import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil 
 import { DOOR, PATHS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
-setDefaultTimeout(240_000);
+setDefaultTimeout(240_000); // walks each of six paths in headless Chrome at phone and desktop sizes
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();

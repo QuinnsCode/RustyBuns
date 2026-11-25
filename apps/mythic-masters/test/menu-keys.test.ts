@@ -4,7 +4,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(300_000);
+setDefaultTimeout(300_000); // the whole opening by keyboard in headless Chrome (about 120 s on CI)
 
 const KEYS = { ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Enter: 13 } as const;
 

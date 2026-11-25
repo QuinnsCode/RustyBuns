@@ -13,7 +13,7 @@ import { bars, BEND_MAX, midiJog, peakLevels, TICKS_PER_TURN, toneOf, ZOOMS } fr
 import { actionOf, bindKey, DEFAULT_PREFS, Prefs } from "../src/dj/prefs.ts";
 import { check } from "@rustybuns/util/guard";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(120_000); // vite serves the decks page cold, then plays audio in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();
