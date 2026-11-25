@@ -2,25 +2,12 @@
 // 128 brought in on the crossfader) is recorded from the master. The take decodes, its first half has A's tempo and
 // its second half B's, and the track list names both with the time each came in. Then the set out and a line in
 // through the sound card (Chrome's fake one): the master plays to an output, and an input sounds on channel 1.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(120_000); // records and decodes a ten-second set in headless Chrome
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser("--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream");
 
 type Take = { type: string; bytes: number; seconds: number; decoded: number; cues: { at: number; side: number; name: string }[]; list: string; name: string; bpm: (number | null)[] };
 
@@ -28,10 +15,7 @@ test.skipIf(!hasChrome)("record ten seconds of a two-track set: both tracks' sou
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms);
   await until("the decks", "!!window.qdecks");
   await page("qdecks.start()");
   await until("the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
@@ -63,14 +47,14 @@ test.skipIf(!hasChrome)("the sound card: the master out to an output, a line in 
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  for (const end = Date.now() + 30_000; Date.now() < end && !(await page<boolean>("!!window.qdecks").catch(() => false)); await Bun.sleep(50));
+  await waitFor(tab, "the decks", "window.qdecks");
   await page("qdecks.start()");
   const { inputs, outputs } = await page<{ inputs: { id: string }[]; outputs: { id: string }[] }>("qdecks.io.devices(true)");
   expect(inputs.length).toBeGreaterThan(0);
 
   // the panel: pick the first input for channel 1, as a DJ does
   await page(`document.querySelector("#dj .dj-io-open").click()`);
-  for (const end = Date.now() + 5000; Date.now() < end && !(await page<boolean>(`document.querySelectorAll("#dj .dj-io-pick").length >= 2`)); await Bun.sleep(50));
+  await waitFor(tab, "the panel's two pickers", `document.querySelectorAll("#dj .dj-io-pick").length >= 2`, 5000);
   await page(`(() => { const s = document.querySelector('#dj .dj-io-pick[aria-label="Line in to channel 1"]'); s.value = ${JSON.stringify(inputs[0]!.id)}; s.dispatchEvent(new Event("change")); })()`);
   const loudest = await page<number>(`(async () => { let m = 0; for (let i = 0; i < 150 && m < 0.01; i++) { m = Math.max(m, qdecks.state().meters.channels[0]); await new Promise((r) => setTimeout(r, 20)); } return m; })()`);
   expect(loudest).toBeGreaterThan(0.01);

@@ -162,7 +162,8 @@ const pad = loadPad(CONTROLS, [{ id: "sit", label: "Sit / stand up", button: 0 }
 // ---- the scene ----
 const canvas = $("stage");
 if (!(canvas instanceof HTMLCanvasElement)) throw new Error("#stage is not a canvas");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// no multisampling at low: in software GL (a weak laptop, CI) it is four times the pixels on every frame (#5922)
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: loadQuality() === "high" });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
 // a lens about a phone's main camera: wide enough to see the room, not so wide its corners stretch (the light: look.ts)
