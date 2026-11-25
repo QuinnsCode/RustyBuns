@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--page-->
+<title>Stack Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Two views of one design. Stack: the boxes from the front, dragged in from the box list and stacked by gravity, its
+     numbers on a taped sheet. Stage: the site from above, stacks dragged round the stage, the floor shaded by how loud
+     it is. The look is src/paper.css. */
+  :root { color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #0b0a0c; color: var(--chalk); font: 600 15px/1.35 var(--pen); }
+  #app { min-height: 100%; display: grid; grid-template-rows: auto 1fr; padding-block: 10px 14px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); gap: 10px; box-sizing: border-box; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+  header h1 { margin: 0; font: 400 34px/1 var(--slab); letter-spacing: .04em; text-transform: uppercase; color: var(--chalk); text-shadow: 2px 1px 0 var(--spot); }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select, input, button { font: 600 15px var(--pen); min-height: 40px; box-sizing: border-box; border-radius: 6px; }
+  select, input { background: #1b1a1e; color: var(--chalk); border: 1.5px solid #3b3940; padding: 0 8px; }
+  input[type="number"] { width: 4.5em; }
+  button { background: #1b1a1e; color: var(--chalk); border: 1.5px solid #3b3940; padding: 0 12px; cursor: pointer; }
+  button:hover { border-color: var(--spot); }
+  button.on { background: var(--chalk); color: var(--ink); border-color: var(--chalk); }
+  #go { font: 400 20px/1 var(--slab); padding: 10px 26px 10px 16px; min-height: 44px; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  main { display: grid; gap: 12px; min-height: 0; grid-template-columns: 13.5rem minmax(0, 1fr) 17rem; }
+  main.stage { grid-template-columns: minmax(0, 1fr) 17rem; }
+  #boxes { display: grid; align-content: start; gap: 6px; overflow: auto; max-height: calc(100vh - 90px); padding-right: 2px; }
+  #boxes h3 { margin: 6px 0 0; font: 400 15px var(--marker); color: var(--spot); }
+  .chip { display: grid; grid-template-columns: 54px 1fr; gap: 8px; align-items: center; padding: 6px; border: 1.5px solid #2c2a30; border-radius: 6px; background: #151417; cursor: grab; touch-action: none; user-select: none; text-align: left; min-height: 52px; }
+  .chip:hover { border-color: var(--spot); }
+  .chip canvas { width: 54px; height: 40px; }
+  .chip b { display: block; font: 600 13px/1.2 var(--pen); }
+  .chip small { color: #a9a39a; font: 700 11px var(--mono); }
+  .view { position: relative; min-height: 420px; border-radius: 8px; overflow: hidden; background: #121116; }
+  .view canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  #tabs { position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 2; }
+  #tabs button { min-height: 36px; font-size: 14px; }
+  #tip { position: absolute; left: 50%; bottom: 8px; translate: -50% 0; margin: 0; max-width: calc(100% - 24px); text-align: center; pointer-events: none; font-size: 14px; }
+  .card { padding: 14px 16px 16px; --tilt: .6deg; align-self: start; display: grid; gap: 6px; font: 600 14px/1.35 var(--pen); }
+  .card h2 { margin: 0; font: 400 21px var(--marker); }
+  .card input { background: transparent; color: var(--ink); border: 0; border-bottom: 1.5px dashed var(--ink-soft); border-radius: 0; font: 400 20px var(--marker); width: 100%; padding: 0; min-height: 34px; }
+  .card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+  .card dt { color: var(--ink-soft); }
+  .card dd { margin: 0; text-align: right; }
+  .card ul { margin: 2px 0 0; padding-left: 1.1em; display: grid; gap: 3px; }
+  .card p { margin: 0; }
+  .card button { background: var(--ink); color: var(--paper); border: 0; min-height: 40px; }
+  .card .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .legend { display: grid; grid-template-columns: repeat(6, 1fr); font: 700 11px var(--mono); text-align: center; }
+  .legend span { padding: 3px 0; color: #111; }
+  @media (max-width: 900px) {
+    main, main.stage { grid-template-columns: 1fr; }
+    #boxes { grid-auto-flow: column; grid-auto-columns: 11.5rem; overflow-x: auto; max-height: none; padding-bottom: 4px; }
+    #boxes h3 { display: none; }
+    .view { min-height: 52vh; }
+    .chip { touch-action: pan-x; }
+    #tip { font-size: 12px; width: calc(100% - 24px); }
+    .card { --tilt: 0deg; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Courier+Prime:wght@400;700&family=Metal+Mania&family=Permanent+Marker&family=Shantell+Sans:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/src/paper.css">
+<!--/page-->
+</head>
+<body>
+<!--page-->
+<div id="app">
+  <header>
+    <h1>Stack builder</h1>
+    <div class="tools">
+      <label>Rig <select id="rig" aria-label="Rig"></select></label>
+      <label>Floor <input id="depth" type="number" min="5" max="120" step="1" value="25" aria-label="Floor depth in metres"> m deep</label>
+      <button id="go" class="stub" type="button">Just do it</button>
+      <span class="seg" role="tablist">
+        <button id="v-stack" class="on" type="button">Stack</button><button id="v-stage" type="button">Stage</button>
+      </span>
+      <button id="undo" type="button">Undo</button>
+    </div>
+  </header>
+  <main id="main">
+    <aside id="boxes" aria-label="Boxes: drag one onto the stack"></aside>
+    <section class="view" id="stackView">
+      <div id="tabs"></div>
+      <canvas id="front"></canvas>
+      <p id="tip" class="gaff">Drag a box onto the stack, or tap one to put it on top. Drag one off to take it away.</p>
+    </section>
+    <section class="view" id="stageView" hidden>
+      <canvas id="plan"></canvas>
+      <p class="gaff" id="tip2" style="position:absolute;left:50%;bottom:10px;translate:-50% 0;margin:0;pointer-events:none;font-size:14px">Drag a stack to move it, its orange dot to aim it.</p>
+    </section>
+    <aside class="card paper tape" id="card"></aside>
+  </main>
+</div>
+<script type="module" src="/src/stacker/main.ts"></script>
+<!--/page-->
+</body>
+</html>
