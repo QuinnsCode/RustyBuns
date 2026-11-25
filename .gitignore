@@ -4,6 +4,10 @@ dist
 !.rustybuns/vite.d.ts
 # Each run's step timings (--profile): one machine's numbers, rewritten every run, never committed
 **/.rustybuns/profile/
+# A deploy's plan stamp (`.rustybuns/planned.<stage>`) and run output left in a worktree, so they stop counting as work (#5913)
+**/.rustybuns/planned.*
+apps/codesplitter/.shadow-prs.json
+apps/mythic-masters/docs/shots-*/
 native/target
 native/dist
 *.sqlite*

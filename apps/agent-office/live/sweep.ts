@@ -14,7 +14,8 @@
 //     gone, and each floor sweeps every 30 minutes too (see `sweepEvery`, below).
 //  4. Playwright's browser builds no installed playwright-core names (`prunePlaywright`, manual, dry run first).
 //  5. Worktree folders a send-home left half deleted: no `.git`, not in `git worktree list`, an hour old (`sweepHalfGone`,
-//     #5657). What still runs in one ends first. Every floor sweep runs it.
+//     #5657). What still runs in one ends first. Every floor sweep runs it. And listed worktrees nobody sits at whose
+//     only changes are files deleted by a cut-off remove (`sweepHalfRemoved`, #5913), when the sweep knows who sits where.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync, statfsSync } from "node:fs";
@@ -207,22 +208,73 @@ export async function sweepHalfGone(repo: string, go: boolean, end: (dir: string
   return { paths, bytes };
 }
 
+// 2026-11-24 (#5913): 31 worktrees (26 GB) were removes cut off part way that kept their `.git`: hundreds of tracked files
+// deleted, nothing else changed, so git still lists them, every deletion counts as an uncommitted change and send-home
+// keeps them, and `halfGone` skips anything with a `.git`. One nobody sits at, an hour old, with nothing unpushed and
+// only unstaged deletions (` D`) in its status, is finished with `git worktree remove --force --force`.
+
+/**
+ * The worktrees of `repo` that git still lists but a cut-off remove left part deleted: not in `live`, an hour old or
+ * more, no commit that no remote has, and a `git status` of only unstaged deletions. None when git can't answer.
+ */
+export async function halfRemoved(repo: string, live: string[], now = Date.now()): Promise<string[]> {
+  const seated = new Set(live.flatMap((p) => { try { return [path.resolve(p), realpathSync(p)]; } catch { return [path.resolve(p)]; } }));
+  const out: string[] = [];
+  for (const name of (await treesOf(repo)) ?? []) {
+    const dir = path.join(repo, WORKTREES, name);
+    try {
+      const st = await lstat(dir);
+      if (!st.isDirectory() || now - st.mtimeMs < 3_600_000) continue;
+      if (seated.has(dir) || seated.has(realpathSync(dir))) continue;
+      await lstat(path.join(dir, ".git"));
+    } catch { continue; }
+    // not `run`: its trim would eat the first line's leading space
+    const proc = Bun.spawn(["git", "-C", dir, "status", "--porcelain", "-uall"], { stdout: "pipe", stderr: "ignore" });
+    const status = (await new Response(proc.stdout).text()).split("\n").filter(Boolean);
+    if ((await proc.exited) !== 0 || !status.length || !status.every((l) => l.startsWith(" D "))) continue;
+    if (await run(["git", "-C", dir, "rev-list", "--count", "HEAD", "--not", "--remotes"]) !== "0") continue;
+    out.push(dir);
+  }
+  return out;
+}
+
+/** Removes (`go`) or lists `halfRemoved(repo, live)` through git, ending what still runs in each first. Never throws. */
+export async function sweepHalfRemoved(repo: string, live: string[], go: boolean, end: (dir: string) => Promise<unknown> = endIn, now = Date.now()): Promise<Swept> {
+  const paths = await halfRemoved(repo, live, now);
+  const sizes = await duKb(paths);
+  const done: string[] = [];
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) {
+      try { await end(p); } catch { continue; }
+      const proc = Bun.spawn(["git", "-C", repo, "worktree", "remove", "--force", "--force", p], { stdout: "ignore", stderr: "ignore" });
+      if ((await proc.exited) !== 0) continue;
+    }
+    done.push(p);
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths: done, bytes };
+}
+
 /**
  * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
- * worktree paths workers sit at), also the `node_modules` and build output of every other worktree.
+ * worktree paths workers sit at), also the half-removed worktrees git still lists and the `node_modules` and build
+ * output of every other worktree.
  */
 export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
     const h = await sweepHalfGone(dir, true);
+    const hr = live ? await sweepHalfRemoved(dir, live, true) : { paths: [], bytes: 0 };
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
     const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       h.paths.length && `${h.paths.length} half-deleted worktree folder${h.paths.length === 1 ? "" : "s"}`,
+      hr.paths.length && `${hr.paths.length} half-removed worktree${hr.paths.length === 1 ? "" : "s"}`,
       r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
       m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
-    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + r.bytes + m.bytes)} freed` : "";
+    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
 }
 

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepHalfRemoved, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -189,4 +189,37 @@ test("a half-deleted worktree folder an hour old goes after what runs in it ends
   expect(ended).toEqual([half]);
   expect(done.bytes).toBeGreaterThanOrEqual(1 << 20);
   expect([existsSync(half), existsSync(path.join(live, "a.txt")), existsSync(fresh)]).toEqual([false, true, true]);
+});
+
+// #5913: a remove cut off part way that kept its .git (git still lists it, every deleted file an "uncommitted change")
+test("a listed worktree with only deleted files goes through git; one with work, one unpushed, a seated one and a fresh one stay", async () => {
+  const root = tmp();
+  const remote = path.join(root, "remote.git"), repo = path.join(root, "repo");
+  const git = (dir: string, ...a: string[]) => Bun.spawnSync(["git", "-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdout: "ignore", stderr: "ignore" });
+  Bun.spawnSync(["git", "init", "-q", "--bare", remote]);
+  mkdirSync(repo);
+  git(repo, "init", "-q", "-b", "main");
+  for (const f of ["a.txt", "b.txt"]) writeFileSync(path.join(repo, f), `${f}\n`);
+  git(repo, "add", ".");
+  git(repo, "commit", "-qm", "a");
+  git(repo, "remote", "add", "origin", remote);
+  git(repo, "push", "-q", "origin", "main");
+  const trees = path.join(repo, WORKTREES);
+  const at = (n: string) => path.join(trees, n);
+  const names = ["cut-1", "work-1", "ahead-1", "seated-1", "fresh-1"];
+  for (const n of names) { git(repo, "worktree", "add", "-q", "-b", `office/${n}`, at(n), "main"); rmSync(path.join(at(n), "a.txt")); }
+  writeFileSync(path.join(at("work-1"), "new.ts"), "work");
+  writeFileSync(path.join(at("ahead-1"), "b.txt"), "changed");
+  git(at("ahead-1"), "commit", "-qam", "unpushed");
+  rmSync(path.join(at("ahead-1"), "b.txt"));
+  const old = (Date.now() - 2 * 3_600_000) / 1000;
+  for (const n of names.filter((n) => n !== "fresh-1")) utimesSync(at(n), old, old);
+
+  const ended: string[] = [];
+  const done = await sweepHalfRemoved(repo, [at("seated-1")], true, async (d) => { ended.push(d); });
+  expect(done.paths).toEqual([at("cut-1")]);
+  expect(ended).toEqual([at("cut-1")]);
+  expect(names.map((n) => [n, existsSync(at(n))])).toEqual(names.map((n) => [n, n !== "cut-1"]));
+  const listed = Bun.spawnSync(["git", "-C", repo, "worktree", "list"]).stdout.toString();
+  expect(listed).not.toContain("cut-1");
 });
