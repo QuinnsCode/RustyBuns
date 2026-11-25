@@ -132,6 +132,11 @@ merge). CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked 
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 
+`bun run lint` is oxlint (the whole repo in about two seconds): its correctness rules plus five vendored
+anti-slop rules (`scripts/lint/anti-slop`: chained `as unknown as X`, `Reflect.get`/`apply`, a widen-then-assert,
+a reducer that copies its accumulator). Same ratchet, per file and rule, in `scripts/lint.allow.json`;
+`bun run lint <files>` lists what is in the files you touched. CI runs it in the `typecheck` job.
+
 Where a type is known, pass it forward through a generic instead of casting the result: D1's
 `first<Row>()`, `first<number>("n")` and `all<Row>()`, `repoRow<Row>(...)`, `storage.get<T>()`.
 A helper that hands back rows takes a type parameter rather than returning `Record<string, unknown>`
