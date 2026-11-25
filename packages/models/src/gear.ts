@@ -98,13 +98,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "plug", "violet"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
- * sculpted array's moulded composite), badge (the dance stack's maker plate), ink (the white print on a control face); and a hung line array box's own:
+ * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
- * lit key's orange, the Qone mixer's one accent). */
+ * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
+ * its mid and high horns) plug (the bronze phase plug in a mid horn's throat) and violet (its cabinets' dark violet paint). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -113,9 +114,10 @@ export function gearLook(): GearLook {
     paint: std(0x1d1e20, 0.85), grille: std(0x2c2e31, 0.55, 0.6), metal: std(0x8a8d92, 0.4, 0.8), rubber: std(0x121212, 0.95),
     panel: std(0x3a3c40, 0.6, 0.3), lid: std(0xf2c230, 0.6), tolex: std(0x161514, 0.9), body: std(0x8f1f1f, 0.3, 0.1),
     chrome: std(0xd8dade, 0.15, 1), knob: std(0x0c0c0c, 0.5), light: new THREE.MeshBasicMaterial({ color: 0x45e06a }),
-    shell: std(0x1f6f78, 0.32, 0.1), badge: std(0x7a3fc6, 0.45), ink: std(0xe4e2dc, 0.7),
+    shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
+    horn: std(0x9a9e96, 0.55), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
   };
 }
 
@@ -1511,8 +1513,8 @@ function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tu
 }
 
 /**
- * A horn-loaded box of the dance stack: a black cabinet whose front is a well (its walls run the full depth) filled by
- * its horn mouths, the maker's purple plate on the top rail, bar handles on the sides and the speaker jacks on the back.
+ * A horn-loaded box (the tri-amp rig's): a black cabinet whose front is a well (its walls run the full depth) filled by
+ * its horn mouths, a label plate on the top rail, bar handles on the sides and the speaker jacks on the back.
  */
 function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number, p?: number][], deep: number, { badge = true, skin = "paint" as GearSlot } = {}): Build {
   const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] }, t = 0.04, front = d / 2;
@@ -1527,9 +1529,96 @@ function hornCab(id: GearId, mouths: [x: number, y: number, w: number, h: number
   mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
   return b;
 }
-const midHigh = () => hornCab("stack-mid-high", [[-0.09, 0.25, 0.47, 0.41], [0.245, 0.25, 0.17, 0.2]], 0.32);
-const midBass = () => hornCab("stack-mid-bass", [[0, 0.375, 0.66, 0.66]], 0.42);
-const hornSub = () => hornCab("horn-sub-21", [[0, 0.46, 1.01, 0.5]], 0.55);
+
+/**
+ * A painted horn set into a dance-stack box's front, as in the photos of stacks at festivals: a pale lining (`horn`)
+ * that runs in straight from a rounded-square mouth `w` by `h` and rolls over in a lip at the face, a flange out to its
+ * cell `cw` by `ch` (the box's baffle round the horn, in `skin`), and the driver's dark throat at the back. `plug` puts
+ * the bronze axe-head of a phase plug in the throat: wide and flat, `plugY` below the horn's middle.
+ */
+function paleHorn(b: Build, skin: GearSlot, [x, y, z]: THREE.Vector3Tuple, w: number, h: number, cw: number, ch: number, deep: number, { plug = false, plugY = 0, p = 5 } = {}) {
+  const m = new THREE.Matrix4().makeTranslation(x, y, z), a = w / 2, c = h / 2;
+  // straight walls from the throat, bending out over the last few centimetres into a rolled lip
+  const flare = Array.from({ length: 11 }, (_, i): [number, number, number] => { const s = i / 10, r = 0.1 + 0.62 * s + 0.28 * s ** 7; return [-deep * (1 - s), a * r, c * r]; });
+  b.pieces.push(lathe("horn", flare, { p, seg: 32, m }));
+  b.pieces.push(lathe(skin, [[0, a, c], [0.002, a + 0.006, c + 0.006], [0, cw / 2, ch / 2]], { p: 24, seg: 32, m }));
+  b.pieces.push(disc("knob", Math.min(a, c) * 0.13, 0.01, "z", [x, y, z - deep], 16));
+  if (plug) b.pieces.push(lathe("plug", [[-deep * 0.95, a * 0.04, c * 0.05], [-deep * 0.8, a * 0.24, c * 0.09], [-deep * 0.64, a * 0.33, c * 0.07], [-deep * 0.52, a * 0.27, c * 0.035],
+    [-deep * 0.45, a * 0.1, c * 0.01], [-deep * 0.42, a * 0.01, c * 0.004]], { p: 2.4, seg: 24, m: new THREE.Matrix4().makeTranslation(x, y - plugY, z) }));
+}
+
+/** A mouth flaring back from a rectangle on the face to a smaller one at the back, `outer` and `inner` [x0, x1, y0, y1],
+ * the front at z `zf` and the back `deep` behind it: four flat walls, every face turned to look forward (a bass bin's
+ * pyramid horn, its throat anywhere in the mouth). */
+function frustum(slot: GearSlot, outer: number[], inner: number[], zf: number, deep: number): Piece {
+  const [ox0, ox1, oy0, oy1] = outer, [ix0, ix1, iy0, iy1] = inner, zb = zf - deep, V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const o = [V(ox0, oy0, zf), V(ox1, oy0, zf), V(ox1, oy1, zf), V(ox0, oy1, zf)], i = [V(ix0, iy0, zb), V(ix1, iy0, zb), V(ix1, iy1, zb), V(ix0, iy1, zb)], pos: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a));
+    pos.push(...(n.z >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  };
+  for (let k = 0; k < 4; k++) { const j = (k + 1) % 4; tri(o[k], o[j], i[j]); tri(o[k], i[j], i[k]); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return { geo, slot };
+}
+
+/**
+ * A box of the dance stack: a cabinet in the stack's dark violet paint, its front a baffle of painted horns
+ * (`paleHorn`), bar handles on the sides and the speaker jacks on the back; `fill` sets the horns into the front.
+ */
+function stackBox(id: GearId, deep: number, fill: (b: Build, front: number) => void): Build {
+  const size = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] };
+  well(b, "violet", size, deep, 0.035);
+  fill(b, size[2] / 2);
+  backAndFeet(b, size, 0.55);
+  return b;
+}
+
+/** A row of angled fins across a slot `w` wide and `h` tall, centred on (0, y), its front at z `f`: a top's mid-bass
+ * port, read in the photos as a row of slanted teeth over a dark slot. */
+function fins(b: Build, w: number, h: number, y: number, f: number) {
+  b.pieces.push(box("knob", [w, h, 0.01], [0, y, f - 0.14]));
+  for (let k = 0; k < 11; k++) b.pieces.push(box("violet", [0.012, h - 0.01, 0.1], [-w / 2 + (k + 0.5) * (w / 11), y, f - 0.06], { rot: [0, 0.75, 0] }));
+  b.pieces.push(box("violet", [w, 0.014, 0.12], [0, y - h / 2 + 0.007, f - 0.06], { bevel: 0.003 }));
+}
+
+/** The top: a big pale mid horn with an axe-head phase plug low in its throat and a small high horn set into its top
+ * half, over a row of angled fins, as the stack at the field (refs 3). */
+const midHigh = () => stackBox("stack-mid-high", 0.36, (b, f) => {
+  const iw = GEAR_SIZES["stack-mid-high"][0] - 0.07, fh = 0.085, hy = 0.035 + fh + 0.19;
+  paleHorn(b, "violet", [0, hy, f - 0.002], 0.64, 0.355, iw, 0.38, 0.34, { plug: true, plugY: 0.04 });
+  // the high horn, a pale box-shaped flare standing in the mid horn's upper throat
+  paleHorn(b, "horn", [0, hy + 0.06, f - 0.1], 0.26, 0.1, 0.27, 0.11, 0.16, { p: 10 });
+  fins(b, iw, fh, 0.035 + fh / 2, f);
+});
+
+/** The mid-bass: a big square mid horn with its phase plug over a bass horn's mouth, a slot barred by three louvres. */
+const midBass = () => stackBox("stack-mid-bass", 0.4, (b, f) => {
+  const iw = GEAR_SIZES["stack-mid-bass"][0] - 0.07, sh = 0.19;
+  paleHorn(b, "violet", [0, 0.035 + sh + 0.245, f - 0.002], 0.6, 0.45, iw, 0.49, 0.38, { plug: true, plugY: 0.04 });
+  b.pieces.push(box("knob", [iw, sh, 0.01], [0, 0.035 + sh / 2, f - 0.2]));
+  for (const k of [0, 1, 2]) b.pieces.push(box("violet", [iw, 0.022, 0.16], [0, 0.035 + 0.03 + k * 0.065, f - 0.08], { bevel: 0.004, rot: [-0.35, 0, 0] }));
+  b.pieces.push(box("violet", [0.03, sh, 0.2], [0, 0.035 + sh / 2, f - 0.1], { bevel: 0.004 }));
+  b.pieces.push(box("violet", [iw, 0.02, 0.2], [0, 0.035 + sh + 0.01, f - 0.1], { bevel: 0.004 }));
+});
+
+/**
+ * The bass bin, as the stack at the field (refs 3): one pyramid mouth across the front whose flat walls close in on a
+ * tall throat a little left of the middle, where the drivers show through a bulging perforated steel grille, and a
+ * column of four round ports beside it.
+ */
+const hornSub = () => stackBox("horn-sub-21", 0.55, (b, f) => {
+  const [w, h] = GEAR_SIZES["horn-sub-21"], t = 0.035, deep = 0.5, gx0 = -0.16, gx1 = 0.02, px1 = 0.13, y0 = 0.09, y1 = h - 0.09, zb = f - deep;
+  b.pieces.push(frustum("violet", [-w / 2 + t, w / 2 - t, t, h - t], [gx0, px1, y0, y1], f, deep));
+  // the grille: half a cylinder of perforated steel standing out of the throat, the woofers dark behind it
+  b.pieces.push(box("knob", [gx1 - gx0, y1 - y0, 0.01], [(gx0 + gx1) / 2, h / 2, zb - 0.005]));
+  b.pieces.push(rod("mesh", [(gx0 + gx1) / 2, y0, zb], [(gx0 + gx1) / 2, y1, zb], (gx1 - gx0) / 2, 16));
+  // the port column: a flat panel with four round holes down it
+  b.pieces.push(box("violet", [px1 - gx1, y1 - y0, 0.02], [(gx1 + px1) / 2, h / 2, zb - 0.01]));
+  for (let k = 0; k < 4; k++) b.pieces.push(disc("knob", 0.036, 0.004, "z", [(gx1 + px1) / 2, y0 + (k + 0.5) * ((y1 - y0) / 4), zb + 0.001], 16));
+});
 
 // ---- the other rigs on the sand (Qollab Studio's Desert Gathering, packages/gear systems.ts) -------------------------
 

@@ -71,6 +71,11 @@ export const SURFACES = {
   coat: { dir: "plastic", tile: 0.35, tint: 0x8c8c8c, roughness: 1, metalness: 0, color: true, normalScale: 0.45, wear: { chip: 0x6a6866, stipple: 1.4, scuff: 0.45, matte: 0.82, speck: 1 } },
   /** A line array box's side cheeks: an olive-grey pebble-coat panel (flat colour, no photo map), set off against the black shell. */
   cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
+  /** A dance-stack horn's lining: pale painted fibreglass in a satin finish (flat colour, the plastic's fine relief),
+   * greyed where hands and road dust have rubbed it, scuffed where the boxes are stacked. */
+  horn: { dir: "plastic", tile: 0.35, tint: 0x8f938b, roughness: 0.6, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  /** A dance stack's cabinets: dark violet paint over birch, a fine roller texture, rubbed pale at the edges. */
+  violet: { dir: "plastic", tile: 0.35, tint: 0x1c1733, roughness: 0.8, metalness: 0, normalScale: 0.35, wear: { chip: 0x4a4560, stipple: 0.5, scuff: 0.6, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
@@ -220,16 +225,16 @@ function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wea
 
 /** The gear's look made of the kit: cabinets in textured plastic (a line array box's in an even coat with paler
  * cheeks, and a black grille backed nearly solid), perforated steel grilles, brushed aluminium,
- * painted steel panels, rubber and tolex; the rest (the guitar's paint, chrome, knobs, LEDs) as `gearLook()` has them. */
+ * painted steel panels, rubber and tolex, a dance stack's pale horn lining and violet cabinets; the rest (the guitar's paint, chrome, knobs, LEDs) as `gearLook()` has them. */
 export function gearSurfaces(opts: SurfaceOptions): { look: GearLook; ready: Promise<void> } {
   const flat = gearLook(), loader = opts.loader ?? new THREE.TextureLoader();
   const pick = (name: SurfaceName) => surface(name, { ...opts, loader });
-  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek") };
+  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek"), horn: pick("horn"), violet: pick("violet") };
   const lid = parts.paint.material.clone();
   lid.color.setHex(0xf2c230);
   lid.map = null;
   const lidReady = parts.paint.ready.then(() => { lid.normalMap = parts.paint.material.normalMap; lid.roughnessMap = parts.paint.material.roughnessMap; lid.needsUpdate = true; });
   const look: GearLook = { ...flat, paint: parts.paint.material, grille: parts.grille.material, metal: parts.metal.material, rubber: parts.rubber.material, panel: parts.panel.material, tolex: parts.tolex.material, lid,
-    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material };
+    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material, horn: parts.horn.material, violet: parts.violet.material };
   return { look, ready: Promise.all([...Object.values(parts).map((p) => p.ready), lidReady]).then(() => {}) };
 }
