@@ -49,17 +49,14 @@ test("public/shelf.json is the shelf the packages describe, and each part's pict
   for (const p of parts) expect(existsSync(`${import.meta.dir}/../public/shots/${p.picture}.jpg`)).toBe(true);
 });
 
-test("public/llms.txt is apps.json retold for an agent, and a product's guide in this repo is a file that exists", async () => {
+// CI checks out this app's folder only, so a guide's file can't be looked for here: the link is checked as a link.
+test("public/llms.txt is apps.json retold for an agent, and every product names its guide", async () => {
   const { llms } = await import("../scripts/llms.ts");
   const text = await llms();
   expect(await Bun.file(`${import.meta.dir}/../public/llms.txt`).text()).toBe(text);
   const guides = [...text.matchAll(/^- Agent guide: (\S+)$/gm)].map((m) => m[1] ?? "");
-  expect(guides.length).toBeGreaterThan(5);
-  const inRepo = "https://github.com/QuinnsCode/RustyBuns/blob/main/";
-  for (const g of guides) {
-    expect(new URL(g).protocol).toBe("https:");
-    if (g.startsWith(inRepo)) expect(existsSync(`${import.meta.dir}/../../../${g.slice(inRepo.length)}`)).toBe(true);
-  }
+  expect(guides.length).toBe(text.split("\n### ").length - 1);
+  for (const g of guides) expect(new URL(g).protocol).toBe("https:");
 });
 
 test("public/ui.js is the current packages/ui bundle", async () => {
