@@ -1,0 +1,17 @@
+{
+  "name": "hemyviz",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Your Alchemy deployments drawn live in 2D, 2.5D and 3D, five ways each. Reads state, never writes it.",
+  "scripts": {
+    "dev": "bun --hot src/main.ts",
+    "start": "bun src/main.ts",
+    "demo": "bun src/main.ts --demo",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@rustybuns/util": "^0.1.12",
+    "lucide": "1.55.0"
+  }
+}

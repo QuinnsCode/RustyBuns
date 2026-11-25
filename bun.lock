@@ -819,6 +819,14 @@
         "vite": "^6.4.4",
       },
     },
+    "apps/hemyviz": {
+      "name": "hemyviz",
+      "version": "0.1.0",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+        "lucide": "1.55.0",
+      },
+    },
     "apps/hippo-tycoon": {
       "name": "hippo-tycoon",
       "version": "0.1.0",
@@ -3424,6 +3432,8 @@
     "hast-util-whitespace": ["hast-util-whitespace@3.0.0", "", { "dependencies": { "@types/hast": "^3.0.0" } }, "sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw=="],
 
     "hello-world": ["hello-world@workspace:apps/hello-world"],
+
+    "hemyviz": ["hemyviz@workspace:apps/hemyviz"],
 
     "hippo-tycoon": ["hippo-tycoon@workspace:apps/hippo-tycoon"],
 
