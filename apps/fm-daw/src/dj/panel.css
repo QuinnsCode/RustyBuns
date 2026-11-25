@@ -8,6 +8,11 @@
 #dj button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; min-width: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid #3a3e45; background: #1e2025; color: inherit; font: 600 14px "Barlow Condensed", sans-serif; letter-spacing: 0.04em; cursor: pointer; white-space: nowrap; touch-action: manipulation; user-select: none; }
 #dj button:hover { border-color: #6b707a; }
 #dj button.on { background: #ff6b4a; border-color: #ff6b4a; color: #15171b; }
+#dj .dj-rec svg { color: #ff4a4a; }
+#dj .dj-rec.on svg { color: #15171b; animation: dj-rec-blink 1s steps(2) infinite; }
+#dj .dj-rec-time { min-width: 4.2ch; font-variant-numeric: tabular-nums; text-align: right; }
+#dj .dj-rec-time:empty { display: none; }
+@keyframes dj-rec-blink { 50% { opacity: 0.35; } }
 .dj-head-tools { display: flex; gap: 6px; margin-left: auto; flex: none; }
 /* the sources: a file from this computer, or a YouTube link */
 .dj-src { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }

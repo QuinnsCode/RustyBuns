@@ -21,6 +21,8 @@ import { Booth, changed, farView, HOTS, hotOf, JOG_LOST_MS, JOG_SEND_MS, JogOut,
 import { Decks, type Beside, type Side, type Track } from "./engine.ts";
 import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
+import { DeckIo, LINE_CHANNELS, type Device } from "./io.ts";
+import { saveTake, SetRecorder, stamp, type OnAir, type Take } from "./record.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, overTone, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FAST_TIMES, keyName, keysOf, loadPrefs, NUDGE_MS, savePrefs, TONE_LUT, TONE_STEPS, type Action, type Prefs } from "./prefs.ts";
@@ -47,6 +49,8 @@ const ICON = {
   mixer: svg('<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>'),
   magnet: svg('<path d="m12 15 4 4"/><path d="M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z"/><path d="m5 8 4 4"/>'),
   cog: svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
+  cable: svg('<path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v-2h-4"/><path d="M3 5h4V3"/><path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3"/>'),
+  rec: svg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -127,6 +131,12 @@ export interface DecksPanel {
   flick(side: Side, pxPerSec: number): void;
   /** Whether each deck's waveform is still coasting from a flick. */
   coasting(): [boolean, boolean];
+  /** REC: start recording the master, or stop and hand back the take (saved as two downloads unless `save` is false). */
+  record(on: boolean, save?: boolean): Promise<Take | null>;
+  /** The take being recorded: how long so far and the tracks that have come in. */
+  recording(): { on: boolean; seconds: number };
+  /** The sound card in and out (io.ts): the master to an output, a line in on channel 1 or 4. */
+  io: DeckIo;
 }
 
 /** How far back the hand's speed is read when it lets go of the close-up, ms. */
@@ -193,8 +203,78 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
   const prefsBox = el("div", { class: "dj-people dj-prefs", role: "dialog", "aria-label": "Deck settings" });
   prefsBox.hidden = true;
   prefsB.addEventListener("click", () => { prefsBox.hidden = !prefsBox.hidden; prefsB.classList.toggle("on", !prefsBox.hidden); listening = null; drawPrefs(); });
-  tools.append(libB, ...midi.buttons, prefsB, peopleB, closeB);
-  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox);
+  // REC: the master (what the room hears) to a file on this computer, with the track list
+  const recB = button(`${ICON.rec}<span class="dj-rec-time"></span>`, "Record your set to a file on this computer: the master and a track list. YouTube decks play in YouTube's own player, so they aren't in the recording", "dj-rec");
+  const recTime = recB.querySelector<HTMLElement>(".dj-rec-time")!;
+  const recorder = new SetRecorder();
+  let recTick: ReturnType<typeof setInterval> | null = null;
+  /** Each of your decks as the recorder hears it (someone else's deck isn't in your master). */
+  const onAir = (side: Side): OnAir => {
+    const d = decks.decks[side], t = tubes[side], ch = decks.mixer.channels[DECK_CHANNEL[side]]!.s;
+    if (far(side)) return { name: null, playing: false, tube: false, ch };
+    return t ? { name: t.title, playing: t.isPlaying(), tube: true, ch } : { name: d.track?.name ?? null, playing: d.playing, tube: false, ch };
+  };
+  const recNow = () => { const m = decks.mixer; recorder.tick([onAir(0), onAir(1)], m.xfader, m.curve); recTime.textContent = stamp(recorder.seconds()); };
+  async function record(on: boolean, save = true): Promise<Take | null> {
+    if (on === recorder.on) return null;
+    if (on) {
+      void o.ctx.resume();
+      recorder.start(decks.stream);
+      recNow();
+      recTick = setInterval(recNow, 250);
+      recB.classList.add("on");
+      flash(tubes.some(Boolean) ? "Recording the master (the YouTube deck isn't in it: it plays in YouTube's player)" : "Recording the master");
+      return null;
+    }
+    recNow();
+    if (recTick) clearInterval(recTick);
+    recTick = null;
+    recB.classList.remove("on");
+    recTime.textContent = "";
+    const take = await recorder.stop();
+    if (take && save) { saveTake(take); flash(`Saved ${take.name}: ${stamp(take.seconds)}, ${take.cues.length} track${take.cues.length === 1 ? "" : "s"} on the list`); }
+    return take;
+  }
+  recB.addEventListener("click", () => void record(!recorder.on));
+  // the sound card: the master out to any output (a virtual cable into a streaming app), a line in on 1 or 4
+  const io = new DeckIo(decks.mixer);
+  const ioB = button(ICON.cable, "Audio in and out: send your set to any output on your sound card (a stream app, OBS, an interface), or bring an input onto channel 1 or 4", "dj-io-open");
+  const ioBox = el("div", { class: "dj-people dj-prefs dj-io", role: "dialog", "aria-label": "Audio in and out" });
+  ioBox.hidden = true;
+  ioB.addEventListener("click", () => { ioBox.hidden = !ioBox.hidden; ioB.classList.toggle("on", !ioBox.hidden); void drawIo(); });
+  let ioNames = false;
+  async function drawIo() {
+    if (ioBox.hidden) return;
+    const { inputs, outputs } = await io.devices(ioNames).catch(() => ({ inputs: [] as Device[], outputs: [] as Device[] }));
+    const now = io.state();
+    const row = (label: string, ...kids: HTMLElement[]) => { const r = el("div", { class: "dj-prefs-row" }), l = el("span"); l.textContent = label; r.append(l, ...kids); return r; };
+    const pick = (label: string, list: Device[], on: string | null, set: (id: string | null) => Promise<boolean>) => {
+      const sel = el("select", { "aria-label": label, class: "dj-io-pick" });
+      for (const [id, name] of [["", "Off"], ...list.map((d) => [d.id, d.label])] as const) {
+        const opt = el("option", { value: id });
+        opt.textContent = name; opt.selected = id === (on ?? "");
+        sel.append(opt);
+      }
+      sel.addEventListener("change", async () => {
+        const ok = await set(sel.value || null);
+        if (!ok) flash(`Couldn't open ${sel.selectedOptions[0]?.textContent ?? "that"}`);
+        void drawIo();
+      });
+      return row(label, sel);
+    };
+    ioBox.replaceChildren(el("h3", {}, "Audio in and out"));
+    if (DeckIo.canPickOutput()) ioBox.append(pick("Master out to", outputs, now.out, (id) => io.sendTo(id)), el("p", {}, "Your set plays there too, as well as your speakers: pick a virtual cable to stream it from OBS or a stream app. YouTube decks play in YouTube's own player, so they aren't in it."));
+    else ioBox.append(el("p", {}, "This browser plays only to its default output: Chrome, Edge and Firefox can pick one."));
+    for (const ch of LINE_CHANNELS) ioBox.append(pick(`Line in to channel ${ch + 1}`, inputs, now.ins[ch] ?? null, (id) => io.lineIn(ch, id)));
+    ioBox.append(el("p", {}, "A turntable, a mic or another computer: raw, no echo cancelling. Don't send the master out to the same cable you bring in, or it feeds back."));
+    if (!ioNames && [...inputs, ...outputs].some((d) => /^(Input|Output) \d+$/.test(d.label))) {
+      const names = button("Show their names", "The browser names your sound card's ins and outs once you let it use the microphone");
+      names.addEventListener("click", () => { ioNames = true; void drawIo(); });
+      ioBox.append(names);
+    }
+  }
+  tools.append(recB, ioB, libB, ...midi.buttons, prefsB, peopleB, closeB);
+  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox, ioBox);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -883,5 +963,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       if (vinyl) jogs[side].touch(true, true);
       flick(side, pxPerSec, vinyl);
     },
-    coasting: () => [!!coasts[0], !!coasts[1]] };
+    coasting: () => [!!coasts[0], !!coasts[1]],
+    record,
+    io,
+    recording: () => ({ on: recorder.on, seconds: recorder.seconds() }) };
 }
