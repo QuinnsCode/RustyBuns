@@ -114,6 +114,13 @@ const harness = {
   phones: (v: number) => mx()?.setPhones(v),
   cueBlend: (v: number) => mx()?.setCueBlend(v),
   split: (on: boolean) => mx()?.setSplit(on),
+  /** The sound card (io.ts): devices(names), out(id) sends the master to an output (null stops), lineIn(ch, id) on channel 0 or 3, state(). */
+  io: {
+    devices: (names = false) => start().io.devices(names),
+    out: (id: string | null) => start().io.sendTo(id),
+    lineIn: (ch: Ch, id: string | null) => start().io.lineIn(ch, id),
+    state: () => panel?.io.state() ?? null,
+  },
   /** MIDI (midi.ts): show(on) the connections, controls() to pair, learn(id), feed(device, bytes) a message as that controller sends it, plug(device, on), clear(device, key). */
   midi: {
     show: (on: boolean) => panel?.midi.show(on),

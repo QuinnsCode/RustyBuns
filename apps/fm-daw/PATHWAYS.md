@@ -11,7 +11,7 @@ of these walks shorter or less broken. When a step changes, change its line here
 | [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | No: help for keys only, no guided setup |
 | [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | `/` | Yes, one loop at a time (no song mode yet) |
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | `/jam.html` | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Into the room and to a file, yes; a live link out, no |
+| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Yes: into the room, to a file, and out of your sound card to any stream app; no link of our own |
 | [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | `/rooms.html` | Partly: room acoustics and a rig pick, no coverage map or gear list |
 | [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | `/amp.html`, the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
 
@@ -88,9 +88,12 @@ stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
 table) records the master, what the room's PA gets, to a file on your computer (`src/dj/record.ts`: Opus in WebM, or
 AAC in Safari), with a track list beside it naming each track and the time it came in (its deck playing with the fader
 and its crossfader side open). Nothing is uploaded. A YouTube deck plays in YouTube's own player, so it is never in the
-recording; the button says so.
+recording; the button says so. Audio in and out (the cable button, `src/dj/io.ts`) sends the master to any output on
+your sound card as well as your speakers (an interface, or a virtual cable into OBS or a stream app), so a DJ streams
+the set wherever they like with nothing hosted by us; and brings any input (a turntable, a mic, another computer) onto
+mixer channel 1 or 4. Picking an output needs Chrome, Edge or Firefox; Safari plays to the default.
 
-**Missing:** the listen link: people outside the sesh hearing the set live, no sign-in and no seat
+**Missing:** a listen link of our own: people outside the sesh hearing the set live from a link we host, no sign-in and no seat
 ([#5878](https://github.com/QuinnsCode/RustyBuns/issues/5878): priced, waits on the owner's yes). There is no saved
 library either (tracks load each visit), and MIDI learn is checked only with fed messages, not a real controller.
 
