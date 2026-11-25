@@ -1,13 +1,14 @@
 // The room setup, asked once: on the front door (/jam.html) a new browser picks the studio its rooms are made in, makes a
 // room and walks in; back at the front door it isn't asked again, and the next room is made in the same studio. Settings
 // (the cog) changes it, and the room after that is made in the new one. Headless Chrome over CDP (scripts/chrome.ts).
+// What's checked is the front door and the link it walks you to, so the room itself is never drawn: its page load is
+// answered with a blank page (CDP Fetch). Three rooms drawn in software GL held CI's runners past 240 s (#5893).
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-// walking into a room draws a 3D scene in software on CI's runners
-setDefaultTimeout(240_000);
+setDefaultTimeout(120_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 let vite: Awaited<ReturnType<typeof startVite>>;
 const hasChrome = !!chromePath();
@@ -26,7 +27,14 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
   // its own browser context: a fresh browser's storage, not another test's
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
   const page = async <T>(expr: string): Promise<T> => tab.eval<T>(`(async () => (${expr}))()`);
-  // each look has its own deadline: a main thread busy drawing a room holds an evaluate back, and the step should say so
+  // a room's page (jam.html?room=...) comes back blank: the link is what's checked, not the 3D room it opens
+  const blank = Buffer.from("<!doctype html><title>room</title>").toString("base64");
+  chrome.cdp.on((m) => {
+    if (m.sessionId !== tab.sessionId || m.method !== "Fetch.requestPaused") return;
+    void tab.call("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/html" }], body: blank });
+  });
+  await tab.call("Fetch.enable", { patterns: [{ urlPattern: "*jam.html?room=*", resourceType: "Document" }] });
+  // each look has its own deadline: a busy main thread holds an evaluate back, and the step should say so
   const until = async (expr: string) => {
     for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
       const look = page<boolean>(expr).catch(() => false); // mid-navigation
@@ -43,18 +51,15 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
     kept: document.getElementById("room-studio-kept").offsetParent !== null ? document.getElementById("room-studio-kept-name").textContent : "",
     setup: qjam.state().door.setup,
   })`);
-  /** Make a room on the front door and walk in: the studio its link names. */
+  /** Make a room on the front door and follow its link: the studio the link names. */
   const make = async (name: string) => {
     await page(`(() => { document.getElementById("room-name").value = ${JSON.stringify(name)}; document.getElementById("make").requestSubmit(); return 1; })()`);
-    await until(`new URLSearchParams(location.search).has("room") && !!window.qjam`);
+    await until(`new URLSearchParams(location.search).has("room")`);
     return page<string>(`new URLSearchParams(location.search).get("studio")`);
   };
   try {
     // first visit: asked, and the pick is the room's studio
     await frontDoor();
-    // the invite link a room is made with carries no ?quality, so this browser keeps "low" the way Q does: rooms drawn in
-    // software GL at high quality held CI's runner past the test's time
-    await page(`(localStorage.setItem("qollab-studio:quality", "low"), 1)`);
     expect(await door()).toEqual({ asked: true, kept: "", setup: null });
     await page(`(document.querySelector('#room-studio [data-studio="console-room"][data-copy="0"]').click(), 1)`);
     expect(await make("first jam")).toBe("console-room");
