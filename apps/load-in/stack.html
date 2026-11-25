@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!--page-->
 <title>Stack Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <style>
   /* Two views of one design. Stack: the boxes from the front, dragged in from the box list and stacked by gravity, its
      numbers on a taped sheet. Stage: the site from above, stacks dragged round the stage, the floor shaded by how loud
@@ -13,7 +14,7 @@
   [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { margin: 0; background: #0b0a0c; color: var(--chalk); font: 600 15px/1.35 var(--pen); }
-  #app { min-height: 100%; display: grid; grid-template-rows: auto 1fr; padding: 10px max(12px, env(safe-area-inset-right, 0px)) 14px max(12px, env(safe-area-inset-left, 0px)); gap: 10px; box-sizing: border-box; }
+  #app { min-height: 100%; display: grid; grid-template-rows: auto 1fr; padding-block: 10px 14px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); gap: 10px; box-sizing: border-box; }
   header { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
   header h1 { margin: 0; font: 400 34px/1 var(--slab); letter-spacing: .04em; text-transform: uppercase; color: var(--chalk); text-shadow: 2px 1px 0 var(--spot); }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
