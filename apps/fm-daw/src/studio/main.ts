@@ -40,7 +40,7 @@ import { FarSound } from "./plugin-line.ts";
 import { brickWall, peerCeilingSetting } from "./limiter.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey, saveLook, savedLook } from "../ui/me.ts";
-import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
+import { type Answer, BODY_HZ, DRUM_KEYS, blendShot, body, cameraPose, orbitPose, gone, hear, hop, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import type { Aim } from "./fingers.ts";
 import { floorAt, keysReach, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
@@ -143,7 +143,7 @@ const character = characterDialog({
   },
   wear: (a) => { look = a; wear(); door(); },
 });
-mountWay("jam", { character: () => void character.open() });
+const way = mountWay("jam", { character: () => void character.open() });
 
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
@@ -1394,7 +1394,7 @@ $("share").addEventListener("click", () => {
   void navigator.share?.({ title: here.name || "Qollab Studio", text: inviteNote(here.name, def.name), url: inviteLink(location.origin, here.room, here.studio, here.name) }).catch(() => {});
 });
 
-function menu() { decksBtn.hidden = phase !== "play"; $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
+function menu() { decksBtn.hidden = phase !== "play"; way.fold(phase === "play"); $("menu").hidden = phase === "play"; door(); people(); invites(); if (phase === "menu") void refreshHub(); }
 function play() { if (!here) return; phase = "play"; menu(); if (help.firstTime()) help.open(); else lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => void character.open());
@@ -1484,6 +1484,16 @@ const overlay = new Overlay((track, semis) => {
 
 // ---- every frame ----
 let last = performance.now(), sentAt = 0, sentBody = "";
+// paused, the camera circles you (orbitPose); it flies between that and your own view over FLY seconds
+const FLY = 0.9;
+let orbiting = false, orbitFrom = 0, orbitAt = 0, flyFrom: ReturnType<typeof cameraPose> | null = null, flyAt = 0, shot: ReturnType<typeof cameraPose> | null = null;
+function view(t: number) {
+  const own = cameraPose(jam), paused = phase === "menu";
+  if (paused !== orbiting) { orbiting = paused; flyFrom = shot; flyAt = t; if (paused) { orbitFrom = shot?.yaw ?? jam.me.yaw; orbitAt = t; } }
+  const goal = orbiting ? orbitPose(jam, orbitFrom, t - orbitAt) : own, k = (t - flyAt) / FLY;
+  shot = flyFrom && k < 1 ? blendShot(flyFrom, goal, k) : goal;
+  return { c: shot, settled: !orbiting && (!flyFrom || k >= 1) };
+}
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000), t = now / 1000;
   last = now;
@@ -1508,7 +1518,8 @@ function frame(now: number) {
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
   // you: seen over your shoulder with no tag of your own, and not at all once a wall behind pulls the camera into your
   // head; in first person, your body and hands below you with no head, so you see where you'd press or strike
-  const c = cameraPose(jam), first = jam.me.cam === "first";
+  // paused or flying back in, your figure stays drawn until the camera reaches first person
+  const { c, settled } = view(t), first = jam.me.cam === "first" && settled;
   const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
   watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
   if (c.boom > 0.7 || first) {

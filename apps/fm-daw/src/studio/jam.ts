@@ -160,6 +160,31 @@ export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number;
   return { ...p, at: [p.at[0], p.at[1] + lift, p.at[2]], head: headFade(Math.hypot(p.at[0] - m.x, p.at[1] - eye, p.at[2] - m.z)) };
 }
 
+type Shot = { at: [number, number, number]; yaw: number; pitch: number; boom: number; head: number };
+/** The paused camera: out this far (metres) and up this much over your eyes, a lap every `lap` seconds. */
+export const ORBIT = { far: 3.2, near: 0.3, up: 0.9, lap: 50 };
+
+/**
+ * While the menu is up, the camera circles you slowly, looking at your chest. It starts behind you (`from`, your yaw
+ * when you paused) and comes in toward you where a wall would be in the way, the way the shoulder camera's boom does.
+ */
+export function orbitPose(j: Jam, from: number, secs: number): Shot {
+  const m = j.me, a = from + (secs / ORBIT.lap) * Math.PI * 2, lift = floorAt(j.def, m.x, m.z) + (m.seat ? 0 : m.y);
+  const eye = (m.seat ? EYE_SIT : EYE_STAND) + lift;
+  let r = ORBIT.near;
+  for (let b = ORBIT.near; b <= ORBIT.far + 1e-9; b += 0.1) { if (walled(j.def, m.x + Math.sin(a) * b, m.z + Math.cos(a) * b)) break; r = b; }
+  const y = eye + ORBIT.up * (r / ORBIT.far);
+  return { at: [m.x + Math.sin(a) * r, y, m.z + Math.cos(a) * r], yaw: a, pitch: Math.atan2(eye - 0.35 - y, r), boom: BOOM, head: 1 };
+}
+
+/** Part way (`k`, 0 to 1, eased here) from one camera to another: the fly between the paused orbit and your own view. */
+export function blendShot(a: Shot, b: Shot, k: number): Shot {
+  if (k >= 1) return b;
+  const e = k * k * (3 - 2 * k), mix = (x: number, y: number) => x + (y - x) * e;
+  const turn = Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw));
+  return { at: [mix(a.at[0], b.at[0]), mix(a.at[1], b.at[1]), mix(a.at[2], b.at[2])], yaw: a.yaw + turn * e, pitch: mix(a.pitch, b.pitch), boom: mix(a.boom, b.boom), head: mix(a.head, b.head) };
+}
+
 /** How solid your head is drawn, the camera this far (metres) from it: solid out on the full boom, see-through up close. */
 export function headFade(d: number): number { return clamp((d - HEAD_FADE.near) / (HEAD_FADE.far - HEAD_FADE.near), HEAD_FADE.min, 1); }
 /** Nearer than `near` the head is `min` solid (0: not drawn, no haze over the keys); past `far`, solid. The seated shoulder camera is about 0.7 m away, the full boom 2.2. */

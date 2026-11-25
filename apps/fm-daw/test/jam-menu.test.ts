@@ -1,6 +1,7 @@
 // The jam room's menu (Esc in a room), in headless Chrome over CDP (scripts/chrome.ts): every group in it is a sideways
 // row of cards, as the studios are. With five people in the room, Who's here is one row; a mouse wheel turns it and a
-// real mouse drag slides it back, on a laptop and at phone width, and the page itself never scrolls sideways.
+// real mouse drag slides it back, on a laptop and on a phone either way up, and the page itself never scrolls sideways.
+// The menu uses the screen (nearly its whole width) and sits under the row of rooms, which folds to one pill once you play.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -23,7 +24,7 @@ beforeAll(async () => {
 });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
-test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as const)("the room's menu on %s: every group a sideways row", async (_, w, h) => {
+test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844], ["a phone on its side", 844, 390]] as const)("the room's menu on %s: every group a sideways row", async (_, w, h) => {
   const tab = await openTab(chrome.cdp, { w, h });
   // a tab left drawing its room starves the next one of CPU, so each case closes its own
   try { await rows(tab, w); } finally { await tab.close(); }
@@ -35,10 +36,18 @@ async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
   for (const end = Date.now() + 30_000; Date.now() < end; await Bun.sleep(50)) if (await page(`!!window.qjam && document.getElementById("studios").clientWidth > 0`)) break;
 
 
-  // five people here: their cards are one row, and the wheel turns it sideways
+  // the menu: most of the screen's width, under the row of rooms
+  const box = await page<{ wide: number; gap: number }>(`(() => {
+    const m = document.getElementById("menu").getBoundingClientRect(), way = document.getElementById("qs-way").getBoundingClientRect();
+    return { wide: m.width / innerWidth, gap: m.top - way.bottom };
+  })()`);
+  expect(box.wide).toBeGreaterThan(0.9);
+  expect(box.gap).toBeGreaterThanOrEqual(0);
+
+  // nine people here: their cards are one row, and the wheel turns it sideways
   await page(`(() => {
     const ul = document.getElementById("people");
-    for (const n of ["Sam", "Ari", "Jo", "Kit", "Lee"]) { const li = document.createElement("li"); li.textContent = n; ul.append(li); }
+    for (const n of ["Sam", "Ari", "Jo", "Kit", "Lee", "Max", "Ivy", "Rue", "Oz"]) { const li = document.createElement("li"); li.textContent = n; ul.append(li); }
     ul.scrollIntoView({ block: "center" });
   })()`);
   const row = await page<{ x: number; y: number; over: number; tops: number }>(`(() => {
@@ -59,4 +68,13 @@ async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
   await Bun.sleep(400);
   expect(await page<number>(`document.getElementById("people").scrollLeft`)).toBeLessThan(wheeled);
   expect(await page<number>("document.documentElement.scrollWidth")).toBe(w);
+
+  // in the room the row of rooms folds to the one you're in; pressing it opens the row again
+  const shown = () => page<number>(`[...document.getElementById("qs-way").children].filter((e) => e.getClientRects().length).length`);
+  // the place you are in and a door to each of the six others (Paths first, #5880)
+  expect(await shown()).toBe(7);
+  await page(`window.qjam.start()`);
+  expect(await shown()).toBe(1);
+  await page(`document.querySelector("#qs-way [aria-current]").click()`);
+  expect(await shown()).toBe(7);
 }
