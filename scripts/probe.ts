@@ -10,13 +10,20 @@
 //   bun run probe alien-disc-golf "/?seed=42" --js "golf.aim(90, 0.8); golf.throw(); await new Promise(r => setTimeout(r, 4000)); golf.state()"
 //   bun run probe two-fronts "/?battle=1" --cmd tf_state                   run a page command (@rustybuns/util/commands) with optional JSON args
 //   bun run probe skate-tech-park "/?level=el-capitan" --shot out.png        a picture, when eyes are needed
+//   bun run probe skate-tech-park "/?level=el-capitan" --before-after shots/  origin/main next to your working tree
 //   bun run probe --list                                                     every game's handle and what it does
 //   bun run probe --list mythic-masters                                      one game's handle
 //
 // --size WxH (default 1280x720), --mobile (phone size, touch, 2x), --settle <ms> (default 3000) to wait before the
 // expression, --url <http://...> to use a server already running instead of starting one, --shot <file.png>.
+// --before-after <dir> (#5909) shoots the app twice, as `--base` (default origin/main) has it and as the working tree
+// has it, and writes before.png, after.png and before-after.html (both side by side, one file) there. The base copy
+// is the app's own folder only: packages/ and node_modules are the working tree's. A PR that changes how an app looks
+// publishes the html as an artifact and links it under "Before / after" in its body.
 // The expression is the body of an async function: `await` and statements work, and its last expression (or a `return`) is the answer.
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { esc } from "../packages/util/src/index.ts";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
 import { help } from "./help.ts";
 import { appDir } from "./app-dirs.ts";
@@ -47,11 +54,11 @@ export const HANDLES: Record<string, { state: string; does: string }> = {
   "fleet-commander": { state: "fleetCommander.state()", does: "the screen (menu | battle | sector | report), the battle (t, outcome, focus, planet base, rim temper/doctrine/intent, every ship and wing with its order, stats) and the campaign sector. quick(seed), armada(seed), campaign(), go(world), refit(); select(...ids), mark(id), play(torpedo-run | pincer | hammer-anvil | screen | hunt | feint | recall), stance(attack | neutral | defend), formation(tight | screen | loose), flagship(broadside | rake | hold), lane(), orderAt(x, z), draw([[x, z], ...], join) (a drawn route, what a right-drag does), power(foresight | trance | voice), run(seconds), look(holo | cinema), pause(on) (the harness only; players cannot pause), camera(x, z, dist) (stops riding the flagship). Orders to wings land 2 s later (state().battle.radio counts them) unless voice is up. The Theater (top-down RTS in the fog): theater(seed), ping(), buy(scout | interceptor | bomber | escort | sensors), box(x1, y1, x2, y2) (screen-pixel selection box); state().battle.field has supply, strongpoints, sees (Compact ids in sight), known (last seen) and mines. Jump: /?battle=theater|quick|armada|campaign&seed=n&look=cinema" },
 };
 
-export interface Probe { app?: string; path: string; js?: string; size: { w: number; h: number }; mobile: boolean; settle: number; url?: string; shot?: string; list: boolean }
+export interface Probe { app?: string; path: string; js?: string; size: { w: number; h: number }; mobile: boolean; settle: number; url?: string; shot?: string; list: boolean; pair?: string; base: string }
 
 /** The arguments: the app (a folder under apps/), then a path (starts with / or ?), then flags. */
 export function parse(argv: string[]): Probe {
-  const p: Probe = { path: "/", size: { w: 1280, h: 720 }, mobile: false, settle: 3000, list: false };
+  const p: Probe = { path: "/", size: { w: 1280, h: 720 }, mobile: false, settle: 3000, list: false, base: "origin/main" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!, next = () => argv[++i] ?? "";
     if (a === "--list") p.list = true;
@@ -59,6 +66,8 @@ export function parse(argv: string[]): Probe {
     else if (a === "--cmd") { const name = next(), json = argv[i + 1]?.startsWith("{") ? next() : "{}"; p.js = `await __commands.run(${JSON.stringify(name)}, ${json})`; }
     else if (a === "--url") p.url = next();
     else if (a === "--shot") p.shot = next();
+    else if (a === "--before-after") p.pair = next();
+    else if (a === "--base") p.base = next();
     else if (a === "--settle") p.settle = Number(next()) || 3000;
     else if (a === "--mobile") { p.mobile = true; p.size = { w: 390, h: 844 }; }
     else if (a === "--size") { const m = /^(\d+)x(\d+)$/.exec(next()); if (m) p.size = { w: Number(m[1]), h: Number(m[2]) }; }
@@ -91,6 +100,42 @@ export const MAX_OUT = 4000;
 /** The answer as JSON, cut at MAX_OUT characters with a note; `undefined` says so. */
 export const show = (v: unknown) => { const s = v === undefined ? "undefined" : JSON.stringify(v, null, 1); return s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n… ${s.length - MAX_OUT} more characters: ask for less` : s; };
 
+/** `base`'s copy of the app's folder, in `<root>/.probe-base/<sha>/` next to links to the working tree's packages/,
+ *  scripts/ and node_modules, so its imports resolve as they would in the repo. Undefined when `base` has no such app. */
+export async function baseTree(root: string, app: string, base: string): Promise<string | undefined> {
+  const sha = (await Bun.$`git -C ${root} rev-parse --short ${base}`.quiet().text()).trim();
+  const dir = appDir(app, root), out = join(root, ".probe-base", sha);
+  if ((await Bun.$`git -C ${root} cat-file -e ${sha}:${dir}/package.json`.quiet().nothrow()).exitCode !== 0) return undefined;
+  if (!existsSync(join(out, dir, ".probe-done"))) {
+    rmSync(join(out, dir), { recursive: true, force: true });
+    mkdirSync(out, { recursive: true });
+    await Bun.$`git -C ${root} archive ${sha} ${dir} | tar -x -C ${out}`.quiet();
+    await Bun.write(join(out, dir, ".probe-done"), sha);
+  }
+  for (const d of ["packages", "scripts", "node_modules", `${dir}/node_modules`]) {
+    if (existsSync(join(root, d)) && !existsSync(join(out, d))) symlinkSync(join(root, d), join(out, d));
+  }
+  return join(out, dir);
+}
+
+/** The two shots side by side as one page, the pictures inlined, to publish as an artifact and link from a PR. */
+export function pairHtml(o: { app: string; path: string; base: string; before?: Uint8Array; after: Uint8Array }): string {
+  const img = (b: Uint8Array) => `<img alt="" src="data:image/png;base64,${Buffer.from(b).toString("base64")}">`;
+  const side = (label: string, b?: Uint8Array) => `<figure><figcaption>${esc(label)}</figcaption>${b ? img(b) : `<p>not on ${esc(o.base)}: a new app</p>`}</figure>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Before and after</title><style>
+:root { --bg: #fafafa; --fg: #1a1a1a; --dim: #666; --line: #ddd; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #141414; --fg: #eee; --dim: #999; --line: #333; } }
+:root[data-theme="dark"] { --bg: #141414; --fg: #eee; --dim: #999; --line: #333; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+h1 { font-size: 18px; margin: 0 0 12px; } h1 span { color: var(--dim); font-weight: 400; }
+main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+figure { margin: 0; } figcaption { color: var(--dim); margin-bottom: 6px; }
+img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; display: block; }
+</style></head><body><h1>${esc(o.app)} <span>${esc(o.path)}</span></h1>
+<main>${side(`Before: ${o.base}`, o.before)}${side("After: this branch", o.after)}</main></body></html>\n`;
+}
+
 /** Every game's handle (or just `app`'s) and what it does. */
 export const listLines = (app?: string) => [...Object.entries(HANDLES).filter(([a]) => !app || a === app).flatMap(([a, h]) => [`${a}: ${h.state}`, `  ${h.does}`]),
   "any page on @rustybuns/util/commands: __commands.list(), await __commands.run(name, args) (its WebMCP tools and Cmd+K palette)"];
@@ -100,25 +145,47 @@ if (import.meta.main) {
   const p = parse(process.argv.slice(2));
   if (p.list) { console.log(listLines(p.app).join("\n")); process.exit(0); }
   if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
+  if (p.pair && !p.app) { console.error("--before-after needs an app: it starts the app twice, once as --base has it"); process.exit(2); }
   const root = resolve(import.meta.dir, "..");
-  const server = p.url ? { url: p.url.replace(/\/?$/, "/"), stop: () => {} } : await startVite(resolve(root, appDir(p.app!, root)));
   // a page's audio runs without a click (a probe has no gesture to give), so a music app's clock moves
   const chrome = await launchChrome(["--autoplay-policy=no-user-gesture-required"]);
   let code = 0;
-  try {
+  // One look at a running server: the expression's answer, then a picture when `shot` names a file.
+  const look = async (url: string, shot?: string) => {
     const tab = await openTab(chrome.cdp, p.size, p.mobile);
-    await load(chrome.cdp, tab, new URL(p.path, server.url).href, p.settle);
+    await load(chrome.cdp, tab, new URL(p.path, url).href, p.settle);
     if (p.js) {
       try { console.log(show(await tab.eval(`(async () => {\n${asyncBody(p.js)}\n})()`))); }
       catch (e) { console.log(`error: ${(e as Error).message.split("\n")[0]}`); code = 1; }
     }
-    if (p.shot) {
-      const { data } = await tab.call("Page.captureScreenshot", { format: p.shot.endsWith(".jpg") ? "jpeg" : "png", quality: 80 });
-      await Bun.write(p.shot, Buffer.from(data, "base64"));
-      console.log(`shot: ${resolve(p.shot)}`);
+    let png: Uint8Array | undefined;
+    if (shot) {
+      const { data } = await tab.call("Page.captureScreenshot", { format: shot.endsWith(".jpg") ? "jpeg" : "png", quality: 80 });
+      png = Buffer.from(data, "base64");
+      await Bun.write(shot, png);
+      console.log(`shot: ${resolve(shot)}`);
     }
     if (tab.noise.length) console.log(`noise (${tab.noise.length}):\n  ${[...new Set(tab.noise)].slice(0, 12).join("\n  ")}`);
     await tab.close();
-  } finally { chrome.stop(); server.stop(); }
+    return png;
+  };
+  const onVite = async (dir: string, shot?: string) => {
+    const server = await startVite(dir);
+    try { return await look(server.url, shot); } finally { server.stop(); }
+  };
+  try {
+    if (p.pair) {
+      const out = resolve(p.pair);
+      mkdirSync(out, { recursive: true });
+      const baseDir = await baseTree(root, p.app!, p.base);
+      console.log(`before (${p.base}):`);
+      const before = baseDir ? await onVite(baseDir, join(out, "before.png")) : (console.log(`  ${p.app} is not on ${p.base}`), undefined);
+      console.log("after (working tree):");
+      const after = await onVite(resolve(root, appDir(p.app!, root)), join(out, "after.png"));
+      await Bun.write(join(out, "before-after.html"), pairHtml({ app: p.app!, path: p.path, base: p.base, before, after: after! }));
+      console.log(`side by side: ${join(out, "before-after.html")}`);
+    } else if (p.url) await look(p.url.replace(/\/?$/, "/"), p.shot);
+    else await onVite(resolve(root, appDir(p.app!, root)), p.shot);
+  } finally { chrome.stop(); }
   process.exit(code);
 }

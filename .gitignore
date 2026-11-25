@@ -33,3 +33,4 @@ wrangler.generated.jsonc
 __pycache__/
 
 apps/agent-office/sandbox/box.json
+.probe-base/
