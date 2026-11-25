@@ -77,7 +77,7 @@ export const SURFACES = {
   /** The same lining deep in a horn's throat, where no rag reaches: greyed and browned with road dust, matte. */
   grime: { dir: "plastic", tile: 0.35, tint: 0x403f37, roughness: 0.9, metalness: 0, normalScale: 0.3, wear: { chip: 0x3e3b33, stipple: 0.8, scuff: 0.4, matte: 0.7, speck: 1 } },
   /** A dance stack's cabinets: dark violet paint over birch, a fine roller texture, rubbed pale at the edges. */
-  violet: { dir: "plastic", tile: 0.35, tint: 0x1a1530, roughness: 0.65, metalness: 0, normalScale: 0.55, wear: { chip: 0x8a7656, stipple: 0.6, scuff: 0.8, matte: 0.65 } },
+  violet: { dir: "plastic", tile: 0.35, tint: 0x18142a, roughness: 0.5, metalness: 0, normalScale: 0.55, wear: { chip: 0x8a7656, stipple: 0.6, scuff: 0.8, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];

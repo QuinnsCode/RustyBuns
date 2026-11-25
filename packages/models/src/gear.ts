@@ -117,7 +117,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x868a84, 0.5, 0.15), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1a1530, 0.65),
+    horn: std(0x868a84, 0.5, 0.15), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x18142a, 0.5),
   };
 }
 
@@ -1645,21 +1645,21 @@ function midHigh(): Build {
   const size = GEAR_SIZES["stack-mid-high"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.025, f = d / 2;
   const iw = w - 2 * t, pw = iw / 2, top = h - t, band = 0.405, pb = 0.53;
   well(b, "violet", size, d - 0.04, t);
-  // the mid horn: a mouth 0.39 by 0.28 at the panel and three bands of big flat panels back to an eight-sided throat at
-  // the back left. The corner panels run narrow at the mouth, wide halfway in and narrow again at the throat, so the
-  // walls fold into diamonds; the first band is the driver's black throat ring.
-  const my = 0.79, ma = 0.196, mc = 0.14, tx = -0.11, tz = -0.36;
+  // the mid horn: a mouth 0.39 by 0.28 at the panel and three bands of big flat panels back to a regular eight-sided
+  // throat at the left, 22 cm in. The corner panels run narrow at the mouth, wide halfway in and narrow again at the
+  // throat, so the walls fold into diamonds; the first band is the driver's black throat ring.
+  const my = 0.79, ma = 0.196, mc = 0.14, tx = -0.12, tz = -0.22;
   const flare: Facet[] = [
-    [tz, 0.064, 0.064, 0.019, my, tx], [tz * 0.8, 0.078, 0.076, 0.023, my, tx * 0.92],
-    [tz * 0.42, 0.15, 0.115, 0.095, my, tx * 0.45], [0, ma, mc, 0.006, my, 0],
+    [tz, 0.07, 0.07, 0.0205, my, tx], [tz * 0.82, 0.08, 0.08, 0.0234, my, tx * 0.95],
+    [tz * 0.45, 0.15, 0.115, 0.08, my, tx * 0.5], [0, ma, mc, 0.006, my, 0],
   ];
   const m = new THREE.Matrix4().makeTranslation(0, 0, f - 0.01);
   b.pieces.push(facets("knob", flare.slice(0, 2), m), facets("horn", flare.slice(1), m));
-  b.pieces.push(disc("knob", 0.062, 0.01, "z", [tx, my, f - 0.01 + tz], 8));
-  // the phase plug: a long six-sided crystal lying across the horn, its blunt end in the throat ring, coming forward
-  // and drawn to a point three quarters of the way across
+  b.pieces.push(disc("knob", 0.07, 0.01, "z", [tx, my, f - 0.01 + tz], 8));
+  // the phase plug: a crisp six-sided prism lying across the horn out of the throat ring, its blunt end flat, its
+  // nose a six-sided point three quarters of the way across
   const plug: THREE.Vector3[] = [];
-  for (const [x, r, z] of [[tx - 0.02, 0.042, -0.22], [tx + 0.04, 0.062, -0.17], [0.06, 0.056, -0.1], [0.18, 0.006, -0.06]]) for (let j = 0; j < 6; j++) {
+  for (const [x, r, z] of [[tx - 0.02, 0.06, -0.15], [0.0, 0.06, -0.11], [0.16, 0.004, -0.08]]) for (let j = 0; j < 6; j++) {
     const q = (j / 6) * Math.PI * 2 + Math.PI / 6;
     plug.push(new THREE.Vector3(x, my + Math.sin(q) * r * 0.8, f + z + Math.cos(q) * r * 0.7));
   }
@@ -1684,7 +1684,7 @@ function midHigh(): Build {
   const bi = [-pw + 0.1, pw - 0.12, by0 + 0.1, by1 - 0.16], bd = 0.44;
   b.pieces.push(frustum("rubber", [-pw, pw, by0, by1], bi, f, bd));
   b.pieces.push(box("knob", [bi[1] - bi[0], bi[3] - bi[2], 0.01], [(bi[0] + bi[1]) / 2, (bi[2] + bi[3]) / 2, f - bd - 0.005]));
-  b.pieces.push(box("metal", [0.012, 0.41, 0.014], [0.04, (by0 + by1) / 2, f - 0.06], { bevel: 0.004, rot: [0, 0, 0.3] }));
+  b.pieces.push(box("knob", [0.024, 0.41, 0.01], [0.04, (by0 + by1) / 2, f - 0.06], { bevel: 0.004, rot: [0, 0, 0.3] }));
   b.pieces.push(box("metal", [0.03, 0.045, 0.005], [0.085, by0 + 0.06, f - 0.051], { bevel: 0.002, rot: [0, 0, 0.3] }));
   // the sides: a recessed handle each side (a dark pocket, its grip bar across the top), and on one a bracket with the
   // black knob that clamps a pole
