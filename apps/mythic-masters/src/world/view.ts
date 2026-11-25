@@ -241,7 +241,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   /** `at` is where the drawn patch stands, `next` where it is being built (they differ while `dirty`). `heave`, on the
    * relief patch only, is each vertex's mound noise and how much of it the vertex carries (HEAVE_ATTR). */
   interface Patch { n: number; sp: number; half: number; at: { x: number; z: number }; next: { x: number; z: number }; pos: Float32Array; col: Float32Array; wts: Uint8Array; feel: Uint8Array; geo: THREE.BufferGeometry; mesh: THREE.Mesh; dirty: boolean; build: Build; centre: { value: THREE.Vector2 }; water: THREE.Mesh | null; heave: Uint8Array | null }
-  const ripple = { value: 0 };
+  const ripple = { value: 0 }, teaU = { value: 0 };
   const groundTex = loadGround();
   /** The rivers' water: the sea's colour, a little clearer, with a slow ripple over it (cedar water in the Pine Barrens,
    *  `cedarWater`). */
@@ -254,8 +254,16 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     mat.onBeforeCompile = (sh, r) => {
       was.call(mat, sh, r);
       sh.uniforms.uRipple = ripple;
+      sh.uniforms.uTea = teaU;
       sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform float uRipple;")
         .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed.y += 0.05 * sin(uRipple * 1.8 + position.x * 0.9 + position.z * 0.7);");
+      // Cedar water is black-brown looking down and holds the sky across it, the way a still tannin stream does: a cheap
+      // Fresnel toward the sky's colour, and more opaque where it takes the sky, so it reads as water, not a muddy ditch.
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTea;")
+        .replace("#include <dithering_fragment>", `#include <dithering_fragment>
+        float fr = (0.1 + 0.9 * pow(clamp(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0), 2.5)) * uTea;
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.74, 0.78, 0.82), fr * 0.6);
+        gl_FragColor.a = mix(gl_FragColor.a, 1.0, fr);`);
     };
     mat.side = THREE.DoubleSide;
     mat.customProgramCacheKey = () => `water-hole${holeR.toFixed(1)}`;
@@ -1031,6 +1039,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     teaDrawn = tea;
     wc.lerpColors(waterC, teaC, tea); gc.lerpColors(glowC, teaGlowC, tea);
     for (const m of waters) { m.color.copy(wc); m.emissive.copy(gc); m.opacity = 0.7 + 0.2 * tea; }
+    teaU.value = tea;
     seaMat.color.copy(sc.lerpColors(seaC, estC, tea));
   }
 

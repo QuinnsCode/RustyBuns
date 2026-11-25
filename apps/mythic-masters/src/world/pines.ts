@@ -12,7 +12,7 @@ export const PINE_N = 1;
 /** Metres kept clear round a keeper's stone (poi.ts NO_STONE) and either side of the trail. */
 const STONE_GAP = 30, TRAIL_GAP = 8, PLACE_GAP = 14;
 
-export type PartKind = "mansion" | "tower" | "mill" | "gristmill" | "cottage" | "lake" | "bog" | "vines" | "dyke" | "sluice" | "firetower" | "shed" | "beach" | "dock" | "cedar";
+export type PartKind = "mansion" | "tower" | "mill" | "gristmill" | "cottage" | "lake" | "bog" | "vines" | "dyke" | "sluice" | "firetower" | "shed" | "beach" | "dock" | "cedar" | "sedge";
 /** One built thing: its centre, which way it faces (radians about y), and its footprint, metres (w along its own x). */
 export interface Part { kind: PartKind; x: number; z: number; yaw: number; w: number; d: number }
 export interface Sight { id: "batsto" | "atsion" | "fire-tower" | "bogs"; name: string; k: number; x: number; z: number; yaw: number; r: number; parts: Part[] }
@@ -97,6 +97,11 @@ function atsion(): Sight | undefined {
     // round the shore from one end of the beach to the other the long way, two deep in places
     const a = Math.PI * (0.62 + 1.76 * (i / 25)) + (hash(i, 41) - 0.5) * 0.08, back = 3 + 5 * hash(i, 42), wide = 1.3 + 0.6 * hash(i, 44);
     parts.push({ kind: "cedar", x: Math.sin(a) * (35 + back), z: -6 + Math.cos(a) * (26 + back), w: wide, d: wide });
+  }
+  // Sedge in tussocks along the waterline, all the way round but the beach: half in the water, half on the bank.
+  for (let i = 0; i < 110; i++) {
+    const a = Math.PI * (0.58 + 1.84 * (i / 109)) + (hash(i, 51) - 0.5) * 0.05, k = 0.96 + 0.09 * hash(i, 52), wide = 1.2 + 1.4 * hash(i, 53);
+    parts.push({ kind: "sedge", x: Math.sin(a) * 35 * k, z: -6 + Math.cos(a) * 26 * k, w: wide, d: wide });
   }
   return { id: "atsion", name: "Atsion Lake", k: 2, x: p.x, z: p.z, yaw, r: 50, parts: stand(p, yaw, parts) };
 }

@@ -27,7 +27,12 @@ describe("the Pine Barrens' landmarks", () => {
     const atsion = SIGHTS.find((s) => s.id === "atsion")!, lake = atsion.parts.find((p) => p.kind === "lake")!, cedars = atsion.parts.filter((p) => p.kind === "cedar");
     expect(cedars.length).toBeGreaterThan(20);
     const co = Math.cos(lake.yaw), sn = Math.sin(lake.yaw);
-    for (const c of cedars) { const dx = c.x - lake.x, dz = c.z - lake.z; expect(Math.hypot((dx * co - dz * sn) / (lake.w / 2), (dx * sn + dz * co) / (lake.d / 2))).toBeGreaterThan(1); }
+    const ring = (p: { x: number; z: number }) => { const dx = p.x - lake.x, dz = p.z - lake.z; return Math.hypot((dx * co - dz * sn) / (lake.w / 2), (dx * sn + dz * co) / (lake.d / 2)); };
+    for (const c of cedars) expect(ring(c)).toBeGreaterThan(1);
+    // and its sedge lines the waterline, a little in and a little out, all round but the beach
+    const sedge = atsion.parts.filter((p) => p.kind === "sedge");
+    expect(sedge.length).toBeGreaterThan(60);
+    for (const s of sedge) { expect(ring(s)).toBeGreaterThan(0.9); expect(ring(s)).toBeLessThan(1.1); }
   });
 
   test("walking at Batsto's mansion, you stop at its wall", () => {
