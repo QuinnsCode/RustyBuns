@@ -1,0 +1,78 @@
+:root {
+  --bg: #f7f5fb; --zone: #e6e0f2; --edge: #231d2e; --ink: #231d2e; --muted: #6e6680; --grid: rgba(80, 60, 130, 0.10);
+  --link: rgba(124, 92, 255, 0.45); --hot: #ff7a45; --sky-1: #cdbcf5; --sky-2: rgba(255, 176, 120, 0.35); --beam: rgba(124, 92, 255, 0.22);
+  --card: #fffffff0; --line: #ddd6ea; --chip: #efebf7; --on: #7c5cff; --on-ink: #fff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16131c; --zone: #2a2436; --edge: #0f0c14; --ink: #ece8f6; --muted: #9b93b0; --grid: rgba(185, 163, 232, 0.08);
+    --link: rgba(185, 163, 232, 0.45); --hot: #ffb15e; --sky-1: #3b2a66; --sky-2: rgba(255, 138, 92, 0.30); --beam: rgba(236, 225, 255, 0.20);
+    --card: #1f1a28f0; --line: #352e44; --chip: #241f2e; --on: #7c5cff; --on-ink: #fff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16131c; --zone: #2a2436; --edge: #0f0c14; --ink: #ece8f6; --muted: #9b93b0; --grid: rgba(185, 163, 232, 0.08);
+  --link: rgba(185, 163, 232, 0.45); --hot: #ffb15e; --sky-1: #3b2a66; --sky-2: rgba(255, 138, 92, 0.30); --beam: rgba(236, 225, 255, 0.20);
+  --card: #1f1a28f0; --line: #352e44; --chip: #241f2e; --on: #7c5cff; --on-ink: #fff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; display: flex; flex-direction: column; overflow: hidden; }
+svg { width: 18px; height: 18px; flex: none; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 8px; font: 700 16px var(--mono); letter-spacing: 2px; margin-right: 4px; }
+.logo { width: 18px; height: 18px; border-radius: 5px; background: radial-gradient(circle at 50% 110%, #ffc15e 0 22%, #ff8a5c 23% 40%, #7c5cff 41% 70%, #b9a3e8 71%); border: 2px solid var(--edge); }
+.seg { display: flex; background: var(--chip); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted); padding: 6px 10px; border-radius: 8px; cursor: pointer; font: inherit; white-space: nowrap; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
+.tools { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+select, .search { height: 34px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 9px; font: inherit; }
+select { padding: 0 8px; max-width: 200px; }
+.search { display: flex; align-items: center; gap: 6px; padding: 0 8px; color: var(--muted); }
+.search input { border: 0; background: transparent; color: var(--ink); font: inherit; width: 120px; outline: none; }
+button.icon { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 9px; cursor: pointer; }
+button.icon[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
+button.icon[hidden] { display: none; }
+
+main { position: relative; flex: 1; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas.dragging { cursor: grabbing; }
+.stats, .legend { position: absolute; left: 16px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; max-width: calc(100% - 32px); }
+.stats { top: 12px; }
+.legend { bottom: 14px; }
+.stats span, .legend span { font-family: var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.stats b { color: var(--ink); }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; border: 1.5px solid var(--edge); }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 12px; max-width: 260px; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+.tip b { display: block; font-size: 13px; }
+.tip small { color: var(--muted); }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
+.empty[hidden] { display: none; }
+.empty code { background: var(--chip); padding: 2px 6px; border-radius: 6px; color: var(--ink); }
+
+.panel { position: absolute; top: 12px; right: 16px; bottom: 12px; width: 320px; max-width: calc(100% - 32px); overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.18); backdrop-filter: blur(8px); }
+.panel h2 { margin: 0 32px 2px 0; font: 700 16px var(--mono); overflow-wrap: anywhere; }
+.panel .type { color: var(--muted); margin-bottom: 12px; }
+.panel dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0 0 12px; }
+.panel dt { color: var(--muted); }
+.panel dd { margin: 0; overflow-wrap: anywhere; }
+.panel .close { position: absolute; top: 12px; right: 12px; }
+.panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 6px; }
+.panel ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.panel li button { border: 1px solid var(--line); background: var(--chip); color: var(--ink); border-radius: 8px; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.panel a { color: inherit; display: inline-flex; gap: 4px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; background: var(--chip); }
+.pill i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+@media (max-width: 760px) {
+  .seg button span { display: none; }
+  .tools { margin-left: 0; width: 100%; }
+  .search { flex: 1; }
+  .search input { width: 100%; }
+  .panel { top: auto; left: 16px; right: 16px; width: auto; max-height: 55%; }
+}

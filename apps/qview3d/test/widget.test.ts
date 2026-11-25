@@ -234,7 +234,7 @@ test("a 24 MP photo on a shirt front gets its print file made on the server", as
   await until("a picture on the shirt", () => layer(tab));
   const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
   const l = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", saved.id)))?.text()) ?? "null"))!.layers[0]!;
-  const size = async (key: string) => pictureSize(new Uint8Array(await await new Response((await app.bindings.BUCKET.get(key))!.body).arrayBuffer()));
+  const size = async (key: string) => pictureSize(new Uint8Array(await new Response((await app.bindings.BUCKET.get(key))!.body).arrayBuffer()));
   expect(await size(l.original!)).toEqual({ width: 6000, height: 4000 });
   const copy = (await size(l.print!))!;
   expect(copy.width * copy.height).toBeLessThanOrEqual(PRINT_COPY_PX);

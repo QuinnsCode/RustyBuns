@@ -52,6 +52,7 @@
     "./report": "./src/report.ts",
     "./quality": "./src/quality.ts",
     "./room": "./src/room.ts",
+    "./secrets": "./src/secrets.ts",
     "./seats": "./src/seats.ts",
     "./skin": "./src/skin.ts",
     "./socket": "./src/socket.ts",
