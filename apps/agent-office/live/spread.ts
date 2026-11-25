@@ -16,6 +16,8 @@ export const BY = "Ester";
 export const WINDOW_MS = 6 * 3600_000;
 export const EVERY_MS = 10 * 60_000;
 export const WORKFLOWS = { pr: "apps.yml", hourly: "desktop-hourly.yml" } as const;
+/** The label Mervin and scripts/after.ts find blocker issues by (#5934). */
+export const BLOCKER_LABEL = "ci-blocker";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const Runs = arr(obj({ databaseId: int(1, Number.MAX_SAFE_INTEGER), headBranch: text(300), createdAt: text(40), url: text(400) }), 200, { drop: true });
@@ -23,29 +25,37 @@ const Prs = arr(obj({ number: int(1, 1e9), headRefName: text(300), title: text(4
 const Issues = arr(obj({ number: int(1, 1e9), title: text(400), body: text(200_000) }), 100, { drop: true });
 const Thread = obj({ body: text(200_000), comments: arr(obj({ body: text(200_000) }), 500, { drop: true }) });
 
-/** The failed tests in a `gh run view --log-failed` log, each with the log lines that led up to it. */
-export function failedTests(log: string): { name: string; lines: string[] }[] {
-  const lines = trimLog(log, Infinity), out = new Map<string, string[]>();
+const FAIL = /^\s*\(fail\)\s+(.+?)(?:\s+\[[\d.]+m?s\])?\s*$/;
+
+/** The failed tests in a `gh run view --log-failed` log, each with the log lines that led up to it and the check it
+ * failed in (the job's name with its lane left off: `test fm-daw 2/3` is `test fm-daw`). */
+export function failedTests(log: string): { name: string; lines: string[]; check?: string }[] {
+  const lines = trimLog(log, Infinity), out = new Map<string, { lines: string[]; check?: string }>();
   lines.forEach((l, i) => {
-    const m = /^\s*\(fail\)\s+(.+?)(?:\s+\[[\d.]+m?s\])?\s*$/.exec(l);
-    if (m && !out.has(m[1]!)) out.set(m[1]!, lines.slice(Math.max(0, i - 8), i + 1));
+    const m = FAIL.exec(l);
+    if (m && !out.has(m[1]!)) out.set(m[1]!, { lines: lines.slice(Math.max(0, i - 8), i + 1) });
   });
-  return [...out].map(([name, lines]) => ({ name, lines }));
+  for (const raw of log.split("\n")) {
+    const [job, , rest] = raw.split("\t"), name = rest && FAIL.exec(trimLog(raw, 1)[0] ?? "")?.[1], t = name ? out.get(name) : undefined;
+    if (t && job && !t.check) t.check = job.replace(/\s+\d+\/\d+$/, "").trim();
+  }
+  return [...out].map(([name, t]) => ({ name, ...t }));
 }
 
 /** One failed run: where it ran (a PR, or the hourly run) and the tests that failed in it. */
-export interface Failure { pr?: number; hourly: boolean; url: string; at: number; tests: { name: string; lines: string[] }[] }
+export interface Failure { pr?: number; hourly: boolean; url: string; at: number; tests: ReturnType<typeof failedTests> }
 
-/** A test failing on 3+ PRs, or on the hourly run and 1+ PR, within the window. */
-export interface Spread { test: string; prs: number[]; hourly: boolean; runs: string[]; lines: string[] }
+/** A test failing on 3+ PRs, or on the hourly run and 1+ PR, within the window, and the checks it turns red. */
+export interface Spread { test: string; prs: number[]; hourly: boolean; runs: string[]; lines: string[]; checks: string[] }
 
 export function spreading(failures: Failure[], now = Date.now(), windowMs = WINDOW_MS): Spread[] {
   const by = new Map<string, Spread>();
   for (const f of failures) {
     if (now - f.at > windowMs) continue;
     for (const t of f.tests) {
-      const s = by.get(t.name) ?? { test: t.name, prs: [], hourly: false, runs: [], lines: t.lines };
+      const s = by.get(t.name) ?? { test: t.name, prs: [], hourly: false, runs: [], lines: t.lines, checks: [] };
       if (f.pr && !s.prs.includes(f.pr)) s.prs.push(f.pr);
+      if (t.check && !s.checks.includes(t.check)) s.checks.push(t.check);
       s.hourly ||= f.hourly;
       if (!s.runs.includes(f.url)) s.runs.push(f.url);
       by.set(t.name, s);
@@ -73,7 +83,7 @@ const json = (s: string): unknown => { try { return JSON.parse(s); } catch { ret
 const issueTitle = (s: Spread) => `CI: ${s.test} fails on ${s.prs.length} PR${s.prs.length === 1 ? "" : "s"}${s.hourly ? " and the hourly run" : ""}`;
 const issueBody = (s: Spread) => `Ester's spread watch saw this test fail on ${s.prs.map((n) => `#${n}`).join(", ")}${s.hourly ? " and the hourly run (desktop-hourly.yml)" : ""} in the last 6 hours.
 
-Test: \`${s.test}\`
+Test: \`${s.test}\`${s.checks.length ? `\nChecks: ${s.checks.join(", ")}` : ""}
 
 Runs:
 ${s.runs.map((u) => `- ${u}`).join("\n")}
@@ -137,7 +147,7 @@ export function spreadWatch(run: Gh = gh, now = () => Date.now()) {
         const fresh = s.prs.filter((n) => !new RegExp(`#${n}\\b`).test(said));
         if (t && fresh.length) await run(floor.dir, ["issue", "comment", String(issue), "--body", `Still spreading: now also red on ${fresh.map((n) => `#${n}`).join(", ")}.\n\n${s.runs.map((u) => `- ${u}`).join("\n")}`]);
       } else {
-        const url = await run(floor.dir, ["issue", "create", "--title", issueTitle(s), "--body", issueBody(s)]);
+        const url = await run(floor.dir, ["issue", "create", "--label", BLOCKER_LABEL, "--title", issueTitle(s), "--body", issueBody(s)]);
         issue = Number(/\/issues\/(\d+)/.exec(url)?.[1]) || undefined;
         if (issue) filed.set(s.test, issue);
         if (issue && !fix) {

@@ -41,6 +41,7 @@ function repo() {
     // GitHub's search index lags: a just-filed issue isn't found for a while
     if (a === "issue" && b === "list") return "[]";
     if (a === "issue" && b === "create") {
+      expect(args[args.indexOf("--label") + 1]).toBe("ci-blocker");
       issues.push({ number: 6000 + issues.length, title: args[args.indexOf("--title") + 1]!, body: args[args.indexOf("--body") + 1]!, comments: [] });
       return `https://github.com/o/r/issues/${issues.at(-1)!.number}\n`;
     }
@@ -73,6 +74,7 @@ test("a test red on three PRs gets one issue, one hire and a word to each PR's w
   expect(r.issues).toHaveLength(1);
   expect(r.issues[0]!.title).toContain(SLOW);
   expect(r.issues[0]!.body).toContain("https://x/runs/3");
+  expect(r.issues[0]!.body).toContain("Checks: test fm-daw\n");
   for (const n of [5879, 5880, 5884, 5887]) expect(r.issues[0]!.body).toContain(`#${n}`);
   expect(queued).toEqual([{ prompt: expect.stringContaining("Fixes #6000"), issue: 6000 }]);
   // 5887 is red on another test too, so its worker isn't told to just wait
@@ -122,7 +124,7 @@ test("the hourly run and one PR is spreading; two PRs alone is not", async () =>
 
 test("the log parser takes each (fail) line's name, without its time, with the lines before it", () => {
   const t = failedTests(log(SLOW, "mixer > pans", SLOW));
-  expect(t.map((x) => x.name)).toEqual([SLOW, "mixer > pans"]);
+  expect(t.map((x) => [x.name, x.check])).toEqual([[SLOW, "test fm-daw"], ["mixer > pans", "test fm-daw"]]);
   expect(t[0]!.lines.at(-1)).toBe(`(fail) ${SLOW} [240001.52ms]`);
   expect(t[0]!.lines).toContain("  ^ this test timed out after 240000ms.");
   expect(failedTests("error: script \"test\" exited with code 1")).toEqual([]);
