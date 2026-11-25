@@ -11,7 +11,9 @@
 //   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
 //   bun run builder queue [base-ref]           send the pushed HEAD's suites (what both required checks run) to the test swarm
 //   bun run builder join [--slots N]           this Mac takes test jobs from the swarm, N at a time (default 1), until Ctrl-C
-//   bun run builder serve                      on Bob: he takes runs until Ctrl-C (and stays awake while he does)
+//   bun run builder serve                      on Bob: he takes runs until Ctrl-C (and stays awake while he does), and shows
+//                                              what he runs on a live board (scripts/builder-board.ts)
+//   bun run builder watch                      that board from this Mac, over ssh
 //
 // Bob says when he takes work, not the runs: nothing is sent to him until `bun run builder serve` is running on him,
 // which keeps `serving` in his builder folder fresh. Off, asleep, or not serving, a run waits for him (valve shut).
@@ -119,18 +121,19 @@ const BUSY = 75;
 // A run touches its slot's lock every HEARTBEAT_MS while it holds it, however long its tests take. A lock untouched
 // for STALE_MIN is a run that died (its worker sent home, its ssh dropped, its Mac asleep): the next claim takes it back.
 // It was 90 minutes with no heartbeat, and one dead run held its slot that long while every other run waited.
-const STALE_MIN = 3;
+export const STALE_MIN = 3;
 const HEARTBEAT_MS = 60_000;
 // A push to a slot that hasn't finished in this long is hung (seen at over 2 hours): give up and give the slot back.
-const PUSH_MS = 5 * 60_000;
+export const PUSH_MS = 5 * 60_000;
 /** What `load` answers when the push to the slot failed or hung: Bob went away. */
 const PUSH_FAILED = 254;
 
 export type Builder = { host: string; dir: string; ssh: string[] };
 
+/** How every ssh shell remote-ci starts begins: the builder board (builder-board.ts) knows its shells by it. */
+export const REMOTE_PATH = `export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"`;
 function remote(b: Builder, script: string) {
-  const path = `export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; cd ${q(b.dir)} && `;
-  return Bun.spawn([...b.ssh, b.host, path + script], { stdout: "pipe", stderr: "pipe" });
+  return Bun.spawn([...b.ssh, b.host, remoteScript(b, script)], { stdout: "pipe", stderr: "pipe" });
 }
 
 async function stream(p: ReturnType<typeof remote>, label: string, quiet = false) {
@@ -156,9 +159,14 @@ const KEEP = 10;
 const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; `;
 // The command's own exit code, not tee's, without pipefail (dash has none): each ssh shell has its own $$.
 const teed = (cmd: string) => `{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; exit "\${c:-1}"`;
+/** The script one suite runs in a slot over ssh, its output teed to the slot's log. */
+export const jobScript = (slot: string, dir: string, cmd: string) => LOG(slot) + teed(`cd ${q(`${slot}/${dir}`)} && ${cmd}`);
+/** What `remote` hands ssh for a script. */
+export const remoteScript = (b: Pick<Builder, "dir">, script: string) => `${REMOTE_PATH}; cd ${q(b.dir)} && ${script}`;
 
 // Claim a free slot, waiting while every slot is busy. The same round trip writes the slot's run record and
-// reads the builder's battery.
+// reads the builder's battery. A claim that finds every slot busy leaves its record in runs/wait for the builder board
+// (refreshed each try, gone once it gets a slot or a minute after it stops asking).
 /** A builder slot's name, as the claim prints it. */
 const SLOT = /^slot-[\w-]+$/;
 // Taking a dead run's lock back ends what that run left running first: anything whose command line names the slot's
@@ -170,10 +178,12 @@ const REAP = `for l in $(find locks -mindepth 1 -maxdepth 1 -type d -mmin +${STA
   + `rmdir "$l"; done; `;
 export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string; batt: Battery }> {
   const write = rec ? `printf '%s' ${q(JSON.stringify(rec))} > "runs/$d.json"; : > "runs/$d.log"; ` : "";
+  const wait = rec ? `runs/wait/${rec.started}-${rec.who.replace(/[^\w.-]/g, "_")}.json` : "";
   // a lock is a folder; anything else there is junk (a heartbeat's touch after release once left a file at locks/slot-1, and
   // every claim after it read rmdir's complaint as its slot name and ran nowhere, over and over, for hours: 2026-11-22)
-  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; ${REAP}`
-    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
+  const script = `mkdir -p locks runs/done runs/wait && find runs/wait -type f -mmin +1 -exec rm -f {} + 2>/dev/null; find locks -mindepth 1 -maxdepth 1 ! -type d -exec rm -f {} + 2>/dev/null; ${REAP}`
+    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}${wait && `rm -f ${wait}; `}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; `
+    + `${wait && `printf '%s' ${q(JSON.stringify(rec))} > ${wait}; `}exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);
     if (code === 0) { const lines = out.trim().split("\n"), at = lines.findIndex((l) => SLOT.test(l)); return { slot: lines[at] ?? "", batt: battery(lines.slice(at + 1).join("\n")) }; }
@@ -419,11 +429,30 @@ async function serve(): Promise<number> {
   const timer = setInterval(beat, SERVE_BEAT_MS);
   const awake = Bun.which("caffeinate") ? Bun.spawn(["caffeinate", "-i", "-w", String(process.pid)], { stdout: "ignore", stderr: "ignore" }) : null;
   console.log(`taking runs (${dir}); Ctrl-C to stop: runs already going finish, new ones wait for the next serve`);
-  await new Promise<void>((done) => { process.once("SIGINT", done); process.once("SIGTERM", done); });
+  // What he is doing, live: a board on a terminal, one line per event when piped (scripts/builder-board.ts).
+  const stop = new AbortController();
+  process.once("SIGINT", () => stop.abort());
+  process.once("SIGTERM", () => stop.abort());
+  const { GATHER, show } = await import("./builder-board.ts");
+  await show(() => Bun.$`sh -c ${GATHER}`.cwd(dir).quiet().nothrow().text(), stop.signal, { every: 1000, title: `${(await Bun.$`hostname -s`.quiet().nothrow().text()).trim() || "builder"} · taking runs · Ctrl-C to stop` });
   clearInterval(timer);
   awake?.kill();
   await Bun.$`rm -f ${file}`.quiet().nothrow();
   console.log("not taking runs");
+  return 0;
+}
+
+/** `bun run builder watch`: the same board as `serve` draws on Bob, from here, one ssh read every two seconds. */
+async function watch(host: string | undefined): Promise<number> {
+  if (!host) { console.error("BUILDER_HOST is not set: no builder to watch"); return 2; }
+  const b = builder(host), stop = new AbortController();
+  process.once("SIGINT", () => stop.abort());
+  const { GATHER, show } = await import("./builder-board.ts");
+  await show(async () => {
+    // sh, not his login shell: zsh neither splits ${PS:-ps ...} nor lets a glob match nothing
+    const r = await stream(remote(b, `sh -c ${q(GATHER)}`), "watch", true);
+    return r.code === 0 ? r.out : `@error ssh to ${host} answered ${r.code}`;
+  }, stop.signal, { every: 2000, title: `${host} · watching · Ctrl-C to stop` });
   return 0;
 }
 
@@ -446,13 +475,14 @@ export const NOT_RUN = 125;
  *  (unset, off, charging) answers NOT_RUN at once instead of running here or waiting. scripts/ring-red.ts bisects with it. */
 export async function main(argv: string[], cwd: string, at?: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder serve  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
+  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder serve  |  bun run builder watch  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
   if (argv[0] === "nightly") return nightly(host);
   if (argv[0] === "passed") return passed(cwd);
   if (argv[0] === "queue") return queue(argv[1] ?? "origin/main", cwd);
   if (argv[0] === "join") return joinSwarm(argv, cwd);
   if (argv[0] === "serve") return serve();
+  if (argv[0] === "watch") return watch(host);
   const all = argv[0] === "all";
   if (all) argv = [argv[1] ?? "origin/main"];
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
@@ -527,7 +557,7 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
       console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
       const t0 = performance.now();
       const codes: number[] = [];
-      const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code; codes.push(c); return c; });
+      const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, jobScript(slot, j.dir, j.cmd)), j.label)).code; codes.push(c); return c; });
       if (codes.includes(LOST)) return (code = LOST);
       // every base-ref run, targeted or whole, is what the dial learns from; a one-off `run` isn't the branch's test
       if (tier !== undefined && !at) await recordVerdict({ who, tier, passed: !worst, at: Date.now() }).catch(() => {});
