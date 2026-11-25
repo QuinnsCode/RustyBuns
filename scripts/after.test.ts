@@ -39,7 +39,7 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
     const git = (...a: string[]) => run(ci, ...a);
     const head = (): Head => ({ headRefOid: ok(origin, "rev-parse", "mine"), commits: [{ committedDate: new Date(0).toISOString(), messageHeadline: "merge", authors: [{ name: ok(origin, "log", "-1", "--format=%an", "mine") }] }], comments: [] });
     const said: string[] = [];
-    const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: (_, text) => { said.push(text); }, setBody: (_, b) => { pr.body = b; }, head, runs: () => [] };
+    const gh: Gh = { open: () => [pr], state: (n) => states[n]!, comment: (_, text) => { said.push(text); }, setBody: (_, b) => { pr.body = b; }, head, runs: () => [], closedBlockers: () => [] };
 
     expect(pass(gh, git, { token })).toEqual(["#12 waits on #9"]);
 
@@ -64,7 +64,7 @@ test.each(pushes)("a PR that says merge after #9 waits while #9 is open, then ge
 
 test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", () => {
   const pr: AfterPr = { number: 12, headRefName: "mine", body: "Merge after #9\n", author: { login: "someone" }, isCrossRepository: false, labels: [{ name: "claude-pr-steward-is-working" }] };
-  const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: () => { throw new Error("no comment"); }, setBody: () => { throw new Error("no body change"); }, head: () => { throw new Error("no head"); }, runs: () => [] };
+  const gh: Gh = { open: () => [pr], state: () => "OPEN", comment: () => { throw new Error("no comment"); }, setBody: () => { throw new Error("no body change"); }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
   const git = () => { throw new Error("no git"); };
   expect(pass(gh, git)).toEqual(["#12 skipped: a Claude watch holds it (claude-pr-steward-is-working) and merges main in itself"]);
   pr.labels = [{ name: "bug" }];
@@ -91,7 +91,7 @@ test.each(rows)("$why", ({ author, age, runs, token, comments, line, push, comme
     open: () => [pr], state: () => "MERGED", setBody: () => { throw new Error("no body change"); },
     comment: (_, t) => { said.push(t); },
     head: () => ({ headRefOid: SHA, commits: [{ committedDate: mins(age), messageHeadline: "Merge main into mine", authors: [{ name: author }] }], comments }),
-    runs: () => runs,
+    runs: () => runs, closedBlockers: () => [],
   };
   const git = (...a: string[]) => {
     if (a[0] === "rev-parse") return { code: 0, out: SHA + "\n" };

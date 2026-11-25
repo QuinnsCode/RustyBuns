@@ -3,7 +3,7 @@
 // finds it and the job goes back on the queue, which is the only moment it matters.
 import { json, readJson } from "@rustybuns/util/http";
 import { hex } from "@rustybuns/util/bytes";
-import { CONTEXTS, Enqueue, Extend, LEASE_SECONDS, LeaseAsk, Report, STATES, Sha, type Job, type JobsReply, type LeaseReply } from "./api.ts";
+import { CONTEXTS, Enqueue, Extend, LEASE_SECONDS, LeaseAsk, Report, STATES, Sha, type Job, type JobsReply, type LeaseReply, type QueueReply } from "./api.ts";
 import { check } from "@rustybuns/util/guard";
 
 type Cursor<T> = { toArray(): T[]; rowsWritten: number };
@@ -45,6 +45,7 @@ export class Queue {
       if (sha) await this.settle(sha);
       return sha ? json(this.jobs(sha) satisfies JobsReply) : json({ error: "sha: a full 40-character commit" }, 400);
     }
+    if (req.method === "GET" && url.pathname === "/queue") return json(this.queue(now) satisfies QueueReply);
     if (req.method !== "POST") return json({ error: "not a swarm route" }, 404);
     if (url.pathname === "/enqueue") {
       const b = await readJson(req, Enqueue);
@@ -94,6 +95,17 @@ export class Queue {
     this.sql.exec("UPDATE jobs SET state = 'leased', runner = ?, lease = ?, until = ?, tries = tries + 1 WHERE id = ?", runner, lease, until, row.id);
     const job: Job = { id: row.id, sha: row.sha, branch: row.branch, suite: row.suite, lease, until };
     return { job };
+  }
+
+  /** What is waiting and what is running, in lease order. Read-only: a lease that ran out is shown queued, not put back. */
+  private queue(now: number): QueueReply {
+    const rows = this.sql.exec<Row & { at: number }>("SELECT * FROM jobs WHERE state IN ('queued', 'leased') ORDER BY id LIMIT 1000").toArray();
+    return {
+      jobs: rows.map((r) => {
+        const held = r.state === "leased" && r.until >= now;
+        return { sha: r.sha, branch: r.branch, suite: r.suite, state: held ? "leased" : "queued", runner: held ? r.runner : "", at: r.at, until: held ? r.until : 0, tries: r.tries };
+      }),
+    };
   }
 
   private jobs(sha: string): JobsReply {

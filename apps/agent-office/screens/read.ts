@@ -15,7 +15,8 @@ export const SCREENS: Screen[] = ["gitpath", "mervin", "ester"];
 
 const TIER = ["certain", "agree", "mervin", "differ", "card"] as const;
 export type Tier = (typeof TIER)[number];
-export interface Stage { pr: number; title: string; files: number; certain: number; tiers: Record<Tier, number> }
+/** `fixes`: why it jumped the line (it fixes a test red on PR after PR); `waitingOn`: the PR (or issue) a held PR waits on. */
+export interface Stage { pr: number; title: string; files: number; certain: number; tiers: Record<Tier, number>; fixes?: string; waitingOn?: number }
 /** A file more than one side changed, like one of codeSplitter's file objects: who wrote to it and how it settled. */
 export interface Contested { path: string; tier: Tier; prs: number[]; main: boolean }
 export interface Clash { kind: string; key: string; prs: number[]; settled: boolean }
@@ -36,6 +37,9 @@ export function mervinBoard(lines: string[]): Board {
       for (const [, t, n] of f[3]!.matchAll(/(\w+) (\d+)/g)) if (TIER.some((x) => x === t)) last.tiers[t as Tier] = Number(n);
       continue;
     }
+    const jump = l.match(/^ {2}jumps the line: (.*)$/), wait = l.match(/^ {2}waiting on #(\d+):/);
+    if (jump && last) { last.fixes = jump[1]!; continue; }
+    if (wait && last) { last.waitingOn = Number(wait[1]); continue; }
     const row = l.match(/^ {2}(agree|mervin|differ|card)\s+(\S+)\s.*?(?:\(after ([^)]*)\))?$/);
     if (row && last) {
       const after = row[3] ?? "", was = files.get(row[2]!);
@@ -139,8 +143,9 @@ export function fixPrompt(pr: number, lines: string[]): string {
 export const STATIONS = ["open", "CI", "Mervin", "Ester", "main"] as const;
 export interface OpenPr { number: number; title: string; url: string; draft: boolean; ci: "pass" | "fail" | "pending" | "none" }
 export interface MergedPr { number: number; title: string; mergedAt: number }
-/** A PR on the line: the station it has reached, and whether it is moving, sitting ready, or stuck there. */
-export interface Car { pr: number; title: string; url: string; at: number; state: "moving" | "ready" | "stuck" }
+/** A PR on the line: the station it has reached, and whether it is moving, sitting ready, stuck there, or waiting on
+ * another PR (`on`) that fixes the test it is red on, which isn't its fault. */
+export interface Car { pr: number; title: string; url: string; at: number; state: "moving" | "ready" | "stuck" | "waiting"; on?: number }
 
 const FAILED = ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR", "ACTION_REQUIRED"];
 // What `gh pr list --json ...` prints (GitHub's GraphQL names); a PR or check that isn't this shape is left out.
@@ -174,10 +179,11 @@ export function line(open: OpenPr[], mervin: EsterState, ester: EsterState): Car
   const carded = new Set(board.stages.filter((s) => s.tiers.card).map((s) => s.pr)); // the stage whose change a card left out
   const stack = new Map(esterStack(ester).blocks.map((b) => [b.pr, b.state]));
   const ordered = new Set(board.stages.map((s) => s.pr));
+  const held = new Map(board.stages.flatMap((s) => (s.waitingOn ? [[s.pr, s.waitingOn] as const] : [])));
   return open.map((p): Car => {
     const car = (at: number, state: Car["state"]) => ({ pr: p.number, title: p.title, url: p.url, at, state });
     if (p.draft) return car(0, "ready");
-    if (p.ci === "fail") return car(1, "stuck");
+    if (p.ci === "fail") return held.has(p.number) ? { ...car(1, "waiting"), on: held.get(p.number)! } : car(1, "stuck");
     if (p.ci !== "pass") return car(0, "moving");
     if (!ordered.has(p.number)) return car(1, "ready");
     if (carded.has(p.number)) return car(2, "stuck");

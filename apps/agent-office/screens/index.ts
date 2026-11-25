@@ -110,7 +110,9 @@ function drawGitpath(ctx: CanvasRenderingContext2D, t: number) {
       const bob = c.state === "moving" ? Math.sin(t * 9 + c.pr) * 3 : 0;
       const nudge = c.state === "moving" ? ((t * 14 + c.pr * 7) % 18) - 9 : 0;
       wheels(ctx, x + nudge, y + ch, cw);
-      box(ctx, x + nudge, y + bob, cw, ch, String(c.pr), c.state === "stuck" ? RED : c.state === "ready" ? ORANGE : PAPER, c.state === "moving" ? INK : PAPER);
+      // a PR red only on a test another PR fixes waits on that PR, grey: not its fault
+      if (c.state === "waiting") box(ctx, x, y, cw, ch, `${c.pr} › ${c.on}`, GREY, PAPER);
+      else box(ctx, x + nudge, y + bob, cw, ch, String(c.pr), c.state === "stuck" ? RED : c.state === "ready" ? ORANGE : PAPER, c.state === "moving" ? INK : PAPER);
       cars.push({ x, y, w: cw, h: ch, url: c.url });
     });
   }

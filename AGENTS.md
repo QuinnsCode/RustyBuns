@@ -29,7 +29,7 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob only while he serves (`~/builder/serve` on him: the owner turns him on for runs)
-  and wait otherwise (one suite at a time on battery, wait under 20%). Losing him mid-run waits and starts over, never fails. Shut, the
+  and wait otherwise (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). Losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
   and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run

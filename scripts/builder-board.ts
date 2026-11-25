@@ -1,7 +1,8 @@
 // What Bob is doing, live, where `bun run builder serve` runs on him (and from the office Mac: `bun run builder watch`).
 // A board redrawn in place about once a second: each slot (busy or free, who sent it, its commit, the exact command
 // its shell is running, how long, the last output line), the runs waiting for a slot, the last finished runs, his power
-// and how many suites at once that allows. A run with no heartbeat or no output past remote-ci's own limits shows
+// and how many suites at once that allows, and (with SWARM_URL and SWARM_TOKEN set) the test swarm's queue, asked every
+// 15 s. A run with no heartbeat or no output past remote-ci's own limits shows
 // STALLED; a shell on Bob whose command isn't one the builder sends (a suite, a build, typecheck, its own housekeeping)
 // shows UNEXPECTED with its whole command line. Piped or not a terminal, it prints one line per event instead.
 //
@@ -10,7 +11,8 @@
 // command line holds the whole script); a process started some other way is outside it.
 import { took, Record as RunGuard } from "./builder-bar.ts";
 import { check } from "../packages/util/src/guard.ts";
-import { battery, plan, PUSH_MS, REMOTE_PATH, STALE_MIN, type Battery, type RunRecord } from "./remote-ci.ts";
+import { battery, CUT_CHECK, GATE, plan, PUSH_MS, REMOTE_PATH, STALE_MIN, type Battery, type RunRecord } from "./remote-ci.ts";
+import type { QueueReply } from "../apps/test-swarm/src/api.ts";
 
 /** One pass over the builder folder, as `@kind ...` lines. Run in the folder; `PS` swaps the process list (tests). */
 export const GATHER = String.raw`mt() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
@@ -112,7 +114,8 @@ const one = (w: string[]): boolean => {
 export const expected = (cmd: string): boolean => { const cs = commands(cmd.trim()); return !!cs && cs.every(one); };
 
 export type Kind = { kind: "job"; slot: string; dir: string; cmd: string; ok: boolean } | { kind: "house" } | { kind: "unexpected"; cmd: string };
-const JOB = /^L="\$PWD\/runs\/(slot-[\w-]+)\.log"; \{ cd '(slot-[\w-]+)(?:\/([^']*))?' && ([\s\S]*?); echo \$\? > "\$L\.\$\$"; \} 2>&1 \| tee -a "\$L"; c=\$\(cat "\$L\.\$\$"\); rm -f "\$L\.\$\$"; exit "\$\{c:-1\}"$/;
+const lit = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const JOB = new RegExp(String.raw`^L="\$PWD/runs/(slot-[\w-]+)\.log"; ${lit(GATE)}\{ cd '(slot-[\w-]+)(?:\/([^']*))?' && ([\s\S]*?); echo \$\? > "\$L\.\$\$"; \} 2>&1 \| tee -a "\$L"; c=\$\(cat "\$L\.\$\$"\); rm -f "\$L\.\$\$"; ${lit(CUT_CHECK)}exit "\$\{c:-1\}"$`);
 const HOUSE = [
   /^mkdir -p locks runs\/done /, // claim
   /(^printf '%s' |^rm -f runs\/'slot-[\w-]+'\.json ).*rmdir locks\/'slot-[\w-]+'$/, // release
@@ -135,7 +138,9 @@ export type SlotView = {
   name: string; sha: string; busy: boolean; run?: Live; stall?: string;
   jobs: { pid: number; secs: number; dir: string; cmd: string; ok: boolean }[];
 };
-export type View = { shot: Shot; slots: SlotView[]; odd: { pid: number; secs: number; slot?: string; cmd: string; full: string }[] };
+/** The test swarm's queue (GET /queue), when SWARM_URL and SWARM_TOKEN are set; null when it didn't answer. */
+export type SwarmQueue = QueueReply | null;
+export type View = { shot: Shot; slots: SlotView[]; odd: { pid: number; secs: number; slot?: string; cmd: string; full: string }[]; swarm?: SwarmQueue };
 
 /** Why a busy slot looks stuck: its lock's heartbeat older than STALE_MIN (what the next claim reaps), or no output for PUSH_MS. */
 export function stalled(now: number, lockAt: number, logAt?: number): string | undefined {
@@ -209,7 +214,8 @@ export function board(v: View, look: Look): string {
   const live = shot.serving && shot.now - shot.serving < 2 * 60_000;
   const p = plan("off", true, shot.batt, 4);
   const power = shot.batt.onPower ? paint("green", "on power") : paint(shot.batt.pct < 20 ? "red" : "yellow", `on battery ${shot.batt.pct}%`);
-  const cap = p.where === "wait" ? paint("red", "runs wait until he is charged") : p.cap === 1 ? paint("yellow", "one suite at a time per run") : `up to ${p.cap} suites at once per run`;
+  const each = p.cap === 1 ? "one suite at a time per run" : `up to ${p.cap} suites at once per run`;
+  const cap = p.where === "wait" ? paint("red", "runs wait until he is charged") : shot.batt.onPower ? each : paint("yellow", each);
   const clock = new Date(shot.now).toTimeString().slice(0, 8);
   const head = box(look.title ?? "builder", "pink", [
     `${paint("gray", "power ")} ${power} ${paint("dim", "·")} ${cap}`,
@@ -243,12 +249,16 @@ export function board(v: View, look: Look): string {
   const waiting = box("waiting for a slot, longest first", "blue", shot.waiting.map((w, i) =>
     `${paint("dim", `${i + 1}.`)} ${paint("blue", w.who)} ${paint("gray", w.cmd)} ${paint("dim", `· asked ${ago(shot.now, w.started)}`)}`));
 
+  const swarm = v.swarm === undefined ? [] : box("swarm", "yellow", v.swarm === null ? [paint("red", "the test swarm didn't answer")] : v.swarm.jobs.map((j, i) =>
+    `${paint("dim", `${i + 1}.`)} ${j.state === "leased" ? `${paint("pink", spin)} ${paint("blue", j.runner)}` : paint("gray", "queued")} ${j.suite} ${paint("dim", j.sha.slice(0, 8))} ${paint("gray", j.branch)} ` +
+      paint("dim", j.state === "leased" ? `· lease ends in ${took(Math.max(0, j.until - shot.now))}` : `· asked ${ago(shot.now, j.at)}${j.tries ? ` · try ${j.tries + 1}` : ""}`)));
+
   const done = box("finished", "gray", shot.done.slice(0, 10).map((r) => {
     const end = r.ended ?? r.started, okay = r.code === 0;
     return `${okay ? paint("green", "✓ pass") : paint("red", `✗ fail${r.code === undefined ? "" : ` ${r.code}`}`)} ${paint("gray", took(end - r.started).padStart(7))} ${paint("blue", r.who)} ${r.cmd} ${paint("dim", `· ${ago(shot.now, end)}`)}`;
   }));
 
-  return [...head, ...odd, ...slots, ...waiting, ...done].join("\n");
+  return [...head, ...odd, ...slots, ...waiting, ...swarm, ...done].join("\n");
 }
 
 /** One plain line per thing that changed between two views: a run started or finished, a slot stalled, an unexpected command. */
@@ -271,17 +281,29 @@ export function events(prev: View | undefined, next: View): string[] {
   return out;
 }
 
+const SWARM_EVERY = 15_000;
+
+/** The test swarm's queue, read through its guard. Imported when asked: the swarm app's packages may not be installed. */
+export async function swarmQueue(s: { url: string; token: string }): Promise<SwarmQueue> {
+  const [{ getJson }, { QueueReply }] = await Promise.all([import("../packages/util/src/http.ts"), import("../apps/test-swarm/src/api.ts")]);
+  return getJson(new URL("/queue", s.url).href, QueueReply, { headers: { authorization: `Bearer ${s.token}` }, signal: AbortSignal.timeout(5000) });
+}
+
 /** Gather, draw, repeat until `stop` aborts: a board redrawn in place on a terminal, else one line per event. */
-export async function show(gather: () => Promise<string>, stop: AbortSignal, opts: { every: number; title: string }) {
+export async function show(gather: () => Promise<string>, stop: AbortSignal, opts: { every: number; title: string; swarm?: () => Promise<SwarmQueue> }) {
   const tty = !!process.stdout.isTTY;
   const color = tty && !process.env.NO_COLOR;
   let prev: View | undefined, frame = 0;
+  // The swarm is a paid Worker: asked once every SWARM_EVERY, not every frame.
+  let swarm: SwarmQueue | undefined, swarmAt = 0;
   if (tty) process.stdout.write("\x1b[?1049h\x1b[?25l");
   try {
     while (!stop.aborted) {
       const text = await gather().catch((e: unknown) => `@error ${e instanceof Error ? e.message : String(e)}`);
       const v = view(parseShot(text));
       if (!v.shot.now) v.shot.now = Date.now();
+      if (opts.swarm && Date.now() - swarmAt >= SWARM_EVERY) { swarmAt = Date.now(); swarm = await opts.swarm().catch(() => null); }
+      v.swarm = swarm;
       if (tty) {
         const frameText = board(v, { width: Math.min(120, process.stdout.columns ?? 100), color, frame: frame++, title: opts.title });
         process.stdout.write(`\x1b[H${frameText.split("\n").join("\x1b[K\n")}\x1b[K\n\x1b[J`);

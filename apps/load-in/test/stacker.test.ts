@@ -30,7 +30,7 @@ describe("stack builder", () => {
 
   test("a bad stack says what is wrong with it", () => {
     const kinds = (boxes: Box[]) => stats({ name: "", boxes }).warnings.map((w) => w.kind).sort();
-    expect(kinds([{ gear: "stack-mid-high", x: 0, y: 0 }, { gear: "horn-sub-21", x: 0, y: 1 }])).toEqual(["buried", "heavy-high"]);
+    expect(kinds([{ gear: "stack-mid-high", x: 0, y: 0 }, { gear: "horn-sub-21", x: 0, y: 1 }])).toEqual(["buried", "heavy-high", "overhang"]);
     expect(kinds([{ gear: "horn-sub-21", x: 0, y: 0 }, { gear: "stack-mid-high", x: 0.75, y: 1 }])).toEqual(["overhang"]);
     expect(kinds([{ gear: "horn-sub-21", x: 0, y: 0 }])).toEqual(["no-top"]);
   });

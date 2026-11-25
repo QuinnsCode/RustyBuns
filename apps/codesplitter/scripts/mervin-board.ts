@@ -6,7 +6,8 @@
 //   bun scripts/mervin-board.ts --score <dir> [--main origin/main]
 //
 // With no PR numbers it takes every open PR (`gh pr list`, read only), oldest first, a stacked PR right after
-// the PR it's built on. Each stage merges one PR's files onto the tree the stages before it left, and files
+// the PR it's built on. A PR that fixes an open `ci-blocker` issue (one test red on PR after PR) goes first, and each
+// stage says whether it is that fix or a PR the blocker holds (agent-office/ester/blockers.ts). Each stage merges one PR's files onto the tree the stages before it left, and files
 // each one in a tier:
 //
 //   certain   nothing to merge: no one else changed the file since the PR's base (or it already reads as the PR
@@ -65,6 +66,7 @@ import { PIPELINE_FILE, Pipeline } from "../src/pipeline.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 import { help } from "../../../scripts/help.ts";
+import { BLOCKER_LABEL, blockerLines, blockerOf, jumpLine, withFixes } from "../../agent-office/ester/blockers.ts";
 
 help(import.meta.path);
 /** The repo's pipeline file at `top`, for Ester's release-only question, or null when it has none (or one that isn't a pipeline). */
@@ -497,7 +499,11 @@ if (import.meta.main) {
 
   const disk = args.includes("--no-cache") ? undefined : diskCache(arg("cache") ? resolve(arg("cache")!) : join(top, ".mervin/board-cache"));
   const wide = args.includes("--blast") ? load(gitIn(top), main, prs) : undefined;
-  const { board, tree, writes } = run(top, main, order(prs, given.length ? given : undefined, wide && rank(wide.blasts)), disk?.cache);
+  // one test red on PR after PR: its fix goes first, and the PRs it holds wait rather than fail (#5566's issues)
+  const issues = from ? "[]" : Bun.spawnSync(["gh", "issue", "list", "--label", BLOCKER_LABEL, "--state", "open", "--limit", "50", "--json", "number,body"], { cwd: top }).stdout.toString() || "[]";
+  const blockers = withFixes(arr(obj({ number: int(1, 1e9), body: str(70_000, { min: 0 }) }), 50, { drop: true })(JSON.parse(issues)).flatMap((i) => blockerOf(i) ?? []), prs);
+  const ordered = order(prs, given.length ? given : undefined, wide && rank(wide.blasts));
+  const { board, tree, writes } = run(top, main, given.length ? ordered : jumpLine(ordered, blockers), disk?.cache);
   disk?.save();
   const mergeMs = Math.round(performance.now() - wall);
   writeTree(join(out, "tree"), main);
@@ -516,7 +522,8 @@ if (import.meta.main) {
   if (args.includes("--json")) console.log(JSON.stringify(board, null, 2));
   else {
     console.log(`Mervin's board: ${board.stages.length} PRs onto main ${main.slice(0, 9)}\n`);
-    board.stages.forEach((s, i) => console.log([`stage ${i + 1}: ${describe(s)[0]}`, ...describe(s).slice(1)].join("\n") + "\n"));
+    const open = prs.map((p) => p.number);
+    board.stages.forEach((s, i) => console.log([`stage ${i + 1}: ${describe(s)[0]}`, ...describe(s).slice(1), ...blockerLines(s.pr, s.failing ?? [], blockers, open)].join("\n") + "\n"));
     for (const c of board.clashes) console.log(`clash ${c.kind}: ${c.key}  ${c.prs.map((n) => `#${n}`).join(" + ")}${c.main ? " + main" : ""}  ${c.settled ? `settled: ${c.settled}` : "CARD"}`);
     if (wide) { for (const b of wide.blasts) console.log(describeBlast(b)); for (const f of wide.flags) console.log(`warning: ${f}`); }
     for (const s of board.skipped) console.log(`skipped #${s.pr}: ${s.why}`);
