@@ -91,7 +91,7 @@ test("a bounce has the takes in it: at their beat, as playback has them, and not
 // ---- clips: a take cut, trimmed and slipped, its sound stored once ----
 const ID = "abcdefgh", BPM = 120, FPB = (60 / BPM) * TAKE_RATE;
 const withTake = (take: object, more: object[] = []) => {
-  const tracks = Array.from({ length: TRACKS }, (_, i) => ({ params: [], notes: [], ...(i === 2 ? take : {}), ...(more[i] ?? {}) }));
+  const tracks = Array.from({ length: TRACKS }, (_, i) => ({ params: [], notes: [], ...(i === 2 ? take : {}), ...more[i] }));
   const p = sanitize({ v: 1, bpm: BPM, bars: 2, tracks });
   if (!p) throw new Error("bad project");
   return p;

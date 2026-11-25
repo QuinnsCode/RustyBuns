@@ -38,7 +38,7 @@ export async function put(conf: Env, userId: string, app: string, slot: string, 
  * Null for no save, and for a sealed one whose key is gone. */
 export async function get(conf: Env, userId: string, app: string, slot: string, version?: number) {
   const row = await conf.DB.prepare(`SELECT id, at, data, sealed FROM saves WHERE user_id = ? AND app = ? AND slot = ?${version ? " AND id = ?" : ""} ORDER BY id DESC LIMIT 1`)
-    .bind(...[userId, app, slot, ...(version ? [version] : [])]).first<{ id: number; at: number; data: ArrayLike<number>; sealed: number }>();
+    .bind(userId, app, slot, ...(version ? [version] : [])).first<{ id: number; at: number; data: ArrayLike<number>; sealed: number }>();
   if (!row) return null;
   const bytes = Uint8Array.from(row.data);
   if (!row.sealed) return { id: row.id, at: row.at, data: bytes };
@@ -50,6 +50,6 @@ export async function get(conf: Env, userId: string, app: string, slot: string, 
 /** A person's saves as slots: versions kept, bytes and last write, newest first (never the data). */
 export async function slotsOf(conf: Env, userId: string, app?: string) {
   const { results } = await conf.DB.prepare(`SELECT app, slot, COUNT(*) AS versions, SUM(size) AS bytes, MAX(at) AS at FROM saves WHERE user_id = ?${app ? " AND app = ?" : ""} GROUP BY app, slot ORDER BY at DESC`)
-    .bind(...[userId, ...(app ? [app] : [])]).all<{ app: string; slot: string; versions: number; bytes: number; at: number }>();
+    .bind(userId, ...(app ? [app] : [])).all<{ app: string; slot: string; versions: number; bytes: number; at: number }>();
   return results;
 }

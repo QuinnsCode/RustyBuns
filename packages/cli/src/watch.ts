@@ -31,7 +31,7 @@ export function watchOutputs(c: RustyBunsConfig): string[] {
 export function watchIgnored(rel: string, outputs: string[]): boolean {
   const path = rel.split(sep).join("/");
   if (path.split("/").some((part) => part === "node_modules" || part.startsWith("."))) return true;
-  if (/^native\/target/.test(path) || /\.timestamp-[^/]*\.mjs$/.test(path)) return true;
+  if (path.startsWith("native/target") || /\.timestamp-[^/]*\.mjs$/.test(path)) return true;
   return outputs.some((o) => path === o || path.startsWith(o + "/"));
 }
 

@@ -90,7 +90,7 @@ export function biped(o: Biped) {
   return {
     feet: 2, wings: 0, root: "belly", material: "hide", belly: "belly", belly_turn: -0.25, blend: o.blend ?? s(0.02),
     eyes: fc.eyes, dense: DENSE,
-    palette: { ...palette(o.pal), ...(o.extra ?? {}) }, hide: hide(o.skin.pattern, o.pal.body, o.skin),
+    palette: { ...palette(o.pal), ...o.extra }, hide: hide(o.skin.pattern, o.pal.body, o.skin),
     nodes, links, blobs: [...body, ...h.blobs], parts,
     check: { head: f4((crown - chin) / crown), legOverTrunkHead: f4(LL / (TL + (crown - chin) / k)), eye: fc.share, legThin: f4(leg.low / leg.radii[0]!), hand: hs.size ?? 1.5 },
   };

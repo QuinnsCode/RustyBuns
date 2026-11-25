@@ -140,7 +140,7 @@ export const reviewOf = (b: unknown): ReviewMessage | null => {
 /** Reviews started in this process (the desktop, tests) and not done yet. */
 const live = new Set<Promise<unknown>>();
 /** Settles once every review started in this process has answered: for tests, which read the verdict after. */
-export const reviewsDone = async () => { while (live.size) await Promise.all([...live]); };
+export const reviewsDone = async () => { while (live.size) await Promise.all(live); };
 
 /** Runs `m` after the request answers: on the JOBS queue when hosted (an agent run outlasts a request's waitUntil), else in this process. */
 export async function offRequest(env: Env, m: ReviewMessage) {

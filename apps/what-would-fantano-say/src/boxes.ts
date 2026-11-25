@@ -107,6 +107,7 @@ const ARCHETYPES: Archetype[] = [
 ];
 
 export const BOXES: Box[] = ARCHETYPES.map((a) => {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- built by scripts/build-boxes.ts; JSON reads its [low, high] pair as number[]
   const d = (DATA as unknown as Record<string, BoxData>)[a.id];
   if (!d) throw new Error(`no review data for box ${a.id}: run scripts/build-boxes.ts`);
   return { ...a, reviews: d.reviews, scores: d.scores, soundsLike: d.soundsLike, examples: d.examples };

@@ -65,7 +65,7 @@ export function Preview() {
     const renderer = (r.current = new Renderer(stage.current!, overlay.current!, { view: init.view }));
     const table = (tr.current = new Turntable(turn.current!)); table.seat = init.seat; table.angle = init.angle; table.spin = init.spin;
     renderer.styles = init.styles;
-    (window as unknown as { __preview: unknown }).__preview = { renderer, turntable: table };
+    Object.assign(window, { __preview: { renderer, turntable: table } });
     let raf = 0, lastUi = 0, first = true;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);

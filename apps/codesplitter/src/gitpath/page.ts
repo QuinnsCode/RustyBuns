@@ -702,4 +702,4 @@ if (hosted) {
 }
 
 // A handle for the console (window.gitpath.seek(40)).
-(window as unknown as { gitpath: unknown }).gitpath = { seek, play, setGame, pedal, get q() { return q; }, get notes() { return notes; }, get layout() { return lay; } };
+Object.assign(window, { gitpath: { seek, play, setGame, pedal, get q() { return q; }, get notes() { return notes; }, get layout() { return lay; } } });

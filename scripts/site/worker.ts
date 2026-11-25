@@ -27,6 +27,7 @@ export default {
     if (new URL(req.url).pathname !== "/api/votes") return env.ASSETS.fetch(req);
     const stub = env.VOTES.get(env.VOTES.idFromName("votes"));
     if (req.method !== "GET") return stub.fetch(req);
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- caches.default is Cloudflare's; the app is typed with the DOM's lib, which doesn't have it
     const cache = (globalThis as unknown as { caches?: { default: Cache } }).caches?.default;
     const hit = await cache?.match(req);
     if (hit) return hit;

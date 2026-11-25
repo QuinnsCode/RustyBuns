@@ -5,6 +5,7 @@
 //   bun scripts/lock-drift.ts      lists each mismatch; exit 1 if any (fix: bun install, commit bun.lock)
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { field } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 
 const SECTIONS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
@@ -15,14 +16,14 @@ const isDeps = (v: unknown): v is Record<string, string> =>
 const sections = (v: unknown): Deps => {
   const out: Deps = {};
   if (typeof v !== "object" || v === null) return out;
-  for (const k of SECTIONS) { const d: unknown = Reflect.get(v, k); if (isDeps(d)) out[k] = d; }
+  for (const k of SECTIONS) { const d = field(v, k); if (isDeps(d)) out[k] = d; }
   return out;
 };
 
 /** Each place under `root` where a workspace's package.json and bun.lock disagree, as "<workspace> <section> <name>: <package.json> vs <lock>". */
 export async function drift(root: string): Promise<string[]> {
   const lock: unknown = (await import(join(root, "bun.lock"))).default;
-  const spaces: unknown = typeof lock === "object" && lock !== null ? Reflect.get(lock, "workspaces") : undefined;
+  const spaces = field(lock, "workspaces");
   if (typeof spaces !== "object" || spaces === null) return ["bun.lock has no workspaces"];
   const out: string[] = [];
   for (const [dir, locked] of Object.entries(spaces)) {

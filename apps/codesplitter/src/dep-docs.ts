@@ -172,7 +172,7 @@ export const isTable = (path: string) => /(^|\/)(go\.mod|Cargo\.toml|pyproject\.
  * compared) returns null and the lines merge asks. Text is main's, edited in place.
  */
 export function mergeTable(path: string, base: string, main: string, branch: string): string | null {
-  const go = /go\.mod$/.test(path);
+  const go = path.endsWith("go.mod");
   const [tb, tm, tr] = [base, main, branch].map((t) => parseTables(t, go));
   const val = (ts: Table[], s: string, k: string) => ts.find((t) => t.section === s)?.vals.get(k);
   const swaps = new Map<string, string>(), adds: [string, string, string][] = [];
