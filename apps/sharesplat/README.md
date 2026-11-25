@@ -4,6 +4,14 @@
 
 **Live:** https://sharesplat.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
+**What it solves:** A flat photo can't show a product from every side, and a 3D model used to need a studio or a 3D artist.
+
+**You need it when:** You sell online and want shoppers to turn the real product round before they buy.
+
+**Why it beats the usual answer:** A phone and a shot list that tells you each photo to take are enough. Your photos stay on your device until you choose to put a model online, and one pasted snippet (or the Shopify block) puts it on the page.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest ShareSplat, where to go and how to call it.
+
 ## Use it
 
 **What it is:** turn photos of a product into a 3D model that spins on your shop page.

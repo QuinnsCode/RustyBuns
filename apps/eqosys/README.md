@@ -2,6 +2,14 @@
 
 **Your home for every Q game: one account with your games, friends, saves and the studio where you make them.**
 
+**What it solves:** Every new game or app asks for one more account, and your friends and saves stay stuck inside each one.
+
+**You need it when:** You play more than one of these, or you are making a game and don't want to build sign-in, friends and cloud saves again.
+
+**Why it beats the usual answer:** A game with no server of its own can use it straight from its page. Each person's saves are sealed with their own key and kept in their own region. An agent can call the same tools a person clicks.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest eqosys, where to go and how to call it.
+
 ## Use it
 
 **What it is:** one account for every Q game: your games, friends, saves and the studio where you make games.

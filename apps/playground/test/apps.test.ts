@@ -49,6 +49,19 @@ test("public/shelf.json is the shelf the packages describe, and each part's pict
   for (const p of parts) expect(existsSync(`${import.meta.dir}/../public/shots/${p.picture}.jpg`)).toBe(true);
 });
 
+test("public/llms.txt is apps.json retold for an agent, and a product's guide in this repo is a file that exists", async () => {
+  const { llms } = await import("../scripts/llms.ts");
+  const text = await llms();
+  expect(await Bun.file(`${import.meta.dir}/../public/llms.txt`).text()).toBe(text);
+  const guides = [...text.matchAll(/^- Agent guide: (\S+)$/gm)].map((m) => m[1] ?? "");
+  expect(guides.length).toBeGreaterThan(5);
+  const inRepo = "https://github.com/QuinnsCode/RustyBuns/blob/main/";
+  for (const g of guides) {
+    expect(new URL(g).protocol).toBe("https:");
+    if (g.startsWith(inRepo)) expect(existsSync(`${import.meta.dir}/../../../${g.slice(inRepo.length)}`)).toBe(true);
+  }
+});
+
 test("public/ui.js is the current packages/ui bundle", async () => {
   const { bundle } = await import("../scripts/ui.ts");
   expect(await Bun.file(`${import.meta.dir}/../public/ui.js`).text()).toBe(await bundle());

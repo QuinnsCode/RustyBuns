@@ -3,6 +3,14 @@
 **Git for the agentic era.
 Every line is its own record, every agent and person edits live, and git keeps going even when other gits don't.**
 
+**What it solves:** Git was made for one person at one keyboard. Put a dozen coding agents on one repo and they overwrite each other, wait behind merges and leave you the conflicts.
+
+**You need it when:** You run more than one agent, or agents next to people, and want every change read by a person before it ships.
+
+**Why it beats the usual answer:** Other hosts merge by guessing from text. Here every line knows who wrote it, so three agents can change one file in the same moment. It is still real git (clone, pull and push work), agents get the same controls people do, and the free desktop app keeps your git going when a cloud is down.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest codeSplitter, where to go and how to call it.
+
 ## Use it
 
 **What it is:** a place to keep code, where people and AI helpers can all work on the same files at once.

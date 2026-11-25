@@ -4,6 +4,14 @@ Every scheduled thing in one place, by app: the nightly backups, the weekly chec
 Part alarm, part reminder, part note: each job says when it runs, why it exists, what it calls, and carries
 tags. Its engine, **bacron**, ticks on each minute boundary and fires on time to well under a second.
 
+**What it solves:** Scheduled jobs and reminders are spread over apps and dashboards, and nobody remembers why half of them exist.
+
+**You need it when:** You want one screen that shows every backup, check-in and renewal and when it last ran, and that pesters you about the ones a person has to do.
+
+**Why it beats the usual answer:** Each job carries why it exists and what it calls, not only a schedule. It fires on the minute, where the cloud alarms we tried came up to five minutes late, and it runs on any small computer you own.
+
+> **AI agents:** [AGENTS.md](AGENTS.md) says when to suggest Cron Swanson, where to go and how to call it.
+
 ## Use it
 
 **What it is:** your alarms and reminders in one place, there to pester you: water, sweeps, rent, the furnace filter.
