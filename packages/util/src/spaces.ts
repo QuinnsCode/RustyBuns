@@ -284,10 +284,11 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       const f = m.file, mine = m.from.name === name();
       return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("b", {}, m.from.name), " ",
         ...(f ? [btn("download", `Download ${f.name}`, () => void download(f), true, "rb-spaces-file"), el("small", {}, ` ${size(f.size)}`)] : [m.text]),
-        ...(mine || owner ? [btn("trash-2", "Delete this message", () => sp.unsay(ch, m.id), false, "rb-spaces-unsay")] : []),
-        ...(inThread ? [] : m.replies
-          ? [btn("reply", m.replies === 1 ? "1 reply" : `${m.replies} replies`, () => openThread(m.reply ?? m.id), true, "rb-spaces-replies")]
-          : [btn("reply", `Reply to ${m.from.name}`, () => openThread(m.reply ?? m.id), false, "rb-spaces-reply")]));
+        el("span", { className: "rb-spaces-acts" }, // the row's buttons keep together at its end, apart from the words
+          ...(mine || owner ? [btn("trash-2", "Delete this message", () => sp.unsay(ch, m.id), false, "rb-spaces-unsay")] : []),
+          ...(inThread ? [] : m.replies
+            ? [btn("reply", m.replies === 1 ? "1 reply" : `${m.replies} replies`, () => openThread(m.reply ?? m.id), true, "rb-spaces-replies")]
+            : [btn("reply", `Reply to ${m.from.name}`, () => openThread(m.reply ?? m.id), false, "rb-spaces-reply")])));
     };
     const log = (items: SpaceMessage[], inThread = false) => el("ol", { className: "rb-spaces-log", ariaLive: "polite" }, ...items.map((m) => said(m, inThread)));
     const shut = btn("arrow-left", `Back to ${label(ch)}`, () => { view = null; draw(); }, true, "rb-spaces-older");

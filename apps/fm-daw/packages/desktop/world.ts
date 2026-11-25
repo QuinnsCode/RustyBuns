@@ -27,6 +27,15 @@ export const MAX_SOCKETS = 32;
 export const CLOSE_FLOOD = 4008;
 // No seat in this room, or no room free on the edge: the page stops trying and offers the sign-up list.
 export const CLOSE_FULL = 4009;
+// The same page came back on a new socket: its old one, still open here, is closed with this and leaves no one.
+export const CLOSE_RESUMED = 4010;
+// A page that names itself (?tab=) and drops is held this long before the room hears it left: a socket blip or a
+// hibernating room's wake-up keeps its peer number, so its PA call, its decks and its seat carry on through it.
+export const LEAVE_GRACE_MS = 20_000;
+/** The page's own random name for itself, made once per page load (src/ui/net.ts). */
+const TAB = /^[A-Za-z0-9]{16,64}$/;
+/** A named page's peer number: the same on every reconnect, and after a deploy (no memory needed). */
+const peerOf = (tabHash: string) => 1 + (parseInt(tabHash.slice(0, 8), 16) % 2 ** 31);
 // Per socket: a knob drag sends an op per pointer move; a big message costs more.
 const BYTES_PER_TOKEN = 16 * 1024;
 // Chat lines a second per socket, and how many can come at once.
@@ -76,12 +85,15 @@ export interface WorldEnv {
   /** Every sesh's groove, copied out of the Durable Object, so a reset one gets it back. */
   BACKUP?: Bucket;
   ROOM_SEATS?: string;
+  /** How long a named page's drop is held before the room hears it left (LEAVE_GRACE_MS when unset). */
+  LEAVE_GRACE_MS?: string;
 }
 /** `peer` numbers a socket for the live line; 0 is one that was turned away. `host`: it's the sesh's maker. */
 /** A deck someone's machine plays, as the World last heard it. */
 type DeckHeld = { peer: number; who: string | undefined; name: string; playing: boolean };
-/** `invite`: the code the page brought on ?invite=, run as a join once its hello names the person. */
-type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string; invite?: string };
+/** `invite`: the code the page brought on ?invite=, run as a join once its hello names the person. `tab`: the hash of the
+ *  page's own name for itself, when it sent one: a reconnect with the same name gets its peer number back. */
+type Seat = { userId: string; peer: number; room: string; host: boolean; me?: string; invite?: string; tab?: string };
 /** An invite code as a page brings it. */
 const INVITE = /^[A-Za-z0-9_-]{4,40}$/;
 /** An invite's code: random and too long to guess. */
@@ -148,9 +160,13 @@ export default class World {
   private ladder: Ladder = { snaps: [], edited: 0 };
   /** Takes kept for the ladder alone (on no track since the room last emptied): not counted against MAX_STORED_TAKES. */
   private ladderTakes = new Set<string>();
+  /** Named pages that dropped and are held for LEAVE_GRACE_MS: by peer, their tab's hash and the timer that lets them go. */
+  private leaving = new Map<number, { tab: string; timer: ReturnType<typeof setTimeout> }>();
+  private graceMs: number;
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
+    this.graceMs = env.LEAVE_GRACE_MS !== undefined && Number(env.LEAVE_GRACE_MS) >= 0 ? Number(env.LEAVE_GRACE_MS) : LEAVE_GRACE_MS;
     this.lobby = env.LOBBY ? env.LOBBY.get(env.LOBBY.idFromName("lobby")) : null;
     this.bucket = env.BACKUP ?? null;
     this.seats = Number(env.ROOM_SEATS) > 0 ? Number(env.ROOM_SEATS) : MAX_SOCKETS;
@@ -184,12 +200,16 @@ export default class World {
     const room = request.headers.get("X-Room") ?? "";
     const key = new URL(request.url).searchParams.get("key") ?? "";
     const hash = KEY.test(key) ? await hashKey(key) : "";
+    // a page that names itself: its old socket, if this is a reconnect the World hasn't seen close yet, gives its seat back
+    const tabName = new URL(request.url).searchParams.get("tab") ?? "";
+    const tab = TAB.test(tabName) ? await hashKey(`${room}\n${tabName}`) : "";
+    const stale = tab ? this.sockets.open().filter((w) => this.sockets.who(w)?.tab === tab) : [];
     // before anyone claims it: a reset sesh gets its maker and floor back along with the groove
     if (!this.project && this.bucket && room) await this.restore(this.bucket, room);
     if (hash && !this.host) { this.host = hash; this.backupDirty = true; await this.ctx.storage.put("host", hash); }
     const host = !!hash && hash === this.host;
     if (this.floor === "closed" && !host) return this.refuse(userId, "closed");
-    if (this.sockets.open().length >= this.seats) return this.refuse(userId, "room");
+    if (this.sockets.open().length - stale.length >= this.seats) return this.refuse(userId, "room");
     // the maker never needs the code; checked before the Lobby, so a wrong one never holds an edge room open
     const locked = !host && room ? await this.locked(room, request) : null;
     if (locked) return this.refuse(userId, locked);
@@ -198,7 +218,12 @@ export default class World {
     if (idle > 0) this.idleMs = idle;
     if (room && room !== this.room) { this.room = room; await this.ctx.storage.put("room", room); }
     const invite = new URL(request.url).searchParams.get("invite") ?? "";
-    const { server, response } = this.sockets.upgrade({ userId, peer: 1 + Math.floor(Math.random() * 2 ** 31), room, host, ...(INVITE.test(invite) ? { invite } : {}) });
+    const peer = this.peerFor(tab);
+    const { server, response } = this.sockets.upgrade({ userId, peer, room, host, ...(INVITE.test(invite) ? { invite } : {}), ...(tab ? { tab } : {}) });
+    // back within the grace: nobody heard it go, so nothing is said now; its old socket closes without a word
+    const back = this.leaving.get(peer);
+    if (back) { clearTimeout(back.timer); this.leaving.delete(peer); }
+    if (tab) this.sockets.replace(server, (a) => a.tab === tab, CLOSE_RESUMED, "resumed");
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
@@ -777,9 +802,35 @@ export default class World {
   webSocketClose(ws: RoomSocket) { this.left(ws); }
   webSocketError(ws: RoomSocket) { this.left(ws); }
 
+  /** A socket's peer number: a named page's own (unless someone else's page holds it), else a random one. */
+  private peerFor(tab: string): number {
+    const taken = (p: number) => this.sockets.open().some((w) => { const s = this.sockets.who(w); return s?.peer === p && s.tab !== tab; })
+      || (this.leaving.has(p) && this.leaving.get(p)?.tab !== tab);
+    if (tab && !taken(peerOf(tab))) return peerOf(tab);
+    let p = 0;
+    do p = 1 + Math.floor(Math.random() * 2 ** 31); while (taken(p) || this.leaving.has(p));
+    return p;
+  }
+
+  /** A socket closed. A named page's drop is held a while first, so a reconnect carries on as if it never went. */
   private left(ws: RoomSocket) {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: never counted in
+    // the same page is in again on a newer socket (the resumed one): this one leaves no one
+    if (this.sockets.open().some((w) => w !== ws && this.sockets.who(w)?.peer === seat.peer)) return;
+    if (!seat.tab || !this.graceMs) return this.gone(ws, seat);
+    const was = this.leaving.get(seat.peer);
+    if (was) clearTimeout(was.timer);
+    const timer = setTimeout(() => {
+      if (this.leaving.get(seat.peer)?.timer !== timer) return;
+      this.leaving.delete(seat.peer);
+      if (!this.sockets.open().some((w) => this.sockets.who(w)?.peer === seat.peer)) this.gone(ws, seat);
+    }, this.graceMs);
+    this.leaving.set(seat.peer, { tab: seat.tab, timer });
+  }
+
+  /** Someone left for good: the room hears it, and what they held lets go. */
+  private gone(ws: RoomSocket, seat: Seat) {
     this.broadcast({ t: "gone", from: seat.peer }, ws);
     // who's in changed, and a raised hand goes down with the last tab its person has in the room
     if (seat.me && this.host) {
