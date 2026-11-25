@@ -44,6 +44,8 @@ test.skipIf(!hasChrome)("music against the crowd, and one person's level, from t
       for (const [p, name] of [[7, "Dee"], [8, "Sol"]]) { qjam.live(p, { t: "body", at: [p - 6, 0, 2], yaw: 0, seat: null }); qjam.live(p, { t: "wear", avatar, name }); }
       qjam.live(7, { t: "pa", on: true, name: "Set" });
       qjam.live(8, { t: "guitar", track: -1, mic: true });
+      // the mic on its call, as heard "now" (a loop late it comes in the audio thread's slices, with the band)
+      qjam.listen("now");
     })()`);
     const heard = () => page<Heard>("qjam.levels()");
     const full = await heard();
