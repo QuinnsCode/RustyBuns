@@ -63,7 +63,7 @@ async function player(chrome: Awaited<ReturnType<typeof launchChrome>>, base: st
   await load(chrome.cdp, tab, base, 500);
   const login = { name, email: `${name}@example.com`, token: await tokenFor(name) };
   await tab.eval(`localStorage.setItem("git-recon.eqosys", ${JSON.stringify(EQOSYS)}), localStorage.setItem("git-recon.login", ${JSON.stringify(JSON.stringify(login))})`);
-  return { tab, sockets };
+  return { tab, sockets, token: login.token };
 }
 
 const until = async <T>(get: () => Promise<T>, ok: (v: T) => boolean, ms = 10_000) => {
@@ -101,7 +101,7 @@ test.skipIf(!chromePath())("a party online: open it, a friend joins by its link 
     for (const [p, name] of [[ada, "Ada"], [bo, "Bo"]] as const) {
       const url = new URL(await until(async () => p.sockets.find((s) => s.includes("/ws?")) ?? "", (s) => !!s));
       expect(url.searchParams.get("room")).toBe(CODE);
-      expect(url.searchParams.get("token")).toBe(JSON.parse((await p.tab.eval<string>(`localStorage.getItem("git-recon.login")`))).token);
+      expect(url.searchParams.get("token")).toBe(p.token); // the planted login moved out of localStorage into the page's memory
       expect(url.searchParams.get("name")).toBe(name);
       expect((await lobby(p.tab)).shown).toBe(false);
       expect(await p.tab.eval<string>("location.search")).toBe(`?room=${CODE}`);

@@ -109,6 +109,11 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
    (signing out on the eqosys page ends it). Add `prompt=none` to `/login` to check without a page: a code for someone signed in
    here who has used your app, else `return?error=login_required&state=…`. The `@rustybuns/util/eqosys` page client does both
    in `finishSignIn()`: it renews in the background, and quietly checks once per tab when renewing fails.
+   Bound to the page: send a `DPoP` proof (RFC 9449, `dpopProof` in `@rustybuns/util/token`) with `/api/exchange` and the
+   refresh token is bound to that key. Each renewal then needs a proof from the same key, so a refresh token copied out of
+   the page renews nowhere. The page client does this with a non-extractable key. The token stays in memory, and only the
+   key and the bound refresh token are kept, in IndexedDB (`@rustybuns/util/vault`), never in localStorage. A client that
+   sends no proof (a native app) works as before.
 
 6. For friends and presence, open `/hub` from your page with the subprotocols `["eqosys", token]` (`SOCKET_PROTOCOL` in
    `@rustybuns/util/eqosys`; every eqosys socket takes its token this way, out of the URL) and say what they're doing with

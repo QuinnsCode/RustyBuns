@@ -60,6 +60,7 @@
     "./token": "./src/token.ts",
     "./train": "./src/train.ts",
     "./tutorial": "./src/tutorial.ts",
+    "./vault": "./src/vault.ts",
     "./visitors": "./src/visitors.ts",
     "./voice": "./src/voice.ts",
     "./wasm-shared": "./src/wasm-shared.ts",

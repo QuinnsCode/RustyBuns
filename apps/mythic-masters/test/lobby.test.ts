@@ -12,7 +12,7 @@ import { serveEdge } from "../scripts/edge.ts";
 
 setDefaultTimeout(150_000);
 /** What eqosys's /api/exchange hands back that this test uses. */
-const Exchanged = obj({ user: obj({ id: str(200) }), token: str(4096) });
+const Exchanged = obj({ user: obj({ id: str(200) }), token: str(4096), refresh: str(100) });
 const stops: (() => unknown)[] = [];
 afterAll(async () => { for (const s of stops.reverse()) await s(); });
 
@@ -46,9 +46,10 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   const signUp = async (name: string) => {
     const a = await asks(APP, new URL(vite.url).origin);
     const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
-    const got = check(Exchanged, await (await call("/api/exchange", { json: { app: APP, code: codeIn(up.to), verifier: a.verifier } })).res.json());
+    const got = check(Exchanged, await (await call("/api/exchange", { json: { app: APP, code: codeIn(up.to), verifier: a.verifier, keep: true } })).res.json());
     if (!got) throw new Error(`no login for ${name}`);
-    return { id: got.user.id, login: { name, email: `${name.toLowerCase()}@example.com`, token: got.token } };
+    // with the refresh token a page keeps: the token itself lives in the page's memory, so a reload renews it
+    return { id: got.user.id, login: { name, email: `${name.toLowerCase()}@example.com`, token: got.token, refresh: got.refresh } };
   };
   const ada0 = await signUp("Ada"), bo0 = await signUp("Bo"), cy0 = await signUp("Cy");
   // A party the host makes admits the host's eqosys friends: Bo asks for Ada, and she says yes.

@@ -52,7 +52,7 @@ ${leaf("::after")}{content:"";position:absolute;inset:8px;z-index:-1;pointer-eve
 };
 
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm", skin: SKIN });
-export const { signIn, signInHere, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, achievements, hub } = account;
+export const { ready, signIn, signInHere, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, achievements, hub } = account;
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the world's lobby and the Book's readers
  *  (both at `?party=`) listen on one socket, or each knocks the other out. */
