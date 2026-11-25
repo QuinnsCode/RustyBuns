@@ -148,6 +148,22 @@ test.skipIf(!chromePath())("on a phone the Report flag sits on none of the page'
   }
 });
 
+// In a desktop's narrow chat column a message's trash and reply buttons stay beside its words, not on a line of their own.
+test.skipIf(!chromePath())("on a desktop each message's buttons sit beside its words, in every look", async () => {
+  for (const look of ["?house", "?game=two-fronts", "?game=mythic-masters", "?game=skate-tech-park"]) {
+    const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 }, false);
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${look}`, 300);
+    const got = await tab.eval<{ rows: number; below: string[] }>(`(() => {
+      const rows = [...document.querySelectorAll(".rb-spaces-log li")].filter((li) => li.querySelector(".rb-spaces-acts .eq-btn"));
+      const below = rows.filter((li) => li.querySelector(".rb-spaces-acts").getBoundingClientRect().top >= li.querySelector("b").getBoundingClientRect().bottom).map((li) => li.textContent);
+      return { rows: rows.length, below };
+    })()`);
+    await tab.close();
+    expect(got.rows).toBeGreaterThan(0);
+    expect({ look, below: got.below }).toEqual({ look, below: [] });
+  }
+});
+
 // At phone width a toast is as wide as the screen, and Mythic's drops in under its cog, where the account chip can be.
 test.skipIf(!chromePath())("on a phone a toast covers neither the account chip nor a corner button the game marks", async () => {
   const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
