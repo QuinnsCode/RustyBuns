@@ -17,7 +17,7 @@ import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar, eqosysKept, saveEqosysAvatar } from "../account.ts";
 import { mountWay } from "../way.ts";
 import { characterDialog } from "./character.ts";
-import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
+import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
 import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
@@ -1291,13 +1291,23 @@ function door() {
     a.append(t, m); li.append(a); list.append(li);
   }
 }
-let doorStudio = LIVE_ROOM.id;
-const doorStudios = () => studioCards($("room-studio"), studios(), doorStudio, (id) => { doorStudio = id; doorStudios(); });
+// the studio your rooms are made in: asked on the front door until you make your first room, then kept (door.ts loadSetup)
+// and only shown, with Settings to change it
+let doorStudio = loadSetup() ?? LIVE_ROOM.id;
+function doorStudios() {
+  const kept = loadSetup() !== null;
+  $("room-studio").hidden = kept;
+  $("room-studio-kept").hidden = !kept;
+  $("room-studio-kept-name").textContent = studios().find((x) => x.id === doorStudio)?.name ?? "";
+  if (!kept) studioCards($("room-studio"), studios(), doorStudio, (id) => { doorStudio = id; doorStudios(); });
+}
 doorStudios();
+function setSetup(id: string) { doorStudio = id; saveSetup(id); doorStudios(); }
 $("make").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("room-name"), label = input instanceof HTMLInputElement ? input.value.trim().slice(0, 40) : "";
   const studio = doorStudio;
+  saveSetup(studio);
   const room = roomId(label);
   saveRecent(remember(loadRecent(), { room, name: label, studio, mine: true, at: Date.now() }));
   // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
@@ -1384,6 +1394,21 @@ mountControls({
   keys: keysTable(),
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
+  // the room setup you picked once on the front door, to change any time (it never moves the sesh you're in: the leader's studio cards do that)
+  titles: { game: "Your rooms" },
+  extras: (card) => {
+    const label = Object.assign(document.createElement("label"), { textContent: "New rooms start in" });
+    const sel = Object.assign(document.createElement("select"), { id: "setup-studio" });
+    label.append(sel);
+    card.append(label);
+    const sync = () => {
+      sel.replaceChildren(...studios().map((x) => Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
+      sel.value = doorStudio;
+    };
+    sel.addEventListener("change", () => setSetup(sel.value));
+    sync();
+    return { sync };
+  },
 });
 
 function resize() {
@@ -1524,7 +1549,7 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
+  state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
     gear: atWall.state(jam), lanterns: lit.state(jam), levels: harness.levels() }),
