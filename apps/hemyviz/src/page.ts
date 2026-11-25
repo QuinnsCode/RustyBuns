@@ -1,12 +1,13 @@
 // The page: one canvas, three cameras (project.ts) over one scene (layout.ts), five modes. Reads /api/fleet every
 // two seconds (204 while nothing changed); `?demo` or no server draws the demo fleet. `window.hemyviz` is the probe's
 // handle: state(), set({ dim, mode, stack }), pick(fqn), views().
-import { createElement, Box, HeartPulse, History, Layers, Maximize, Network, Orbit, Radar, Search, Shapes, Square, X, ExternalLink, type IconNode } from "lucide";
+import { createElement, Moon, Sun, Box, HeartPulse, History, Layers, Maximize, Network, Orbit, Radar, Search, Shapes, Square, X, ExternalLink, type IconNode } from "lucide";
 import { readJson } from "@rustybuns/util/http";
 import { BUSY, Fleet, kindOf, providerOf } from "./api.ts";
 import { DIMS, MODES, STATUS_COLOR, layout, type Block, type Dim, type Mode, type Scene } from "./layout.ts";
 import { boxFaces, camFor, fitScale, inside, project, type Cam, type Pt } from "./project.ts";
 import { demoFleet } from "./demo.ts";
+import { iconFor, iconImage } from "./icons.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const icon = (node: IconNode) => createElement(node);
@@ -57,6 +58,20 @@ segButtons($("modes"), MODES, MODE_INFO, (m) => set({ mode: m }));
 $("search-icon").replaceWith(icon(Search));
 $("orbit").append(icon(Orbit));
 $("fit").append(icon(Maximize));
+// Off-black or off-white: the system's choice until the button picks one, remembered in this browser.
+const theme = (pick?: "dark" | "light") => {
+  const dark = pick ? pick === "dark" : document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  if (pick) { document.documentElement.dataset.theme = pick; try { localStorage.setItem("hemyviz-theme", pick); } catch { /* private window */ } }
+  $("theme").replaceChildren(icon(dark ? Sun : Moon));
+  $("theme").title = dark ? "Off-white" : "Off-black";
+  readColors();
+  st.dirty = true;
+};
+try { const saved = localStorage.getItem("hemyviz-theme"); if (saved === "dark" || saved === "light") document.documentElement.dataset.theme = saved; } catch { /* no storage */ }
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  theme(dark ? "light" : "dark");
+};
 $("orbit").onclick = () => { st.orbit = !st.orbit; sync(); };
 $("fit").onclick = () => { delete st.cams[st.dim]; rebuild(); };
 $<HTMLSelectElement>("stack").onchange = (e) => set({ stack: (e.target as HTMLSelectElement).value });
@@ -159,13 +174,17 @@ function panel() {
 // ---- drawing ----
 
 let colors: Record<string, string> = {};
-const readColors = () => { const cs = getComputedStyle(document.documentElement); colors = Object.fromEntries(["--bg", "--ground", "--zone", "--zone-line", "--ink", "--muted", "--link", "--hot"].map((k) => [k, cs.getPropertyValue(k).trim()])); };
+const TOKENS = ["--bg", "--zone", "--edge", "--ink", "--muted", "--link", "--hot", "--grid", "--sky-1", "--sky-2", "--beam"];
+const readColors = () => { const cs = getComputedStyle(document.documentElement); colors = Object.fromEntries(TOKENS.map((k) => [k, cs.getPropertyValue(k).trim()])); };
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); st.dirty = true; });
 
-function shade(hex: string, k: number): string {
-  const m = hex.match(/^#(..)(..)(..)$/), rgb = m ? m.slice(1).map((h) => parseInt(h, 16)) : (hex.match(/\d+/g) ?? ["128", "128", "128"]).map(Number);
-  return `rgb(${rgb.map((v) => Math.round(Math.min(255, v * k))).join(",")})`;
-}
+const rgbOf = (c: string): number[] => {
+  const m = c.match(/^#(..)(..)(..)$/);
+  return m ? m.slice(1).map((h) => parseInt(h, 16)) : (c.match(/\d+/g) ?? ["128", "128", "128"]).slice(0, 3).map(Number);
+};
+const shade = (c: string, k: number) => `rgb(${rgbOf(c).map((v) => Math.round(Math.min(255, v * k))).join(",")})`;
+/** Light paint gets a dark icon, dark paint a white one. */
+const inkOn = (c: string) => { const [r, g, b] = rgbOf(c); return 0.299 * r! + 0.587 * g! + 0.114 * b! > 150 ? colors["--edge"]! : "#f7f5fb"; };
 
 function cam(): Cam {
   const s = st.scene!;
@@ -181,6 +200,7 @@ function cam(): Cam {
 }
 
 const poly = (pts: Pt[]) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 function draw(t: number) {
   const s = st.scene;
@@ -194,23 +214,44 @@ function draw(t: number) {
   const c = cam(), flat = st.dim === "2d", P = (x: number, y: number, z: number) => project(c, W, H, st.scale, x, y, z);
   const px = st.scale * c.zoom;
 
-  // Ground plates per zone, with their names.
-  ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
-  for (const z of s.zones) {
-    const pts = [P(z.x, 0, z.z), P(z.x + z.w, 0, z.z), P(z.x + z.w, 0, z.z + z.d), P(z.x, 0, z.z + z.d)];
-    if (pts.some((p) => !p)) continue;
-    poly(pts.map((p) => p!.p));
-    ctx.fillStyle = colors["--zone"]!;
-    ctx.fill();
-    ctx.strokeStyle = colors["--zone-line"]!;
+  // A sunrise on the horizon, and a floor grid running off into the dark.
+  if (!flat) {
+    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.34);
+    sky.addColorStop(0, colors["--sky-1"]!);
+    sky.addColorStop(0.55, colors["--sky-2"]!);
+    sky.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H * 0.34);
+    ctx.strokeStyle = colors["--grid"]!;
     ctx.lineWidth = 1;
-    ctx.stroke();
+    const step = 2, ext = Math.max(s.w, s.d) * 0.6;
+    for (let x = -ext; x <= s.w + ext; x += step) { const a = P(x, 0, -ext), b = P(x, 0, s.d + ext); if (a && b) { ctx.beginPath(); ctx.moveTo(...a.p); ctx.lineTo(...b.p); ctx.stroke(); } }
+    for (let z = -ext; z <= s.d + ext; z += step) { const a = P(-ext, 0, z), b = P(s.w + ext, 0, z); if (a && b) { ctx.beginPath(); ctx.moveTo(...a.p); ctx.lineTo(...b.p); ctx.stroke(); } }
   }
+
+  const solid = (box: { x: number; z: number; w: number; d: number; h: number }, color: string, edge: number) => {
+    const faces = boxFaces(c, W, H, st.scale, box);
+    for (const f of faces) {
+      poly(f.pts);
+      ctx.fillStyle = shade(color, f.shade);
+      ctx.fill();
+      ctx.strokeStyle = colors["--edge"]!;
+      ctx.lineWidth = edge;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
+    return faces;
+  };
+
+  // Plates: an app's own colour when the zone is one app (map, age), a quiet slab otherwise.
+  const slab = flat ? 0.01 : 0.22;
+  for (const z of s.zones) solid({ x: z.x, z: z.z, w: z.w, d: z.d, h: slab }, z.color ?? colors["--zone"]!, 2);
 
   const focus = st.hover?.id ?? st.selected;
   const match = (b: Block) => !st.find || b.r.fqn.toLowerCase().includes(st.find) || b.r.type.toLowerCase().includes(st.find) || (b.r.name ?? "").toLowerCase().includes(st.find);
   const byId = new Map(s.blocks.map((b) => [b.id, b]));
-  const height = (b: Block) => (flat ? 0.02 : b.h);
+  const height = (b: Block) => slab + (flat ? 0.02 : b.h);
+  const plinth = !s.zones.some((z) => z.color) && s.mode !== "kinds";
 
   // Links: what feeds what. Lifted into an arc off the ground in 2.5D and 3D.
   const links = () => {
@@ -224,7 +265,7 @@ function draw(t: number) {
       const p0 = P(ax, height(a), az), p1 = P(bx, height(b), bz), pm = P((ax + bx) / 2, lift, (az + bz) / 2);
       if (!p0 || !p1 || !pm) continue;
       ctx.strokeStyle = on ? colors["--hot"]! : colors["--link"]!;
-      ctx.lineWidth = on ? 2 : 1.2;
+      ctx.lineWidth = on ? 2.5 : 1.5;
       ctx.beginPath();
       ctx.moveTo(...p0.p);
       if (flat) ctx.lineTo(...p1.p); else ctx.quadraticCurveTo(2 * pm.p[0] - (p0.p[0] + p1.p[0]) / 2, 2 * pm.p[1] - (p0.p[1] + p1.p[1]) / 2, ...p1.p);
@@ -242,25 +283,30 @@ function draw(t: number) {
   };
   if (flat) links();
 
-  // Blocks, far to near.
+  // Blocks, far to near: an app-coloured plinth where the plate doesn't say the app, the body, its icon on top.
   const order = s.blocks.map((b) => ({ b, d: P(b.x + b.w / 2, height(b) / 2, b.z + b.d / 2)?.depth ?? -Infinity })).sort((a, b) => a.d - b.d);
   const pulse = 0.5 + 0.5 * Math.sin(t / 260);
   for (const { b } of order) {
-    const faces = boxFaces(c, W, H, st.scale, { x: b.x, z: b.z, w: b.w, d: b.d, h: height(b) });
     const dim = !match(b);
     ctx.globalAlpha = dim ? 0.18 : 1;
-    for (const f of faces) {
-      poly(f.pts);
-      ctx.fillStyle = shade(b.color, f.shade);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 0.6;
-      ctx.stroke();
+    if (plinth) solid({ x: b.x - 0.16, z: b.z - 0.16, w: b.w + 0.32, d: b.d + 0.32, h: slab + 0.14 }, b.app, 1.6);
+    const box = { x: b.x, z: b.z, w: b.w, d: b.d, h: height(b) };
+    const faces = solid(box, b.color, 1.8);
+    const top = faces.find((f) => f.name === "top");
+    if (top && px > 14) {
+      // The unit square onto the top face: corners 0 (x0,z0), 1 (x1,z0), 3 (x0,z1).
+      const [o, ex, ez] = [top.pts[0]!, top.pts[1]!, top.pts[3]!], img = iconImage(iconFor(b.r.type), inkOn(b.color), 2.4);
+      if (img.complete) {
+        ctx.save();
+        ctx.setTransform(dpr * (ex[0] - o[0]), dpr * (ex[1] - o[1]), dpr * (ez[0] - o[0]), dpr * (ez[1] - o[1]), dpr * o[0], dpr * o[1]);
+        ctx.drawImage(img, 0.12, 0.12, 0.76, 0.76);
+        ctx.restore();
+      } else img.onload = () => { st.dirty = true; };
     }
     const outline = b.id === focus || (b.pulse && !dim);
     if (outline) {
-      ctx.strokeStyle = b.id === focus ? colors["--ink"]! : `rgba(79,142,247,${0.35 + 0.65 * pulse})`;
-      ctx.lineWidth = b.id === focus ? 2.2 : 2 + 2 * pulse;
+      ctx.strokeStyle = b.id === focus ? colors["--hot"]! : `rgba(124,92,255,${0.35 + 0.65 * pulse})`;
+      ctx.lineWidth = b.id === focus ? 3 : 2.5 + 2.5 * pulse;
       for (const f of faces) { poly(f.pts); ctx.stroke(); }
     }
     ctx.globalAlpha = 1;
@@ -268,44 +314,70 @@ function draw(t: number) {
   }
   if (!flat) links();
 
-  // Labels: inside each tile in 2D when there's room, above the hovered and picked ones otherwise.
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  for (const { b } of order) {
-    const big = flat ? px > 46 : px > 70;
-    if (!big && b.id !== focus && !(st.find && match(b))) continue;
-    const top = P(b.x + b.w / 2, height(b), b.z + b.d / 2);
-    if (!top) continue;
-    const y = flat ? top.p[1] : top.p[1] - 12;
-    const text = b.label.length > 18 && flat ? `${b.label.slice(0, 16)}…` : b.label;
-    ctx.font = `${b.id === focus ? 700 : 500} ${flat ? Math.min(12, px * 0.22) : 12}px ui-sans-serif, system-ui, sans-serif`;
-    if (!flat) {
-      const w = ctx.measureText(text).width + 10;
-      ctx.fillStyle = colors["--bg"]!;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(top.p[0] - w / 2, y - 9, w, 18);
-      ctx.globalAlpha = 1;
+  // The picked block stands in a beam of light from the sky, a ring of it on the floor.
+  const picked = st.selected ? byId.get(st.selected) : undefined;
+  if (picked && !flat) {
+    const cx = picked.x + picked.w / 2, cz = picked.z + picked.d / 2, r = 0.95;
+    const ring = Array.from({ length: 32 }, (_, i) => P(cx + Math.cos((i / 32) * Math.PI * 2) * r, slab + 0.02, cz + Math.sin((i / 32) * Math.PI * 2) * r)).filter((p) => p).map((p) => p!.p);
+    if (ring.length > 8) {
+      const xs = ring.map((p) => p[0]), left = Math.min(...xs), right = Math.max(...xs), floor = Math.max(...ring.map((p) => p[1]));
+      const beam = ctx.createLinearGradient(0, 0, 0, floor);
+      beam.addColorStop(0, "rgba(0,0,0,0)");
+      beam.addColorStop(1, colors["--beam"]!);
+      ctx.fillStyle = beam;
+      ctx.fillRect(left, 0, right - left, floor - (floor - Math.min(...ring.map((p) => p[1]))) / 2);
+      poly(ring);
+      ctx.fillStyle = colors["--beam"]!;
+      ctx.fill();
+      ctx.strokeStyle = colors["--hot"]!;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(left, 0); ctx.lineTo(left, floor - (floor - Math.min(...ring.map((p) => p[1]))) / 2); ctx.moveTo(right, 0); ctx.lineTo(right, floor - (floor - Math.min(...ring.map((p) => p[1]))) / 2); ctx.stroke();
     }
-    ctx.fillStyle = flat ? "#fff" : colors["--ink"]!;
-    ctx.fillText(text, top.p[0], y);
+  }
+
+  // Names on the floor in front of each block, terminal style; only the hovered and picked ones when it's small.
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (const { b } of order) {
+    const big = flat ? px > 34 : px > 22;
+    if (!big && b.id !== focus && !(st.find && match(b))) continue;
+    const at = P(b.x + b.w / 2, slab, b.z + b.d + (flat ? 0.05 : 0.18));
+    if (!at) continue;
+    const text = b.label.length > 18 ? `${b.label.slice(0, 16)}…` : b.label;
+    ctx.font = `${b.id === focus ? 700 : 500} ${Math.max(9, Math.min(13, px * 0.22))}px ${MONO}`;
+    ctx.fillStyle = b.id === focus ? colors["--hot"]! : colors["--ink"]!;
+    ctx.globalAlpha = match(b) ? 1 : 0.3;
+    ctx.fillText(text, at.p[0], at.p[1] + 1);
+    ctx.globalAlpha = 1;
   }
   ctx.textAlign = "start";
 
-  // Zone names last, on a chip, so no block hides them.
-  ctx.font = "600 12px ui-sans-serif, system-ui, sans-serif";
+  // Zone names on the floor at the plate's front edge, spaced out like an old terminal.
   ctx.textBaseline = "middle";
   for (const z of s.zones) {
-    const at = flat ? P(z.x, 0, z.z) : P(z.x, 0, z.z + z.d);
+    const at = flat ? P(z.x, 0, z.z) : P(z.x + z.w / 2, slab, z.z + z.d - 0.3);
     if (!at) continue;
-    const w = ctx.measureText(z.label).width + 12, x = at.p[0] + (flat ? 0 : -w / 2), y = at.p[1] + (flat ? -12 : 14);
+    // Fit the name to its own plate: smaller type first, then cut.
+    const l = P(z.x, slab, z.z + z.d), r = P(z.x + z.w, slab, z.z + z.d), room = flat ? Infinity : l && r ? Math.hypot(r.p[0] - l.p[0], r.p[1] - l.p[1]) : Infinity;
+    let label = z.label.toUpperCase(), size = 13;
+    ctx.letterSpacing = "2px";
+    for (;;) {
+      ctx.font = `700 ${size}px ${MONO}`;
+      if (ctx.measureText(label).width + 14 <= room || label.length <= 4) break;
+      // Cut the name, never the count after it.
+      if (size > 9) size--; else { const [, name = label, n = ""] = label.match(/^(.*?)…?( ×\d+)?$/) ?? []; label = `${name.slice(0, -1)}…${n}`; }
+    }
+    const w = ctx.measureText(label).width + 14, x = at.p[0] + (flat ? 0 : -w / 2), y = at.p[1] + (flat ? -13 : 0);
     ctx.fillStyle = colors["--bg"]!;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.8;
     ctx.beginPath();
-    ctx.roundRect(x, y - 9, w, 18, 9);
+    ctx.roundRect(x, y - 10, w, 20, 6);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = colors["--muted"]!;
-    ctx.fillText(z.label, x + 6, y);
+    if (z.color) { ctx.strokeStyle = z.color; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.fillStyle = colors["--ink"]!;
+    ctx.fillText(label, x + 7, y);
+    ctx.letterSpacing = "0px";
   }
 }
 
@@ -422,7 +494,7 @@ window.hemyviz = {
   views: () => DIMS.flatMap((d) => MODES.map((m) => `?dim=${d}&mode=${m}${st.demo ? "&demo" : ""}`)),
 };
 
-readColors();
+theme();
 if (st.demo) st.fleet = demoFleet();
 rebuild();
 requestAnimationFrame(frame);
