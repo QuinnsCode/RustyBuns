@@ -1,6 +1,7 @@
 // The page vault.test.ts loads: a game's eqosys client against the stand-in eqosys named by ?eq=, started on load
 // the way a game starts it (`finishSignIn` first).
 import { eqosys } from "../src/eqosys.ts";
+import { keptOf } from "../src/vault.ts";
 
 // The stand-in eqosys, as a local eqosys is named (`<prefix>.eqosys`), so it outlives the trip to /login and back.
 const named = new URLSearchParams(location.search).get("eq");
@@ -15,12 +16,7 @@ const kept = () => new Promise<unknown>((ok, no) => {
   r.onsuccess = () => {
     const q = r.result.transaction("kept", "readonly").objectStore("kept").get("g");
     q.onerror = () => no(q.error);
-    q.onsuccess = () => {
-      const v: unknown = q.result;
-      const key: unknown = v && typeof v === "object" ? Reflect.get(v, "key") : null;
-      const priv: unknown = key && typeof key === "object" ? Reflect.get(key, "privateKey") : null;
-      ok({ login: v && typeof v === "object" ? Reflect.get(v, "login") : null, extractable: priv instanceof CryptoKey ? priv.extractable : null });
-    };
+    q.onsuccess = () => { const k = keptOf(q.result); ok({ login: k.login, extractable: k.key?.privateKey.extractable ?? null }); };
   };
 });
 

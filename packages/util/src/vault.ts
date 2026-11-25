@@ -3,7 +3,7 @@
 // signed in, with a refresh token eqosys bound to that key (DPoP): copied anywhere else, the refresh token spends nowhere.
 // In a browser it lives in IndexedDB; with none (a test, an odd webview) in memory only, so the player signs in again
 // next visit. A desktop host can hand `eqosys()` its own vault (the OS keychain, `@rustybuns/util/secrets`).
-import { check, obj, opt, str, type Of } from "./guard.ts";
+import { Bad, check, maybe, nul, obj, opt, str, type Guard, type Of } from "./guard.ts";
 
 /** Who signed in, as kept: no access token (that lives in memory for its ten minutes). */
 export const KeptLogin = obj({ name: str(200), email: str(320), refresh: opt(str(100)) });
@@ -20,14 +20,17 @@ export interface Vault {
   save(k: Kept): Promise<void>;
 }
 
-const isKey = (v: unknown): v is CryptoKey => typeof CryptoKey !== "undefined" && v instanceof CryptoKey;
+/** A WebCrypto key, as IndexedDB gives it back (a structured clone keeps it a `CryptoKey`, unextractable as made). */
+const Key: Guard<CryptoKey> = (v) => {
+  if (typeof CryptoKey !== "undefined" && v instanceof CryptoKey) return v;
+  throw new Bad("a CryptoKey");
+};
+/** What the vault holds: each half read on its own, so a bad key or an older login shape is nothing kept, not an error. */
+const Stored = obj({ key: maybe(nul(obj({ privateKey: Key, publicKey: Key }))), login: maybe(nul(KeptLogin)) });
 /** A stored value as a `Kept`: anything that isn't one (an older shape, a cleared store) is nothing kept. */
 export function keptOf(v: unknown): Kept {
-  if (typeof v !== "object" || v === null) return { key: null, login: null };
-  const key: unknown = Reflect.get(v, "key"), login = check(KeptLogin, Reflect.get(v, "login"));
-  const half = (k: string): unknown => (typeof key === "object" && key !== null ? Reflect.get(key, k) : null);
-  const privateKey = half("privateKey"), publicKey = half("publicKey");
-  return { key: isKey(privateKey) && isKey(publicKey) ? { privateKey, publicKey } : null, login };
+  const got = check(Stored, v);
+  return { key: got?.key ?? null, login: got?.login ?? null };
 }
 
 /** Kept for as long as the page is open. */
