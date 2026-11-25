@@ -1671,7 +1671,7 @@ function midHigh(): Build {
   // the sides: a round handle cup each side, and on one a bracket with the black knob that clamps a pole
   for (const s of [-1, 1]) b.pieces.push(disc("knob", 0.045, 0.004, "x", [s * (w / 2 + 0.001), 0.72, -0.05], 16));
   b.pieces.push(box("metal", [0.008, 0.11, 0.07], [-w / 2 - 0.004, 0.42, 0.02], { bevel: 0.002 }));
-  b.pieces.push(disc("knob", 0.02, 0.03, "x", [-w / 2 - 0.022, 0.42, 0.02], 12), disc("knob", 0.008, 0.03, "x", [-w / 2 - 0.045, 0.42, 0.02], 8));
+  b.pieces.push(disc("knob", 0.02, 0.014, "x", [-w / 2 - 0.015, 0.42, 0.02], 12), disc("knob", 0.007, 0.012, "x", [-w / 2 - 0.028, 0.42, 0.02], 8));
   backAndFeet(b, size, 0.72, false);
   return b;
 }
