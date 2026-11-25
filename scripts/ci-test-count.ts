@@ -21,9 +21,15 @@
 // file the PR adds or changes (CHANGED_TESTS, repo-relative and space-separated, from ci-apps.ts's plan) is a
 // `::error` that fails the step: make the test faster or split it, since a higher timeout only moves the cliff.
 // A file the PR didn't touch only warns, so one slow test on main can't block every unrelated PR.
+//
+// Fail fast (#5920): a red run names its first failing file in a `::error title=first failure::` annotation. With LANE
+// set (a split app's job name, "test fm-daw 2/6") and a GH_TOKEN that can read the run's jobs, it checks every 15 s
+// whether another lane of the same app failed, and if so kills its tests and fails with `::error title=stopped::`.
+// apps.yml's `apps` job reads both titles back to say which lane and file went red first.
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize, relative } from "node:path";
 import { MARK } from "./ci-group.ts";
+import { arr, check, obj, opt, or, str, type Of } from "../packages/util/src/guard.ts";
 
 export type TestCount = { pass: number; fail: number; skip: number };
 
@@ -145,6 +151,56 @@ export function limits(src: string, fallback: number): Limits {
   return { file: d ? num(d[1]!) : fallback, tests };
 }
 
+/** The test file of the first `(fail)` line, as a path under `cwd` (a group's `ci-group: <dir>` line counts), else the
+ * last file bun started: a file that throws before its first test has no `(fail)` line, and with --bail nothing runs after it. */
+export function firstFailure(out: string): string | undefined {
+  let dir = "", file = "", last: string | undefined;
+  for (const line of strip(out).split("\n")) {
+    const at = line.indexOf(MARK);
+    if (at >= 0) { dir = line.slice(at + MARK.length).trim(); file = ""; continue; }
+    const h = header(line);
+    if (h) { last = file = normalize(join(dir, h)); continue; }
+    if (/^\d+ tests? (failed|skipped|todo):?\s*$/.test(line)) file = "";
+    if (file && line.startsWith("(fail) ")) return file;
+  }
+  return last;
+}
+
+// A lane of a split app ("test fm-daw 2/6") stops once another lane of that app has failed (#5920): the check is red
+// already, and the runner is freed. GitHub can't cancel one job of a matrix, so each lane asks the run's jobs list.
+const Jobs = obj({ jobs: arr(obj({ name: str(300), conclusion: opt(str(40)), steps: or(arr(obj({ conclusion: opt(str(40)) }), 200), []) }), 100) });
+export type Jobs = Of<typeof Jobs>["jobs"];
+
+/** The first other lane of `lane`'s app ("test fm-daw 2/6" -> "test fm-daw k/6") that failed or has a failed step. */
+export function failedSibling(jobs: Jobs, lane: string): string | undefined {
+  const app = lane.match(/^(.*) \d+\/(\d+)$/);
+  if (!app) return;
+  const sibling = new RegExp(`^${app[1]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\d+/${app[2]}$`);
+  return jobs.find((j) => j.name !== lane && sibling.test(j.name) && (j.conclusion === "failure" || j.steps.some((s) => s.conclusion === "failure")))?.name;
+}
+
+/** Polls the run's jobs every `everyMs` until `onFailed` gets a failed sibling of `lane`. Quiet and gone on any error,
+ * or when the token's API allowance runs low: a lane never fails for want of the watch. Returns the stop function. */
+function watchSiblings(lane: string, onFailed: (sibling: string) => void, everyMs = Number(process.env.LANE_POLL_MS) || 15_000): () => void {
+  const { GITHUB_REPOSITORY: repo, GITHUB_RUN_ID: run, GITHUB_RUN_ATTEMPT: attempt = "1", GH_TOKEN: token } = process.env;
+  if (!repo || !run || !token || !/ \d+\/\d+$/.test(lane)) return () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = async () => {
+    try {
+      const r = await fetch(`${process.env.GITHUB_API_URL ?? "https://api.github.com"}/repos/${repo}/actions/runs/${run}/attempts/${attempt}/jobs?per_page=100`,
+        { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } });
+      const jobs = r.ok ? check(Jobs, await r.json()) : null;
+      if (!jobs) return console.log(`lane watch off: jobs list answered ${r.status}`);
+      const hit = failedSibling(jobs.jobs, lane);
+      if (hit) return onFailed(hit);
+      if (Number(r.headers.get("x-ratelimit-remaining") ?? 1000) < 200) return console.log("lane watch off: API allowance low");
+    } catch (e) { return console.log(`lane watch off: ${e instanceof Error ? e.message : e}`); }
+    timer = setTimeout(tick, everyMs);
+  };
+  timer = setTimeout(tick, everyMs);
+  return () => clearTimeout(timer);
+}
+
 export const limitOf = (l: Limits, test: string) => l.tests.find((t) => t.name.test(test))?.ms ?? l.file;
 
 /** The command's own --timeout, else bun's default. */
@@ -181,12 +237,16 @@ if (import.meta.main) {
   if (!cmd || !(minutes > 0)) throw new Error("usage: bun scripts/ci-test-count.ts [--budget <minutes>] <test command>");
   // Its own process group, so a hang kills bun's workers too, not just the shell.
   const child = Bun.spawn(["sh", "-c", cmd], { stdin: "inherit", stdout: "pipe", stderr: "pipe", detached: true });
-  let out = "", timedOut = false;
+  let out = "", timedOut = false, stoppedBy = "";
+  const kill = () => { try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } };
   const budget = setTimeout(() => {
     timedOut = true;
     console.log(hung(out, testFiles(cmd), minutes, /\s--parallel\b/.test(cmd)));
-    try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+    kill();
   }, minutes * 60_000);
+  // LANE is the job's name, set by apps.yml on a split app's lanes.
+  const lane = process.env.LANE ?? "";
+  const unwatch = watchSiblings(lane, (sibling) => { stoppedBy = sibling; kill(); });
   const pump = async (from: ReadableStream<Uint8Array>, to: NodeJS.WriteStream) => {
     const dec = new TextDecoder();
     const reader = from.getReader();
@@ -195,6 +255,16 @@ if (import.meta.main) {
   await Promise.all([pump(child.stdout, process.stdout), pump(child.stderr, process.stderr)]);
   const code = await child.exited;
   clearTimeout(budget);
+  unwatch();
+  const say = (line: string) => process.env.GITHUB_STEP_SUMMARY && appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`);
+  if (stoppedBy) {
+    // apps.yml's `apps` job reads these two titles back off each failed lane to name the first failure.
+    console.log(`::error title=stopped::${stoppedBy} failed first, so ${lane} stopped`);
+    say(`Stopped: ${stoppedBy} failed first`);
+  } else if (code && !timedOut) {
+    const f = firstFailure(out), file = f && relative(join(import.meta.dir, ".."), join(process.cwd(), f));
+    if (file) { console.log(`::error file=${file},title=first failure::${file}`); say(`First failure: ${file}`); }
+  }
   const t = countOf(out);
   if (t) {
     console.log(notice(t));
@@ -205,5 +275,5 @@ if (import.meta.main) {
   for (const v of verdicts) console.log(v.line);
   const tooSlow = verdicts.filter((v) => v.fail).length;
   if (tooSlow && process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Too slow: ${tooSlow} changed test(s) over 80% of their time limit\n`);
-  process.exit(timedOut ? 124 : code || (tooSlow ? 1 : 0));
+  process.exit(timedOut ? 124 : stoppedBy ? 1 : code || (tooSlow ? 1 : 0));
 }

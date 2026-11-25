@@ -116,9 +116,15 @@ jobs:
         run: |
           { echo '### Release-rings lane'; bun scripts/lane.ts --base "$BASE" --facts "$RUNNER_TEMP/bites.json" --pr "$PR"; } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # Each lane fails fast (#5920): the PR's changed test files run first and --bail stops it at the first failure
+  # (scripts/ci-apps.ts). fail-fast stays false, since the matrix covers every app; instead a split app's lanes watch
+  # each other (LANE, scripts/ci-test-count.ts), and one red lane stops the rest of that app's, freeing their runners.
   test:
     needs: plan
     if: needs.plan.outputs.any == 'true'
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.apps) }}
@@ -162,7 +168,10 @@ jobs:
         run: ${{ matrix.prep }}
       # the test count goes on the check run as an annotation, for the office's PR health bar
       - if: matrix.test
-        env: { CHANGED_TESTS: "${{ needs.plan.outputs.tests }}" }
+        env:
+          CHANGED_TESTS: "${{ needs.plan.outputs.tests }}"
+          LANE: "${{ matrix.shard && format('test {0} {1}', matrix.app, matrix.shard) || '' }}"
+          GH_TOKEN: "${{ github.token }}"
         run: bun ${{ matrix.up }}scripts/ci-test-count.ts "${{ matrix.test }}"
       # Borg tier 1: the dev host builds and boots on the local twins (scripts/boot.ts).
       - if: matrix.boot
@@ -228,7 +237,23 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
+      checks: read
     steps:
+      # Which lane went red and on which file: each failed lane's `first failure` or `stopped` annotation
+      # (scripts/ci-test-count.ts), the earliest finished first. Lanes another lane stopped come last.
+      - if: contains(needs.*.result, 'failure')
+        env: { GH_TOKEN: "${{ github.token }}", REPO: "${{ github.repository }}", RUN: "${{ github.run_id }}", ATTEMPT: "${{ github.run_attempt }}" }
+        run: |
+          gh api --paginate "repos/$REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs?per_page=100" \
+            -q '.jobs[] | select(.conclusion == "failure") | [.completed_at, (.id|tostring), .name] | @tsv' | sort |
+          while IFS=$'\t' read -r _ id name; do
+            said=$(gh api "repos/$REPO/check-runs/$id/annotations" \
+              -q '.[] | select(.title == "first failure" or .title == "stopped") | "\(.title): \(.message)"' | head -1)
+            echo "$name	${said:-failed}"
+          done | awk -F'\t' '$2 !~ /^stopped/ { print "- " $1 ": " $2 } $2 ~ /^stopped/ { s = s "- " $1 ": " $2 "\n" } END { printf "%s", s }' |
+            { echo '### Failed first'; cat; } | tee -a "$GITHUB_STEP_SUMMARY"
       - env: { RESULTS: "${{ join(needs.*.result, ' ') }}" }
         run: |
           echo "plan, packages, hooks, scripts, test: $RESULTS"
