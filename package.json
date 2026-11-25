@@ -12,6 +12,7 @@
     "typecheck": "bun scripts/typecheck.ts",
     "docs": "bun scripts/docs.ts",
     "engine": "bun scripts/engine.ts",
+    "lint": "bun scripts/lint.ts",
     "knip": "knip --include exports,types,files --workspace apps/cron-swanson --workspace apps/at-lens",
     "site": "bun scripts/site.ts",
     "test": "bun test",
@@ -41,9 +42,11 @@
     "deprecate:bad": "bun scripts/deprecate-bad.ts"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.94.0",
     "@types/bun": "^1.4.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "knip": "6.45.1",
+    "oxlint": "1.94.0",
     "typescript": "^5.9.0"
   },
   "version": "0.1.10",
