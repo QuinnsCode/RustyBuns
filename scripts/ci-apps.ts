@@ -284,6 +284,8 @@ if (cmd === "drop") {
   out("hooks", shared || deps || changed.some((f) => f.startsWith(".claude/")));
   // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.
   out("scripts", shared || deps || changed.some((f) => f.startsWith("scripts/")));
+  // The test files this PR adds or changes, space-separated: ci-test-count.ts fails a test there over 80% of its limit.
+  console.log(`tests=${changed.filter((f) => /[._](test|spec)\.[cm]?[jt]sx?$/.test(f)).join(" ")}`);
 } else if (cmd === "lanes") {
   // The lanes apps.yml gives one app, one line each, to run a single lane here or on the builder.
   const a = APPS[arg];

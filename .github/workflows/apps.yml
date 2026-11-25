@@ -28,6 +28,7 @@ jobs:
       skins: ${{ steps.p.outputs.skins }}
       hooks: ${{ steps.p.outputs.hooks }}
       scripts: ${{ steps.p.outputs.scripts }}
+      tests: ${{ steps.p.outputs.tests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -51,7 +52,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
-      - env: { ALL: "${{ needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch' }}" }
+      - env: { ALL: "${{ needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch' }}", CHANGED_TESTS: "${{ needs.plan.outputs.tests }}" }
         run: bun scripts/ci-test-count.ts "bun test $([ "$ALL" = true ] && echo packages || echo ./packages/util/test/skin.test.ts)"
 
   # The agent guard hook (.claude/hooks/guard.ts). bun test skips dot directories, hence the explicit path.
@@ -64,7 +65,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
-      - run: bun scripts/ci-test-count.ts "bun test ./.claude/hooks"
+      - env: { CHANGED_TESTS: "${{ needs.plan.outputs.tests }}" }
+        run: bun scripts/ci-test-count.ts "bun test ./.claude/hooks"
 
   # The root scripts' tests (scripts/*.test.ts): no app row runs them.
   scripts:
@@ -78,7 +80,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
-      - run: bun scripts/ci-test-count.ts "bun test ./scripts"
+      - env: { CHANGED_TESTS: "${{ needs.plan.outputs.tests }}" }
+        run: bun scripts/ci-test-count.ts "bun test ./scripts"
 
   # Do the PR's new tests bite? Report only, never a gate (a refactor's tests pass on the old code on purpose), and not
   # in the `apps` check below: the test files the PR adds or edits run once more on the base's source, and the job
@@ -159,6 +162,7 @@ jobs:
         run: ${{ matrix.prep }}
       # the test count goes on the check run as an annotation, for the office's PR health bar
       - if: matrix.test
+        env: { CHANGED_TESTS: "${{ needs.plan.outputs.tests }}" }
         run: bun ${{ matrix.up }}scripts/ci-test-count.ts "${{ matrix.test }}"
       # Borg tier 1: the dev host builds and boots on the local twins (scripts/boot.ts).
       - if: matrix.boot
