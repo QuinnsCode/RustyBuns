@@ -249,7 +249,7 @@ test("Dexter says to batch when replies carry one tool call each, and not when t
     tally(ids.flatMap((x, i) => reply(`m${i}`, x)), r);
     const out = render(r).join("\n");
     expect(out).toContain(line);
-    expect(out.includes("Send independent reads")).toBe(tip);
+    expect(out.includes("mcp__repo__execute program")).toBe(tip);
   }
 });
 

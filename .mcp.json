@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "repo": { "command": "bun", "args": ["scripts/codemode-mcp.ts"] }
+  }
+}

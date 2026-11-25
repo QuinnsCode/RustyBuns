@@ -1,10 +1,15 @@
 # RustyBuns
 
-## Tools: CLI first
+## Tools: code mode first
 
-Prefer a shell command to a tool server: `gh`, `bun`, `git`, `office-workers`, `codesplitter <command>`
-(`codesplitter tools` lists them). MCP is there when no CLI covers it (same operations as the CLI). WebMCP
-is different: it runs in a signed-in browser page as the user, so use it only for what needs that page.
+Reading and checking goes through `mcp__repo__execute` (`scripts/codemode-mcp.ts`, wired in `.mcp.json`): one
+program over the worktree (`read`, `grep`, `files`, `outline`, `sh`) that returns only its answer. Every Bash or
+Read result stays in the context and is re-read on each reply after it (about 150k a reply here); a program's
+intermediate output never enters it. Put the exploring of a turn (the outlines, greps, `bun run pr <n> --no-wait`,
+the lines you will edit) in one program and return a short answer. `sh` passes through the same guard as Bash.
+Bash is for what changes things (commits, pushes, `bun run builder`), Edit and Write for edits. MCP servers with their
+own `execute` (codeSplitter, Executor) go the same way. WebMCP runs in a signed-in browser page as the user, so use it
+only for what needs that page.
 
 ## Ephemeral worktrees: already installed
 
@@ -77,10 +82,7 @@ Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts a
 these are the tools for the big ones. Each prints a short answer meant for a context window, so use them over the raw command.
 Ask a script `--help` before reading its source: it prints the script's top comment (`help(import.meta.path)` from `scripts/help.ts`; give a new script one).
 
-Many calls per reply, few replies. Every reply re-reads the whole context (about 150k here), and 9 in 10 replies carry a
-single tool call. When calls don't depend on each other (outlines, greps, briefs, `bun run pr --no-wait`, the files you
-will edit), send them together in one reply, and give each a narrow output. Chain dependent steps in one Bash line
-with `&&`. Dexter prints the calls-per-reply figure; aim for 2 or more while exploring.
+Dexter counts code-mode programs and tool calls per reply: a session at 0 programs is reading through the shell.
 
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
