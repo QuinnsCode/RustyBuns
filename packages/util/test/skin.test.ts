@@ -17,9 +17,9 @@ const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean; chip: boolean; stamp: boolean; lobby: boolean } }>(`(() => {
+  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; button: string; fits: { select: boolean; members: boolean; chip: boolean; stamp: boolean; lobby: boolean } }>(`(() => {
     const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); const under = getComputedStyle(document.querySelector(sel), "::before"); return { bg: s.backgroundColor, image: s.backgroundImage + under.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily, edge: s.boxShadow, deckled: under.maskImage !== "none", tilt: s.rotate !== "none" || s.transform !== "none" }; };
-    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
+    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform, button: getComputedStyle(document.querySelector(".rb-spaces-tabs .eq-btn:not(.on)")).boxShadow,
       // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
       fits: { select: document.querySelector(".rb-report select").offsetWidth === document.querySelector(".rb-report input").offsetWidth,
         members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right),
@@ -52,14 +52,14 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
 // #4148: a real game's skin points at its own stylesheet (var(--plate), var(--paper), var(--f-book)); over that stylesheet,
 // its paper or plate and its face reach every surface, under a texture where the game lays one (the colour is in the image).
 // Two Fronts' chip is the one exception it chose: a brass tag (#4210), so its "paper" there is the brass. Skate's surfaces
-// are stickers, each printed in a colour of its own; only the spaces panel is the park's paper.
+// are stickers, each printed in a colour of its own.
 test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces, and its page rules stay out", async () => {
   const games = [
     ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`, "rgb(216, 168, 63)"],
     ["mythic-masters", "rgb(232, 217, 181)", `"IM Fell English", Georgia, "Times New Roman", serif`],
     ["skate-tech-park", "rgb(251, 247, 240)", "system-ui, sans-serif"],
   ] as const;
-  const prints: Record<string, Record<string, string>> = { "two-fronts": { chip: "rgb(216, 168, 63)" }, "skate-tech-park": { chip: "rgb(226, 87, 43)", toast: "rgb(255, 210, 63)", lobby: "rgb(127, 208, 234)", form: "rgb(255, 255, 255)" } };
+  const prints: Record<string, Record<string, string>> = { "two-fronts": { chip: "rgb(216, 168, 63)" }, "skate-tech-park": { chip: "rgb(226, 87, 43)", toast: "rgb(255, 210, 63)", lobby: "rgb(127, 208, 234)", form: "rgb(255, 158, 194)", spaces: "rgb(183, 236, 93)" } };
   for (const [game, plain, face] of games) {
     const got = await looks(`?game=${game}`);
     expect({ game, ...got.fits }).toEqual({ game, select: true, members: true, chip: true, stamp: true, lobby: true });
@@ -71,6 +71,8 @@ test.skipIf(!chromePath())("each game's own paper and face land on the chip, rep
       // Skate's are die-cut stickers on a deck: a white cut edge round the ink line, a halftone, each set at a tilt.
       if (game === "skate-tech-park") expect({ name, cut: l.edge.startsWith("rgb(255, 255, 255) 0px 0px 0px 6px"), halftone: l.image.includes("radial-gradient"), tilt: l.tilt }).toEqual({ name, cut: true, halftone: true, tilt: true });
     }
+    // and the buttons on them are small stickers with a white cut, not the house's pills.
+    if (game === "skate-tech-park") expect(got.button.startsWith("rgb(255, 255, 255) 0px 0px 0px 3px")).toBe(true);
   }
 });
 
@@ -127,6 +129,23 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   const desk = await corner(1024, 700);
   expect(desk.scrim).toBe(false);
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
+});
+
+// #5573: on a phone the flag's corner is where a chat keeps its Send button; it lifts clear of any control, in every look.
+test.skipIf(!chromePath())("on a phone the Report flag sits on none of the page's controls, and stays on screen", async () => {
+  for (const look of ["?house&closed", "?game=two-fronts&closed", "?game=mythic-masters&closed", "?game=skate-tech-park&closed"]) {
+    const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${look}`, 300);
+    const got = await tab.eval<{ covered: string[]; onScreen: boolean }>(`(async () => {
+      dispatchEvent(new Event("resize"));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const flag = document.querySelector(".rb-report > .eq-btn"), f = flag.getBoundingClientRect();
+      const covered = [...document.querySelectorAll("button, input, select, textarea")].filter((el) => !flag.parentElement.contains(el)).filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.left < f.right && r.right > f.left && r.top < f.bottom && r.bottom > f.top; }).map((el) => el.getAttribute("aria-label") || el.placeholder || el.textContent);
+      return { covered, onScreen: f.top >= 0 && f.bottom <= innerHeight };
+    })()`);
+    await tab.close();
+    expect({ look, ...got }).toEqual({ look, covered: [], onScreen: true });
+  }
 });
 
 // At phone width a toast is as wide as the screen, and Mythic's drops in under its cog, where the account chip can be.

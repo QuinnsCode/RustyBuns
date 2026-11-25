@@ -69,5 +69,49 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   };
   root.append(form, open);
   parent.append(root);
-  return () => root.remove();
+  const unclear = keepClear(root, open);
+  return () => { unclear(); root.remove(); };
+}
+
+/** What the flag must never sit on: the page's own controls, and anything it marks `data-eq-clear`. */
+const CONTROL = "button,input,select,textarea,a[href],[role=button],[data-eq-clear]";
+
+/**
+ * The flag's corner is where a game's chat keeps its Send button, so it lifts (`--eq-lift` on the root, which moves the
+ * corner up without making it the box a phone's fixed form sheet sits in) just clear of any control under it, as the
+ * page scrolls, resizes or changes. If there is no room above, it stays in its corner.
+ */
+function keepClear(root: HTMLElement, flag: HTMLElement): () => void {
+  // Every control the flag's box touches, by its box: a hit test would miss a Send button that is resting (pointer-events: none).
+  const under = (r: DOMRect) => {
+    for (const el of document.querySelectorAll<HTMLElement>(CONTROL)) {
+      if (root.contains(el)) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width && b.height && b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) return b;
+    }
+    return null;
+  };
+  let queued = 0;
+  const place = () => {
+    queued = 0;
+    root.style.removeProperty("--eq-lift");
+    if (!flag.offsetWidth) return;
+    let lift = 0;
+    for (let pass = 0; pass < 4; pass++) {
+      const hit = under(flag.getBoundingClientRect());
+      if (!hit) return;
+      const up = flag.getBoundingClientRect().bottom - hit.top + 8;
+      if (root.getBoundingClientRect().top - up < 8) break;
+      lift += up;
+      root.style.setProperty("--eq-lift", `${Math.round(lift)}px`);
+    }
+    if (under(flag.getBoundingClientRect())) root.style.removeProperty("--eq-lift");
+  };
+  const soon = () => { queued ||= requestAnimationFrame(place); };
+  addEventListener("resize", soon);
+  addEventListener("scroll", soon, { capture: true, passive: true });
+  root.addEventListener("click", soon);
+  const tick = setInterval(soon, 1000); // a panel opening or a log growing moves what is under it, with no event to hear
+  soon();
+  return () => { clearInterval(tick); cancelAnimationFrame(queued); removeEventListener("resize", soon); removeEventListener("scroll", soon, { capture: true }); };
 }
