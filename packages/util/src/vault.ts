@@ -34,7 +34,7 @@ export const HostLogin = obj({ login: nul(KeptLogin) });
  * Null on a page no host marked (`<meta name="rb-login">`), so the web build keeps IndexedDB. `send` is fetch; a test
  * passes one that carries the host's cookie.
  */
-export function hostVault(opts: { send?: typeof fetch; at?: string; marked?: boolean } = {}): Vault | null {
+export function hostVault(opts: { send?: (url: string, init: RequestInit) => Promise<Response>; at?: string; marked?: boolean } = {}): Vault | null {
   const marked = opts.marked ?? (typeof document !== "undefined" && !!document.querySelector?.('meta[name="rb-login"]'));
   if (!marked) return null;
   const send = opts.send ?? fetch, at = opts.at ?? HOST_LOGIN_PATH;

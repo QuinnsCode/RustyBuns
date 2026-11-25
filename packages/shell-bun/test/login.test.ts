@@ -19,7 +19,7 @@ async function launch(token: string) {
   const cookie = (await fetch(`${shell.url}/?token=${token}`, { redirect: "manual" })).headers.get("set-cookie")!.split(";")[0]!;
   const page = (path: string, init: RequestInit = {}) =>
     fetch(shell.url + path, { ...init, headers: { ...init.headers as Record<string, string>, cookie, origin: shell.url } });
-  const vault = hostVault({ marked: true, send: (u, init) => page(String(u), init) })!;
+  const vault = hostVault({ marked: true, send: page })!;
   return { shell, page, vault };
 }
 
