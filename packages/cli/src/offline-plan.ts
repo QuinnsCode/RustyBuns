@@ -22,7 +22,7 @@ export function plannedResources(stack: string): PlannedResource[] {
   const out: PlannedResource[] = [];
   const seen = new Set<string>();
   for (const m of stack.matchAll(/\b((?:Cloudflare|Hetzner|Railway|Command|Neon)\.[\w.]+|Alchemy\.makeRandom)\("([^"]+)"/g)) {
-    const [, type, id] = m as unknown as [string, string, string];
+    const [, type = "", id = ""] = m;
     const key = `${type} ${id}`;
     if (seen.has(key)) continue;
     seen.add(key);

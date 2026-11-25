@@ -37,7 +37,7 @@ export class Relay {
 
 /** The DO's 101 again, answering the subprotocol the page offered: a browser drops a socket whose answer names none. */
 function echo(res: Response): Response {
-  const webSocket: unknown = Reflect.get(res, "webSocket");
+  const webSocket: unknown = "webSocket" in res ? res.webSocket : undefined;
   if (res.status !== 101 || !webSocket) return res;
   const init: ResponseInit & { webSocket: unknown } = { status: 101, webSocket, headers: { "sec-websocket-protocol": PROTOCOL } };
   return new Response(null, init);

@@ -46,7 +46,7 @@ export function refuseKey(key: string | null, name: string, taken: Readonly<Reco
 
 /** Whether a key press landed where someone types. */
 export const isTyping = (target: EventTarget | null): boolean =>
-  !!target && typeof Reflect.get(target, "closest") === "function" && !!Reflect.get(target, "closest").call(target, "input, textarea, select, [contenteditable]:not([contenteditable=false])");
+  !!target && "closest" in target && typeof target.closest === "function" && !!target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false])");
 
 /** Whether a dialog is open: a <dialog open>, or an aria-modal sheet that isn't inside something hidden. */
 export function dialogOpen(doc: Document = document): boolean {

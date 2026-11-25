@@ -113,7 +113,7 @@ function walk(dir: string, out: string[] = []): string[] {
 function listing(dir: string) {
   const files = walk(dir).map((p) => relative(dir, p).split(sep).join("/")).sort();
   const boards = files.filter((f) => f.endsWith(".circuit.tsx"));
-  const entry = boards.find((f) => f === "index.circuit.tsx") ?? boards[0] ?? files.find((f) => /\.tsx$/.test(f)) ?? null;
+  const entry = boards.find((f) => f === "index.circuit.tsx") ?? boards[0] ?? files.find((f) => f.endsWith(".tsx")) ?? null;
   return { dir, name: basename(dir), files, boards, entry };
 }
 

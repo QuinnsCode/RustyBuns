@@ -235,6 +235,24 @@ test("a turn that hangs, or that a notice ends owing work, is a stall once, and 
   }
 });
 
+test("Dexter says to batch when replies carry one tool call each, and not when they carry several", () => {
+  const reply = (mid: string, ids: string[]) => [
+    j({ type: "assistant", message: { id: mid, usage: { input_tokens: 1, cache_read_input_tokens: 99_999 }, content: ids.map((id) => ({ type: "tool_use", id, name: "Bash" })) } }),
+    j({ type: "user", message: { content: ids.map((id) => ({ type: "tool_result", tool_use_id: id, content: "ok" })) } }),
+  ];
+  const rows = [
+    { ids: [["a"], ["b"], ["c"]], line: "Tool calls per reply: 1.00 (3 calls over 3 replies), each reply re-reading 100k of context.", tip: true },
+    { ids: [["a", "b", "c"]], line: "Tool calls per reply: 3.00 (3 calls over 1 replies)", tip: false },
+  ];
+  for (const { ids, line, tip } of rows) {
+    const r = fresh();
+    tally(ids.flatMap((x, i) => reply(`m${i}`, x)), r);
+    const out = render(r).join("\n");
+    expect(out).toContain(line);
+    expect(out.includes("Send independent reads")).toBe(tip);
+  }
+});
+
 test("Dexter counts code mode against tool loads and direct MCP calls, and a new program is an event once", () => {
   const call = (id: string, name: string, mid: string) => j({ type: "assistant", sessionId: "s-code", cwd: "/x/.agent-office/worktrees/gizmo-1a2b", message: { id: mid, usage: { input_tokens: 1 }, content: [{ type: "tool_use", id, name }] } }) + "\n";
   const result = (id: string, n: number) => j({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "z".repeat(n * 4) }] } }) + "\n";

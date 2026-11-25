@@ -12,6 +12,7 @@ import initSql from "../migrations/0001_init.sql?raw";
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secrets: on the dev server the request's
 // own origin is the trusted one, and throwaway secrets let `bun run dev` sign in as admin@artstew.local.
 const e = (req?: Request): AppEnv => {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Cloudflare's runtime types and ours describe the same object differently
   const base = env as unknown as AppEnv;
   if (!import.meta.env.VITE_IS_DEV_SERVER || !req) return base;
   return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000", ADMIN_EMAIL: base.ADMIN_EMAIL ?? "admin@artstew.local", ENGINE_KEY: base.ENGINE_KEY ?? btoa("dev-only-engine-key-32-bytes-long!") };

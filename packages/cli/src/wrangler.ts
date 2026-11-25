@@ -124,7 +124,8 @@ export function wranglerStages(w: WranglerJson, base: RustyBunsConfig): { stages
     for (const [k, b] of Object.entries(own)) {
       const was = base.bindings[k];
       if (!was || was.type !== b.type) { bindings[k] = b; continue; }
-      const diff = Object.entries(b).filter(([f, v]) => JSON.stringify(v) !== JSON.stringify(Reflect.get(was, f)));
+      const old = new Map(Object.entries(was));
+      const diff = Object.entries(b).filter(([f, v]) => JSON.stringify(v) !== JSON.stringify(old.get(f)));
       if (!diff.length) continue;
       bindings[k] = diff.every(([f]) => STAGE_FIELDS.has(f)) ? Object.fromEntries(diff) : b;
     }

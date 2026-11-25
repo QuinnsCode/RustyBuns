@@ -57,6 +57,7 @@ Bun.serve = ((options: NodeServeOptions) =>
 const v8 = require("node:v8");
 v8.queryObjects ??= (ctor: { name: string }) => {
   Bun.gc(true);
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Bun types the snapshot as an opaque object; this is V8's heap snapshot layout
   const snapshot = Bun.generateHeapSnapshot() as unknown as { nodes: number[]; nodeClassNames: string[] };
   const index = snapshot.nodeClassNames.indexOf(ctor.name);
   let count = 0;

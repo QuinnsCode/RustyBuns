@@ -94,6 +94,7 @@ export async function putProduct(env: SettingsEnv, org: string, id: string, p: P
 }
 
 const cacheOf = (env: SettingsEnv): SettingsCache | undefined =>
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- caches.default is Cloudflare's; the app is typed with the DOM's lib, which doesn't have it
   env.SETTINGS_CACHE ?? (typeof caches !== "undefined" ? (caches as unknown as { default?: SettingsCache }).default : undefined);
 // One entry per product on this host, whatever page or query asked for it.
 const cacheKey = (origin: string, org: string, id: string) => new Request(`${origin}/__settings/${org}/${id}`);

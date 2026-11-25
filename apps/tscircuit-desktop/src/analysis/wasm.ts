@@ -13,6 +13,7 @@ export interface WasmExports {
 export async function loadWasm(bytes: BufferSource): Promise<WasmExports> {
   // compile + instantiate(Module): one overload in both the DOM and Bun typings.
   const instance = await WebAssembly.instantiate(await WebAssembly.compile(bytes), {});
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   return instance.exports as unknown as WasmExports;
 }
 

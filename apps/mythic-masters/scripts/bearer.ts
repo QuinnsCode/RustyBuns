@@ -62,7 +62,7 @@ function rewrite(src: Uint8Array, edits: Edits) {
   const local = (n: GNode) => new THREE.Matrix4().compose(new THREE.Vector3(...(n.translation ?? [0, 0, 0])), new THREE.Quaternion(...(n.rotation ?? [0, 0, 0, 1])), new THREE.Vector3(...(n.scale ?? [1, 1, 1])));
   const world = (list: GNode[], i: number): THREE.Matrix4 => { const p = parent.get(i); const m = local(list[i]!); return p === undefined ? m : world(list, p).multiply(m); };
   // Keep the lowest toe where it was: the root moves by the difference, in its parent's frame.
-  const toeY = (list: GNode[]) => Math.min(...skin.joints.filter((j) => /ToeBase$/.test(named(j))).map((j) => new THREE.Vector3().setFromMatrixPosition(world(list, j)).y));
+  const toeY = (list: GNode[]) => Math.min(...skin.joints.filter((j) => named(j).endsWith("ToeBase")).map((j) => new THREE.Vector3().setFromMatrixPosition(world(list, j)).y));
   const dy = toeY(json.nodes) - toeY(nodes);
   // the local shift that moves the root up by dy in the world
   const rp = parent.get(root), rootShift = new THREE.Vector3();

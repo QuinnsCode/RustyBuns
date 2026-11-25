@@ -139,7 +139,7 @@ export class LocalArtifacts {
    */
   async import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }) {
     const { source, target } = params;
-    if (!/^https:\/\//.test(source.url)) throw new ArtifactsError("INVALID_INPUT", "source.url must be https");
+    if (!source.url.startsWith("https://")) throw new ArtifactsError("INVALID_INPUT", "source.url must be https");
     const name = target.name, p = this.path(name);
     if (existsSync(p) || this.busy.has(name)) throw new ArtifactsError("ALREADY_EXISTS", name);
     this.busy.set(name, "IMPORT_IN_PROGRESS");
@@ -280,7 +280,7 @@ export async function gitHttp(req: Request, namespaces: LocalArtifacts[]): Promi
   const m = /^\/__rb\/git\/([^/]+)\/([^/]+)\.git(\/.*)$/.exec(url.pathname);
   const ns = m && namespaces.find((n) => n.namespace === m[1]);
   if (!m || !ns || !NAME.test(m[2]!)) return new Response("not found", { status: 404 });
-  const [, , repo, rest] = m as unknown as [string, string, string, string];
+  const [, , repo = "", rest = ""] = m;
   const write = rest === "/git-receive-pack" || url.searchParams.get("service") === "git-receive-pack";
 
   const h = req.headers.get("authorization") ?? "";

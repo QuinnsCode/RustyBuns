@@ -37,7 +37,7 @@ const MAX = { peak: 45, water: 30, sight: 45 } as const;
 
 async function get(url: string, init?: RequestInit, tries = 4): Promise<any> {
   for (let i = 0; ; i++) {
-    const r = await fetch(url, { ...init, headers: { "user-agent": UA, ...(init?.headers ?? {}) } });
+    const r = await fetch(url, { ...init, headers: { "user-agent": UA, ...init?.headers } });
     if (r.ok) return r.json();
     if (i + 1 >= tries || ![429, 502, 503, 504].includes(r.status)) throw new Error(`${r.status} ${url.slice(0, 80)}: ${(await r.text()).slice(0, 200)}`);
     const wait = 10000 * (i + 1);
