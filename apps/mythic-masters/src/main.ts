@@ -48,7 +48,7 @@ import { applyQuality, budgetQuality, type Quality, QUALITY } from "@rustybuns/u
 import { CHOICES, type Choice, choose, looksOf, qualityNote, startChoice } from "./display.ts";
 import { music as score, SCORE, type Cue } from "./music.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
-import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
+import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, ready, reportButton } from "./account.ts";
 import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
@@ -272,10 +272,14 @@ const partyId = room ? null : partyCode(location.search);
 /** Who sent the party link, read before the world puts its own address up. */
 const partyFrom = invitedBy(location.search);
 let lobbyOpen = false, askedIn = false;
+/** Whether the kept login is back from the vault yet (`ready`): until then the party chip waits. */
+let loginBack = false;
 /** The world HUD's party chip: the room and who is here (or why nobody is); with no room, "Walk together" for a signed-in player. */
 function drawTogether() {
   const el = document.querySelector<HTMLElement>("#worldHud .together"), box = document.querySelector<HTMLElement>("#worldHud .lobby");
   if (!el || !box) return;
+  // Until the kept login is back (and renewed) nobody is known to be signed in or out: drawn again once it is.
+  if (!loginBack) { void ready.then(() => { loginBack = true; drawTogether(); }); return; }
   if (partyId && !lobbyOpen && login()) { lobbyOpen = true; box.hidden = false; joinParty(partyId, box); }
   // Signed out at the link: "Sign in to join Ada's party" first, then this again with the login (heardLogin).
   else if (partyId && !lobbyOpen && !askedIn) { askedIn = true; signInToJoin(box, partyId, partyFrom, heardLogin); }

@@ -72,20 +72,25 @@ const REFRESH_MS = 30 * 86_400_000;
 
 /** A refresh token for a native app (OpenID's offline_access) or a game's page (`web`): a month long, one use, kept as its hash.
  * Each use hands out the next. Signing out on the eqosys page ends a page's, not a native app's. */
-export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now(), web = false) {
+/** `jkt`: the thumbprint of the page key it is bound to (DPoP), so only a proof from that key spends it. */
+export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now(), web = false, jkt: string | null = null) {
   const token = "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
   await conf.DB.batch([
     conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
-    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at, web) VALUES (?, ?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS, web ? 1 : 0),
+    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at, web, jkt) VALUES (?, ?, ?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS, web ? 1 : 0, jkt),
   ]);
   return token;
 }
 
-/** Spend a refresh token: who it was for, now, and whether a page held it, or null for one that is spent, late, revoked or another app's. */
-export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<{ who: Handoff; web: boolean } | null> {
-  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at, web")
-    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number; web: number }>();
-  const who = row && row.app === app && row.expires_at >= now ? await handoff(conf, row.user_id, app) : null;
+/**
+ * Spend a refresh token: who it was for, now, and whether a page held it, or null for one that is spent, late, revoked or
+ * another app's, or bound to a key (`jkt`) that `proved` isn't. A refused one is spent all the same.
+ */
+export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now(), proved: string | null = null): Promise<{ who: Handoff; web: boolean } | null> {
+  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at, web, jkt")
+    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number; web: number; jkt: string | null }>();
+  const ok = row && row.app === app && row.expires_at >= now && (row.jkt === null || row.jkt === proved);
+  const who = ok ? await handoff(conf, row.user_id, app) : null;
   return who && { who, web: row!.web === 1 };
 }
 

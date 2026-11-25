@@ -18,6 +18,8 @@ import { levelOp, masterOp, muteOp, myTrack, rights, spaceOp, strips, tone, tone
 
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio" });
+// The kept sign-in comes back from IndexedDB (and renews) before the page reads who you are.
+await eq.ready;
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
 const name = eq.login()?.name || localMe().name || "Someone";
 const DEFS = [...Object.values(ROOMS), ...[yours()].filter((d) => d !== null)];

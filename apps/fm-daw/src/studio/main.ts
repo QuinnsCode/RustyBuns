@@ -118,6 +118,8 @@ const keysAsked = POLY_KINDS.find((k) => k === new URLSearchParams(location.sear
 const def: StudioDef = picked.outdoor && rigAsked ? { ...picked, outdoor: { ...picked.outdoor, rig: system(rigAsked).id } } : picked;
 const jam = newJam(def);
 const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
+// The kept sign-in comes back from IndexedDB (and renews) before the page reads who you are.
+await eq.ready;
 const signedIn = () => !!eq.login();
 /** A fresh token for /ws, or null: a guest (signed out, or a page eqosys won't send anyone back to). */
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };

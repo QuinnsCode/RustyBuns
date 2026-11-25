@@ -266,3 +266,41 @@ export async function startTicket(eqosys: string, app: string, ticket: string, g
     return extras && { sub: claims.sub, room: extras.room, seat: extras.seat };
   } catch { return null; }
 }
+
+// DPoP (RFC 9449): a page proves it holds the key a refresh token was bound to. The key is made non-extractable, so a
+// script that reads the page's storage gets a refresh token it can't spend anywhere else.
+
+/** A DPoP proof's public key: an EC P-256 JWK with only the fields a thumbprint reads. */
+const DpopJwk = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord });
+const DpopHead = obj({ typ: oneOf(["dpop+jwt"]), alg: oneOf(["ES256"]), jwk: DpopJwk });
+const DpopClaims = obj({ jti: str(64, { min: 16 }), htm: str(10), htu: str(2000), iat: num(0, 1e11) });
+/** How far a proof's `iat` may sit from the server's clock, in seconds. */
+export const DPOP_SKEW_S = 300;
+
+/** The RFC 7638 thumbprint of a public key: what a bound refresh token remembers (`jkt`). */
+export const thumbprint = async (jwk: { crv: string; kty: string; x: string; y: string }): Promise<string> =>
+  b64url(await digest(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y })));
+
+/** The URL as a proof names it: no query, no fragment. */
+const htuOf = (url: string): string => { const u = new URL(url); return `${u.origin}${u.pathname}`; };
+
+/** A proof that the holder of `key` sends this request (`DPoP` header). The private key never needs to be extractable. */
+export async function dpopProof(key: CryptoKeyPair, htm: string, url: string, now = Date.now()): Promise<string> {
+  const pub = await crypto.subtle.exportKey("jwk", key.publicKey);
+  const jwk = DpopJwk({ kty: pub.kty, crv: pub.crv, x: pub.x, y: pub.y });
+  const enc = (v: unknown) => b64url(text.encode(JSON.stringify(v)));
+  const body = `${enc({ typ: "dpop+jwt", alg: "ES256", jwk })}.${enc({ jti: b64url(crypto.getRandomValues(new Uint8Array(16))), htm, htu: htuOf(url), iat: Math.floor(now / 1000) })}`;
+  return `${body}.${b64url(new Uint8Array(await crypto.subtle.sign(SIGN, key.privateKey, text.encode(body))))}`;
+}
+
+/** The thumbprint of the key that signed `proof` for this method and URL, or null for a proof that is missing, late, for another request or forged. */
+export async function checkDpop(proof: string | null, htm: string, url: string, now = Date.now()): Promise<string | null> {
+  const [h, p, s, extra] = (proof ?? "").split(".");
+  if (!h || !p || !s || extra !== undefined) return null;
+  try {
+    const head = check(DpopHead, decode(h)), claims = check(DpopClaims, decode(p));
+    if (!head || !claims || claims.htm !== htm || claims.htu !== htuOf(url) || Math.abs(claims.iat - now / 1000) > DPOP_SKEW_S) return null;
+    const pub = await crypto.subtle.importKey("jwk", head.jwk, EC, false, ["verify"]);
+    return await crypto.subtle.verify(SIGN, pub, unb64url(s), text.encode(`${h}.${p}`)) ? thumbprint(head.jwk) : null;
+  } catch { return null; }
+}

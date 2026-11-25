@@ -1,6 +1,7 @@
 // A player goes to eqosys and comes back: the handoff's secrets stay in the tab, the code is traded for a login, and a return that didn't start here is refused.
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { newKey, sign } from "../src/token.ts";
+import { checkDpop, newKey, sign } from "../src/token.ts";
+import { memoryVault, type Vault } from "../src/vault.ts";
 import { eqosys } from "../src/eqosys.ts";
 
 const store = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
@@ -8,10 +9,12 @@ const g = globalThis as Record<string, unknown>;
 let went = "", address = "https://game.example/play";
 const loc = () => { const u = new URL(address); return { origin: u.origin, pathname: u.pathname, search: u.search, hash: u.hash, assign: (to: string) => { went = to; } }; };
 const key = { EQOSYS_SIGNING_KEY: await newKey() };
-let exchanged: unknown = null, renewals = 0, refuse = false;
+let exchanged: unknown = null, renewals = 0, refuse = false, proofs: string[] = [];
 const who = { user: { id: "u_ada", email: "ada@example.com", name: "Ada" }, app: "game", source: "game", access: ["play"] };
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) => {
   const path = new URL(req.url).pathname;
+  const jkt = await checkDpop(req.headers.get("dpop"), "POST", req.url);
+  if (jkt) proofs.push(jkt);
   if (path === "/health" || path === "/oauth/revoke") return Response.json({});
   if (path === "/oauth/token") {
     if (refuse) return Response.json({ error: "invalid_grant" }, { status: 400 });
@@ -24,10 +27,10 @@ const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async (req) =>
 const stale = async (refresh?: string) => JSON.stringify({ name: "Ada", email: "ada@example.com", token: await sign(key, "http://eqosys", who, Date.now() - 3_600_000), ...(refresh ? { refresh } : {}) });
 const until = async (ok: () => unknown) => { for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5)); };
 afterAll(() => server.stop(true));
-const client = () => eqosys({ app: "game", url: `http://127.0.0.1:${server.port}/`, from: ["https://game.example"], prefix: "g" });
+const client = (vault?: Vault) => eqosys({ app: "game", url: `http://127.0.0.1:${server.port}/`, from: ["https://game.example"], prefix: "g", ...(vault ? { vault } : {}) });
 
 beforeEach(() => {
-  g.localStorage = store(); g.sessionStorage = store(); went = ""; address = "https://game.example/play"; refuse = false;
+  g.localStorage = store(); g.sessionStorage = store(); went = ""; address = "https://game.example/play"; refuse = false; proofs = [];
   g.location = loc(); g.history = { replaceState: (_: unknown, __: string, to: string) => { address = new URL(to, address).href; g.location = loc(); } };
 });
 
@@ -119,4 +122,23 @@ test("the sign-in window closed with nothing done is no login and no error; a bl
   while (!went) await Bun.sleep(5);
   expect(new URL(went).pathname).toBe("/login");
   delete g.window;
+});
+
+test("nothing of a sign-in is left in localStorage: a reload gets it back from the vault and renews with the page's own key", async () => {
+  const vault = memoryVault(), eq = client(vault);
+  await eq.signIn();
+  address = `https://game.example/play?code=eq_1&state=${new URL(went).searchParams.get("state")}`; g.location = loc();
+  expect((await eq.finishSignIn())?.login?.name).toBe("Ada");
+  expect((g.localStorage as Storage).getItem("g.login")).toBeNull();
+  const kept = await vault.load();
+  expect(kept.login).toEqual({ name: "Ada", email: "ada@example.com", refresh: "r1" }); // no access token kept
+  expect(kept.key?.privateKey.extractable).toBe(false);
+
+  const reloaded = client(vault);
+  expect(reloaded.login()).toEqual({ name: "Ada", email: "ada@example.com", token: "" }); // by name only, until the renewal
+  expect((g.localStorage as Storage).getItem("g.who")).not.toContain("r1");
+  await reloaded.ready;
+  expect(reloaded.fresh(reloaded.login()!)).toBe(true);
+  expect(proofs.length).toBe(2); // the exchange and the renewal, both signed by the one page key
+  expect(new Set(proofs).size).toBe(1);
 });

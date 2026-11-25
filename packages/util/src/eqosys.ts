@@ -1,8 +1,10 @@
 // Signing in through eqosys, from a page: send the player to eqosys's /login with a PKCE challenge, and
-// when they come back with ?code=&state=, trade it for who they are and a token. The login is kept in
-// localStorage; the token is what the app's Worker checks (`TokenChecker` from ./token). It lasts ten minutes,
-// so the page renews it in the background with a one-use refresh token kept beside it. When that fails (a month
-// unused, or a sign-out on eqosys), the next load checks with eqosys quietly (`prompt=none`): still signed in
+// when they come back with ?code=&state=, trade it for who they are and a token. The token is what the app's Worker
+// checks (`TokenChecker` from ./token) and lives in memory only. It lasts ten minutes, so the page renews it in the
+// background with a one-use refresh token, which eqosys binds to the page's own non-extractable key (DPoP) and which
+// is kept in IndexedDB beside that key (./vault.ts), never in localStorage. `ready` settles once a kept login is back
+// (`finishSignIn` waits for it). When renewing fails (a month unused, or a sign-out on eqosys), the next load checks
+// with eqosys quietly (`prompt=none`): still signed in
 // there, the player comes straight back signed in with no page shown; signed out, they stay a guest.
 // `signInHere` signs in through a small window beside the page, so a game that is running keeps running.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
@@ -13,7 +15,8 @@ import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { EASE, morph, pop } from "./morph.ts";
-import { peek, Login } from "./token.ts";
+import { dpopProof, EC, peek, Login } from "./token.ts";
+import { idbVault, memoryVault, type Kept, type Vault } from "./vault.ts";
 import { PartyRules } from "./party-rules.ts";
 import { board } from "./board.ts";
 
@@ -51,17 +54,19 @@ export interface EqosysConfig {
   url: string;
   /** The origins eqosys sends players back to. Any other page (a desktop app, a LAN host) keeps the typed name. */
   from: readonly string[];
-  /** Prefix for what is kept in localStorage (`<prefix>.login`, `<prefix>.eqosys`) and sessionStorage. */
+  /** Prefix for the settings kept in localStorage (`<prefix>.eqosys`), the vault entry, and sessionStorage. */
   prefix: string;
   /**
    * This game's look for every surface the client mounts (account chip, achievement toast, report button and form, party
    * lobby, spaces panel): `--ui-*` tokens and any extra rules on the `eq-*` classes (./skin.ts). Left out, the house look.
    */
   skin?: Skin;
+  /** Where the sign-in is kept between visits: IndexedDB by default (memory where there is none); a desktop host may pass the OS keychain. */
+  vault?: Vault;
 }
 
 /** The sign-in client for one app. `signIn`, `signInHere`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
-export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
+export function eqosys({ app, url, from, prefix, skin, vault: given }: EqosysConfig) {
   if (skin) wearSkin(skin);
   const kept = {
     get(k: string) { try { return localStorage.getItem(`${prefix}.${k}`) ?? ""; } catch { return ""; } },
@@ -72,7 +77,45 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     take(k: string) { try { const v = sessionStorage.getItem(`${prefix}.eq.${k}`) ?? ""; sessionStorage.removeItem(`${prefix}.eq.${k}`); return v; } catch { return ""; } },
     put(k: string, v: string) { try { sessionStorage.setItem(`${prefix}.eq.${k}`, v); } catch {} },
   };
-  const keep = (l: Login | null) => { kept.put("login", l ? JSON.stringify(l) : ""); if (l) plan(); };
+  const vault = given ?? idbVault(prefix) ?? memoryVault();
+  /** The login, token and all, in this tab's memory only; the vault keeps who it is and the bound refresh token. */
+  let signedIn: Login | null = null, pair: CryptoKeyPair | null = null;
+  // Who is signed in, by name only (`<prefix>.who`: no token, nothing that signs anyone in), so a page drawn before
+  // `ready` already says who it is, its token "" until the first renewal, as a login whose ten minutes ran out does.
+  const Who = obj({ name: str(200), email: str(320) });
+  const named = (l: Login | null) => kept.put("who", l ? JSON.stringify({ name: l.name, email: l.email }) : "");
+  try { const w = check(Who, JSON.parse(kept.get("who") || "null")); if (w) signedIn = { ...w, token: "" }; } catch { /* no name kept */ }
+  const keptLogin = (l: Login | null): Kept["login"] => l && { name: l.name, email: l.email, ...(l.refresh ? { refresh: l.refresh } : {}) };
+  /** One change to the vault at a time, in order. */
+  let saving: Promise<void> = Promise.resolve();
+  const save = () => (saving = saving.then(() => vault.save({ key: pair, login: keptLogin(signedIn) })).catch(() => {}));
+  /** The page's other tabs hear of a new login (or a sign-out) at once, token included, so they don't renew it again. */
+  const tabs = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(`${prefix}.eq.login`);
+  const Told = obj({ login: nul(obj({ name: str(200), email: str(320), token: str(8192, { min: 0 }), refresh: opt(str(100)) })) });
+  if (tabs) tabs.onmessage = (e) => { const m = check(Told, e.data); if (m) { signedIn = m.login; plan(); } };
+  const keep = (l: Login | null): Promise<void> => {
+    signedIn = l;
+    named(l);
+    tabs?.postMessage({ login: l } satisfies Of<typeof Told>);
+    plan();
+    return save();
+  };
+  /** One at a time across this page's tabs, where the browser can say so. */
+  const locked = <T>(name: string, f: () => Promise<T>): Promise<T> =>
+    typeof navigator !== "undefined" && navigator.locks ? navigator.locks.request(`${prefix}.eq.${name}`, f) : f();
+  /** The page's DPoP key, made once and kept: its private half can't be read out, so a refresh token bound to it works only here. */
+  const keyPair = () => locked("key", async () => {
+    if (pair) return pair;
+    pair = (await vault.load().catch(() => null))?.key ?? await crypto.subtle.generateKey(EC, false, ["sign", "verify"]);
+    await save();
+    return pair;
+  });
+  /** POST to eqosys with a proof of the page's key. An eqosys from before DPoP refuses the header (CORS), so that try goes again without it. */
+  const post = async (to: string, init: { headers?: Record<string, string>; body: BodyInit }): Promise<Response | null> => {
+    const proof = await keyPair().then((k) => dpopProof(k, "POST", to), () => null);
+    const send = (dpop: boolean) => fetch(to, { method: "POST", body: init.body, headers: { ...init.headers, ...(dpop && proof ? { dpop: proof } : {}) } });
+    return send(true).catch(() => (proof ? send(false) : null)).catch(() => null);
+  };
 
   /** Where eqosys is for this page: the live one, or the `<prefix>.eqosys` setting (a local eqosys, `bun run dev` there with loopback returns on). */
   const eqosysUrl = () => (kept.get("eqosys") || url).replace(/\/$/, "");
@@ -95,12 +138,14 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
 
   /** Trade eqosys's code for the login, and keep it. */
   async function trade(code: string, verifier: string, then: string): Promise<Returned> {
-    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
+    await ready;
+    const res = await post(`${eqosysUrl()}/api/exchange`, { headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
+    const got = res?.ok ? check(ExchangeReply, await res.json().catch(() => null)) : null;
     if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
     if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
     waiting.clear();
     const login: Login = { name: got.user.name, email: got.user.email, token: got.token, ...(got.refresh ? { refresh: got.refresh } : {}) };
-    keep(login);
+    await keep(login);
     void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
     return { login, then };
   }
@@ -135,6 +180,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    * null when this wasn't a return. The query is taken off the address either way, so a reload doesn't retry it.
    */
   async function finishSignIn(): Promise<Returned | null> {
+    // The address is read before anything waits: a page may put its own address up right after calling this.
     const q = new URLSearchParams(location.search);
     const code = q.get("code"), state = q.get("state"), refused = q.get("error") === "login_required";
     if ((code === null && !refused) || state === null) return stale();
@@ -155,13 +201,13 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     const verifier = once.take("verifier"), then = once.take("then");
     if (!verifier || state !== started) return { login: null, then, error: "That sign-in didn't start here. Try again." };
     // The quiet check found nobody signed in on eqosys: a guest, and the run-out login is let go so the page doesn't ask again.
-    if (refused || code === null) { keep(null); return null; }
+    if (refused || code === null) { await ready; await keep(null); return null; }
     return trade(code, verifier, then);
   }
 
-  /** The login kept from the last sign-in, if any. Its token may have run out: see `fresh`. */
+  /** The login kept from the last sign-in, if any (null until `ready`). Its token may have run out, or be "" until the first renewal: see `fresh`. */
   function login(): Login | null {
-    try { return check(Login, JSON.parse(kept.get("login") || "null")); } catch { return null; }
+    return signedIn;
   }
 
   /** Whether the token still has `forMs` to run: long enough for the server to check it when the request lands. */
@@ -169,7 +215,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
 
   function signOut() {
     const spent = login()?.refresh;
-    keep(null);
+    void keep(null);
     if (spent) void fetch(`${eqosysUrl()}/oauth/revoke`, { method: "POST", body: new URLSearchParams({ token: spent }), keepalive: true }).catch(() => {});
   }
 
@@ -177,20 +223,21 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    * a month old, or a sign-out there), or "down" (eqosys couldn't be reached). One renewal at a time. */
   let renewing: Promise<"ok" | "refused" | "down"> | null = null;
   function renew(): Promise<"ok" | "refused" | "down"> {
-    return renewing ??= (async () => {
+    // Across tabs too: the one that waited finds the login another tab renewed (it heard of it on `tabs`) and spends nothing.
+    return renewing ??= locked("renew", async () => {
       const l = login();
       if (l && fresh(l, 60_000)) return "ok" as const;
       if (!l?.refresh) return "refused" as const;
-      const res = await fetch(`${eqosysUrl()}/oauth/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: app, refresh_token: l.refresh }) }).catch(() => null);
+      const res = await post(`${eqosysUrl()}/oauth/token`, { body: new URLSearchParams({ grant_type: "refresh_token", client_id: app, refresh_token: l.refresh }) });
       if (!res || res.status >= 500) return "down" as const;
       const got = res.ok ? check(Renewed, await res.json().catch(() => null)) : null;
-      if (got) { keep({ ...l, token: got.access_token, refresh: got.refresh_token }); return "ok" as const; }
+      if (got) { await keep({ ...l, token: got.access_token, refresh: got.refresh_token }); return "ok" as const; }
       // Another tab may have spent it first and kept the next one.
       const now = login();
       if (now && fresh(now, 60_000)) return "ok" as const;
-      if (now?.refresh === l.refresh) keep({ name: l.name, email: l.email, token: l.token });
+      if (now?.refresh === l.refresh) await keep({ name: l.name, email: l.email, token: l.token });
       return "refused" as const;
-    })().finally(() => { renewing = null; });
+    }).finally(() => { renewing = null; });
   }
 
   /** Renew a minute before the token runs out, and on coming back to a tab whose timer the browser held back. */
@@ -203,10 +250,30 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     (timer as { unref?: () => void }).unref?.();
   }
   if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", () => { if (document.visibilityState === "visible" && login()?.refresh) void renew(); });
-  plan();
+
+  /**
+   * The kept login back from the vault, with a fresh token when it has a refresh token and eqosys answers. Until then
+   * `login()` names the player only (`<prefix>.who`). A login an older page kept in localStorage (`<prefix>.login`) is
+   * taken out of it at once, before anything waits, so only the login this page read leaves, and it moves into the vault.
+   */
+  let old: Login | null = null;
+  try { old = check(Login, JSON.parse(kept.get("login") || "null")); } catch { /* not a login */ }
+  if (kept.get("login")) kept.put("login", "");
+  if (old) signedIn = old;
+  const ready: Promise<void> = (async () => {
+    const got = await vault.load().catch((): Kept => ({ key: null, login: null }));
+    pair = got.key;
+    signedIn = old ?? (got.login && { ...got.login, token: "" });
+    named(signedIn);
+    if (old) await save();
+    plan();
+    if (signedIn?.refresh && !fresh(signedIn)) await renew();
+  })().finally(() => { settled = true; });
+  let settled = false;
 
   /** Not a return from eqosys: a run-out login is renewed, or else checked quietly with eqosys once per tab (the page leaves for it). */
   async function stale(): Promise<null> {
+    await ready;
     const l = login();
     if (!l || fresh(l)) return null;
     const r = await renew();
@@ -298,6 +365,8 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    */
   function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
+    // Drawn before the kept login is back: drawn again once it is, so a signed-in player never sees "Sign in" stick.
+    if (!settled) void ready.then(() => accountChip(slot, o));
     // Only a signed-in chip folds: signed out, the badge is just the mark and Sign in always shows beside it.
     const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), { note: _note, ...again } = o;
     const part = <E extends HTMLElement>(name: string, e: E) => { e.dataset.part = name; return e; };
@@ -335,7 +404,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return slot;
   }
 
-  return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, board: boardClient, achieve, achievements, sendHeld, celebrate };
+  return { ready, signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, board: boardClient, achieve, achievements, sendHeld, celebrate };
 }
 
 /** Whether the account chip is folded into its badge: one choice for every game on this site. */

@@ -68,6 +68,6 @@ export function echoProtocol(res: Response, offered: boolean): Response {
 export async function cors(req: Request, conf: Env): Promise<Record<string, string>> {
   const origin = req.headers.get("origin");
   return origin && ((await originsOf(conf)).has(origin) || (loopbackOn(conf) && isLoopback(origin)))
-    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization", vary: "origin" }
+    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization, dpop", vary: "origin" }
     : {};
 }

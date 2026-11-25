@@ -515,6 +515,16 @@ Each game's catalog is in [eqosys](apps/eqosys/README.md) (`src/achievements.ts`
 
 </details>
 
+### A sign-in that a copied token cannot use
+
+A page's eqosys token stays in memory. Its refresh token works only with the page's own key, which nobody can read out.
+
+<details><summary>More</summary>
+
+The page client makes a non-extractable WebCrypto key and keeps it in IndexedDB. eqosys binds the page's refresh token to that key (DPoP, RFC 9449), and each renewal must have a fresh signature from the key. If a script copies the refresh token out of the page, the token does not renew anywhere else. The ten-minute access token is never stored. localStorage keeps only the player's name, so the page can show who is signed in before the first renewal. `eq.ready` settles when the kept sign-in is back, and `finishSignIn()` waits for it. Native apps send no proof, and they work as before.
+
+</details>
+
 ### A tutorial you do once
 
 The first time you play, a coach card names one thing to do, waits until you do it, and moves on; after that it never shows again.
