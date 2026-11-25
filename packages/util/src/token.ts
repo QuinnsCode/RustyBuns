@@ -9,6 +9,10 @@ import { arr, check, int, num, obj, oneOf, opt, str, type Of } from "./guard.ts"
 /** The most studios a token names: a token travels in a query, so it stays a few KB (TOKEN). */
 export const STUDIOS_MAX = 8;
 
+/** What an app keeps of a sign-in: who, the token its Worker checks, and the one-use refresh token beside it. */
+export const Login = obj({ name: str(200), email: str(320), token: str(8192), refresh: opt(str(100)) });
+export type Login = Of<typeof Login>;
+
 /**
  * What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch).
  * `email` is empty only on eqosys's own tickets and orders to Qlave (apps/eqosys/src/qollab/qlave.ts), which don't need it.
