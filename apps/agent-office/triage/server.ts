@@ -26,6 +26,8 @@ import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 export { startReaper } from "../live/reaper.ts";
 export { startCiLoop } from "../live/ci-loop.ts";
+import { spread, spreadNow } from "../live/spread.ts";
+export { startSpreadWatch } from "../live/spread.ts";
 import { officeReload } from "../live/reload.ts";
 import type { ContextReply } from "../live/replies.ts";
 import { CARRY_ON, ContextWatch, Meter, ModeWatch, nameOf, sessionLines, StallWatch, type Context, type Stall } from "../ester/dexter.ts";
@@ -88,7 +90,7 @@ export function officeTriage(
       return { status: 200, body: { snapshots } };
     }
     if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); const reply = { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions), stalled: stalls.check(sessions).stalled.map((x) => x.message) }; return reply satisfies ContextReply; })() } : only("GET");
-    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally(), rings: rings(repoWith(RINGS, [...floors()].map((f) => f.dir))) } satisfies HelpersReply } : only("GET");
+    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally(), rings: rings(repoWith(RINGS, [...floors()].map((f) => f.dir))), spread: spread.lines() } satisfies HelpersReply } : only("GET");
     if (p === "/__rb/line") {
       if (method !== "GET") return only("GET");
       const dir = [...floors()][0]?.dir;
@@ -99,6 +101,7 @@ export function officeTriage(
       if (!isHelper(name)) return { status: 404, body: { error: "Ester, Mervin or Dexter" } };
       if (method !== "POST") return only("POST");
       if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
+      if (name === "ester") void spreadNow(); // her badge also looks for tests failing on PR after PR (live/spread.ts)
       const dirs = [...floors()].map((f) => f.dir);
       if (!dirs.length) return { status: 404, body: { error: "No floor to run in" } };
       const repo = repoWith(HELPERS[name].script, dirs);

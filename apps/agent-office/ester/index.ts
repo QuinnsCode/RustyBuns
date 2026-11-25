@@ -62,6 +62,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   let code: NonNullable<ContextReply["code"]> = []; // the latest code-mode programs Dexter saw (a line each on his card, and an rb:code-mode event on window)
   let rings: string[] = []; // the release rings, a line each (scripts/rings.ts), on Ester's card
+  let spread: string[] = []; // the tests failing on PR after PR, a line each (live/spread.ts), at the top of her card
   let over: ContextReply["over"] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
@@ -79,7 +80,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
       el("div", { className: "rb-helper-job" }, who.job),
-      el("div", { className: "rb-helper-log" }, held + (open === "ester" && rings.length ? rings.join("\n") + "\n\n" : "") + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
+      el("div", { className: "rb-helper-log" }, held + (open === "ester" && spread.length ? spread.join("\n") + "\n\n" : "") + (open === "ester" && rings.length ? rings.join("\n") + "\n\n" : "") + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);
   };
@@ -94,7 +95,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       if (res.ok) {
         // the reply also carries Mervin's tally (null until one is kept): only the three helpers are states
         const body = check(HelpersReply, await res.json().catch(() => null));
-        if (body) { for (const n of Object.keys(WHO) as Name[]) states[n] = body[n]; rings = body.rings; }
+        if (body) { for (const n of Object.keys(WHO) as Name[]) states[n] = body[n]; rings = body.rings; spread = body.spread ?? []; }
       }
       const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then(async (c) => (c.ok ? check(ContextReply, await c.json()) : null), () => null);
       if (ctx) {
