@@ -22,6 +22,6 @@ export default defineConfig({
   // react/jsx-dev-runtime is found late otherwise (the scan reads JSX for production), and the page reloads a few
   // seconds in: named here, a fresh server never reloads a page under someone.
   optimizeDeps: { exclude: ["@webaudiomodules/sdk"], include: ["react/jsx-dev-runtime"] },
-  // Seven pages (the decks on their own too, decks.html): the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).
-  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html"), remote: resolve(__dirname, "remote.html"), decks: resolve(__dirname, "decks.html") } } },
+  // Eight pages (the front door, door.html, naming the six paths; the decks on their own too, decks.html): the DAW, Q Amp (amp.html, the circuit amp live), Qollab Studio's gear room (studio.html), Qollab Studio (jam.html, the lobby and the jam room), its studio builder (rooms.html) and its remote (remote.html, one screen for a phone).
+  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html"), jam: resolve(__dirname, "jam.html"), rooms: resolve(__dirname, "rooms.html"), remote: resolve(__dirname, "remote.html"), decks: resolve(__dirname, "decks.html"), door: resolve(__dirname, "door.html") } } },
 });

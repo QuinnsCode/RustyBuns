@@ -24,6 +24,7 @@ import { BuildSheet } from "../kit/sheet.ts";
 import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
+import { swapWontPlay } from "../circuit/bench.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, lightLevels, topHz, hzLabel, type ScreenMode } from "./screens.ts";
@@ -557,7 +558,9 @@ function showBoard() {
   const def = PEDALS.find((p) => p.id === S.pedal);
   const l = loopOf();
   ui.sheetBtn.hidden = !def?.board;
-  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
+  const why = refused;
+  refused = ""; // said once, on the change it turned away
+  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {}, why ? { hint: `won't play, kept your last parts: ${why}` } : {});
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
   else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
@@ -570,16 +573,29 @@ function openSheet() {
   return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}, S.drive[def.id] ?? 5) : null;
 }
 
-/** Puts `choice` in the playing pedal's socket (null or the stock part: back to stock; socket null: every socket). */
-function swapPart(socket: string | null, choice: string | null) {
-  if (!S.pedal) return;
+/** Why the last part change was turned away (the board view says so until the next one), or "". */
+let refused = "";
+
+/**
+ * Puts `choice` in the playing pedal's socket (null or the stock part: back to stock; socket null: every socket),
+ * once the bench has played it with the knob down, centred and up. A change that won't solve is turned away, and the
+ * pedal keeps the parts it had. Back to the reasons it won't play, or [] when it plays.
+ */
+function swapPart(socket: string | null, choice: string | null): string[] {
+  const def = PEDALS.find((p) => p.id === S.pedal);
+  if (!S.pedal || !def) return [];
   const mine = { ...S.swaps[S.pedal] };
   if (socket === null) for (const k of Object.keys(mine)) delete mine[k];
   else if (choice === null || choice === "silicon" || choice === "1") delete mine[socket];
   else mine[socket] = choice;
-  if (Object.keys(mine).length) S.swaps[S.pedal] = mine; else delete S.swaps[S.pedal];
+  const why = swapWontPlay(def, mine);
+  refused = why.join("; ");
+  if (!why.length) {
+    if (Object.keys(mine).length) S.swaps[S.pedal] = mine; else delete S.swaps[S.pedal];
+    send();
+  }
   showBoard();
-  send();
+  return why;
 }
 
 function setAmp(id: string) {
@@ -697,7 +713,7 @@ Object.assign(window, {
     sheetDownload: () => ui.sheet.download(),
     /** The open sheet's tolerance band, run (a few seconds) and returned: dB per frequency for the sim and the builds. */
     sheetBand: () => ui.sheet.bandOf(),
-    /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */
+    /** Swap a socket on the playing pedal's board (`"D1", "germanium"`, `"R2", "0.47"`); null puts the stock part back. Why it won't play, or []. */
     swap: swapPart,
     /** Switch a loop machine ("spring", "tape", "bbd") on or off. */
     loop: (kind: "spring" | "tape" | "bbd", isOn: boolean) => { loopOf()[kind].on = isOn ? 1 : 0; showPedals(); send(); },

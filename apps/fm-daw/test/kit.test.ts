@@ -3,10 +3,13 @@
 // (circuits/q-drive/) as the page does, here from disk instead of through Vite.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Glob } from "bun";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { PEDALS } from "../src/circuit/amps.ts";
+import { swapWontPlay } from "../src/circuit/bench.ts";
+import { farads, ohms, sockets, type Swaps } from "../src/circuit/circuits.ts";
 import { PANELS } from "../circuits/wall-panels.ts";
-import { csvRows, kitZip, moduleSheetOf, readBom, sheetOf, type KitFiles } from "../src/kit/kit.ts";
+import { KIT_REFS, csvRows, kitId, kitZip, moduleSheetOf, readBom, sheetOf, type KitFiles } from "../src/kit/kit.ts";
 import { ohmsCode } from "../src/kit/parts.ts";
 import { toleranceBand, widest } from "../src/kit/tolerance.ts";
 import { unzip, zip } from "../src/kit/zip.ts";
@@ -55,6 +58,44 @@ test("look at Q Drive on the pedal wall, open its build sheet with your swap, an
 
   // Stock parts: no swaps, nothing marked as yours.
   expect(sheetOf(drive!, kit).parts.some((p) => p.swapped)).toBe(false);
+});
+
+test("change Q Drive's gain resistor in Q Amp: it still plays, you hear more gain, and the kit's bom.csv and order.csv carry your value", async () => {
+  const drive = PEDALS.find((p) => p.id === "drive")!;
+  // R2 is the gain leg: above its corner the gain is 1 + Drive / R2, so 4.7k down a step to 2.2k is about 6.5 dB more
+  // (its corner with C2 moves up, from 720 Hz to 1.5 kHz, so the low mids get less of it).
+  expect(sockets("drive").find((s) => s.id === "R2")).toMatchObject({ kind: "res", ohms: 4700 });
+  const mine: Swaps = { R2: "0.47" };
+  expect(swapWontPlay(drive, mine)).toEqual([]);
+  const highMids = async (s?: Swaps) => { const b = await toleranceBand(drive.net(5, s), { runs: 0 }); return b.sim[b.hz.indexOf(3620)]!; };
+  const more = (await highMids(mine)) - (await highMids());
+  expect(more).toBeGreaterThan(4);
+  expect(more).toBeLessThan(8);
+
+  const kit = await kitOnDisk("q-drive"), sheet = sheetOf(drive, kit, mine);
+  expect(sheet.parts.find((p) => p.ref === "R2")).toMatchObject({ value: "2.2k", swapped: true, socketed: false });
+  const files = unzip(kitZip(kit, sheet.text, "<svg/>", sheet.parts));
+  expect(csvRows(text(files["bom.csv"])).find((r) => r[0] === "R2")).toEqual(["R2", "Resistor", "2.2k", "axial_p10.16mm", "no, your value", "", ""]);
+  const r2 = csvRows(text(files["order.csv"])).find((r) => r[4]!.split(" ").includes("R2"));
+  expect([r2?.[0], r2?.[3]]).toEqual(["1", "Resistor 2.2k axial_p10.16mm"]);
+  // A value in the same holes: the board files are the stock board's, and the sheet says so.
+  for (const l of Object.keys(kit).filter((p) => p.startsWith("gerbers/"))) expect(text(files[l])).toBe(kit[l]!);
+  expect(sheet.text).toContain("the board files are the stock board's");
+  // The sim's output resistor, R3, is R4 in the box (KIT_REFS): the kit's own R3 stays stock.
+  expect(sheetOf(drive, kit, { R3: "4.7" }).parts.filter((p) => p.swapped).map((p) => [p.ref, p.value])).toEqual([["R4", "4.7k"]]);
+});
+
+test("every pedal kit holds its sim board's changeable parts at their stock values, so a change lands on the right part", async () => {
+  const unit = (v: string) => v.replace("µF", "u").replace("nF", "n").replace("pF", "p");
+  for (const def of PEDALS.filter((p) => p.board)) {
+    if (!existsSync(join(CIRCUITS, kitId(def.name), "bom.csv"))) continue;
+    const bom = readBom(await Bun.file(join(CIRCUITS, kitId(def.name), "bom.csv")).text()), refs = KIT_REFS[def.board!] ?? {};
+    for (const s of sockets(def.board!)) {
+      if (s.kind === "clipper") continue;
+      const ref = refs[s.id] ?? s.id;
+      expect([def.id, ref, bom.find((r) => r.Designator === ref)?.Value]).toEqual([def.id, ref, s.kind === "cap" ? unit(farads(s.farads)) : ohms(s.ohms)]);
+    }
+  }
 });
 
 test("B on Q Saw in the sound wall's case opens its build sheet: its parts to order, its board and its front panel in the zip", async () => {

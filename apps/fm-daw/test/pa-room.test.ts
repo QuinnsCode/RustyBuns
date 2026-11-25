@@ -1,7 +1,8 @@
 // The PA heard from the floor (src/studio/pa-room.ts): level by the inverse square law, the speed of sound's delay,
 // the air's highs, and a speaker behind you quieter; and Desert Gathering's stacks as the speakers it plays from: one mono point source.
 import { expect, test } from "bun:test";
-import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, SOUND_SPEED, stackBlocks, type Speaker } from "../src/studio/pa-room.ts";
+import { EAR_Y, HORN_Y, hearSpeaker, paSpeakers, REF_M, SOUND_SPEED, stackBlocks, type Speaker } from "../src/studio/pa-room.ts";
+import { floorMap, mapAt } from "../src/studio/coverage.ts";
 import { clubStack, subCones } from "../src/studio/open-air.ts";
 import { GEAR_SIZES } from "@rustybuns/models/gear";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
@@ -15,7 +16,8 @@ const facing = (z: number) => hearSpeaker(stack, { x: 0, z, yaw: 0 }); // yaw 0 
 test("twice as far is 6 dB down and arrives twice as late, with fewer highs", () => {
   const near = facing(10), far = facing(20);
   const m = (z: number) => Math.hypot(z, HORN_Y - EAR_Y);
-  expect(20 * Math.log10(far.gain / near.gain)).toBeCloseTo(20 * Math.log10(m(10) / m(20)), 5); // about -6 dB
+  // about -6 dB (the horn's own vertical pattern, @rustybuns/gear's, takes a little more nearer in, where you're further below its axis)
+  expect(20 * Math.log10(far.gain / near.gain)).toBeCloseTo(20 * Math.log10(m(10) / m(20)), 0);
   expect(near.delay * 1000).toBeCloseTo(m(10) / SOUND_SPEED * 1000, 5); // about 29 ms
   expect(far.delay / near.delay).toBeCloseTo(m(20) / m(10), 5);
   expect(far.cutoff).toBeLessThan(near.cutoff);
@@ -74,4 +76,15 @@ test("a club stack's sub pumps on the beat, settles between beats, rests when th
   expect(cone.position.z - rest).toBeLessThan(0.0001);
   pump(null);
   expect(cone.position.z).toBe(rest);
+});
+
+test("the builder's coverage map is what the jam room's PA plays: between two places on the floor, the same difference", () => {
+  const one = { ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, stacks: [{ at: [0, -6] as [number, number], yaw: 0.5 }] } };
+  const [sp] = paSpeakers(one), map = floorMap(one, 0.1)!;
+  // facing the stack, so your head shades nothing; on its axis and well off it, both past the horn's near field
+  const at = (a: number, d: number) => ({ x: sp!.at[0] + d * Math.sin(sp!.yaw + a), z: sp!.at[1] + d * Math.cos(sp!.yaw + a) });
+  const heard = (p: { x: number; z: number }) => 20 * Math.log10(hearSpeaker(sp!, { ...p, yaw: Math.atan2(p.x - sp!.at[0], p.z - sp!.at[1]) }).gain);
+  const [a, b] = [at(0, 2.5 * REF_M), at(1, 2 * REF_M)];
+  expect(heard(a) - heard(b)).toBeCloseTo(mapAt(map, a.x, a.z) - mapAt(map, b.x, b.z), 0);
+  expect(mapAt(map, a.x, a.z) - mapAt(map, b.x, b.z)).toBeGreaterThan(3);
 });
