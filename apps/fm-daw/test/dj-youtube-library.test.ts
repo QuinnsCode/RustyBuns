@@ -47,7 +47,7 @@ test.skipIf(!hasChrome)("links pasted mid-set wait in the library, once each, an
   expect((await shelf()).map((s) => s.id)).toEqual(["M7lc1UVf-VE", "dQw4w9WgXcQ"]);
   // both decks kept what they had
   expect(await page<string[]>("qdecks.state().decks.map((d) => d.name)")).toEqual(names);
-  expect(await page("qdecks.state().tubes")).toEqual([null, null]);
+  expect(await page<unknown[]>("qdecks.state().tubes")).toEqual([null, null]);
 
   // next visit: still in the library, and its row's x forgets one
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
