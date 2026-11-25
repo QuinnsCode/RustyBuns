@@ -2,7 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Box } from "lucide";
 import { Fleet } from "../src/api.ts";
+import { iconFor } from "../src/icons.ts";
 import { demoFleet } from "../src/demo.ts";
 import { MODES, layout } from "../src/layout.ts";
 import { boxFaces, camFor } from "../src/project.ts";
@@ -79,4 +81,16 @@ test("each camera sees the faces it should: the map only tops, 2.5D and 3D a top
   expect(seen("2d")).toEqual(["top"]);
   expect(seen("2.5d")).toEqual(["east", "south", "top"]);
   expect(seen("3d")).toEqual(["east", "south", "top"]);
+});
+
+test("each app keeps one colour across its stages and modes, and every primitive we deploy has its own icon", () => {
+  const fleet = demoFleet();
+  for (const mode of MODES) {
+    const byApp = new Map<string, Set<string>>();
+    for (const b of layout(fleet, mode).blocks) byApp.set(b.stack, (byApp.get(b.stack) ?? new Set()).add(b.app));
+    expect([...byApp.values()].every((c) => c.size === 1)).toBe(true);
+    expect(new Set([...byApp.values()].map((c) => [...c][0])).size).toBe(byApp.size);
+  }
+  const types = [...new Set(fleet.stacks.flatMap((s) => s.resources.map((r) => r.type)))];
+  expect(types.filter((t) => iconFor(t) === Box)).toEqual([]);
 });

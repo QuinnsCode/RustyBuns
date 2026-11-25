@@ -5,9 +5,9 @@
 //   map     each stack is an island; resources stand in columns by dependency depth, links show what feeds what
 //   health  zones per status; a deploy in flight (creating, updating, deleting, replacing) pulses
 //   age     one lane per stack; left is the oldest change, right the newest, and newer stands taller
-//   kinds   zones per resource type, the most common first
+//   kinds   zones per resource type, the most common first, each block in its app's colour
 //   blast   what a destroy takes with it: height is how many resources depend on it (all the way down); kept ones apart
-import { BUSY, kindOf, providerOf, shortName, type Fleet, type Resource, type Stack } from "./api.ts";
+import { BUSY, kindOf, shortName, type Fleet, type Resource, type Stack } from "./api.ts";
 
 export const MODES = ["map", "health", "age", "kinds", "blast"] as const;
 export type Mode = (typeof MODES)[number];
@@ -21,30 +21,35 @@ export interface Block {
   stage: string;
   r: Resource;
   x: number; z: number; w: number; d: number; h: number;
+  /** The body colour: what the mode says about it. */
   color: string;
+  /** Its app's colour: the plinth it stands on, and the plate in map and age. */
+  app: string;
   label: string;
   pulse: boolean;
   /** Transitive dependents in its stage. */
   reach: number;
 }
-export interface Zone { id: string; label: string; x: number; z: number; w: number; d: number }
+export interface Zone { id: string; label: string; x: number; z: number; w: number; d: number; /** An app's plate colour, when the zone is one stack. */ color?: string }
 export interface Link { from: string; to: string }
 export interface Scene { mode: Mode; blocks: Block[]; zones: Zone[]; links: Link[]; w: number; d: number; legend: { label: string; color: string }[] }
 
-const CELL = 1.7, SIZE = 1, PAD = 0.9, GAP = 1.6;
+const CELL = 2, SIZE = 1.3, PAD = 1.1, GAP = 1.6;
 
-/** Twelve hues that read on a light and a dark ground, handed out to resource types in name order. */
-const PALETTE = ["#4f8ef7", "#f28c38", "#3fbf7f", "#d65db1", "#e6b422", "#36b5c9", "#9b7cf2", "#e5534b", "#8bc34a", "#ff7eb6", "#a1887f", "#5c6bc0"];
+/** The house colours: purples, lilac and lavender, grey, and a sunrise for heat. Each app gets one, in name order. */
+export const APP_COLORS = ["#7c5cff", "#ff8a5c", "#b9a3e8", "#ffc15e", "#9c8fb8", "#e86f9a", "#5b45b0", "#d8b4fe", "#f4a259", "#6f6a85"];
+/** The resource blocks in map mode: lilac-white, so the app plates and the icons carry the colour. */
+export const BLOCK = "#e4def5";
 
 export const STATUS_COLOR: Record<Resource["status"], string> = {
-  created: "#3fbf7f", updated: "#3fbf7f", replaced: "#36b5c9",
-  creating: "#4f8ef7", updating: "#4f8ef7", replacing: "#e6b422", deleting: "#e5534b",
+  created: "#c9bff0", updated: "#c9bff0", replaced: "#a48ee6",
+  creating: "#7c5cff", updating: "#7c5cff", replacing: "#ffc15e", deleting: "#ff6b5c",
 };
-const KEPT = "#36b5c9";
+const KEPT = "#9c8fb8";
 
-/** A colour from cold (0) to hot (1). */
+/** A colour from cool lavender (0) through purple to a sunrise (1). */
 function ramp(t: number): string {
-  const stops = [[79, 142, 247], [155, 124, 242], [242, 140, 56], [229, 83, 75]] as const;
+  const stops = [[216, 206, 245], [124, 92, 255], [255, 138, 92], [255, 193, 94]] as const;
   const f = Math.max(0, Math.min(1, t)) * (stops.length - 1), i = Math.min(stops.length - 2, Math.floor(f)), k = f - i;
   const [a, b] = [stops[i]!, stops[i + 1]!];
   return `rgb(${a.map((v, j) => Math.round(v + (b[j]! - v) * k)).join(",")})`;
@@ -52,7 +57,7 @@ function ramp(t: number): string {
 
 interface Item { s: Stack; r: Resource }
 interface Placed extends Item { col: number; row: number; h: number; color: string }
-interface ZoneSpec { id: string; label: string; items: Placed[]; cols?: number }
+interface ZoneSpec { id: string; label: string; items: Placed[]; cols?: number; color?: string }
 
 /** How deep each resource sits: 0 for one nothing feeds, else one more than the deepest that lists it downstream. */
 function depths(rs: Resource[]): Map<string, number> {
@@ -92,7 +97,7 @@ const grid = (items: Omit<Placed, "col" | "row">[], cols = Math.max(1, Math.ceil
   items.map((it, i) => ({ ...it, col: i % cols, row: Math.floor(i / cols) }));
 
 /** Lay zones out left to right, wrapping into rows; `lanes` puts each on its own row. */
-function arrange(mode: Mode, specs: ZoneSpec[], reach: Map<string, number>, legend: Scene["legend"], lanes = false): Scene {
+function arrange(mode: Mode, specs: ZoneSpec[], reach: Map<string, number>, legend: Scene["legend"], appOf: (stack: string) => string, lanes = false): Scene {
   const sized = specs.filter((z) => z.items.length).map((z) => {
     const cols = Math.max(z.cols ?? 0, ...z.items.map((p) => p.col + 1)), rows = Math.max(...z.items.map((p) => p.row + 1));
     return { ...z, w: cols * CELL - (CELL - SIZE) + PAD * 2, d: rows * CELL - (CELL - SIZE) + PAD * 2 };
@@ -103,13 +108,13 @@ function arrange(mode: Mode, specs: ZoneSpec[], reach: Map<string, number>, lege
   let x = 0, z = 0, rowD = 0, w = 0;
   for (const s of sized) {
     if (x > 0 && x + s.w > maxW) { x = 0; z += rowD + GAP; rowD = 0; }
-    zones.push({ id: s.id, label: s.label, x, z, w: s.w, d: s.d });
+    zones.push({ id: s.id, label: s.label, x, z, w: s.w, d: s.d, ...(s.color && { color: s.color }) });
     for (const p of s.items) {
       const id = `${p.s.id}::${p.r.fqn}`;
       blocks.push({
         id, stack: p.s.stack, stage: p.s.stage, r: p.r,
         x: x + PAD + p.col * CELL, z: z + PAD + p.row * CELL, w: SIZE, d: SIZE, h: p.h,
-        color: p.color, label: shortName(p.r.fqn), pulse: BUSY.has(p.r.status), reach: reach.get(id) ?? 0,
+        color: p.color, app: appOf(p.s.stack), label: shortName(p.r.fqn), pulse: BUSY.has(p.r.status), reach: reach.get(id) ?? 0,
       });
     }
     w = Math.max(w, x + s.w);
@@ -135,8 +140,10 @@ export function layout(fleet: Fleet, mode: Mode, stacks: readonly string[] = [])
   for (const s of shown) for (const [f, n] of reaches(s.resources)) reach.set(`${s.id}::${f}`, n);
   const reachOf = (it: Item) => reach.get(`${it.s.id}::${it.r.fqn}`) ?? 0;
   const kinds = [...new Set(items.map((i) => i.r.type))].sort();
-  const kindColor = (t: string) => PALETTE[kinds.indexOf(t) % PALETTE.length]!;
-  const kindLegend = kinds.slice(0, 12).map((t) => ({ label: kindOf(t), color: kindColor(t) }));
+  // Every stage of an app shares its colour, and the colour stays put when the filter hides other apps.
+  const apps = [...new Set(fleet.stacks.map((x) => x.stack))].sort();
+  const appOf = (name: string) => APP_COLORS[Math.max(0, apps.indexOf(name)) % APP_COLORS.length]!;
+  const appLegend = [...new Set(shown.map((x) => x.stack))].sort().map((a) => ({ label: a, color: appOf(a) }));
 
   if (mode === "map") {
     const specs = shown.map((s) => {
@@ -144,11 +151,11 @@ export function layout(fleet: Fleet, mode: Mode, stacks: readonly string[] = [])
       const items = [...s.resources].sort((a, b) => (dep.get(a.fqn)! - dep.get(b.fqn)!) || a.fqn.localeCompare(b.fqn)).map((r) => {
         const col = dep.get(r.fqn)!, row = rows.get(col) ?? 0;
         rows.set(col, row + 1);
-        return { s, r, col, row, h: 0.6 + Math.min(5, r.downstream.length * 0.5), color: kindColor(r.type) };
+        return { s, r, col, row, h: 0.45 + Math.min(4, r.downstream.length * 0.4), color: BLOCK };
       });
-      return { id: s.id, label: `${s.stack} · ${s.stage}`, items };
+      return { id: s.id, label: `${s.stack} · ${s.stage}`, items, color: appOf(s.stack) };
     });
-    return arrange(mode, specs, reach, kindLegend);
+    return arrange(mode, specs, reach, appLegend, appOf);
   }
   if (mode === "health") {
     const order: Resource["status"][] = ["deleting", "replacing", "creating", "updating", "replaced", "updated", "created"];
@@ -157,7 +164,7 @@ export function layout(fleet: Fleet, mode: Mode, stacks: readonly string[] = [])
       items: grid(items.filter((i) => i.r.status === st).map((i) => ({ ...i, h: BUSY.has(st) ? 1.6 : 1, color: STATUS_COLOR[st] }))),
     }));
     const legend = [{ label: "live", color: STATUS_COLOR.created }, { label: "in flight", color: STATUS_COLOR.updating }, { label: "replacing", color: STATUS_COLOR.replacing }, { label: "deleting", color: STATUS_COLOR.deleting }];
-    return arrange(mode, specs, reach, legend);
+    return arrange(mode, specs, reach, legend, appOf);
   }
   if (mode === "age") {
     const ts = items.map((i) => i.r.updatedAt), lo = Math.min(...ts), hi = Math.max(...ts), span = Math.max(1, hi - lo);
@@ -169,21 +176,21 @@ export function layout(fleet: Fleet, mode: Mode, stacks: readonly string[] = [])
         used.set(col, row + 1);
         return { s, r, col, row, h: 0.4 + 3 * t, color: ramp(t) };
       });
-      return { id: s.id, label: `${s.stack} · ${s.stage}`, items: its, cols };
+      return { id: s.id, label: `${s.stack} · ${s.stage}`, items: its, cols, color: appOf(s.stack) };
     });
-    return arrange(mode, specs, reach, [{ label: "oldest", color: ramp(0) }, { label: "newest", color: ramp(1) }], true);
+    return arrange(mode, specs, reach, [{ label: "oldest", color: ramp(0) }, { label: "newest", color: ramp(1) }], appOf, true);
   }
   if (mode === "kinds") {
     const groups = kinds.map((t) => items.filter((i) => i.r.type === t)).sort((a, b) => b.length - a.length || a[0]!.r.type.localeCompare(b[0]!.r.type));
     const specs = groups.map((g) => {
       const t = g[0]!.r.type;
-      return { id: t, label: `${kindOf(t)} (${providerOf(t)}) ×${g.length}`, items: grid(g.map((i) => ({ ...i, h: 1, color: kindColor(t) }))) };
+      return { id: t, label: `${kindOf(t)} ×${g.length}`, items: grid(g.map((i) => ({ ...i, h: 1, color: appOf(i.s.stack) }))) };
     });
-    return arrange(mode, specs, reach, kindLegend);
+    return arrange(mode, specs, reach, appLegend, appOf);
   }
   const top = Math.max(1, ...items.map(reachOf));
   const blast = (kept: boolean) => grid(items.filter((i) => i.r.kept === kept).sort((a, b) => reachOf(b) - reachOf(a) || byName(a, b))
     .map((i) => ({ ...i, h: 0.5 + Math.min(8, reachOf(i) * 0.6), color: kept ? KEPT : ramp(reachOf(i) / top) })));
   return arrange(mode, [{ id: "goes", label: "a destroy removes", items: blast(false) }, { id: "kept", label: "kept on destroy", items: blast(true) }], reach,
-    [{ label: "nothing depends on it", color: ramp(0) }, { label: "most depend on it", color: ramp(1) }, { label: "kept", color: KEPT }]);
+    [{ label: "nothing depends on it", color: ramp(0) }, { label: "most depend on it", color: ramp(1) }, { label: "kept", color: KEPT }], appOf);
 }
