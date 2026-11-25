@@ -111,7 +111,7 @@ const one = (w: string[]): boolean => {
 /** True for a command the builder runs every day: a suite, a build, typecheck's steps, a slot's setup. */
 export const expected = (cmd: string): boolean => { const cs = commands(cmd.trim()); return !!cs && cs.every(one); };
 
-export type Kind = { kind: "job"; slot: string; dir: string; cmd: string; ok: boolean } | { kind: "house" } | { kind: "unexpected" };
+export type Kind = { kind: "job"; slot: string; dir: string; cmd: string; ok: boolean } | { kind: "house" } | { kind: "unexpected"; cmd: string };
 const JOB = /^L="\$PWD\/runs\/(slot-[\w-]+)\.log"; \{ cd '(slot-[\w-]+)(?:\/([^']*))?' && ([\s\S]*?); echo \$\? > "\$L\.\$\$"; \} 2>&1 \| tee -a "\$L"; c=\$\(cat "\$L\.\$\$"\); rm -f "\$L\.\$\$"; exit "\$\{c:-1\}"$/;
 const HOUSE = [
   /^mkdir -p locks runs\/done /, // claim
@@ -126,7 +126,7 @@ export function classify(script: string): Kind {
   const body = (at < 0 ? script : script.slice(at + REMOTE_PATH.length)).replace(/^; cd '[^']*' && /, "");
   const job = body.match(JOB);
   if (job && job[1] === job[2]) return { kind: "job", slot: job[2]!, dir: job[3] ?? ".", cmd: job[4]!, ok: expected(job[4]!) };
-  return HOUSE.some((re) => re.test(body)) ? { kind: "house" } : { kind: "unexpected" };
+  return HOUSE.some((re) => re.test(body)) ? { kind: "house" } : { kind: "unexpected", cmd: body };
 }
 
 // ---- the view: one per gather, what the board and the event log both read ----
@@ -135,7 +135,7 @@ export type SlotView = {
   name: string; sha: string; busy: boolean; run?: Live; stall?: string;
   jobs: { pid: number; secs: number; dir: string; cmd: string; ok: boolean }[];
 };
-export type View = { shot: Shot; slots: SlotView[]; odd: { pid: number; secs: number; slot?: string; cmd: string }[] };
+export type View = { shot: Shot; slots: SlotView[]; odd: { pid: number; secs: number; slot?: string; cmd: string; full: string }[] };
 
 /** Why a busy slot looks stuck: its lock's heartbeat older than STALE_MIN (what the next claim reaps), or no output for PUSH_MS. */
 export function stalled(now: number, lockAt: number, logAt?: number): string | undefined {
@@ -154,8 +154,8 @@ export function view(shot: Shot): View {
     const k = classify(p.script);
     if (k.kind === "job") {
       jobs.set(k.slot, [...(jobs.get(k.slot) ?? []), { pid: p.pid, secs: p.secs, dir: k.dir, cmd: k.cmd, ok: k.ok }]);
-      if (!k.ok) odd.push({ pid: p.pid, secs: p.secs, slot: k.slot, cmd: k.cmd });
-    } else if (k.kind === "unexpected") odd.push({ pid: p.pid, secs: p.secs, cmd: p.script });
+      if (!k.ok) odd.push({ pid: p.pid, secs: p.secs, slot: k.slot, cmd: k.cmd, full: p.script });
+    } else if (k.kind === "unexpected") odd.push({ pid: p.pid, secs: p.secs, cmd: k.cmd, full: p.script });
   }
   const slots = shot.slots.map((s): SlotView => {
     const lock = shot.locks.find((l) => l.slot === s.name), run = shot.runs.find((r) => r.slot === s.name);
@@ -220,6 +220,8 @@ export function board(v: View, look: Look): string {
   const odd = v.odd.length ? box("UNEXPECTED", "red", v.odd.flatMap((o) => [
     paint("red", `pid ${o.pid} · ${took(o.secs * 1000)}${o.slot ? ` · ${o.slot}` : ""}`, true),
     ...wrap(o.cmd, inner).map((l) => paint("white", l)),
+    // the whole command line, ssh shell and all, under it
+    ...(o.full !== o.cmd ? wrap(o.full, inner).map((l) => paint("gray", l)) : []),
   ])) : [];
 
   const slots = box("slots", "purple", v.slots.flatMap((s, i) => {
@@ -265,7 +267,7 @@ export function events(prev: View | undefined, next: View): string[] {
     out.push(`finish ${r.code === 0 ? "pass" : `fail ${r.code ?? "?"}`} ${r.who} in ${took((r.ended ?? r.started) - r.started)}: ${r.cmd}`);
   }
   const odd = new Set(prev?.odd.map((o) => `${o.pid}:${o.cmd}`));
-  for (const o of next.odd) if (!odd.has(`${o.pid}:${o.cmd}`)) out.push(`UNEXPECTED pid ${o.pid}${o.slot ? ` ${o.slot}` : ""}: ${o.cmd}`);
+  for (const o of next.odd) if (!odd.has(`${o.pid}:${o.cmd}`)) out.push(`UNEXPECTED pid ${o.pid}${o.slot ? ` ${o.slot}` : ""}: ${o.full}`);
   return out;
 }
 
