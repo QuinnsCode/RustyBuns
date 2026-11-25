@@ -16,3 +16,7 @@ draws text from bitmaps rasterized from these fonts:
   https://dejavu-fonts.github.io/License.html
 - Geist Mono. Copyright (c) 2023 Vercel, in collaboration with
   basement.studio. SIL Open Font License 1.1: https://openfontlicense.org
+
+scripts/lint/anti-slop holds five Oxlint rules from anti-slop
+(https://github.com/dmmulroy/anti-slop), Copyright (c) 2026 Dillon Mulroy,
+MIT License (scripts/lint/anti-slop/LICENSE), vendored at 63dbb09 and changed here.
