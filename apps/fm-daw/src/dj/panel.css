@@ -13,6 +13,11 @@
 #dj .dj-rec-time { min-width: 4.2ch; font-variant-numeric: tabular-nums; text-align: right; }
 #dj .dj-rec-time:empty { display: none; }
 @keyframes dj-rec-blink { 50% { opacity: 0.35; } }
+#dj .dj-live-open.on svg { color: #ff4a4a; animation: dj-rec-blink 1s steps(2) infinite; }
+#dj .dj-live-n { min-width: 2ch; font-variant-numeric: tabular-nums; text-align: right; }
+#dj .dj-live-n:empty { display: none; }
+#dj .dj-live input { flex: 1; min-width: 0; background: #0d0e11; color: inherit; border: 1px solid #3a3e45; border-radius: 6px; padding: 5px 8px; font: inherit; }
+#dj .dj-live-go.on { background: #ff4a4a; border-color: #ff4a4a; color: #141416; }
 .dj-head-tools { display: flex; gap: 6px; margin-left: auto; flex: none; }
 /* the sources: a file from this computer, or a YouTube link */
 .dj-src { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }
@@ -123,6 +128,7 @@
 @media (max-width: 899px) {
   #dj { inset: 0; border-radius: 0; border: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px 8px; }
   #dj header { flex-wrap: wrap; }
+  .dj-head-tools { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
   .dj-src { order: 3; flex-basis: 100%; }
   .dj-tube { max-width: none; }
   .dj-lib { top: 86px; }

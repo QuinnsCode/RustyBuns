@@ -32,6 +32,10 @@
       {
         "name": "PROFILE",
         "class_name": "Profile"
+      },
+      {
+        "name": "LISTEN",
+        "class_name": "Listen"
       }
     ]
   },
@@ -53,11 +57,18 @@
       "new_sqlite_classes": [
         "Profile"
       ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "Listen"
+      ]
     }
   ],
   "vars": {
     "MAX_ROOMS": "50",
     "MAX_SESHES": "2000",
-    "ROOM_SEATS": "16"
+    "ROOM_SEATS": "16",
+    "LISTEN_EARS": "200"
   }
 }

@@ -59,7 +59,7 @@ test("a machine over its budget hears the heaviest friend's guitar as their amp'
 test("a call's servers from GET /ice: Cloudflare's TURN pass when the key is set (no port 53), else STUN alone", async () => {
   const stub = { fetch: async () => new Response("") };
   const place = { idFromName: (n: string) => n, get: () => stub };
-  const env: Parameters<typeof worker.fetch>[1] = { ASSETS: stub, WORLD: place, LOBBY: place, PROFILE: place };
+  const env: Parameters<typeof worker.fetch>[1] = { ASSETS: stub, WORLD: place, LOBBY: place, PROFILE: place, LISTEN: place };
   const ask = async (e: typeof env, ip: string) => {
     const r = await worker.fetch(new Request("https://fm-daw.test/ice", { headers: { "CF-Connecting-IP": ip } }), e);
     return { status: r.status, cache: r.headers.get("Cache-Control"), body: check(IceReply, await r.json().catch(() => null)) };

@@ -13,7 +13,7 @@ Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts
 | [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | Learn the setup: `/studio.html`, the gear room (plug the guitar into an amp); the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
 | [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | Make a track: `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, and out of your sound card to any stream app; no link of our own |
+| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, out of your sound card to any stream app, and a listen link of our own |
 | [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Partly: room acoustics and a rig pick, no coverage map or gear list |
 | [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, change parts, download a kit with your parts; nothing built yet |
 
@@ -86,7 +86,17 @@ stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
    (`src/studio/pa-line.ts`), and every listener hears it from the room's speakers, from where they stand (`pa-room.ts`).
 4. Take it out: record it to a file to post later, or send a listen link to people outside the sesh.
 
-**Works today:** steps 1 to 3, and the recording in step 4: REC in the decks' header (on `/decks.html` and at the DJ
+**Works today:** all four steps. The listen link ([#5878](https://github.com/QuinnsCode/RustyBuns/issues/5878)): the
+radio button beside REC opens it; name the set, press Go live, and send the link (`/listen/<id>`, the same each time
+from this browser). The decks' MediaRecorder sends the master as a WebM chunk a second (Opus, 128 kb/s) over a socket to
+one `Listen` Durable Object per set (`src/listen.ts`), which keeps the stream's header and the bytes since the latest
+cluster for whoever comes in late, and passes each chunk on to every listener. The listener's page (`listen.html`,
+`src/dj/listen-page.ts`) shows the set's name, the track list as each track comes in and a Play button, and plays it
+through MediaSource a few seconds behind; no sign-in. Stop, or closing the decks, ends it for everyone. Limits: a link is
+held by the key in the DJ's browser (one live set per DJ; a second tab going live takes over), 200 listeners a set
+(`LISTEN_EARS`), a cap on chunk size and rate, and per-address gates on going live and listening. It costs about
+$0.006 per set-hour whatever the crowd (the object is awake for the set; messages it sends aren't billed). The journey
+is `test/dj-live.test.ts`. The recording in step 4: REC in the decks' header (on `/decks.html` and at the DJ
 table) records the master, what the room's PA gets, to a file on your computer (`src/dj/record.ts`: Opus in WebM, or
 AAC in Safari), with a track list beside it naming each track and the time it came in (its deck playing with the fader
 and its crossfader side open). Nothing is uploaded. A YouTube deck plays in YouTube's own player, so it is never in the
@@ -95,8 +105,8 @@ your sound card as well as your speakers (an interface, or a virtual cable into 
 the set wherever they like with nothing hosted by us; and brings any input (a turntable, a mic, another computer) onto
 mixer channel 1 or 4. Picking an output needs Chrome, Edge or Firefox; Safari plays to the default.
 
-**Missing:** a listen link of our own: people outside the sesh hearing the set live from a link we host, no sign-in and no seat
-([#5878](https://github.com/QuinnsCode/RustyBuns/issues/5878): priced, waits on the owner's yes). There is no saved
+**Missing:** going live from Safari (it records only MP4, which the link doesn't take) and from the desktop app (no
+Listen object there); a listener on an iPhone needs Safari 17.1's MediaSource for WebM. There is no saved
 library either (tracks load each visit), and MIDI learn is checked only with fed messages, not a real controller.
 
 ## 5. Plan a sound system (CAD for speakers)

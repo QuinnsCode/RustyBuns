@@ -23,6 +23,7 @@ import { DECK_CHANNEL } from "./mixer.ts";
 import { mountMixer } from "./mixer-panel.ts";
 import { DeckIo, LINE_CHANNELS, type Device } from "./io.ts";
 import { saveTake, SetRecorder, stamp, type OnAir, type Take } from "./record.ts";
+import { canGoLive, LiveSet, type LiveState } from "./live.ts";
 import { DEMOS, demoTrack } from "./demo.ts";
 import { bars, overTone, peakLevels, ZOOM_START, ZOOMS, type Level } from "./player.ts";
 import { ACTION_LABEL, ACTIONS, actionOf, bindKey, deckAction, DEFAULT_PREFS, FAST_TIMES, keyName, keysOf, loadPrefs, NUDGE_MS, savePrefs, TONE_LUT, TONE_STEPS, type Action, type Prefs } from "./prefs.ts";
@@ -51,6 +52,8 @@ const ICON = {
   cog: svg('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
   cable: svg('<path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v-2h-4"/><path d="M3 5h4V3"/><path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3"/>'),
   rec: svg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/>'),
+  radio: svg('<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>'),
+  copy: svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
   hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>'),
 };
 
@@ -135,6 +138,10 @@ export interface DecksPanel {
   record(on: boolean, save?: boolean): Promise<Take | null>;
   /** The take being recorded: how long so far and the tracks that have come in. */
   recording(): { on: boolean; seconds: number };
+  /** Go live on this browser's listen link under `name`, or stop: false when the link can't be reached. */
+  live(on: boolean, name?: string): Promise<boolean>;
+  /** The live set: on or not, its link, how many listen. */
+  liveState(): LiveState;
   /** The sound card in and out (io.ts): the master to an output, a line in on channel 1 or 4. */
   io: DeckIo;
 }
@@ -236,6 +243,57 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     return take;
   }
   recB.addEventListener("click", () => void record(!recorder.on));
+  // LIVE: the same master to a listen link people outside the room open (live.ts); nothing goes until Go live
+  const live = new LiveSet();
+  const liveB = button(`${ICON.radio}<span class="dj-live-n"></span>`, "Listen link: stream your set live to a link anyone can open, no sign-in. YouTube decks play in YouTube's own player, so they aren't in the stream", "dj-live-open");
+  const liveN = liveB.querySelector<HTMLElement>(".dj-live-n")!;
+  const liveBox = el("div", { class: "dj-people dj-prefs dj-live", role: "dialog", "aria-label": "Listen link" });
+  liveBox.hidden = true;
+  const liveName = el("input", { class: "dj-live-name", maxlength: "80", "aria-label": "The set's name", placeholder: "The set's name" });
+  liveName.value = `QDJs set, ${new Date().toLocaleDateString()}`;
+  const liveGo = button("Go live", "Start streaming the master to your listen link", "dj-live-go");
+  const liveLink = el("input", { class: "dj-live-link", readonly: "", "aria-label": "Your listen link" });
+  liveLink.value = live.link;
+  const liveCopy = button(ICON.copy, "Copy the link", "dj-live-copy");
+  const liveSays = el("p", { class: "dj-live-says" });
+  let liveTick: ReturnType<typeof setInterval> | null = null;
+  const drawLive = () => {
+    const s = live.state();
+    liveB.classList.toggle("on", s.on);
+    liveN.textContent = s.on ? String(s.ears) : "";
+    liveGo.textContent = s.on ? "Stop" : "Go live";
+    liveGo.classList.toggle("on", s.on);
+    liveName.disabled = s.on;
+    liveSays.textContent = s.on ? `Live ${stamp(s.seconds)}: ${s.ears} listening` : "Off: nothing is sent until you go live.";
+  };
+  const liveNow = () => { const m = decks.mixer; live.tick([onAir(0), onAir(1)], m.xfader, m.curve); drawLive(); };
+  live.onChange = (why) => {
+    if (!live.on && liveTick) { clearInterval(liveTick); liveTick = null; }
+    if (why) flash(why);
+    drawLive();
+  };
+  async function goLive(on: boolean, name = liveName.value): Promise<boolean> {
+    if (on === live.on) return true;
+    if (!on) { live.stop(); flash("The set is over: the link went quiet"); return true; }
+    if (!canGoLive()) { flash("Going live needs Chrome, Edge or Firefox"); return false; }
+    void o.ctx.resume();
+    const ok = await live.start(decks.stream, name.trim().slice(0, 80) || "QDJs set");
+    if (!ok) { flash("Couldn't reach the listen link: it needs the decks online, not the desktop app"); return false; }
+    liveNow();
+    liveTick = setInterval(liveNow, 250);
+    flash(tubes.some(Boolean) ? "Live (the YouTube deck isn't in it: it plays in YouTube's player)" : "Live: send people the link");
+    return true;
+  }
+  liveB.addEventListener("click", () => { liveBox.hidden = !liveBox.hidden; liveB.classList.toggle("open", !liveBox.hidden); drawLive(); });
+  liveGo.addEventListener("click", () => void goLive(!live.on));
+  liveCopy.addEventListener("click", () => void navigator.clipboard?.writeText(live.link).then(() => flash("Link copied"), () => liveLink.select()));
+  const linkRow = el("div", { class: "dj-prefs-row" });
+  linkRow.append(liveLink, liveCopy);
+  const goRow = el("div", { class: "dj-prefs-row" });
+  goRow.append(liveName, liveGo);
+  liveBox.append(el("h3", {}, "Listen link"), goRow, linkRow, liveSays,
+    el("p", {}, "Anyone with the link hears the master live, a few seconds behind, with the track list. YouTube decks play in YouTube's own player, so they aren't in the stream. The link stays yours: it is the same next time."));
+  drawLive();
   // the sound card: the master out to any output (a virtual cable into a streaming app), a line in on 1 or 4
   const io = new DeckIo(decks.mixer);
   const ioB = button(ICON.cable, "Audio in and out: send your set to any output on your sound card (a stream app, OBS, an interface), or bring an input onto channel 1 or 4", "dj-io-open");
@@ -273,8 +331,8 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
       ioBox.append(names);
     }
   }
-  tools.append(recB, ioB, libB, ...midi.buttons, prefsB, peopleB, closeB);
-  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox, ioBox);
+  tools.append(recB, liveB, ioB, libB, ...midi.buttons, prefsB, peopleB, closeB);
+  head.append(title, src, ...(room?.card ? [room.card] : []), tools, people, prefsBox, ioBox, liveBox);
   const zoom = el("canvas", { class: "dj-zoom", width: "1200", height: "150", "aria-label": "Both decks' waveforms, around the playheads" });
   // the close-up's zoom: right in to watch a kick race past, out to see the phrase
   let zoomAt: number = ZOOM_START;
@@ -966,5 +1024,7 @@ export function mountDecks(o: { ctx: AudioContext; parent?: HTMLElement; onToggl
     coasting: () => [!!coasts[0], !!coasts[1]],
     record,
     io,
-    recording: () => ({ on: recorder.on, seconds: recorder.seconds() }) };
+    recording: () => ({ on: recorder.on, seconds: recorder.seconds() }),
+    live: goLive,
+    liveState: () => live.state() };
 }
