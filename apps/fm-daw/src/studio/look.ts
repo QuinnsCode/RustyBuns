@@ -29,6 +29,8 @@ import { inFootprint } from "./gear-wall.ts";
 import { MATERIALS, type Material } from "./sound.ts";
 
 export type Quality = "low" | "high";
+/** How many downlights light the room on low (the rest glow): the cost of each light is paid in every lit shader. */
+const LOW_CANS = 4;
 const KEY = "qollab-studio:quality";
 
 /** The setting: ?quality= first, then what this browser chose last, else high unless it's a phone. */
@@ -1172,15 +1174,21 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   // no two cans alike, as in a real room: lamps of different ages, a touch warmer or brighter, the same every visit
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
   const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
-  for (const [x, z] of spots) {
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.29 + rnd() * 0.05), 0.78 + rnd() * 0.15, 2); // a real can throws a scallop whose edge melts into the wall, each its own
+  // low lights only the LOW_CANS nearest the middle, a little brighter: every lit material's shader carries every light,
+  // and software GL took ~37 s to compile a room's 16 (#5919); the other cans still glow
+  const lit = new Set(high ? spots : [...spots].sort((a, b) => Math.hypot(...a) - Math.hypot(...b)).slice(0, LOW_CANS));
+  const boost = high ? 1 : Math.min(2, spots.length / lit.size);
+  for (const spot of spots) {
+    const [x, z] = spot, tint = rnd(), strength = power * (0.72 + rnd() * 0.45) * boost;
+    const c = new THREE.Mesh(can, bulb); c.position.set(x, h - 0.012, z);
+    const r = new THREE.Mesh(rim, trim); r.rotation.x = Math.PI / 2; r.position.set(x, h - 0.02, z);
+    group.add(c, r);
+    if (!lit.has(spot)) { rnd(); rnd(); continue; }
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength, 0, Math.PI * (0.29 + rnd() * 0.05), 0.78 + rnd() * 0.15, 2); // a real can throws a scallop whose edge melts into the wall, each its own
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x, 0, z);
     group.add(l, l.target);
     lights.push(l);
-    const c = new THREE.Mesh(can, bulb); c.position.set(x, h - 0.012, z);
-    const r = new THREE.Mesh(rim, trim); r.rotation.x = Math.PI / 2; r.position.set(x, h - 0.02, z);
-    group.add(c, r);
   }
   const shadowers = high ? [...lights].sort((a, b) => Math.hypot(a.position.x, a.position.z) - Math.hypot(b.position.x, b.position.z)).slice(0, 3) : [];
   for (const l of shadowers) {
@@ -1197,7 +1205,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const bounce = new THREE.RectAreaLight(floorTone, 2.4 * Math.max(1, h / 3.4), w * 0.9, d * 0.9);
   bounce.position.set(0, 0.05, 0);
   bounce.lookAt(0, h, 0);
-  group.add(bounce);
+  if (high) group.add(bounce);
 
   // floor lamps in the free corners (practicals()): a pole, a fabric drum shade glowing from inside, darker at its
   // middle where the cloth is thickest seen edge on; light spills out of its open top and bottom as two cones, the
@@ -1214,7 +1222,10 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.45, 8), pole); stem.position.y = 0.74;
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.3, 28, 1, true), shadeMat); drum.position.y = 1.55;
     const glow = new THREE.PointLight(0xffb878, 0.9, 4, 2); glow.position.y = 1.55;
-    lamp.add(foot, stem, drum, glow);
+    lamp.add(foot, stem, drum);
+    group.add(lamp);
+    if (!high) continue; // on low the shade glows and lights nothing
+    lamp.add(glow);
     lampLights.push(glow);
     for (const [dy, cd, cone] of [[0.16, 30, 0.9], [-0.16, 22, 0.8]] as const) {
       const sp = new THREE.SpotLight(0xffc488, cd, 6, cone, 0.8, 2); // the cloth's rim blurs the cone's edge
@@ -1222,22 +1233,25 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       lamp.add(sp, sp.target);
       lampLights.push(sp);
     }
-    group.add(lamp);
   }
 
   // baked once the room stands: the shade where things meet the floor, then the reflections, taken from this room
   // under its own lights (from head height in the middle, lit by the generated room as its first bounce), so the
   // floor and the glass show the walls, the lights and the gear in front of them rather than a white box
   const bake = ground(renderer, scene, group, def, high);
-  const pm2 = new THREE.PMREMGenerator(renderer);
-  bulb.emissiveIntensity = 1.2; // the cans as the room sees them: bright, not a sun smeared across every reflection
-  if (glassFace) glassFace.visible = false;
-  const roomEnv = pm2.fromScene(scene, 0.02, 0.05, Math.hypot(w, d, h), { size: high ? 256 : 128, position: new THREE.Vector3(0, Math.min(1.5, h / 2), 0) });
-  pm2.dispose();
-  bulb.emissiveIntensity = 6;
-  if (glassFace) { glassFace.visible = true; glassFace.envMap = roomEnv.texture; } // its own map: a scene environment would override its strength
-  scene.environment = roomEnv.texture;
-  scene.environmentIntensity = 0.5; // the downlights light the room already: this is their bounce
+  // on low the generated room stays the reflection: baking this one renders the room six times and, at another size,
+  // compiles every material a second time
+  if (high) {
+    const pm2 = new THREE.PMREMGenerator(renderer);
+    bulb.emissiveIntensity = 1.2; // the cans as the room sees them: bright, not a sun smeared across every reflection
+    if (glassFace) glassFace.visible = false;
+    const roomEnv = pm2.fromScene(scene, 0.02, 0.05, Math.hypot(w, d, h), { size: 256, position: new THREE.Vector3(0, Math.min(1.5, h / 2), 0) });
+    pm2.dispose();
+    bulb.emissiveIntensity = 6;
+    if (glassFace) { glassFace.visible = true; glassFace.envMap = roomEnv.texture; } // its own map: a scene environment would override its strength
+    scene.environment = roomEnv.texture;
+    scene.environmentIntensity = 0.5; // the downlights light the room already: this is their bounce
+  }
 
   // the post: a little bloom on the lights, the lens's vignette and grain
   const post: string[] = [];
@@ -1278,7 +1292,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       if (glow > 0 && mat instanceof THREE.MeshStandardMaterial) {
         o.material = mat.clone();
         if (o.material instanceof THREE.MeshStandardMaterial) { if (mat.emissive.getHex() === 0) o.material.emissive.copy(mat.color); /* a screen is dark glass lit by its own colour: keep it */ o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass
-        if (o.userData.lamp && lamps.length < 4) { const p = new THREE.PointLight(0xffd7a8, 6 * glow, 6, 2); o.add(p); lamps.push(p); }
+        if (o.userData.lamp && lamps.length < (high ? 4 : 0)) { const p = new THREE.PointLight(0xffd7a8, 6 * glow, 6, 2); o.add(p); lamps.push(p); }
         return;
       }
       const see = !(mat instanceof THREE.Material && mat.transparent);
@@ -1303,6 +1317,6 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       renderer.setSize(wpx, hpx, false);
       if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(wpx, hpx); }
     },
-    state: () => ({ quality, lights: lights.length + lamps.length + lampLights.length + 1, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: "room" }),
+    state: () => ({ quality, lights: lights.length + lamps.length + lampLights.length + 1, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: high ? "room" : "generated" }),
   };
 }

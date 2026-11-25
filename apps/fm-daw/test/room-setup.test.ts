@@ -2,12 +2,12 @@
 // room and walks in; back at the front door it isn't asked again, and the next room is made in the same studio. Settings
 // (the cog) changes it, and the room after that is made in the new one. Headless Chrome over CDP (scripts/chrome.ts).
 // What's checked is the front door and the link it walks you to, so the room itself is never loaded: its navigation is
-// stopped (CDP Fetch) and the link read off it, and the front door stays up. Each front-door load costs ~37 s in software
-// GL on CI's runners, so the test loads it three times, not once per step (#5893).
+// stopped (CDP Fetch) and the link read off it, and the front door stays up. Each front-door load costs ~20 s in software
+// GL (~37 s before low quality lit four cans, not sixteen), so the test loads it three times, not once per step (#5893).
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(240_000);
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -34,32 +34,19 @@ test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after,
   const page = async <T>(expr: string): Promise<T> => tab.eval<T>(`(async () => (${expr}))()`);
   // a room's page (jam.html?room=...) is never opened: the link is what's checked, and the front door stays where it is
   const links: string[] = [];
-  const pending = new Map<string, string>();
   chrome.cdp.on((m) => {
     if (m.sessionId !== tab.sessionId) return;
     if (m.method === "Fetch.requestPaused") {
       links.push(m.params.request.url);
       void tab.call("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Aborted" });
-    } else if (m.method === "Network.requestWillBeSent") pending.set(m.params.requestId, m.params.request.url);
-    else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") pending.delete(m.params.requestId);
+    }
   });
   await tab.call("Fetch.enable", { patterns: [{ urlPattern: "*jam.html?room=*", resourceType: "Document" }] });
   step("tab open, room loads caught");
-  // each look has its own deadline: a busy main thread holds an evaluate back, and the step should say so
-  const until = async (expr: string) => {
-    for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
-      const look = page<boolean>(expr).catch(() => false); // mid-navigation
-      const got = await Promise.race([look, Bun.sleep(5_000).then(() => "held" as const)]);
-      if (got === true) return;
-      if (got === "held") step(`a look held 5 s: ${expr.slice(0, 60)}`);
-    }
-    throw new Error(`never: ${expr}`);
-  };
   const frontDoor = async () => {
-    pending.clear();
     await load(chrome.cdp, tab, `${vite.url}jam.html?quality=low`, 0);
-    step(`front door loaded, ${pending.size} requests open${pending.size ? `: ${[...pending.values()].slice(0, 8).map((u) => u.slice(0, 100)).join(" | ")}` : ""}`);
-    await until(`!!window.qjam && !document.getElementById("door-lobby").hidden`);
+    step("front door loaded");
+    await until(tab, `!!window.qjam && !document.getElementById("door-lobby").hidden`, "the front door's lobby", 30_000);
     step("front door ready");
   };
   const door = () => page<{ asked: boolean; kept: string; setup: string | null }>(`({

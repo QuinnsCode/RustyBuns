@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
 setDefaultTimeout(240_000);
@@ -24,10 +24,7 @@ beforeAll(async () => {
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
-const until = async (tab: Tab, ready: string) => {
-  for (const end = Date.now() + 30_000; Date.now() < end; await Bun.sleep(50)) if (await tab.eval<boolean>(ready)) return;
-  throw new Error(`never ready: ${ready}`);
-};
+const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 30_000, 50);
 
 test.skipIf(!hasChrome)("build a desert room with a van and a fire pit, walk in, and walk up to each", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });

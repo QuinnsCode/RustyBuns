@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
 setDefaultTimeout(240_000);
@@ -28,10 +28,7 @@ test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as
   try {
     await load(chrome.cdp, tab, `${vite.url}jam.html?room=look-dialog&studio=desert-gathering&quality=low`, 0);
     const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-    const until = async (what: string, expr: string) => {
-      for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) if (await page<boolean>(expr)) return;
-      throw new Error(`waited for ${what}`);
-    };
+    const until = (what: string, expr: string) => pageUntil(tab, expr, what, 60_000);
     await until("the room", "!!window.qjam && !!window.qjam.state().me.wearing");
     // a mark on this page: a page load would lose it
     await page("(window.__same = true)");
