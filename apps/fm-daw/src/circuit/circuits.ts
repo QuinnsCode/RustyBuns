@@ -40,14 +40,14 @@ export const CLIPPERS = {
 } satisfies Record<string, { label: string; note: string; junction: Junction | null }>;
 export type Clipper = keyof typeof CLIPPERS;
 
-/** A capacitor socket takes the stock value times one of these, as the nearest part you can buy (`capValue`). */
-export const CAP_STEPS = ["0.22", "0.47", "1", "2.2", "4.7"] as const;
+/** A capacitor socket or a resistor takes the stock value times one of these, as the nearest part you can buy (`stepValue`). */
+export const STEPS = ["0.22", "0.47", "1", "2.2", "4.7"] as const;
 
 const E6 = [1, 1.5, 2.2, 3.3, 4.7, 6.8];
-/** The stock capacitance times `step`, snapped to the nearest E6 value (10n, 15n, 22n, 33n, 47n, 68n, 100n...). */
-export function capValue(farads: number, step: number): number {
-  if (step === 1) return farads;
-  const want = farads * step, decade = 10 ** Math.floor(Math.log10(want) + 1e-9);
+/** A stock value (farads or ohms) times `step`, snapped to the nearest E6 value (10n, 15n, 22n, 33n, 47n, 68n, 100n...). */
+export function stepValue(stock: number, step: number): number {
+  if (step === 1) return stock;
+  const want = stock * step, decade = 10 ** Math.floor(Math.log10(want) + 1e-9);
   const off = (m: number) => Math.abs(Math.log((m * decade) / want));
   const best = [...E6, 10].reduce((x, m) => (off(m) < off(x) ? m : x));
   return Number((best * decade).toPrecision(3));
@@ -59,12 +59,22 @@ export function farads(f: number): string {
   return `${Number((f * scale).toPrecision(3))}${unit}`;
 }
 
-/** A socket on a board: a clipper (the diodes sharing two nets) or one capacitor. */
+/** Ohms as a part's printed value: 2.2k, 470, 1M (`bom.csv`'s way; the page adds Ω). */
+export function ohms(r: number): string {
+  const [unit, scale] = r >= 1e6 ? ["M", 1e-6] : r >= 1e3 ? ["k", 1e-3] : ["", 1];
+  return `${Number((r * scale).toPrecision(3))}${unit}`;
+}
+
+/**
+ * A place on a board a player can change: a clipper (the diodes sharing two nets) and a capacitor sit in sockets;
+ * a fixed resistor (not a pot, whose knob sets it) is soldered, a value you pick for your own build.
+ */
 export type Socket =
   | { id: string; kind: "clipper"; parts: string[] }
-  | { id: string; kind: "cap"; parts: [string]; farads: number };
+  | { id: string; kind: "cap"; parts: [string]; farads: number }
+  | { id: string; kind: "res"; parts: [string]; ohms: number };
 
-/** A player's version of a board: socket id → a `Clipper` or a `CAP_STEPS` entry. Anything else is stock. */
+/** A player's version of a board: socket id → a `Clipper` or a `STEPS` entry. Anything else is stock. */
 export type Swaps = Record<string, string>;
 
 /** The swappable sockets on a board, in board order. */
@@ -72,6 +82,7 @@ export function sockets(board: BoardId): Socket[] {
   const out: Socket[] = [], pairs = new Map<string, string[]>();
   for (const p of readBoard(BOARDS[board]).parts) {
     if (p.kind === "C") out.push({ id: p.name, kind: "cap", parts: [p.name], farads: p.farads });
+    else if (p.kind === "R" && !/^RV/.test(p.name)) out.push({ id: p.name, kind: "res", parts: [p.name], ohms: p.ohms });
     else if (p.kind === "D") {
       const key = [p.a, p.k].sort().join("|");
       const group = pairs.get(key);
@@ -83,7 +94,7 @@ export function sockets(board: BoardId): Socket[] {
 }
 
 const isClipper = (v: string | undefined): v is Clipper => v !== undefined && Object.hasOwn(CLIPPERS, v);
-const isStep = (v: string | undefined): v is (typeof CAP_STEPS)[number] => CAP_STEPS.some((s) => s === v);
+const isStep = (v: string | undefined): v is (typeof STEPS)[number] => STEPS.some((s) => s === v);
 
 /** The board options a set of swaps comes to. Unknown sockets and choices are ignored. */
 export function swapOptions(board: BoardId, swaps: Swaps = {}): Pick<BoardOptions, "values" | "diodes"> {
@@ -91,7 +102,8 @@ export function swapOptions(board: BoardId, swaps: Swaps = {}): Pick<BoardOption
   for (const s of sockets(board)) {
     const v = swaps[s.id];
     if (s.kind === "clipper" && isClipper(v)) for (const d of s.parts) diodes[d] = CLIPPERS[v].junction;
-    if (s.kind === "cap" && isStep(v)) values[s.id] = capValue(s.farads, Number(v));
+    if (s.kind === "cap" && isStep(v)) values[s.id] = stepValue(s.farads, Number(v));
+    if (s.kind === "res" && isStep(v)) values[s.id] = stepValue(s.ohms, Number(v));
   }
   return { values, diodes };
 }
