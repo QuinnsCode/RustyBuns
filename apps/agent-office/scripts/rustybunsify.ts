@@ -183,7 +183,7 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage, startReaper as __rbReaper, watchStalls as __rbWatchStalls, startCiLoop as __rbCiLoop } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage, startReaper as __rbReaper, watchStalls as __rbWatchStalls, startCiLoop as __rbCiLoop, startSpreadWatch as __rbSpread } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
     "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n" +
     // #4306: a worker whose turn hung, or that a notice stopped owing work, is told to carry on; other sessions are a toast
@@ -192,6 +192,8 @@ async function prepare(tag: string) {
     "    if (process.env.AGENT_OFFICE_REAPER !== 'off')\n        __rbReaper(() => ctx.floors.values(), (m) => { for (const fl of ctx.floors.values()) ctx.toastFloor(fl, m, 'warn'); });\n" +
     // #5565: every 30 minutes, each open ci-hourly issue nobody holds goes on the floor's task queue (live/ci-loop.ts)
     "    if (process.env.AGENT_OFFICE_CI_LOOP !== 'off')\n        __rbCiLoop(() => ctx.floors.values(), (fl, m) => ctx.toastFloor(fl, m));\n" +
+    // Ester's spread watch: every 10 minutes, a test red on PR after PR gets one issue, one task and a word to each red PR's worker (live/spread.ts)
+    "    if (process.env.AGENT_OFFICE_SPREAD_WATCH !== 'off')\n        __rbSpread(() => ctx.floors.values());\n" +
     "    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
   patch("http/router.js", "            for (const route of signedIn)\n",
     "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbBuilderRoute(req.method, url) ?? await __rbConnectRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
