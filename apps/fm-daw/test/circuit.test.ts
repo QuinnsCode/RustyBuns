@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { B_PLUS, Circuit, PushPull, Rig, cabIR, gainAt, runRig, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
-import { BOARDS, CAP_STEPS, capValue, farads, fuzz, hardClip, overdrive, sockets, toneStack, triodeStage } from "../src/circuit/circuits.ts";
+import { BOARDS, STEPS, stepValue, farads, fuzz, hardClip, overdrive, sockets, toneStack, triodeStage } from "../src/circuit/circuits.ts";
 import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig, tremHz } from "../src/circuit/amps.ts";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
@@ -94,7 +94,7 @@ test("a part swapped in its socket is one you hear", () => {
   for (let i = 1; i < peaks.length; i++) expect([peaks[i - 1][0], peaks[i][0], peaks[i][1] > peaks[i - 1][1] * 1.3]).toEqual([peaks[i - 1][0], peaks[i][0], true]);
   // A capacitor socket offers parts you can buy, and a smaller gain-leg cap tightens the lows; a choice the socket doesn't offer leaves it stock.
   inRange("C2 x0.22: dB lost at 60 Hz", gainDb(hardClip(10e3), 60, 192000, 0.001) - gainDb(hardClip(10e3, { C2: "0.22" }), 60, 192000, 0.001), 3, 20);
-  expect(CAP_STEPS.map((s) => farads(capValue(47e-9, Number(s))))).toEqual(["10nF", "22nF", "47nF", "100nF", "220nF"]);
+  expect(STEPS.map((s) => farads(stepValue(47e-9, Number(s))))).toEqual(["10nF", "22nF", "47nF", "100nF", "220nF"]);
   expect(hardClip(10e3, { C2: "0.3", D1: "gold" })).toEqual(hardClip(10e3));
 });
 

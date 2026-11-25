@@ -15,7 +15,7 @@ Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
 | [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, and out of your sound card to any stream app; no link of our own |
 | [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Partly: room acoustics and a rig pick, no coverage map or gear list |
-| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
+| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, change parts, download a kit with your parts; nothing built yet |
 
 All six share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
 move from one path to the next without starting over: the pedal you built in path 6 is gear on the floor in path 3,
@@ -138,17 +138,23 @@ stacks on the map, and the coverage map in the 3D view.
 **The walk:**
 1. Play it: Q Amp (`/amp.html`) and the pedal wall, the sound wall in the gear room (`/studio.html`). Each pedal and
    module is a real circuit solved as you play ([CIRCUITS.md](CIRCUITS.md), [WALL.md](WALL.md)).
-2. Change it: swap parts (clipping diodes, caps) and hear the change.
+2. Change it: open the board view, click a part and pick another: a clipper's diodes, a capacitor's or a resistor's
+   value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
+   first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
 4. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
-   number for every part), the front panel and a plain-words build sheet (`src/kit/`).
+   number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
+   carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
+   sheet says so.
 5. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
 6. Close the loop: record the built board, play the same riff through the sim, compare.
 
 **Works today:** steps 1 to 4. Step 5 is by hand with the files from step 4.
 
 **Missing:**
-- Editing a board happens in the repo (`circuits/<board>.tsx`, then `bun scripts/boards.ts <board>`), not in the app ([#5864](https://github.com/QuinnsCode/RustyBuns/issues/5864)). tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
+  `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
+- A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
 - No board has been built yet, so step 6 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).
 

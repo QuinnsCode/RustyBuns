@@ -92,7 +92,7 @@ export class BuildSheet {
     const sheet = sheetOf(pedal, kit, swaps);
     if (ask !== this.asked) return sheet; // opened another while this loaded
     const swapped = sheet.parts.filter((p) => p.swapped).length;
-    return this.opened(kit, sheet, !sheet.made ? "fab files not made yet" : swapped ? `your version · ${swapped} part${swapped > 1 ? "s" : ""} swapped` : "stock parts");
+    return this.opened(kit, sheet, !sheet.made ? "fab files not made yet" : swapped ? `your version · ${swapped} part${swapped > 1 ? "s" : ""} changed, same board` : "stock parts");
   }
 
   /** Open a sound wall module's sheet (`circuits/wall-<id>/`): its board, front panel, parts to order and files. */
@@ -215,6 +215,7 @@ export class BuildSheet {
       const tr = row(l.part, l.value, String(l.count), l.footprint, l.mpn ? Object.assign(h("span", "", l.mpn), { title: l.maker }) : "", l.refs.join(" "));
       tr.classList.toggle("socketed", l.socketed); tr.classList.toggle("swapped", l.swapped);
       if (l.socketed) tr.title = l.swapped ? "In a socket: your swap" : "In a socket";
+      else if (l.swapped) tr.title = "Your value, soldered in the stock part's holes";
       return tr;
     }))));
   }
