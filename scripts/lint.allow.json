@@ -6,8 +6,7 @@
     "no-unused-vars": 1
   },
   ".github/t3-bun/bun-shims.ts": {
-    "anti-slop/no-chained-type-assertions": 1,
-    "anti-slop/no-reflect-get": 1
+    "anti-slop/no-chained-type-assertions": 1
   },
   ".github/t3-bun/compare.ts": {
     "no-unused-vars": 1
@@ -42,20 +41,10 @@
   "apps/agent-office/scripts/floorguard.ts": {
     "no-unused-vars": 1
   },
-  "apps/agent-office/test/brawl.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "apps/agent-office/test/codesplitter.test.ts": {
-    "anti-slop/no-chained-type-assertions": 3
-  },
-  "apps/agent-office/test/live.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
   "apps/agent-office/test/outbound.test.ts": {
     "no-unsafe-optional-chaining": 4
   },
   "apps/agent-office/test/podcast.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1,
     "no-unsafe-optional-chaining": 1
   },
   "apps/agent-office/test/screen.test.ts": {
@@ -63,9 +52,6 @@
   },
   "apps/alien-disc-golf/src/main.ts": {
     "anti-slop/no-reflect-get": 1
-  },
-  "apps/alien-disc-golf/test/currents.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/artstewengine/src/worker.tsx": {
     "anti-slop/no-chained-type-assertions": 1
@@ -198,9 +184,6 @@
     "no-unused-vars": 2,
     "unicorn/no-useless-spread": 1
   },
-  "apps/codesplitter/test/board.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
   "apps/codesplitter/test/borg.test.ts": {
     "no-unused-vars": 1
   },
@@ -220,14 +203,12 @@
     "no-unused-vars": 13
   },
   "apps/codesplitter/test/codesplitter-github.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1,
     "no-unused-vars": 3
   },
   "apps/codesplitter/test/codesplitter.test.ts": {
     "no-unused-vars": 2
   },
   "apps/codesplitter/test/dep-docs.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2,
     "no-unused-vars": 2
   },
   "apps/codesplitter/test/deploy-hosted-review.test.ts": {
@@ -241,9 +222,6 @@
   },
   "apps/codesplitter/test/doc-store.test.ts": {
     "no-unused-vars": 1
-  },
-  "apps/codesplitter/test/gitpath-data.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
   },
   "apps/codesplitter/test/gitpath.test.ts": {
     "no-unused-vars": 2
@@ -260,9 +238,6 @@
   },
   "apps/codesplitter/test/mirror-pushes.test.ts": {
     "no-unused-vars": 5
-  },
-  "apps/codesplitter/test/pick.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/codesplitter/test/pulse.test.ts": {
     "unicorn/no-new-array": 2,
@@ -281,13 +256,7 @@
     "no-unused-vars": 1,
     "unicorn/no-new-array": 1
   },
-  "apps/codesplitter/test/watch.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
   "apps/cron-swanson/src/relay.ts": {
-    "anti-slop/no-reflect-get": 1
-  },
-  "apps/cron-swanson/test/live.test.ts": {
     "anti-slop/no-reflect-get": 1
   },
   "apps/delayed-reaction/src/hallway.ts": {
@@ -317,17 +286,11 @@
   "apps/eqosys/test/avatar.test.ts": {
     "unicorn/no-invalid-fetch-options": 1
   },
-  "apps/eqosys/test/deploy-route.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
   "apps/eqosys/test/saves.test.ts": {
     "unicorn/no-invalid-fetch-options": 1
   },
   "apps/eqosys/test/spaces-page.ts": {
     "no-unused-vars": 2
-  },
-  "apps/eqosys/test/teams.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/excalibrawl/src/arena.ts": {
     "no-unused-vars": 1
@@ -340,9 +303,6 @@
   },
   "apps/excalibrawl/src/worker.tsx": {
     "anti-slop/no-chained-type-assertions": 1
-  },
-  "apps/excalibrawl/test/manual-run.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
   },
   "apps/fm-daw/src/chat.ts": {
     "no-control-regex": 1
@@ -400,18 +360,9 @@
   "apps/frameworks/elysia-conduit/src/articles/articles.controller.ts": {
     "no-unused-vars": 1
   },
-  "apps/frameworks/elysia-conduit/src/articles/articles.service.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
-  "apps/frameworks/elysia-conduit/src/users/users.service.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
   "apps/geoboxq/src/main.ts": {
     "anti-slop/no-chained-type-assertions": 1,
     "anti-slop/no-reflect-get": 1
-  },
-  "apps/geoboxq/test/journey.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/git-recon/src/sim/director.ts": {
     "no-unused-vars": 1
@@ -471,14 +422,7 @@
     "unicorn/no-useless-spread": 1
   },
   "apps/hippo-tycoon/test/cinematic.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1,
     "no-unused-vars": 1
-  },
-  "apps/hippo-tycoon/test/client.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "apps/hippo-tycoon/test/input.test.ts": {
-    "anti-slop/no-chained-type-assertions": 3
   },
   "apps/kitesurf-bench/.rustybuns/alchemy.run.ts": {
     "no-unused-vars": 1
@@ -498,9 +442,6 @@
   "apps/load-in/src/venues/show.ts": {
     "unicorn/no-useless-spread": 1
   },
-  "apps/load-in/test/crew.test.ts": {
-    "anti-slop/no-reflect-get": 1
-  },
   "apps/load-in/test/strike.test.ts": {
     "no-unused-vars": 1
   },
@@ -512,9 +453,6 @@
   },
   "apps/meshy-studio/src/Presets.tsx": {
     "no-unused-vars": 2
-  },
-  "apps/meshy-studio/tests/fake-meshy.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/mythic-masters/proposals/compendium/flatwoods-monster.ts": {
     "no-unused-vars": 1
@@ -554,7 +492,7 @@
     "no-unused-vars": 1
   },
   "apps/mythic-masters/src/main.ts": {
-    "anti-slop/no-reflect-get": 2,
+    "anti-slop/no-reflect-get": 1,
     "no-unused-vars": 1,
     "unicorn/no-thenable": 1
   },
@@ -587,17 +525,11 @@
   "apps/mythic-masters/src/world/view.ts": {
     "no-unused-vars": 2
   },
-  "apps/mythic-masters/test/dev-beasts.test.ts": {
-    "anti-slop/no-reflect-get": 2
-  },
   "apps/mythic-masters/test/journey.test.ts": {
     "unicorn/no-new-array": 1
   },
   "apps/mythic-masters/test/nature.test.ts": {
     "no-unused-vars": 1
-  },
-  "apps/mythic-masters/test/pen.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/mythic-masters/test/poi.test.ts": {
     "no-unused-vars": 1
@@ -614,12 +546,6 @@
   },
   "apps/park-hide-seek/tests/hunt.test.ts": {
     "no-unused-vars": 1
-  },
-  "apps/park-hide-seek/tests/offline.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "apps/park-hide-seek/tests/requests.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "apps/pixel-rag/src/engine/host-worker.ts": {
     "anti-slop/no-chained-type-assertions": 1
@@ -801,12 +727,6 @@
   "apps/what-would-fantano-say/src/worker.tsx": {
     "anti-slop/no-chained-type-assertions": 1
   },
-  "apps/what-would-fantano-say/test/api.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "apps/what-would-fantano-say/test/board.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
   "packages/cli/scripts/corpus.ts": {
     "no-unused-vars": 1
   },
@@ -827,42 +747,6 @@
   },
   "packages/cli/src/wrangler.ts": {
     "anti-slop/no-reflect-get": 1
-  },
-  "packages/cli/test/advisories.test.ts": {
-    "anti-slop/no-chained-type-assertions": 5
-  },
-  "packages/cli/test/containers.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/drain.test.ts": {
-    "anti-slop/no-chained-type-assertions": 4
-  },
-  "packages/cli/test/environment.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/infra.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/isolation.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/offline-plan.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/protect.test.ts": {
-    "anti-slop/no-chained-type-assertions": 5
-  },
-  "packages/cli/test/steam.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/test-run.test.ts": {
-    "anti-slop/no-chained-type-assertions": 2
-  },
-  "packages/cli/test/triage.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
-  "packages/cli/test/watch.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "packages/game-controls/src/panel.ts": {
     "unicorn/no-useless-spread": 1
@@ -906,16 +790,10 @@
   "packages/shell-bun/src/bindings/worker-loader.ts": {
     "no-async-promise-executor": 1
   },
-  "packages/shell-bun/src/edge-limits.ts": {
-    "anti-slop/no-reflect-get": 1
-  },
   "packages/shell-bun/src/serve.ts": {
     "anti-slop/no-chained-type-assertions": 4,
     "no-unused-vars": 1,
     "unicorn/no-useless-spread": 1
-  },
-  "packages/shell-bun/src/usage.ts": {
-    "anti-slop/no-reflect-get": 1
   },
   "packages/shell-bun/test/terminal.test.ts": {
     "no-control-regex": 1
@@ -948,23 +826,11 @@
   "packages/util/src/seats.ts": {
     "unicorn/no-useless-spread": 1
   },
-  "packages/util/test/commands.test.ts": {
-    "anti-slop/no-reflect-get": 2
-  },
   "packages/util/test/eqosys.test.ts": {
     "unicorn/no-thenable": 3
   },
-  "packages/util/test/keys.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
   "packages/util/test/protocol.test.ts": {
     "typescript/no-this-alias": 1
-  },
-  "packages/util/test/seats.test.ts": {
-    "anti-slop/no-reflect-get": 1
-  },
-  "packages/util/test/skin-page.ts": {
-    "anti-slop/no-chained-type-assertions": 3
   },
   "scripts/bridge-lib.ts": {
     "no-unused-vars": 1
@@ -1014,18 +880,12 @@
   "scripts/test-times.ts": {
     "no-control-regex": 1
   },
-  "scripts/trial-flags.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
-  },
   "scripts/trial-flags.ts": {
     "anti-slop/no-chained-type-assertions": 1
   },
   "scripts/trial-github.ts": {
     "no-control-regex": 1,
     "no-unused-vars": 1
-  },
-  "scripts/trial-lfs.test.ts": {
-    "anti-slop/no-chained-type-assertions": 1
   },
   "scripts/typecheck.ts": {
     "no-unused-vars": 1
