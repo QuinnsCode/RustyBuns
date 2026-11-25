@@ -461,8 +461,9 @@ async function serve(): Promise<number> {
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
   process.once("SIGTERM", () => stop.abort());
-  const { GATHER, show } = await import("./builder-board.ts");
-  await show(() => Bun.$`sh -c ${GATHER}`.cwd(dir).quiet().nothrow().text(), stop.signal, { every: 1000, title: `${(await Bun.$`hostname -s`.quiet().nothrow().text()).trim() || "builder"} · taking runs · Ctrl-C to stop` });
+  const { GATHER, show, swarmQueue } = await import("./builder-board.ts");
+  const s = swarm();
+  await show(() => Bun.$`sh -c ${GATHER}`.cwd(dir).quiet().nothrow().text(), stop.signal, { every: 1000, title: `${(await Bun.$`hostname -s`.quiet().nothrow().text()).trim() || "builder"} · taking runs · Ctrl-C to stop`, swarm: s && (() => swarmQueue(s)) });
   clearInterval(timer);
   clearInterval(cut);
   awake?.kill();
@@ -476,12 +477,13 @@ async function watch(host: string | undefined): Promise<number> {
   if (!host) { console.error("BUILDER_HOST is not set: no builder to watch"); return 2; }
   const b = builder(host), stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
-  const { GATHER, show } = await import("./builder-board.ts");
+  const { GATHER, show, swarmQueue } = await import("./builder-board.ts");
+  const s = swarm();
   await show(async () => {
     // sh, not his login shell: zsh neither splits ${PS:-ps ...} nor lets a glob match nothing
     const r = await stream(remote(b, `sh -c ${q(GATHER)}`), "watch", true);
     return r.code === 0 ? r.out : `@error ssh to ${host} answered ${r.code}`;
-  }, stop.signal, { every: 2000, title: `${host} · watching · Ctrl-C to stop` });
+  }, stop.signal, { every: 2000, title: `${host} · watching · Ctrl-C to stop`, swarm: s && (() => swarmQueue(s)) });
   return 0;
 }
 

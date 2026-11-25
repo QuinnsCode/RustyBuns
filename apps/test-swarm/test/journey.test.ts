@@ -5,7 +5,7 @@ import { durableObject } from "@rustybuns/shell-bun";
 import { readJson } from "@rustybuns/util/http";
 import { check, obj, str } from "@rustybuns/util/guard";
 import worker, { Queue, type Env } from "../src/worker.ts";
-import { JobsReply, LeaseReply, Ok } from "../src/api.ts";
+import { JobsReply, LeaseReply, Ok, QueueReply } from "../src/api.ts";
 
 setDefaultTimeout(20_000);
 const TOKEN = "swarm-test-token";
@@ -78,4 +78,24 @@ test("two runners share a SHA, a quiet one's job goes back, and GitHub hears gre
     ["typecheck", "passed", "alice", 2], ["eqosys", "passed", "alice", 2], ["codesplitter:1/3", "passed", "alice", 1],
   ]);
   expect(posted).toHaveLength(2);
+});
+
+test("the queue lists what waits and who holds what, in the order runners take them, and only for us", async () => {
+  const qenv: Env = { SWARM_TOKEN: TOKEN, QUEUE: durableObject(Queue, {}) };
+  const ask = (path: string, body?: unknown, token = TOKEN) => worker.fetch(new Request(`https://swarm.test${path}`, {
+    method: body === undefined ? "GET" : "POST", headers: { authorization: `Bearer ${token}` }, body: body === undefined ? undefined : JSON.stringify(body),
+  }), qenv);
+  const B = "b".repeat(40), C = "c".repeat(40);
+  await ask("/enqueue", { sha: B, branch: "office/b", suites: ["typecheck", "eqosys"] });
+  await ask("/enqueue", { sha: C, branch: "office/c", suites: ["qcrm"] });
+  const held = (await readJson(await ask("/lease", { runner: "bob/1", seconds: 60 }), LeaseReply))!.job!;
+  const done = (await readJson(await ask("/lease", { runner: "bob/2" }), LeaseReply))!.job!;
+  await ask("/report", { lease: done.lease, ok: true, log: "" });
+
+  expect((await ask("/queue", undefined, "a fork")).status).toBe(401);
+  const q = (await readJson(await ask("/queue"), QueueReply))!;
+  expect(q.jobs.map((j) => [j.sha.slice(0, 1), j.branch, j.suite, j.state, j.runner])).toEqual([
+    ["b", "office/b", "typecheck", "leased", "bob/1"], ["c", "office/c", "qcrm", "queued", ""],
+  ]);
+  expect(q.jobs[0]!.until).toBe(held.until);
 });

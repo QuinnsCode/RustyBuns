@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
-import { board, events, expected, GATHER, parseShot, view, type Shot } from "./builder-board.ts";
+import { board, events, expected, GATHER, parseShot, view, type Shot, type SwarmQueue } from "./builder-board.ts";
 import { battery, ciJobs, cutOff, jobScript, load, main, outcome, parseJobs, passedFile, passes, plan, pool, recordPass, remoteScript, snapshot, targetedJobs, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
@@ -245,7 +245,8 @@ const busy = (lockAge: number, logAge: number, cmd = "bun test test") => ({
   runs: [{ who: "pixel-7c1a", cmd: "suites: fm-daw:2/3", started: NOW - 125_000, slot: "slot-1", logAt: NOW - logAge, last: "(pass) mixer > routes a bus" }],
   procs: [{ pid: 4242, secs: 120, script: shell("slot-1", "apps/fm-daw", cmd) }],
 });
-test.each<[string, Partial<Shot>, string[], string[]]>([
+const swarmJob = { branch: "office/nib", at: NOW - 70_000, until: 0, tries: 0, runner: "", state: "queued" as const };
+test.each<[string, Partial<Shot>, string[], string[], SwarmQueue?]>([
   ["a busy slot", busy(20_000, 3_000),
     ["slot-1", "pixel-7c1a", "1a2b3c4d", "2m 5s", "suites: fm-daw:2/3", "$ bun test test", "apps/fm-daw", "(pass) mixer > routes a bus", "free", "1 of 2 busy", "up to 4 suites at once"],
     ["STALLED", "UNEXPECTED"]],
@@ -257,9 +258,14 @@ test.each<[string, Partial<Shot>, string[], string[]]>([
     batt: { onPower: false, pct: 54 },
     waiting: [{ who: "nib", cmd: "suites: eqosys", started: NOW - 90_000, at: NOW }, { who: "byte", cmd: "suites: qcrm", started: NOW - 30_000, at: NOW }],
     done: [{ who: "byte", cmd: "suites: wildclash", started: NOW - 200_000, ended: NOW - 158_000, code: 0 }, { who: "nib", cmd: ".: bun test x", started: NOW - 100_000, ended: NOW - 90_000, code: 1 }],
-  }, ["on battery 54%", "up to 3 suites at once", "1. nib", "2. byte", "✓ pass", "42s", "wildclash", "✗ fail 1"], []],
-])("the board shows %s", (_, over, has, hasnt) => {
-  const text = board(view(shot(over)), { width: 100, color: false, frame: 0 });
+  }, ["on battery 54%", "up to 3 suites at once", "1. nib", "2. byte", "✓ pass", "42s", "wildclash", "✗ fail 1"], ["swarm"]],
+  ["the test swarm's queue", {}, ["swarm", "1. ⠋ alice/1 typecheck aaaaaaaa office/nib · lease ends in 8m 0s", "2. queued eqosys bbbbbbbb office/nib · asked 1m 10s ago · try 2"], [], { jobs: [
+    { ...swarmJob, sha: "a".repeat(40), suite: "typecheck", state: "leased", runner: "alice/1", until: NOW + 480_000, tries: 1 },
+    { ...swarmJob, sha: "b".repeat(40), suite: "eqosys", tries: 1 },
+  ] }],
+  ["a swarm that doesn't answer", {}, ["the test swarm didn't answer"], [], null],
+])("the board shows %s", (_, over, has, hasnt, swarm) => {
+  const text = board({ ...view(shot(over)), ...(swarm === undefined ? {} : { swarm }) }, { width: 100, color: false, frame: 0 });
   for (const s of has) expect(text).toContain(s);
   for (const s of hasnt) expect(text).not.toContain(s);
   expect(new Set(text.split("\n").map((l) => [...l].length))).toEqual(new Set([100]));
