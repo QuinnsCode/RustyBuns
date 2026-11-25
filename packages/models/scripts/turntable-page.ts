@@ -18,20 +18,23 @@ import { surface, gearSurfaces } from "../src/surfaces.ts";
 const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16] } as const;
 type Angle = keyof typeof ANGLES;
 
+// `?sky=1` (an outdoor overcast HDRI, the default): the photos' soft daylight. The sky does most of the lighting, the
+// key is a weak sun through cloud with a wide blurred shadow, and the deck fades into a pale haze, not a dark room.
 const q = new URLSearchParams(location.search), size = Number(q.get("size") ?? 768), plain = q.has("plain"), hdri = q.get("hdri") !== "0";
+const sky = hdri && q.has("sky");
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(1);
 renderer.setSize(size, size);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = sky ? 1.0 : 1.15;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = sky ? THREE.VSMShadowMap : THREE.PCFSoftShadowMap;
 document.body.style.margin = "0";
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
-const backdrop = 0x3b3d40;
+const backdrop = sky ? 0x8c9196 : 0x3b3d40;
 let lit: Promise<unknown> = Promise.resolve();
 if (hdri) {
   lit = new HDRLoader().loadAsync("/hdri.hdr").then((t) => {
@@ -39,27 +42,57 @@ if (hdri) {
     scene.environment = pmrem.fromEquirectangular(t).texture;
     scene.background = t;
     scene.backgroundBlurriness = 0.35;
-    scene.backgroundIntensity = 0.45;
+    scene.backgroundIntensity = sky ? 0.6 : 0.45;
   });
 } else {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.background = new THREE.Color(backdrop);
 }
-scene.environmentIntensity = 0.8;
-const key = new THREE.DirectionalLight(0xfff4e8, 1.8);
+scene.environmentIntensity = sky ? 0.95 : 0.8;
+const key = new THREE.DirectionalLight(0xfff4e8, sky ? 1.0 : 1.8);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
-key.shadow.radius = 8;
-key.shadow.bias = -0.0004;
+key.shadow.radius = sky ? 10 : 8;
+key.shadow.blurSamples = 24;
+key.shadow.bias = sky ? -0.0002 : -0.0004;
 key.shadow.normalBias = 0.01;
-const rim = new THREE.DirectionalLight(0xdfe8ff, 0.9);
+const rim = new THREE.DirectionalLight(0xdfe8ff, sky ? 0.35 : 0.9);
 scene.add(key, key.target, rim, rim.target);
+
+// The contact shadow: under overcast sky the darkest thing in a photo is the thin band where a box meets the floor. A
+// soft dark pad the size of the piece's footprint, fading out over a few centimetres past it, laid just above the deck.
+const PAD = 256, FADE = 0.025, REACH = 0.1;
+const px = new Uint8Array(PAD * PAD * 4), pad = new THREE.DataTexture(px, PAD, PAD);
+/** Redraws the pad for a footprint `w` by `d` metres: solid under it, falling off as e^(-distance / FADE) past it. */
+function padFor(w: number, d: number) {
+  for (let j = 0; j < PAD; j++) for (let i = 0; i < PAD; i++) {
+    const x = Math.abs((i + 0.5) / PAD - 0.5) * (w + 2 * REACH) - w / 2, z = Math.abs((j + 0.5) / PAD - 0.5) * (d + 2 * REACH) - d / 2;
+    const out = Math.hypot(Math.max(x, 0), Math.max(z, 0)), a = Math.round(255 * Math.exp(-out / FADE));
+    px.fill(a, (j * PAD + i) * 4, (j * PAD + i) * 4 + 4);
+  }
+  pad.needsUpdate = true;
+}
+const contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: pad, transparent: true, opacity: 0.7, depthWrite: false }));
+contact.rotation.x = -Math.PI / 2;
+contact.position.y = 0.0015;
+contact.renderOrder = 1;
+scene.add(contact);
 
 // The stage deck: painted ply sheets, 1.22 by 2.44 m, with a 3 mm gap between them, fading into the room's haze. One
 // mesh, each sheet's grain shifted (UVs in metres, so the grain is at its real size), so no two sheets repeat.
 const deckLook = plain ? { material: new THREE.MeshStandardMaterial({ color: 0x2b2b2c, roughness: 0.8 }), ready: Promise.resolve() } : surface("ply", { base: "/textures/" });
 if (!plain) deckLook.material.color.setHex(0x34332f);
-deckLook.material.roughness = 0.75;
+// matte under the sky: a painted deck is flat, and a glossy one reads as brushed metal
+deckLook.material.roughness = sky ? 0.95 : 0.75;
+// and under it the grain is painted over: no colour streaks, only a faint relief from the wood under the paint (more reads as brushed metal at a slant)
+if (sky && !plain) void deckLook.ready.then(() => {
+  const m = deckLook.material;
+  m.map = null;
+  m.color.setHex(0x3a3936);
+  m.normalScale.setScalar(0.12);
+  m.envMapIntensity = 0.7;
+  m.needsUpdate = true;
+});
 const sheets: THREE.BufferGeometry[] = [];
 for (let i = -4; i <= 4; i++) for (let j = -3; j <= 3; j++) {
   const g = new THREE.BoxGeometry(1.217, 0.02, 2.437), uv = g.getAttribute("uv"), pos = g.getAttribute("position"), nor = g.getAttribute("normal");
@@ -132,6 +165,13 @@ async function show(id: GearId | "dance-stack", angle: Angle) {
   const s = key.shadow.camera as THREE.OrthographicCamera;
   s.left = s.bottom = -r * 2; s.right = s.top = r * 2; s.near = 0.1; s.far = r * 20; s.updateProjectionMatrix();
   scene.fog = new THREE.Fog(backdrop, dist + r * 2, dist + r * 14);
+  // the pad covers the footprint, and only when the piece stands on the deck
+  const foot = box.getSize(new THREE.Vector3());
+  contact.visible = sky && box.min.y < 0.02;
+  if (contact.visible) padFor(foot.x, foot.z);
+  contact.scale.set(foot.x + 2 * REACH, foot.z + 2 * REACH, 1);
+  contact.position.x = c.x;
+  contact.position.z = c.z;
   ao.updateGtaoMaterial({ radius: Math.max(0.05, r * 0.25) });
   await Promise.all([ready, lit, deckLook.ready]);
   // count the gear's own triangles and draws on a plain render, then take the picture through the AO
@@ -146,4 +186,4 @@ async function show(id: GearId | "dance-stack", angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack"], angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao, contact, key } });
