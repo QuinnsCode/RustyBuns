@@ -23,8 +23,8 @@ Open `docs/story.html` for the map: regions as columns, the four kinds as rows, 
 | S2 | every playable region's world names all 7 senses (place, life, weather, sound, people, history, craft) | 100% | 1.00 |
 | S3 | written beats tied to another arc (40% is full marks) | 100% | 1.00 |
 | S4 | written beats the game plays (built) | 20% | 0.20 |
-| S5 | world wants the game has (built) | 21% | 0.21 |
-| | **total** | | **3.41 of 5** |
+| S5 | world wants the game has (built) | 23% | 0.23 |
+| | **total** | | **3.43 of 5** |
 
 ## Threads
 
@@ -93,6 +93,8 @@ Region 1, from level 2.
 - [x] place: Two soft wheel ruts down every sugar-sand road, packed darker than the loose white sand of the crown.
 - [x] life: Short, crooked pitch pines, none much over ten metres, standing open over waist-high scrub oak and huckleberry.
 - [x] life: Atlantic white cedar, dark and close, only where the ground is wet: along the streams and round the lakes.
+- [x] life: Grey snags of fire-killed pine standing among the living, and stunted pines no taller than a man on the poorest sand.
+- [x] life: Sedge in tussocks along every waterline, half in the cedar water and half on the bank.
 - [ ] life: Pitch pine bark blackened by old fires, with new tufts of needles growing straight from the trunk.
 - [ ] life: The Pine Barrens tree frog (green with a lavender stripe), northern pine snakes, deer, turkey vultures over the plains.
 - [x] weather: Summer thunderstorms that roll in at dusk.

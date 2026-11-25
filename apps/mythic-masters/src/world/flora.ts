@@ -66,7 +66,9 @@ const STREAMSIDE = 14;
 export const streamside = (waterAt: (x: number, z: number) => number, x: number, z: number) =>
   [0, 1, 2, 3].some((i) => waterAt(x + Math.cos(i * Math.PI / 2) * STREAMSIDE, z + Math.sin(i * Math.PI / 2) * STREAMSIDE) > 0);
 /** Trees that grow crooked, leaning a little off true (the radians at most, each way). */
-const CROOKED: Partial<Record<Kind, number>> = { "pitch-pine": 0.13 };
+const CROOKED: Partial<Record<Kind, number>> = { "pitch-pine": 0.2 };
+/** Share of the trees along a stream that are its bank kind: the Pine Barrens' streams run through cedar swamp. */
+const SWAMP = 0.75;
 const CAP = 3200;      // instances a kind can show at once, near
 const FAR_CAP = 9000;  // far cards a kind can show at once
 const GRID = 5;        // metres between candidate spots, near
@@ -104,7 +106,7 @@ const CULL_MOVE = 2, CULL_TURN = Math.cos((1.5 * Math.PI) / 180), CULL_MARGIN = 
 export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
 export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
-  "pine-barrens": B(0.6, ["pitch-pine", 0.41, 5, 10], ["white-cedar", 0.1, 9, 15], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.04, 4, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
+  "pine-barrens": B(0.78, ["pitch-pine", 0.41, 3, 10], ["white-cedar", 0.1, 9, 15], ["blueberry", 0.2, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.08, 3, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
   forest: B(0.7, ["hemlock", 0.2, 12, 22], ["sugar-maple", 0.2, 12, 20], ["paper-birch", 0.12, 9, 16], ["rhododendron", 0.14, 2, 4], ["oak", 0.05, 8, 15], ["sword-fern", 0.12, 0.6, 1.2], ["stump", 0.02, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.05, 0.12, 0.35], ["log", 0.05, 3, 6]),
   rainforest: B(0.85, ["red-cedar", 0.26, 22, 40], ["bigleaf-maple", 0.14, 14, 22], ["sword-fern", 0.37, 0.8, 2], ["skunk-cabbage", 0.05, 0.5, 1], ["stump", 0.03, 0.5, 1], ["rock", 0.03, 0.6, 1.8], ["mushroom", 0.06, 0.15, 0.4], ["log", 0.06, 4, 9]),
   lake: B(0.5, ["white-pine", 0.22, 14, 26], ["tamarack", 0.12, 9, 15], ["red-osier", 0.16, 1.5, 2.6], ["cattail", 0.12, 1.6, 2.6], ["paper-birch", 0.08, 9, 15], ["flower", 0.12, 0.3, 0.6], ["rock", 0.1, 0.5, 1.6], ["reed", 0.06, 1.4, 2.4]),
@@ -279,7 +281,8 @@ function scrub(leaves: number): THREE.BufferGeometry {
     const t = (s / 6) * Math.PI * 2 + r(), w = 0.012;
     tri(pos, col, [-w, 0, 0], [w, 0, 0], [Math.cos(t) * 0.28, 0.75, Math.sin(t) * 0.28], dark, dark, stem);
   }
-  const big = Math.sqrt(40 / leaves); // fewer leaves, each bigger, so the far mound covers as much
+  // fewer leaves, each bigger, so the far mound covers as much; near, the scrub oak's and huckleberry's leaves are small
+  const big = Math.sqrt(40 / leaves) * (leaves >= SCRUB_LEAVES[0] ? 0.78 : 1);
   for (let l = 0; l < leaves; l++) {
     const a = r() * Math.PI * 2, e = Math.asin(0.15 + 0.85 * r()), lump = 0.8 + 0.3 * Math.sin(a * 3 + 1.7);
     const ox = Math.cos(a) * Math.cos(e), oy = Math.sin(e), oz = Math.sin(a) * Math.cos(e), k = (0.75 + 0.25 * r()) * lump;
@@ -296,7 +299,7 @@ function scrub(leaves: number): THREE.BufferGeometry {
   return coloured(pos, col);
 }
 /** Leaves on a scrub mound in the near grass ring and in the far one (about 2 triangles a leaf). */
-const SCRUB_LEAVES = [30, 7] as const;
+const SCRUB_LEAVES = [40, 7] as const;
 /** A cap on a stem. */
 function mushroom(): THREE.BufferGeometry {
   const stem = new THREE.CylinderGeometry(0.1, 0.13, 0.55, 6), cap = new THREE.SphereGeometry(0.42, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -491,9 +494,14 @@ export function scatterFlora(f: Flora, cx: number, cz: number, radius: number, r
       let [kind, , lo, hi] = draw(spec, hash(gx, gz, 4));
       // The water's edge grows reeds and nothing else; reeds grow nowhere else.
       const above = y - waterAt(x, z);
+      const wet = spec.kinds.find((k) => k[0] === "reed") ?? spec.kinds.find((k) => WET.has(k[0]));
+      // At the very edge a dry-ground roll is the biome's reeds or sedge instead, most times, so the water is lined.
+      if (!WET.has(kind) && above < 0.3 && above > -0.3 && wet && hash(gx, gz, 14) < 0.8) [kind, , lo, hi] = wet;
       if (WET.has(kind) ? above < -0.3 || above > WATER_EDGE : above < 0.3) continue;
-      // White cedar keeps to the stream banks; away from water its spot goes to the pines.
-      if (BANKS.has(kind) && !streamside(waterAt, x, z)) [kind, , lo, hi] = spec.kinds[0]!;
+      // White cedar keeps to the stream banks, and there it is most of the trees; away from water its spot goes to the pines.
+      const bank = spec.kinds.find((k) => BANKS.has(k[0])), side = bank && TALL.has(kind) && streamside(waterAt, x, z);
+      if (BANKS.has(kind) && !side) [kind, , lo, hi] = spec.kinds[0]!;
+      else if (side && hash(gx, gz, 15) < SWAMP) [kind, , lo, hi] = bank;
       // In a glade the trees stand back: a tree there is a flower or grass instead, twice as often.
       if (open && TALL.has(kind)) { if (hash(gx, gz, 13) > 0.5) continue; [kind, , lo, hi] = spec.kinds.find((k) => k[0] === "flower") ?? spec.kinds.find((k) => k[0] === "sage") ?? ["grass", 1, 0.4, 0.7]; }
       // Above the treeline, and on steep faces, only rock stands.

@@ -644,6 +644,16 @@
         },
         {
           "kind": "life",
+          "what": "Grey snags of fire-killed pine standing among the living, and stunted pines no taller than a man on the poorest sand.",
+          "status": "built"
+        },
+        {
+          "kind": "life",
+          "what": "Sedge in tussocks along every waterline, half in the cedar water and half on the bank.",
+          "status": "built"
+        },
+        {
+          "kind": "life",
           "what": "Pitch pine bark blackened by old fires, with new tufts of needles growing straight from the trunk.",
           "status": "idea"
         },

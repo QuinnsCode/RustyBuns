@@ -13,7 +13,7 @@ const SEEN_R = 1500, TOWER_SEEN_R = 2600, PUDDLE_R = 240, PUDDLE_CAP = 96, RUT_R
 const STUCCO = 0xf0e6cc, ROOF = 0x55585a, SHUTTER = 0x2f4a36, TRIM = 0xeeeae0, GLASS = 0x22282e, CEDAR = 0xb4a68e, CEDAR_DARK = 0x655243,
   SHINGLE = 0x4a4541, IRONSTONE = 0x8b5a3e, MORTAR = 0x9a7a62, TIN = 0x7c5c48, DOOR = 0x4a3626, BRICK = 0x8a4a3a, STEEL = 0x9aa1a6,
   CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0x8c8460, PLANK = 0x5e4a36, TEA = 0x7a4a1c, LOGS = 0x7a5a3c,
-  BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640];
+  BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640], SEDGE = [0x8a8a4a, 0x6e7a3c, 0xa69a5c, 0x7c6e3a, 0x5c6a34];
 
 type G = THREE.BufferGeometry;
 /** A geometry painted one colour, non-indexed and without uvs, so any of them merge. */
@@ -126,6 +126,22 @@ function build(p: Part, seed: number): G[] {
       out.push(paint(new THREE.ConeGeometry(w * 0.22, h * 0.14, 6).translate(0, h * 0.97, 0), CEDAR_LEAF[0]!));
       return out;
     }
+    // a sedge tussock: thin arching blades from one foot, green-gold and straw, as wide as w
+    case "sedge": {
+      const rnd = mulberry32(seed), out: G[] = [], pos: number[] = [], col: number[] = [], c = new THREE.Color();
+      for (let i = 0; i < 40; i++) {
+        const a = rnd() * Math.PI * 2, h = 0.9 + 0.8 * rnd(), lean = (0.2 + 0.5 * rnd()) * w / 2, bw = 0.05, ca = Math.cos(a), sa = Math.sin(a);
+        const base = [-sa * bw, 0, ca * bw, sa * bw, 0, -ca * bw], tip = [ca * lean, h, sa * lean];
+        // both faces, so a blade shows from either side
+        pos.push(...base, ...tip, ...base.slice(3), ...base.slice(0, 3), ...tip);
+        c.setHex(SEDGE[Math.floor(rnd() * SEDGE.length)]!);
+        for (const k of [0.55, 0.55, 1, 0.55, 0.55, 1]) col.push(c.r * k, c.g * k, c.b * k);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+      out.push(g);
+      return out;
+    }
     case "shed": return [box(w, 4, d, CEDAR, 0, 0.6, 0), gable(w, d, 1.2, TIN, 2.6, 0.3), box(0.9, 1.8, 0.08, DOOR, 0, 0.9, f)];
     case "lake": return [surface(w, d, seed, pickOf([TEA, 0x84521f, 0x6e4319, 0x8f5c26]), true)];
     case "bog": return [surface(w, d, seed, (r) => [0xa3192a, 0xb8262e, 0x8e1424, 0xc8333a, 0x7a1a22][Math.floor(r() * 5)]!)];
@@ -171,6 +187,8 @@ function build(p: Part, seed: number): G[] {
 
 /** How a part meets uneven ground: a building's foot sits at its lowest corner (its walls go on down), water and banks
  *  at the highest, so a flooded bed never shows ground through it, and a lake just over its highest ground (never more than 0.6 m over its lowest, so it never floats). */
+/** A sight's plants: merged into one mesh round its middle, not a mesh each. */
+const GROVE: ReadonlySet<PartKind> = new Set(["cedar", "sedge"]);
 const HIGH: ReadonlySet<PartKind> = new Set(["bog", "vines", "dyke", "sluice", "beach"]);
 
 export function pinesView(group: THREE.Group, groundY: (x: number, z: number) => number) {
@@ -191,7 +209,7 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
     g.visible = false;
     root.add(g);
     const parts = s.parts.flatMap((p, pi) => {
-      if (p.kind === "cedar") return [];
+      if (GROVE.has(p.kind)) return [];
       const geo = mergeGeometries(build(p, si * 101 + pi)) ?? new THREE.BufferGeometry();
       const m = new THREE.Mesh(geo, p.kind === "lake" ? lake : p.kind === "bog" ? wet : solid);
       m.rotation.y = p.yaw; m.position.set(p.x, 0, p.z); m.matrixAutoUpdate = false; m.updateMatrix();
@@ -200,7 +218,7 @@ export function pinesView(group: THREE.Group, groundY: (x: number, z: number) =>
     });
     // A sight's trees are one mesh (one draw call, not one a tree), stood round the sight's middle and laid as one on
     // the lowest ground under them: a sight stands on flat ground, so none floats.
-    const cedars = s.parts.filter((p) => p.kind === "cedar");
+    const cedars = s.parts.filter((p) => GROVE.has(p.kind));
     const grove = cedars.length ? new THREE.Mesh(mergeGeometries(cedars.map((p) => mergeGeometries(build(p, si * 101 + s.parts.indexOf(p)))!.rotateY(p.yaw).translate(p.x - s.x, 0, p.z - s.z))) ?? new THREE.BufferGeometry(), solid) : null;
     if (grove) { grove.position.set(s.x, 0, s.z); grove.matrixAutoUpdate = false; grove.updateMatrix(); g.add(grove); }
     return { s, g, parts, grove, cedars, reach: s.id === "fire-tower" ? TOWER_SEEN_R : SEEN_R };
