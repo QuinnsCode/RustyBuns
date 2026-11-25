@@ -203,17 +203,18 @@ test("at the DJ table, the mixer moves as the DJ's says: channel 2's fader goes 
   // what the mixer said when this page came in: the caps go there, no hand moves
   booth.mixed(say(), t);
   frames(10);
-  const was = cap("part:fader-2").position.z;
+  const was = cap("part:fader-2").position.z, crossHome = cap("part:cross").position.x;
+  const { faderTravel = 0, crossTravel = 0 } = mixer.userData as { faderTravel?: number; crossTravel?: number };
   // deck A's channel up: its cap slides away from the DJ, the left index riding it
   booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5] }), t);
   frames(20);
-  expect(cap("part:fader-2").position.z).toBeCloseTo(was - 0.03, 3);
+  expect(cap("part:fader-2").position.z).toBeCloseTo(was - 0.5 * faderTravel, 3);
   const top = (part: string) => cap(part).localToWorld(new THREE.Vector3(0, 0.012, 0));
   expect(f.hands.tips().left.index.distanceTo(top("part:fader-2"))).toBeLessThan(0.02);
   // the crossfader over to B: the right hand on it, the left still on its fader
   booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5], cross: 0.8 }), t);
   frames(20);
-  expect(cap("part:cross").position.x).toBeCloseTo(0.8 * 0.045 / 2, 3);
+  expect(cap("part:cross").position.x).toBeCloseTo(crossHome + 0.8 * crossTravel / 2, 3);
   expect(f.hands.tips().right.index.distanceTo(top("part:cross"))).toBeLessThan(0.02);
   // filter 2 swept down: its knob turns back anticlockwise (seen from above), the right hand on it
   booth.mixed(say({ faders: [0.5, 1, 0.5, 0.5], cross: 0.8, filters: [0.6, 0.1] }), t);
