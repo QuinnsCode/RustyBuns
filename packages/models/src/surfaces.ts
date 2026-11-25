@@ -73,9 +73,11 @@ export const SURFACES = {
   cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
   /** A dance-stack horn's lining: pale painted fibreglass in a satin finish (flat colour, the plastic's fine relief),
    * greyed where hands and road dust have rubbed it, scuffed where the boxes are stacked. */
-  horn: { dir: "plastic", tile: 0.35, tint: 0x8f938b, roughness: 0.6, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  horn: { dir: "plastic", tile: 0.35, tint: 0x6a6e66, roughness: 0.75, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  /** The same lining deep in a horn's throat, where no rag reaches: greyed and browned with road dust, matte. */
+  grime: { dir: "plastic", tile: 0.35, tint: 0x403f37, roughness: 0.9, metalness: 0, normalScale: 0.3, wear: { chip: 0x3e3b33, stipple: 0.8, scuff: 0.4, matte: 0.7, speck: 1 } },
   /** A dance stack's cabinets: dark violet paint over birch, a fine roller texture, rubbed pale at the edges. */
-  violet: { dir: "plastic", tile: 0.35, tint: 0x1c1733, roughness: 0.8, metalness: 0, normalScale: 0.35, wear: { chip: 0x4a4560, stipple: 0.5, scuff: 0.6, matte: 0.65 } },
+  violet: { dir: "plastic", tile: 0.35, tint: 0x1c1733, roughness: 0.8, metalness: 0, normalScale: 0.35, wear: { chip: 0x8a7656, stipple: 0.6, scuff: 0.8, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;
 export type SurfaceName = keyof typeof SURFACES;
 export const SURFACE_NAMES = Object.keys(SURFACES) as SurfaceName[];
@@ -229,12 +231,12 @@ function patch(material: THREE.MeshStandardMaterial, backing: number, wear?: Wea
 export function gearSurfaces(opts: SurfaceOptions): { look: GearLook; ready: Promise<void> } {
   const flat = gearLook(), loader = opts.loader ?? new THREE.TextureLoader();
   const pick = (name: SurfaceName) => surface(name, { ...opts, loader });
-  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek"), horn: pick("horn"), violet: pick("violet") };
+  const parts = { paint: pick("plastic"), grille: pick("grille"), metal: pick("aluminium"), rubber: pick("rubber"), panel: pick("steel"), tolex: pick("tolex"), mesh: pick("mesh"), coat: pick("coat"), cheek: pick("cheek"), horn: pick("horn"), grime: pick("grime"), violet: pick("violet") };
   const lid = parts.paint.material.clone();
   lid.color.setHex(0xf2c230);
   lid.map = null;
   const lidReady = parts.paint.ready.then(() => { lid.normalMap = parts.paint.material.normalMap; lid.roughnessMap = parts.paint.material.roughnessMap; lid.needsUpdate = true; });
   const look: GearLook = { ...flat, paint: parts.paint.material, grille: parts.grille.material, metal: parts.metal.material, rubber: parts.rubber.material, panel: parts.panel.material, tolex: parts.tolex.material, lid,
-    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material, horn: parts.horn.material, violet: parts.violet.material };
+    mesh: parts.mesh.material, coat: parts.coat.material, cheek: parts.cheek.material, horn: parts.horn.material, grime: parts.grime.material, violet: parts.violet.material };
   return { look, ready: Promise.all([...Object.values(parts).map((p) => p.ready), lidReady]).then(() => {}) };
 }
