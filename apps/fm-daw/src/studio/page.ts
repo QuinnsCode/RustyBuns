@@ -5,8 +5,10 @@
 // them, and the PA panel turns, splays and pins the picked one, shows the coverage map over the floor (coverage.ts: the
 // boxes the jam room plays from), checks the amps, breakers and generator (@rustybuns/gear powerPlan) and hands out the
 // gear list and the plan drawing. Every change goes through the builder's edits (builder.ts), so the room is never left
-// half built. Your room is kept in this browser. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id),
-// pa(), level(x, z), download("list" | "plan").
+// half built. Your room is kept in this browser. The Party panel (Qevent, party.ts) makes a party, gives each performer
+// a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
+// party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z),
+// download("list" | "plan"), undo(), redo(), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
@@ -23,6 +25,7 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
 import { paSpeakers, rigPlan, rigStacks, roomRig } from "./pa-room.ts";
 import { floorMap, heatCanvas, mapAt, type FloorMap } from "./coverage.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, reschedule, restore, saveVersion, stored, switchScene, whenWords, type Done } from "./party.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -30,13 +33,22 @@ const SVG = "http://www.w3.org/2000/svg";
 const SIDES: Side[] = ["front", "back", "left", "right"];
 const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch"] as const;
 
-let room: StudioDef = yours() ?? structuredClone(ROOM_LIST[0]);
+/** Your parties (party.ts): with one open, the builder edits the scene on its stage. */
+let parties = stored((() => { try { return localStorage.getItem(PARTIES); } catch { return null; } })());
+let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(ROOM_LIST[0]);
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
 /** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map shows. */
 let stackPicked: number | null = null, showMap = false;
 
-function save() { try { localStorage.setItem(YOURS, JSON.stringify(room)); } catch { /* private window: the room lives until reload */ } }
+/** Keep the room: in the open party's scene, and as the room /jam.html walks into (the live party's stage while one is live). */
+function save() {
+  if (openParty(parties)) parties = keepStudio(parties, room).store;
+  try {
+    localStorage.setItem(PARTIES, JSON.stringify(parties));
+    localStorage.setItem(YOURS, JSON.stringify(liveStudio(parties) ?? room));
+  } catch { /* private window: the room lives until reload */ }
+}
 const preset = () => ROOM_LIST.find((r) => r.id === room.id && JSON.stringify(r) === JSON.stringify(room));
 
 /** Do an edit (from the page's controls or the harness, so it is checked first); false and `why` if it can't be done. */
@@ -52,8 +64,11 @@ function apply(raw: unknown): boolean {
   return out.ok;
 }
 
-// ---- undo and redo: every edit that went through, as the room was before it (this page's session only) ----
-const UNDOS = 100, undos: StudioDef[] = [], redos: StudioDef[] = [];
+// ---- undo and redo: every edit that went through, as the room was before it (this page's session only), one
+// history per scene, so switching performers and back keeps each one's ----
+const UNDOS = 100, histories = new Map<string, [StudioDef[], StudioDef[]]>();
+let undos: StudioDef[] = [], redos: StudioDef[] = [];
+histories.set(`${parties.open ?? ""}/${openParty(parties)?.scene ?? ""}`, [undos, redos]);
 function undo(back = true) {
   const from = back ? undos : redos, to = back ? redos : undos, prev = from.pop();
   if (!prev) return false;
@@ -161,6 +176,7 @@ function render() {
   $("why").textContent = why;
   $("about").textContent = room.about ?? "";
   select.value = preset()?.id ?? "";
+  renderParty();
   renderSound();
   renderPa();
   renderEdit();
@@ -636,6 +652,71 @@ function renderEdit() {
   });
 }
 
+// ---- the party (Qevent, #5915): a party's scenes, one per performer, its saved versions, and the one live party ----
+
+/** Do a party change (party.ts); the builder then shows the open party's scene on stage, with that scene's undo history. */
+function partyDo(d: Done): boolean {
+  why = d.ok ? "" : d.why;
+  if (d.ok) {
+    parties = d.store;
+    const scene = openScene(parties), key = `${parties.open ?? ""}/${openParty(parties)?.scene ?? ""}`;
+    let h = histories.get(key);
+    if (!h) histories.set(key, (h = [[], []]));
+    [undos, redos] = h;
+    if (scene) room = scene.studio;
+    if (picked && !room.spots.some((s) => s.id === picked)) picked = room.spots[0]?.id;
+    stackPicked = null;
+    save();
+  }
+  render();
+  return d.ok;
+}
+/** A <input type="datetime-local"> value and back: empty is open now. */
+const toLocal = (ms: number | null) => ms === null ? "" : new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; return Number.isFinite(ms) ? ms : null; };
+
+function renderParty() {
+  const host = $("party"), p = openParty(parties), x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
+  if (!p) {
+    host.innerHTML = `<h2>Party</h2>
+      ${parties.parties.length ? `<ul class="parties">${parties.parties.map((q) => `<li><button type="button" data-party-open="${q.id}">${esc(q.name)}</button><span class="hint">${esc(whenWords(q.when))}${q.id === parties.live ? " · live" : ""}</span>${x(`data-party-drop="${q.id}"`, `Take ${q.name} away, with every version`)}</li>`).join("")}</ul>` : ""}
+      <div class="row"><label>Name<input id="party-name" maxlength="60" placeholder="Saturday night"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local"></label></div>
+      <div class="row"><button type="button" class="go" id="party-make">Make a party</button></div>
+      <p class="hint">Its first scene is the room you have now. Each performer gets a scene of their own.</p>`;
+  } else {
+    const live = parties.live === p.id;
+    host.innerHTML = `<h2>Party</h2>
+      <div class="row"><label>Name<input id="party-rename" maxlength="60" value="${esc(p.name)}"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local" value="${toLocal(p.when)}"></label></div>
+      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button></div>
+      <p class="hint">${live ? "The room people join: Enter walks its scene on stage." : parties.live ? "Another party is live; only one is at a time." : "Not live yet: you can change it before or during the event."}</p>
+      <h2>Scenes</h2>
+      <ul class="scenes">${p.scenes.map((s) => `<li><button type="button" data-scene="${s.id}" aria-pressed="${s.id === p.scene}">${esc(s.performer)}</button><span class="hint">${s.studio.spots.length} seat${s.studio.spots.length === 1 ? "" : "s"}</span>${p.scenes.length > 1 ? x(`data-scene-drop="${s.id}"`, `Take ${s.performer}'s scene out`) : ""}</li>`).join("")}</ul>
+      <div class="row"><label>Next performer<input id="scene-name" maxlength="40"></label><button type="button" id="scene-add">Add scene</button></div>
+      ${p.scenes.length > 1 ? `<div class="row"><button type="button" id="scene-all">Everyone at once</button></div>` : ""}
+      <h2>Versions</h2>
+      <div class="row"><label>What changed<input id="version-note" maxlength="80"></label><button type="button" id="version-save">Save version</button></div>
+      ${p.versions.length ? `<ul class="versions">${[...p.versions].reverse().map((v) => `<li><span>v${v.n}${v.note ? ` ${esc(v.note)}` : ""} <small class="hint">${esc(whenWords(v.at))}</small></span><button type="button" data-restore="${v.n}">Bring back</button></li>`).join("")}</ul>` : `<p class="hint">No versions saved yet. Every one you save stays.</p>`}`;
+  }
+  const val = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
+  document.getElementById("party-make")?.addEventListener("click", () => partyDo(makeParty(parties, val("party-name"), fromLocal(val("party-when")), room)));
+  document.getElementById("party-rename")?.addEventListener("change", () => partyDo(reschedule(parties, { name: val("party-rename") })));
+  if (p) document.getElementById("party-when")?.addEventListener("change", () => partyDo(reschedule(parties, { when: fromLocal(val("party-when")) })));
+  document.getElementById("party-live")?.addEventListener("click", () => partyDo(goLive(parties, parties.live === p?.id ? null : p?.id ?? null)));
+  document.getElementById("party-close")?.addEventListener("click", () => partyDo(open(parties, undefined)));
+  document.getElementById("scene-add")?.addEventListener("click", () => partyDo(addScene(parties, val("scene-name"), room)));
+  document.getElementById("scene-all")?.addEventListener("click", () => partyDo(everyone(parties)));
+  document.getElementById("version-save")?.addEventListener("click", () => partyDo(saveVersion(parties, val("version-note"), Date.now())));
+}
+$("party").addEventListener("click", (e) => {
+  const t = e.target instanceof Element ? e.target.closest<HTMLElement>("button") : null, d = t?.dataset;
+  if (!d) return;
+  if (d.partyOpen) partyDo(open(parties, d.partyOpen));
+  else if (d.partyDrop) partyDo(dropParty(parties, d.partyDrop));
+  else if (d.scene) partyDo(switchScene(parties, d.scene));
+  else if (d.sceneDrop) partyDo(dropScene(parties, d.sceneDrop));
+  else if (d.restore) partyDo(restore(parties, Number(d.restore)));
+});
+
 const select = $("preset") as HTMLSelectElement;
 select.innerHTML = `<option value="">Yours</option>${ROOM_LIST.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("")}`;
 function load(id: string) {
@@ -676,6 +757,27 @@ const harness = {
   download: (what: "list" | "plan") => download(what),
   undo: () => undo(true),
   redo: () => undo(false),
+  /** The party (Qevent): every change answers { ok, why } as `edit` does. */
+  party: {
+    state: () => {
+      const p = openParty(parties);
+      return {
+        open: p ? { id: p.id, name: p.name, when: p.when, scene: p.scene, scenes: p.scenes.map((s) => ({ id: s.id, performer: s.performer, seats: s.studio.spots.length })), versions: p.versions.map((v) => ({ n: v.n, note: v.note })) } : null,
+        live: parties.live ?? null, parties: parties.parties.map((q) => q.id),
+      };
+    },
+    make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
+    open: (id?: string) => ({ ok: partyDo(open(parties, id)), why }),
+    drop: (id: string) => ({ ok: partyDo(dropParty(parties, id)), why }),
+    live: (on = true) => ({ ok: partyDo(goLive(parties, on ? parties.open ?? null : null)), why }),
+    when: (when: number | null) => ({ ok: partyDo(reschedule(parties, { when })), why }),
+    addScene: (performer: string) => ({ ok: partyDo(addScene(parties, performer, room)), why }),
+    scene: (id: string) => ({ ok: partyDo(switchScene(parties, id)), why }),
+    dropScene: (id: string) => ({ ok: partyDo(dropScene(parties, id)), why }),
+    everyone: () => ({ ok: partyDo(everyone(parties)), why }),
+    save: (note = "") => ({ ok: partyDo(saveVersion(parties, note, Date.now())), why }),
+    restore: (n: number) => ({ ok: partyDo(restore(parties, n)), why }),
+  },
   pick: (id: string) => { picked = id; render(); },
   /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
   enter: (sesh?: string) => builtLink(location.origin, room, sesh),
