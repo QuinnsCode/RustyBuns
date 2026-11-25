@@ -22,9 +22,8 @@ export function makeSfx(far = 1) {
   // Browsers only let audio start from a click or key, so the first one opens it.
   const wake = () => {
     if (!ctx) {
-      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AC) return;
-      ctx = new AC();
+      if (typeof AudioContext === "undefined") return;
+      ctx = new AudioContext();
       const squash = ctx.createDynamicsCompressor();
       squash.threshold.value = -16; squash.ratio.value = 6;
       master = ctx.createGain();

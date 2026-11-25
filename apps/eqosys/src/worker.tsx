@@ -30,6 +30,7 @@ import { spaceOf } from "./qollab/space.ts";
 // URLs are allowed, and admin@eqosys.local is the super admin.
 let devKey: string | undefined;
 const e = (req?: Request): AppEnv => {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Cloudflare's runtime types and ours describe the same object differently
   const base = env as unknown as AppEnv;
   if (!import.meta.env.VITE_IS_DEV_SERVER || !req) return base;
   return {
@@ -148,6 +149,7 @@ const app = defineApp([
 // Hub, Party and Space live in Qollab's Worker (apps/qollab, #3816); this one binds them there. The Vault stays: privacy is eqosys's.
 export { Vault } from "./vault.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- cloudflare:workers has no types in this app; only the class it uses is named
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {
   call(name: string, json: string) { return bridgeCall(this.env as AppEnv, this.ctx.props, name, json); }

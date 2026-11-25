@@ -62,7 +62,7 @@ export function behind(n: number): Set<string> {
 }
 
 /** Flags the engine sets itself (engine.ts): the order the quests close in, and a promise made too late. */
-const engineFlag = (fl: string) => /^closed-(first|last)-(office|institute|lamplighters)$/.test(fl) || /-late$/.test(fl);
+const engineFlag = (fl: string) => /^closed-(first|last)-(office|institute|lamplighters)$/.test(fl) || fl.endsWith("-late");
 
 /** Everything wrong with the weave (content/faction-weave.json): the lead's crossings between the three. */
 export function weaveProblems(raw: unknown): string[] {

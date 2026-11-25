@@ -23,7 +23,10 @@ const piney = (d: number) => ({ needles: S(d, 0.35, [0.16, 0.28], ...NEEDLE), co
 const open = (pebbles: number, colours = STONE) => ({ pebble: S(pebbles, 1, [0.05, 0.18], ...colours), twig: S(0.05, 1, [0.2, 0.5], 0xa89a88, 0x8a7a68) });
 const LITTER: Record<Biome, Partial<Record<Piece, Spec>>> = {
   "pine-barrens": piney(8), forest: leafy(14), rainforest: leafy(10, WET_LEAF, [0.2, 0.38]), lake: piney(5), desert: open(3, [0x9a8a78, 0x7a6a5a, 0xa8907a, 0x8a5a40, 0x6a6460, 0xb09a80]),
-  swamp: leafy(9, WET_LEAF, [0.14, 0.28]), plains: open(0.25), highlands: open(0.8), jungle: leafy(10, WET_LEAF, [0.2, 0.4]), island: open(0.3), mountains: { ...piney(3), ...{ pebble: S(0.9, 1, [0.05, 0.2], ...STONE) } },
+  swamp: leafy(9, WET_LEAF, [0.14, 0.28]), plains: open(0.25), highlands: open(0.8), jungle: leafy(10, WET_LEAF, [0.2, 0.4]), island: open(0.3), mountains: ({
+	...piney(3),
+	pebble: S(.9, 1, [.05, .2], ...STONE)
+}),
   river: leafy(6), coast: open(0.6), savanna: open(0.4, [0x9a8470, 0x8a6a50, 0xa89078]), tundra: open(0.9), steppe: open(0.35),
 };
 

@@ -578,11 +578,11 @@ try { if (localStorage.getItem("splat-spray.retro") === "1") setRetro(true); } c
 
 // ---------- the room on screen: the built one, or a scanned one ----------
 
-let room: SpyScene = undefined as unknown as SpyScene;
+let room!: SpyScene;
 let opacities = new Float32Array(0);
 let radii = new Float32Array(0);
-let field: RevealField = undefined as unknown as RevealField;
-let mesh: SplatMesh = undefined as unknown as SplatMesh;
+let field!: RevealField;
+let mesh!: SplatMesh;
 /** Set while a scanned room is on screen: where its eye stands. */
 let captured: { eye: THREE.Vector3 } | null = null;
 const BUILT_HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1.2, -0.6) };

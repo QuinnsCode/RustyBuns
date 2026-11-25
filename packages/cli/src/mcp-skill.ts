@@ -11,6 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { field } from "@rustybuns/shell-bun/guard";
 
 export interface McpTool { name: string; description: string; args: string[]; danger: boolean }
 export interface McpServer { name: string; instructions: string; tools: McpTool[] }
@@ -18,7 +19,6 @@ export interface McpServer { name: string; instructions: string; tools: McpTool[
 /** A rough token count (four characters each), what the skill list shows. */
 export const tokens = (s: string) => Math.ceil(s.length / 4);
 
-const field = (v: unknown, k: string): unknown => (v && typeof v === "object" && k in v ? Reflect.get(v, k) : undefined);
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const firstSentence = (s: string) => (/^[\s\S]*?[.!?](?=\s|$)/.exec(s.replace(/\s+/g, " ").trim())?.[0] ?? s.replace(/\s+/g, " ").trim());
 const clip = (s: string, words: number) => { const w = s.split(" "); return w.length <= words ? s : `${w.slice(0, words).join(" ")}...`; };

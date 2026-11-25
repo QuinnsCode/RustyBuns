@@ -30,6 +30,7 @@ export function wasmExports(inst: WebAssembly.Instance): PixelRagWasm {
   const e = inst.exports;
   for (const k of ["pr_embed", "pr_dhash", "pr_quantize", "pr_fill", "pr_topk"]) if (!isFn(e[k])) throw new Error(`pixel_rag.wasm: no ${k}`);
   if (!(e.__stack_pointer instanceof WebAssembly.Global) || !(e.__heap_base instanceof WebAssembly.Global)) throw new Error("pixel_rag.wasm: not linked for a shared memory");
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   return e as unknown as PixelRagWasm;
 }
 

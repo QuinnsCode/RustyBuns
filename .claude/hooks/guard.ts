@@ -38,7 +38,7 @@ const ONE_LINERS = new Set(["bun", "node", "deno", "python", "python3", "ruby", 
  * The office's own data: config and session secret, hook tokens, people's sign-ins (homes/), every terminal's
  * scrollback and the chat log. Everything under a `.agent-office/` except `worktrees/`, where the agents work.
  */
-export const officeData = (abs: string) => /\/\.agent-office\/(?!worktrees(\/|$))/.test(abs) || /\/\.agent-office$/.test(abs);
+export const officeData = (abs: string) => /\/\.agent-office\/(?!worktrees(\/|$))/.test(abs) || abs.endsWith("/.agent-office");
 
 export function secretPath(p: string, cwd = process.cwd()): boolean {
   // a glob that would reach one (`.env*`, `.en[v]`, `.e''nv`) is read as the plainest name it covers
@@ -161,7 +161,7 @@ function ghAdmin(t: string[]): string | null {
     const method = (m >= 0 ? t[m + 1] : t.find((x) => /^(-X|--method=)\w+/.test(x))?.replace(/^(-X|--method=)/, "")) ?? "";
     const writes = (method && method.toUpperCase() !== "GET") || t.some((x) => /^(-f|-F|--field|--raw-field|--input)/.test(x));
     if (writes && (GH_ADMIN.test(path) || GH_REFS.test(path))) return `gh api write to ${path}`;
-    if (writes && /\/git\/refs$/.test(path) && t.some((x) => /^ref=refs\/(tags\/|heads\/(main|master)$)/.test(x))) return `gh api write to ${path}`;
+    if (writes && path.endsWith("/git/refs") && t.some((x) => /^ref=refs\/(tags\/|heads\/(main|master)$)/.test(x))) return `gh api write to ${path}`;
     // GraphQL has no path to check: a mutation can do all of the above
     if (t[2] === "graphql" && t.some((x) => /\bmutation\b/.test(x))) return "gh api graphql mutation";
   }

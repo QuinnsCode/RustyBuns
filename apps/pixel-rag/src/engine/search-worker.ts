@@ -9,6 +9,7 @@ let memory: WebAssembly.Memory | null = null;
 let wasm: PixelRagWasm | null = null;
 let l: Layout | null = null;
 
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- this file runs in a Worker, but the app is typed with the DOM's lib, where self is a Window
 const post = (r: Reply) => (self as unknown as Worker).postMessage(r);
 
 self.onmessage = async (e: MessageEvent<Job>) => {

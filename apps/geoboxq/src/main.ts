@@ -6,7 +6,7 @@ import { solve, type Solution } from "./engine.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { esc } from "@rustybuns/util";
 import { mountPalette } from "@rustybuns/util/palette";
-import { check } from "@rustybuns/util/guard";
+import { field as arg, check } from "@rustybuns/util/guard";
 import { blank, example, group, innerOf, parseRows, Saved, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
 import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
 
@@ -237,7 +237,7 @@ app.addEventListener("input", (e) => {
     if (k === "name") r.name = t.value;
     else if (k === "holds") { r.holds = t.checked; save(); list(sect); void answer(); return; }
     else if (k.startsWith("in")) r.inner = [0, 1, 2].map((n) => Number(entry.querySelector<HTMLInputElement>(`[data-k=in${n}]`)!.value) || 0) as [number, number, number];
-    else (r as unknown as Record<string, number>)[k] = Number(t.value) || 0;
+    else Object.assign(r, { [k]: Number(t.value) || 0 });
     // The drawing follows the numbers; so do the default inside sizes until they are typed.
     if (!r.inner) innerOf(r, state.unit).forEach((v, n) => { const f = entry.querySelector<HTMLInputElement>(`[data-k=in${n}]`); if (f) f.value = String(v); });
     entry.querySelector(".thumb")!.innerHTML = thumbOf(r, sect === "items");
@@ -307,7 +307,6 @@ render();
 // The page's commands (@rustybuns/util/commands): WebMCP tools for an agent in the browser, window.__commands for a
 // harness, and the Cmd/Ctrl+K palette with its corner button for a person (bottom-left in style.css: eqosys's Report
 // button has the bottom-right).
-const arg = (a: unknown, k: string): unknown => (typeof a === "object" && a ? Reflect.get(a, k) : undefined);
 const size = (a: unknown, k: string) => { const v = arg(a, k); if (typeof v !== "number" || !(v > 0)) throw new Error(`${k}: a size above 0`); return v; };
 const listArg = (a: unknown) => { const v = arg(a, "list"); if (v !== "boxes" && v !== "items") throw new Error('list: "boxes" or "items"'); return v; };
 const nameArg = (a: unknown) => { const v = arg(a, "name"); return typeof v === "string" ? v.slice(0, 120) : ""; };
