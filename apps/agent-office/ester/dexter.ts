@@ -61,8 +61,21 @@ export function render(r: Report): string[] {
   if (!top.length) return [...out, "No tool results. Nothing to trim."];
   out.push("Biggest results kept in context:");
   for (const [tool, t] of top) out.push(`  ${tool}: ${k(t.tokens)} over ${t.calls} calls, worst ${k(t.worst)}. ${tip(tool)}`);
-  out.push(...modeLines(r.modes), ...choreLines(r.chores));
+  out.push(...roundLines(r), ...modeLines(r.modes), ...choreLines(r.chores));
   out.push("Say less: short words, no preamble, no recap. Keep jargon that steers.");
+  return out;
+}
+
+/** Below this many tool calls per reply, Dexter says to send independent calls together. */
+export const BATCH = 1.5;
+/** Tool calls per reply, and the context each reply re-reads. A reply carries the whole context again, so five reads sent
+ * one by one pay for it five times and sent in one reply pay once: more calls per reply, not more replies. */
+export function roundLines(r: Report): string[] {
+  const calls = [...r.tools.values()].reduce((a, t) => a + t.calls, 0);
+  if (!calls || !r.turns) return [];
+  const per = calls / r.turns, ctx = (r.usage.input + r.usage.cacheRead + r.usage.cacheWrite) / r.turns;
+  const out = [`Tool calls per reply: ${per.toFixed(2)} (${k(calls)} calls over ${k(r.turns)} replies), each reply re-reading ${k(Math.round(ctx))} of context.`];
+  if (per < BATCH) out.push("  Send independent reads, greps, briefs and checks together in one reply: each extra reply pays for the whole context again.");
   return out;
 }
 
