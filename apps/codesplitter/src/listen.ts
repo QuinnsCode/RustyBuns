@@ -27,7 +27,6 @@ import { gh, githubToken, gitTip } from "./github.ts";
 import { arr, int, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { emit } from "./hooks.ts";
-import type { Doc } from "./lines.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 
 /** Hear a fork again once this long has passed, when its page opens. */

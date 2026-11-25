@@ -43,7 +43,7 @@ import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, patchOps, sanitizePatch, type Board, type Patch, type StudioServer } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, type Heard, type Room, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, moduleAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Answer, EYE, bringModule, benchGear, boardFor, boardIn, bodyOf, furnish, benchIn, hear, left, type Heard, type Room, aimed, drop, gearOf, hand, heldId, hint, knobValue, lead, listen, lookAt, moduleAt, newRoom, pedalAt, pickUp, plug, putDown, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { GearScene } from "./gear-scene.ts";
 import { lounge } from "./lounge.ts";
 import { loadQuality } from "../studio/look.ts";

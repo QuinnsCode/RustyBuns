@@ -2,11 +2,10 @@
 // checked as you go. Saves to the workspace's meshy-presets.json.
 import { useEffect, useState } from "react";
 import { scrimProps } from "./scrim.ts";
-import { checkPreset, estimateCredits, estimateRetexture, FORMATS, RETEXTURE_DEFAULTS, type Format, type MeshyOptions, type RetextureOptions } from "../engine/presets.ts";
+import { checkPreset, estimateCredits, estimateRetexture, FORMATS, RETEXTURE_DEFAULTS, type Format, type RetextureOptions } from "../engine/presets.ts";
 import { api, type Preset, type Summary } from "./api.ts";
 import { OptionFields } from "./OptionFields.tsx";
 
-type Opt = MeshyOptions;
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 export function PresetsPanel({ sum, onClose, onSaved }: { sum: Summary; onClose: () => void; onSaved: (s: Summary) => void }) {
@@ -23,7 +22,6 @@ export function PresetsPanel({ sum, onClose, onSaved }: { sum: Summary; onClose:
 
   const p = list[Math.min(at, list.length - 1)]!;
   const update = (fn: (p: Preset) => void) => { const next = clone(list); fn(next[at]!); setList(next); setSaved(false); };
-  const o = (k: keyof Opt, v: unknown) => update((x) => { if (v === undefined || v === "") delete x.options[k]; else (x.options as any)[k] = v; });
   const r = (k: keyof RetextureOptions, v: unknown) => update((x) => {
     x.retexture ??= {};
     if (v === undefined || v === "") delete x.retexture[k]; else (x.retexture as any)[k] = v;
@@ -39,8 +37,6 @@ export function PresetsPanel({ sum, onClose, onSaved }: { sum: Summary; onClose:
   const remove = () => { setList(list.filter((_, i) => i !== at)); setAt(0); };
 
   const issues = checkPreset(p);
-  const t2 = p.options.model_type === "smart-topology" || p.options.ai_model === "meshy-t2";
-  const m71 = !t2 && (!p.options.ai_model || p.options.ai_model === "latest" || p.options.ai_model === "meshy-7.1");
   const sizeKind = "height" in p.size ? "height" : "longest" in p.size ? "longest" : "auto";
   const meters = "height" in p.size ? p.size.height : "longest" in p.size ? p.size.longest : 1;
   const rt = { ...RETEXTURE_DEFAULTS, ...p.retexture };

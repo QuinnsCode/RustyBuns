@@ -6,7 +6,7 @@ import { Claimed, EQOSYS_HEADER, Started, View, Wars, type PartyAsk, type War } 
 import { fresh, login } from "./eqosys.ts";
 import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
-import type { Seats, Vote } from "./war/table.ts";
+import type { Seats } from "./war/table.ts";
 import { decodeOut, type PointerIn, type PointerOut } from "./pointer-wire.ts";
 import type { Guard } from "@rustybuns/util/guard";
 import { connectSocket } from "@rustybuns/util/socket";

@@ -5,7 +5,7 @@ import { pct, type HudHit, type HudSide, type HudSkin, type HudView } from "../s
 
 const bar = (v: number, max: number, cls: string, ic: string, tip: string) =>
   `<span class="bar ${cls}" title="${esc(tip)}">${icon(ic, tip)}<span><i style="width:${pct(v, max)}%"></i></span></span>`;
-const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
+const side = (f: HudSide, i: number, _v: HudView) => `<div class="side s${i}">
   <div class="head"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   <span class="hpbar${f.hp / (f.hpMax || 1) < 0.25 ? " low" : ""}" title="Health"><i style="width:${pct(f.hp, f.hpMax)}%"></i><em>${Math.ceil(f.hp)}</em></span>
   <div class="small">${bar(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", "wind", "Stamina: flying, sprinting and dashing spend it")}${bar(f.energy, f.energyMax, "en", "zap", `Energy: landing and taking hits fill it`)}</div>

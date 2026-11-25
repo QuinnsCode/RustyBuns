@@ -16,6 +16,7 @@ for (const f of ["pglite.wasm", "pglite.data"]) copyFileSync(join(dist, f), join
 // Every small module compiled from here on is a callback trampoline; keep its bytes.
 const seen = new Map<string, Uint8Array>();
 const Orig = WebAssembly.Module;
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- stands in for the WebAssembly.Module constructor, which a plain function can't be typed as
 const Recording = function (bytes: BufferSource) {
   const b = new Uint8Array(ArrayBuffer.isView(bytes) ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) : bytes);
   if (b.length < 256) seen.set(Buffer.from(b).toString("hex"), b);

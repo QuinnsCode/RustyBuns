@@ -55,7 +55,7 @@ export function sky(haze = HAZE, cheap = false) {
   group.add(dome);
   // Far ridges: layered, conifer-toothed silhouettes like a painted backdrop. The nearest is the darkest and
   // tallest, each one further out fades toward the haze, so the valley reads as bands of colour.
-  RIDGES.forEach(([fade, height, phase], k) => {
+  RIDGES.forEach(([, height, phase], k) => {
     const n = 180, r = 0.92 - k * 0.025;
     const geo = new THREE.BufferGeometry(), pos: number[] = [];
     const top = (i: number) => {

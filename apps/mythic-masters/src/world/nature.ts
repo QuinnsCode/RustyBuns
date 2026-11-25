@@ -5,7 +5,7 @@
 // birds; src/world/view.ts turns the day and the wind into light and sway.
 import { clamp, lerp } from "@rustybuns/util";
 import type { Biome } from "../regions.ts";
-import { dry, heightAt, regionAt, type World } from "./world.ts";
+import { dry, regionAt, type World } from "./world.ts";
 
 function hash(x: number, y: number, s: number) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s, 1442695041);

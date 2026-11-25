@@ -154,7 +154,7 @@ function parseTables(text: string, go: boolean): Table[] {
       if (m && cur) { cur.keys.push(m[1]!); cur.vals.set(m[1]!, m[2]!); }
     } else {
       const h = line.match(/^\[([^\]]+)\]$/);
-      if (h) { cur = /dependencies$/.test(h[1]!) ? { section: h[1]!, keys: [], vals: new Map() } : null; if (cur) out.push(cur); continue; }
+      if (h) { cur = h[1]!.endsWith("dependencies") ? { section: h[1]!, keys: [], vals: new Map() } : null; if (cur) out.push(cur); continue; }
       const kv = line.match(/^([\w.-]+)\s*=\s*(?:"([^"]*)"|\{[^}]*\bversion\s*=\s*"([^"]*)")/);
       if (kv && cur) { cur.keys.push(kv[1]!); cur.vals.set(kv[1]!, kv[2] ?? kv[3]!); }
     }

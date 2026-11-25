@@ -23,7 +23,6 @@ const GOLD = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, rou
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xf2ecdc, roughness: 0.45 });
 const DARK = new THREE.MeshStandardMaterial({ color: 0x120d0a, roughness: 0.5 });
 const OIL = new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.6, roughness: 0.1, clearcoat: 1 });
-const GLASS = new THREE.MeshPhysicalMaterial({ color: 0xcfe8ff, roughness: 0.05, transparent: true, opacity: 0.28, metalness: 0, clearcoat: 1 });
 const mats = new Map<string, THREE.MeshStandardMaterial>();
 /** One material per colour and roughness, shared by every rig, so like parts merge into one draw. */
 const mat = (color: number, rough = 0.6) => {
@@ -40,11 +39,6 @@ function box(m: THREE.Material, w: number, h: number, d: number, x = 0, y = 0, z
   const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
   b.position.set(x, y, z);
   return b;
-}
-function dome(m: THREE.Material, r: number, x: number, y: number, z: number, sy = 1): THREE.Mesh {
-  const d = new THREE.Mesh(new THREE.SphereGeometry(r, 22, 12, 0, Math.PI * 2, 0, Math.PI / 2), m);
-  d.position.set(x, y, z); d.scale.y = sy;
-  return d;
 }
 function tube(m: THREE.Material, pts: THREE.Vector3[], r = 0.025): THREE.Mesh {
   return new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, r, 6), m);

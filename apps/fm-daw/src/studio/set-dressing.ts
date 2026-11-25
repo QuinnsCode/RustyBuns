@@ -7,7 +7,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Prop } from "./room.ts";
-import { speaker } from "./gear-models.ts";
 
 /** A small part for `many`: [w, h, d, x, y, z, colour, turn about y]. */
 export type Item = [number, number, number, number, number, number, string, number?];
@@ -242,7 +241,7 @@ export function dressing(p: Prop, k: Kit) {
       const deck = m("wood", "#2a2826"), frame = m("metal", "#18181a");
       box(w, 0.025, d, 0, h - 0.0125, 0, deck);
       box(w - 0.04, h - 0.025, d - 0.04, 0, (h - 0.025) / 2, 0, frame);
-      const pleats: Item[] = [], tape: Item[] = [], step = Math.min(0.2, h / 2);
+      const pleats: Item[] = [], tape: Item[] = [];
       for (let x = -w / 2 + 0.04; x < w / 2; x += 0.08) pleats.push([0.06, h - 0.04, 0.02, x, (h - 0.04) / 2, -d / 2 - 0.004 + (Math.round(x / 0.08) % 2) * 0.008, color]);
       for (const sx of [-1, 1]) for (let z = -d / 2 + 0.04; z < d / 2; z += 0.08) pleats.push([0.02, h - 0.04, 0.06, sx * (w / 2 + 0.004 - (Math.round(z / 0.08) % 2) * 0.008), (h - 0.04) / 2, z, color]);
       g.add(glow(box(w - 0.04, 0.018, 0.012, 0, h - 0.035, -d / 2 - 0.012, m("screen", "#bcd8ff")), 0.9));

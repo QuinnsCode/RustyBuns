@@ -149,8 +149,13 @@ export class LocalWorkerStub {
   }
 
   /** One call in a fresh Worker thread, ended when it answers or runs past killMs. */
-  private isolated(l: { file: string; env: Fields }, name: string | undefined, method: string, args: unknown[]): Promise<any> {
-    return new Promise(async (resolve, reject) => {
+  private async isolated(l: { file: string; env: Fields }, name: string | undefined, method: string, args: unknown[]): Promise<any> {
+    let a = args;
+    if (method === "fetch") {
+      const r = args[0] as Request;
+      a = [{ url: r.url, method: r.method, headers: [...r.headers], body: r.method === "GET" || r.method === "HEAD" ? undefined : await r.text() }];
+    }
+    return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(new Blob([ISOLATE], { type: "text/javascript" }));
       // An empty environment: the host's variables (its keys among them) never reach the code.
       const w = new Worker(url, { env: {} });
@@ -169,11 +174,6 @@ export class LocalWorkerStub {
         }
       };
       try {
-        let a = args;
-        if (method === "fetch") {
-          const r = args[0] as Request;
-          a = [{ url: r.url, method: r.method, headers: [...r.headers], body: r.method === "GET" || r.method === "HEAD" ? undefined : await r.text() }];
-        }
         w.postMessage({ file: l.file, name, method, args: a, bound: boundSpec(l.env) });
       } catch (e) { end(); reject(e); }
     });

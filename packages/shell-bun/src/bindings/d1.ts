@@ -61,6 +61,7 @@ export class D1PreparedStatement {
   async raw<T = unknown[]>(opts?: { columnNames?: boolean }): Promise<T[]> {
     const s = this.stmt();
     const rows = s.values(...(this.params as any[])) as T[];
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- D1's raw() puts the column names first as one more row of T, as Cloudflare's does
     if (opts?.columnNames) return [s.columnNames as unknown as T, ...rows];
     return rows;
   }

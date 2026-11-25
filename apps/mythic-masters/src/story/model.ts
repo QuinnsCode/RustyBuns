@@ -10,7 +10,7 @@
 //   unlock  what opens the next thing: a road, a line-up slot, a way to travel; each one sits at a level
 // Beats the game already plays (mythics, faction stages, sighting boards) are read from the game (infer.ts), so they
 // never go stale; the JSON holds only what a writer adds.
-import { arr, bool, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 
 export const KINDS = ["main", "sub", "side", "unlock"] as const;
 export type Kind = (typeof KINDS)[number];

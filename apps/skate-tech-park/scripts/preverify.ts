@@ -32,8 +32,8 @@ say("ollie apex at 8 m/s, m", Math.round(apex * 100) / 100);
 const wall = process.argv[3] ? l.spawns.find((p) => p.name === process.argv[3]) : spotFor(l, "vert");
 if (wall) {
   const w = Object.assign(start(wall.x, wall.z, wall.yaw, l), { speed: 14 });
-  let airs = 0, was = false, bail = false, last = 0;
-  run(w, 15, () => ({ throttle: 1 }), (s) => { if (was && !s.air) { airs++; last = s.speed; } was = s.air; if (s.bail > 0) bail = true; });
+  let airs = 0, was = false, bail = false;
+  run(w, 15, () => ({ throttle: 1 }), (s) => { if (was && !s.air) { airs++; } was = s.air; if (s.bail > 0) bail = true; });
   say(`?spawn=vert landings in 15 s held push`, { airs, bail, finalSpeedKmh: Math.round(Math.abs(w.speed) * 3.6) });
 } else say("?spawn=vert", "no wall on this park");
 

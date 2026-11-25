@@ -10,6 +10,7 @@ g.location ??= new URL("file:///bundle/worker.js");
 
 const Orig = WebAssembly.Module;
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- stands in for the WebAssembly.Module constructor, which a plain function can't be typed as
 const Patched = function (bytes: BufferSource) {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes instanceof ArrayBuffer ? bytes : bytes.buffer);
   const pre = b.length < 256 ? callbacks[hex(b)] : undefined;

@@ -8,7 +8,7 @@ export type Part = { pkg: string; dir: string; name: string; does: string; add: 
 
 const root = `${import.meta.dir}/../../..`;
 // Reads one field off parsed JSON, or undefined when it isn't there.
-const field = (v: unknown, k: string): unknown => (v && typeof v === "object" ? Reflect.get(v, k) : undefined);
+const field = (v: unknown, k: string): unknown => (v && typeof v === "object" ? Object.getOwnPropertyDescriptor(v, k)?.value : undefined);
 const text = (v: unknown, what: string): string => {
   if (typeof v !== "string" || !v) throw new Error(`${what} is missing`);
   return v;

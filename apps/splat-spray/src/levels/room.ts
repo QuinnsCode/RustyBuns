@@ -87,7 +87,7 @@ export const THINGS: Thing[] = [
     name: "mushroom", aliases: ["toadstool"], width: 0.24,
     draw(b, p) {
       cylinder(b, at(p, 0, 0, 0), 0.14, 0.035, C(0xf0e6d2), { r2: 0.05, size: 0.009 });
-      ellipsoid(b, at(p, 0, 0.14, 0), V(0.13, 0.09, 0.13), (q) => (b.rand() < 0.15 ? C(0xf5f0e4) : C(0xc0281f)), 0.01, { bottom: 0 });
+      ellipsoid(b, at(p, 0, 0.14, 0), V(0.13, 0.09, 0.13), () => (b.rand() < 0.15 ? C(0xf5f0e4) : C(0xc0281f)), 0.01, { bottom: 0 });
     },
   },
   {
@@ -509,9 +509,9 @@ export function buildRoom(opts: { density?: number; seed?: number; shuffle?: boo
   // over a million splats by itself).
   b.scenery();
   b.density = objectDensity / 10;
-  disc(b, V(0, 0, 0), 9, (p) => shade(C(0x6b5f52), 0.08, b.rand), 0.03);            // floorboards
-  disc(b, V(0, 0.005, 0.7), 3.2, (p) => shade(C(0x7a4a5a), 0.1, b.rand), 0.028);      // rug
-  wall(b, V(0, 0, -2.7), 13, 3.6, (p) => shade(C(0xaab6c0), 0.05, b.rand), 0.03);   // back wall
+  disc(b, V(0, 0, 0), 9, () => shade(C(0x6b5f52), 0.08, b.rand), 0.03);            // floorboards
+  disc(b, V(0, 0.005, 0.7), 3.2, () => shade(C(0x7a4a5a), 0.1, b.rand), 0.028);      // rug
+  wall(b, V(0, 0, -2.7), 13, 3.6, () => shade(C(0xaab6c0), 0.05, b.rand), 0.03);   // back wall
   b.density = objectDensity / 3;
   for (const y of [1.08, 1.65, 2.22]) box(b, V(0, y, -2.5), V(7.6, 0.06, 0.44), C(0x8d6a45), 0.018);   // shelves
   // bed

@@ -40,7 +40,7 @@
 // It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
-import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { arr, bool, check, int, obj, str } from "../packages/util/src/guard.ts";

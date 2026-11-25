@@ -41,6 +41,7 @@ export async function pgliteHyperdrive(dir: string, name = "HYPERDRIVE", opts: P
   if (opts.migrations) for (const f of await applyPgMigrations(db, opts.migrations)) console.log(`[${name}] migrate ${f}`);
   const server = new PGLiteSocketServer({ db, host: "127.0.0.1", port: 0, maxConnections: 100 });
   // handlers read server.queryQueue when they connect, so ours stands in from the first one
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- sets the socket server's private queue, which its types don't show
   (server as unknown as { queryQueue: SessionQueue }).queryQueue = new SessionQueue(db);
   await server.start();
   const port = Number(server.getServerConn().split(":").pop());

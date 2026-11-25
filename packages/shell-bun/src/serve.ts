@@ -133,7 +133,7 @@ function findRedirect(rules: RedirectRule[], pathname: string): { to: string; st
   return null;
 }
 
-export interface ServeOptions<Env> {
+export interface ServeOptions<_Env> {
   /** Directory of built client assets (Vite dist). Served before fetch(). */
   assets?: string;
   /** Extra static mounts: URL prefix -> directory. e.g. { "/asset": ".asset-cache/asset" }. Checked before `assets`. */

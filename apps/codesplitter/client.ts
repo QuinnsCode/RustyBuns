@@ -13,7 +13,7 @@
 // Worker sends tags and never imports effect (EFFECT.md ruling 9).
 
 import { Effect, Schedule, Schema } from "effect";
-import { ERRORS, OP_ERRORS, TOKEN_CANT_DO, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
+import { OP_ERRORS, TOKEN_CANT_DO, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
 import { tool, toRequest } from "./src/mcp.ts";
 import { check } from "@rustybuns/util/guard";
 import { FailureBody } from "./src/failed.ts";

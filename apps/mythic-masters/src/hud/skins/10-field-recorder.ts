@@ -1,7 +1,7 @@
 // A field recorder: segmented VU meters as the bars, and a waveform of the last two seconds that spikes on hits.
 import { esc } from "@rustybuns/util";
 import { icon } from "../../icons.ts";
-import { pct, type HudSide, type HudSkin, type HudView } from "../skin.ts";
+import { type HudSide, type HudSkin, type HudView } from "../skin.ts";
 
 const SEG = 20;
 /** Lit LED segments for a value; health changes colour as it runs low. */
@@ -11,7 +11,7 @@ const leds = (v: number, max: number, health = false) => {
 };
 const vu = (v: number, max: number, cls: string, label: string, ic: string, tip: string, health = false) =>
   `<span class="vu ${cls}" title="${esc(tip)}">${icon(ic, tip)}<em>${label}</em><span class="leds">${leds(v, max, health)}</span></span>`;
-const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
+const side = (f: HudSide, i: number, _v: HudView) => `<div class="side s${i}">
   <div class="head"><b>${esc(f.name)}</b><span class="launch" title="Launch: the higher, the further the next hit sends you">${Math.round(f.launch)}%</span></div>
   ${vu(f.hp, f.hpMax, "hp", "HP", "heart", "Health", true)}
   ${vu(f.stamina, f.staminaMax, f.exhausted ? "st out" : "st", f.exhausted ? "CLIP" : "STA", "wind", "Stamina: flying, sprinting and dashing spend it")}

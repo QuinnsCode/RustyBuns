@@ -9,7 +9,7 @@
 //   bun run bridge --html out.html  write the page with this scan baked in (a snapshot to share)
 //   bun run bridge --json           print the scan
 //   --offline (no gh, no pings), --tiers file.json, --port N, --no-open
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readGroups, plays } from "./readme-apps.ts";

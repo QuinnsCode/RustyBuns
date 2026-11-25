@@ -87,9 +87,11 @@ export const EVERY = 5 * 60_000, MAX_WAIT = 15 * 60_000;
 
 /** The desktop's Artifacts: bare repos on this machine (shell-bun's LocalArtifacts). */
 interface LocalGit { path(name: string): string; remote(name: string): string; stamp(p: string, o: { description?: string; source?: string }): void; onPush?: (name: string) => unknown; importing?: Promise<unknown> }
-export const localGit = (env: Env) => {
-  const a = env.ARTIFACTS as unknown as Partial<LocalGit> | undefined;
-  return typeof a?.path === "function" && typeof a.stamp === "function" && typeof Bun !== "undefined" ? a as LocalGit : null;
+const isLocalGit = (a: unknown): a is LocalGit =>
+  typeof a === "object" && a !== null && "path" in a && typeof a.path === "function" && "stamp" in a && typeof a.stamp === "function";
+export const localGit = (env: Env): LocalGit | null => {
+  const a: unknown = env.ARTIFACTS;
+  return isLocalGit(a) && typeof Bun !== "undefined" ? a : null;
 };
 /** Mirrors need git on this machine to fetch and push: the desktop, not Cloudflare. */
 export const mirrorsOn = (env: Env) => !!localGit(env);

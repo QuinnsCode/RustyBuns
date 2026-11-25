@@ -23,7 +23,7 @@
 // When it really clashes, a rebuild task merges main in for it, both sides kept (#1219, rebuildOnMain).
 // So does one that follows a branch upstream and clashes with main only in git, at the next sync (#1190, takeMainUpstream).
 
-import { apply, empty, explain, FileCommit, fromText, isMergeReply, merge, PICK, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
+import { apply, empty, explain, FileCommit, fromText, isMergeReply, merge, PICK, text, type Conflict, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";

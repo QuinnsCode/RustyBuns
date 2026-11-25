@@ -15,5 +15,6 @@ export const ZONE_DATA = [halfDome, elCapitan, yosemiteFalls, glacierPoint, mari
 export const zoneData = (id: string): ZoneData => {
   const z = ZONE_DATA.find((d) => d.id === id);
   if (!z) throw new Error(`no zone ${id}`);
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- JSON imports widen the zone's tuples and literals; fetch-zones.ts writes ZoneData
   return z as unknown as ZoneData;
 };

@@ -4,7 +4,7 @@
 // pins), else tsgo (TypeScript's native compiler, pinned in package.json) on an
 // older local Bun. Errors print one line each, cut short (`--full` for all of it).
 // Exits non-zero if any project has errors.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { appDirs } from "./app-dirs.ts";
 import { compactDiagnostics } from "../packages/cli/src/typecheck.ts";

@@ -75,7 +75,7 @@ else
   for (const [, title, body] of features.matchAll(/\n### (.+)\n([\s\S]*?)(?=\n### |$)/g)) {
     const [short, ...rest] = body!.trim().split(/\n\s*\n/);
     if (!short || short.startsWith("<")) problems.push(`README.md feature "${title}": needs a one-line short explanation`);
-    if (!/^<details><summary>/.test(rest[0] ?? "") || !body!.trim().endsWith("</details>"))
+    if (!(rest[0] ?? "").startsWith("<details><summary>") || !body!.trim().endsWith("</details>"))
       problems.push(`README.md feature "${title}": put the long explanation in <details><summary>More</summary> ... </details>`);
   }
 

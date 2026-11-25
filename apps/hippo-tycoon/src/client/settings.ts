@@ -36,6 +36,7 @@ export function parseSettings(raw: string | null): Settings {
     else if (k === "players") { if (v === 1 || v === 2) out[k] = v; }
     else if (v !== undefined && typeof v === typeof d) out[k] = v;
   }
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- each key above is checked against its default's type before it is kept
   return out as unknown as Settings;
 }
 

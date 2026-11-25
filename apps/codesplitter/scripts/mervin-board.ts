@@ -345,7 +345,6 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
     if (parent) stage.stackedOn = board.stages.find((s) => s.head === parent)?.pr;
     perStage.push({ pr: pr.number, claims: [] });
     const mine = new Map<string, string | null>();
-    const mainBase = parent ? git("merge-base", main, pr.headRefOid)?.trim() : base;
     const diff = (git("diff", "--name-status", "--no-renames", base, pr.headRefOid) ?? "").split("\n").filter(Boolean);
     const key = cache && sha(main, pr.headRefOid, base, ...diff.flatMap((line) => {
       const path = line.split("\t")[1]!;

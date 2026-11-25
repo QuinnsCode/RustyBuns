@@ -510,7 +510,7 @@ export class Hunt {
    * The live weather for a round, or null if it couldn't be had (then the
    * lobby's time of day stands). Too late once the hunt has started.
    */
-  setWeather(round: number, w: Weather | null, now: number) {
+  setWeather(round: number, w: Weather | null, _now: number) {
     const r = this.round;
     if (!r || r.id !== round || r.sky || (this.phase !== "drop" && this.phase !== "hide")) return;
     r.sky = w?.sky ?? clearSky(this.tod);
