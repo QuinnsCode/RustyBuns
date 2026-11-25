@@ -6,8 +6,11 @@
 //   stats       height, weight, layers, amp channels, how loud at 1 m and at the back of the floor, and what is wrong
 //   sizeFor     how many tops and bins a side a rig needs to fill a floor this deep ("how many layers?")
 //   wallFor     that stack, built: bins in rows, mid-bass on them, the horns on top (the "just do it" default)
-//   coverage    the floor's level from every stack on the plan, highs and bass, and how even it is
-import { GEAR, SYSTEMS, SYSTEM_IDS, boxChannels, coverage as gridOf, gear, sumPower, type Source, type SpeakerSpec } from "@rustybuns/gear";
+//   coverage    the floor's level from every stack on the plan, highs and bass, and how even it is (gear's stackSources and floorStats)
+import {
+  GEAR, SYSTEMS, SYSTEM_IDS, boxChannels, coverage as gridOf, floorStats, gear, isTop, source, stackSources, sumPower,
+  type FloorStats, type Source, type SpeakerSpec,
+} from "@rustybuns/gear";
 import { arr, check, int, num, obj, str } from "@rustybuns/util/guard";
 
 /** One box in a stack: a catalog id, its centre across the stack (m, 0 is the middle, + is your right as you face it)
@@ -57,6 +60,8 @@ export type Warning = { box: number | null; kind: "overhang" | "heavy-high" | "b
 
 /** Dance-floor targets at the back of the floor: highs by power, bass by pressure. */
 export const TARGET = { high: 106, low: 115 } as const;
+/** The most a floor's level may spread from its quiet tenth to its loud (gear's `floorStats` `even`), dB: tops, then bass. */
+export const EVEN = { tops: 14, lows: 18 } as const;
 /** Continuous level sits this far under a sheet's peak. */
 const HEADROOM = 6;
 const db = (x: number) => Math.round(x * 10) / 10;
@@ -185,36 +190,54 @@ export function justDoIt(id = "dance-stack", floor = { w: 24, d: 25 }): Design {
 }
 
 const EAR = 1.6;
-/** The speakers of every placed stack, as @rustybuns/gear sources: each box where it stands, aimed with its stack. */
+/**
+ * The speakers of every placed stack, as @rustybuns/gear sources. A stack's boxes go up in columns (boxes at one x,
+ * each on the one under it), and each column is gear's `stackSources` lifted onto whatever it stands on, so its tops
+ * are aimed as Qollab Studio aims them (a line array box tipped down by its pin). Bass bins, which `stackSources`
+ * leaves to a sub block, play where they stand.
+ */
 export function sources(d: Design): Source[] {
   return d.plan.placed.flatMap((p) => {
     const st = d.stacks[p.stack];
     if (!st) return [];
     const yaw = (p.yaw * Math.PI) / 180, rx = Math.cos(yaw), rz = -Math.sin(yaw);
     // + across the stack is your right as you face it, which is the stack's own left.
-    return settle(st.boxes).map((b) => ({
-      speaker: gear(b.gear).speaker!, yaw, pitch: 0,
-      pos: { x: p.x - rx * b.x, y: b.y + gear(b.gear).size.h / 2, z: p.z - rz * b.x },
-    }));
+    const at = (x: number): [number, number] => [p.x - rx * x, p.z - rz * x];
+    const boxes = settle(st.boxes), out: Source[] = [];
+    for (const b of boxes) if (!isTop(b.gear)) out.push(source(b.gear, { x: at(b.x)[0], y: b.y + gear(b.gear).size.h / 2, z: at(b.x)[1] }, { yaw }));
+    for (const col of columns(boxes.filter((b) => isTop(b.gear)))) {
+      const lift = col[0]!.y;
+      for (const s of stackSources({ stack: col.map((b) => b.gear) }, { at: at(col[0]!.x), yaw })) out.push({ ...s, pos: { ...s.pos, y: s.pos.y + lift } });
+    }
+    return out;
   });
 }
 
-export type Cover = { nx: number; nz: number; high: Float32Array; low: Float32Array; median: number; even: number; bassEven: number; back: number; bass: number };
+/** Boxes (bottom first) as columns: the runs at one x where each box sits right on the one before it. */
+function columns(boxes: readonly Box[]): Box[][] {
+  const out: Box[][] = [];
+  for (const b of boxes) {
+    const col = out.find((c) => { const l = c[c.length - 1]!; return Math.abs(l.x - b.x) < EPS && Math.abs(top(l) - b.y) < EPS; });
+    if (col) col.push(b);
+    else out.push([b]);
+  }
+  return out;
+}
 
-const median = (a: Float32Array) => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1] ?? 0; };
-const within = (a: Float32Array, m: number, by: number) => a.length ? a.filter((v) => Math.abs(v - m) <= by).length / a.length : 0;
+/** The floor map: its grids of highs and bass, gear's `floorStats` over each (`tops`, `lows`), and the back row's
+ *  level (`back` for the highs, `bass` at 63 Hz), dB. */
+export type Cover = { nx: number; nz: number; high: Float32Array; low: Float32Array; tops: FloorStats; lows: FloorStats; back: number; bass: number };
 
 /** The floor's level from every stack, on a grid of about half a metre: highs by power, bass at 63 Hz with phase (so two
- *  stacks a stage apart make a power alley and holes). `even` is the share of the floor within 3 dB of its middle
- *  level, `bassEven` the same for bass within 6 dB; `back` and `bass` are the middle levels along the back row. */
+ *  stacks a stage apart make a power alley and holes), with the same numbers Qollab Studio's coverage map gives. */
 export function cover(d: Design, nx = Math.min(96, Math.round(d.plan.floor.w * 2)), nz = Math.min(96, Math.round(d.plan.floor.d * 2))): Cover {
   const { floor } = d.plan, src = sources(d);
   const area = { x0: -floor.w / 2, x1: floor.w / 2, z0: 0.5, z1: floor.d, y: EAR, nx, nz };
   const hot = (s: Source) => ({ ...s, watts: s.speaker.ohms === null ? undefined : s.speaker.ratedWatts / 4 });
-  const high = gridOf(src.map(hot), area, "high").db, low = gridOf(src.map(hot), area, "low", 63).db;
-  const m = median(high), ml = median(low);
-  const backRow = (g: Float32Array) => median(g.slice((nz - 1) * nx));
-  return { nx, nz, high, low, median: db(m), even: db(within(high, m, 3)), bassEven: db(within(low, ml, 6)), back: db(backRow(high)), bass: db(backRow(low)) };
+  const high = gridOf(src.map(hot), area, "high"), low = gridOf(src.map(hot), area, "low", 63);
+  const backRow = (_x: number, z: number) => z > floor.d - (floor.d - 0.5) / nz;
+  const round = (f: FloorStats): FloorStats => ({ mean: db(f.mean), min: db(f.min), max: db(f.max), even: db(f.even), cells: f.cells });
+  return { nx, nz, high: high.db, low: low.db, tops: round(floorStats(high)), lows: round(floorStats(low)), back: db(floorStats(high, backRow).mean), bass: db(floorStats(low, backRow).mean) };
 }
 
 /** A saved design, checked on the way back in from storage (a stale or hand-edited save loses what doesn't fit). */

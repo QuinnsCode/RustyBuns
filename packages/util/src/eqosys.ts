@@ -16,7 +16,7 @@ import { mountReportButton, sendReport, type ReportIn, type Sent } from "./repor
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { EASE, morph, pop } from "./morph.ts";
 import { dpopProof, EC, peek, Login } from "./token.ts";
-import { idbVault, memoryVault, type Kept, type Vault } from "./vault.ts";
+import { hostVault, idbVault, memoryVault, type Kept, type Vault } from "./vault.ts";
 import { PartyRules } from "./party-rules.ts";
 import { board } from "./board.ts";
 
@@ -61,7 +61,7 @@ export interface EqosysConfig {
    * lobby, spaces panel): `--ui-*` tokens and any extra rules on the `eq-*` classes (./skin.ts). Left out, the house look.
    */
   skin?: Skin;
-  /** Where the sign-in is kept between visits: IndexedDB by default (memory where there is none); a desktop host may pass the OS keychain. */
+  /** Where the sign-in is kept between visits: IndexedDB by default (memory where there is none), the OS store through the host on a desktop build. */
   vault?: Vault;
 }
 
@@ -77,7 +77,8 @@ export function eqosys({ app, url, from, prefix, skin, vault: given }: EqosysCon
     take(k: string) { try { const v = sessionStorage.getItem(`${prefix}.eq.${k}`) ?? ""; sessionStorage.removeItem(`${prefix}.eq.${k}`); return v; } catch { return ""; } },
     put(k: string, v: string) { try { sessionStorage.setItem(`${prefix}.eq.${k}`, v); } catch {} },
   };
-  const vault = given ?? idbVault(prefix) ?? memoryVault();
+  // On a desktop build the host keeps who signed in, and the key, in the OS store, and signs the proofs (./vault.ts).
+  const vault = given ?? hostVault() ?? idbVault(prefix) ?? memoryVault();
   /** The login, token and all, in this tab's memory only; the vault keeps who it is and the bound refresh token. */
   let signedIn: Login | null = null, pair: CryptoKeyPair | null = null;
   // Who is signed in, by name only (`<prefix>.who`: no token, nothing that signs anyone in), so a page drawn before
@@ -112,7 +113,7 @@ export function eqosys({ app, url, from, prefix, skin, vault: given }: EqosysCon
   });
   /** POST to eqosys with a proof of the page's key. An eqosys from before DPoP refuses the header (CORS), so that try goes again without it. */
   const post = async (to: string, init: { headers?: Record<string, string>; body: BodyInit }): Promise<Response | null> => {
-    const proof = await keyPair().then((k) => dpopProof(k, "POST", to), () => null);
+    const proof = await (vault.prove ? vault.prove("POST", to) : keyPair().then((k) => dpopProof(k, "POST", to))).catch(() => null);
     const send = (dpop: boolean) => fetch(to, { method: "POST", body: init.body, headers: { ...init.headers, ...(dpop && proof ? { dpop: proof } : {}) } });
     return send(true).catch(() => (proof ? send(false) : null)).catch(() => null);
   };

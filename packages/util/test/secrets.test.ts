@@ -54,9 +54,10 @@ test("Linux with no Secret Service keeps secrets in a private file, and moves th
 test("a desktop app keeps its eqosys sign-in, and signs out", async () => {
   const dir = scratch(), secrets = fileSecrets(dir, "eqosys"), store = eqosysLogin("park-hide-seek", { secrets });
   expect(await store.load()).toBeNull();
-  const login = { name: "Zoë Ångström", email: "zoe@example.com", token: "a.b.c", refresh: "r1" };
-  await store.save(login);
-  expect(await store.load()).toEqual(login);
+  const login = { name: "Zoë Ångström", email: "zoe@example.com", refresh: "r1" };
+  await store.save({ ...login, token: "a.b.c" });
+  expect(await store.load()).toEqual(login);   // never the access token
+  expect(store.save({ name: 1 })).rejects.toThrow();
   await secrets.set("park-hide-seek", '{"name":1}');
   expect(await store.load()).toBeNull();
   await store.save(null);

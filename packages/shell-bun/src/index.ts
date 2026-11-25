@@ -3,7 +3,7 @@
 // the same method names. No container, no decorators, no magic.
 
 export type { Fields } from "@rustybuns/ports";
-export { serve, type ServeOptions, type BunShell } from "./serve.ts";
+export { serve, type ServeOptions, type BunShell, type LoginStore } from "./serve.ts";
 export { openBrowser, writeDesktopFile, findChromium, mintToken, type LaunchOptions } from "./launcher.ts";
 export { d1, D1Database, applyD1Migrations } from "./bindings/d1.ts";
 export { kv, KVNamespace } from "./bindings/kv.ts";

@@ -5,7 +5,7 @@
 // side. `window.stacker` drives it without a mouse (`bun run probe load-in /stack.html --js "stacker.state()"`).
 import { gear } from "@rustybuns/gear";
 import {
-  PALETTE, RIGS, TARGET, aimAt, cover, justDoIt, planFor, readDesign, rig, role, settle, sizeFor, stats, wallFor,
+  EVEN, PALETTE, RIGS, TARGET, aimAt, cover, justDoIt, planFor, readDesign, rig, role, settle, sizeFor, stats, wallFor,
   type Box, type Cover, type Design, type Role,
 } from "./plan.ts";
 
@@ -254,7 +254,7 @@ function drawPlan() {
   planView = { x0, z0, s, ox: (w - (x1 - x0) * s) / 2, oy: 12 };
   c.clearRect(0, 0, w, h);
   // the floor, shaded by level against its middle
-  const g = band === "high" ? heat.high : heat.low, mid = band === "high" ? heat.median : heat.bass;
+  const g = band === "high" ? heat.high : heat.low, mid = band === "high" ? heat.tops.mean : heat.bass;
   const cw = floor.w / heat.nx, cd = (floor.d - 0.5) / heat.nz;
   for (let iz = 0; iz < heat.nz; iz++) for (let ix = 0; ix < heat.nx; ix++) {
     const a = P(-floor.w / 2 + ix * cw, 0.5 + iz * cd);
@@ -452,12 +452,12 @@ function stageCard() {
   card.replaceChildren(
     el("h2", "On the floor"),
     dl([
-      ["Tops, middle", `${heat.median} dB`], ["Even (within 3 dB)", `${Math.round(heat.even * 100)}%`, heat.even >= 0.5 ? "pass" : "warn"],
-      ["Bass even (6 dB)", `${Math.round(heat.bassEven * 100)}%`, heat.bassEven >= 0.6 ? "pass" : "warn"],
+      ["Tops, average", `${heat.tops.mean} dB`], ["Tops spread", `${heat.tops.even} dB`, heat.tops.even <= EVEN.tops ? "pass" : "warn"],
+      ["Bass spread", `${heat.lows.even} dB`, heat.lows.even <= EVEN.lows ? "pass" : "warn"],
       ["Back row tops", `${heat.back} dB`, heat.back >= TARGET.high - 3 ? "pass" : "warn"], ["Back row bass", `${heat.bass} dB`, heat.bass >= TARGET.low ? "pass" : "warn"],
     ]),
     seg, legend,
-    el("p", band === "high" ? "Shade: tops against the floor's middle level." : "Shade: bass at 63 Hz. Two stacks far apart make a loud alley down the middle and holes beside it."),
+    el("p", band === "high" ? "Shade: tops against the floor's average level." : "Shade: bass at 63 Hz. Two stacks far apart make a loud alley down the middle and holes beside it."),
     num("Floor wide", plan.floor.w, (n) => (plan.floor.w = n), 4, 300), num("Stage wide", plan.stage.w, (n) => (plan.stage.w = n), 2, 80),
     el("h2", "Stacks"), list, row,
   );
@@ -513,7 +513,7 @@ const api = {
     view, band, current, rig: rigSel.value,
     stacks: design.stacks.map((s) => ({ name: s.name, boxes: s.boxes, stats: stats(s, depth()) })),
     plan: design.plan,
-    floor: { median: heat.median, even: heat.even, bassEven: heat.bassEven, back: heat.back, bass: heat.bass },
+    floor: { mean: heat.tops.mean, even: heat.tops.even, bassMean: heat.lows.mean, bassEven: heat.lows.even, back: heat.back, bass: heat.bass },
   }),
   justDoIt: (id?: string) => { doIt(id); return api.state(); },
   build: (id: string) => { rigSel.value = rig(id).id; change(() => (design.stacks[current] = wallFor(rig(id), depth()))); return api.state(); },

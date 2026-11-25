@@ -36,5 +36,7 @@ export const HelpersReply = obj({
   tally: maybe(nul(Tally)),
   /** The release rings' lines (scripts/rings.ts). */
   rings: arr(str(500, { min: 0 }), 20, { drop: true }),
+  /** A line per test failing on PR after PR (live/spread.ts): the test, how many PRs it hit, who holds it. */
+  spread: maybe(arr(str(1000, { min: 0 }), 50, { drop: true })),
 });
 export type HelpersReply = Of<typeof HelpersReply>;
