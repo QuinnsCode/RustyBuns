@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import type { SystemId } from "@rustybuns/gear";
+import type { GeneratorId, SystemId } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -80,8 +80,9 @@ export interface StudioDef {
 export type { SystemId };
 export interface Outdoor {
   /** Each stack is one column of the rig's boxes. Columns closer than STACK_CLUSTER_M stand as one block (a side of the
-   *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor. */
-  stacks: { at: [number, number]; yaw: number; splay?: number }[];
+   *  floor); `splay` turns that column's top boxes a little off its yaw, so a side's two tops fan out across the floor; `pins`
+   *  are a line array's pins, bottom box up (radians down from level, @rustybuns/gear LINE_PINS when left out). */
+  stacks: { at: [number, number]; yaw: number; splay?: number; pins?: number[] }[];
   /** The sub block in the middle, between the sides: the rig's sub box `wide` across and `high` up, its front facing yaw's way. */
   subs?: { at: [number, number]; yaw: number; wide: number; high: number };
   /** The DJ's booth monitors: a mid-high horn on a tripod stand at each end of the decks, aimed at the DJ. */
@@ -91,7 +92,8 @@ export interface Outdoor {
   /** The stacks all play one mono sum of the set, as one point source, instead of each the side of the stereo set it stands on. */
   mono?: boolean;
   truss?: { at: [number, number]; yaw: number; w: number; h: number };
-  generator?: { at: [number, number]; yaw: number };
+  /** Where the generator stands, and which set it is (@rustybuns/gear powerPlan picks the smallest that holds when left out). */
+  generator?: { at: [number, number]; yaw: number; set?: GeneratorId };
   /** A fire pit in a ring of stones (open-air.ts `firePit`), lit, and heard crackling as you come near (night-air.ts). */
   fire?: { at: [number, number] };
   /** Camper vans parked round the edge (@rustybuns/models/van), nose the way `yaw` faces; `awning` rolls one out. */

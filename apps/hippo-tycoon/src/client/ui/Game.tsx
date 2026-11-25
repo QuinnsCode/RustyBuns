@@ -80,10 +80,10 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
 
     if (import.meta.env.DEV) {
       // dev hook: background tabs pause rAF, so tests and screenshots step the sim by hand
-      (window as unknown as { __hippo: unknown }).__hippo = {
+      Object.assign(window, { __hippo: {
         driver, renderer: r, seek: (s: number) => r.seek(s), skip: () => r.skipFinale(),
         run: (ms: number) => { let f: Frame | undefined; for (let t = 0; t < ms; t += 33) { f = driver.advance(33); if (f.events.length) for (const e of f.events) r.draw({ ...f, events: [e] }, performance.now()); } if (f) r.draw({ ...f, events: [] }, performance.now()); return f ? { phase: f.phase, scores: f.cur.hippos.map((h) => h.score), drops: f.cur.drops.length } : null; },
-      };
+      } });
     }
     let raf = 0, last = performance.now(), lastUi = 0, lastPhase = "", playingAt = 0;
     const cues = newCues(), tally = newTally();

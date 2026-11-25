@@ -85,7 +85,7 @@ export function applyOverrides(pkg: any, pm: string): { pkg: any; changed: boole
   const target = pm === "pnpm" ? (pkg.pnpm ??= {}) : pkg;
   const before = JSON.stringify(target[key] ?? {});
   // npm overrides nest (a package can hold its own map), so the values stay unknown: only our pins are strings.
-  const next: Record<string, unknown> = { ...(target[key] ?? {}) };
+  const next: Record<string, unknown> = { ...target[key] };
   // A range that already covers the pin stays: narrowing a monorepo root's "^4.1.4" to "4.1.4" would downgrade every app (#3803).
   for (const [name, pin] of Object.entries(DEPLOY_OVERRIDES)) {
     const have = next[name];

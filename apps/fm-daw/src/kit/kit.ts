@@ -2,7 +2,7 @@
 // `drill.svg`), read into a parts list with the player's part swaps in it, a short build sheet in plain words, and
 // one zip of the lot. No DOM and no Vite here: the page (sheet.ts) and the tests hand in the kit's files as text.
 import { check, obj, str, type Of } from "@rustybuns/util/guard";
-import { CLIPPERS, capValue, CAP_STEPS, farads, sockets, type BoardId, type Swaps } from "../circuit/circuits.ts";
+import { CLIPPERS, stepValue, STEPS, farads, ohms, sockets, type BoardId, type Swaps } from "../circuit/circuits.ts";
 import type { Panel } from "../../circuits/wall-panels.ts";
 import { sourceOf } from "./parts.ts";
 import { zip } from "./zip.ts";
@@ -82,29 +82,39 @@ const kindOf = (ref: string, footprint: string, comment: string): string => {
 };
 
 /**
+ * A sim board's parts that its kit numbers otherwise, sim name → kit designator. Q Drive's output resistor is R3 on
+ * the sim board and R4 in the box, whose R3 is the Drive pot's 51k end stop (circuits/q-drive.tsx).
+ */
+export const KIT_REFS: Partial<Record<BoardId, Record<string, string>>> = { drive: { R3: "R4" } };
+
+/**
  * The kit's parts with the player's swaps on `board` (Q Amp's `Swaps`): a swapped diode pair or capacitor carries
- * the part they picked and is marked socketed and swapped. Parts on socket holes and the op-amp are socketed too.
+ * the part they picked and is marked socketed and swapped; a resistor they changed carries its new value, soldered.
+ * Parts on socket holes and the op-amp are socketed too. A change is a value in the same holes, so the board's
+ * footprints, and its Gerbers, stay the stock board's.
  */
 export function partsOf(rows: BomRow[], board: BoardId | undefined, swaps: Swaps = {}): Part[] {
-  const socks = board ? sockets(board) : [];
+  const socks = board ? sockets(board) : [], refs = (board && KIT_REFS[board]) || {};
   return rows.map((r) => {
-    const s = socks.find((x) => x.parts.includes(r.Designator));
+    const s = socks.find((x) => x.parts.some((p) => (refs[p] ?? p) === r.Designator));
     const choice = s ? swaps[s.id] : undefined;
     // A resistor's or capacitor's Comment, when it isn't the value, is how good it must be ("0.1%", "C0G").
     let value = r.Value && r.Comment && r.Comment !== r.Value ? `${r.Value} ${r.Comment}` : r.Value || r.Comment, swapped = false;
     if (s?.kind === "clipper") {
       const c = choice !== undefined && Object.hasOwn(CLIPPERS, choice) ? (choice as keyof typeof CLIPPERS) : "silicon";
       value = DIODE[c]; swapped = c !== "silicon";
-    } else if (s?.kind === "cap" && choice !== undefined && choice !== "1" && CAP_STEPS.some((x) => x === choice)) {
-      value = farads(capValue(s.farads, Number(choice))).replace("F", ""); swapped = true;
+    } else if (s?.kind === "cap" && choice !== undefined && choice !== "1" && STEPS.some((x) => x === choice)) {
+      value = farads(stepValue(s.farads, Number(choice))).replace("F", ""); swapped = true;
+    } else if (s?.kind === "res" && choice !== undefined && choice !== "1" && STEPS.some((x) => x === choice)) {
+      value = ohms(stepValue(s.ohms, Number(choice))); swapped = true;
     }
     // A pot or an op-amp names itself in Comment ("TL071", "16mm 500k B"); a jack's pads say what goes on them.
     const jack = /^J\d/.test(r.Designator), part = jack ? (r.Comment || "Wire pads") : kindOf(r.Designator, r.Footprint, r.Comment);
     if (/^(J|U|RV|RT|LED|Q)/.test(r.Designator)) value = r.Comment || value;
     // Socket holes are sized for machined-pin strips (`_id1.1mm`, `SOCKET` in circuits/q-drive.tsx); a DIP op-amp sits in a socket.
-    const socketed = swapped || r.Footprint.includes("_id1.1mm") || (r.Designator.startsWith("U") && r.Footprint.startsWith("dip"));
-    // A swapped part is the player's pick, so the stock part's number isn't it.
-    const src = swapped ? null : sourceOf(r);
+    const socketed = (swapped && s?.kind !== "res") || r.Footprint.includes("_id1.1mm") || (r.Designator.startsWith("U") && r.Footprint.startsWith("dip"));
+    // A changed part is the player's pick, so the stock part's number isn't it: a new value is looked up as itself.
+    const src = !swapped ? sourceOf(r) : s?.kind === "clipper" ? null : sourceOf({ ...r, Value: value, Comment: r.Comment === r.Value ? value : r.Comment });
     return { ref: r.Designator, part, value, footprint: r.Footprint.trim(), socketed, swapped, maker: src?.maker ?? "", mpn: src?.mpn ?? "" };
   });
 }
@@ -131,7 +141,7 @@ const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 const csv = (rows: string[][]) => rows.map((r) => r.map(q).join(",")).join("\r\n") + "\r\n";
 /** The parts as `bom.csv` for the zip: one row per place on the board, with a Socketed column and what to order. */
 export const bomCsv = (parts: Part[]): string =>
-  csv([["Designator", "Part", "Value", "Footprint", "Socketed", "Manufacturer", "MPN"], ...parts.map((p) => [p.ref, p.part, p.value, p.footprint, p.socketed ? (p.swapped ? "yes, your swap" : "yes") : "", p.maker, p.mpn])]);
+  csv([["Designator", "Part", "Value", "Footprint", "Socketed", "Manufacturer", "MPN"], ...parts.map((p) => [p.ref, p.part, p.value, p.footprint, p.socketed ? (p.swapped ? "yes, your swap" : "yes") : p.swapped ? "no, your value" : "", p.maker, p.mpn])]);
 /**
  * The cart: one row per part number with how many to buy, the shape a shop's BOM upload takes (LCSC, Mouser and
  * DigiKey match on MPN). A part with no number is still a row, its MPN empty, so nothing on the board is missed.
@@ -163,10 +173,18 @@ export function buildSheet(name: string, blurb: string, lines: BomLine[]): strin
     "- pcb.svg and schematic.svg: the board and the circuit, to check against while you build.",
     "",
     "Parts",
-    ...lines.map((l) => `- ${l.count} x ${l.part}${l.value ? ` ${l.value}` : ""} (${l.refs.join(", ")})${l.socketed ? (l.swapped ? ", in a socket: your swap" : ", in a socket") : ""}`),
+    ...lines.map((l) => `- ${l.count} x ${l.part}${l.value ? ` ${l.value}` : ""} (${l.refs.join(", ")})${l.socketed ? (l.swapped ? ", in a socket: your swap" : ", in a socket") : l.swapped ? ": your value" : ""}`),
     "",
   ];
-  if (swaps.length) out.push("Your swaps", "These parts are the ones you picked in Q Amp. They go in sockets, so you can change them back.", ...swaps.map((l) => `- ${l.refs.join(", ")}: ${l.value}`), "");
+  if (swaps.length) {
+    out.push(
+      "Your parts",
+      "These are the parts you picked in Q Amp. The ones in sockets you can change back; a resistor you changed is soldered in like the rest.",
+      "Each fits the same holes as the stock part, so the board files are the stock board's.",
+      ...swaps.map((l) => `- ${l.refs.join(", ")}: ${l.value}${l.socketed ? ", in a socket" : ""}`),
+      "",
+    );
+  }
   out.push(
     "Drill the box",
     "1. Tape drill.svg to the box. Check the 50 mm line with a ruler.",

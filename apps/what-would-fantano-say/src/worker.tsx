@@ -15,6 +15,7 @@ const budget = env.BUDGET && { take: (cap: number) => env.BUDGET!.get(env.BUDGET
 export default defineApp([
   setCommonHeaders(),
   route("/api/review", {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- caches.default is Cloudflare's; the app is typed with the DOM's lib, which doesn't have it
     post: ({ request }) => handleReview(request, { ...env, BUDGET: budget }, (caches as unknown as { default: Cache }).default),
   }),
   // Shared reviews: keep one past its day, read the board, and a signed-out visitor's one vote (src/board.ts).

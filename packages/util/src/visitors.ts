@@ -18,6 +18,6 @@ export function kindOf(headers: Headers): { kind: Kind; via: Via } {
   if (BOT.test(ua)) return { kind: "bot", via: "crawler" };
   if (HEADLESS.test(ua)) return { kind: "agent", via: "headless" };
   if (!ua || SCRIPT.test(ua)) return { kind: "agent", via: "script" };
-  if (/^Mozilla\//.test(ua) && headers.has("sec-fetch-mode")) return { kind: "person", via: "browser" };
+  if (ua.startsWith("Mozilla/") && headers.has("sec-fetch-mode")) return { kind: "person", via: "browser" };
   return { kind: "agent", via: "headless" };
 }

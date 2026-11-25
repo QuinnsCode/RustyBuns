@@ -20,6 +20,7 @@ export type FaceReply =
 
 type Find = (p: Pixels, page: number) => Promise<Face[]>;
 let find: Find | null = null;
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- this file runs in a Worker, but the app is typed with the DOM's lib, where self is a Window
 const post = (r: FaceReply) => (self as unknown as Worker).postMessage(r);
 const message = (e: unknown) => String(e instanceof Error ? e.message : e);
 

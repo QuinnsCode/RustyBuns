@@ -44,14 +44,17 @@ test("a listener's player joins late, keeps up on the room's clock, follows a st
   expect(tubeStep(stopped, 30000, { pos: 31, moving: true }, 1e9, 0)).toEqual({ play: false, seek: 30, rate: 1.25, volume: 0 });
 });
 
-test("the PA's level for a YouTube deck: full on the floor, down further back and behind the stacks", () => {
+test("the PA's level for a YouTube deck: full on the floor, down close in between the sides, further back and behind the stacks", () => {
   const speakers = paSpeakers(DESERT_GATHERING), dj = DESERT_GATHERING.spots.find((s) => s.kind === "dj")!;
   const mx = speakers.reduce((t, s) => t + s.at[0], 0) / speakers.length, mz = speakers.reduce((t, s) => t + s.at[1], 0) / speakers.length;
   // out in front of the stacks (the way the crowd stands), facing them, against behind the DJ
   const fx = Math.sin(speakers[0]!.yaw), fz = Math.cos(speakers[0]!.yaw), yaw = Math.atan2(fx, fz);
   const at = (m: number) => roomLevel(speakers, { x: mx + fx * m, z: mz + fz * m, yaw });
-  expect(at(3)).toBe(1);
+  // full across the floor where the toed-in sides' horns cross; close in, between the sides, is the gap they leave
+  // (the builder's coverage map shows it too: @rustybuns/gear's horn pattern)
   expect(at(10)).toBeCloseTo(1, 1);
+  expect(at(15)).toBe(1);
+  expect(at(3)).toBeLessThan(0.5);
   expect(at(25)).toBeLessThan(at(10));
   expect(roomLevel(speakers, { x: mx - fx * 4, z: mz - fz * 4, yaw: dj.yaw })).toBeLessThan(at(10));
   expect(roomLevel([], { x: 0, z: 0, yaw: 0 })).toBe(1);

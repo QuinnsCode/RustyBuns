@@ -265,7 +265,7 @@ export class OfficeFloor {
     if (!m) return fail("BadInput", "send one of the office's messages, {t: \"queue.add\", prompt}");
     const r = await this.apply(m, by, true);
     if (r && "error" in r) return fail("BadInput", r.error);
-    return json({ ok: true, ...(r ?? {}), ...this.state(floor) });
+    return json({ ok: true, ...r, ...this.state(floor) });
   }
 
   async webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {

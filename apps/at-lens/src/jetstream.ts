@@ -1,6 +1,6 @@
 // Jetstream: Bluesky's public firehose as JSON over a WebSocket, filtered on the server by account and collection.
 // No key, no sign-in. Docs: https://bsky.network/docs/jetstream/
-import { check, obj, opt, raw, str } from "@rustybuns/util/guard";
+import { check, field, obj, opt, raw, str } from "@rustybuns/util/guard";
 
 const JETSTREAM = "wss://jetstream.us-east.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents";
 
@@ -44,7 +44,6 @@ export function decodeCommit(v: unknown): Commit | null {
 }
 
 /** A field of something parsed, still unknown. */
-const field = (o: unknown, k: string): unknown => (typeof o === "object" && o !== null ? Reflect.get(o, k) : undefined);
 
 /** One line saying what a record is: a post's text, a like's subject, else its createdAt. */
 export function gist(record: unknown): string {

@@ -366,7 +366,7 @@ async function init() {
   // dist/worker/worker.js. The build's own dist/worker/wrangler.json settles it at build time.
   {
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-    const rw = String({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }["rwsdk"] ?? "");
+    const rw = String({ ...pkg.dependencies, ...pkg.devDependencies }["rwsdk"] ?? "");
     const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
     if (major >= 1 && !/^[^0-9]*1\.0\.0-alpha/.test(rw)) cfg.worker!.builtMain = "dist/worker/index.js";
   }

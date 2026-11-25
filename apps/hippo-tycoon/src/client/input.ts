@@ -14,7 +14,7 @@ const KEYS = {
 const SCHEMES = {
   kb1: [KEYS.kb1], kb2: [KEYS.kb2], kbAll: [KEYS.kb1, KEYS.kb2],
 } as const;
-const ALL_CODES = new Set<string>([...Object.values(KEYS).flatMap((k) => [...k.left, ...k.right, ...k.gulp, ...k.bellow])]);
+const ALL_CODES = new Set<string>(Object.values(KEYS).flatMap((k) => [...k.left, ...k.right, ...k.gulp, ...k.bellow]));
 const DEADZONE = 0.25;
 const PAD_ACTIONS = [{ id: "gulp", label: "Gulp", button: 0 }, { id: "bellow", label: "Bellow", button: 1 }];
 /** The keys a focused button answers to. */

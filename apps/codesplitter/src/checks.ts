@@ -857,7 +857,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const no = crew(); if (no) return no;
     const { ref } = await body<"ref">();
     if (ref !== undefined && typeof ref !== "string") return fail("BadInput", "ref: a branch name");
-    const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all<{ ref: string; sha: string }>();
+    const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(owner, repo, ...(ref ? [ref] : [])).all<{ ref: string; sha: string }>();
     const out = [];
     for (const w of results) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
     return json({ polled: out });

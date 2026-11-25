@@ -148,7 +148,9 @@ interface FluidExports {
 
 /** The Rust build, from bytes. Throws if the module is not the fluid. */
 export async function fluidFromWasm(bytes: BufferSource, seed = 1): Promise<Fluid> {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   const { instance } = (await WebAssembly.instantiate(bytes, {})) as unknown as WebAssembly.WebAssemblyInstantiatedSource;
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- WebAssembly hands back untyped exports; this is the shape the module was built with
   const e = instance.exports as unknown as FluidExports;
   if (typeof e.fl_step !== "function" || !e.memory) throw new Error("not the hippo_fluid module");
   e.fl_init(seed);

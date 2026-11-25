@@ -58,7 +58,7 @@ export function socketToken(req: Request): { token: string | null | undefined; o
 }
 /** The world's 101, naming the subprotocol the page offered first: a browser drops a socket whose answer names none of its offers. */
 export function echoProtocol(res: Response, offered: boolean): Response {
-  const webSocket: unknown = Reflect.get(res, "webSocket");
+  const webSocket: unknown = "webSocket" in res ? res.webSocket : undefined;
   if (!offered || res.status !== 101 || !webSocket) return res;
   const init: ResponseInit & { webSocket: unknown } = { status: 101, webSocket, headers: { "sec-websocket-protocol": SOCKET_PROTOCOL } };
   return new Response(null, init);
