@@ -13,7 +13,7 @@
 import { clamp } from "@rustybuns/util";
 import { levelAt, source, stackSources, stackWidth, system, systemSound, type RigPlan, type Source, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
-import { thingBox, type Outdoor, type StudioDef } from "./room.ts";
+import { thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
 
 /** Metres a second. */
@@ -35,9 +35,12 @@ export const WET = 0.4;
  *  DEFAULT_TOP at HORN_Y when left out). How loud it is anywhere is gear's `levelAt` over them: the coverage map's sum. */
 export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number; boxes?: Source[] }
 
-/** The room's rig, if it has stacks: the outdoor rig asked for, else the horn stack. */
+/** The PA you placed: an open-air party's, else an indoor room's own (none: the club stacks either side of the decks). */
+export const roomPa = (def: StudioDef): RoomPa | undefined => def.outdoor ?? def.pa;
+
+/** The room's rig, if it has stacks: the rig asked for, else the horn stack. */
 export function roomRig(def: StudioDef): System {
-  return system(def.outdoor?.rig);
+  return system(roomPa(def)?.rig);
 }
 
 /**
@@ -46,7 +49,7 @@ export function roomRig(def: StudioDef): System {
  * so its columns stay shoulder to shoulder and the gap between the sides stays where the room put it.
  */
 export function rigStacks(def: StudioDef): Outdoor["stacks"] {
-  const stacks = def.outdoor?.stacks ?? [];
+  const stacks = roomPa(def)?.stacks ?? [];
   const w = stackWidth(roomRig(def)) + 0.02;
   return stackBlocks(stacks).flatMap((block) => {
     if (block.length < 2) return block;
@@ -83,7 +86,7 @@ const AIR_4K_DB = 10 * Math.log10(Math.E) * AIR[5];
  */
 export function paSpeakers(def: StudioDef): Speaker[] {
   const dj = def.spots.find((s) => s.kind === "dj");
-  const spread = def.outdoor ? systemSound(roomRig(def)).coverage.h : undefined, rig = roomRig(def);
+  const spread = roomPa(def)?.stacks.length ? systemSound(roomRig(def)).coverage.h : undefined, rig = roomRig(def);
   const stacks: { at: [number, number]; yaw: number; boxes: Source[] }[] = rigStacks(def).map((s) => ({ at: s.at, yaw: s.yaw, boxes: stackSources(rig, s) }));
   if (!stacks.length && dj) {
     const b = thingBox(dj), fx = -Math.sin(dj.yaw), fz = -Math.cos(dj.yaw), rx = Math.cos(dj.yaw), rz = -Math.sin(dj.yaw), out = b.hw + 1.2;
@@ -94,7 +97,7 @@ export function paSpeakers(def: StudioDef): Speaker[] {
     }
   }
   if (!stacks.length) return [];
-  if (def.outdoor?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread }));
+  if (roomPa(def)?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
@@ -108,16 +111,37 @@ export const paSources = (def: StudioDef): Source[] => paSpeakers(def).flatMap(b
 const boxesOf = (sp: Speaker): Source[] => sp.boxes ?? [source(DEFAULT_TOP, { x: sp.at[0], y: HORN_Y, z: sp.at[1] }, { yaw: sp.yaw })];
 
 /** An open-air room's rig as @rustybuns/gear plans one (its power, its gear list): the stacks where they stand, the sub
- *  block, the booth monitors, the generator and the DJ's desk. Null indoors. */
+ *  block, the booth monitors, the generator and the DJ's desk. Indoors, the stacks you placed and the desk (the power
+ *  check picks the set that would hold them). Null in a room with no PA of its own. */
 export function rigPlan(def: StudioDef): RigPlan | null {
   const out = def.outdoor;
-  if (!out) return null;
+  const pa = roomPa(def);
+  if (!pa || (!out && !pa.stacks.length)) return null;
   const dj = def.spots.find((s) => s.kind === "dj");
   return {
-    system: roomRig(def), stacks: rigStacks(def), subs: out.subs, monitors: out.monitors,
-    generator: out.generator ? { at: out.generator.at, set: out.generator.set } : undefined,
+    system: roomRig(def), stacks: rigStacks(def), subs: out?.subs, monitors: out?.monitors,
+    generator: out?.generator ? { at: out.generator.at, set: out.generator.set } : undefined,
     desk: dj ? [thingBox(dj).cx, thingBox(dj).cz] : undefined,
   };
+}
+
+/** Each speaker's sound at (x, z), ears high: how much later it lands than the first speaker's (ms) and how far under the
+ *  loudest it is (dB), in the order paSpeakers gives them. What the builder's delay view reads. */
+export function arrivals(def: StudioDef, x: number, z: number): { ms: number; down: number }[] {
+  const sp = paSpeakers(def), ears = { x, z, yaw: 0 };
+  // the head's shadow is a listener's, not the room's: hear every speaker as if facing it
+  const heard = sp.map((s) => hearSpeaker(s, { ...ears, yaw: Math.atan2(x - s.at[0], z - s.at[1]) }));
+  const first = Math.min(...heard.map((h) => h.delay)), loud = Math.max(...heard.map((h) => h.gain));
+  return heard.map((h) => ({ ms: (h.delay - first) * 1000, down: 20 * Math.log10(loud / Math.max(h.gain, 1e-9)) }));
+}
+
+/** How far a speaker under the loudest can be and still smear what you hear when it lands late, dB. */
+export const SMEAR_DB = 10;
+/** The spread in arrival at (x, z), ms: from the first to the last of the speakers within SMEAR_DB of the loudest.
+ *  Past ~10 ms you hear it as a smear, past ~30 ms as an echo: where a delay tower would go. */
+export function arrivalSpread(def: StudioDef, x: number, z: number): number {
+  const ms = arrivals(def, x, z).filter((h) => h.down <= SMEAR_DB).map((h) => h.ms);
+  return ms.length ? Math.max(...ms) - Math.min(...ms) : 0;
 }
 
 /** One speaker as heard from `ears`, out of `n` speakers playing the same set (so two stacks together are as loud as one was). */

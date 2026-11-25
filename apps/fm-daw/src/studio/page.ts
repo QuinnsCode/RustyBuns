@@ -1,13 +1,14 @@
 // The studio builder (/rooms.html): start from one of the rooms, then size it, change what its floor, ceiling and
 // walls are made of, hang panels on its walls, put up booths and drag seats and booths around on the plan. The side
 // shows how long the space at the picked seat rings, Clap plays a clap through that seat's impulse response, and
-// Walk in opens the room in /jam.html. Out of doors the PA tool puts the rig's stacks down; Move drags them, Turn aims
+// Walk in opens the room in /jam.html. Indoors or out the PA tool puts the rig's stacks down; Move drags them, Turn aims
 // them, and the PA panel turns, splays and pins the picked one, shows the coverage map over the floor (coverage.ts: the
-// boxes the jam room plays from), checks the amps, breakers and generator (@rustybuns/gear powerPlan) and hands out the
-// gear list and the plan drawing. Every change goes through the builder's edits (builder.ts), so the room is never left
+// boxes the jam room plays from) on the blueprint or the 3D floor, and the delay view where the far stacks land late
+// (pa-room.ts arrivals: a delay tower's place), checks the amps, breakers and generator (@rustybuns/gear powerPlan) and
+// hands out the gear list and the plan drawing. Every change goes through the builder's edits (builder.ts), so the room is never left
 // half built. Your room is kept in this browser. The Party panel (Qevent, party.ts) makes a party, gives each performer
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
-// party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z),
+// party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
 // download("list" | "plan"), undo(), redo(), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
@@ -23,8 +24,8 @@ import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAI
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
-import { paSpeakers, rigPlan, rigStacks, roomRig } from "./pa-room.ts";
-import { floorMap, heatCanvas, mapAt, type FloorMap } from "./coverage.ts";
+import { arrivals, paSpeakers, rigPlan, rigStacks, roomPa, roomRig } from "./pa-room.ts";
+import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
 import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, reschedule, restore, saveVersion, stored, switchScene, whenWords, type Done } from "./party.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -38,8 +39,8 @@ let parties = stored((() => { try { return localStorage.getItem(PARTIES); } catc
 let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(ROOM_LIST[0]);
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
-/** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map shows. */
-let stackPicked: number | null = null, showMap = false;
+/** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map and the delay view show. */
+let stackPicked: number | null = null, showMap = false, showDelay = false;
 
 /** Keep the room: in the open party's scene, and as the room /jam.html walks into (the live party's stage while one is live). */
 function save() {
@@ -113,8 +114,18 @@ function render() {
   // the PA's coverage over the floor, under the grid, and a ring at the floor's middle it's coloured against
   const map = paMap();
   if (showMap && map) {
-    plan.append(el("image", { class: "heat", href: heatCanvas(map.grid, map.ref).toDataURL(), x: -w / 2, y: -d / 2, width: w, height: d, preserveAspectRatio: "none", opacity: 0.85 }));
+    plan.append(el("image", { class: "heat", href: paHeat()!.toDataURL(), x: -w / 2, y: -d / 2, width: w, height: d, preserveAspectRatio: "none", opacity: 0.85 }));
     plan.append(el("circle", { class: "mid", cx: map.middle[0], cy: map.middle[1], r: 0.4 * scale, "stroke-width": 0.05 * scale }));
+  }
+  // the delay view: where the far stacks land late (amber a smear, red an echo), and the ms written every few metres
+  const late = showDelay ? paDelay() : null;
+  if (late) {
+    plan.append(el("image", { class: "delay", href: delayCanvas(late).toDataURL(), x: -w / 2, y: -d / 2, width: w, height: d, preserveAspectRatio: "none" }));
+    const step = Math.max(2, Math.round(Math.max(w, d) / 8));
+    for (let z = -d / 2 + step / 2; z < d / 2; z += step) for (let x = -w / 2 + step / 2; x < w / 2; x += step) {
+      const ix = Math.min(late.nx - 1, Math.floor(((x + w / 2) / w) * late.nx)), iz = Math.min(late.nz - 1, Math.floor(((z + d / 2) / d) * late.nz)), ms = late.ms[iz * late.nx + ix]!;
+      if (ms >= 1) plan.append(el("text", { class: "delay-ms", x, y: z, "font-size": 0.3 * scale }, `${Math.round(ms)} ms`));
+    }
   }
   // the floor's half-metre grid, as the 3D view has it
   for (let x = -Math.floor(w / 2 / 0.5) * 0.5; x <= w / 2 + 1e-6; x += 0.5) plan.append(el("line", { class: "grid", x1: x, y1: -d / 2, x2: x, y2: d / 2, "stroke-width": 0.02 * scale }));
@@ -156,7 +167,7 @@ function render() {
   const [dx, dz] = room.door.at;
   plan.append(el("path", { "data-door": 1, class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
   // the rig's stacks, each its footprint turned its way, and a line out along where its tops aim
-  if (room.outdoor) {
+  if (roomPa(room)) {
     const rig = roomRig(room), sw = stackWidth(rig), sd = Math.max(...rig.stack.map((b) => sheet(b).size.d));
     rigStacks(room).forEach((st, i) => {
       const g = el("g", { "data-stack": i }), turned = el("g", { transform: `rotate(${(-st.yaw * 180) / Math.PI} ${st.at[0]} ${st.at[1]})` });
@@ -181,7 +192,7 @@ function render() {
   renderPa();
   renderEdit();
   renderTools();
-  if (view === "3d") build?.show(room, picked, walls);
+  if (view === "3d") build?.show(room, picked, walls, showMap ? paHeat() : null);
 }
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
@@ -302,10 +313,9 @@ function act(e: PointerEvent) {
     else if (h && "wall" in h) apply({ t: "wall", index: h.wall, material: painting });
     else { why = "Click the floor or a wall to paint it"; render(); }
   } else if (tool === "pa") {
-    if (!room.outdoor) { why = "Stacks you place stand out of doors: start from an open-air room"; render(); }
-    else if (at && apply({ t: "stack", at })) { stackPicked = room.outdoor.stacks.length - 1; render(); }
+    if (at && apply({ t: "stack", at })) { stackPicked = (roomPa(room)?.stacks.length ?? 1) - 1; render(); }
   } else if (tool === "turn") {
-    if (h && "stack" in h) { const st = room.outdoor?.stacks[h.stack]; stackPicked = h.stack; if (st) apply({ t: "aimStack", index: h.stack, yaw: st.yaw + (e.shiftKey ? -1 : 1) * Math.PI / 12 }); }
+    if (h && "stack" in h) { const st = roomPa(room)?.stacks[h.stack]; stackPicked = h.stack; if (st) apply({ t: "aimStack", index: h.stack, yaw: st.yaw + (e.shiftKey ? -1 : 1) * Math.PI / 12 }); }
     else if (h && "spot" in h) { picked = h.spot; apply({ t: "turn", id: h.spot, by: e.shiftKey ? -1 : 1 }); }
     else if (h && "prop" in h) apply({ t: "turnProp", index: h.prop, by: e.shiftKey ? -1 : 1 });
   } else if (tool === "remove") {
@@ -365,7 +375,7 @@ function up(e?: PointerEvent) {
     const d = drag; drag = null;
     if (d.at[0] === d.from[0] && d.at[1] === d.from[1]) return render();
     // a stack moves by what it was dragged: where the room stood it, not where its block drew it
-    const stored = d.kind === "stack" ? room.outdoor?.stacks[Number(d.id)]?.at : undefined;
+    const stored = d.kind === "stack" ? roomPa(room)?.stacks[Number(d.id)]?.at : undefined;
     if (stored) return void apply({ t: "moveStack", index: Number(d.id), at: [tenth(stored[0] + d.at[0] - d.from[0]), tenth(stored[1] + d.at[1] - d.from[1])] });
     apply(d.kind === "spot" ? { t: "move", id: d.id, at: d.at } : d.kind === "gear" ? { t: "moveGear", at: d.at } : d.kind === "prop" ? { t: "moveProp", index: Number(d.id), at: d.at } : d.kind === "door" ? { t: "moveDoor", at: d.at } : { t: "moveBooth", id: d.id, at: d.at });
   } else if (drawing) {
@@ -398,6 +408,7 @@ const VIEW_3D = `<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="
 const BLUEPRINT = `<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>`;
 const LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
 const WAVES = `<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>`;
+const TIMER = `<line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/>`;
 const CCW = `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>`;
 const CW = `<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>`;
 const WALL_WORDS: Record<WallsMode, string> = { cutaway: "Walls cut away on your side", down: "Walls down", up: "Walls up" };
@@ -413,7 +424,8 @@ function renderTools() {
     + (build ? b(`data-view="3d"`, "3D: your studio cut away, from above", VIEW_3D, view === "3d") : "")
     + b(`data-view="plan"`, "Blueprint: the plan from straight above", BLUEPRINT, view === "plan")
     + (view === "3d" ? b(`data-walls`, `${WALL_WORDS[walls]} (click for the next)`, LAYERS) : "")
-    + (paSpeakers(room).length ? b(`data-map="1"`, "Coverage: how loud the PA is over the floor, on the blueprint", WAVES, showMap) : "");
+    + (paSpeakers(room).length ? b(`data-map="1"`, "Coverage: how loud the PA is over the floor", WAVES, showMap) : "")
+    + (paSpeakers(room).length > 1 ? b(`data-delay="1"`, "Delay: how late the far stacks land, on the blueprint (a delay tower's place)", TIMER, showDelay) : "");
   $("orbit").innerHTML = view === "3d" ? b(`data-orbit="1"`, "Turn the view left", CCW) + b(`data-orbit="-1"`, "Turn the view right", CW) : "";
   const cat = $("catalog");
   cat.hidden = tool !== "place" && tool !== "paint" && tool !== "decor";
@@ -453,7 +465,8 @@ $("tools").addEventListener("click", (e) => {
   if (t.dataset.furnish) return void furnishRoom();
   if (t.dataset.tool) tool = t.dataset.tool as Tool;
   if (t.dataset.view) view = t.dataset.view === "3d" && build ? "3d" : "plan";
-  if (t.dataset.map) { showMap = !showMap; if (showMap) view = "plan"; }
+  if (t.dataset.map) showMap = !showMap;
+  if (t.dataset.delay) { showDelay = !showDelay; if (showDelay) view = "plan"; }
   if (t.hasAttribute("data-walls")) walls = walls === "cutaway" ? "down" : walls === "down" ? "up" : "cutaway";
   render();
 });
@@ -491,10 +504,20 @@ function renderSound() {
 // ---- the PA: the picked stack's aim, the coverage, the power, and what to take away ----
 
 /** The coverage map of the room as it stands, kept until the room changes. */
-let mapFor: { room: StudioDef; map: FloorMap | null } | null = null;
+let mapFor: { room: StudioDef; map: FloorMap | null; heat?: HTMLCanvasElement | null; late?: DelayMap | null } | null = null;
 function paMap(): FloorMap | null {
   if (mapFor?.room !== room) mapFor = { room, map: floorMap(room) };
   return mapFor.map;
+}
+/** The coverage map as a picture (the blueprint's and the 3D floor's), and the delay view: kept until the room changes. */
+function paHeat(): HTMLCanvasElement | null {
+  const map = paMap();
+  return mapFor!.heat ??= map ? heatCanvas(map.grid, map.ref) : null;
+}
+function paDelay(): DelayMap | null {
+  paMap();
+  if (mapFor!.late === undefined) mapFor!.late = delayMap(room);
+  return mapFor!.late;
 }
 const deg = (r: number) => Math.round((r * 180) / Math.PI), rad = (d: number) => (d * Math.PI) / 180;
 const kw = (w: number) => `${(w / 1000).toFixed(1)} kW`;
@@ -502,24 +525,25 @@ const kw = (w: number) => `${(w / 1000).toFixed(1)} kW`;
 function renderPa() {
   const host = $("pa"), map = paMap();
   if (!map) { host.innerHTML = ""; return; }
-  const rp = rigPlan(room), power = rp ? powerPlan(rp) : null, stacks = room.outdoor?.stacks ?? [];
+  const rp = rigPlan(room), power = rp ? powerPlan(rp) : null, stacks = roomPa(room)?.stacks ?? [];
   if (stackPicked !== null && !stacks[stackPicked]) stackPicked = null;
   const st = stackPicked !== null ? stacks[stackPicked] : undefined, line = roomRig(room).stack.filter((b) => b.startsWith("line-array")).length;
   const pins = st?.pins ?? [0.14, 0.07, 0.02];
   host.innerHTML = `<h2>PA</h2>
     <div class="big">${map.stats.mean.toFixed(0)} dB <small>over the floor, ${map.stats.even.toFixed(1)} dB from its quiet tenth to its loud</small></div>
-    <p class="hint">Quietest ${map.stats.min.toFixed(0)} dB, loudest ${map.stats.max.toFixed(0)} dB at ear height, mids and highs. ${showMap ? "The map is against the ring on the floor: gold louder, orange within 3 dB, teal 9 down, blue past 15." : "Coverage (the waves over the view) draws it on the blueprint."}</p>
-    ${room.outdoor ? `${st ? `<h2>Stack ${stackPicked! + 1}</h2>
+    <p class="hint">Quietest ${map.stats.min.toFixed(0)} dB, loudest ${map.stats.max.toFixed(0)} dB at ear height, mids and highs. ${showMap ? "The map is against the ring on the floor: gold louder, orange within 3 dB, teal 9 down, blue past 15." : "Coverage (the waves over the view) draws it on the floor."}</p>
+    ${rp ? `${st ? `<h2>Stack ${stackPicked! + 1}</h2>
       <div class="row"><label>Aim, degrees<input type="range" min="-180" max="180" step="1" data-aim="yaw" value="${deg(st.yaw)}"></label></div>
       <div class="row"><label>Splay of its tops, degrees<input type="range" min="-30" max="30" step="1" data-aim="splay" value="${deg(st.splay ?? 0)}"></label></div>
       ${line ? `<div class="row">${Array.from({ length: line }, (_, k) => `<label>Pin ${k + 1}, down<input type="number" min="0" max="17" step="0.5" data-pin="${k}" value="${deg(pins[k] ?? 0)}"></label>`).join("")}</div>` : ""}
       <div class="row"><button type="button" id="unstack">Take stack ${stackPicked! + 1} away</button></div>` : `<p class="hint">Pick a stack on the plan to aim it; the PA tool stands a new one.</p>`}
     <h2>Power</h2>
-    <div class="row"><label>Generator<select id="gen-set"><option value="auto"${power?.auto ? " selected" : ""}>The smallest that holds</option>${GENERATOR_IDS.map((g) => `<option value="${g}"${!power?.auto && power?.generator === g ? " selected" : ""}>${esc(sheet(g).what)}</option>`).join("")}</select></label></div>
+    ${room.outdoor ? "" : `<p class="hint">Indoors, what a generator would have to give to run it: the house supply's limit is the venue's to say.</p>`}
+    <div class="row"${room.outdoor ? "" : " hidden"}><label>Generator<select id="gen-set"><option value="auto"${power?.auto ? " selected" : ""}>The smallest that holds</option>${GENERATOR_IDS.map((g) => `<option value="${g}"${!power?.auto && power?.generator === g ? " selected" : ""}>${esc(sheet(g).what)}</option>`).join("")}</select></label></div>
     ${power ? `<p class="${power.ok ? "hint" : "bad"}">${power.ok ? "Holds" : "Fails"}: ${power.channels} amp channels on ${power.racks} rack${power.racks === 1 ? "" : "s"}, ${kw(power.feed.watts)} of the ${esc(sheet(power.generator).what)}'s ${kw(power.feed.limit)} at show level.</p>
       ${power.why.length || power.warn.length ? `<ul class="why">${power.why.map((w) => `<li class="bad">${esc(w)}</li>`).join("")}${power.warn.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}` : ""}
     <h2>Take it away</h2>
-    <div class="row"><button type="button" id="dl-list">Gear list</button><button type="button" id="dl-plan">Plan drawing</button></div>` : `<p class="hint">Indoors the PA is a stack either side of the decks; stacks you place stand out of doors.</p>`}`;
+    <div class="row"><button type="button" id="dl-list">Gear list</button><button type="button" id="dl-plan">Plan drawing</button></div>` : `<p class="hint">With none of its own, the PA is a stack either side of the decks: the PA tool stands your own.</p>`}`;
   const q = <T extends Element>(sel: string) => [...host.querySelectorAll<T>(sel)];
   for (const i of q<HTMLInputElement>("[data-aim]")) i.addEventListener("change", () => { if (stackPicked !== null) apply({ t: "aimStack", index: stackPicked, [i.dataset.aim!]: rad(Number(i.value)) }); });
   for (const i of q<HTMLInputElement>("[data-pin]")) i.addEventListener("change", () => {
@@ -613,7 +637,7 @@ function renderEdit() {
     <h2>Instruments</h2>
     <div class="row"><label>Keys<select id="keys-kind">${POLY_KINDS.map((k) => `<option value="${k}"${k === room.keys ? " selected" : ""}>${esc(KEYS_NAMES[k])}</option>`).join("")}</select></label>
       <label>Bass<select id="bass-kind"><option value="mono"${room.bass !== "box" ? " selected" : ""}>Big analog mono</option><option value="box"${room.bass === "box" ? " selected" : ""}>Bass-line box</option></select></label>
-      ${room.outdoor ? `<label>Rig<select id="rig-kind">${SYSTEM_IDS.map((id) => `<option value="${id}"${id === (room.outdoor?.rig ?? "dance-stack") ? " selected" : ""}>${esc(SYSTEMS[id].name)}</option>`).join("")}</select></label>` : ""}</div>
+      ${roomPa(room) ? `<label>Rig<select id="rig-kind">${SYSTEM_IDS.map((id) => `<option value="${id}"${id === (roomPa(room)?.rig ?? "dance-stack") ? " selected" : ""}>${esc(SYSTEMS[id].name)}</option>`).join("")}</select></label>` : ""}</div>
     <h2>Gear wall</h2>
     <div class="row"><button type="button" id="turn-gear">Turn it a quarter</button></div>
     <h2>Seats</h2>
@@ -751,9 +775,20 @@ const harness = {
   },
   /** The coverage map's level at (x, z) on the floor, dB. */
   level: (x: number, z: number) => { const m = paMap(); return m ? +mapAt(m, x, z).toFixed(1) : null; },
+  /** Each speaker's sound at (x, z) on the floor, in paSpeakers' order: how much later than the first it lands (ms) and
+   *  how far under the loudest it is (dB). */
+  delay: (x: number, z: number) => paSpeakers(room).length ? arrivals(room, x, z).map((a) => ({ ms: +a.ms.toFixed(1), down: +a.down.toFixed(1) })) : [],
   pickStack: (i: number | null) => { stackPicked = i; render(); },
-  /** Show the coverage map on the blueprint, or not. */
-  showMap: (on = true) => { showMap = on; if (on) view = "plan"; render(); },
+  /** Show the coverage map (on the blueprint, or the 3D view's floor), or not. */
+  showMap: (on = true) => { showMap = on; render(); },
+  /** Show the delay view on the blueprint, or not; the cells drawn amber or red, for the harness. */
+  showDelay: (on = true) => {
+    showDelay = on; if (on) view = "plan"; render();
+    const late = paDelay();
+    return late ? { smear: late.ms.filter((v) => v >= 10 && v < 30).length, echo: late.ms.filter((v) => v >= 30).length } : null;
+  },
+  /** Which view shows, and whether the 3D floor wears the coverage map. */
+  view: (v?: "3d" | "plan") => { if (v) { view = v === "3d" && build ? "3d" : "plan"; render(); } return { view, heatOnFloor: view === "3d" && showMap && !!paHeat() }; },
   download: (what: "list" | "plan") => download(what),
   undo: () => undo(true),
   redo: () => undo(false),
