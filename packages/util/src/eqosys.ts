@@ -13,15 +13,14 @@ import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { EASE, morph, pop } from "./morph.ts";
-import { peek } from "./token.ts";
+import { peek, Login } from "./token.ts";
 import { PartyRules } from "./party-rules.ts";
 import { board } from "./board.ts";
 
 export type { Skin } from "./skin.ts";
 
-/** What the page keeps of a sign-in. */
-export const Login = obj({ name: str(200), email: str(320), token: str(8192), refresh: opt(str(100)) });
-export type Login = Of<typeof Login>;
+/** What the page keeps of a sign-in (declared in ./token so a desktop app's Bun side keeps the same shape). */
+export { Login } from "./token.ts";
 
 /** POST eqosys /api/exchange: who signed in, and the token the Worker checks. `token` is null while eqosys has no signing key. */
 export const ExchangeReply = obj({

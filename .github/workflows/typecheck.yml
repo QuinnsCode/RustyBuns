@@ -30,10 +30,12 @@ jobs:
       - run: bun run typecheck
       - run: bun scripts/conflict-markers.ts
       - run: bun scripts/boundary-audit.ts
+      # oxlint plus five anti-slop rules; old findings are an allowance that only goes down
+      - run: bun run lint
       # exports nothing imports and files nothing reaches, in the apps knip.json lists (#5333)
       - run: bun run knip
       - run: bun scripts/util-api.ts
       - run: bun scripts/migration-numbers.ts
-      - run: bun test ./scripts/lock-drift.test.ts ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts ./scripts/util-api.test.ts
+      - run: bun test ./scripts/lock-drift.test.ts ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/lint.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts ./scripts/util-api.test.ts
       - run: bun run docs --check
       - run: bun run site --check

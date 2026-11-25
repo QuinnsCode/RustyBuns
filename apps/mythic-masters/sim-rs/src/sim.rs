@@ -196,6 +196,8 @@ pub struct Fighter<'a> {
     pub bearing: f64,
     pub red: f64,
     pub hurt: f64,
+    /// Sidesteps chained lately (sim.ts STEP).
+    pub heat: f64,
     pub fresh: bool,
     pub drop: f64,
     pub marks: Marks,
@@ -324,6 +326,7 @@ fn fighter<'a>(c: &'a Creature, side: usize, z: f64) -> Fighter<'a> {
         bearing: if side == 1 { 0.0 } else { PI },
         red: 0.0,
         hurt: 999.0,
+        heat: 0.0,
         fresh: true,
         drop: 0.0,
         marks: Marks::default(),
@@ -427,6 +430,17 @@ pub const DIVE_TUCK: f64 = 4.0;
 pub const DIVE_REACH: f64 = 0.6;
 const LEDGE_REACH: f64 = 0.6;
 const LEDGE_BELOW: f64 = 1.5;
+/// The sidestep (sim.ts STEP).
+pub const STEP_SIDE: f64 = 0.7;
+pub const STEP_FADE: f64 = 0.6;
+pub const STEP_COOL: f64 = 45.0;
+pub const STEP_CHASE: f64 = 0.25;
+pub const STEP_HOT: f64 = 2.0;
+pub const STEP_CURL: f64 = 0.35;
+/// sim.ts stepHeat: how hot `o`'s sidestepping is, 0 to 1.
+pub fn step_heat(o: Option<&Fighter>) -> f64 {
+    o.map_or(0.0, |o| min(1.0, o.heat / STEP_HOT))
+}
 pub const ORBIT_FREE: f64 = 1.2;
 const ORBIT_SPAN: f64 = 2.0;
 const ORBIT_SLOW: f64 = 0.25;
@@ -519,7 +533,7 @@ pub fn through(f: &Fighter) -> bool {
     let fr = frames(&a.mv, a.tired);
     f.t >= fr.startup + fr.active
 }
-pub fn swing_phase(f: &Fighter) -> Option<Phase> {
+pub fn swing_phase(f: &Fighter, at: Option<&Fighter>) -> Option<Phase> {
     let a = f.act.as_ref()?;
     let slot = a.mv.slot;
     if f.state != State::Attack || a.dive || !a.mv.delivery.is_touch() || (slot != Slot::Heavy && slot != Slot::Launcher) {
@@ -529,7 +543,7 @@ pub fn swing_phase(f: &Fighter) -> Option<Phase> {
     if f.t >= fr.startup + fr.active {
         return None;
     }
-    Some(if f.t < round(fr.startup * LUNGE_LOCK) {
+    Some(if f.t < round(fr.startup * (LUNGE_LOCK + STEP_CURL * step_heat(at))) {
         Phase::Tracking
     } else {
         Phase::Locked
@@ -620,6 +634,10 @@ fn start(m: &mut Match, side: usize, slot: Slot, i: &Input) {
 }
 
 fn control(m: &mut Match, side: usize, i: &Input) {
+    let (op, casting) = {
+        let o = &m.f[foe_of(m, side)];
+        (o.pos, o.state == State::Attack && o.act.as_ref().is_some_and(|a| !a.mv.delivery.is_touch()))
+    };
     let f = &mut m.f[side];
     let b = f.b;
     let moving = hypot(i.mx, i.mz) > 0.1;
@@ -674,12 +692,18 @@ fn control(m: &mut Match, side: usize, i: &Input) {
             (-k.0, -k.1)
         };
         let n = or1(hypot(dx, dz));
-        f.vel.x = (dx / n) * b.top_speed * 2.4;
-        f.vel.z = (dz / n) * b.top_speed * 2.4;
+        let a = angle_to(f.pos, op);
+        let across = !casting && (dx * -sin(a) + dz * cos(a)).abs() / n > STEP_SIDE;
+        let push = if across { pow(STEP_FADE, f.heat) } else { 1.0 };
+        if across {
+            f.heat += 1.0;
+        }
+        f.vel.x = (dx / n) * b.top_speed * 2.4 * push;
+        f.vel.z = (dz / n) * b.top_speed * 2.4 * push;
         f.stamina -= b.dash_cost;
         f.state = State::Dash;
         f.t = 0.0;
-        f.invuln = b.dodge;
+        f.invuln = round(b.dodge * push);
         return;
     }
     if i.guard && f.on_ground && !f.exhausted {
@@ -753,6 +777,9 @@ fn move_body(m: &mut Match, side: usize, i: &Input) {
     let foe = foe_of(m, side);
     let (f, o) = pair(&mut m.f, side, foe);
     let b = f.b;
+    if f.heat > 0.0 {
+        f.heat = max(0.0, f.heat - 1.0 / STEP_COOL);
+    }
     if f.state == State::Ledge {
         f.vel = V3::default();
         f.hurt += 1.0;
@@ -780,6 +807,16 @@ fn move_body(m: &mut Match, side: usize, i: &Input) {
         let k = if through(f) { FOLLOW } else { 0.3 };
         wx *= k;
         wz *= k;
+    }
+    let heat = step_heat(Some(o));
+    if heat > 0.0 && f.on_ground && f.state == State::Free {
+        let a = angle_to(f.pos, o.pos);
+        let w = hypot(wx, wz);
+        if w > 0.1 && (wx * cos(a) + wz * sin(a)) / w > STEP_SIDE {
+            let k = 1.0 + STEP_CHASE * heat;
+            wx *= k;
+            wz *= k;
+        }
     }
     let lock = f.on_ground && !f.flying && f.state == State::Free;
     if lock {
@@ -829,7 +866,7 @@ fn move_body(m: &mut Match, side: usize, i: &Input) {
     } else {
         atan2(wz, wx)
     };
-    let phase = swing_phase(f);
+    let phase = swing_phase(f, Some(o));
     if let Some(aim) = f.act.as_ref().and_then(|a| a.aim) {
         f.yaw = aim.yaw;
         f.spin = 0.0;

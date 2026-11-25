@@ -82,6 +82,8 @@ export interface Fighter {
   red: number;
   /** Ticks since a hit last landed on you. */
   hurt: number;
+  /** Sidesteps chained lately (STEP): one more each step, cooling back toward 0 between them. */
+  heat: number;
   /** A grab of the ledge is safe (HANG.safe) only the first time since your feet were last on the ring; `drop`
    * frames after letting go you can't grab it again. */
   fresh: boolean; drop: number;
@@ -135,7 +137,7 @@ function fighter(c: Creature, side: number, z = 0): Fighter {
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
     flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0, buf: null, hop: false,
-    spin: 0, orbit: 0, bearing: side ? 0 : Math.PI, red: 0, hurt: 999, fresh: true, drop: 0,
+    spin: 0, orbit: 0, bearing: side ? 0 : Math.PI, red: 0, hurt: 999, heat: 0, fresh: true, drop: 0,
     marks: { dot: 0, dotPer: 0, dotField: null, chill: 0, root: 0 },
   };
 }
@@ -170,6 +172,17 @@ const drops = (f: Fighter, i: Input) => i.down || (i.guard && !f.onGround);
 /** The buttons that act on a press, highest first when two come on the same tick. */
 type Press = "ultimate" | "big" | "special" | "heavy" | "light" | "dash" | "up";
 const PRESSES: readonly Press[] = ["ultimate", "big", "special", "heavy", "light", "dash", "up"];
+/**
+ * The sidestep, the fencing step: a dash mostly across the line to the foe (its sideways share over `side`), unless it
+ * gets out of a ranged move the foe is casting (a painted shape is read and dodged clean, every time). Each one
+ * chained soon after the last goes `fade` as far and is untouchable `fade` as long: `heat` adds 1 a step and cools by
+ * 1 every `cool` ticks. A foe stepping hot gets chased down: walking straight in on it is up to `chase` faster (at
+ * `hot` heat), and a heavy swing at it keeps tracking `curl` more of its wind-up, so the round smack follows the step.
+ * One clean sidestep still beats a heavy; a third in a row is a short shuffle the pursuer walks through.
+ */
+export const STEP = { side: 0.7, fade: 0.6, cool: 45, chase: 0.25, hot: 2, curl: 0.35 } as const;
+/** How hot `o`'s sidestepping is, 0 to 1 (STEP.hot). */
+export const stepHeat = (o: Fighter | undefined) => (o ? Math.min(1, o.heat / STEP.hot) : 0);
 /** Frames a press made while busy (mid-swing, in hitstun, dashing) is kept, to go off on the first free frame. */
 export const BUFFER = 8;
 /** How much harder feet grip on the ground when stopping or turning back than when speeding up. */
@@ -263,12 +276,13 @@ export function through(f: Fighter): boolean {
   const fr = frames(f.act.move, f.act.tired);
   return f.t >= fr.startup + fr.active;
 }
-export function swingPhase(f: Fighter): "tracking" | "locked" | null {
+/** `at`, the one it swings at: a heavy keeps tracking longer the hotter they sidestep (STEP.curl). */
+export function swingPhase(f: Fighter, at?: Fighter): "tracking" | "locked" | null {
   const slot = f.act?.move.slot;
   if (f.state !== "attack" || !f.act || f.act.dive || f.act.move.delivery.shape !== "touch" || (slot !== "heavy" && slot !== "launcher")) return null;
   const fr = frames(f.act!.move, f.act!.tired);
   if (f.t >= fr.startup + fr.active) return null;
-  return f.t < Math.round(fr.startup * LUNGE.lock) ? "tracking" : "locked";
+  return f.t < Math.round(fr.startup * (LUNGE.lock + STEP.curl * stepHeat(at))) ? "tracking" : "locked";
 }
 /**
  * The ledge: hang up to `max` frames (then you drop), safe for `safe` of them on a fresh grab. Climbing is safe for
@@ -332,10 +346,14 @@ function control(m: Match, side: number, i: Input) {
   if (f.buf?.k === "dash" && !f.exhausted && f.stamina >= b.dashCost && f.marks.root === 0) {
     f.buf = null;
     const d = move ? { x: i.mx, z: i.mz } : (() => { const k = fwd(f.yaw); return { x: -k.x, z: -k.z }; })();
-    const n = hypot(d.x, d.z) || 1;
-    f.vel.x = (d.x / n) * b.topSpeed * 2.4; f.vel.z = (d.z / n) * b.topSpeed * 2.4;
+    const n = hypot(d.x, d.z) || 1, a = angleTo(f.pos, o.pos);
+    // A sidestep fades the more of them are chained (STEP); a dash in or out is always whole.
+    const casting = o.state === "attack" && !!o.act && o.act.move.delivery.shape !== "touch";
+    const across = !casting && Math.abs(d.x * -sin(a) + d.z * cos(a)) / n > STEP.side, push = across ? pow(STEP.fade, f.heat) : 1;
+    if (across) f.heat += 1;
+    f.vel.x = (d.x / n) * b.topSpeed * 2.4 * push; f.vel.z = (d.z / n) * b.topSpeed * 2.4 * push;
     f.stamina -= b.dashCost; f.state = "dash"; f.t = 0;
-    f.invuln = b.dodge; // the quick creatures' dodge is the vanish
+    f.invuln = Math.round(b.dodge * push); // the quick creatures' dodge is the vanish
     return;
   }
   if (i.guard && f.onGround && !f.exhausted) { if (f.state !== "guard") f.stamina = Math.max(0, f.stamina - GUARD_COST); f.state = "guard"; return; }
@@ -367,6 +385,7 @@ function ledge(m: Match, side: number, i: Input, inward: boolean) {
 
 function moveBody(m: Match, side: number, i: Input) {
   const f = m.f[side], o = foe(m, side), b = f.b;
+  if (f.heat > 0) f.heat = Math.max(0, f.heat - 1 / STEP.cool);
   if (f.state === "ledge") { f.vel = { x: 0, y: 0, z: 0 }; f.hurt++; return; }
   const canSteer = f.state === "free" || f.state === "attack";
   const slow = (f.exhausted ? 0.6 : 1) * (f.marks.chill ? 0.65 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
@@ -374,6 +393,12 @@ function moveBody(m: Match, side: number, i: Input) {
   // Swinging slows you, except the rising strike in the air, which is how you steer back to the ledge.
   const rising = f.state === "attack" && f.act?.move.slot === "launcher" && !f.onGround;
   if (f.state === "attack" && !rising) { const k = through(f) ? FOLLOW : 0.3; wish.x *= k; wish.z *= k; }
+  // The chase: on the ground, pressing straight in on a foe who keeps sidestepping gains on them (STEP.chase).
+  const heat = stepHeat(o);
+  if (heat > 0 && f.onGround && f.state === "free") {
+    const a = angleTo(f.pos, o.pos), w = hypot(wish.x, wish.z);
+    if (w > 0.1 && (wish.x * cos(a) + wish.z * sin(a)) / w > STEP.side) { const k = 1 + STEP.chase * heat; wish.x *= k; wish.z *= k; }
+  }
   // Orbit: on the ground, sideways input circles the opponent instead of running off along a tangent: the gap
   // you had when you started circling is pulled back to, so the path is a ring. Forward or back resets the gap.
   const lock = f.onGround && !f.flying && f.state === "free";
@@ -402,11 +427,11 @@ function moveBody(m: Match, side: number, i: Input) {
   const want = lock || f.flying || f.state === "attack" || f.state === "guard" || hypot(wish.x, wish.z) < 0.5
     ? angleTo(f.pos, o.pos) : atan2(wish.z, wish.x);
   if (f.act?.aim) { f.yaw = f.act.aim.yaw; f.spin = 0; } // a ranged move holds its aim through the wind-up
-  else if (swingPhase(f) === "locked") f.spin = 0;      // a heavy swing past its lock goes where it was pointed
+  else if (swingPhase(f, o) === "locked") f.spin = 0;      // a heavy swing past its lock goes where it was pointed
   else if (f.state !== "stun") {
     // Turning has momentum: spin builds toward what's needed and winds down to stop, so a big body carries its
     // turn past where it meant to stop, and a reversal has to wind down first. A heavy swing's wind-up tracks, until its lock.
-    const swing = swingPhase(f) === "tracking";
+    const swing = swingPhase(f, o) === "tracking";
     const top = (b.turnRate + (swing ? LUNGE.track : 0)) * (f.marks.chill ? 0.65 : 1), err = wrap(want - f.yaw);
     const goal = clamp(err * 8, -top, top), spinUp = b.spinUp * (swing ? 2 : 1);
     f.spin += clamp(goal - f.spin, -spinUp * DT, spinUp * DT);

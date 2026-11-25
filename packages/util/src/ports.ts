@@ -32,6 +32,7 @@ export const PORTS = {
   manual: 4790,
   bridge: 4796,
   pushes: 4797,
+  hemyviz: 4798,
   eqosysPreview: 4792,
   qview3d: 5190,
   parkHideSeek: 5391,
