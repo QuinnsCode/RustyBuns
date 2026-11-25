@@ -118,7 +118,7 @@ what power, before the truck is loaded.
 - `window.qrooms`: `pa()`, `level(x, z)`, `pickStack(i)`, `showMap()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
-**Missing:** stacks you place indoors (a room's PA is still a stack either side of the decks), the delay from far
+**Missing** ([#5883](https://github.com/QuinnsCode/RustyBuns/issues/5883)): stacks you place indoors (a room's PA is still a stack either side of the decks), the delay from far
 stacks on the map, and the coverage map in the 3D view.
 
 ## 6. Build the circuit (tscircuit to your hands)
