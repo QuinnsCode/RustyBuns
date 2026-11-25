@@ -71,9 +71,10 @@ async function rows(tab: Awaited<ReturnType<typeof openTab>>, w: number) {
 
   // in the room the row of rooms folds to the one you're in; pressing it opens the row again
   const shown = () => page<number>(`[...document.getElementById("qs-way").children].filter((e) => e.getClientRects().length).length`);
-  expect(await shown()).toBe(6);
+  // the place you are in and a door to each of the six others (Paths first, #5880)
+  expect(await shown()).toBe(7);
   await page(`window.qjam.start()`);
   expect(await shown()).toBe(1);
   await page(`document.querySelector("#qs-way [aria-current]").click()`);
-  expect(await shown()).toBe(6);
+  expect(await shown()).toBe(7);
 }
