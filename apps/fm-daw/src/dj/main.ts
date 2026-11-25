@@ -8,6 +8,7 @@ import type { Ch, ChannelKnob, Curve, FilterState, XAssign } from "./mixer.ts";
 import type { JogMode, JogPart } from "./player.ts";
 import type { Press } from "./booth.ts";
 import type { Prefs } from "./prefs.ts";
+import { detectGrid } from "./analyze.ts";
 
 /** On a narrow screen the decks are a carousel: which piece is in view (0 deck A, 1 the mixer, 2 deck B), or null when all three fit. */
 function carousel(): number | null {
@@ -48,6 +49,14 @@ const harness = {
   play: (side: Side) => panel?.decks.decks[side].toggle(),
   sync: (side: Side) => panel?.decks.sync(side) ?? false,
   cross: (x: number) => panel?.decks.cross(x),
+  /** REC on, or off: the take (not downloaded) read back, its track list and the tempo heard in each window (seconds into it). */
+  record: async (on: boolean, windows: [number, number][] = []) => {
+    const take = await panel?.record(on, false);
+    if (!take) return null;
+    const ctx = new OfflineAudioContext(1, 1, 48_000), buf = await ctx.decodeAudioData(await take.audio.arrayBuffer()), mono = buf.getChannelData(0);
+    const bpm = windows.map(([a, b]) => detectGrid(mono.slice(Math.round(a * buf.sampleRate), Math.round(b * buf.sampleRate)), buf.sampleRate)?.bpm ?? null);
+    return { type: take.type, bytes: take.audio.size, seconds: take.seconds, decoded: buf.duration, cues: take.cues, list: take.list, name: take.name, bpm };
+  },
   loop: (side: Side, beats: number | null) => panel?.decks.decks[side].setLoop(beats),
   hot: (side: Side, i: number) => panel?.decks.decks[side].hotCue(i, true),
   pitch: (side: Side, p: number) => panel?.decks.decks[side].setPitch(p),

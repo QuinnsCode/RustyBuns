@@ -11,7 +11,7 @@ of these walks shorter or less broken. When a step changes, change its line here
 | [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | the jam room's `?` card | No: help for keys only, no guided setup |
 | [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | `/` | Yes, one loop at a time (no song mode yet) |
 | [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | `/jam.html` | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Into the room, yes; out to the internet, no |
+| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | `/decks.html` | Into the room and to a file, yes; a live link out, no |
 | [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | `/rooms.html` | Partly: room acoustics and a rig pick, no coverage map or gear list |
 | [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | `/amp.html`, the gear room | Partly: play, swap parts, download a kit; no board editor in the app, nothing built yet |
 
@@ -82,11 +82,16 @@ stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
 2. Practise: sync, cue, hot cues, loops, scratch, master tempo, MIDI controller learn.
 3. Take it to a room: in a jam room, click the DJ table; your master goes to the room's PA over WebRTC
    (`src/studio/pa-line.ts`), and every listener hears it from the room's speakers, from where they stand (`pa-room.ts`).
-4. Stream it out: send the set to a stream, or record it to a file to post later.
+4. Take it out: record it to a file to post later, or send a listen link to people outside the sesh.
 
-**Works today:** steps 1 to 3.
+**Works today:** steps 1 to 3, and the recording in step 4: REC in the decks' header (on `/decks.html` and at the DJ
+table) records the master, what the room's PA gets, to a file on your computer (`src/dj/record.ts`: Opus in WebM, or
+AAC in Safari), with a track list beside it naming each track and the time it came in (its deck playing with the fader
+and its crossfader side open). Nothing is uploaded. A YouTube deck plays in YouTube's own player, so it is never in the
+recording; the button says so.
 
-**Missing:** step 4 ([#5862](https://github.com/QuinnsCode/RustyBuns/issues/5862)). There is no recording of a set and no way to send it out of the sesh. There is no saved
+**Missing:** the listen link: people outside the sesh hearing the set live, no sign-in and no seat
+([#5862](https://github.com/QuinnsCode/RustyBuns/issues/5862) priced it; it waits on the owner's yes). There is no saved
 library either (tracks load each visit), and MIDI learn is checked only with fed messages, not a real controller.
 
 ## 5. Plan a sound system (CAD for speakers)
