@@ -65,6 +65,7 @@ export const APPS: Record<string, App> = {
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
   "cron-swanson":      { test: "bun test test", drop: false },
+  "hemyviz":           { test: "bun test test", drop: false },
   "test-swarm":        { test: "bun test test", drop: false },
   "codesplitter":     { test: "bun test --parallel test", boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
