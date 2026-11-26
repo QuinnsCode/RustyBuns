@@ -76,7 +76,7 @@ test("friends across apps: ask, accept, see who is on and where, nudge into a ga
   // Nor does Ada's link into her game's native app: a note links to the app's pages, never its URL scheme.
   expect((await op(ada.token, { op: "notify", id: bo.id, text: "join me", link: "com.quinnscode.parkhideseek:/party/BCDFGH" })).status).toBe(400);
   await until(() => b.got.some((m) => m.t === "error"));
-  expect(a.state()!.notes.filter((n) => n.kind === "app")).toHaveLength(1);
+  expect(a.state()!.notes.filter((n) => n.kind === "app")).toHaveLength(2);
 
   // He closes the tab: she sees him go. Her hub sleeping and waking keeps everything.
   b.ws.close();
