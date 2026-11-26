@@ -568,7 +568,7 @@ function corners(def: StudioDef, group: THREE.Group) {
     for (let y = 0; y < 64; y++) { const t = 1 - y / 63; g.fillStyle = `rgba(0,0,0,${(t * t * t).toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
   }, false);
   fade.wrapS = fade.wrapT = THREE.ClampToEdgeWrapping;
-  const { h } = def.size, mat = shade(fade, 0.55), top = shade(fade, 0.22), deep = shade(fade, 0.72); // the bounce off the floor lights the tops: only a hint of shade there
+  const { h } = def.size, mat = shade(fade, 0.62), top = shade(fade, 0.26), deep = shade(fade, 0.86); // the bounce off the floor lights the tops: only a hint of shade there
   for (const side of ["front", "back", "left", "right"] as const) {
     const s = sideOf(def, side), wall = new THREE.Group();
     wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
@@ -580,8 +580,12 @@ function corners(def: StudioDef, group: THREE.Group) {
     band(s.len, 0.7, 0, 0.35, 0); // the foot
     band(s.len, 0.6, 0, h - 0.3, Math.PI, top); // the top, dark side up
     // the corners, dark side toward each end: the plane turned on its side, so its "wide" runs up the wall
-    band(h, 0.9, -s.len / 2 + 0.51, h / 2, -Math.PI / 2, deep); // deeper and wider than the foot: two walls shade each other
-    band(h, 0.9, s.len / 2 - 0.51, h / 2, Math.PI / 2, deep);
+    band(h, 1.3, -s.len / 2 + 0.71, h / 2, -Math.PI / 2, deep); // deeper and wider than the foot: two walls shade each other
+    band(h, 1.3, s.len / 2 - 0.71, h / 2, Math.PI / 2, deep);
+    // round 12: the light falls away along the whole wall toward its ends, far from the cans in the middle of the
+    // room, and most at its foot and top, so a wall reads lit in the middle and dim at the edges, not one flat grey
+    const ends = new THREE.Mesh(new THREE.PlaneGeometry(s.len, h), shade(falloff(), 0.5));
+    ends.position.set(0, h / 2, 0.0615); ends.name = "corner"; wall.add(ends);
   }
   // the fill between the pools: light that has bounced round the room reaches every wall from all over it, soft
   // and shadowless, brightest at head height and fading to the floor and the ceiling. Baked as a faint wash of the
@@ -609,6 +613,63 @@ function corners(def: StudioDef, group: THREE.Group) {
   const { w, d } = def.size, ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shade(ceilingFade, 0.8));
   ceiling.rotation.x = Math.PI / 2; ceiling.position.y = h - 0.004; ceiling.name = "corner";
   group.add(ceiling);
+}
+
+let ends: THREE.CanvasTexture | null = null;
+/** A whole wall's falloff (corners()): clear in its lit middle, darkening toward both ends and a little to its foot and top. */
+function falloff() {
+  ends ??= canvasTex(64, (g) => {
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const u = Math.abs(x / 63 - 0.5) * 2, v = Math.abs(y / 63 - 0.52) * 2;
+      const a = Math.min(1, u ** 2.4 * 0.85 + v ** 3 * 0.35);
+      g.fillStyle = `rgba(0,0,0,${a.toFixed(3)})`; g.fillRect(x, y, 1, 1);
+    }
+  }, false);
+  ends.wrapS = ends.wrapT = THREE.ClampToEdgeWrapping;
+  return ends;
+}
+
+let glowFrom: THREE.CanvasTexture | null = null;
+/** What a warm wall gives back (round 12): the light a brick or wood wall throws off is its own colour. */
+const BOUNCE: Partial<Record<string, number>> = { brick: 0xc0603c, wood: 0xb57a42 };
+/**
+ * A brick or wood wall colours what is near it: the floor in front of it and the ends of the walls beside it take
+ * a faint warm wash of its colour, strongest at the wall and gone a metre and a half out. Baked as additive planes,
+ * not a light per wall (an area light costs a twelfth of a frame).
+ */
+function warmth(def: StudioDef, group: THREE.Group) {
+  // one gradient, bright at its bottom edge, eased out
+  glowFrom ??= canvasTex(64, (g) => {
+    for (let y = 0; y < 64; y++) { const t = 1 - y / 63; g.fillStyle = `rgba(255,255,255,${(t * t).toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
+  }, false);
+  glowFrom.wrapS = glowFrom.wrapT = THREE.ClampToEdgeWrapping;
+  const { h } = def.size, reach = 1.6;
+  const order = ["back", "right", "front", "left"] as const; // round the room, so each wall's neighbours are either side of it
+  for (const side of order) {
+    const tone = BOUNCE[def.materials?.walls[side] ?? ""];
+    if (tone === undefined) continue;
+    const mat = (k: number) => new THREE.MeshBasicMaterial({ color: new THREE.Color(tone).multiplyScalar(k), map: glowFrom, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
+    const s = sideOf(def, side), wall = new THREE.Group();
+    wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn; group.add(wall);
+    // the floor in front of it: the plane's bright edge at the wall's foot
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(s.len, reach), mat(0.3));
+    floor.rotation.x = -Math.PI / 2; floor.rotation.z = Math.PI; floor.position.set(0, 0.006, reach / 2); floor.name = "warmth";
+    wall.add(floor);
+    // the ceiling over it, fainter: only the bounce reaches up there
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(s.len, reach), mat(0.1));
+    ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, h - 0.006, reach / 2); ceiling.name = "warmth";
+    wall.add(ceiling);
+    // the ends of the two walls beside it, bright at the shared corner
+    const i = order.indexOf(side);
+    for (const [next, end] of [[order[(i + 1) % 4], -1], [order[(i + 3) % 4], 1]] as const) {
+      const n = sideOf(def, next), side2 = new THREE.Group();
+      side2.position.set(n.cx, 0, n.cz); side2.rotation.y = n.turn; group.add(side2);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(h, reach), mat(0.24));
+      m.rotation.z = end > 0 ? Math.PI / 2 : -Math.PI / 2; // the bright edge to the end that meets the warm wall
+      m.position.set(end * (n.len / 2 - reach / 2), h / 2, 0.063); m.name = "warmth";
+      side2.add(m);
+    }
+  }
 }
 
 let roller: THREE.CanvasTexture | null = null;
@@ -1210,6 +1271,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   scene.add(group);
   const taken = hang(def, group);
   corners(def, group);
+  warmth(def, group);
   walls(def, group);
   windows(def, group);
   lived(def, group);
@@ -1224,7 +1286,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const per = (w * d) / spots.length, power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
   // no two cans alike, as in a real room: lamps of different ages, a touch warmer or brighter, the same every visit
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
-  const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
+  const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc), aim = mulberry32(6032);
   // low lights only the LOW_CANS nearest the middle, a little brighter: every lit material's shader carries every light,
   // and software GL took ~37 s to compile a room's 16 (#5919); the other cans still glow
   const lit = new Set(high ? spots : [...spots].sort((a, b) => Math.hypot(...a) - Math.hypot(...b)).slice(0, LOW_CANS));
@@ -1235,9 +1297,11 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     const r = new THREE.Mesh(rim, trim); r.rotation.x = Math.PI / 2; r.position.set(x, h - 0.02, z);
     group.add(c, r);
     if (!lit.has(spot)) { rnd(); rnd(); continue; }
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength, 0, Math.PI * (0.29 + rnd() * 0.05), 0.78 + rnd() * 0.15, 2); // a real can throws a scallop whose edge melts into the wall, each its own
+    // a real can throws a scallop whose edge melts into the wall, each its own: wide and faint (round 12), and no
+    // two aimed quite plumb (a can's gimbal is set by hand), so the scallops land at different heights and leans
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, tint), strength * 0.85, 0, Math.PI * (0.33 + rnd() * 0.06), 0.88 + rnd() * 0.12, 2);
     l.position.set(x, h - 0.03, z);
-    l.target.position.set(x, 0, z);
+    l.target.position.set(x + (aim() - 0.5) * 1.6, 0, z + (aim() - 0.5) * 1.6);
     group.add(l, l.target);
     lights.push(l);
   }
