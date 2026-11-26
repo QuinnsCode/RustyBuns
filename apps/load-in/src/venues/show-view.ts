@@ -12,7 +12,7 @@ import { doors } from "../clock.ts";
 import { REACH, type Answer, type World } from "../sim.ts";
 import { aim } from "./dive-bar.ts";
 import { showSound } from "../audio/stems.ts";
-import { AMP_KNOBS, type AmpKnob } from "../audio/amp.ts";
+import { AMP_KNOBS, SHOW_HEAD, type AmpKnob } from "../audio/amp.ts";
 import {
   AUDIENCE, SET_LIST, BAND, CHANNELS, CUE_TEXT, type Channel, type Desk, type Move, type Show, atAmp, atDesk, fixOnStage, mix, newDesk, newShow, notch, nudge,
   ring, setAmp, showState, songAt, startShow, stepShow,
@@ -121,7 +121,7 @@ export function showView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     // At the amp before doors, its panel in place of the channel strip.
     if (s.atAmp && !show.on && !show.done) {
       lines.splice(-2, 2,
-        `<b>Guitar amp</b> ${AMP_KNOBS.map((k) => (k === knob ? `<b>${k} ${show.amp[k]}</b>` : `${k} ${show.amp[k]}`)).join(", ")}`,
+        `<b>Guitar amp: ${SHOW_HEAD.name}</b> ${AMP_KNOBS.map((k) => (k === knob ? `<b>${k} ${show.amp[k]}</b>` : `${k} ${show.amp[k]}`)).join(", ")}`,
         `<small>${sound.ready < SET_LIST.length ? `baking the guitar through it, ${sound.ready} of ${SET_LIST.length} songs` : "the guitar is baked through it"}</small>`);
     }
     const html = lines.map((l) => `<div>${l}</div>`).join("");

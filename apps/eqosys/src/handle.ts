@@ -7,7 +7,7 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { GENRES, HOME, ourApp, playOf, returnTo, type Genre, type QApp } from "./apps.ts";
+import { GENRES, HOME, ourApp, playOf, returnTo, studioGame, type Genre, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
@@ -213,6 +213,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const t = bearer ? await tokenOf(req, conf, bearer) : null, me = bearer ? null : await meOf(req, conf);
     const who = t ? t.who : me ? atHome(me) : null;
     if (!who) return json({ error: "sign in at /login first, or send an app's token as a bearer" }, 401, head);
+    // Everything eqosys keeps is theirs to fetch, not a studio's game's: it is somebody else's code holding one of their tokens.
+    if (studioGame(who.app)) return json({ error: "download your data on eqosys, not through a studio's game" }, 403, head);
     if (pathname === "/api/privacy/export")
       return new Response(JSON.stringify(await exportFor({ conf, me: { id: who.id, name: who.name } }), null, 2), { headers: { ...head, ...dossierHeaders("eqosys") } });
     const vault = await vaultFor(conf, who.id);
@@ -226,6 +228,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
+    if (studioGame(t.who.app)) return json({ error: "delete your account on eqosys (/delete), not through a studio's game" }, 403, head);
     return json({ ok: await deleteAccount(conf, t.who.id, issuer(req, conf)) }, 200, head);
   }
 
