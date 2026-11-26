@@ -30,7 +30,7 @@ const SR = 48000;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Runs 50 ms of a hot 220 Hz note through `net`: why it won't play, or its peak volts when it does. */
-function tryPlay(net: Netlist): string | number {
+export function tryPlay(net: Netlist): string | number {
   let rig: Rig;
   try { rig = new Rig({ inputVolts: TEST_VOLTS, links: [{ net }], power: 0, cab: null }, SR, 2); }
   catch (e) { return errText(e); }
