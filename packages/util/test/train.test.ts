@@ -30,6 +30,15 @@ test("an updated branch merges once its required check passes on the new head, n
   expect(fake.mainGreen()).toBe(true);
 });
 
+test("a fork's PR is never merged by the train", async () => {
+  const fake = fakeGitHub({ defines: [], uses: [] });
+  fake.open(1, { add: ["A"] });
+  const train = new Train({ gh: { ...fake.gh, pr: async (n) => ({ ...(await fake.gh.pr(n)), fork: true }) } });
+  train.join(1);
+  await train.step();
+  expect([train.spot(1)?.state, fake.prs.get(1)!.state]).toEqual(["pulled", "OPEN"]);
+});
+
 test("a check that fails on main too holds the line and tells one worker, then the line moves once main is fixed", async () => {
   const fake = fakeGitHub({ defines: [], uses: ["GONE"] });
   fake.open(1, { add: ["A"] });

@@ -140,6 +140,8 @@ test("files: a member posts one and another downloads it; the message, the chann
   if (!("id" in posted)) throw new Error(posted.error);
   await until(() => a.said.some((m) => m.file));
   const m = a.said.find((x) => x.file)!;
+  // The file's name is its own, never the sender's.
+  expect(m.from.name).toBe("Bo5");
   expect(m.file).toEqual({ id: posted.id, name: "mix notes.txt", size: notes.size, type: "text/plain" });
   expect(await (await a.c.fetchFile(made.id, posted.id))!.text()).toBe("take two is the keeper");
   // Someone who isn't in the space gets nothing, and a file past the cap or in a channel that isn't there isn't taken.
@@ -173,6 +175,45 @@ test("files: a member posts one and another downloads it; the message, the chann
   expect(await (await call("/api/account/delete", { json: {}, bearer: bo.token, origin: QCRM })).res.json()).toEqual({ ok: true });
   expect(await keys()).toEqual([]);
   a.c.close();
+});
+
+test("a channel called constructor opens, a muted member sets no status, files sent together are counted, and what they wrote goes with the account after they leave", async () => {
+  const ada = await signUp("Ada6", "park-hide-seek", PARK), bo = await signUp("Bo6", "park-hide-seek", PARK);
+  const a = member(ada.token), b = member(bo.token);
+  const made = (await a.c.make("Odd names"))!;
+  await b.c.join(made.invite);
+  a.open(made.id); b.open(made.id);
+  await until(() => a.online().join() === "Ada6,Bo6");
+  a.c.channel("constructor");
+  const again = member(ada.token);
+  await until(() => a.channels().includes("constructor"));
+  again.open(made.id);
+  await until(() => again.channels().join() === "general,constructor");
+  again.c.close();
+
+  const sent = await Promise.all(Array.from({ length: 15 }, (_, i) => b.c.postFile(made.id, "general", new Blob(["x"]), `take${i}.txt`)));
+  expect(sent.filter((r) => "id" in r)).toHaveLength(10);
+
+  a.c.say("general", "still here");
+  b.c.say("general", "kept after I go");
+  await until(() => a.heard.general?.includes("Bo6: kept after I go"));
+  a.c.mute(bo.id);
+  await Bun.sleep(50);
+  b.c.status("still here");
+  await until(() => b.refused.includes("you're muted here"));
+
+  b.c.leave();
+  await until(() => b.gone() !== "");
+  const mine = await (await call("/api/privacy/export", { bearer: bo.token, origin: PARK })).res.text();
+  expect(mine).toContain("kept after I go");
+  expect(await (await call("/api/account/delete", { json: {}, bearer: bo.token, origin: PARK })).res.json()).toEqual({ ok: true });
+  const later = member(ada.token);
+  later.open(made.id);
+  later.c.history("general");
+  await until(() => later.history().some((x) => x.text === "still here"));
+  expect(later.history().map((x) => x.text)).not.toContain("kept after I go");
+  expect(await keys()).toEqual([]);
+  later.c.close(); a.c.close();
 });
 
 test("deleting the owner's account deletes their space for everyone", async () => {

@@ -558,3 +558,161 @@ Source only, overnight while the owner was away. Nothing was deployed.
 ### Still open
 
 - The code-mode call cap on the edge (`limits.subRequests`) waits on step 5 of MANUAL RUN QuinnsCode/rustybuns-manual#76. If the edge doesn't count a binding's RPC call as a subrequest, count per run in a Durable Object. MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
+
+## Round 18a, November 26: Rusty Buns core
+
+The security-audit skill's quick profile on `packages/`, the scripts CI and push run, `.github/workflows/`, `.claude/hooks/guard.ts` and Agent Office, source first: five hunters, two verifiers and a coverage critic (eight agents, about 1.84M tokens), no deployed site touched. Run output: `~/security-audit-skill/RustyBuns/run-18a/` (a partial run: no coverage ledger or schema-checked findings). Rounds 18b and 18c took eqosys and Qollab.
+
+### Fixed in this round
+
+Each with a test that fails without the fix.
+
+**The desktop's code-mode wall** (`worker-loader.ts`; desktop and box hosts, not Cloudflare):
+
+- **Critical.** The wall's own check transpiled the program with Bun's import macros on, so checking a program could run code in the host. Macros are off now (`macro: false`), imports are scanned before anything is transpiled, and an isolated Worker runs the checked output.
+- **High.** The name filter let spreads and `ShadowRealm` through, and a CommonJS module reached `require`. All three are refused, and every isolated module loads as an ES module.
+
+**The guard hook** (high to low): gh's `{owner}/{repo}` placeholders, variables and `$(...)` in a path; a header before the `gh api` path; the `Monitor` tool, which it didn't see; continued lines and quoted pipes; `then`, `do`, `timeout`, `sh -c`; a tag pushed by name; approving a deployment; `--delete-branch`, `branch -df`, deleting a ref; repointing a remote or the shared `.git/config` from the shell; `cd` into a secret folder; a file named inside a flag; `.ENV`. It now reads each command twice (the rough split, and by whole words) and refuses on either.
+
+**The CLI:**
+
+- A converted Pages app skipped a `_middleware` under a `[param]` folder, one exporting only method handlers, and a re-exported one, so its auth never ran (high).
+- `--sandbox` left the shared deploy state in `.git` and wrangler's macOS login readable; a host got the deploy's `RB_` secrets.
+- `destroy --fresh` skipped the ADOPT question for a stage whose state holds adopted resources.
+- `plan` ran `bun check` from the shared temp folder, where anyone's `check` script would run.
+
+**The desktop host:** codeSplitter's consent page no longer opens without the launch cookie (anyone reaching the port could mint a write token; high); open routes drop a caller's `x-rb-*`; a public prefix can't be climbed out of with `%2F`; the cms and screens editors answer on localhost only.
+
+**CI and scripts:** `rings.ts rollback` takes a build only from our build workflows (any run, a fork's too, could upload one by that name); ring-red reads only its own markers and PRs; deps-doctor edits only this repo's PR; `climbs` and `phil` read only the team's issues and comments; a test's name can't forge a `ci-blocker` record.
+
+**Agent Office:**
+
+- Sending any worker home could delete a multi-repository worker's live folder, uncommitted work included (high, no attacker needed).
+- The spread watch counted fork runs and put their test names, control characters and all, into prompts (high).
+- The added `/__rb/` routes took writes from another local port's page; an agent in the box could allow its own outbound card; the merge train merged heads a fork pushed after the click, and merged for a signed-in person as the office; `/__rb/outbound` read any size of body before sign-in.
+
+### Still open
+
+- #6243: the desktop's local Postgres has a fixed password on loopback (low).
+- #6244: what wasn't confirmed or audited (the guard failing open, other file-reading tools, the Keychain under `--sandbox`, and the coverage critic's eight units).
+- QuinnsCode/rustybuns-manual#158: the office update and the releases that put these fixes in use.
+
+### Known limits, kept on purpose
+
+- The code-mode wall is still a name filter over source; a subprocess under an OS sandbox would be a real wall (#6244).
+- The guard is a speed bump: a script an agent writes can still do what it refuses. Its rough split still trips on some harmless text.
+- The merge train takes no fork PR at all now: read it and merge it by hand. A same-repository push after the click is still adopted.
+- The box's card is told apart by where the answer comes from, so it rests on the box holding no capability to take another address.
+
+## Round 18b, November 26: eqosys
+
+The `security-audit` skill's quick profile on `apps/eqosys`: sign-in and Better Auth, app tokens and their cuts, members, spaces,
+invites, the hub, notes, the Library, account delete, rate limits and CSP, at 468acd8c4. Qollab's party and voice rooms are the next
+round's. Four hunters read the source and one critic looked for what they missed (5 agents, about 1.14 million tokens). There were no
+separate verifier agents: each fix was checked by hand and by a test. Overnight while the owner was away; nothing was deployed. The
+run's notes are outside the repo, in `~/security-audit-skill/RustyBuns/run-18b/`.
+
+### Fixed in this round
+
+Company sign-in and studios:
+
+- **A domain proof could land on another domain** (high). `proveDomain` wrote `proved_at` whatever the domain was by then, so changing it while the DNS check waited marked somebody else's domain proved, and company sign-in then linked accounts on it. The write names the domain it read (`sso.test.ts`).
+- **An unproved studio made "verified" accounts at any company's addresses** (high). Company sign-in now starts only once the domain is proved (`sso.test.ts`).
+- **A first company link kept what someone else had set up** (high). An account whose email was never proved kept its password, sessions and refresh tokens when the company's sign-in was linked to it. They go now, unless that browser is signed in to the account already (`sso.test.ts`).
+- **A link outlived a domain change** (medium). A company link signs in only an email on the domain the studio holds now (`sso.test.ts`).
+- **Company-only and a lapsed seat left apps signed in** (medium). Both end refresh tokens and signed tokens, not only sessions (`sso.test.ts`).
+- **A studio admin could demote an owner, then remove them** (medium). An owner's role is an owner's to change, and the last owner keeps it (`studios.test.ts`).
+
+The Library:
+
+- **A studio's game could be named for a token audience** (high): `qlave-admin`, `erase`, `eqosys`. Those, and our games not yet in `APPS`, can't be taken (`library.test.ts`).
+- **A listed erase URL got every deleting person's email and could stop deletions** (high). A studio's game is asked only for people who opened it, after our apps, and its answer doesn't block (`library.test.ts`).
+- **A studio's game held a person's whole account** (medium). Its token no longer reads or makes studios (other people's emails), downloads the data, deletes the account, sees the friend link or decides who is a friend (`library.test.ts`, `hub.test.ts`).
+- **A listing was approved by id, not by what was read** (medium). Listing takes the queue's `at` (`library.test.ts`), and a save lands only on the row it read, so it can't undo a pull (no test).
+- **`GH-12` still linked an issue from a report** (low) (`report.test.ts`).
+
+Spaces, the hub and the board:
+
+- **A file's name replaced the sender's** (medium), so a member could post as someone else (`space.test.ts`).
+- **Files sent together passed the per-minute and 1 GB caps** (medium). Both are taken before the upload (`space.test.ts`), and a channel, mute or seat that changed during it now refuses the file (no test).
+- **Ways back into a space** (medium). Leaving the studio now retires the invite and drops private-channel grants (so does a kick); whoever made a studio's space can be kicked once they are only a guest; a company sign-in seat keeps no guest row behind it (`studio-space.test.ts`).
+- **A channel called `constructor` locked everyone out of its space** (medium) (`space.test.ts`).
+- **What someone wrote in a space they had left survived their deletion and was missing from their download** (medium). `space_past` (a migration) remembers those spaces. Spaces left before it are not known (`space.test.ts`).
+- **A long display name broke friends' hubs and a board's whole feed** (medium). Names are cut at 100, and clipped where read (`board.test.ts`).
+- **A tab still open could write behind an account deletion** (low). Sessions and tokens end before the sweep, and the hub is erased again after it (`hub.test.ts`).
+- **A note's link was kept as typed, not as checked** (low): one form of it opened a page on eqosys itself (`hub.test.ts`).
+- **A muted member could still set a status line** (low) (`space.test.ts`).
+- **Posts sent together passed the hourly cap** (low) (`board.test.ts`).
+- **A web client's refresh token outlived a sign-out on eqosys** (low). One whose code went to an https address is a page's (`openid.test.ts`).
+
+### Still open
+
+- A studio seats any email with no consent: #6232.
+- A native-scheme sign-in goes on with no Continue page: #6233.
+- A studio's game has full space powers with the player's token (owner's call): #6234.
+- A refresh racing sign-out or deletion: #6235.
+- No limit on `eq_execute` runs: #6236. Unbounded visit rows: #6237.
+- A deleted account's name in space audit logs and its rows in other hubs: #6238.
+- Sockets already open after company-only, a lapse or a pull: #6239.
+- Outside the scope, needs validation: Cron Swanson matches its owner by email: #6240.
+- The save quota race went to round 18c.
+
+### Known limits
+
+- `/api/account/delete` and the data download stay open to our own apps' tokens (round 17's call); only studios' games lost them.
+- An admin of a studio's space can still read its members' emails through our own apps' tokens (`eq_studios`).
+- DPoP proofs are not remembered, so one can be replayed within its short life. A studio's game can be renamed without a new review (on purpose).
+- Company sign-in set up before this round and never proved stops signing people in until it is proved.
+
+## Round 18c, November 26: Qollab
+
+The vendored skill's quick profile, source only, over `apps/qollab`, eqosys's multiplayer layer (hubs, parties, spaces,
+saves, voice), the panels games mount, and the game worlds on `util/room` and `util/limits`. Commit 468acd8c4. Five
+hunters and two verifiers (about 1.4M tokens); no final coverage critic, so partial coverage, and the verifiers took the
+candidates in two batches rather than one each. Qollab Events (#6077) had not merged and was not read. The run's brief and
+candidates are outside the repo (`~/security-audit-skill/RustyBuns/run-18c/`). Round 18b (eqosys) ran beside this one and
+took the files both rounds reached: `listings.ts`, `qollab/space.ts`, `qollab/hub.ts`, `members.ts`. What the hunt found
+there (a listing taking a service token's audience, a file upload renaming its sender, parallel uploads past the quota,
+ways back into a space after removal, a channel named `constructor`, deletion missing spaces the person had left) is
+that round's to report.
+
+### Fixed in this round
+
+Each with a test.
+
+- **A blocked person let in hidden still reached the host** (medium, parties). The block filtered lists and chat only: they
+  shared the voice room, could mute or report the host, and could stall the start. Blocked means no voice ticket and a
+  voice `kick`; mute and report from them go nowhere; the start does not wait for them (`party-audit.test.ts`).
+- **Narrowing who may talk did not end voice** (low, parties). Chat turned "host" or off left everyone talking. The room
+  ends and whoever still may asks again (`party-audit.test.ts`).
+- **A muted member could unmute themself** under "anyone mutes" (low), and the mute list took any made-up id.
+- **A party past its lifetime kept working for open sockets** (low). Expiry was checked at the door only. A message after
+  it closes everyone, and a reused code closes any socket left on it (`party-audit.test.ts`).
+- **Saves sent at once passed the slot and byte caps** (low). The statement that writes now checks them (`saves.test.ts`).
+- **Copying someone's display name took their buttons away** (low). The party and space panels found "you" by name, so a
+  namesake of the host or owner had no mute or kick, and could be taken for you. They use the account id from the page's
+  own token (`spaces-panel.test.ts`).
+- **A guest list took an id like `toString`** (low, `util/guests`), and the stored list then failed its own guard, losing the
+  block list (`guests.test.ts`).
+- **One Load In crew member could blank the room for the rest** (low). Made-up cable and switch keys pushed the view past
+  what pages read. No new key past the view's caps (`crew.test.ts`).
+- **FM DAW: new chat keys piled up raised hands** past what pages read (low). A new key lowers the old one's hand
+  (`guests.test.ts`).
+- **Park Hide & Seek's vote and report limits did not count repeats** (low). The gate lets a key it has seen through free,
+  and the key was the park or the reported player (`requests.test.ts`).
+- **Git Recon parsed anyone's 1 MB frames** (low). Only whoever may pick the battle gets a big frame read (`edge.test.ts`).
+- **Hippo Tycoon wrote storage on every repeated `hello`** (low). It writes when the room's saved state changes
+  (`room.test.ts`).
+
+### Still open
+
+- #6227: any app's token, a studio's listed game included, opens all of a person's spaces. The owner's call.
+- #6228: a modified client that closes its party socket stays in the party's voice room, off the member list.
+- #6229: leads no verifier settled (Qlave relaying a peer's `server-mute`, and smaller ones).
+
+### Known limits
+
+- `RoomMintGate` counts per Worker isolate: a speed bump, not a quota.
+- A Git Recon room online with no owner yet reads a big frame from anyone in it, since anyone may still pick.
+- A voice ticket lasts a minute, so an order to end a room relies on Qlave refusing tickets for it; Qlave is its own repo
+  and was not read.

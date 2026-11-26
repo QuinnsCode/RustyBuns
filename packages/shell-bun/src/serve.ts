@@ -295,9 +295,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     const host = req.headers.get("host");
     return origin === `http://${host}` || origin === `https://${host}`;
   };
-  const isPublic = (req: Request, url: URL) =>
-    (req.method === "GET" || req.method === "HEAD") &&
-    (opts.public ?? []).some((p) => p.endsWith("*") ? url.pathname.startsWith(p.slice(0, -1)) : url.pathname === p);
+  const isPublic = (req: Request, url: URL) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return false;
+    // matched on the path as the files are looked up, decoded: `..%2f` under a public prefix must not climb out of it
+    let path: string;
+    try { path = decodeURIComponent(url.pathname); } catch { return false; }
+    if (path.split("/").includes("..") || path.includes("\\")) return false;
+    return (opts.public ?? []).some((p) => p.endsWith("*") ? path.startsWith(p.slice(0, -1)) : path === p);
+  };
   const gate = (req: Request, url: URL): Response | Principal => {
     if (!opts.token) return "host";
     const cookie = req.headers.get("cookie") ?? "";
@@ -417,10 +422,17 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     deserializeAttachment: () => ws.data.attachment,
   });
 
+  const unvouched = (raw: Request): Headers => {
+    const h = new Headers(raw.headers);
+    for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
+    return h;
+  };
+
   const respond = async (raw: Request, srv: Server<WsData>): Promise<Response> => {
     const url = new URL(raw.url);
+    // an open route carries its own auth; the caller's x-rb-* (the principal this host vouches) never reaches it
     for (const [prefix, route] of Object.entries(opts.open ?? {}))
-      if (url.pathname.startsWith(prefix)) return withHeaders(await route(raw));
+      if (url.pathname.startsWith(prefix)) return withHeaders(await route(new Request(raw, { headers: unvouched(raw) })));
     const who = gate(raw, url);
     if (who instanceof Response) return who;
     // Pairing a phone: the host's own page (a POST, so the browser sends Origin) asks for a
@@ -433,8 +445,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     if (keeps && (url.pathname === LOGIN_PATH || url.pathname === LOGIN_PATH + "/proof")) return keptLogin(raw, url, who, keeps);
     if (watching && url.pathname === RELOAD_PATH) return Response.json({ boot }, { headers: { "cache-control": "no-store" } });
     // Vouch the principal to the handler; never trust the client's copy.
-    const h = new Headers(raw.headers);
-    for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
+    const h = unvouched(raw);
     h.set("x-rb-principal", who);
     const req = new Request(raw, { headers: h });
 

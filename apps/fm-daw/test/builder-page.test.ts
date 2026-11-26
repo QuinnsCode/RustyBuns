@@ -45,3 +45,37 @@ test.skipIf(!hasChrome)("scope the fuzz's clipper net, swap its diodes, see the 
     expect((await state()).files).toEqual(["fuzz-yours.tsx", "fuzz-yours.circuit.json"]);
   } finally { await tab.close(); }
 });
+
+// #6118: an effect pedal on the bench. Q Phase's LFO is off its board, on GATE: the scope there sweeps the full
+// 0 to 4.5 V at a fast Rate and only part of the way at the slowest. A part swapped here is on Q Amp's pedal too, in
+// a Q Amp tab already open, and back.
+test.skipIf(!hasChrome)("Q Phase: the scope on GATE moves with the Rate knob, and a swap here is on Q Amp's phaser", async () => {
+  const builder = await openTab(chrome.cdp, { w: 1280, h: 860 }), amp = await openTab(chrome.cdp, { w: 1280, h: 860 });
+  try {
+    await load(chrome.cdp, builder, `${vite.url}/builder.html`, 0);
+    const page = <T>(expr: string) => builder.eval<T>(`(async () => (${expr}))()`);
+    const state = async () => { await page("qbuilder.idle()"); return page<State>("qbuilder.state()"); };
+    await waitFor(builder, "Q Builder", "!!window.qbuilder && !!qbuilder.state().probe", 60_000);
+    await page("(localStorage.clear(), qbuilder.pick('phase'), qbuilder.swap(null, null))");
+    expect(await page<boolean>("qbuilder.probe('GATE')")).toBe(true);
+
+    await page("qbuilder.drive(10)");
+    const fast = await state();
+    expect(fast.why).toBe("");
+    expect(fast.swing!.hi).toBeGreaterThan(4.4);
+    expect(fast.swing!.lo).toBeLessThan(0.1);
+    await page("qbuilder.drive(0)");
+    expect((await state()).swing!.hi).toBeLessThan(3); // 0.05 Hz: under half a sweep in the riff's 4.7 s
+
+    await load(chrome.cdp, amp, `${vite.url}/amp.html`, 0);
+    await waitFor(amp, "Q Amp", "!!window.qamp", 60_000);
+    await amp.eval("qamp.pedal('phase')");
+    expect(await page<string>("qbuilder.swap('R1', '2.2')")).toBe("");
+    await waitFor(amp, "the swap on Q Amp", "qamp.state().swaps.R1 === '2.2'", 10_000);
+    expect(await amp.eval<number>("qamp.state().drive")).toBe(0);
+
+    expect(await amp.eval<string[]>("qamp.swap('R1', null)")).toEqual([]);
+    await waitFor(builder, "the stock part back on Q Builder", "!('R1' in qbuilder.state().swaps)", 10_000);
+    expect((await state()).retest).toBeNull();
+  } finally { await builder.close(); await amp.close(); }
+});

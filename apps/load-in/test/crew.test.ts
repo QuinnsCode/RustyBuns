@@ -14,7 +14,7 @@ import { newWorld, pickUp, putDown, snapshot, walkTo, type Level, type World } f
 import { UNTANGLE_S, bowl, cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, takeRoll, walkWith, type Cables } from "../src/cables/cables.ts";
 import { setDial } from "../src/assists.ts";
 import { World as Room } from "../src/edge/world.ts";
-import { readServer } from "../src/crew/room.ts";
+import { Crew, readServer } from "../src/crew/room.ts";
 import { hear, outbox, poseOf, synced, type Synced } from "../src/crew/sync.ts";
 import { APP } from "../src/eqosys.ts";
 import { hear as heard } from "../src/audio/hear.ts";
@@ -301,4 +301,16 @@ test("a friend at the case works a tangled cable free with you in half the time,
 
   // Ada is off by the way in now, so Bea works the next one free alone: the whole four twists.
   expect(took(bea, "instrument")).toBeCloseTo(4 * UNTANGLE_S, 5);
+});
+
+test("a crew member making up cables and switches can't push the room's view past what the others read", () => {
+  const crew = new Crew();
+  crew.join("ada", "Ada"); crew.join("mal", "Mallory");
+  for (let i = 0; i < 600; i++) {
+    crew.end("mal", { t: "end", key: `cable-${i}`, end: "a", to: { at: "case" } });
+    crew.throw("mal", { t: "switch", key: `switch-${i}`, on: true });
+  }
+  expect(readServer(JSON.parse(JSON.stringify(crew.view("ada"))))?.t).toBe("view");
+  // what is already there still moves
+  expect(crew.end("ada", { t: "end", key: "cable-0", end: "b", to: { at: "hand" } })).toEqual({ ok: true });
 });

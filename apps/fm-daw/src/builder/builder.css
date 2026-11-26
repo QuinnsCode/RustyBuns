@@ -16,7 +16,8 @@ button { font: inherit; color: inherit; }
 .qb { display: grid; gap: 14px; padding: calc(56px + env(safe-area-inset-top, 0px)) 16px 24px; max-width: 1400px; margin: 0 auto; }
 .qb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .qb-head h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 600 1.35rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
-.qb-pedals { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
+/* Eleven pedals: they wrap onto a second row rather than push the page sideways. */
+.qb-pedals { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); min-width: 0; }
 .qb-pedal { padding: 6px 12px; border: 0; border-radius: 9px; background: none; cursor: pointer; white-space: nowrap; }
 .qb-pedal[aria-pressed="true"] { background: rgba(255, 176, 0, 0.16); color: var(--warn); }
 .qb-knob { display: inline-flex; align-items: center; gap: 8px; color: var(--dim); font: 500 12px/1 var(--mono); }
