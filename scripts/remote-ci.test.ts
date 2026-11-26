@@ -112,7 +112,7 @@ test("a run waits until Bob serves, takes back a dead run's slot and ends what i
     // Bob answers ssh but isn't serving yet: nothing is sent until `bun run builder serve` touches his `serving`
     setTimeout(() => void Bun.write(`${builder}/serving`, "now\n"), 300);
     // Mid-run, the slot is locked and its record is there: what the menu bar shows.
-    expect(await main(["run", ".", "sh", "-c", `cat new.txt; cp -R ${builder} ${root}/mid`], work)).toBe(0);
+    expect(await main(["--wait", "run", ".", "sh", "-c", `cat new.txt; cp -R ${builder} ${root}/mid`], work)).toBe(0);
     expect(await Bun.file(`${builder}/slot-1/new.txt`).text()).toBe("hello");
     expect(leftover.signalCode ?? await Promise.race([leftover.exited.then(() => leftover.signalCode), Bun.sleep(2000).then(() => "still running")])).toBe("SIGKILL");
     const mid = readRuns(`${root}/mid`);
@@ -213,6 +213,18 @@ test.each([
     process.env = saved;
   }
 }, 30000);
+
+// Valve shut and Bob not serving: without --wait a run and `all` each say so and stop, nothing ran (#5839).
+test.each([[["run", ".", "true"]], [["all"]]])("valve shut, Bob off: %p stops at once", async (argv) => {
+  const saved = { ...process.env }, repo = `${import.meta.dir}/..`, rb = mkdtempSync(`${tmpdir()}/valve-`);
+  await Bun.write(`${rb}/valve`, "off\n");
+  Object.assign(process.env, { BUILDER_HOST: "bob", BUILDER_SSH: "false", RUSTYBUNS_HOME: rb, BUILDER_POLL_MS: "60000" });
+  try {
+    expect(await main(argv, repo)).toBe(125);
+  } finally {
+    process.env = saved;
+  }
+}, 15000);
 
 // The builder board (builder-board.ts): what `bun run builder serve` shows on Bob, from the shells remote-ci starts there.
 const shell = (slot: string, dir: string, cmd: string) => remoteScript({ dir: "builder" }, jobScript(slot, dir, cmd));
