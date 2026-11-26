@@ -76,6 +76,23 @@ test.skipIf(!chromePath())("each game's own paper and face land on the chip, rep
   }
 });
 
+// The chip's sign-out button sits inside it like a nested tile: its corners curve with the chip's (no rounder), and in
+// the house look it stands on the chip's thick edge instead of a second, thinner one of its own.
+test.skipIf(!chromePath())("the chip's button curves with the chip and carries no edge of its own, in every look", async () => {
+  for (const query of ["?house", "", "?game=two-fronts", "?game=mythic-masters", "?game=skate-tech-park"]) {
+    const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
+    const got = await tab.eval<{ chip: number; btn: number; h: number; lip: boolean }>(`(() => {
+      const c = document.querySelector(".eq-chip.in"), b = c.querySelector(".eq-btn"), s = getComputedStyle(b);
+      return { chip: parseFloat(getComputedStyle(c).borderTopLeftRadius), btn: parseFloat(s.borderTopRightRadius), h: b.offsetHeight, lip: s.boxShadow.includes("0px 2px 0px") || s.boxShadow.includes("0px 3px 0px") };
+    })()`);
+    await tab.close();
+    // a pill chip may hold a pill button; otherwise the inner corner is the tighter one
+    const pill = got.chip >= got.h / 2;
+    expect({ query, nested: pill || got.btn < got.chip || got.chip === 0, lip: got.lip }).toEqual({ query, nested: true, lip: false });
+  }
+});
+
 // #3600: eqosys's badge is its own mark: the same pixels on the report form and the toast whatever a game's skin does.
 test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythic Masters, Skate Tech Park and the house look", async () => {
   const badges = async (query: string) => {
