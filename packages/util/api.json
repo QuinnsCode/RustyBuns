@@ -2,7 +2,7 @@
   "$comment": "Where each module of @rustybuns/util runs, and which ones promise not to break. Checked by `bun scripts/util-api.ts`; see packages/util/README.md.",
   "stable": ["index", "sweep", "reel", "motion", "guard", "bytes", "http", "limits", "room", "socket"],
   "shared": [
-    "index", "guard", "bytes", "http", "socket", "token", "board",
+    "index", "guard", "bytes", "http", "socket", "token", "board", "connectors",
     "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "guests", "ports", "train", "visitors", "wasm-shared"
   ],
   "web": [
