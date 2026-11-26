@@ -17,6 +17,8 @@ import { eqosys, hub, type HubView } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar, eqosysKept, saveEqosysAvatar } from "../account.ts";
 import { mountWay } from "../way.ts";
 import { characterDialog } from "./character.ts";
+import { FOLLOW_MS, invitedWords, LiveParty, partyFollow, partyFrom } from "./party.ts";
+import { getJson } from "@rustybuns/util/http";
 import { follow, friendOrder, fromLink, inviteLink, inviteNote, invitesIn, loadRecent, loadSetup, remember, roomId, saveRecent, saveSetup, studios } from "./door.ts";
 import { sideways, studioCards } from "./picker.ts";
 import { apply, loopBeats, roomGain, type Live, type Op, type Project } from "../project.ts";
@@ -936,7 +938,7 @@ function keepBuilt(p: Project) {
   if (!here) return;
   const key = SESH_BUILT(here.room);
   // the sesh has no build of its own now: forget the old one, so "yours" is this browser's room again
-  if (p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
+  if (partyOwner || p.studio !== "yours" || !p.built) { try { localStorage.removeItem(key); } catch { /* no storage */ } return; }
   const json = JSON.stringify(p.built);
   try { if (localStorage.getItem(key) !== json) localStorage.setItem(key, json); } catch { /* still walk into it */ }
   // already in "yours" but a different build: reload into the sesh's (walkOver handles coming from another studio)
@@ -946,7 +948,8 @@ function keepBuilt(p: Project) {
 /** The sesh's studio isn't this page's: walk into the one the leader picked (a beat later, so the leader's move goes out first). */
 let movingTo: string | null = null;
 function walkOver(p: Project) {
-  const to = here && follow(location.origin, here, p.studio);
+  // a party's room follows its owner's stage (followParty), not a leader's move
+  const to = here && !partyOwner && follow(location.origin, here, p.studio);
   if (!to || movingTo) return;
   movingTo = to;
   flash = { text: `Moving to ${studios().find((x) => x.id === p.studio)?.name ?? "another studio"}`, until: performance.now() + 2000 };
@@ -1285,6 +1288,25 @@ void startMidi({
   panic: releaseAll, bend(x) { overlay.wheels.midi(x); }, cc(n, v) { if (n === 1) overlay.wheels.mod = v; }, devices() {},
 });
 
+// ---- a party's join link (#5963): the owner's live party, asked every few seconds; a scene switch walks everyone over ----
+const partyOwner = here ? partyFrom(location.search) : null;
+let partyLive: LiveParty | null = null;
+async function followParty() {
+  if (!partyOwner || movingTo) return;
+  // nothing live (404) or offline: stay in the room you're in
+  const live = await getJson(`${location.origin}/party/${partyOwner}`, LiveParty).catch(() => null);
+  if (!live) return;
+  const was = partyLive?.performer;
+  partyLive = live;
+  if (was !== live.performer) door();
+  const to = partyFollow(location.href, live, picked);
+  if (!to || movingTo) return;
+  movingTo = to;
+  flash = { text: `${live.performer} is up: moving to their setup`, until: performance.now() + 2000 };
+  setTimeout(() => location.replace(to), 300);
+}
+if (partyOwner) { void followParty(); setInterval(() => { if (document.visibilityState === "visible") void followParty(); }, FOLLOW_MS); }
+
 // ---- the front door ----
 function door() {
   const out = !signedIn() && eq.canSignIn();
@@ -1293,7 +1315,7 @@ function door() {
   $("door-room").hidden = out || !here;
   const invited = $("invited");
   invited.hidden = !here;
-  invited.textContent = here ? `You're invited to ${here.name || here.room}.` : "";
+  invited.textContent = here ? partyLive ? invitedWords(partyLive, Date.now()) : `You're invited to ${here.name || here.room}.` : "";
   $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
   if (here) $("room-title").textContent = here.name || here.room;
   $("room-studio-name").textContent = def.name;

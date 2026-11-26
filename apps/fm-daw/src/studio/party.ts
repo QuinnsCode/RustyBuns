@@ -207,3 +207,32 @@ export function liveParty(s: Parties, owner: string): LiveParty | null {
   const on = sceneOf(p);
   return { name: p.name, when: p.when, room: partyRoom(owner, p.id), performer: on.performer, studio: on.studio };
 }
+
+// ---- the join page follows the live party (#5963): the owner's scene switch reaches everyone already in its room ----
+/** The owner key a join link carries (`&party=`), or null: not a party's link. */
+export function partyFrom(search: string): string | null {
+  const o = new URLSearchParams(search).get("party");
+  return o && OWNER.test(o) ? o : null;
+}
+/** How often a join page asks the owner's store what is on stage. */
+export const FOLLOW_MS = 4_000;
+/**
+ * Where a join page goes when the owner's live party changed: the same link with the scene on stage now (and the new
+ * party's room when another one went live), so everyone walks into the next performer's setup. Null: stay (it is
+ * the one standing here, or nothing is live now, so the room people are in keeps going).
+ */
+export function partyFollow(href: string, live: LiveParty | null, standing: StudioDef): string | null {
+  if (!live) return null;
+  const u = new URL(href);
+  if (u.searchParams.get("room") === live.room && JSON.stringify(live.studio) === JSON.stringify(standing)) return null;
+  u.searchParams.set("room", live.room);
+  u.searchParams.set("studio", "yours");
+  u.searchParams.set("built", JSON.stringify(live.studio));
+  u.searchParams.set("name", live.name);
+  return u.href;
+}
+/** The join page's invite line: the party, who is on, and when it starts if it hasn't yet. */
+export function invitedWords(live: LiveParty, now: number, locale?: string): string {
+  const starts = live.when !== null && live.when > now ? ` It starts ${whenWords(live.when, locale)}.` : "";
+  return `You're invited to ${live.name}. ${live.performer} is on.${starts}`;
+}
