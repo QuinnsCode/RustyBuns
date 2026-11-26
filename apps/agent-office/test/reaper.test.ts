@@ -2,7 +2,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
+import { endWorker, OLD_ORPHAN_S, parseEtime, parseHeavy, parseSwap, processes, type Proc, reapOnce, reaperStats, swapHold } from "../live/reaper.ts";
 import { WORKTREES } from "../live/sweep.ts";
 
 setDefaultTimeout(30_000);
@@ -154,4 +154,39 @@ test("the reaper ends a server left in a gone worktree's scratch folder, and a C
   const n = await reapOnce(() => [floor], () => {}, { procs, swap: () => null });
   expect({ server: alive(server), shell: alive(shell.pid), kept: alive(kept) }).toEqual({ server: false, shell: false, kept: true });
   expect(n).toBeGreaterThanOrEqual(3); // the server, the shell and the sleep under it
+});
+
+test("a seated worker's fork loop, or a branch past the memory cap, is ended and named to the floor and the worker; its session is kept", async () => {
+  const seat = tree("gadget-9");
+  const told: string[] = [];
+  const floor = { dir: repo, workers: { list: () => [{ id: "w9", name: "Gadget", worktree: { path: path.join(WORKTREES, "gadget-9") } }], prompt: (id: string, text: string) => { told.push(`${id} ${text}`); return undefined; } } };
+  // the worker's session (a bun named claude: a multicall coreutils, as Ubuntu 26.04's, runs by its name and would
+  // not start as `claude`), and a loop it started that keeps forking one command
+  const bin = path.join(repo, "session-bin");
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(process.execPath, path.join(bin, "claude"));
+  const claude = Bun.spawn([path.join(bin, "claude"), "-e", "setTimeout(() => {}, 120_000)"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
+  const loop = Bun.spawn(["sh", "-c", "i=0; while [ $i -lt 150 ]; do sleep 60 & i=$((i+1)); done; wait"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
+  started.push(claude, loop);
+  const copies = () => processes().filter((p) => p.ppid === loop && p.args === "sleep 60").map((p) => p.pid);
+  for (let t = 0; copies().length < 150 && t < 50; t++) await Bun.sleep(100);
+  const forks = copies();
+  // every other orphan on the machine hidden, as above
+  const hide = (p: Proc) => (p.ppid === 1 ? { ...p, ppid: 0 } : p);
+  const said: string[] = [];
+  await reapOnce(() => [floor], (m) => said.push(m), { procs: () => processes().map(hide), swap: () => null });
+  expect({ loop: alive(loop), forks: forks.filter(alive).length, claude: alive(claude) }).toEqual({ loop: false, forks: 0, claude: true });
+  expect(said.join("\n")).toContain("Runaway in Gadget: 150 copies of `sleep 60`");
+  // how many it ended is the machine's (some forks exit or are reaped before the kill lands): the message names the loop
+  expect(told[0]).toMatch(/^w9 The office ended \d+ of your processes: 150 copies of `sleep 60` \(#6154\)/);
+  expect(reaperStats().runaways[0]).toContain("Gadget: 150 copies");
+
+  // memory: a dev server at 9 GB goes, the session at 9 GB too stays (ending it is the worker's own call)
+  const server = leave(seat);
+  const big = (p: Proc) => (p.pid === server || p.pid === claude ? { ...p, rss: 9 * 1024 ** 2 } : p);
+  told.length = 0;
+  await reapOnce(() => [floor], (m) => said.push(m), { procs: () => processes().map(hide).map(big), swap: () => null });
+  expect({ server: alive(server), claude: alive(claude) }).toEqual({ server: false, claude: true });
+  expect(told[0]).toContain("9.0 GB in all, over 8.0 GB");
+  process.kill(claude, "SIGKILL");
 });
