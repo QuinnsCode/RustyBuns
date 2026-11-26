@@ -185,4 +185,23 @@ body > .gc-dialog .gc-sec[data-sec="music"] .gc-sec-h > span { --code: var(--lan
 body > .gc-dialog .gc-chev { margin-left: auto; opacity: 0.55; }
 /* The rows read like the fascia's engraving: small capitals in the label grey. */
 body > .gc-dialog .gc-sec-b .gc-lab { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #e9ecf2; }
+/* The rows are hardware on a plate: each section's rows sit on brushed black metal screwed to the panel, sunk a little. */
+body > .gc-dialog .gc-sec-b { gap: 0; margin: 2px 0 12px; padding: 6px 18px; border: 1px solid #000; border-radius: 6px; background: var(--plate);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
+body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { background: none; border: 0; box-shadow: none; padding: 2px 12px 12px; }
+body > .gc-dialog .gc-sec-b label { border-bottom: 1px solid #00000080; box-shadow: 0 1px 0 #ffffff0d; }
+body > .gc-dialog .gc-sec-b label:last-child { border: 0; box-shadow: none; }
+/* A fader: the slot with its printed scale under it, 0 to 10, lined up with the cap's travel. The read-out in a small window. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=range] { box-sizing: content-box; padding: 6px 0 18px; background: var(--scale) 8px calc(100% - 1px) / calc(100% - 16px) 16px no-repeat; }
+body > .gc-dialog .gc-sec-b output { justify-self: end; padding: 3px 6px; border: 1px solid #000; border-radius: 3px; background: #07080b; box-shadow: inset 0 1px 3px #000, 0 1px 0 #ffffff12;
+  color: #cfe6ff; font: 600 12px ui-monospace, Menlo, monospace; text-shadow: 0 0 6px #cfe6ff66; }
+/* Music on: a bat-handle toggle on its own plate, OFF and ON printed either side, the go LED lit when it is on. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox] { width: 56px; height: 34px; border: 0; border-radius: 4px; background: var(--toggle-off) center / 100% 100%; box-shadow: 0 2px 0 #000; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:checked { background: var(--toggle-on) center / 100% 100%; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]::after { display: none; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:focus-visible { outline: 1.5px solid #e9ecf2; outline-offset: 2px; }
+/* Desktop: the section tapes a size up, so they read at arm's length. */
+@media (min-width: 600px) {
+  body > .gc-dialog .gc-sec-h > span:not(.gc-chev) { padding: 4px 13px 4px 16px; font-size: 13px; }
+}
 body > .gc-dialog .gc-reset { border: 1px solid #000; background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000; letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }

@@ -96,9 +96,9 @@ test("a package.json both sides touched merges by key: new keys land sorted, the
 
 test("the line merge no longer asks on neighbouring dependency bumps in package.json, and still asks on other files", () => {
   const base = pkg({ dependencies: { a: "^1.0.0", b: "^1.0.0" } });
-  const side = (t: string) => { const d = empty(); apply(d, fromText(base), "base"); return d; };
+  const side = () => { const d = empty(); apply(d, fromText(base), "base"); return d; };
   const run = (path: string) => {
-    const [b, m, br] = [side(base), side(base), side(base)];
+    const [b, m, br] = [side(), side(), side()];
     apply(m, [{ kind: "set", line: m.lines[2]!.id, base: m.lines[2]!.rev, text: '    "a": "^1.1.0",' }], "main");
     apply(br, [{ kind: "set", line: br.lines[2]!.id, base: br.lines[2]!.rev, text: '    "a": "^1.2.0",' }], "branch");
     return merge(b, br, m, {}, "branch", path, "branch");
@@ -106,7 +106,7 @@ test("the line merge no longer asks on neighbouring dependency bumps in package.
   expect(run("notes.json").conflicts.length).toBeGreaterThan(0);
   const r = run("package.json");
   expect(r.conflicts).toEqual([]);
-  const m = side(base);
+  const m = side();
   apply(m, [{ kind: "set", line: m.lines[2]!.id, base: m.lines[2]!.rev, text: '    "a": "^1.1.0",' }], "main");
   expect(apply(m, r.ops, r.by).ok).toBe(true);
   expect(text(m)).toContain('"a": "^1.2.0"');

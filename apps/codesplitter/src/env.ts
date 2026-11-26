@@ -28,11 +28,14 @@ export interface Artifacts {
   import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
+/** What a vector carries beside its numbers (search.ts writes `repo`, `pub`, `path`, `line`, `text`), and a query's filter over it. */
+export type VectorMeta = Record<string, string | number | boolean>;
+export type VectorFilter = Record<string, string | number | boolean | { $in: (string | number | boolean)[] }>;
 /** The slice of a Vectorize index that search.ts uses. */
 export interface VectorIndex {
-  upsert(vectors: { id: string; values: number[]; metadata?: Record<string, string | number | boolean> }[]): Promise<unknown>;
-  query(values: number[], opts: { topK: number; filter?: Record<string, unknown>; returnMetadata?: "none" | "indexed" | "all" }): Promise<{ matches: { id: string; score: number; metadata?: Record<string, unknown> }[] }>;
-  getByIds(ids: string[]): Promise<{ id: string; metadata?: Record<string, unknown> }[]>;
+  upsert(vectors: { id: string; values: number[]; metadata?: VectorMeta }[]): Promise<unknown>;
+  query(values: number[], opts: { topK: number; filter?: VectorFilter; returnMetadata?: "none" | "indexed" | "all" }): Promise<{ matches: { id: string; score: number; metadata?: VectorMeta }[] }>;
+  getByIds(ids: string[]): Promise<{ id: string; metadata?: VectorMeta }[]>;
   deleteByIds(ids: string[]): Promise<unknown>;
 }
 

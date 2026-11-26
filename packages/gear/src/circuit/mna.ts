@@ -197,19 +197,25 @@ function solve(A: Float64Array, b: Float64Array, n: number, m: number): boolean 
   return true;
 }
 
+/** Each node's number, ground left out: the order `Circuit` and `encodeNetlist` number them (what `Circuit.node` gives). */
+export function nodeNumbers(net: Netlist): Map<string, number> {
+  const nodes = new Map<string, number>();
+  let opamps = 0;
+  for (const p of net.parts) {
+    for (const l of legs(p, opamps)) if (!GROUND.has(l) && !nodes.has(l)) nodes.set(l, nodes.size);
+    if (p.kind === "Opamp") opamps++;
+  }
+  return nodes;
+}
+
 /**
  * A netlist as numbers for the Rust solver (native/crates/fm_daw/src/circuit.rs):
  * `[nodes, input, output, parts]`, then 12 per part, `[kind, n0, n1, n2, n3, v0 … v5, flag]`,
  * ground −1. Nodes are numbered in the order `Circuit` numbers them, defaults filled in.
  */
 export function encodeNetlist(net: Netlist): Float64Array {
-  const nodes = new Map<string, number>();
-  const node = (name: string): number => {
-    if (GROUND.has(name)) return -1;
-    let i = nodes.get(name);
-    if (i === undefined) { i = nodes.size; nodes.set(name, i); }
-    return i;
-  };
+  const nodes = nodeNumbers(net);
+  const node = (name: string): number => nodes.get(name) ?? -1;
   const rows: number[][] = [];
   let opamps = 0;
   for (const p of net.parts) {
@@ -488,6 +494,10 @@ export class Circuit {
     const i = this.nodes.get(name);
     return i === undefined ? 0 : this.x[i];
   }
+  /** A named node's index for `voltsAt` in a hot loop (−1 for ground or a name not in the circuit): `encodeNetlist`'s numbering. */
+  node(name: string): number { return this.nodes.get(name) ?? -1; }
+  /** The voltage on node `i` (from `node`) after the last step. */
+  voltsAt(i: number): number { return this.x[i] ?? 0; }
 
   /** Each part's current out of its ports at port voltages `v` into `i`, and their slopes into `J` (K×K). */
   private currents(v: Float64Array, i: Float64Array, J: Float64Array): void {

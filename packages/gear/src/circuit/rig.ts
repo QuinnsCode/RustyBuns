@@ -30,11 +30,14 @@ export class ModRun {
   private ys: Float64Array;
   private coef: [number, number][];
   readonly slot: number;
+  /** What the last `step` gave (`rest` before one has run): what a scope on its control reads. */
+  value: number;
   constructor(readonly m: Mod, circuit: Circuit, sampleRate: number) {
     this.slot = circuit.controlSlot(m.ctl);
     const a = (sec: number) => (sec > 0 ? 1 - Math.exp(-1 / (sec * sampleRate)) : 1);
     this.coef = (m.lag ?? []).map(([up, down]) => [a(up), a(down)]);
     this.ys = new Float64Array(this.coef.length).fill(this.shape(0));
+    this.value = this.rest;
   }
   private shape(raw: number): number {
     const { from = 0, to = 1, pow = 1 } = this.m;
@@ -57,7 +60,7 @@ export class ModRun {
       const prev = this.ys[k];
       y = this.ys[k] = prev + (y > prev ? this.coef[k][0] : this.coef[k][1]) * (y - prev);
     }
-    return y;
+    return (this.value = y);
   }
 }
 
@@ -124,6 +127,17 @@ export const POWER_VOLTS = 40;
 /** The loop's send pads the preamp's swing (about 125 V at the most) down to line level by this, and the return brings it back. */
 export const LOOP_VOLTS = 100;
 
+/**
+ * Where a scope listens on a rig: link `link`'s node `net`, or, when `net` names a control one of its mods moves
+ * (an effect's GATE, LED or FOOT, matched without case, as Q Builder's bench does), that control at `CONTROL_VOLTS`
+ * full scale. It reads once per output sample, after the sample's last oversampled step.
+ */
+export interface ScopeAt { link: number; net: string }
+/** The volts a control reads at full scale on a scope: 0 to 1 as 0 V to half a pedal's 9 V supply. */
+export const CONTROL_VOLTS = 4.5;
+/** Samples a scope keeps between reads: over two reports' worth at 48 kHz (`scope` hands back the newest). */
+export const SCOPE_SAMPLES = 4096;
+
 /** Each `Pot` part's turn, in netlist order (what `setPot` numbers them by). */
 const potTurns = (net: Netlist): number[] => net.parts.flatMap((p) => (p.kind === "Pot" ? [p.at ?? 0.5] : []));
 /** What a slot of links is built from, pots, volume pots and blend mixes left out: those are turned, not rebuilt. */
@@ -152,6 +166,14 @@ class LinkStage {
   private up: Biquad[];
   private down: Biquad[];
   steps = 0;
+  /** The scoped link (-1: no scope), its net, and what it reads there: a node's index, or a mod. */
+  private scopeLink = -1;
+  private scopeNet = "";
+  private scopeNode = -1;
+  private scopeMod: ModRun | null = null;
+  /** The scope's ring: `scopeN` samples written since the last `takeScope`, the newest at `scopeN - 1` (mod the length). */
+  private scopeBuf: Float32Array | null = null;
+  private scopeN = 0;
 
   /**
    * `inRest`: the volts this slot's input rests at, 0 but for a part of a split rig, which takes the part ahead's
@@ -205,6 +227,27 @@ class LinkStage {
     this.mods[i] = this.startMods(i, mods);
     this.mods[i].forEach((m, k) => { if (old[k]) m.phase = old[k].phase; });
     this.rest[i] = c.settle(this.restIn(i));
+    if (i === this.scopeLink) this.setScope(i, this.scopeNet);
+  }
+
+  /** A scope on link `i`'s `net` (`ScopeAt`), or none (`i` -1). False, and no scope, when the link has no such net. */
+  setScope(i: number, net: string): boolean {
+    const c = this.circuits[i];
+    const mod = c ? this.mods[i].find((m) => m.m.ctl.toUpperCase() === net.toUpperCase()) ?? null : null;
+    const node = c && !mod ? c.node(net) : -1;
+    const ok = !!mod || node >= 0;
+    this.scopeLink = ok ? i : -1; this.scopeNet = ok ? net : ""; this.scopeMod = mod; this.scopeNode = node;
+    if (ok) this.scopeBuf ??= new Float32Array(SCOPE_SAMPLES);
+    this.scopeN = 0;
+    return ok;
+  }
+  get scoped(): boolean { return this.scopeLink >= 0; }
+  /** The scope's samples since the last call, oldest first (the newest `SCOPE_SAMPLES` of them), then cleared. */
+  takeScope(): Float32Array {
+    const b = this.scopeBuf, n = Math.min(this.scopeN, SCOPE_SAMPLES), out = new Float32Array(n);
+    if (b) for (let k = 0, at = this.scopeN - n; k < n; k++, at++) out[k] = b[at % SCOPE_SAMPLES];
+    this.scopeN = 0;
+    return out;
   }
 
   /** The voltage link `i`'s input rests at. */
@@ -248,7 +291,7 @@ class LinkStage {
    */
   run(buf: Float64Array, n: number, amp: PushPull | null, power: number, tapIn?: Float32Array | Float64Array, tapOut?: Float32Array | Float64Array): void {
     const { circuits, rest, up, down, oversample, mods, swing, sampleRate, blendAt, blends } = this;
-    const count = circuits.length, powered = !!amp && power > 0;
+    const count = circuits.length, powered = !!amp && power > 0, scoped = this.scopeLink >= 0;
     for (let s = 0; s < n; s++) {
       let acc = 0;
       for (let i = 0; i < mods.length; i++) {
@@ -279,8 +322,14 @@ class LinkStage {
         acc = chain(down, x);
       }
       if (!tapOut) buf[s] = acc;
+      if (scoped) this.scopeSample();
     }
     this.steps += n * oversample * count;
+  }
+  private scopeSample(): void {
+    const b = this.scopeBuf, m = this.scopeMod;
+    if (!b) return;
+    b[this.scopeN++ % SCOPE_SAMPLES] = m ? m.value * CONTROL_VOLTS : this.circuits[this.scopeLink].voltsAt(this.scopeNode);
   }
   get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0); }
   get iterations(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0); }
@@ -463,6 +512,21 @@ export class Rig {
     this.right = this.left.map(() => null);
     this.split = this.left.length;
     this.ms = new Float64Array(this.left.length + 1);
+  }
+
+  /**
+   * A scope on one link's net (`ScopeAt`), or none (null): one at a time, on the left side. False, and no scope,
+   * when there is no such link or net. A new rig (`prev`) starts with none.
+   */
+  setScope(at: ScopeAt | null): boolean {
+    for (const s of this.left) if (s instanceof LinkStage && s.scoped) s.setScope(-1, "");
+    const where = at ? this.linkAt[at.link] : undefined, s = where ? this.left[where[0]] : undefined;
+    return !!at && !!where && s instanceof LinkStage && s.setScope(where[1], at.net);
+  }
+  /** The scope's volts since the last call, oldest first (at most `SCOPE_SAMPLES`), then cleared; empty with no scope. */
+  scope(): Float32Array {
+    for (const s of this.left) if (s instanceof LinkStage && s.scoped) return s.takeScope();
+    return new Float32Array(0);
   }
 
   /** Link `i` becomes `net` (same input and output roles), starting from its rest state. An LFO keeps its phase. */

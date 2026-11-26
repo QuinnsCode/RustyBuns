@@ -1,14 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "node:path";
 import { unsealState } from "../src/deploy-keys.ts";
-import { review, textDiff } from "../src/deploy-review.ts";
+import { textDiff } from "../src/deploy-review.ts";
 import { type ContainerApi } from "../src/sandbox.ts";
 import { CiRunner } from "../src/ci-runner.ts";
 import { gated, gateExports } from "./fake-gate.ts";
-// @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
-import { state } from "../deploy-sandbox/server.mjs";
 import { type Call } from "../src/local.ts";
-import { checked, TOKEN, ACCOUNT, hosted, K, settle, D } from "./deploy-kit.ts";
+import { TOKEN, ACCOUNT, hosted, K, settle, D } from "./deploy-kit.ts";
 
 describe("code that isn't the owner's waits for them (#646)", () => {
   type Send = (u: string, url: string, b: unknown) => Promise<Response>;
