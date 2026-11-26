@@ -4,12 +4,15 @@
 import { afterAll, beforeAll } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromePath, launchChrome, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, chromeStartMs, launchChrome, startVite } from "../../../scripts/chrome.ts";
 export { waitFor } from "../../../scripts/chrome.ts";
 
 export const hasChrome = !!chromePath();
 export let chrome: Awaited<ReturnType<typeof launchChrome>>;
 export let vite: Awaited<ReturnType<typeof startVite>>;
+
+/** Chrome's start-or-explain budget or vite's 60 s to answer, whichever is longer, with room to spare. */
+const startMs = Math.max(chromeStartMs, 60_000) + 15_000;
 
 /** Chrome (no sound card: real time with stand-in speakers, plus any `flags`) and vite, for this file's tests. */
 export function useBrowser(...flags: string[]) {
@@ -22,7 +25,6 @@ export function useBrowser(...flags: string[]) {
       if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
     }
     [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output", ...flags]), startVite(app)]);
-  });
+  }, startMs); // not the file's test timeout: a Chrome that stalls once on a cold CI runner (#6241) gets its retry and its report
   afterAll(() => { chrome?.stop(); vite?.stop(); });
 }
-
