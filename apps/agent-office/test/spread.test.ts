@@ -130,7 +130,7 @@ test("the hourly run and one PR is spreading; two PRs alone is not", async () =>
   const r = repo(), { f, queued } = floor();
   r.runs["apps.yml"] = r.runs["apps.yml"].slice(0, 2);
   expect(await spreadWatch(r.gh, () => NOW).pass([f])).toEqual([]);
-  r.runs["desktop-hourly.yml"] = [{ databaseId: 9, headBranch: "main", createdAt: ago(0.5), url: "https://x/runs/9" }];
+  r.runs["desktop-hourly.yml"] = [{ databaseId: 9, headBranch: "main", createdAt: ago(0.5), url: "https://x/runs/9", event: "schedule" }];
   r.logs[9] = log(SLOW);
   expect(await spreadWatch(r.gh, () => NOW).pass([f])).toEqual([`${SLOW}: 2 PRs + hourly, held by #6000`]);
   expect(r.issues[0]!.title).toContain("and the hourly run");
