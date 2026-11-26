@@ -12,11 +12,12 @@ import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
 import { help } from "../../../scripts/help.ts";
-import { dieWith } from "../../../scripts/chrome.ts";
+import { chromePath, dieWith } from "../../../scripts/chrome.ts";
 
 help(import.meta.path);
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
-const CHROME = arg("chrome") ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// the Mac's Chrome, or a Linux box's /usr/bin/google-chrome (CI's ubuntu runner, #5783); CHROME=/path works too
+const CHROME = arg("chrome") ?? chromePath() ?? "google-chrome";
 
 const call = await local({ GH_CLI: "off" });
 // Always build: an old dist/client served against new source fails in ways that look unrelated (#6166), and
