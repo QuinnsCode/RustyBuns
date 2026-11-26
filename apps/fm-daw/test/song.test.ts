@@ -2,7 +2,8 @@
 import { expect, test } from "bun:test";
 import { heard, setup, useWorld } from "./world-kit.ts";
 import { apply, decodeOp, decodeServer, sanitize, type Note, type Project } from "../src/project.ts";
-import { TRACKS } from "../src/engine/params.ts";
+import { P, TRACKS } from "../src/engine/params.ts";
+import { eqLane, flatEq } from "../src/engine/eq.ts";
 
 useWorld();
 
@@ -50,4 +51,29 @@ test("a song that doesn't fit its loop, or of the wrong shape, is left out; an e
   expect(sanitize({ ...p, song: { bars: 1, chain: [9] } })?.song).toBeUndefined();
   expect(sanitize(p)?.song).toEqual({ bars: 1, chain: [0, 0] });
   expect(decodeOp({ t: "song", chain: [] })).toBeNull();
+});
+
+test("automation follows the patterns: a filter sweep and a Shape move drawn in one A play in every A, and a joiner hears them", async () => {
+  const { world, join } = await setup();
+  const a = (await join()).ws;
+  let p = sanitize({ ...loop(), eq: flatEq().map((_, i) => (i === 0 ? { kind: "bell", f: 1000, g: 0, q: 0.707, slope: 12, on: true } : null)) })!;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project: p }));
+  const send = (op: unknown) => { const o = decodeOp(op)!; p = apply(p, o); world.webSocketMessage(a, JSON.stringify({ t: "op", op: o })); };
+  const sweep = (from: number, lo = 0.2, hi = 0.9) => [[from, lo], [from + 3, hi]];
+
+  send({ t: "auto", track: 0, lanes: [{ i: P.CUTOFF, pts: sweep(0) }] }); // a sweep on the loop, before song mode
+  send({ t: "song", chain: [0, 1, 0] });                                  // it becomes A's: the new B has none
+  expect(p.tracks[0].auto).toEqual([{ i: P.CUTOFF, pts: [...sweep(0), ...sweep(8)] }]);
+
+  // the second A redrawn flat, and a point put in B: every A takes the new line, only B has the point
+  send({ t: "auto", track: 0, lanes: [{ i: P.CUTOFF, pts: [...sweep(0), [5, 0.5], ...sweep(8, 0.4, 0.4)] }] });
+  expect(p.tracks[0].auto).toEqual([{ i: P.CUTOFF, pts: [...sweep(0, 0.4, 0.4), [5, 0.5], ...sweep(8, 0.4, 0.4)] }]);
+
+  const gain = eqLane(0, "g");
+  send({ t: "eqAuto", lanes: [{ i: gain, pts: [[8.5, -12]] }] });        // Shape's dip drawn in the second A
+  expect(p.eqAuto).toEqual([{ i: gain, pts: [[0.5, -12], [8.5, -12]] }]);
+
+  const b = (await join()).ws;
+  const got = decodeServer((await heard(b, "snapshot")));
+  expect(got?.t === "snapshot" && got.project).toEqual(p);
 });
