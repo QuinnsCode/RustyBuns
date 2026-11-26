@@ -32,7 +32,7 @@ for (const b of ["fix-a", "fix-b"]) await j("/repos/ryan/office/branches", { nam
 // Two open PRs on Mervin's board: one green, one red, so Ester has something to sort.
 await j("/repos/ryan/office/board", { main: "abc", prs: [
   { pr: 1, head: "h1", ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], title: "fix a" },
-  { pr: 2, head: "h2", ci: "fail", failing: ["apps/a: t1"], tiers: { agree: 1 }, files: 1, clashes: [], title: "fix b" },
+  { pr: 2, head: "h2", ci: "fail", failing: ["apps/a: t1"], ester: [{ test: "apps/a: t1", owner: "own", why: "CI is already red (apps/a: t1)", prs: [2] }], tiers: { agree: 1 }, files: 1, clashes: [], title: "fix b" },
 ] });
 
 // Chrome over CDP, with the page's WebMCP registry stood in for (an agent's browser has document.modelContext).
