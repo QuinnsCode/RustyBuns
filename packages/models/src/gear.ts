@@ -1507,13 +1507,6 @@ function mixerClub4(): Build {
 
 // ---- the festival's systems (#5029 step 9) ----------------------------------------------------------------------
 
-/** A horn's mouth flaring back from the front face: `w` by `h`, `deep` into the box, squarer as `p` grows. */
-function mouth(b: Build, w: number, h: number, deep: number, at: THREE.Vector3Tuple, p = 6, slot: GearSlot = "panel") {
-  const m = new THREE.Matrix4().makeTranslation(...at);
-  b.pieces.push(lathe(slot, [[-deep, w * 0.1, h * 0.1], [-deep * 0.6, w * 0.24, h * 0.26], [-deep * 0.25, w * 0.4, h * 0.41], [0, w / 2, h / 2]], { p, seg: 24, m }));
-  b.pieces.push(disc("knob", Math.min(w, h) * 0.1, 0.01, "z", [at[0], at[1], at[2] - deep], 12));
-}
-
 /** A mouth flaring back from a rectangle on the face to a smaller one at the back, `outer` and `inner` [x0, x1, y0, y1],
  * the front at z `zf` and the back `deep` behind it: four flat walls, every face turned to look forward (a bass bin's
  * pyramid horn, its throat anywhere in the mouth). */
