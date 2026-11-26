@@ -14,6 +14,7 @@
 
 **How to use:** press Space to play the beat, pick a track, and play notes on your keyboard.
 Press R to record what you play; click steps on the grid to add notes by hand.
+**Song mode:** the list button beside Bars turns the loop into pattern A. Use + to add another copy of the last slot, the star to add a new pattern, and − to drop the last slot. Click a slot's letter to make it play the next pattern (A to H). A note you draw in one A shows up in every A. Patterns are what their first slot holds, so taking the last copy of a pattern out of the chain lets it go; undo brings it back. Automation and audio clips stay on the timeline and don't follow the patterns. The list button again leaves song mode and keeps the notes where they are.
 To put something on a track, use the four buttons over the grid: **Record audio** (a mic or guitar, one pass of the loop), **Record MIDI** (the notes you play), **Import audio** (wav, mp3, m4a, ogg, flac) and **Import MIDI** (a .mid file). You can also drop a file on a track.
 In the piano roll, drag anywhere to draw a note, drag a note to move it or its ends to stretch it; Snap (N, the magnet) keeps edits on the Grid, and Alt frees one drag. The scissors (C) cut a note on the Grid.
 Recorded or imported audio sits as clips in the lane under the grid: drag a clip's edges to trim it, Alt-drag to slide the sound under it, and C cuts it in two.

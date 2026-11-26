@@ -16,6 +16,7 @@ import type { StudioDef } from "./studio/room.ts";
 import { RUNG, type Rung } from "./rewind.ts";
 import { DeckPress, DeckSay, MixSay } from "./dj/booth.ts";
 import { SOUND_MAX_FRAMES } from "./clock.ts";
+import { Chain, MAX_CHAIN, Song, chained, patternsOf, relink } from "./song.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -65,8 +66,9 @@ export interface TrackDoc {
  * studio: the jam room's studio (src/studio/rooms/), by id; the leader moves the sesh to another, and everyone walks into it. Only there once set.
  * rig: the open-air rig on the sand (@rustybuns/gear systems.ts), the leader's to change; only there once set.
  * master: the room's level, dB (MASTER_MIN to 0), on top of each listener's own; set from the remote (src/remote/), only there below 0. A bounce leaves it out.
+ * song: song mode (src/song.ts), the loop as a chain of patterns, bars × chain slots long; only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; built?: StudioDef }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; master?: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[]; instruments?: Instrument[]; desk?: SeshDesk; studio?: string; rig?: SystemId; built?: StudioDef; song?: Song }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -98,6 +100,8 @@ export type Op =
   | { t: "studio"; id: string; built?: StudioDef }
   /** The leader brings another open-air rig to the sand (@rustybuns/gear systems.ts): its boxes and their sound, for everyone. */
   | { t: "rig"; id: SystemId }
+  /** Song mode: the patterns each slot plays (the first time, the loop as it is becomes pattern A), or null to leave it (the notes stay). */
+  | { t: "song"; chain: number[] | null }
   | { t: "replace"; project: Project };
 
 /** The room's level at its lowest, dB: silence. */
@@ -194,7 +198,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, built: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), master: num(MASTER_MIN, 0, 0), eq: raw, eqAuto: raw, eqLinear: bool(false), instruments: raw, desk: raw, studio: raw, rig: raw, built: raw, song: raw });
 /** A studio's id, as the rooms name them. */
 const STUDIO_ID = (v: unknown) => (typeof v === "string" && /^[a-z0-9-]{1,64}$/.test(v) ? v : bad("a studio id"));
 const studioOf = (v: unknown): { studio?: string } => { const id = check(STUDIO_ID, v); return id ? { studio: id } : {}; };
@@ -208,9 +212,16 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
-  const fitted = fitTakes(tracks.map((v, ti) => track(v, ti, beats)));
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built) };
+  const made = fitTakes(tracks.map((v, ti) => track(v, ti, beats))), song = songOf(p.song, bars).song;
+  const fitted = song ? linked(made, song) : made;
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, ...masterOf(p.master), eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: fitted, ...madeOf(arr(Instrument, MAX_MADE, { drop: true })(p.instruments ?? [])), ...deskOf(check(SeshDesk, p.desk) ?? emptySeshDesk()), ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built), ...songOf(p.song, bars) };
 }
+
+/** song only when it fits the loop exactly. */
+const songOf = (v: unknown, bars: number): { song?: Song } => { const s = check(Song, v); return s && s.bars * s.chain.length === bars ? { song: s } : {}; };
+
+/** The tracks with every slot playing its pattern again, as each pattern's first slot holds it. */
+const linked = (tracks: TrackDoc[], song: Song): TrackDoc[] => tracks.map((t) => ({ ...t, notes: chained(patternsOf(t.notes, song, BEATS_PER_BAR), song, BEATS_PER_BAR) }));
 
 /** desk only when something on it was moved, so a groove nobody mixed players in reads as it did. */
 const deskOf = (d: SeshDesk): { desk?: SeshDesk } => (plainSeshDesk(d) ? {} : { desk: d });
@@ -332,6 +343,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("desk"), player: maybe(DeskEdit.player), aux2: maybe(DeskEdit.aux2), space: maybe(DeskEdit.space) }),
   obj({ t: tag("studio"), id: STUDIO_ID, built: opt(Studio) }),
   obj({ t: tag("rig"), id: oneOf(SYSTEM_IDS) }),
+  obj({ t: tag("song"), chain: nul(Chain) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -473,8 +485,13 @@ export function apply(p: Project, op: Op): Project {
         return { ...t, params };
       });
     }
-    case "notes":
-      return withTrack(p, op.track, (t) => ({ ...t, notes: sanitizeNotes(op.notes, loopBeats(p)) }));
+    case "notes": {
+      const song = p.song;
+      return withTrack(p, op.track, (t) => {
+        const notes = sanitizeNotes(op.notes, loopBeats(p));
+        return { ...t, notes: song ? relink(t.notes, notes, song, BEATS_PER_BAR) : notes };
+      });
+    }
     case "auto":
       return withTrack(p, op.track, (t) => ({ ...t, auto: sanitizeLanes(op.lanes, loopBeats(p)) }));
     case "track":
@@ -485,7 +502,8 @@ export function apply(p: Project, op: Op): Project {
         ...(op.name !== undefined ? { name: op.name.slice(0, 24) } : {}),
       }));
     case "global": {
-      const bars = op.bars ?? p.bars;
+      // in song mode the chain sets the loop's length
+      const bars = p.song ? p.bars : op.bars ?? p.bars;
       const next: Project = {
         ...p,
         bpm: num(40, 240, p.bpm)(op.bpm),
@@ -555,6 +573,15 @@ export function apply(p: Project, op: Op): Project {
       if (!next) return p;
       const { studio: _, rig: __, built: ___, ...rest } = next;
       return { ...rest, ...studioOf(p.studio), ...rigOf(p.rig), ...builtOf(p.built) };
+    }
+    case "song": {
+      if (!op.chain) { const { song: _, ...rest } = p; return rest; }
+      const was = p.song ?? { bars: p.bars, chain: [0] }, song: Song = { bars: was.bars, chain: op.chain.slice(0, MAX_CHAIN) };
+      const bars = song.bars * song.chain.length;
+      if (bars > MAX_BARS || !song.chain.length) return p;
+      // each track's patterns as the old chain had them, laid out along the new one; what falls past the end goes
+      const tracks = p.tracks.map((t) => ({ ...t, notes: chained(patternsOf(t.notes, was, BEATS_PER_BAR), song, BEATS_PER_BAR) }));
+      return { ...p, bars, song, tracks: fitTakes(tracks, bars * BEATS_PER_BAR) };
     }
     default:
       return p;

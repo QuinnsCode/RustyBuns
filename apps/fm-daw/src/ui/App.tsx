@@ -20,6 +20,7 @@ import { PluginPump, bounceInserts, bouncePlugins, effectChoices, pluginChoices,
 const playing = (s: PluginShown | undefined) => !!s && !s.starting && s.error === null;
 import { InsertPanel, PluginPanel, TrackSound } from "./PluginPanel.tsx";
 import { AddMenu, MidiLand } from "./AddMenu.tsx";
+import { SongStrip } from "./SongStrip.tsx";
 import { useImports } from "./import.ts";
 import { withValue, type TrackPlugin } from "../plugin-track.ts";
 import { pageRack, type PageAudio } from "./wam.ts";
@@ -476,7 +477,7 @@ export function App() {
         view: viewRef.current,
         audio: audioRef.current?.ctx.state ?? null, playing: live.current.transportOn, selected: live.current.selected, peak: Math.max(lastTick().peakL, lastTick().peakR), out: out(), sides: sides(),
         line: Object.fromEntries(linePeaks.current),
-        bars: proj.current.bars, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
+        bars: proj.current.bars, song: proj.current.song ?? null, bpm: proj.current.bpm, recording: live.current.recording, armed: armedRef.current,
         tracks: proj.current.tracks.map((tr, i) => {
           const shown = (p: TrackPlugin, s: PluginShown | undefined) => ({ name: p.name, path: p.path, web: !!p.web, starting: s?.starting ?? true, error: s?.error ?? null, site: s?.site ?? null, sliders: (s?.params ?? []).map((q) => ({ name: q.name, value: q.value })) });
           return { name: tr.name, mute: tr.mute, level: tr.params[P.GAIN], notes: tr.notes.length, take: clipsOf(tr)[0] ? { beat: clipsOf(tr)[0].beat, seconds: clipsOf(tr)[0].frames / TAKE_RATE } : null, clips: clipsOf(tr), plays: tr.voiceless ? "none" : tr.plugin ? shown(tr.plugin, pump.current?.state.get(i)) : "fm", insert: tr.insert ? shown(tr.insert, fxPump.current?.state.get(i)) : null };
@@ -488,6 +489,8 @@ export function App() {
       plays: (track: number, plugin: TrackPlugin | null) => commit({ t: "plugin", track, plugin }),
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
+      // song mode's chain (patterns 0 to 7, A to H), as the Song strip sets it; null leaves song mode
+      chain: (chain: number[] | null) => commit({ t: "song", chain }),
       pan: (track: number, v: number) => commit({ t: "param", track, i: P.PAN, v }),
       // a track's Shape (its EQ bands), as the desk's Shape panel sets it
       shape: (track: number, bands: EqDoc) => commit({ t: "eq", track, bands }),
@@ -979,7 +982,7 @@ export function App() {
             <input type="range" min={0} max={100} value={Math.round(project.squash * 100)}
               onChange={(e) => commit({ t: "global", squash: Number(e.currentTarget.value) / 100 }, { group: "squash" })} />
           </label>
-          <div className="field"><span className="silk">Bars</span>
+          {!project.song && <div className="field"><span className="silk">Bars</span>
             <div className="seg">
               {!(BAR_CHOICES as readonly number[]).includes(project.bars) && <button className="on">{project.bars}</button>}
               {BAR_CHOICES.map((b) => (
@@ -987,7 +990,8 @@ export function App() {
                   title={b < project.bars ? "Notes past the new end are removed (undo brings them back)" : undefined}>{b}</button>
               ))}
             </div>
-          </div>
+          </div>}
+          <SongStrip song={project.song} bars={project.bars} onChain={(chain) => commit({ t: "song", chain })} />
         </div>
 
         <div className="out">
