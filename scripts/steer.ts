@@ -145,8 +145,8 @@ export function areas(): string[] {
 export interface Call { app: string; files: string[]; kind: string; level: string; merged: number; known: number; steers: number | null; risky: boolean; near: { doc: Doc; score: number }[] }
 
 /** The call on one task's words against a history: nearest tasks, area, files, kind and their record. */
-export function steer(text: string, docs: Doc[], graph: ReturnType<typeof coChange>, apps: string[], paths: string[], keep?: (f: string) => boolean, ix = bm25Index(docs.map((d) => d.text))): Call {
-  const near = bm25(ix, text, 10).map((h) => ({ doc: docs[h.doc]!, score: h.score }));
+export function steer(text: string, docs: Doc[], graph: ReturnType<typeof coChange>, apps: string[], paths: string[], keep?: (f: string) => boolean, ix = bm25Index(docs.map((d) => d.text)), find = (t: string) => bm25(ix, t, 10)): Call {
+  const near = find(text).map((h) => ({ doc: docs[h.doc]!, score: h.score }));
   const app = guessApp(text, near.map((n) => ({ app: n.doc.app, weight: n.score })), apps);
   const files = rankFiles(taskFiles(text, paths), near.map((n) => ({ files: n.doc.files, weight: n.doc.app === app ? n.score * 3 : n.score })), graph, keep);
   const five = near.slice(0, 5), withRun = five.filter((n) => n.doc.steers !== undefined);
@@ -158,13 +158,15 @@ export function steer(text: string, docs: Doc[], graph: ReturnType<typeof coChan
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 3)}...` : s);
 
-function evaluate(docs: Doc[], days = 14) {
+export type Finder = (past: Doc[], ix: ReturnType<typeof bm25Index>) => (text: string) => { doc: number; score: number }[];
+
+export function evaluate(docs: Doc[], days = 14, finder?: Finder, label = "") {
   const cut = Date.now() - days * DAY;
   const past = docs.filter((d) => d.created < cut), held = docs.filter((d) => d.created >= cut && d.pr && d.ask);
-  const graph = coChange(past.map((d) => d.files)), ix = bm25Index(past.map((d) => d.text)), apps = areas();
+  const graph = coChange(past.map((d) => d.files)), ix = bm25Index(past.map((d) => d.text)), apps = areas(), find = finder?.(past, ix);
   let app = 0, appN = 0, file = 0, steered = 0, caught = 0, flagged = 0, flaggedRight = 0, runs = 0;
   for (const h of held) {
-    const c = steer(h.text.slice(0, h.ask), past, graph, apps, [], undefined, ix);
+    const c = steer(h.text.slice(0, h.ask), past, graph, apps, [], undefined, ix, find);
     if (h.merged && h.files.length) {
       appN++;
       if (c.app === h.app) app++;
@@ -176,7 +178,7 @@ function evaluate(docs: Doc[], days = 14) {
     if (c.risky) { flagged++; if (h.steers >= 3) flaggedRight++; }
   }
   const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : "-");
-  console.log([`steer --eval: the last ${days} days held out, ${past.length} older tasks to learn from`,
+  console.log([`steer --eval${label}: the last ${days} days held out, ${past.length} older tasks to learn from`,
     `  right app in the top 1        ${pct(app, appN)} (${app} of ${appN} merged PRs)`,
     `  a touched file in the top 5   ${pct(file, appN)} (${file} of ${appN})`,
     `  risky vs steered 3+ times     caught ${caught} of ${steered} such runs; ${flaggedRight} of ${flagged} flagged runs were (${runs} runs with a session)`].join("\n"));
