@@ -4,12 +4,11 @@
 // It can hire anyway (Mervin orders the merges) or hold: the office queues it itself once that work has merged.
 //
 // The task's files are the repo's paths its text names (@rustybuns/util/overlap taskFiles), its issue's title and
-// body included, and its apps are the `apps/<name>` those files sit in or its text names (#4956): two tasks on one
-// app clash even when they name different files, since a task names a file or two and then edits dozens. A seated
+// body included. Only shared files clash: two tasks on one app that name different files both start, and Mervin
+// orders the merges (the same-app hold of #4956 kept queues waiting 5 to 13 hours). A seated
 // worker with no PR yet counts too (#3427): the files its branch and worktree change against origin/main, and the
 // files and apps its first prompt names. Anything the office can't read (no gh, no git, not a GitHub checkout) lets the hire through.
-// The queue asks again when it seats a task (seatClash, patched into server/queue.js): tasks queued together had no
-// branch to clash with yet, so a queued task whose app an open PR or a seated worker is changing stays queued.
+// The queue never holds a task it has: a person queued it, so it starts at the next free desk, and Mervin orders the merges.
 // AGENT_OFFICE_OVERLAP=off turns it off.
 
 import { execFile } from "node:child_process";
@@ -59,25 +58,21 @@ export function taskApps(text: string, paths: string[]): string[] {
   return [...out].sort();
 }
 
-/** The pure part: which open PRs, queued tasks and seated workers change the files `text` names, or its apps. Lock and generated files don't count. */
+/** The pure part: which open PRs, queued tasks and seated workers change the files `text` names (the same app alone is no clash: Mervin orders the merges). Lock and generated files don't count. */
 export function clashOf(text: string, paths: string[], prs: OpenPr[], queued: QueueTask[], issues: Issue[] = [], workers: BusyWorker[] = []): Clash {
   const files = taskFiles(text, paths).filter(real), apps = taskApps(text, paths);
-  const want = new Set(files), mine = new Set(apps);
-  // what another piece of work shares: the same files, then each shared app it touches elsewhere as `apps/<name>/`
-  const shared = (theirs: string[], theirApps = appsOf(theirs)) => {
-    const same = [...new Set(theirs.filter((f) => want.has(f)))].sort();
-    const covered = new Set(appsOf(same));
-    return [...same, ...theirApps.filter((a) => mine.has(a) && !covered.has(a)).map((a) => `apps/${a}/`)];
-  };
+  const want = new Set(files);
+  // what another piece of work shares: the same files
+  const shared = (theirs: string[]) => [...new Set(theirs.filter((f) => want.has(f)))].sort();
   // a dependency bump is the lockfile and a package.json: rebuilt, not merged by hand
   const hit = prs.filter((p) => !p.branch.startsWith("dependabot/"))
     .map((p) => ({ pr: p.number, title: p.title, branch: p.branch, files: shared(p.files.filter(real)) }))
     .filter((p) => p.files.length).sort((a, b) => b.files.length - a.files.length || a.branch.localeCompare(b.branch));
   const others = queued.map((t) => {
     const text = taskText(t, issues);
-    return { id: t.id, title: t.title, files: shared(taskFiles(text, paths), taskApps(text, paths)) };
+    return { id: t.id, title: t.title, files: shared(taskFiles(text, paths)) };
   });
-  const seated = workers.map(({ apps: theirs = [], ...w }) => ({ ...w, files: shared(w.files.filter(real), [...new Set([...appsOf(w.files), ...theirs])]) }))
+  const seated = workers.map(({ apps: _apps, ...w }) => ({ ...w, files: shared(w.files.filter(real)) }))
     .filter((w) => w.files.length);
   return { files, apps, prs: hit, queued: others.filter((o) => o.files.length), workers: seated };
 }
@@ -183,43 +178,8 @@ export async function hireClash(floor: GuardFloor, body: unknown, exec: Run = ru
 /** Whether the request said to go ahead, or to wait. */
 export const flagOf = (body: unknown, k: "anyway" | "hold") => field(body, k) === true;
 
-// --- asked again when the queue seats a task (#4956) ---
-
-const goAhead = new Set<string>();
-/** A request sent with anyway: its prompt is remembered, so the queue seats it later without asking again. Returns null (no clash). */
-export function anyway(body: unknown): null {
-  const prompt = check(obj({ prompt: str(Infinity) }), body)?.prompt.trim();
-  if (prompt) goAhead.add(prompt);
-  if (goAhead.size > 200) goAhead.delete(goAhead.values().next().value!);
-  return null;
-}
-
-const waitSaid = new Map<string, string>();
-/**
- * Whether the queue should leave queued task `t` for now: an open PR or a seated worker with no PR is changing its files
- * or its apps. Synchronous, as the queue's seating is: it reads the last minute's look at the checkout, and lets the task
- * through until there is one. Toasts once per task what it waits on.
- */
-export function seatClash(floor: GuardFloor, t: unknown, toast: (m: string) => void = () => {}, setting = process.env.AGENT_OFFICE_OVERLAP ?? ""): boolean {
-  if (setting.trim().toLowerCase() === "off" || !floor.dir) return false;
-  const task = check(obj({ id: str(200), title: str(Infinity, { min: 0, dflt: "" }), prompt: maybe(str(Infinity, { min: 0 })), issue: maybe(int(1, Infinity)) }), t);
-  if (!task) return false;
-  if ([...goAhead].some((p) => task.prompt?.includes(p))) return false;
-  let snap: Snapshot | undefined;
-  try { snap = look(floor.dir).ready; } catch { return false; }
-  if (!snap) return false;
-  const issues = floor.github?.issues?.items ?? [];
-  const seated = (floor.workers?.list() ?? []).map((w) => check(Seated, w)).filter((w) => w !== null && !!w.worktree && !w.pr)
-    .map((w) => ({ id: w!.id, name: w!.name, branch: w!.worktree!.branch, files: taskFiles(w!.prompt ?? "", snap.paths), apps: taskApps(w!.prompt ?? "", snap.paths) }));
-  const c = clashOf(taskText(task, issues), snap.paths, snap.prs, [], issues, seated);
-  if (!clashes(c)) { waitSaid.delete(task.id); return false; }
-  const on = [...c.prs.map((p) => `PR #${p.pr}`), ...c.workers.map((w) => `${w.name}'s work`)].join(", ");
-  if (waitSaid.get(task.id) !== on) {
-    waitSaid.set(task.id, on);
-    toast(`📋 "${task.title || "A task"}" stays queued until ${on} merges: they change ${[...new Set([...c.prs, ...c.workers].flatMap((x) => x.files))].slice(0, 3).join(", ")}`);
-  }
-  return true;
-}
+/** A request sent with anyway goes ahead: no clash. */
+export const anyway = (_body: unknown): null => null;
 
 // --- hold until merged ---
 
@@ -275,8 +235,6 @@ export const heldTasks = (floor?: string): HeldTask[] =>
 export function resetOverlap() {
   held.clear();
   seen.clear();
-  goAhead.clear();
-  waitSaid.clear();
   if (timer) clearInterval(timer);
   timer = undefined;
 }

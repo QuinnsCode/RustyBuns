@@ -140,20 +140,6 @@ export function floorGuardQueue(js: string) {
   return "import * as __rbGuard from '../rb-floorguard.js';\n" + js;
 }
 
-/**
- * server/queue.js and server/floor.js (#4956): the queue asks again as it seats a task, and leaves one whose files or
- * app an open PR or a seated worker is changing queued (live/overlap.ts seatClash). Tasks queued together had no branch
- * to clash with when they were added.
- */
-export function floorGuardSeat(queue: string, floor: string) {
-  queue = once(queue, "queue.js", "            if (t.status !== 'queued')\n                continue;\n",
-    "            if (t.status !== 'queued')\n                continue;\n            if (this.events.seatClash?.(t))\n                continue;\n");
-  floor = once(floor, "floor.js", "        this.queue = new TaskQueue(dataDir, this.workers, !!this.project.branch, {\n",
-    "        this.queue = new TaskQueue(dataDir, this.workers, !!this.project.branch, {\n" +
-    "            seatClash: (t) => __rbSeat(this, t, (m) => ctx.toast(this, m, 'info')),\n");
-  return { queue, floor: "import { seatClash as __rbSeat } from './rb-floorguard.js';\n" + floor };
-}
-
 /** bin/office-workers.js: an ask-first office holds a request for up to ASK_MS, so the command waits that much longer. */
 export function floorGuardBin(js: string) {
   const timeouts = "const TIMEOUT_MS = { list: 15_000, tell: 15_000, pr: 45_000, hire: 90_000, home: 300_000 };\n";

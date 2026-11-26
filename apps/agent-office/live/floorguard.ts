@@ -7,8 +7,8 @@
 // - tell_worker's prompt reaches the other agent marked as from the worker who sent it, not from its person, and
 //   the floor gets a toast of it, so a prompt-injected agent can't pass its injection on as an order.
 // - AGENT_OFFICE_PEOPLE_ONLY=tell,hire,home,pr,queue (any of them, or all) keeps those to people: an agent asking gets
-//   a 403 that says so. Agents can still list the workers. Unset, it is `home`: only a person sends a worker home
-//   (the owner's rule). Set it to "" to let agents do it again.
+//   a 403 that says so. Agents can still list the workers. Unset, it is empty: an agent sends a finished worker
+//   home, so done workers don't sit on desks the queue needs.
 // - AGENT_OFFICE_ASK_FIRST=tell,hire,home,pr (any of them, or all) is the softer one (#727): once the office's own
 //   checks pass, the agent's request waits while the office asks its people (an Allow / Deny card on every open
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
@@ -21,7 +21,7 @@ import type { Ask } from "./replies.ts";
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
 export { writeCheck } from "../askfirst/ask.ts";
 // #3119: the hire and queue handlers ask what a task collides with before it starts
-export { anyway, clashMessage, flagOf, heldTasks, hireClash, holdTask, seatClash, titleOf } from "./overlap.ts";
+export { anyway, clashMessage, flagOf, heldTasks, hireClash, holdTask, titleOf } from "./overlap.ts";
 export { swapHold } from "./reaper.ts";
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
@@ -35,7 +35,7 @@ function listed(action: string, setting: string) {
 }
 
 /** Why an agent can't do `action`, or '' when it can. */
-export function peopleOnly(action: string, setting = process.env.AGENT_OFFICE_PEOPLE_ONLY ?? "home") {
+export function peopleOnly(action: string, setting = process.env.AGENT_OFFICE_PEOPLE_ONLY ?? "") {
   const what = listed(action, setting);
   return what ? `This office keeps ${what} to people (AGENT_OFFICE_PEOPLE_ONLY): ask your person to do it from the office` : "";
 }
