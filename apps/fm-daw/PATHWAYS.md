@@ -47,6 +47,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 - A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
+- QDAW's lesson, "Make a beat" ([#6171](https://github.com/QuinnsCode/RustyBuns/issues/6171)), on the desk (`/?lesson=beat`, or the cap button at the bottom left; `src/beat-lesson.ts`): starting it empties the groove's Kick, Snare and Hat rows (one undo puts them back), then a kick on every beat, a snare on 2 and 4, hats on every "and", and play it. Each step reads the project's own drum rows as the grid lights them, and says why when a hit is missing or the snare lands on 1 and 3 with the kick. The journey is `test/qdaw-lesson.test.ts`.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
 - Sound Guy Simulator (`apps/load-in`) already teaches load-in, cabling and aiming speakers as a game, level by level.
 
