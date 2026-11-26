@@ -17,7 +17,9 @@ import * as THREE from "three";
 import { arr, num, obj, rec, str } from "@rustybuns/util/guard";
 import { runBlender } from "@rustybuns/cli/blender";
 import { GlbWriter, readGlb, type GNode } from "./gltf-lite.ts";
+import { queued } from "../../../scripts/blender-queue.ts";
 
+await queued(); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 const APP = join(import.meta.dir, "..");
 const RIG = join(APP, "blender/bearer-rig.glb"), SHEET = join(APP, "blender/bearer.json");
 const STRETCHED = join(APP, "blender/out/bearer-stretched.glb"), OUT = join(APP, "public/models/bearer.glb");

@@ -2,6 +2,7 @@
 // Coordinates are metres with y up (three.js); a speaker with yaw 0 and pitch 0 faces +z.
 
 import { gear, type SpeakerSpec } from "./catalog.ts";
+import { type Field, fieldLoss, onLand, speedOfSound } from "./field.ts";
 
 export type Vec3 = { x: number; y: number; z: number };
 
@@ -65,10 +66,14 @@ export function aimTo(src: Pick<Source, "pos" | "yaw" | "pitch">, p: Vec3): { h:
   return { h: Math.atan2(x1, z2), v: Math.atan2(y2, Math.hypot(x1, z2)), d: Math.hypot(dx, dy, dz) };
 }
 
-/** dB SPL from one source at a point: level at 1 m - 20 log10(d) - off-axis loss. */
-export function splAt(src: Source, p: Vec3): number {
-  const { h, v, d } = aimTo(src, p);
-  return levelAt1m(src.speaker, src.watts) - 20 * Math.log10(Math.max(d, MIN_DISTANCE)) - offAxisLoss(src.speaker, h, v);
+/** dB SPL from one source at a point: level at 1 m - 20 log10(d) - off-axis loss. Over a field (field.ts), both stand on
+ *  its land (heights above the flat floor) and the air, the ground and any bank between take theirs: at `freq` Hz, or
+ *  the mids and highs on the whole. */
+export function splAt(src: Source, p: Vec3, field?: Field, freq?: number): number {
+  const s = field?.terrain ? { ...src, pos: onLand(src.pos, field.terrain) } : src, q = onLand(p, field?.terrain);
+  const { h, v, d } = aimTo(s, q);
+  const free = levelAt1m(src.speaker, src.watts) - 20 * Math.log10(Math.max(d, MIN_DISTANCE)) - offAxisLoss(src.speaker, h, v);
+  return field ? free - fieldLoss(s.pos, q, field, freq) : free;
 }
 
 /** Levels added as power (mids and highs, or sources that don't line up in phase): two equal ones make +3 dB. */
@@ -95,15 +100,16 @@ function plays(s: SpeakerSpec, band: Band, freq: number): boolean {
   return band === "low" ? s.lowCut <= freq && freq <= s.highCut : s.highCut > 500;
 }
 
-/** Level at a point from every source playing the band: "high" by power, "low" with phase at `freq` Hz. */
-export function levelAt(sources: readonly Source[], p: Vec3, band: Band, freq = 63): number {
+/** Level at a point from every source playing the band: "high" by power, "low" with phase at `freq` Hz; over a field
+ *  when given one (its air sets the speed the phases turn at). */
+export function levelAt(sources: readonly Source[], p: Vec3, band: Band, freq = 63, field?: Field): number {
   const playing = sources.filter((s) => plays(s.speaker, band, freq));
-  if (band === "high") return sumPower(playing.map((s) => splAt(s, p)));
-  const k = (2 * Math.PI * freq) / SPEED_OF_SOUND;
+  if (band === "high") return sumPower(playing.map((s) => splAt(s, p, field)));
+  const k = (2 * Math.PI * freq) / (field ? speedOfSound(field.tempC) : SPEED_OF_SOUND), q = onLand(p, field?.terrain);
   return sumCoherent(
     playing.map((s) => ({
-      db: splAt(s, p),
-      phase: -k * Math.hypot(p.x - s.pos.x, p.y - s.pos.y, p.z - s.pos.z) - 2 * Math.PI * freq * ((s.delayMs ?? 0) / 1000) + (s.invert ? Math.PI : 0),
+      db: splAt(s, p, field, freq),
+      phase: -k * Math.hypot(q.x - s.pos.x, q.y - onLand(s.pos, field?.terrain).y, q.z - s.pos.z) - 2 * Math.PI * freq * ((s.delayMs ?? 0) / 1000) + (s.invert ? Math.PI : 0),
     })),
   );
 }
@@ -114,8 +120,8 @@ export type Area = { x0: number; z0: number; x1: number; z1: number; y: number; 
 /** dB at each cell, row by row along z (`db[iz * nx + ix]`). */
 export type Grid = Area & { db: Float32Array };
 
-/** The coverage map: level from all sources at every cell of the area, in one band. */
-export function coverage(sources: readonly Source[], area: Area, band: Band, freq = 63): Grid {
+/** The coverage map: level from all sources at every cell of the area, in one band, over a field when given one. */
+export function coverage(sources: readonly Source[], area: Area, band: Band, freq = 63, field?: Field): Grid {
   const { x0, z0, x1, z1, y, nx, nz } = area;
   const db = new Float32Array(nx * nz);
   const dx = (x1 - x0) / nx;
@@ -125,7 +131,7 @@ export function coverage(sources: readonly Source[], area: Area, band: Band, fre
     p.z = z0 + (iz + 0.5) * dz;
     for (let ix = 0; ix < nx; ix++) {
       p.x = x0 + (ix + 0.5) * dx;
-      db[iz * nx + ix] = levelAt(sources, p, band, freq);
+      db[iz * nx + ix] = levelAt(sources, p, band, freq, field);
     }
   }
   return { ...area, db };

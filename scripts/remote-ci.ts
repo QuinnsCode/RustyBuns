@@ -137,11 +137,11 @@ export type Builder = { host: string; dir: string; ssh: string[] };
 
 /** How every ssh shell remote-ci starts begins: the builder board (builder-board.ts) knows its shells by it. */
 export const REMOTE_PATH = `export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"`;
-function remote(b: Builder, script: string) {
+export function remote(b: Builder, script: string) {
   return Bun.spawn([...b.ssh, b.host, remoteScript(b, script)], { stdout: "pipe", stderr: "pipe" });
 }
 
-async function stream(p: ReturnType<typeof remote>, label: string, quiet = false) {
+export async function stream(p: { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number> }, label: string, quiet = false) {
   let out = "";
   const pipe = async (s: ReadableStream<Uint8Array>) => {
     let rest = "";
@@ -250,20 +250,26 @@ function alive(dir: string) {
   try { process.kill(pid, 0); return true; } catch (e) { return e instanceof Error && "code" in e && e.code === "EPERM"; }
 }
 
+/** Push `sha` to `ref` in the repo at `path` under Bob's builder folder, one push at a time from this Mac (pushLock),
+ *  given up after PUSH_MS. Answers git's exit code: not 0 means Bob went away or the push hung. */
+export async function pushTo(b: Builder, path: string, sha: string, ref: string, cwd: string): Promise<number> {
+  const unlock = await pushLock();
+  const push = Bun.spawn(["nice", "git", "push", "-q", `${b.host}:${b.dir}/${path}`, `+${sha}:${ref}`], {
+    cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
+  });
+  const hung = setTimeout(() => { console.error(`the push to ${path} hung for ${PUSH_MS / 60_000} minutes; giving up`); push.kill(); }, PUSH_MS);
+  const code = await push.exited.finally(unlock);
+  clearTimeout(hung);
+  return code;
+}
+
 // Send the commit straight to the slot's own repo, then check it out on top of its warm node_modules.
 // The ref is the slot's scratch: one a run left behind (it failed before its checkout) is overwritten, not a reason to refuse.
 // After the checkout the commit stays at refs/remote-ci/base, so the next push packs only what is new since this run
 // (a few KB). Without it the slot showed only its setup-day refs, and every push packed 200 MB of history again.
 export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   const ref = `refs/remote-ci/${slot}`;
-  const unlock = await pushLock();
-  const push = Bun.spawn(["nice", "git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `+${sha}:${ref}`], {
-    cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
-  });
-  const hung = setTimeout(() => { console.error(`the push to ${slot} hung for ${PUSH_MS / 60_000} minutes; giving up`); push.kill(); }, PUSH_MS);
-  const pushed = await push.exited.finally(unlock);
-  clearTimeout(hung);
-  if (pushed) return PUSH_FAILED;
+  if (await pushTo(b, slot, sha, ref, cwd)) return PUSH_FAILED;
   const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref refs/remote-ci/base ${sha} `
     + `&& git update-ref -d ${ref} && git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
   return code;
@@ -461,9 +467,12 @@ async function serve(): Promise<number> {
   const stop = new AbortController();
   process.once("SIGINT", () => stop.abort());
   process.once("SIGTERM", () => stop.abort());
+  // The Blender queue (scripts/blender-queue.ts, #6007): one job at a time, in order, while he serves.
+  const blender = (await import("./blender-queue.ts")).drain(dir, stop.signal, { log: () => {} });
   const { GATHER, show, swarmQueue } = await import("./builder-board.ts");
   const s = swarm();
   await show(() => Bun.$`sh -c ${GATHER}`.cwd(dir).quiet().nothrow().text(), stop.signal, { every: 1000, title: `${(await Bun.$`hostname -s`.quiet().nothrow().text()).trim() || "builder"} · taking runs · Ctrl-C to stop`, swarm: s && (() => swarmQueue(s)) });
+  await blender;
   clearInterval(timer);
   clearInterval(cut);
   awake?.kill();
@@ -487,7 +496,7 @@ async function watch(host: string | undefined): Promise<number> {
   return 0;
 }
 
-const builder = (host: string): Builder =>
+export const builder = (host: string): Builder =>
   ({ host, dir: process.env.BUILDER_DIR ?? "builder", ssh: (process.env.BUILDER_SSH ?? "ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=4").split(" ") });
 
 // `bun run builder off|on` sets the valve; bare `bun run builder` says which way it is and whether the builder answers.

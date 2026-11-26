@@ -42,8 +42,16 @@ export function blenderFailure(log: string): string {
   return (picked.length ? picked : lines.slice(-25)).join("\n").trim();
 }
 
+/** A Mac that hands its heavy work to a builder (BUILDER_HOST set: the office Mac) never starts Blender itself: it
+ *  crashed that Mac (2026-11-23). Its scripts go through the Blender queue (scripts/blender-queue.ts, #6007). */
+function notHere(instead: string) {
+  if (process.env.BUILDER_HOST && !process.env.BLENDER_JOB)
+    throw new Error(`Blender doesn't run on this Mac (BUILDER_HOST is set: the builder Mac runs it, one job at a time). Instead: ${instead}`);
+}
+
 /** Runs a Python script in headless Blender; resolves to its stdout and stderr, or throws with why it failed. */
 export async function runBlender(run: BlenderRun): Promise<{ out: string; err: string }> {
+  notHere(`bun run blender add ${run.script} ${(run.args ?? []).join(" ")} --out <dir>`);
   const exe = findBlender();
   if (!exe) throw new Error("no Blender: install it or set BLENDER_PATH");
   if (run.version) {
@@ -132,6 +140,7 @@ export async function warmBlender(run: WarmRun = {}): Promise<WarmBlender> {
     cmd = [...(run.ssh ?? ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]), run.host,
       `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"; cd ${dir} && exec ${exe} ${args.map(quote).join(" ")}`];
   } else {
+    notHere("a warm Blender on the builder: warmBlender({ host: process.env.BUILDER_HOST })");
     const exe = findBlender();
     if (!exe) throw new Error("no Blender: install it or set BLENDER_PATH");
     if (run.version) {

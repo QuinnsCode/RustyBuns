@@ -1,9 +1,9 @@
 // The room's PA over its floor, from above: @rustybuns/gear's coverage map of the very boxes the jam room plays the set
-// from (pa-room.ts paSources), so the map in the builder is what you hear on Walk in. The colours are against a level
-// you name (the floor's middle, pa-room.ts floorMiddle, where the PA sets its level): pale gold louder than it, orange within 3 dB,
-// teal 9 dB down, deep blue past 15. The rig cards (rig-cards.ts) paint the same ramp. Pure but for `heatUrl`.
+// from (pa-room.ts paSources), over the same field (roomField: air, ground, banks), so the map in the builder is what
+// you hear on Walk in. The colours are against a level you name (the floor's middle, pa-room.ts floorMiddle, where the PA
+// sets its level): pale gold louder than it, orange within 3 dB, teal 9 dB down, deep blue past 15. The rig cards (rig-cards.ts) paint the same ramp. Pure but for `heatUrl`.
 import { coverage, floorStats, levelAt, type Area, type FloorStats, type Grid } from "@rustybuns/gear";
-import { arrivalSpread, EAR_Y, floorMiddle, paSources, paSpeakers } from "./pa-room.ts";
+import { arrivalSpread, EAR_Y, floorMiddle, paSources, paSpeakers, roomField } from "./pa-room.ts";
 import type { StudioDef } from "./room.ts";
 
 /** The colour ramp, dB under the reference against RGB. */
@@ -44,7 +44,8 @@ export function floorMap(def: StudioDef, cell = 0.5): FloorMap | null {
   if (!sp.length) return null;
   const mid = floorMiddle(sp), middle: [number, number] = [mid.x, mid.z];
   const { w, d } = def.size, area: Area = { x0: -w / 2, x1: w / 2, z0: -d / 2, z1: d / 2, y: EAR_Y, nx: Math.max(1, Math.round(w / cell)), nz: Math.max(1, Math.round(d / cell)) };
-  const src = paSources(def), grid = coverage(src, area, "high"), ref = levelAt(src, { x: middle[0], y: EAR_Y, z: middle[1] }, "high");
+  // out of doors over the field: its air, its ground and its banks (pa-room.ts roomField), as the Walk-in sound hears it
+  const src = paSources(def), field = roomField(def), grid = coverage(src, area, "high", 63, field), ref = levelAt(src, { x: middle[0], y: EAR_Y, z: middle[1] }, "high", 63, field);
   // the crowd's floor: a metre or more in front of the line the speakers stand on, as they face
   const mx = sp.reduce((t, s) => t + s.at[0], 0) / sp.length, mz = sp.reduce((t, s) => t + s.at[1], 0) / sp.length;
   const fx = middle[0] - mx, fz = middle[1] - mz, len = Math.hypot(fx, fz) || 1;

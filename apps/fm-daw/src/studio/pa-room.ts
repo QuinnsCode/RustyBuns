@@ -11,12 +11,12 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { levelAt, source, stackSources, stackWidth, system, systemSound, type RigPlan, type Source, type System } from "@rustybuns/gear";
+import { airAbsorption, banks, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
 import { thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
 
-/** Metres a second. */
+/** Metres a second, indoors (out of doors the field's air sets it: roomField). */
 export const SOUND_SPEED = 343;
 /** How far in front of a speaker it plays at full level, metres: closer doesn't get louder (you're inside the horn's near field). */
 export const REF_M = 4;
@@ -32,8 +32,17 @@ export const WET = 0.4;
 /** A PA speaker: where it stands on the floor, the way its front faces, which side of the stereo set it plays ("mono": both,
  *  summed), its horizontal pattern in degrees (the full width 6 dB down, from its top's sheet; 90 when left out), and the
  *  boxes in it that carry the mids and highs as @rustybuns/gear sources (stackSources: placed, aimed, splayed, pinned; one
- *  DEFAULT_TOP at HORN_Y when left out). How loud it is anywhere is gear's `levelAt` over them: the coverage map's sum. */
-export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number; boxes?: Source[] }
+ *  DEFAULT_TOP at HORN_Y when left out). How loud it is anywhere is gear's `levelAt` over them: the coverage map's sum.
+ *  Out of doors each carries the room's field (roomField), so its level, its highs and its delay cross the same air and land. */
+export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number; boxes?: Source[]; field?: Field }
+
+/** The field an open-air room's sound crosses (@rustybuns/gear field.ts): its air (a mild evening when left out), what
+ *  the crowd stands on and its banks as the land's heights. None indoors: a room's floor is flat and its air still. */
+export function roomField(def: StudioDef): Field | undefined {
+  const out = def.outdoor;
+  if (!out) return undefined;
+  return { tempC: out.air?.tempC ?? MILD_FIELD.tempC, humidity: out.air?.humidity ?? MILD_FIELD.humidity, ground: out.ground ?? MILD_FIELD.ground, terrain: out.banks?.length ? banks(out.banks) : undefined };
+}
 
 /** The PA you placed: an open-air party's, else an indoor room's own (none: the club stacks either side of the decks). */
 export const roomPa = (def: StudioDef): RoomPa | undefined => def.outdoor ?? def.pa;
@@ -97,12 +106,13 @@ export function paSpeakers(def: StudioDef): Speaker[] {
     }
   }
   if (!stacks.length) return [];
-  if (roomPa(def)?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread }));
+  const field = roomField(def);
+  if (roomPa(def)?.mono) return stacks.map((s) => ({ ...s, side: "mono" as const, spread, field }));
   // a stack plays the left of the set when it stands left of the stacks' middle as the crowd sees them
   const mx = stacks.reduce((t, s) => t + s.at[0], 0) / stacks.length, mz = stacks.reduce((t, s) => t + s.at[1], 0) / stacks.length;
   return stacks.map((s) => {
     const rx = Math.cos(s.yaw), rz = -Math.sin(s.yaw); // the crowd's right, facing the speaker
-    return { ...s, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread };
+    return { ...s, side: (s.at[0] - mx) * rx + (s.at[1] - mz) * rz < 0 ? 0 : 1, spread, field };
   });
 }
 
@@ -146,11 +156,13 @@ export function arrivalSpread(def: StudioDef, x: number, z: number): number {
 
 /** One speaker as heard from `ears`, out of `n` speakers playing the same set (so two stacks together are as loud as one was). */
 export function hearSpeaker(sp: Speaker, ears: Ears, n = 1): Heard {
-  const dx = ears.x - sp.at[0], dz = ears.z - sp.at[1], flat = Math.hypot(dx, dz), m = Math.hypot(flat, HORN_Y - EAR_Y);
+  const f = sp.field, land = f?.terrain ?? (() => 0);
+  const horn = { x: sp.at[0], y: HORN_Y + land(sp.at[0], sp.at[1]), z: sp.at[1] }, ear = { x: ears.x, y: EAR_Y + land(ears.x, ears.z), z: ears.z };
+  const dx = ears.x - sp.at[0], dz = ears.z - sp.at[1], flat = Math.hypot(dx, dz), m = Math.hypot(flat, horn.y - ear.y);
   // the throw: @rustybuns/gear's level from the speaker's boxes where your ears are (distance and off-axis loss, as the
   // coverage map works it out), against straight in front at REF_M; never louder than that (the horn's near field)
   const boxes = boxesOf(sp), ref = { x: sp.at[0] + Math.sin(sp.yaw) * REF_M, y: EAR_Y, z: sp.at[1] + Math.cos(sp.yaw) * REF_M };
-  const throwK = Math.min(1, 10 ** ((levelAt(boxes, { x: ears.x, y: EAR_Y, z: ears.z }, "high") - levelAt(boxes, ref, "high")) / 20));
+  const throwK = Math.min(1, 10 ** ((levelAt(boxes, { x: ears.x, y: EAR_Y, z: ears.z }, "high", 63, f) - levelAt(boxes, ref, "high", 63, f)) / 20));
   const onAxis = flat > 1e-6 ? (dx * Math.sin(sp.yaw) + dz * Math.cos(sp.yaw)) / flat : 1;
   // your head: the speaker's direction against the way you face, and to your right
   const fx = -Math.sin(ears.yaw), fz = -Math.cos(ears.yaw), rx = Math.cos(ears.yaw), rz = -Math.sin(ears.yaw);
@@ -158,13 +170,18 @@ export function hearSpeaker(sp: Speaker, ears: Ears, n = 1): Heard {
   const front = (1 + ahead) / 2, head = HEAD_BACK + (1 - HEAD_BACK) * front;
   const gain = throwK * head / Math.sqrt(n);
   // the air: its loss at f grows as f², so it reaches 3 dB at 4 kHz · √(3 / (loss at 4k · m)); behind your head it's duller still
-  const air = 4000 * Math.sqrt(3 / (AIR_4K_DB * m)) * (0.55 + 0.45 * front);
+  // (out of doors the loss at 4k is the field's air's, ISO 9613-1: a dry night dulls the far stack sooner)
+  const air4k = f ? airAbsorption(4000, f.tempC, f.humidity, f.kPa) : AIR_4K_DB;
+  const air = 4000 * Math.sqrt(3 / (air4k * m)) * (0.55 + 0.45 * front);
+  // a bank in the way: over its crest the highs don't bend (the level already lost its share, gear's fieldLoss); the
+  // further the sound must bend to reach you, the lower it rolls off
+  const over = f?.terrain ? screenPath(f.terrain, horn, ear) : 0, screen = over > 0 ? 2000 / Math.sqrt(1 + 20 * over) : 20000;
   // the horn's pattern: inside it the highs hold; past its edge they fall away (a horn beams its highs, the bass wraps
   // round), so walking off a narrow rig's axis dulls it sooner than a wide one's
   const edge = ((sp.spread ?? 90) / 2) * Math.PI / 180, off = Math.acos(clamp(onAxis, -1, 1));
   const beam = off <= edge ? 20000 : 20000 * (edge / off) ** 3;
-  const cutoff = clamp(Math.min(air, beam), 800, 20000);
-  return { gain, delay: m / SOUND_SPEED, cutoff, pan: clamp(right, -1, 1), m };
+  const cutoff = clamp(Math.min(air, beam, screen), 800, 20000);
+  return { gain, delay: m / (f ? speedOfSound(f.tempC) : SOUND_SPEED), cutoff, pan: clamp(right, -1, 1), m };
 }
 
 /** How far out on the floor the set plays at the level it was played at, metres in front of the speakers' middle. */

@@ -52,3 +52,14 @@ test("a build pinned to a Blender version runs on that one and stops on any othe
   expect(String(e)).toContain("needs Blender 5.2.1");
   expect(String(e)).toContain("is 5.2.0");
 });
+
+test("on a Mac that hands its heavy work to a builder, it won't start Blender and names the queue line instead", async () => {
+  const host = process.env.BUILDER_HOST;
+  process.env.BUILDER_HOST = "bob.local";
+  try {
+    const e = await runBlender({ script: "blender/beast.py", args: ["beasts/squonk.json"] }).catch((x: unknown) => x);
+    expect(String(e)).toContain("bun run blender add blender/beast.py beasts/squonk.json");
+  } finally {
+    if (host === undefined) delete process.env.BUILDER_HOST; else process.env.BUILDER_HOST = host;
+  }
+});

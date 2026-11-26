@@ -11,7 +11,9 @@ import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { runBlender } from "@rustybuns/cli/blender";
 import { judgePairs, keep, keptDir, OUT } from "./judge-loop.ts";
+import { queued } from "../../../scripts/blender-queue.ts";
 
+await queued(); // Blender runs on the builder Mac, one job at a time (scripts/blender-queue.ts)
 const APP = join(import.meta.dir, "..");
 const TEX = join(APP, "public", "ground-tex");
 /** The shipped textures, in KB, may not pass this. */

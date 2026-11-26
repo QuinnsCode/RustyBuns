@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { homedir } from "node:os";
-import { check, heavy, prCreate, wideRead, wideScan } from "./guard";
+import { blenderLaunch, check, heavy, prCreate, wideRead, wideScan } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);
@@ -113,6 +113,21 @@ test.each([
   if (hint === null) expect(why).toBeNull();
   else expect(why).toContain(hint);
   expect(heavy(cmd, "/repo", "/repo", false)).toBeNull();
+});
+
+// #6007: Blender never starts on the office Mac; a direct launch gets the queue's line.
+test.each([
+  ["blender -b --factory-startup -P blender/beast.py -- beasts/squonk.json", "bun run blender add blender/beast.py beasts/squonk.json"],
+  ["cd apps/mythic-masters && /Applications/Blender.app/Contents/MacOS/Blender -b -P x.py", "bun run blender add x.py --out"],
+  ["open -a Blender model.blend", "bun run blender add <script.py>"],
+  ["bun run blender add blender/beast.py beasts/squonk.json", null],
+  ["git grep -n blender -- scripts", null],
+  ["git diff | grep -E 'remote-ci|cli/src/blender|blender' | head", null],
+  ["git commit -F - <<'X'\nBlender queue: one job at a time on Bob\nX", null],
+])("blender: %s", (cmd, hint) => {
+  const why = blenderLaunch(cmd);
+  if (hint === null) expect(why).toBeNull();
+  else expect(why).toContain(hint);
 });
 
 // #5194: a du/find over the whole office walks every worktree's node_modules and stalls everyone

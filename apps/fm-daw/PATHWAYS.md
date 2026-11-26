@@ -15,7 +15,7 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 | Word | Sector | The real problem | Who | Door | Works end to end today? |
 |---|---|---|---|---|---|
 | LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
-| BUILD | [Event Planner](#5-build-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and on flat open ground: coverage, delay, power, gear list. No weather or terrain yet |
+| BUILD | [Event Planner](#5-build-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and out: coverage, delay, power, gear list; out of doors over the night's air, the ground and banks on the field. No wind, forecast or captured terrain yet |
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
 | BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
@@ -28,7 +28,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 
 **The build order** (visual plan: https://claude.ai/artifact/EvSXowEP4iSpRvfjL5zEs5): 0. this regroup;
 1. the Event Planner outdoors, sound that travels the way it does in the weather and over the ground
-   ([below](#next-sound-that-travels-through-weather-and-over-the-ground)); 2. the landing page, which shows that off;
+   ([below](#out-of-doors-the-air-the-ground-and-the-land)); 2. the landing page, which shows that off;
 3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest);
 5. a lesson in every sector, and QDAW's song mode.
 
@@ -143,28 +143,39 @@ what power, before the truck is loaded.
   and the PA panel gives the floor's level and how even it is. It is `@rustybuns/gear`'s `coverage` of the very boxes
   `pa-room.ts` plays the set from (`paSources`), so the map is what you hear on Walk in. The Delay button marks where the far stacks land late on the blueprint
   (`pa-room.ts` `arrivals`, from `hearSpeaker`'s delay): amber past 10 ms (a smear), red past 30 (an echo, a delay tower's
-  place), the ms written across the floor. Ring time and a clap at each seat.
+  place), the ms written across the floor. Ring time and a clap at each seat. Out of doors the map, the delay marks and the
+  Walk-in sound all cross the same field ([below](#out-of-doors-the-air-the-ground-and-the-land)).
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
 - Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
   breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
 - Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
   and the power plan (`gearList`); **Plan drawing** saves the blueprint with the coverage map on it as an SVG.
-- `window.qrooms`: `pa()`, `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
+- `window.qrooms`: `pa()` (with `field`: the air, ground, speed of sound and banks), `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
-### Next: sound that travels through weather and over the ground
+### Out of doors: the air, the ground and the land
 
-Outdoors the map today is the speakers' own spread with distance. What a crew needs next is sound that travels the
-way it does on the night, a fair try at the physics from three inputs:
-- **Air:** temperature and relative humidity set how fast highs fade with distance (ISO 9613-1 air absorption) and
-  the speed of sound, so the delay towers' times move with the evening.
-- **Ground:** grass, soil, tarmac or water under the crowd soak up or throw back the low mids (a ground factor per
-  surface, ISO 9613-2).
-- **Geography:** the lie of the land: a hill or a bank between a stack and a listener cuts the highs behind it, a bowl
-  carries. A height map under the field, from the splat capture or drawn.
+Out of doors the sound crosses a field (`@rustybuns/gear` `field.ts`, #6018), and `coverage`, `levelAt` and `splAt` take
+it, so the map, the Walk-in sound (`pa-room.ts` `roomField`, carried by every speaker) and the delay marks stay one model.
+No wave solver: a fair try at the physics from the standards.
 
-Each is a change to `@rustybuns/gear`'s `coverage`, so the map, the Walk-in sound and the delay marks stay one model.
-Wind, a forecast for the date, noise at the site's edge and wind load on the stacks come later.
+**Works today:**
+- **Air:** the PA panel's Air and ground section sets the night's temperature and relative humidity. They set how fast
+  the highs fade with distance (ISO 9613-1, checked against its table) and the speed of sound, so the delay marks move with
+  the evening (a freezing night lands the far stack later than a hot one). Walk in hears the same air dull the far stack.
+- **Ground:** grass, trodden soil, tarmac or water under the crowd (ISO 9613-2's ground factor, its octave-band method):
+  hard ground hands back up to 3 dB, grass soaks the low mids near the ground.
+- **Land:** banks on the field as a height map (`banks`): the panel's mountain button stands one across the picked stack's
+  throw, the plan draws each, and a crest between a stack and a listener cuts the highs behind it (a thin screen, the
+  barrier loss in place of the ground term) on the map and on Walk in.
+- `qrooms.edit({ t: "field", tempC, humidity, ground })`, `{ t: "bank", at, yaw, len, h }`, `{ t: "unbank", index }`;
+  `qrooms.pa().field`. The journey is the third test in `test/pa-builder.test.ts`; the ISO table is `packages/gear/test/field.test.ts`.
+
+**Missing:**
+- Banks stand on the plan only: the builder's 3D view and the Walk-in room are still flat, and a bank can't be dragged or
+  turned on the plan yet.
+- The land from a splat capture's height map, not only drawn banks.
+- Wind, a forecast for the date, noise at the site's edge and wind load on the stacks (later, by the owner's call).
 
 
 ## 6. BUILD: Q Amps and Q Builder

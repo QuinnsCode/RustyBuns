@@ -23,8 +23,8 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
-import { arrivals, paSpeakers, rigPlan, rigStacks, roomPa, roomRig } from "./pa-room.ts";
+import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground } from "@rustybuns/gear";
+import { arrivals, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
 import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
@@ -176,6 +176,13 @@ function render() {
   plan.append(side);
   const [dx, dz] = room.door.at;
   plan.append(el("path", { "data-door": 1, class: "door", d: `M ${dx - 0.3 * scale} ${dz + 0.25 * scale} L ${dx} ${dz - 0.25 * scale} L ${dx + 0.3 * scale} ${dz + 0.25 * scale}`, "stroke-width": 0.06 * scale }));
+  // the field's banks: each its foot turned its way, its crest dashed along it
+  for (const b of room.outdoor?.banks ?? []) {
+    const turned = el("g", { transform: `rotate(${(-b.yaw * 180) / Math.PI} ${b.at[0]} ${b.at[1]})` }), wide = Math.max(2, 4 * b.h);
+    turned.append(el("rect", { class: "bank", x: b.at[0] - b.len / 2 - wide / 2, y: b.at[1] - wide / 2, width: b.len + wide, height: wide, rx: wide / 2, "stroke-width": 0.03 * scale }));
+    turned.append(el("line", { class: "crest", x1: b.at[0] - b.len / 2, y1: b.at[1], x2: b.at[0] + b.len / 2, y2: b.at[1], "stroke-width": 0.05 * scale }));
+    plan.append(turned);
+  }
   // the rig's stacks, each its footprint turned its way, and a line out along where its tops aim
   if (roomPa(room)) {
     const rig = roomRig(room), sw = stackWidth(rig), sd = Math.max(...rig.stack.map((b) => sheet(b).size.d));
@@ -531,6 +538,32 @@ function paDelay(): DelayMap | null {
   return mapFor!.late;
 }
 const deg = (r: number) => Math.round((r * 180) / Math.PI), rad = (d: number) => (d * Math.PI) / 180;
+const GROUND_NAMES: Record<Ground, string> = { grass: "Grass", soil: "Trodden soil", tarmac: "Tarmac", water: "Water" };
+/** Lucide's mountain: a bank on the field. */
+const MOUNTAIN = `<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>`;
+/** A bank the panel stands: across the picked stack's throw (the first stack's, none picked), 6 m out, 10 m long, 2.5 m high
+ *  (over the horns' line to the ears behind it: a lower one hides nothing). */
+function bankAhead(): { t: "bank"; at: [number, number]; yaw: number; len: number; h: number } | null {
+  const stacks = roomPa(room)?.stacks ?? [], st = stacks[stackPicked ?? 0];
+  if (!st) return null;
+  return { t: "bank", at: [st.at[0] + Math.sin(st.yaw) * 6, st.at[1] + Math.cos(st.yaw) * 6], yaw: st.yaw, len: 10, h: 2.5 };
+}
+
+/** The outdoor panel: the night's air and what the crowd stands on, the banks on the field (pa-room.ts roomField). */
+function fieldPanel(): string {
+  const f = roomField(room);
+  if (!f) return "";
+  const loss = (hz: number) => (airAbsorption(hz, f.tempC, f.humidity) * 100).toFixed(1);
+  const x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
+  const list = room.outdoor?.banks ?? [];
+  return `<h2>Air and ground</h2>
+    <div class="row"><label>Air ${f.tempC.toFixed(0)} °C<input type="range" min="-10" max="40" step="1" data-field="tempC" value="${f.tempC}"></label>
+      <label>Humidity ${f.humidity.toFixed(0)} %<input type="range" min="10" max="100" step="5" data-field="humidity" value="${f.humidity}"></label></div>
+    <div class="row"><label>Ground<select id="ground">${GROUNDS.map((g) => `<option value="${g}"${g === f.ground ? " selected" : ""}>${GROUND_NAMES[g]}</option>`).join("")}</select></label></div>
+    <p class="hint">Sound at ${speedOfSound(f.tempC).toFixed(1)} m/s. Over 100 m this air takes ${loss(1000)} dB off 1 kHz, ${loss(4000)} off 4 kHz, ${loss(8000)} off 8 kHz.</p>
+    ${list.length ? `<ul class="why">${list.map((b, i) => `<li><span>Bank ${i + 1}, ${b.h.toFixed(1)} m high, ${b.len.toFixed(0)} m long</span>${x(`data-unbank="${i}"`, `Take bank ${i + 1} away`)}</li>`).join("")}</ul>` : `<p class="hint">Flat ground. A bank between a stack and you cuts its highs behind it.</p>`}
+    <div class="row"><button type="button" class="tool" id="bank" aria-label="Bank across the stack's throw" title="Bank: a 2.5 m bank across the picked stack's throw, 6 m out"${bankAhead() ? "" : " disabled"}>${icon(MOUNTAIN)}</button></div>`;
+}
 const kw = (w: number) => `${(w / 1000).toFixed(1)} kW`;
 
 function renderPa() {
@@ -548,6 +581,7 @@ function renderPa() {
       <div class="row"><label>Splay of its tops, degrees<input type="range" min="-30" max="30" step="1" data-aim="splay" value="${deg(st.splay ?? 0)}"></label></div>
       ${line ? `<div class="row">${Array.from({ length: line }, (_, k) => `<label>Pin ${k + 1}, down<input type="number" min="0" max="17" step="0.5" data-pin="${k}" value="${deg(pins[k] ?? 0)}"></label>`).join("")}</div>` : ""}
       <div class="row"><button type="button" id="unstack">Take stack ${stackPicked! + 1} away</button></div>` : `<p class="hint">Pick a stack on the plan to aim it; the PA tool stands a new one.</p>`}
+    ${fieldPanel()}
     <h2>Power</h2>
     ${room.outdoor ? "" : `<p class="hint">Indoors, what a generator would have to give to run it: the house supply's limit is the venue's to say.</p>`}
     <div class="row"${room.outdoor ? "" : " hidden"}><label>Generator<select id="gen-set"><option value="auto"${power?.auto ? " selected" : ""}>The smallest that holds</option>${GENERATOR_IDS.map((g) => `<option value="${g}"${!power?.auto && power?.generator === g ? " selected" : ""}>${esc(sheet(g).what)}</option>`).join("")}</select></label></div>
@@ -563,6 +597,10 @@ function renderPa() {
     apply({ t: "aimStack", index: stackPicked, pins: next.slice(0, line) });
   });
   document.getElementById("unstack")?.addEventListener("click", () => { if (stackPicked !== null && apply({ t: "unstack", index: stackPicked })) { stackPicked = null; render(); } });
+  for (const i of q<HTMLInputElement>("[data-field]")) i.addEventListener("change", () => apply({ t: "field", [i.dataset.field!]: Number(i.value) }));
+  document.getElementById("ground")?.addEventListener("change", (e) => apply({ t: "field", ground: (e.target as HTMLSelectElement).value }));
+  for (const b of q<HTMLButtonElement>("[data-unbank]")) b.addEventListener("click", () => apply({ t: "unbank", index: Number(b.dataset.unbank) }));
+  document.getElementById("bank")?.addEventListener("click", () => { const b = bankAhead(); if (b) apply(b); });
   document.getElementById("gen-set")?.addEventListener("change", (e) => apply({ t: "generator", set: (e.target as HTMLSelectElement).value }));
   document.getElementById("dl-list")?.addEventListener("click", () => download("list"));
   document.getElementById("dl-plan")?.addEventListener("click", () => download("plan"));
@@ -811,11 +849,12 @@ const harness = {
   furnish: () => furnishRoom(),
   /** The PA: its stacks where they stand, the coverage over the floor, the power plan, the picked stack. */
   pa: () => {
-    const map = paMap(), rp = rigPlan(room);
+    const map = paMap(), rp = rigPlan(room), field = roomField(room);
     return {
       stacks: rigStacks(room), picked: stackPicked, map: showMap,
       coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
       power: rp ? powerPlan(rp) : null,
+      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [] } : null,
     };
   },
   /** The coverage map's level at (x, z) on the floor, dB. */

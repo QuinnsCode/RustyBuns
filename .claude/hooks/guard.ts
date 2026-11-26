@@ -236,6 +236,23 @@ export function heavy(cmd: string, cwd: string, root: string, shut: boolean): st
   return null;
 }
 
+// Blender here: the owner banned it on the office Mac (2026-11-23, it crashes the Mac). A direct launch (`blender`,
+// the app's own binary, `open -a Blender`) gets the Blender queue's line instead (scripts/blender-queue.ts, #6007).
+export function blenderLaunch(cmd: string): string | null {
+  // quoted text is a pattern or a message (`grep -E 'a|blender'`), not a command: segments() splits inside quotes
+  for (const seg of segments(cmd.replace(/'[^']*'|"[^"]*"/g, "''"))) {
+    const t = strip(seg).rest, c = basename(t[0] ?? "");
+    const opened = c === "open" && t.some((x, k) => (t[k - 1] === "-a" || t[k - 1] === "-b") && /blender/i.test(x));
+    // a launch has a flag, a script or a scene: "Blender queue: one job..." in a heredoc's text is not one
+    const launch = /^blender$/i.test(c) && t.slice(1).some((x) => x.startsWith("-") || /\.(py|blend)$/.test(x));
+    if (!launch && !opened) continue;
+    const p = t.findIndex((x) => x === "-P" || x === "--python"), i = t.indexOf("--");
+    const args = p > 0 && t[p + 1] ? [t[p + 1], ...(i > p ? t.slice(i + 1) : [])].join(" ") : "<script.py> [args]";
+    return `Blender never runs on this Mac (the owner banned it: it crashes the office Mac). Queue it for the builder, one job at a time: \`bun run blender add ${args} --out <dir>\`, then \`bun run blender wait <id>\``;
+  }
+  return null;
+}
+
 // The read valve: a whole code file by `cat`, or a `sed -n A,Bp` wider than WIDE lines, costs the most tokens in the
 // office (every later turn re-reads the result). Turn it away with the outline commands to use; small files, narrow
 // ranges, non-code files, files outside the repo and reads piped into grep/head/tail/wc go through.
@@ -379,6 +396,8 @@ if (import.meta.main) {
     const root = shut ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
     const busy = heavy(String(input.tool_input?.command ?? ""), cwd, root || cwd, shut);
     if (busy) { console.error(`Blocked by .claude/hooks/guard.ts: ${busy}.`); process.exit(2); }
+    const blender = blenderLaunch(String(input.tool_input?.command ?? ""));
+    if (blender) { console.error(`Blocked by .claude/hooks/guard.ts: ${blender}.`); process.exit(2); }
   }
   if (input.tool_name === "Bash") {
     const cwd = input.cwd ?? process.cwd(), cmd = String(input.tool_input?.command ?? "");
