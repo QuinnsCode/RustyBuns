@@ -87,6 +87,8 @@ import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
 import { mountLessonCard } from "./lesson-card.ts";
 import { Lessons } from "./lessons.ts";
+import { classOf, lessonLine } from "./class.ts";
+import { mountClassCard } from "./class-card.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
@@ -708,7 +710,7 @@ setInterval(() => { if (guitars && plugged.size) void guitars.lags().then((l) =>
 // ---- the sesh ----
 let net: Net | null = null;
 const live = (e: Live) => net?.live(e);
-function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
+function wear() { live({ t: "wear", avatar: look, name }); live(body(jam)); if (myGuitar !== null) live({ t: "guitar", track: myGuitar, mic: myInput === "mic" || undefined }); if (myLine.id || myLine.finished.length) live(myLine); if (myPa) live({ t: "pa", on: true, name: myPa.name }); }
 function onLive(from: number, e: Live) {
   // the booth: what's on someone's decks, or a press on yours
   if (e.t === "deck") { if (decks) decks.heard(from, e); else booth.heard(from, e, performance.now(), false); return; }
@@ -786,6 +788,14 @@ const atWall = new GearHands(def, (op) => net?.studio(op));
 const lessons = new Lessons(atWall);
 const lessonCard = mountLessonCard($("hud"), lessons);
 let lessonTick = 0;
+/** Your lesson as the room last heard it (class.ts): said when it changes, and again when someone new comes in. */
+let myLine = lessonLine(null, []), saidLine = JSON.stringify(myLine);
+const classCard = mountClassCard($("hud"), () => classOf(jam, myLine));
+function sayLesson() {
+  myLine = lessonLine(lessons.state(), lessons.finished);
+  const s = JSON.stringify(myLine);
+  if (s !== saidLine) { saidLine = s; live(myLine); }
+}
 const lit = new LanternsHere(def, (m) => net?.lantern(m), scene);
 /** The sesh's gear room as the World keeps it, kept in step by the wall's hands: what the desk reads (aux 2) and shows. */
 const gearRoom = { get patch() { return atWall.room.studio.patch; } };
@@ -1194,6 +1204,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyN") return muteAll();
   if (code === "Escape" && !$("modules").hidden) return openModules(false);
   if (code === "KeyK" && !jam.me.seat) return openModules(!!$("modules").hidden);
+  if (code === "KeyL" && !jam.me.seat) return classCard.toggle();
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Tab") {
     if (desk.isOpen()) return desk.close();
@@ -1594,7 +1605,7 @@ function frame(now: number) {
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
   $("hint").textContent = now < flash.until ? flash.text : away() ? "Click to look around. Esc: the menu" : roomTubes.note() ?? hint();
   help.frame(phase === "play");
-  if (++lessonTick % 6 === 0) lessonCard.frame();   // a few times a second: the steps read the whole patch
+  if (++lessonTick % 6 === 0) { lessonCard.frame(); sayLesson(); classCard.frame(); }   // a few times a second: the steps read the whole patch
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
   $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
@@ -1642,6 +1653,8 @@ const harness = {
   gearAt: (id: string) => atWall.at(id),
   /** A setup lesson (lessons.ts): start one (guitar, voice, pa; the PA one brings its kit), null leaves it; then the lesson as it stands and the ones finished. */
   lesson: (id?: string | null) => { const a = id === null ? (lessons.leave(), { ok: true }) : id ? say(lessons.start(id, jam)) : { ok: true }; lessonCard.frame(); return { ...a, lesson: lessons.state(), finished: [...lessons.finished] }; },
+  /** The class card (L, class.ts): open or close it (left out: as it is); then whether it's open and the class as this page heard it. */
+  class: (open?: boolean) => { if (open !== undefined) classCard.toggle(open); sayLesson(); classCard.frame(); return { open: classCard.open, class: classOf(jam, myLine) }; },
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },

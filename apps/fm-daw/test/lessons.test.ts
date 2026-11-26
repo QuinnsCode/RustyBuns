@@ -11,6 +11,7 @@ import { GearHands } from "../src/studio/gear-hands.ts";
 import { gearPlace, toStudio } from "../src/studio/gear-wall.ts";
 import { hear, newJam, walkTo } from "../src/studio/jam.ts";
 import { Lessons } from "../src/studio/lessons.ts";
+import { classOf, lessonLine } from "../src/studio/class.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 
 setDefaultTimeout(30_000);
@@ -37,7 +38,9 @@ async function walkIn() {
   /** Look at a knob, hold the click and drag: up turns it up (a pixel is 0.004). */
   const turn = (id: string, knob: string, by: number) => { expect(click(id, knob)).toEqual({ ok: true }); hands.drag(-by / 0.004); hands.turning = null; };
   const now = () => lessons.state()!;
-  return { jam, hands, lessons, g, go, click, turn, now };
+  /** What this page says on the live line about its lesson (main.ts does it a few times a second). */
+  const sayLesson = () => world.webSocketMessage(ws, JSON.stringify({ t: "live", e: lessonLine(lessons.state(), lessons.finished) }));
+  return { jam, hands, lessons, g, go, click, turn, now, join, sayLesson };
 }
 
 test("plug a guitar through a pedal into an amp: straight into the amp is caught, then a gain too hot", async () => {
@@ -199,4 +202,36 @@ test("know your plugs: an XLR out into an out is refused with why, then mic to m
   cable("pa-mixer", "xlr-out-1", "pa-top-1", "xlr-in");
   cable("pa-top-1", "xlr-out", "pa-top-2", "xlr-in");
   expect(now()).toMatchObject({ done: true });
+});
+
+test("a teacher's class card: a second page in the sesh sees the student's lesson, where they're stuck and why, and when they finish", async () => {
+  const { lessons, jam, hands, go, turn, join, sayLesson } = await walkIn();
+  const cable = (a: string, ja: string, b: string, jb: string) => { hands.lookAt(jam, a, ja); hands.click(jam); hands.lookAt(jam, b, jb); hands.click(jam); };
+  // the teacher comes in on the room's link, as anyone does: nothing to make, nothing to sign in to
+  const teacher = (await join()).ws, room = newJam(LIVE_ROOM);
+  let read = 0;
+  const look = async () => {
+    await sayLesson();
+    for (; read < teacher.sent.length; read++) { const m = decodeServer(teacher.sent[read]); if (m?.t === "live") hear(room, m.from, m.e); }
+    return classOf(room, lessonLine(null, [])).find((p) => p.who !== "me")!;
+  };
+
+  expect(lessons.start("voice", jam)).toEqual({ ok: true });
+  expect(await look()).toMatchObject({ lesson: "Patch a synth voice", done: 0, of: 4, why: null });
+
+  go([2.5, 0.5], [2.5, -2.0], [1.84, -2.15]);
+  cable("wall-vco", "saw", "wall-vcf", "cv");
+  const stuck = await look();
+  expect(stuck.why).toContain("moves the filter's cutoff");
+  // stuck comes first on the card, ahead of the teacher's own row
+  expect(classOf(room, lessonLine(null, []))[0]).toMatchObject({ who: stuck.who });
+
+  hands.lookAt(jam, "wall-vcf", "cv"); hands.click(jam); hands.letGo();
+  for (const [a, ja, b, jb] of [["wall-vco", "saw", "wall-vcf", "in"], ["wall-vcf", "lp", "wall-vca", "in"], ["wall-vca", "out", "wall-out", "in-l"]]) cable(a, ja, b, jb);
+  expect(await look()).toMatchObject({ done: 3, of: 4 });
+  turn("wall-vca", "level", 0.6);
+  expect(await look()).toMatchObject({ done: 4, of: 4, next: null, why: null, finished: ["Patch a synth voice"] });
+  // they leave the lesson: the card still shows what they finished
+  lessons.leave();
+  expect(await look()).toMatchObject({ lesson: null, finished: ["Patch a synth voice"] });
 });
