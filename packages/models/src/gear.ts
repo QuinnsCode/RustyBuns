@@ -475,12 +475,6 @@ function backPrint(b: Build, text: string, at: THREE.Vector3Tuple, size = 0.008)
   b.pieces.push(...onto(m, print(text, 0, 0, 0, size)));
 }
 
-/** Print on a side face (looking along x, `side` +1 or -1), reading left to right for someone facing it. */
-function sidePrint(b: Build, text: string, at: THREE.Vector3Tuple, side: number, size = 0.012) {
-  const m = new THREE.Matrix4().makeTranslation(...at).multiply(new THREE.Matrix4().makeRotationY(side > 0 ? -Math.PI / 2 : Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationY(Math.PI));
-  b.pieces.push(...onto(m, print(text, 0, 0, 0, size)));
-}
-
 /** The small plain plate a speaker's grille carries in a corner (no maker's mark), standing just proud of the sheet;
  * `m` places it, its face looking along +z. */
 function grillePlate(b: Build, m: THREE.Matrix4) {
@@ -2203,7 +2197,7 @@ const K2 = {
  * - amp-plate: the back's amp plate with its jacks
  */
 function k2Pieces(id: keyof typeof K2): Record<string, Build> {
-  const k = K2[id], mm = (v: number) => v / 1000, [w, h, d] = GEAR_SIZES[id], y0 = mm(k.feet), body = h - y0, f = d / 2;
+  const k = K2[id], mm = (v: number) => v / 1000, [, h, d] = GEAR_SIZES[id], y0 = mm(k.feet), body = h - y0, f = d / 2;
   const P = (): Build => ({ pieces: [], marks: [] }), shell = P(), grille = P(), drivers = P(), grip = P(), hw = P(), amp = P();
   const top = (z: number) => h - (mm(k.fall) * (f - z)) / d;
   const [gw, gh] = k.grille.map(mm) as [number, number], yc = y0 + body / 2, cave = mm(70), g = 0.008;
@@ -2267,7 +2261,7 @@ function k2Pieces(id: keyof typeof K2): Record<string, Build> {
  * - casters: four on the back's corners, sticking out 110 behind it
  */
 function ks118Pieces(): Record<string, Build> {
-  const [w, h, d] = GEAR_SIZES["sub-18"], mm = (v: number) => v / 1000, P = (): Build => ({ pieces: [], marks: [] });
+  const [, h, d] = GEAR_SIZES["sub-18"], mm = (v: number) => v / 1000, P = (): Build => ({ pieces: [], marks: [] });
   const cab = P(), drv = P(), ports = P(), grille = P(), grips = P(), skids = P(), pole = P(), amp = P(), casters = P();
   const bw = mm(512), y0 = mm(14), bh = mm(624), bd = mm(674), f = d / 2, back = f - bd, g = 0.014, cy = h - mm(249);
   const py = mm(86), ph = mm(110), pw = mm(235), hy = h - mm(273), hz = f - mm(253);
@@ -2404,7 +2398,7 @@ function cp12Pieces(): Record<string, Build> {
  * - amp-plate: the back's amp plate, its heat sink and jacks, the M10 point under it
  */
 function la108Pieces(): Record<string, Build> {
-  const [w, h, d] = GEAR_SIZES["line-array-10"], mm = (v: number) => v / 1000, P = (): Build => ({ pieces: [], marks: [] });
+  const [, h, d] = GEAR_SIZES["line-array-10"], mm = (v: number) => v / 1000, P = (): Build => ({ pieces: [], marks: [] });
   const cab = P(), grille = P(), drv = P(), rig = P(), cups = P(), amp = P();
   const cw = mm(482), f = d / 2, b = -d / 2, taper = d * Math.tan((6 * Math.PI) / 180), yc = h / 2, ch = 0.008, cave = mm(70);
   const foot = (z: number) => (taper * (f - z)) / (f - b);
