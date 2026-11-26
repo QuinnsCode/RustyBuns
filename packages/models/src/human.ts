@@ -437,7 +437,7 @@ function buildMesh(d: Dims, b: Build, o: Outfit, face: Face): THREE.BufferGeomet
       L(-0.06 * k, rT * 0.92, 0.092 * k * (0.6 + 0.4 * tf), -0.098 * k * (0.6 + 0.4 * tf), -0.002),
       L(0.05 * k, rT * 0.62, 0.065 * k, -0.07 * k, -0.02),
     ], {
-      seg: 14, step: 0.03 * k, capTop: 0.03 * k, cuts: fur || o.barefoot ? [] : [bootTop],
+      seg: 14, step: 0.04 * k, capTop: 0.03 * k, cuts: fur || o.barefoot ? [] : [bootTop],
       shape: (r, y) => {
         if (fur) return pad(r, 0.016);
         if (o.barefoot) return;
@@ -482,7 +482,7 @@ function buildMesh(d: Dims, b: Build, o: Outfit, face: Face): THREE.BufferGeomet
       A(-0.02 * k, 0.05 * (0.6 + 0.4 * af), 0.056, -0.056, -0.004),
       A(0.02 * k, 0.04, 0.046, -0.046, -0.012),
     ], {
-      seg: 12, step: 0.026 * k, capTop: 0.016 * k, capBottom: 0.012 * k, cuts: fur ? [] : [sleeveEnd],
+      seg: 12, step: 0.034 * k, capTop: 0.016 * k, capBottom: 0.012 * k, cuts: fur ? [] : [sleeveEnd],
       shape: (r, y) => {
         if (fur) return pad(r, y > wrist ? 0.016 : 0);
         if (y > sleeveEnd) pad(r, top.thick * 0.85 + baffle(y) + (y < sleeveEnd + 0.03 * k ? 0.003 : 0));
@@ -598,7 +598,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     // toward the outer corner, the bottom is flatter, and both close to a point at the corners.
     const edge = (u: number) => { const w = Math.sqrt(Math.max(0, 1 - (u / 0.92) ** 2)); return [0.36 * w ** 0.8 + 0.04 * u, -0.42 * w ** 1.2 + 0.03 * u] as const; };
     m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
-      seg: 24, step: r * 0.1, capTop: r * 0.05, m: em, skin: B.head,
+      seg: 20, step: r * 0.1, capTop: r * 0.05, m: em, skin: B.head,
       // up is -z here (the ball is built looking along y, then turned to look forward)
       bump: (p) => {
         const up = -p.z / r, [hi, lo] = edge((p.x / r) * s);
@@ -681,8 +681,8 @@ function nose(m: Builder, X: (v: number) => number, Y: (v: number) => number, z0
   const front = surf(tip, 0) + X(0.0235);
   const flush = (p: THREE.Vector3) => smooth(Y(tip + 0.025), Y(tip), p.y) * 0.75;
   m.tube(RIDGE.map((r) => ring(r)), {
-    // twenty rings whatever its length, so every face of a build has the same number of points
-    seg: 22, step: X(0.011 - tip) / 20, capBottom: X(0.0075), front: 0.5, skin: B.head,
+    // twelve rings whatever its length, so every face of a build has the same number of points
+    seg: 16, step: X(0.011 - tip) / 12, capBottom: X(0.0075), front: 0.5, skin: B.head,
     // the nostrils: two dark ovals under the tip, either side of the skin between them
     slot: (y, p) => {
       if (y > Y(tip - 0.0025)) return "skin";
@@ -696,7 +696,7 @@ function nose(m: Builder, X: (v: number) => number, Y: (v: number) => number, z0
   for (const s of [-1, 1]) {
     const WING: [number, number, number, number][] = [[tip - 0.003, 0.0045, 0.0072, 0.0108], [tip + 0.003, 0.0052, 0.0088, 0.0108], [tip + 0.0095, 0.0028, 0.0035, 0.0088]];
     m.tube(WING.map(([y, w, out, x]) => ring([y, w, out], x * nw * s)), {
-      seg: 14, step: X(0.0025), capBottom: X(0.0035), capTop: X(0.004), skin: B.head, slot: "skin",
+      seg: 10, step: X(0.004), capBottom: X(0.0035), capTop: X(0.004), skin: B.head, slot: "skin",
       tone: (p) => [0.55 * flush(p), 0.3 * smooth(Y(tip + 0.002), Y(tip - 0.005), p.y)],
     });
   }
