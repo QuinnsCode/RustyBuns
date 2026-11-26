@@ -4,8 +4,8 @@
 // like, but only one is live: the room other people join. Every change hands back a new store, so the page can keep
 // it in this browser and a sesh or an agent's tool can send the same data later.
 import { arr, check, int, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
-import type { StudioDef } from "./room.ts";
-import { MAX_SPOTS, Studio } from "./builder.ts";
+import type { StudioDef, Venue } from "./room.ts";
+import { edit, MAX_SPOTS, Studio } from "./builder.ts";
 
 export const MAX_PARTIES = 24;
 export const MAX_SCENES = 12;
@@ -103,6 +103,18 @@ export const reschedule = (s: Parties, patch: { name?: string; when?: number | n
 export const keepStudio = (s: Parties, studio: StudioDef): Done => withParty(s, s.open, (p) => ({
   ...p, scenes: p.scenes.map((x) => (x.id === p.scene ? { ...x, studio } : x)),
 }));
+
+/** Lay every scene of the open party out in one real venue (#5933), or take it away (null): the performers change over
+ *  in the same place. Each scene keeps its own seats; a scene whose room the venue's edit refuses says why. */
+export const setVenue = (s: Parties, venue: Venue | null): Done => withParty(s, s.open, (p) => {
+  const scenes: Scene[] = [];
+  for (const x of p.scenes) {
+    const b = edit(x.studio, { t: "venue", venue });
+    if (!b.ok) return `${x.performer}'s scene: ${b.why}`;
+    scenes.push({ ...x, studio: b.def });
+  }
+  return { ...p, scenes };
+});
 
 /** A new scene for `performer`, starting from `studio` (the one on stage, as a rule), and put it on stage. */
 export const addScene = (s: Parties, performer: string, studio: StudioDef): Done => withParty(s, s.open, (p) => {

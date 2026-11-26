@@ -21,6 +21,7 @@ import { van } from "@rustybuns/models/van";
 import { rigStacks, roomRig } from "./pa-room.ts";
 import { cotton, drape, rugs, tapestry } from "./tapestry.ts";
 import { wallMaterial, type Material } from "./sound.ts";
+import { VenueSplat } from "./venue-splat.ts";
 
 /** What the pointer is over. */
 export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { stack: number } | { side: Side; at?: [number, number] } | { floor: true } | null;
@@ -82,6 +83,8 @@ export class BuildView {
   /** The camera's turn round the room (radians), its height angle, and how far out. */
   yaw = Math.PI / 5; pitch = 0.82; dist = 14;
   private dirty = false;
+  /** The captured venue round the room, when it has one (venue-splat.ts). */
+  readonly venue: VenueSplat;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
@@ -96,6 +99,7 @@ export class BuildView {
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
     Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 40 });
     this.scene.add(sun, this.root, this.preview);
+    this.venue = new VenueSplat(this.scene, this.renderer);
     new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
@@ -116,6 +120,8 @@ export class BuildView {
     // free what the last build made (the shared surfaces stay: look.ts caches them)
     this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh || (o as THREE.LineSegments).isLineSegments) (o as THREE.Mesh).geometry.dispose(); });
     this.root.clear(); this.pickables = []; this.keyed.clear();
+    // the venue loads once per file; Spark sorts its points over the next frames, so draw a few once it is in
+    void this.venue.show(room.venue).then(() => { for (let i = 0; i < 30; i++) setTimeout(() => this.draw(), i * 50); });
     this.placeCamera();
     const add = (o: THREE.Object3D, key?: string, hit?: Hit) => {
       this.root.add(o);
@@ -153,7 +159,7 @@ export class BuildView {
       if (room.outdoor.fire) { const f = firePit(room.outdoor.seed + 5).group; f.position.set(room.outdoor.fire.at[0], 0, room.outdoor.fire.at[1]); this.root.add(f); }
       (room.outdoor.vans ?? []).forEach((v, i) => { const m = van(room.outdoor!.seed + 31 * i, { awning: v.awning }); m.position.set(v.at[0], 0, v.at[1]); m.rotation.y = v.yaw; this.root.add(m); });
     }
-    for (const [side, x, z, sw, sd] of room.outdoor ? [] : sides) {
+    for (const [side, x, z, sw, sd] of room.outdoor || room.venue ? [] : sides) {
       const toward = side === "front" ? cam.z > d / 2 : side === "back" ? cam.z < -d / 2 : side === "left" ? cam.x < -w / 2 : cam.x > w / 2;
       const tall = this.walls === "up" || (this.walls === "cutaway" && !toward) ? h : CUT;
       const mat = wallLook(room.materials?.walls[side] ?? "plaster");
