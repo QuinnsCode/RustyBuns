@@ -434,7 +434,11 @@ export class Space {
     const online = (await this.members()).find((m) => m.id === id);
     const name = online?.name ?? (await this.env.DB.prepare(`SELECT name FROM "user" WHERE id = ?`).bind(id).first<string>("name")) ?? "";
     const channel = `dm-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
-    await this.ctx.storage.put("dms", { ...dms, [channel]: { ids: [me.id, id], names: [me.name, name] } } satisfies Dms);
+    // Read again after the awaits above: another DM opened meanwhile stays, and two asks at once for the same pair make one.
+    const now = await this.dms(), raced = Object.entries(now).find(([, d]) => d.ids.includes(me.id) && d.ids.includes(id));
+    if (raced) return this.sockets.send(ws, { t: "dm", channel: raced[0], id });
+    if (Object.keys(now).length >= DMS) return this.sockets.send(ws, { t: "refused", why: "this space holds as many direct messages as it can" });
+    await this.ctx.storage.put("dms", { ...now, [channel]: { ids: [me.id, id], names: [me.name, name] } } satisfies Dms);
     await this.tell([me.id, id]);
     this.sockets.send(ws, { t: "dm", channel, id });
   }
@@ -528,6 +532,8 @@ export class Space {
     if (!set) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     await this.log({ act: "role", by: { id: me.id, name: me.name }, who: id, to: role });
     this.close((m) => m.id === id, ROLE_CHANGED, "your role in the space changed");
+    // A guest has no voice channels: a call they were in ends with the role, not when they next ask for a ticket.
+    if (role === "guest") await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
   }
   /** The studio that owns this space, if one does. */
   private async studio(): Promise<string | undefined> { return await this.ctx.storage.get<string>("studio"); }
