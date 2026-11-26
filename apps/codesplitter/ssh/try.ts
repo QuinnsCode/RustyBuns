@@ -2,8 +2,9 @@
 // apps/codesplitter. It makes a throwaway key and adds it as spike's through codeSplitter's POST /api/me/ssh-keys
 // (codeSplitter booted in this process, src/local.ts), starts a stand-in for the parts codeSplitter doesn't answer yet
 // on this Mac (the remote lookup and a smart-HTTP git remote that wants a Bearer token, like Artifacts; any other
-// path goes to codeSplitter, so sshd's key lookups reach GET /api/ssh/key), starts ssh/worker.ts under wrangler dev (Docker
-// builds the sshd container the first time, a minute or so), then pushes a commit to
+// path goes to codeSplitter, so sshd's key lookups reach GET /api/ssh/key), starts codeSplitter's own Worker under
+// wrangler dev from the config rustybuns generates with CODESPLITTER_SSH=1 and no other flag (its connect() on 8788, the
+// SshGate container; Docker builds the sshd image the first time, a minute or so), then pushes a commit to
 // ssh://git@127.0.0.1:8788/spike/demo.git, checks it landed in the HTTP remote, lists its refs and clones it back,
 // each through Worker -> Durable Object -> container -> HTTP remote. It prints one line per step, with its time, and
 // exits 1 if any failed. Last, spike's key is removed through the API and turned away on the next login. Needs
@@ -117,11 +118,26 @@ await call("spike", "/api/login", { method: "POST", body: JSON.stringify({ name:
 const added = await got(call("spike", "/api/me/ssh-keys", { method: "POST", body: JSON.stringify({ key: pub, title: "try.ts" }) }), SshKeyRow, "add the key", (n) => n === 201);
 step("key added through codeSplitter's API", true, added.fingerprint);
 
+// codeSplitter's wrangler config as rustybuns generates it, with only the gate's flag on (any other flag would bind its
+// container and build that image too) and a fresh migration list (the checked-in one names classes this run leaves
+// out). It goes beside the checked-in wrangler.jsonc so its paths resolve the same, under its own name so its
+// containers are this run's, and is deleted at the end.
+for (const k of Object.keys(process.env)) if (/^CODESPLITTER_[A-Z_]+$/.test(k) && k !== "CODESPLITTER_URL" && k !== "CODESPLITTER_TOKEN") delete process.env[k];
+process.env.CODESPLITTER_SSH = "1";
+const { default: config } = await import("../rustybuns.config.ts");
+const { generateWrangler } = await import("../../../packages/cli/src/gen/wrangler.ts");
+const NAME = "codesplitter-ssh-try";
+const app = path.join(here, "..");
+const conf = path.join(app, "wrangler.ssh-try.jsonc");
+writeFileSync(conf, generateWrangler({ ...config, name: NAME }, null));
+mkdirSync(path.join(app, "dist", "client"), { recursive: true });
+
 // KeyLookup runs in workerd on this Mac, so it reaches codeSplitter on 127.0.0.1; the container reaches the rest through Docker's host name.
-const vars = { CODESPLITTER_URL: `http://127.0.0.1:${site.port}`, LOOKUP_URL: `http://host.docker.internal:${site.port}/lookup`, GATE_SECRET };
+const vars = { SSH_KEYS_URL: `http://127.0.0.1:${site.port}`, SSH_LOOKUP_URL: `http://host.docker.internal:${site.port}/lookup`, SSH_GATE_SECRET: GATE_SECRET };
 const dev = Bun.spawn(
-  ["bunx", "wrangler@4.156.0", "dev", "--ip", "127.0.0.1", "--port", "8797", ...Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`])],
-  { cwd: here, stdout: "pipe", stderr: "pipe" },
+  ["bunx", "wrangler@4.156.0", "dev", "--config", conf, "--persist-to", path.join(tmp, "wrangler"), "--ip", "127.0.0.1", "--port", "8797",
+    ...Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`])],
+  { cwd: app, stdout: "pipe", stderr: "pipe" },
 );
 // Both of wrangler's streams are read to the end (a full pipe would stall it), and its "Ready on" line ends the wait.
 let log = "";
@@ -204,8 +220,9 @@ if (keep && !failed) {
 }
 site.stop(true);
 call.close();
-// wrangler dev leaves the containers it started (sshd and its proxy) running; only this spike's are named like this.
-const left = Bun.spawnSync(["docker", "ps", "-aq", "--filter", "name=workerd-codesplitter-ssh-spike-"]).stdout.toString().split("\n").filter(Boolean);
+// wrangler dev leaves the containers it started (sshd and its proxy) running; only this run's are named like this.
+const left = Bun.spawnSync(["docker", "ps", "-aq", "--filter", `name=workerd-${NAME}-`]).stdout.toString().split("\n").filter(Boolean);
 if (left.length) Bun.spawnSync(["docker", "rm", "-f", ...left]);
+rmSync(conf, { force: true });
 rmSync(tmp, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

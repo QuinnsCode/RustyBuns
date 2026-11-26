@@ -298,6 +298,9 @@ export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
 export { EgressGate } from "./egress.ts";
+// git over ssh:// (ssh-gate.ts): the gate's DO and the key lookup its sshd asks through ctx.exports.
+export { KeyLookup, SshGate } from "./ssh-gate.ts";
+import { sshConnect, type Socket } from "./ssh-gate.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.
@@ -1049,6 +1052,8 @@ async function route(req: Request, env: Env): Promise<Response> {
 }
 
 const app = {
+  // Inbound TCP (worker.connect in rustybuns.config.ts): git over ssh://, through the SshGate's sshd container.
+  connect(socket: Socket, env: Env): Promise<void> { return sshConnect(socket, env); },
   // Each answer to the internet is tallied for the admins' insights page (insights.ts), after it's sent.
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     hearPushes(env);

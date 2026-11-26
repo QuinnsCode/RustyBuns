@@ -20,6 +20,9 @@ const egress = (...hosts: (readonly string[])[]) => ({ module: "src/egress.ts", 
 //                          Workers AI (src/search.ts); billed by use, see REFERENCE.md
 //   CODESPLITTER_PUSH_EVENTS=1 a queue that hears Artifacts' push events and logs pushes made
 //                          outside the app (src/push-events.ts); its subscription is made by hand, below
+//   CODESPLITTER_SSH=1     git over ssh:// on the connect port: the SshGate DO and its sshd container
+//                          (src/ssh-gate.ts, ssh/). On the edge it also needs a Spectrum app, the owner's
+//                          step (REFERENCE.md, "Inbound TCP"); `bun ssh/try.ts` runs it on this Mac
 //   CODESPLITTER_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
 //                          packages (src/watch.ts): one Claude run with web search a day,
 //                          on ANTHROPIC_API_KEY; billed by use, see REFERENCE.md
@@ -33,6 +36,7 @@ const vectors = flag("VECTORS") === "1";
 const checks = flag("CHECKS") === "1";
 const news = flag("WATCH_NEWS") === "1";
 const pushEvents = flag("PUSH_EVENTS") === "1";
+const ssh = flag("SSH") === "1";
 const mailFrom = flag("MAIL_FROM")?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
@@ -56,7 +60,9 @@ export default defineConfig({
     main: "src/worker.ts",
     builtMain: "dist/worker/worker.js",
     // Containers bound only behind a flag: a run without it stops and names the flag, never deleted_classes (#3428).
-    flaggedClasses: { AgentSandbox: "CODESPLITTER_AGENTS=1", DeployRunner: "CODESPLITTER_DEPLOYS=1", CiRunner: "CODESPLITTER_CHECKS=1" },
+    flaggedClasses: { AgentSandbox: "CODESPLITTER_AGENTS=1", DeployRunner: "CODESPLITTER_DEPLOYS=1", CiRunner: "CODESPLITTER_CHECKS=1", SshGate: "CODESPLITTER_SSH=1" },
+    // Inbound TCP: src/worker.ts's connect() hands each connection to the ssh gate (src/ssh-gate.ts). 8788 locally.
+    connect: { port: 8788 },
     assets: "dist/client",
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
@@ -155,6 +161,9 @@ export default defineConfig({
     DRAIN_SECRET: op("DRAIN_SECRET/password", true),
     // The ssh gate's remote lookup (ssh/, src/ssh-remote.ts): the gate's GATE_SECRET. Optional: the route is off without it.
     SSH_GATE_SECRET: op("SSH_GATE_SECRET/password", true),
+    // The ssh gate: one Durable Object and its container (ssh/Dockerfile: sshd, git, curl), which bridges each
+    // connection to the repo's smart-HTTP remote and keeps no repos. Its internet is on for that (src/ssh-gate.ts).
+    ...(ssh ? { SSH_GATE: { type: "container", className: "SshGate", dockerfile: "ssh/Dockerfile", maxInstances: 1, instanceType: "lite" } as const } : {}),
     // Hosted deploys: one Durable Object per repo, each run in its own container
     // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
     // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
