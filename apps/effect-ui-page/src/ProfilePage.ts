@@ -118,15 +118,15 @@ const how = Def.fragment((h, online: boolean, last: typeof Logged.Type | undefin
       node(true, "Page", "checks"),
     ),
     h.ol.class("steps").children(
-      h.li("You tell your agent what page you want."),
-      h.li("Each change it makes travels through the relay to this tab."),
-      h.li("This page checks the change, shows it, and tells the agent how it went."),
+      h.li("You ask agent."),
+      h.li("Agent sends change."),
+      h.li("Page checks. Page shows."),
     ),
     h.p.class("safe").children(
-      h.b("Is it safe? "),
-      "Your agent can only change what's on this page: words, colors, links and blocks. Each change is checked first, so a bad color or a link that isn't https is turned away. Nothing here can reach your computer or your files. ",
-      h.b("The link is the key: "),
-      "anyone who has it can edit this page, so give it only to your own agents.",
+      h.b("Safe? "),
+      "Agent can only change this page. ",
+      h.b("Link is key. "),
+      "Keep it secret.",
     ),
   );
 });
