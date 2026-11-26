@@ -79,7 +79,8 @@ async function report(req: Request, url: URL, env: Env): Promise<Response> {
   const reason = REPORT_REASONS.find((r) => r === url.searchParams.get("reason"));
   if (!ROOM.test(room) || !/^[0-9a-f]{16}$/.test(player) || !reason) return new Response("bad report", { status: 400 });
   const ip = req.headers.get("CF-Connecting-IP");
-  if (ip && !reportGate.allow(ip, player, Date.now())) return new Response("too many reports, try again in a minute", { status: 429 });
+  // Each report counts: the gate lets a key it has seen through free, so the key is new every time.
+  if (ip && !reportGate.allow(ip, crypto.randomUUID(), Date.now())) return new Response("too many reports, try again in a minute", { status: 429 });
   console.log(JSON.stringify({ report: { room, player, reason, by: await voter(who.uid) } }));
   return new Response(null, { status: 204 });
 }
@@ -93,6 +94,7 @@ async function parks(req: Request, url: URL, env: Env): Promise<Response> {
   const who = await whoIs(url, door(env));
   if (who instanceof Response) return who;
   const ip = req.headers.get("CF-Connecting-IP");
-  if (ip && !voteGate.allow(ip, code, Date.now())) return new Response("too many votes, try again in a minute", { status: 429 });
+  // Per park and player: the same vote again is free, another guest on the same park is another of the address's five.
+  if (ip && !voteGate.allow(ip, `${code}:${who.uid}`, Date.now())) return new Response("too many votes, try again in a minute", { status: 429 });
   return stub.fetch(new Request(`https://parks/?code=${code}&voter=${await voter(who.uid)}`, { method: "POST" }));
 }

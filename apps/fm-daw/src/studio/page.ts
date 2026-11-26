@@ -9,7 +9,7 @@
 // half built. Your room is kept in this browser. The Party panel (Qevent, party.ts) makes a party, gives each performer
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
-// download("list" | "plan"), undo(), redo(), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
+// download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
@@ -24,9 +24,9 @@ import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAI
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
-import { arrivals, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
+import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
@@ -782,23 +782,41 @@ function joinLink(): string | null {
   u.searchParams.set("party", owner);
   return u.href;
 }
+/** The Event's room (#6020): the join link signed in, else this browser's own room for the live party, carrying its
+ *  scene on stage. `walk` makes it the client walk-through: the planned PA plays a test set to walk the site by. */
+function eventLink(walk = false): string | null {
+  const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
+  if (!p || !on) return null;
+  const u = new URL(joinLink() ?? builtLink(location.origin, on, `event-${p.id}`.slice(0, 64)));
+  u.searchParams.set("name", p.name);
+  if (walk) u.searchParams.set("walk", "1");
+  return u.href;
+}
+/** Open the plan as The Event: live as it stands, in a new tab (a walk-through, or the room itself). */
+function openEvent(walk: boolean): string | null {
+  if (!partyDo(openAsEvent(parties, room.name, room))) return null;
+  const link = eventLink(walk);
+  if (link) window.open(link, "_blank", "noopener");
+  return link;
+}
 /** A <input type="datetime-local"> value and back: empty is open now. */
 const toLocal = (ms: number | null) => ms === null ? "" : new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; return Number.isFinite(ms) ? ms : null; };
 
 function renderParty() {
   const host = $("party"), p = openParty(parties), x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
+  const eventButtons = `<button type="button" id="event-open" title="The planned room or field as a jam room, with its PA, guest list and listen link">Open as event</button><button type="button" id="event-walk" title="Walk the site and hear the planned PA before the show">Client walk-through</button>`;
   if (!p) {
     host.innerHTML = `<h2>Party</h2>
       ${parties.parties.length ? `<ul class="parties">${parties.parties.map((q) => `<li><button type="button" data-party-open="${q.id}">${esc(q.name)}</button><span class="hint">${esc(whenWords(q.when))}${q.id === parties.live ? " · live" : ""}</span>${x(`data-party-drop="${q.id}"`, `Take ${q.name} away, with every version`)}</li>`).join("")}</ul>` : ""}
       <div class="row"><label>Name<input id="party-name" maxlength="60" placeholder="Saturday night"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local"></label></div>
-      <div class="row"><button type="button" class="go" id="party-make">Make a party</button></div>
+      <div class="row"><button type="button" class="go" id="party-make">Make a party</button>${eventButtons}</div>
       <p class="hint">Its first scene is the room you have now. Each performer gets a scene of their own.</p>`;
   } else {
     const live = parties.live === p.id, join = joinLink();
     host.innerHTML = `<h2>Party</h2>
       <div class="row"><label>Name<input id="party-rename" maxlength="60" value="${esc(p.name)}"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local" value="${toLocal(p.when)}"></label></div>
-      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button></div>
+      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button>${eventButtons}</div>
       <p class="hint">${live ? "The room people join: Enter walks its scene on stage." : parties.live ? "Another party is live; only one is at a time." : "Not live yet: you can change it before or during the event."}</p>
       ${live ? join ? `<div class="row"><a class="button" id="party-join" href="${esc(join)}" target="_blank" rel="noopener">Join link</a><button type="button" id="party-copy">Copy link</button></div>` : `<p class="hint">Sign in with eqosys on the front door to give it a join link for any device.</p>` : ""}
       <h2>Scenes</h2>
@@ -815,6 +833,8 @@ function renderParty() {
   document.getElementById("party-rename")?.addEventListener("change", () => partyDo(reschedule(parties, { name: val("party-rename") })));
   if (p) document.getElementById("party-when")?.addEventListener("change", () => partyDo(reschedule(parties, { when: fromLocal(val("party-when")) })));
   document.getElementById("party-live")?.addEventListener("click", () => partyDo(goLive(parties, parties.live === p?.id ? null : p?.id ?? null)));
+  document.getElementById("event-open")?.addEventListener("click", () => openEvent(false));
+  document.getElementById("event-walk")?.addEventListener("click", () => openEvent(true));
   document.getElementById("party-close")?.addEventListener("click", () => partyDo(open(parties, undefined)));
   document.getElementById("party-copy")?.addEventListener("click", (e) => {
     const b = e.currentTarget, link = joinLink();
@@ -868,7 +888,7 @@ const harness = {
   pa: () => {
     const map = paMap(), rp = rigPlan(room), field = roomField(room);
     return {
-      stacks: rigStacks(room), picked: stackPicked, map: showMap,
+      stacks: rigStacks(room), picked: stackPicked, map: showMap, sources: paBoxes(room),
       coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
       power: rp ? powerPlan(rp) : null,
       field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [], captured: !!room.venue?.land } : null,
@@ -923,6 +943,8 @@ const harness = {
     save: (note = "") => ({ ok: partyDo(saveVersion(parties, note, Date.now())), why }),
     restore: (n: number) => ({ ok: partyDo(restore(parties, n)), why }),
   },
+  /** Open as event (#6020): the open party (or a new one from this room) goes live; its room's link, `walk` for the client walk-through. */
+  event: (walk = false) => { const ok = partyDo(openAsEvent(parties, room.name, room)); return { ok, why, link: ok ? eventLink(walk) : null }; },
   pick: (id: string) => { picked = id; render(); },
   /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
   enter: (sesh?: string) => builtLink(location.origin, room, sesh),

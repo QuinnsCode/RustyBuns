@@ -29,6 +29,9 @@ export function providers(conf: Env, appleFirst = false) {
   return out;
 }
 
+/** The longest name an account keeps. */
+export const NAME_MAX = 100;
+
 const MOODS = ["Quiet", "Brave", "Sunny", "Swift", "Lucky", "Merry", "Clever", "Gentle", "Bold", "Breezy", "Cosmic", "Plucky"];
 const CRITTERS = ["Otter", "Fox", "Heron", "Badger", "Lynx", "Puffin", "Wombat", "Gecko", "Marten", "Finch", "Panda", "Hare"];
 
@@ -69,7 +72,9 @@ const make = (conf: Env, origin: string) => betterAuth({
   // A studio that made company sign-in the only way in for its proved domain (sso.ts ssoOnly): any other way to make an account
   // or a session with an email there is refused, the company's own callback aside.
   databaseHooks: {
-    user: { create: { before: async (user, ctx) => (ctx?.path !== "/sso/callback" && await ssoRequired(conf, user.email) ? false : { data: { ...user, name: user.name?.trim() || nameFor(user.email) } }) } },
+    user: { create: { before: async (user, ctx) => (ctx?.path !== "/sso/callback" && await ssoRequired(conf, user.email) ? false : { data: { ...user, name: (user.name?.trim() || nameFor(user.email)).slice(0, NAME_MAX) } }) },
+      // Better Auth's update-user takes a name of any length; the hub and the boards don't (a longer one broke other people's reads).
+      update: { before: async (user) => ({ data: typeof user.name === "string" ? { ...user, name: user.name.slice(0, NAME_MAX) } : user }) } },
     session: { create: { before: async (session, ctx) => {
       if (ctx?.path === "/sso/callback") return;
       const email = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(session.userId).first<string>("email");

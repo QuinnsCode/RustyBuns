@@ -2,7 +2,7 @@
 // wrong (48 V left off, the amp switched on before the desk, the rack carried to the desk with a long speaker run).
 import { expect, test } from "bun:test";
 import type { Cable, CableKind } from "@rustybuns/gear";
-import { CROWD, FIRST_GIG, ZONES, judge, jobs, phantom, show } from "../src/venues/first-gig.ts";
+import { CROWD, FIRST_GIG, type LaidCable, ZONES, judge, jobs, phantom, show } from "../src/venues/first-gig.ts";
 import { type World, newWorld } from "../src/sim.ts";
 
 const c = (kind: CableKind, from: string, to: string, lengthM: number): Cable => {
@@ -101,4 +101,36 @@ test("the first gig's crowd stands between the stage and the back wall, clear of
   const perM2 = CROWD.capacity / ((f.x1 - f.x0) * (f.z1 - f.z0));
   expect(perM2).toBeGreaterThan(1.5);
   expect(perM2).toBeLessThan(2.5);
+});
+
+/** Rope points 0.2 m apart on the floor from one spot to another, as a laid cable's rope lies. */
+const lay = (x0: number, z0: number, x1: number, z1: number) => {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.2);
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: x0 + ((x1 - x0) * i) / n, y: 0.006, z: z0 + ((z1 - z0) * i) / n }));
+};
+
+test("a power cord laid along the mic's cable hums through the wedge; moved apart, or crossed square, it stops", () => {
+  const w = setUp({ x: -2.2, z: 1.0 });
+  phantom(w, true);
+  // The mic's cable runs down the side of the room to the desk; the rack's power cord lies 15 cm beside it.
+  const runs = (power: ReturnType<typeof lay>): LaidCable[] => [
+    { ...byStage[0]!, key: "power-5a", path: power },
+    byStage[1]!,
+    { ...byStage[2]!, key: "xlr-15a", path: lay(0, 1.2, 2.5, 8.2) },
+    ...byStage.slice(3),
+  ];
+  const beside = runs(lay(0.14, 1.15, 1.6, 5.2));
+  const on = switchOn(w, beside, ["desk", "rack"]);
+  const j = judge(w, beside, on);
+  expect(j.fed).toBe(true);
+  expect(j.problems.map((p) => p.kind)).toEqual(["hum"]);
+  expect(j.problems[0]!.message).toContain("cable xlr-15a lies along power cord power-5a");
+  expect(j.problems[0]!.message).toContain("Run them apart");
+  expect(show(w, beside, on).sound).toBeLessThan(100);
+
+  // A metre away, or across it at a right angle: no hum, and the show is clean again.
+  for (const power of [lay(-0.9, 1.5, 0.6, 5.5), lay(0.2, 4, 2.2, 3.3)]) {
+    expect(judge(w, runs(power), on).problems).toEqual([]);
+    expect(show(w, runs(power), on)).toMatchObject({ sound: 100, pass: true });
+  }
 });

@@ -29,8 +29,17 @@ export type Blocker = Of<typeof Blocker>;
 
 const MARK = /<!-- blocker (\{.*?\}) -->/s;
 
-/** The record as a line for an issue body, read back by `blockerOf`. */
-export const blockerMark = (b: Blocker) => `<!-- blocker ${JSON.stringify({ test: b.test, prs: b.prs, ...(b.checks ? { checks: b.checks } : {}) })} -->`;
+/** Text without its control characters (newlines and tabs stay), which in a terminal's paste would be keystrokes. */
+export const noControls = (s: string) => s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+
+/** A test's name or log line made safe for an issue, a prompt or a terminal: no control characters, and it can't open an
+ * HTML comment (a forged mark) or close a fence. */
+export const inert = (s: string) => noControls(s).replaceAll("<!--", "<! --").replaceAll("-->", "-- >").replaceAll("```", "` ` `");
+
+/** The record as a line for an issue body, read back by `blockerOf`. `<` and `>` are JSON escapes, so a name holding
+ * `-->` neither ends the line early nor starts another. */
+export const blockerMark = (b: Blocker) =>
+  `<!-- blocker ${JSON.stringify({ test: b.test, prs: b.prs, ...(b.checks ? { checks: b.checks } : {}) }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")} -->`;
 
 /** The blocker an issue describes (its number is the issue), or null when the body names none. */
 export function blockerOf(issue: { number: number; body: string }): Blocker | null {

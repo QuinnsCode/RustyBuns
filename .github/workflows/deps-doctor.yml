@@ -48,7 +48,8 @@ jobs:
           git fetch -q origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
           git push --force-with-lease="$BRANCH" origin "HEAD:$BRANCH"
           { cat "$RUNNER_TEMP/report.md"; printf '\nRebuilt from main each week by `.github/workflows/deps-doctor.yml`; commits pushed here by hand are replaced on the next run.\n'; } > "$RUNNER_TEMP/body.md"
-          pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          # a fork's branch of the same name matches --head too: only this repository's own PR is ours
+          pr=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository -q 'map(select(.isCrossRepository | not))[0].number // empty')
           if [ -n "$pr" ]; then gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
           else gh pr create --head "$BRANCH" --title "Dependency doctor: updates and security fixes" --body-file "$RUNNER_TEMP/body.md"; fi
           gh workflow run typecheck.yml --ref "$BRANCH"
