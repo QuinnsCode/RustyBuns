@@ -20,7 +20,8 @@ const BASE = `
 .eq input,.eq select,.eq textarea{width:100%;max-width:none;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
 .eq textarea{resize:vertical}.eq ::placeholder{color:var(--ui-dim);opacity:1}
 .eq-chip{display:inline-flex;align-items:center;gap:8px}.eq-chip:has(.eq-note){flex-wrap:wrap}.eq-chip .eq-btn{min-height:30px;min-width:30px}
-.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:2px 2px 2px 5px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:3px 3px 3px 6px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+.eq-chip.in .eq-btn{border-radius:max(0px,calc(var(--ui-radius-sm) - 3px - var(--ui-border)))}
 :where(.eq-chip){position:relative}
 .eq-fold{display:inline-flex;flex:none;padding:0;margin:0;border:0;border-radius:5px;background:none;cursor:pointer}.eq-fold:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -137,7 +138,7 @@ export const DARK: Theme = {
  */
 export const HOUSE = `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in{box-shadow:0 4px 0 var(--ui-line),var(--ui-shadow)}
 .eq-btn{box-shadow:0 3px 0 var(--ui-line);margin-bottom:3px}.eq-btn:active{transform:translateY(3px);box-shadow:0 0 0 var(--ui-line)}.eq-btn:disabled{transform:none}
-.eq-chip .eq-btn,.rb-spaces-log .eq-btn{box-shadow:0 2px 0 var(--ui-line);margin-bottom:2px}
+.rb-spaces-log .eq-btn{box-shadow:0 2px 0 var(--ui-line);margin-bottom:2px}.eq-chip.in .eq-btn{box-shadow:none;margin-bottom:0}.eq-chip.in .eq-btn:active{transform:scale(.97)}
 .eq-title,.rb-spaces h2{text-decoration:underline 3px var(--ui-accent);text-underline-offset:4px}
 .eq-chip.in .eq-who::before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--ui-accent)}
 .eq input,.eq select,.eq textarea{box-shadow:inset 0 2px 0 var(--ui-accent-soft)}

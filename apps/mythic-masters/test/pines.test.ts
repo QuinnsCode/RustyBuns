@@ -29,6 +29,10 @@ describe("the Pine Barrens' landmarks", () => {
     const co = Math.cos(lake.yaw), sn = Math.sin(lake.yaw);
     const ring = (p: { x: number; z: number }) => { const dx = p.x - lake.x, dz = p.z - lake.z; return Math.hypot((dx * co - dz * sn) / (lake.w / 2), (dx * sn + dz * co) / (lake.d / 2)); };
     for (const c of cedars) expect(ring(c)).toBeGreaterThan(1);
+    // the pitch pines make the skyline across the water: behind the cedars, none on the beach side you look from
+    const pitch = atsion.parts.filter((p) => p.kind === "pitch");
+    expect(pitch.length).toBeGreaterThan(10);
+    for (const p of pitch) { expect(ring(p)).toBeGreaterThan(1.2); expect((p.x - lake.x) * sn + (p.z - lake.z) * co).toBeLessThan(0); }
     // and its sedge lines the waterline, a little in and a little out, all round but the beach
     const sedge = atsion.parts.filter((p) => p.kind === "sedge");
     expect(sedge.length).toBeGreaterThan(60);
