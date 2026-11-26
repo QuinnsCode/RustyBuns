@@ -214,6 +214,11 @@
         "line": "A small business site on the built-in CMS: its words and news posts are JSON files you edit as forms and translate, with no code to touch."
       },
       {
+        "app": "effect-ui-page",
+        "name": "Agent Page",
+        "line": "An Effect UI profile page your agent builds through WebMCP tools: name, theme and blocks, each call checked by a Schema, with undo."
+      },
+      {
         "app": "hemyviz",
         "name": "hemyviz",
         "line": "Your Alchemy deployments, drawn live: every stack, every stage, every resource, in 2D, 2.5D and 3D, five ways each."

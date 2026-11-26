@@ -1,0 +1,19 @@
+{
+  "name": "effect-ui-page",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578",
+    "@rustybuns/util": "^0.1.12",
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "vite": "^6.4.4"
+  }
+}

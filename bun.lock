@@ -235,6 +235,18 @@
         "vite": "^6.4.4",
       },
     },
+    "apps/effect-ui-page": {
+      "name": "effect-ui-page",
+      "version": "0.0.1",
+      "dependencies": {
+        "@effect/ui": "https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578",
+        "@rustybuns/util": "^0.1.12",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "vite": "^6.4.4",
+      },
+    },
     "apps/eqosys": {
       "name": "eqosys",
       "version": "0.0.1",
@@ -1872,6 +1884,8 @@
 
     "@effect/sql-d1": ["@effect/sql-d1@4.1.4", "", { "dependencies": { "@cloudflare/workers-types": "^5.20261107.1" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-x7UtDPNCgcAz6lvGbrf0INHxztV0qV8i4qleqPb31ADeilz7MnGYJ5Qhprqod+ySBUNPdsvXNRE9vm36TznIdg=="],
 
+    "@effect/ui": ["@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@a0d7578", { "peerDependencies": { "effect": "^4.1.4" } }, "sha512-t5MlRULBOIy3v20WTd20LHw4qlRtUO5ZLZ+EZ4xPgtzF67/KWnx606OfRFOpYnaYltQlTa9gYt00Cwg0hN6BNQ=="],
+
     "@electric-sql/pglite": ["@electric-sql/pglite@0.5.8", "", {}, "sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q=="],
 
     "@electric-sql/pglite-age": ["@electric-sql/pglite-age@0.0.9", "", { "peerDependencies": { "@electric-sql/pglite": "0.5.8" } }, "sha512-IdNy5P5nxwKVeSPLjDLXkp/eYffH5roympM7fTG+g9ehzBrDnQ9TT2tfCJ2vRVcOSPQBp4oURzfRE19cs/x8ZA=="],
@@ -3205,6 +3219,8 @@
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
     "effect": ["effect@4.1.4", "", {}, "sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ=="],
+
+    "effect-ui-page": ["effect-ui-page@workspace:apps/effect-ui-page"],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.433", "", {}, "sha512-5lCAbyZBjtmUt/RAGHRqrL2q0oEFRThDAsZHHDn9XHa89Qw7gMYOeSicBTy+AHfvo0r6vwsZvqNJTQIQy1BLzA=="],
 
