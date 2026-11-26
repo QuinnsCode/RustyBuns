@@ -1,12 +1,12 @@
 // Studios, the way the owner and a teammate meet them: the super admin finds QNTBR already holding every app, a teammate makes
-// their own studio and is added to QNTBR from the Studio tab, roles hold, and deleting an account takes the studio it owned alone with it.
+// their own studio and is asked into QNTBR from the Studio tab and says yes, roles hold, and deleting an account takes the studio it owned alone with it.
 // Then a deploy tells eqosys what went out (the CLI's own reporter, packages/cli/src/report-deploy.ts), and the Ship door shows it.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey, peek } from "@rustybuns/util/token";
 import { APPS } from "../src/apps.ts";
 import { reportDeploy } from "../../../packages/cli/src/report-deploy.ts";
 import { handle } from "../src/handle.ts";
-import { addMember, makeStudio, STUDIO_MEMBERS } from "../src/studios.ts";
+import { addMember, answerInvite, makeStudio, STUDIO_MEMBERS } from "../src/studios.ts";
 import { SPACE_MEMBERS } from "../src/qollab/space.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 
@@ -24,9 +24,9 @@ async function signUp(name: string, email = `${name.toLowerCase()}@example.com`)
 }
 const run = async (name: string, args: unknown, who: { cookie?: string; token?: string }) => {
   const { res } = await call(`/api/tools/${name}`, { json: args, ...(who.cookie ? { cookie: who.cookie } : {}), ...(who.token ? { bearer: who.token } : {}) });
-  return { status: res.status, body: await res.json() as { result?: { studios: Shelf[] }; error?: string } };
+  return { status: res.status, body: await res.json() as { result?: { studios: Shelf[]; invites?: unknown[] }; error?: string } };
 };
-type Shelf = { id: string; name: string; kind: string; role: string; members: number; people: { name: string; role: string }[];
+type Shelf = { id: string; name: string; kind: string; role: string; members: number; people: { name: string; role: string }[]; pending?: { email: string; role: string }[];
   apps: { id: string; play: string | null; make: string | null; ship: string; shipped: { stage: string; version: string; at: number } | null }[] };
 const studios = async (who: { cookie?: string; token?: string }) => (await run("eq_studios", {}, who)).body.result?.studios ?? [];
 
@@ -48,10 +48,26 @@ test("QNTBR is the owner's business studio with every app; a teammate makes thei
 
   // Adding by email is for the page: the Studio tab's form (or the tool, signed in there); an app's token is refused, and so is a maker adding people.
   const add = (who: { cookie: string }, email: string, role = "maker") => call("/do/studio-add", { form: { studio: "qntbr", email, role }, cookie: who.cookie }).then((r) => r.to);
+  const answer = (who: { cookie: string }, yes: boolean) => call("/do/studio-join", { form: { studio: "qntbr", answer: yes ? "yes" : "no" }, cookie: who.cookie }).then((r) => r.to);
+  const invites = async (who: { cookie: string }) => (await run("eq_studios", {}, who)).body.result?.invites ?? [];
   expect((await run("eq_studio_add", { studio: "qntbr", email: "ada@example.com", role: "maker" }, { token: boss.token })).status).toBe(403);
-  expect(await add(boss, "nobody@example.com")).toBe("/?tab=studio&e=nobody");
-  expect(await add(boss, "ada@example.com")).toBe("/?tab=studio");
+  // Asking someone in seats nobody (#6232): Ada says yes first, and an email with no account answers the same, so asking tells nothing.
+  expect(await add(boss, "nobody@example.com")).toBe("/?tab=studio");
+  expect(await add(boss, "Ada@example.com")).toBe("/?tab=studio");
+  const [asked] = await studios({ cookie: boss.cookie });
+  expect([asked!.people.map((p) => p.name), asked!.pending]).toEqual([["Boss"], [{ email: "nobody@example.com", role: "maker" }, { email: "ada@example.com", role: "maker" }]]);
+  expect((await studios({ cookie: ada.cookie })).map((x) => x.name)).toEqual(["Ada Works"]);
+  expect(await invites(ada)).toEqual([{ studio: "qntbr", name: "QNTBR", kind: "business", role: "maker", by: "Boss" }]);
   expect(await add(ada, "boss@example.com")).toBe("/?tab=studio&e=studio");
+  // No thanks drops it; asked again, she joins.
+  expect(await answer(ada, false)).toBe("/?tab=studio");
+  expect([await invites(ada), await answer(ada, true)]).toEqual([[], "/?tab=studio&e=noinvite"]);
+  expect(await add(boss, "ada@example.com")).toBe("/?tab=studio");
+  expect(await answer(ada, true)).toBe("/?tab=studio");
+  expect(await invites(ada)).toEqual([]);
+  // The one nobody answered is taken back with the same button as taking someone out.
+  expect((await run("eq_studio_remove", { studio: "qntbr", email: "nobody@example.com" }, { cookie: boss.cookie })).status).toBe(200);
+  expect((await studios({ cookie: boss.cookie }))[0]!.pending).toEqual([]);
   expect((await run("eq_studio_add", { studio: "qntbr", email: "boss@example.com", role: "maker" }, { cookie: ada.cookie })).status).toBe(403);
   expect((await studios({ cookie: boss.cookie }))[0]!.people.map((p) => [p.name, p.role])).toEqual([["Boss", "owner"], ["Ada", "maker"]]);
 
@@ -118,7 +134,9 @@ test("a studio holds more people than a person's own space, up to its cap; a rol
   // Fill it to one short of the cap with people who only exist as rows.
   await conf.DB.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?) INSERT INTO studio_members (studio_id, user_id, role, at) SELECT ?, 'row-' || i, 'maker', 0 FROM n`)
     .bind(STUDIO_MEMBERS - 2, made.id).run();
-  expect(await addMember(conf, made.id, lead, "late@example.com", "maker")).toEqual({ ok: true, id: made.id });
-  expect(await addMember(conf, made.id, lead, "third@example.com", "maker")).toEqual({ ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` });
+  // Both are asked; the first yes takes the last seat, the second finds it full.
+  for (const email of ["late@example.com", "third@example.com"]) expect(await addMember(conf, made.id, lead, email, "maker")).toEqual({ ok: true, id: made.id });
+  expect(await answerInvite(conf, made.id, await id("late@example.com"), true)).toEqual({ ok: true, id: made.id });
+  expect(await answerInvite(conf, made.id, await id("third@example.com"), true)).toEqual({ ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` });
   expect(await addMember(conf, made.id, lead, "late@example.com", "admin")).toEqual({ ok: true, id: made.id });
 });

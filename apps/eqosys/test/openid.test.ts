@@ -62,7 +62,7 @@ test("the QNTBR site's Better Auth signs a person in with eqosys as its OpenID p
 });
 
 test("a native app: its own scheme, a refresh token it keeps, signing out, and deleting the account", async () => {
-  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+  const { call, conf } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
   const app = "park-hide-seek", redirect = "com.quinnscode.parkhideseek:/eqosys";
   const verifier = "n".repeat(43);
   const authorize = (q: Record<string, string>) => call(`/oauth/authorize?${new URLSearchParams({
@@ -98,6 +98,8 @@ test("a native app: its own scheme, a refresh token it keeps, signing out, and d
   // Signing out also ends the tokens signed up to that second (token-life.test.ts), so the next sign-in waits for a fresh one.
   await Bun.sleep(1000 - Date.now() % 1000);
   const again = new URL((await authorize({ code_challenge: await challengeOf(verifier) })).to, ORIGIN);
+  // Signed in, she still sees the Continue page for a scheme any app on the phone could claim (#6233): no code goes out unasked.
+  expect(await handle(new Request(again.href, { headers: { cookie: up.cookie } }), conf)).toBeNull();
   // The QNTBR site's own session cookie rides along on all of .qntbr.com; eqosys's has its own name and still reads.
   const cont = await call("/do/continue", { form: Object.fromEntries(again.searchParams), cookie: `better-auth.session_token=the-sites.sig; ${up.cookie}` });
   const kept = check(Tokens, (await post({ grant_type: "authorization_code", code: new URL(cont.to).searchParams.get("code")!, code_verifier: verifier, scope: "offline_access" })).body)!;
