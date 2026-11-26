@@ -78,7 +78,7 @@ const list: Gear[] = [
   {
     id: "top-12-powered",
     what: '12" two-way powered speaker',
-    size: box(0.37, 0.6, 0.36),
+    size: box(0.356, 0.602, 0.35),
     kg: 18,
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 98, maxSpl: 128, ratedWatts: 500, ohms: null, coverage: { h: 90, v: 60 }, lowCut: 55, highCut: 20000, rearLoss: 20 },
@@ -95,7 +95,7 @@ const list: Gear[] = [
   {
     id: "sub-18",
     what: '18" subwoofer',
-    size: box(0.55, 0.7, 0.75),
+    size: box(0.52, 0.638, 0.784),
     kg: 45,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 99, maxSpl: 133, ratedWatts: 800, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 120, rearLoss: 6 },
@@ -103,7 +103,7 @@ const list: Gear[] = [
   {
     id: "wedge-12",
     what: '12" floor monitor',
-    size: box(0.6, 0.35, 0.42),
+    size: box(0.515, 0.375, 0.453),
     kg: 16,
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 96, maxSpl: 125, ratedWatts: 300, ohms: null, coverage: { h: 60, v: 40 }, lowCut: 65, highCut: 20000, rearLoss: 20 },
@@ -190,7 +190,7 @@ const list: Gear[] = [
   {
     id: "line-array-10",
     what: "line array box, two 10\" and a horn",
-    size: box(0.74, 0.3, 0.5),
+    size: box(0.512, 0.271, 0.374),
     kg: 36,
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 101, maxSpl: 138, ratedWatts: 1200, ohms: null, coverage: { h: 110, v: 10 }, lowCut: 55, highCut: 20000, rearLoss: 22 },
@@ -199,7 +199,7 @@ const list: Gear[] = [
   {
     id: "fill-8-powered",
     what: "8\" powered front fill",
-    size: box(0.28, 0.42, 0.25),
+    size: box(0.28, 0.449, 0.269),
     kg: 9,
     jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
     speaker: { sensitivity: 95, maxSpl: 122, ratedWatts: 300, ohms: null, coverage: { h: 100, v: 70 }, lowCut: 70, highCut: 20000, rearLoss: 18 },

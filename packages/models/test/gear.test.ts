@@ -30,9 +30,11 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   const centre = box.getCenter(new THREE.Vector3());
   for (const [name, j] of jacks) {
     const out = new THREE.Vector3(0, 0, 1).applyQuaternion(j.quaternion);
-    // out of the box, not buried: a plug coming in along -z reaches it from outside the model
+    // out of the box, not buried: a plug coming in along -z reaches it from outside the model, clear of the box, or
+    // (a box lying tilted, as a floor monitor on its flat does) with nothing of it in the 10 cm in front of the jack
     expect(j.position.clone().sub(centre).dot(out), name).toBeGreaterThan(0);
-    expect(box.distanceToPoint(j.position.clone().addScaledVector(out, 0.05)), name).toBeGreaterThan(0.03);
+    const from = j.position.clone().addScaledVector(out, 0.1), hit = new THREE.Raycaster(from, out.clone().negate()).intersectObject(g, true)[0];
+    expect(box.distanceToPoint(j.position.clone().addScaledVector(out, 0.05)) > 0.03 || (hit?.distance ?? 1) > 0.095, name).toBe(true);
   }
   expect(g.getObjectByName("grab")).toBeDefined();
 });
@@ -106,11 +108,11 @@ function reach(id: GearId, from: readonly [number, number, number], dir: readonl
 
 test.each([
   // [what, id, from, along, the face's own coordinate along it, how deep a real one goes at least]
-  ["the PA top's woofer, 7 cm back behind its grille", "top-12-powered", [0, 0.3, 1], [0, 0, -1], -0.18, 0.03],
-  ["the PA top's handle, a pocket sunk in its top", "top-12-powered", [0, 1, 0.01], [0, -1, 0], -0.575, 0.025],
-  ["the PA top's side handle", "top-12-powered", [1, 0.36, -0.01], [-1, 0, 0], -0.16, 0.025],
-  ["the sub's port, a slot right across the bottom of its front", "sub-18", [0, 0.084, 1], [0, 0, -1], -0.361, 0.1],
-  ["the sub's side handle", "sub-18", [1, 0.42, 0], [-1, 0, 0], -0.27, 0.03],
+  ["the PA top's woofer, back behind its grille", "top-12-powered", [0, 0.3, 1], [0, 0, -1], -0.175, 0.03],
+  ["the PA top's handle, a well sunk in its top behind the grip bar", "top-12-powered", [0, 1, -0.04], [0, -1, 0], -0.593, 0.025],
+  ["the front fill's woofer, back behind its grille", "fill-8-powered", [0, 0.2, 1], [0, 0, -1], -0.1345, 0.03],
+  ["the sub's port, one of two slots across the bottom of its front", "sub-18", [0.12, 0.086, 1], [0, 0, -1], -0.392, 0.1],
+  ["the sub's side handle", "sub-18", [1, 0.365, 0.1], [-1, 0, 0], -0.26, 0.03],
 ] as const)("%s is a hollow you see into", (_, id, from, dir, face, deep) => {
   expect(reach(id, from, dir, face)).toBeGreaterThan(deep);
 });
