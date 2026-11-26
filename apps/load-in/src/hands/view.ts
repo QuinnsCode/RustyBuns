@@ -23,6 +23,8 @@ export type Hold = {
   show?: boolean;
   /** what's next (world space): an empty right hand reaches toward it */
   reach?: V3;
+  /** looking at a piece you could take: empty hands drop out of the way so its face and label show */
+  low?: boolean;
 };
 
 const SKIN = 0xb57a58;
@@ -104,6 +106,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   /** The middle of what the right hand grips (world space), as of the last update: where a page hangs a coil. */
   const gripWorld = new THREE.Vector3();
   const fromV = (v: THREE.Vector3): V3 => [v.x, v.y, v.z];
+  /** How far the empty hands have dropped (0 up, 1 down), eased toward `hold.low`. */
+  let low = 0, lowAt = -1;
   /** A world-space frame (a carry) in the camera's space. */
   const toCam = (f: Frame): Frame => {
     const r = (v: V3) => fromV(toV(v, vA).transformDirection(camInv));
@@ -123,6 +127,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       const reachTo = hold.reach && !hold.show && !carry && hold.right.kind === "rest" ? toV(hold.reach, vR).applyMatrix4(camInv) : null;
       const reach = reachTo ? reachFrame(fromV(reachTo), t, speed) : null;
       const far = reachTo ? Math.min(1, Math.max(0.45, 1.5 - reachTo.length() / 8)) : 0;
+      const lowDt = lowAt < 0 ? 0 : Math.min(0.1, Math.max(0, t - lowAt));
+      lowAt = t;
+      low += ((hold.low ? 1 : 0) - low) * Math.min(1, lowDt * 7);
       for (const s of sides) {
         const what = s.side > 0 ? hold.right : hold.left;
         const show = !!hold.show && !carry && what.kind === "rest";
@@ -138,6 +145,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view. Not
         // the raised arms: they already reach across the view, and pulled in they cross in the middle (#5157).
         if (!carry && !show && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
+        // Out of the way while you look at a piece: down and a touch apart. A hand reaching for the next piece stays on it.
+        const drop = low * (1 - s.reachK);
+        if (!carry && !show && what.kind === "rest" && drop > 0.001) f.o = [f.o[0] * (1 + 0.12 * drop), f.o[1] - 0.075 * drop, f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
