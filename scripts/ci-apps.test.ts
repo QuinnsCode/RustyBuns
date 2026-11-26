@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { APPS, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { APPS, appsFor, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
 import { appDir } from "./app-dirs.ts";
 
 // A docs-only PR under packages/ used to run every app's suite (PR #5404: 4635 tests for a skill file).
@@ -15,6 +15,17 @@ test("only code under packages/, the lockfile and the apps workflow fan out to e
     ["README.md", false],
   ];
   for (const [file, shared] of cases) expect([file, sharedCode(file)]).toEqual([file, shared]);
+});
+
+// #5899: playground's shelf.json is built from each package's package.json, so editing one runs playground's tests.
+test("a package's package.json runs playground's tests besides its own folder's", () => {
+  const cases: [string, string[]][] = [
+    ["packages/models/package.json", ["playground"]],
+    ["packages/models/src/human.ts", []],
+    ["apps/two-fronts/src/main.ts", ["two-fronts"]],
+    ["package.json", []],
+  ];
+  for (const [file, apps] of cases) expect([file, appsFor(file)]).toEqual([file, apps]);
 });
 
 // #5229: every app's tests in up to three lanes by time, the heavy files apart, and never an empty job.
