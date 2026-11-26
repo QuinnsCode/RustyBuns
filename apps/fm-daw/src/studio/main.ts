@@ -87,7 +87,7 @@ import { capture, guitarSettings, inputAt, inputTrack, lagWords, type Input, typ
 import { mountLane } from "./lane.tsx";
 import { mountHelp } from "./help.ts";
 import { mountLessonCard } from "./lesson-card.ts";
-import { Lessons } from "./lessons.ts";
+import { type Mark, Lessons, markAt } from "./lessons.ts";
 import { keysTable } from "./actions.ts";
 import { TABS, type LaneModel, type Tab } from "./lane-model.ts";
 import { mountDesk } from "./desk-panel.ts";
@@ -791,7 +791,7 @@ const atWall = new GearHands(def, (op) => net?.studio(op));
 /** The setup lessons at the gear wall (lessons.ts): started from the ? card, shown at the top left as you go. */
 const lessons = new Lessons(atWall);
 const lessonCard = mountLessonCard($("hud"), lessons);
-let lessonTick = 0;
+let lessonTick = 0, lessonMark: Mark | null = null;
 const lit = new LanternsHere(def, (m) => net?.lantern(m), scene);
 /** The sesh's gear room as the World keeps it, kept in step by the wall's hands: what the desk reads (aux 2) and shows. */
 const gearRoom = { get patch() { return atWall.room.studio.patch; } };
@@ -1600,7 +1600,8 @@ function frame(now: number) {
   $("cross").hidden = jam.me.cam !== "first" && !atWall.wants(jam);
   $("hint").textContent = now < flash.until ? flash.text : away() ? "Click to look around. Esc: the menu" : roomTubes.note() ?? hint();
   help.frame(phase === "play");
-  if (++lessonTick % 6 === 0) lessonCard.frame();   // a few times a second: the steps read the whole patch
+  if (++lessonTick % 6 === 0) { lessonCard.frame(); lessonMark = lessons.state()?.mark ?? null; }   // a few times a second: the steps read the whole patch
+  gearScene.mark(lessonMark && markAt(atWall.room, lessonMark), t);   // every frame: it follows a box in your hands
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
   $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${walkSet ? ". Walk-through: the planned PA plays a test set, walk the site to hear it" : ""}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
@@ -1649,7 +1650,7 @@ const harness = {
   /** A box on the wall's floor in studio metres (x, z), to walk up to. */
   gearAt: (id: string) => atWall.at(id),
   /** A setup lesson (lessons.ts): start one (guitar, voice, pa; the PA one brings its kit), null leaves it; then the lesson as it stands and the ones finished. */
-  lesson: (id?: string | null) => { const a = id === null ? (lessons.leave(), { ok: true }) : id ? say(lessons.start(id, jam)) : { ok: true }; lessonCard.frame(); return { ...a, lesson: lessons.state(), finished: [...lessons.finished] }; },
+  lesson: (id?: string | null) => { const a = id === null ? (lessons.leave(), { ok: true }) : id ? say(lessons.start(id, jam)) : { ok: true }; lessonCard.frame(); const lesson = lessons.state(); lessonMark = lesson?.mark ?? null; return { ...a, lesson, finished: [...lessons.finished], marker: lessonMark && markAt(atWall.room, lessonMark) }; },
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },

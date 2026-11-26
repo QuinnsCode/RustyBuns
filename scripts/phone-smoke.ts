@@ -13,7 +13,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { join, resolve } from "node:path";
 import { appDir } from "./app-dirs.ts";
 import { launchChrome, load, openTab, startVite, type Cdp } from "./chrome.ts";
-import { PHONES, REFERENCE, WEB_APPS, analyze, appStatus, board, mergeReports, pageAudit, shardOf, Report, type AppResult, type Audit, type PhoneResult } from "./phone-smoke-lib.ts";
+import { PHONES, REFERENCE, WEB_APPS, analyze, settledAudit, appStatus, board, mergeReports, pageAudit, shardOf, Report, type AppResult, type Audit, type PhoneResult } from "./phone-smoke-lib.ts";
 
 /** Where an app opens for the run, when its root is random: the same course on every screen, so the laptop and the phones show the same buttons. */
 export const PATHS: Record<string, string> = { "alien-disc-golf": "/?seed=42&wind=synthetic" };
@@ -36,7 +36,7 @@ function serve(app: string, cwd: string) {
 }
 
 /** Opens `url` in a fresh tab sized like `size`, and returns what the audit saw, a screenshot and the noise the page made. */
-async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobile: boolean) {
+async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobile: boolean, ref?: Audit) {
   const tab = await openTab(cdp, size, mobile);
   try {
     // Every visit starts as a first visit: a game that autosaves (Two Fronts) would otherwise hand the laptop's run to the phones.
@@ -45,7 +45,7 @@ async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobi
     // title paper swings in from edge-on, and on a busy CI runner the audit caught it on its spine, every button a sliver (#5633).
     await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(cdp, tab, url);
-    const audit = await tab.eval<Audit>(`(${pageAudit})()`);
+    const audit = await settledAudit(() => tab.eval<Audit>(`(${pageAudit})()`), ref);
     const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 70, clip: { x: 0, y: 0, width: size.w, height: size.h, scale: mobile ? 0.6 : 0.4 } });
     return { audit, shot: Buffer.from(shot.data, "base64"), noise: [...new Set(tab.noise)].slice(0, 5) };
   } finally {
@@ -54,7 +54,8 @@ async function visit(cdp: Cdp, url: string, size: { w: number; h: number }, mobi
 }
 
 // ---- one app: boot it, look at it on the laptop and then on every phone.
-async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> {
+// `phones` fills as each phone is looked at, so an app that runs out of time keeps what it finished; `stop` ends it there.
+async function smokeApp(app: string, cdp: Cdp, out: string, phones: PhoneResult[], stop: { now: boolean }): Promise<AppResult> {
   const cwd = join(root, appDir(app, root));
   let server: { url: string; stop: () => void } | undefined;
   try {
@@ -62,11 +63,11 @@ async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> 
     const url = new URL(PATHS[app] ?? "/", server.url).href;
     mkdirSync(join(out, app), { recursive: true });
     const ref = await visit(cdp, url, REFERENCE, false).catch(() => visit(cdp, url, REFERENCE, false));
-    const phones: PhoneResult[] = [];
     for (const ph of screens) {
+      if (stop.now) break;
       const shotName = `${app}/${ph.name.replaceAll(" ", "-").toLowerCase()}.jpg`;
       try {
-        const v = await visit(cdp, url, ph, true).catch(() => visit(cdp, url, ph, true));
+        const v = await visit(cdp, url, ph, true, ref.audit).catch(() => visit(cdp, url, ph, true, ref.audit));
         writeFileSync(join(out, shotName), v.shot);
         phones.push({ phone: ph.name, w: ph.w, h: ph.h, shot: shotName, findings: analyze(v.audit, ref.audit, v.noise) });
       } catch (e) {
@@ -102,9 +103,16 @@ if (flag("merge")) {
     const chrome = await launchChrome();
     try {
       for (let app = queue.shift(); app; app = queue.shift()) {
-        const r = await Promise.race([smokeApp(app, chrome.cdp, out), Bun.sleep(300_000).then((): AppResult => ({ app, phones: [], bootError: "gave up after 5 minutes" }))]);
+        // A WebGL game on a software-rendered runner can take most of a minute a phone (#5797): past 5 minutes the phones it
+        // finished still count and the rest is a warning; with none finished it is broken.
+        const phones: PhoneResult[] = [], stop = { now: false };
+        const r = await Promise.race([smokeApp(app, chrome.cdp, out, phones, stop), Bun.sleep(300_000).then((): AppResult => {
+          stop.now = true;
+          const done = phones.slice();
+          return done.length ? { app, phones: done, unfinished: `gave up after 5 minutes: ${done.length} of ${screens.length} phones looked at` } : { app, phones: [], bootError: "gave up after 5 minutes" };
+        })]);
         results.push(r);
-        console.log(`${appStatus(r).padEnd(5)} ${app}${r.bootError ? `  (did not finish: ${r.bootError.split("\n")[0]})` : `  ${r.phones.reduce((s, p) => s + p.findings.length, 0)} findings`}`);
+        console.log(`${appStatus(r).padEnd(5)} ${app}${r.bootError ? `  (did not finish: ${r.bootError.split("\n")[0]})` : `  ${r.phones.reduce((s, p) => s + p.findings.length, 0)} findings${r.unfinished ? ` (${r.unfinished})` : ""}`}`);
       }
     } finally {
       chrome.stop();
