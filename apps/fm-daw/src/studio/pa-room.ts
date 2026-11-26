@@ -11,9 +11,9 @@
 // out here and moved at body rate (jam.ts BODY_HZ), not every frame, with short glides so nothing clicks.
 // `hearSpeaker` and `paSpeakers` are pure, for the test; `PaRoom` is the Web Audio graph.
 import { clamp } from "@rustybuns/util";
-import { airAbsorption, banks, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
+import { airAbsorption, levelAt, MILD_FIELD, screenPath, source, speedOfSound, stackSources, stackWidth, system, systemSound, type Field, type RigPlan, type Source, type System } from "@rustybuns/gear";
 import { BODY_HZ } from "./jam.ts";
-import { thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
+import { roomLand, thingBox, type Outdoor, type RoomPa, type StudioDef } from "./room.ts";
 import { AIR, impulse } from "./sound.ts";
 
 /** Metres a second, indoors (out of doors the field's air sets it: roomField). */
@@ -41,7 +41,7 @@ export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mon
 export function roomField(def: StudioDef): Field | undefined {
   const out = def.outdoor;
   if (!out) return undefined;
-  return { tempC: out.air?.tempC ?? MILD_FIELD.tempC, humidity: out.air?.humidity ?? MILD_FIELD.humidity, ground: out.ground ?? MILD_FIELD.ground, terrain: out.banks?.length ? banks(out.banks) : undefined };
+  return { tempC: out.air?.tempC ?? MILD_FIELD.tempC, humidity: out.air?.humidity ?? MILD_FIELD.humidity, ground: out.ground ?? MILD_FIELD.ground, terrain: roomLand(def) };
 }
 
 /** The PA you placed: an open-air party's, else an indoor room's own (none: the club stacks either side of the decks). */

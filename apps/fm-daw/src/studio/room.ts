@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import type { Bank, GeneratorId, Ground, SystemId } from "@rustybuns/gear";
+import { banks, type Bank, type GeneratorId, type Ground, type SystemId, type Terrain } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -221,9 +221,24 @@ export interface Prop {
 export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony", "cables", "clutter", "riser", "grid", "cyc"].includes(p.kind);
 /** A prop's footprint, as a box on the floor turned by its yaw. */
 export const propBox = (p: Prop) => ({ cx: p.at[0], cz: p.at[1], hw: p.w / 2, hd: p.d / 2, turn: p.yaw });
-/** How high the floor is here: a riser's deck under (x, z) lifts whoever stands or sits on it, and what they play. */
+const lands = new WeakMap<readonly Bank[], { key: string; land: Terrain }>();
+/** An open-air room's land: its banks as @rustybuns/gear's height map, the one the sound crosses (pa-room.ts roomField)
+ *  and your feet stand on (floorAt). Kept per banks list while its banks stay where they are (the builder moves them
+ *  in place), so a frame's many asks don't rebuild it. */
+export function roomLand(def: StudioDef): Terrain | undefined {
+  const list = def.outdoor?.banks;
+  if (!list?.length) return undefined;
+  const key = JSON.stringify(list), had = lands.get(list);
+  if (had?.key === key) return had.land;
+  const land = banks(list);
+  lands.set(list, { key, land });
+  return land;
+}
+
+/** How high the floor is here: a riser's deck under (x, z), or out of doors a bank's slope, lifts whoever stands or
+ *  sits on it, and what they play. */
 export function floorAt(def: StudioDef, x: number, z: number): number {
-  let y = 0;
+  let y = roomLand(def)?.(x, z) ?? 0;
   for (const p of def.props ?? []) {
     if (p.kind !== "riser") continue;
     const dx = x - p.at[0], dz = z - p.at[1], c = Math.cos(p.yaw), s = Math.sin(p.yaw);

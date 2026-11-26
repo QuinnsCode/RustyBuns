@@ -1,8 +1,9 @@
 // Walking about a room: an easy walk, Shift's speed walk, a hop everyone else sees, and the lantern in your hand
-// swinging on its handle as you go and stop. Two jams on one live line, no DOM.
+// swinging on its handle as you go and stop, and up and over a bank out of doors. Two jams on one live line, no DOM.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { BRISK, WALK, body, hear, hop, newJam, sit, step } from "../src/studio/jam.ts";
+import { BRISK, WALK, body, cameraPose, hear, hop, newJam, sit, step } from "../src/studio/jam.ts";
+import { roomField } from "../src/studio/pa-room.ts";
 import { Swing, WEIGHT } from "../src/studio/lanterns.ts";
 import { DESERT_GATHERING } from "../src/studio/rooms/desert-gathering.ts";
 
@@ -58,4 +59,21 @@ test("a carried lantern is heavy: it hangs straight on a steady walk, sways a li
   // and within a second and a half it hangs still, straight down
   for (let t = 0; t < 0.9; t += tick) swing.step(hand, tick);
   expect(swing.angle(hand)).toBeLessThan(0.05);
+});
+
+test("out of doors you walk up a bank: your feet and eyes ride the land the sound crosses, and back down off it", () => {
+  const bank = { at: [0, 4] as [number, number], yaw: 0, len: 10, h: 1.2 };
+  const def = { ...DESERT_GATHERING, outdoor: { ...DESERT_GATHERING.outdoor!, banks: [bank] } };
+  const j = newJam(def);
+  Object.assign(j.me, { x: 0, z: 10, yaw: 0 });         // facing -z, the bank's crest across the way ahead
+  const flat = cameraPose(j).at[1];
+  let top = flat;
+  while (j.me.z > -2) { step(j, tick, { forward: 1, right: 0, turn: 0 }); top = Math.max(top, cameraPose(j).at[1]); }
+  expect(j.me.x).toBeCloseTo(0, 5);                      // nothing stood in the way
+  expect(top - flat).toBeCloseTo(bank.h, 2);             // up over the crest
+  expect(cameraPose(j).at[1]).toBeCloseTo(flat, 5);      // and down onto the flat floor past it
+  // stood on the crest, the camera is your eyes over the bank's h, the height the sound reads there
+  Object.assign(j.me, { x: 0, z: 4 });
+  expect(cameraPose(j).at[1]).toBeCloseTo(flat + bank.h, 5);
+  expect(roomField(def)?.terrain?.(0, 4)).toBeCloseTo(bank.h, 5);
 });
