@@ -33,6 +33,8 @@ export const PORTS = {
   bridge: 4796,
   pushes: 4797,
   hemyviz: 4798,
+  // apps/effect-ui-page: the page and its relay for agents in a terminal (`bun run dev`)
+  agentPage: 4799,
   eqosysPreview: 4792,
   qview3d: 5190,
   parkHideSeek: 5391,

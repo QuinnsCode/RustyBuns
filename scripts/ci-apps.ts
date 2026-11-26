@@ -52,6 +52,7 @@ export const APPS: Record<string, App> = {
   "geoboxq-shopify":   { test: "bun test test", drop: false },
   "sharesplat":        { test: "bun test test", drop: false },
   "copy-desk":         { test: "bun test test", drop: false },
+  "effect-ui-page":    { test: "bun test test", drop: false },
   "starter-game":      { test: "bun test test", drop: false },
   "fleet-commander":   { test: "bun test test", drop: false },
   "load-in":           { test: "bun test test", drop: false },
