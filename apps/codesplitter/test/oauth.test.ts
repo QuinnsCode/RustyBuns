@@ -1,12 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
 import { ownOrigin } from "../src/security.ts";
+import config from "../rustybuns.config.ts";
 
 // These run the app end to end (in-process D1): fine alone, but a full run on a
 // busy machine can stretch one past bun's 5s default.
 
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 const REDIRECT = "http://127.0.0.1:4788/oauth/callback";
+
+test("on the desktop the consent page stays behind the host's launch cookie; only the token routes open", () => {
+  const open = (path: string) => (config.worker?.desktopOpenPaths ?? []).some((p) => path.startsWith(p));
+  for (const path of ["/api/oauth/authorize", "/api/oauth/grants"]) expect([path, open(path)]).toEqual([path, false]);
+  for (const path of ["/api/mcp", "/api/oauth/token", "/api/oauth/register", "/api/oauth/revoke", "/.well-known/oauth-authorization-server"]) expect([path, open(path)]).toEqual([path, true]);
+});
 
 async function app() {
   const call = await boot({ GH_CLI: "off" });

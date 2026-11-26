@@ -1,8 +1,8 @@
 // The API: list, make, change, pause, run and delete jobs, and match an app's jobs to its own list. Every route but
 // /api/health wants `Authorization: Bearer <...>`: the owner's eqosys token (the page, signed in) or CRON_SWANSON_TOKEN
 // (scripts and apps: sync.ts). With neither set, it's open (a laptop, a test).
-import { Bad, type Guard } from "@rustybuns/util/guard";
-import { parseJson, privateJson } from "@rustybuns/util/http";
+import { Bad, bool, obj, str, type Guard } from "@rustybuns/util/guard";
+import { getJson, parseJson, privateJson } from "@rustybuns/util/http";
 import type { Claims } from "@rustybuns/util/token";
 import { next } from "./bacron.ts";
 import { AppJobs, AppName, Declared, JobInput, NOT_OWNER, SIGN_IN, Snooze, type Job, type JobsReply, type SyncReply } from "./api.ts";
@@ -12,8 +12,14 @@ import { sameToken, ticket } from "./live.ts";
 
 const MAX_BODY = 64 * 1024;
 
-/** Who may use the page: the one eqosys account with this email (CRON_SWANSON_OWNER), its token checked by `checker` (a TokenChecker). */
-interface Owner { email: string; checker: { check(token: string): Promise<Claims | null> } }
+/**
+ * Who may use the page: the one eqosys account with this email (CRON_SWANSON_OWNER), its token checked by `checker`
+ * (a TokenChecker, which knows its eqosys's origin).
+ */
+interface Owner { email: string; checker: { eqosys: string; check(token: string): Promise<Claims | null> } }
+
+/** The part of eqosys's /oauth/userinfo reply the door reads: whose token it is, and whether eqosys knows the email is theirs. */
+const UserInfo = obj({ sub: str(200), email_verified: bool() });
 
 export interface Options {
   /** The bearer for machine callers (CRON_SWANSON_TOKEN), and the secret the relay's tickets are signed with. */
@@ -28,15 +34,26 @@ export interface Options {
 
 const refuse = (error: string, status: number) => privateJson({ error }, status);
 
-/** Why `req` may not in, or null when it may: the machine token, or an eqosys token for the owner's account. */
-async function door(req: Request, o: Options): Promise<string | null> {
+/**
+ * Why `req` may not in, or null when it may: the machine token, or an eqosys token for the owner's account. A token's
+ * email alone doesn't do: eqosys lets anyone sign up with a password under any email unverified, and its access token
+ * doesn't say. So the first time an account turns up with the owner's email, eqosys's userinfo is asked whether that
+ * email is verified, and the account (`sub`) is kept in `known` once it is.
+ */
+async function door(req: Request, o: Options, known: Set<string>): Promise<string | null> {
   if (!o.token && !o.owner) return null;
   const given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
   if (!given) return SIGN_IN;
   if (o.token && sameToken(given, o.token)) return null;
   const who = o.owner ? await o.owner.checker.check(given) : null;
   if (!who) return SIGN_IN;
-  return who.email.toLowerCase() === o.owner!.email.toLowerCase() ? null : NOT_OWNER;
+  if (who.email.toLowerCase() !== o.owner!.email.toLowerCase()) return NOT_OWNER;
+  if (known.has(who.sub)) return null;
+  const info = await getJson(`${o.owner!.checker.eqosys}/oauth/userinfo`, UserInfo, { headers: { authorization: `Bearer ${given}` } });
+  if (!info) return SIGN_IN;
+  if (info.sub !== who.sub || !info.email_verified) return NOT_OWNER;
+  known.add(who.sub);
+  return null;
 }
 
 async function body<T>(req: Request, guard: Guard<T>): Promise<T | Response> {
@@ -93,11 +110,12 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
 }
 
 function route(store: Store, o: Options, now: () => number, send: Deliver): (req: Request) => Promise<Response> {
+  const known = new Set<string>();
   return async (req) => {
     const url = new URL(req.url), path = url.pathname;
     if (path === "/api/health") return privateJson({ ok: true, now: now() });
     if (!path.startsWith("/api/")) return refuse("not found", 404);
-    const shut = await door(req, o);
+    const shut = await door(req, o, known);
     if (shut) return refuse(shut, 401);
 
     if (path === "/api/jobs" && req.method === "GET") {

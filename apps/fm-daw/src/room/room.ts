@@ -11,7 +11,7 @@ import { CASE, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./
 import { BAY, BAY_SOLIDS } from "./lounge-plan.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { Avatar } from "@rustybuns/util/avatar";
-import { CONNECTORS } from "@rustybuns/util/connectors";
+import { CONNECTORS, fits, type ConnectorType } from "@rustybuns/util/connectors";
 import { bench, type BenchPedal } from "../circuit/bench.ts";
 import { AUXES } from "../mixer.ts";
 import { HP, PANEL_H, PANELS, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
@@ -22,8 +22,10 @@ import { applyStudio, emptyStudio, letGo, MAX_BOARD_CHARS, MAX_KNOBS, type Board
 export type Vec3 = [number, number, number];
 /** The face of a box a jack or knob sits on, in the box's own frame: front is +z. */
 export type Face = "front" | "back" | "left" | "right" | "top";
-/** A jack: its name in the patch, which way the signal goes, where it is, and (on a module's panel) what it says. */
-export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face; label?: string }
+/** A jack: its name in the patch, which way the signal goes, where it is, and (on a module's panel) what it says.
+ * `socket`: the real connector on the box (@rustybuns/util/connectors), for gear that has one: a cable only goes
+ * between two sockets that carry the same thing (mains into mains, a speaker line into a speaker input). */
+export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face; label?: string; socket?: ConnectorType }
 /** A knob 0 to 1 (the patch's range); `circuit` is its 0 to 10 name in the amp or pedal it drives. */
 export interface KnobDef { name: string; label: string; at: Vec3; face: Face; dflt: number }
 export type Kind = "guitar" | "pedal" | "split" | "amp" | "cab" | "machine" | "desk" | "module" | "pa";
@@ -124,27 +126,57 @@ const DESK: GearDef = {
 };
 
 /**
- * A small PA for the setup lesson (src/studio/lessons.ts): a vocal mic, a little mixer and two powered tops, each the
+ * A small PA for the setup lessons (src/studio/lessons.ts): a vocal mic, a little mixer and two powered tops, each the
  * @rustybuns/gear catalog box named in `pa` (Sound Guy Simulator's), with its jacks by the catalog's names so the
- * catalog's switch-on check reads the patch as it is. A Power knob stands in for each switch: up is on.
+ * catalog's checks read the patch as it is, and each jack's real socket. A Power knob stands in for each switch: up is on.
+ * The amp rack lesson's boxes take mains on a cable too (a `power-in` jack): a distro, a mixer with its IEC inlet, a
+ * rolling amp rack and two passive tops on speakON.
  */
 const POWER: KnobDef = { name: "power", label: "Power", at: [0, 0, 0], face: "back", dflt: 0 };
+const mixer = (id: string, mains: boolean): GearDef => ({
+  id, name: "small mixer", kind: "pa", pa: "mixer-small", size: [0.4, 0.1, 0.35], kg: 4,
+  jacks: [
+    { name: "xlr-in-1", dir: "in", at: [-0.15, 0.06, -0.175], face: "back", socket: "xlr3" },
+    { name: "xlr-out-1", dir: "out", at: [0.08, 0.06, -0.175], face: "back", socket: "xlr3" },
+    { name: "xlr-out-2", dir: "out", at: [0.15, 0.06, -0.175], face: "back", socket: "xlr3" },
+    ...(mains ? [{ name: "power-in", dir: "in", at: [0.02, 0.06, -0.175], face: "back", socket: "iec" } satisfies JackDef] : []),
+  ],
+  knobs: [{ ...POWER, at: [-0.05, 0.06, -0.175] }],
+});
 export const PA_GEAR: GearDef[] = [
-  { id: "pa-mic", name: "vocal mic", kind: "pa", pa: "mic-dynamic", size: [0.06, 0.2, 0.06], kg: 0.3, jacks: [{ name: "xlr-out", dir: "out", at: [0, 0.02, 0.03], face: "front" }], knobs: [] },
-  {
-    id: "pa-mixer", name: "small mixer", kind: "pa", pa: "mixer-small", size: [0.4, 0.1, 0.35], kg: 4,
-    jacks: [
-      { name: "xlr-in-1", dir: "in", at: [-0.15, 0.06, -0.175], face: "back" },
-      { name: "xlr-out-1", dir: "out", at: [0.08, 0.06, -0.175], face: "back" },
-      { name: "xlr-out-2", dir: "out", at: [0.15, 0.06, -0.175], face: "back" },
-    ],
-    knobs: [{ ...POWER, at: [-0.05, 0.06, -0.175] }],
-  },
+  { id: "pa-mic", name: "vocal mic", kind: "pa", pa: "mic-dynamic", size: [0.06, 0.2, 0.06], kg: 0.3, jacks: [{ name: "xlr-out", dir: "out", at: [0, 0.02, 0.03], face: "front", socket: "xlr3" }], knobs: [] },
+  mixer("pa-mixer", false),
   {
     id: "pa-top", name: "powered speaker", kind: "pa", pa: "top-12-powered", size: [0.37, 0.6, 0.36], kg: 18,
     // input A (a combo socket) and the thru under it, as the K12.2's panel has them
-    jacks: [{ name: "xlr-in", dir: "in", at: [-0.08, 0.15, -0.18], face: "back" }, { name: "xlr-out", dir: "out", at: [-0.08, 0.05, -0.18], face: "back" }],
+    jacks: [{ name: "xlr-in", dir: "in", at: [-0.08, 0.15, -0.18], face: "back", socket: "combo" }, { name: "xlr-out", dir: "out", at: [-0.08, 0.05, -0.18], face: "back", socket: "xlr3" }],
     knobs: [{ ...POWER, at: [0.08, 0.15, -0.18] }],
+  },
+  // the amp rack lesson: the distro's own cord is in the wall; its outlets are wall-plug sockets on its face
+  {
+    id: "pa-distro", name: "power distro", kind: "pa", pa: "distro-box", size: [0.4, 0.3, 0.25], kg: 10,
+    jacks: [1, 2, 3, 4].map((n): JackDef => ({ name: `power-out-${n}`, dir: "out", at: [-0.225 + n * 0.09, 0.15, 0.125], face: "front", socket: "edison" })),
+    knobs: [],
+  },
+  mixer("pa-mains-mixer", true),
+  {
+    // two amps in a rolling rack: mains in on a blue powerCON, two XLR inputs, a speakON out per channel; its power
+    // switch on the front, as an amp's is
+    id: "pa-amp", name: "amp rack", kind: "pa", pa: "amp-rack-4u", size: [0.6, 0.4, 0.65], kg: 35,
+    jacks: [
+      { name: "power-in", dir: "in", at: [0.2, 0.1, -0.325], face: "back", socket: "powercon-blue" },
+      { name: "xlr-in-1", dir: "in", at: [-0.2, 0.28, -0.325], face: "back", socket: "xlr3" },
+      { name: "xlr-in-2", dir: "in", at: [-0.1, 0.28, -0.325], face: "back", socket: "xlr3" },
+      { name: "speaker-out-1", dir: "out", at: [-0.2, 0.15, -0.325], face: "back", socket: "nl4" },
+      { name: "speaker-out-2", dir: "out", at: [-0.1, 0.15, -0.325], face: "back", socket: "nl4" },
+    ],
+    knobs: [{ ...POWER, at: [0.2, 0.3, 0.325], face: "front" }],
+  },
+  {
+    // a 15" passive top as its plate has it: speakON in, a quarter-inch link out
+    id: "pa-passive", name: "passive speaker", kind: "pa", pa: "top-15-passive", size: [0.46, 0.7, 0.43], kg: 27,
+    jacks: [{ name: "speaker-in", dir: "in", at: [-0.04, 0.27, -0.215], face: "back", socket: "nl4" }, { name: "speaker-out", dir: "out", at: [0.04, 0.27, -0.215], face: "back", socket: "ts" }],
+    knobs: [],
   },
 ];
 
@@ -626,12 +658,20 @@ export function turnHeld(r: Room, dir: number) { if (heldId(r)) r.heldTurn += (d
 
 const same = (a: End, b: End) => a[0] === b[0] && a[1] === b[1];
 const jackDef = (r: Room, end: End) => { const p = item(r, end[0]); return p ? gearOf(p)?.jacks.find((j) => j.name === end[1]) : undefined; };
+/** The plug on a cable taken from a socket of this type: its mate (a combo socket's cable ends in an XLR). */
+const plugFor = (t: ConnectorType): ConnectorType => { const c = CONNECTORS[t]; return c.genders.length === 1 && c.genders[0] === "female" && c.takes[0] ? c.takes[0] : t; };
+/** Why a cable from `from` can't go into `to`, in the shared connector list's words: a speaker line into an XLR input,
+ * mains into an audio jack. Null when they carry the same thing, or a jack has no real socket. */
+export function wrongPlug(from: JackDef | undefined, to: JackDef): string | null {
+  if (!from?.socket || !to.socket || CONNECTORS[from.socket].carries === CONNECTORS[to.socket].carries) return null;
+  return fits({ type: plugFor(from.socket), gender: "male" }, { type: to.socket, gender: "female" });
+}
 export const cableIn = (r: Room, end: End) => r.studio.patch.cables.find((c) => same(c.from, end) || same(c.to, end));
 /** With a cable end in your hand, every jack it can go into: free, the other way round, on another box. Else none. */
 export function openJacks(r: Room): End[] {
   const h = hand(r), from = h && "lead" in h ? h.lead : null, dir = from && jackDef(r, from)?.dir;
   if (!from || !dir) return [];
-  return r.studio.patch.placed.flatMap((p) => p.id === from[0] ? [] : (gearOf(p)?.jacks ?? []).filter((j) => j.dir !== dir && !cableIn(r, [p.id, j.name])).map((j): End => [p.id, j.name]));
+  return r.studio.patch.placed.flatMap((p) => p.id === from[0] ? [] : (gearOf(p)?.jacks ?? []).filter((j) => j.dir !== dir && !wrongPlug(jackDef(r, from), j) && !cableIn(r, [p.id, j.name])).map((j): End => [p.id, j.name]));
 }
 const label = (r: Room, end: End) => `${nameOf(r, end[0])}'s ${end[1]}`;
 
@@ -649,7 +689,8 @@ export function plug(r: Room, to: End): Answer {
   if (!h || !("lead" in h)) return no("you have no cable in your hand");
   if (!j) return no(`no jack ${to[1]} on ${to[0]}`);
   if (h.lead[0] === to[0]) return no(`that's ${nameOf(r, to[0])} into itself`);
-  const from = jackDef(r, h.lead);
+  const from = jackDef(r, h.lead), wrong = wrongPlug(from, j);
+  if (wrong) return no(`${label(r, h.lead)} into ${label(r, to)}: ${wrong}`);
   if (from && from.dir === j.dir) {
     // two XLRs the same way round: say why, from the connector itself (an out is male, an in female)
     const xlr = [h.lead[1], to[1]].every((n) => n.startsWith("xlr")) ? `: an XLR out is male, an XLR in is female, and a cable has one end of each (${CONNECTORS.xlr3.name} is ${CONNECTORS.xlr3.genders.join(" or ")})` : "";

@@ -14,6 +14,8 @@
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
 //   minutes.
 
+import { networkInterfaces } from "node:os";
+import { noControls } from "../ester/blockers.ts";
 import { allowHost } from "../sandbox/box.ts";
 import { boxDir, cameraOf, logFile, record, type Entry } from "./camera.ts";
 import type { Ask } from "./replies.ts";
@@ -159,11 +161,17 @@ export function logHome(who: string, workers: string[] | string, cleanup: unknow
 
 export const ASK_HEADER = "x-rb-ask";
 
+/** Whether a connection comes from this machine (or container) itself: loopback, or one of its own addresses. */
+export function ownAddress(address: string | undefined, mine: string[] = Object.values(networkInterfaces()).flatMap((l) => l?.map((i) => i.address) ?? [])): boolean {
+  const a = (address ?? "").replace(/^::ffff:/, "");
+  return a === "::1" || a.startsWith("127.") || mine.includes(a);
+}
+
 /**
  * GET /__rb/asks lists them, POST /__rb/asks/<id>?allow=1 (or 0) answers one; null for any other path.
  * Signed-in people only (http/router.js). A POST needs an X-RB-Ask header, which a form on another site can't send.
  */
-export function asksRoute(method: string, url: URL, trusted: boolean, by?: string) {
+export function asksRoute(method: string, url: URL, trusted: boolean, by?: string, inside = false) {
   const p = url.pathname;
   if (p === "/__rb/asks") return method === "GET" ? { status: 200, body: { asks: pendingAsks() } } : { status: 405, body: { error: `GET ${p}` } };
   if (!p.startsWith("/__rb/asks/")) return null;
@@ -171,7 +179,11 @@ export function asksRoute(method: string, url: URL, trusted: boolean, by?: strin
   if (!trusted) return { status: 403, body: { error: `Send ${ASK_HEADER}: 1 with the POST` } };
   const allow = url.searchParams.get("allow");
   if (allow !== "1" && allow !== "0") return { status: 400, body: { error: "allow=1 or allow=0" } };
-  return answerAsk(p.slice("/__rb/asks/".length), allow === "1", by, url.searchParams.get("always") === "1")
+  const id = p.slice("/__rb/asks/".length);
+  // an agent in the box can sign in to the office it shares the box with: its Allow would open the box's own wall
+  if (inside && asks.get(id)?.what === "outbound")
+    return { status: 403, body: { error: "The box's cards are answered from outside it: open the office on your own computer" } };
+  return answerAsk(id, allow === "1", by, url.searchParams.get("always") === "1")
     ? { status: 200, body: { ok: true } } : { status: 404, body: { error: "That question was answered already, or timed out" } };
 }
 
@@ -180,7 +192,7 @@ export function asksRoute(method: string, url: URL, trusted: boolean, by?: strin
  * ESC [201~ inside one would end the paste early and type what follows as keystrokes (an Esc to clear the header, a
  * `!` command Claude Code runs without asking). Newlines and tabs stay.
  */
-export const cleanPrompt = (text: string) => String(text ?? "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+export const cleanPrompt = (text: string) => noControls(String(text ?? ""));
 
 /**
  * A prompt from one agent to another, marked as such for the one reading it: the header says whose it is, and the

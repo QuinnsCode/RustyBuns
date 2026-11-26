@@ -17,6 +17,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { githubToken } from "../connect/github.ts";
 import type { Secrets } from "../connect/keychain.ts";
 import { GH_API_WRITE, GH_WRITE, GIT_PUSH } from "../askfirst/kinds.ts";
+import { every } from "./every.ts";
 
 /** How often a busy floor asks GitHub whether anything changed. */
 export const WATCH_MS = 10_000;
@@ -87,23 +88,21 @@ export class LiveGitHub {
   private etags = new Map<string, string>();
   private settle?: ReturnType<typeof setTimeout>;
   private again?: ReturnType<typeof setTimeout>;
-  private timer?: ReturnType<typeof setInterval>;
+  private halt?: () => void;
   private want: Touch = { issues: false, pulls: false };
   private tok?: Promise<string>;
   private restUntil = 0;
-  private watching = false;
   /** Webhooks are being forwarded, so the watch stands down. */
   pushed = false;
 
   constructor(private deps: Deps) {}
 
-  start(every = WATCH_MS) {
-    this.timer = setInterval(() => void this.watch(), every);
-    this.timer.unref?.();
+  start(ms = WATCH_MS) {
+    this.halt = every(ms,() => this.watch(), { name: "live GitHub watch" });
   }
 
   stop() {
-    clearInterval(this.timer);
+    this.halt?.();
     clearTimeout(this.settle);
     clearTimeout(this.again);
   }
@@ -137,8 +136,7 @@ export class LiveGitHub {
   async watch(): Promise<Touch> {
     const t: Touch = { issues: false, pulls: false };
     const now = this.deps.now?.() ?? Date.now();
-    if (this.pushed || this.watching || now < this.restUntil || !this.deps.active()) return t;
-    this.watching = true;
+    if (this.pushed || now < this.restUntil || !this.deps.active()) return t;
     try {
       const repo = await this.deps.repo();
       // PRs are issues to GitHub: one list, newest change first, covers both boards
@@ -152,8 +150,6 @@ export class LiveGitHub {
     } catch (err) {
       this.restUntil = now + REST_MS;
       this.deps.warn?.(`🥐 live GitHub boards resting for ${REST_MS / 60_000} min: ${(err as Error).message}`);
-    } finally {
-      this.watching = false;
     }
     if (t.issues || t.pulls) await this.look(t);
     return t;

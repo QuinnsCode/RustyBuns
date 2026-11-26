@@ -1,7 +1,7 @@
 // Layout: the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only
 // The security audit log (#648): a trail of what changes who can get in, beyond the
 // row it changes. Append-only (a trigger refuses updates); a row goes only with an
-// account that's erased (privacy.ts). Each says who, signed in how, did what, in
+// account that's erased (privacy.ts). Each says who, signed in how (and with which token), did what, in
 // which repo, to what, when, and from which country.
 //
 // What's logged:
@@ -23,18 +23,20 @@ import { fail, json, type Env } from "./env.ts";
 export type Via = "cookie" | "token" | "oauth" | "job" | "invite";
 /** What each request was signed in with, set where it's identified (worker.ts). */
 export const via = new WeakMap<Request, Via>();
+/** Which token signed a request in (its api_tokens id), set beside `via`: a self-request made inside a token's carries the outer one's. */
+export const viaToken = new WeakMap<Request, string>();
 
-export interface Entry { actor: string | null; action: string; owner?: string; repo?: string; target?: string | null; detail?: string | null; via?: Via }
+export interface Entry { actor: string | null; action: string; owner?: string; repo?: string; target?: string | null; detail?: string | null; via?: Via; token?: string | null }
 
 const LIMIT = 100;
-const COLUMNS = "id, at, actor, via, action, owner, repo, target, detail, country";
+const COLUMNS = "id, at, actor, via, token, action, owner, repo, target, detail, country";
 
 /** Log one (`req` null for what a queue heard, which has no country). Never in the way of what happened: a failed write is only reported. */
 export async function audit(env: Env, req: Request | null, e: Entry) {
   const country = req && ((req as { cf?: { country?: string } }).cf?.country ?? req.headers.get("cf-ipcountry"));
   try {
-    await env.DB.prepare("INSERT INTO audit (at, actor, via, action, owner, repo, target, detail, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(Date.now(), e.actor, e.via ?? (req && via.get(req)) ?? "cookie", e.action, e.owner ?? null, e.repo ?? null, e.target ?? null, e.detail ?? null, country || null).run();
+    await env.DB.prepare("INSERT INTO audit (at, actor, via, token, action, owner, repo, target, detail, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(Date.now(), e.actor, e.via ?? (req && via.get(req)) ?? "cookie", e.token ?? (req && viaToken.get(req)) ?? null, e.action, e.owner ?? null, e.repo ?? null, e.target ?? null, e.detail ?? null, country || null).run();
   } catch (err) {
     console.error("codeSplitter: audit write failed", e.action, String((err as Error)?.message ?? err));
   }

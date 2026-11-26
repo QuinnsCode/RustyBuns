@@ -9,6 +9,7 @@ import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf, SEATED } from ".
 import { FILE_MAX, makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { board, isBoard } from "./board.ts";
+import { events, isEvents } from "./events.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { RoomMintGate } from "@rustybuns/util/limits";
@@ -28,13 +29,15 @@ const tryCode = (req: Request, who: string, code: string) => {
 
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
-  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?|\/export)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname);
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+(?:\/file(?:\/[^/]+)?|\/export)?)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname) || isBoard(pathname) || isEvents(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
   // Posts and reactions (board.ts): read signed out, written with the app's token.
   if (isBoard(pathname)) return board(req, conf);
+  // Events (events.ts): an account's events, with any Q app's token.
+  if (isEvents(pathname)) return events(req, conf);
   // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
   // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
   if (pathname === "/hub" || pathname === "/api/hub") {
@@ -185,7 +188,8 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (!s) return json({ error: "not a space you're in" }, 404, head);
     const u = new URL(req.url).searchParams;
     const q = new URLSearchParams({ ...t.who, sid: fileAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}),
-      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
+      // The file's name goes as `file`: `name` is the sender's, from their token.
+      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", file: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
     const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
       fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
     const out = new Headers(r.headers);

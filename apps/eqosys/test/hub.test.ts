@@ -2,11 +2,11 @@
 // through real sockets on the Rusty Buns host and the same Hub class the edge runs.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { Hub, type HubOut, type HubState } from "../src/qollab/hub.ts";
+import { Hub, hubAsk, type HubOut, type HubState } from "../src/qollab/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
-import { signOutEverywhere } from "../src/members.ts";
+import { deleteAccount, signOutEverywhere } from "../src/members.ts";
 
 setDefaultTimeout(30_000);
 
@@ -62,7 +62,8 @@ test("friends across apps: ask, accept, see who is on and where, nudge into a ga
   // Bo comes online in qCRM; Ada sees it. He nudges her with a link on his app's own site.
   const b = open(bo.token, QCRM);
   await until(() => a.state()?.friends[0]?.presence[0]?.app === "qcrm");
-  b.say({ op: "notify", id: ada.id, text: "come look at this deal", link: `${QCRM}/deals/7` });
+  // The link is kept as it was checked: typed like this it passes as qCRM's, and as it is would open a page on eqosys itself.
+  b.say({ op: "notify", id: ada.id, text: "come look at this deal", link: `https:${new URL(QCRM).host}/deals/7` });
   await until(() => a.state()?.notes[0]?.kind === "app");
   expect(a.state()!.notes[0]).toMatchObject({ app: "qcrm", text: "come look at this deal", link: `${QCRM}/deals/7`, from: { name: "Bo" } });
 
@@ -159,4 +160,26 @@ test("the home's folded rows live on the person's hub: saved, read back on the n
   expect((await op(cy.token, { op: "fold", rows: ["Nope"] })).status).toBe(400);
   await op(cy.token, { op: "fold", rows: [] });
   expect((await op(cy.token, { op: "state" })).body.folded).toBeUndefined();
+});
+
+test("deleting an account ends its sessions and tokens before the sweep, so nothing still open writes behind it", async () => {
+  const other = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+  const a = await asks("park-hide-seek", PARK);
+  const up = await other.call("/do/signup", { form: { ...a.form, name: "Di", email: "di@example.com", password: PASSWORD } });
+  const who = await (await other.call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { user: { id: string }; token: string };
+  const status = async () => (await other.call("/api/privacy", { bearer: who.token, origin: PARK })).res.status;
+  const seen: number[] = [];
+  // A hub that tries the person's token each time deletion reaches it.
+  other.conf.HUB = { idFromName: (n: string) => n, get: () => ({ fetch: async () => { seen.push(await status()); return new Response("{}"); } }) } as never;
+  expect(await deleteAccount(other.conf, who.user.id, "http://eqosys.local")).toBe(true);
+  expect(seen.length).toBeGreaterThan(1);
+  expect(new Set(seen)).toEqual(new Set([401]));
+});
+
+test("a studio's own game gets no friend link and decides no friendship; one of our apps still does", async () => {
+  const zed = { id: "zed", name: "Zed", app: "rocket-golf" };
+  expect(await hubAsk(conf.HUB!, zed, { op: "state" })).not.toHaveProperty("link");
+  for (const op of [{ op: "befriend", email: "ada@example.com" }, { op: "accept", id: "x" }, { op: "drop", id: "x" }, { op: "relink" }, { op: "clear" }] as const)
+    expect(await hubAsk(conf.HUB!, zed, op)).toHaveProperty("error", expect.stringContaining("studio's game"));
+  expect(await hubAsk(conf.HUB!, { ...zed, app: "qcrm" }, { op: "state" })).toHaveProperty("link");
 });
