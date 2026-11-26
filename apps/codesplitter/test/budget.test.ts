@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CONFLICT_ROUNDS, conflictNote, conflictRound, failureKey, HANDOFFS, handoffTask, noteFor, readNote, sameFailure, tokens, tripped, usageOf, writeNote } from "../src/budget.ts";
+import { CONFLICT_ROUNDS, conflictNote, conflictRound, failureKey, HANDOFFS, handoffTask, noteFor, readNote, sameFailure, tripped, usageOf, writeNote } from "../src/budget.ts";
 
 describe("agent budgets (#1077)", () => {
   test("claude's JSON answer gives its real usage and its reply (#1088)", () => {

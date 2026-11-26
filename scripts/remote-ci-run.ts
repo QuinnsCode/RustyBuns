@@ -17,7 +17,7 @@ export class Cut extends Data.TaggedError("Cut")<{}> {}
 
 export type Job = { label: string; dir: string; cmd: string };
 export type Run = {
-  b: Builder; host: string; v: Valve; at?: string; all: boolean; tier?: Tier; who: string; branch: string;
+  b: Builder; host: string; v: Valve; at?: string; wait?: boolean; all: boolean; tier?: Tier; who: string; branch: string;
   argv: string[]; cwd: string; jobs: Job[]; rec: RunRecord;
 };
 
@@ -130,6 +130,9 @@ const attempt = (r: Run): Effect.Effect<number, Lost | Cut> => Effect.gen(functi
     const why = t.wait.why ?? "off";
     if (r.at) { console.error(`the builder can't take a run now (${why})`); return NOT_RUN; }
     if (t.wait.where === "here") return yield* Effect.promise(() => fallback(r.argv, r.cwd, why));
+    // Without --wait, a shut valve and no Bob is one line and out, not a wait nobody knows how long is (#5839):
+    // push and let GitHub CI run it, or ask again with --wait once he serves.
+    if (!r.wait) { console.error(`${why}: not waiting, nothing ran (push and let CI run it, or \`bun run builder --wait ...\`)`); return NOT_RUN; }
     if (said !== why) console.log((said = why));
     // the session that started this wait is gone (it was a background task): nobody reads the answer, so stop waiting
     // rather than poll for Bob for days under pid 1 (2026-11-23, leftovers that held the office to three workers)

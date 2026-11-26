@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc, type Pick } from "../src/lines.ts";
+import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { run } from "../agents.ts";
 import { accounts, local, post } from "./app-kit.ts";
@@ -391,7 +391,7 @@ describe("account email", () => {
 
   test("signup mails a verification link; opening it verifies the email, so a grant lands", async () => {
     const box = outbox();
-    const { call, signup, session, person } = await accounts({ ADMINS: "boss-person", EMAIL: box.EMAIL, EMAIL_FROM: "accounts@example.com" });
+    const { call, session, person } = await accounts({ ADMINS: "boss-person", EMAIL: box.EMAIL, EMAIL_FROM: "accounts@example.com" });
     const boss = await person("boss@example.com", "boss-person");
     await call(null, "/api/admin/handles", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ handle: "zed", email: "zed@example.com" }) });
 

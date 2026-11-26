@@ -138,7 +138,7 @@ About 10 of the apps found aren't runnable apps at all: library packages inside 
 
 ## Elysia
 
-**Run: Oct 25 2026, Elysia 1.4.30, one app by hand: [bedstack/elysia-drizzle-realworld-example](https://github.com/bedstack/elysia-drizzle-realworld-example) as [elysia-conduit](apps/frameworks/elysia-conduit/RUSTYBUNS.md).** No trial-github sweep yet, because `init` doesn't recognise Elysia ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)).
+**Run: Oct 25 2026, Elysia 1.4.30, one app by hand: [bedstack/elysia-drizzle-realworld-example](https://github.com/bedstack/elysia-drizzle-realworld-example) as [elysia-conduit](apps/frameworks/elysia-conduit/RUSTYBUNS.md).** No trial-github sweep yet ([#2285](https://github.com/QuinnsCode/RustyBuns/issues/2285)). `init` used to refuse Elysia ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)); it now reads it as a plain Worker ([`apps/frameworks/elysia-example`](apps/frameworks/elysia-example)).
 
 | | result |
 |---|---|

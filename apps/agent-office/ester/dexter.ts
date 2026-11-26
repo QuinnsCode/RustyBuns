@@ -11,7 +11,8 @@
 // back), loading tool schemas into the context (ToolSearch), or calling MCP tools one by one. The CLI and the card count each,
 // and a session's first code-mode program in a while is an event (`ModeWatch`) the page shows on his card.
 // And whether a session's turn stalled (`StallWatch`, #4306): a request with no reply for 10 min, or a turn a notice opened
-// that ended owing work, quiet 30 min. The office tells a stalled worker to carry on (triage/server.ts `watchStalls`).
+// that ended owing work, quiet 30 min. The office tells a stalled worker to carry on (triage/server.ts `watchStalls`), with an
+// Escape first when the request hung (#4311); a turn that ended on an API error is logged by .claude/hooks/stop-failure.ts.
 // Run: bun apps/agent-office/ester/dexter.ts
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";

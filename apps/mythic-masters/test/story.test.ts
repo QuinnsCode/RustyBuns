@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { checkStory } from "../src/story/check.ts";
 import { storyMarkdown } from "../scripts/story.ts";
 import { storyPage } from "../scripts/story-page.ts";
+import { ALL, tapeOf } from "../src/world/poi.ts";
 import json from "../content/story.json";
 
 setDefaultTimeout(30_000);
@@ -23,6 +24,13 @@ describe("story bible", () => {
     expect(p).toContain("names nothing in the game");
     expect(p).toContain("no such beat");
     expect(p).toContain("held sacred");
+  });
+  test("a built beat's tape is found in its section, and one with no unmarked tape left there is caught", () => {
+    const reel = ALL.find((p) => p.n === 8 && p.k === 8 && p.kind === "tape" && tapeOf(p).title === "Office reel 8, Texarkana");
+    expect(reel && tapeOf(reel).lines[0]).toStartWith("Control: Office reel eight");
+    const bad = structuredClone(json);
+    bad.arcs.find((a) => a.id === "office-reels")!.beats[0]!.at = "section:5:0"; // Niagara: every tape there is written
+    expect(checkStory(bad).problems.join("\n")).toContain("no unmarked tape is left in section:5:0");
   });
   test("docs/STORY.md and docs/story.html are up to date (bun run story)", () => {
     expect(readFileSync(new URL("../docs/STORY.md", import.meta.url), "utf8")).toBe(storyMarkdown(r));
