@@ -185,7 +185,8 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (!s) return json({ error: "not a space you're in" }, 404, head);
     const u = new URL(req.url).searchParams;
     const q = new URLSearchParams({ ...t.who, sid: fileAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}),
-      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", name: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
+      // The file's name goes as `file`: `name` is the sender's, from their token.
+      ...(fileAt[2] ? {} : { channel: u.get("channel") ?? "general", file: u.get("name") ?? "", type: req.headers.get("content-type") ?? "" }) });
     const r = await spaceOf(conf.SPACE, fileAt[1]!).fetch(new Request(`https://space/file${fileAt[2] ? `/${fileAt[2]}` : ""}?${q}`,
       fileAt[2] ? {} : { method: "POST", body: await req.arrayBuffer() }));
     const out = new Headers(r.headers);

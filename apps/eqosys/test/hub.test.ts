@@ -6,7 +6,7 @@ import { Hub, type HubOut, type HubState } from "../src/qollab/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
-import { signOutEverywhere } from "../src/members.ts";
+import { deleteAccount, signOutEverywhere } from "../src/members.ts";
 
 setDefaultTimeout(30_000);
 
@@ -69,6 +69,10 @@ test("friends across apps: ask, accept, see who is on and where, nudge into a ga
   // A link off his app's site, or a nudge to someone who isn't a friend, goes nowhere.
   b.say({ op: "notify", id: ada.id, text: "free prize", link: "https://evil.example/" });
   expect((await op(bo.token, { op: "notify", id: "someone-else", text: "hi" })).status).toBe(400);
+  // A link is kept as it was checked: this one passes as the app's site, and typed as it is would open a page of eqosys's own.
+  expect((await op(bo.token, { op: "notify", id: ada.id, text: "look", link: `https:${new URL(QCRM).host}/../../delete` })).status).toBe(200);
+  await until(() => a.state()?.notes[0]?.text === "look");
+  expect(a.state()!.notes[0]!.link).toBe(`${QCRM}/delete`);
   // Nor does Ada's link into her game's native app: a note links to the app's pages, never its URL scheme.
   expect((await op(ada.token, { op: "notify", id: bo.id, text: "join me", link: "com.quinnscode.parkhideseek:/party/BCDFGH" })).status).toBe(400);
   await until(() => b.got.some((m) => m.t === "error"));
@@ -159,4 +163,18 @@ test("the home's folded rows live on the person's hub: saved, read back on the n
   expect((await op(cy.token, { op: "fold", rows: ["Nope"] })).status).toBe(400);
   await op(cy.token, { op: "fold", rows: [] });
   expect((await op(cy.token, { op: "state" })).body.folded).toBeUndefined();
+});
+
+test("deleting an account ends its sessions and tokens before the sweep, so nothing still open writes behind it", async () => {
+  const other = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
+  const a = await asks("park-hide-seek", PARK);
+  const up = await other.call("/do/signup", { form: { ...a.form, name: "Di", email: "di@example.com", password: PASSWORD } });
+  const who = await (await other.call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { user: { id: string }; token: string };
+  const status = async () => (await other.call("/api/privacy", { bearer: who.token, origin: PARK })).res.status;
+  const seen: number[] = [];
+  // A hub that tries the person's token each time deletion reaches it.
+  other.conf.HUB = { idFromName: (n: string) => n, get: () => ({ fetch: async () => { seen.push(await status()); return new Response("{}"); } }) } as never;
+  expect(await deleteAccount(other.conf, who.user.id, "http://eqosys.local")).toBe(true);
+  expect(seen.length).toBeGreaterThan(1);
+  expect(new Set(seen)).toEqual(new Set([401]));
 });

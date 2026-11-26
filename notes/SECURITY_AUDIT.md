@@ -541,3 +541,63 @@ Round 13 fixed the report notes, round 15 the knock gate, and the iOS kit's sock
 ### Still open
 
 - In #5590, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, and `/api/account/delete` on an app's token (an owner's call). MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
+
+## Round 18b, November 26: eqosys
+
+The `security-audit` skill's quick profile on `apps/eqosys`: sign-in and Better Auth, app tokens and their cuts, members, spaces,
+invites, the hub, notes, the Library, account delete, rate limits and CSP, at 468acd8c4. Qollab's party and voice rooms are the next
+round's. Four hunters read the source and one critic looked for what they missed (5 agents, about 1.14 million tokens). There were no
+separate verifier agents: each fix was checked by hand and by a test. Overnight while the owner was away; nothing was deployed. The
+run's notes are outside the repo, in `~/security-audit-skill/RustyBuns/run-18b/`.
+
+### Fixed in this round
+
+Company sign-in and studios:
+
+- **A domain proof could land on another domain** (high). `proveDomain` wrote `proved_at` whatever the domain was by then, so changing it while the DNS check waited marked somebody else's domain proved, and company sign-in then linked accounts on it. The write names the domain it read (`sso.test.ts`).
+- **An unproved studio made "verified" accounts at any company's addresses** (high). Company sign-in now starts only once the domain is proved (`sso.test.ts`).
+- **A first company link kept what someone else had set up** (high). An account whose email was never proved kept its password, sessions and refresh tokens when the company's sign-in was linked to it. They go now, unless that browser is signed in to the account already (`sso.test.ts`).
+- **A link outlived a domain change** (medium). A company link signs in only an email on the domain the studio holds now (`sso.test.ts`).
+- **Company-only and a lapsed seat left apps signed in** (medium). Both end refresh tokens and signed tokens, not only sessions (`sso.test.ts`).
+- **A studio admin could demote an owner, then remove them** (medium). An owner's role is an owner's to change, and the last owner keeps it (`studios.test.ts`).
+
+The Library:
+
+- **A studio's game could be named for a token audience** (high): `qlave-admin`, `erase`, `eqosys`. Those, and our games not yet in `APPS`, can't be taken (`library.test.ts`).
+- **A listed erase URL got every deleting person's email and could stop deletions** (high). A studio's game is asked only for people who opened it, after our apps, and its answer doesn't block (`library.test.ts`).
+- **A studio's game held a person's whole account** (medium). Its token no longer reads or makes studios (other people's emails), downloads the data, deletes the account, sees the friend link or decides who is a friend (`library.test.ts`).
+- **A listing was approved by id, not by what was read** (medium). Listing takes the queue's `at`, and a save lands only on the row it read, so it can't undo a pull (`library.test.ts`).
+- **`GH-12` still linked an issue from a report** (low) (`report.test.ts`).
+
+Spaces, the hub and the board:
+
+- **A file's name replaced the sender's** (medium), so a member could post as someone else (`space.test.ts`).
+- **Files sent together passed the per-minute and 1 GB caps** (medium). Both are taken before the upload, and a channel, mute or seat that changed during it refuses the file (`space.test.ts`).
+- **Ways back into a space** (medium). Leaving the studio now retires the invite and drops private-channel grants (so does a kick); whoever made a studio's space can be kicked once they are only a guest; a company sign-in seat keeps no guest row behind it (`studio-space.test.ts`).
+- **A channel called `constructor` locked everyone out of its space** (medium) (`space.test.ts`).
+- **What someone wrote in a space they had left survived their deletion and was missing from their download** (medium). `space_past` (a migration) remembers those spaces. Spaces left before it are not known (`space.test.ts`).
+- **A long display name broke friends' hubs and a board's whole feed** (medium). Names are cut at 100, and clipped where read (`board.test.ts`).
+- **A tab still open could write behind an account deletion** (low). Sessions and tokens end before the sweep, and the hub is erased again after it (`hub.test.ts`).
+- **A note's link was kept as typed, not as checked** (low): one form of it opened a page on eqosys itself (`hub.test.ts`).
+- **A muted member could still set a status line** (low) (`space.test.ts`).
+- **Posts sent together passed the hourly cap** (low) (`board.test.ts`).
+- **A web client's refresh token outlived a sign-out on eqosys** (low). One whose code went to an https address is a page's (`openid.test.ts`).
+
+### Still open
+
+- A studio seats any email with no consent: #6232.
+- A native-scheme sign-in goes on with no Continue page: #6233.
+- A studio's game has full space powers with the player's token (owner's call): #6234.
+- A refresh racing sign-out or deletion: #6235.
+- No limit on `eq_execute` runs: #6236. Unbounded visit rows: #6237.
+- A deleted account's name in space audit logs and its rows in other hubs: #6238.
+- Sockets already open after company-only, a lapse or a pull: #6239.
+- Outside the scope, needs validation: Cron Swanson matches its owner by email: #6240.
+- The save quota race went to round 18c.
+
+### Known limits
+
+- `/api/account/delete` and the data download stay open to our own apps' tokens (round 17's call); only studios' games lost them.
+- An admin of a studio's space can still read its members' emails through our own apps' tokens (`eq_studios`).
+- DPoP proofs are not remembered, so one can be replayed within its short life. A studio's game can be renamed without a new review (on purpose).
+- Company sign-in set up before this round and never proved stops signing people in until it is proved.
