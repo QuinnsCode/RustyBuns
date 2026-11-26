@@ -6,6 +6,7 @@
 // stay pure; this only stores and sequences them, so the page runs it for a game against the AI or
 // a hotseat game, and the campaign's Durable Object runs the same code for a game played a turn at
 // a time over days.
+import { record } from "@rustybuns/util";
 import { MATCH_MODES, type BattleResult, type Faction, type MatchMode, type SpaceBattleResult } from "../battle/contract.ts";
 import { replayGround, replaySpace } from "../battle/replay.ts";
 import { run } from "../battle/sim.ts";
@@ -107,7 +108,7 @@ function handInSetup(t: Table, f: Faction, o: Orders): Step {
   if (error) return { ok: false, error };
   const next: Table = { ...t, handedIn: { ...t.handedIn, [f]: { faction: f, orders: [], deployment: o.deployment } } };
   if (waitingOn(next).length) return { ok: true, table: next, done: null };
-  const all = Object.fromEntries(FACTIONS.map((g) => [g, next.handedIn[g]?.deployment ?? aiDeployment(c, g)])) as Record<Faction, NonNullable<Orders["deployment"]>>;
+  const all = record(FACTIONS, (g) => next.handedIn[g]?.deployment ?? aiDeployment(c, g));
   return { ok: true, table: { ...next, campaign: beginWar(c, all), handedIn: {} }, done: null };
 }
 
