@@ -8,6 +8,7 @@
 //                                              Each app's tests run in up to LANES time-balanced jobs ("test mythic-masters 2/3")
 //                                              A suite under a minute is one lane, and with no prep or boot it shares a
 //                                              job with up to five others ("test borg+qcrm+...", scripts/ci-group.ts)
+//                                              Every lane fails fast: the PR's test files first, --bail (#5920)
 //   bun scripts/ci-apps.ts lanes <app>         that app's lanes as `bun run builder run` lines, to run one locally
 //   --lanes n (or CI_LANES=n)                  lanes per app instead of 3, for every row without its own `shards`
 //   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
@@ -129,13 +130,22 @@ function buildCmd(app: string, a: App, targets: string[]) {
 const laneArg = import.meta.main ? process.argv.indexOf("--lanes") : -1;
 export const LANES = Math.max(1, Number(laneArg > 0 ? process.argv.splice(laneArg, 2)[1] : process.env.CI_LANES || 3) || 3);
 
+// A lane fails fast (#5920): bun runs the files in the order they're named and --bail stops it at the first failing
+// test, so a PR's own breakage shows in its first minute and the rest of the lane's runner time is freed.
+const BAIL = "--bail";
+/** `test` with --bail after its `test` word, unless it already has it. */
+export const bail = (test: string) => test.split(/\s+/).includes(BAIL) ? test : test.replace(/\btest\b/, `test ${BAIL}`);
+
 /** `test` as one command per lane, its files spread by Ester's shard() on their times: the same files and times always
- *  give the same lanes, and never an empty one (an app with two files gets two lanes). Flags stay, paths and filters go. */
-export function laneCommands(test: string, files: { name: string; ms: number }[], n: number): string[] {
-  const words = test.split(/\s+/), at = words.indexOf("test");
+ *  give the same lanes, and never an empty one (an app with two files gets two lanes). Flags stay, paths and filters go.
+ *  In each lane the files `first` picks (the PR's own test files) run before the rest, and the lane stops at its first failure. */
+export function laneCommands(test: string, files: { name: string; ms: number }[], n: number, first: (name: string) => boolean = () => false): string[] {
+  const words = bail(test).split(/\s+/), at = words.indexOf("test");
   const flags = words.slice(at + 1).filter((w, i, all) => w.startsWith("-") || (/^\d+$/.test(w) && !!all[i - 1]?.startsWith("-")));
   const prefix = [...words.slice(0, at + 1), ...flags].join(" ");
-  return shard(files, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
+  const rank = (name: string) => first(name) ? 0 : 1;
+  return shard(files, n).filter((s) => s.length).map((s) =>
+    `${prefix} ${s.map((t) => t.name).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)).map((f) => `./${f}`).join(" ")}`);
 }
 
 // An app's test files and their weights. A file's weight is its recorded ms (<app dir>/test-times.json, written by
@@ -157,10 +167,12 @@ export const isSmall = (a: App, files: { ms: number }[]) => oneLane(a, files) &&
 export const groups = (apps: string[], size = GROUP) =>
   Array.from({ length: Math.ceil(apps.length / size) }, (_, i) => apps.slice(i * size, (i + 1) * size));
 
-// An app's lanes (one when its suite is small).
-async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
-  const files = await weighed(app, test);
-  return oneLane(APPS[app] ?? { test }, files) ? [test] : laneCommands(test, files, n);
+// An app's lanes (one when its suite is small), each failing fast with the `changed` test files (repo-relative) first.
+// A one-lane suite keeps its own command unless the PR changed one of its test files, which then has to be named first.
+async function shardedTests(app: string, test: string, n: number, changed = new Set<string>()): Promise<string[]> {
+  const files = await weighed(app, test), mine = (name: string) => changed.has(`${appDir(app)}/${name}`);
+  if (!oneLane(APPS[app] ?? { test }, files)) return laneCommands(test, files, n, mine);
+  return files.some((f) => mine(f.name)) ? laneCommands(test, files, 1, mine) : [bail(test)];
 }
 const filters = (apps: string[]) => apps.map((n) => `--filter ./${appDir(n)}`).join(" ");
 
@@ -262,15 +274,21 @@ if (cmd === "drop") {
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const files = new Map(await Promise.all(names.map(async (n) => [n, APPS[n]!.test ? await weighed(n, APPS[n]!.test!) : []] as const)));
   const small = names.filter((n) => isSmall(APPS[n]!, files.get(n)!));
-  const grouped = groups(small).filter((g) => g.length > 1).map((g) => ({
-    app: g.join("+"), dir: ".", up: "", boot: false, prep: "", cargo: "", shard: "", filters: filters(g),
-    sparse: [...new Set(g.flatMap((n) => sparseDirs(n).split("\n")))].join("\n"), test: `bun scripts/ci-group.ts ${g.map((n) => `${appDir(n)} '${APPS[n]!.test}'`).join(" ")}`,
+  const own = new Set(changed);
+  // A group job is one lane too: the apps the PR touched run first, each with its changed test files first (#5920).
+  const grouped = await Promise.all(groups(small).filter((g) => g.length > 1).map(async (g) => {
+    const order = [...g].sort((a, b) => Number(!touched.has(a)) - Number(!touched.has(b)));
+    const tests = await Promise.all(order.map(async (n) => `${appDir(n)} '${(await shardedTests(n, APPS[n]!.test!, 1, own))[0]}'`));
+    return {
+      app: g.join("+"), dir: ".", up: "", boot: false, prep: "", cargo: "", shard: "", filters: filters(g),
+      sparse: [...new Set(g.flatMap((n) => sparseDirs(n).split("\n")))].join("\n"), test: `bun scripts/ci-group.ts ${tests.join(" ")}`,
+    };
   }));
   const alone = names.filter((n) => !grouped.some((g) => g.app.split("+").includes(n)));
   const include = (await Promise.all(alone.map(async (app) => {
     const a = APPS[app]!, row = { ...where(app), boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app), sparse: sparseDirs(app), filters: filters([app]) };
-    const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES) : [];
-    if (lanes.length < 2) return [{ ...row, test: a.test ?? "", shard: "" }];
+    const lanes = a.test ? await shardedTests(app, a.test, a.shards ?? LANES, own) : [];
+    if (lanes.length < 2) return [{ ...row, test: lanes[0] ?? a.test ?? "", shard: "" }];
     // Boot runs once, with the first lane.
     return lanes.map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
   }))).flat().concat(grouped);
@@ -291,7 +309,7 @@ if (cmd === "drop") {
   const a = APPS[arg];
   if (!a?.test) throw new Error(`no tests for app "${arg}". Known: ${Object.keys(APPS).filter((n) => APPS[n]!.test).join(", ")}`);
   const lanes = await shardedTests(arg, a.test, a.shards ?? LANES);
-  for (const [i, t] of (lanes.length < 2 ? [a.test] : lanes).entries()) console.log(`${i + 1}/${Math.max(1, lanes.length)}  bun run builder run ${appDir(arg)} ${t}`);
+  for (const [i, t] of lanes.entries()) console.log(`${i + 1}/${Math.max(1, lanes.length)}  bun run builder run ${appDir(arg)} ${t}`);
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ ...where(app), ...r, smoke: APPS[app]!.smoke })))

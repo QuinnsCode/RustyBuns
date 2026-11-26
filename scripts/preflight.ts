@@ -14,12 +14,14 @@
 // scripts/after.ts (after.yml) merges main into the branch once those land (#5344). It notes the HEAD it read in the worktree's git folder
 // (`rustybuns-preflight`) with the PRs it named, and .claude/hooks/guard.ts turns away `gh pr create` on a commit it
 // hasn't read (#4956), or whose body lacks that `Merge after` line (#5344). Lock and generated files are listed apart:
-// they are expected to clash and are regenerated.
+// they are expected to clash and are regenerated. It also warns (exit code unchanged) on prose tells in the branch's
+// commit messages: emojis, em dashes, filler words, a closing word on a manual run (scripts/prose-slop.ts, #5953).
 
 import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { GENERATED } from "../packages/util/src/overlap.ts";
 import { type Board, type Clash, type FileRow, run } from "../apps/codesplitter/scripts/mervin-board.ts";
 import { noteSaved } from "./conflicts-saved.ts";
+import { commitMessages, proseSlop, report } from "./prose-slop.ts";
 
 /** One row of `gh pr list --json number,title,headRefName,headRefOid,files`. */
 export const OpenPr = obj({
@@ -132,6 +134,8 @@ if (import.meta.main) {
       else if (v.settles.length || v.look.length) console.log("\nIt merges, with conflicts Mervin settles: open the PR with the Merge after line below.");
       else console.log("  every shared file merges clean");
     }
+    const prose = commitMessages((...a) => run$(["git", ...a]), base).flatMap(([sha, msg]) => report(sha, proseSlop(msg)));
+    if (prose.length) console.log(`\nProse tells in your commit messages (a warning, #5953; check the PR body with bun scripts/prose-slop.ts body.md):\n${prose.join("\n")}`);
     if (others.length) console.log(`\nPut this line in the PR body; scripts/after.ts merges main in once they land:\n  Merge after ${others.map((p) => `#${p.number}`).join(", ")}`);
   }
   const code = back.length || (v && (v.cards.length || v.clashes.length)) ? 1 : 0;
