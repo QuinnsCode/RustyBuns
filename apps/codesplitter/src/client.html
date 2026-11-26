@@ -5315,7 +5315,8 @@ const views = {
         if (pick) (resolve[f.path] ??= {})[c.line] = pick;
       }
       try {
-        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked });
+        // The branch as this page showed it (#5701): an edit someone made since lands nothing, and the review is read again.
+        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked, hash: b.hash });
         mergeRefused.delete(clashId(owner, repo, b.name));
         if (branchPicked(owner, repo) === b.name) pickBranch(owner, repo, null);
         toast(`Merged ${b.name}. Commit the files to push them to git.`);
