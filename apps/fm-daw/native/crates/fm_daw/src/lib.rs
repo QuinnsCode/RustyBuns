@@ -1056,6 +1056,22 @@ pub unsafe extern "C" fn fm_amp_levels(r: *mut circuit::Rig, out: *mut f32) {
     if let Some(r) = r.as_mut() { let o = std::slice::from_raw_parts_mut(out, r.links()); r.levels(o); }
 }
 
+/// A scope on link `link`'s node `node` (`encodeNetlist`'s numbering), or none (`link` < 0): 1 if set as asked.
+#[no_mangle]
+pub extern "C" fn fm_amp_set_scope(r: *mut circuit::Rig, link: i32, node: i32) -> u32 {
+    let at = if link < 0 || node < 0 { None } else { Some((link as usize, node as usize)) };
+    unsafe { r.as_mut() }.map_or(0, |r| r.set_scope(at) as u32)
+}
+
+/// The scope's samples since the last call (oldest first, at most `max`) into `out`: how many.
+/// # Safety
+/// `out` must point to at least `max` f32s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_scope(r: *mut circuit::Rig, out: *mut f32, max: u32) -> u32 {
+    if out.is_null() { return 0; }
+    match r.as_mut() { Some(r) => r.take_scope(std::slice::from_raw_parts_mut(out, max as usize)) as u32, None => 0 }
+}
+
 #[no_mangle]
 pub extern "C" fn fm_amp_misses(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.misses() as f64) }
 #[no_mangle]

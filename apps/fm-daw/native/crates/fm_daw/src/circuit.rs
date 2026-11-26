@@ -496,6 +496,8 @@ impl Circuit {
     /// Turns pot `i` (in netlist order) to `at`, 0 to 1 (mna.ts `setPot`): it glides there over about 10 ms.
     /// How big the solve is: the unknowns (nodes and branch currents), and the nonlinear ports Newton iterates over.
     pub fn shape(&self) -> (usize, usize) { (self.size, self.k) }
+    /// The voltage on node `i` (`encodeNetlist`'s numbering) after the last step; 0 past the end.
+    pub fn volts(&self, i: usize) -> f64 { if i < self.size { self.x[i] } else { 0.0 } }
 
     pub fn set_pot(&mut self, i: usize, at: f64) {
         if let Some(p) = self.pots.get_mut(i) { p.to = at.clamp(0.0, 1.0); }
@@ -812,7 +814,14 @@ pub struct Rig {
     steps: u64,
     sample_rate: f64,
     oversample: usize,
+    /// The scope (rig.ts `setScope`): link and node, read once per output sample into a ring of `SCOPE_SAMPLES`.
+    scope: Option<(usize, usize)>,
+    scope_buf: Vec<f32>,
+    scope_n: usize,
 }
+
+/// Samples the scope keeps between reads (rig.ts `SCOPE_SAMPLES`).
+pub const SCOPE_SAMPLES: usize = 4096;
 
 impl Rig {
     pub fn new(sample_rate: f64, oversample: usize, input_volts: f64, power: f64, noise: f64) -> Rig {
@@ -822,6 +831,7 @@ impl Rig {
             up: butter8(0.45 * sample_rate, hi), down: butter8(0.45 * sample_rate, hi),
             amp: PushPull::new(1.0, 120.0, 8.0, hi), cab: None,
             input_volts, power, noise, steps: 0, sample_rate, oversample,
+            scope: None, scope_buf: Vec::new(), scope_n: 0,
         }
     }
 
@@ -868,6 +878,20 @@ impl Rig {
             (None, false) => self.cab = Some(Convolver::new(ir)),
         }
     }
+    /// A scope on link `link`'s node `node`, or none. False, and no scope, when there is no such link or node.
+    pub fn set_scope(&mut self, at: Option<(usize, usize)>) -> bool {
+        self.scope = at.filter(|&(l, n)| self.circuits.get(l).is_some_and(|c| n < c.size));
+        self.scope_n = 0;
+        if self.scope.is_some() && self.scope_buf.is_empty() { self.scope_buf = vec![0.0; SCOPE_SAMPLES]; }
+        self.scope.is_some() == at.is_some()
+    }
+    /// The scope's samples since the last call into `out`, oldest first (the newest that fit): how many. Then cleared.
+    pub fn take_scope(&mut self, out: &mut [f32]) -> usize {
+        let n = self.scope_n.min(SCOPE_SAMPLES).min(out.len());
+        for (k, o) in out.iter_mut().take(n).enumerate() { *o = self.scope_buf[(self.scope_n - n + k) % SCOPE_SAMPLES]; }
+        self.scope_n = 0;
+        n
+    }
     pub fn fault(&self) -> u32 { self.amp.fault }
     pub fn supply(&self) -> f64 { self.amp.supply }
 
@@ -892,6 +916,10 @@ impl Rig {
                 acc = chain(&mut self.down, x);
             }
             io[s] = (match &mut self.cab { Some(c) => c.run(acc), None => acc }) as f32;
+            if let Some((l, node)) = self.scope {
+                self.scope_buf[self.scope_n % SCOPE_SAMPLES] = self.circuits[l].volts(node) as f32;
+                self.scope_n += 1;
+            }
         }
         self.steps += (n * os * self.circuits.len()) as u64;
     }

@@ -324,7 +324,7 @@ test("the mic on the cab: bright on the centre cap, darker at the edge and off a
   expect(rig.misses).toBe(0);
 });
 
-test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
+test("rust (wasm) plays every rig like ts, while the knobs turn, and scopes the first link's output like it", async () => {
   const f = new URL("../public/fm_daw.wasm", import.meta.url);
   if (!existsSync(f)) { console.log("  (skipped: wasm not built; run `bun run build:native`)"); return; }
   const x = await instantiateFm(readFileSync(f));
@@ -341,7 +341,10 @@ test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
   for (const [name, spec] of Object.entries(rigs)) {
     const ts = new Rig(spec, SR), rust = new WasmRig(x, spec, SR);
     const a = new Float32Array(input.length), b = new Float32Array(input.length);
+    const at = { link: 0, net: spec.links[0].net.output };
+    expect([name, ts.setScope(at), rust.setScope(at)]).toEqual([name, true, true]);
     ts.process(input, a, half); rust.process(input, b, half);
+    const scopes = [[ts.scope(), rust.scope()]];
     // Halfway: every knob Q Amp turns live (a volume, the power drive, the hiss, a rebuilt circuit, a pot inside one, the mic, the bias trem), and a 16 ohm cab.
     const last = spec.links.length - 1;
     for (const r of [ts, rust]) {
@@ -351,6 +354,14 @@ test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
       if (spec.output?.trem) r.setTrem({ hz: tremHz(9), depth: 1 });
     }
     ts.process(input.subarray(half), a.subarray(half)); rust.process(input.subarray(half), b.subarray(half));
+    scopes.push([ts.scope(), rust.scope()]);
+    // Each half's newest SCOPE_SAMPLES, the second after link 0 was rebuilt (the scope follows it by name).
+    for (const [p, q] of scopes) {
+      expect([name, q.length]).toEqual([name, p.length]);
+      let d = 0, t = 0;
+      for (let i = 0; i < p.length; i++) { d = Math.max(d, Math.abs(p[i] - q[i])); t = Math.max(t, Math.abs(p[i])); }
+      expect([name, p.length > 0, d <= 1e-5 * Math.max(1, t)]).toEqual([name, true, true]);
+    }
     let diff = 0, top = 0;
     for (let i = 0; i < a.length; i++) { diff = Math.max(diff, Math.abs(a[i] - b[i])); top = Math.max(top, Math.abs(a[i])); }
     console.log(`  ${name}: max |rust - ts| = ${diff.toExponential(2)} (peak ${top.toFixed(2)} V)`);
