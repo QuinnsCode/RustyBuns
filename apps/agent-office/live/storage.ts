@@ -11,15 +11,13 @@
 //   AGENT_OFFICE_SANDBOX_CAP_GB   per worker, default 8 (0 turns the cap off)
 //   AGENT_OFFICE_DISK_FLOOR_GB    free on the volume, default 15 (0 turns the floor off)
 //   AGENT_OFFICE_STORAGE_SCAN_S   seconds between looks, default 120
-import { statfsSync } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { existsSync, statfsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { every } from "./every.ts";
 
 const GB = 1024 ** 3;
-/** node_modules is most of the bytes and changes least: it's sized again after this long. */
-export const NODE_MODULES_MS = 15 * 60_000;
 /** A worker over the cap is clear again once it's this far under it, so one that hovers at the line isn't announced every look. */
 export const RESUME_AT = 0.95;
 
@@ -55,44 +53,28 @@ export function scratchOf(cwd: string, uid = process.getuid?.() ?? 0, base = pro
   return path.join(base, `claude-${uid}`, cwd.replace(/[/.]/g, "-"));
 }
 
-/** A tree's size on disk (blocks, not apparent bytes; a hardlink counts once), without .git, and a node_modules from memory while it's fresh. */
-export class Sizer {
-  private nm = new Map<string, { bytes: number; at: number }>();
-  constructor(private now = Date.now) {}
-
-  async size(root: string, topN = 5): Promise<Size> {
-    const seen = new Set<string>();
-    const dirs: { path: string; bytes: number }[] = [];
-    const walk = async (dir: string, depth: number): Promise<number> => {
-      const isNm = path.basename(dir) === "node_modules";
-      if (isNm) {
-        const hit = this.nm.get(dir);
-        if (hit && this.now() - hit.at < NODE_MODULES_MS) return hit.bytes;
-      }
-      let total = 0;
-      let entries: import("node:fs").Dirent[];
-      try { entries = await readdir(dir, { withFileTypes: true }); } catch { return 0; }
-      for (const e of entries) {
-        if (e.name === ".git") continue;
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) { total += await walk(p, depth + 1); continue; }
-        try {
-          const s = await lstat(p);
-          if (s.nlink > 1) {
-            const key = `${s.dev}:${s.ino}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-          }
-          total += s.blocks * 512;
-        } catch {}
-      }
-      if (isNm) this.nm.set(dir, { bytes: total, at: this.now() });
-      if (depth === 1) dirs.push({ path: dir, bytes: total });
-      return total;
-    };
-    const bytes = await walk(root, 0);
-    return { bytes, top: dirs.sort((a, b) => b.bytes - a.bytes).slice(0, topN) };
-  }
+/**
+ * The sandbox's size on disk (blocks, not apparent bytes; a hardlink counts once across all of `roots`), without .git,
+ * with the biggest directories one level under each root. One `du` child does the walk: until #6199 the server awaited
+ * an lstat per file over every seated worktree, and that kept its JS thread 55-59% busy.
+ */
+export async function sizeOf(roots: string[], topN = 5, platform = process.platform): Promise<Size> {
+  const there = roots.filter((r) => existsSync(r));
+  if (!there.length) return { bytes: 0, top: [] };
+  const skipGit = platform === "darwin" || platform.endsWith("bsd") ? ["-I", ".git"] : ["--exclude=.git"];
+  // du exits 1 when it can't read a file somewhere (a worker deleting as it walks); what it printed still counts.
+  const out = await new Promise<string>((done) =>
+    execFile("du", ["-k", "-d", "1", ...skipGit, ...there], { maxBuffer: 16 << 20, timeout: 10 * 60_000 }, (_err, stdout) => done(String(stdout ?? ""))));
+  const rows = out.split("\n").flatMap((line) => {
+    const tab = line.indexOf("\t");
+    const kb = Number(line.slice(0, tab));
+    return tab > 0 && Number.isFinite(kb) ? [{ path: line.slice(tab + 1), bytes: kb * 1024 }] : [];
+  });
+  const isRoot = (p: string) => there.some((r) => path.resolve(r) === path.resolve(p));
+  return {
+    bytes: rows.filter((r) => isRoot(r.path)).reduce((n, r) => n + r.bytes, 0),
+    top: rows.filter((r) => !isRoot(r.path)).sort((a, b) => b.bytes - a.bytes).slice(0, topN),
+  };
 }
 
 export interface Seat {
@@ -164,13 +146,9 @@ export function storageGuard(
   _dataDir?: string,
   vars: Vars = process.env,
 ) {
-  const sizer = new Sizer();
   const guard = new StorageGuard({
     seats: () => floor.workers.owners().map((o) => ({ id: o.workerId, name: floor.workers.get(o.workerId)?.name ?? o.workerId, pid: o.pid, cwd: o.cwd })),
-    sizeOf: async (seat) => {
-      const [tree, scratch] = await Promise.all([sizer.size(seat.cwd), sizer.size(scratchOf(seat.cwd))]);
-      return { bytes: tree.bytes + scratch.bytes, top: [...tree.top, ...scratch.top].sort((a, b) => b.bytes - a.bytes).slice(0, 5) };
-    },
+    sizeOf: (seat) => sizeOf([seat.cwd, scratchOf(seat.cwd)]),
     free: () => { try { const s = statfsSync(dir); return s.bavail * s.bsize; } catch { return Infinity; } },
     alert: (text) => floor.ctx.toast(floor, text, "warn"),
     settings: () => settings(vars),
