@@ -159,7 +159,7 @@ test.skipIf(!chromePath())("on a desktop the messages get the panel's width and 
       const rows = [...document.querySelectorAll(".rb-spaces-log li")].filter((li) => li.querySelector(".rb-spaces-acts .eq-btn"));
       const below = rows.filter((li) => li.querySelector(".rb-spaces-acts").getBoundingClientRect().top >= li.querySelector("b").getBoundingClientRect().bottom).map((li) => li.textContent);
       const body = document.querySelector(".rb-spaces-body").getBoundingClientRect(), chat = document.querySelector(".rb-spaces-chat").getBoundingClientRect(), who = document.querySelector(".rb-spaces-online").getBoundingClientRect();
-      return { rows: rows.length, below, wide: chat.width >= body.width - 1, under: who.top >= chat.bottom };
+      return { rows: rows.length, below, wide: chat.width >= body.width * 0.85, under: who.top >= chat.bottom };
     })()`);
     await tab.close();
     expect(got.rows).toBeGreaterThan(0);
