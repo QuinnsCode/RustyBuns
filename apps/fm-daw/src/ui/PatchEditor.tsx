@@ -181,8 +181,8 @@ function Choice(props: { label: string; value: number; names: string[]; onPick(v
   );
 }
 
-/** The sidechain: which track this one ducks under (the kick, so the bass pumps), and how far. */
-function Duck({ p, names, self, onParam }: { p: number[]; names: string[]; self: number; onParam(i: number, v: number): void }) {
+/** The sidechain: which track this one ducks under (the kick, so the bass pumps), and how far. A plugin track's Mix has it too. */
+export function Duck({ p, names, self, onParam }: { p: number[]; names: string[]; self: number; onParam(i: number, v: number): void }) {
   const from = p[P.DUCK_FROM] | 0;
   return (<>
     <label className="fader" title="Sidechain: this track dips each time the other one plays, and comes back over 150 ms">
