@@ -14,8 +14,8 @@ import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
 import { AmpThreads, type Threads } from "./threads.ts";
 import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
-import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
-import type { LoopSpec } from "@rustybuns/gear/circuit";
+import { AMPS, PEDALS, boardLinks, type AmpDef, type Knobs } from "../circuit/amps.ts";
+import { SCOPE_SAMPLES, nodeNumbers, type LoopSpec } from "@rustybuns/gear/circuit";
 import { STAGE, compile, heard, type Cable, type End, type Patch } from "../circuit/patch.ts";
 import { patchView } from "./patch-view.ts";
 import { riff } from "../circuit/riff.ts";
@@ -187,6 +187,33 @@ function send() {
   save();
   chainIds = board().ids;
   threads?.send(patched(settings()));
+  sendScope();
+}
+
+// ---- the scope on a pedal's net: its volts back from the audio thread, the way it sends meters ----
+/** Where the scope sits (a pedal tile and a net on its board, or a control its LFO or envelope moves), or nowhere. */
+let probe: { pedal: string; net: string } | null = null;
+/** The newest of its volts, newest last, and how far they swung since it was put there. */
+const probed = new Float32Array(SCOPE_SAMPLES);
+let probeSwing = { hi: 0, lo: 0, samples: 0 };
+/** The scope's link in the rig: the pedal's while it plays, nowhere once it is off. */
+function sendScope() {
+  const at = probe ? linksAt(probe.pedal) : null;
+  threads?.scope(probe && at !== null ? { link: at, net: probe.net } : null);
+}
+/** Whether pedal `id` playing now has `net` on its board, or a control by that name. */
+function hasNet(id: string, net: string): boolean {
+  const slot = board().chain[chainIds.indexOf(id)];
+  const link = slot && "pedal" in slot ? boardLinks([slot]).links[0] : undefined;
+  return !!link && (nodeNumbers(link.net).has(net) || !!link.mods?.some((m) => m.ctl.toUpperCase() === net.toUpperCase()));
+}
+function takeScope(v: readonly number[] | undefined) {
+  if (!v?.length || !probe) return;
+  const n = Math.min(v.length, SCOPE_SAMPLES);
+  probed.copyWithin(0, n);
+  probed.set(v.slice(v.length - n), SCOPE_SAMPLES - n);
+  const s = probeSwing;
+  for (const x of v) { if (!s.samples || x > s.hi) s.hi = x; if (!s.samples || x < s.lo) s.lo = x; s.samples++; }
 }
 function setCables(cables: Cable[]) {
   S.cables = cables;
@@ -246,6 +273,7 @@ async function start() {
   node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
   threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("./part-worker.ts", import.meta.url), { type: "module" }), (m) => {
     meter = m;
+    takeScope(m.scope);
     watchLoad(meter);
   });
   out = new GainNode(ctx, { gain: sound.audible ? dbToGain(S.level) : 0 });
@@ -646,7 +674,7 @@ function frame() {
     analyser.getFloatFrequencyData(db);
     analyser.getFloatTimeDomainData(wave);
   }
-  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000 };
+  const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000, net: probe && probeSwing.samples ? { volts: probed, label: `${probe.pedal} · ${probe.net}` } : undefined };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
   const offset = linksAt(AMP_SLOT) ?? 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
@@ -721,7 +749,20 @@ Object.assign(window, {
       slots: S.order.map((id) => { const i = chainIds.indexOf(id); return { id, on: i >= 0, load: i < 0 ? null : meter.slots?.[i] ?? null }; }), midi: { cc: S.cc, inputs: midiInputs },
       stage: { on: S.stage === 1 && !!stage3d, webgl, ...stage3d?.state() },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
+      scope: probe && { ...probe, ...probeSwing },
     }),
+    /**
+     * The Scope screen on a net of a playing pedal's board (`"fuzz", "D3"`'s node name) or a control its LFO or
+     * envelope moves (`"GATE"`), as you play; null for the output again. False when that pedal isn't playing or has no such net.
+     */
+    scope: (pedal: string | null, net = "") => {
+      if (pedal !== null && !hasNet(pedal, net)) return false;
+      probe = pedal === null ? null : { pedal, net };
+      probeSwing = { hi: 0, lo: 0, samples: 0 };
+      probed.fill(0);
+      sendScope();
+      return true;
+    },
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,

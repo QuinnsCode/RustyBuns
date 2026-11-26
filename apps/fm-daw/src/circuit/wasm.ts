@@ -1,7 +1,7 @@
 // The circuit amp in Rust (native/crates/fm_daw/src/circuit.rs), compiled into
 // the same wasm as the engine, behind the same knobs as `Rig` in rig.ts.
 import type { Exports } from "../engine/wasm.ts";
-import { DEFAULT_POWER, cabIR, encodeNetlist, type Fault, type Mic, type Netlist, type RigSpec, type Trem } from "@rustybuns/gear/circuit";
+import { DEFAULT_POWER, SCOPE_SAMPLES, cabIR, encodeNetlist, nodeNumbers, type Fault, type Mic, type Netlist, type RigSpec, type ScopeAt, type Trem } from "@rustybuns/gear/circuit";
 
 const CHUNK = 512;
 
@@ -10,6 +10,10 @@ export class WasmRig {
   private readonly buf: number;
   private readonly lv: number;
   private readonly links: number;
+  /** Each link's netlist, to number a scope's node by (Rust has no names), and the scope. */
+  private readonly nets: Netlist[];
+  private at: ScopeAt | null = null;
+  private sc = 0;
 
   constructor(private readonly x: Exports, spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
     if (spec.blends?.length) throw new Error("the Rust rig runs its links one after another: no splits yet");
@@ -26,6 +30,7 @@ export class WasmRig {
       }
     }
     this.links = spec.links.length;
+    this.nets = spec.links.map((l) => l.net);
     this.buf = x.fm_alloc(CHUNK);
     this.lv = x.fm_alloc(Math.max(1, this.links));
   }
@@ -52,6 +57,24 @@ export class WasmRig {
   get supply(): number { return this.x.fm_amp_supply(this.h); }
   setLink(i: number, net: Netlist): void {
     if (!this.send(net, (p, n) => this.x.fm_amp_set_link(this.h, i >>> 0, p, n))) throw new Error(`rust amp refused link ${i}`);
+    this.nets[i] = net;
+    if (this.at?.link === i) this.setScope(this.at);
+  }
+
+  /** As `Rig.setScope`, on a node (the Rust rig has no mods, so no control nets). */
+  setScope(at: ScopeAt | null): boolean {
+    const net = at ? this.nets[at.link] : undefined, node = at && net ? nodeNumbers(net).get(at.net) ?? -1 : -1;
+    const ok = node >= 0 && !!this.x.fm_amp_set_scope(this.h, at?.link ?? -1, node);
+    if (!ok) this.x.fm_amp_set_scope(this.h, -1, -1);
+    this.at = ok ? at : null;
+    return ok;
+  }
+  /** As `Rig.scope`. */
+  scope(): Float32Array {
+    if (!this.at) return new Float32Array(0);
+    this.sc ||= this.x.fm_alloc(SCOPE_SAMPLES);
+    const n = this.x.fm_amp_scope(this.h, this.sc, SCOPE_SAMPLES);
+    return new Float32Array(this.x.memory.buffer, this.sc, n).slice();
   }
 
   /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
@@ -76,6 +99,7 @@ export class WasmRig {
   free(): void {
     this.x.fm_dealloc(this.buf, CHUNK);
     this.x.fm_dealloc(this.lv, Math.max(1, this.links));
+    if (this.sc) this.x.fm_dealloc(this.sc, SCOPE_SAMPLES);
     this.x.fm_amp_free(this.h);
   }
 }

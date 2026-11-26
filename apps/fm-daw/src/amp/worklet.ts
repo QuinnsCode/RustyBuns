@@ -22,7 +22,10 @@ class AmpProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     // Knob drags send many; only the newest is applied, at the start of the next block.
-    this.port.onmessage = (e: MessageEvent<ToAmp>) => { if (e.data.t === "set") this.head.set(e.data); else this.head.connect(e.data.rings); };
+    this.port.onmessage = (e: MessageEvent<ToAmp>) => {
+      const m = e.data;
+      if (m.t === "set") this.head.set(m); else if (m.t === "scope") this.head.scope.aim(m.at); else this.head.connect(m.rings);
+    };
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -58,6 +61,7 @@ class AmpProcessor extends AudioWorkletProcessor {
         misses: this.head.live?.rig.misses ?? 0,
         work: rig ? rig.work() : [],
         late: this.head.late,
+        ...this.head.scope.report(rig),
       };
       this.port.postMessage(msg);
       this.frames = 0; this.busyMs = 0; this.peak = 0;
