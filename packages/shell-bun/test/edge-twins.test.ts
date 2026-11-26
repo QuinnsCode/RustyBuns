@@ -1,13 +1,13 @@
 // The smaller twins: Vectorize, Analytics Engine, Workers AI and the Worker Loader.
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalVectorize } from "../src/bindings/vectorize.ts";
 import { LocalAnalyticsEngine } from "../src/bindings/analytics.ts";
 import { LocalAi } from "../src/bindings/ai.ts";
 import { LocalBrowser } from "../src/bindings/browser.ts";
-import { LocalWorkerLoader } from "../src/bindings/worker-loader.ts";
+import { LocalWorkerLoader, walled } from "../src/bindings/worker-loader.ts";
 
 test("vectorize: upsert, query by cosine with metadata filters, getByIds, deleteByIds", async () => {
   const v = new LocalVectorize(":memory:", "idx", { dimensions: 3 });
@@ -61,6 +61,20 @@ test("browser run: content and links fetch the page (kitesurf or not); a screens
     await expect(b.quickAction("screenshot", { url, browser: "kitesurf" })).rejects.toThrow(/BROWSER.*only on Cloudflare/);
     await expect(b.quickAction("content", { url, browser: "chromium" })).rejects.toThrow(/expected "kitesurf"/);
   } finally { server.stop(true); }
+});
+
+test("worker loader: an isolated Worker's wall holds against import macros, spreads, realms and CommonJS", () => {
+  const marker = join(mkdtempSync(join(tmpdir(), "rb-wall-")), "ran");
+  // a macro import runs at transpile time, in the host: the check itself must not run it
+  const macro = `import { writeFileSync } from "node:fs" with { type: "macro" };\nexport default writeFileSync(${JSON.stringify(marker)}, "x");`;
+  expect(walled({ "a.js": macro })).toContain("imports only its own modules");
+  expect(existsSync(marker)).toBe(false);
+  for (const src of [
+    `export default {...require(["f", "s"].join(""))};`, `export default {...globalThis};`, `export default {...import.meta};`,
+    `export default new ShadowRealm();`,
+  ]) expect([src, walled({ "a.js": src })]).not.toEqual([src, null]);
+  expect(walled({ "a.js": { cjs: "module.exports = arguments;" } })).toContain("CommonJS");
+  expect(walled({ "a.js": `import * as b from "./b.js";\nexport default (x) => [x.self, x?.window, b];`, "b.js": "export default 1;" })).toBeNull();
 });
 
 test("worker loader: get() runs getCode once per id; fetch, RPC and a WorkerEntrypoint class", async () => {

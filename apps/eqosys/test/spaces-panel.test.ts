@@ -35,9 +35,9 @@ let chrome: Awaited<ReturnType<typeof launchChrome>>;
 beforeAll(async () => { chrome = await launchChrome(); });
 afterAll(() => { chrome?.stop(); shell.stop(); });
 
-async function signUp(name: string, app: string, origin: string) {
+async function signUp(name: string, app: string, origin: string, email = `${name.toLowerCase()}@example.com`) {
   const a = await asks(app, origin);
-  const up = await call("/do/signup", { form: { ...a.form, name, email: `${name.toLowerCase()}@example.com`, password: PASSWORD } });
+  const up = await call("/do/signup", { form: { ...a.form, name, email, password: PASSWORD } });
   return (await (await call("/api/exchange", { json: { app, code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string }).token;
 }
 /** For what this side of the wire hears (a page's waits are `waitFor`'s). */
@@ -125,5 +125,20 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   await until("the kick sent to Qlave", () => orders.some((o) => JSON.stringify(o).includes('"t":"kick"')));
 
   expect(tab.noise.filter((n) => !n.startsWith("HTTP "))).toEqual([]);
+  await tab.close();
+});
+
+test("a namesake is not you: the owner of a space still has the buttons for a member called what they are", async () => {
+  // Anyone may take any name: two accounts called Cleo.
+  const cleo = await signUp("Cleo", "park-hide-seek", PARK), other = await signUp("Cleo", "qcrm", QCRM, "cleo.too@example.com");
+  const mine = space({ url: () => base, token: () => cleo });
+  const made = (await mine.make("Twins"))!;
+  const theirs = space({ url: () => base, token: () => other });
+  await theirs.join(made.invite);
+  const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
+  await load(chrome.cdp, tab, `${base}/panel?${new URLSearchParams({ token: cleo, name: "Cleo", open: made.id })}`, 0);
+  theirs.open(made.id, {});
+  await waitFor(tab, "a Kick button for the namesake", `!!document.querySelector('#spaces button[title="Kick Cleo"]')`, 10_000, "panel.state()", 50);
+  theirs.close();
   await tab.close();
 });

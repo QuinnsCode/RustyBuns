@@ -375,6 +375,12 @@ export type Live =
    * stopped (`on` false). `name` is what's on, for the room to read.
    */
   | { t: "pa"; on: boolean; name?: string }
+  /**
+   * The setup lesson they're in at the gear wall (src/studio/lessons.ts), for the room's class card (src/studio/class.ts,
+   * #6087): which one (null: none), each step's words and whether it's done, what's in the way of the next one, and the
+   * lessons they've finished in this room.
+   */
+  | { t: "lesson"; id: string | null; steps: { job: string; done: boolean }[]; why?: string; finished: string[] }
   /** What's on one of their DJ decks, for the booth (src/dj/booth.ts); a press on someone else's deck, for its player; or where their mixer's controls sit. */
   | DeckSay | DeckPress | MixSay
   /**
@@ -386,7 +392,8 @@ export type Live =
 const MIDI = int(0, 127);
 /** A beat on the shared clock: the leader's time 0 is beat 0, so it is big, never negative. */
 const STAMP = num(0, 1e13);
-const SOUND_CHARS = Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
+const LESSON_ID = str(24, { re: /^[a-z]+$/ });
+const SOUND_CHARS =Math.ceil((SOUND_MAX_FRAMES * 2 * 4) / 3);
 const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8), b: opt(STAMP) }),
   obj({ t: tag("off"), track: TRACK, midi: MIDI, b: opt(STAMP) }),
@@ -399,13 +406,14 @@ const LIVE: Guard<Exclude<Live, DeckSay | DeckPress | MixSay>>[] = [
   obj({ t: tag("guitar"), track: nul(int(-1, TRACKS - 1)), mic: opt(bool()) }),
   obj({ t: tag("plugin"), track: TRACK, name: nul(str(500)) }),
   obj({ t: tag("pa"), on: bool(), name: opt(str(120, { min: 0 })) }),
+  obj({ t: tag("lesson"), id: nul(LESSON_ID), steps: arr(obj({ job: str(200), done: bool() }), 16, { min: 0 }), why: opt(str(300)), finished: arr(LESSON_ID, 16, { min: 0 }) }),
   obj({ t: tag("sound"), track: int(-1, TRACKS - 1), b: STAMP, c: opt(oneOf(["opus"])), data: str(SOUND_CHARS, { min: 4, re: /^[A-Za-z0-9_-]+$/ }) }),
 ];
 const LIVE_EVENT = (v: unknown): Live => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? check(DeckSay, v) ?? check(DeckPress, v) ?? check(MixSay, v) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || (e.t === "guitar" && e.track === null) || (e.t === "plugin" && e.name === null) || (e.t === "pa" && !e.on) || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || (e.t === "guitar" && e.track === null) || (e.t === "plugin" && e.name === null) || (e.t === "pa" && !e.on) || e.t === "cursor" || e.t === "body" || e.t === "wear" || e.t === "lesson" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the

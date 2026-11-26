@@ -112,6 +112,25 @@ test.each([["a phone", 390 / 844, -10], ["a laptop", 1280 / 800, 0], ["a laptop"
   expect(carryDrop(45)).toBeGreaterThan(carryDrop(18) + 0.2);
 });
 
+// The next piece ahead and to the left: the free right hand eases out toward it, and stays put for one behind you.
+test("an empty right hand reaches for what's next, not for what's behind you", () => {
+  const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 150), scene = new THREE.Scene();
+  scene.add(camera);
+  const view = handsView(scene, camera), rest: What = { kind: "rest" };
+  // the right forearm (drawn first, in its sleeve): where its wrist is
+  const right = camera.children.find((o) => o instanceof THREE.Mesh && o.children.length > 0)!;
+  const after = (reach?: [number, number, number]) => {
+    for (let t = 0; t <= 1; t += 1 / 60) view.update({ right: rest, left: rest, kg: 0, reach }, t);
+    return new THREE.Vector3().setFromMatrixPosition(right.matrix);
+  };
+  const idle = after();
+  const ahead = after([-0.6, -1, -2]);
+  expect(ahead.x).toBeLessThan(idle.x - 0.05);
+  expect(ahead.z).toBeLessThan(idle.z);
+  const behind = after([0, -1, 2]);
+  expect(behind.distanceTo(idle)).toBeLessThan(0.01);
+});
+
 // Holding Y on a phone held upright: both forearms raised, each hand on its own side of the view, the fingers not
 // crossed in the middle (#5157).
 test("raised arms on a tall phone: the hands stay apart", () => {

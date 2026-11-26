@@ -1517,7 +1517,7 @@ async function wireAudit(el, path, showRepo) {
   el.innerHTML = rows.length ? `<div class="list">${rows.map((a) => `<div class="row" style="flex-wrap:nowrap;font-size:12px" title="${esc(new Date(a.at).toLocaleString())}">
       <span style="flex:1;min-width:0">${a.actor ? `<a href="#/u/${esc(a.actor)}">@${esc(a.actor)}</a>` : "someone"} ${esc(AUDIT_SAID[a.action] ?? a.action)}
       ${[a.target, a.detail].filter(Boolean).map((x) => `<code>${esc(x)}</code>`).join(" ")}${showRepo && a.repo ? ` <span class="muted">in ${esc(a.owner)}/${esc(a.repo)}</span>` : ""}
-      <span class="muted">· ${esc(a.via)}${a.country ? ` · ${esc(a.country)}` : ""}</span></span><span class="when">${ago(a.at)}</span></div>`).join("")}</div>`
+      <span class="muted">· ${esc(a.via)}${a.token ? ` <code>${esc(a.token)}</code>` : ""}${a.country ? ` · ${esc(a.country)}` : ""}</span></span><span class="when">${ago(a.at)}</span></div>`).join("")}</div>`
     : '<span class="muted" style="font-size:12px">Nothing yet.</span>';
 }
 const app = $("#app");
@@ -5315,7 +5315,8 @@ const views = {
         if (pick) (resolve[f.path] ??= {})[c.line] = pick;
       }
       try {
-        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked });
+        // The branch as this page showed it (#5701): an edit someone made since lands nothing, and the review is read again.
+        await api(`${base}/${encodeURIComponent(b.name)}/merge`, { resolve, build_ok: !!read(b.name)?.checked, hash: b.hash });
         mergeRefused.delete(clashId(owner, repo, b.name));
         if (branchPicked(owner, repo) === b.name) pickBranch(owner, repo, null);
         toast(`Merged ${b.name}. Commit the files to push them to git.`);

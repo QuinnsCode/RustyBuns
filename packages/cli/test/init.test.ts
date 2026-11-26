@@ -219,10 +219,12 @@ test("init: a Pages project's functions/ runs as a Worker, ahead of its static f
     "functions/api/tile/[[path]].ts": `export const onRequestGet = (c) => Response.json({ path: c.params.path });`,
     "functions/api/_lib/util.ts": `export const onRequest = () => new Response("helper, not a route");`,
     "functions/api/items.test.ts": `export const onRequest = () => new Response("a test, not a route");`,
+    "functions/api/orgs/[org]/_middleware.ts": `const only = (c) => new Response(\`no \${c.params.org}\`, { status: 401 });\nexport const { onRequestPost } = { onRequestPost: only };`,
+    "functions/api/orgs/[org]/things.ts": `export const onRequest = () => new Response("secret");`,
   });
   const r = p.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/pages: +functions\/ -> \.rustybuns\/pages\/index\.ts \(4 routes, 2 middleware\)/);
+  expect(r.out).toMatch(/pages: +functions\/ -> \.rustybuns\/pages\/index\.ts \(5 routes, 3 middleware\)/);
   const cfg = p.read("rustybuns.config.ts");
   expect(cfg).toContain('"main": ".rustybuns/pages/index.ts"');
   expect(cfg).toContain('"assets": "dist"');
@@ -245,6 +247,10 @@ test("init: a Pages project's functions/ runs as a Worker, ahead of its static f
   expect(await (await go("/api/tile/a/b/c.jpg")).json()).toEqual({ path: ["a", "b", "c.jpg"] });
   expect(await (await go("/api/_lib/util")).text()).toBe("asset /api/_lib/util");
   expect(await (await go("/api/items.test")).text()).toBe("asset /api/items.test");
+  // a guard under a [param] folder runs, with its params, though it's for one method and re-exported
+  res = await go("/api/orgs/7/things", "POST");
+  expect([res.status, await res.text()]).toEqual([401, "no 7"]);
+  expect(await (await go("/api/orgs/7/things")).text()).toBe("secret");
   res = await go("/assets/app.js");   // _routes.json: straight to the files, no middleware
   expect([await res.text(), res.headers.get("x-mw")]).toEqual(["asset /assets/app.js", null]);
 });
