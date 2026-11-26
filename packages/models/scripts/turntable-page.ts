@@ -129,14 +129,15 @@ let shown: THREE.Object3D | null = null;
 /** Swaps in another look (the material kit) for the pieces shown from now on; `done` resolves once its textures are in. */
 function setLook(l: typeof look, done: Promise<unknown>) { look = l; ready = done; }
 
-/** `dance-stack`: the stack as the photos show one, a long F221 bin and three columns of mid-bass and top
+/** `dance-stack`: the stack as the photos show one, two long F221 bins side by side and three columns of mid-bass and top
  * on them, the outer columns splayed out. */
 function danceStack(): THREE.Group {
   const g = new THREE.Group(), sh = GEAR_SIZES["horn-sub-21"][1], bh = GEAR_SIZES["stack-mid-bass"][1];
-  g.add(gear("horn-sub-21", { look }));
+  const [bw] = GEAR_SIZES["horn-sub-21"];
+  for (const s of [-1, 1]) { const bin = gear("horn-sub-21", { look }); bin.position.x = (s * bw) / 2; g.add(bin); }
   for (const k of [-1, 0, 1]) {
     const col = new THREE.Group();
-    col.position.set(k * 0.6, sh, k ? -0.05 : 0);
+    col.position.set(k * 1.05, sh, k ? -0.05 : 0);
     col.rotation.y = -k * 0.1;
     const mb = gear("stack-mid-bass", { look }), mh = gear("stack-mid-high", { look });
     mh.position.y = bh;

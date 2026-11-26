@@ -19,19 +19,19 @@ describe("stack builder", () => {
   test("gravity: a box lands on what is under it, and one dropped low goes in underneath", () => {
     const bin: Box = { gear: "horn-sub-21", x: 0, y: 0 };
     const top = settle([bin, { gear: "stack-mid-high", x: 0, y: 5 }]);
-    expect(top[1]!.y).toBeCloseTo(0.8);
+    expect(top[1]!.y).toBeCloseTo(0.582);
     // dropped beside the bin, a box stays on the ground
     expect(settle([bin, { gear: "sub-18", x: 1.5, y: 3 }])[1]!.y).toBe(0);
-    // a mid-bass dropped at 0.5 m goes under the horn sitting at 0.8 m and lifts it
+    // a mid-bass dropped at 0.5 m goes under the horn sitting at 0.58 m and lifts it
     const lifted = settle([...top, { gear: "stack-mid-bass", x: 0, y: 0.5 }]);
-    expect(lifted.map((b) => [b.gear, Math.round(b.y * 100)])).toEqual([["horn-sub-21", 0], ["stack-mid-bass", 80], ["stack-mid-high", 165]]);
+    expect(lifted.map((b) => [b.gear, Math.round(b.y * 100)])).toEqual([["horn-sub-21", 0], ["stack-mid-bass", 58], ["stack-mid-high", 143]]);
     expect(stats({ name: "", boxes: lifted }).layers).toBe(3);
   });
 
   test("a bad stack says what is wrong with it", () => {
     const kinds = (boxes: Box[]) => stats({ name: "", boxes }).warnings.map((w) => w.kind).sort();
     expect(kinds([{ gear: "stack-mid-high", x: 0, y: 0 }, { gear: "horn-sub-21", x: 0, y: 1 }])).toEqual(["buried", "heavy-high", "overhang"]);
-    expect(kinds([{ gear: "horn-sub-21", x: 0, y: 0 }, { gear: "stack-mid-high", x: 0.75, y: 1 }])).toEqual(["overhang"]);
+    expect(kinds([{ gear: "horn-sub-21", x: 0, y: 0 }, { gear: "stack-mid-high", x: 1.0, y: 1 }])).toEqual(["overhang"]);
     expect(kinds([{ gear: "horn-sub-21", x: 0, y: 0 }])).toEqual(["no-top"]);
   });
 
