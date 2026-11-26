@@ -589,15 +589,15 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     const em = new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
     const r = 0.0118 * hs * er;
     const ball = (y: number): Ctl => { const w = Math.sqrt(1 - y * y) * r; return { y: y * r, w, f: w, b: -w }; };
-    m.tube([ball(0.45), ball(0.65), ball(0.8), ball(0.88), ball(0.94), ball(0.985)],
+    m.tube([ball(0.65), ball(0.8), ball(0.88), ball(0.94), ball(0.985)],
       // the ball turned a little out toward the temple, as eyes look, so the iris sits mid-opening rather than by the nose
-      { seg: 20, step: r * 0.08, cuts: [r * 0.865, r * 0.972], capTop: r * 0.015, m: new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationY(0.14 * s)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), slot: (y) => (fur ? "glow" : y > r * 0.972 ? "pupil" : y > r * 0.865 ? "iris" : "eyeWhite"), skin: B.head });
+      { seg: 16, step: r * 0.08, cuts: [r * 0.865, r * 0.972], capTop: r * 0.015, m: new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationY(0.14 * s)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), slot: (y) => (fur ? "glow" : y > r * 0.972 ? "pupil" : y > r * 0.865 ? "iris" : "eyeWhite"), skin: B.head });
     if (fur) continue;
     // The opening, in the lid's own units across (u, toward the temple when positive) and up: the top arcs higher
     // toward the outer corner, the bottom is flatter, and both close to a point at the corners.
     const edge = (u: number) => { const w = Math.sqrt(Math.max(0, 1 - (u / 0.92) ** 2)); return [0.36 * w ** 0.8 + 0.04 * u, -0.42 * w ** 1.2 + 0.03 * u] as const; };
     m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
-      seg: 32, step: r * 0.08, capTop: r * 0.05, m: em, skin: B.head,
+      seg: 24, step: r * 0.1, capTop: r * 0.05, m: em, skin: B.head,
       // up is -z here (the ball is built looking along y, then turned to look forward)
       bump: (p) => {
         const up = -p.z / r, [hi, lo] = edge((p.x / r) * s);

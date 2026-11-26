@@ -2,13 +2,13 @@
 // room and walks in; back at the front door it isn't asked again, and the next room is made in the same studio. Settings
 // (the cog) changes it, and the room after that is made in the new one. Headless Chrome over CDP (scripts/chrome.ts).
 // What's checked is the front door and the link it walks you to, so the room itself is never loaded: its navigation is
-// stopped (CDP Fetch) and the link read off it, and the front door stays up. Each front-door load costs ~20 s in software
-// GL (~37 s before low quality lit four cans, not sixteen), so the test loads it three times, not once per step (#5893).
+// stopped (CDP Fetch) and the link read off it, and the front door stays up. The front door builds no studio behind it, so
+// a load is a few seconds in software GL (#5905; ~20 s when it did), and the test loads it three times (#5893).
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until } from "../../../scripts/chrome.ts";
 import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
-setDefaultTimeout(240_000); // makes and walks into rooms in software GL, from a fresh browser
+setDefaultTimeout(60_000); // three front-door loads and a fresh browser: about 15 s on CI's software GL (#5905)
 useBrowser();
 
 test.skipIf(!hasChrome)("the studio is asked on the first room only, kept after, and Settings changes it", async () => {
