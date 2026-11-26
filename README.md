@@ -33,6 +33,14 @@ That is the whole idea. The same app then runs as a desktop file, a Worker, a se
 
 **Rust when you need it.** One crate runs through `bun:ffi` on the desktop and the server, and as wasm in the page and on the edge. Each Rust engine has a TypeScript twin that gives the same answer. [More](FEATURES.md#rust-when-you-need-it-typescript-always)
 
+## But why not just TypeScript? Why not just Rust?
+
+**Why not just TypeScript?** TypeScript has the best interop speed there is. The page, the Worker, the server and the desktop host all run it with no bridge, and every npm package is one import away. Most of an app is glue, and TypeScript is the best glue. But some hot paths (audio, physics, circuits) need systems speed, and TypeScript alone cannot give you that.
+
+**Why not just Rust?** Rust is fast and it goes everywhere too. But the web speaks TypeScript: each page, Worker and SDK. An app that is all Rust writes a binding for each one, and it waits for a native build to try each change. Rusty Buns starts your desktop app on a Bun host, so it runs today. Then Rust takes over one piece at a time: first an engine through `bun:ffi`, and later the whole backend if you want it (a full Tauri app is an option).
+
+**So we use both.** The app is a little bigger: a hot path has a Rust engine and a TypeScript twin that gives the same answer. In return, the code moves to a lot more places: wasm in the page, FFI on the desktop and server, plain TypeScript where Rust cannot load. You maintain **features, not implementations**. The tests say what the feature does, both twins pass them, and you can change the implementation under it.
+
 ## Get started
 
 ```sh
