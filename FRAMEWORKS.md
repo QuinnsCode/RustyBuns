@@ -183,7 +183,7 @@ CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scrip
 ## Adding a framework
 
 1. Copy the nearest example: `apps/frameworks/hono-example` for a plain Worker, `apps/frameworks/nuxt-example` for a built Worker plus assets, `apps/frameworks/svelte-spa-example` for a client-only SPA. For a Vite SPA with `"use server"` modules, `init` adds the boundary plugin to `vite.config.ts` and `rustybuns boundary` before its web build ([that README](apps/frameworks/svelte-spa-example/README.md#what-init-wires-in-for-the-action)).
-2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config.
+2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config. A framework whose Cloudflare build writes the Worker and its assets (Nuxt, SolidStart, Qwik City, Next.js) is one row in `BUILT_WORKERS` (`packages/cli/src/index.ts`): the built Worker, its assets folder and the Worker build.
 3. `test/desktop.test.ts` is one line: `test("...", () => counterJourney(join(import.meta.dir, "..")))`.
 4. A row in `scripts/ci-apps.ts` with `test: "bun test test"` and `boot: true`, so tier 1 and the journey run on every PR that touches it.
 5. A README that opens with "What it proves", a row in the [matrix](#matrix) and the [five primitives](#each-framework-as-the-five-primitives) table, then `bun run docs`.
@@ -193,7 +193,7 @@ CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scrip
 - **The compiled binary per framework**, and a screenshot for the README gallery: [#3341](https://github.com/QuinnsCode/RustyBuns/issues/3341) (a job for Bob).
 - **A deploy per framework example**, not just slim borg: [#4790](https://github.com/QuinnsCode/RustyBuns/issues/4790).
 - **D1 in the contract**: one table and one migration beside `COUNTER` ([#4790](https://github.com/QuinnsCode/RustyBuns/issues/4790) too, since a deploy is where a migration can go wrong).
-- **Angular, bigger real apps, folding `init`'s four built-Worker branches**: [#2455](https://github.com/QuinnsCode/RustyBuns/issues/2455).
+- **Angular, bigger real apps, coverage numbers for the newer frameworks**: [#2455](https://github.com/QuinnsCode/RustyBuns/issues/2455).
 - **Wasp**: [#5520](https://github.com/QuinnsCode/RustyBuns/issues/5520) (back burner). Its server half (Express on Postgres) runs: [`apps/frameworks/express-example`](apps/frameworks/express-example). Left: Prisma in that server, `init` reading `main.wasp`, then a `trial-github.ts` run of real Wasp apps. Where it stands beside RWSDK and Elysia: [Beside Rusty Buns](#beside-rusty-buns-rwsdk-elysia-and-wasp).
 - **Elysia on Workers, and a `trial-github.ts` sweep**: [#2285](https://github.com/QuinnsCode/RustyBuns/issues/2285) (back burner).
 - **More of Alchemy** (its test harness against preview stages, previews, rollout): [#2328](https://github.com/QuinnsCode/RustyBuns/issues/2328).
