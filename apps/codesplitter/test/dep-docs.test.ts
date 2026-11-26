@@ -26,7 +26,7 @@ const branch = pkg({ dependencies: { x: "^2.0.0", y: "^1.2.0" } });
 
 test("a minor bump needs no docs; a major the docs call safe is taken; a breaking one is a card with the finding", async () => {
   const calls: string[] = [];
-  const breaks: Docs = async (_e, name, from, to) => { calls.push(name); return { breaking: ["renames `foo`"], fixes: [] }; };
+  const breaks: Docs = async (_e, name) => { calls.push(name); return { breaking: ["renames `foo`"], fixes: [] }; };
   const card = await settleDeps(base, main, branch, breaks, new Budget(5), () => "src/a.ts:12");
   expect(calls).toEqual(["x"]);
   expect(card.text).toBeNull();

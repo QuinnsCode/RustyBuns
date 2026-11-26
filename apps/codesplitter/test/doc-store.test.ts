@@ -126,7 +126,7 @@ test("a file past the old 2 MB key saves, reloads, and forks into a branch", asy
   // Each at the top, so apply doesn't search 40k lines for the one before.
   const ops = big(40_000).map((o) => ({ ...o, after: null, text: o.text.padEnd(60, ".") }));
   expect((await call(a, "ops", { ops })).rev).toBe(40_000);
-  for (const [k, v] of s.m) expect(JSON.stringify(v).length).toBeLessThan(2 * CHUNK_CHARS + 2);
+  for (const v of s.m.values()) expect(JSON.stringify(v).length).toBeLessThan(2 * CHUNK_CHARS + 2);
   const b = new FileDurableObject(ctx, {} as any);
   await ready;
   expect((await call(b, "file")).lines.length).toBe(40_000);

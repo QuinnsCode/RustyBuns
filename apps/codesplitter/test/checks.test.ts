@@ -131,7 +131,7 @@ test("a required check gates the merge: missing waits, failed blocks, passed let
 });
 
 test("a run that ran out of time says where it hung: the merge block names the file (#1218)", async () => {
-  const { call, send, checks } = await app();
+  const { send, checks } = await app();
   await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
   await send("ryan", "/api/repos/ryan/lab/branches", { name: "slow" });
   await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test", "lint"] }, "PUT");
