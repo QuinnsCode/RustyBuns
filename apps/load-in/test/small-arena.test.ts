@@ -115,11 +115,12 @@ test("hang the arrays, fail and pass the point's check, fly them clear, fill the
   expect(after).toMatchObject({ desk: true, pass: true });
 
   // Doors: 800 on the floor. The fills on the floor fire into the front row's chests, so the rows behind lose them;
-  // the hangs and the raked seats are over the heads and don't change. It still passes, and the show scores it full.
+  // the hangs and the raked seats are over the heads and hardly change (the out-fills' three LA108s, 0.81 m of box, lose
+  // a cell of side seats to the heads). It still passes, and the show scores it full.
   letIn(w, CROWD);
   const full = scores(w).full;
   expect(full.covered.front).toBeLessThan(after.covered.front - 0.2);
-  expect(full.covered.sides).toBe(after.covered.sides);
+  expect(Math.abs(full.covered.sides - after.covered.sides)).toBeLessThanOrEqual(0.02);
   expect(full.covered.floor).toBeGreaterThan(0.9);
   expect(full.pass).toBe(true);
   expect(show(w).sound).toBe(full.score);
