@@ -1,17 +1,24 @@
 // Makes the generated files the spike Worker imports (all gitignored), from the app's own PGlite:
-//   src/pglite.wasm, src/pglite.data  copied from @electric-sql/pglite
-//   src/template.data                 an empty cluster: initdb run once here, since workerd can't run it
+//   src/pglite.wasm, src/pglite.data  copied from @electric-sql/pglite, the wasm's memory floor at 64 MB (memory.ts)
+//   src/template.data                 an empty cluster: initdb run once here, since workerd can't run it;
+//                                     1 MB WAL segments, only the `postgres` database, 16 MB shared buffers
 //   src/cb/*.wasm, src/cb/index.ts    the callback modules Emscripten's addFunction compiles at runtime,
 //                                     recorded here so the Worker ships them precompiled (src/shim.ts)
 //
 //   bun do/setup.ts        (from apps/borg-postgres)
 import { PGlite } from "@electric-sql/pglite";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { INITDB_PARAMS, lowerMemoryFloor, SLIM_SQL, WASM_MEMORY } from "./memory.ts";
 
 const src = join(import.meta.dir, "src");
 const dist = dirname(Bun.resolveSync("@electric-sql/pglite", import.meta.dir));
-for (const f of ["pglite.wasm", "pglite.data"]) copyFileSync(join(dist, f), join(src, f));
+copyFileSync(join(dist, "pglite.data"), join(src, "pglite.data"));
+// The wasm with its memory floor at 64 MB instead of 128 (memory.ts says why that's the whole change).
+const wasm = lowerMemoryFloor(readFileSync(join(dist, "pglite.wasm")), WASM_MEMORY);
+writeFileSync(join(src, "pglite.wasm"), wasm);
+const pgliteWasmModule = new WebAssembly.Module(wasm);
+const opts = { pgliteWasmModule, initialMemory: WASM_MEMORY };
 
 // Every small module compiled from here on is a callback trampoline; keep its bytes.
 const seen = new Map<string, Uint8Array>();
@@ -27,9 +34,10 @@ Object.assign(Recording, { imports: Orig.imports, exports: Orig.exports, customS
 WebAssembly.Module = Recording;
 
 let t = performance.now();
-const fresh = await PGlite.create();
+const fresh = await PGlite.create({ ...opts, initDbStartParams: INITDB_PARAMS });
 await fresh.exec("select 1");
 const initdbMs = Math.round(performance.now() - t);
+for (const sql of SLIM_SQL) await fresh.exec(sql);
 const template = await fresh.dumpDataDir("gzip");
 await fresh.close();
 await Bun.write(join(src, "template.data"), template);
@@ -37,9 +45,11 @@ await Bun.write(join(src, "template.data"), template);
 // The path the Durable Object takes: boot from a dump, write, dump again.
 seen.clear();
 t = performance.now();
-const db = await PGlite.create({ loadDataDir: template });
+const db = await PGlite.create({ ...opts, loadDataDir: template });
 await db.exec("create table t (id serial primary key, v text); insert into t (v) values ('a'); select * from t;");
 const bootMs = Math.round(performance.now() - t);
+const memoryMB = db.Module.HEAPU8.buffer.byteLength / 1048576;
+if (memoryMB > WASM_MEMORY / 1048576) throw new Error(`a copy of the template grew to ${memoryMB} MB of wasm memory`);
 await db.dumpDataDir("gzip");
 await db.close();
 WebAssembly.Module = Orig;

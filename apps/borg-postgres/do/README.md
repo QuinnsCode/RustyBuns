@@ -20,17 +20,19 @@ Then `curl '127.0.0.1:8799/q?name=pr-12&sql=select%20version()'` makes database 
 
 ## What it measured
 
-Local workerd on the office Mac (M-series, 16 GB), 2026-11-24, five runs, milliseconds:
+Local workerd on the office Mac (M-series, 16 GB), five runs, milliseconds. The first column is the stock spike
+(2026-11-24); the second is after the memory fit (2026-11-26, #6203, below):
 
-| Step | Median | Max |
+| Step | Stock, median (max) | Fitted, median (max) |
 |---|---|---|
-| New database, first query | 315 | 571 |
-| Warm query | 7 | 39 |
-| 10k rows written and saved | 530 | 578 |
-| After a restart (eviction, deploy), first query | 391 | 474 |
-| Branch of a database holding 10k rows | 342 | 660 |
+| New database, first query | 315 (571) | 148 (283) |
+| Warm query | 7 (39) | 5 (8) |
+| 10k rows written and saved | 530 (578) | 237 (297) |
+| After a restart (eviction, deploy), first query | 391 (474) | 143 (164) |
+| Branch of a database holding 10k rows | 342 (660) | 157 (182) |
+| WASM memory with 10k rows | 184 MB | 64 MB |
 
-A saved database is 4.8 MB (gzip tarball of the data dir, mostly the empty cluster).
+A saved database is 2.4 MB (gzip tarball of the data dir, mostly the empty cluster; 4.8 MB stock).
 The Worker uploads at 5.7 MB gzip: under the paid plan's 10 MB, over the free plan's 3 MB.
 
 **What a deploy does differently.** A Neon-backed stage (`origin: { neon }`) creates a Neon branch and a Hyperdrive
@@ -71,9 +73,16 @@ the CPU limit would end it, but look for a hang first when this breaks.
 
 ## Before it can go live
 
-1. **Memory.** Stock PGlite asks for 128 MB of WASM memory at start (smaller fails to link). That is a whole
-   Durable Object's limit, before the JS heap. Live, it needs a PGlite built with a smaller initial memory (64 MB),
-   which means an Emscripten build of PGlite from source.
+1. **Memory (done locally, #6203; the live check is still to run).** Stock PGlite asks for 128 MB of WASM memory at start
+   (smaller fails to link), and Postgres's default 128 MB of shared buffers grows it to 184 MB at boot: past a whole
+   Durable Object's 128 MB before the JS heap. `memory.ts` fixes both without a source build. The wasm imports its
+   memory, so Emscripten's `INITIAL_MEMORY` only sets that import's floor (static data ends near 3 MB, the heap grows on
+   demand), and `setup.ts` rewrites the floor to 64 MB in the copied `pglite.wasm`. The template is slimmed before
+   it's saved: 1 MB WAL segments (`--wal-segsize=1`), only the `postgres` database (template0 and template1 dropped;
+   each preview env is a schema), and `shared_buffers = 16MB` in `postgresql.auto.conf`, so every copy boots with
+   it. With 10k rows WASM memory stays at 64 MB (`bench.ts` prints it from each reply's `memoryBytes`).
+   Not done: trimming time zones, ICU and the unused `lib/postgresql` modules from the 6 MB `pglite.data`, which
+   means repacking it and PGlite's bundled file list.
 2. **Saving.** Each write re-saves the whole 4.8 MB dump (about 0.5 s). A filesystem that maps Postgres's 8 KB pages onto
    DO SQLite rows would make writes cost what they change.
 3. **How an app reaches it.** Apps here speak postgres.js over a URL (Hyperdrive on the edge, `pgliteHyperdrive` on

@@ -8,6 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import { PGlite } from "@electric-sql/pglite";
 import pgliteWasmModule from "./pglite.wasm";
 import pgliteData from "./pglite.data";
+import { WASM_MEMORY } from "../memory.ts";
 
 interface Env { PG: DurableObjectNamespace<Pg> }
 const CHUNK = 1_500_000;
@@ -56,7 +57,7 @@ export class Pg extends DurableObject<Env> {
     }
     const t2 = now();
     this.db = await PGlite.create({
-      pgliteWasmModule, fsBundle: new Blob([pgliteData]),
+      pgliteWasmModule, fsBundle: new Blob([pgliteData]), initialMemory: WASM_MEMORY,
       loadDataDir: new Blob([dump], { type: "application/x-gzip" }),
     });
     this.boot = { copyMs, bootMs: ms(t2), openMs: ms(t), dumpBytes: dump.byteLength };
@@ -77,7 +78,9 @@ export class Pg extends DurableObject<Env> {
     const res = await this.db!.exec(sql);
     const queryMs = ms(t);
     const saved = write ? await this.save() : undefined;
-    return { fresh, ...(fresh ? this.boot : {}), queryMs, ...saved, rows: res.at(-1)?.rows ?? [] };
+    // A Durable Object has 128 MB for everything; this is PGlite's share (WASM_MEMORY unless it grew).
+    const memoryBytes = this.db!.Module.HEAPU8.buffer.byteLength;
+    return { fresh, ...(fresh ? this.boot : {}), queryMs, ...saved, memoryBytes, rows: res.at(-1)?.rows ?? [] };
   }
 
   async dump(): Promise<Uint8Array> {

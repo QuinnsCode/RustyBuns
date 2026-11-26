@@ -4,7 +4,7 @@
 import { arr, num, obj, opt, raw, str } from "@rustybuns/util/guard";
 
 const B = process.argv[2] ?? "http://127.0.0.1:8799";
-const Reply = obj({ error: opt(str(2000)), bytes: opt(num(0, 1e10)), rows: opt(arr(raw, 1000)) });
+const Reply = obj({ error: opt(str(2000)), bytes: opt(num(0, 1e10)), memoryBytes: opt(num(0, 1e10)), rows: opt(arr(raw, 1000)) });
 
 async function get(path: string) {
   const t = performance.now();
@@ -32,6 +32,7 @@ for (let i = 0; i < 5; i++) {
   const w = await q(n, rows10k, true);
   add("10k rows written + saved (ms)", w.ms);
   add("saved size (KB)", (w.bytes ?? 0) / 1024);
+  add("wasm memory, 10k rows (MB)", (w.memoryBytes ?? 0) / 1048576);
   await get(`/restart?name=${n}`);
   add("restart, first query (ms)", (await q(n, "select count(*) from notes")).ms);
   add("branch of it (ms)", (await get(`/branch?name=${n}-b&from=${n}`)).ms);
