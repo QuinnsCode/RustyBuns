@@ -302,7 +302,7 @@ const list: Gear[] = [
   {
     id: "horn-sub-21",
     what: '21" horn-loaded bass bin',
-    size: box(1.1, 0.8, 1.0),
+    size: box(1.686, 0.582, 0.867),
     kg: 115,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     // At 63 Hz a horn bin is near omni: about 6 dB front to back, which the cardioid trick (site.ts) builds on.
