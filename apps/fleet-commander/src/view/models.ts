@@ -1,7 +1,9 @@
-// The hulls, made in code: plain three.js shapes, no files. The navy builds sharp wedges in pale grey; the Compact flies
+// The hulls, made in code: three.js shapes, no files. A hull with a drawing sheet (sheets.ts) is built from it in
+// ships.ts; the others are still a few plain shapes here. The navy builds sharp wedges in pale grey; the Compact flies
 // what it could weld together, long industrial hulls in rust and ochre with their drives showing.
 import * as THREE from "three";
 import type { Role, ShipKind, Side } from "../names.ts";
+import { hasSheet, sheetModel } from "./ships.ts";
 
 const navyHull = () => new THREE.MeshStandardMaterial({ color: 0xc9cdd3, roughness: 0.55, metalness: 0.35, flatShading: true });
 const navyDark = () => new THREE.MeshStandardMaterial({ color: 0x6d737c, roughness: 0.7, metalness: 0.3, flatShading: true });
@@ -29,6 +31,8 @@ function engines(g: THREE.Group, x: number, zs: number[], r: number, side: Side)
 
 /** A capital ship's model, about `HULL[kind].r * 2` long, nose along +x. */
 export function shipModel(kind: ShipKind, side: Side): THREE.Group {
+  // A hull with a drawing sheet is built piece by piece from it (ships.ts); the rest keep their plain shapes for now.
+  if (side === "navy" && hasSheet(kind)) return sheetModel(kind);
   const g = new THREE.Group();
   if (side === "navy") {
     const hull = navyHull(), dark = navyDark();
