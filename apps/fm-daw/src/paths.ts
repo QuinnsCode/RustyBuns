@@ -68,8 +68,8 @@ export const PATHS: readonly Path[] = [
     icon: '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/><circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>',
   },
   {
-    id: "builder", sector: "build", name: "Q Builder", does: "Open a pedal's board, swap its parts, drop in a tscircuit board, download the kit.",
-    href: "/amp.html", first: "Q Amp, where B on a pedal opens its board and build sheet", signIn: false,
+    id: "builder", sector: "build", name: "Q Builder", does: "Open a pedal's board, swap its parts, scope any net, remake it in tscircuit and retest it.",
+    href: "/builder.html", first: "Q Builder: the fuzz's board with a scope on it", signIn: false,
     icon: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/><circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/>',
   },
   {
@@ -85,3 +85,43 @@ export const iconSvg = (body: string, size = 24) =>
 
 // lucide (ISC): door-open
 export const DOOR_OPEN = '<path d="M10 21H2"/><path d="M10 3H7a2 2 0 0 0-2 2v16"/><path d="M14 12h.01"/><path d="M19 21V5a2 2 0 0 0-1.675-1.974l-6.163-1.013A1 1 0 0 0 10 3v18a1 1 0 0 0 1.124.992z"/><path d="M22 21h-3"/>';
+
+/** The landing page's pedal-to-show chain (#6019): one idea carried through the sectors, each step a path's door. */
+export const CHAIN: readonly { step: string; does: string; path: PathId }[] = [
+  { step: "Build it", does: "Swap the parts on a pedal's board in Q Builder.", path: "builder" },
+  { step: "Play it", does: "Plug in and play it through Q Amp, solved as a circuit.", path: "amps" },
+  { step: "Record it", does: "Lay the take down in QDAW and loop it.", path: "daw" },
+  { step: "Plan the stage", does: "Place the stacks on the field and see who hears what.", path: "planner" },
+  { step: "Play it live", does: "Send the link; your friends walk in and hear it.", path: "event" },
+];
+
+/** What works end to end today (PATHWAYS.md's table), a line a sector. */
+export const LIVE: readonly { path: PathId; line: string }[] = [
+  { path: "planner", line: "Coverage, delay, power and the gear list, indoors and out over the night's air, the ground and banks." },
+  { path: "learn", line: "Four lessons at the gear wall, checked on the gear as you go." },
+  { path: "daw", line: "A loop at a time: play, record, mix and bounce it to a file." },
+  { path: "instruments", line: "Two decks into the room, to a file, or out on a listen link." },
+  { path: "amps", line: "An amp and pedals solved as circuits; speaker boxes from the makers' drawings." },
+  { path: "event", line: "An invite link, a guest list, and the room's PA from where you stand." },
+];
+
+/** Two short pitches, for crews and for classes, each with its path's icon and door. */
+export const PITCHES: readonly { who: string; line: string; path: PathId }[] = [
+  { who: "For crews", line: "Know the field covers before the night: place the stacks, set the air and the ground, see where the highs drop, and take the power plan and the gear list with you.", path: "planner" },
+  { who: "For classes", line: "Cabling, gain staging, a PA and a circuit, learned on gear that can't break: each step checked as you go, no account needed.", path: "learn" },
+];
+
+// lucide (ISC): thermometer, droplets, mountain, play, pause, headphones, arrow-right, check
+export const ICON = {
+  thermometer: '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
+  droplets: '<path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/>',
+  mountain: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  headphones: '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+} as const;
+
+/** A path by its id. */
+export const pathOf = (id: PathId): Path => PATHS.find((p) => p.id === id)!;

@@ -164,6 +164,41 @@ export const PANELS: { readonly [id in GearId]?: Panel } = {
     ],
     ref: "qsc/q_spk_l_class_la108-la112_specsheet.pdf, la108_2ddrawing: connectors from the sheet; the layout, a block of in and thru pairs beside the heatsink, is inferred",
   },
+  "synergy-horn": {
+    face: "back", drive: "passive", pins: "full range on 1+/1-, 2+/2- passed through; the two NL4s in parallel, one amp channel (sheet)",
+    sockets: pair(nl4, [[0, 340], [0, 200]]), ref: "danley/SH50-Spec-Sheet-Rev.-202209301629.pdf p1, SH50T-B_BACK.png: plate low on the back flat, the two NL4s stacked",
+  },
+  "tapped-horn-18": {
+    face: "back", drive: "passive", pins: "the 4 ohm single channel on 1+/1-, 2+/2- passed through; the two NL4s in parallel (sheet)",
+    sockets: pair(nl4, [[-60, 731], [-60, 611]]), ref: "danley/TH118-spec.pdf p1 (2 x NL4); no render of the back, so the plate's place left of centre is inferred",
+  },
+  "cab-4x12": {
+    face: "back", drive: "passive", pins: "jack tip +, sleeve -; mono 16 ohm wires all four speakers, mono 4 ohm the same in parallel, each stereo 8 ohm jack two of them",
+    sockets: [
+      { jack: "speaker-in", type: "ts", gender: "female", role: "mono 16 ohm", at: [30, 645], carries: "speaker" },
+      { jack: null, type: "ts", gender: "female", role: "mono 4 ohm", at: [-30, 645], carries: "speaker" },
+      { jack: null, type: "ts", gender: "female", role: "stereo 8 ohm left", at: [30, 610], carries: "speaker" },
+      { jack: null, type: "ts", gender: "female", role: "stereo 8 ohm right", at: [-30, 610], carries: "speaker" },
+    ],
+    ref: "marshall/1960a: the jack plate's four quarter-inch inputs high on the back; two by two on the plate is inferred",
+  },
+  "horn-sub-24": {
+    face: "back", drive: "biamp", pins: "dual voice coils on 1+/1- and 2+/2- (sheet), 2 x 8 ohm",
+    sockets: pair(nl4, [[35, 690], [-35, 690]]), ref: "f1/f124-datasheet.pdf (D0037-01): 2 x NL4, the plate high on the back's centre line, side by side",
+  },
+  "infra-sub-18": {
+    face: "back", drive: "biamp", pins: "the two 18\"s on 1+/1- and 2+/2-, 2 x 8 ohm (the sheet gives the pairs' load, not the pins: as the F218)",
+    sockets: pair(nl4, [[0, 300], [0, 244]]), ref: "f1/ib218-datasheet.pdf (D0059-00): 2 x NL4 on a small plate dead centre of the back, stacked",
+  },
+  "skeletal-mid-high": {
+    face: "back", drive: "passive", pins: "1+/1- through the passive crossover, one amp channel (sheet); 2+/2- not connected (assumed)",
+    sockets: pair(nl4, [[-20, 164], [20, 164]]), ref: "f1/res2sh-datasheet.pdf (D0028-01): 2 x NL4; on the driver can's back, side by side, is inferred",
+  },
+  "skeletal-mid": {
+    face: "back", drive: "passive", pins: "1+/1-, 16 ohm",
+    sockets: [nl4("speaker-in", "input (junction box)", 0, 154)],
+    ref: "f1/r2s8-datasheet.pdf (D0061-00): a Wago terminal or junction box options; drawn as the junction box with one NL4, as the Wago takes bare wire no cable in the game has",
+  },
 };
 
 /** The socket a game jack is on, if its box has a panel. */

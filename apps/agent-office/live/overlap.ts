@@ -16,6 +16,7 @@ import path from "node:path";
 import { arr, check, field, int, maybe, obj, raw, str } from "@rustybuns/util/guard";
 import { GENERATED, taskFiles } from "@rustybuns/util/overlap";
 import { stillBusy } from "../codesplitter/hint.ts";
+import { every } from "./every.ts";
 
 /** An open pull request and the files it changes. */
 export interface OpenPr { number: number; title: string; branch: string; files: string[] }
@@ -187,14 +188,13 @@ export interface HeldTask { id: string; floor: string; by: string; owner?: strin
 const held = new Map<string, HeldTask & { home: GuardFloor; toast: (m: string) => void }>();
 const HOLD_DAYS = 14;
 const EVERY_MS = 60_000;
-let timer: ReturnType<typeof setInterval> | undefined;
+let halt: (() => void) | undefined;
 
 /** Holds the task; the office queues it once the clashing PRs have merged and the clashing queue tasks are done. */
 export function holdTask(floor: GuardFloor, c: Clash, task: Omit<HeldTask, "id" | "floor" | "branches" | "tasks" | "workers" | "at">, toast: (m: string) => void) {
   const h = { ...task, id: crypto.randomUUID(), floor: floor.id, branches: [...c.prs.map((p) => p.branch), ...c.workers.map((w) => w.branch).filter(Boolean)], tasks: c.queued.map((q) => q.id), workers: c.workers.map((w) => w.id), at: Date.now(), home: floor, toast };
   held.set(h.id, h);
-  timer ??= setInterval(() => void releaseHeld(), EVERY_MS);
-  (timer as { unref?: () => void }).unref?.();
+  halt ??= every(EVERY_MS, () => releaseHeld(), { name: "held tasks" });
   const on = [...c.prs.map((p) => `PR #${p.pr}`), ...c.queued.map((q) => `"${q.title}"`), ...c.workers.map((w) => `${w.name}'s work`)];
   return { id: h.id, message: `Held: the office queues it once ${on.join(", ")} ${on.length > 1 ? "have" : "has"} merged` };
 }
@@ -235,8 +235,8 @@ export const heldTasks = (floor?: string): HeldTask[] =>
 export function resetOverlap() {
   held.clear();
   seen.clear();
-  if (timer) clearInterval(timer);
-  timer = undefined;
+  halt?.();
+  halt = undefined;
 }
 
 /** A held task's title on the queue: its own, its issue's, or its prompt's first line (not the agent mark added later). */

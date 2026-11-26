@@ -2,7 +2,7 @@
 // orders: pick wings or ships, mark a Compact ship, call a play, set stance and formation, order the flagship to
 // broadside or rake. `window.fleetCommander` is the harness (scripts/probe.ts HANDLES): state() says what is on the
 // table, and its moves play the game without a mouse.
-import { createElement, Crosshair, Eye, Sparkles, Megaphone, PenLine, LogOut, Layers, Shield, Swords, Scale, Triangle, Rows3, Shuffle, Flame, Magnet, Anchor, Target, Split, Hammer, Rocket, Undo2, Radar, Ghost, Telescope, RadioTower, Thermometer, Map as MapIcon, type IconNode } from "lucide";
+import { createElement, Star, Check, Crosshair, Eye, Sparkles, Megaphone, PenLine, LogOut, Layers, Shield, Swords, Scale, Triangle, Rows3, Shuffle, Flame, Magnet, Anchor, Target, Split, Hammer, Rocket, Undo2, Radar, Ghost, Telescope, RadioTower, Thermometer, Map as MapIcon, type IconNode } from "lucide";
 import { addCommands, howToPlay } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { esc } from "@rustybuns/util";
@@ -12,6 +12,7 @@ import { COMMS_LAG, DT, FOCUS, HULL, alive, flagship, ship, step, usePower, wing
 import { PLAYS, landsAt, playById, send, wingsOf, type PlayId } from "./sim/plays.ts";
 import { autoCommander, brains } from "./sim/ai.ts";
 import { armada, battle, quick, type Fleet } from "./sim/scenarios.ts";
+import { LEVELS, startLevel } from "./sim/levels.ts";
 import { BUY, PING, eyes, ping, requisition, theater, theaterBrains, type Buy } from "./sim/theater.ts";
 import { Bridge, shipAt as anyShipAt, type Look, type Overlay } from "./view/scene.ts";
 import { Minimap } from "./view/minimap.ts";
@@ -34,11 +35,13 @@ const shipAt = (w: World, x: number, z: number, slop: number) => {
   return s && visible(w, s.side, s.id) ? s : undefined;
 };
 
-type Screen = "menu" | "battle" | "sector" | "report";
+type Screen = "menu" | "battle" | "sector" | "report" | "levels";
 const ui = {
   screen: "menu" as Screen,
   w: null as World | null,
-  kind: "quick" as "quick" | "armada" | "campaign" | "theater",
+  kind: "quick" as "quick" | "armada" | "campaign" | "theater" | "level",
+  /** The level being fought (an index into LEVELS), when `kind` is "level". */
+  level: 0,
   seed: 1,
   sel: new Set<number>(),
   target: 0,
@@ -88,6 +91,23 @@ function startTheater(seed = ui.seed) { ui.seed = seed; startBattle(theater(seed
 
 function startQuick(seed = ui.seed) { ui.seed = seed; startBattle(quick(seed), "quick"); }
 function startArmada(seed = ui.seed) { ui.seed = seed; startBattle(armada(seed), "armada"); }
+/** A level: its lesson goes up on the banner as it starts (the list showed it first). */
+function playLevel(i: number, seed = ui.seed) {
+  const l = LEVELS[i]; if (!l) return;
+  ui.seed = seed; ui.level = i;
+  startBattle(startLevel(l, seed), "level");
+  flash(l.teaches);
+}
+
+const CLEARED = "fleet-commander.levels";
+const cleared = () => new Set((localStorage.getItem(CLEARED) ?? "").split(",").filter(Boolean));
+function drawLevels() {
+  const done = cleared();
+  $("level-rows").innerHTML = LEVELS.map((l, i) => {
+    const stars = [1, 2, 3, 4, 5].map((n) => icon(Star, 14).replace("<svg", `<svg class="${n <= l.stars ? "on" : "off"}"`)).join("");
+    return `<li><button type="button" data-level="${i}" class="${done.has(l.id) ? "cleared" : ""}"><span class="n">${done.has(l.id) ? icon(Check, 22) : i + 1}</span><b>${esc(l.name)}</b><span class="stars" title="Difficulty ${l.stars} of 5">${stars}</span><small>${esc(l.teaches)}</small></button></li>`;
+  }).join("");
+}
 
 function show(s: Screen) {
   ui.screen = s;
@@ -96,7 +116,9 @@ function show(s: Screen) {
   $("menu").hidden = s !== "menu";
   $("sector").hidden = s !== "sector";
   $("report").hidden = s !== "report";
+  $("level-list").hidden = s !== "levels";
   if (s === "sector") drawSector();
+  if (s === "levels") drawLevels();
 }
 
 function flash(text: string) { ui.banner = { text, until: performance.now() + 4500 }; $("banner").textContent = text; $("banner").classList.add("on"); }
@@ -122,7 +144,10 @@ function endBattle(w: World) {
     ["Shields split", String(w.stats.splits)],
   ];
   $("report-stats").innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${esc(b)}</dd>`).join("");
-  $("again").textContent = ui.kind === "campaign" ? "Back to the sector" : "Again";
+  const next = ui.kind === "level" && o === "win" && ui.level + 1 < LEVELS.length;
+  if (ui.kind === "level" && o === "win") localStorage.setItem(CLEARED, [...cleared().add(LEVELS[ui.level].id)].join(","));
+  $("again").textContent = ui.kind === "campaign" ? "Back to the sector" : next ? `Next: ${LEVELS[ui.level + 1].name}` : ui.kind === "level" ? "Try again" : "Again";
+  $("again").dataset.next = next ? "1" : "";
   if (ui.kind === "campaign" && ui.sector) settle(ui.sector, o, fleetAfter(w));
   show("report");
 }
@@ -711,7 +736,7 @@ const harness = {
   state: () => {
     const w = ui.w;
     return {
-      screen: ui.screen, kind: ui.kind, look: bridge.look, paused: ui.paused, speed: ui.speed, pen: ui.pen,
+      screen: ui.screen, kind: ui.kind, level: ui.kind === "level" ? { n: ui.level + 1, id: LEVELS[ui.level].id, teaches: LEVELS[ui.level].teaches } : null, look: bridge.look, paused: ui.paused, speed: ui.speed, pen: ui.pen,
       battle: w ? {
         t: w.t, mode: w.mode, outcome: w.outcome, why: w.why, focus: Math.round(w.focus), foresight: w.t < w.foresightUntil, trance: w.t < w.tranceUntil, voice: w.t < w.voiceUntil, radio: w.pending.length,
         planet: { name: w.planet.name, base: Math.round(w.planet.base), of: Math.round(w.planet.baseMax) },
@@ -729,6 +754,9 @@ const harness = {
     };
   },
   quick: (seed = 1) => { startQuick(seed); return harness.state(); },
+  /** A level, by its number (1 is the first) or id; state().level says which and what it teaches. */
+  level: (n: number | string = 1, seed = 1) => { const i = typeof n === "number" ? n - 1 : LEVELS.findIndex((l) => l.id === n); playLevel(i, seed); return harness.state(); },
+  levels: () => LEVELS.map((l, i) => ({ n: i + 1, id: l.id, name: l.name, stars: l.stars, teaches: l.teaches, cleared: cleared().has(l.id) })),
   armada: (seed = 1) => { startArmada(seed); return harness.state(); },
   /** The theater: the whole Pyre system in the fog. */
   theater: (seed = 1) => { startTheater(seed); return harness.state(); },
@@ -781,7 +809,10 @@ async function boot() {
   $("armada").addEventListener("click", () => startArmada(Date.now() >>> 0));
   $("theater").addEventListener("click", () => startTheater(Date.now() >>> 0));
   $("campaign").addEventListener("click", startCampaign);
-  $("again").addEventListener("click", () => (ui.kind === "campaign" ? show("sector") : ui.kind === "armada" ? startArmada(ui.seed + 1) : ui.kind === "theater" ? startTheater(ui.seed + 1) : startQuick(ui.seed + 1)));
+  $("levels").addEventListener("click", () => show("levels"));
+  $("levels-back").addEventListener("click", () => show("menu"));
+  $("level-rows").addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-level]") : null; if (b) playLevel(Number(b.dataset.level), 1); });
+  $("again").addEventListener("click", () => (ui.kind === "level" ? playLevel(ui.level + ($("again").dataset.next ? 1 : 0), 1) : ui.kind === "campaign" ? show("sector") : ui.kind === "armada" ? startArmada(ui.seed + 1) : ui.kind === "theater" ? startTheater(ui.seed + 1) : startQuick(ui.seed + 1)));
   $("to-menu").addEventListener("click", () => show("menu"));
   $("quit").addEventListener("click", () => { if (ui.kind === "campaign" && ui.w && ui.sector) { ui.w.outcome = "loss"; ui.w.why = "You ordered the retreat."; endBattle(ui.w); } else show("menu"); });
   $("sector-quit").addEventListener("click", () => show("menu"));
@@ -805,6 +836,8 @@ async function boot() {
   else if (go === "armada") startArmada(Number(params.get("seed") ?? 1));
   else if (go === "theater") startTheater(Number(params.get("seed") ?? 1));
   else if (go === "campaign") startCampaign();
+  else if (go === "levels") show("levels");
+  else if (go === "level") { const n = params.get("level") ?? "1"; const i = LEVELS.findIndex((l) => l.id === n); playLevel(i >= 0 ? i : Number(n) - 1, Number(params.get("seed") ?? 1)); }
   requestAnimationFrame(frame);
 }
 

@@ -5,7 +5,7 @@
 // Pedals run on a split supply (op-amp rails ±4 V around ground) instead of a
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
 import type { MachineCircuits, Netlist } from "@rustybuns/gear/circuit";
-import { boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
+import { DIODE_PARTS, boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
 import dist from "../../circuits/dist.circuit.json";
 import drive from "../../circuits/drive.circuit.json";
 import fuzzBoard from "../../circuits/fuzz.circuit.json";
@@ -30,14 +30,19 @@ export type BoardId = keyof typeof BOARDS;
 
 // ---- part swaps ----
 
-/** What can sit in a clipper socket. Each junction is tuned to its forward drop at about 1 mA. */
+/** What can sit in a clipper socket: the part (a `DIODE_PARTS` number, '' for none) and its junction. */
+const diode = (part: string): { part: string; junction: Junction } => {
+  const junction = DIODE_PARTS[part];
+  if (!junction) throw new Error(`no diode part `);
+  return { part, junction };
+};
 export const CLIPPERS = {
-  silicon: { label: "Silicon", note: "about 0.6 V, a sharp knee", junction: { is: 2.52e-9, n: 1.752 } },
-  germanium: { label: "Germanium", note: "about 0.3 V, soft and early", junction: { is: 1.4e-7, n: 1.3 } },
-  led: { label: "LED", note: "about 1.7 V, louder and more open", junction: { is: 5e-18, n: 2 } },
-  mosfet: { label: "MOSFET", note: "about 1.2 V, the softest knee", junction: { is: 2e-10, n: 3 } },
-  none: { label: "None", note: "an empty socket: the op-amp clips on its own", junction: null },
-} satisfies Record<string, { label: string; note: string; junction: Junction | null }>;
+  silicon: { label: "Silicon", note: "about 0.6 V, a sharp knee", ...diode("1N4148") },
+  germanium: { label: "Germanium", note: "about 0.3 V, soft and early", ...diode("1N34A") },
+  led: { label: "LED", note: "about 1.7 V, louder and more open", ...diode("LED-RED-3MM") },
+  mosfet: { label: "MOSFET", note: "about 1.2 V, the softest knee", ...diode("BS170") },
+  none: { label: "None", note: "an empty socket: the op-amp clips on its own", part: "", junction: null },
+} satisfies Record<string, { label: string; note: string; part: string; junction: Junction | null }>;
 export type Clipper = keyof typeof CLIPPERS;
 
 /** A capacitor socket or a resistor takes the stock value times one of these, as the nearest part you can buy (`stepValue`). */
@@ -93,7 +98,8 @@ export function sockets(board: BoardId): Socket[] {
   return out;
 }
 
-const isClipper = (v: string | undefined): v is Clipper => v !== undefined && Object.hasOwn(CLIPPERS, v);
+/** A clipper choice by its id. */
+export const isClipper = (v: string | undefined): v is Clipper => v !== undefined && Object.hasOwn(CLIPPERS, v);
 const isStep = (v: string | undefined): v is (typeof STEPS)[number] => STEPS.some((s) => s === v);
 
 /** The board options a set of swaps comes to. Unknown sockets and choices are ignored. */
@@ -108,9 +114,10 @@ export function swapOptions(board: BoardId, swaps: Swaps = {}): Pick<BoardOption
   return { values, diodes };
 }
 
-const pedal = (board: BoardId, pot: number, swaps?: Swaps, o: BoardOptions = {}): Netlist => {
+/** `json` reads another copy of the board in place of `BOARDS[board]`: a remake of it (Q Builder's retest). */
+const pedal = (board: BoardId, pot: number, swaps?: Swaps, o: BoardOptions = {}, json: unknown = BOARDS[board]): Netlist => {
   const s = swapOptions(board, swaps);
-  return boardToNetlist(BOARDS[board], { ...o, diodes: s.diodes, values: { ...s.values, RV1: pot } });
+  return boardToNetlist(json, { ...o, diodes: s.diodes, values: { ...s.values, RV1: pot } });
 };
 
 // ---- the circuits ----
@@ -120,8 +127,8 @@ const pedal = (board: BoardId, pot: number, swaps?: Swaps, o: BoardOptions = {})
  * two silicon diodes to ground that flatten the tops, then a one-pole tone.
  * `gain` is the feedback resistor, RV1.
  */
-export function hardClip(gain = 100_000, swaps?: Swaps): Netlist {
-  return pedal("dist", gain, swaps);
+export function hardClip(gain = 100_000, swaps?: Swaps, json?: unknown): Netlist {
+  return pedal("dist", gain, swaps, {}, json);
 }
 
 /**
@@ -129,8 +136,8 @@ export function hardClip(gain = 100_000, swaps?: Swaps): Netlist {
  * the wave off instead of cutting it, and the 4.7k/47nF leg only gives gain
  * above ~720 Hz, so the lows stay clean and the mids push. `drive` 0 to 1.
  */
-export function overdrive(drive = 0.5, swaps?: Swaps): Netlist {
-  return pedal("drive", 51e3 + drive * 500e3, swaps);
+export function overdrive(drive = 0.5, swaps?: Swaps, json?: unknown): Netlist {
+  return pedal("drive", 51e3 + drive * 500e3, swaps, {}, json);
 }
 
 /**
@@ -139,8 +146,8 @@ export function overdrive(drive = 0.5, swaps?: Swaps): Netlist {
  * and that hiss gets the same ×2000 and the same clipping as the guitar: the
  * fizz around the notes and the wash when you stop. `drive` 0 to 1.
  */
-export function fuzz(drive = 0.7, swaps?: Swaps): Netlist {
-  return pedal("fuzz", 20e3 + drive ** 2 * 2e6, swaps, { noisy: ["R1"] });
+export function fuzz(drive = 0.7, swaps?: Swaps, json?: unknown): Netlist {
+  return pedal("fuzz", 20e3 + drive ** 2 * 2e6, swaps, { noisy: ["R1"] }, json);
 }
 
 /** One 12AX7 gain stage: coupling cap and grid leak, grid stopper, plate load, cathode resistor (and bypass cap). */
