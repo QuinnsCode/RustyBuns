@@ -40,6 +40,7 @@
       "Bash(declare -p)"
     ]
   },
+  "statusLine": { "type": "command", "command": "bun \"${CLAUDE_PROJECT_DIR:-.}/apps/agent-office/ester/usage-reading.ts\"" },
   "hooks": {
     "PreToolUse": [
       {
