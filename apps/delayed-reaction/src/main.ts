@@ -6,7 +6,7 @@ import { Music } from "./audio.ts";
 import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { backplate, faderCap, faderSlot, fibre, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
+import { backplate, brushed, faderCap, faderScale, faderSlot, fibre, screwAt, toggleOff, toggleOn, switchKnob, switchLit, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
 import { SETUP_NAMES, SETUPS } from "./dub.ts";
 import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
@@ -252,6 +252,8 @@ mountControls({
   skin: "house", theme: NEON, faders: true,
   // Only what a rhythm game has: the tunnel's sway (the look rows, renamed) and the music. The rest stays out.
   lean: true, show: ["audio"], hide: ["invertY", "touch", "sfx", "sfxOn"],
+  // The four profiles are the radio's preset keys, each with a lane's LED and a name on tape, not a gamepad, keyboard and mouse.
+  presets: ["Home", "Phone", "Night", "Club"],
   titles: { lookX: "Tunnel sway", lookY: "Tunnel tilt" }, labels: { lookX: "Side", lookY: "Up", music: "Volume" },
   keys: [["D F J K", "Pads 1 to 4"], ["Arrow keys", "Pads 1 to 4"], ["Hold", "Long notes"], ["M", "Mute"], ["Esc", "Leave the run"]],
   onChange: (s) => { ctl = s; if (music) music.volume = volumeOf(s, "music"); },
@@ -262,6 +264,20 @@ mountControls({
     music.hold(open);
   },
 });
+// The sheet wears the radio's tape: the title on a torn strip, each section's name on its own strip with a lane's colour code.
+{
+  const sheet = document.querySelector<HTMLElement>("body > .gc-dialog")!;
+  sheet.style.setProperty("--fibre", fibre);
+  // The rows' hardware: the faders' printed scale, the bat-handle toggle, and the brushed plate each section's rows sit on.
+  sheet.style.setProperty("--scale", faderScale);
+  sheet.style.setProperty("--toggle-off", toggleOff);
+  sheet.style.setProperty("--toggle-on", toggleOn);
+  sheet.style.setProperty("--plate", [screwAt("left 5px top 5px", 30), screwAt("right 5px top 5px", 110), screwAt("left 5px bottom 5px", 70), screwAt("right 5px bottom 5px", 150),
+    `${brushed} 0 0 / 240px 60px`, "linear-gradient(#1b1e24, #101216)"].join(", "));
+  LANE_COLOURS.forEach((c, i) => sheet.style.setProperty(`--lane-${i}`, c));
+  const strips = [sheet.querySelector<HTMLElement>(".gc-head h2"), ...sheet.querySelectorAll<HTMLElement>(".gc-sec-h > span:not(.gc-chev)")];
+  strips.forEach((s, i) => { if (s) taped(s, 40 + i); });
+}
 
 // ---- drawing ----
 function resize() {

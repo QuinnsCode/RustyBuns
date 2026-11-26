@@ -1,5 +1,5 @@
 // The theater as a commander meets it: a dark board where rifts and the star's heat hide the Compact, scouts and the
-// sensor ship that see into them, an ambush you can't answer until it fires, wells that hurry a hull along, mines,
+// sensor ship that see into them, an ambush in a rift you can't answer without them, wells that hurry a hull along, mines,
 // and strongpoints that pay for new wings. Seeded, so every run is the same system.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { BUY, requisition, sensors, theater, theaterBrains } from "../src/sim/theater.ts";
@@ -25,7 +25,7 @@ test("who sees into the dark: open space, a rift, the star's heat shear", () => 
     ["the sensor ship at 1200", (w, at) => place(named(w, "Argus"), at, 1200), [true, true, true]],
     ["a destroyer point blank", (w, at) => place(named(w, "Vigil"), at, 250), [true, true, true]],
     ["a destroyer with thermal sensors", (w, at) => { w.field!.tier.navy = 1; place(named(w, "Vigil"), at, 1200); }, [true, true, false]],
-    ["a destroyer, the target just fired", (w, at) => { at.loudUntil = w.t + 4; place(named(w, "Vigil"), at, 1200); }, [true, true, true]],
+    ["a destroyer, the target just fired (a rift swallows the flash)", (w, at) => { at.loudUntil = w.t + 4; place(named(w, "Vigil"), at, 1200); }, [true, false, true]],
   ];
   for (const [who, put, want] of cases) {
     const got = ["Gannet", "Tidewall", "Ember Tithe"].map((name) => {

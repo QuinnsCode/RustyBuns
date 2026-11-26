@@ -392,11 +392,12 @@ export function openRegions(beaten: ReadonlySet<number>): Set<number> {
 }
 
 /** The road: the playable regions in the order a player who takes the lowest-numbered open region each time beats
- * them, region 1 first (1, 2, 3, 5, 4, ...: the lakes open before the northwest). Faction steps and levels follow it. */
+ * them, region 1 first (1, 2, 3, 5, 4, ...: the lakes open before the northwest). Faction steps and levels follow it.
+ * The gates don't hold here (a flier and a swimmer are along), so it is the same road whoever is in the line-up. */
 export function road(): number[] {
   const playable = REGIONS.filter((g) => g.tier === "playable").map((g) => g.n), done: number[] = [];
   while (done.length < playable.length) {
-    const open = openRegions(new Set(done)), next = playable.find((n) => open.has(n) && !done.includes(n));
+    const open = reach(new Set(done)), next = playable.find((n) => open.has(n) && !done.includes(n));
     if (next === undefined) break;
     done.push(next);
   }

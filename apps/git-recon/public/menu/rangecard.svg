@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 270" width="220" height="270">
+  <!-- The sniper's range card, pinned beside the field manual (out from under its rows): a cut card folded once, a
+       stencilled title, a reticle with posts and mil hash, a clay soldier's bust on the cross with two orange hits,
+       a pencilled stadia ladder and a wind note. -->
+  <path d="M6 8L60 5 120 9 170 4 214 8 212 80 216 150 211 210 214 264 150 261 90 266 30 262 5 265 8 190 4 120 7 60Z" fill="#fffdf6" stroke="#141414" stroke-width="1.3" stroke-linejoin="round"/>
+  <path d="M8 10L212 10 210 262 8 262Z" fill="none" stroke="#b08a43" stroke-opacity=".22" stroke-width="7"/>
+  <path d="M6 138L214 132" stroke="#14141418" stroke-width="5"/><path d="M6 137L214 131" stroke="#fff" stroke-width="1.2"/>
+  <rect x="16" y="18" width="188" height="26" fill="#141414"/>
+  <g font-family="ui-monospace,monospace" font-weight="700">
+    <text x="26" y="36" font-size="13" letter-spacing="3" fill="#fff">RANGE CARD</text>
+    <text x="196" y="36" font-size="9" text-anchor="end" letter-spacing="1" fill="#e8590c">GR-12/R</text>
+  </g>
+  <g transform="translate(110 152) scale(.92)">
+    <g fill="none" stroke="#141414" stroke-linecap="round">
+      <circle r="94" stroke-width="2.4"/><circle r="89" stroke-width=".7" stroke-dasharray="1 3.2"/>
+      <path d="M-94 0h30M64 0h30M0-94v30M0 64v30" stroke-width="6"/>
+      <path d="M-64 0h58M6 0h58M0-64v58M0 6v58" stroke-width=".9"/>
+      <path d="M-48-3v6M-32-3v6M-16-3v6M16-3v6M32-3v6M48-3v6M-3-48h6M-3-32h6M-3-16h6M-3 16h6M-3 32h6M-3 48h6" stroke-width=".9"/>
+      <path d="M-70 30h22M-70 42h16M-70 54h10M-70 66h6M-70 28v40" stroke-width="1"/>
+    </g>
+    <path d="M14-46a9 9 0 0 1 18 0v3h4v3H10v-3h4zM8-38h30q8 2 10 14l4 22H-6l4-22q2-12 10-14z" fill="#141414" opacity=".78"/>
+    <g fill="none" stroke="#e8590c" stroke-width="2" stroke-linecap="round"><path d="M20-30l5 5m0-5l-5 5M30-14l5 5m0-5l-5 5"/></g>
+    <g font-family="ui-monospace,monospace" font-size="8" fill="#3d3b37" transform="rotate(-3)">
+      <text x="-46" y="33">300</text><text x="-52" y="45">450</text><text x="-58" y="57">600 m</text>
+      <text x="22" y="58">WIND 2R</text>
+    </g>
+  </g>
+</svg>

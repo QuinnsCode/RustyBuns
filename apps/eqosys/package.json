@@ -12,6 +12,7 @@
     "deploy": "bun ../../packages/cli/src/index.ts deploy"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "1.4.0",
     "@rustybuns/models": "^0.1.12",
     "better-auth": "1.7.14",
     "lucide": "1.55.0",

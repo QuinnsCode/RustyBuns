@@ -38,8 +38,11 @@ const DOOR = {
 export const SEATED = "x-eqosys-seated";
 /** A member the host took out: closed with this, free to come back unless blocked too. */
 const CLOSE_KICKED = 4406;
-/** Everyone, when the host shortened the party past its age. */
+/** Everyone, when the party is past its lifetime. */
 const CLOSE_ENDED = 4409;
+/** How long someone whose last party socket closed keeps their seat in the voice room: a reload or a network blip comes back
+ *  well inside it (the page retries for about ten seconds); past it, Qlave is told to drop them, so no call outlives the lobby. */
+export const VOICE_GRACE = 30_000;
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;
@@ -119,7 +122,8 @@ export class Party {
       const held = await this.ctx.storage.get<number>("expires");
       if (held && held > now) return json({ error: "taken" }, 409);
       if (!who) return json({ error: "bad" }, 400);
-      // The expired party this code held had a voice room its alarm didn't end: end it now.
+      // The expired party this code held: a socket still open from it never joins the new one, and its voice room ends.
+      this.closeAll("the party ended");
       await this.endVoice();
       await this.ctx.storage.put("app", who.app);
       await this.ctx.storage.put("host", who.id);
@@ -138,6 +142,7 @@ export class Party {
       // A code comes round again once its party expired: nothing of the old one (its chat, its mutes) reaches the new one's members.
       await this.ctx.storage.put("chat", []);
       await this.ctx.storage.put("muted", []);
+      await this.ctx.storage.put("voiceGone", {});
       return json({ ok: true });
     }
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
@@ -176,6 +181,8 @@ export class Party {
     const frame = this.sockets.frame(ws, raw), me = this.sockets.who(ws);
     const msg = frame && check(PartyIn, frame.value);
     if (!msg || !me) return;
+    // A party past its lifetime is over for the sockets still open on it too, not only at the door.
+    if ((await this.ctx.storage.get<number>("expires") ?? 0) <= Date.now()) { this.closeAll("the party ended"); return this.endVoice(); }
     if (msg.t === "say") return this.say(ws, me, msg.text ?? "");
     if (msg.t === "game") return this.game(ws, me, msg.text ?? "");
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
@@ -197,7 +204,8 @@ export class Party {
     // start: the host's alone, once the ready rule is met.
     const host = await this.ctx.storage.get<string>("host");
     if (me.id !== host) return this.sockets.send(ws, { t: "refused", why: "only the host can start" });
-    const members = this.members(), others = members.filter((m) => m.id !== host);
+    // Someone the host blocked and let in hidden is not waited for: the host can't see them, and they can't hold the start.
+    const members = this.members(), apart = await this.apart(), others = members.filter((m) => m.id !== host && !apart(me.id, m.id));
     const waiting = others.filter((m) => !ready.has(m.id));
     if (!readyEnough((await this.rules()).ready, others.length, others.length - waiting.length)) return this.sockets.send(ws, { t: "refused", why: `waiting for ${waiting.map((m) => m.name).join(", ")}` });
     await this.ctx.storage.put("started", true);
@@ -240,6 +248,16 @@ export class Party {
     return (a, b) => (a === host && blocked.has(b)) || (b === host && blocked.has(a));
   }
 
+  private closeAll(why: string) {
+    for (const sock of this.sockets.open()) try { sock.close(CLOSE_ENDED, why); } catch { /* closing */ }
+  }
+
+  /** Blocked people never share the voice room with the host, kept out or let in hidden. */
+  private async blockedOutOfVoice() {
+    const blocked = await this.ctx.storage.get<Member[]>("blocked") ?? [];
+    await this.toVoice((room) => blocked.map((b): Order => ({ t: "kick", room, sub: b.id })));
+  }
+
   /** Every socket of a blocked person, closed: when blocked people are kept out. */
   private async shutOut() {
     const blocked = new Set((await this.ctx.storage.get<Member[]>("blocked") ?? []).map((b) => b.id));
@@ -265,7 +283,8 @@ export class Party {
 
   /** Why `who` may not come in, or null; let in, they are remembered, so coming back (a reload, after a start) needs no link. */
   private async door(who: Member & { invite?: string }, app: string): Promise<{ code: number; why: string } | null> {
-    const no = await this.doorRules(who, app);
+    // The friend check waits on another object, and other joins and the host's block go on meanwhile: the seat is read again after it.
+    const no = await this.doorRules(who, app) ?? await this.seat(who);
     if (!no) {
       const admitted = await this.ctx.storage.get<string[]>("admitted") ?? [];
       if (!admitted.includes(who.id)) await this.ctx.storage.put("admitted", [...admitted, who.id].slice(-500));
@@ -279,8 +298,8 @@ export class Party {
     const host = await this.ctx.storage.get<string>("host") ?? "";
     if (who.id === host) return null;
     const rules = await this.rules(), members = this.members(), here = members.some((m) => m.id === who.id);
-    if (rules.block === "out" && (await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
-    if (!here && members.length >= rules.size) return DOOR.full;
+    const seat = await this.seat(who);
+    if (seat) return seat;
     if (!rules.late && await this.ctx.storage.get<boolean>("started") && !(await this.ctx.storage.get<string[]>("startedWith") ?? []).includes(who.id)) return DOOR.late;
     // A party link is an invitation: whoever holds its key comes in, a friend or not, with or without an account before today,
     // and (remembered in `admitted`) comes back without it. `join` is for someone who only has the code.
@@ -290,6 +309,14 @@ export class Party {
     if (rules.join === "friends" || rules.invite === "host") return { code: 4403, why: FRIENDS_ONLY };
     for (const m of members) if (m.id !== host && await this.friendOf(m.id, m.name, app, who.id)) return null;
     return DOOR.friendsOfMembers;
+  }
+
+  /** Blocked and kept out, or no seat left: read off storage and the open sockets only, so nothing else runs in between. */
+  private async seat(who: Member): Promise<{ code: number; why: string } | null> {
+    if (who.id === await this.ctx.storage.get<string>("host")) return null;
+    const rules = await this.rules(), members = this.members();
+    if (rules.block === "out" && (await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
+    return !members.some((m) => m.id === who.id) && members.length >= rules.size ? DOOR.full : null;
   }
 
   private async friendOf(of: string, name: string, app: string, id: string): Promise<boolean> {
@@ -309,17 +336,21 @@ export class Party {
     if (msg.t === "rules") {
       if (!msg.rules) return;
       // Inviting turns the host's: links others handed out stop working.
-      if (msg.rules.invite === "host" && (await this.rules()).invite !== "host") await this.ctx.storage.put("invite", mintKey());
+      const before = await this.rules();
+      if (msg.rules.invite === "host" && before.invite !== "host") await this.ctx.storage.put("invite", mintKey());
       await this.ctx.storage.put("rules", msg.rules);
       // The lifetime counts from when the party was made; shortened past its age, the party ends now.
       const made = await this.ctx.storage.get<number>("made") ?? (await this.ctx.storage.get<number>("expires") ?? 0) - PARTY_LIFE;
       const expires = made + msg.rules.hours * 60 * 60 * 1000;
       await this.ctx.storage.put("expires", expires);
       if (expires <= Date.now()) {
-        for (const sock of this.sockets.open()) try { sock.close(CLOSE_ENDED, "the host ended the party"); } catch { /* closing */ }
+        this.closeAll("the host ended the party");
         return this.endVoice();
       }
       await this.schedule();
+      // Fewer may talk now: the voice room ends, and whoever still may asks for a fresh ticket into a new one.
+      if (msg.rules.chat !== "everyone" && msg.rules.chat !== before.chat) await this.endVoice();
+      await this.blockedOutOfVoice();
       if (msg.rules.block === "out") await this.shutOut();
       await this.announce(app);
       return tell();
@@ -336,8 +367,11 @@ export class Party {
       if (!them) return this.sockets.send(ws, { t: "refused", why: "they aren't in the party" });
       await this.ctx.storage.put("host", them.id);
       await this.ctx.storage.put("hostName", them.name);
-      // The old host may not invite any more: their links stop working too.
-      if ((await this.rules()).invite === "host") await this.ctx.storage.put("invite", mintKey());
+      // The old host may not invite any more: their links stop working too. Nor talk, when only the host does.
+      const rules = await this.rules();
+      if (rules.invite === "host") await this.ctx.storage.put("invite", mintKey());
+      if (rules.chat === "host") await this.endVoice();
+      await this.blockedOutOfVoice();
       await this.announce(app);
       return tell();
     }
@@ -347,9 +381,9 @@ export class Party {
     const name = them?.name ?? [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id)?.from.name ?? "someone";
     if (msg.on ?? true) blocked.push({ id, name });
     await this.ctx.storage.put("blocked", blocked);
-    // Kept out: out now. Let in hidden: they stay, and the host and they drop off each other's list.
+    // Kept out: out now. Let in hidden: they stay in the lobby, out of voice, and the host and they drop off each other's list.
     if ((msg.on ?? true) && (await this.rules()).block === "out") await out("blocked by the host");
-    else await this.announce(app);
+    else { await this.blockedOutOfVoice(); await this.announce(app); }
     this.sockets.send(ws, await this.rulesFor(me.id));
   }
 
@@ -399,10 +433,16 @@ export class Party {
 
   /** Someone the `mute` rule allows (the host, by default) quiets a member (or lets them speak again) for the whole party, now. */
   private async mute(ws: RoomSocket, me: Member, id: string, on: boolean) {
-    const rule = (await this.rules()).mute;
-    if (!may(rule, me.id === await this.ctx.storage.get<string>("host")))
+    const rule = (await this.rules()).mute, host = me.id === await this.ctx.storage.get<string>("host");
+    if (!may(rule, host))
       return this.sockets.send(ws, { t: "refused", why: rule === "host" ? "only the host can mute" : "nobody can mute in this party" });
+    // Under "anyone mutes", a muted member must not lift their own mute.
+    if (id === me.id && !host) return this.sockets.send(ws, { t: "refused", why: "you can't mute or unmute yourself" });
+    // Hidden from each other, a blocked member can't quiet the host.
+    if (!host && (await this.apart())(me.id, id)) return;
     const muted = new Set(await this.ctx.storage.get<string[]>("muted") ?? []);
+    // Only someone this party has let in: the list and Qlave's orders don't grow with made-up ids.
+    if (!muted.has(id) && !(await this.ctx.storage.get<string[]>("admitted") ?? []).includes(id)) return;
     if (on && id !== me.id) muted.add(id); else muted.delete(id);
     await this.ctx.storage.put("muted", [...muted]);
     // A party mute is a voice mute too.
@@ -431,6 +471,8 @@ export class Party {
     const chat = (await this.rules()).chat;
     if (chat === "off" || (chat === "host" && me.id !== await this.ctx.storage.get<string>("host")))
       return this.sockets.send(ws, { t: "refused", why: chat === "off" ? "talking is off in this party" : "only the host talks in this party" });
+    // Whoever the host blocked gets the same answer a busy Qlave gives: hidden, they aren't told.
+    if ((await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === me.id)) return this.sockets.send(ws, { t: "refused", why: "Voice is busy. Try again in a minute." });
     const iss = await this.iss(), room = (await this.voiceRoom(true))!;
     if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id) && await send(this.env, iss, { t: "mute", room, sub: me.id, on: true }) !== "done")
       return this.sockets.send(ws, { t: "refused", why: "Voice is busy. Try again in a minute." });
@@ -456,17 +498,28 @@ export class Party {
     await this.schedule();
   }
 
-  /** One alarm for both: orders waiting for Qlave, and a voice room's party running out of time. */
+  /** One alarm for all three: orders waiting for Qlave, a voice room's party running out of time, and someone gone past VOICE_GRACE. */
   private async schedule() {
-    const at = [await this.ctx.storage.get<number>("outboxAt"), await this.voiceRoom() ? await this.ctx.storage.get<number>("expires") : undefined];
+    const voice = await this.voiceRoom();
+    const at = [await this.ctx.storage.get<number>("outboxAt"), voice ? await this.ctx.storage.get<number>("expires") : undefined,
+      ...voice ? Object.values(await this.ctx.storage.get<Record<string, number>>("voiceGone") ?? {}) : []];
     const next = at.filter((n): n is number => typeof n === "number");
     if (next.length) await this.ctx.storage.setAlarm(Math.max(Date.now(), Math.min(...next)));
   }
 
   async alarm() {
-    const expires = await this.ctx.storage.get<number>("expires") ?? 0;
+    const now = Date.now(), expires = await this.ctx.storage.get<number>("expires") ?? 0;
     // Out of time: the code stops letting people in (fetch), and the voice room ends.
-    if (expires <= Date.now()) await this.endVoice();
+    if (expires <= now) await this.endVoice();
+    // Gone past the grace and not back: out of the voice room, off the list that no longer shows them.
+    const gone = await this.ctx.storage.get<Record<string, number>>("voiceGone") ?? {}, here = new Set(this.members().map((m) => m.id));
+    const due = Object.keys(gone).filter((id) => gone[id]! <= now);
+    if (due.length) {
+      for (const id of due) delete gone[id];
+      await this.ctx.storage.put("voiceGone", gone);
+      const out = due.filter((id) => !here.has(id));
+      if (out.length) await this.toVoice((room) => out.map((sub): Order => ({ t: "kick", room, sub })));
+    }
     await flush(this.ctx.storage, this.env);
     await this.schedule();
   }
@@ -479,7 +532,7 @@ export class Party {
     if (!may(rule, me.id === host)) return this.sockets.send(ws, { t: "refused", why: rule === "host" ? "only the host can report" : "reports are off in this party" });
     const said = [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id);
     const name = this.members().find((m) => m.id === id)?.name ?? said?.from.name;
-    if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });
+    if (!name || (me.id !== host && (await this.apart())(me.id, id))) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === host) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
     const app = await appOf(this.env, await this.ctx.storage.get<string>("app"));
     if (!app) return;
@@ -493,6 +546,12 @@ export class Party {
 
   private async left(ws: RoomSocket) {
     await this.announce(await this.ctx.storage.get<string>("app") ?? "", ws);
+    // Their last socket here: unless they come back within VOICE_GRACE (a reload, a blip), the alarm takes them out of voice too.
+    const who = this.sockets.who(ws);
+    if (!who || this.members(ws).some((m) => m.id === who.id) || !await this.voiceRoom()) return;
+    const gone = await this.ctx.storage.get<Record<string, number>>("voiceGone") ?? {};
+    await this.ctx.storage.put("voiceGone", { ...gone, [who.id]: Date.now() + VOICE_GRACE });
+    await this.schedule();
   }
 
   /** The room a start points at: the party's own code, so everyone lands in the same world. With it, `who`'s start ticket. */

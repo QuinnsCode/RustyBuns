@@ -205,19 +205,30 @@ test("a turn that hangs, or that a notice ends owing work, is a stall once, and 
   const quiet = check(54).fresh;
   expect(quiet.map((s) => s.kind)).toEqual(["quiet"]);
 
-  // the office types into its worker (waking it with the prompt when it stopped); a session no worker runs in is a toast for a person
-  const told: string[] = [], toasts: string[] = [];
+  // the office types into its worker (waking it with the prompt when it stopped); a hung turn in a live process is
+  // interrupted with Escape first, so the prompt doesn't queue behind it (#4311); a session no worker runs in is a toast for a person
+  const told: string[] = [], toasts: string[] = [], waits: (() => void)[] = [];
   let running = false;
   const floor: StallFloor = { id: "f", workers: {
     list: () => [{ id: "w1", name: "Sprocket", worktree: { path: ".agent-office/worktrees/sprocket-b93a" } }],
+    write: (id, data) => void (running && told.push(`keys ${id}: ${JSON.stringify(data)}`)),
     prompt: (id, text) => (running ? (told.push(`prompt ${id}: ${text}`), undefined) : "Worker is not running"),
     resume: (id, text) => (told.push(`resume ${id}: ${text}`), undefined),
   } };
-  carryOn(quiet[0]!, [floor], (_, m) => toasts.push(m));
+  const later = (f: () => void) => void waits.push(f);
+  carryOn(quiet[0]!, [floor], (_, m) => toasts.push(m), later);
   running = true;
-  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m));
-  expect(told).toEqual([`resume w1: ${CARRY_ON}`, `prompt w1: ${CARRY_ON}`]);
-  expect(toasts[1]).toEndWith("Told Sprocket to carry on.");
+  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m), later);
+  expect(told).toEqual([`resume w1: ${CARRY_ON}`, `keys w1: "\\u001b"`]); // the prompt waits for the interrupt to land
+  waits.splice(0).forEach((f) => f());
+  expect(told.at(-1)).toBe(`prompt w1: ${CARRY_ON}`);
+  expect(toasts[1]).toEndWith("Interrupted the hung request and told Sprocket to carry on.");
+  // a hung request whose process died: the Escape goes nowhere and the prompt wakes it
+  running = false;
+  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m), later);
+  waits.splice(0).forEach((f) => f());
+  expect(told.at(-1)).toBe(`resume w1: ${CARRY_ON}`);
+  expect(toasts.at(-1)).toEndWith("Woke Sprocket to carry on.");
 
   writeFileSync(other, prompt(0, "peer") + reply(1, "d", "end_turn", "ok", "s-other", "/tmp/elsewhere"));
   const lone = check(54).fresh;
@@ -389,4 +400,25 @@ test("the plan's weekly usage is entered by the morning it reset, a second entry
   expect(b).toEqual([{ ends: "2026-10-15", pct: 94, approx: true }, { ends: "2026-10-29", pct: 58 }]);
   expect(() => setBudget(b, "last week", 50)).toThrow("--budget takes a date");
   expect(["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "<synthetic>"].map((m) => familyOf(m))).toEqual(["opus", "sonnet", "fable", "other"]);
+});
+
+test("the status line keeps each plan week's highest reading, and the ledger takes it over a lower entry the owner typed", async () => {
+  const { withReadings } = await import("../ester/usage-reading.ts");
+  const home = mkdtempSync(path.join(tmpdir(), "usage-"));
+  const resets = new Date(2026, 11, 3, 10).getTime() / 1000; // Thursday 2026-12-03, 10am local
+  const status = (pct: number) => {
+    const p = Bun.spawnSync(["bun", path.join(import.meta.dir, "../ester/usage-reading.ts")], {
+      env: { ...process.env, HOME: home },
+      stdin: new TextEncoder().encode(j({ model: { display_name: "Opus" }, rate_limits: { seven_day: { used_percentage: pct, resets_at: resets }, five_hour: { used_percentage: 12, resets_at: resets } } })),
+    });
+    return p.stdout.toString().trim();
+  };
+  status(40);
+  expect(status(87.6)).toStartWith("Opus · week 88% (resets Thu");
+  status(30); // an older session's stale refresh never lowers the week
+  const readings = JSON.parse(readFileSync(path.join(home, ".rustybuns/ledger/usage.json"), "utf8"));
+  expect(readings).toEqual([{ ends: "2026-12-03", pct: 87.6, at: expect.any(String) }]);
+  expect(withReadings([{ ends: "2026-11-26", pct: 41, fable: 15 }, { ends: "2026-12-03", pct: 50, fable: 20, approx: true }], readings))
+    .toEqual([{ ends: "2026-11-26", pct: 41, fable: 15 }, { ends: "2026-12-03", pct: 88, fable: 20 }]);
+  expect(withReadings([{ ends: "2026-12-03", pct: 95 }], readings)).toEqual([{ ends: "2026-12-03", pct: 95 }]);
 });

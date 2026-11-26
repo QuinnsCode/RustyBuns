@@ -68,3 +68,19 @@ test("the maker invites a player who plays in a held sesh, blocks them, and the 
   expect(again.closed).toBe(CLOSE_FULL);
   expect(again.sent.some((m) => m.t === "chat")).toBe(false);
 });
+
+test("a hand goes down when its socket says hello with a new key, so hands never pile up", async () => {
+  const { world, join } = await setup({}, "quiet-jade-heron");
+  const maker = (await join({}, "a".repeat(32))).ws;
+  said(world, maker, { t: "hello", key: "a".repeat(48), name: "Ryan" });
+  await heard(maker, "chat");
+  const mal = (await join()).ws;
+  said(world, mal, { t: "hello", key: "b".repeat(48), name: "" });
+  await heard(mal, "chat");
+  let n = maker.sent.length;
+  said(world, mal, { t: "ask", can: "lead" });
+  expect(Object.values((await next(maker, "grants", n)).asks)).toEqual(["lead"]);
+  n = maker.sent.length;
+  said(world, mal, { t: "hello", key: "c".repeat(48), name: "" });
+  expect((await next(maker, "grants", n)).asks).toEqual({});
+});

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { ALL, OLD, Sim, TRACKS, type Layers } from "../src/swarm-sim.ts";
-import { at } from "../src/swarm-story.ts";
 
 const crowd = { agents: 30, overlap: 0.35, flaky: 0.12 };
 const run = (layers: Layers, knobs = crowd, minutes = 480) => { const s = new Sim(layers, { ...knobs }, 5); s.step(minutes); return s; };

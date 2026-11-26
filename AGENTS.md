@@ -29,7 +29,9 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob only while he serves (`~/builder/serve` on him: the owner turns him on for runs)
-  (when he isn't serving, don't wait: push and let CI run them), and otherwise wait (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). Losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
+  (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). When he isn't serving, a run
+  says so in one line and exits 125 (nothing ran): push and let CI run them. `bun run builder --wait run ...` waits for him
+  instead, and with it losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
   and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run
@@ -86,7 +88,10 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).
-  When it says an after-bot head has no checks, run `bun run kick <n>` (one empty commit on top, pushed).
+  When it says an after-bot head has no checks, or a PR's head got none, run `bun run kick <n>` (one empty commit on top, pushed).
+  A lead doesn't hand-roll `git commit --allow-empty && git push origin <branch>` onto another worker's branch: auto mode's
+  classifier reads that as pushing someone else's work and turns it away (#5839). If `kick` is turned away too, tell the
+  PR's worker to run it (`office-workers tell <name>`), or hand the PR number to the owner; don't look for another way to push.
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
@@ -96,7 +101,8 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run blender add <script.py> [args] --out <dir>`: a Blender job queued for Bob, who runs them one at a time in order
   (`bun run blender` lists them, `bun run blender wait <id>` brings the output back). Blender never runs on this Mac:
-  `runBlender` and the guard turn it away, and a build script's first line `await queued()` (`scripts/blender-queue.ts`) sends the whole script through the queue.
+  `runBlender` and the guard turn it away, and a build script's first line `await queued()` (`scripts/blender-queue.ts`) sends the whole script through the queue;
+  a script that must stay here (a `claude -p` judge) sends just its Blender step with `blender({ script, args, out })` from the same file.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it, `--wait` to keep trying each minute while the office is full) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and

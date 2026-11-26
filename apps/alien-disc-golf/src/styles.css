@@ -22,8 +22,19 @@
     linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 18px 18px,
     radial-gradient(120% 70% at 100% 0, rgba(94, 230, 200, 0.07), transparent 60%);
   --panel-art: var(--art), var(--panel);
-  /* The Controls card sits over the panel: the same art on solid glass, so nothing shows through it. */
-  --panel-art-solid: var(--art), var(--glass);
+  /* The scanner's corner brackets as background layers, so a card that scrolls (Controls, the report form) keeps them
+   * on its corners instead of scrolling them away the way the panel's ::before would. */
+  --bracket: rgba(94, 230, 200, 0.45);
+  --brackets: linear-gradient(var(--bracket), var(--bracket)) left 5px top 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px top 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px top 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px top 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px bottom 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px bottom 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px bottom 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px bottom 5px / 1.5px 14px no-repeat;
+  /* The Controls card and the eqosys surfaces sit over the panel: the same art and brackets on solid glass, so nothing shows through. */
+  --panel-art-solid: var(--brackets), var(--art), var(--glass);
   /* The scorecard: a printout fed from a slot in the panel, on pale stock with the scanner's grid printed faint. */
   --card: #e2eeec;
   --card-ink: #0b1a2b;
@@ -140,6 +151,9 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .wx .rose .face { fill: #030810; }
 .wx .forecast { margin: 0; padding-top: 6px; border-top: 1px dashed var(--edge); }
 .wx .board .wind { margin: 4px 0 0; gap: 3px 10px; }
+/* Each reading on one line ("23 m/s blowing SE"): the rose gives up a few pixels for it. */
+@media (min-width: 721px) { .wx .board { grid-template-columns: 96px 1fr; } }
+.wx .board .wind > span { white-space: nowrap; }
 
 /* The nine punches along the top of the panel while you play. */
 .punches { display: grid; grid-template-columns: repeat(9, 1fr); justify-items: center; list-style: none; margin: 0 0 8px; padding: 0 0 7px; border-bottom: 1px solid var(--edge); }
@@ -155,7 +169,7 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .slot { position: relative; z-index: 1; height: 12px; margin: 0 -4px; border-radius: 6px; background: linear-gradient(#01050a, #0b1a2b); box-shadow: inset 0 2px 3px #000, 0 1px 0 rgba(159, 232, 255, 0.12); }
 .slot i { position: absolute; left: 10px; right: 10px; top: 5px; height: 2px; border-radius: 1px; background: var(--teal); box-shadow: 0 0 8px var(--teal); opacity: 0.7; }
 .scorecard { position: relative; margin: -6px 2px 0; padding: 16px 12px 16px; color: var(--card-ink);
-  background: var(--flora-big, none) no-repeat right -10px bottom 2px / 200px 142px,
+  background: var(--flora-big, none) no-repeat right -10px bottom 4px / 288px 204px,
     linear-gradient(rgba(10, 125, 104, 0.07) 1px, transparent 1px) 0 0 / 18px 18px, linear-gradient(90deg, rgba(10, 125, 104, 0.07) 1px, transparent 1px) 0 0 / 18px 18px,
     linear-gradient(rgba(1, 5, 10, 0.35), transparent 14px), var(--card);
   -webkit-mask: linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat, conic-gradient(from -45deg at 50% 100%, #000 25%, #0000 0) 0 100% / 10px 6px repeat-x;
@@ -175,7 +189,28 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .scorecard header, .scorecard footer { display: flex; justify-content: space-between; gap: 8px; font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--card-dim); }
 .scorecard header { padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid rgba(11, 26, 43, 0.25); }
 .scorecard footer { flex-direction: column; justify-content: flex-start; gap: 3px; text-transform: none; letter-spacing: 0; margin-top: 4px; padding-right: 96px; min-height: 40px; }
-.scorecard h2 { color: var(--amber-deep); border-bottom-color: rgba(11, 26, 43, 0.25); }
+.scorecard h2 { color: var(--amber-deep); border-bottom-color: rgba(11, 26, 43, 0.25); padding-right: 74px; min-height: 48px; display: flex; align-items: center; }
+/* The total, rubber-stamped on once the card has printed: a double ring in the result's ink, a little crooked, the ink
+ * worn thin in specks. Teal under par, rust over, the deep amber for even. */
+.stamp { position: absolute; z-index: 1; top: 30px; right: 10px; width: 64px; height: 64px; border-radius: 50%; display: grid; place-content: center; justify-items: center; gap: 1px;
+  --ink: var(--amber-deep); color: var(--ink); font-family: var(--mono); text-transform: uppercase; transform: rotate(-11deg);
+  border: 2.5px solid var(--ink); box-shadow: inset 0 0 0 2px var(--card), inset 0 0 0 3.5px var(--ink); opacity: 0.88; mix-blend-mode: multiply;
+  -webkit-mask: radial-gradient(circle at 30% 40%, #0000 0.8px, #000 1.2px) 0 0 / 7px 9px, radial-gradient(circle at 70% 20%, #0006 0.6px, #000 1px) 0 0 / 5px 6px;
+  -webkit-mask-composite: source-in; mask: radial-gradient(circle at 30% 40%, #0000 0.8px, #000 1.2px) 0 0 / 7px 9px, radial-gradient(circle at 70% 20%, #0006 0.6px, #000 1px) 0 0 / 5px 6px;
+  mask-composite: intersect; animation: stamp 0.22s cubic-bezier(0.3, 1.6, 0.6, 1) 1.15s both; }
+.stamp.under { --ink: var(--card-under); }
+.stamp.over { --ink: var(--card-over); }
+.stamp small { font-size: 8px; letter-spacing: 0.14em; }
+.stamp b { font: 700 22px/1 var(--mono); }
+.stamp span { font-size: 9px; letter-spacing: 0.06em; white-space: nowrap; }
+@keyframes stamp { from { opacity: 0; transform: rotate(-4deg) scale(1.6); } to { opacity: 0.88; transform: rotate(-11deg); } }
+@media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+/* A punch through the card beside each hole: the dark of the panel shows through, ringed in the hole's ink. */
+.card tr.hole td:first-child { position: relative; padding-left: 17px; }
+.card tr.hole td:first-child::before { content: ""; position: absolute; left: 1px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%;
+  background: #0b1a2b; box-shadow: inset 0 1.5px 2px #000, 0 0 0 1.5px rgba(11, 26, 43, 0.25); }
+.card tr.hole.birdie td:first-child::before, .card tr.hole.eagle td:first-child::before { box-shadow: inset 0 1.5px 2px #000, 0 0 0 1.5px var(--card-under); }
+.card tr.hole.bogey td:first-child::before, .card tr.hole.double td:first-child::before { box-shadow: inset 0 1.5px 2px #000, 0 0 0 1.5px var(--card-over); }
 .scorecard .where { color: var(--card-dim); }
 .mark { display: inline-grid; place-items: center; min-width: 24px; height: 19px; padding: 0 3px; box-sizing: border-box; border: 1.5px solid transparent; }
 .mark.birdie, .mark.eagle { border-color: var(--card-under); border-radius: 999px; }
@@ -254,6 +289,28 @@ body:has(.eq-toast) .toast { top: 150px; }
   html body:has(.rb-report) .rb-pal-btn { bottom: max(10px, env(safe-area-inset-bottom)); }
   /* The report form opens beside the panel, its foot on the panel's foot, so it never covers the scorecard or the throw. */
   html body .rb-report .eq-form { position: fixed; right: 364px; bottom: 58px; width: min(340px, calc(100vw - 388px)); max-height: calc(100% - 128px); overflow-y: auto; }
+}
+/* The Controls card as one more scanner panel: the brackets come with its glass (--panel-art-solid), the heading is the
+ * panels' amber caps over a dashed rule, and a row's name stays on one line. `html` outranks the skin's injected rules. */
+html .ui-house .gc-head { padding-bottom: 8px; border-bottom: 1px dashed var(--edge); }
+html .ui-house .gc-head h2 { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
+html .ui-house .gc-sub { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); opacity: 1; }
+html .ui-house .gc-binds { grid-template-columns: auto 1fr auto; }
+html .ui-house .gc-card label { grid-template-columns: auto 1fr 3.5em; }
+html .ui-house .gc-card label:has(> input[type=checkbox]) { grid-template-columns: 1fr auto; }
+html .ui-house .gc-binds > :not(button), html .ui-house .gc-card label > :first-child { white-space: nowrap; }
+@media (max-width: 520px) {
+  /* On a phone the card keeps a margin and all four corners, like the panel under it. */
+  html .gc-dialog.ui-house { padding: 8px; font-size: 14px; }
+  html .ui-house .gc-card { border-radius: 12px; border-bottom: 1px solid var(--edge); max-height: 100%; padding: 16px 14px; }
+}
+/* The report form's kind picker: the scanner's mono caps on glass with a teal chevron, not the browser's stock select. */
+html body .rb-report .eq-form select { appearance: none; -webkit-appearance: none; padding-right: 34px; font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--teal); cursor: pointer;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235ee6c8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px 8px, var(--glass-hi); }
+html body .rb-report .eq-form option { background: var(--glass); color: var(--ink); text-transform: none; }
+@media (max-width: 600px) {
+  /* On a phone the form is a framed panel standing on the screen's foot, not a sheet glued to it. */
+  html body .rb-report .eq-form { left: 8px; right: 8px; bottom: 8px; border-width: 1px; border-radius: 12px; }
 }
 /* A dialog up (Controls, the report form, a how-to) has the screen: the corner buttons step out from over it. */
 body:has(.gc-dialog:not([hidden])) :is(.rb-pal-btn, .rb-report),

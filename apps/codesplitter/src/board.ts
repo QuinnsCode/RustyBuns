@@ -1,12 +1,22 @@
 // The live board (#1524): one row per open PR that Mervin's sandbox merge (scripts/mervin-board.ts) staged, kept in
 // D1 by `scripts/mervin-live.ts` and read by the UI and the MCP tool (GET /api/repos/:o/:r/board). This file is the
-// pure part: the row's shape, and the answers read off the rows. Imports nothing.
+// pure part: the row's shape, and the answers read off the rows. Imports only the shared guards and Ester's sort.
+
+import { arr, Bad, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { OWNERS } from "./ester-sort.ts";
 
 export type Ci = "pass" | "fail" | "pending" | "none";
+
+/** Ester's verdict on one red check of the row's (#5784): whose it is (main, flaky, own, wait, slow, blocks), why, and the PRs she names. */
+export const EsterVerdict = obj({ test: str(300), owner: oneOf(OWNERS), why: str(300, { min: 0 }), prs: opt(arr(int(1, 1e9), 50)) });
+export type EsterVerdict = Of<typeof EsterVerdict>;
+const EsterVerdicts = arr(EsterVerdict, 20);
 
 export interface BoardRow {
   pr: number; title?: string; head: string;
   ci: Ci; failing?: string[];
+  /** Ester's verdict on each red check, from the live process. */
+  ester?: EsterVerdict[];
   /** The open PR this one is built on. */
   stackedOn?: number;
   /** Files per tier (certain, agree, mervin, differ, card), and how many files the PR has. */
@@ -17,6 +27,8 @@ export interface BoardRow {
   owner?: string;
   /** For a PR touching package.json, bun.lock or packages/: the apps and PRs it reaches. */
   blast?: { apps: string[]; prs: number[] };
+  /** Its head has had no typecheck or apps check for 10 minutes (#5838): why, in plain words, and what to do. */
+  stall?: string;
 }
 
 /** How often each tier's files landed exactly as the sandbox wrote them, after real merges (`--score`). */
@@ -128,6 +140,7 @@ export function whyNot(row: BoardRow, rows: BoardRow[]): string[] {
   for (const c of row.clashes) if (c.main) why.push(`clashes with main on ${c.kind} ${c.key}`);
   if (row.ci === "fail") why.push(`its own CI is red${row.failing?.length ? ` (${row.failing.join(", ")})` : ""}`);
   if (row.ci === "pending") why.push("its CI is still running");
+  if (row.stall) why.push(`no checks on its head: ${row.stall}`);
   if (row.tiers.card) why.push(`${row.tiers.card} file${row.tiers.card === 1 ? "" : "s"} Mervin asks about (cards)`);
   return why;
 }
@@ -205,12 +218,16 @@ export function parseRow(x: unknown): BoardRow | string {
   if (!r.tiers || typeof r.tiers !== "object" || Array.isArray(r.tiers) || !Object.values(r.tiers).every((v) => Number.isInteger(v))) return "tiers: {tier: count}";
   if (!Number.isInteger(r.files)) return "files: the PR's file count";
   if (!Array.isArray(r.clashes)) return "clashes: []";
+  let ester: EsterVerdict[] | undefined;
+  try { ester = opt(EsterVerdicts)(r.ester); } catch (e) { if (e instanceof Bad) return `ester: ${e.message}`; throw e; }
   return {
     pr: r.pr!, head: r.head, ci: r.ci!, tiers: r.tiers, files: r.files!, clashes: r.clashes,
     ...(typeof r.title === "string" && { title: r.title.slice(0, 300) }),
     ...(Array.isArray(r.failing) && { failing: r.failing.map(String).slice(0, 20) }),
+    ...(ester?.length && { ester }),
     ...(Number.isInteger(r.stackedOn) && { stackedOn: r.stackedOn }),
     ...(typeof r.owner === "string" && { owner: r.owner.slice(0, 100) }),
     ...(r.blast && { blast: r.blast }),
+    ...(typeof r.stall === "string" && r.stall && { stall: r.stall.slice(0, 200) }),
   };
 }

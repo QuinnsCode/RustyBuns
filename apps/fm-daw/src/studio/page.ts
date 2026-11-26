@@ -9,7 +9,7 @@
 // half built. Your room is kept in this browser. The Party panel (Qevent, party.ts) makes a party, gives each performer
 // a scene (the builder edits the one on stage, each scene with its own undo), saves versions that stay, and puts one
 // party live. `window.qrooms` is the harness: state(), load(id), edit(e), pick(id), pa(), level(x, z), delay(x, z),
-// download("list" | "plan"), undo(), redo(), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
+// download("list" | "plan"), undo(), redo(), event(walk?), party.{state, make, open, live, addScene, scene, everyone, save, restore}.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "./rooms.css";
@@ -23,14 +23,17 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground } from "@rustybuns/gear";
-import { arrivals, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
+import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
+import { arrivals, paBoxes, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openAsEvent, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
 import { partySync } from "./party-sync.ts";
 import { eqosys } from "@rustybuns/util/eqosys";
 import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
 import { SKIN } from "../guest-list.ts";
+import { mountLessonCard } from "./lesson-card.ts";
+import { askedFor, PageLesson } from "./page-lesson.ts";
+import { PLAN_LESSON, PLAN_ROOM } from "./plan-lesson.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -50,6 +53,8 @@ let picked: string | undefined = room.spots[0]?.id;
 let why = "";
 /** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map and the delay view show. */
 let stackPicked: number | null = null, showMap = false, showDelay = false;
+/** The Event Planner's lesson (plan-lesson.ts) and its card, and whether the gear list went out while it was on. */
+let listed = false, lessonCard: { frame(): void } | null = null;
 
 /** Keep the room: in the open party's scene, and as the room /jam.html walks into (the live party's stage while one is live). */
 function save() {
@@ -211,6 +216,7 @@ function render() {
   renderEdit();
   renderTools();
   if (view === "3d") build?.show(room, picked, walls, showMap ? paHeat() : null);
+  lessonCard?.frame();
 }
 
 // ---- build mode: one set of tools, on the blueprint and in the 3D view alike ----
@@ -237,6 +243,12 @@ const canvas = $("view") as HTMLCanvasElement;
 let build: BuildView | null = null;
 try { build = new BuildView(canvas); } catch { view = "plan"; /* no WebGL: the blueprint only */ }
 if (build) build.venue.onChange = (s) => { if (s.state === "drawn" || s.state === "failed") renderParty(); };
+// a capture's ground, read off its points once it is in, becomes the field's land (pa-room.ts roomField)
+if (build) build.venue.onLand = (src, land) => {
+  const v = room.venue;
+  if (v?.src !== src || v.land) return;
+  if (parties.open ? partyDo(setVenue(parties, { ...v, land })) : apply({ t: "venue", venue: { ...v, land } })) render();
+};
 /** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
 const quarter = (v: number) => Math.round(v * 4) / 4;
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -641,6 +653,7 @@ function download(what: "list" | "plan"): { name: string; text: string } | null 
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type: what === "list" ? "text/plain" : "image/svg+xml" }));
   a.download = name; a.click();
+  if (what === "list" && lesson.on) { listed = true; lessonCard?.frame(); }
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   return { name, text };
 }
@@ -776,23 +789,41 @@ function joinLink(): string | null {
   u.searchParams.set("party", owner);
   return u.href;
 }
+/** The Event's room (#6020): the join link signed in, else this browser's own room for the live party, carrying its
+ *  scene on stage. `walk` makes it the client walk-through: the planned PA plays a test set to walk the site by. */
+function eventLink(walk = false): string | null {
+  const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
+  if (!p || !on) return null;
+  const u = new URL(joinLink() ?? builtLink(location.origin, on, `event-${p.id}`.slice(0, 64)));
+  u.searchParams.set("name", p.name);
+  if (walk) u.searchParams.set("walk", "1");
+  return u.href;
+}
+/** Open the plan as The Event: live as it stands, in a new tab (a walk-through, or the room itself). */
+function openEvent(walk: boolean): string | null {
+  if (!partyDo(openAsEvent(parties, room.name, room))) return null;
+  const link = eventLink(walk);
+  if (link) window.open(link, "_blank", "noopener");
+  return link;
+}
 /** A <input type="datetime-local"> value and back: empty is open now. */
 const toLocal = (ms: number | null) => ms === null ? "" : new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; return Number.isFinite(ms) ? ms : null; };
 
 function renderParty() {
   const host = $("party"), p = openParty(parties), x = (attrs: string, name: string) => `<button type="button" class="x" ${attrs} aria-label="${esc(name)}" title="${esc(name)}">${icon(X)}</button>`;
+  const eventButtons = `<button type="button" id="event-open" title="The planned room or field as a jam room, with its PA, guest list and listen link">Open as event</button><button type="button" id="event-walk" title="Walk the site and hear the planned PA before the show">Client walk-through</button>`;
   if (!p) {
     host.innerHTML = `<h2>Party</h2>
       ${parties.parties.length ? `<ul class="parties">${parties.parties.map((q) => `<li><button type="button" data-party-open="${q.id}">${esc(q.name)}</button><span class="hint">${esc(whenWords(q.when))}${q.id === parties.live ? " · live" : ""}</span>${x(`data-party-drop="${q.id}"`, `Take ${q.name} away, with every version`)}</li>`).join("")}</ul>` : ""}
       <div class="row"><label>Name<input id="party-name" maxlength="60" placeholder="Saturday night"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local"></label></div>
-      <div class="row"><button type="button" class="go" id="party-make">Make a party</button></div>
+      <div class="row"><button type="button" class="go" id="party-make">Make a party</button>${eventButtons}</div>
       <p class="hint">Its first scene is the room you have now. Each performer gets a scene of their own.</p>`;
   } else {
     const live = parties.live === p.id, join = joinLink();
     host.innerHTML = `<h2>Party</h2>
       <div class="row"><label>Name<input id="party-rename" maxlength="60" value="${esc(p.name)}"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local" value="${toLocal(p.when)}"></label></div>
-      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button></div>
+      <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button>${eventButtons}</div>
       <p class="hint">${live ? "The room people join: Enter walks its scene on stage." : parties.live ? "Another party is live; only one is at a time." : "Not live yet: you can change it before or during the event."}</p>
       ${live ? join ? `<div class="row"><a class="button" id="party-join" href="${esc(join)}" target="_blank" rel="noopener">Join link</a><button type="button" id="party-copy">Copy link</button></div>` : `<p class="hint">Sign in with eqosys on the front door to give it a join link for any device.</p>` : ""}
       <h2>Scenes</h2>
@@ -809,6 +840,8 @@ function renderParty() {
   document.getElementById("party-rename")?.addEventListener("change", () => partyDo(reschedule(parties, { name: val("party-rename") })));
   if (p) document.getElementById("party-when")?.addEventListener("change", () => partyDo(reschedule(parties, { when: fromLocal(val("party-when")) })));
   document.getElementById("party-live")?.addEventListener("click", () => partyDo(goLive(parties, parties.live === p?.id ? null : p?.id ?? null)));
+  document.getElementById("event-open")?.addEventListener("click", () => openEvent(false));
+  document.getElementById("event-walk")?.addEventListener("click", () => openEvent(true));
   document.getElementById("party-close")?.addEventListener("click", () => partyDo(open(parties, undefined)));
   document.getElementById("party-copy")?.addEventListener("click", (e) => {
     const b = e.currentTarget, link = joinLink();
@@ -846,6 +879,14 @@ function load(id: string) {
 }
 select.addEventListener("change", () => load(select.value));
 
+/** The lesson starts on the Desert Gathering with its stacks taken away, each through the builder's own edits (undo brings them back). */
+const lesson = new PageLesson(PLAN_LESSON, () => ({ def: room, map: paMap(), listed }), () => {
+  load(PLAN_ROOM);
+  while (rigPlan(room)?.stacks.length && apply({ t: "unstack", index: 0 }));
+  listed = false;
+});
+lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. The plan is yours: walk in to hear it, or keep changing it", offer: { title: PLAN_LESSON.title, start: () => lesson.start() } });
+
 declare global { interface Window { qrooms: typeof harness } }
 const harness = {
   state: () => ({
@@ -862,10 +903,10 @@ const harness = {
   pa: () => {
     const map = paMap(), rp = rigPlan(room), field = roomField(room);
     return {
-      stacks: rigStacks(room), picked: stackPicked, map: showMap,
+      stacks: rigStacks(room), picked: stackPicked, map: showMap, sources: paBoxes(room),
       coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
       power: rp ? powerPlan(rp) : null,
-      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [] } : null,
+      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [], captured: !!room.venue?.land } : null,
     };
   },
   /** The coverage map's level at (x, z) on the floor, dB. */
@@ -899,11 +940,12 @@ const harness = {
       };
     },
     make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
-    /** Lay every scene out in a captured venue (any ShareSplat link), or none. */
-    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number } = {}) => {
+    /** Lay every scene out in a captured venue (any ShareSplat link), or none; `land` its ground's heights when they are
+     *  known already (else they are read off the capture once it is in). */
+    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number; land?: HeightMap } = {}) => {
       const src = link === null ? null : venueSrc(link);
       if (link !== null && !src) return { ok: false, why: "not a ShareSplat link" };
-      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0 } : null)), why };
+      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0, ...(place.land ? { land: place.land } : {}) } : null)), why };
     },
     open: (id?: string) => ({ ok: partyDo(open(parties, id)), why }),
     drop: (id: string) => ({ ok: partyDo(dropParty(parties, id)), why }),
@@ -916,11 +958,16 @@ const harness = {
     save: (note = "") => ({ ok: partyDo(saveVersion(parties, note, Date.now())), why }),
     restore: (n: number) => ({ ok: partyDo(restore(parties, n)), why }),
   },
+  /** Open as event (#6020): the open party (or a new one from this room) goes live; its room's link, `walk` for the client walk-through. */
+  event: (walk = false) => { const ok = partyDo(openAsEvent(parties, room.name, room)); return { ok, why, link: ok ? eventLink(walk) : null }; },
   pick: (id: string) => { picked = id; render(); },
   /** The link into /jam.html (in sesh `sesh`) that carries this room (builder.ts builtLink), for a probe whose browser has none of this page's storage. */
   enter: (sesh?: string) => builtLink(location.origin, room, sesh),
+  /** The Event Planner's lesson (plan-lesson.ts): "plan" starts it, null leaves it; then the lesson as it stands. */
+  lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === PLAN_LESSON.id) lesson.start(); lessonCard?.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
 };
 window.qrooms = harness;
+if (askedFor(location.search, PLAN_LESSON.id)) lesson.start();
 render();
 // your account's parties: what it keeps opens here (another device's work); an account with none takes this browser's
 void eq.ready.then(() => sync.pull()).then((got) => {

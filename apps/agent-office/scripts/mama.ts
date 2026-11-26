@@ -18,6 +18,7 @@
 // so Claude workers are resumed (`claude --resume`) rather than kept.
 import { existsSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
+import { supervise } from "@rustybuns/util/supervise";
 
 const root = path.dirname(import.meta.dir);
 const POLL_MS = 3000;
@@ -45,45 +46,23 @@ export function sources(dir = root) {
   return [...new Bun.Glob("**/*.{ts,js,json}").scanSync({ cwd: dir })].filter((f) => !skip.test(f)).sort().map((f) => path.join(dir, f));
 }
 
-/** How long to wait before starting the office again, after `crashes` quick deaths in a row: 1s, 2s, 4s… up to 30s. */
-export const backoff = (crashes: number) => Math.min(30_000, 1000 * 2 ** Math.max(0, crashes - 1));
-
 /** Build ./office with rustybunsify: true if it built. */
 export const build = () =>
   Bun.spawnSync(["bun", path.join(root, "scripts/rustybunsify.ts")], { cwd: root, stdio: ["inherit", "inherit", "inherit"] }).exitCode === 0;
 
 /** Start the office from an already-built ./office and keep it running, swapping it on changes; her timer keeps this process alive. */
 export function watch(args: string[]) {
-  let office: Bun.Subprocess | null = null;
   let swapping = false;
   let stopping = false;
-  let crashes = 0;
-
-  const start = () => {
-    const born = Date.now();
-    const child = Bun.spawn(["bun", path.join(root, "office/bin/agent-office.js"), ...args], { cwd: root, stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, AGENT_OFFICE_RB_MAMA: "1" } });
-    office = child;
-    void child.exited.then((code) => {
-      if (stopping || swapping || office !== child) return;
-      crashes = Date.now() - born > STEADY_MS ? 1 : crashes + 1;
-      const wait = backoff(crashes);
-      console.log(`🥐 mama: the office exited (${code}); starting another in ${wait / 1000}s`);
-      setTimeout(() => !stopping && start(), wait);
-    });
-  };
-
-  const stopOffice = async () => {
-    const old = office;
-    if (!old) return;
-    old.kill("SIGTERM");
-    // upstream exits 300ms after SIGTERM; one that hangs goes anyway
-    const gone = await Promise.race([old.exited.then(() => true), Bun.sleep(5000).then(() => false)]);
-    if (!gone) old.kill("SIGKILL");
-  };
+  // upstream exits 300ms after SIGTERM; one that hangs after 5s gets a SIGKILL
+  const office = supervise(["bun", path.join(root, "office/bin/agent-office.js"), ...args], {
+    cwd: root, env: { ...process.env, AGENT_OFFICE_RB_MAMA: "1" }, steadyMs: STEADY_MS, graceMs: 5000,
+    onExit: (code, signal, wait) => console.log(`🥐 mama: the office exited (${signal ?? code}); starting another in ${wait / 1000}s`),
+  });
 
   let seen = fingerprint(watched());
   let seenSrc = fingerprint(sources());
-  start();
+  office.start();
 
   setInterval(async () => {
     if (swapping || stopping) return;
@@ -110,9 +89,7 @@ export function watch(args: string[]) {
     console.log("🥐 mama: Bun or the dependencies changed; rebuilding while the office keeps running");
     if (build()) {
       console.log("🥐 mama: swapping in a fresh office (workers keep running)");
-      await stopOffice();
-      crashes = 0;
-      start();
+      await office.restart();
     } else {
       console.log("🥐 mama: the rebuild failed, so the old office stays up. Fix it and save; she'll try again.");
     }
@@ -125,12 +102,12 @@ export function watch(args: string[]) {
   // Ctrl+C reaches the office too (same process group); she just waits for it and goes
   process.on("SIGINT", async () => {
     stopping = true;
-    await office?.exited;
+    await office.stop({ signal: null });
     process.exit(0);
   });
   process.on("SIGTERM", async () => {
     stopping = true;
-    await stopOffice();
+    await office.stop();
     process.exit(0);
   });
 }

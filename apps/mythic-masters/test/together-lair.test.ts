@@ -1,6 +1,6 @@
 // Two friends in one room (together-kit.ts), and one fight at one den, joined together (#4063).
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath } from "../../../scripts/chrome.ts";
+import { chromePath, waitFor } from "../../../scripts/chrome.ts";
 import { noise, settle, stride, together, until } from "./together-kit.ts";
 
 setDefaultTimeout(300_000); // two pages walk the open world and fight one den in headless Chrome
@@ -33,7 +33,7 @@ test.skipIf(!chromePath())("two friends at one lair fight the one creature there
   expect(bTrip?.foe).toEqual(aTrip?.foe);
   // A fight report is believed only once it has lasted 3 s (party.ts FIGHT), by the fight's own clock: 4 s of ticks
   // (a CI runner's page ticks slower than the wall clock).
-  await until(() => a.eval<number>(`mythicMasters.state()?.tick ?? 0`), (t) => t >= 4 * 60, 90_000);
+  await waitFor(a, "4 s of A's fight", `(mythicMasters.state()?.tick ?? 0) >= ${4 * 60}`, 90_000);
   await a.eval(`mythicMasters.journey.wear(0.5)`);
   type Lair = { den: string; hp: number; friends: Record<string, number> } | null;
   const lairOf = "mythicMasters.together.state()?.lair ?? null";

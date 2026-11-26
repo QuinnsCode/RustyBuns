@@ -8,7 +8,9 @@ import { inHand, type Cables } from "./cables/cables.ts";
 import { hasSwitch, type Switches } from "./audio/hear.ts";
 import { strikeState, striking } from "./strike.ts";
 
-export type Next = { text: string; key?: string };
+/** `text` the line, `key` the piece it is about (the marker), `to` where that piece goes: the free stand, lit on the
+ * floor so the thin tripod reads from the door. */
+export type Next = { text: string; key?: string; to?: string };
 
 /** What the crew calls a piece, the same on the Next line, the arrow and its stencil: the case with the cables is the
  * "cable case" (stencil CABLES), any other road case the "backline case" (stencil BACKLINE), the rest by catalog name. */
@@ -44,19 +46,23 @@ const nearest = (w: World, list: Item[]) => list.sort((a, b) => Math.hypot(a.x -
 const freeStand = (w: World) => nearest(w, stands(w).filter((s) => !w.items.some((i) => isTop(i) && over(s, i))));
 const bareTop = ({ w }: At) => freeStand(w) && nearest(w, w.items.filter((i) => isTop(i) && i.key !== w.held?.key && !stands(w).some((s) => over(s, i))));
 
+const STAND_JOB = "Put a speaker on a stand: F to lift it";
+
 /** Each step is done while its job doesn't apply: the first one that does is what to do next. */
 const FIRST_MINUTE: Step<At>[] = [
   { job: ({ w, c }) => { const h = heldItem(w)!; return outside(w, w.you.z) ? `Carry the ${callName(w, c, h.key)} inside` : isTop(h) && freeStand(w) ? "Set it on the stand: F" : "Set it down where it goes: F"; }, done: ({ w }) => !heldItem(w), key: ({ w }) => { const h = heldItem(w); return h && isTop(h) && !outside(w, w.you.z) ? freeStand(w)?.key : undefined; } },
   { job: "Plug it in: look at a jack and press F", done: ({ c }) => !inHand(c) },
   { job: (s) => `Bring the ${callName(s.w, s.c, outdoors(s)!.key)} in`, done: (s) => !outdoors(s), key: (s) => outdoors(s)?.key },
-  { job: "Put a speaker on a stand: F to lift it", done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
+  { job: STAND_JOB, done: (s) => !bareTop(s), key: (s) => bareTop(s)?.key },
   { job: "Take a cable from the cable case: F", done: ({ c }) => !c.caseKey || c.runs.some((r) => "plug" in r.a || "plug" in r.b), key: ({ c }) => c.caseKey ?? undefined },
   { job: (s) => `Switch on the ${callName(s.w, s.c, switchedOff(s)!.key)}: look at it, press P`, done: (s) => !switchedOff(s), key: (s) => switchedOff(s)?.key },
 ];
 
 export function nextStep(w: World, c: Cables, on: Switches): Next | null {
   const n = nextOf(FIRST_MINUTE, { w, c, on });
-  return n && { text: n.job, ...(n.key ? { key: n.key } : {}) };
+  if (!n) return null;
+  const to = n.job === STAND_JOB || n.key === freeStand(w)?.key ? freeStand(w)?.key : undefined;
+  return { text: n.job, ...(n.key ? { key: n.key } : {}), ...(to ? { to } : {}) };
 }
 /** The centre prompt when your hands are free and you look at nothing. While there's setting up left it says nothing (the
  * Next line has it); L strike only once the show is over (the doors opened, or, where there are no doors, nothing left to

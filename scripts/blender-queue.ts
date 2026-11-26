@@ -23,8 +23,12 @@
 // A build script calls `await queued()` first thing (like `offload()` in remote-ci.ts): on the office Mac (BUILDER_HOST
 // set) it sends itself through the queue and exits with the job's code; on Bob, in a job, it returns and the script runs.
 // `runBlender` refuses to start Blender on the office Mac, and .claude/hooks/guard.ts turns away a direct `blender`.
+// A script that must keep running here (a `claude -p` judge, GLBs read out of git) sends just its Blender step with
+// `blender({ script, args, out, send })`. On Bob a .py job, a test's `runBlender` and a warm Blender over ssh all take one
+// lock (`blenderLock` in packages/cli/src/blender.ts, #6035), so only one Blender runs there at a time.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
+import type { BlenderRun } from "../packages/cli/src/blender.ts";
 import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 
@@ -146,6 +150,8 @@ export type DrainOpts = {
   log?: (line: string) => void;
   /** How long a job's minute is (ms): a test's time limit in milliseconds. */
   minuteMs?: number;
+  /** The one-Blender-at-a-time lock a .py job takes (default blenderLockDir(): the one runBlender takes). */
+  lock?: string;
 };
 
 /**
@@ -192,11 +198,15 @@ async function runJob(dir: string, job: Job, signal: AbortSignal, o: DrainOpts) 
   if (prep.exitCode) return append(dir, { id, at: at(), state: "failed", code: prep.exitCode, note: "its commit didn't check out on Bob (see the log)" });
   writeFileSync(stamp, "");
   await Bun.sleep(20);
-  let cmd = job.cmd;
+  let cmd = job.cmd, release = () => {};
   if (job.py) {
-    const exe = o.blender ?? (await import("../packages/cli/src/blender.ts")).findBlender();
+    const b = await import("../packages/cli/src/blender.ts");
+    const exe = o.blender ?? b.findBlender();
     if (!exe) return append(dir, { id, at: at(), state: "failed", code: 127, note: "no Blender on Bob" });
     cmd = [exe, "-b", "--factory-startup", "--python-exit-code", "1", "-P", job.cmd[0]!, "--", ...job.cmd.slice(1)];
+    // a test in a builder slot or a warm Blender may have Bob's Blender: this job waits its turn (a command job's
+    // runBlender takes the same lock itself)
+    release = await b.blenderLock({ dir: o.lock, onWait: (pid) => (o.log ?? console.log)(`${id} waits for the Blender already running on Bob (pid ${pid})`) });
   }
   // its own process group, so a kill takes the Blender a script started with it; its output appended to the log
   const p = Bun.spawn(["perl", "-e", `setpgrp(0,0); open(STDOUT,">>",shift) or die "$!"; open(STDERR,">&STDOUT"); exec @ARGV or die "$!"`, logFile, ...cmd], {
@@ -208,6 +218,7 @@ async function runJob(dir: string, job: Job, signal: AbortSignal, o: DrainOpts) 
   const onAbort = () => kill("lost");
   signal.addEventListener("abort", onAbort, { once: true });
   const code = await p.exited;
+  release();
   clearTimeout(timer);
   signal.removeEventListener("abort", onAbort);
   if (why === "lost") return append(dir, { id, at: at(), state: "waiting", note: "Bob stopped serving mid-job; back in line" });
@@ -233,6 +244,9 @@ async function sh(bob: Bob, script: string) {
   return { code: await p.exited, out };
 }
 
+/** The pid and command holding a Mac's Blender lock (blenderLock in packages/cli), as one line; nothing when it's free. */
+export const SH_LOCK_HOLDER = `p=$(cat "\${RUSTYBUNS_HOME:-$HOME/.rustybuns}/blender.lock/pid" 2>/dev/null) && kill -0 "$p" 2>/dev/null && echo "$p $(ps -o command= -p "$p" | cut -c1-200)"`;
+
 /** The real Bob: BUILDER_HOST over ssh (scripts/remote-ci.ts). */
 export async function realBob(host: string): Promise<Bob> {
   const { builder, pushTo, remote } = await import("./remote-ci.ts");
@@ -241,7 +255,11 @@ export async function realBob(host: string): Promise<Bob> {
 }
 
 export type AddOpts = { dir: string; py: boolean; cmd: string[]; out: string[]; minutes?: number; who?: string };
-export type Talk = { log?: (line: string) => void; every?: number };
+export type Talk = {
+  log?: (line: string) => void; every?: number;
+  /** `wait`: the job's log (its last `lines`, default 200) goes here instead of to `log`. */
+  onTail?: (text: string) => void; lines?: number;
+};
 
 /** Queue a job on the tree at `sha`: waits while Bob is away, then answers its id and place in line. */
 export async function add(bob: Bob, root: string, sha: string, a: AddOpts, t: Talk = {}): Promise<{ id: string; place: string }> {
@@ -276,8 +294,9 @@ export async function wait(bob: Bob, root: string, id: string, t: Talk = {}): Pr
     if (now !== last) log(`${id}: ${now}`);
     last = now;
     if (j.state === "done" || j.state === "failed") {
-      const tail = await sh(bob, `tail -n 200 ${QDIR}/log/${id}.log 2>/dev/null; true`);
-      if (tail.out.trim()) log(tail.out.trimEnd());
+      const tail = await sh(bob, `tail -n ${t.lines ?? 200} ${QDIR}/log/${id}.log 2>/dev/null; true`);
+      if (t.onTail) t.onTail(tail.out);
+      else if (tail.out.trim()) log(tail.out.trimEnd());
       const got = await bring(bob, root, id);
       log(`${id} ${j.state}${j.code ? ` (exit ${j.code})` : ""}${j.note ? `: ${j.note}` : ""}; ${got} file(s) back under ${j.out.join(", ")}`);
       return j.state === "done" ? 0 : 1;
@@ -300,6 +319,9 @@ export async function list(bob: Bob, t: Talk = {}): Promise<number> {
   const r = await sh(bob, `cat ${FILE} 2>/dev/null; true`);
   if (r.code !== 0) { log("can't reach Bob"); return 1; }
   const jobs = fold(r.out);
+  // who has Bob's one Blender now: a job, a test in a builder slot, or a warm Blender (blenderLock, #6035)
+  const holder = (await sh(bob, `${SH_LOCK_HOLDER}; true`)).out.trim();
+  if (holder) log(`Bob's Blender: pid ${holder.slice(0, 160)}`);
   if (!jobs.length) { log("the Blender queue is empty"); return 0; }
   const time = (ms?: number) => ms ? new Date(ms).toTimeString().slice(0, 5) : "--:--";
   const mins = (a?: number, b?: number) => a ? `${Math.max(0, Math.round(((b ?? Date.now()) - a) / 60_000))} min` : "";
@@ -311,25 +333,76 @@ export async function list(bob: Bob, t: Talk = {}): Promise<number> {
 
 // ---------------------------------------------------------------- a build script's first line
 
-const top = async () => (await Bun.$`git rev-parse --show-toplevel`.cwd(process.cwd()).quiet().text()).trim();
+const top = async (cwd = process.cwd()) => (await Bun.$`git rev-parse --show-toplevel`.cwd(cwd).quiet().text()).trim();
 
 /**
  * First thing in a script that runs Blender: on the office Mac (BUILDER_HOST set) it queues this same command for Bob,
  * waits, brings back what it wrote under `out` (folders relative to here; default here), and exits with its code.
  * In a queue job on Bob, or on a Mac with no builder, it returns and the script runs.
+ * A script that writes outside the tree (a scenes folder in ~/Documents) gives the job `args` that write inside it, under
+ * `out`, and copies the result out in `then`, which runs here once the job passed and its files are back.
  */
-export async function queued(out: string[] = ["."]): Promise<void> {
+export async function queued(out: string[] = ["."], o: { args?: string[]; then?: () => unknown } = {}): Promise<void> {
   const host = process.env.BUILDER_HOST;
   if (process.env.BLENDER_JOB || !host || process.argv.some((a) => a === "--help" || a === "-h")) return;
   const root = await top(), cwd = process.cwd();
   const { snapshot } = await import("./remote-ci.ts");
   const bob = await realBob(host);
   const { id, place: at } = await add(bob, root, await snapshot(root), {
-    dir: relative(root, cwd) || ".", py: false, cmd: ["bun", relative(cwd, process.argv[1]!), ...process.argv.slice(2)],
-    out: out.map((o) => relative(root, resolve(cwd, o)) || "."),
+    dir: relative(root, cwd) || ".", py: false, cmd: ["bun", relative(cwd, process.argv[1]!), ...(o.args ?? process.argv.slice(2))],
+    out: out.map((x) => relative(root, resolve(cwd, x)) || "."),
   });
   console.log(`Blender runs on the builder Mac, never here: queued as ${id} (${at}); \`bun run blender wait ${id}\` if this stops`);
-  process.exit(await wait(bob, root, id));
+  const code = await wait(bob, root, id);
+  if (code === 0) await o.then?.();
+  process.exit(code);
+}
+
+/** What `blender` takes: runBlender's run, and the folders whose new files come back (`out`) and the ignored files the
+ *  job reads (`send`), both under `cwd`. */
+export type QueuedRun = BlenderRun & { out: string[]; send?: string[] };
+
+/**
+ * One headless Blender run of a .py, from a script that does the rest of its work here (#6035): a judge that needs this
+ * Mac's `claude`, or GLBs read out of git history. On the office Mac (BUILDER_HOST set) it is a queue job, waited for,
+ * with what it wrote under `out` brought back; in a job on Bob, or on a Mac with no builder, it is `runBlender`.
+ * The job runs the working tree as it is; an absolute path in `script` or `args` under the tree is sent relative to `cwd`,
+ * and one outside it throws (Bob can't read it). Files git ignores go in only through `send`. `env`, `threads` and
+ * `version` hold only for a run here.
+ */
+export async function blender(run: QueuedRun): Promise<{ out: string; err: string }> {
+  const host = process.env.BUILDER_HOST;
+  const b = await import("../packages/cli/src/blender.ts");
+  if (process.env.BLENDER_JOB || !host) return b.runBlender(run);
+  const cwd = resolve(run.cwd ?? process.cwd()), root = await top(cwd);
+  const { snapshot } = await import("./remote-ci.ts");
+  const job = queuedJob(root, cwd, run);
+  const bob = await realBob(host);
+  const { id, place: at } = await add(bob, root, await snapshot(root, job.send), job.add);
+  console.log(`${basename(run.script)} runs on the builder Mac, never here: queued as ${id} (${at})`);
+  let out = "";
+  const code = await wait(bob, root, id, { lines: 20_000, onTail: (t) => { out = t; } });
+  if (run.onLine) for (const l of out.split("\n")) run.onLine(l);
+  if (code !== 0) throw new Error(`blender ${basename(run.script)} failed on the builder Mac (job ${id}):\n${b.blenderFailure(out)}`);
+  return { out, err: "" };
+}
+
+/** A `blender` run as the job it queues: its paths made relative (the job's checkout is elsewhere on Bob), and the
+ *  ignored files it sends, from the repo's top. Throws on a path outside the tree. */
+export function queuedJob(root: string, cwd: string, run: QueuedRun): { add: AddOpts; send: string[] } {
+  const inTree = (p: string) => {
+    const at = resolve(cwd, p), r = relative(root, at);
+    if (r.startsWith("..") || isAbsolute(r)) throw new Error(`${p} is outside the repo: a Blender job on the builder Mac can't read or write it`);
+    return at;
+  };
+  const sent = (p: string) => relative(cwd, inTree(p)) || ".";
+  return {
+    add: {
+      dir: relative(root, cwd) || ".", py: true, cmd: [sent(run.script), ...(run.args ?? []).map((a) => (isAbsolute(a) ? sent(a) : a))],
+      out: run.out.map((o) => relative(root, inTree(o)) || "."),
+    },
+    send: (run.send ?? []).map((p) => relative(root, inTree(p))),
+  };
 }
 
 /** `add`'s arguments: the queue's own flags before the script (and a trailing `--out <dir>`), then the script or `-- <cmd...>`. */

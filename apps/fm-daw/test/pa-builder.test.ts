@@ -95,7 +95,7 @@ test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the out
   try {
     await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
     await until(tab, "!!window.qrooms");
-    type Field = { tempC: number; humidity: number; ground: string; speed: number; banks: unknown[] } | null;
+    type Field = { tempC: number; humidity: number; ground: string; speed: number; banks: unknown[]; captured: boolean } | null;
     // one stack at the back of the Desert Gathering's floor, facing down it; then the panel's air, humidity and ground
     const set = await tab.eval<{ field: Field; ok: boolean[] }>(`(() => {
       qrooms.load("desert-gathering");
@@ -107,7 +107,7 @@ test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the out
       return { field: qrooms.pa().field, ok };
     })()`);
     expect(set.ok.every(Boolean)).toBe(true);
-    expect(set.field).toEqual({ tempC: 30, humidity: 80, ground: "grass", speed: 349, banks: [] });
+    expect(set.field).toEqual({ tempC: 30, humidity: 80, ground: "grass", speed: 349, banks: [], captured: false });
 
     // the panel's bank, 6 m out across the stack's throw: 6 m past it the floor loses its highs over the crest
     const bank = await tab.eval<{ before: number; after: number; banks: number }>(`(() => {
@@ -148,5 +148,46 @@ test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the out
     })()`);
     expect(late.hot).toBeCloseTo(((Math.hypot(18, 22) - Math.hypot(10, 22)) / 349) * 1000, 0);
     expect(late.cold - late.hot).toBeGreaterThan(0.5);
+
+    // a captured venue whose ground rises 4 m in a ridge across the field 7 m out (its heights as groundMap reads them
+    // off the splat): with the drawn bank gone and one stack again, the floor behind the ridge loses its highs the same way
+    const ridge = { x0: -12, z0: -4, cell: 3, cols: 8, h: [...Array(8).fill(0), ...Array(8).fill(4), ...Array(8).fill(0)] };
+    const lie = await tab.eval<{ before: number; after: number; ok: boolean; captured: boolean }>(`(() => {
+      qrooms.edit({ t: "unbank", index: 0 }); qrooms.edit({ t: "unstack", index: 1 });
+      const before = qrooms.level(0, 6);
+      const ok = qrooms.edit({ t: "venue", venue: { src: "https://sharesplat.notryanquinn.workers.dev/s/0123456789abcdef0123.spz", scale: 1, at: [0, 0, 0], yaw: 0, land: ${JSON.stringify(ridge)} } }).ok;
+      return { before, after: qrooms.level(0, 6), ok, captured: qrooms.pa().field.captured };
+    })()`);
+    expect([lie.ok, lie.captured]).toEqual([true, true]);
+    expect(lie.before - lie.after).toBeGreaterThan(6);
+  } finally { await tab.close(); }
+});
+
+test.skipIf(!hasChrome)("the Event Planner's lesson: the cap button starts it on a cleared field, the card ticks each step off and says done", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
+    await until(tab, "!!window.qrooms");
+    // the cap button in the corner starts it: the Desert Gathering with its stacks taken away, the card on the first step
+    const started = await tab.eval<{ stacks: number; room: string; shown: boolean; next: string | null }>(`(() => {
+      document.querySelector(".lesson-ask").click();
+      const card = document.getElementById("lesson");
+      return { stacks: qrooms.pa().stacks.length, room: qrooms.state().room, shown: !card.hidden && document.querySelector(".lesson-ask").hidden, next: card.querySelector("li.next span")?.textContent ?? null };
+    })()`);
+    expect(started).toMatchObject({ stacks: 0, room: "desert-gathering", shown: true });
+    expect(started.next).toContain("Stand two stacks");
+    // two stacks either side, facing the middle as the PA tool puts them down; the 100 kVA set; the gear list
+    const done = await tab.eval<{ steps: boolean[]; why: string | null; done: boolean; doneLine: string | null }>(`(() => {
+      qrooms.edit({ t: "stack", at: [-15, -16] });
+      const why = document.querySelector("#lesson .lesson-why span")?.textContent ?? null;
+      qrooms.edit({ t: "stack", at: [15, -16] });
+      qrooms.edit({ t: "generator", set: "generator-100kva" });
+      qrooms.download("list");
+      const l = qrooms.lesson().lesson;
+      return { steps: l.steps.map((s) => s.done), why, done: l.done, doneLine: document.querySelector("#lesson .lesson-done")?.textContent ?? null };
+    })()`);
+    expect(done.why).toMatch(/^One stack throws at its own side/);
+    expect(done).toMatchObject({ steps: [true, true, true, true], done: true });
+    expect(done.doneLine).toContain("The plan is yours");
   } finally { await tab.close(); }
 });

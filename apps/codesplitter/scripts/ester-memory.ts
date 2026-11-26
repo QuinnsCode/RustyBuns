@@ -19,6 +19,7 @@
 //
 // Pure over the text of a JUnit file and the ledger's lines, so it is tested without running a suite.
 
+import { record } from "@rustybuns/util";
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -176,7 +177,7 @@ export function recallLines(mem: ReturnType<typeof recall>, min = 5, top = 10): 
   const { tests, runs } = mem;
   if (!tests.length) return ["Ester remembers nothing yet: run a board --check, or `bun test --reporter=junit --reporter-outfile=junit.xml` then `bun scripts/ester-memory.ts remember junit.xml`"];
   const failed = tests.filter((m) => m.fails > 0);
-  const kinds = (ms: Memory[]) => Object.fromEntries((["fix", "stale", "flaky"] as const).map((k) => [k, ms.filter((m) => m.verdicts.some((v) => v.kind === k)).length])) as Record<Kind, number>;
+  const kinds = (ms: Memory[]) => record(["fix", "stale", "flaky"], (k) => ms.filter((m) => m.verdicts.some((v) => v.kind === k)).length);
   const k = kinds(failed);
   const open = failed.filter(unresolved);
   const out = [`Ester remembers: ${tests.length} tests across ${runs} runs; ${failed.length} failed at least once: ${k.fix} fixed by a PR, ${k.stale} stale, ${k.flaky} flaky, ${open.length} unresolved`];

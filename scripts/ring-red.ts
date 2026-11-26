@@ -87,6 +87,12 @@ export function jobsFor(failed: string[], apps: unknown, smoke: unknown): { jobs
 /** The marker in the blame comment: what was blamed, for which red, and when. No `pr`: it passed on Bob, nobody is blamed. */
 export type Blame = { red: string; sha: string; pr?: number; at: number };
 export const blameLine = (b: Blame) => `<!-- ring-red red=${b.red} sha=${b.sha} pr=${b.pr ?? 0} at=${new Date(b.at).toISOString()} -->`;
+/** The comments this script's own account wrote: the repo is public, and anyone can paste a marker. */
+export const ownBodies = (comments: { body: string; viewerDidAuthor: boolean }[]) => comments.filter((c) => c.viewerDidAuthor).map((c) => c.body);
+
+/** The first PR of the repo's own: `gh pr list --head` matches a fork's branch of the same name too. */
+export const ownPr = (rows: { url: string; isCrossRepository: boolean }[]) => rows.find((r) => !r.isCrossRepository)?.url;
+
 /** The newest blame in these comment bodies (oldest first, as GitHub lists them). */
 export function lastBlame(bodies: string[]): Blame | undefined {
   for (const body of bodies.toReversed()) {
@@ -121,7 +127,8 @@ const text = async (cmd: string[], cwd?: string) => {
 const Statuses = arr(obj({ context: str(200), target_url: nul(str(2000)) }), 1000);
 const Jobs = obj({ jobs: arr(obj({ name: str(300), conclusion: nul(str(40)) }), 1000) });
 const Issues = arr(obj({ number: num(1, Number.MAX_SAFE_INTEGER) }), 10);
-const Comments = obj({ comments: arr(obj({ body: str(Infinity, { min: 0 }) }), 10_000) });
+const Comments = obj({ comments: arr(obj({ body: str(Infinity, { min: 0 }), viewerDidAuthor: bool() }), 10_000) });
+const HeadPrs = arr(obj({ url: str(2000), isCrossRepository: bool() }), 100);
 const Workers = obj({ workers: arr(obj({ name: str(200), pr: opt(obj({ number: num(1, Number.MAX_SAFE_INTEGER) })) }), 1000) });
 
 /** The names of the jobs that failed in the run behind the red SHA's ring status. */
@@ -152,7 +159,7 @@ async function issueComments(repo: string): Promise<{ issue?: number; bodies: st
   const [open] = Issues(JSON.parse(await text(["gh", "issue", "list", "-R", repo, "--label", "ci-hourly", "--state", "open", "--json", "number"])));
   if (!open) return { bodies: [] };
   const { comments } = Comments(JSON.parse(await text(["gh", "issue", "view", String(open.number), "-R", repo, "--json", "comments"])));
-  return { issue: open.number, bodies: comments.map((c) => c.body) };
+  return { issue: open.number, bodies: ownBodies(comments) };
 }
 
 async function tellWorker(pr: number, msg: string): Promise<string> {
@@ -167,7 +174,7 @@ async function tellWorker(pr: number, msg: string): Promise<string> {
 /** The revert of one squash commit on main's tip, made in a scratch clone and pushed as its own branch. */
 async function openRevert(repo: string, b: Blame, title: string, body: string): Promise<string> {
   const branch = `ring-revert-${b.sha.slice(0, 7)}`;
-  const had = await text(["gh", "pr", "list", "-R", repo, "--head", branch, "--state", "all", "--json", "url", "-q", ".[0].url"]);
+  const had = ownPr(HeadPrs(JSON.parse(await text(["gh", "pr", "list", "-R", repo, "--head", branch, "--state", "all", "--json", "url,isCrossRepository"]))));
   if (had) return `already opened: ${had}`;
   const dir = mkdtempSync(`${tmpdir()}/ring-red-`);
   try {

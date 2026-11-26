@@ -73,7 +73,7 @@ export async function exportFor(env: Env, handle: string) {
     api_tokens: await all(env, "SELECT label, scope, last4, created_at, expires_at, last_used_at FROM api_tokens WHERE name = ? AND grant_id IS NULL", handle),
     connected_apps: await all(env, "SELECT client_name, scope, created_at, last_used_at FROM oauth_grants WHERE name = ?", handle),
     // The security audit log (audit.ts): what you did, and what was done in your repos.
-    audit: await all(env, "SELECT at, actor, via, action, owner, repo, target, detail, country FROM audit WHERE actor = ? OR owner = ? ORDER BY id", handle, handle),
+    audit: await all(env, "SELECT at, actor, via, token, action, owner, repo, target, detail, country FROM audit WHERE actor = ? OR owner = ? ORDER BY id", handle, handle),
     // What the insights page counts (insights.ts): your requests per day, and the first and last time you did each step.
     usage: await all(env, "SELECT day, kind, via, hits, errors, first_at, last_at, ua FROM traffic WHERE who = ? ORDER BY day", `@${handle}`),
     steps: await all(env, "SELECT step, first_at, last_at, n FROM user_steps WHERE name = ?", handle),

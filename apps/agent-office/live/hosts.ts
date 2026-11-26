@@ -43,6 +43,18 @@ export function allowedHosts(cfg: HostCfg, env: Record<string, string | undefine
   };
 }
 
+/**
+ * Whether this is a write to one of the added `/__rb/` routes from anywhere but the office's own page. The session cookie
+ * alone can't say: SameSite counts every port on a host as one site, so another local page's POST carries it. A browser
+ * sends Origin on such a write; upstream's own check (http/util.js sameOrigin) guards only /ws and the file routes.
+ */
+export function foreignWrite(req: { method?: string; headers: { origin?: string; host?: string; "x-forwarded-host"?: string | string[] } }, path: string, cfg: HostCfg): boolean {
+  if (!path.startsWith("/__rb/") || req.method === "GET" || req.method === "HEAD") return false;
+  const forwarded = cfg.trustProxy ? req.headers["x-forwarded-host"] : undefined;
+  const host = (typeof forwarded === "string" && forwarded) || req.headers.host;
+  try { return !req.headers.origin || new URL(req.headers.origin).host !== host; } catch { return true; }
+}
+
 /** For the office's request handler: answers 421 to a name the office isn't known by, else false. */
 export function guardHost(cfg: HostCfg) {
   const ok = allowedHosts(cfg);

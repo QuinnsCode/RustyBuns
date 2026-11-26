@@ -139,9 +139,9 @@
         {
           "id": "gary-cedar-water",
           "title": "Gary and the cedar water",
-          "text": "The first Gary tape: cedar water, tannins, 'the water just moved'. Nobody knows who Gary is; the Lamplighters have heard of a man with a camera.",
-          "at": "section:1:1",
-          "status": "idea"
+          "text": "The first Gary tape, in a stump at Batsto: cedar water, tannins, 'the water just moved'. Nobody knows who Gary is; the Lamplighters have heard of a man with a camera.",
+          "at": "section:1:0",
+          "status": "built"
         },
         {
           "id": "gary-gorge",
@@ -151,7 +151,34 @@
           "needs": [
             "gary-cedar-water"
           ],
-          "status": "idea"
+          "status": "built",
+          "tape": {
+            "title": "Gary, the far cliff",
+            "lines": [
+              "Gary: I crossed to the far cliff. The thing that waved isn't here. My tripod marks are, pressed in the moss, from yesterday. Yesterday I was on the other side.",
+              "Gary: There's a lens cap in the moss with my name scratched on it, in my writing. I don't remember scratching it.",
+              "Gary: If you're the one with the book: it wasn't waving at me. It was waving at you. Hold the shot."
+            ]
+          }
+        },
+        {
+          "id": "gary-walks-first",
+          "title": "Gary walks first",
+          "at": "section:3:2",
+          "needs": [
+            "gary-gorge",
+            "lamplighters-3"
+          ],
+          "status": "built",
+          "text": "A Gary tape on a stump at the logging camp. Old Dutch told him never to walk last on a north-woods trail, so he walked first, alone, and heard a second set of boots stop when his did. He left the camera running for whoever came next.",
+          "tape": {
+            "title": "Gary walks first",
+            "lines": [
+              "Gary: A trucker at the logging camp told me never to walk last on a trail up here. So I'm walking first. I'm also the only one walking.",
+              "Gary: The cook's stories say the hidebehind is always behind the tree you turn toward. So I've stopped turning.",
+              "Gary: There's a second set of boots. They stop when mine stop. I'm leaving the camera on this stump. Whoever's next, it's yours."
+            ]
+          }
         },
         {
           "id": "gary-tripod",
@@ -159,9 +186,28 @@
           "text": "Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose.",
           "at": "section:5:0",
           "needs": [
-            "gary-gorge"
+            "gary-walks-first"
           ],
           "status": "idea"
+        },
+        {
+          "id": "gary-film",
+          "title": "Gary at the sandbar",
+          "at": "section:4:7",
+          "needs": [
+            "gary-tripod",
+            "office-5"
+          ],
+          "status": "built",
+          "text": "Gary stands where the 1967 film was shot at Bluff Creek, after one frame nobody can argue with. Two Office agents ask for his camera, and ask if he has seen you.",
+          "tape": {
+            "title": "Gary at the sandbar",
+            "lines": [
+              "Gary: Bluff Creek, northern California. In October 1967 two riders filmed about a minute of something walking along this sandbar.",
+              "Gary: People have argued over that minute ever since. I came for one frame nobody can argue with. Two men in grey suits came for my camera.",
+              "Gary: I told them it's a camcorder, not evidence. The tall one wrote that down. The short one asked if I'd seen you."
+            ]
+          }
         },
         {
           "id": "gary-white-sands",
@@ -169,9 +215,37 @@
           "text": "At White Sands the gypsum keeps tracks for days. Gary's boot prints walk beside something with three toes, then the boot prints run.",
           "at": "section:6:2",
           "needs": [
-            "gary-tripod"
+            "gary-film",
+            "lamplighters-6"
           ],
-          "status": "idea"
+          "status": "built",
+          "tape": {
+            "title": "Gary, the tracks",
+            "lines": [
+              "Gary: The gypsum keeps footprints for days, until the wind smooths them. These are mine from this morning. These beside them have three toes.",
+              "Gary: They walk with me step for step to the top of the dune. Then mine start running. I don't remember running.",
+              "Gary: This one is for whoever follows me with that book. You're a day behind. Or I'm a day ahead. Roll that."
+            ]
+          }
+        },
+        {
+          "id": "gary-big-cypress",
+          "title": "Gary heads north",
+          "at": "section:7:7",
+          "needs": [
+            "gary-white-sands",
+            "office-7"
+          ],
+          "status": "built",
+          "text": "Gary's last tape before you meet him, in Big Cypress: he has stopped filming animals, the Office has asked after him at every motel desk, and he is going to a town in Arkansas with one monster and one film about it.",
+          "tape": {
+            "title": "Gary heads north",
+            "lines": [
+              "Gary: Big Cypress. Cypress domes standing in water up to my knees. Locals say the skunk ape smells like a wet dog that rolled in a dump. I can confirm the smell.",
+              "Gary: I've stopped filming the animals. Every motel I check into, two men in grey suits have already asked the desk about me.",
+              "Gary: I'm going north to Arkansas. There's a town with one monster and one film about it. If you want the true shot, that's where I'll be."
+            ]
+          }
         },
         {
           "id": "gary-fouke",
@@ -179,10 +253,162 @@
           "text": "In Fouke, Arkansas, Gary is editing his film in a motel room. He is not a hunter; he wants one true shot so people believe him. Show him the Book, or don't. Either way he joins the believers' fire at the Howl-Back Club's ridge.",
           "at": "section:8:9",
           "needs": [
-            "gary-white-sands",
+            "gary-big-cypress",
             "office-8"
           ],
           "status": "idea"
+        }
+      ]
+    },
+    {
+      "id": "office-reels",
+      "kind": "sub",
+      "title": "The Office's lost reels",
+      "pitch": "The Office films its subjects too, and Agent Quist loses a reel in every region. Each one is a page of the Office's file on you and the Book, read over the history of the place, with what the agents would never log said off the record. The last one says where Quist keeps the rest.",
+      "beats": [
+        {
+          "id": "reel-apple-pie-hill",
+          "title": "Apple Pie Hill",
+          "at": "section:1:4",
+          "needs": [
+            "office-1"
+          ],
+          "status": "built",
+          "text": "Agent Quist's first reel, dropped under the fire tower: the file on you opens, the Pine Barrens' iron and glass are read into it, and off the record nobody stands under the tower after dark.",
+          "tape": {
+            "title": "Office reel 1, Apple Pie Hill",
+            "lines": [
+              "Agent Quist: Office reel one, Apple Pie Hill. Subject carries an unregistered register. Subject says it talks. Agent Pell says registers do not talk.",
+              "Agent Quist: Background, for the file. Batsto's furnace cast cannonballs from bog iron for the Revolution, and glass works here ran on white sand and pine. All of it shut. The pines came back.",
+              "Agent Quist: Off the record, Pell won't stand under the tower after dark. Off the record, neither will I. End of reel."
+            ]
+          }
+        },
+        {
+          "id": "reel-green-bank",
+          "title": "Green Bank",
+          "at": "section:2:5",
+          "needs": [
+            "office-2"
+          ],
+          "status": "built",
+          "text": "In the Radio Quiet Zone the Book makes a sound nothing should make; Pell files it as wind. The hollows' raid and feud go into the file, and Quist's question about the mothman gets an answer from the Book, not from you.",
+          "tape": {
+            "title": "Office reel 2, Green Bank",
+            "lines": [
+              "Agent Quist: Office reel two, Green Bank. Almost no radio is allowed out here, so the big telescope can hear. The Book still made a sound. Pell has filed it as wind.",
+              "Agent Quist: Background. In October 1859 John Brown's men raided the armory at Harpers Ferry. Down on the Tug Fork, the Hatfields and the McCoys feuded across the river for most of thirty years.",
+              "Agent Quist: Off the record, I asked the subject about the mothman. The Book turned a page by itself. I did not log that."
+            ]
+          }
+        },
+        {
+          "id": "reel-wisconsin-river",
+          "title": "Wisconsin River",
+          "at": "section:3:3",
+          "needs": [
+            "office-3"
+          ],
+          "status": "built",
+          "text": "Agent Pell's reel on the river the logs came down: the white pine boom and the hodag hoax, read aloud like procedure, and the crate that moved in the night from the inside.",
+          "tape": {
+            "title": "Office reel 3, Wisconsin River",
+            "lines": [
+              "Agent Pell: Office reel three, Wisconsin River. Reading the procedure aloud: an exhibit in a crate stays in the crate. The exhibit is a wooden hodag. It stays in the crate.",
+              "Agent Pell: Background. From about 1870 to 1910 the white pine here was cut and driven down rivers like this one to the mills. In 1893 Eugene Shepard of Rhinelander said he had found a hodag. The one he showed at the fair was carved.",
+              "Agent Pell: The crate moved in the night. From the inside. I am not logging that. Agent Quist is logging that."
+            ]
+          }
+        },
+        {
+          "id": "reel-valcour",
+          "title": "Valcour Island",
+          "at": "section:5:10",
+          "needs": [
+            "office-4"
+          ],
+          "status": "built",
+          "text": "The Office wanted your camcorder tape and did not get it. Quist's reel from Valcour Island reads the lake's battles, wrecks and one photograph into the file.",
+          "tape": {
+            "title": "Office reel 4, Valcour Island",
+            "lines": [
+              "Agent Quist: Office reel four, Valcour Island. The subject would not give up the camcorder tape. Pell says that is obstruction. I say it is a good tape.",
+              "Agent Quist: Background. In October 1776 Benedict Arnold's small fleet fought the British in the channel behind this island. It lost, and it slowed them for a year. In 1977 a woman on the shore photographed something in this lake.",
+              "Agent Quist: Thousands of ships lie on the bottoms of these lakes. Pell asked me to stop reading the water its own history."
+            ]
+          }
+        },
+        {
+          "id": "reel-bluff-creek",
+          "title": "Bluff Creek",
+          "at": "section:4:6",
+          "needs": [
+            "office-5"
+          ],
+          "status": "built",
+          "text": "Control starts Protocol QUIET over the radio while Quist reads the road crew's 1958 tracks and the 1967 film into the file, then asks the question nobody answers: what does the Book do with them?",
+          "tape": {
+            "title": "Office reel 5, Bluff Creek",
+            "lines": [
+              "Control: Office reel five, Bluff Creek. Protocol QUIET is in effect. Agents will not discuss the film. Agent Quist, stop discussing the film.",
+              "Agent Quist: Background. In 1958 a road crew here found huge footprints round their bulldozer, and a newspaper printed the word Bigfoot. Nine years later two riders filmed about a minute of something on the sandbar.",
+              "Agent Quist: Off the record, the subject asked me what the Book does with them. I asked first. Nobody answered either of us."
+            ]
+          }
+        },
+        {
+          "id": "reel-douglas",
+          "title": "Douglas",
+          "at": "section:6:9",
+          "needs": [
+            "office-6"
+          ],
+          "status": "built",
+          "text": "After Annex 9, Pell insists on tape that the place does not exist. The desert's crash, its goat deaths and its jackalopes go into the file, and a postcard goes onto Pell's desk.",
+          "tape": {
+            "title": "Office reel 6, Douglas",
+            "lines": [
+              "Agent Pell: Office reel six, Douglas, Wyoming. Reading the procedure aloud: Annex 9 does not exist. The subject stood inside it. The subject is mistaken.",
+              "Agent Pell: Background. In July 1947 the Army at Roswell said it had recovered a flying disc, then said it was a weather balloon. In 1995 goats in Puerto Rico were found drained of blood, and the chupacabra got its name.",
+              "Agent Pell: Douglas calls itself the home of the jackalope. Agent Quist bought a jackalope postcard. I have confiscated it. It is on my desk. It is looking at me."
+            ]
+          }
+        },
+        {
+          "id": "reel-barataria",
+          "title": "Barataria",
+          "at": "section:7:4",
+          "needs": [
+            "office-7"
+          ],
+          "status": "built",
+          "text": "The Office loses a Lamplighter boat in the marsh cuts in five minutes. Quist reads the Acadians and Lafitte's smugglers into the file, and Pell sleeps in the boat with the lamp on.",
+          "tape": {
+            "title": "Office reel 7, Barataria",
+            "lines": [
+              "Agent Quist: Office reel seven, Barataria. We chased a Lamplighter boat into the marsh cuts and lost it in five minutes. Pell says jurisdiction ends where the water starts.",
+              "Agent Quist: Background. The Acadians were driven out of Nova Scotia from 1755, and many made new homes in these bayous. Jean Lafitte's smugglers ran goods through these cuts, then fought for New Orleans in 1815.",
+              "Agent Quist: The old folks say the rougarou hunts those who break Lent. Pell ate meat on a Friday. Pell is sleeping in the boat with the lamp on."
+            ]
+          }
+        },
+        {
+          "id": "reel-texarkana",
+          "title": "Texarkana",
+          "at": "section:8:8",
+          "needs": [
+            "office-8"
+          ],
+          "status": "built",
+          "text": "Brandt comes in person with two forms, Fouke's 1971 night and its drive-in film go into the file, and Quist says off the record where every reel is kept.",
+          "tape": {
+            "title": "Office reel 8, Texarkana",
+            "lines": [
+              "Control: Office reel eight, Texarkana. Section Chief Brandt, in person. Two forms. One says the Book is ours. One says you are. Sign either.",
+              "Agent Quist: Background. In 1971 a family outside Fouke said a big hairy thing reached in through their window. In 1972 a film about it, The Legend of Boggy Creek, played drive-ins all over the country.",
+              "Agent Quist: Off the record, I kept every reel. The scrapbook is in the glovebox. If you're watching this, you found the glovebox."
+            ]
+          }
         }
       ]
     },
@@ -691,7 +917,8 @@
         {
           "kind": "history",
           "what": "Bog iron, glass works and charcoal pits of the 1700s and 1800s; cannonballs for the Revolution cast at Batsto.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:1:4"
         },
         {
           "kind": "craft",
@@ -762,7 +989,8 @@
         {
           "kind": "history",
           "what": "The 1859 raid at Harpers Ferry, the Hatfield and McCoy feud, the Silver Bridge's fall in 1967.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:2:5"
         },
         {
           "kind": "craft",
@@ -828,7 +1056,8 @@
         {
           "kind": "history",
           "what": "The white pine logging boom of 1870-1910; Eugene Shepard's hodag hoax of 1893.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:3:3"
         },
         {
           "kind": "craft",
@@ -894,7 +1123,8 @@
         {
           "kind": "history",
           "what": "The 1958 Bluff Creek tracks; the 1967 film; the 1980 eruption.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:4:6"
         },
         {
           "kind": "craft",
@@ -954,7 +1184,8 @@
         {
           "kind": "history",
           "what": "The 1977 Champ photograph; the Battle of Valcour Island in 1776; shipwrecks of the lakes.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:5:10"
         },
         {
           "kind": "craft",
@@ -1015,7 +1246,8 @@
         {
           "kind": "history",
           "what": "The 1947 Roswell report; the 1995 Puerto Rico goat deaths that named the chupacabra; Douglas, Wyoming's jackalopes.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:6:9"
         },
         {
           "kind": "craft",
@@ -1070,7 +1302,8 @@
         {
           "kind": "history",
           "what": "The Acadians' arrival after 1755; Lafitte's smugglers; the rougarou of Lent.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:7:4"
         },
         {
           "kind": "craft",
@@ -1131,7 +1364,8 @@
         {
           "kind": "history",
           "what": "The Fouke Monster sightings of the 1970s and the 1972 film; the old Route 66.",
-          "status": "idea"
+          "status": "built",
+          "at": "section:8:8"
         },
         {
           "kind": "craft",
