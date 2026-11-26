@@ -11,6 +11,7 @@ import { CASE, PEDAL_WALL, RACK, SHELVING, shelvingRects, type Bounds } from "./
 import { BAY, BAY_SOLIDS } from "./lounge-plan.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { Avatar } from "@rustybuns/util/avatar";
+import { CONNECTORS } from "@rustybuns/util/connectors";
 import { bench, type BenchPedal } from "../circuit/bench.ts";
 import { AUXES } from "../mixer.ts";
 import { HP, PANEL_H, PANELS, panelWidth, type Panel } from "../../circuits/wall-panels.ts";
@@ -141,7 +142,8 @@ export const PA_GEAR: GearDef[] = [
   },
   {
     id: "pa-top", name: "powered speaker", kind: "pa", pa: "top-12-powered", size: [0.37, 0.6, 0.36], kg: 18,
-    jacks: [{ name: "xlr-in", dir: "in", at: [-0.08, 0.15, -0.18], face: "back" }],
+    // input A (a combo socket) and the thru under it, as the K12.2's panel has them
+    jacks: [{ name: "xlr-in", dir: "in", at: [-0.08, 0.15, -0.18], face: "back" }, { name: "xlr-out", dir: "out", at: [-0.08, 0.05, -0.18], face: "back" }],
     knobs: [{ ...POWER, at: [0.08, 0.15, -0.18] }],
   },
 ];
@@ -648,7 +650,11 @@ export function plug(r: Room, to: End): Answer {
   if (!j) return no(`no jack ${to[1]} on ${to[0]}`);
   if (h.lead[0] === to[0]) return no(`that's ${nameOf(r, to[0])} into itself`);
   const from = jackDef(r, h.lead);
-  if (from && from.dir === j.dir) return no(`two ${j.dir === "out" ? "outputs" : "inputs"}: ${label(r, h.lead)} and ${label(r, to)}`);
+  if (from && from.dir === j.dir) {
+    // two XLRs the same way round: say why, from the connector itself (an out is male, an in female)
+    const xlr = [h.lead[1], to[1]].every((n) => n.startsWith("xlr")) ? `: an XLR out is male, an XLR in is female, and a cable has one end of each (${CONNECTORS.xlr3.name} is ${CONNECTORS.xlr3.genders.join(" or ")})` : "";
+    return no(`two ${j.dir === "out" ? "outputs" : "inputs"}: ${label(r, h.lead)} and ${label(r, to)}${xlr}`);
+  }
   if (cableIn(r, to)) return no(`${label(r, to)} has a cable in it`);
   return act(r, { t: "plug", to }) ? OK : no(`can't plug into ${label(r, to)}`);
 }

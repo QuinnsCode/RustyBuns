@@ -14,7 +14,7 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 
 | Word | Sector | The real problem | Who | Door | Works end to end today? |
 |---|---|---|---|---|---|
-| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
+| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, four lessons at the gear wall; more to come |
 | BUILD | [Event Planner](#5-build-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and out: coverage, delay, power, gear list; out of doors over the night's air, the ground and banks on the field. No wind, forecast or captured terrain yet |
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
@@ -44,12 +44,13 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 
 **Works today:**
 - Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
+- A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
 - Sound Guy Simulator (`apps/load-in`) already teaches load-in, cabling and aiming speakers as a game, level by level.
 
-**Missing:** lessons past the first three (gain-staging a desk, why a room rings), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
+**Missing:** lessons past the first four (gain-staging a desk, why a room rings; speakON, powerCON and IEC lessons wait for typed cables in the room, with power run apart from audio, [#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
 
 ## 2. BUILD: QDAW
 
