@@ -565,14 +565,14 @@ The Library:
 
 - **A studio's game could be named for a token audience** (high): `qlave-admin`, `erase`, `eqosys`. Those, and our games not yet in `APPS`, can't be taken (`library.test.ts`).
 - **A listed erase URL got every deleting person's email and could stop deletions** (high). A studio's game is asked only for people who opened it, after our apps, and its answer doesn't block (`library.test.ts`).
-- **A studio's game held a person's whole account** (medium). Its token no longer reads or makes studios (other people's emails), downloads the data, deletes the account, sees the friend link or decides who is a friend (`library.test.ts`).
-- **A listing was approved by id, not by what was read** (medium). Listing takes the queue's `at`, and a save lands only on the row it read, so it can't undo a pull (`library.test.ts`).
+- **A studio's game held a person's whole account** (medium). Its token no longer reads or makes studios (other people's emails), downloads the data, deletes the account, sees the friend link or decides who is a friend (`library.test.ts`, `hub.test.ts`).
+- **A listing was approved by id, not by what was read** (medium). Listing takes the queue's `at` (`library.test.ts`), and a save lands only on the row it read, so it can't undo a pull (no test).
 - **`GH-12` still linked an issue from a report** (low) (`report.test.ts`).
 
 Spaces, the hub and the board:
 
 - **A file's name replaced the sender's** (medium), so a member could post as someone else (`space.test.ts`).
-- **Files sent together passed the per-minute and 1 GB caps** (medium). Both are taken before the upload, and a channel, mute or seat that changed during it refuses the file (`space.test.ts`).
+- **Files sent together passed the per-minute and 1 GB caps** (medium). Both are taken before the upload (`space.test.ts`), and a channel, mute or seat that changed during it now refuses the file (no test).
 - **Ways back into a space** (medium). Leaving the studio now retires the invite and drops private-channel grants (so does a kick); whoever made a studio's space can be kicked once they are only a guest; a company sign-in seat keeps no guest row behind it (`studio-space.test.ts`).
 - **A channel called `constructor` locked everyone out of its space** (medium) (`space.test.ts`).
 - **What someone wrote in a space they had left survived their deletion and was missing from their download** (medium). `space_past` (a migration) remembers those spaces. Spaces left before it are not known (`space.test.ts`).

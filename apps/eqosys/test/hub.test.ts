@@ -2,7 +2,7 @@
 // through real sockets on the Rusty Buns host and the same Hub class the edge runs.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { Hub, type HubOut, type HubState } from "../src/qollab/hub.ts";
+import { Hub, hubAsk, type HubOut, type HubState } from "../src/qollab/hub.ts";
 import { handle } from "../src/handle.ts";
 import { newKey } from "@rustybuns/util/token";
 import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
@@ -174,4 +174,12 @@ test("deleting an account ends its sessions and tokens before the sweep, so noth
   expect(await deleteAccount(other.conf, who.user.id, "http://eqosys.local")).toBe(true);
   expect(seen.length).toBeGreaterThan(1);
   expect(new Set(seen)).toEqual(new Set([401]));
+});
+
+test("a studio's own game gets no friend link and decides no friendship; one of our apps still does", async () => {
+  const zed = { id: "zed", name: "Zed", app: "rocket-golf" };
+  expect(await hubAsk(conf.HUB!, zed, { op: "state" })).not.toHaveProperty("link");
+  for (const op of [{ op: "befriend", email: "ada@example.com" }, { op: "accept", id: "x" }, { op: "drop", id: "x" }, { op: "relink" }, { op: "clear" }] as const)
+    expect(await hubAsk(conf.HUB!, zed, op)).toHaveProperty("error", expect.stringContaining("studio's game"));
+  expect(await hubAsk(conf.HUB!, { ...zed, app: "qcrm" }, { op: "state" })).toHaveProperty("link");
 });
