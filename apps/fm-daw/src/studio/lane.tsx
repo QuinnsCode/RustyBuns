@@ -83,7 +83,7 @@ function View({ m }: { m: LaneModel }) {
         {ro && <p className="jl-ro">Read only: you may listen and play, not change this. H raises your hand</p>}
         {s.refused && !ro && <p className="jl-said">{s.refused}</p>}
         {tab === "patch" && (
-          <PatchEditor track={t} color={color} onParam={param}
+          <PatchEditor track={t} color={color} onParam={param} duck={{ names: p.tracks.map((x) => x.name), self: i }}
             onSound={(x) => withParams(loadSound(t.params, x))}
             onRandom={() => withParams(randomPatch(t.kind, t.params))}
             onReset={() => withParams((KIT[i]?.params ?? t.params).slice())}

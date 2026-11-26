@@ -185,3 +185,36 @@ test("a synced LFO sits on the transport: stopping and starting at another momen
   for (let i = SR * 2; i < a.length; i++) diff = Math.max(diff, Math.abs(a[i] - b[i])); // past the gain smoothing
   expect(diff).toBeLessThan(1e-6);
 }, HEAVY);
+
+/** The demo groove with the bass (track 6) and the pad (track 8) ducked under the kick (track 1): the kick pumping them. */
+function pumped(depth = 1): Project {
+  const p = demoProject();
+  const duck = (t: Project["tracks"][number], ti: number) => (ti === 5 || ti === 7 ? { ...t, params: t.params.map((v, i) => (i === P.DUCK_FROM ? 1 : i === P.DUCK ? depth : v)) } : t);
+  return { ...p, tracks: p.tracks.map(duck) };
+}
+
+test("rust matches ts on the sidechain (the bass and the pad ducking under the kick)",
+  () => compare("cdylib, sidechain", () => createNativeEngine(SR), pumped()), HEAVY);
+
+test("a track ducked under the kick dips on every kick and comes back between them", () => {
+  const PAD = 7;
+  // the pad alone, as its Shape's spectrum hears it (a copy of its chunk), through the groove as the bounce plays it
+  const padOf = (p: Project) => {
+    const e = new TsEngine(SR), got: number[] = [];
+    renderPattern(e, SR, 4, (seq) => { load(e, p)(seq); e.setTap(PAD, "listen"); },
+      undefined, (_, n, taps) => { for (let f = 0; f < n; f++) got.push(taps![f * TRACKS + PAD]); }, true);
+    return got;
+  };
+  const beat = (60 / demoProject().bpm) * SR;
+  const rms = (a: number[], from: number, len: number) => Math.sqrt(a.slice(from, from + len).reduce((s, x) => s + x * x, 0) / len);
+  // inside the pad's long chords (beats 1 to 3 and 5 to 7): the 30 ms after each kick against 30 ms three quarters on
+  const pump = (a: number[]) => [1, 2, 3, 5, 6, 7].map((b) => rms(a, Math.round(b * beat), SR * 0.03) / rms(a, Math.round((b + 0.75) * beat), SR * 0.03));
+  // each beat against the same beat with no sidechain (the pad swells on its own)
+  const dry = pump(padOf(demoProject()));
+  const dip = (depth: number) => pump(padOf(pumped(depth))).map((r, i) => r / dry[i]);
+  const full = dip(1), half = dip(0.5);
+  console.log(`  the pad on a kick against between, to the dry pad: full ${full.map((x) => x.toFixed(2))}, half ${half.map((x) => x.toFixed(2))}`);
+  for (const r of full) expect(r).toBeLessThan(0.3);
+  // half the depth: a dip you hear, not a gap
+  for (const r of half) { expect(r).toBeGreaterThan(0.4); expect(r).toBeLessThan(0.85); }
+}, HEAVY);
