@@ -14,7 +14,7 @@ Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.
 
 | Word | Sector | The real problem | Who | Door | Works end to end today? |
 |---|---|---|---|---|---|
-| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, four lessons at the gear wall; more to come |
+| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, five lessons at the gear wall; more to come |
 | BUILD | [Event Planner](#5-build-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and out: coverage, delay, power, gear list; out of doors over the night's air, the ground and banks on the field. No wind, forecast or captured terrain yet |
 | BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
 | BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
@@ -45,6 +45,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 **Works today:**
 - Three setup lessons, started from the `?` card's "Learn to set it up" row (`src/studio/lessons.ts`, [#5861](https://github.com/QuinnsCode/RustyBuns/issues/5861)): plug a guitar through a pedal into an amp and its cab; patch a sound wall voice (VCO, VCF, VCA, Q Out); set up a small PA (two powered speakers placed apart and aimed at the room's middle, a mic through a mixer, powered on mixer first). All with your hands at the gear wall, on the sesh's own patch. A card at the top left ticks each step off as the gear says so and, when something is in the way, says what and why (straight into the amp, the filter's CV, gain too hot, a speaker facing the wall, a thump). A small warm cone floats over the jack, knob or box the next step is about and moves on as each step goes green; with a cable in your hand it points at where the cable goes ([#6086](https://github.com/QuinnsCode/RustyBuns/issues/6086); `qjam.lesson()` returns its `mark` and `marker`). Leave any time; what you built stays. The steps run on `packages/gear`'s checker (`steps.ts`), the one Sound Guy Simulator's first-minute hints use, and the PA's switch-on order is the catalog's own `thumps`.
 - A fourth, "Know your plugs: XLR" ([#6029](https://github.com/QuinnsCode/RustyBuns/issues/6029)): the mic into the mixer, the mixer into a powered speaker's combo input A, its thru on to the next speaker. Each step reads the connector off `@rustybuns/util/connectors`, the same list Sound Guy Simulator plugs by (what it carries, its pins), and an XLR out into an out is refused with why (an out is male, an in female).
+- A fifth, "Run an amp rack: power apart from audio" ([#6030](https://github.com/QuinnsCode/RustyBuns/issues/6030)): a power distro, a mixer, a rolling amp rack and two passive 15" tops. Mains go on cables of their own: a cord from the distro into the rack's blue powerCON and the mixer's IEC, and a box whose cord isn't in stays dark with its switch up. The mixer's outs into the amp's XLR inputs, a speakON from each amp channel to a speaker. Then keep the mains off the signal: carry the mixer out front and its cord from the distro lies along its XLRs, so the step asks you to move the distro until the cords leave them at an angle. Power on mixer first, amp last, or it thumps. Every jack in the PA kits now has its real socket from `@rustybuns/util/connectors`, and a cable only goes between sockets that carry the same thing: an XLR out into a speakON, or an amp's speaker line into a powered speaker's combo, is refused in the connector list's words.
 - The jam room's "What you can do here" card (`?`, `src/studio/help.ts`) and the key strip: what each key does where you stand.
 - The studio builder's Why line and ring time per seat (`/rooms.html`): change a wall's material and hear and see the room change.
 - The sound wall's build sheets explain each module in plain words (`B` in the gear room, [WALL.md](WALL.md)).
@@ -82,6 +83,13 @@ voices can't go through the Amp insert yet ([CIRCUITS.md: Next](CIRCUITS.md#next
 6. Optional: a phone as a remote for the desk (`/remote.html`), an agent at the desk over MCP (`scripts/studio-mcp.ts`).
 
 **Works today:** all six steps (front door `src/studio/door.ts`, grants `src/grants.ts`, guest lists `src/guest-list.ts`).
+
+**From the Event Planner** (#6020): the Party panel's **Open as event** puts the open party live (with none open, it makes
+one from the room as planned) and opens its room, which plays from the same stacks, aim and power, with the sesh's own
+guest list and the decks' listen link. **Client walk-through** opens the same room with `?walk=1`: the planned PA plays a
+test set (`src/studio/walk-set.ts`) on that page alone, so a client walks the site and hears it before the show.
+`qrooms.event(walk?)` gives the link; `qjam.state().pa.sources` is the same list as `qrooms.pa().sources`. The journey
+is `test/event.test.ts`.
 
 **Missing:** the character is a stand-in until [#4987](https://github.com/QuinnsCode/RustyBuns/issues/4987); the
 rooms' look is a climb ([#5365](https://github.com/QuinnsCode/RustyBuns/issues/5365)). Pedals, amps and cables
@@ -147,6 +155,8 @@ what power, before the truck is loaded.
   place), the ms written across the floor. Ring time and a clap at each seat. Out of doors the map, the delay marks and the
   Walk-in sound all cross the same field ([below](#out-of-doors-the-air-the-ground-and-the-land)).
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
+  The Party panel's Client walk-through does the same with a test set on the PA, and Open as event makes the plan The
+  Event ([path 3](#3-play-the-event)).
 - Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
   breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
 - Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
@@ -168,14 +178,15 @@ No wave solver: a fair try at the physics from the standards.
   hard ground hands back up to 3 dB, grass soaks the low mids near the ground.
 - **Land:** banks on the field as a height map (`banks`): the panel's mountain button stands one across the picked stack's
   throw, the plan draws each, and a crest between a stack and a listener cuts the highs behind it (a thin screen, the
-  barrier loss in place of the ground term) on the map and on Walk in.
+  barrier loss in place of the ground term) on the map and on Walk in. A captured venue brings its own ground: once the
+  splat is in, `groundMap` reads its floor off the points (a 32 by 32 raster at most, the venue's `land`), sampled
+  bilinearly and flat outside it (`heightMap`), the higher of it and any bank where both are (`highest`).
 - `qrooms.edit({ t: "field", tempC, humidity, ground })`, `{ t: "bank", at, yaw, len, h }`, `{ t: "unbank", index }`;
   `qrooms.pa().field`. The journey is the third test in `test/pa-builder.test.ts`; the ISO table is `packages/gear/test/field.test.ts`.
 
 **Missing:**
 - Banks stand on the plan only: the builder's 3D view and the Walk-in room are still flat, and a bank can't be dragged or
   turned on the plan yet.
-- The land from a splat capture's height map, not only drawn banks.
 - Wind, a forecast for the date, noise at the site's edge and wind load on the stacks (later, by the owner's call).
 
 

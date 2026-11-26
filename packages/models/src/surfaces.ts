@@ -73,12 +73,12 @@ export const SURFACES = {
   cheek: { dir: "plastic", tile: 0.35, tint: 0x3a3c33, roughness: 0.92, metalness: 0, normalScale: 0.8, wear: { chip: 0x9a988c, stipple: 1.4, scuff: 0.3, matte: 0.75, speck: 1, fleck: 0.5 } },
   /** A dance-stack horn's lining: pale painted fibreglass in a satin finish (flat colour, the plastic's fine relief),
    * greyed where hands and road dust have rubbed it, scuffed where the boxes are stacked. */
-  horn: { dir: "plastic", tile: 0.35, tint: 0x565b60, roughness: 0.75, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
+  horn: { dir: "plastic", tile: 0.35, tint: 0x565b60, roughness: 0.6, metalness: 0, normalScale: 0.22, wear: { chip: 0x7d786d, stipple: 0.35, scuff: 0.7, matte: 0.45 } },
   /** The same lining deep in a horn's throat, where no rag reaches: greyed and browned with road dust, matte. */
   grime: { dir: "plastic", tile: 0.35, tint: 0x403f37, roughness: 0.9, metalness: 0, normalScale: 0.3, wear: { chip: 0x3e3b33, stipple: 0.8, scuff: 0.4, matte: 0.7, speck: 1 } },
   /** A dance stack's cabinets: a deep red-leaning violet over birch in a coarse textured coat (the strong pebble a
-   * rolled or sprayed cabinet paint has, its grains near the coat's own colour), rubbed pale at the edges. */
-  violet: { dir: "plastic", tile: 0.35, tint: 0x11091d, roughness: 0.86, metalness: 0, normalScale: 0.9, wear: { chip: 0x8a7656, stipple: 3, scuff: 0.5, matte: 0.74, speck: 1, fleck: 0.8 } },
+   * rolled or sprayed cabinet paint has, its grains near the coat's own colour) with a satin sheen, rubbed pale at the edges. */
+  violet: { dir: "plastic", tile: 0.35, tint: 0x11091d, roughness: 0.62, metalness: 0, normalScale: 0.9, wear: { chip: 0x8a7656, stipple: 3, scuff: 0.5, matte: 0.74, speck: 1, fleck: 0.8 } },
   /** The tri-amp rig's cabinets: TurboBlue, a near-black blue semi-matt textured paint over birch, worn at the edges. */
   turbo: { dir: "plastic", tile: 0.35, tint: 0x0e1422, roughness: 0.82, metalness: 0, normalScale: 0.45, wear: { chip: 0x8a7656, stipple: 0.9, scuff: 0.8, matte: 0.65 } },
 } as const satisfies Record<string, Spec>;

@@ -77,7 +77,8 @@ import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 import { drumKit } from "@rustybuns/models/drums";
 import { GuitarLine, askIce } from "./guitar-line.ts";
 import { PaLine } from "./pa-line.ts";
-import { PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
+import { paBoxes, PaRoom, paSpeakers, rigStacks, roomLevel, roomRig } from "./pa-room.ts";
+import { playWalkSet } from "./walk-set.ts";
 import { NightAir } from "./night-air.ts";
 import { turnWheels } from "@rustybuns/models/monosynth";
 import { Dancers } from "./dancers.ts";
@@ -573,6 +574,8 @@ async function startAudio() {
     paRoom = new PaRoom(out.ctx, def, out.speakers);
     // out of doors, the night itself under the music: wind, crickets, the generator as you near it (night-air.ts)
     if (def.outdoor) nightAir = new NightAir(out.ctx, bus?.crowd ?? out.speakers, def.outdoor.generator?.at, def.outdoor.seed, def.outdoor.fire?.at, dancers?.count ?? 0);
+    // the client walk-through (?walk=1, #6020): the planned PA plays a test set, here alone, to walk the site by
+    if (walking && !walkSet) walkSet = playWalkSet(out.ctx, paRoom.input);
     pa = new PaLine(out.ctx, paRoom.input, (to, line, sig) => net?.rtc(to, line, sig), () => askIce().then((r) => r.iceServers));
     pa.ceiling(peerDb());
     for (const [peer, n] of paOn) pa.heardSay(peer, true, n);
@@ -652,10 +655,13 @@ let pa: PaLine | null = null;
 /** The room's speakers every set plays out of, heard from where you stand (src/studio/pa-room.ts). */
 let paRoom: PaRoom | null = null;
 let nightAir: NightAir | null = null;
+/** A client walk-through (/jam.html?walk=1, from the Event Planner's Client walk-through): the site before the show. */
+const walking = new URLSearchParams(location.search).get("walk") === "1";
+let walkSet: { stop(): void } | null = null;
 let shownStep: number | null = null;
 const hasDrumMachine = (def.props ?? []).some((p) => p.kind === "drumMachine");
 /** Music on the floor: the band's loop running, or someone's set on the PA. */
-const musicOn = () => transport.playing || paOn.size > 0 || !!myPa;
+const musicOn = () => transport.playing || paOn.size > 0 || !!myPa || !!walkSet;
 /** Who says they're playing a set to the room, and what's on, by peer: kept before the audio is up, asked for after. */
 const paOn = new Map<number, string>();
 /** What you're playing to the room, or null. */
@@ -1598,7 +1604,7 @@ function frame(now: number) {
   gearScene.mark(lessonMark && markAt(atWall.room, lessonMark), t);   // every frame: it follows a box in your hands
   const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
+  $("heard").textContent = `${netWords(status)}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${walkSet ? ". Walk-through: the planned PA plays a test set, walk the site to hear it" : ""}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}${[...plugged.keys()].map((p) => `. ${lagWords(jam.others.get(p)?.name || "Someone", lags.get(p) ?? null, mics.has(p) ? "mic" : "guitar", band.listen === "now")}`).join("")}${myGuitar !== null ? `. Your ${myInput} is in (I)` : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
@@ -1613,7 +1619,9 @@ const harness = {
   state: () => ({ studio: { here: pick, sesh: project.studio ?? null }, door: { signedIn: signedIn(), name, room: here?.room ?? null, setup: loadSetup(), look: lookFrom, rooms: loadRecent() }, me: { avatar: look, wearing: drawnLook("me") }, character: character.isOpen() ? character.picker()?.state() ?? "loading" : null, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], clock: player.clock?.() ?? null, dust: boothGear.dust(), ...snapshot(jam, project),
     muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
     grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) },
-    gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels() }),
+    gear: atWall.state(jam), lanterns: lit.state(jam), venue: venue.state, levels: harness.levels(),
+    /** The PA as planned (the same boxes as the builder's qrooms.pa().sources), the walk-through, and each stack as heard here. */
+    pa: { stacks: rigStacks(def), sources: paBoxes(def), walk: walking, testSet: !!walkSet, heard: paRoom?.state() ?? null } }),
   /** What you hear (levels.ts): MUSIC and CROWD as set and as their buses play, each person's level, and each of their lines as heard now. */
   levels: () => {
     const at = roomLevel(tubeSpeakers, { x: jam.me.x, z: jam.me.z, yaw: jam.me.yaw }), peers = [...jam.others.keys()];

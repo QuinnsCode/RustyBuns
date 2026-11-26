@@ -11,6 +11,10 @@ the Blender queue (`bun run blender`, `scripts/blender-queue.ts`, #6007) to the 
 the scripts below queue themselves (`await queued()`), `runBlender` refuses to start Blender where `BUILDER_HOST`
 is set, and the guard hook turns a direct `blender` away. On 2026-11-23 a `bun run builder run` on Bob did not find
 `blender` on its `PATH`: a queue job fails "no Blender on Bob" until it does (or `BLENDER_PATH` points at it).
+`beast-refs.ts` stays on the office Mac (its judge runs `claude -p` here) and sends only its close-ups, one queue job
+each (`blender()` in the queue script). On Bob one Blender runs at a time across everything (#6035): a queue job, a
+test in a builder slot (`runBlender`) and the warm Blender below all take `~/.rustybuns/blender.lock` and wait their
+turn; `bun run blender` and the builder board name who holds it.
 
 Blender 5.2 LTS is at `/opt/homebrew/bin/blender` on the office Mac and is on `PATH`. The builder Mac (Bob)
 has it too ([MAC_SETUP.md](../../../MAC_SETUP.md)). The beast build runs on 5.2.0 only: 5.2.1 writes other GLB bytes from the same

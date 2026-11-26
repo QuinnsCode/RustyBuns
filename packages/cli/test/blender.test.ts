@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runBlender } from "../src/blender.ts";
+import { blenderLock, blenderLockHolder, runBlender } from "../src/blender.ts";
 
 // A stand-in Blender (BLENDER_PATH, so CI needs none): it prints its arguments, and with `boom` after `--`
 // it fails the way Blender does on a Python error, chatter first, then the traceback on stderr.
@@ -24,6 +24,7 @@ esac
 chmodSync(fake, 0o755);
 const before = process.env.BLENDER_PATH;
 process.env.BLENDER_PATH = fake;
+process.env.RUSTYBUNS_HOME = dir; // runBlender takes its one-Blender lock here, not in ~/.rustybuns
 afterAll(() => { process.env.BLENDER_PATH = before; rmSync(dir, { recursive: true, force: true }); });
 
 test("a build runs headless with the pinned threads and hands back its output, line by line as it comes", async () => {
@@ -62,4 +63,25 @@ test("on a Mac that hands its heavy work to a builder, it won't start Blender an
   } finally {
     if (host === undefined) delete process.env.BUILDER_HOST; else process.env.BUILDER_HOST = host;
   }
+});
+
+test("one Blender at a time: a second taker waits for a live holder, takes over a dead one's lock, and nests in one process", async () => {
+  const lock = join(dir, "one.lock");
+  // a live holder elsewhere (a warm Blender over ssh, a test in another slot): the lock waits until it is gone
+  const other = Bun.spawn(["sh", "-c", `mkdir ${lock} && echo $$ > ${lock}/pid && exec sleep 0.6`]);
+  while (!existsSync(`${lock}/pid`)) await Bun.sleep(10);
+  const waited: number[] = [], t0 = Date.now();
+  const release = await blenderLock({ dir: lock, every: 50, onWait: (pid) => waited.push(pid) });
+  expect(waited).toEqual([other.pid]);
+  expect(Date.now() - t0).toBeGreaterThan(400);
+  // the same process again (a warm Blender's own build) doesn't wait on itself
+  const inner = await blenderLock({ dir: lock, every: 50, onWait: () => { throw new Error("waited on itself"); } });
+  inner();
+  expect(blenderLockHolder(lock)).toBe(process.pid);
+  release();
+  expect(existsSync(lock)).toBe(false);
+  // one left by a process that died holding it is taken straight away
+  mkdirSync(lock);
+  writeFileSync(`${lock}/pid`, String(other.pid));
+  (await blenderLock({ dir: lock, every: 50, onWait: () => { throw new Error("waited on a dead holder"); } }))();
 });

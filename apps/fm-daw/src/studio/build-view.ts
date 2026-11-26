@@ -12,7 +12,7 @@ import { footprint } from "./gear-wall.ts";
 import { metreUV, surface, wallSurface } from "./look.ts";
 import { thingBox, wallPieces, type Prop, type Side, type Spot, type StudioDef, type Wall } from "./room.ts";
 import { prop } from "./props.ts";
-import { paStack } from "./open-air.ts";
+import { bankMounds, paStack } from "./open-air.ts";
 import { firePit } from "@rustybuns/models/fire";
 import { doorways } from "./doors.ts";
 /** The doors' vision panels in the builder: one material for every build. */
@@ -24,7 +24,7 @@ import { wallMaterial, type Material } from "./sound.ts";
 import { VenueSplat } from "./venue-splat.ts";
 
 /** What the pointer is over. */
-export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { stack: number } | { side: Side; at?: [number, number] } | { floor: true } | null;
+export type Hit = { spot: string } | { booth: string } | { wall: number } | { gear: true } | { prop: number } | { door: true } | { stack: number } | { bank: number } | { side: Side; at?: [number, number] } | { floor: true } | null;
 /** The room's look for a prop: what it's made of, from the look's surfaces. */
 const propMat = (name: string, color: string) => surface(name, color);
 /** The outside walls: cut down on the sides toward you, all cut down, or all standing. */
@@ -154,6 +154,7 @@ export class BuildView {
     }
     // out of doors there are no walls: the rugs stand on the sand instead
     if (room.outdoor) {
+      this.root.add(bankMounds(room.outdoor.banks ?? []));
       this.root.add(rugs(room.outdoor));
       // the fire pit and the parked vans, as the room stands them
       if (room.outdoor.fire) { const f = firePit(room.outdoor.seed + 5).group; f.position.set(room.outdoor.fire.at[0], 0, room.outdoor.fire.at[1]); this.root.add(f); }

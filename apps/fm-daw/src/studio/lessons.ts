@@ -1,12 +1,14 @@
 // The jam room's setup lessons (#5861, PATHWAYS.md path 1): learn to set gear up with your hands, at the studio's gear
 // wall, on the sesh's own patch. Plug a guitar through a pedal into an amp and its cab; patch a sound wall voice, VCO to
 // VCF to VCA to Q Out; set up a small PA, placed, aimed and powered on in order; learn the PA's XLRs, a speaker's
-// combo input and its thru (#6029), from the connector list Sound Guy Simulator plugs by (@rustybuns/util/connectors). Each lesson is a list of steps on
+// combo input and its thru (#6029), from the connector list Sound Guy Simulator plugs by (@rustybuns/util/connectors); run
+// an amp rack (#6030): mains on its own cables from a distro (powerCON, IEC), speakON out to passive tops, and the mains
+// kept off the signal runs. Each lesson is a list of steps on
 // @rustybuns/gear's checker (Sound Guy Simulator's), read from the patch as it stands: a step is done when the gear says
 // so, and the next one not done says what to do and, when something is in the way, what and why in plain words. The
 // PA's switch-on order is the catalog's own `thumps`, its aim the catalog speaker's coverage. Nothing is reset or locked:
 // leave whenever you like, and what you built stays, the room's own rig to keep playing. Pure: no DOM.
-import { type Checked, type Flick, type Step, aimTo, checkSteps, gear as catalog, offAxisLoss, thumps } from "@rustybuns/gear";
+import { type Cable, type Checked, type Flick, type Step, aimTo, cableFor, checkSteps, compile, gear as catalog, jackKind, offAxisLoss, thumps } from "@rustybuns/gear";
 import { CONNECTORS } from "@rustybuns/util/connectors";
 import { type Answer, type GearDef, type Room, type Vec3, bringKit, gearOf, hand, heldId, inCase, item, knobValue, listen, placedNow, toWorld } from "../room/room.ts";
 import { GEAR_ROOM, type Bounds } from "../room/frame.ts";
@@ -19,6 +21,7 @@ export const LESSONS = [
   { id: "voice", title: "Patch a synth voice", blurb: "On the sound wall: an oscillator through a filter and a level into Q Out" },
   { id: "pa", title: "Set up a PA for a small room", blurb: "Place two speakers, aim them, cable a mic through a mixer, and power on in order" },
   { id: "plugs", title: "Know your plugs: XLR", blurb: "What an XLR carries and its pins: a mic into the mixer, a speaker's combo input, its thru on to the next box" },
+  { id: "rack", title: "Run an amp rack: power apart from audio", blurb: "Mains off a distro on powerCON and IEC, the mixer into the amps, speakON out to two passive speakers, and the power kept off the signal" },
 ] as const;
 export type LessonId = (typeof LESSONS)[number]["id"];
 const isLesson = (id: string): id is LessonId => LESSONS.some((l) => l.id === id);
@@ -194,14 +197,15 @@ function aims({ patch, bounds }: At) {
   });
 }
 
-/** The switch flicks since the speakers were last all off: an old thump is put right by starting again in order. */
-function sinceAllOff(flicks: readonly Flick[]): Flick[] {
+/** The switch flicks since the amps (a powered speaker's own counts) were last all off: an old thump is put right by starting again in order. */
+function sinceAll(flicks: readonly Flick[], amps: readonly string[]): Flick[] {
   const on = new Set<string>();
   let from = 0;
-  flicks.forEach((f, i) => { if (f.on) on.add(f.id); else on.delete(f.id); if (TOPS.every((t) => !on.has(t))) from = i + 1; });
+  flicks.forEach((f, i) => { if (f.on) on.add(f.id); else on.delete(f.id); if (amps.every((t) => !on.has(t))) from = i + 1; });
   return flicks.slice(from);
 }
-const paCables = (p: Patch) => p.cables.filter((c) => [c.from[0], c.to[0]].every((id) => defOf(p, id)?.kind === "pa")).map((c) => ({ kind: "xlr" as const, lengthM: 1, from: c.from, to: c.to }));
+const sinceAllOff = (flicks: readonly Flick[]) => sinceAll(flicks, TOPS);
+const paCables = (p: Patch): Cable[] => p.cables.filter((c) => [c.from[0], c.to[0]].every((id) => defOf(p, id)?.kind === "pa")).map((c) => ({ kind: cableFor(jackKind(c.from[1])), lengthM: 1, from: c.from, to: c.to }));
 const paPlaced = (p: Patch) => p.placed.flatMap((x) => { const g = gearOf(x); return g?.pa ? [{ id: x.id, gear: g.pa }] : []; });
 
 const PA: Lesson = [
@@ -310,7 +314,124 @@ const PLUGS: Lesson = [
   },
 ];
 
-const STEPS: Record<LessonId, Lesson> = { guitar: GUITAR, voice: VOICE, pa: PA, plugs: PLUGS };
+// ---- 5. an amp rack: mains on its own cables, apart from the audio ----
+
+const DISTRO = "rack-distro", DESK = "rack-mixer", AMP = "rack-amp", PASSIVE = ["rack-top-1", "rack-top-2"] as const;
+// side by side as they land: the distro beside the amp rack, so its cord runs along the mixer's signal at first
+export const RACK_KIT = [{ id: PASSIVE[0], gear: "pa-passive" }, { id: DESK, gear: "pa-mains-mixer" }, { id: AMP, gear: "pa-amp" }, { id: DISTRO, gear: "pa-distro" }, { id: PASSIVE[1], gear: "pa-passive" }];
+const C = CONNECTORS;
+/** The wall socket the distro's own cord is in: one 15 A circuit, as a small room's is. */
+const WALL = { id: "wall", circuit: "wall", breaker: { volts: 120, amps: 15 } };
+/** The rig as Sound Guy Simulator's checker reads it: the distro's cord in the wall, every cable by the jacks it is in. */
+const rig = (p: Patch) => compile(paPlaced(p), [...paCables(p), { kind: "power", lengthM: 2, from: [WALL.id, "power-out-1"], to: [DISTRO, "power-in"] }], { outlets: [WALL] });
+/** Whether a box has mains: a box that takes it on a cable (a `power-in` jack) is dark until one is in, switch or no. */
+const mains = (p: Patch, id: string) => !defOf(p, id)?.jacks.some((j) => j.name === "power-in") || !rig(p).problems.some((x) => x.kind === "no-power" && x.items.includes(id));
+const isOn = (p: Patch, id: string) => powerOf(p, id) && mains(p, id);
+const fromDistro = (p: Patch, id: string) => other(p, [id, "power-in"])?.[0] === DISTRO;
+
+/** A cable on the floor as a line between the jacks it is in (x, z). */
+type Run = { name: string; a: [number, number]; b: [number, number] };
+function runOf(p: Patch, c: Patch["cables"][number]): Run | null {
+  const end = (e: End): [number, number] | null => {
+    const x = placedOf(p, e[0]), j = x && gearOf(x)?.jacks.find((q) => q.name === e[1]);
+    if (!x || !j) return null;
+    const w = toWorld(x, j.at);
+    return [w[0], w[2]];
+  };
+  const a = end(c.from), b = end(c.to);
+  return a && b ? { name: `${name(p, c.from[0])} to ${name(p, c.to[0])}`, a, b } : null;
+}
+/** Closer than this, metres, and heading the same way within 30 degrees, two runs lie together. */
+export const APART_M = 0.3;
+/** How far `r` runs alongside `q`, metres: the stretch of it within APART_M of `q`, when the two head the same way. */
+function alongside(r: Run, q: Run): number {
+  const d = [r.b[0] - r.a[0], r.b[1] - r.a[1]], e = [q.b[0] - q.a[0], q.b[1] - q.a[1]], ld = Math.hypot(d[0]!, d[1]!), le = Math.hypot(e[0]!, e[1]!);
+  if (ld < 1e-6 || le < 1e-6 || Math.abs(d[0]! * e[0]! + d[1]! * e[1]!) / (ld * le) < Math.cos(Math.PI / 6)) return 0;
+  const N = 40;
+  let near = 0;
+  for (let i = 0; i <= N; i++) {
+    const x = r.a[0] + (d[0]! * i) / N, z = r.a[1] + (d[1]! * i) / N;
+    const t = Math.max(0, Math.min(1, ((x - q.a[0]) * e[0]! + (z - q.a[1]) * e[1]!) / (le * le)));
+    if (Math.hypot(x - q.a[0] - e[0]! * t, z - q.a[1] - e[1]! * t) < APART_M) near++;
+  }
+  return (near / (N + 1)) * ld;
+}
+/** Lying together this far, metres, is a run laid side by side; less is two cords meeting at the box they both go into. */
+export const TOGETHER_M = 0.5;
+/** The longest stretch a mains cable lies along a signal cable in the rig: hum is picked up where they run together. */
+function together(p: Patch): { power: Run; signal: Run; m: number } | null {
+  const mine = p.cables.filter((c) => [c.from[0], c.to[0]].every((id) => RACK_KIT.some((k) => k.id === id)));
+  const kind = (c: (typeof mine)[number]) => cableFor(jackKind(c.from[1]));
+  const runs = (k: (k: string) => boolean) => mine.filter((c) => k(kind(c))).flatMap((c) => runOf(p, c) ?? []);
+  let worst: { power: Run; signal: Run; m: number } | null = null;
+  for (const power of runs((k) => k === "power")) for (const signal of runs((k) => k === "xlr")) {
+    const m = Math.max(alongside(power, signal), alongside(signal, power));
+    if (m > (worst?.m ?? 0)) worst = { power, signal, m };
+  }
+  return worst && worst.m >= TOGETHER_M ? worst : null;
+}
+
+/** A box's mains cord from the distro: its power inlet, or, with that cord in your hand, the distro. */
+const powerMark = ({ lead }: Look, id: string): Mark => (same(lead, [id, "power-in"]) ? { id: DISTRO } : { id, part: "power-in" });
+const RACK: Lesson = [
+  {
+    job: `Power the amp rack off the distro: a cord from a distro outlet into the rack's mains in on its back, a ${C["powercon-blue"].name}. ${C["powercon-blue"].what} ${C["powercon-grey"].what}`,
+    done: ({ patch }) => fromDistro(patch, AMP),
+    why: () => null,
+    mark: (s) => powerMark(s, AMP),
+  },
+  {
+    job: `Power the mixer off the distro too, into its ${C.iec.name} inlet. ${C.iec.what}`,
+    done: ({ patch }) => fromDistro(patch, DESK),
+    why: () => null,
+    mark: (s) => powerMark(s, DESK),
+  },
+  {
+    job: "Cable the mixer's outs 1 and 2 into the amp rack's inputs 1 and 2: XLR, a line-level signal",
+    done: ({ patch }) => [1, 2].every((n) => other(patch, [AMP, `xlr-in-${n}`])?.[0] === DESK),
+    why: () => null,
+    mark: (s) => { const n = [1, 2].find((k) => other(s.patch, [AMP, `xlr-in-${k}`])?.[0] !== DESK) ?? 1; return cableMark(s, [DESK, `xlr-out-${n}`], [AMP, `xlr-in-${n}`]); },
+  },
+  {
+    job: `Run a speaker cable from each of the amp's outs to a passive speaker's input. ${C.nl4.what}`,
+    done: ({ patch }) => PASSIVE.every((t) => other(patch, [t, "speaker-in"])?.[0] === AMP),
+    why: ({ patch }) => {
+      const t = PASSIVE.findIndex((id) => { const e = other(patch, [id, "speaker-in"]); return !!e && e[0] !== AMP; });
+      return t >= 0 ? `The ${WHICH[t]} speaker hangs off ${at(patch, other(patch, [PASSIVE[t]!, "speaker-in"])!)}: give each speaker its own amp channel, out 1 and out 2` : null;
+    },
+    mark: (s) => { const i = Math.max(0, PASSIVE.findIndex((t) => other(s.patch, [t, "speaker-in"])?.[0] !== AMP)); return cableMark(s, [AMP, `speaker-out-${i + 1}`], [PASSIVE[i]!, "speaker-in"]); },
+  },
+  {
+    job: `Keep the mains off the signal: no power cord lying along an XLR. Move the distro so its cords run apart, and where a cord must cross a signal cable, cross it square`,
+    done: ({ patch }) => !together(patch),
+    why: ({ patch }) => {
+      const t = together(patch);
+      return t ? `The cord from the ${t.power.name} lies along the XLR from the ${t.signal.name} for ${r1(t.m)} m: mains hums into a cable laid beside it. Move the distro so they run apart, or cross square` : null;
+    },
+    mark: () => ({ id: DISTRO }),
+  },
+  {
+    job: "Power on in order: the mixer's Power knob up first, then the amp rack's, on its front",
+    done: ({ patch, flicks }) => [DESK, AMP].every((id) => isOn(patch, id)) && !thumps(paPlaced(patch), paCables(patch), sinceAll(flicks, [AMP])).length,
+    why: ({ patch, flicks }) => {
+      const dark = [DESK, AMP].find((id) => powerOf(patch, id) && !mains(patch, id));
+      if (dark) return `${name(patch, dark)}'s switch is on but no mains reaches it: plug its cord into the distro`;
+      if (thumps(paPlaced(patch), paCables(patch), sinceAll(flicks, [AMP])).length) return "The amp rack was on when the mixer switched: the pop went through the amps into the speakers as a thump. Amp off, then the mixer on, then the amp: amps on last and off first";
+      if (isOn(patch, AMP) && !isOn(patch, DESK)) return "The amp rack is on before the mixer: when the mixer goes on, it will thump through the amps. Turn the amp off, the mixer on, then the amp";
+      return null;
+    },
+    // a box switched on with no mains: its inlet; an amp on too soon (or after a thump) goes off first, then the mixer, then the amp
+    mark: ({ patch, flicks }) => {
+      const dark = [DESK, AMP].find((id) => powerOf(patch, id) && !mains(patch, id));
+      if (dark) return { id: dark, part: "power-in" };
+      if (powerOf(patch, AMP) && (!isOn(patch, DESK) || thumps(paPlaced(patch), paCables(patch), sinceAll(flicks, [AMP])).length)) return { id: AMP, part: "power" };
+      const n = [DESK, AMP].find((id) => !powerOf(patch, id));
+      return n ? { id: n, part: "power" } : null;
+    },
+  },
+];
+
+const STEPS: Record<LessonId, Lesson> = { guitar: GUITAR, voice: VOICE, pa: PA, plugs: PLUGS, rack: RACK };
 
 /** Every step of a lesson checked against what is in the room now. */
 export const checkLesson = (id: LessonId, s: At): Checked[] => checkSteps(STEPS[id], s);
@@ -337,10 +458,10 @@ export class Lessons {
   /** Start a lesson (the PA one brings its kit to the floor in front of you); a lesson already on is left for it. */
   start(id: string, j: Jam): Answer {
     if (!isLesson(id)) return { ok: false, why: `no lesson ${id}` };
-    if (id === "pa" || id === "plugs") {
+    if (id === "pa" || id === "plugs" || id === "rack") {
       if (!this.hands.joined) return { ok: false, why: "The sesh's gear is on its way" };
-      if (j.me.seat) return { ok: false, why: "Stand up first: the PA goes on the floor in front of you" };
-      if (!bringKit(this.hands.reach(j), PA_KIT)) return { ok: false, why: "Your hands are full: set it down first" };
+      if (j.me.seat) return { ok: false, why: `Stand up first: the ${id === "rack" ? "rig" : "PA"} goes on the floor in front of you` };
+      if (!bringKit(this.hands.reach(j), id === "rack" ? RACK_KIT : PA_KIT)) return { ok: false, why: "Your hands are full: set it down first" };
     }
     this.on = id;
     this.flicks = [];
@@ -350,7 +471,8 @@ export class Lessons {
   /** Leave the lesson: nothing is undone. */
   leave() { this.on = null; }
 
-  private powered(): Set<string> { const p = this.hands.room.studio.patch; return new Set(paPlaced(p).filter((x) => powerOf(p, x.id)).map((x) => x.id)); }
+  /** The PA boxes on now: switched on, and with mains where they take it on a cable. */
+  private powered(): Set<string> { const p = this.hands.room.studio.patch; return new Set(paPlaced(p).filter((x) => isOn(p, x.id)).map((x) => x.id)); }
   /** Note each power switch thrown since the last look, in order (as Sound Guy Simulator's first gig does). */
   private sync() {
     const now = this.powered();
