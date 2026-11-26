@@ -23,6 +23,7 @@ import path from "node:path";
 import { cpuProfile, PROF_MAX_MS, profiling } from "@rustybuns/shell-bun/cpuprof";
 import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
+import { every } from "../live/every.ts";
 import { officeHistory, officeMem } from "../live/mem.ts";
 export { startReaper } from "../live/reaper.ts";
 export { startCiLoop } from "../live/ci-loop.ts";
@@ -167,8 +168,5 @@ export function carryOn(s: Stall, floors: Iterable<StallFloor>, toast: (floor: S
 /** Every `everyMs`, Dexter's stall watch over the live sessions (#4306): each new stall acted on once (carryOn). The office starts it once. */
 export function watchStalls(floors: () => Iterable<StallFloor>, toast: (floor: StallFloor | undefined, message: string) => void, projects = path.join(homedir(), ".claude/projects"), everyMs = 60_000) {
   const meter = new Meter(), watch = new StallWatch();
-  const tick = () => { try { for (const s of watch.check(meter.scan(projects)).fresh) carryOn(s, floors(), toast); } catch (e) { console.warn("[rb] stall watch:", (e as Error).message); } };
-  const timer = setInterval(tick, everyMs);
-  timer.unref?.();
-  return () => clearInterval(timer);
+  return every(everyMs, () => { for (const s of watch.check(meter.scan(projects)).fresh) carryOn(s, floors(), toast); }, { name: "stall watch" });
 }

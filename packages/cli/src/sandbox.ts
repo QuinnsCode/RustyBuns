@@ -35,9 +35,16 @@ export function hostEnv(env: Record<string, string | undefined>): Record<string,
 // build may read the app's .dev.vars, NPM_TOKEN for a private package, or GITHUB_SHA for a version.
 const DEPLOY_LOGIN = /^(CLOUDFLARE|CF|WRANGLER|ALCHEMY)_|^(HCLOUD|HETZNER|RAILWAY|OP|AWS|AZURE|GCP|VERCEL|DOCKER|GH|GITHUB)_.*(TOKEN|SECRET|PASSW|CREDENTIAL|KEY)/i;
 
-/** The environment plan, deploy and dev build the Worker in: everything but the deploy's logins (#1114). */
+// A repo whose package.json pins "packageManager": "pnpm@11.3.0" makes an older pnpm switch itself:
+// it runs `pnpm add pnpm@11.3.0` in a child, and under an empty HOME or a sandbox that can't keep the
+// result, each child switches again. On the office Mac that was 1,164 copies and 27 GB (#5764).
+// The installed pnpm runs the repo instead (pnpm 10 reads npm_config_*, pnpm 11 pnpm_config_*).
+export const NO_PM_SWITCH = { npm_config_manage_package_manager_versions: "false", pnpm_config_manage_package_manager_versions: "false" };
+
+/** The environment plan, deploy and dev build the Worker in: everything but the deploy's logins (#1114),
+ *  with pnpm's version switch off (#5764). */
 export function buildEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = { ...NO_PM_SWITCH };
   for (const [k, v] of Object.entries(env)) if (v !== undefined && !DEPLOY_LOGIN.test(k)) out[k] = v;
   return out;
 }

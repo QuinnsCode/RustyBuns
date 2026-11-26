@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { packageManager, withMode } from "../src/smoke.ts";
+import { copyApp, installApp, packageManager, withMode } from "../src/smoke.ts";
+import { buildEnv } from "../src/sandbox.ts";
 import { declaredSecrets, fakeSecret, removeCommittedSecrets } from "../src/fake-secrets.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "smoke-test-"));
@@ -32,3 +33,20 @@ test("committed secrets are deleted, examples stay, and fakes are never real-loo
   expect(fakeSecret("DATABASE_URL")).toContain("127.0.0.1:9");
   expect(fakeSecret("CLOUDFLARE_API_TOKEN")).toBeUndefined();
 });
+
+test("a workspace member is copied with its workspace and installs there, its workspace:* sibling linked", () => {
+  const ws = tmp();
+  const pkg = (dir: string, body: object) => { mkdirSync(join(ws, dir), { recursive: true }); writeFileSync(join(ws, dir, "package.json"), JSON.stringify(body)); };
+  pkg(".", { name: "mono", private: true, workspaces: ["apps/*", "packages/*"] });
+  pkg("apps/web", { name: "web", dependencies: { "@mono/ui": "workspace:*" } });
+  pkg("packages/ui", { name: "@mono/ui", version: "1.0.0" });
+  writeFileSync(join(ws, "apps/web/.env"), "DATABASE_URL=postgres://real");
+
+  const { top, dir } = copyApp(join(ws, "apps/web"), join(tmp(), "app"));
+  expect(dir).toBe(join(top, "apps/web"));
+  expect(existsSync(join(dir, ".env"))).toBe(false);
+  const r = installApp(top, buildEnv(process.env));
+  expect(r.tail).not.toContain("failed to resolve");
+  expect(r.ok).toBe(true);
+  expect(existsSync(join(dir, "node_modules/@mono/ui/package.json")) || existsSync(join(top, "node_modules/@mono/ui/package.json"))).toBe(true);
+}, 60_000);

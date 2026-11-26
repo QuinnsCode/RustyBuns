@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { arr, check, int, obj, str } from "@rustybuns/util/guard";
+import { every } from "./every.ts";
 
 export const BY = "CI loop";
 export const CAP = 2;
@@ -69,17 +70,12 @@ export async function loopOnce(floor: LoopFloor, run: Gh = gh): Promise<number[]
 
 /** Every `everyMs`, the loop over each floor that has the hourly ring; the office starts it once. */
 export function startCiLoop(floors: () => Iterable<LoopFloor>, toast: (floor: LoopFloor, message: string) => void, everyMs = 30 * 60_000) {
-  const tick = async () => {
+  return every(everyMs, async () => {
     for (const f of floors()) {
       if (!existsSync(path.join(f.dir, ".github", "workflows", "desktop-hourly.yml"))) continue;
       try {
         for (const n of await loopOnce(f)) toast(f, `The ${BY} queued issue #${n}: the hourly CI run is red`);
       } catch (e) { console.warn("[rb] ci loop:", (e as Error).message); }
     }
-  };
-  const first = setTimeout(() => void tick(), 60_000);
-  const timer = setInterval(() => void tick(), everyMs);
-  first.unref?.();
-  timer.unref?.();
-  return () => { clearTimeout(first); clearInterval(timer); };
+  }, { name: "ci loop", first: 60_000 });
 }
