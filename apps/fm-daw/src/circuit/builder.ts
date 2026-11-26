@@ -3,15 +3,18 @@
 // (`circuits/<board>.tsx` with your values), retested against the board you played with the same riff.
 // A swap is always a value in the same holes, so the remake keeps the stock board's layout and footprints.
 // The page is src/builder/main.ts.
-import { Circuit, type Netlist } from "@rustybuns/gear/circuit";
+import { Circuit, ModRun, type Mod, type Netlist } from "@rustybuns/gear/circuit";
 import { check, isRecord, obj, oneOf, str } from "@rustybuns/util/guard";
 import { PEDALS, type PedalDef } from "./amps.ts";
 import { BOARDS, CLIPPERS, farads, isClipper, ohms, sockets, swapOptions, type BoardId, type Clipper, type Swaps } from "./circuits.ts";
 import { riff } from "./riff.ts";
 import { readBoard } from "./tscircuit.ts";
 
-/** The pedals Q Builder opens: the clip pedals, whose circuit is the board and its one knob (no LFO moving a part). */
-export const BUILDER_PEDALS = ["fuzz", "drive", "dist"] as const;
+/**
+ * The pedals Q Builder opens: every one with a board. The clip pedals are the board and its knob; the effects also
+ * have an LFO or an envelope moving a part (their `mods`), which the bench steps as Q Amp's rig does.
+ */
+export const BUILDER_PEDALS = ["fuzz", "drive", "dist", "germ", "octave", "phase", "vibe", "trem", "wah", "autowah", "comp"] as const;
 export type BuilderPedal = (typeof BUILDER_PEDALS)[number];
 export const isBuilderPedal = (id: string): id is BuilderPedal => BUILDER_PEDALS.some((p) => p === id);
 
@@ -27,6 +30,12 @@ export const SR = 48000;
 export const INPUT_VOLTS = 0.5;
 /** The scope's window: about 21 ms, nearly two periods of the low E (a fuzz turns the riff to hash, so more is a blur). */
 export const WINDOW = 1024;
+
+/**
+ * The volts a control net reads at full scale. An effect's LFO or envelope follower is off its board, on a net named
+ * after its control (GATE, LED, FOOT), so the scope there shows that control, 0 to 1, as 0 V to half the 9 V supply.
+ */
+export const CONTROL_VOLTS = 4.5;
 
 /** A net a scope can sit on: its connectivity key (what a schematic trace carries), its node in the netlist, and the parts on it. */
 export interface ScopeNet { key: string; node: string; label: string; parts: string[] }
@@ -56,18 +65,26 @@ export interface Played { out: Float32Array; at: Float32Array | null; misses: nu
 /**
  * `input` (−1 to 1, `INPUT_VOLTS` at full scale) through `net`, run at twice the rate with the input drawn straight
  * between samples, so a clipper's edges alias less. Each output sample is its two steps averaged; `node`'s volts are
- * read at the second.
+ * read at the second. `mods` (a pedal's LFO or envelope) move its parts once a sample, as in Q Amp's rig: an
+ * envelope reads the last sample's swing at the output. On a control's own net (GATE for "gate") the scope reads the
+ * control, at `CONTROL_VOLTS` full scale.
  */
-export function play(net: Netlist, input: Float32Array, node?: string): Played {
+export function play(net: Netlist, input: Float32Array, node?: string, mods: readonly Mod[] = []): Played {
   const c = new Circuit(net, SR * 2);
-  c.settle(0);
+  const rest = c.settle(0);
+  const runs = mods.map((m) => new ModRun(m, c, SR));
+  for (const r of runs) { if (r.slot < 0) throw new Error(`no part listens to control "${r.m.ctl}"`); c.setCtl(r.slot, r.rest); }
+  const ctl = node ? runs.find((r) => r.m.ctl.toUpperCase() === node) : undefined;
   const out = new Float32Array(input.length), at = node ? new Float32Array(input.length) : null;
-  let last = 0;
+  let last = 0, swing = 0;
   for (let i = 0; i < input.length; i++) {
+    let moved = 0;
+    for (const r of runs) { const v = r.step(swing, SR); c.setCtl(r.slot, v); if (r === ctl) moved = v; }
     const x = input[i] * INPUT_VOLTS;
     const y0 = c.step((last + x) / 2), y1 = c.step(x);
     out[i] = (y0 + y1) / 2;
-    if (at && node) at[i] = c.volts(node);
+    swing = Math.max(Math.abs(y0 - rest), Math.abs(y1 - rest));
+    if (at && node) at[i] = ctl ? moved * CONTROL_VOLTS : c.volts(node);
     last = x;
   }
   return { out, at, misses: c.misses };
@@ -184,7 +201,9 @@ const db = (r: number) => (r > 0 ? 20 * Math.log10(r) : -Infinity);
 
 /** Plays the same riff through your board (`def` at `drive` with `swaps`), through the remake read back, and through the stock board. */
 export function retest(def: PedalDef & { board: BoardId }, drive: number, swaps: Swaps, input = theRiff()): Retest {
-  const yours = play(def.net(drive, swaps), input), remade = play(def.net(drive, {}, remakeJson(def.board, swaps)), input), stock = play(def.net(drive), input);
+  const mods = def.mods?.(drive);
+  const yours = play(def.net(drive, swaps), input, undefined, mods), stock = play(def.net(drive), input, undefined, mods);
+  const remade = play(def.net(drive, {}, remakeJson(def.board, swaps)), input, undefined, mods);
   let apart = 0;
   for (let i = 0; i < input.length; i++) apart = Math.max(apart, Math.abs(yours.out[i] - remade.out[i]));
   const diff = yours.out.map((v, i) => v - stock.out[i]);

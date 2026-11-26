@@ -9,7 +9,7 @@ self.onmessage = (e: MessageEvent<BenchAsk>) => {
   try {
     if (m.t === "retest") reply = { t: "retest", id: m.id, retest: retest(def, m.drive, m.swaps, input) };
     else {
-      const p = play(def.net(m.drive, m.swaps), input, m.node);
+      const p = play(def.net(m.drive, m.swaps), input, m.node, def.mods?.(m.drive));
       const at = p.at ?? new Float32Array(0);
       reply = { t: "play", id: m.id, out: p.out, at, swing: swing(at), misses: p.misses };
       postMessage(reply, { transfer: [p.out.buffer, at.buffer] });
