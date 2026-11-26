@@ -24,7 +24,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { apply, empty, oneOp, text } from "../src/lines.ts";
-import { got, local, type Call } from "../src/local.ts";
+import { got, local } from "../src/local.ts";
 import { arr, bool, obj, opt, or, raw, str, type Guard } from "@rustybuns/util/guard";
 import { FileDoc } from "../src/file-do.ts";
 import { readJson } from "@rustybuns/util/http";

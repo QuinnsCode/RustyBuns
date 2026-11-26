@@ -40,7 +40,6 @@ const TREES = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "sna
 const { PI } = Math;
 const mat = (...ms: THREE.Matrix4[]) => ms.reduce((a, m) => a.multiply(m), new THREE.Matrix4());
 const at = (x: number, y: number, z: number) => new THREE.Matrix4().makeTranslation(x, y, z);
-const rx = (a: number) => new THREE.Matrix4().makeRotationX(a);
 const ry = (a: number) => new THREE.Matrix4().makeRotationY(a);
 const rz = (a: number) => new THREE.Matrix4().makeRotationZ(a);
 

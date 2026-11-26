@@ -341,7 +341,7 @@ let showArms = false;
 window.addEventListener("keydown", (e) => { if (e.code === "KeyY") showArms = true; });
 window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = false; });
 const shoes = shoesView(scene);
-const ink = mountInk($("ink-host"), hands, () => Object.keys(FLASH).map((level) => ({ level, pass: 1 as const })), shoes);
+mountInk($("ink-host"), hands, () => Object.keys(FLASH).map((level) => ({ level, pass: 1 as const })), shoes);
 /** What the hands hold: a roll hooked on the right hand's fingers (the left on its end once that is out), a plug
  * ready at a lit jack, a fist round a cable you walk, or nothing. The wrist drops with what the cable weighs on it. */
 function holding(): Hold {

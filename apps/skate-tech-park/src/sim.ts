@@ -479,7 +479,7 @@ function land(s: State, level: Level, steer: number, brake: boolean) {
   if (s.airTime > 0.2) s.jetT = JETS.landBurst;
   const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), a = gx * fx + gz * fz;
   s.pitch = Math.atan(a); s.roll = Math.atan(gx * fz - gz * fx);
-  const hs = Math.hypot(vx, vz), along = (vx * fx + vz * fz + vy * a) / Math.sqrt(1 + a * a); // along the surface under the heading
+  const along = (vx * fx + vz * fz + vy * a) / Math.sqrt(1 + a * a); // along the surface under the heading
   if (s.flipT > 0 && s.flipT < flickTime(s.flipKind) * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (flewSideways) return bail(s, "Bail: landed sideways");

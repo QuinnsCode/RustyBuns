@@ -21,7 +21,7 @@
 //                                     Your order goes first: a JSON list of app ids in ~/.rustybuns/release-order.json
 //                                     (the release-order artifact copies one: `pbpaste > ~/.rustybuns/release-order.json`),
 //                                     then the rest busiest first
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { help } from "./help.ts";

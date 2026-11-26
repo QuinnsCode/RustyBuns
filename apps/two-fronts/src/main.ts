@@ -11,7 +11,6 @@ import {
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { claimSeat, fetchView, fetchWars, linkInHash, openWar, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { EVENT_ICONS, eventLine, eventNow, eventSoon, forecasting, galeAt, sheltered } from "./war/gale.ts";
-import { yearOf } from "./war/objectives.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { applyTheme, installUi, toast as say } from "@rustybuns/ui";
 import { BATTLE_KEYS, WAR_TABLE, mountControlsPanel } from "./ui/controls-panel.ts";
@@ -26,7 +25,7 @@ import { run } from "./battle/sim.ts";
 import { PLACES } from "./battle/cutscenes.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
-import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
+import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Pods, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
 import { addCommands, howToPlay, wordsOf } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -143,7 +142,7 @@ const ORBIT_PLAYS: Card[] = ["trap", ...ORBIT_CARDS];
 const DECK_ICONS: Record<Deck, string> = { fleet: "rocket", ground: "swords", gale: "wind" };
 const DECK_NAMES: Record<Deck, string> = { fleet: "Fleet", ground: "Ground", gale: "Gale" };
 
-const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
+const systemDef = (id: string) => galaxyOf(c).system(id);
 
 const placeName = (w: Where) => {
   const d = systemDef(w.system);
@@ -270,7 +269,7 @@ function render() {
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? tip("Cut off: your troops here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${orbitCards ? `<div class="act">${orbitCards}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
-        const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
+        const at = { system: selected!, sector: i };
         const cards = !answering && ph === 1 ? (x.owner === me ? cardButtons(at, SECTOR_CARDS) : "") + cardButtons(at, AIMED_CARDS, true) : "";
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><span class="kind" title="${isHold(x.kind) ? "A landing hold" : SECTOR_NAMES[x.kind]}">${icon(KIND_ICONS[x.kind], 14)}</span><b>${SECTOR_NAMES[x.kind]}</b>${chip(places[selected!]!.sectors[i]!)}${gale === i ? `<i class="mark gale" title="Under the Gale: ${sheltered(x.kind) ? "sheltered here" : "armies in the open lose 1 in 3 this Collect"}; no landings, no bombardment, the holder has cover">${icon("wind", 13)}</i>` : galeSoon.includes(i) ? `<i class="mark gale-soon" title="${told ? "Your forecast: the Gale blows here next turn" : "The Gale may blow here next turn"}">${icon("wind", 13)}</i>` : ""}${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}

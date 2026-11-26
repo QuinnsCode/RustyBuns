@@ -17,7 +17,7 @@ import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { createAuthEndpoint } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import type { BetterAuthPlugin } from "better-auth";
-import { arr, check, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, check, nul, num, obj, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { b64url } from "@rustybuns/util/bytes";
 import { JwksKeyring, verifiedClaims } from "./jwks.ts";
 import { Role, roleIn, type Made } from "./studios.ts";

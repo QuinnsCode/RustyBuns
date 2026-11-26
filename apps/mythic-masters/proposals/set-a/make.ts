@@ -473,7 +473,7 @@ function sphinx() {
   b.parts.push({ kind: "tuft", along: ["chest", "belly", "hip"], n: 16, len: f4(0.04 * k), base: f4(0.02 * k), rows: 7, spread: 100, sweep: 1.6, curve: 20, flat: 0.5, material: "tuft" });
   // the head bigger than a man's on a lion this size, so the face reads at fight size
   const h = (x: number) => f4(x * k * 1.4);
-  const hd = b.nodes.head!, H: V = [hd[0], hd[1], hd[2]];
+  const hd = b.nodes.head!;
   b.nodes.head = [hd[0], hd[1], hd[2], s(0.06)];
   b.nodes.snout = [f4(hd[0] + s(0.06)), f4(hd[1] - s(0.09)), 0, s(0.04)];
   // the head, in metres from the head node: a cranium, a face narrowing to the jaw, a chin, a straight nose, a brow

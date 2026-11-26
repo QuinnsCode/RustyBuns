@@ -26,7 +26,7 @@ import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, NodeTooOld, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
 import { homedir } from "node:os";
 import { newestSupported, nodeFloors, nodeSupported } from "./node-version.ts";
-import { infer, readPackageJson, appsBelow, siblingServers, proxyServers, bunServerEntry } from "./glue/infer.ts";
+import { infer, appsBelow, siblingServers, proxyServers, bunServerEntry } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 
 // @sveltejs/adapter-cloudflare builds the Worker and the static assets into one directory.
@@ -76,7 +76,7 @@ import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
 import { isRecord } from "@rustybuns/shell-bun/guard";
 import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
-import { TRIAGE_USAGE, triage } from "./triage.ts";
+import { triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { skillCommand } from "./skill.ts";
 import { mcpSkillCommand } from "./mcp-skill.ts";

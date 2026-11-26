@@ -11,7 +11,7 @@ import { practicePen } from "./engine/pen-fighter.ts";
 import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts";
 import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
-import { addToIndex, type MatchSummary, summarize } from "./archive.ts";
+import { addToIndex, summarize } from "./archive.ts";
 import type { LiveMatch, LiveMessage } from "./live-wire.ts";
 
 /** Turns per fighter, and the gap between them: about three minutes of fight. A plan is 5–12 parts and a

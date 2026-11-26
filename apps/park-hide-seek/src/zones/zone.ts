@@ -14,6 +14,7 @@ import { PARK_STATES, ZONE_INDEX, type ZoneMeta } from "./index.ts";
 export type { ZoneMeta };
 
 /** The surveyed zones (Yosemite and Yellowstone: landmarks, a park map), bundled, so there's always ground to stand on. */
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- JSON imports widen the zone's tuples and literals; fetch-zones.ts writes ZoneData
 const SURVEYED = ZONE_DATA as unknown as ZoneData[];
 /** The ground that's here: the surveyed zones from the start, the rest as loadZoneData brings them. */
 const ground = new Map<string, ZoneData>(SURVEYED.map((z) => [z.id, z]));
@@ -48,6 +49,7 @@ export function loadZoneData(id: string): Promise<void> {
   let p = loading.get(id);
   if (!p) {
     const row = ZONE_INDEX.find((z) => z.id === id);
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- JSON imports widen the zone's tuples and literals; fetch-zones.ts writes ZoneData
     p = row ? loadZone(id).then((json) => { ground.set(id, { ...(json as unknown as ZoneData), ...row }); }) : Promise.reject(new Error(`no zone ${id}`));
     p.catch(() => loading.delete(id));
     loading.set(id, p);

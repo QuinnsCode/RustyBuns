@@ -11,7 +11,7 @@ const narrate = (v: HudView) => {
   const a = v.sides[h.by]!.name, b = v.sides[1 - h.by]!.name;
   return h.guarded ? `${b} turns the blow aside.` : h.rear ? `${a} strikes from behind.` : `${a} strikes ${b}.`;
 };
-const side = (f: HudSide, i: number, v: HudView) => `<div class="side s${i}">
+const side = (f: HudSide, i: number, _v: HudView) => `<div class="side s${i}">
   <div class="nm">${esc(f.name)}</div>
   <div class="facts">${f.massKg} kg · ${f.heightM} m · ${esc(f.fields.map((x) => x[0]!.toUpperCase() + x.slice(1)).join(", "))}</div>
   <div class="vit" title="Health"><span>Vitality</span><i><u style="width:${pct(f.hp, f.hpMax)}%"></u></i><b>${Math.ceil(f.hp)}</b></div>

@@ -38,7 +38,7 @@ for (const deg of [3, 6, 10, 15]) {
 {
   const k = pcs.kicker({ x: 0, z: 20 }, {}); const box = lv.piece("box", "land", 0, 40, 0, 10, 12, 1.5, 1.5);
   const level = mk({ pieces: [...k.pieces, box] });
-  for (const thr of [1]) {
+  for (const _thr of [1]) {
     const s = start(0, 0, 0, level); let maxY = 0, landedOnBox = false, bail = "";
     for (let i = 0; i < 5 / DT; i++) { step(s, { ...IDLE, throttle: 1, jump: s.z > 23 && s.z < 23.5 }, level); maxY = Math.max(maxY, s.y); if (!s.air && s.z > 34 && s.z < 46 && s.y > 1.4) landedOnBox = true; if (s.last?.name?.startsWith("Bail")) bail = s.last.name; }
     out.kickerGap = { maxY: +maxY.toFixed(2), landedOnBox, bail, z: +s.z.toFixed(1) };
@@ -48,7 +48,7 @@ for (const deg of [3, 6, 10, 15]) {
 for (const v of [2, 4, 8, 16]) {
   const level = mk({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }] });
   const s = start(0, 2, 0, level); Object.assign(s, { air: true, y: 1.0, vy: -1, vz: v, speed: v });
-  let ground = 0, onRail = 0, names: string[] = [], reGrab = 0, wasOff = false;
+  let onRail = 0, names: string[] = [], reGrab = 0, wasOff = false;
   for (let i = 0; i < 6 / DT; i++) {
     step(s, { ...IDLE, steer: Math.max(-1, Math.min(1, s.balance * 2)) }, level);
     if (s.grind >= 0) { onRail += DT; if (wasOff) reGrab++; } else if (onRail > 0) wasOff = true;

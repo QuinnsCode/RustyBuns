@@ -1,7 +1,7 @@
 // Helpers the shop interiors share (not a shop kind itself). A room is a square whose door is on one
 // wall: u runs across it (0 = the door's middle), d runs inward from the door wall to the back wall.
 // Every box is axis-aligned, so the frame only swaps which world axis is which.
-export function room({ b, pw, ph, y0, put, door: [fx, fz] }) {
+export function room({ b, pw, y0, put, door: [fx, fz] }) {
   const ih = pw / 2 - 0.1, W = 2 * ih, alongX = fx !== 0;
   const at = (u, d) => [b.x + fx * (ih - d) + fz * u, b.z + fz * (ih - d) + fx * u];
   /** A box centred u across, d in, y up from the floor; lu across, ly tall, ld deep. */

@@ -45,7 +45,7 @@ export type { Kind };
 /** What a request looks like: a person in a browser, an agent, or a bot. */
 export function classify(req: Request, p: string[]): { kind: Kind; via: string } {
   if (p[1] === "mcp") return { kind: "agent", via: "mcp" };
-  if (/^codesplitter-cli\//.test(req.headers.get("user-agent") ?? "")) return { kind: "agent", via: "cli" };
+  if ((req.headers.get("user-agent") ?? "").startsWith("codesplitter-cli/")) return { kind: "agent", via: "cli" };
   if (/^bearer /i.test(req.headers.get("authorization") ?? "")) return { kind: "agent", via: "token" };
   return kindOf(req.headers);
 }

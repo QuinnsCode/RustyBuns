@@ -48,6 +48,7 @@ export class R2Bucket {
     return {
       key, size: st.size, etag, httpEtag: `"${etag}"`, uploaded: st.mtime,
       httpMetadata: http, customMetadata: m.customMetadata ?? {},
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- head() has no body, but R2ObjectLike says every object has one, as Cloudflare's R2Object does
       get body() { return withBody ? f.stream() : (null as unknown as ReadableStream); },
       arrayBuffer: () => f.arrayBuffer(), text: () => f.text(), json: () => f.json(),
       writeHttpMetadata(h: Headers) {

@@ -192,6 +192,7 @@ export class IkRig {
 
   /** Every joint inside its range, give or take `slack` radians. */
   withinLimits(slack = 1e-4): boolean {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- closed-chain-ik types a joint's dof list apart from the DoF its own setters take
     return this.joints.every((j) => (j.dof as unknown as Dof[]).every((d) =>
       Number(j.getDoFValue(d)) >= Number(j.getMinLimit(d)) - slack && Number(j.getDoFValue(d)) <= Number(j.getMaxLimit(d)) + slack));
   }
@@ -199,6 +200,7 @@ export class IkRig {
   /** Back to the rest pose, goals and all. */
   reset() {
     for (const j of this.joints) {
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- closed-chain-ik types a joint's dof list apart from the DoF its own setters take
       for (const d of j.dof as unknown as Dof[]) j.setDoFValue(d, j.getRestPoseValue(d));
       j.setMatrixDoFNeedsUpdate();
     }

@@ -1,4 +1,3 @@
-import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { StatusCodes } from 'http-status-codes';
 import { setupArticles } from '@/articles/articles.module';

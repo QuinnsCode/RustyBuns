@@ -378,7 +378,7 @@ export class Director {
 
   /* ---------------- barrage ---------------- */
 
-  private barrage(b: { phase: Phase; t: number }, dt: number) {
+  private barrage(b: { phase: Phase; t: number }, _dt: number) {
     const game = this.game, you = game.you(), c = game.map.compounds[this.target];
     if (!c) return this.end();
     if (b.phase === "spotting") {

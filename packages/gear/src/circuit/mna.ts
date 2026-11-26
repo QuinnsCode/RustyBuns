@@ -689,7 +689,7 @@ export class Circuit {
 
   /** One sample: `vin` volts on the input, the output's volts back. */
   step(vin: number): number {
-    const { m, size: n, K, Ainv, W, H, z, x, v, vNew, iP, J, F, JF, p, pa, pb } = this;
+    const { m, size: n, K, W, H, z, x, v, vNew, iP, J, F, JF, p, pa, pb } = this;
     // z = A⁻¹b: what the circuit would do if nothing bent. b is sparse, so add only its columns.
     z.fill(0);
     if (this.pots.length) this.turnPots(this.potGlide);

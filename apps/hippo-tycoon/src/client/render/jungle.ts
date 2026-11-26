@@ -241,7 +241,7 @@ export function fireflies(): THREE.Points & { update(t: number): void } {
   const dot = document.createElement("canvas"); dot.width = dot.height = 32;
   const x = dot.getContext("2d")!, grad = x.createRadialGradient(16, 16, 1, 16, 16, 15);
   grad.addColorStop(0, "#fff"); grad.addColorStop(0.35, "#fffa"); grad.addColorStop(1, "#fff0"); x.fillStyle = grad; x.fillRect(0, 0, 32, 32);
-  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.42, map: new THREE.CanvasTexture(dot), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true })) as unknown as THREE.Points & { update(t: number): void };
+  const pts = Object.assign(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.42, map: new THREE.CanvasTexture(dot), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true })), { update(_t: number) {} });
   pts.frustumCulled = false;
   pts.update = (t) => {
     for (let i = 0; i < n; i++) {

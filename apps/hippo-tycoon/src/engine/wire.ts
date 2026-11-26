@@ -112,5 +112,5 @@ export function decodeSnapshot(m: Snap): Snapshot {
 
 export const roomCfg = (m: Extract<ServerMsg, { t: "room" }>): Cfg => ({
   secs: m.secs, difficulty: m.diff,
-  bots: Array.from({ length: SEATS }, (_, i) => (DIFFICULTIES.includes(m.bd?.[i]!) ? m.bd[i]! : m.diff)),
+  bots: Array.from({ length: SEATS }, (_, i) => { const d = m.bd?.[i]; return d !== undefined && DIFFICULTIES.includes(d) ? d : m.diff; }),
 });

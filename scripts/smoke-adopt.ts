@@ -74,7 +74,6 @@ function makeApp(o: { adopt?: boolean } = {}) {
   if (existsSync(MODULES)) symlinkSync(MODULES, join(dir, "node_modules"), "dir");
   return dir;
 }
-const setAdopt = (dir: string, adopt: boolean) => writeFileSync(join(dir, "rustybuns.config.ts"), config({ adopt }));
 const rb = (dir: string, ...a: string[]) => sh([process.execPath, CLI, ...a], { cwd: dir, input: "" });
 /** Runs under a pseudo-terminal (`script`), answering the prompts in order. */
 const rbTty = (dir: string, answers: string[], ...a: string[]) =>

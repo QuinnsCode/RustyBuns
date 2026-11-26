@@ -63,7 +63,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
   const sheds = mesh(mergeGeometries([new THREE.BoxGeometry(6, 2.4, 4).translate(0, 1.2, 0), shedRoof]) ?? new THREE.BoxGeometry(6, 2.4, 4), SHED);
   const corks = mesh(mergeGeometries([new THREE.BoxGeometry(1.8, 1.2, 0.12).translate(0, 1.7, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(-0.8, 1.15, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(0.8, 1.15, 3.2)]) ?? new THREE.BoxGeometry(1.8, 1.2, 0.12), CORK);
   const all = [stumps, tapes, logs, flames, masts, caps, wisps, cabins, doors, panes, sheds, corks, ...fronts];
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3(), sc = new THREE.Vector3();
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), at = new THREE.Vector3(), sc = new THREE.Vector3();
   const put = (im: THREE.InstancedMesh, x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1) => {
     q.setFromAxisAngle(up, yaw);
     im.setMatrixAt(im.count++, m4.compose(at.set(x, y, z), q, sc.set(sx, sy, sx)));

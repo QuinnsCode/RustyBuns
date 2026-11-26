@@ -94,9 +94,9 @@
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
-import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, maybe, nul, num, obj, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
-import type { Doc, Op } from "./lines.ts";
+import type { Doc } from "./lines.ts";
 import { access as artifactAccess, docIn, handleFor, toFile, TreeReply } from "./archive.ts";
 import { keep, unkeep, type Kept } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
@@ -1665,11 +1665,13 @@ const FIELDS: { [K in keyof Settings]: Field<K> } = {
 const fields = Object.entries(FIELDS) as [keyof Settings, Field<keyof Settings>][];
 /** The settings a PUT takes, in order: the API reference's sketch of its body. */
 export const SETTING_KEYS = fields.map(([k]) => k);
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Object.fromEntries over FIELDS, which has one entry per Settings key
 export const DEFAULTS = Object.fromEntries(fields.map(([k, f]) => [k, f.default])) as unknown as Settings;
 
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT * FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   if (!r) return { ...DEFAULTS };
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Object.fromEntries over FIELDS, which has one entry per Settings key
   return Object.fromEntries(fields.map(([k, f]) => [k, f.read(r[f.column ?? k])])) as unknown as Settings;
 }
 

@@ -50,7 +50,7 @@ async function sh(cmd: string[], cwd: string, timeoutMs = 600_000, env: Record<s
 }
 
 async function one(e: Entry) {
-  const s = slug(e), r: any = { ...e, steps: [] as any[] };
+  const r: any = { ...e, steps: [] as any[] };
   const step = async (name: string, cmd: string[], cwd: string, ms?: number) => {
     const x = await sh(cmd, cwd, ms); r.steps.push({ name, ok: x.ok, code: x.code, ms: x.ms, out: tail(x.out) }); return x;
   };

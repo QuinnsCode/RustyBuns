@@ -10,9 +10,9 @@
 // pointer is kept. The votes themselves are POSTs, kept with the table.
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
-import { enemy, FACTIONS, fogged, type Campaign, type Orders } from "../war/rules.ts";
+import { enemy, FACTIONS, fogged, type Orders } from "../war/rules.ts";
 import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
-import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
+import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord } from "../war/table.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { privateJson as json } from "@rustybuns/util/http";
 import { Claimed, MAX_WARS, PartyAsk, TICKET_SEAT_HEADER, War, type Started, type View } from "./view.ts";

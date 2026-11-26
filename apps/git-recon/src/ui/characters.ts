@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 
-const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff, GREY = 0xbdbdbd, DARK = 0x3a3a3a;
+const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff;
 const mats = new Map<number, THREE.MeshStandardMaterial>();
 const mat = (color: number) => {
   let m = mats.get(color);

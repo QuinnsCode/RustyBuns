@@ -3,7 +3,7 @@
 // Interfaces and type aliases get a section each; inline `{ ... }` types are flattened into dotted
 // keys (`worker.compatibilityDate`), and a union of objects (a Binding) gets a table per member.
 import ts from "typescript";
-import { type Page, type Source, slug } from "./lib.ts";
+import { type Page, type Source } from "./lib.ts";
 
 const FILE = "packages/cli/src/config.ts";
 

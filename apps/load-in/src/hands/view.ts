@@ -6,7 +6,7 @@
 // rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
 import * as THREE from "three";
 import { FINGERS, FOREARM, HAND, HandSolver, gripFor, handMesh, localQuats, placeHand, type HandPose, type V3, type What } from "@rustybuns/rig/hand";
-import { type Box, type Frame, type Side, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
+import { type Box, type Frame, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
 import { connectorMesh } from "../cables/ends-view.ts";
 import type { Connector } from "../cables/ends.ts";
 

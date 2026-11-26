@@ -51,7 +51,6 @@ function parts(): Part[] {
   for (const f of FINGERS) {
     const c = HAND.chains[f], thumb = f === "thumb";
     for (let s = 0; s < 3; s++) {
-      const end = s === 2;
       // the fingertip is a ball round the tip joint, where the solver puts the pad on what it holds
       // (the thumb lies across the hand's axes, so it keeps its girth)
       const a = at(c[s]), b = at(c[s + 1]), r1 = B[c[s]].radius, r2 = B[c[s + 1]].radius, wide = thumb ? 1 : SLIM;

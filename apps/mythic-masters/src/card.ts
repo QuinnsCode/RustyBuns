@@ -4,7 +4,7 @@
 import { esc } from "@rustybuns/util";
 import { Art, type Pic } from "./art.ts";
 import artJson from "./art.json";
-import { hex, type Field } from "./fields.ts";
+import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { REGIONS } from "./regions.ts";
 import type { Creature, Stats } from "./roster.ts";

@@ -156,6 +156,7 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
     if (type && !/javascript/.test(type)) continue;
     const code = src ? await (await pageFetch(src)).text() : s.textContent ?? "";
     // An inline `import("/assets/x.js")` means the page's server, not this disk.
+    // oxlint-disable-next-line no-eval -- runs the page's own scripts in the render scope, which is the point of render
     try { (0, eval)(code.replace(/\bimport\(/g, "__rbImport(")); } catch (e) { console.error("[render] script failed:", e); }
   }
   for (const src of deferred) await load(src);

@@ -148,7 +148,7 @@ export function mount(el, { embed = false } = {}) {
     lock(t, w, h) { this.signal(t, w, h, 0.14 + 0.86 * seg(t, 0.6, 4.5), true); },
     /** The branches as waves at coherence `c` (1 in tune, 0 fighting): their sum, the light it powers, and where the AI's time goes. */
     signal(t, w, h, c, locked) {
-      const n = 5, top = 22, band = h - 128, trunk = 30, wl = w * 0.4, sx = wl + 16, sw = w * 0.22, bx = sx + sw + 18, by = top + band / 2;
+      const n = 5, top = 22, band = h - 128, trunk = 30, wl = w * 0.4, sx = wl + 16, sw = w * 0.22, by = top + band / 2;
       // The branches: forked in about a second, then each drifting out of tune unless something keeps them in step.
       g.strokeStyle = col.fg; g.lineWidth = 3; g.beginPath(); g.moveTo(trunk, top); g.lineTo(trunk, top + band); g.stroke();
       text("main", trunk, top - 8, { mono: true, size: 10, c: col.muted });
@@ -197,7 +197,7 @@ export function mount(el, { embed = false } = {}) {
       const bw = (w - 28) / 4, y0 = h - 92, ai = 12, plumbing = Math.round(ai * (1 - c) * 1.05);
       const counts = [0, 0, 0, 0];
       const checking = locked && c > 0.7 ? Math.floor(t / 1.6) % ai : -1, phase = (t / 1.6) % 1;
-      bins.forEach(([name, cc], k) => { box(14 + k * bw + 3, y0, bw - 6, 64, k === 3 && plumbing > 3 ? col.bad : col.border, null); text(name, 14 + k * bw + bw / 2, y0 + 78, { mono: true, size: 10, c: k === 3 ? col.bad : col.muted }); });
+      bins.forEach(([name], k) => { box(14 + k * bw + 3, y0, bw - 6, 64, k === 3 && plumbing > 3 ? col.bad : col.border, null); text(name, 14 + k * bw + bw / 2, y0 + 78, { mono: true, size: 10, c: k === 3 ? col.bad : col.muted }); });
       if (aiPos.length !== ai) aiPos = Array.from({ length: ai }, (_, j) => ({ x: 14 + (j % 3) * bw + bw / 2, y: y0 + 32 }));
       for (let j = 0; j < ai; j++) {
         const k = j >= ai - plumbing ? 3 : j % 3, slot = counts[k]++;

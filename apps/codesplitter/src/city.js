@@ -78,7 +78,7 @@ addEventListener("resize", resize); resize();
 
 const canvasTex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
 const label = (text, color = "#0a0a0a", bg = "rgba(255,255,255,.92)") => {
-  const t = canvasTex(512, 64, (g, w, h) => {
+  const t = canvasTex(512, 64, (g, w) => {
     g.font = "500 30px 'Geist Mono', ui-monospace, monospace";
     const tw = Math.min(w - 8, g.measureText(text).width + 28);
     g.fillStyle = bg; g.beginPath(); g.roundRect((w - tw) / 2, 8, tw, 48, 8); g.fill();
@@ -240,7 +240,7 @@ function shopSign(key) {
 }
 /** A themed shop on the face (fx, fz) of a podium pw wide: shelves behind the glass, a sign over it, neon on the wet pavement. */
 function stock(b, repo, r, pw, ph, y0, [fx, fz], hall, hq) {
-  const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive", "office", "coffee", "coffee"]), ry = Math.atan2(fx, fz);
+  const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive", "office", "coffee", "coffee"]);
   // Every face of the ground floor is the shop: shelves behind the glass and a sign over it.
   for (const [gx, gz] of [[fx, fz], [-fx, -fz], [fz, fx], [-fz, -fx]]) {
     const gy = Math.atan2(gx, gz);
