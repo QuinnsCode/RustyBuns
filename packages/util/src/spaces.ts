@@ -282,8 +282,9 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
     const said = (m: SpaceMessage, inThread = false) => {
       const to = m.reply && !inThread ? shown.find((x) => x.id === m.reply) : undefined;
       const f = m.file, mine = m.from.name === name();
-      return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("b", {}, m.from.name), " ",
-        ...(f ? [btn("download", `Download ${f.name}`, () => void download(f), true, "rb-spaces-file"), el("small", {}, ` ${size(f.size)}`)] : [m.text]),
+      // the name and words wrap inside their own span, so the buttons stay on the message's line however narrow the chat
+      return el("li", {}, ...(to ? [el("small", { className: "rb-spaces-re" }, `re ${to.from.name}`)] : []), el("span", { className: "rb-spaces-said" }, el("b", {}, m.from.name), " ",
+        ...(f ? [btn("download", `Download ${f.name}`, () => void download(f), true, "rb-spaces-file"), el("small", {}, ` ${size(f.size)}`)] : [m.text])),
         el("span", { className: "rb-spaces-acts" }, // the row's buttons keep together at its end, apart from the words
           ...(mine || owner ? [btn("trash-2", "Delete this message", () => sp.unsay(ch, m.id), false, "rb-spaces-unsay")] : []),
           ...(inThread ? [] : m.replies

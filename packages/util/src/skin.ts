@@ -79,11 +79,11 @@ const BASE = `
 .rb-spaces-body{display:flex;gap:8px;min-height:0;flex:1}
 .rb-spaces-chat{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .rb-spaces-log{overflow-y:auto;max-height:40dvh;min-height:80px;overflow-wrap:anywhere}.rb-spaces-log li{display:flex;flex-wrap:wrap;align-items:center;column-gap:.3em;padding:2px 0}
-.rb-spaces-acts{display:inline-flex;align-items:center;gap:4px;margin-left:auto}.rb-spaces-acts:empty{display:none}
-.rb-spaces-log .rb-spaces-unsay{min-height:26px;min-width:26px}.rb-spaces-log .eq-btn svg{width:15px;height:15px}
+.rb-spaces-said{flex:1 1 0;min-width:0}
+.rb-spaces-acts{display:inline-flex;flex:none;align-items:center;gap:4px;margin-left:auto}.rb-spaces-acts:empty{display:none}
+.rb-spaces-log .rb-spaces-unsay,.rb-spaces-log .rb-spaces-reply{min-height:26px;min-width:26px}.rb-spaces-log .eq-btn svg{width:15px;height:15px}
 .rb-spaces-log b{font-family:var(--ui-font-head);color:var(--ui-accent);margin-right:.25em}
-.rb-spaces-re{flex-basis:100%;font-size:12px;color:var(--ui-dim)}.rb-spaces-log .rb-spaces-reply,.rb-spaces-log .rb-spaces-replies{margin-left:.4em;padding:0 4px;min-height:0;font-size:12px;opacity:.7}
-.rb-spaces-log .rb-spaces-reply:hover,.rb-spaces-log .rb-spaces-reply:focus-visible{opacity:1}
+.rb-spaces-re{flex-basis:100%;font-size:12px;color:var(--ui-dim)}.rb-spaces-log .rb-spaces-replies{padding:0 6px;min-height:26px;font-size:12px}
 .rb-spaces-online{min-width:110px;max-width:45%;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
 .rb-spaces-online li{justify-content:space-between;flex-wrap:wrap}
 .rb-spaces-status{flex-basis:100%;color:var(--ui-mut,inherit);opacity:.8;font-size:12px}.rb-spaces-mine input{width:100%;min-width:0}
