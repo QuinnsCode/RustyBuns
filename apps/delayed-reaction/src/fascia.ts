@@ -130,15 +130,22 @@ const cap = (led: string) => dataUri(`<rect x=".5" y=".5" width="15" height="15"
 export const switchKnob = `${cap("#3a3e48")} center / 100% 100%`;
 export const switchLit = `${cap(LANE_COLOURS[3])} center / 100% 100%`;
 
-/** A fader's printed scale, laid under its slot: a tick at every tenth (long at 0, 5 and 10) and the numbers 0 to 10 under
- * them, as a mixing desk prints it. The SVG has no viewBox, so its x are shares of the slot's width and the numbers keep
- * their size at any width. ~1.6 KB. */
-export const faderScale = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" overflow="visible">${Array.from({ length: 11 }, (_, i) => {
-  // The end ticks sit just inside the tile and their numbers hang inward, so neither is cut at the edge.
-  const x = i === 0 ? "0.5" : i === 10 ? "99.6%" : `${i * 10}%`, big = i % 5 === 0, anchor = i === 0 ? "start" : i === 10 ? "end" : "middle";
-  return `<line x1="${x}" x2="${x}" y1="0" y2="${big ? 6 : 3.5}" stroke="${INK}" stroke-opacity="${big ? 0.75 : 0.4}" stroke-width="1"/>`
-    + (i % 2 === 0 ? `<text x="${x}" y="15" text-anchor="${anchor}" font-size="8" fill="${INK}" fill-opacity=".6" font-family="${MONO}">${i}</text>` : "");
-}).join("")}</svg>`)}")`;
+/** A fader's printed scale, laid under its slot, in the fader's own range as a mixing desk prints it: a tick at every
+ * `step` (long where a number is printed) and the numbers under them. The SVG has no viewBox, so its x are shares of the
+ * slot's width and the numbers keep their `size` at any width. ~1.5 KB. */
+export const faderScale = (min: number, max: number, step: number, marks: [number, string][], size = 9) => {
+  const at = (v: number) => (v - min) / (max - min), x = (f: number) => (f <= 0 ? "0.5" : f >= 1 ? "99.6%" : `${(f * 100).toFixed(2)}%`);
+  const ticks = Array.from({ length: Math.round((max - min) / step) + 1 }, (_, i) => min + i * step).map((v) => {
+    const big = marks.some(([m]) => Math.abs(m - v) < 1e-6);
+    return `<line x1="${x(at(v))}" x2="${x(at(v))}" y1="0" y2="${big ? 6 : 3.5}" stroke="${INK}" stroke-opacity="${big ? 0.75 : 0.4}" stroke-width="1"/>`;
+  });
+  // The end numbers hang inward, so neither is cut at the slot's edge.
+  const nums = marks.map(([v, t]) => `<text x="${x(at(v))}" y="${7 + size}" text-anchor="${at(v) <= 0 ? "start" : at(v) >= 1 ? "end" : "middle"}" font-size="${size}" fill="${INK}" fill-opacity=".68" font-family="${MONO}">${t}</text>`);
+  return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" overflow="visible">${ticks.join("")}${nums.join("")}</svg>`)}")`;
+};
+/** Side and Up run 0.25x to 3x; Volume 0 to 100%. */
+const SWAY: [number, string][] = [[0.25, ".25"], [1, "1x"], [2, "2x"], [3, "3x"]], LOUD: [number, string][] = [[0, "0"], [0.5, "50"], [1, "100%"]];
+export const swayScale = (size?: number) => faderScale(0.25, 3, 0.25, SWAY, size), volumeScale = (size?: number) => faderScale(0, 1, 0.1, LOUD, size);
 
 /** A bat-handle toggle on its own small plate, OFF and ON printed either side: the lever thrown left and dark, or thrown
  * right with the go lane's LED lit over it. ~1.3 KB each. */

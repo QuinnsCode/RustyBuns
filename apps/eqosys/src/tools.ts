@@ -12,8 +12,8 @@ import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type T
 import { members } from "./members.ts";
 import { slotsOf } from "./qollab/saves.ts";
 import { visitorsOf } from "./visitors.ts";
-import { house, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
-import { studioAdd, studioRemove } from "./qollab/space.ts";
+import { house, invitesOf, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
+import { studioAdd, studioJoin, studioRemove } from "./qollab/space.ts";
 import type { Env } from "./env.ts";
 
 /** Who is asking: a signed-in page (a session cookie; `email` and maybe `admin`) or an app's token (just who). */
@@ -123,11 +123,13 @@ export const TOOLS: Tool[] = [
   tool(obj({}), {
     name: "eq_studios", title: "Studios", annotations: READ,
     description: "The studios this person is in (an account that makes apps: solo, team or business), with their role, its members (name, email, role) and how many, and each app on the shelf: " +
-      "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask.",
+      "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask. " +
+      "Its owners and admins also see `pending`, the invites waiting for a yes (email, role); `invites` are the ones waiting for this person's (studio, name, kind, role, by): answer them with eq_studio_join.",
     run: async (c) => {
       notAGame(c);
       if (c.admin) await house(c.conf, c.who.id);
-      return { studios: await studiosOf(c.conf, c.who.id) };
+      const [studios, invites] = await Promise.all([studiosOf(c.conf, c.who.id), invitesOf(c.conf, c.who.id)]);
+      return { studios, invites };
     },
   }),
   tool(obj({ name: STUDIO_NAME, kind: Kind }), {
@@ -142,8 +144,9 @@ export const TOOLS: Tool[] = [
     },
   }),
   tool(obj({ studio: str(64), email: str(320), role: Role }), {
-    name: "eq_studio_add", title: "Add someone to a studio", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
-    description: "Signed in on the page only. Put someone who has an eqosys account in a studio by their email, as owner, admin or maker (or change their role). The studio's owner or admin asks; only an owner makes another owner.",
+    name: "eq_studio_add", title: "Invite someone to a studio", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Invite someone to a studio by their email, as owner, admin or maker: they are in once they say yes (eq_studio_join), and the answer is the same whether or not the email has an account. " +
+      "For someone already in, it changes their role at once. The studio's owner or admin asks; only an owner makes another owner; 50 invites wait at most, and 20 a minute.",
     input: { studio: { type: "string" }, email: { type: "string" }, role: { enum: [...ROLES] } }, required: ["studio", "email", "role"],
     run: async (c, a) => {
       if (!c.email) throw new Refused("adding people by email is for the signed-in page, not an app's token", 403);
@@ -152,9 +155,20 @@ export const TOOLS: Tool[] = [
       return { ok: true };
     },
   }),
+  tool(obj({ studio: str(64), yes: bool() }), {
+    name: "eq_studio_join", title: "Answer a studio's invite", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Say yes (join it with the role it offers) or no to an invite waiting for you (`invites` in eq_studios). Either way the invite goes.",
+    input: { studio: { type: "string" }, yes: { type: "boolean" } }, required: ["studio", "yes"],
+    run: async (c, a) => {
+      if (!c.email) throw new Refused("answering an invite is for the signed-in page, not an app's token", 403);
+      const r = await studioJoin(c.conf, a.studio, c.who.id, a.yes);
+      if (!r.ok) throw new Refused(r.error, r.status);
+      return { ok: true };
+    },
+  }),
   tool(obj({ studio: str(64), email: str(320) }), {
     name: "eq_studio_remove", title: "Take someone out of a studio", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-    description: "Signed in on the page only. Take someone out of a studio by their email, or leave it with your own. The studio's owner or admin asks; only an owner takes out another owner, and a studio keeps one owner. They are out of the studio's space at once.",
+    description: "Signed in on the page only. Take someone out of a studio by their email (or take back their invite), or leave it with your own. The studio's owner or admin asks; only an owner takes out another owner, and a studio keeps one owner. They are out of the studio's space at once.",
     input: { studio: { type: "string" }, email: { type: "string" } }, required: ["studio", "email"],
     run: async (c, a) => {
       if (!c.email) throw new Refused("taking people out by email is for the signed-in page, not an app's token", 403);
