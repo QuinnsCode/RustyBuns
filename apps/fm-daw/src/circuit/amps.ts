@@ -1,64 +1,18 @@
-// The amps and pedals by name, and their knobs. Each amp is a list of 12AX7
-// stages, the pots between them, a tone stack, a push-pull power stage and its
-// supply; `buildRig` turns an amp, an optional pedal, the knobs, the mic on the cab
-// and what is on the speaker jack into a rig. Names are ours and
-// describe the circuit, never a product.
-import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type StageSpec, type Swaps, type ToneSpec } from "./circuits.ts";
+// The amps and pedals by name, and their knobs. The amps are Q Amp's heads, kept in `@rustybuns/gear/circuit`
+// (heads.ts) so Sound Guy Simulator plays the same ones; here each stage is built from its tscircuit board.
+// `buildRig` turns an amp, an optional pedal, the knobs, the mic on the cab and what is on the speaker jack into a
+// rig. Names are ours and describe the circuit, never a product.
+import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type Swaps } from "./circuits.ts";
 import { envelopeWah, germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "./effects.ts";
-import { DEFAULT_MIC, type Blend, type Link, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { DEFAULT_MIC, HEADS, headRig, type Blend, type Head, type HeadKnobs, type Link, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 import type { BoardPedal, BoardStep } from "../amp/messages.ts";
 
-/**
- * The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`).
- * Rate and Depth are the bias tremolo's, only on an amp that has one (`AmpDef.trem`).
- */
-export interface Knobs { gain: number; bass: number; mid: number; treble: number; master: number; noise: number; rate: number; depth: number }
-
-export interface AmpDef {
-  id: string;
-  name: string;
-  blurb: string;
-  stages: StageSpec[];
-  /** The pot ahead of each stage, 0 to 1; `null` is the Gain knob. */
-  pots: (number | null)[];
-  tone: Omit<ToneSpec, "bass" | "mid" | "treble">;
-  /** Power-stage drive at Master 5. */
-  power: number;
-  /** Output tubes, in push-pull pairs (and drawn on the page). */
-  powerTubes: number;
-  /** The supply's resistance, ohms: how much it sags when you dig in. */
-  sag: number;
-  /** An LFO on the power tubes' bias (power.ts), with Rate and Depth knobs. */
-  trem?: boolean;
-  knobs: Knobs;
-}
-
-export const AMPS: AmpDef[] = [
-  {
-    id: "brit", name: "Q Brit 3", blurb: "Three tubes, the middle one biased cold, tone stack last. Crunch to lead.",
-    stages: [{ rk: 2.7e3, ck: 0.68e-6 }, { rk: 10e3, ck: 0, cc: 22e-9 }, { rk: 820, ck: 0.68e-6, cc: 22e-9 }],
-    pots: [1, null, 0.8], tone: {}, power: 1.5, powerTubes: 2, sag: 250,
-    knobs: { gain: 7, bass: 5, mid: 7, treble: 6, master: 5, noise: 3, rate: 5, depth: 0 },
-  },
-  {
-    id: "lead", name: "Q Lead 50", blurb: "Four tubes, small coupling caps for tight lows, two cold clippers. Saturated high gain.",
-    stages: [{ rk: 1.5e3, ck: 0.47e-6, cc: 10e-9 }, { rk: 39e3, ck: 0, cc: 4.7e-9 }, { rk: 10e3, ck: 0, cc: 22e-9 }, { rk: 1.5e3, ck: 0.47e-6, cc: 22e-9 }],
-    pots: [1, null, 0.9, 0.6], tone: { slope: 47e3, cTreble: 250e-12 }, power: 2, powerTubes: 4, sag: 90,
-    knobs: { gain: 7, bass: 4, mid: 5, treble: 7, master: 5, noise: 3, rate: 5, depth: 0 },
-  },
-  {
-    id: "triple", name: "Q Triple", blurb: "Fat bypass caps early, a scooped tone stack. Big, loose, modern.",
-    stages: [{ rk: 1.8e3, ck: 22e-6 }, { rk: 1.8e3, ck: 1e-6, cc: 22e-9 }, { rk: 15e3, ck: 0, cc: 10e-9 }, { rk: 1.5e3, ck: 0.68e-6, cc: 22e-9 }],
-    pots: [1, null, 0.9, 0.6], tone: { cTreble: 500e-12, cBass: 100e-9, cMid: 47e-9 }, power: 2.5, powerTubes: 4, sag: 60,
-    knobs: { gain: 7, bass: 7, mid: 2, treble: 7, master: 5, noise: 1, rate: 5, depth: 0 },
-  },
-  {
-    id: "clean", name: "Q Clean T", blurb: "Two tubes, big bypass caps, a tube rectifier, and an LFO on the output tubes' bias: the whole amp throbs, and dug in, the dips clip less than the peaks.",
-    stages: [{ rk: 1.5e3, ck: 22e-6 }, { rk: 1.5e3, ck: 0, cc: 22e-9 }],
-    pots: [null, 0.5], tone: { cTreble: 250e-12 }, power: 1.2, powerTubes: 2, sag: 250, trem: true,
-    knobs: { gain: 4, bass: 5, mid: 4, treble: 6, master: 5, noise: 2, rate: 5, depth: 6 },
-  },
-];
+export { gainPot, noiseScale, tremHz, tremOf } from "@rustybuns/gear/circuit";
+/** The amp's front panel (gear's `HeadKnobs`). */
+export type Knobs = HeadKnobs;
+/** One of Q Amp's heads (gear's `Head`). */
+export type AmpDef = Head;
+export const AMPS: AmpDef[] = HEADS;
 
 /**
  * A pedal: its circuit at its one knob (0 to 10) with the player's part swaps, what the knob is called (Drive if not
@@ -98,20 +52,6 @@ export const PEDALS: PedalDef[] = [
   },
 ];
 
-/** The Gain knob's pot: log taper, never quite off, all the way open at 10. */
-export const gainPot = (gain: number) => 0.02 + 0.98 * (gain / 10) ** 2;
-
-/**
- * The Noise knob as a multiple of a perfect resistor's thermal noise: 0 is silent,
- * then 1× at 1 up to 1000× (+60 dB, a worn carbon resistor and then some) at 10.
- */
-export const noiseScale = (k: number) => (k <= 0 ? 0 : 10 ** ((k - 1) / 3));
-
-/** The Rate knob in Hz: a slow 1.5 Hz sway at 0 up to a 9.5 Hz flutter at 10. */
-export const tremHz = (rate: number) => 1.5 + 0.8 * rate;
-/** The bias tremolo for these knobs, or none on an amp without one. */
-export const tremOf = (amp: AmpDef, knobs: Knobs) => (amp.trem ? { hz: tremHz(knobs.rate), depth: knobs.depth / 10 } : undefined);
-
 /** The cab and the jack: where the mic sits, and the ohms on the speaker jack (0 for nothing plugged in). */
 export interface Room { mic: Mic; load: number }
 export const DEFAULT_ROOM: Room = { mic: DEFAULT_MIC, load: 8 };
@@ -139,14 +79,8 @@ export function boardLinks(board: readonly BoardStep[]): { links: Link[]; blends
 
 /** A pedal (or none, and with the player's part swaps) into an amp, with these knobs, into a cab. */
 export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number; swaps?: Swaps }, room: Room = DEFAULT_ROOM): RigSpec {
-  const links: RigSpec["links"] = [];
-  if (pedal) links.push({ net: pedal.def.net(pedal.drive, pedal.swaps), mods: pedal.def.mods?.(pedal.drive) });
-  amp.stages.forEach((s, i) => links.push({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) }));
-  links.push({ net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) });
-  return {
-    inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), noise: noiseScale(knobs.noise),
-    output: { pairs: amp.powerTubes / 2, sag: amp.sag, load: room.load, trem: tremOf(amp, knobs) }, cab: room.mic,
-  };
+  const pre = pedal ? [{ net: pedal.def.net(pedal.drive, pedal.swaps), mods: pedal.def.mods?.(pedal.drive) }] : [];
+  return headRig(amp, knobs, { stage: triodeStage, tone: toneStack, pre, mic: room.mic, load: room.load });
 }
 
 /** A pedal (or nothing) straight into a desk: no amp, no power stage, no cab. The loop's machines go after it. */
