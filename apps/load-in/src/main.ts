@@ -57,7 +57,7 @@ import { mountInk } from "./you/ink-view.ts";
 import { wireBooth } from "./venues/dj-booth-wire.ts";
 import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, tapeLabel, type Dressed } from "./faces.ts";
-import { idlePrompt, nextStep } from "./next.ts";
+import { begun, callName, idlePrompt, nextStep } from "./next.ts";
 import { toward } from "./toward.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -138,6 +138,26 @@ scene.add(lights);
 // The marker over what the Next line is about: a small cone pointing down, bobbing.
 const marker = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.26, 12).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(marker);
+// Once it is on screen the piece itself stands out: a lit outline round it and a pool of light on the floor under it,
+// with a lamp over it so its own faces catch the light. The lamp is always in the scene (dimmed to 0, never hidden), so
+// showing it does not rebuild every material.
+const goal = new THREE.Group();
+const goalLine = new THREE.LineBasicMaterial({ color: 0x4cc9f0, transparent: true, depthTest: false });
+const goalEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), goalLine);
+goalEdges.renderOrder = 2;
+const goalPool = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: poolTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+goal.add(goalEdges, goalPool);
+scene.add(goal);
+const goalLamp = new THREE.PointLight(0x9fe3ff, 0, 2.6, 1.6);
+scene.add(goalLamp);
+function poolTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!, r = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  r.addColorStop(0, "rgba(140, 225, 255, 0.85)"); r.addColorStop(0.55, "rgba(76, 201, 240, 0.4)"); r.addColorStop(1, "rgba(76, 201, 240, 0)");
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
 
 function room(l: World["level"]) {
   const g = new THREE.Group(), r = l.room, b = l.bounds;
@@ -306,7 +326,20 @@ function draw() {
   const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
-  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = gear(tgt.gear).what; }
+  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = callName(world, cables, tgt.key); }
+  // In view, the outline and the pool, breathing slowly.
+  const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
+  goal.visible = seen;
+  goalLamp.intensity = seen ? 3 * pulse : 0;
+  if (seen && tgt) {
+    const [w, h, d] = dims(tgt);
+    goalEdges.position.set(tgt.x, tgt.y, tgt.z); goalEdges.rotation.y = tgt.rot; goalEdges.scale.set(w + 0.08, h + 0.08, d + 0.08);
+    goalLine.opacity = pulse;
+    goalPool.position.set(tgt.x, (world.level.floorAt?.(tgt.x, tgt.z) ?? 0) + 0.012, tgt.z); goalPool.scale.setScalar(Math.max(w, d) * 1.1 + 0.35);
+    goalLamp.position.set(tgt.x, tgt.y + h + 0.6, tgt.z + 0.3);
+  }
+  // Until you start (a piece moved, a cable out), only the Next line: no score card, no speakers tab.
+  document.body.classList.toggle("fresh", !!next && !begun(world, cables));
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
