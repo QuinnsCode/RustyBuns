@@ -294,7 +294,7 @@ const list: Gear[] = [
   {
     id: "stack-mid-bass",
     what: "dance stack mid-bass horn",
-    size: box(0.75, 0.75, 0.85),
+    size: box(0.59, 0.845, 0.603),
     kg: 68,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 106, maxSpl: 136, ratedWatts: 1000, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 75, highCut: 250, rearLoss: 14 }, // crossed to the bins near 100 Hz

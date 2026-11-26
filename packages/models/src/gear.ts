@@ -66,7 +66,7 @@ export const GEAR_SIZES = {
   "mixer-club-4": [0.32, 0.088, 0.358],
   // the festival (#5029 step 9): the dance stack, the sculpted array, a stage rack and the site generator
   "stack-mid-high": [0.522, 0.92, 0.56],
-  "stack-mid-bass": [0.75, 0.75, 0.85],
+  "stack-mid-bass": [0.59, 0.845, 0.603],
   "horn-sub-21": [1.1, 0.8, 1.0],
   "sculpted-3way": [0.42, 0.85, 0.52],
   "arc-sub-18": [1.2, 0.5, 0.75],
@@ -1563,28 +1563,6 @@ function facets(slot: GearSlot, rings: Facet[], m: THREE.Matrix4, out = false): 
   return { geo: toCreasedNormals(geo, 0.3), slot };
 }
 
-/**
- * A painted horn set into a dance-stack box's front, as in the photos of stacks at festivals: a pale lining built of
- * flat panels (`facets`) that runs in straight from a chamfered mouth `w` by `h` and rolls over in a lip at the face,
- * dusty and dark (`grime`) over its back two thirds where hands and rags never reach, a flange out to its cell `cw` by `ch`
- * (the box's baffle round the horn, in `skin`), and the driver's dark throat at the back. `plug` puts the bronze
- * axe-head of a phase plug in the throat: wide and flat, `plugY` below the horn's middle.
- */
-function paleHorn(b: Build, skin: GearSlot, [x, y, z]: THREE.Vector3Tuple, w: number, h: number, cw: number, ch: number, deep: number, { plug = false, plugY = 0 } = {}) {
-  const m = new THREE.Matrix4().makeTranslation(x, y, z), a = w / 2, c = h / 2, lip = Math.min(0.01, cw / 2 - a, ch / 2 - c) * 0.9;
-  // straight walls from the throat, bending out over the last few centimetres, then a rolled lip at the face
-  const flare = Array.from({ length: 9 }, (_, i): Facet => {
-    const s = i / 8, r = 0.1 + 0.62 * s + 0.28 * s ** 7, ra = a * r, rc = c * r;
-    return [-deep * (1 - s) - 0.012 * s, ra, rc, Math.min(ra, rc) * 0.3];
-  });
-  const k = Math.min(a, c) * 0.3;
-  b.pieces.push(facets("grime", flare.slice(0, 6), m), facets("horn", [...flare.slice(5), [-0.004, a + lip * 0.6, c + lip * 0.6, k], [0, a + lip, c + lip, k]], m));
-  b.pieces.push(facets(skin, [[0, a + lip, c + lip, k], [-0.002, cw / 2, ch / 2, 0.004]], m));
-  b.pieces.push(disc("knob", Math.min(a, c) * 0.13, 0.01, "z", [x, y, z - deep], 16));
-  if (plug) b.pieces.push(lathe("plug", [[-deep * 0.95, a * 0.04, c * 0.05], [-deep * 0.8, a * 0.24, c * 0.09], [-deep * 0.64, a * 0.33, c * 0.07], [-deep * 0.52, a * 0.27, c * 0.035],
-    [-deep * 0.45, a * 0.1, c * 0.01], [-deep * 0.42, a * 0.01, c * 0.004]], { p: 2.4, seg: 24, m: new THREE.Matrix4().makeTranslation(x, y - plugY, z) }));
-}
-
 /** A mouth flaring back from a rectangle on the face to a smaller one at the back, `outer` and `inner` [x0, x1, y0, y1],
  * the front at z `zf` and the back `deep` behind it: four flat walls, every face turned to look forward (a bass bin's
  * pyramid horn, its throat anywhere in the mouth). */
@@ -1603,8 +1581,8 @@ function frustum(slot: GearSlot, outer: number[], inner: number[], zf: number, d
 }
 
 /**
- * A box of the dance stack: a cabinet in the stack's dark violet paint, its front a baffle of painted horns
- * (`paleHorn`), bar handles on the sides and the speaker jacks on the back; `fill` sets the horns into the front.
+ * A box of the dance stack: a cabinet in the stack's dark violet paint, its front a baffle of horns,
+ * bar handles on the sides and the speaker jacks on the back; `fill` sets the horns into the front.
  */
 function stackBox(id: GearId, deep: number, fill: (b: Build, front: number) => void): Build {
   const size = GEAR_SIZES[id], [w, h, d] = size, b: Build = { pieces: [], marks: [] };
@@ -1701,15 +1679,42 @@ function midHigh(): Build {
   return b;
 }
 
-/** The mid-bass: a big square mid horn with its phase plug over a bass horn's mouth, a slot barred by three louvres. */
-const midBass = () => stackBox("stack-mid-bass", 0.4, (b, f) => {
-  const iw = GEAR_SIZES["stack-mid-bass"][0] - 0.07, sh = 0.19;
-  paleHorn(b, "violet", [0, 0.035 + sh + 0.245, f - 0.002], 0.6, 0.45, iw, 0.49, 0.38, { plug: true, plugY: 0.04 });
-  b.pieces.push(box("knob", [iw, sh, 0.01], [0, 0.035 + sh / 2, f - 0.2]));
-  for (const k of [0, 1, 2]) b.pieces.push(box("violet", [iw, 0.022, 0.16], [0, 0.035 + 0.03 + k * 0.065, f - 0.08], { bevel: 0.004, rot: [-0.35, 0, 0] }));
-  b.pieces.push(box("violet", [0.03, sh, 0.2], [0, 0.035 + sh / 2, f - 0.1], { bevel: 0.004 }));
-  b.pieces.push(box("violet", [iw, 0.02, 0.2], [0, 0.035 + sh + 0.01, f - 0.1], { bevel: 0.004 }));
-});
+/**
+ * The mid-bass, as the Funktion-One F215 MkII is built (no maker's name): a tall open box of 15 mm birch ply, 590 x 845
+ * x 603 mm as its sheet gives it, in textured violet paint, its whole front two horn cells, one over the other, split
+ * by a thin shelf. In each, a flat wall runs from the front left corner back to the throat, and a narrow upright brace
+ * pierced by three tall ovals stands near the front right, the driver's channel deep and dark behind it. Two kidney
+ * handle slots on the top, the fly points on the sides, the jack plate on the back.
+ */
+function midBass(): Build {
+  const size = GEAR_SIZES["stack-mid-bass"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.018, f = d / 2;
+  const back = 0.03, zb = -d / 2 + back, bx = 0.077, bw = 0.062, mid = h * 0.505;
+  well(b, "violet", size, d - back, t);
+  b.pieces.push(box("violet", [w - 2 * t, t, d - back], [0, mid, back / 2], { bevel: 0.005 }));
+  for (const [y0, y1] of [[t, mid - t / 2], [mid + t / 2, h - t]]) {
+    const ch = y1 - y0, cy = (y0 + y1) / 2;
+    // the horn wall: flat, from the front left corner back to the throat behind the brace's left edge
+    const x0 = -w / 2 + t, x1 = bx - bw / 2, dz = f - 0.01 - zb, dx = x1 - x0, len = Math.hypot(dx, dz);
+    b.pieces.push(box("violet", [len, ch, t], [(x0 + x1) / 2, cy, (f - 0.01 + zb) / 2], { rot: [0, Math.atan2(dz, dx), 0] }));
+    // the brace: a ply strip set just back from the front, three tall ovals through it, a fin behind its left edge
+    const ovals = [0, 1, 2].map((k) => {
+      const oy = cy + (k - 1) * ch * 0.29;
+      return Array.from({ length: 16 }, (_, j) => [bx + Math.cos((j / 16) * Math.PI * 2) * bw * 0.32, oy + Math.sin((j / 16) * Math.PI * 2) * ch * 0.11]);
+    });
+    b.pieces.push(frontPlate("violet", rect(bx, cy, bw, ch), ovals, f - 0.02, t));
+    b.pieces.push(box("violet", [t, ch, f - 0.038 - zb], [x1 + t / 2, cy, (f - 0.038 + zb) / 2]));
+    // the driver's channel: dark at the back, a small mounting block in its outer corner by the shelf
+    b.pieces.push(box("knob", [w / 2 - t - x1, ch, 0.004], [(w / 2 - t + x1) / 2, cy, zb + 0.003]));
+    const by = y0 === t ? y0 + 0.02 : y1 - 0.02;
+    b.pieces.push(box("violet", [0.07, 0.022, 0.035], [w / 2 - t - 0.035, by, f - 0.06], { bevel: 0.003 }));
+  }
+  // the kidney handle slots on the top, sunk dark, and the M10 fly points down the sides
+  for (const s of [-1, 1]) b.pieces.push(box("knob", [0.032, 0.004, 0.11], [s * w * 0.3, h + 0.0005, -d * 0.18], { bevel: 0.0015 }));
+  for (const s of [-1, 1]) for (const [y, z] of [[h * 0.2, -d * 0.3], [h * 0.8, -d * 0.3], [h * 0.5, d * 0.35]])
+    b.pieces.push(disc("knob", 0.009, 0.003, "x", [s * (w / 2 + 0.001), y, z], 10));
+  backAndFeet(b, size, 0.55, false);
+  return b;
+}
 
 /**
  * The bass bin, as the stack at the field (refs 3): one pyramid mouth across the front whose flat walls close in on a
