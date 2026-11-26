@@ -42,7 +42,7 @@ import { basename, dirname, relative, resolve } from "node:path";
 import { arr, check, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { appDir, upFrom } from "./app-dirs.ts";
 import { Matrix, report } from "./builder-nightly.ts";
-import { classify, dial, readVerdicts, recordVerdict, tierLine, type Tier } from "./ci-tier.ts";
+import { classify, dial, readVerdicts, tierLine, type Tier } from "./ci-tier.ts";
 
 /** A row of ci-apps' matrix: one without an app, test and prep isn't a job. A group row ("borg+qcrm") runs from `dir`, the root. */
 const line = str(Infinity, { min: 0 });
@@ -60,14 +60,6 @@ export function parseJobs(out: string): Job[] {
     if (j && (j.test || j.boot)) jobs.push(j);
   }
   return jobs;
-}
-
-// Run `fn` over items with at most `cap` at a time; the result is the worst (highest) code.
-export async function pool<T>(items: T[], cap: number, fn: (item: T) => Promise<number>): Promise<number> {
-  let worst = 0, next = 0;
-  const lane = async () => { while (next < items.length) worst = Math.max(worst, await fn(items[next++]!)); };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(cap, items.length)) }, lane));
-  return worst;
 }
 
 // A commit of the working tree (untracked files too, .gitignore respected), built in a scratch index so
@@ -121,17 +113,15 @@ export function plan(v: Valve, up: boolean, batt: Battery, cap: number): Plan {
   return { where: "bob", cap };
 }
 
-const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+export const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const BUSY = 75;
 // A run touches its slot's lock every HEARTBEAT_MS while it holds it, however long its tests take. A lock untouched
 // for STALE_MIN is a run that died (its worker sent home, its ssh dropped, its Mac asleep): the next claim takes it back.
 // It was 90 minutes with no heartbeat, and one dead run held its slot that long while every other run waited.
 export const STALE_MIN = 3;
-const HEARTBEAT_MS = 60_000;
+export const HEARTBEAT_MS = 60_000;
 // A push to a slot that hasn't finished in this long is hung (seen at over 2 hours): give up and give the slot back.
 export const PUSH_MS = 5 * 60_000;
-/** What `load` answers when the push to the slot failed or hung: Bob went away. */
-const PUSH_FAILED = 254;
 
 export type Builder = { host: string; dir: string; ssh: string[] };
 
@@ -161,7 +151,7 @@ export async function stream(p: { stdout: ReadableStream<Uint8Array>; stderr: Re
 // runs, then both in runs/done, the last KEEP of them.
 export type RunRecord = { who: string; cmd: string; started: number; ended?: number; code?: number };
 const KEEP = 10;
-const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; `;
+export const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; `;
 // The command's own exit code, not tee's, without pipefail (dash has none): each ssh shell has its own $$.
 // A slot `serve` cut off has runs/<slot>.cut: nothing starts there, and what it killed exits CUT, not as a failure.
 // Under LOW_PCT on battery nothing new starts either (plain sh, no tools but pmset: `p` is the number before the first %).
@@ -171,7 +161,7 @@ export const GATE = `[ -e "\${L%.log}.cut" ] && exit ${CUT}; b=$(pmset -g batt 2
 export const CUT_CHECK = `[ -e "\${L%.log}.cut" ] && exit ${CUT}; `;
 /** How a suite's or run's exit code reads: a cut-off or a lost Bob is neither a pass nor a fail. */
 export const outcome = (code: number) => code === CUT ? "cut off" : code === LOST ? "lost" : code ? "failed" : "passed";
-const teed = (cmd: string) => `${GATE}{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; ${CUT_CHECK}exit "\${c:-1}"`;
+export const teed = (cmd: string) => `${GATE}{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; ${CUT_CHECK}exit "\${c:-1}"`;
 /** The script one suite runs in a slot over ssh, its output teed to the slot's log. */
 export const jobScript = (slot: string, dir: string, cmd: string) => LOG(slot) + teed(`cd ${q(`${slot}/${dir}`)} && ${cmd}`);
 /** What `remote` hands ssh for a script. */
@@ -263,24 +253,12 @@ export async function pushTo(b: Builder, path: string, sha: string, ref: string,
   return code;
 }
 
-// Send the commit straight to the slot's own repo, then check it out on top of its warm node_modules.
-// The ref is the slot's scratch: one a run left behind (it failed before its checkout) is overwritten, not a reason to refuse.
-// After the checkout the commit stays at refs/remote-ci/base, so the next push packs only what is new since this run
-// (a few KB). Without it the slot showed only its setup-day refs, and every push packed 200 MB of history again.
-export async function load(b: Builder, slot: string, sha: string, cwd: string) {
-  const ref = `refs/remote-ci/${slot}`;
-  if (await pushTo(b, slot, sha, ref, cwd)) return PUSH_FAILED;
-  const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref refs/remote-ci/base ${sha} `
-    + `&& git update-ref -d ${ref} && git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
-  return code;
-}
-
 /** The file `bun run builder serve` keeps fresh in Bob's builder folder while he takes runs, and how often. */
 export const SERVING = "serving";
 const SERVE_BEAT_MS = 20_000;
 const CUT_EVERY_MS = 15_000;
 /** An ssh exit that means the connection, not the command: Bob went away. */
-const LOST = 255;
+export const LOST = 255;
 
 // One quick ssh round trip: true only while Bob is serving (`serving` touched in the last 2 minutes). Off, asleep,
 // or not serving reads false, so nothing is sent to him until he says he takes runs.
@@ -387,7 +365,7 @@ async function passed(cwd: string): Promise<number> {
 
 // No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on. With a swarm, a
 // pushed HEAD is queued there as well, so whichever answers first (GitHub or one of our Macs) posts the checks.
-async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
+export async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
   if (argv[0] === "run") {
     console.log(`${why}: running here`);
     return Bun.spawn(argv.slice(2), { cwd: resolve(cwd, argv[1]!), stdio: ["inherit", "inherit", "inherit"] }).exited;
@@ -551,80 +529,10 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }
 
-  const poll = Number(process.env.BUILDER_POLL_MS ?? 30_000);
   const rec: RunRecord = { who, started: Date.now(),
     cmd: argv[0] === "run" ? `${argv[1]}: ${argv.slice(2).join(" ")}` : `suites: ${jobs.map((j) => j.label).join(", ")}` };
-  for (;;) {
-    const r = await attempt();
-    if (r !== LOST && r !== CUT) return r;
-    const gone = r === CUT ? `cut off: Bob's battery fell to ${CUT_PCT}%` : "lost Bob mid-run";
-    if (at) { console.error(gone); return NOT_RUN; }
-    console.log(`${gone}: waiting for him again, then running it from the start`);
-  }
-
-  /** Wait for Bob and a slot, then run: the run's code, or LOST when Bob went away under it, or CUT when his battery
-   *  stopped it (nothing to blame on the code either way). */
-  async function attempt(): Promise<number> {
-    let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
-    for (let said = ""; ; ) {
-      const up = await reachable(b);
-      // he can go between the check and the claim: that is waiting, not a failure
-      const got = up ? await claim(b, { ...rec, started: (rec.started = Date.now()) }).catch(() => undefined) : undefined;
-      const p = plan(v, !!got, got?.batt ?? { onPower: true, pct: 100 }, cap);
-      if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
-      if (got) await release(b, got.slot);
-      if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
-      if (p.where === "here") return fallback(argv, cwd, p.why!);
-      if (said !== p.why) console.log((said = p.why!));
-      // the session that started this wait is gone (it was a background task): nobody reads the answer, so stop waiting
-      // rather than poll for Bob for days under pid 1 (2026-11-23, leftovers that held the office to three workers)
-      if (process.ppid === 1) { console.error("the session that asked for this run is gone: not waiting for the builder"); return NOT_RUN; }
-      await Bun.sleep(poll);
-    }
-
-    // The heartbeat: while this run holds the slot, its lock stays fresh, so only a dead run's lock goes stale.
-    // only a lock that is still there is kept fresh: a touch after release would leave a file where the lock was
-    const beat = setInterval(() => { remote(b, `[ -d locks/${q(slot)} ] && touch locks/${q(slot)}`); }, HEARTBEAT_MS);
-    const finish = (code: number) => { clearInterval(beat); return code === LOST || code === CUT ? release(b, slot) : release(b, slot, { ...rec, ended: Date.now(), code }); };
-    const giveBack = () => { finish(130).finally(() => process.exit(130)); };
-    process.once("SIGINT", giveBack);
-    process.once("SIGTERM", giveBack);
-    let code = 1;
-    try {
-      const sent = at ?? await snapshot(cwd);
-      const setup = await load(b, slot, sent, cwd);
-      // a push that failed or hung, or a setup whose ssh dropped, is Bob going away, not the branch
-      if (setup === PUSH_FAILED || setup === LOST) return (code = LOST);
-      if (setup === CUT) return (code = CUT);
-      if (setup) return (code = setup);
-      console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
-      const t0 = performance.now();
-      const codes: number[] = [];
-      const worst = await pool(jobs, cap, async (j) => { const c = (await stream(remote(b, jobScript(slot, j.dir, j.cmd)), j.label)).code; codes.push(c); return c; });
-      if (codes.includes(CUT)) return (code = CUT);
-      if (codes.includes(LOST)) return (code = LOST);
-      // every base-ref run, targeted or whole, is what the dial learns from; a one-off `run` isn't the branch's test
-      if (tier !== undefined && !at) await recordVerdict({ who, tier, passed: !worst, at: Date.now() }).catch(() => {});
-      console.log(`${outcome(worst)} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
-      if (all && !worst) {
-        // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.
-        const head = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
-        if (sent !== head) console.log("not written down as ready: the working tree has uncommitted changes");
-        else {
-          const named = branch && branch !== "HEAD" ? branch
-            : (await Bun.$`git branch -a --points-at HEAD ${"--format=%(refname:short)"}`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
-          await recordPass({ sha: head, branch: named.replace(/^origin\//, ""), base: argv[0]!, at: Date.now(), jobs: jobs.map((j) => j.label) });
-          console.log(`${head.slice(0, 8)} ${named} written down as ready: bun run builder passed`);
-        }
-      }
-      return (code = worst);
-    } finally {
-      process.off("SIGINT", giveBack);
-      process.off("SIGTERM", giveBack);
-      // Bob gone: giving the slot back may not reach him either (a lock untouched for STALE_MIN is taken back anyway)
-      await finish(code).catch(() => {});
-    }
-  }
+  // the slot, its heartbeat, the push and every ssh, given back whatever ends the run (remote-ci-run.ts, #5736)
+  return (await import("./remote-ci-run.ts")).run({ b, host, v, at, all, tier, who, branch, argv, cwd, jobs, rec });
 }
 
 // `bun run builder nightly`: the last nightly desktop build's failures, read from the builder (or this Mac, when it is one).
