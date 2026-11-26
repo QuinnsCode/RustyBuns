@@ -401,3 +401,24 @@ test("the plan's weekly usage is entered by the morning it reset, a second entry
   expect(() => setBudget(b, "last week", 50)).toThrow("--budget takes a date");
   expect(["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "<synthetic>"].map((m) => familyOf(m))).toEqual(["opus", "sonnet", "fable", "other"]);
 });
+
+test("the status line keeps each plan week's highest reading, and the ledger takes it over a lower entry the owner typed", async () => {
+  const { withReadings } = await import("../ester/usage-reading.ts");
+  const home = mkdtempSync(path.join(tmpdir(), "usage-"));
+  const resets = new Date(2026, 11, 3, 10).getTime() / 1000; // Thursday 2026-12-03, 10am local
+  const status = (pct: number) => {
+    const p = Bun.spawnSync(["bun", path.join(import.meta.dir, "../ester/usage-reading.ts")], {
+      env: { ...process.env, HOME: home },
+      stdin: new TextEncoder().encode(j({ model: { display_name: "Opus" }, rate_limits: { seven_day: { used_percentage: pct, resets_at: resets }, five_hour: { used_percentage: 12, resets_at: resets } } })),
+    });
+    return p.stdout.toString().trim();
+  };
+  status(40);
+  expect(status(87.6)).toStartWith("Opus · week 88% (resets Thu");
+  status(30); // an older session's stale refresh never lowers the week
+  const readings = JSON.parse(readFileSync(path.join(home, ".rustybuns/ledger/usage.json"), "utf8"));
+  expect(readings).toEqual([{ ends: "2026-12-03", pct: 87.6, at: expect.any(String) }]);
+  expect(withReadings([{ ends: "2026-11-26", pct: 41, fable: 15 }, { ends: "2026-12-03", pct: 50, fable: 20, approx: true }], readings))
+    .toEqual([{ ends: "2026-11-26", pct: 41, fable: 15 }, { ends: "2026-12-03", pct: 88, fable: 20 }]);
+  expect(withReadings([{ ends: "2026-12-03", pct: 95 }], readings)).toEqual([{ ends: "2026-12-03", pct: 95 }]);
+});

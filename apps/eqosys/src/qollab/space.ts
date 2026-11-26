@@ -28,7 +28,7 @@ import { SpaceRole, type SpaceAudit, type SpaceInfo, type SpaceMsg, type SpaceMe
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, STUDIO_SAY_MAX, type Said } from "./chat.ts";
-import { addMember, removeMember, roleIn, STUDIO_MEMBERS, type Made, type Role } from "../studios.ts";
+import { addMember, answerInvite, cancelInvite, removeMember, roleIn, STUDIO_MEMBERS, type Made, type Role } from "../studios.ts";
 import { json, type Env } from "../env.ts";
 import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
@@ -172,7 +172,8 @@ export async function makeSpace(conf: Pick<Env, "DB">, owner: string, name: stri
 export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string): Promise<Made> {
   const who = await conf.DB.prepare(`SELECT u.id FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<string>("id");
-  if (!who) return { ok: false, status: 404, error: "nobody in that studio has that email" };
+  // Not in it yet: an invite still waiting is taken back.
+  if (!who) return cancelInvite(conf, studio, by, email);
   const r = await removeMember(conf, studio, by, who);
   const sid = r.ok && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
   if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/gone?${new URLSearchParams({ id: who, by, sid })}`)).catch(() => null);
@@ -199,22 +200,37 @@ export async function removeEverywhere(conf: Pick<Env, "DB" | "SPACE">, by: { id
   return { done, refused };
 }
 
+/** Tells the studio's space that someone's seat changed: their sockets close and reconnect with the new role (ROLE_CHANGED). */
+async function roleChanged(conf: Pick<Env, "DB" | "SPACE">, studio: string, who: string, by: string, to: string) {
+  const sid = conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+  if (sid) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who, by, to })}`)).catch(() => null);
+}
+
 /**
- * Puts someone in a studio by email or changes their role (the Studio tab, eq_studio_add), by studios.ts addMember's rules. Whether
- * they run the studio's space is read when their socket opens, so a changed role closes the sockets they have open there with a
- * code the page reconnects on (ROLE_CHANGED): they come back with the new powers, not the old ones.
+ * Asks someone into a studio by email or changes a member's role (the Studio tab, eq_studio_add), by studios.ts addMember's rules:
+ * someone new gets an invite to say yes to (studioJoin). At most 20 a minute a person, as sign-in is (#6232). Whether they run
+ * the studio's space is read when their socket opens, so a changed role closes the sockets they have open there with a code the
+ * page reconnects on (ROLE_CHANGED): they come back with the new powers, not the old ones.
  */
-export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string, role: Role): Promise<Made> {
+export async function studioAdd(conf: Pick<Env, "DB" | "SPACE" | "AUTH_LIMIT">, studio: string, by: string, email: string, role: Role): Promise<Made> {
+  if (conf.AUTH_LIMIT && !(await conf.AUTH_LIMIT.limit({ key: `studio-add:${by}` })).success) return { ok: false, status: 429, error: "too many invites: wait a minute" };
   const before = await conf.DB.prepare(`SELECT u.id, m.role FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
     .bind(studio, email.trim()).first<{ id: string; role: Role }>();
   const r = await addMember(conf, studio, by, email, role);
-  // A guest of the studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the
-  // studio later takes them out of the space too.
-  const guest = r.ok ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?)
-    AND user_id IN (SELECT id FROM "user" WHERE lower(email) = lower(?)) RETURNING user_id`).bind(studio, email.trim()).first<string>("user_id") : null;
-  const who = guest ?? (before && before.role !== role ? before.id : null);
-  const sid = r.ok && who && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
-  if (sid && who) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: who, by, to: guest ? "member" : role })}`)).catch(() => null);
+  if (r.ok && before && before.role !== role) await roleChanged(conf, studio, before.id, by, role);
+  return r;
+}
+
+/**
+ * Says yes or no to an invite to a studio (the Studio tab, eq_studio_join), by studios.ts answerInvite's rules. A guest of the
+ * studio's space who joins the studio sits there as the studio's from now on: their guest row goes, so leaving the studio later
+ * takes them out of the space too.
+ */
+export async function studioJoin(conf: Pick<Env, "DB" | "SPACE">, studio: string, who: string, yes: boolean): Promise<Made> {
+  const r = await answerInvite(conf, studio, who, yes);
+  const guest = r.ok && yes ? await conf.DB.prepare(`DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?) AND user_id = ? RETURNING user_id`)
+    .bind(studio, who).first<string>("user_id") : null;
+  if (guest) await roleChanged(conf, studio, who, who, "member");
   return r;
 }
 

@@ -185,4 +185,61 @@ body > .gc-dialog .gc-sec[data-sec="music"] .gc-sec-h > span { --code: var(--lan
 body > .gc-dialog .gc-chev { margin-left: auto; opacity: 0.55; }
 /* The rows read like the fascia's engraving: small capitals in the label grey. */
 body > .gc-dialog .gc-sec-b .gc-lab { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #e9ecf2; }
+/* The rows are hardware on a plate: each section's rows sit on brushed black metal screwed to the panel, sunk a little. */
+body > .gc-dialog .gc-sec-b { gap: 0; margin: 2px 0 12px; padding: 6px 18px; border: 1px solid #000; border-radius: 6px; background: var(--plate);
+  box-shadow: inset 0 1px 0 #ffffff1f, inset 0 -1px 0 #0008, 0 2px 0 #0006; }
+/* Keyboard: the radio's printed legend strip on the same plate. The pads are four columns, each a letter key and an arrow key
+   with its lane's colour under the caps; Hold, M and Esc follow, each legend printed under its cap. */
+body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 14px 18px 12px; }
+body > .gc-dialog .dr-keys { display: grid; grid-template-columns: 1fr; gap: 12px; }
+body > .gc-dialog .dr-keys > div { display: grid; gap: 10px; }
+body > .gc-dialog .dr-pads { grid-template-columns: repeat(4, 1fr); }
+body > .gc-dialog .dr-rest { grid-template-columns: 1fr 0.7fr 1.3fr; padding-top: 11px; border-top: 1px solid #00000080; box-shadow: inset 0 1px 0 #ffffff0d; }
+body > .gc-dialog .dr-keys .dr-lane, body > .gc-dialog .dr-keys .dr-key { display: grid; justify-items: center; gap: 6px; }
+body > .gc-dialog .dr-keys dt { display: flex; gap: 5px; }
+body > .gc-dialog .dr-keys kbd { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 7px; border: 1px solid #000; border-radius: 5px;
+  background: linear-gradient(#30343e, #17191f); box-shadow: inset 0 1px 0 #ffffff2e, inset 0 -3px 0 color-mix(in srgb, var(--c, #6a707c) 70%, #000), 0 2px 0 #000, 0 4px 8px #0008;
+  color: #f4f6fa; font: 700 14px/1 ui-monospace, Menlo, monospace; }
+body > .gc-dialog .dr-keys kbd.wide { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+/* The legend printed on the plate: the pad's number in its lane's colour, the rest in the panel's engraving. */
+body > .gc-dialog .dr-keys dd { margin: 0; font: 600 10px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.16em; text-transform: uppercase; text-align: center; color: #e9ecf2b8; opacity: 1; }
+body > .gc-dialog .dr-lane dd { color: var(--c); text-shadow: 0 0 6px color-mix(in srgb, var(--c) 45%, #0000); }
+body > .gc-dialog .gc-sec-b label { border-bottom: 1px solid #00000080; box-shadow: 0 1px 0 #ffffff0d; }
+body > .gc-dialog .gc-sec-b label:last-child { border: 0; box-shadow: none; }
+/* A fader: the slot with its own range printed under it (Side and Up 0.25x to 3x, Volume 0 to 100%), lined up with the cap's
+   travel, the numbers a size up on desktop. The read-out in a small window. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x); box-sizing: content-box; padding: 6px 0 19px; background: var(--s) 8px calc(100% - 1px) / calc(100% - 16px) 17px no-repeat; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct); }
+@media (min-width: 600px) {
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range] { --s: var(--scale-x-lg); padding-bottom: 21px; background-size: calc(100% - 16px) 19px; }
+  body > .gc-dialog .gc-card .gc-sec-b input[type=range][name=music] { --s: var(--scale-pct-lg); }
+}
+body > .gc-dialog .gc-sec-b output { justify-self: end; padding: 3px 6px; border: 1px solid #000; border-radius: 3px; background: #07080b; box-shadow: inset 0 1px 3px #000, 0 1px 0 #ffffff12;
+  color: #cfe6ff; font: 600 12px ui-monospace, Menlo, monospace; text-shadow: 0 0 6px #cfe6ff66; }
+/* Music on: a bat-handle toggle on its own plate, OFF and ON printed either side, the go LED lit when it is on. */
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox] { width: 56px; height: 34px; border: 0; border-radius: 4px; background: var(--toggle-off) center / 100% 100%; box-shadow: 0 2px 0 #000; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:checked { background: var(--toggle-on) center / 100% 100%; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]::after { display: none; }
+body > .gc-dialog .gc-card .gc-sec-b input[type=checkbox]:focus-visible { outline: 1.5px solid #e9ecf2; outline-offset: 2px; }
+/* Desktop: the section tapes a size up, so they read at arm's length. */
+@media (min-width: 600px) {
+  body > .gc-dialog .gc-sec-h > span:not(.gc-chev) { padding: 4px 13px 4px 16px; font-size: 13px; }
+}
 body > .gc-dialog .gc-reset { border: 1px solid #000; background: linear-gradient(#262a33, #121419); box-shadow: inset 0 1px 0 #ffffff29, 0 3px 0 #000; letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }
+/* A phone on its side: the sheet sits low, so the header, the preset keys and the key strip shrink and more rows show before you scroll. */
+@media (max-height: 480px) {
+  body > .gc-dialog .gc-card { gap: 8px; padding-top: 12px; }
+  body > .gc-dialog .gc-head h2 { padding: 3px 12px 3px 16px; font-size: 14px; }
+  body > .gc-dialog .gc-close { width: 36px; height: 36px; }
+  body > .gc-dialog .gc-presets .gc-prof { flex-direction: row; align-items: center; gap: 0; }
+  body > .gc-dialog .gc-presets .gc-prof b { flex: 0 0 38px; height: 34px; font-size: 16px; }
+  body > .gc-dialog .gc-presets .gc-led { top: 4px; left: 4px; width: 5px; height: 5px; }
+  body > .gc-dialog .gc-presets .gc-prof[aria-pressed=true] .gc-led { top: 6px; }
+  body > .gc-dialog .gc-presets .gc-name { flex: 1; align-self: center; text-align: left; }
+  body > .gc-dialog .gc-sec-h { min-height: 32px; padding: 6px 2px 2px; }
+  body > .gc-dialog .gc-sec[data-sec="keys"] .gc-sec-b { padding: 10px 14px 8px; }
+  body > .gc-dialog .dr-keys { grid-template-columns: 1.6fr 1fr; gap: 10px; }
+  body > .gc-dialog .dr-rest { grid-template-columns: repeat(3, auto); padding: 0 0 0 10px; border: 0; border-left: 1px solid #00000080; box-shadow: inset 1px 0 0 #ffffff0d; }
+  body > .gc-dialog .dr-keys kbd { min-width: 26px; height: 26px; padding: 0 5px; font-size: 13px; }
+  body > .gc-dialog .dr-keys kbd.wide { font-size: 10px; }
+}

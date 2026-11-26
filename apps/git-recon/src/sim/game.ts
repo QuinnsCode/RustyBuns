@@ -24,7 +24,7 @@
 import { gateDir, mapRepo, mulberry32, reachable, SMOKE_SEE, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, slope, wet, type Terrain } from "@rustybuns/terrain";
-import { len, len3 } from "@rustybuns/util";
+import { len, len3, record } from "@rustybuns/util";
 import { ORDER, rangeDamage, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
 import { ROLES, type RoleId } from "./roles.ts";
 import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, THRUST_LIFT, THRUST_REFILL, THRUST_SECONDS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
@@ -528,8 +528,8 @@ export class Game {
 
   private soldier(team: Team, name: string, x: number, z: number, yaw: number, compound: number, id = this.soldiers.length): Soldier {
     const player = team !== "conflict";
-    const ammo = Object.fromEntries(ORDER.map((w) => [w, player ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
-    const loaded = Object.fromEntries(ORDER.map((w) => [w, full(w, ammo[w])])) as Record<WeaponId, number>;
+    const ammo = record(ORDER, (w) => player ? WEAPONS[w].ammo : w === "commit" ? -1 : 0);
+    const loaded = record(ORDER, (w) => full(w, ammo[w]));
     return {
       id, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
       hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, loaded, reload: 0, kit: ORDER.filter((w) => ammo[w] !== 0), vehicle: -1, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
