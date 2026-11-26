@@ -8,9 +8,8 @@ import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { space } from "@rustybuns/util/eqosys";
-import type { SpacesState } from "@rustybuns/util/spaces";
 import { newKey } from "@rustybuns/util/token";
-import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, waitFor } from "../../../scripts/chrome.ts";
 import { Document } from "../src/app/Document.tsx";
 import { pageCsp, spacesConnect } from "../src/csp.ts";
 import { Home, SpacesPage } from "../src/app/pages.tsx";
@@ -57,6 +56,7 @@ async function signUp(name: string) {
   const got = await (await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier } })).res.json() as { token: string; user: { id: string } };
   return { id: got.user.id, token: got.token, cookie: up.cookie };
 }
+/** For what the server says (a page's waits are `waitFor`'s). */
 const until = async (what: string, f: () => Promise<unknown> | unknown, ms = 10_000) => {
   for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await f()) return;
   throw new Error(`never saw ${what}`);
@@ -107,9 +107,8 @@ test("the home shows your party and your spaces beside your friends, and a space
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   await tab.call("Network.setCookies", { cookies: ada.cookie.split("; ").map((c) => ({ name: c.slice(0, c.indexOf("=")), value: c.slice(c.indexOf("=") + 1), url: base })) });
   await step("/spaces", load(chrome.cdp, tab, `${base}/spaces?open=${made.id}`, 0), 25_000);
-  const state = () => tab.eval<SpacesState | null>("window.__spaces?.state() ?? null").catch(() => null);
-  try { await until("game-night open with Bo on", async () => { const s = await state(); return s?.open === "game-night" && [...s.online].sort().join() === "Ada,Bo"; }); }
-  catch (e) { throw new Error(`${(e as Error).message}: ${JSON.stringify(await state())} ${tab.noise.join(" | ")}`); }
+  try { await waitFor(tab, "game-night open with Bo on", `(() => { const s = window.__spaces?.state(); return s?.open === "game-night" && [...s.online].sort().join() === "Ada,Bo"; })()`, 10_000, "window.__spaces?.state() ?? null", 50); }
+  catch (e) { throw new Error(`${(e as Error).message} ${tab.noise.join(" | ")}`); }
   expect(await tab.eval<number>("document.documentElement.scrollWidth")).toBe(390);
   // Voice: a socket to Qlave opens; one to any other origin (localhost is not 127.0.0.1) the policy stops.
   const reach = (url: string) => tab.eval<string>(`new Promise((ok) => { const w = new WebSocket(${JSON.stringify(url)}); w.onopen = () => { w.close(); ok("open"); }; w.onerror = () => ok("refused"); setTimeout(() => ok("hung"), 5000); })`);

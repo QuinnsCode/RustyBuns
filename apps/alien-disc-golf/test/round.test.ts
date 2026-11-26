@@ -3,7 +3,7 @@
 // no wind relay means synthetic wind, no currents means no swim. Any page error or console.error fails it.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, startVite, waitFor, type Cdp } from "../../../scripts/chrome.ts";
 import { countryAt } from "../src/countries.ts";
 import { BASKET_KM, makeCourse } from "../src/course.ts";
 import { decodeCurrents, paddleToward, startSwim, SWIM_S, swimOver, swimStep } from "../src/currents.ts";
@@ -58,10 +58,7 @@ async function open(cdp: Cdp, query: string, fail: Record<string, number> = {}) 
   if (Object.keys(fail).length) await tab.call("Fetch.enable", { patterns: Object.keys(fail).map((s) => ({ urlPattern: `*${s}` })) });
   await load(cdp, tab, new URL(`/?${query}&speed=${SPEED}`, vite.url).href, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.golf?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms = 30_000) => waitFor(tab, what, expr, ms, "window.golf?.state()", 50);
   const state = () => page<State>("golf.state()");
   // A page error or console.error; the failed responses asked for above are expected.
   const errors = () => tab.noise.filter((n) => !n.startsWith("HTTP "));

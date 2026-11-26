@@ -3,7 +3,7 @@
 // learned in this browser and the next room has no coach.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
-import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 
 setDefaultTimeout(180_000); // vite serves the game cold, then plays the tutorial room in headless Chrome
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
@@ -11,7 +11,6 @@ let vite: Awaited<ReturnType<typeof startVite>>;
 beforeAll(async () => { [chrome, vite] = await Promise.all([launchChrome(), startVite(join(import.meta.dir, ".."))]); });
 afterAll(() => { chrome?.stop(); vite?.stop(); });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface State { mode: string; target: string | null; found: number; tutorial: { learned: boolean; running: boolean; step: number; title: string | null } }
 
 async function open() {
@@ -19,10 +18,7 @@ async function open() {
   await load(chrome.cdp, tab, vite.url, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
   const state = () => page<State>("splatSpray.state()");
-  const until = async (what: string, expr: string, ms = 20_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await state().catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms = 20_000) => waitFor(tab, what, expr, ms, "splatSpray.state()", 50);
   const mouse = (type: string, x: number, y: number, buttons = 2) =>
     tab.call("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "right", buttons });
   const key = (type: "keyDown" | "keyUp", k: string, code: string) => tab.call("Input.dispatchKeyEvent", { type, key: k, code });
