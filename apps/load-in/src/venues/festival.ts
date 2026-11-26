@@ -114,7 +114,7 @@ export function rig(w: World): Rig {
   let r = rigs.get(w);
   if (!r) {
     r = {
-      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, lift: { tent: false, open: false }, master: { tent: -10, open: -9 },
+      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, lift: { tent: false, open: false }, master: { tent: -12, open: -11 },
       phase: Object.fromEntries(Object.keys(FEEDS).map((k) => [k, null])), feeder: { tent: 10, open: 10 },
       snake: { tent: false, open: false }, clock: 0, log: { tent: [], open: [] }, late: null,
     };
