@@ -98,14 +98,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat) and violet (its cabinets' dark violet paint). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -118,6 +118,7 @@ export function gearLook(): GearLook {
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
     horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8),
+    cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
   };
 }
 
@@ -1542,13 +1543,19 @@ function facets(slot: GearSlot, rings: Facet[], m: THREE.Matrix4, out = false): 
   const ring = ([z, a, c, k, y = 0, x = 0]: Facet) => [[a, -c + k], [a, c - k], [a - k, c], [-a + k, c], [-a, c - k], [-a, -c + k], [-a + k, -c], [a - k, -c]]
     .map(([u, v]) => new THREE.Vector3(u + x, v + y, z));
   const rows = rings.map(ring), pos: number[] = [];
-  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
-    const n = b.clone().sub(a).cross(c.clone().sub(a));
-    pos.push(...((n.z >= 0) !== out ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  // each triangle faces in toward the horn's axis between its two rings, leaning forward: a steep wall's two halves
+  // then never turn opposite ways (a flat flange ring has no inward, and the lean faces it forward)
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, axis: THREE.Vector2) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a)).normalize(), p = a.clone().add(b).add(c).divideScalar(3);
+    const inward = new THREE.Vector3(axis.x - p.x, axis.y - p.y, 0).normalize().setZ(0.3);
+    pos.push(...((n.dot(inward) >= 0) !== out ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
   };
-  for (let i = 0; i + 1 < rows.length; i++) for (let j = 0; j < 8; j++) {
-    const k = (j + 1) % 8, [a, b] = [rows[i], rows[i + 1]];
-    tri(a[j], a[k], b[k]); tri(a[j], b[k], b[j]);
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const [, , , , y0 = 0, x0 = 0] = rings[i], [, , , , y1 = 0, x1 = 0] = rings[i + 1], axis = new THREE.Vector2((x0 + x1) / 2, (y0 + y1) / 2);
+    for (let j = 0; j < 8; j++) {
+      const k = (j + 1) % 8, [a, b] = [rows[i], rows[i + 1]];
+      tri(a[j], a[k], b[k], axis); tri(a[j], b[k], b[j], axis);
+    }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -1634,28 +1641,31 @@ const rect = (x: number, y: number, w: number, h: number) => [[x - w / 2, y - h 
  */
 function midHigh(): Build {
   const size = GEAR_SIZES["stack-mid-high"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.025, f = d / 2;
-  const iw = w - 2 * t, pw = iw / 2, top = h - t, band = 0.405, pb = 0.53, deep = 0.3;
+  const iw = w - 2 * t, pw = iw / 2, top = h - t, band = 0.405, pb = 0.53;
   well(b, "violet", size, d - 0.04, t);
-  // the mid horn: a mouth 0.4 by 0.29 at the panel, its facets running back to an eight-sided throat at the back left
-  const my = 0.79, ma = 0.2, mc = 0.145, tx = -0.1, tz = -deep;
-  const flare = Array.from({ length: 6 }, (_, i): Facet => {
-    const s = i / 5, e = s ** 1.6, a = 0.055 + (ma - 0.055) * e, c = 0.055 + (mc - 0.055) * e;
-    return [tz * (1 - s), a, c, Math.min(a, c) * (0.45 - 0.35 * s), my, tx * (1 - s)];
-  });
+  // the mid horn: a mouth 0.39 by 0.28 at the panel and three bands of big flat panels back to a regular eight-sided
+  // throat at the left, 22 cm in. The corner panels run narrow at the mouth, wide halfway in and narrow again at the
+  // throat, so the walls fold into diamonds; the first band is the driver's black throat ring.
+  const my = 0.79, ma = 0.196, mc = 0.14, tx = -0.12, tz = -0.22;
+  const flare: Facet[] = [
+    [tz, 0.07, 0.07, 0.0205, my, tx], [tz * 0.82, 0.08, 0.08, 0.0234, my, tx * 0.95],
+    [tz * 0.45, 0.15, 0.115, 0.08, my, tx * 0.5], [0, ma, mc, 0.006, my, 0],
+  ];
   const m = new THREE.Matrix4().makeTranslation(0, 0, f - 0.01);
-  b.pieces.push(facets("grime", flare.slice(0, 3), m), facets("horn", flare.slice(2), m));
-  b.pieces.push(disc("knob", 0.06, 0.01, "z", [tx, my, f - 0.01 + tz], 8));
-  // the phase plug: a stretched six-sided crystal along x, blunt where it leaves the throat, drawn to a point to the right
+  b.pieces.push(facets("knob", flare.slice(0, 2), m), facets("horn", flare.slice(1), m));
+  b.pieces.push(disc("knob", 0.07, 0.01, "z", [tx, my, f - 0.01 + tz], 8));
+  // the phase plug: a crisp six-sided prism lying across the horn out of the throat ring, its blunt end flat, its
+  // nose a six-sided point three quarters of the way across
   const plug: THREE.Vector3[] = [];
-  for (const [x, r] of [[tx - 0.03, 0.03], [tx + 0.02, 0.046], [tx + 0.09, 0.04], [0.1, 0.002]]) for (let j = 0; j < 6; j++) {
+  for (const [x, r, z] of [[tx - 0.02, 0.06, -0.15], [0.0, 0.06, -0.11], [0.16, 0.004, -0.08]]) for (let j = 0; j < 6; j++) {
     const q = (j / 6) * Math.PI * 2 + Math.PI / 6;
-    plug.push(new THREE.Vector3(x, my + Math.sin(q) * r * 0.85, f - 0.09 + Math.cos(q) * r));
+    plug.push(new THREE.Vector3(x, my + Math.sin(q) * r * 0.8, f + z + Math.cos(q) * r * 0.7));
   }
   b.pieces.push({ geo: toCreasedNormals(new ConvexGeometry(plug), 0.3), slot: "horn" });
-  // the high horn: a small straight-walled box mouth under the mid horn, its driver's dot at the back
+  // the high horn: a small straight-walled box mouth under the mid horn, its driver's dot at the back left
   const hy = 0.592, hw = 0.15, hh = 0.072;
-  b.pieces.push(facets("horn", [[-0.13, 0.022, 0.014, 0.002, hy], [0, hw / 2, hh / 2, 0.003, hy]], m));
-  b.pieces.push(disc("knob", 0.011, 0.008, "z", [0, hy, f - 0.14], 10));
+  b.pieces.push(facets("horn", [[-0.13, 0.02, 0.014, 0.002, hy, -0.045], [0, hw / 2, hh / 2, 0.003, hy]], m));
+  b.pieces.push(disc("knob", 0.011, 0.008, "z", [-0.045, hy, f - 0.14], 10));
   // the moulded panel, its two mouths cut through it, and the violet baffle round it down to the bass mouth
   const panel = [[-pw, pb + 0.1], [-0.12, pb], [0.12, pb], [pw, pb + 0.1], [pw, top], [-pw, top]];
   b.pieces.push(frontPlate("horn", panel, [rect(0, my, ma * 2, mc * 2), rect(0, hy, hw, hh)], f + 0.002, 0.014));
@@ -1664,12 +1674,18 @@ function midHigh(): Build {
     b.pieces.push(...screw([x * (pw - 0.012), y, f + 0.003], "z", 0.0035, "metal", 6));
   // the bass horn: a dark mouth across the bottom, its walls closing on the driver deep in the box, a brace across it
   const by0 = t, by1 = band;
-  b.pieces.push(frustum("paint", [-pw, pw, by0, by1], [-pw + 0.06, pw - 0.14, by0 + 0.06, by1 - 0.12], f, 0.36));
-  b.pieces.push(box("knob", [iw - 0.2, by1 - by0 - 0.18, 0.01], [-0.04, (by0 + by1) / 2 - 0.03, f - 0.365]));
-  b.pieces.push(box("violet", [0.022, 0.4, 0.05], [0.02, (by0 + by1) / 2, f - 0.16], { bevel: 0.004, rot: [0, 0, 0.32] }));
-  b.pieces.push(box("metal", [0.05, 0.06, 0.006], [0.1, by0 + 0.13, f - 0.3], { bevel: 0.002 }));
-  // the sides: a round handle cup each side, and on one a bracket with the black knob that clamps a pole
-  for (const s of [-1, 1]) b.pieces.push(disc("knob", 0.045, 0.004, "x", [s * (w / 2 + 0.001), 0.72, -0.05], 16));
+  // deep, every wall slanting in (the floor rises toward the back), the brace from the band's middle down to the floor
+  const bi = [-pw + 0.1, pw - 0.12, by0 + 0.1, by1 - 0.16], bd = 0.44;
+  b.pieces.push(frustum("cavity", [-pw, pw, by0, by1], bi, f, bd));
+  b.pieces.push(box("knob", [bi[1] - bi[0], bi[3] - bi[2], 0.01], [(bi[0] + bi[1]) / 2, (bi[2] + bi[3]) / 2, f - bd - 0.005]));
+  b.pieces.push(box("violet", [0.024, 0.41, 0.01], [0.04, (by0 + by1) / 2, f - 0.06], { bevel: 0.004, rot: [0, 0, 0.3] }));
+  b.pieces.push(box("knob", [0.03, 0.045, 0.005], [0.085, by0 + 0.06, f - 0.051], { bevel: 0.002, rot: [0, 0, 0.3] }));
+  // the sides: a recessed handle each side (a dark pocket, its grip bar across the top), and on one a bracket with the
+  // black knob that clamps a pole
+  for (const s of [-1, 1]) {
+    b.pieces.push(box("knob", [0.004, 0.06, 0.15], [s * (w / 2 + 0.001), 0.72, -0.05]));
+    b.pieces.push(box("metal", [0.008, 0.012, 0.14], [s * (w / 2 - 0.001), 0.742, -0.05], { bevel: 0.003 }));
+  }
   b.pieces.push(box("metal", [0.008, 0.11, 0.07], [-w / 2 - 0.004, 0.42, 0.02], { bevel: 0.002 }));
   b.pieces.push(disc("knob", 0.02, 0.014, "x", [-w / 2 - 0.015, 0.42, 0.02], 12), disc("knob", 0.007, 0.012, "x", [-w / 2 - 0.028, 0.42, 0.02], 8));
   backAndFeet(b, size, 0.72, false);
