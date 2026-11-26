@@ -363,6 +363,11 @@ function sample(ctl: Ctl[], y: number): Ring {
 
 const smooth = (a: number, b: number, v: number) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
 const gauss = (d: number, s: number) => Math.exp(-(d * d) / (2 * s * s));
+/** How far (x, y) is from the segment (ax, ay) to (bx, by). */
+const segDist = (x: number, y: number, ax: number, ay: number, bx: number, by: number) => {
+  const dx = bx - ax, dy = by - ay, t = clamp01(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy));
+  return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+};
 /** A bone below `y0`, the next above `y1`, blended between. */
 const blend = (a: number, b: number, y0: number, y1: number, y: number): Skin => [a, b, smooth(y0, y1, y)];
 /** Grow a ring by `t` all round. */
@@ -548,6 +553,12 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     const w = Math.sqrt(Math.max(0, 1 - (u / 0.86) ** 2));
     return [0.37 * w ** 0.75 * (1 - 0.12 * u) + 0.05 * u, -0.36 * w ** 1.1 * (1 + 0.15 * u) + 0.05 * u] as const;
   };
+  // The mouth: its centre (the line where the lips meet) and half its width, head scale 1. Its own mesh lies over a
+  // shallow dent in the skull under the lower lip (`mouthDent`, `v` up from the centre), so the groove over the chin can
+  // sink below the face's surface. The dent is broad and soft: the skull's coarse triangles can't follow a sharp one,
+  // and would poke through the mouth where they cut across it.
+  const MY = -0.0672, MW = 0.0232 * (1 + 0.04 * fc.lips), plump = lerp(0.85, 1.15, d.g) * (1 + 0.22 * fc.lips);
+  const mouthDent = (x: number, v: number) => 0.0017 * gauss(x, 0.018) * gauss(v + 0.0145, 0.005);
   // The face, as heights on the front of the skull.
   const face = (p: THREE.Vector3) => {
     if (p.z < z0 + 0.03 * hs) return;
@@ -564,12 +575,11 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     // the skin rising to meet the nose (its own mesh, below), so it grows out of the face instead of sitting on it
     if (y < 0.014 && y > tip - 0.006) dz += lerp(0.002, 0.009, down ** 1.2) * gauss(x, lerp(0.009, 0.016 * nw, down)) * smooth(tip - 0.006, tip + 0.012, y);
     dz -= 0.0018 * gauss(ax - 0.0185 * nw, 0.0026) * gauss(y - wing + 0.006, 0.006);          // the groove round each wing
-    dz += 0.0045 * gauss(x, 0.02) * gauss(y + 0.062, 0.0045);                                 // upper lip
-    dz -= 0.0012 * gauss(x, 0.0035) * gauss(y + 0.0585, 0.004);                               // the groove under the nose
-    dz += 0.0045 * (1 + 0.3 * fc.lips) * gauss(x, 0.017) * gauss(y + 0.0735, 0.005);         // lower lip
-    dz -= 0.003 * gauss(x, 0.02) * gauss(y + 0.0675, 0.002);                                  // where they meet
-    dz -= 0.003 * gauss(x, 0.02) * gauss(y + 0.084, 0.005);
-    dz += 0.005 * (1 + 0.5 * fc.chin) * gauss(x, 0.017 * (1 + 0.15 * fc.jaw)) * gauss(y + 0.1, 0.01); // chin
+    // the fold from each wing of the nose down past the corner of the mouth, soft, with the cheek full above it
+    const fold = segDist(ax, y, 0.0215 * nw, wing - 0.002, MW + 0.0085, MY - 0.011);
+    dz -= 0.0011 * gauss(fold, 0.0035) * smooth(wing + 0.004, wing - 0.004, y);
+    dz -= mouthDent(x, y - MY);                                                                // under the mouth, its own mesh (below)
+    dz += 0.0065 * (1 + 0.5 * fc.chin) * gauss(x, 0.017 * (1 + 0.15 * fc.jaw)) * gauss(y + 0.1, 0.01); // chin
     dz += (0.004 + 0.004 * full + 0.0022 * fc.cheeks) * gauss(ax - 0.046, 0.018) * gauss(y + 0.03 - 0.006 * fc.cheeks, 0.02); // cheeks
     p.z += dz * hs * smooth(0.03, 0.055, (p.z - z0) / hs);
   };
@@ -591,11 +601,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
       const n = 1 + 0.2 * hash(p.x * 31.7, p.y * 17.3, p.z * 23.9);
       p.x *= n; p.z = z0 + (p.z - z0) * n;
     },
-    slot: (y, p) => {
-      if (fur) return p.z < z0 + 0.05 * hs || p.y > Y(0.028) ? "top" : "bootDark";
-      const x = Math.abs(p.x) / hs, yy = (p.y - eyeY) / hs + 0.0677;
-      return p.z > z0 + 0.07 * hs && x < 0.021 && Math.abs(yy) < (yy > 0 ? 0.0055 : 0.0075) * (1 - (x / 0.022) ** 2) ? "lips" : "skin";
-    },
+    slot: (y, p) => (!fur ? "skin" : p.z < z0 + 0.05 * hs || p.y > Y(0.028) ? "top" : "bootDark"),
     skin: B.head,
   });
   /** How far forward the skin of the face is at (x, y), head scale 1 (y from the eye line). */
@@ -670,15 +676,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
       { seg: 6, step: X(0.009), capTop: X(0.003), capBottom: X(0.002), m: bm, slot: "brow", skin: B.head });
   }
   if (fur) return;
-  // The mouth: an upper lip, a fuller lower one, and the dark line where they meet.
-  const across = (y: number) => new THREE.Matrix4().makeTranslation(0, Y(y), 0).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
-  const lip = (x: number, tall: number, out: number): Ctl => ({ y: X(x), w: X(tall), f: z0 + X(0.1005 + out - 6.5 * x * x), b: z0 + X(0.09 - 6.5 * x * x) });
-  const plump = lerp(0.85, 1.15, d.g) * (1 + 0.22 * fc.lips);
-  m.tube([lip(-0.023, 0.0004, 0.001), lip(-0.012, 0.0038 * plump, 0.0036), lip(0, 0.0034 * plump, 0.0042), lip(0.012, 0.0038 * plump, 0.0036), lip(0.023, 0.0004, 0.001)],
-    { seg: 8, step: X(0.0075), m: across(-0.0642), slot: "lips", skin: B.head });
-  m.tube([lip(-0.021, 0.0004, 0.001), lip(-0.011, 0.0042 * plump, 0.0036), lip(0, 0.0052 * plump, 0.0042), lip(0.011, 0.0042 * plump, 0.0036), lip(0.021, 0.0004, 0.001)],
-    { seg: 8, step: X(0.0075), m: across(-0.0712), slot: "lips", skin: B.head });
-  m.tube([lip(-0.02, 0.0003, 0.0022), lip(0, 0.0006, 0.0036), lip(0.02, 0.0003, 0.0022)], { seg: 6, step: X(0.012), m: across(-0.0672), slot: "pupil", skin: B.head });
+  mouth(m, X, Y, hs, MY, MW, plump, mouthDent, surf, faceTone);
 
   // Hair: a sheet over the skull that starts on the hairline, thin at its edge and full a finger above it. Long hair
   // carries on down the back, behind the ears. A hat presses the top of it flat.
@@ -751,6 +749,63 @@ function nose(m: Builder, X: (v: number) => number, Y: (v: number) => number, z0
       tone: (p) => [0.55 * flush(p), 0.3 * smooth(Y(tip + 0.002), Y(tip - 0.005), p.y)],
     });
   }
+}
+
+/**
+ * The mouth, built as the lids are: rings of its own fine points round the line where the lips meet, from just inside
+ * it out to where it goes under the face. Each point lies on the face (`surf`, plus back the dent the skull has there)
+ * at the height `lipH` gives it, so the lips, the philtrum, the corners and the groove over the chin are one surface
+ * with no edge; the outer rings dive gently under the skin and take the face's own tone, so no line shows there either.
+ * The red of the lips stops at its border (a cupid's bow over a fuller lower lip) on points about a millimetre apart.
+ */
+function mouth(m: Builder, X: (v: number) => number, Y: (v: number) => number, hs: number, MY: number, MW: number, plump: number,
+  dent: (x: number, v: number) => number, surf: (y: number, x: number) => number, faceTone: (p: THREE.Vector3) => [number, number]) {
+  const cw = (x: number) => Math.sqrt(Math.max(0, 1 - (x / MW) ** 2));
+  // the top of the upper lip's red: two peaks either side of a dip under the philtrum, and the bottom of the lower lip's
+  const top = (x: number) => 0.0056 * plump * cw(x) ** 1.2 * (1 + 0.16 * gauss(Math.abs(x) - 0.0056, 0.0026)) - 0.0008 * gauss(x, 0.0021);
+  const bottom = (x: number) => -0.0086 * plump * cw(x) ** 1.1;
+  /** How far the mouth stands off the face (not counting the dent), head scale 1. */
+  const lipH = (x: number, v: number) => {
+    const ax = Math.abs(x), c = cw(x), ub = top(x), lb = bottom(x);
+    let h = 0.0046 * plump * c * gauss(v - 0.5 * ub, 0.45 * ub + 0.0004);                              // the upper lip
+    h += 0.0054 * plump * c * gauss(v - 0.52 * lb, -0.42 * lb + 0.0004);                               // the lower one, fuller
+    h += 0.0008 * c * gauss(v - ub, 0.0011);                                                           // the ridge along the border
+    h -= 0.0011 * c * gauss(v, 0.0008);                                                                // where they meet, rolling in
+    h += 0.0012 * gauss(x, 0.018) * smooth(0.0115, 0.004, v) * smooth(-0.001, 0.004, v);               // the upper lip's skin, over the teeth
+    const philtrum = smooth(ub - 0.0015, ub + 0.0015, v) * smooth(0.0112, 0.007, v);
+    h += philtrum * (0.0007 * gauss(ax - 0.0042, 0.0013) - 0.0004 * gauss(x, 0.0019));                 // its two ridges and the groove between
+    h += 0.0008 * gauss(ax - MW - 0.0045, 0.003) * gauss(v, 0.0045);                                   // the cheek round each corner, so it tucks in
+    h -= 0.0013 * gauss(x, 0.016) * gauss(v + 0.0145, 0.0035);                                         // the groove over the chin
+    return h;
+  };
+  const RINGS = [-0.12, 0, 0.03, 0.07, 0.12, 0.18, 0.25, 0.32, 0.4, 0.48, 0.56, 0.64, 0.72, 0.8, 0.88, 0.94, 1], AROUND = 72;
+  const UP = 0.0105, DOWN = 0.025, SIDE = 0.013;
+  const flat = (i: number, j: number) => {
+    const th = (j / AROUND) * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th), rho = Math.max(0, RINGS[i]!);
+    const x = Math.sign(c) * Math.abs(c) ** 0.85 * (MW + SIDE * rho), v = sn * (0.0003 * (i === 0 ? 0.3 : 1) + (sn > 0 ? UP : DOWN) * rho);
+    return [x, v, RINGS[i]!] as const;
+  };
+  const point = (i: number, j: number, out: THREE.Vector3) => {
+    const [x, v, rho] = flat(i, j), y = MY + v;
+    let z = surf(y, x) + X(dent(x, v) + lipH(x, v) * smooth(0.98, 0.7, rho) + 0.0002) - X(0.00015) * smooth(0.7, 1, rho);
+    if (rho < 0) z -= X(0.004);                                                                        // into the mouth
+    out.set(X(x), Y(y), z);
+  };
+  const at = new THREE.Vector3();
+  m.sheet(RINGS.length, AROUND, point,
+    (i, j) => {
+      if (i === 0) return "pupil";
+      const [x, v] = flat(i, j);
+      return Math.abs(x) < MW && v < top(x) && v > bottom(x) ? "lips" : "skin";
+    },
+    () => [B.head, B.head, 0],
+    // the lips a little flushed and darker where they meet; out where the mouth meets the face it takes the face's tone
+    (i, j) => {
+      const [, , rho] = flat(i, j);
+      point(i, j, at);
+      const [fl, sh] = faceTone(at), w = smooth(0.55, 0.85, rho);
+      return [lerp(Math.max(fl, 0.3), fl, w), lerp(Math.max(sh, 0.45 * smooth(0.12, 0, rho)), sh, w)];
+    });
 }
 
 function hat(m: Builder, d: Dims, kind: Hat, ctl: (grow?: number, lift?: number) => Ctl[]) {
