@@ -308,15 +308,16 @@ class Builder {
    * A grid of points, `rows` by `cols`, joined round (the last column meets the first) and open at the bottom: hair,
    * whose edge is the hairline and not a level ring.
    */
-  sheet(rows: number, cols: number, at: (i: number, j: number, out: THREE.Vector3) => void, slot: Slot, skin: (p: THREE.Vector3) => Skin) {
+  sheet(rows: number, cols: number, at: (i: number, j: number, out: THREE.Vector3) => void, slot: Slot | ((i: number, j: number) => Slot), skin: (p: THREE.Vector3) => Skin, tone?: (i: number, j: number) => [flush: number, shade: number]) {
     const start = this.pos.length / 3, p = this.v;
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
         at(i, j, p);
         const sk = skin(p);
         this.pos.push(p.x, p.y, p.z);
-        this.tone.push(0, 0);
-        this.slot.push(SLOTS.indexOf(slot));
+        const t = tone?.(i, j);
+        this.tone.push(t ? clamp01(t[0]) : 0, t ? clamp01(t[1]) : 0);
+        this.slot.push(SLOTS.indexOf(typeof slot === "string" ? slot : slot(i, j)));
         this.bone.push(sk[0], sk[1], 0, 0);
         this.weight.push(1 - sk[2], sk[2], 0, 0);
       }
@@ -537,14 +538,28 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     return { y: eyeY + (y + lift) * hs, w: (w * lerp(1, jaw, low) + 0.006 * full * low + grow) * hs, f: z0 + (f + grow) * hs, b: z0 + (back - grow) * hs + 0.006 * full * low, p };
   });
   const X = (v: number) => v * hs, Y = (v: number) => eyeY + v * hs;
+  // The eye: a ball of radius `r` beside the nose on the eye line, and over it the lid, a shell a little bigger than the
+  // ball and wider than it is tall (`WIDE`), with an almond opening. `edge(u)` is the opening's top and bottom,
+  // in the lid's own units: `u` across (toward the temple when positive) and up, in balls. The upper edge peaks a little
+  // toward the nose and the lower one dips a little toward the temple, and the outer corner sits a touch higher than the
+  // inner one, as most eyes tilt.
+  const r = 0.0118 * hs * er, eyeZ = z0 + 0.0728 * hs, WIDE = 1.12;
+  const edge = (u: number) => {
+    const w = Math.sqrt(Math.max(0, 1 - (u / 0.86) ** 2));
+    return [0.37 * w ** 0.75 * (1 - 0.12 * u) + 0.05 * u, -0.36 * w ** 1.1 * (1 + 0.15 * u) + 0.05 * u] as const;
+  };
   // The face, as heights on the front of the skull.
   const face = (p: THREE.Vector3) => {
     if (p.z < z0 + 0.03 * hs) return;
     const x = p.x / hs, y = (p.y - eyeY) / hs, ax = Math.abs(x);
     let dz = 0;
-    // eye sockets: shallow enough that the skin runs onto the lids instead of leaving them standing in a pit
-    dz -= 0.0052 * er * gauss(ax - ex, 0.0135 * er) * gauss(y + 0.0005, 0.0068 * er);
+    // eye sockets: an almond, wider than tall, a little deeper toward the nose, shallow enough that the lids lie on the skin
+    dz -= 0.0058 * er * gauss(ax - ex + 0.002, 0.0165 * er) * gauss(y + 0.0005, 0.0072 * er);
     dz += 0.0035 * brow * gauss(y - 0.019, 0.007) * smooth(0.058, 0.03, ax);                  // the brow ridge
+    dz += 0.0014 * brow * gauss(ax - ex - 0.012, 0.012) * gauss(y - 0.016, 0.006);              // its outer end, over the eye's corner
+    dz += 0.0022 * gauss(ax - ex - 0.014, 0.013) * gauss(y + 0.027, 0.0065);                    // the cheekbone, under the eye's outer half
+    dz += 0.0026 * gauss(ax - ex, 0.014) * gauss(y + 0.014, 0.006);                            // the soft fullness under the lower lid
+    dz += 0.0045 * gauss(ax - ex - 0.014, 0.0065) * gauss(y + 0.001, 0.009);                    // the skin wrapping the outer corner, over the ball
     const down = clamp01((0.008 - y) / (0.008 - tip + 0.004));                                // 0 at the bridge, 1 at the tip
     // the skin rising to meet the nose (its own mesh, below), so it grows out of the face instead of sitting on it
     if (y < 0.014 && y > tip - 0.006) dz += lerp(0.002, 0.009, down ** 1.2) * gauss(x, lerp(0.009, 0.016 * nw, down)) * smooth(tip - 0.006, tip + 0.012, y);
@@ -583,31 +598,67 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     },
     skin: B.head,
   });
-  if (!fur) nose(m, X, Y, z0, hs, tip, nw, (yy, xx) => { const v = new THREE.Vector3(X(xx), Y(yy), sample(skull, Y(yy)).f); face(v); return v.z; });
+  /** How far forward the skin of the face is at (x, y), head scale 1 (y from the eye line). */
+  const surf = (yy: number, xx: number) => {
+    const ring = sample(skull, Y(yy)), t = clamp01(Math.abs(X(xx) - ring.x) / ring.w);   // on the ring's superellipse, as the tube lays it
+    const v = new THREE.Vector3(X(xx), Y(yy), (ring.f + ring.b) / 2 + ((ring.f - ring.b) / 2) * (1 - t ** ring.p) ** (1 / ring.p));
+    face(v);
+    return v.z;
+  };
+  if (!fur) nose(m, X, Y, z0, hs, tip, nw, surf);
   // Eyes: a ball in each socket with a coloured iris and a pupil on its front, under lids that make an almond of it:
   // the upper lid covers the top of the iris, the lower one meets its bottom, so the eye looks out rather than stares.
   for (const s of [-1, 1]) {
-    const em = new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-    const r = 0.0118 * hs * er;
+    const em = new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), eyeZ).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
     const ball = (y: number): Ctl => { const w = Math.sqrt(1 - y * y) * r; return { y: y * r, w, f: w, b: -w }; };
     m.tube([ball(0.65), ball(0.8), ball(0.88), ball(0.94), ball(0.985)],
       // the ball turned a little out toward the temple, as eyes look, so the iris sits mid-opening rather than by the nose
-      { seg: 16, step: r * 0.08, cuts: [r * 0.865, r * 0.972], capTop: r * 0.015, m: new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationY(0.14 * s)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), slot: (y) => (fur ? "glow" : y > r * 0.972 ? "pupil" : y > r * 0.865 ? "iris" : "eyeWhite"), skin: B.head });
+      { seg: 16, step: r * 0.08, cuts: [r * 0.865, r * 0.972], capTop: r * 0.015, m: new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), eyeZ).multiply(new THREE.Matrix4().makeRotationY(0.14 * s)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), slot: (y) => (fur ? "glow" : y > r * 0.972 ? "pupil" : y > r * 0.865 ? "iris" : "eyeWhite"), skin: B.head });
     if (fur) continue;
-    // The opening, in the lid's own units across (u, toward the temple when positive) and up: the top arcs higher
-    // toward the outer corner, the bottom is flatter, and both close to a point at the corners.
-    const edge = (u: number) => { const w = Math.sqrt(Math.max(0, 1 - (u / 0.92) ** 2)); return [0.36 * w ** 0.8 + 0.04 * u, -0.42 * w ** 1.2 + 0.03 * u] as const; };
-    m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
-      seg: 20, step: r * 0.1, capTop: r * 0.05, m: em, skin: B.head,
-      // up is -z here (the ball is built looking along y, then turned to look forward)
-      bump: (p) => {
-        const up = -p.z / r, [hi, lo] = edge((p.x / r) * s);
-        const open = smooth(hi + 0.05, hi - 0.03, up) * smooth(lo - 0.04, lo + 0.03, up);
-        p.multiplyScalar(lerp(1, 0.8, open));
-      },
-      // a dark lash line along the top edge, and the lid's crease a little above it
-      slot: (_y, p) => { const up = -p.z / r, [hi] = edge((p.x / r) * s); return up > hi - 0.05 && up < hi + 0.09 && hi > 0.02 ? "brow" : "skin"; },
-      tone: (p) => { const up = -p.z / r, [hi] = edge((p.x / r) * s); return [0.15, up > 0 ? 0.3 + 0.35 * gauss(up - hi - 0.22, 0.06) : 0.2]; },
+    // The lids: rings of points round the opening, from just behind the ball's front (so the edge tucks in) out to where
+    // they go under the skin of the face, each ring the almond grown a little. Near the edge the lid is a shell over the
+    // ball; the upper one folds into a crease a little above its edge, with the soft skin under the brow over it; further
+    // out it lies a hair off the face and then dives under it between two rings, so the lid's own fine points, not the
+    // skull's coarse ones, draw the eye and the two meet along a clean line. The lower lid is the upper one, narrower.
+    const RINGS = [-0.12, -0.03, 0, 0.035, 0.08, 0.14, 0.2, 0.26, 0.3, 0.34, 0.38, 0.42, 0.46, 0.5], AROUND = 44;
+    const thOf = (j: number) => ((s * j) / AROUND) * Math.PI * 2;                  // round the way that faces out, on either side
+    const lidPoint = (i: number, j: number, out: THREE.Vector3) => {
+      const th = thOf(j), c = Math.cos(th), sn = Math.sin(th), t = RINGS[i]!;
+      // a point on the opening's edge, then out from it
+      const u = 0.86 * Math.sign(c) * Math.abs(c) ** 0.8, [hi, lo] = edge(u);
+      const upE = sn >= 0 ? lerp(lo, hi, 0.5 + 0.5 * Math.min(1, sn * 6)) : lerp(hi, lo, 0.5 + 0.5 * Math.min(1, -sn * 6));
+      const n = Math.hypot(u, upE * 2) || 1, upper = smooth(-0.35, 0.35, sn), rho = t * lerp(0.85, 1, upper);
+      const uu = u + (rho * u) / n, up = upE + (rho * upE * 2) / n;
+      const xw = X(ex) * s + uu * WIDE * r * s, yw = Y(0.001) + up * r;
+      const shell = (k: number) => eyeZ + r * Math.sqrt(Math.max(0, k * k - (uu * WIDE) ** 2 - up * up));
+      const skin = surf((yw - eyeY) / hs, xw / hs);
+      let z: number;
+      if (t <= 0) z = lerp(shell(0.94), shell(1.06), smooth(-0.12, 0, t));                       // tucked in behind the ball's front
+      else {
+        const fold = upper * (-0.035 * gauss(t - 0.25, 0.04) + 0.015 * gauss(t - 0.38, 0.06));    // the crease and the fold over it
+        const lid = shell(1.06 + 0.04 * smooth(0, 0.08, t) + fold), lie = skin + 0.00015 * hs;
+        // never under the ball, which stands out of the face below the eye; at the last rings, gently under the skin
+        z = Math.max(shell(1.035), lerp(Math.max(lid, lie), lie, smooth(0.14, 0.36, t))) - 0.0007 * hs * smooth(0.38, 0.5, t);
+      }
+      out.set(xw, yw, z);
+    };
+    const at = new THREE.Vector3();
+    m.sheet(RINGS.length, AROUND, lidPoint,
+      // a dark lash line along the top edge, a fainter one along the bottom
+      (i, j) => { const sn = Math.sin(thOf(j)); return (i === 2 || i === 3) && Math.abs(Math.cos(thOf(j))) < 0.93 && (sn > 0.1 || (i === 2 && sn < -0.1)) ? "brow" : "skin"; },
+      () => [B.head, B.head, 0],
+      // the rim catches the light, the crease and the corners sit in shadow, and the lid is a touch pinker than the face;
+      // out where it meets the face it takes the face's own tone, so no line shows there
+      (i, j) => {
+        const t = RINGS[i]!, th = thOf(j), up = Math.sin(th) > 0, corner = smooth(0.75, 1, Math.abs(Math.cos(th)));
+        lidPoint(i, j, at);
+        const [fl, sh] = faceTone(at), w = smooth(0.2, 0.38, t);
+        return [lerp(0.35 * gauss(t - 0.08, 0.1), fl, w), lerp((up ? 0.12 + 0.45 * gauss(t - 0.25, 0.04) : 0.08 + 0.2 * gauss(t - 0.1, 0.06)) + 0.25 * corner * smooth(0.2, 0, t), sh, w)];
+      });
+    // the tear duct: a little pink mound in the inner corner, against the ball
+    m.tube([ball(0.3), ball(0.6), ball(0.9)].map((c) => ({ ...c, w: c.w * 0.18, f: c.f * 0.18, b: c.b * 0.18, y: c.y * 0.18 })), {
+      seg: 8, step: r * 0.04, capTop: r * 0.04, capBottom: r * 0.03, slot: "lips", skin: B.head, tone: () => [0.6, 0.2],
+      m: em.clone().multiply(new THREE.Matrix4().makeTranslation(-0.74 * r * WIDE * s, 0.55 * r, 0.02 * r)),
     });
     // an ear, and a brow that sits on the ridge
     const ear = new THREE.Matrix4().makeTranslation(X(0.0745) * s, Y(-0.012), z0 - 0.012 * hs).multiply(new THREE.Matrix4().makeRotationY(-0.35 * s)).multiply(new THREE.Matrix4().makeRotationZ(-0.12 * s));
