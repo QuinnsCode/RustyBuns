@@ -1,5 +1,5 @@
-// Qollab Studio's front door (#5860), signed out: through each path's card to its first step (only the jam room asks to
-// sign in), and from there the way back home, in headless Chrome over CDP (scripts/chrome.ts). The door itself at phone
+// Qollab Studio's front door (#5860), signed out: through each card under LEARN, BUILD and PLAY to its first step (only The Event asks
+// to sign in), and from there the way back home, in headless Chrome over CDP (scripts/chrome.ts). The door itself at phone
 // and desktop sizes is front-door.test.ts.
 import { setDefaultTimeout, test } from "bun:test";
 import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
@@ -7,7 +7,7 @@ import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 import { DOOR, PATHS, type PathId } from "../src/paths.ts";
 
 // the gear room and the jam room are 3D scenes, drawn in software on CI's runners
-setDefaultTimeout(240_000); // walks each of six paths in headless Chrome
+setDefaultTimeout(240_000); // walks each of seven cards in headless Chrome
 useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
@@ -16,16 +16,17 @@ const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 60_000);
 /** Each path's first step as its page shows it, signed out, and the way back home on that page. */
 const FIRST: Record<PathId, { ready: string; back: string }> = {
   learn: { ready: "!!window.qstudio && !!document.getElementById('play')", back: "#qs-way a[data-to=paths]" },
-  track: { ready: "!!window.fmdaw && fmdaw.state().tracks.length > 0", back: "#qs-way a[data-to=paths]" },
+  daw: { ready: "!!window.fmdaw && fmdaw.state().tracks.length > 0", back: "#qs-way a[data-to=paths]" },
   // the jam room is a room you share: its lobby asks you to sign in (live), or makes a room as a guest where eqosys
   // won't send anyone back (this test's 127.0.0.1)
-  jam: { ready: "['door-out', 'door-lobby'].some((id) => document.getElementById(id)?.hidden === false)", back: "#qs-way a[data-to=paths]" },
-  dj: { ready: "!!window.qdecks && qdecks.start().library.length >= 2", back: "#qs-back" },
-  plan: { ready: "!!window.qrooms && !!qrooms.state()", back: "#qs-back" },
-  circuit: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
+  event: { ready: "['door-out', 'door-lobby'].some((id) => document.getElementById(id)?.hidden === false)", back: "#qs-way a[data-to=paths]" },
+  instruments: { ready: "!!window.qdecks && qdecks.start().library.length >= 2", back: "#qs-back" },
+  planner: { ready: "!!window.qrooms && !!qrooms.state()", back: "#qs-back" },
+  amps: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
+  builder: { ready: "!!window.qamp && !!qamp.state().amp", back: "#qs-way a[data-to=paths]" },
 };
 
-test.skipIf(!hasChrome)("each of the six paths opens on its first step and leads back", async () => {
+test.skipIf(!hasChrome)("each card opens on its first step and leads back", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   try {
     // the paths are what's checked, not the picture: this browser keeps low quality, as Q would, so the jam room

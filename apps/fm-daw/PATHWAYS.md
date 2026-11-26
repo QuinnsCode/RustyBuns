@@ -1,27 +1,38 @@
-# Qollab Studio: the six ways in
+# Qollab Studio: Learn, Build, Play
 
-Qollab Studio is one app with six doors. Each door is a different person with a different job, and each one walks
-a path through the same pieces: the desk (FM DAW), the 3D rooms, the DJ decks, the studio builder, the gear
-(`packages/gear`) and the circuits (`circuits/`, Q Amp, the sound wall). This file names each path: who walks it,
-where they come in, the steps they take, what works today and what is missing. Work on Qollab Studio should make one
-of these walks shorter or less broken. When a step changes, change its line here.
+Qollab Studio is a DAW and an event planner in one shared 3D world, where a show is set up in a place that behaves
+like the real one. Three words split it, and every task names the problem it shortens:
 
-Every path starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
+- **LEARN** is how to set it up and how to use it. It isn't a separate room: each sector gets lessons on its own tools,
+  checked on the real gear as you go. LEARN and Sound Guy Simulator (`apps/load-in`) are one thing with two
+  storylines: the same gear, models and step checker (`packages/gear` `steps.ts`), told as lessons here and as a
+  career from the garage to the arena there. A speaker, amp or rig model built in Qollab Studio is one the game uses.
+- **BUILD** is six sectors, each aimed at one real problem.
+- **PLAY** is The Event: what you built, played live for people who walk in.
 
-| Path | Who | Door | Works end to end today? |
-|---|---|---|---|
-| [1. Learn to set it up](#1-learn-to-set-it-up) | a beginner, a student, a teacher | Learn the setup: `/studio.html`, the gear room (plug the guitar into an amp); the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
-| [2. Make a track](#2-make-a-track-the-daw) | a bedroom producer | Make a track: `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
-| [3. Jam with friends](#3-jam-with-friends-the-metaverse) | a band, friends far apart | Jam with friends: `/jam.html`, the lobby (sign in, make a room) | Yes, sign in to invite link to playing together |
-| [4. DJ a set and stream it](#4-dj-a-set-and-stream-it) | a DJ | DJ a set: `/decks.html`, the decks with the demo tracks | Yes: into the room, to a file, out of your sound card to any stream app, and a listen link of our own |
-| [5. Plan a sound system](#5-plan-a-sound-system-cad-for-speakers) | a sound engineer, a venue, a festival crew | Plan a sound system: `/rooms.html`, the studio builder | Yes: stacks indoors or out, coverage, delay, power, gear list |
-| [6. Build the circuit](#6-build-the-circuit-tscircuit-to-your-hands) | a pedal or synth DIYer | Build the circuit: `/amp.html`, Q Amp; the gear room | Partly: play, change parts, download a kit with your parts; nothing built yet |
+Every sector starts on the front door, `/door.html` (`src/paths.ts`, `src/front.ts`). The Door column is where its card lands.
 
-All six share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
-move from one path to the next without starting over: the pedal you built in path 6 is gear on the floor in path 3,
-the rig you planned in path 5 is the PA your set plays through in path 4.
+| Word | Sector | The real problem | Who | Door | Works end to end today? |
+|---|---|---|---|---|---|
+| LEARN | [Learn the setup](#1-learn-learn-the-setup) | Nobody teaches cabling, gain staging or a PA unless a tech stands next to you; breaking real gear is a dear way to learn | beginners, students, teachers | `/studio.html`, the gear room; the jam room's `?` card | Yes, three lessons at the gear wall; more to come |
+| BUILD | [Event Planner](#5-build-event-planner) | Crews guess whether the rig covers the room or the field and whether the power holds, and find out on the night | sound engineers, venues, festival and wedding crews | `/rooms.html`, the studio builder | Yes indoors and on flat open ground: coverage, delay, power, gear list. No weather or terrain yet |
+| BUILD | [QDAW](#2-build-qdaw) | A music maker in the browser is a toy, or an install and an account first | bedroom producers | `/`, the desk with the demo beat | Yes, one loop at a time (no song mode yet) |
+| BUILD | [Q Instruments](#4-build-q-instruments) | Synths, classic keys and decks cost a lot and you can't try them first | players, synth-curious, DJs | `/decks.html`, the decks; the sound wall in the gear room | Yes: decks into the room, to a file, to any stream app, a listen link |
+| BUILD | [Q Amps](#6-build-q-amps-and-q-builder) | Amp sims are black boxes: you can't see why a pedal sounds the way it does | guitarists, speaker DIYers | `/amp.html`, Q Amp; `/speakers.html` | Yes: an amp and pedals solved as circuits; speaker boxes from the makers' drawings |
+| BUILD | [Q Builder](#6-build-q-amps-and-q-builder) | A DIY kit is a parts list with no feedback: it hums and you can't tell which part did it | pedal and synth DIYers, EE students | `/amp.html`, B on a pedal (its board and build sheet) | Partly: change parts, drop in a tscircuit board, download the kit; no scope yet |
+| PLAY | [The Event](#3-play-the-event) | A plan is a drawing until someone stands in it; a far-away crowd gets a flat stream | the band, the client, the crowd | `/jam.html`, the lobby (sign in, make a room) | Yes indoors: invite link, guest list, the room's PA from where you stand |
 
-## 1. Learn to set it up
+All of them share one account (eqosys), one saved project (the sesh's world) and one gear catalogue, so a person can
+move from one sector to the next without starting over: the pedal built in Q Builder is a pedal on Q Amp's floor, the
+track recorded through it plays at The Event, and the rig planned in the Event Planner is the PA it plays through.
+
+**The build order** (visual plan: https://claude.ai/artifact/EvSXowEP4iSpRvfjL5zEs5): 0. this regroup;
+1. the Event Planner outdoors, sound that travels the way it does in the weather and over the ground
+   ([below](#next-sound-that-travels-through-weather-and-over-the-ground)); 2. the landing page, which shows that off;
+3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest);
+5. a lesson in every sector, and QDAW's song mode.
+
+## 1. LEARN: Learn the setup
 
 **Who:** someone who has never cabled a rig, gain-staged a mixer or heard why a room rings. A teacher with a class.
 
@@ -40,7 +51,7 @@ the rig you planned in path 5 is the PA your set plays through in path 4.
 
 **Missing:** lessons past the first three (gain-staging a desk, why a room rings), a marker over the gear the next step is about, and a teacher's view of a class's progress. The lessons need the sesh's gear room, so a page with no World (plain `vite`) can't take them.
 
-## 2. Make a track (the DAW)
+## 2. BUILD: QDAW
 
 **Who:** a producer who wants a music maker in the browser, with no install and no account.
 
@@ -57,7 +68,7 @@ the rig you planned in path 5 is the PA your set plays through in path 4.
 into a whole song), a sidechain from the kick, drawing automation by hand, input monitoring, MIDI clock. The synth
 voices can't go through the Amp insert yet ([CIRCUITS.md: Next](CIRCUITS.md#next)).
 
-## 3. Jam with friends (the metaverse)
+## 3. PLAY: The Event
 
 **Who:** a band, or friends in different cities who want to play together in a place, not a video call.
 
@@ -75,7 +86,7 @@ voices can't go through the Amp insert yet ([CIRCUITS.md: Next](CIRCUITS.md#next
 rooms' look is a climb ([#5365](https://github.com/QuinnsCode/RustyBuns/issues/5365)). Pedals, amps and cables
 stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
 
-## 4. DJ a set and stream it
+## 4. BUILD: Q Instruments
 
 **Who:** a DJ who practises at home, plays a party in a room, and wants the set heard outside the room too.
 
@@ -109,7 +120,7 @@ mixer channel 1 or 4. Picking an output needs Chrome, Edge or Firefox; Safari pl
 Listen object there); a listener on an iPhone needs Safari 17.1's MediaSource for WebM. There is no saved
 library either (tracks load each visit), and MIDI learn is checked only with fed messages, not a real controller.
 
-## 5. Plan a sound system (CAD for speakers)
+## 5. BUILD: Event Planner
 
 **Who:** a sound engineer, a venue owner or a festival crew who must decide which speakers, where, aimed how, on
 what power, before the truck is loaded.
@@ -141,8 +152,25 @@ what power, before the truck is loaded.
 - `window.qrooms`: `pa()`, `level(x, z)`, `delay(x, z)`, `pickStack(i)`, `showMap()`, `showDelay()`, `view()`, `download("list" | "plan")`; the journey is
   `test/pa-builder.test.ts`.
 
+### Next: sound that travels through weather and over the ground
 
-## 6. Build the circuit (tscircuit to your hands)
+Outdoors the map today is the speakers' own spread with distance. What a crew needs next is sound that travels the
+way it does on the night, a fair try at the physics from three inputs:
+- **Air:** temperature and relative humidity set how fast highs fade with distance (ISO 9613-1 air absorption) and
+  the speed of sound, so the delay towers' times move with the evening.
+- **Ground:** grass, soil, tarmac or water under the crowd soak up or throw back the low mids (a ground factor per
+  surface, ISO 9613-2).
+- **Geography:** the lie of the land: a hill or a bank between a stack and a listener cuts the highs behind it, a bowl
+  carries. A height map under the field, from the splat capture or drawn.
+
+Each is a change to `@rustybuns/gear`'s `coverage`, so the map, the Walk-in sound and the delay marks stay one model.
+Wind, a forecast for the date, noise at the site's edge and wind load on the stacks come later.
+
+
+## 6. BUILD: Q Amps and Q Builder
+
+Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 6).
+Both start on Q Amp today; Q Builder gets a page of its own with its scope.
 
 **Who:** a guitarist or synth DIYer who wants to hear a pedal or a module, change its parts, and solder the real one.
 
@@ -171,9 +199,9 @@ what power, before the truck is loaded.
 
 ## The front door
 
-`/door.html` names all six paths, each a card with a Lucide icon, a short name and a line on what you do there, and
-each card opens on that path's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only the jam
-room asks you to sign in; the rest work signed out. Every page has a way back: **Paths** first in the row of doors
+`/door.html` names LEARN, BUILD and PLAY, each over its row of cards, each card with a Lucide icon, a short name and a line on what you do there, and
+opening on that sector's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only The
+Event asks you to sign in; the rest work signed out. Every page has a way back: **Paths** first in the row of doors
 along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
 (`mountBack`). `qdoor.state()` for probes; `test/front-door.test.ts` walks every card to its first step and back at
 phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.

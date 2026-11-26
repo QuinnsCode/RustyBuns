@@ -10,23 +10,29 @@
   h1 { font: 600 40px/1 "Barlow Condensed", sans-serif; letter-spacing: .02em; margin: 8px 0 6px; }
   h1 span { color: #ff6b4a; }
   .lede { margin: 0 0 22px; color: #b9b4aa; max-width: 60ch; }
-  #paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+  #paths { display: grid; gap: 28px; }
+  .sector { --tone: #0f766e; display: grid; gap: 10px; }
+  .sector[data-sector="build"] { --tone: #c2410c; }
+  .sector[data-sector="play"] { --tone: #4f46e5; }
+  .sector h2 { margin: 0; font: 600 15px/1 "Barlow Condensed", sans-serif; letter-spacing: .18em; text-transform: uppercase; color: color-mix(in srgb, var(--tone) 55%, #f4f1ea); }
+  .sector .line { margin: -4px 0 2px; color: #8b877f; font-size: 13px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
   .path { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: 14px; background: #1a1c21; color: inherit; text-decoration: none; border: 1px solid #2a2d33; transition: background .15s, border-color .15s, transform .15s; }
-  .path:hover, .path:focus-visible { background: #20242a; border-color: #0f766e; transform: translateY(-1px); outline: none; }
-  .icon { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: #0f766e; color: #f4f1ea; }
+  .path:hover, .path:focus-visible { background: #20242a; border-color: var(--tone); transform: translateY(-1px); outline: none; }
+  .icon { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: var(--tone); color: #f4f1ea; }
   .text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .text b { font: 600 22px/1.1 "Barlow Condensed", sans-serif; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .does { color: #b9b4aa; }
   .tag { align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: #2a2d33; color: #d8d3c8; font-size: 12px; white-space: nowrap; }
   .foot { margin: 22px 0 0; color: #8b877f; font-size: 13px; }
-  @media (min-width: 1000px) { h1 { font-size: 52px; } #paths { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 1000px) { h1 { font-size: 52px; } .cards { grid-template-columns: repeat(3, 1fr); } }
 </style>
 </head><body>
 <main>
   <h1>Qollab <span>Studio</span></h1>
-  <p class="lede">One studio, six ways in. Pick what you came to do: each one opens on its first step, and the Paths button on every page brings you back here.</p>
-  <nav id="paths" aria-label="The six paths"></nav>
-  <p class="foot">Only the jam room asks you to sign in: it is a room you share with friends. Everything else works signed out.</p>
+  <p class="lede">Learn it, build it, play it live. Pick what you came to do: each card opens on its first step, and the Paths button on every page brings you back here.</p>
+  <nav id="paths" aria-label="Learn, build and play"></nav>
+  <p class="foot">Only The Event asks you to sign in: it is a room you share with friends. Everything else works signed out.</p>
 </main>
 <script type="module" src="/src/front.ts"></script>
 </body></html>

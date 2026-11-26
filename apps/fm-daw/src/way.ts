@@ -7,7 +7,7 @@ import { DOOR, DOOR_OPEN, iconSvg } from "./paths.ts";
 export type Here = "paths" | "character" | "jam" | "gear" | "amp" | "speakers" | "desk" | "remote";
 /** Each place, its page and the word on its door. The lobby and the jam room are one page (jam.html): no ?room is the lobby. */
 export const PLACES: Record<Here, { page: string; label: string; title: string }> = {
-  paths: { page: DOOR, label: "Paths", title: "Qollab Studio's front door: the six paths" },
+  paths: { page: DOOR, label: "Paths", title: "Qollab Studio's front door: learn, build, play" },
   character: { page: `${EQOSYS}/?tab=account`, label: "Character", title: "Your character, on eqosys" },
   jam: { page: "/jam.html", label: "Jam room", title: "Qollab Studio: the jam room (the lobby when you're not in a room)" },
   gear: { page: "/studio.html", label: "Gear room", title: "Qollab Studio: the gear room, amps and pedals to cable" },
