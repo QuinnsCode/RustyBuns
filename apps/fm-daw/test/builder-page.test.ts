@@ -20,13 +20,13 @@ test.skipIf(!hasChrome)("scope the fuzz's clipper net, swap its diodes, see the 
     await waitFor(tab, "Q Builder", "!!window.qbuilder && !!qbuilder.state().probe", 60_000);
     await page("(localStorage.clear(), qbuilder.pick('fuzz'), qbuilder.swap(null, null))");
 
-    expect(await page("qbuilder.probe('R3 · D3 · D4 · R4')")).toBe(true);
+    expect(await page<boolean>("qbuilder.probe('R3 · D3 · D4 · R4')")).toBe(true);
     const stock = await state();
     expect(stock.why).toBe("");
     expect(stock.swing!.hi).toBeGreaterThan(0.4); // silicon: about 0.5 V
     expect(stock.swing!.hi).toBeLessThan(0.6);
 
-    expect(await page("qbuilder.swap('D3', 'germanium')")).toBe("");
+    expect(await page<string>("qbuilder.swap('D3', 'germanium')")).toBe("");
     const germ = await state();
     expect(germ.swing!.hi).toBeLessThan(stock.swing!.hi * 0.7); // about 0.26 V
     expect(germ.swing!.flat).toBeGreaterThan(stock.swing!.flat); // and more of the time sat on it
