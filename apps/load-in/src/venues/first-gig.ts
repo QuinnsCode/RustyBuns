@@ -2,7 +2,8 @@
 // stand, one small desk at the back of the room, one amp rack, one passive wedge on stage, and the wall's power. The
 // jobs go in the real order: the rack near the stage, power to the rack and the desk, the mic into the desk with 48 V
 // on (a condenser takes its power down the same XLR; no phantom, no sound), the desk's aux out to the amp, the amp to
-// the wedge; then the desk on and the amp last (and off first), or the wedge thumps.
+// the wedge; then the desk on and the amp last (and off first), or the wedge thumps. The mic's cable laid along a power
+// cord hums, as at band night (cables/alongside.ts): run them apart.
 //
 // Why the rack goes by the stage: an XLR carries a line-level signal into a 10 kohm input, so 15 m of it loses nothing.
 // Speaker cable carries amps of current into 8 ohms, so its own resistance eats level and, worse, the amp's grip on
@@ -15,7 +16,9 @@ import { type Cable, type Flick, type Placed, type Problem, cableLoss, compile, 
 import { doors, showScore } from "../clock.ts";
 import type { Level, World } from "../sim.ts";
 import type { Switches } from "../audio/hear.ts";
-import { type Cables, plugged } from "../cables/cables.ts";
+import type { Cables } from "../cables/cables.ts";
+import { humming } from "../cables/alongside.ts";
+import type { Vec } from "../cables/rope.ts";
 
 export const FIRST_GIG: Level = {
   name: "first-gig",
@@ -128,16 +131,33 @@ function placedOf(w: World): Placed[] {
   return w.items.filter((i) => jackNames(catalog(i.gear)).length).map((i) => ({ id: i.key, gear: i.gear, ...(i.gear === "mixer-small" ? { phantom: gig(w).phantom } : {}) }));
 }
 
-/** The cables you have laid with both ends in, as compile reads them. */
-export const runsOf = (w: World, c: Cables): Cable[] => plugged(w, c).runs;
+/** A cable with both ends in, its key and the points it lies on across the floor (for a power cord laid along the mic's). */
+export type LaidCable = Cable & { key?: string; path?: readonly Vec[] };
+
+/** The cables you have laid with both ends in, as compile reads them, with their keys and where they lie. */
+export function runsOf(w: World, c: Cables): LaidCable[] {
+  const out: LaidCable[] = [];
+  for (const r of c.runs) if ("plug" in r.a && "plug" in r.b) out.push({ key: r.key, kind: r.kind, lengthM: r.lengthM, from: r.a.plug, to: r.b.plug, ...(r.rope ? { path: r.rope.pts } : {}) });
+  return out;
+}
+
+/** The mic's cable laid along a power cord: it hums on the desk's channel, and the wedge plays it to the singer. */
+function mainsHum(w: World, runs: readonly LaidCable[]): Problem | null {
+  const mic = w.items.find((i) => i.gear === "mic-condenser");
+  const cable = mic && runs.find((r) => r.key && [r.from, r.to].some(([id, j]) => id === mic.key && j === "xlr-out"));
+  const by = cable?.key ? humming(runs.flatMap((r) => (r.key ? [{ key: r.key, kind: r.kind, path: r.path }] : []))).get(cable.key) : undefined;
+  if (!mic || !cable?.key || !by) return null;
+  return { kind: "hum", items: [mic.key, cable.key, by.power], message: `The mic hums: cable ${cable.key} lies along power cord ${by.power} for ${by.m} m. Run them apart, and cross square where they must meet` };
+}
 
 /** Judge the first gig: compile the patch, add the thumps, then what the singer hears and what the speaker run costs. */
-export function judge(w: World, runs: readonly Cable[], on: Switches): Judged {
+export function judge(w: World, runs: readonly LaidCable[], on: Switches): Judged {
   syncSwitches(w, on);
   const placed = placedOf(w);
   const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: o.circuit ?? w.level.name, breaker: { volts: 120, amps: o.amps ?? 15 } }));
   const r = compile(placed, runs, { outlets });
-  const problems = [...r.problems, ...thumps(placed, runs, gig(w).flicks)];
+  const hum = mainsHum(w, runs);
+  const problems = [...r.problems, ...thumps(placed, runs, gig(w).flicks), ...(hum ? [hum] : [])];
   const switched = (gearId: string) => w.items.filter((i) => i.gear === gearId).every((i) => on.has(i.key));
   const wedge = w.items.find((i) => i.gear === "wedge-12-passive");
   const fed = !!wedge && r.fed.get(wedge.key) === true && switched("mixer-small") && switched("amp-rack-4u");

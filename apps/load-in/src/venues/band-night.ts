@@ -4,7 +4,8 @@
 // 12-pair multicore, 0.9 kg a metre, so a 30 m roll is 27 kg) from the stage box to the fan at the desk, whose tails
 // sit in the desk's channels in order. Then the line check: each player plays alone and you listen for them on their
 // channel. One to three faults are seeded a night (@rustybuns/gear `lineCheck`): a dead cable, a crackling one, two
-// stage box inputs crossed, a ground-loop hum through the bass DI. Swap, repatch, lift. The vocal 2 mic is a
+// stage box inputs crossed, a ground-loop hum through the bass DI. Swap, repatch, lift. A mic cable (or the snake)
+// laid along a power cord hums too, wherever it lies (cables/alongside.ts): run them apart. The vocal 2 mic is a
 // condenser, so the desk's 48 V goes on as at the first gig.
 // Plain data, no DOM.
 import { clamp, mulberry32 } from "@rustybuns/util";
@@ -13,6 +14,8 @@ import { doors, showScore } from "../clock.ts";
 import type { Level, World } from "../sim.ts";
 import type { Switches } from "../audio/hear.ts";
 import type { Cables } from "../cables/cables.ts";
+import { humming } from "../cables/alongside.ts";
+import type { Vec } from "../cables/rope.ts";
 import { type CrowdSpot, house } from "../crowd/crowd.ts";
 
 export const BAND_NIGHT: Level = {
@@ -111,11 +114,27 @@ export function night(w: World, seed = 1): Night {
   return n;
 }
 
-/** The cables with both ends in, with their own keys (a dead cable stays dead wherever it goes). */
-export function keyedRuns(c: Cables): KeyedCable[] {
-  const out: KeyedCable[] = [];
-  for (const r of c.runs) if ("plug" in r.a && "plug" in r.b) out.push({ key: r.key, kind: r.kind, lengthM: r.lengthM, from: r.a.plug, to: r.b.plug });
+/** A cable with both ends in, and the points it lies on across the floor (for a mains cord laid along a signal run). */
+export type LaidCable = KeyedCable & { path?: readonly Vec[] };
+
+/** The cables with both ends in, with their own keys (a dead cable stays dead wherever it goes) and where they lie. */
+export function keyedRuns(c: Cables): LaidCable[] {
+  const out: LaidCable[] = [];
+  for (const r of c.runs) if ("plug" in r.a && "plug" in r.b) out.push({ key: r.key, kind: r.kind, lengthM: r.lengthM, from: r.a.plug, to: r.b.plug, ...(r.rope ? { path: r.rope.pts } : {}) });
   return out;
+}
+
+/** An input that comes up clean but whose cable (or the snake) lies along a mains cord: it hums, and the hint says why. */
+function withMainsHum(heard: Heard[], runs: readonly LaidCable[]): Heard[] {
+  const hums = humming(runs), snake = runs.find((r) => r.kind === "multi");
+  return heard.map((h) => {
+    if (h.sound !== "clean" || h.on === null) return h;
+    const run = runs.find((r) => [r.from, r.to].some(([i, j]) => i === h.source && j === "xlr-out"));
+    const key = run && hums.has(run.key) ? run.key : snake?.key ?? "", by = hums.get(key);
+    if (!by) return h;
+    const why = `${h.what} hums: ${key === snake?.key ? "the snake" : `cable ${key}`} lies along power cord ${by.power} for ${by.m} m. Run them apart, and cross square where they must meet${h.why ? `; and ${h.why}` : ""}`;
+    return { ...h, sound: "hum", ok: false, why };
+  });
 }
 
 function placedOf(w: World): Placed[] {
@@ -130,12 +149,12 @@ function placedOf(w: World): Placed[] {
 export type Judged = { heard: Heard[]; deskOn: boolean; problems: string[]; placed: number; checked: number };
 
 /** Judge the night as the patch stands: what each input comes up as, the desk's power, the marks and the checks. */
-export function judge(w: World, runs: readonly KeyedCable[], on: Switches): Judged {
+export function judge(w: World, runs: readonly LaidCable[], on: Switches): Judged {
   const n = night(w), placed = placedOf(w);
   const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: o.circuit ?? w.level.name, breaker: { volts: 120, amps: o.amps ?? 15 } }));
   const patched = compile(placed, runs, { outlets }).problems.filter((p) => p.kind !== "hum" && p.kind !== "no-phantom" && !(p.kind === "no-power" && p.items[0] !== "desk"));
   const deskOn = on.has("desk") && !patched.some((p) => p.kind === "no-power");
-  const heard = lineCheck(placed, runs, INPUTS, n.faults, { id: "desk", powered: deskOn });
+  const heard = withMainsHum(lineCheck(placed, runs, INPUTS, n.faults, { id: "desk", powered: deskOn }), runs);
   const at = (key: string) => w.items.find((i) => i.key === key && i.key !== w.held?.key);
   const marked = INPUTS.filter((l) => {
     const i = at(l.source);
