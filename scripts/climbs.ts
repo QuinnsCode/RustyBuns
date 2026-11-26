@@ -29,7 +29,7 @@ import { help } from "./help.ts";
 import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
-const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), updatedAt: text(40), authorAssociation: text(40) });
+const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), createdAt: text(40), updatedAt: text(40), authorAssociation: text(40) });
 const Prs = arr(obj({ number: num(1, 1e9), title: text(400), body: text(200_000) }), 1000, { drop: true });
 
 export type Climb = {
@@ -128,11 +128,15 @@ async function gh(args: string[]): Promise<string> {
   return out;
 }
 
-export async function climbs(): Promise<Climb[]> {
-  // REST, since `gh issue list` can't say who wrote an issue to the repo; one issue a line (its PRs left out)
+/** Every open issue with who its author is to the repo. REST, since `gh issue list` can't say; one issue a line, PRs left out. */
+export async function openIssues() {
   const listed = await gh(["api", "--paginate", "repos/{owner}/{repo}/issues?state=open&per_page=100", "--jq",
-    '.[] | select(.pull_request | not) | {number, title, body: (.body // ""), updatedAt: .updated_at, authorAssociation: .author_association}']);
-  const rows = listed.split("\n").filter(Boolean).flatMap((l) => check(Row, JSON.parse(l)) ?? []);
+    '.[] | select(.pull_request | not) | {number, title, body: (.body // ""), createdAt: .created_at, updatedAt: .updated_at, authorAssociation: .author_association}']);
+  return listed.split("\n").filter(Boolean).flatMap((l) => check(Row, JSON.parse(l)) ?? []);
+}
+
+export async function climbs(): Promise<Climb[]> {
+  const rows = await openIssues();
   const hits = teamOnly(rows).filter((r) => isClimb(r.title, r.body));
   const prs = check(Prs, JSON.parse(await gh(["pr", "list", "--state", "open", "--limit", "300", "--json", "number,title,body"]))) ?? [];
   return Promise.all(hits.map(async (r) => {

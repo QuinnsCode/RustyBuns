@@ -8,7 +8,7 @@
 //
 // Phil never sends workers home, never merges and never closes issues.
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
-import { isClimb } from "./climbs.ts";
+import { isClimb, openIssues, teamOnly } from "./climbs.ts";
 import { help } from "./help.ts";
 import { MANUAL_REPO } from "./manual-runs-lib.ts";
 
@@ -16,15 +16,14 @@ import { MANUAL_REPO } from "./manual-runs-lib.ts";
 export const WAITING = new Set([3031, 3279]);
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
-const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), createdAt: text(40) });
-export type Row = { number: number; title: string; body: string; createdAt: string };
-const Rows = arr(Row, 1000, { drop: true });
+export type Row = { number: number; title: string; body: string; createdAt: string; authorAssociation: string };
 const Prs = arr(obj({ number: num(1, 1e9), title: text(400), body: text(200_000) }), 1000, { drop: true });
 const Floor = obj({ workers: arr(obj({ status: text(40), task: text(2000) }), 200, { drop: true }) });
 
-/** The oldest issue left once MANUAL RUNs, climbs, held ones and the owner's waiting list are taken out. */
+/** The oldest issue left once strangers' ones (the worker hired reads it as its task), MANUAL RUNs, climbs, held ones and
+ * the owner's waiting list are taken out. */
 export function pick(rows: Row[], held: Set<number>, waiting = WAITING): Row | null {
-  return rows
+  return teamOnly(rows)
     .filter((r) => /mythic masters/i.test(r.title) && !/^MANUAL RUN:/i.test(r.title) && !isClimb(r.title, r.body))
     .filter((r) => !held.has(r.number) && !waiting.has(r.number))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.number - b.number)[0] ?? null;
@@ -50,7 +49,7 @@ async function run(cmd: string[]): Promise<string> {
 
 if (import.meta.main) {
   help(import.meta.path);
-  const rows = check(Rows, JSON.parse(await run(["gh", "issue", "list", "--state", "open", "--search", "Mythic Masters in:title", "--limit", "1000", "--json", "number,title,body,createdAt"]))) ?? [];
+  const rows = await openIssues();
   const prs = check(Prs, JSON.parse(await run(["gh", "pr", "list", "--state", "open", "--limit", "300", "--json", "number,title,body"]))) ?? [];
   const desks = check(Floor, JSON.parse(await run(["office-workers", "list", "--json"])))?.workers ?? [];
   const held = heldBy([...prs.flatMap((p) => [p.title, p.body]), ...desks.filter((w) => w.status !== "done").map((w) => w.task)]);

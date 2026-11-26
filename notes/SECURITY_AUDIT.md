@@ -541,3 +541,48 @@ Round 13 fixed the report notes, round 15 the knock gate, and the iOS kit's sock
 ### Still open
 
 - In #5590, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, and `/api/account/delete` on an app's token (an owner's call). MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
+
+## Round 18a, November 26: Rusty Buns core
+
+The security-audit skill's quick profile on `packages/`, the scripts CI and push run, `.github/workflows/`, `.claude/hooks/guard.ts` and Agent Office, source first: five hunters, two verifiers and a coverage critic (eight agents, about 1.84M tokens), no deployed site touched. Run output: `~/security-audit-skill/RustyBuns/run-18a/` (a partial run: no coverage ledger or schema-checked findings). Rounds 18b and 18c took eqosys and Qollab.
+
+### Fixed in this round
+
+Each with a test that fails without the fix.
+
+**The desktop's code-mode wall** (`worker-loader.ts`; desktop and box hosts, not Cloudflare):
+
+- **Critical.** The wall's own check transpiled the program with Bun's import macros on, so checking a program could run code in the host. Macros are off now (`macro: false`), imports are scanned before anything is transpiled, and an isolated Worker runs the checked output.
+- **High.** The name filter let spreads and `ShadowRealm` through, and a CommonJS module reached `require`. All three are refused, and every isolated module loads as an ES module.
+
+**The guard hook** (high to low): gh's `{owner}/{repo}` placeholders, variables and `$(...)` in a path; a header before the `gh api` path; the `Monitor` tool, which it didn't see; continued lines and quoted pipes; `then`, `do`, `timeout`, `sh -c`; a tag pushed by name; approving a deployment; `--delete-branch`, `branch -df`, deleting a ref; repointing a remote or the shared `.git/config` from the shell; `cd` into a secret folder; a file named inside a flag; `.ENV`. It now reads each command twice (the rough split, and by whole words) and refuses on either.
+
+**The CLI:**
+
+- A converted Pages app skipped a `_middleware` under a `[param]` folder, one exporting only method handlers, and a re-exported one, so its auth never ran (high).
+- `--sandbox` left the shared deploy state in `.git` and wrangler's macOS login readable; a host got the deploy's `RB_` secrets.
+- `destroy --fresh` skipped the ADOPT question for a stage whose state holds adopted resources.
+- `plan` ran `bun check` from the shared temp folder, where anyone's `check` script would run.
+
+**The desktop host:** codeSplitter's consent page no longer opens without the launch cookie (anyone reaching the port could mint a write token; high); open routes drop a caller's `x-rb-*`; a public prefix can't be climbed out of with `%2F`; the cms and screens editors answer on localhost only.
+
+**CI and scripts:** `rings.ts rollback` takes a build only from our build workflows (any run, a fork's too, could upload one by that name); ring-red reads only its own markers and PRs; deps-doctor edits only this repo's PR; `climbs` and `phil` read only the team's issues and comments; a test's name can't forge a `ci-blocker` record.
+
+**Agent Office:**
+
+- Sending any worker home could delete a multi-repository worker's live folder, uncommitted work included (high, no attacker needed).
+- The spread watch counted fork runs and put their test names, control characters and all, into prompts (high).
+- The added `/__rb/` routes took writes from another local port's page; an agent in the box could allow its own outbound card; the merge train merged heads a fork pushed after the click, and merged for a signed-in person as the office; `/__rb/outbound` read any size of body before sign-in.
+
+### Still open
+
+- #6243: the desktop's local Postgres has a fixed password on loopback (low).
+- #6244: what wasn't confirmed or audited (the guard failing open, other file-reading tools, the Keychain under `--sandbox`, and the coverage critic's eight units).
+- QuinnsCode/rustybuns-manual#158: the office update and the releases that put these fixes in use.
+
+### Known limits, kept on purpose
+
+- The code-mode wall is still a name filter over source; a subprocess under an OS sandbox would be a real wall (#6244).
+- The guard is a speed bump: a script an agent writes can still do what it refuses. Its rough split still trips on some harmless text.
+- The merge train takes no fork PR at all now: read it and merge it by hand. A same-repository push after the click is still adopted.
+- The box's card is told apart by where the answer comes from, so it rests on the box holding no capability to take another address.
