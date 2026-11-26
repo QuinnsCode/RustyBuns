@@ -66,7 +66,7 @@ export const SYSTEMS: Record<SystemId, System> = {
   },
   "line-array": {
     id: "line-array", name: "Line array",
-    about: "Today's festival rig, ground-stacked: three powered line array boxes on two 18-inch subs. Very wide and even across the floor, clean, with a little lift up top.",
+    about: "Today's festival rig, ground-stacked: three powered line array boxes on two powered 18-inch subs. Very wide and even across the floor, clean, with a little lift up top.",
     setup: "Subs on the ground, the array stood on them on a stacking frame, the pins between boxes set so the top box aims at the back of the floor and the bottom one at the front. Every box is powered: a mains feed and a signal line to each, daisy-chained down the stack.",
     stack: ["sub-18", "sub-18", "line-array-10", "line-array-10", "line-array-10"], top: "line-array-10", sub: "sub-18",
     voicing: [{ hz: 70, db: 1.5, q: 0.9 }, { hz: 9000, db: 1, q: 0.7 }],
@@ -75,7 +75,7 @@ export const SYSTEMS: Record<SystemId, System> = {
 
 /** How many amp channels a passive box takes: one a way, as each family's sheet wires it (the three-way tops tri-amped,
  *  the horn stack's mid-high horn two ways); one for a box left out. A powered box brings its own amps: none. */
-const WAYS: Record<string, number> = { "stack-mid-high": 2, "synergy-horn": 3, "sculpted-3way": 3, "tri-amp-top": 3 };
+const WAYS: Record<string, number> = { "stack-mid-high": 2, "synergy-horn": 3, "sculpted-3way": 3, "tri-amp-top": 3, "line-array-box": 4 };
 /** The amp channels one box takes: one a way of a passive box, none for a powered box or a dolly. */
 export const boxChannels = (id: string): number => (id === "sand-dolly" || !(gear(id).jacks["speaker-in"] ?? 0) ? 0 : WAYS[id] ?? 1);
 /** The amp channels `stacks` stacks of rig `s` take, from its passive boxes. */

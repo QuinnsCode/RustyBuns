@@ -171,3 +171,32 @@ test("set up a PA for a small room: placed, aimed, cabled, and a thump from the 
   power("pa-top-1", true); power("pa-top-2", true);
   expect(now()).toMatchObject({ done: true });
 });
+
+test("know your plugs: an XLR out into an out is refused with why, then mic to mixer, mixer to input A, thru to the next box", async () => {
+  const { lessons, jam, hands, g, go, click, now } = await walkIn();
+  const b = hands.room.bounds!, mid = { x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 };
+  go([mid.x, mid.z + 1.5]);
+  jam.me.yaw = g.yaw; jam.me.pitch = -0.6;
+  expect(lessons.start("plugs", jam)).toEqual({ ok: true });
+  // the first step reads the XLR's pins off the shared connector list
+  expect(now().steps[0].job).toContain("pin 1 ground, pin 2 hot, pin 3 cold");
+
+  const reach = (id: string, part: string) => {
+    const p = hands.room.studio.patch.placed.find((x) => x.id === id)!, gd = gearOf(p)!;
+    const s = gd.jacks.find((x) => x.name === part)!.face === "back" ? -1 : 1;
+    go([p.at[0] + s * Math.sin(p.turn) * 0.7, p.at[2] + s * Math.cos(p.turn) * 0.7]);
+    return click(id, part);
+  };
+  // the mic's XLR out to the mixer's out: two males, and the room says so
+  expect(reach("pa-mic", "xlr-out")).toEqual({ ok: true });
+  const wrong = reach("pa-mixer", "xlr-out-1");
+  expect(wrong.ok).toBe(false);
+  expect(wrong.ok ? "" : wrong.why).toContain("an XLR out is male, an XLR in is female");
+  expect(reach("pa-mixer", "xlr-in-1")).toEqual({ ok: true });
+  expect(now().steps[0]).toMatchObject({ done: true });
+
+  const cable = (a: string, ja: string, b2: string, jb: string) => { expect(reach(a, ja)).toEqual({ ok: true }); expect(reach(b2, jb)).toEqual({ ok: true }); };
+  cable("pa-mixer", "xlr-out-1", "pa-top-1", "xlr-in");
+  cable("pa-top-1", "xlr-out", "pa-top-2", "xlr-in");
+  expect(now()).toMatchObject({ done: true });
+});

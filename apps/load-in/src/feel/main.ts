@@ -13,7 +13,7 @@ import { shoesView } from "../you/shoes.ts";
 import { FLASH } from "../you/ink.ts";
 import { CABLE, ROLL_R, bowl, leftM, newRoll, rollKg, stepRoll, throwSpeed, type CableKind, type Roll } from "../cables/roll.ts";
 import type { Solid, Vec } from "../cables/rope.ts";
-import { CONNECTOR_NAME, endOf, endWhy } from "../cables/ends.ts";
+import { connectorName, endWhy, familyEnd } from "../cables/ends.ts";
 import { aimEnd, connectorMesh } from "../cables/ends-view.ts";
 
 const DT = 1 / 60, EYE = 1.65, REACH = 1.5, WALK = 3.2;
@@ -131,7 +131,7 @@ function run(key: string, kind: CableKind, lengthM: number, x: number, z: number
   const coil = new THREE.Mesh(new THREE.TorusGeometry(ROLL_R - 0.03, 0.035, 10, 28), mat);
   coil.rotation.order = "YXZ";
   // Each end its own connector: a wall plug and an IEC socket, an XLR female and male, a speakON at both ends.
-  const plugA = connectorMesh(endOf(kind, "a")), plugB = connectorMesh(endOf(kind, "b"));
+  const plugA = connectorMesh(familyEnd(kind, "a")), plugB = connectorMesh(familyEnd(kind, "b"));
   scene.add(tube, coil, plugA, plugB);
   return { key, roll: newRoll(kind, lengthM, { x, z }), a: "coil", b: "coil", tube, coil, plugA, plugB, sum: NaN, mat };
 }
@@ -166,17 +166,17 @@ const rollGrip = () => held.find((g) => g.part === "roll") ?? null;
 const freeSide = (): 0 | 1 | null => (!held.some((g) => g.side === 0) ? 0 : !held.some((g) => g.side === 1) ? 1 : null);
 /** The end that goes in next: a roll still wound up gives its outer (`a`) end first, then its inner (`b`) one. */
 const goingIn = (g: Grip): "a" | "b" => (g.part === "roll" ? (g.run.roll.tailIn ? "a" : "b") : g.part);
-const connector = (g: Grip) => endOf(g.run.roll.kind, goingIn(g));
+const connector = (g: Grip) => familyEnd(g.run.roll.kind, goingIn(g));
 /** The nearest free jack in reach of that hand that takes the end it would plug in: the right kind and the right end. */
 function jackFor(g: Grip): Jack | null {
   const h = hand(g.side), kind = g.run.roll.kind;
-  return jacks.filter((j) => j.kind === kind && !taken(j) && !endWhy(kind, goingIn(g), j.side) && dist(h, j.at) < REACH).sort((p, q) => dist(h, p.at) - dist(h, q.at))[0] ?? null;
+  return jacks.filter((j) => j.kind === kind && !taken(j) && !endWhy({ kind }, goingIn(g), j.side) && dist(h, j.at) < REACH).sort((p, q) => dist(h, p.at) - dist(h, q.at))[0] ?? null;
 }
 /** A free jack of the right kind in reach that wants the cable's other end: why it won't go in. */
 function wrongEnd(g: Grip): string | null {
   const h = hand(g.side), kind = g.run.roll.kind;
-  const j = jacks.find((q) => q.kind === kind && !taken(q) && dist(h, q.at) < REACH && endWhy(kind, goingIn(g), q.side));
-  return j ? `${endWhy(kind, goingIn(g), j.side)!.replace(/^t/, "T")} (${JACK_NAME[j.id]})` : null;
+  const j = jacks.find((q) => q.kind === kind && !taken(q) && dist(h, q.at) < REACH && endWhy({ kind }, goingIn(g), q.side));
+  return j ? `${endWhy({ kind }, goingIn(g), j.side)!.replace(/^t/, "T")} (${JACK_NAME[j.id]})` : null;
 }
 const fits = (j: Jack) => held.some((g) => jackFor(g) === j);
 const carryKg = () => { const g = rollGrip(); return g ? rollKg(g.run.roll) : 0; };
@@ -206,7 +206,7 @@ const drop = (g: Grip) => {
 
 /** Plug the end a hand would plug in into `j`. A roll still wound up keeps hold of the roll; its last end ties it off. */
 function plugIn(g: Grip, j: Jack) {
-  const r = g.run, roll = r.roll, what = CONNECTOR_NAME[connector(g)];
+  const r = g.run, roll = r.roll, what = connectorName(connector(g));
   click();
   if (g.part === "roll" && roll.tailIn) {
     roll.tailIn = false; r.a = j; Object.assign(roll.rope.pts[0]!, j.at);
@@ -413,7 +413,7 @@ function draw() {
 function hintNow(): string {
   for (const g of [...held].reverse()) {
     const j = jackFor(g);
-    if (j) return `F plug the ${CONNECTOR_NAME[connector(g)]} into ${JACK_NAME[j.id]}`;
+    if (j) return `F plug the ${connectorName(connector(g))} into ${JACK_NAME[j.id]}`;
   }
   const side = freeSide();
   if (side !== null && picks(side).length) return held.length ? "F pick it up with your other hand. G lets go" : "F pick it up";
@@ -431,7 +431,7 @@ function hud() {
   $("hint").textContent = hintNow();
   $("said").textContent = said;
   // What each hand holds, and which connector is on the end that goes in next.
-  const what = (g: Grip) => `${CABLE[g.run.roll.kind].what}${g.part === "roll" ? ` roll ${rollKg(g.run.roll).toFixed(1)} kg, ${leftM(g.run.roll).toFixed(0)} m left` : ""}, ${CONNECTOR_NAME[connector(g)]} end`;
+  const what = (g: Grip) => `${CABLE[g.run.roll.kind].what}${g.part === "roll" ? ` roll ${rollKg(g.run.roll).toFixed(1)} kg, ${leftM(g.run.roll).toFixed(0)} m left` : ""}, ${connectorName(connector(g))} end`;
   $("weight").textContent = held.length ? held.map(what).join("  +  ") + (pullKg() > 0.3 ? `  ·  pull ${pullKg().toFixed(1)} kg` : "") : "Hands free";
   ($("power") as HTMLElement).style.setProperty("--p", String(charge));
   $("power").hidden = charge === 0;

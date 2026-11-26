@@ -7,13 +7,15 @@
 import { mulberry32 } from "@rustybuns/util";
 import { assist } from "../assists.ts";
 import { CABLE, ROLL_R, bowl as bowlRoll, leftM, newRoll, rollKg, rollKind, stepRoll, type Roll } from "./roll.ts";
-import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
+import { CIRCUIT_15A, CIRCUIT_20A, boxChannels, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
+import { socketOf } from "@rustybuns/models/panels";
+import { fits } from "@rustybuns/util/connectors";
 import { Vector3 } from "three";
 import { EYE, EYE_CROUCH, LOW, REACH, corners, dims, facing, footprint, overlap, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, pathLength, type Rope, type Solid, type Vec } from "./rope.ts";
-import { endOf, endWhy, sideOf, type Connector } from "./ends.ts";
+import { connectorName, endOf, endWhy, pairsOf, realEnd, sideOf, type Connector, type Ends } from "./ends.ts";
 import type { WireRoll } from "../crew/room.ts";
 
 /** Which of your hands: a roll always hangs on the right. */
@@ -22,6 +24,8 @@ export type Side = "right" | "left";
 export type EndAt = { plug: End } | { hand: Side } | { mate: string } | { loose: true } | { case: true };
 export interface Run {
   key: string; kind: CableKind; lengthM: number; a: EndAt; b: EndAt;
+  /** Its connectors, when not its family's (ends.ts): an NL8 speaker cable, a TRUE1 power cord. */
+  ends?: Ends;
   /** Out of the case: the roll, and its rope (the same one, for the readers that only want the points). */
   roll?: Roll; rope: Rope | null;
   /** Being coiled at the case: the loops so far, over or under, and when the last one went on. */
@@ -51,7 +55,7 @@ export const twistsIn = (ways: readonly Way[]) => ways.filter((x, i) => i > 0 &&
 export interface Cables { runs: Run[]; caseKey: string | null; rnd: () => number; last?: Side }
 
 /** What the road case holds when you open it. */
-export const CASE_LOAD: readonly { key: string; kind: CableKind; lengthM: number }[] = [
+export const CASE_LOAD: readonly { key: string; kind: CableKind; lengthM: number; ends?: Ends }[] = [
   { key: "power-10", kind: "power", lengthM: 10 },
   { key: "speaker-10", kind: "speaker", lengthM: 10 },
   { key: "inst-6", kind: "instrument", lengthM: 6 },
@@ -123,9 +127,23 @@ const goingIn = (h: Pick<Held, "run" | "end">) => (h.end === "b" && h.run.roll?.
 /** The connector on the end of the cable you would plug in now (the roll's outer end while it is still wound on). */
 export const endInHand = (c: Cables): Connector | null => { const h = inHand(c); return h ? connectorOf(h) : null; };
 /** The connector on the end one hand holds. */
-export const connectorOf = (h: Pick<Held, "run" | "end">): Connector => endOf(h.run.kind, goingIn(h));
-/** Whether a jack takes the cable in your hand: its kind, and the right end of it (an XLR male goes in an input). */
-const takes = (h: Pick<Held, "run" | "end">, jack: string) => cableFor(jackKind(jack)) === h.run.kind && !endWhy(h.run.kind, goingIn(h), sideOf(jack));
+export const connectorOf = (h: Pick<Held, "run" | "end">): Connector => endOf(h.run, goingIn(h));
+/** Why the plug on this end won't go into `owner`'s `jack` on its real panel (@rustybuns/models panels.ts), or null:
+ * a speakON into an XLR, an IEC cord into a powerCON inlet, an NL4 into a four-way box's NL8. Gear with no panel yet
+ * takes any plug of the jack's kind. */
+function socketWhy(w: World, h: Pick<Held, "run" | "end">, owner: string, jack: string): string | null {
+  const id = w.items.find((i) => i.key === owner)?.gear;
+  const socket = id && hasModel(id) ? socketOf(id, jack) : null;
+  if (!id || !socket) return null;
+  const c = connectorOf(h), why = fits(realEnd(c), socket);
+  if (why) return why;
+  const need = boxChannels(id);
+  if (socket.type === "nl8" && pairsOf(c) < need) return `a ${connectorName(c)} carries ${pairsOf(c)} amp channels and the ${gear(id).what} takes ${need}: it wants an NL8 cable`;
+  return null;
+}
+/** Whether a jack takes the cable in your hand: its kind, the right end of it (an XLR male goes in an input), and its plug. */
+const takes = (w: World, h: Pick<Held, "run" | "end">, owner: string, jack: string) =>
+  cableFor(jackKind(jack)) === h.run.kind && !endWhy(h.run, goingIn(h), sideOf(jack)) && !socketWhy(w, h, owner, jack);
 /** Whether your hands are full: a piece of gear in your arms, or a cable end in each hand. */
 export const handsFull = (w: World, c: Cables) => !freeHand(w, c);
 
@@ -336,13 +354,13 @@ export function grabEnd(w: World, c: Cables, key: string, end: "a" | "b"): Answe
 export function plug(w: World, c: Cables, owner: string, jack: string): Answer {
   const last = inHand(c);
   if (!last) return { ok: false, why: "no cable in your hand" };
-  const two = otherHand(c, last), h = !takes(last, jack) && two && takes(two, jack) ? two : last;
+  const two = otherHand(c, last), h = !takes(w, last, owner, jack) && two && takes(w, two, owner, jack) ? two : last;
   const at = jackAt(w, owner, jack);
   if (!at) return { ok: false, why: `no ${jack} on ${owner}` };
   if (!near(w, at)) return { ok: false, why: `${owner} ${jack} is out of reach` };
   const fits = cableFor(jackKind(jack));
   if (fits !== h.run.kind) return { ok: false, why: `a ${h.run.kind} cable doesn't fit ${jack} (it takes ${fits})` };
-  const wrongEnd = endWhy(h.run.kind, goingIn(h), sideOf(jack));
+  const wrongEnd = endWhy(h.run, goingIn(h), sideOf(jack)) ?? socketWhy(w, h, owner, jack);
   if (wrongEnd) return { ok: false, why: wrongEnd };
   const taken = c.runs.some((r) => [r.a, r.b].some((e) => isPlug(e) && e.plug[0] === owner && e.plug[1] === jack));
   if (taken) return { ok: false, why: `${owner} ${jack} already has a cable in it` };
@@ -543,7 +561,7 @@ export function glowing(w: World, c: Cables): Vec[] {
   const h = inHand(c);
   if (!h || !assist("jackGlow")) return [];
   const used = new Set(c.runs.flatMap((r) => [r.a, r.b].filter(isPlug).map((e) => e.plug.join(" "))));
-  return jacks(w).filter((j) => takes(h, j.jack) && !used.has(`${j.owner} ${j.jack}`)).map((j) => j.at);
+  return jacks(w).filter((j) => takes(w, h, j.owner, j.jack) && !used.has(`${j.owner} ${j.jack}`)).map((j) => j.at);
 }
 
 /** A breaker nothing in a small venue can trip, for the stops where breakers don't. */
@@ -604,7 +622,7 @@ export function use(w: World, c: Cables, aimedItem: Item | null): Answer | null 
   const h = inHand(c), j = aimedJack(w);
   if (!h && w.held) return null;
   const filled = j && c.runs.some((r) => [r.a, r.b].some((e) => isPlug(e) && e.plug[0] === j.owner && e.plug[1] === j.jack));
-  if (h && j && !filled && held(c).some((x) => takes(x, j.jack))) return plug(w, c, j.owner, j.jack);
+  if (h && j && !filled && held(c).some((x) => takes(w, x, j.owner, j.jack))) return plug(w, c, j.owner, j.jack);
   const free = freeHand(w, c);
   if (free) {
     if (j && filled) return unplug(w, c, j.owner, j.jack);

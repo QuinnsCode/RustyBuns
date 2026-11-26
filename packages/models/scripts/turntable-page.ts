@@ -12,12 +12,17 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook, gearPieces } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
+import { plugPieces, socketPieces } from "../src/sockets.ts";
+import { CONNECTOR_TYPES, CONNECTORS, type ConnectorType, type Gender } from "@rustybuns/util/connectors";
+import type { Piece } from "../src/shapes.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
 // half a millimetre, so the coat's grain, the grille's holes and the hardware show as they would in a close photo.
+// `panel` looks straight at a box's jacks from behind, close enough that a socket's pins and latch read (opt in:
+// `--js "turntable.angles = ['panel']"`; on the `connectors` board it looks at the board's face).
 // `photo` is the dance stack top's reference photo's own view (#5948): from the box's left, near straight on, a little
 // above; `straight` is the owner's straight-on photo's. Neither is in the default set; `--js "turntable.angles = ['photo']"` picks one.
-const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16], photo: [-15, 8], straight: [0, 4] } as const;
+const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18], close: [35, 16], photo: [-15, 8], straight: [0, 4], panel: [195, 12] } as const;
 type Angle = keyof typeof ANGLES;
 
 // `?sky=1` (an outdoor overcast HDRI, the default): the photos' soft daylight. The sky does most of the lighting, the
@@ -158,17 +163,52 @@ function pieces(name: string): THREE.Group {
   }
   return g;
 }
+/** Pieces as meshes, a mesh per piece in the look's material for its slot. */
+const meshes = (ps: Piece[]) => ps.map((p) => { const m = new THREE.Mesh(p.geo, look[p.slot as keyof typeof look]); m.castShadow = m.receiveShadow = true; return m; });
+
+/** `connectors`: every connector (@rustybuns/util/connectors) on a panel plate standing up, each socket with its cable's
+ * plug under it turned nose-first toward you (its pins or holes and its latch showing), a row per kind (speaker, signal, mains and the rest), so the close shot can be
+ * read against the makers' photos. An XLR shows both genders. */
+function connectorBoard(): THREE.Group {
+  const g = new THREE.Group(), rows: [ConnectorType, Gender][][] = [[], [], []];
+  for (const t of CONNECTOR_TYPES) {
+    const c = CONNECTORS[t], row = c.carries === "speaker" ? 0 : c.carries === "signal" ? 1 : 2;
+    for (const gender of t === "xlr3" ? (["female", "male"] as const) : [c.genders.includes("male") && c.genders.length === 1 ? "male" : c.genders.includes("female") ? "female" : c.genders[0]!]) rows[row]!.push([t, gender]);
+  }
+  const step = 0.075, wide = Math.max(...rows.map((r) => r.length)) * step;
+  // a pale plate, so the black sockets read on it
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(wide + 0.04, rows.length * 0.13 + 0.03, 0.006), new THREE.MeshStandardMaterial({ color: 0x9a9ea4, roughness: 0.6, metalness: 0.2 }));
+  plate.position.set(0, 0.06 + (rows.length * 0.13) / 2, -0.003);
+  plate.receiveShadow = true;
+  g.add(plate);
+  rows.forEach((row, r) => row.forEach(([t, gender], i) => {
+    const at = new THREE.Vector3(-wide / 2 + step * (i + 0.5), 0.06 + (rows.length - r - 0.5) * 0.13 + 0.025, 0);
+    const sock = new THREE.Group(), plug = new THREE.Group();
+    sock.add(...meshes(socketPieces(t, gender)));
+    plug.add(...meshes(plugPieces(t, gender)));
+    sock.position.copy(at);
+    plug.position.copy(at).add(new THREE.Vector3(0, -0.055, 0.07));
+    plug.rotation.y = Math.PI;
+    g.add(sock, plug);
+  }));
+  return g;
+}
+
 const PIECE_IDS = GEAR_IDS.flatMap((id) => { const p = gearPieces(id); return p ? [`${id}~exploded`, ...p.map((q) => `${id}~${q.name}`)] : []; });
 
 async function show(id: string, angle: Angle) {
   if (shown) scene.remove(shown);
-  shown = id === "dance-stack" ? danceStack() : id.includes("~") ? pieces(id) : gear(id as GearId, { look, height: 1.6 });
+  shown = id === "dance-stack" ? danceStack() : id === "connectors" ? connectorBoard() : id.includes("~") ? pieces(id) : gear(id as GearId, { look, height: 1.6 });
   scene.add(shown);
   shown.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(shown), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
-  const [az, el] = ANGLES[angle].map((d) => (d * Math.PI) / 180);
-  const far = (r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.02, dist = angle === "close" ? far * 0.4 : far;
-  const aim = angle === "close" ? c.clone().lerp(box.max, 0.62) : c;
+  const [az, el] = ANGLES[angle === "panel" && id === "connectors" ? "straight" : angle].map((d) => (d * Math.PI) / 180);
+  const far = (r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.02;
+  let dist = angle === "close" ? far * 0.4 : far;
+  // the panel shot aims at the middle of the jacks (or the board's face) from 40 cm
+  const jacks = shown.children.filter((o) => o.name.startsWith("jack:")), panelAt = jacks.length ? jacks.reduce((a, o) => a.add(o.position), new THREE.Vector3()).divideScalar(jacks.length) : c;
+  if (angle === "panel") dist = id === "connectors" ? far * 0.75 : 0.4;
+  const aim = angle === "close" ? c.clone().lerp(box.max, 0.62) : angle === "panel" ? panelAt : c;
   camera.position.set(aim.x + Math.sin(az) * Math.cos(el) * dist, aim.y + Math.sin(el) * dist, aim.z + Math.cos(az) * Math.cos(el) * dist);
   camera.lookAt(aim);
   camera.updateProjectionMatrix();
@@ -202,4 +242,4 @@ async function show(id: string, angle: Angle) {
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
 if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", ...PIECE_IDS], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });
+Object.assign(window, { turntable: { ids: [...GEAR_IDS, "dance-stack", "connectors", ...PIECE_IDS], angles: ["front", "side", "back", "close"], show, ready: true, look: () => look, ao, contact, key } });

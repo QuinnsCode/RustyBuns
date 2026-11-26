@@ -11,7 +11,7 @@ import { gear as model, gearLook } from "@rustybuns/models/gear";
 import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, push, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
 import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
-import { CONNECTOR_NAME } from "./cables/ends.ts";
+import { connectorName } from "./cables/ends.ts";
 import { DIVE_BAR, aim, barState, crowdState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, aimHint, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
@@ -353,7 +353,7 @@ function draw() {
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : roll ? `${CABLE[roll.kind].what} roll, ${rollKg(roll).toFixed(1)} kg, ${leftM(roll).toFixed(0)} m left, ${you.speed.toFixed(1)} m/s${windup ? `, bowl ${Math.round(windup.power * 100)}%` : ""}`
-    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${CONNECTOR_NAME[cable.endInHand(cables)!]} end${(world.cableKg ?? 0) > 0.3 ? `, pulling ${world.cableKg!.toFixed(1)} kg` : ""}, ${you.speed.toFixed(1)} m/s` : "";
+    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${connectorName(cable.endInHand(cables)!)} end${(world.cableKg ?? 0) > 0.3 ? `, pulling ${world.cableKg!.toFixed(1)} kg` : ""}, ${you.speed.toFixed(1)} m/s` : "";
   renderer.render(scene, camera);
 }
 
@@ -386,7 +386,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   const end = cable.inHand(cables), coil = cable.coiling(cables);
   if (coil?.coiling) return `Q over, E under (${coil.coiling.ways.length} of ${cable.loopsFor(coil)})`;
   const roll = cable.carried(cables)?.roll;
-  const conn = cable.endInHand(cables), named = conn ? CONNECTOR_NAME[conn] : "";
+  const conn = cable.endInHand(cables), named = conn ? connectorName(conn) : "";
   if (roll && jack) return `F plug the ${named} into ${jack.owner} ${jack.jack}`;
   if (roll) return roll.tailIn ? "Carry it to where the run starts, F plug the end, or Space bowl it holding the end" : "Hold Space to wind up, let go to bowl. F set it down";
   if (end) {

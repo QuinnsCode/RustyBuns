@@ -1,11 +1,13 @@
 // The jam room's setup lessons (#5861, PATHWAYS.md path 1): learn to set gear up with your hands, at the studio's gear
 // wall, on the sesh's own patch. Plug a guitar through a pedal into an amp and its cab; patch a sound wall voice, VCO to
-// VCF to VCA to Q Out; set up a small PA, placed, aimed and powered on in order. Each lesson is a list of steps on
+// VCF to VCA to Q Out; set up a small PA, placed, aimed and powered on in order; learn the PA's XLRs, a speaker's
+// combo input and its thru (#6029), from the connector list Sound Guy Simulator plugs by (@rustybuns/util/connectors). Each lesson is a list of steps on
 // @rustybuns/gear's checker (Sound Guy Simulator's), read from the patch as it stands: a step is done when the gear says
 // so, and the next one not done says what to do and, when something is in the way, what and why in plain words. The
 // PA's switch-on order is the catalog's own `thumps`, its aim the catalog speaker's coverage. Nothing is reset or locked:
 // leave whenever you like, and what you built stays, the room's own rig to keep playing. Pure: no DOM.
 import { type Checked, type Flick, type Step, aimTo, checkSteps, gear as catalog, offAxisLoss, thumps } from "@rustybuns/gear";
+import { CONNECTORS } from "@rustybuns/util/connectors";
 import { type Answer, type GearDef, type Room, bringKit, gearOf, heldId, inCase, knobValue, listen } from "../room/room.ts";
 import { GEAR_ROOM, type Bounds } from "../room/frame.ts";
 import type { Patch } from "../studio.ts";
@@ -16,6 +18,7 @@ export const LESSONS = [
   { id: "guitar", title: "Plug a guitar into an amp", blurb: "Guitar, through a pedal, into an amp and its cab, with the gain set so it doesn't fizz" },
   { id: "voice", title: "Patch a synth voice", blurb: "On the sound wall: an oscillator through a filter and a level into Q Out" },
   { id: "pa", title: "Set up a PA for a small room", blurb: "Place two speakers, aim them, cable a mic through a mixer, and power on in order" },
+  { id: "plugs", title: "Know your plugs: XLR", blurb: "What an XLR carries and its pins: a mic into the mixer, a speaker's combo input, its thru on to the next box" },
 ] as const;
 export type LessonId = (typeof LESSONS)[number]["id"];
 const isLesson = (id: string): id is LessonId => LESSONS.some((l) => l.id === id);
@@ -234,7 +237,37 @@ const PA: Step<At>[] = [
   },
 ];
 
-const STEPS: Record<LessonId, Step<At>[]> = { guitar: GUITAR, voice: VOICE, pa: PA };
+// ---- 4. know your plugs: the PA's XLRs ----
+
+const XLR = CONNECTORS.xlr3, COMBO = CONNECTORS.combo;
+/** "pin 1 ground, pin 2 hot, pin 3 cold": the XLR's pins as the connector list has them. */
+const XLR_PINS = XLR.pins.map((p) => `pin ${p.name} ${p.what.split(":")[0]}`).join(", ");
+const PLUGS: Step<At>[] = [
+  {
+    job: `Cable the mic into the mixer's input 1. ${XLR.what} Its pins: ${XLR_PINS}`,
+    done: ({ patch }) => { const e = other(patch, [MIC, "xlr-out"]); return e?.[0] === MIXER && e[1] === "xlr-in-1"; },
+    why: ({ patch }) => {
+      const e = other(patch, [MIC, "xlr-out"]);
+      return e && e[0] !== MIXER ? `The mic goes into ${at(patch, e)}: its signal is a few thousandths of a volt and wants the mixer's mic input to bring it up. The mic goes into the mixer's input 1` : null;
+    },
+  },
+  {
+    job: `Cable the mixer's out 1 into the first speaker's input A, its ${COMBO.name} socket. ${COMBO.what}`,
+    done: ({ patch }) => other(patch, [TOPS[0], "xlr-in"])?.[0] === MIXER,
+    why: ({ patch }) => {
+      if (other(patch, [MIXER, "xlr-out-1"])?.[0] === TOPS[1]) return "The mixer's out 1 is in the second speaker: this step feeds the first one, and the second gets its signal from the first's thru next";
+      const e = other(patch, [TOPS[0], "xlr-in"]);
+      return e && e[0] !== MIXER ? `The first speaker's input A is fed by ${at(patch, e)}: the mixer feeds it, so its fader sets the level` : null;
+    },
+  },
+  {
+    job: "Cable the first speaker's thru (the male XLR under its input) into the second speaker's input A: the thru passes the signal on, so one mixer out feeds a line of boxes",
+    done: ({ patch }) => { const e = other(patch, [TOPS[0], "xlr-out"]); return e?.[0] === TOPS[1] && e[1] === "xlr-in"; },
+    why: ({ patch }) => (other(patch, [TOPS[1], "xlr-in"])?.[0] === MIXER ? "The second speaker is fed straight from the mixer. That works, but this step chains it off the first speaker's thru, as a crew does down a row of powered boxes" : null),
+  },
+];
+
+const STEPS: Record<LessonId, Step<At>[]> = { guitar: GUITAR, voice: VOICE, pa: PA, plugs: PLUGS };
 
 /** Every step of a lesson checked against what is in the room now. */
 export const checkLesson = (id: LessonId, s: At): Checked[] => checkSteps(STEPS[id], s);
@@ -252,7 +285,7 @@ export class Lessons {
   /** Start a lesson (the PA one brings its kit to the floor in front of you); a lesson already on is left for it. */
   start(id: string, j: Jam): Answer {
     if (!isLesson(id)) return { ok: false, why: `no lesson ${id}` };
-    if (id === "pa") {
+    if (id === "pa" || id === "plugs") {
       if (!this.hands.joined) return { ok: false, why: "The sesh's gear is on its way" };
       if (j.me.seat) return { ok: false, why: "Stand up first: the PA goes on the floor in front of you" };
       if (!bringKit(this.hands.reach(j), PA_KIT)) return { ok: false, why: "Your hands are full: set it down first" };

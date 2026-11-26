@@ -100,7 +100,7 @@ export function aimOff(i: Item, head: Booth["head"]): { h: number; v: number } {
 const vinyl = booth("vinyl");
 const media = booth("media");
 
-/** The room: the booth against the back wall, the powered tops either side of it on stands, the sub on a rack, and a case of cables by the door. */
+/** The room: the booth against the back wall, the powered tops either side of it on stands, the powered sub in front, and a case of cables by the door. */
 function room(b: Booth, name: string): Level {
   return {
     name,
@@ -120,7 +120,6 @@ function room(b: Booth, name: string): Level {
       { key: "top-r-stand", gear: "stand-tripod", x: -2.9, y: 0, z: 2.2, rot: 0 },
       { key: "top-r", gear: "top-12-powered", x: -2.9, y: 1.6, z: 2.2, rot: 0.15 },
       { key: "sub", gear: "sub-18", x: 0, y: 0, z: 3.0, rot: 0 },
-      { key: "rack", gear: "amp-rack-4u", x: -2.9, y: 0, z: 0.5, rot: 0 },
       { key: "distro", gear: "distro-box", x: 0.6, y: 0, z: 0.3, rot: 0 },
       // The cable case behind the booth on the DJ's side, where the short deck leads reach.
       { key: "case", gear: "road-case-m", x: 2.9, y: 0, z: 0.6, rot: 0 },
@@ -129,7 +128,6 @@ function room(b: Booth, name: string): Level {
       ...[1, 2].map((n) => ({ key: `rca-${n}`, kind: "rca" as const, lengthM: 3 })),
       ...[1, 2].map((n) => ({ key: `ground-${n}`, kind: "ground" as const, lengthM: 3 })),
       ...[1, 2, 3, 4, 5].map((n) => ({ key: `xlr-${n}`, kind: "xlr" as const, lengthM: 10 })),
-      { key: "speaker-10", kind: "speaker" as const, lengthM: 10 },
       ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `power-${n}`, kind: "power" as const, lengthM: 5 })),
     ],
   };

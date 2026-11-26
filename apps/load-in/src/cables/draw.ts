@@ -54,9 +54,9 @@ export function cableView(scene: THREE.Scene) {
   const coils = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>();
   const sums = new Map<string, number>();
   const ends = new Map<string, THREE.Group>();
-  const endOn = (key: string, kind: Parameters<typeof endOf>[0], end: "a" | "b") => {
+  const endOn = (key: string, run: Parameters<typeof endOf>[0], end: "a" | "b") => {
     let m = ends.get(`${key}:${end}`);
-    if (!m) { m = connectorMesh(endOf(kind, end)); ends.set(`${key}:${end}`, m); scene.add(m); }
+    if (!m) { m = connectorMesh(endOf(run, end)); ends.set(`${key}:${end}`, m); scene.add(m); }
     return m;
   };
   const coilOf = (key: string, color: number) => {
@@ -80,7 +80,7 @@ export function cableView(scene: THREE.Scene) {
         // The ends: the outer one once it is off the coil, the inner one once every metre is.
         const rp = run.rope.pts, n = rp.length;
         for (const [end, i, j, off] of [["a", 0, 1, !!roll?.tailIn], ["b", n - 1, n - 2, !!roll && roll.state !== "out" && roll.state !== "tied"]] as const) {
-          const p = endOn(run.key, run.kind, end);
+          const p = endOn(run.key, run, end);
           p.visible = !off && !("hand" in run[end]) && n > 1;
           if (p.visible) aimEnd(p, rp[i]!, rp[j]!);
         }
