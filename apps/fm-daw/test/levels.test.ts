@@ -2,26 +2,13 @@
 // on the PA and a singer's mic is in. MUSIC down on its big slider in the menu takes the music bus and their video down and
 // leaves the crowd bus and the mic alone; at 0 the music is silent. CROWD down takes the mic; the slider beside one
 // person takes their set and mic down for you alone. The two are still set after a reload.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
 setDefaultTimeout(240_000); // a jam room with a DJ set and a mic in software GL, its audio measured
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output", "--autoplay-policy=no-user-gesture-required"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser("--autoplay-policy=no-user-gesture-required");
 
 interface Heard { music: number; crowd: number; buses: { music: number; crowd: number } | null; people: Record<string, number>; pa: Record<string, number>; calls: Record<string, number>; tubes: Record<string, number> }
 

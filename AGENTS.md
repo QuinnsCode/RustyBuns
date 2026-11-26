@@ -90,7 +90,9 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
-  and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
+  and what it does; `--shot out.png` when you need to see it; `--url` for a server already running.
+  A PR that changes how an app looks runs `--before-after <dir>` (origin/main's copy of the app next to your working
+  tree, one `before-after.html`), publishes that page as an artifact and links it under `Before / after` in its body. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it, `--wait` to keep trying each minute while the office is full) hands

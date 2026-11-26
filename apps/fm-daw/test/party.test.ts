@@ -2,26 +2,12 @@
 // /rooms.html make a party from the Desert Gathering, save a version, give a second performer their own scene, undo
 // in one scene without touching the other's, put everyone out at once, bring the first version back, go live, and
 // find it all still there after a reload. A second party going live takes the first off: only one room is live.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
 setDefaultTimeout(240_000);
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 30_000, 50);

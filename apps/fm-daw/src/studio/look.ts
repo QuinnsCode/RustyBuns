@@ -1133,7 +1133,7 @@ export function practicals(def: StudioDef): [number, number][] {
   return free.sort((a, b) => near(b) - near(a)).slice(0, 2);
 }
 
-export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" }
+export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" | "none" }
 
 /** The renderer set up for one room: call `render` every frame and `resize` with the canvas. */
 export interface Look { render(camera: THREE.Camera): void; resize(w: number, h: number): void; state(): LookState; quality: Quality }

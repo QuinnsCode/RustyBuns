@@ -1,4 +1,4 @@
-// The gear turntable (#5021, #5042): every gear id close up on a stage deck in a real room's light (a CC0 HDRI from
+// The gear turntable (#5021, #5042): every gear id close up on a stage deck under a real sky's light (a CC0 HDRI from
 // Poly Haven, fetched once into ~/.cache/rustybuns/hdri/, never committed), from four angles (front three-quarter,
 // side, the back with its jacks, and `close`: a macro shot of the top front corner, half a millimetre a pixel, for
 // the coat's grain, the grille's holes and the hardware), at a fixed picture size. The shots land
@@ -7,10 +7,11 @@
 //   bun packages/models/scripts/turntable.ts --label round-2                every id, the material kit, into docs/gear-refs/shots/round-2/
 //   bun packages/models/scripts/turntable.ts --label round-0 --plain     the flat colours (`gearLook()`, the `low` quality look)
 //   bun packages/models/scripts/turntable.ts --only sub-18,wedge-12       just these ids
-//   bun packages/models/scripts/turntable.ts --only dance-stack --hdri kloofendal_overcast_puresky   the whole stack (bins, mid-bass, tops) outdoors
+//   bun packages/models/scripts/turntable.ts --only dance-stack            the whole stack (bins, mid-bass, tops)
 //   bun packages/models/scripts/turntable.ts --size 1024 --out /tmp/x     bigger, somewhere else
 //   bun packages/models/scripts/turntable.ts --js "turntable.ao.enabled = false"   runs this in the page first (try a light or a material)
-//   bun packages/models/scripts/turntable.ts --hdri music_hall_01         another Poly Haven HDRI (`--hdri none`: three's RoomEnvironment, offline)
+//   bun packages/models/scripts/turntable.ts --hdri studio_small_09       another Poly Haven HDRI (the default, kloofendal_overcast_puresky, is the photos' soft
+//                                                                         overcast daylight with a contact shadow; an indoor one gets the old hard key; `--hdri none`: offline)
 //
 // One headless Chrome (scripts/chrome.ts, on the Mac's GPU) and a tiny server for the page and the kit's textures.
 import { mkdirSync } from "node:fs";
@@ -23,7 +24,7 @@ help(import.meta.path);
 const argv = process.argv.slice(2), flag = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
 const pkg = resolve(import.meta.dir, ".."), label = flag("--label") ?? "now", size = Number(flag("--size") ?? 768);
 const out = resolve(flag("--out") ?? join(pkg, "docs", "gear-refs", "shots", label)), only = flag("--only")?.split(",");
-const plain = argv.includes("--plain"), hdriName = flag("--hdri") ?? "studio_small_09";
+const plain = argv.includes("--plain"), hdriName = flag("--hdri") ?? "kloofendal_overcast_puresky";
 
 /** The HDRI on disk, fetched from Poly Haven (CC0) the first time; null for `--hdri none`. */
 async function hdri(name: string): Promise<string | null> {
@@ -57,7 +58,7 @@ const server = Bun.serve({
 const chrome = await launchChrome();
 try {
   const tab = await openTab(chrome.cdp, { w: size, h: size });
-  await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/?size=${size}${plain ? "&plain=1" : ""}${hdr ? "" : "&hdri=0"}`, 1500);
+  await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/?size=${size}${plain ? "&plain=1" : ""}${hdr ? (/sky|overcast/.test(hdriName) ? "&sky=1" : "") : "&hdri=0"}`, 1500);
   if (flag("--js")) await tab.eval(flag("--js")!);
   const { ids, angles } = await tab.eval<{ ids: string[]; angles: string[] }>("({ ids: turntable.ids, angles: turntable.angles })");
   mkdirSync(out, { recursive: true });

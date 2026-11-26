@@ -213,10 +213,13 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
   renderer.shadowMap.enabled = high;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setPixelRatio(Math.min(high ? 1.5 : 1, devicePixelRatio));
-  const pm = new THREE.PMREMGenerator(renderer);
-  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.12; // a little sheen on the metal, no room light
-  pm.dispose();
+  // a little sheen on the metal, no room light; low quality's plain materials (below) take none, so it isn't made
+  if (high) {
+    const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.12;
+    pm.dispose();
+  }
 
   const group = new THREE.Group();
   group.name = "open-air";
@@ -557,6 +560,7 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
     });
   }
   walk();
+  if (!high) plain(group);
 
   let frames = 0, fps = 0, since = performance.now(), count = 0;
   const lights = 2 + heads.length + flames.length + (fire ? 1 : 0);
@@ -588,6 +592,25 @@ export function openAir(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camer
       renderer.setSize(wpx, hpx, false);
       if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(wpx, hpx); }
     },
-    state: () => ({ quality, lights, shadows: high ? 1 : 0, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: 0, env: "generated" }),
+    state: () => ({ quality, lights, shadows: high ? 1 : 0, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: 0, env: high ? "generated" : "none" }),
   };
+}
+
+/**
+ * Low quality's look: every standard or physical material under `root` that doesn't patch its own shader traded for a
+ * Lambert one, shared by everything that looks the same. Software GL (a weak laptop, CI's runners) then links a few short
+ * programs instead of a physical one per variant, and lights each pixel once (#5922: the desert linked 40). Colour,
+ * texture, vertex colours, glow and see-through stay; roughness, metal and bumps go. Returns how many it made.
+ */
+export function plain(root: THREE.Object3D): number {
+  const made = new Map<string, THREE.MeshLambertMaterial>(), unpatched = THREE.Material.prototype.onBeforeCompile;
+  const swap = (m: THREE.Material): THREE.Material => {
+    if (!(m instanceof THREE.MeshStandardMaterial) || m.onBeforeCompile !== unpatched) return m;
+    const key = [m.color.getHex(), m.emissive.getHex(), m.emissiveIntensity, m.map?.uuid, m.emissiveMap?.uuid, m.vertexColors, m.flatShading, m.transparent, m.opacity, m.side, m.alphaTest, m.depthWrite, m.fog, m.blending].join();
+    let p = made.get(key);
+    if (!p) made.set(key, (p = new THREE.MeshLambertMaterial({ name: m.name, color: m.color, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity, map: m.map, emissiveMap: m.emissiveMap, vertexColors: m.vertexColors, flatShading: m.flatShading, transparent: m.transparent, opacity: m.opacity, side: m.side, alphaTest: m.alphaTest, depthWrite: m.depthWrite, fog: m.fog, blending: m.blending })));
+    return p;
+  };
+  root.traverse((o) => { if (o instanceof THREE.Mesh) o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material); });
+  return made.size;
 }

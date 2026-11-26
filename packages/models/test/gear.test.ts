@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { GEAR_IDS, GEAR_SIZES, RIG_IDS, RIG_SIZES, STOMP_SIZE, type GearId, gear, gearJacks, gearParts, rigging, stompbox } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
+import { LINEUP } from "../src/lineup.ts";
 import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
 // The sound and power math's catalog (lane B). It imports nothing, so the models package can read it without a
@@ -34,6 +35,16 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
     expect(box.distanceToPoint(j.position.clone().addScaledVector(out, 0.05)), name).toBeGreaterThan(0.03);
   }
   expect(g.getObjectByName("grab")).toBeDefined();
+});
+
+// The lineup (#5942): a new speaker gets its real product's row, and a model built to a product's sheet keeps its size.
+test("every speaker copies a real product, at its published size once built to it", () => {
+  const speakers = catalogIds.filter((id) => book.get(id)!.speaker).sort();
+  expect(Object.keys(LINEUP).sort()).toEqual(speakers);
+  for (const id of GEAR_IDS) {
+    const published = LINEUP[id]?.published;
+    if (published) expect<number[]>([...GEAR_SIZES[id]]).toEqual([...published]);
+  }
 });
 
 test("copies share geometry; a stand opens to the height asked, kept between 1.2 and 2 m", () => {
