@@ -316,10 +316,12 @@ function draw() {
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
   loadOut?.update(world, cables);
-  hands.update({ ...holding(), show: showArms }, world.t, stepSpeed());
   shoes.update(you.x, world.level.floorAt?.(you.x, you.z) ?? 0, you.z, you.yaw, stepSpeed(), 1 / 60);
-  ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
+  // An empty right hand reaches for the piece that's next, at its middle.
+  const reach: [number, number, number] | undefined = tgt && tgt !== held ? [tgt.x, tgt.y + dims(tgt)[1] / 2, tgt.z] : undefined;
+  hands.update({ ...holding(), show: showArms, reach }, world.t, stepSpeed());
+  ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
   // Out of view, an arrow on the screen edge says which way to turn for it.
