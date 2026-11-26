@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import type { Bank, GeneratorId, Ground, SystemId } from "@rustybuns/gear";
+import type { Bank, GeneratorId, Ground, HeightMap, SystemId } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -77,8 +77,9 @@ export interface StudioDef {
   venue?: Venue;
 }
 
-/** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn. */
-export interface Venue { src: string; scale: number; at: [number, number, number]; yaw: number }
+/** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn, and
+ *  its ground's heights as captured (@rustybuns/gear `groundMap`, read off the splat once it is in; placed the same way). */
+export interface Venue { src: string; scale: number; at: [number, number, number]; yaw: number; land?: HeightMap }
 
 /**
  * An open-air party's rig, drawn by open-air.ts: the speaker stacks (each a horn bin, a mid-bass horn and a mid-high horn
