@@ -51,6 +51,12 @@ export interface SpacesState {
 /** The role the owner's button hands out next: member, then admin, then guest, then member again. */
 const NEXT_ROLE = { member: "admin", admin: "guest", guest: "member" } as const;
 const ROLE_WORD = { admin: "an admin", guest: "a guest", member: "a member" } as const;
+/** A place kept free at the end of the header for the Report flag on a phone (`data-eq-flag`, report.ts), off every row's buttons. */
+const flagSlot = () => {
+  const s = el("span", { className: "rb-spaces-flag" });
+  s.dataset.eqFlag = "";
+  return s;
+};
 
 /**
  * Keep `box` showing this person's spaces. Returns the panel's handle: `state()` for a harness, `close()` to hang up
@@ -255,7 +261,8 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       ...(owner && row.invite ? [btn("copy", `Copy invite ${row.invite}`, () => copy(row.invite!))] : []),
       ...(owner ? [btn("history", "Audit log", () => sp.audit()), btn("download", "Export this space", () => void exportAll()),
         line(keepDays ? `Keeps ${keepDays} days; 0 for the default` : "Keep messages for how many days?", 4, "clock", "Set how long messages stay", (v) => sp.keep(Math.max(0, Math.min(3650, Math.floor(Number(v)) || 0))))] : []),
-      btn("log-out", "Leave this space", () => { sp.leave(); back(); }));
+      btn("log-out", "Leave this space", () => { sp.leave(); back(); }),
+      flagSlot());
     const tabOf = (id: string, ...label: (Node | string)[]) => {
       const b = el("button", { type: "button", role: "tab", ariaSelected: String(id === channel), className: id === channel ? "eq-btn on" : "eq-btn" }, ...label);
       b.addEventListener("click", () => tab(id));
