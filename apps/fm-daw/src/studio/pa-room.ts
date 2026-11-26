@@ -120,6 +120,8 @@ export function paSpeakers(def: StudioDef): Speaker[] {
 
 /** Every box the room's PA plays the floor from, as @rustybuns/gear sources: what the builder's coverage map adds up. */
 export const paSources = (def: StudioDef): Source[] => paSpeakers(def).flatMap(boxesOf);
+/** The PA's boxes as both harnesses show them (qrooms.pa() and qjam.state().pa, #6020): where each stands and points, and how loud it goes. */
+export const paBoxes = (def: StudioDef) => paSources(def).map((s) => ({ at: [s.pos.x, s.pos.y, s.pos.z].map((v) => +v.toFixed(2)), yaw: +s.yaw.toFixed(3), pitch: +s.pitch.toFixed(3), maxSpl: s.speaker.maxSpl }));
 const boxesOf = (sp: Speaker): Source[] => sp.boxes ?? [source(DEFAULT_TOP, { x: sp.at[0], y: HORN_Y, z: sp.at[1] }, { yaw: sp.yaw })];
 
 /** An open-air room's rig as @rustybuns/gear plans one (its power, its gear list): the stacks where they stand, the sub

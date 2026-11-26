@@ -84,6 +84,13 @@ voices can't go through the Amp insert yet ([CIRCUITS.md: Next](CIRCUITS.md#next
 
 **Works today:** all six steps (front door `src/studio/door.ts`, grants `src/grants.ts`, guest lists `src/guest-list.ts`).
 
+**From the Event Planner** (#6020): the Party panel's **Open as event** puts the open party live (with none open, it makes
+one from the room as planned) and opens its room, which plays from the same stacks, aim and power, with the sesh's own
+guest list and the decks' listen link. **Client walk-through** opens the same room with `?walk=1`: the planned PA plays a
+test set (`src/studio/walk-set.ts`) on that page alone, so a client walks the site and hears it before the show.
+`qrooms.event(walk?)` gives the link; `qjam.state().pa.sources` is the same list as `qrooms.pa().sources`. The journey
+is `test/event.test.ts`.
+
 **Missing:** the character is a stand-in until [#4987](https://github.com/QuinnsCode/RustyBuns/issues/4987); the
 rooms' look is a climb ([#5365](https://github.com/QuinnsCode/RustyBuns/issues/5365)). Pedals, amps and cables
 stand on the gear wall in every room (`src/studio/gear-wall.ts`, #5393).
@@ -148,6 +155,8 @@ what power, before the truck is loaded.
   place), the ms written across the floor. Ring time and a clap at each seat. Out of doors the map, the delay marks and the
   Walk-in sound all cross the same field ([below](#out-of-doors-the-air-the-ground-and-the-land)).
 - Step 4: Walk in opens the room; `pa-room.ts` plays each speaker from its place, aimed, late by distance, with the room's ring.
+  The Party panel's Client walk-through does the same with a test set on the PA, and Open as event makes the plan The
+  Event ([path 3](#3-play-the-event)).
 - Step 5: the PA panel's power check (`@rustybuns/gear` `powerPlan`): the amp racks, each rack's and each powered stack's
   breaker, and the generator (the smallest that holds, or the one you pick), with the reason when one gives out.
 - Step 6: **Gear list** saves every box, amp rack, the generator and distro, each cable run cut to a reel's length,
