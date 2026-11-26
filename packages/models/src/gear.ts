@@ -520,7 +520,7 @@ function cab1960aPieces(): Record<string, Build> {
   grille.pieces.push(box("grille", [gw, upH, 0.004], front(0, (yb + h - fy) / 2, 0.001), { rot: [-lean, 0, 0] }));
   // the piping round the cloth's edge, and the plain plate low on the left where the real one carries its model name
   const ring: [number, number][] = [[-gw / 2, fy], [gw / 2, fy], [gw / 2, yb], [gw / 2, h - fy], [-gw / 2, h - fy], [-gw / 2, yb]];
-  ring.forEach(([x, y], i) => { const [x2, y2] = ring[(i + 1) % ring.length]!; piping.pieces.push(rod("ink", front(x, y, 0.004), front(x2, y2, 0.004), 0.0032, 6)); });
+  ring.forEach(([x, y], i) => { const [x2, y2] = ring[(i + 1) % ring.length]!; piping.pieces.push(rod("ink", front(x, y, 0.002), front(x2, y2, 0.002), 0.0025, 6)); });
   piping.pieces.push(box("plug", [mm(60), mm(22), 0.003], front(-gw / 2 + mm(45), fy + mm(26), 0.004), { bevel: 0.001 }));
 
   // corners: a protector over each of the eight corners, 3 mm proud, the front ones with a brass screw
@@ -541,9 +541,9 @@ function cab1960aPieces(): Record<string, Build> {
   for (const x of [-1, -0.5, 0, 0.5, 1]) for (const y of [0.04, h - 0.04]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y, zb - 0.001], 8));
   for (const x of [-1, 1]) for (const y of [0.25, 0.5, 0.75]) hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [x * (w / 2 - 0.04), y * h, zb - 0.001], 8));
   hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [0, h * 0.4, zb - 0.001], 8));
-  hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.004], { bevel: 0.002 }));
-  for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.009], 8));
-  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.008], [0, 0, 0]);
+  hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.001], { bevel: 0.002 }));
+  for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.006], 8));
+  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.001], [0, 0, 0]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.62, mm(-20)], [1, 0, 0]);
   return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
@@ -1876,8 +1876,8 @@ function sh50Pieces(): Record<string, Build> {
   }
   for (const y of [h + 0.0015, feet - 0.0015]) for (const [x, z] of [[-mm(250), f - mm(45)], [mm(250), f - mm(45)], [-mm(120), zb + mm(200)], [mm(120), zb + mm(200)], [0, zb + mm(40)]])
     hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x, y, z], 10));
-  plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.008], [0, -mm(140), 0]);
+  plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.001]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.001], [0, -mm(140), 0]);
   hw.pieces.push(box("cavity", [mm(80), mm(45), 0.004], [0, h / 2 + mm(30), zb - 0.0004], { bevel: 0.001 }));
   mark(hw, "grab", onSide(1, 0.3, h - mm(75), 0.012), out);
   return { cabinet: cab, horn, ports, grille, hardware: hw };
@@ -1909,15 +1909,15 @@ function th118Pieces(): Record<string, Build> {
   cab.pieces.push(box("coat", [w - 2 * t, t, d - cw], [0, t / 2, (f + zb + cw) / 2]));
   cab.pieces.push(box("coat", [w - 2 * t, h - ch - t, t], [0, (h - t + ch) / 2, zb + t / 2]));
   const slant = Math.atan2(cw, ch);
-  cab.pieces.push(box("coat", [w - 2 * t, Math.hypot(cw, ch), t], [0, ch / 2, zb + cw / 2], { rot: [-slant, 0, 0] }));
+  cab.pieces.push(box("coat", [w - 2 * t, Math.hypot(cw, ch), t], [0, ch / 2 + (Math.sin(slant) * t) / 2, zb + cw / 2 + (Math.cos(slant) * t) / 2], { rot: [-slant, 0, 0] }));
   cab.pieces.push(box("coat", [w - 2 * t, h - mh - t, t], [0, (h - t + mh) / 2, f - t / 2]));
 
   // mouth: the well under the front, its back 400 in, its roof the fold's floor; the 18" on its side in it
-  const back = mm(400), my = mh / 2;
+  const back = mm(480), my = mh / 2;
   mouth.pieces.push(box("cavity", [w - 2 * t, mh - t, 0.004], [0, (mh + t) / 2, f - back]));
   mouth.pieces.push(box("coat", [w - 2 * t, t, back], [0, mh - t / 2, f - back / 2]));
-  mouth.pieces.push(...cone(mm(200), mm(120), new THREE.Matrix4().makeTranslation(-mm(40), my, f - mm(210)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), 20));
-  mouth.pieces.push(disc("metal", mm(85), mm(70), "x", [-mm(200), my, f - mm(210)], 16));
+  mouth.pieces.push(...cone(mm(190), mm(120), new THREE.Matrix4().makeTranslation(-mm(40), my, f - mm(245)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), 20));
+  mouth.pieces.push(disc("metal", mm(85), mm(70), "x", [-mm(200), my, f - mm(245)], 16));
 
   // grille: the sheet over the mouth inside a thin lip, one black screw each side at half height
   const gw = w - mm(16), gh = mh - mm(12);
@@ -1944,8 +1944,8 @@ function th118Pieces(): Record<string, Build> {
   for (const s of [-1, 1]) for (const y of [mm(60), h / 2, h - mm(60)]) for (const z of [f - mm(60), zb + mm(60)])
     if (!(y < ch && z < 0)) hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.0015), y, z], 10));
   hw.pieces.push(disc("metal", 0.009, 0.003, "x", [w / 2 + 0.0015, ch + mm(60), zb + mm(60)], 10), disc("metal", 0.009, 0.003, "x", [-w / 2 - 0.0015, ch + mm(60), zb + mm(60)], 10));
-  plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.008], [0, -mm(120), 0]);
+  plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.001]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.001], [0, -mm(120), 0]);
   hw.pieces.push(box("cavity", [mm(70), mm(45), 0.004], [mm(130), h * 0.66, zb - 0.0004], { bevel: 0.001 }));
   // the casters: a wheel on a fork either side, half out of the slant
   const nz = -Math.cos(slant), ny = -Math.sin(slant), wz = zb + cw / 2 + nz * mm(20), wy = ch / 2 + ny * mm(20);
