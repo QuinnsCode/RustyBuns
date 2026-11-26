@@ -48,6 +48,9 @@ export const Beat = obj({
   /** The owner writes these words; agents leave them as a placeholder. */
   owner: opt(bool()),
   status: oneOf(STATUSES),
+  /** What a found tape plays for this beat, a few "Who: what" lines in the director's voices. Once the beat is built,
+   * the first unmarked tape in its section (`section:n:k`) plays these instead of its placeholder (src/world/poi.ts). */
+  tape: opt(obj({ title: str(80, { min: 1 }), lines: arr(str(240, { min: 1 }), 6, { min: 1 }) })),
 });
 export type Beat = Of<typeof Beat>;
 
