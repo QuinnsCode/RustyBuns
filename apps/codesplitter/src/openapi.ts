@@ -1045,7 +1045,7 @@ const SCHEMAS: Record<string, Schema> = {
     from_line: int("lines: where the range began when followed"), to_line: int(), created_at: int("ms") }, ["id", "kind", "created_at"]),
   Invite: obj({ id: str("revoke it, or (invited by handle) open and claim it, by this"), last4: str("the token's last four characters"), token: str("csi_…, when it's made only"), link: str("…/invite/csi_…, when it's made only"), kind: str("handle, email or link"), target: { type: ["string", "null"] }, note: str(), by: str(), created_at: int(), expires_at: int(),
     owner: str(), repo: str(), mailed: bool("an email invite: whether it went out") }),
-  AuditEntry: obj({ id: int(), at: int("ms"), actor: { type: ["string", "null"] }, via: str("cookie, token, oauth, job or invite"), action: str("like token.create or crew.remove"),
+  AuditEntry: obj({ id: int(), at: int("ms"), actor: { type: ["string", "null"] }, via: str("cookie, token, oauth, job or invite"), token: { type: ["string", "null"], description: "which token, by its id, when via is token or oauth" }, action: str("like token.create or crew.remove"),
     owner: { type: ["string", "null"] }, repo: { type: ["string", "null"] }, target: { type: ["string", "null"], description: "what it was done to" }, detail: { type: ["string", "null"] }, country: { type: ["string", "null"] } }),
   Stamp: obj({ owner: str(), repo: str(), path: str(), line: str("line id"), stamp: str(), by: str("who stamped it"), author: str("who wrote the line, person or agent"), created_at: int("ms") }),
   CheckStatus: { type: "string", enum: ["queued", "running", "passed", "failed", "cancelled"] },
