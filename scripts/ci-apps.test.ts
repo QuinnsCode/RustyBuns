@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { APPS, docRead, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
+import { APPS, appsFor, docRead, dropSample, laneCommands, sharedCode, sparseDirs } from "./ci-apps.ts";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -21,6 +21,7 @@ test("only code under packages/, the lockfile and the apps workflow fan out to e
 });
 
 // #5952: an app README edit ran the whole app suite; a doc its tests read (Mythic Masters' docs/RULES.md) still must.
+// #5899: playground's shelf.json is built from each package's package.json, so editing one runs playground's tests.
 test("an app's .md counts as touching the app only when its code names that doc in a path", () => {
   const root = mkdtempSync(join(tmpdir(), "ci-docs-"));
   const put = (f: string, s: string) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), s); };
@@ -34,6 +35,16 @@ test("an app's .md counts as touching the app only when its code names that doc 
     ["apps/game/src/a.ts", true],
   ];
   for (const [file, runs] of cases) expect([file, docRead(file, root)]).toEqual([file, runs]);
+});
+
+test("a package's package.json runs playground's tests besides its own folder's", () => {
+  const cases: [string, string[]][] = [
+    ["packages/models/package.json", ["playground"]],
+    ["packages/models/src/human.ts", []],
+    ["apps/two-fronts/src/main.ts", ["two-fronts"]],
+    ["package.json", []],
+  ];
+  for (const [file, apps] of cases) expect([file, appsFor(file)]).toEqual([file, apps]);
 });
 
 // #5229: every app's tests in up to three lanes by time, the heavy files apart, and never an empty job.
