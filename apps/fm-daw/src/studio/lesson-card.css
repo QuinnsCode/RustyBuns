@@ -1,0 +1,13 @@
+/* The lesson card on a BUILD sector's page (lesson-card.ts `float`): the jam room's card (help.css) pinned above the
+   corner's way home, in the jam room's colours, and the round cap button that starts the page's lesson. */
+#lesson.lesson-float, .lesson-ask { --ink: #ece8e1; --dim: #a3a7ad; --hot: #ff6b4a; }
+#lesson.lesson-float { position: fixed; top: auto; bottom: 64px; left: 12px; z-index: 40; max-height: calc(100vh - 128px); overflow: auto; }
+.lesson-ask { width: 44px; height: 44px; border-radius: 50%; border: 1px solid #3a3e45; background: rgba(21, 23, 27, 0.9); color: var(--hot); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.lesson-ask.lesson-float { position: fixed; bottom: calc(10px + env(safe-area-inset-bottom)); left: calc(62px + env(safe-area-inset-left)); z-index: 40; }
+.lesson-ask[hidden] { display: none; }
+/* With more than one lesson on the page, the cap opens their list just above it. */
+.lesson-menu { --ink: #ece8e1; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 12px; border: 1px solid #3a3e45; background: rgba(21, 23, 27, 0.95); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+.lesson-menu.lesson-float { position: fixed; bottom: calc(62px + env(safe-area-inset-bottom)); left: calc(62px + env(safe-area-inset-left)); z-index: 41; }
+.lesson-menu button { text-align: left; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
+.lesson-menu button:hover, .lesson-menu button:focus-visible { background: rgba(255, 107, 74, 0.16); }
+.lesson-menu[hidden] { display: none; }
