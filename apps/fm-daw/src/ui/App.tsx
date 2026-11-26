@@ -64,6 +64,10 @@ import { Band } from "../studio/band.ts";
 import { FarSound, PluginOut } from "../studio/plugin-line.ts";
 import { webOpus, type MakeEncoder } from "../studio/opus.ts";
 import { DESK_MS, LISTENS, type Listen } from "../clock.ts";
+import { BEAT_LESSON, beatAt, beatRows } from "../beat-lesson.ts";
+import { FINE, toggle } from "../steps.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { askedFor, PageLesson } from "../studio/page-lesson.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -490,7 +494,11 @@ export function App() {
       insert: (track: number, insert: TrackPlugin | null) => commit({ t: "insert", track, insert }),
       mute: (track: number, mute: boolean) => commit({ t: "track", track, mute }),
       // song mode's chain (patterns 0 to 7, A to H), as the Song strip sets it; null leaves song mode
+      // QDAW's lesson (beat-lesson.ts): "beat" starts it, null leaves it; then the lesson as it stands
       chain: (chain: number[] | null) => commit({ t: "song", chain }),
+      lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === BEAT_LESSON.id) lesson.start(); lessonCard.current?.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
+      // a drum step clicked on the grid, as DrumGrid's cells do (steps.ts toggle): track, 16th
+      step: (track: number, s: number) => { const t = proj.current.tracks[track]; if (t) commit({ t: "notes", track, notes: toggle(t, s, FINE) }); },
       pan: (track: number, v: number) => commit({ t: "param", track, i: P.PAN, v }),
       // a track's Shape (its EQ bands), as the desk's Shape panel sets it
       shape: (track: number, bands: EqDoc) => commit({ t: "eq", track, bands }),
@@ -520,6 +528,21 @@ export function App() {
       },
     } });
   });
+
+  // QDAW's lesson (beat-lesson.ts), read from the groove as it stands; the cap button at the bottom left, ?lesson=beat
+  // or fmdaw.lesson("beat") starts it. Starting it empties the kick, snare and hat rows (one undo puts them back).
+  const commitNow = useRef(commit);
+  commitNow.current = commit;
+  const [lesson] = useState(() => new PageLesson(BEAT_LESSON, () => beatAt(proj.current, live.current.transportOn), () => {
+    for (const track of beatRows(proj.current)) commitNow.current({ t: "notes", track, notes: [] }, { group: "lesson" });
+  }));
+  const lessonCard = useRef<ReturnType<typeof mountLessonCard> | null>(null);
+  useEffect(() => {
+    const card = lessonCard.current ??= mountLessonCard(document.body, lesson, { float: true, done: "Done. That's your beat: keep it, or put a bass line over it", offer: { title: BEAT_LESSON.title, start: () => lesson.start() } });
+    if (askedFor(location.search, BEAT_LESSON.id) && !lesson.on && !lesson.finished) { lesson.start(); card.frame(); }
+    const tick = setInterval(() => card.frame(), 250);
+    return () => clearInterval(tick);
+  }, []);
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
