@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { nextVersion, pickStable, releaseNotes } from "./stable.ts";
+import { nextVersion, pickStable, releaseNotes, releaseVersion } from "./stable.ts";
 import type { Tested } from "./rings.ts";
 
 const [a, b, c, d, e, f] = ["a", "b", "c", "d", "e", "f"].map((x) => x.repeat(40)) as [string, string, string, string, string, string];
@@ -18,6 +18,17 @@ test.each<[string, Tested[], string | undefined]>([
 test("nextVersion bumps the patch", () => {
   expect(nextVersion("0.1.11")).toBe("0.1.12");
   expect(() => nextVersion("1.0.0-beta")).toThrow();
+});
+
+// The version comes from the tag now (#4528), so main's packages trail the tags.
+test.each<[string, string | undefined, string, string]>([
+  ["main's packages trail the last tag", "v0.1.12", "0.1.12", "0.1.13"],
+  ["main's packages trail by more than one release", "v0.1.14", "0.1.12", "0.1.15"],
+  ["main's packages already name the next one", "v0.1.11", "0.1.12", "0.1.12"],
+  ["a minor bump on main", "v0.1.11", "0.2.0", "0.2.0"],
+  ["no tag yet", undefined, "0.1.0", "0.1.0"],
+])("releaseVersion: %s", (_, tag, packages, want) => {
+  expect(releaseVersion(tag, packages)).toBe(want);
 });
 
 test("releaseNotes groups squash titles by area without their #numbers, and counts what it cut", () => {

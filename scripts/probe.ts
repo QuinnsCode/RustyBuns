@@ -112,7 +112,7 @@ export async function baseTree(root: string, app: string, base: string): Promise
     await Bun.$`git -C ${root} archive ${sha} ${dir} | tar -x -C ${out}`.quiet();
     await Bun.write(join(out, dir, ".probe-done"), sha);
   }
-  for (const d of ["packages", "scripts", "node_modules", `${dir}/node_modules`]) {
+  for (const d of ["packages", "scripts", "node_modules", "tsconfig.json", `${dir}/node_modules`]) {
     if (existsSync(join(root, d)) && !existsSync(join(out, d))) symlinkSync(join(root, d), join(out, d));
   }
   return join(out, dir);

@@ -96,6 +96,64 @@ export function banks(list: readonly Bank[]): Terrain {
   };
 }
 
+/** A raster of ground heights (a captured venue's, groundMap): samples `cell` metres apart in rows along x, `cols` to
+ *  a row, the first at (x0, z0) and each row `cell` further down z; `h` row after row, metres up. */
+export type HeightMap = { x0: number; z0: number; cell: number; cols: number; h: number[] };
+
+/** A height map as land, placed as a capture is (scaled about its origin, turned `yaw` about y as three.js turns, its
+ *  origin at `at`): bilinear between the samples, flat (0) outside them. */
+export function heightMap(m: HeightMap, at: readonly [number, number, number] = [0, 0, 0], yaw = 0, scale = 1): Terrain {
+  const rows = Math.floor(m.h.length / m.cols), c = Math.cos(yaw), s = Math.sin(yaw);
+  return (x, z) => {
+    const dx = (x - at[0]) / scale, dz = (z - at[2]) / scale;
+    const u = (dx * c - dz * s - m.x0) / m.cell, v = (dx * s + dz * c - m.z0) / m.cell;
+    if (!(u >= 0 && v >= 0 && u <= m.cols - 1 && v <= rows - 1)) return 0;
+    const i = Math.min(Math.floor(u), m.cols - 2), j = Math.min(Math.floor(v), rows - 2), fu = u - i, fv = v - j;
+    const k = j * m.cols + i, h = m.h;
+    const top = h[k]! + (h[k + 1]! - h[k]!) * fu, bot = h[k + m.cols]! + (h[k + m.cols + 1]! - h[k + m.cols]!) * fu;
+    return at[1] + scale * (top + (bot - top) * fv);
+  };
+}
+
+/** Several lands as one: the highest where they overlap (a drawn bank on a captured slope). None given, none. */
+export function highest(...lands: (Terrain | undefined)[]): Terrain | undefined {
+  const ts = lands.filter((t): t is Terrain => !!t);
+  return ts.length < 2 ? ts[0] : (x, z) => Math.max(...ts.map((t) => t(x, z)));
+}
+
+/** The ground under a capture's points (x, y, z after one another, y up): over the middle 96 % of them, at most `most`
+ *  samples a side and none closer than half a metre, each the height a tenth of the points near it stand under (the
+ *  floor, not the furniture, the walls or the roof). A sample no point fell near takes its neighbours'. Null for too
+ *  few points to say. */
+export function groundMap(xyz: ArrayLike<number>, most = 32): HeightMap | null {
+  const n = Math.floor(xyz.length / 3);
+  if (n < 16) return null;
+  const step = Math.max(1, Math.floor(n / 20000)), xs: number[] = [], zs: number[] = [];
+  for (let i = 0; i < n; i += step) { xs.push(xyz[i * 3]!); zs.push(xyz[i * 3 + 2]!); }
+  const q = (a: number[], f: number) => a[Math.min(a.length - 1, Math.floor(f * a.length))]!;
+  xs.sort((a, b) => a - b); zs.sort((a, b) => a - b);
+  const x0 = q(xs, 0.02), z0 = q(zs, 0.02), span = Math.max(q(xs, 0.98) - x0, q(zs, 0.98) - z0, 1e-6);
+  const cell = Math.max(0.5, span / (most - 1));
+  const cols = Math.min(most, Math.ceil((q(xs, 0.98) - x0) / cell) + 1), rows = Math.min(most, Math.ceil((q(zs, 0.98) - z0) / cell) + 1);
+  if (cols < 2 || rows < 2) return null;
+  const near: number[][] = Array.from({ length: cols * rows }, () => []);
+  for (let p = 0; p < n; p++) {
+    const i = Math.round((xyz[p * 3]! - x0) / cell), j = Math.round((xyz[p * 3 + 2]! - z0) / cell);
+    if (i >= 0 && j >= 0 && i < cols && j < rows) near[j * cols + i]!.push(xyz[p * 3 + 1]!);
+  }
+  const h: (number | null)[] = near.map((ys) => (ys.length < 3 ? null : q(ys.sort((a, b) => a - b), 0.1)));
+  for (let pass = 0; pass < cols + rows && h.includes(null); pass++) {
+    const was = h.slice();
+    for (let k = 0; k < h.length; k++) {
+      if (was[k] !== null) continue;
+      const i = k % cols, j = Math.floor(k / cols);
+      const by = [i > 0 ? was[k - 1] : null, i < cols - 1 ? was[k + 1] : null, j > 0 ? was[k - cols] : null, j < rows - 1 ? was[k + cols] : null].filter((v): v is number => v !== null);
+      if (by.length) h[k] = by.reduce((a, b) => a + b, 0) / by.length;
+    }
+  }
+  return { x0: +x0.toFixed(2), z0: +z0.toFixed(2), cell: +cell.toFixed(3), cols, h: h.map((v) => +(v ?? 0).toFixed(2)) };
+}
+
 /** How much further sound has to go over the land between `a` and `b` (both at their heights above the flat floor
  *  plus the land under them) than straight, metres: 0 when they see each other. The worst crest along the way. */
 export function screenPath(t: Terrain, a: Vec3, b: Vec3): number {
