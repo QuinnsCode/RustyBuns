@@ -8,7 +8,7 @@ import { join } from "node:path";
 import encodeJpeg from "@jsquash/jpeg/encode";
 import encodePng from "@jsquash/png/encode";
 import { hex } from "@rustybuns/util/bytes";
-import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
+import { chromeStartMs, launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
 import { HookEvent, HookReply, PrintPlan, type PrintSheet } from "../src/api.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
 import { decodePicture, type Picture } from "../src/print-render.ts";
@@ -31,7 +31,7 @@ beforeAll(async () => {
   await Bun.write(join(dir, "page.ts"), `import { drawSheet, withDpi } from ${JSON.stringify(join(import.meta.dir, "../src/print-sheet.ts"))};\nObject.assign(globalThis, { drawSheet, withDpi });`);
   const built = await Bun.build({ entrypoints: [join(dir, "page.ts")], target: "browser" });
   await tab.eval(`${await built.outputs[0]!.text()}\n;0`);
-});
+}, chromeStartMs + 30_000); // past Chrome's start-or-explain budget, so a stall on a cold CI runner gets its retry and says why (#6241)
 afterAll(() => { chrome?.stop(); app?.stop(); receiver.stop(true); rmSync(dir, { recursive: true, force: true }); });
 
 const admin = { authorization: `Bearer ${DEMO_ADMIN}` };
