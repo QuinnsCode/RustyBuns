@@ -37,6 +37,9 @@ css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in,.rb-report>.
 .rb-lobby-code{background:#fff}.rb-spaces-online{border-left-style:dashed}
 :where(.eq-toast){position:relative}
 .eq-toast::after{content:"";position:absolute;right:-7px;bottom:-7px;width:24px;height:24px;pointer-events:none;background:linear-gradient(135deg,transparent 50%,#fff 50%,#eee 68%,#c9c9c9);border-top-left-radius:3px 16px;filter:drop-shadow(-2px -1px 1.5px #1b1b1f59)}
+.rb-spaces-log{padding:5px 7px 5px 3px}.eq-chip.in .eq-btn{margin:4px 5px 4px 0}
+.eq-form .eq-status:not(:empty){justify-self:start;padding:4px 8px;border:2px solid var(--ink);border-radius:4px 8px 5px 7px;background:#fff;color:var(--ink);font-weight:600;rotate:-.8deg}.eq-form .eq-status a{color:var(--ink);font-weight:800;text-decoration:underline 2px var(--hot)}
+.eq select{appearance:none;padding-right:34px;font-weight:800;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%231b1b1f%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E") right 10px center/16px no-repeat,#fff}
 @media (max-width:600px){.rb-report .eq-form{rotate:none}}
 @media (max-width:720px){.eq-coach{top:140px}}` }; // on a phone the tutorial's card sits under the HUD's buttons and park picker
 

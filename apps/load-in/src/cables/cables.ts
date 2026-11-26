@@ -57,7 +57,8 @@ export interface Cables { runs: Run[]; caseKey: string | null; rnd: () => number
 /** What the road case holds when you open it. */
 export const CASE_LOAD: readonly { key: string; kind: CableKind; lengthM: number; ends?: Ends }[] = [
   { key: "power-10", kind: "power", lengthM: 10 },
-  { key: "speaker-10", kind: "speaker", lengthM: 10 },
+  // the guitar cab's inputs are quarter-inch jacks (its panel), so the garage's speaker lead is jack to jack
+  { key: "speaker-10", kind: "speaker", lengthM: 10, ends: ["ts", "ts"] },
   { key: "inst-6", kind: "instrument", lengthM: 6 },
 ];
 

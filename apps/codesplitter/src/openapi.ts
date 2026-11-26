@@ -921,7 +921,7 @@ const OPS: Record<string, Record<string, Op>> = {
       query: { pr: int("one PR's answer instead of the whole board"), brief: bool("about four lines, ids first: {brief}, instead of the rows"),
         fields: str("comma list of row fields to keep (ci, owner, stackedOn, ...): {main, prs: [{pr, ...}], mergeable}") },
       ok: obj({ main: { type: ["string", "null"], description: "the main commit the board was staged on" }, at: { type: ["integer", "null"], description: "ms of the last update" },
-        prs: arr(loose("{pr, title?, head, ci, failing?, stackedOn?, tiers, files, clashes: [{kind, key, with, main?}], owner?, blast?: {apps, prs}, at}")),
+        prs: arr(loose("{pr, title?, head, ci, failing?, stackedOn?, tiers, files, clashes: [{kind, key, with, main?}], owner?, blast?: {apps, prs}, stall?, at}")),
         waves: arr(arr(int("a PR number"))), mergeable: arr(int("a PR nothing holds up")), hits: loose("{tier: percent that landed exactly, or null}") }) },
     post: { id: "update_board", summary: "Post the rows of the PRs whose stage moved (the crew)", tag: "Branches",
       description: "What scripts/mervin-live.ts sends: `prs` are upserted by PR number, `drop` removes merged or closed ones, `replace` removes every row not in `prs`, and `hits` replaces the tiers' track record.",

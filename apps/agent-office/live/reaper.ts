@@ -32,6 +32,7 @@
 import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { NAME as BOX } from "../sandbox/box.ts";
+import { every } from "./every.ts";
 import { WORKTREES } from "./sweep.ts";
 
 export interface Proc {
@@ -407,9 +408,5 @@ export async function reapOnce(floors: () => Iterable<ReapFloor>, toast: (messag
 
 /** Every `everyMs` (5 minutes, beside the mem samples), a reaper round. The office starts it once. */
 export function startReaper(floors: () => Iterable<ReapFloor>, toast: (message: string) => void, everyMs = 300_000) {
-  const tick = () => void reapOnce(floors, toast).catch((e) => console.warn("[rb] reaper:", (e as Error).message));
-  tick();
-  const timer = setInterval(tick, everyMs);
-  timer.unref?.();
-  return () => clearInterval(timer);
+  return every(everyMs, () => reapOnce(floors, toast), { name: "reaper", first: 0 });
 }
