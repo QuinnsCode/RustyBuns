@@ -38,6 +38,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { arr, bool, check, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { type Allowance, type Finding, allowance, lint } from "./lint.ts";
 import { AFTER_BOT, RUN_FIELDS, Runs, headRuns } from "./pr.ts";
 import { BLOCKER_LABEL, blockerOf } from "../apps/agent-office/ester/blockers.ts";
 
@@ -84,8 +85,24 @@ export const KICK_MESSAGE = "Start CI (after-bot push started no checks)";
 const MERGED_LINE = /^merged main in after #\d+/im;
 const flagMark = (sha: string) => `<!-- after:unchecked ${sha} -->`;
 
-/** `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. */
-export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null }
+/**
+ * `lineMerge`: Mervin's, which settles git's conflicts; without it every conflict goes to a person. `unused`: run on
+ * the files Mervin settled, before the push; each line it gives back (`` `path`: why ``) stops the push for a person.
+ */
+export interface PassOpts { dry?: boolean; token?: boolean; now?: number; checkAfter?: number; lineMerge?: LineMerge | null; unused?: ((files: string[]) => string[]) | null }
+
+/**
+ * A clean line merge can still leave a function with no callers (both sides moved its one call; #6015, #6017), which
+ * fails CI's lint after the push. One line per settled file with more no-unused-vars findings than lint.allow.json allows.
+ */
+export function newUnused(all: Finding[], allowed: Allowance, files: string[]): string[] {
+  return files.flatMap((f) => {
+    const hits = all.filter((x) => x.file === f && x.rule === "no-unused-vars");
+    if (hits.length <= (allowed[f]?.["no-unused-vars"] ?? 0)) return [];
+    const names = hits.map((h) => /'([^']+)'/.exec(h.message)?.[1] ?? `line ${h.line}`);
+    return [`\`${f}\`: Mervin's merge leaves ${names.join(", ")} with no callers (lint's no-unused-vars would fail)`];
+  });
+}
 
 /** A `Merged main in after` PR whose head is still the bot's: has it CI, and if not, start it (token) or flag it once (no token). Null when the head is someone else's. */
 function ciCheck(gh: Gh, git: Git, pr: AfterPr, o: Required<PassOpts>): string | null {
@@ -150,7 +167,7 @@ const fileOf = (line: string) => line.slice(1, line.indexOf("`", 1));
 
 /** One pass over the open PRs; answers one line per PR it looked at. `token`: pushes run CI (AFTER_TOKEN is set). */
 export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
-  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, ...opts }, { dry, token } = o;
+  const o: Required<PassOpts> = { dry: false, token: false, now: Date.now(), checkAfter: CHECK_AFTER, lineMerge: null, unused: null, ...opts }, { dry, token } = o;
   const out: string[] = [];
   const must = (...a: string[]) => {
     const r = git(...a);
@@ -230,6 +247,14 @@ export function pass(gh: Gh, git: Git, opts: PassOpts = {}): string[] {
     }
     const root = must("rev-parse", "--show-toplevel").trim();
     for (const { f, text } of done) { writeFileSync(join(root, f), text!); must("add", "--", f); }
+    const code = files.filter((f) => /\.[cm]?[jt]sx?$/.test(f));
+    let unused: string[];
+    try { unused = o.unused && code.length ? o.unused(code) : []; }
+    catch (e) { git("merge", "--abort"); throw e; }
+    if (unused.length) {
+      git("merge", "--abort");
+      return { conflicts: unused, settled: "" };
+    }
     must("commit", "-q", "--no-edit");
     must("push", "-q", "origin", `HEAD:${pr.headRefName}`);
     return { conflicts: [], settled: `git's merge of main conflicted, and Mervin's line merge (apps/codesplitter/scripts/shadow.ts) settled every file:\n\n${files.map((f) => `- \`${f}\``).join("\n")}` };
@@ -297,7 +322,8 @@ if (import.meta.main) {
     console.log(`::error::Mervin's line merge didn't load, so conflicts go to a person (run bun install --frozen-lockfile): ${e instanceof Error ? e.message : String(e)}`);
     process.exitCode = 1;
   }
-  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge };
+  const unused = (files: string[]) => newUnused(lint(files), allowance(), files);
+  const opts: PassOpts = { dry: process.argv.includes("--dry"), token: process.env.HAS_AFTER_TOKEN === "true", lineMerge, unused };
   const lines = pass(ghCli, git, opts);
   console.log(lines.length ? lines.join("\n") : "no open PR says merge after, and no fixed blocker holds one");
   // A pass that pushed looks again a few minutes on, so a head that got no CI is started or flagged now, not next hour.

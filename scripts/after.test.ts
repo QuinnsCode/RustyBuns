@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Runs } from "./pr.ts";
 import { lineMerge } from "../apps/codesplitter/scripts/shadow.ts";
-import { type AfterPr, type Gh, type Head, NO_CHECKS, type PrState, KICK_MESSAGE, pass } from "./after.ts";
+import { type AfterPr, type Gh, type Head, NO_CHECKS, type PrState, KICK_MESSAGE, newUnused, pass } from "./after.ts";
+import type { Finding } from "./lint.ts";
 
 setDefaultTimeout(30_000);
 
@@ -69,12 +70,15 @@ const A = "- **Live line:** everything in the room edits one groove.", NEW = "- 
 const HIGH = '  "stack-mid-high": [0.6, 0.9, 0.5],', BASS = '  "stack-mid-bass": [0.75, 0.75, 0.85],';
 const doc = (...l: string[]) => `# fm-daw\n\n## Features\n\n${l.join("\n")}\n\nThe end.\n`;
 const gear = (...l: string[]) => `export const GEAR_SIZES = {\n  turntable: [0.453, 0.169, 0.353],\n${l.join("\n")}\n  "horn-sub-21": [1.1, 0.8, 1.0],\n};\n`;
-const settles: { why: string; file: string; base: string; main: string; branch: string; want: string | null }[] = [
+const NEXT_DOOR = { file: "gear.ts", base: gear(HIGH, BASS), main: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', BASS), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],') };
+const settles: { why: string; file: string; base: string; main: string; branch: string; want: string | null; unused?: string; stop?: string }[] = [
   { why: "a bullet the branch grew, a bullet main added after it", file: "README.md", base: doc(A, B), main: doc(A, NEW, B), branch: doc(`${A} It plays back in time.`, B), want: doc(`${A} It plays back in time.`, NEW, B) },
-  { why: "next-door rows each side changed", file: "gear.ts", base: gear(HIGH, BASS), main: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', BASS), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', '  "stack-mid-bass": [0.7, 0.8, 0.85],') },
-  { why: "one row changed two ways stops", file: "gear.ts", base: gear(HIGH, BASS), main: gear(HIGH, '  "stack-mid-bass": [0.8, 0.75, 0.85],'), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: null },
+  { why: "next-door rows each side changed", ...NEXT_DOOR, want: gear('  "stack-mid-high": [0.522, 0.92, 0.56],', '  "stack-mid-bass": [0.7, 0.8, 0.85],') },
+  { why: "one row changed two ways stops", file: "gear.ts", base: gear(HIGH, BASS), main: gear(HIGH, '  "stack-mid-bass": [0.8, 0.75, 0.85],'), branch: gear(HIGH, '  "stack-mid-bass": [0.7, 0.8, 0.85],'), want: null, stop: "Mervin left 1 card" },
+  // #6015, #6017: a clean merge that leaves a function with no callers would turn CI's lint red after the push
+  { why: "a clean merge lint finds unused callers in stops", ...NEXT_DOOR, want: null, unused: "Mervin's merge leaves mouth with no callers", stop: "Mervin's merge leaves mouth with no callers" },
 ];
-test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want }) => {
+test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want, unused, stop }) => {
   const root = mkdtempSync(join(tmpdir(), "after-"));
   try {
     const run = (cwd: string, ...a: string[]) => {
@@ -95,12 +99,14 @@ test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want })
     const said: string[] = [];
     const gh: Gh = { open: () => [pr], state: () => "MERGED", comment: (_, t) => { said.push(t); }, setBody: (_, b) => { pr.body = b; }, head: () => { throw new Error("no head"); }, runs: () => [], closedBlockers: () => [] };
     const before = ok(origin, "rev-parse", "mine");
-    const out = pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge });
+    const linted: string[][] = [];
+    const out = pass(gh, (...a) => run(ci, ...a), { token: true, lineMerge, unused: (fs) => { linted.push(fs); return unused ? fs.map((f) => `\`${f}\`: ${unused}`) : []; } });
     if (want === null) {
       expect(out).toEqual([`#12 conflicts with main in ${file}: commented`]);
       expect(ok(origin, "rev-parse", "mine")).toBe(before);
       expect(pr.body).toStartWith("Main conflicts after #9");
-      expect(said[0]).toContain(`- \`${file}\`: Mervin left 1 card`);
+      expect(said[0]).toContain(`- \`${file}\`: ${stop}`);
+      expect(ok(ci, "status", "--porcelain")).toBe("");
       return;
     }
     expect(out).toEqual(["#12 merged main in and pushed (settled its conflicts)"]);
@@ -108,7 +114,17 @@ test.each(settles)("main's conflict: $why", ({ file, base, main, branch, want })
     expect(ok(origin, "rev-list", "--parents", "-1", "mine").trim().split(" ")).toHaveLength(3);
     expect(said).toHaveLength(1);
     expect(said[0]).toContain(`- \`${file}\``);
+    expect(linted).toEqual(file.endsWith(".ts") ? [[file]] : []);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("newUnused names a settled file's functions past lint.allow.json's no-unused-vars count", () => {
+  const all: Finding[] = [
+    { file: "gear.ts", rule: "no-unused-vars", line: 3, message: "Function 'mouth' is declared but never used." },
+    { file: "gear.ts", rule: "no-unused-vars", line: 9, message: "Function 'wedge' is declared but never used." },
+    { file: "old.ts", rule: "no-unused-vars", line: 1, message: "Identifier 'x' is imported but never used." },
+  ];
+  expect(newUnused(all, { "old.ts": { "no-unused-vars": 1 } }, ["gear.ts", "old.ts"])).toEqual(["`gear.ts`: Mervin's merge leaves mouth, wedge with no callers (lint's no-unused-vars would fail)"]);
 });
 
 test("a PR a Claude watch holds is left to it: no push, no body change, picked up once the label goes", () => {
