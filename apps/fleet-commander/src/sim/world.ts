@@ -179,27 +179,43 @@ const wrap = (a: number) => ((a + Math.PI) % TAU + TAU) % TAU - Math.PI;
 export const rand = (w: World) => nextRandom(w, "rng");
 const dist = (ax: number, az: number, bx: number, bz: number) => len(bx - ax, bz - az);
 
-/** What the gravity wells do at a point: `boost` multiplies speed (a hull falling along a well goes faster: the
- *  slingshot), and `ax, az` is the pull toward the well's core, which bends a moving hull's path. */
-export function wellAt(w: World, x: number, z: number) {
+/** How a well moves what flies in it, by heading, `k` deep (0 at the edge, 1 at the centre): round it (an orbit) is
+ *  fast, falling in a little faster, and climbing straight out slow. So the slingshot (a route drawn round the rim)
+ *  beats the straight line through, which falls in fast and pays it all back climbing out. */
+export const WELL = { round: 2, deep: 2, fall: 0.3, climb: 0.25, scrape: 0.8, orbit: 0.8 };
+
+/** What the gravity wells do at a point for something heading `hx, hz`: `boost` multiplies speed and `ax, az` is the
+ *  pull toward the well's core, which bends a moving hull's path. With no heading, the plain fall (up to 1.8x). */
+export function wellAt(w: World, x: number, z: number, hx = 0, hz = 0) {
   let boost = 1, ax = 0, az = 0;
+  const hl = Math.hypot(hx, hz);
+  let pull = 1;
   for (const g of w.field?.wells ?? []) {
     const dx = g.x - x, dz = g.z - z, d = Math.hypot(dx, dz);
     if (d >= g.r || d < 1) continue;
     const k = 1 - d / g.r;
-    boost = Math.max(boost, 1 + 0.8 * k);
-    ax += (dx / d) * g.pull * k * k; az += (dz / d) * g.pull * k * k;
+    if (hl < 1e-6) boost = Math.max(boost, 1 + 0.8 * k);
+    else {
+      // Round it pays most low down, near the rim (`low` is 1 there): the slingshot is a low pass.
+      const fall = (hx * dx + hz * dz) / (hl * d), round = 1 - fall * fall, low = clamp((g.r - d) / Math.max(1, g.r - g.core), 0, 1);
+      boost *= 1 + WELL.round * low ** WELL.deep * round + k * (WELL.fall * Math.max(0, fall) - WELL.climb * Math.max(0, -fall));
+      // Going round is an orbit: the speed carries it out as hard as the well pulls it in.
+      pull = 1 - WELL.orbit * round;
+    }
+    ax += (dx / d) * g.pull * pull * k * k; az += (dz / d) * g.pull * pull * k * k;
   }
-  return { boost, ax, az };
+  return { boost: clamp(boost, 0.5, 2.4), ax, az };
 }
 
-/** Nothing flies into a star or a planet: a thing inside a core is put back on its rim. */
+/** Nothing flies into a star or a planet: a thing inside a core is put back on its rim. Says whether it was. */
 function outOfCores(w: World, o: { x: number; z: number }, pad: number) {
+  let hit = false;
   for (const g of w.field?.wells ?? []) {
     if (g.kind === "rift") continue;
     const d = dist(g.x, g.z, o.x, o.z), r = g.core + pad;
-    if (d < r && d > 0.01) { o.x = g.x + ((o.x - g.x) / d) * r; o.z = g.z + ((o.z - g.z) / d) * r; }
+    if (d < r && d > 0.01) { o.x = g.x + ((o.x - g.x) / d) * r; o.z = g.z + ((o.z - g.z) / d) * r; hit = true; }
   }
+  return hit;
 }
 
 /** Whether `side` can see the enemy ship, wing or mine `id`. Outside the theater everyone sees everything. */
@@ -331,10 +347,17 @@ function steerShip(w: World, s: Ship, gx: number, gz: number, faceA: number | nu
   s.v += clamp(speedWant - s.v, -h.speed * 0.3 * dt, h.speed * 0.3 * dt);
   if (!w.field) { s.x += Math.cos(s.a) * s.v * dt; s.z += Math.sin(s.a) * s.v * dt; return; }
   // In the theater a moving hull falls along the wells it crosses; one holding station keeps its place.
-  const f = wellAt(w, s.x, s.z), drift = s.v > 2 ? 1 : 0;
+  const f = wellAt(w, s.x, s.z, Math.cos(s.a), Math.sin(s.a)), drift = s.v > 2 ? 1 : 0;
   s.x += (Math.cos(s.a) * s.v * f.boost + f.ax * drift) * dt;
   s.z += (Math.sin(s.a) * s.v * f.boost + f.az * drift) * dt;
-  outOfCores(w, s, h.r);
+  // A hull flown into a planet grinds along its upper air, bleeding speed, helm hard over for the rim on the side
+  // its goal lies, until the goal is clear of the planet.
+  if (outOfCores(w, s, h.r)) {
+    s.v *= 1 - WELL.scrape * dt;
+    const g = w.field.wells.find((g) => g.kind !== "rift" && dist(g.x, g.z, s.x, s.z) < g.core + h.r + 1);
+    const out = g ? Math.atan2(s.z - g.z, s.x - g.x) : 0, off = wrap(want - out);
+    if (g && Math.abs(off) > Math.PI / 2) s.a = wrap(s.a + clamp(wrap(out + Math.sign(off) * (Math.PI / 2) - s.a), -h.turn * 3 * dt, h.turn * 3 * dt));
+  }
 }
 
 /** Where a ship of `side` shields `target` from: on the line from it to the nearest enemy capital, `k` of the way. */
@@ -425,7 +448,9 @@ function shipGuns(w: World, s: Ship, dt: number) {
     let f = bearFactor(s, target.x, target.z);
     if (o.k === "engage" && o.broadside && f === 1) f = 1.4;
     s.loudUntil = w.t + 4;
-    hitShip(w, target, vol * f, s.x, s.z, 0, s.side);
+    // Fire out of the dark: a hull that can't see the gun can't turn its shields to it or dodge.
+    const dark = !sees(w, target.side, s.id);
+    hitShip(w, target, vol * f * (dark ? DARK.dmg : 1), s.x, s.z, dark ? DARK.bypass : 0, s.side);
     const n = Math.round(3 + f * 4);
     for (let i = 0; i < n; i++) {
       const sp = HULL[target.kind].r * 0.8;
@@ -609,7 +634,7 @@ function stepWing(w: World, g: Wing, dt: number) {
   }
   if (goal) {
     const d = dist(g.x, g.z, goal.x, goal.z);
-    const sp = st.speed * (g.formation === "tight" ? 1.05 : 1) * wellAt(w, g.x, g.z).boost;
+    const sp = st.speed * (g.formation === "tight" ? 1.05 : 1) * (goal ? wellAt(w, g.x, g.z, goal.x - g.x, goal.z - g.z) : wellAt(w, g.x, g.z)).boost;
     if (d > 1) { const k = Math.min(1, (sp * dt) / d); g.x += (goal.x - g.x) * k; g.z += (goal.z - g.z) * k; }
     outOfCores(w, g, 40);
     // On a drawn route: past this point, on to the next. The group's clock starts once the route is flown.
@@ -641,7 +666,7 @@ function stepWing(w: World, g: Wing, dt: number) {
     else { const s = slot(g, i, live.length, heading); dx = g.x + s.x; dz = g.z + s.z; }
     // Steer: craft turn hard but not instantly; a loose wing jinks.
     const want = Math.atan2(dz - c.z, dx - c.x), dd = dist(c.x, c.z, dx, dz);
-    const well = w.field ? wellAt(w, c.x, c.z) : null;
+    const well = w.field ? wellAt(w, c.x, c.z, Math.cos(want), Math.sin(want)) : null;
     const speed = st.speed * (foe ? 1.15 : clamp(dd / 30, 0.6, 1.4)) * (well?.boost ?? 1);
     const jink = g.formation === "loose" ? Math.sin(w.t * 3 + i) * 0.5 : 0;
     const tvx = Math.cos(want + jink) * speed, tvz = Math.sin(want + jink) * speed;
@@ -752,8 +777,16 @@ export function step(w: World, brains: Brain[] = []) {
   judge(w);
 }
 
+/** What the interdictor's well does to a wave it drags out of hyperspace short: `tear` of each hull ripped away,
+ *  `stun` seconds dazed (no guns, no hangar), shields down. */
+/** Guns no one on the receiving end can see: `dmg` times the volley, `bypass` of it past the shields. */
+export const DARK = { dmg: 1.75, bypass: 0.6 };
+
+export const WARDEN = { tear: 0.3, stun: 18 };
+
 /** Reinforcements out of the hyperspace lane. With a navy hull sitting on the lane's mouth, its gravity well drags
- *  them out early, right on top of it, shields down and dazed; otherwise they drop in behind your flagship. */
+ *  them out early, right on top of it, torn, shields down and dazed, and their hangars launch only once they come
+ *  round; otherwise they drop in behind your flagship. */
 function arrive(w: World, wave: Wave) {
   wave.done = true;
   const warden = w.ships.find((s) => !s.dead && s.side === "navy" && dist(s.x, s.z, w.lane.x, w.lane.z) < 320);
@@ -766,9 +799,9 @@ function arrive(w: World, wave: Wave) {
     const s = addShip(w, "rim", spec.kind, `${rimShipName(w)}`, at.x + (i - (wave.ships.length - 1) / 2) * 160 * Math.cos(toward + Math.PI / 2), at.z + (i - (wave.ships.length - 1) / 2) * 160 * Math.sin(toward + Math.PI / 2), toward, true);
     if (w.field) { const p = hold ?? w.planet; s.post = { x: p.x + (i - 0.5) * 260, z: p.z + 200 }; s.order = { k: "move", x: s.post.x, z: s.post.z }; }
     else s.order = fl ? { k: "engage", target: fl.id, broadside: false } : { k: "hold" };
-    if (warden) { s.shield = 0; s.stunUntil = w.t + 8; }
+    if (warden) { s.shield = 0; s.hull -= s.hullMax * WARDEN.tear; s.stunUntil = w.t + WARDEN.stun; }
     fx(w, "jump", "rim", s.x, s.z, s.x - Math.cos(toward) * 600, s.z - Math.sin(toward) * 600);
-    spec.wings.forEach((role, j) => addWing(w, s, role, nextCall(w, "rim"), role === "bomber" ? 4 : 5, w.t + 4 + j * 3));
+    spec.wings.forEach((role, j) => addWing(w, s, role, nextCall(w, "rim"), role === "bomber" ? 4 : 5, (warden ? s.stunUntil : w.t) + 4 + j * 3));
   });
   say(w, "navy", "Sensors", warden ? `Compact ships ripped out of hyperspace on top of the ${warden.name}! Shields down, hit them now.` : w.field ? "Hyperspace wake at the lane: Compact reinforcements, heading in." : "Compact ships out of hyperspace behind us!");
 }
