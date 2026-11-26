@@ -546,10 +546,9 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     dz -= 0.0052 * er * gauss(ax - ex, 0.0135 * er) * gauss(y + 0.0005, 0.0068 * er);
     dz += 0.0035 * brow * gauss(y - 0.019, 0.007) * smooth(0.058, 0.03, ax);                  // the brow ridge
     const down = clamp01((0.008 - y) / (0.008 - tip + 0.004));                                // 0 at the bridge, 1 at the tip
-    // the bridge, narrow between the eyes, and a tip that rounds under into the nostrils rather than ending in a ledge
-    if (y < 0.014 && y > tip - 0.006) dz += lerp(0.005, 0.026, down ** 1.2) * gauss(x, lerp(0.0065, 0.0125 * nw, down)) * smooth(tip - 0.006, tip + 0.012, y);
-    dz += 0.0065 * gauss(ax - 0.015 * nw, 0.0062 * nw) * gauss(y - wing, 0.0062);              // the wings of the nose
-    dz -= 0.0022 * gauss(ax - 0.012 * nw, 0.0028) * gauss(y - wing + 0.0035, 0.0024);         // the crease round each wing
+    // the skin rising to meet the nose (its own mesh, below), so it grows out of the face instead of sitting on it
+    if (y < 0.014 && y > tip - 0.006) dz += lerp(0.002, 0.009, down ** 1.2) * gauss(x, lerp(0.009, 0.016 * nw, down)) * smooth(tip - 0.006, tip + 0.012, y);
+    dz -= 0.0018 * gauss(ax - 0.0185 * nw, 0.0026) * gauss(y - wing + 0.006, 0.006);          // the groove round each wing
     dz += 0.0045 * gauss(x, 0.02) * gauss(y + 0.062, 0.0045);                                 // upper lip
     dz -= 0.0012 * gauss(x, 0.0035) * gauss(y + 0.0585, 0.004);                               // the groove under the nose
     dz += 0.0045 * (1 + 0.3 * fc.lips) * gauss(x, 0.017) * gauss(y + 0.0735, 0.005);         // lower lip
@@ -567,7 +566,8 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
       + 0.4 * smooth(-0.095, -0.115, y);
     return [flush, shade];
   };
-  m.tube(ctl(), {
+  const skull = ctl();
+  m.tube(skull, {
     tone: fur ? undefined : faceTone,
     seg: 52, step: 0.0044 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
     bump: (p) => {
@@ -583,6 +583,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     },
     skin: B.head,
   });
+  if (!fur) nose(m, X, Y, z0, hs, tip, nw, (yy, xx) => { const v = new THREE.Vector3(X(xx), Y(yy), sample(skull, Y(yy)).f); face(v); return v.z; });
   // Eyes: a ball in each socket with a coloured iris and a pupil on its front, under lids that make an almond of it:
   // the upper lid covers the top of the iris, the lower one meets its bottom, so the eye looks out rather than stares.
   for (const s of [-1, 1]) {
@@ -633,7 +634,7 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
   if (o.hair !== "bald") {
     const under = o.hat !== "none", long = o.hair === "long";
     const thick = o.hair === "curly" ? 0.022 : long ? 0.012 : 0.008;
-    const skull = ctl(), ROWS = 14, COLS = 36, TOP = 0.05 + CROWN, FALL = -0.25;
+    const ROWS = 14, COLS = 36, TOP = 0.05 + CROWN, FALL = -0.25;
     /** The point on the skull at this turn round it and this height (from the eye line, head scale 1). */
     const scalp = (u: number, yy: number, out: THREE.Vector3) => {
       const t = u + 0.5 * Math.cos(u), hang = long && yy < -0.02;
@@ -662,6 +663,43 @@ function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
     }, "hair", (p) => (p.y < d.chin ? blend(B.chest, B.head, d.chin - 0.12 * hs, d.chin, p.y) : [B.head, B.head, 0]));
   }
   hat(m, d, o.hat, ctl);
+}
+
+/**
+ * The nose, a piece of its own on the face (the skull's points are too far apart to model one in): a narrow bridge from
+ * the brow, a tip that rounds under, a wing on each side and two nostrils under it. `surf(y, x)` is how far forward the
+ * face is there (head scale 1); each ring's back sits deep in the face, so its sides meet the skin at a slope, not a step.
+ */
+function nose(m: Builder, X: (v: number) => number, Y: (v: number) => number, z0: number, hs: number, tip: number, nw: number, surf: (y: number, x: number) => number) {
+  const long = tip / -0.054;
+  // [y, half-width, how far it stands off the face], down the ridge from the tip to between the brows
+  const RIDGE: [number, number, number][] = [[tip - 0.002, 0.0098, 0.0205], [tip + 0.002, 0.0108, 0.0235], [tip + 0.01, 0.0074, 0.02], [-0.027 * long, 0.0052, 0.0138], [-0.008, 0.0054, 0.0072], [0.009, 0.0085, 0]];
+  const ring = ([y, w, out]: [number, number, number], x = 0): Ctl => {
+    const wide = lerp(1, nw, smooth(-0.02, tip, y)), face = surf(y, x);
+    return { y: Y(y), x: X(x), w: X(w * wide), f: face + X(out), b: face - X(1.6 * out + 0.004) };
+  };
+  const front = surf(tip, 0) + X(0.0235);
+  const flush = (p: THREE.Vector3) => smooth(Y(tip + 0.025), Y(tip), p.y) * 0.75;
+  m.tube(RIDGE.map((r) => ring(r)), {
+    // twenty rings whatever its length, so every face of a build has the same number of points
+    seg: 22, step: X(0.011 - tip) / 20, capBottom: X(0.0075), front: 0.5, skin: B.head,
+    // the nostrils: two dark ovals under the tip, either side of the skin between them
+    slot: (y, p) => {
+      if (y > Y(tip - 0.0025)) return "skin";
+      const nx = (Math.abs(p.x) / hs - 0.0047 * nw) / (0.0022 * nw), nz = ((front - p.z) / hs - 0.011) / 0.0052;
+      return nx * nx + nz * nz < 1 ? "pupil" : "skin";
+    },
+    // the sides of the ridge turn from the light; the underside is in shadow
+    tone: (p, y) => [flush(p), y < Y(tip - 0.002) ? 0.55 : 0.3 * smooth(0.0025, 0.008, Math.abs(p.x) / hs) * smooth(Y(tip), Y(tip + 0.012), p.y)],
+  });
+  // the wings: a teardrop each side, broad and round at the bottom, leaning in to the ridge as it narrows upward
+  for (const s of [-1, 1]) {
+    const WING: [number, number, number, number][] = [[tip - 0.003, 0.0045, 0.0072, 0.0108], [tip + 0.003, 0.0052, 0.0088, 0.0108], [tip + 0.0095, 0.0028, 0.0035, 0.0088]];
+    m.tube(WING.map(([y, w, out, x]) => ring([y, w, out], x * nw * s)), {
+      seg: 14, step: X(0.0025), capBottom: X(0.0035), capTop: X(0.004), skin: B.head, slot: "skin",
+      tone: (p) => [0.55 * flush(p), 0.3 * smooth(Y(tip + 0.002), Y(tip - 0.005), p.y)],
+    });
+  }
 }
 
 function hat(m: Builder, d: Dims, kind: Hat, ctl: (grow?: number, lift?: number) => Ctl[]) {
