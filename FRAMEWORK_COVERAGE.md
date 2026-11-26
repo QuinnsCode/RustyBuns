@@ -211,7 +211,7 @@ This was a single hand run, not a `trial-github.ts` sweep ([#4803](https://githu
 | `pnpm install` | ok (pnpm 11.3.0) |
 | `init` | vite app, pnpm (npm before this run's fix) |
 | `add deploy` | keeps alchemy beta.87 + effect 4.1.4; installs 5 missing packages |
-| `plan --offline` | ok on beta.87, after Rat Stack's own content steps ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)) |
+| `plan --offline` | ok on beta.87, after Rat Stack's own content steps ([#5766](https://github.com/QuinnsCode/RustyBuns/issues/5766)); on a cold clone with no hand steps since #5781 (Nov 26, [#5782](https://github.com/QuinnsCode/RustyBuns/issues/5782)) |
 | `build desktop --dev`, `run desktop` | builds and serves |
 | `smoke apps/web` | stops at install: a workspace member alone ([#5768](https://github.com/QuinnsCode/RustyBuns/issues/5768)) |
 
