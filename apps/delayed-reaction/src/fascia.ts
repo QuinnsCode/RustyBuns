@@ -1,7 +1,8 @@
 // The menu's artwork: the front of a dub radio, drawn in code as small SVGs (no image files). Cold near-white on black
 // like the tunnel; the only colour is the lanes' own (the preset LEDs and tape codes, the VU meter's hot end). Weights,
 // as strings: a screw ~0.4 KB, the dial face ~4 KB, a worn knob ~3 KB, a VU meter ~2.5 KB, the grille and tape-fibre
-// tiles ~0.5 KB each. Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
+// tiles ~0.5 KB each; the Controls rows' hardware (a fader's printed scale ~1.6 KB, the bat-handle toggle ~1.3 KB a side,
+// the brushed plate ~0.5 KB). Wear, tears and scuffs come from seeded streams, so each piece wears the same way every time.
 import { mulberry32 } from "@rustybuns/util";
 
 const INK = "#e9ecf2";
@@ -113,13 +114,14 @@ export const backplate = [
 ].join(", ");
 
 /** The Controls sliders as a mixing desk's faders (the panel's `faders` tokens): a ribbed cap with a white index line, in a
- * sunken slot with a tick every tenth. Both are small inline SVG, under a kilobyte together. */
+ * sunken slot. Both are small inline SVG, under a kilobyte together. */
 export const faderCap = dataUri(`<defs><linearGradient id="fc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a5f6b"/><stop offset=".5" stop-color="#2a2d35"/><stop offset="1" stop-color="#16181d"/></linearGradient></defs>
   <rect x=".5" y=".5" width="15" height="27" rx="2.5" fill="url(#fc)" stroke="#000" stroke-opacity=".7"/>
   ${[5, 8, 20, 23].map((y) => `<line x1="3" x2="13" y1="${y}" y2="${y}" stroke="#000" stroke-opacity=".55"/><line x1="3" x2="13" y1="${y + 1}" y2="${y + 1}" stroke="#fff" stroke-opacity=".12"/>`).join("")}
   <rect x="2" y="13" width="12" height="2" fill="${INK}"/>`, 16, 28);
 export const faderSlot = [
-  `repeating-linear-gradient(90deg, ${INK}40 0 1px, transparent 1px 10%) 0 50% / 100% 100% no-repeat`,
+  // The ticks are printed on the plate under the slot (faderScale); the slot keeps only its dark groove and a lit lip.
+  `linear-gradient(transparent 85%, #ffffff1a 85%)`,
   "linear-gradient(#000, #1a1c22)",
 ].join(", ");
 /** The switches' knob: a square chrome cap, and lit, the same cap with the go lane's green LED in it. */
@@ -127,3 +129,34 @@ const cap = (led: string) => dataUri(`<rect x=".5" y=".5" width="15" height="15"
   <rect x="2" y="2" width="12" height="5" rx="1" fill="#fff" fill-opacity=".08"/><circle cx="8" cy="9.5" r="2.6" fill="${led}"/>`, 16, 16);
 export const switchKnob = `${cap("#3a3e48")} center / 100% 100%`;
 export const switchLit = `${cap(LANE_COLOURS[3])} center / 100% 100%`;
+
+/** A fader's printed scale, laid under its slot: a tick at every tenth (long at 0, 5 and 10) and the numbers 0 to 10 under
+ * them, as a mixing desk prints it. The SVG has no viewBox, so its x are shares of the slot's width and the numbers keep
+ * their size at any width. ~1.6 KB. */
+export const faderScale = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" overflow="visible">${Array.from({ length: 11 }, (_, i) => {
+  // The end ticks sit just inside the tile and their numbers hang inward, so neither is cut at the edge.
+  const x = i === 0 ? "0.5" : i === 10 ? "99.6%" : `${i * 10}%`, big = i % 5 === 0, anchor = i === 0 ? "start" : i === 10 ? "end" : "middle";
+  return `<line x1="${x}" x2="${x}" y1="0" y2="${big ? 6 : 3.5}" stroke="${INK}" stroke-opacity="${big ? 0.75 : 0.4}" stroke-width="1"/>`
+    + (i % 2 === 0 ? `<text x="${x}" y="15" text-anchor="${anchor}" font-size="8" fill="${INK}" fill-opacity=".6" font-family="${MONO}">${i}</text>` : "");
+}).join("")}</svg>`)}")`;
+
+/** A bat-handle toggle on its own small plate, OFF and ON printed either side: the lever thrown left and dark, or thrown
+ * right with the go lane's LED lit over it. ~1.3 KB each. */
+const toggle = (on: boolean) => {
+  const tip = on ? 41 : 15, led = on ? LANE_COLOURS[3] : "#2a2e36";
+  return dataUri(`<defs><linearGradient id="bat" x1="0" x2="1"><stop offset="0" stop-color="#f4f6fa"/><stop offset=".45" stop-color="#9aa0ac"/><stop offset="1" stop-color="#3a3e48"/></linearGradient>
+    <radialGradient id="nut" cx="40%" cy="35%"><stop offset="0" stop-color="#6a707c"/><stop offset="1" stop-color="#15171d"/></radialGradient></defs>
+    <rect x=".5" y=".5" width="55" height="33" rx="4" fill="#0d0f14" stroke="#000"/><rect x="1.5" y="1.5" width="53" height="31" rx="3.5" fill="none" stroke="#fff" stroke-opacity=".07"/>
+    <text x="7" y="29" font-size="6" letter-spacing=".6" fill="${INK}" fill-opacity="${on ? 0.4 : 0.85}" font-family="${MONO}">OFF</text>
+    <text x="49" y="29" text-anchor="end" font-size="6" letter-spacing=".6" fill="${INK}" fill-opacity="${on ? 0.85 : 0.4}" font-family="${MONO}">ON</text>
+    <circle cx="28" cy="7" r="2.6" fill="${led}"${on ? ` stroke="${led}" stroke-opacity=".35" stroke-width="3"` : ""}/>
+    <circle cx="28" cy="20" r="7" fill="url(#nut)" stroke="#000"/><circle cx="28" cy="20" r="4" fill="#0a0b0e"/>
+    <line x1="28" y1="20" x2="${tip}" y2="15" stroke="#000" stroke-width="5.5" stroke-linecap="round" stroke-opacity=".6"/>
+    <line x1="28" y1="20" x2="${tip}" y2="14" stroke="url(#bat)" stroke-width="4" stroke-linecap="round"/><circle cx="${tip}" cy="14" r="3" fill="#dfe3ea" stroke="#000" stroke-opacity=".6"/>`, 56, 34);
+};
+export const toggleOff = toggle(false), toggleOn = toggle(true);
+
+/** Brushed black metal for the plate under each section's rows: fine horizontal streaks of noise. ~0.5 KB, tiled. */
+export const brushed = dataUri(`<filter id="b"><feTurbulence type="fractalNoise" baseFrequency=".004 1.4" numOctaves="2" seed="9" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .45 -.2"/></filter><rect width="240" height="60" filter="url(#b)"/>`, 240, 60);
+/** A small screw as a background layer, for the section plates' corners. */
+export const screwAt = (pos: string, turn: number) => `${dataUri(screwBody(turn, "s"), 16, 16)} ${pos} / 9px 9px no-repeat`;
