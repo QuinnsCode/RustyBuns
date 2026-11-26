@@ -160,11 +160,12 @@ test("a seated worker's fork loop, or a branch past the memory cap, is ended and
   const seat = tree("gadget-9");
   const told: string[] = [];
   const floor = { dir: repo, workers: { list: () => [{ id: "w9", name: "Gadget", worktree: { path: path.join(WORKTREES, "gadget-9") } }], prompt: (id: string, text: string) => { told.push(`${id} ${text}`); return undefined; } } };
-  // the worker's session (a sleep named claude), and a loop it started that keeps forking one command
+  // the worker's session (a bun named claude: a multicall coreutils, as Ubuntu 26.04's, runs by its name and would
+  // not start as `claude`), and a loop it started that keeps forking one command
   const bin = path.join(repo, "session-bin");
   mkdirSync(bin, { recursive: true });
-  symlinkSync(Bun.which("sleep")!, path.join(bin, "claude"));
-  const claude = Bun.spawn([path.join(bin, "claude"), "120"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
+  symlinkSync(process.execPath, path.join(bin, "claude"));
+  const claude = Bun.spawn([path.join(bin, "claude"), "-e", "setTimeout(() => {}, 120_000)"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
   const loop = Bun.spawn(["sh", "-c", "i=0; while [ $i -lt 150 ]; do sleep 60 & i=$((i+1)); done; wait"], { cwd: seat, stdio: ["ignore", "ignore", "ignore"] }).pid;
   started.push(claude, loop);
   const copies = () => processes().filter((p) => p.ppid === loop && p.args === "sleep 60").map((p) => p.pid);
