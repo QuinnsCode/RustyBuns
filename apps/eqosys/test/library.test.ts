@@ -8,6 +8,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ADMIN, asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 import { Studios } from "../src/app/Studio.tsx";
+import { deleteAccount } from "../src/members.ts";
 import type { Studio } from "../src/studios.ts";
 import type { Browse } from "../src/browse.ts";
 
@@ -113,7 +114,15 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
   expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio");
   expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio&e=gamestep");
-  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list" }, { cookie: boss })).result.listing.state).toBe("listed");
+  // Listing takes the `at` the queue gave: origins changed and sent again since that read aren't listed unread.
+  const read = async () => (await run("eq_listing_review", {}, { cookie: boss })).result.queue[0].at as number;
+  const seen = await read();
+  expect((await run("eq_listing_save", { ...draft, origins: ["https://elsewhere.example"] }, { cookie: maya })).result.listing.state).toBe("draft");
+  await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya });
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at: seen }, { cookie: boss })).status).toBe(409);
+  expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
+  await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya });
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at: await read() }, { cookie: boss })).result.listing.state).toBe("listed");
 
   // Listed: the stranger signs in and finds it on the shelf, with the studio's name on it.
   expect((await signIn("sam@example.com")).token).toBeTruthy();
@@ -128,6 +137,12 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect(await formIn(theirs, "Change Rocket Golf")).toMatchObject({ erase: `${GAME}/erase` });
   expect(inbox.reports).toEqual([expect.objectContaining({ kind: "bug", title: "Ball goes through the green", text: "Third hole, every time.", page: "/play", from: expect.stringMatching(/^u_/) })]);
   expect(JSON.stringify(inbox.reports)).not.toContain("sam@example.com");
+
+  // A studio's game is somebody else's code holding the player's token: no studios, no download, no deletion, no say in who their friends are.
+  expect((await run("eq_studios", {}, { bearer: stranger })).status).toBe(403);
+  expect((await run("eq_studio_make", { name: "Mine", kind: "solo" }, { bearer: stranger })).status).toBe(403);
+  expect((await call("/api/privacy/export", { bearer: stranger, origin: GAME })).res.status).toBe(403);
+  expect((await call("/api/account/delete", { json: {}, bearer: stranger, origin: GAME })).res.status).toBe(403);
 
   // The shared achievements: played unlocks, alpha doesn't while it is experimental, its own list is none yet, and tutorial waits for its tutorial.
   const achieve = (id: string) => call("/q/achieve", { json: { id }, bearer: stranger, origin: GAME }).then((r) => r.res.status);
@@ -170,4 +185,43 @@ test("the machine checks say what is wrong: a dead origin, a missing file, no si
   expect(down.find((c: { name: string }) => c.name === "runs")?.says).toBe("not run: the browser stopped (429 too many browsers); check again later");
   expect(down).toHaveLength(6);
   expect((await run("eq_listing_review", { id: "park-hide-seek", verdict: "check" }, boss)).error).toContain("no game");
+});
+
+test("a studio's game takes no name a token already means something by, and only the player's own can hold up their deletion", async () => {
+  const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET) });
+  const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
+  const [boss, maya] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com")];
+  await signUp("Sam", "sam@example.com");
+  const run = async (name: string, args: unknown, cookie: string) => {
+    const { res } = await call(`/api/tools/${name}`, { json: args, cookie });
+    return { status: res.status, ...await res.json() as { result?: any } };
+  };
+  const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, maya)).result.id;
+  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME], erase: `${GAME}/erase` };
+  for (const id of ["eqosys", "erase", "qlave", "qlave-admin"]) expect((await run("eq_listing_save", { ...draft, id }, maya)).status).toBe(409);
+
+  // Listed, with an erase URL that never answers 200. Sam never opened it: it isn't told who Sam is, and Sam's deletion goes through.
+  await run("eq_listing_save", draft, maya);
+  await run("eq_listing_send", { id: "rocket-golf" }, maya);
+  const at = (await run("eq_listing_review", {}, boss)).result.queue[0].at;
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at }, boss)).status).toBe(200);
+  const real = globalThis.fetch, told: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new Request(input, init).url;
+    if (url === `${GAME}/erase`) { told.push(url); return new Response("no", { status: 500 }); }
+    return url.startsWith("https://") ? new Response("ok") : real(input, init);
+  }) as typeof fetch;
+  try {
+    const gone = async (email: string) => {
+      const { id } = (await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind(email).first<{ id: string }>())!;
+      return deleteAccount(conf, id, "http://eqosys.local");
+    };
+    expect(await gone("sam@example.com")).toBe(true);
+    expect(told).toEqual([]);
+    // Maya opened it once: it is asked, and its refusal still doesn't keep Maya's account.
+    const a = await asks("rocket-golf", GAME);
+    await call("/do/signin", { form: { ...a.form, email: "maya@example.com", password: PASSWORD } });
+    expect(await gone("maya@example.com")).toBe(true);
+    expect(told.length).toBeGreaterThan(0);
+  } finally { globalThis.fetch = real; }
 });

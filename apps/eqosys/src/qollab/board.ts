@@ -36,7 +36,8 @@ type Row = { id: string; app: string; user_id: string; name: string; kind: strin
 const toPost = async (r: Row): Promise<Post> => ({
   id: r.id, app: r.app, by: { id: await publicId(r.app, r.user_id), name: r.name }, kind: r.kind, ...(r.ref ? { ref: r.ref } : {}), text: r.text, at: r.at, reacts: r.reacts,
 });
-const SELECT = `SELECT p.id, p.app, p.user_id, u.name, p.kind, p.ref, p.text, p.at,
+// A name is clipped as the pages' guard takes it (packages/util board.ts): one longer would fail the whole feed.
+const SELECT = `SELECT p.id, p.app, p.user_id, substr(u.name, 1, 100) AS name, p.kind, p.ref, p.text, p.at,
   (SELECT COUNT(*) FROM reactions r WHERE r.app = p.app AND r.ref = 'post:' || p.id) AS reacts FROM posts p JOIN "user" u ON u.id = p.user_id`;
 
 /** Each ref's counts by icon, and the asker's own icons on them. */
@@ -63,7 +64,7 @@ export const isBoard = (pathname: string) => /^\/q\/(?:posts(?:\/[^/]+(?:\/(?:re
 
 /** The people this person blocked, newest first. */
 const blocksOf = async (conf: Env, who: string) => (await conf.DB.prepare(
-  `SELECT b.blocked_id, u.name, b.at FROM blocks b JOIN "user" u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.at DESC LIMIT ${BLOCKS_MAX}`)
+  `SELECT b.blocked_id, substr(u.name, 1, 100) AS name, b.at FROM blocks b JOIN "user" u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.at DESC LIMIT ${BLOCKS_MAX}`)
   .bind(who).all<{ blocked_id: string; name: string; at: number }>()).results;
 
 export async function board(req: Request, conf: Env): Promise<Response> {
@@ -98,10 +99,12 @@ export async function board(req: Request, conf: Env): Promise<Response> {
     if (!asked || !me.app.board!.kinds.includes(asked.kind)) return json({ error: `send { kind: ${me.app.board!.kinds.join(" | ")}, text, ref? }` }, 400, head);
     if (!text || text.length > POST_MAX) return json({ error: `a post is 1-${POST_MAX} characters` }, 400, head);
     if (asked.ref && !REF.test(asked.ref)) return json({ error: "a ref is up to 80 letters, digits and :._-" }, 400, head);
-    const lately = await conf.DB.prepare("SELECT COUNT(*) AS n FROM posts WHERE user_id = ? AND app = ? AND at > ?").bind(me.who.id, me.app.id, now - HOUR).first<number>("n");
-    if ((lately ?? 0) >= POSTS_AN_HOUR) return json({ error: `that's ${POSTS_AN_HOUR} posts this hour; wait a while` }, 429, head);
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
-    await conf.DB.prepare("INSERT INTO posts (id, app, user_id, kind, ref, text, at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, me.app.id, me.who.id, asked.kind, asked.ref ?? null, text, now).run();
+    // The hour's count and the insert are one statement, so posts sent together can't all see room.
+    const put = await conf.DB.prepare(`INSERT INTO posts (id, app, user_id, kind, ref, text, at) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+      WHERE (SELECT COUNT(*) FROM posts WHERE user_id = ?3 AND app = ?2 AND at > ?8) < ?9 RETURNING id`)
+      .bind(id, me.app.id, me.who.id, asked.kind, asked.ref ?? null, text, now, now - HOUR, POSTS_AN_HOUR).first<string>("id");
+    if (!put) return json({ error: `that's ${POSTS_AN_HOUR} posts this hour; wait a while` }, 429, head);
     const row = await conf.DB.prepare(`${SELECT} WHERE p.id = ?`).bind(id).first<Row>();
     return json({ post: await toPost(row!) } satisfies PostMade, 200, head);
   }

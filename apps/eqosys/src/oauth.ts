@@ -118,7 +118,7 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
       const traded = await exchange(conf, app.id, body.code, body.code_verifier, body.redirect_uri);
       if (!traded) return oops("invalid_grant", "that code is used, late, for another client or redirect_uri, or the verifier is wrong", 400, head);
       // Native apps ask for offline_access and keep the refresh token; a site with its own sessions doesn't need one.
-      const out = await tokens(conf, iss, traded.who, traded.nonce, /\boffline_access\b/.test(body.scope ?? ""));
+      const out = await tokens(conf, iss, traded.who, traded.nonce, /\boffline_access\b/.test(body.scope ?? ""), traded.web);
       return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
     }
     if (!body.refresh_token) return oops("invalid_request", "send refresh_token", 400, head);

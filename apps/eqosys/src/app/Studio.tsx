@@ -134,7 +134,7 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         <button className={btn(true)} type="submit">{c ? "Save" : "Connect"}</button>
         {c && <button className={btn()} type="submit" name="off" value="1" formNoValidate>Take it off</button>}
       </form>
-      {/* Domain proof (sso.ts proveDomain): a proved domain links coworkers' existing accounts, and no other studio can claim it. */}
+      {/* Domain proof (sso.ts proveDomain): company sign-in starts once the domain is proved, and no other studio can claim it. */}
       {c && (c.proved ? (
         <form method="post" action="/do/studio-sso" aria-label={`Who must use ${s.name}'s company sign-in`}>
           <p className="mut">{c.domain} is proved: coworkers who already have an account here are linked at their first company sign-in.</p>
@@ -144,7 +144,7 @@ function CompanySignIn({ s, origin }: { s: Shelf; origin: string }) {
         </form>
       ) : (
         <form method="post" action="/do/studio-sso" aria-label={`Prove ${s.name} owns ${c.domain}`}>
-          <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Until then, coworkers who already have an account here sign in the usual way.</p>
+          <p className="mut">Prove {c.domain} is yours: add this TXT record to it, then check. Company sign-in starts once it's proved.</p>
           <code>{proofOf(s.id)}</code>
           <input type="hidden" name="studio" value={s.id} />
           <button className={btn()} type="submit" name="prove" value="1">Check the record</button>

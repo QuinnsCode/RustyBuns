@@ -29,7 +29,8 @@ A studio's game is a **listing**, a row in D1 with the same fields plus its stud
 `src/listings.ts` instead of the fixed list, and `mayUse` for who: a draft or a game in review answers only its studio.
 A listing's id is a plain slug (`rocket-golf`), unique across the Library and kept by its studio once taken (even after
 a pull): an id in `APPS` can't be taken, and two studios can't collide. (Studios have no slug of their own yet, and an id
-rides in URLs, `aud` and labels, so it has no `/`.)
+rides in URLs, `aud` and labels, so it has no `/`.) The names a token's `aud` already means something by (`eqosys`,
+`erase`, `qlave`, `qlave-admin`) and our games not yet in `APPS` (`load-in`, `fleet-commander`) can't be taken either.
 
 ## The steps
 
@@ -51,7 +52,8 @@ rides in URLs, `aud` and labels, so it has no `/`.)
   reviewer runs `bun run probe --url <origin> --js "<game>.state()"`, the line the check hands over. Then a person looks: it plays, its name
   and card don't pass it off as someone else's game, nothing the house rules keep out (the same as codeSplitter's:
   no weapons, sexual or political content), and an `erase` URL if it keeps data per account.
-- **Listed.** The tile shows in its genre's row with the studio's name on it, its origins join the CORS set, and
+- **Listed.** The reviewer lists the game as they read it (the queue's `at`): a change made since is refused and read again.
+  The tile shows in its genre's row with the studio's name on it, its origins join the CORS set, and
   anyone can sign in. Changing the origins or returns sends it back to review, since those are where codes go;
   card text and the shot change freely.
 - **Refused.** Back to the studio with a note. Nothing about it shows.
@@ -63,7 +65,10 @@ Who reviews: the super admin for now. A reviewer role comes when there are more 
 ## What a studio's game gets, and doesn't
 
 - The shared achievements (`SHARED`) only; its own list comes later, from its studio, not a PR here.
-- Friends, parties, rooms and saves through Qollab, the same doors our games use, under the same per-app limits.
+- Friends, parties, rooms and saves through Qollab, the same doors our games use, under the same per-app limits. Who a
+  person's friends are stays theirs: a studio's game can't ask, accept, drop or hand out the friend link.
+- No studios (they hold other people's names and emails), no download of the player's data and no deleting their account.
+- Its `erase` URL is called only for people who opened it, after our apps have erased, and can't hold the deletion up.
 - Reports from its players go to its studio in eqosys, not to issues on this repo (`reports.ts` files ours there).
 - Its visitors in the studio's own Visitors view, not ours.
 
