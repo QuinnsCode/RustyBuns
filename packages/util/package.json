@@ -58,6 +58,7 @@
     "./skin": "./src/skin.ts",
     "./socket": "./src/socket.ts",
     "./stripe": "./src/stripe.ts",
+    "./supervise": "./src/supervise.ts",
     "./token": "./src/token.ts",
     "./train": "./src/train.ts",
     "./tutorial": "./src/tutorial.ts",
