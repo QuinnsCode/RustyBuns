@@ -32,17 +32,32 @@ import { unsupported } from "./glue/fit.ts";
 // @sveltejs/adapter-cloudflare builds the Worker and the static assets into one directory.
 const SVELTE_ASSETS = ".svelte-kit/cloudflare";
 const SVELTE_WORKER = `${SVELTE_ASSETS}/_worker.js`;
-// Nitro's cloudflare-module preset (Nuxt) builds the Worker and the client next to each other in .output/.
-const NUXT_WORKER = ".output/server/index.mjs";
-const NUXT_ASSETS = ".output/public";
-// Qwik City's cloudflare-pages adapter builds the client into dist/ and writes dist/_worker.js, a
-// module Worker over server/entry.cloudflare-pages.js (the shape Pages calls "advanced mode").
-const QWIK_ASSETS = "dist";
-const QWIK_WORKER = `${QWIK_ASSETS}/_worker.js`;
 const QWIK_ADAPTER = "adapters/cloudflare-pages/vite.config.ts";
-// OpenNext's Cloudflare adapter (Next.js) runs `next build`, then writes the Worker and the static files to .open-next/.
-const NEXT_WORKER = ".open-next/worker.js";
-const NEXT_ASSETS = ".open-next/assets";
+// Frameworks whose own build writes the Worker the desktop runs: wrangler's main (or `main`) is that
+// built file and its assets (or `assets`) the built static folder. `build` turns the build script
+// init found into the Worker build. `fixed`: the adapter always writes `main` and `assets`, whatever
+// wrangler names.
+type BuiltWorker = { main: string; assets: string; build: (inf: ReturnType<typeof infer>, build: string | undefined) => string; fixed?: true };
+const BUILT_WORKERS: Partial<Record<string, BuiltWorker>> = {
+  // Nitro's cloudflare-module preset builds the Worker and the client next to each other in .output/.
+  nuxt: { main: ".output/server/index.mjs", assets: ".output/public", build: (inf, b) => b || `${inf.execCmd("nuxt")} build` },
+  // SolidStart 2 on Nitro 3's cloudflare_module preset: the same .output/ layout, built by Vite.
+  solidstart: { main: ".output/server/index.mjs", assets: ".output/public", build: (inf, b) => b || `${inf.execCmd("vite")} build` },
+  // Qwik City's cloudflare-pages adapter builds the client into dist/ and writes dist/_worker.js, a module
+  // Worker over server/entry.cloudflare-pages.js. Its build is the client build, then the adapter's server
+  // build (what `qwik build` runs, minus its tsc pass).
+  qwik: {
+    main: "dist/_worker.js", assets: "dist", fixed: true,
+    build: (inf, b) => !b || /\bqwik build\b/.test(b) ? `${inf.execCmd("vite")} build && ${inf.execCmd("vite")} build -c ${QWIK_ADAPTER}` : b,
+  },
+  // OpenNext's Cloudflare adapter (Next.js) runs the app's build script (`next build`) itself, then writes
+  // .open-next/worker.js and .open-next/assets. So the Worker build is OpenNext's command, not the build script.
+  next: {
+    main: ".open-next/worker.js", assets: ".open-next/assets",
+    build: (inf) => inf.scripts.build?.includes("opennextjs-cloudflare") ? inf.runCmd("build") : `${inf.execCmd("opennextjs-cloudflare")} build`,
+  },
+};
+const dotless = (p: string) => p.replace(/^\.\//, "");
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
@@ -280,15 +295,9 @@ async function init() {
   // SolidStart 2 builds through Nitro too: with no wrangler file its build is the same production server.
   if (inf.framework === "solidstart" && !src && !spa) { await initStart(inf); return; }
   const svelteWorker = inf.framework === "sveltekit" && !spa;
-  // Nuxt: Nitro's cloudflare-module preset builds the Worker; the desktop runs it.
-  const nuxtWorker = inf.framework === "nuxt" && !spa;
-  // SolidStart on Nitro's cloudflare_module preset: wrangler's main is the built Worker (.output/server/index.mjs)
-  // and its assets the built static files (.output/public); the desktop runs that same build.
-  const solidWorker = inf.framework === "solidstart" && !spa;
-  const qwikWorker = inf.framework === "qwik" && !spa;
-  // Next.js: @opennextjs/cloudflare builds the Worker; the desktop runs it.
-  const nextWorker = inf.framework === "next" && !spa;
-  if ((!src && !astroWorker && !svelteWorker && !nuxtWorker && !qwikWorker && !nextWorker) || spa) {
+  // Nuxt, SolidStart, Qwik City, Next.js: the framework's Cloudflare build writes the Worker; the desktop runs it.
+  const builtWorker = spa ? undefined : BUILT_WORKERS[inf.framework];
+  if ((!src && !astroWorker && !svelteWorker && !builtWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
   }
@@ -312,7 +321,7 @@ async function init() {
   // Cloudflare Pages: no Worker main, a functions/ folder routed by file name. The Worker is the one
   // `rustybuns pages-functions` writes from that folder, its build writes it first, and it sees every
   // request before the static files, as Pages Functions do (_routes.json sends the rest straight there).
-  const pagesWorker = !w.main && !astroWorker && !svelteWorker && !nuxtWorker && !qwikWorker && !nextWorker && hasPagesFunctions();
+  const pagesWorker = !w.main && !astroWorker && !svelteWorker && !builtWorker && hasPagesFunctions();
   if (pagesWorker) {
     // vite's outDir is relative to its root (root: "src", outDir: "../dist" builds into dist/)
     const viteOut = inf.vite.outDir ? join(inf.vite.root ?? ".", inf.vite.outDir).split("\\").join("/") : null;
@@ -339,23 +348,18 @@ async function init() {
   // SvelteKit: adapter-cloudflare builds the Worker and its assets into .svelte-kit/cloudflare.
   if (svelteWorker && !w.main) cfg.worker!.main = SVELTE_WORKER;
   if (svelteWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("vite")} build`;
-  // Nuxt: `nuxt build` with the cloudflare-module preset writes .output/server/index.mjs and .output/public.
-  if (nuxtWorker) cfg.worker!.main = (w.main ?? NUXT_WORKER).replace(/^\.\//, "");
-  if (nuxtWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("nuxt")} build`;
-  // Qwik City: the client build, then the adapter's server build (what `qwik build` runs, minus its tsc pass).
-  if (qwikWorker) {
-    if (!w.main) cfg.worker!.main = QWIK_WORKER;
-    if (!cfg.worker!.build || /\bqwik build\b/.test(cfg.worker!.build)) cfg.worker!.build = `${inf.execCmd("vite")} build && ${inf.execCmd("vite")} build -c ${QWIK_ADAPTER}`;
-  }
-  // Next.js: `opennextjs-cloudflare build` runs the app's build script (`next build`) itself, then writes
-  // .open-next/worker.js and .open-next/assets. So the Worker build is OpenNext's command, not the build script.
-  if (nextWorker) {
-    cfg.worker!.main = (w.main ?? NEXT_WORKER).replace(/^\.\//, "");
-    cfg.worker!.build = inf.scripts.build?.includes("opennextjs-cloudflare") ? inf.runCmd("build") : `${inf.execCmd("opennextjs-cloudflare")} build`;
+  if (builtWorker) {
+    const main = builtWorker.fixed ? builtWorker.main : dotless(w.main ?? builtWorker.main);
+    cfg.worker!.main = builtWorker.fixed && w.main ? cfg.worker!.main : main;
+    cfg.worker!.builtMain = main;
+    cfg.worker!.assets = builtWorker.fixed ? builtWorker.assets : dotless(w.assets?.directory ?? builtWorker.assets);
+    cfg.worker!.build = builtWorker.build(inf, cfg.worker!.build);
   }
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !((nuxtWorker || solidWorker || nextWorker) && (cfg.worker!.main!.includes(".output/") || cfg.worker!.main!.includes(".open-next/"))) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  // A built Worker's main is in its build's output folder, which isn't there before the first build.
+  const builtOut = builtWorker && dotless(cfg.worker!.main!).startsWith(builtWorker.main.split("/")[0] + "/");
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !builtOut && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" ? "no build script found; using the default" : b.build !== cfg.worker!.build ? `replaces the "${b.from}" script` : `from "${b.from}" script`})`); }
@@ -388,29 +392,10 @@ async function init() {
   // A plain Worker with no client build (Hono, Elysia, itty-router, a hand-written fetch handler): the desktop
   // runs the Worker itself; a Vite SPA split would have nothing to serve.
   const plainWorker = !!w.main && inf.framework === "unknown" && !inf.vite.configPath && !pagesWorker;
-  const workerDesktop = astroWorker || rrWorker || svelteWorker || nuxtWorker || solidWorker || qwikWorker || nextWorker || pagesWorker || startWorker || plainWorker;
-  if (solidWorker) {
-    const main = (w.main ?? ".output/server/index.mjs").replace(/^\.\//, "");
-    cfg.worker!.main = main;
-    cfg.worker!.builtMain = main;
-    cfg.worker!.assets = (w.assets?.directory ?? ".output/public").replace(/^\.\//, "");
-    if (!cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("vite")} build`;
-  }
+  const workerDesktop = astroWorker || rrWorker || svelteWorker || !!builtWorker || pagesWorker || startWorker || plainWorker;
   if (svelteWorker) {
     cfg.worker!.builtMain = SVELTE_WORKER;
     cfg.worker!.assets = SVELTE_ASSETS;
-  }
-  if (nuxtWorker) {
-    cfg.worker!.builtMain = cfg.worker!.main!;
-    cfg.worker!.assets = (w.assets?.directory ?? NUXT_ASSETS).replace(/^\.\//, "");
-  }
-  if (qwikWorker) {
-    cfg.worker!.builtMain = QWIK_WORKER;
-    cfg.worker!.assets = QWIK_ASSETS;
-  }
-  if (nextWorker) {
-    cfg.worker!.builtMain = cfg.worker!.main!;
-    cfg.worker!.assets = (w.assets?.directory ?? NEXT_ASSETS).replace(/^\.\//, "");
   }
   if (astroWorker) {
     // Older adapters (and their wrangler files) build dist/_worker.js and serve dist/; newer ones dist/server + dist/client.

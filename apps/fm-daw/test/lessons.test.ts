@@ -200,3 +200,63 @@ test("know your plugs: an XLR out into an out is refused with why, then mic to m
   cable("pa-top-1", "xlr-out", "pa-top-2", "xlr-in");
   expect(now()).toMatchObject({ done: true });
 });
+
+test("run an amp rack: a desk out into a speakON is refused, mains off the distro, a cord along an XLR, then on in order", async () => {
+  const { lessons, jam, hands, g, go, click, now } = await walkIn();
+  const b = hands.room.bounds!, mid = { x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 };
+  go([mid.x, mid.z + 1.5]);
+  jam.me.yaw = g.yaw; jam.me.pitch = -0.6;
+  expect(lessons.start("rack", jam)).toEqual({ ok: true });
+  expect(now().steps[0].job).toContain("Blue is power coming in");
+
+  const reach = (id: string, part: string) => {
+    const p = hands.room.studio.patch.placed.find((x) => x.id === id)!, gd = gearOf(p)!;
+    const s = [...gd.jacks, ...gd.knobs].find((x) => x.name === part)!.face === "back" ? -1 : 1;
+    go([p.at[0] + s * Math.sin(p.turn) * 0.7, p.at[2] + s * Math.cos(p.turn) * 0.7]);
+    return click(id, part);
+  };
+  const cable = (a: string, ja: string, b2: string, jb: string) => { expect(reach(a, ja)).toEqual({ ok: true }); expect(reach(b2, jb)).toEqual({ ok: true }); };
+
+  // the mixer's XLR out straight into a passive speaker's speakON: refused, in the connector list's words
+  expect(reach("rack-mixer", "xlr-out-1")).toEqual({ ok: true });
+  const wrong = reach("rack-top-1", "speaker-in");
+  expect(wrong.ok ? "" : wrong.why).toContain("it carries an audio signal; this speakON NL4 takes a speaker line from an amp");
+  hands.letGo();
+
+  cable("rack-distro", "power-out-1", "rack-amp", "power-in");
+  cable("rack-distro", "power-out-2", "rack-mixer", "power-in");
+  cable("rack-mixer", "xlr-out-1", "rack-amp", "xlr-in-1");
+  cable("rack-mixer", "xlr-out-2", "rack-amp", "xlr-in-2");
+  cable("rack-amp", "speaker-out-1", "rack-top-1", "speaker-in");
+  cable("rack-amp", "speaker-out-2", "rack-top-2", "speaker-in");
+  expect(now().steps.slice(0, 4).map((s) => s.done)).toEqual([true, true, true, true]);
+
+  // as the kit landed the runs are short and apart
+  expect(now().steps[4]).toMatchObject({ done: true });
+
+  /** Carry a box and set it down at (x, z), facing the back of the room as the kit came in. */
+  const carry = (id: string, x: number, z: number) => {
+    walkTo(jam, ...hands.at(id)!);
+    expect(click(id)).toEqual({ ok: true });
+    go([x, z + 0.5]);
+    jam.me.yaw = g.yaw; jam.me.pitch = -1.2;
+    expect(hands.click(jam)).toEqual({ ok: true });
+  };
+  const rackAt = hands.room.studio.patch.placed.find((x) => x.id === "rack-amp")!.at;
+  // the mixer out front, where its engineer hears the room: its cord from the distro by the rack runs along its XLRs
+  carry("rack-mixer", rackAt[0] - 0.2, rackAt[2] + 2.2);
+  expect(now().steps[4].why).toContain("mains hums into a cable laid beside it");
+  // the distro out to the side: its cords leave the XLRs at an angle
+  carry("rack-distro", rackAt[0] + 1.6, rackAt[2] + 2.4);
+  expect(now().steps[4]).toMatchObject({ done: true });
+
+  // the amp on first: when the mixer switches, it thumps through the amp
+  const power = (id: string, on: boolean) => { expect(reach(id, "power")).toEqual({ ok: true }); hands.drag(on ? -250 : 250); hands.turning = null; lessons.state(); };
+  power("rack-amp", true);
+  expect(now().steps[5].why).toContain("The amp rack is on before the mixer");
+  power("rack-mixer", true);
+  expect(now().steps[5].why).toContain("thump");
+  power("rack-amp", false);
+  power("rack-amp", true);
+  expect(now()).toMatchObject({ done: true });
+});
