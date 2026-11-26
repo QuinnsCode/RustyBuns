@@ -82,6 +82,7 @@ test("a studio's space takes its roles from the studio, not from the role button
     (await (await call(`/api/tools/${name}`, { json: args, ...(cookie ? { cookie } : {}), ...(bearer ? { bearer } : {}) })).res.json()) as { result?: { id?: string } };
   const studio = (await tool("eq_studio_make", { name: "Acme", kind: "team" }, undefined, eve.token)).result!.id!;
   await tool("eq_studio_add", { studio, email: "fin@example.com", role: "maker" }, eve.cookie);
+  await tool("eq_studio_join", { studio, yes: true }, fin.cookie);
   const e = member(eve.token), f = member(fin.token);
   const made = (await e.c.makeForStudio(studio, "Acme"))!;
   e.open(made.id); f.open(made.id);
