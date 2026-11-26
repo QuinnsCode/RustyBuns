@@ -214,9 +214,9 @@ id and its author's opaque id, never the words), and an owner or admin of the ap
 `PUT /q/posts/<id>/block` (the post's author), lists them with `GET /q/blocks` (each by their id in this app) and unblocks with
 `DELETE /q/blocks/<id>` (a `blocks` table, in account delete and the privacy export); a signed-in `GET /q/posts` leaves out
 everyone the reader blocked, and the cached signed-out read is as it was. In the page, `board().block(postId)`, `blocked()` and
-`unblock(id)`. Not yet: the two apps' sign-in and pages. For Excalibrawl and What Would Fantano Say, whose people never meet in
-a party: one person puts something up, and others react to it (owner, 2026-11-08). Neither app signs in through eqosys yet;
-that comes first (both are already in `APPS`).
+`unblock(id)`. Both apps sign in through eqosys and use it: Excalibrawl's prompt posts and fight reactions (#5315, its
+README's "Prompt posts and reactions") and What Would Fantano Say's shared reviews. Their people never meet in a party: one
+person puts something up, and others react to it (owner, 2026-11-08).
 
 **A post** is one short thing a signed-in person puts up in one app, for anyone to see: a line of text (up to 280
 characters, as in chat) and a pointer to the thing it is about, which the app keeps (#3168). Qollab keeps only the post
