@@ -29,7 +29,7 @@ track recorded through it plays at The Event, and the rig planned in the Event P
 **The build order** (visual plan: https://claude.ai/artifact/EvSXowEP4iSpRvfjL5zEs5): 0. this regroup;
 1. the Event Planner outdoors, sound that travels the way it does in the weather and over the ground
    ([below](#out-of-doors-the-air-the-ground-and-the-land)); 2. the landing page, which shows that off;
-3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest);
+3. The Event opened straight from a plan; 4. Q Builder's loop (scope a net, remake it in tscircuit, retest: `/builder.html`, #6021);
 5. a lesson in every sector, and QDAW's song mode.
 
 ## 1. LEARN: Learn the setup
@@ -181,8 +181,8 @@ No wave solver: a fair try at the physics from the standards.
 
 ## 6. BUILD: Q Amps and Q Builder
 
-Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 6).
-Both start on Q Amp today; Q Builder gets a page of its own with its scope.
+Q Amps is playing it (step 1, and the speaker boxes on `/speakers.html`); Q Builder is opening it up (steps 2 to 7).
+Q Builder has a page of its own, `/builder.html` ([#6021](https://github.com/QuinnsCode/RustyBuns/issues/6021)): the clip pedals' boards (Q Fuzz, Q Drive, Q Dist) with a scope and the remake. The build sheet and the kit zip are still on Q Amp (B on a pedal).
 
 **Who:** a guitarist or synth DIYer who wants to hear a pedal or a module, change its parts, and solder the real one.
 
@@ -193,20 +193,27 @@ Both start on Q Amp today; Q Builder gets a page of its own with its scope.
    value (a step up or down, the nearest part you can buy). The bench plays it with the knob down, centred and up
    first, and turns a change away with the reason if it won't solve. Your parts stay with that pedal.
 3. Bring your own board: drop a tscircuit board's circuit JSON on Q Amp's floor; the bench checks it solves, then it is the fourth pedal.
-4. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
+4. Scope it (`/builder.html`): click a trace on the schematic, or a net in the list, and the scope shows the volts there while
+   the riff plays through the circuit (and at its loudest note when nothing plays), with how far it swings and how
+   much of the time it sits at its peak: swap the fuzz's diodes to ground for germanium and that net clips at 0.26 V
+   instead of 0.5, flatter. Remake and retest writes your parts into the board (`<board>-yours.tsx`, tscircuit
+   source with your values and diode part numbers, and its circuit JSON), plays the same riff through the remake and
+   your board, and says whether they match, and how far yours is from the stock board (`src/circuit/builder.ts`).
+5. Build it: B opens the build sheet; download the kit zip: Gerbers, `bom.csv`, `pnp.csv`, `order.csv` (a part
    number for every part), the front panel and a plain-words build sheet (`src/kit/`). `bom.csv` and `order.csv`
    carry your parts. A change is always a value in the same holes, so the Gerbers stay the stock board's, and the
    sheet says so.
-5. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
-6. Close the loop: record the built board, play the same riff through the sim, compare.
+6. Order it: send the Gerbers to a fab, upload `order.csv` to a parts shop.
+7. Close the loop: record the built board, play the same riff through the sim, compare.
 
-**Works today:** steps 1 to 4. Step 5 is by hand with the files from step 4.
+**Works today:** steps 1 to 5. Step 6 is by hand with the files from step 5. The scope runs the built-in riff through the
+circuit on its own thread, not your guitar through Q Amp's audio thread, and only the clip pedals are on `/builder.html`.
 
 **Missing:**
 - Changing the layout or a footprint (a new part, a bigger cap) happens in the repo (`circuits/<board>.tsx`, then
   `bun scripts/boards.ts <board>`), not in the app. tscircuit itself is parked (`apps/tscircuit-desktop`: it pins zod 3).
 - A board dropped on the bench plays and turns its knobs, but has no board view yet, so its parts can't be changed in the app.
-- No board has been built yet, so step 6 has never run. A prototype order is the owner's call, with its price.
+- No board has been built yet, so step 7 has never run. A prototype order is the owner's call, with its price.
 - Selling kits or built boards needs owner decisions first (compliance, the hardware licence, price per board: [ANALOG.md](ANALOG.md#8-from-the-screen-to-your-hands)).
 
 ## The front door

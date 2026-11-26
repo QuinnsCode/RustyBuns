@@ -68,8 +68,8 @@ export const PATHS: readonly Path[] = [
     icon: '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/><circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>',
   },
   {
-    id: "builder", sector: "build", name: "Q Builder", does: "Open a pedal's board, swap its parts, drop in a tscircuit board, download the kit.",
-    href: "/amp.html", first: "Q Amp, where B on a pedal opens its board and build sheet", signIn: false,
+    id: "builder", sector: "build", name: "Q Builder", does: "Open a pedal's board, swap its parts, scope any net, remake it in tscircuit and retest it.",
+    href: "/builder.html", first: "Q Builder: the fuzz's board with a scope on it", signIn: false,
     icon: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/><circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/>',
   },
   {
