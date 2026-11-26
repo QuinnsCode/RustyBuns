@@ -34,6 +34,16 @@ const ask = (method: string, path: string, token?: string, body?: unknown) =>
   handle(new Request(`${ORIGIN}${path}`, { method, headers: { origin: BRAWL, ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined }), conf).then((r) => r!);
 const read = async <T>(r: Response, g: (v: unknown) => T) => { expect(r.status).toBe(200); return check(g, await r.json())!; };
 
+test("posts sent together are counted one by one, and a very long name doesn't fail everyone's feed", async () => {
+  const flo = await signUp("F".repeat(150), "excalibrawl", BRAWL, "flo@example.com");
+  const sent = await Promise.all(Array.from({ length: 30 }, (_, i) => ask("POST", "/q/posts", flo, { kind: "prompt", text: `flood ${i}` })));
+  const kept = sent.filter((r) => r.status === 200);
+  expect(kept.length).toBeLessThanOrEqual(10);
+  const { posts } = await read(await ask("GET", "/q/posts?app=excalibrawl&kind=prompt"), PostList);
+  expect(posts.length).toBe(kept.length);
+  for (const p of posts) await ask("DELETE", `/q/posts/${p.id}`, flo);
+});
+
 test("post, read signed out, react, both see the count, take it back, take the post down", async () => {
   const ada = await signUp("Ada", "excalibrawl", BRAWL), bo = await signUp("Bo", "excalibrawl", BRAWL);
 

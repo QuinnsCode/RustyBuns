@@ -24,8 +24,8 @@ export interface Mod { ctl: string; hz?: number; sens?: number; from?: number; t
 /** A link in the rig: a circuit, with an optional volume pot (0 to 1) ahead of it, and what moves its controls. */
 export interface Link { net: Netlist; gain?: number; mods?: Mod[] }
 
-/** A `Mod` running on one circuit at the rig's sample rate. */
-class ModRun {
+/** A `Mod` running on one circuit at the rig's sample rate. Q Builder's bench steps one too, so its scope sees the LFO move. */
+export class ModRun {
   phase = 0;
   private ys: Float64Array;
   private coef: [number, number][];

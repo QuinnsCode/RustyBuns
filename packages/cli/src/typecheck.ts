@@ -5,7 +5,7 @@
 // `bun check` ignores tsconfig "plugins", so a project that asks for
 // @effect/language-service gets tsc-rs when it is installed.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -69,13 +69,16 @@ export function checkCommand(c: Checker, tsconfig: string | null): string[] {
 
 // `bun check` runs the app's own package.json "check" script when it has one (Bun's scripts win
 // over its built-ins), so a lint-and-codegen "check" ran in place of the type check and passed.
-// With a tsconfig, Bun runs from a directory with no package.json, and the paths it prints
-// are put back relative to here.
+// With a tsconfig, Bun runs from a new directory of its own with an empty package.json (not the shared
+// temp folder, where anyone's package.json "check" script would run in its place), and the paths it
+// prints are put back relative to here.
 export async function runCheck(c: Checker, tsconfig: string | null): Promise<CheckResult> {
   const t = performance.now();
-  const here = process.cwd(), away = c.name === "bun" && tsconfig ? tmpdir() : here;
+  const here = process.cwd(), away = c.name === "bun" && tsconfig ? realpathSync(mkdtempSync(join(tmpdir(), "rb-check-"))) : here;
+  if (away !== here) writeFileSync(join(away, "package.json"), "{}");
   const p = Bun.spawn(checkCommand(c, tsconfig && resolve(tsconfig)), { cwd: away, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  if (away !== here) rmSync(away, { recursive: true, force: true });
   const output = away === here ? out + err : fromDir(out + err, away, here);
   return { checker: c.name, ok: code === 0, ms: performance.now() - t, output: output.trim() };
 }

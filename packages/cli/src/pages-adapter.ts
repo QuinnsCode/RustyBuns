@@ -10,12 +10,12 @@
 export type Seg = { kind: "static" | "param" | "rest"; v: string };
 export type Handler = (context: any) => Response | Promise<Response>;
 export type Route = { path: string; segs: Seg[]; methods: Record<string, Handler> };
-export type Middleware = { prefix: string[]; fns: Handler[] };
+export type Middleware = { prefix: Seg[]; mod: object };
 export type Table = { routes: Route[]; middleware: Middleware[]; routesJson?: { include?: string[]; exclude?: string[] } };
 type Ctx = { waitUntil(p: Promise<unknown>): void; passThroughOnException?(): void };
 
-/** Params for `parts` against `segs`, or null. `[[rest]]` takes zero or more segments, as an array. */
-export function match(segs: Seg[], parts: string[]): Record<string, string | string[]> | null {
+/** Params for `parts` against `segs`, or null. `[[rest]]` takes zero or more segments, as an array. `under`: segs need only start the path. */
+export function match(segs: Seg[], parts: string[], under = false): Record<string, string | string[]> | null {
   const params: Record<string, string | string[]> = {};
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i]!;
@@ -24,7 +24,13 @@ export function match(segs: Seg[], parts: string[]): Record<string, string | str
     if (s.kind === "static" && s.v !== parts[i]) return null;
     if (s.kind === "param") params[s.v] = parts[i]!;
   }
-  return segs.length === parts.length ? params : null;
+  return under || segs.length === parts.length ? params : null;
+}
+
+/** A _middleware file's handlers for one method: `onRequest`, then `onRequestPost` and the like. */
+function handlers(mod: object, method: string): Handler[] {
+  const exports = new Map(Object.entries(mod));
+  return [exports.get("onRequest"), exports.get(`onRequest${method.charAt(0)}${method.slice(1).toLowerCase()}`)].flat().filter(Boolean);
 }
 
 /** A `_routes.json` pattern: `*` is any run of characters. */
@@ -50,14 +56,16 @@ export function pagesWorker(table: Table) {
         const h = p && (r.methods[request.method] ?? r.methods.ANY);
         if (h) { params = p; handler = h; functionPath = r.path; break; }
       }
-      const chain: Handler[] = [
-        ...table.middleware.filter((m) => m.prefix.every((s, i) => parts[i] === s)).flatMap((m) => m.fns),
-        handler ?? ((c: { request: Request }) => assets(c.request)),
-      ];
+      // each step sees its own folder's params as well as the route's
+      const chain = table.middleware.flatMap((m) => {
+        const own = match(m.prefix, parts, true);
+        return own ? handlers(m.mod, request.method).map((fn) => ({ fn, params: { ...params, ...own } })) : [];
+      });
+      chain.push({ fn: handler ?? ((c: { request: Request }) => assets(c.request)), params });
       // Pages types `data` as Record<string, unknown> itself, and this file imports nothing, so it stays.
       const data: Record<string, unknown> = {};
-      const run = (i: number, req: Request): Promise<Response> => Promise.resolve(chain[i]!({
-        request: req, env, params, data, functionPath,
+      const run = (i: number, req: Request): Promise<Response> => Promise.resolve(chain[i]!.fn({
+        request: req, env, params: chain[i]!.params, data, functionPath,
         waitUntil: (p: Promise<unknown>) => ctx.waitUntil(p),
         passThroughOnException: () => ctx.passThroughOnException?.(),
         next: (input?: Request | string, init?: RequestInit) => run(i + 1,

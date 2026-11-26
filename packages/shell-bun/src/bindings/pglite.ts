@@ -3,10 +3,12 @@
 // Drizzle get a postgres:// URL and connect to it unchanged, with no network.
 // Its own entry point (@rustybuns/shell-bun/pglite) so only apps that ask for
 // it need @electric-sql/pglite and @electric-sql/pglite-socket installed.
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { PGLiteSocketHandler } from "@electric-sql/pglite-socket";
 import type { LocalHyperdrive } from "./hyperdrive.ts";
 
 export interface PgliteFiles {
@@ -39,17 +41,89 @@ export async function pgliteHyperdrive(dir: string, name = "HYPERDRIVE", opts: P
     ...(opts.data ? { fsBundle: Bun.file(opts.data) } : {}),
   });
   if (opts.migrations) for (const f of await applyPgMigrations(db, opts.migrations)) console.log(`[${name}] migrate ${f}`);
-  const server = new PGLiteSocketServer({ db, host: "127.0.0.1", port: 0, maxConnections: 100 });
-  // handlers read server.queryQueue when they connect, so ours stands in from the first one
-  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- sets the socket server's private queue, which its types don't show
-  (server as unknown as { queryQueue: SessionQueue }).queryQueue = new SessionQueue(db);
-  await server.start();
-  const port = Number(server.getServerConn().split(":").pop());
-  const connectionString = `postgres://postgres:postgres@127.0.0.1:${port}/postgres`;
+  // A fresh password each launch, as the desktop's HTTP side has its token: loopback is open to
+  // every user on the machine, and pglite-socket has no auth of its own (#6243).
+  const password = randomBytes(16).toString("hex");
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SessionQueue has the three methods the handler calls; its declared type also lists private fields
+  const queryQueue = new SessionQueue(db) as unknown as ConstructorParameters<typeof PGLiteSocketHandler>[0]["queryQueue"];
+  const sockets = new Set<Socket>();
+  const server = createServer(passwordFront(password, async (socket, startup) => {
+    const handler = new PGLiteSocketHandler({ queryQueue, closeOnDetach: true });
+    await handler.attach(socket);
+    socket.emit("data", startup);   // PGlite answers the startup message itself: AuthenticationOk, settings, ReadyForQuery
+    socket.resume();
+  }));
+  server.maxConnections = 100;
+  server.on("connection", (s: Socket) => { sockets.add(s); s.on("close", () => sockets.delete(s)); });
+  await new Promise<void>((ok, fail) => { server.once("error", fail); server.listen(0, "127.0.0.1", ok); });
+  const at = server.address();
+  const port = typeof at === "object" && at ? at.port : 0;
+  const connectionString = `postgres://postgres:${password}@127.0.0.1:${port}/postgres`;
   console.log(`[${name}] no Postgres URL set: PGlite in ${dir} on 127.0.0.1:${port}`);
   return {
-    connectionString, host: "127.0.0.1", port, user: "postgres", password: "postgres", database: "postgres", db,
-    async close() { await server.stop(); await db.close(); },
+    connectionString, host: "127.0.0.1", port, user: "postgres", password, database: "postgres", db,
+    async close() {
+      for (const s of sockets) s.destroy();
+      await new Promise<void>((ok) => server.close(() => ok()));
+      await db.close();
+    },
+  };
+}
+
+const SSL_REQUEST = 80877103, GSSENC_REQUEST = 80877104, PROTOCOL_3 = 196608;
+const AUTH_CLEARTEXT = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 3]);
+function authFailed(): Buffer {
+  const body = Buffer.from("SFATAL\0VFATAL\0C28P01\0Mpassword authentication failed for user \"postgres\"\0\0");
+  const m = Buffer.alloc(5 + body.length);
+  m[0] = 0x45;
+  m.writeInt32BE(4 + body.length, 1);
+  body.copy(m, 5);
+  return m;
+}
+
+/**
+ * Postgres's startup phase, answered before PGlite sees the connection: SSL and GSS requests
+ * get "N", the StartupMessage gets a password prompt, and only the right password lets
+ * `admit` have the socket (paused) and the StartupMessage, to replay into PGlite. A wrong one
+ * gets 28P01 and a close. Cleartext over loopback, which pg, postgres.js and Bun.SQL all answer.
+ */
+export function passwordFront(password: string, admit: (socket: Socket, startup: Buffer) => void | Promise<void>) {
+  const want = Buffer.from(password);
+  return (socket: Socket) => {
+    let buf = Buffer.alloc(0);
+    let startup: Buffer | null = null;
+    const onData = (d: Buffer) => {
+      buf = Buffer.concat([buf, d]);
+      for (;;) {
+        if (!startup) {
+          if (buf.length < 8) return;
+          const len = buf.readInt32BE(0);
+          if (len < 8 || len > 10_000) { socket.destroy(); return; }
+          if (buf.length < len) return;
+          const code = buf.readInt32BE(4);
+          const m = buf.subarray(0, len);
+          buf = buf.subarray(len);
+          if (code === SSL_REQUEST || code === GSSENC_REQUEST) { socket.write("N"); continue; }
+          if (code !== PROTOCOL_3) { socket.destroy(); return; }   // a CancelRequest, or an old protocol
+          startup = Buffer.from(m);
+          socket.write(AUTH_CLEARTEXT);
+          continue;
+        }
+        if (buf.length < 5) return;
+        const len = buf.readInt32BE(1);
+        if (len < 4 || len > 10_000) { socket.destroy(); return; }
+        if (buf.length < 1 + len) return;
+        const got = buf.subarray(5, len);   // the password, less its NUL
+        const ok = buf[0] === 0x70 && got.length === want.length && timingSafeEqual(got, want);
+        if (!ok) { socket.end(authFailed()); socket.off("data", onData); return; }
+        socket.pause();
+        socket.off("data", onData);
+        void Promise.resolve(admit(socket, Buffer.concat([startup, buf.subarray(1 + len)]))).catch(() => socket.destroy());
+        return;
+      }
+    };
+    socket.on("data", onData);
+    socket.on("error", () => socket.destroy());
   };
 }
 

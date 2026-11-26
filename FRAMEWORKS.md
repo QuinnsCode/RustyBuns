@@ -66,7 +66,7 @@ Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md
 | Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | ⛔ [out of scope](#out-of-scope-angular-and-gatsby) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
 | Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ✅ [matrix](#matrix), with `@opennextjs/cloudflare` | [#2455](https://github.com/QuinnsCode/RustyBuns/issues/2455), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
 | Gatsby | none: a static site (its Functions don't build for Workers) | none | none | ⛔ [out of scope](#out-of-scope-angular-and-gatsby) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+gatsby) |
-| Express, Wasp's server | Express routes, as the app's own server beside the host | Postgres from `DATABASE_URL`: the app's, or PGlite in the data dir (a `hyperdrive` binding with `local: "pglite"`) | none yet | ✅ desktop: [matrix](#matrix) | [#4101](https://github.com/QuinnsCode/RustyBuns/issues/4101), [#2327](https://github.com/QuinnsCode/RustyBuns/issues/2327) |
+| Express, Wasp's server | Express routes, as the app's own server beside the host | Postgres from `DATABASE_URL`: the app's, or PGlite in the data dir (a `hyperdrive` binding with `local: "pglite"`) | none yet | ✅ desktop: [matrix](#matrix) | [#5520](https://github.com/QuinnsCode/RustyBuns/issues/5520) |
 | CRA, Vue CLI, custom webpack | as a Vite SPA, after `init --port-vite` | as a Vite SPA | as a Vite SPA | ✅ CRA and Vue CLI, ⏳ webpack: [matrix](#matrix) | [#849](https://github.com/QuinnsCode/RustyBuns/issues/849), [#850](https://github.com/QuinnsCode/RustyBuns/issues/850), [#851](https://github.com/QuinnsCode/RustyBuns/issues/851) |
 
 The 🧪, 🔧 and ⏳ rows describe what each framework's Cloudflare build offers, not something Rusty Buns has run. Each row gets checked, and corrected here, when its sample app lands.
@@ -116,6 +116,18 @@ Both stay named in `stackOf()` (so `fit` says what they are) and neither gets an
 - **Gatsby.** It builds a static site into `public/`. Its Functions and SSR don't build for Workers, and the top repos are Gatsby itself or libraries. A built `public/` folder is boxed as a static site already, so `init` adds nothing.
 
 Reopen either if a real app asks and a sample app can be written on the contract.
+
+## Beside Rusty Buns: RWSDK, Elysia and Wasp
+
+Rusty Buns sits under a framework: it never edits `src/`, and `git rm` takes it out. These three are the frameworks people ask about most. Each one sits at a different distance from us.
+
+| | What it is | How it fits | What `init` reads today |
+|---|---|---|---|
+| RWSDK | A React framework for Cloudflare, shipped as a Vite plugin | An input, not a rival: the app shape Rusty Buns was first built to box. RWSDK stops at Cloudflare and Miniflare; we take the same app to a desktop file and a rented box. Its Queues, Cron and outgoing Email have local twins ([five primitives](#each-framework-as-the-five-primitives)); incoming mail does not | `spa` from `init`, `worker` by hand; [153 of 180 GitHub apps](FRAMEWORK_COVERAGE.md#rwsdk) boot unchanged |
+| Elysia | A Bun-first server framework that is also a `fetch` handler | Like Hono: a Worker already, so we mount `app.fetch` | `worker` mode with no client build, since `elysia` is one of the fetch servers it looks for ([`apps/frameworks/elysia-example`](apps/frameworks/elysia-example)). A real app runs on the desktop on PGlite but not on Workers yet ([coverage](FRAMEWORK_COVERAGE.md#elysia), [#2285](https://github.com/QuinnsCode/RustyBuns/issues/2285)) |
+| Wasp | A framework with its own spec file that a compiler turns into a React client, an Express server and Prisma | Same aim, opposite method: Wasp owns the app's structure and picks Node, Prisma and Postgres; we own none of the code and pick the Cloudflare shapes. It has no Workers or desktop target of its own | Nothing Wasp-specific. A Wasp project (a `main.wasp` beside a `package.json` with `react` and `vite`) reads as a plain Vite React SPA, so `init` would box the client without Wasp's server. The server half, Express on Postgres, runs by hand: [`apps/frameworks/express-example`](apps/frameworks/express-example). Reading `main.wasp`: [#5520](https://github.com/QuinnsCode/RustyBuns/issues/5520) (back burner) |
+
+Auth UI, background jobs and email stay with the framework. That is the part of "full-stack" that Wasp builds in and Rusty Buns leaves out ([ADOPTION.md](ADOPTION.md#the-five-primitives)).
 
 ## Real apps from GitHub
 
@@ -172,7 +184,7 @@ CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scrip
 ## Adding a framework
 
 1. Copy the nearest example: `apps/frameworks/hono-example` for a plain Worker, `apps/frameworks/nuxt-example` for a built Worker plus assets, `apps/frameworks/svelte-spa-example` for a client-only SPA. For a Vite SPA with `"use server"` modules, `init` adds the boundary plugin to `vite.config.ts` and `rustybuns boundary` before its web build ([that README](apps/frameworks/svelte-spa-example/README.md#what-init-wires-in-for-the-action)).
-2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config.
+2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config. A framework whose Cloudflare build writes the Worker and its assets (Nuxt, SolidStart, Qwik City, Next.js) is one row in `BUILT_WORKERS` (`packages/cli/src/index.ts`): the built Worker, its assets folder and the Worker build.
 3. `test/desktop.test.ts` is one line: `test("...", () => counterJourney(join(import.meta.dir, "..")))`.
 4. A row in `scripts/ci-apps.ts` with `test: "bun test test"` and `boot: true`, so tier 1 and the journey run on every PR that touches it.
 5. A README that opens with "What it proves", a row in the [matrix](#matrix) and the [five primitives](#each-framework-as-the-five-primitives) table, then `bun run docs`.
@@ -182,8 +194,9 @@ CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scrip
 - **The compiled binary per framework**, and a screenshot for the README gallery: [#3341](https://github.com/QuinnsCode/RustyBuns/issues/3341) (a job for Bob).
 - **A deploy per framework example**, not just slim borg: [#4790](https://github.com/QuinnsCode/RustyBuns/issues/4790).
 - **D1 in the contract**: one table and one migration beside `COUNTER` ([#4790](https://github.com/QuinnsCode/RustyBuns/issues/4790) too, since a deploy is where a migration can go wrong).
-- **Angular, bigger real apps, folding `init`'s four built-Worker branches**: [#2455](https://github.com/QuinnsCode/RustyBuns/issues/2455).
-- **Wasp, RWSDK's local twins, an Elysia coverage row**: [#2327](https://github.com/QuinnsCode/RustyBuns/issues/2327). Wasp's server half (Express on Postgres) runs: [`apps/frameworks/express-example`](apps/frameworks/express-example). Left for Wasp: Prisma in that server, `init` reading `main.wasp`, then a `trial-github.ts` run of real Wasp apps.
+- **Angular, bigger real apps, coverage numbers for the newer frameworks**: [#2455](https://github.com/QuinnsCode/RustyBuns/issues/2455).
+- **Wasp**: [#5520](https://github.com/QuinnsCode/RustyBuns/issues/5520) (back burner). Its server half (Express on Postgres) runs: [`apps/frameworks/express-example`](apps/frameworks/express-example). Left: Prisma in that server, `init` reading `main.wasp`, then a `trial-github.ts` run of real Wasp apps. Where it stands beside RWSDK and Elysia: [Beside Rusty Buns](#beside-rusty-buns-rwsdk-elysia-and-wasp).
+- **Elysia on Workers, and a `trial-github.ts` sweep**: [#2285](https://github.com/QuinnsCode/RustyBuns/issues/2285) (back burner).
 - **More of Alchemy** (its test harness against preview stages, previews, rollout): [#2328](https://github.com/QuinnsCode/RustyBuns/issues/2328).
 - **A faster loop for trials**: [#2329](https://github.com/QuinnsCode/RustyBuns/issues/2329); Bob, the builder Mac, is set up ([#3448](https://github.com/QuinnsCode/RustyBuns/issues/3448)).
 - **`plan` emitting `Cloudflare.Website.<Fw>`** and a box column: [#4790](https://github.com/QuinnsCode/RustyBuns/issues/4790) too (every example plans as `Cloudflare.Worker` plus assets today, which deploys).

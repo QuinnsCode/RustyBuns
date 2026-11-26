@@ -195,18 +195,22 @@ export const fieldBrain: Brain = (w) => {
 /** Every brain a theater battle runs. */
 export const theaterBrains: Brain[] = [fieldBrain, ...brains];
 
+/** An empty board in the fog, `wide` by `deep` each way from the middle, each side starting with `supply`. */
+export function newField(wide: number, deep: number, supply: number): Field {
+  return {
+    wide, deep, wells: [], veils: [], mines: [], points: [],
+    supply: { navy: supply, rim: supply }, sees: { navy: new Set(), rim: new Set() }, tier: { navy: 0, rim: 0 },
+    ping: { x: 0, z: 0, until: 0, ready: 0 }, heldSince: 0, known: { navy: new Map(), rim: new Map() },
+  };
+}
+
 /** The Pyre system: you drop in at the west edge; the Compact's home world, Hollow, is at the east. Between them a star
  *  whose heat shear hides ships, two planets, two rifts, and four strongpoints, two of them the Compact's and mined. */
 export function theater(seed: number): World {
   const w = emptyWorld(seed);
   w.rimTemper = (["zealot", "pragmatist", "cagey"] as const)[Math.floor(rand(w) * 3)];
   w.limit = 900;
-  const f: Field = {
-    wide: 8000, deep: 5000, wells: [], veils: [], mines: [], points: [],
-    supply: { navy: 6, rim: 6 }, sees: { navy: new Set(), rim: new Set() }, tier: { navy: 0, rim: 0 },
-    ping: { x: 0, z: 0, until: 0, ready: 0 }, heldSince: 0, known: { navy: new Map(), rim: new Map() },
-  };
-  w.field = f;
+  const f = (w.field = newField(8000, 5000, 6));
   w.planet = { name: "Hollow", x: 6000, z: 300, r: 520, base: 3200, baseMax: 3200 };
   f.wells.push(
     { kind: "star", name: "Pyre", x: 0, z: 400, core: 650, r: 3000, pull: 14 },

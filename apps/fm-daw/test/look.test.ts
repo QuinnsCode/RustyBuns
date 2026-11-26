@@ -1,7 +1,7 @@
 // How a room looks (src/studio/look.ts): the picture quality a visit gets, and where things stand in it.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { caseSpot, clearWall, pickQuality, practicals, standSpot, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { caseSpot, clearWall, freeFloor, pickQuality, practicals, standSpot, surface, useKit, type Quality } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { ROOM_LIST, SCORING_HALL } from "../src/studio/rooms/index.ts";
 import { thingBox } from "../src/studio/room.ts";
@@ -86,4 +86,24 @@ test("the keys player's music stand stands a step off the instrument's end, clea
     for (const o of def.spots) if (o !== s) expect(Math.hypot(at[0] - o.at[0], at[1] - o.at[1])).toBeGreaterThan(0.8);
   }
   expect(stood).toBeGreaterThan(0);
+});
+
+test("what a band leaves on the floor lands on clear boards: off every seat and instrument, the walls, the door and each other", () => {
+  let put = 0;
+  for (const def of ROOM_LIST) {
+    const kept: [number, number, number][] = [];
+    for (const [reach, near] of [[0.4, [0.5, 1]], [0.45, [0, 1.2]], [0.3, [1, 0.5]]] as const) {
+      const p = freeFloor(def, [near[0], near[1]], reach, kept);
+      if (!p) continue;
+      put++;
+      expect(Math.abs(p[0])).toBeLessThan(def.size.w / 2 - 0.5);
+      expect(Math.hypot(p[0] - def.door.at[0], p[1] - def.door.at[1])).toBeGreaterThan(0.5 + reach);
+      for (const s of def.spots) expect(Math.hypot(p[0] - s.at[0], p[1] - s.at[1])).toBeGreaterThan(0.75 + reach);
+      for (const [kx, kz, kr] of kept) expect(Math.hypot(p[0] - kx, p[1] - kz)).toBeGreaterThan(kr + reach);
+      kept.push([p[0], p[1], reach]);
+    }
+  }
+  expect(put).toBeGreaterThan(0);
+  // a room packed wall to wall has nowhere to put it
+  expect(freeFloor(LIVE_ROOM, [0, 0], 9, [])).toBeNull();
 });

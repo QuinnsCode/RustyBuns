@@ -16,8 +16,10 @@
 //   bun run builder watch                      that board from this Mac, over ssh
 //
 // Bob says when he takes work, not the runs: nothing is sent to him until `bun run builder serve` is running on him,
-// which keeps `serving` in his builder folder fresh. Off, asleep, or not serving, a run waits for him (valve shut).
-// If he goes away mid-run (ssh drops, a push hangs), the run doesn't fail: it waits for him again and runs from the start.
+// which keeps `serving` in his builder folder fresh. Off, asleep, or not serving (valve shut), a run says so in one line
+// and exits NOT_RUN (125) at once; `bun run builder --wait <...>` waits for him instead (#5839).
+// If he goes away mid-run (ssh drops, a push hangs), the run doesn't fail: it starts over once he is back (with --wait),
+// or says he is gone and exits NOT_RUN.
 //
 // The test swarm (apps/test-swarm, #4758) is a queue any of our Macs pulls from when GitHub is slow: SWARM_URL is its
 // Worker and SWARM_TOKEN its bearer token (the owner's, from 1Password). With both set, a run that finds no builder
@@ -71,14 +73,16 @@ export async function pool<T>(items: T[], cap: number, fn: (item: T) => Promise<
 }
 
 // A commit of the working tree (untracked files too, .gitignore respected), built in a scratch index so
-// the real index and the stash stack are never touched. HEAD itself when nothing changed.
-export async function snapshot(cwd: string): Promise<string> {
+// the real index and the stash stack are never touched. HEAD itself when nothing changed. `force` (paths from the top)
+// go in although git ignores them: a GLB a Blender job reads out of blender/out.
+export async function snapshot(cwd: string, force: string[] = []): Promise<string> {
   const git = (...args: string[]) => Bun.$`git ${args}`.cwd(cwd).quiet();
   const scratch = `${tmpdir()}/remote-ci-index-${process.pid}-${Date.now()}`;
   await Bun.write(scratch, Bun.file(resolve(cwd, (await git("rev-parse", "--git-path", "index")).text().trim())));
   try {
     const env = { ...process.env, GIT_INDEX_FILE: scratch };
     await Bun.$`git add -A`.cwd(cwd).env(env).quiet();
+    if (force.length) await Bun.$`git add -f -- ${force}`.cwd(cwd).env(env).quiet();
     const tree = (await Bun.$`git write-tree`.cwd(cwd).env(env).quiet()).text().trim();
     const head = (await git("rev-parse", "HEAD")).text().trim();
     if (tree === (await git("rev-parse", "HEAD^{tree}")).text().trim()) return head;
@@ -504,7 +508,7 @@ async function setValve(arg: string | undefined): Promise<number> {
   if (arg === "on" || arg === "off") await Bun.write(valveFile(), `${arg}\n`);
   const v = await valve(), host = process.env.BUILDER_HOST;
   const bob = host ? ((await reachable(builder(host))) ? `builder ${host} is taking runs` : `builder ${host} isn't taking runs (off, asleep, or not serving: bun run builder serve on him)`) : "no BUILDER_HOST";
-  console.log(`valve ${v === "off" ? "shut: heavy work goes to the builder, and waits for him" : "open: with no builder, work runs here"}; ${bob}`);
+  console.log(`valve ${v === "off" ? "shut: heavy work goes to the builder, and stops when he isn't serving (--wait to wait)" : "open: with no builder, work runs here"}; ${bob}`);
   return 0;
 }
 
@@ -515,7 +519,9 @@ export const NOT_RUN = 125;
  *  (unset, off, charging) answers NOT_RUN at once instead of running here or waiting. scripts/ring-red.ts bisects with it. */
 export async function main(argv: string[], cwd: string, at?: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder serve  |  bun run builder watch  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
+  const wait = argv[0] === "--wait";
+  if (wait) argv = argv.slice(1);
+  const usage = "usage: bun run builder [on|off]  |  bun run builder --wait <base-ref|all|run ...>  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder serve  |  bun run builder watch  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
   if (argv[0] === "nightly") return nightly(host);
   if (argv[0] === "passed") return passed(cwd);
@@ -575,6 +581,9 @@ export async function main(argv: string[], cwd: string, at?: string): Promise<nu
       if (got) await release(b, got.slot);
       if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
       if (p.where === "here") return fallback(argv, cwd, p.why!);
+      // Without --wait, a shut valve and no Bob is one line and out, not a wait nobody knows how long is (#5839):
+      // push and let GitHub CI run it, or ask again with --wait once he serves.
+      if (!wait) { console.error(`${p.why}: not waiting, nothing ran (push and let CI run it, or \`bun run builder --wait ...\`)`); return NOT_RUN; }
       if (said !== p.why) console.log((said = p.why!));
       // the session that started this wait is gone (it was a background task): nobody reads the answer, so stop waiting
       // rather than poll for Bob for days under pid 1 (2026-11-23, leftovers that held the office to three workers)

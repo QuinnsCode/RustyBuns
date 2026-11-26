@@ -2,9 +2,9 @@
 // from a script or the CLI (scripts/eq.ts), and by the `eq_batch` tool, which runs several of them in one round trip and keeps only
 // the fields asked for. The agent's cheapest path is one batch with `pick`, not a screenshot and not a call per fact (GET /agents says so).
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
-import { arr, bool, Bad, check, int, isRecord, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { arr, bool, Bad, check, int, isRecord, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
-import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
+import { APPS, GENRES, HOME, MATURITY, playOf, studioGame } from "./apps.ts";
 import { appOf, appsOf, Draft, isListing, pull, queue, recheck, review, save, send, type Done } from "./listings.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
@@ -47,6 +47,8 @@ const READ: Hints = { readOnlyHint: true, openWorldHint: false };
 const done = (r: Done) => { if (!r.ok) throw new Refused(r.error, r.status); return r.listing; };
 /** A studio's games change from the signed-in page, not from one app's token. */
 const onPage = (c: Ctx) => { if (!c.email) throw new Refused("a studio's games change from the signed-in page, not an app's token", 403); };
+/** Studios hold other people's names and emails, and a studio's own game is somebody else's code: it neither reads nor makes them. */
+const notAGame = (c: Ctx) => { if (studioGame(c.who.app)) throw new Refused("studios are read and made on eqosys or in a Q app, not in a studio's game", 403); };
 const unlocked =(list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
 const knownApp = async (c: Ctx, id: string) => (await appOf(c.conf, id)) ?? (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
 /** The one app an app's token may read the person's data for (its own), or null on eqosys's page, which reads them all. */
@@ -123,6 +125,7 @@ export const TOOLS: Tool[] = [
     description: "The studios this person is in (an account that makes apps: solo, team or business), with their role, its members (name, email, role) and how many, and each app on the shelf: " +
       "`play` (its site), `make` (its codeSplitter repo, null until linked), `ship` (live or not deployed) and `shipped` (the last deploy it reported: stage, version, at; null until one does). The super admin's QNTBR studio is made the first time they ask.",
     run: async (c) => {
+      notAGame(c);
       if (c.admin) await house(c.conf, c.who.id);
       return { studios: await studiosOf(c.conf, c.who.id) };
     },
@@ -132,6 +135,7 @@ export const TOOLS: Tool[] = [
     description: "Make a studio with this person as its owner: `name` (1-60 characters) and `kind` (solo, team or business). Answers { id }. Three a person.",
     input: { name: { type: "string" }, kind: { enum: [...KINDS] } }, required: ["name", "kind"],
     run: async (c, a) => {
+      notAGame(c);
       const r = await makeStudio(c.conf, c.who.id, a.name, a.kind);
       if (!r.ok) throw new Refused(r.error, r.status);
       return { id: r.id };
@@ -175,15 +179,15 @@ export const TOOLS: Tool[] = [
     input: { id: { type: "string" } }, required: ["id"],
     run: async (c, a) => { onPage(c); return { listing: done(await send(c.conf, c.who.id, a.id)) }; },
   }),
-  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse", "check"])), note: str(500, { min: 0, dflt: "" }) }), {
+  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse", "check"])), note: str(500, { min: 0, dflt: "" }), at: opt(num(0, 1e14)) }), {
     name: "eq_listing_review", title: "Review studios' games (admin)", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true }, admin: true,
-    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first), each with `checks`: what a machine checked when it was sent (https: its origins answer; loads: its page and the files it names answer; signin: someone in its studio signed in through eqosys; state: its window.<handle> harness is in its scripts, with the `bun run probe` line that asks it live). With `id` and `verdict`: `list` puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why, `check` runs the checks again. Answers { queue }, { checks } or { listing }.",
-    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse", "check"] }, note: { type: "string" } },
+    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first), each with `checks`: what a machine checked when it was sent (https: its origins answer; loads: its page and the files it names answer; signin: someone in its studio signed in through eqosys; state: its window.<handle> harness is in its scripts, with the `bun run probe` line that asks it live). With `id` and `verdict`: `list` (with the `at` the queue gave for it, so a change made since you read it isn't listed unread) puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why, `check` runs the checks again. Answers { queue }, { checks } or { listing }.",
+    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse", "check"] }, note: { type: "string" }, at: { type: "number" } },
     run: async (c, a) => {
       if (!a.id) return { queue: await queue(c.conf) };
       if (!a.verdict) throw new Refused("say `verdict`: list, refuse or check");
       if (a.verdict === "check") { const checks = await recheck(c.conf, a.id); if (!checks) throw new Refused(`no game "${a.id}" in review`, 404); return { checks }; }
-      return { listing: done(await review(c.conf, a.id, a.verdict, a.note)) };
+      return { listing: done(await review(c.conf, a.id, a.verdict, a.note, a.at)) };
     },
   }),
   tool(obj({ id: str(40) }), {

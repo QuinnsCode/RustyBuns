@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
 import { MATCH_ID } from "./archive.ts";
+import { EQOSYS, fightPrompt } from "./board.ts";
 import { Document } from "./app/Document.tsx";
 import { setCommonHeaders } from "./app/headers.ts";
 import { Home } from "./app/pages/Home.tsx";
@@ -37,17 +38,17 @@ const app = defineApp([
     const q = new URL(request.url).searchParams;
     const setup = q.get("setup") as keyof typeof SETUPS;
     if (!(setup in SETUPS) || !q.get("prompt")) return Response.json({ setups: SETUPS }, { status: 400 });
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Workers AI's generated types and the lab's narrow run() describe the same binding differently
-    const ai = env.AI as unknown as { run(model: string, input: unknown): Promise<unknown> };
-    return Response.json(await runLab(ai, setup, q.get("prompt")!, Math.min(36, Number(q.get("turns")) || 24)));
+    return Response.json(await runLab(env.AI, setup, q.get("prompt")!, Math.min(36, Number(q.get("turns")) || 24)));
   }),
   render(Document, [route("/", () => <Home />)]),
 ]);
 
 export default {
   fetch: app.fetch,
-  // On the hour: the fight. Cron can run a few minutes late; the arena copes.
+  // On the hour: the fight, on the last hour's most reacted prompt post (or the list's). Cron can run a few minutes late; the arena copes.
   async scheduled() {
-    console.log("hourly fight", await arena().start());
+    const now = Date.now();
+    const { prompt, post } = await fightPrompt(env.EQOSYS_URL || EQOSYS, now);
+    console.log("hourly fight", post ? `posted by ${post.by.name}` : "from the list", await arena().start(now, prompt));
   },
-} satisfies ExportedHandler<Env>;
+};

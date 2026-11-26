@@ -12,7 +12,7 @@ import { read, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 setDefaultTimeout(30_000);
 
 type Board = { items: { number: number; train?: Card }[] };
-type GitHub = Floor["github"] & { merge(n: number, method: string, deleteBranch: boolean, auto: boolean): Promise<string | undefined> };
+type GitHub = Floor["github"] & { merge(n: number, method: string, deleteBranch: boolean, auto: boolean, as?: { env: Record<string, string> }): Promise<string | undefined> };
 let GitHub: new (dir: string, onIssues: () => void, onPulls: (b: Board) => void, runGh: (args: string[]) => Promise<string>) => GitHub;
 
 // upstream's GitHub boards, patched as rustybunsify.ts patches them
@@ -44,6 +44,9 @@ pinnedTest("Merge when ready on two PRs that pass alone but break together: one 
   };
   const train = mergeTrain({ github, workers }, 5);
   try {
+    // someone signed in with their own GitHub merges as themselves, not as the office through the train
+    await github.merge(9999, "squash", false, true, { env: {} }).catch(() => {});
+    expect(train.card(9999)).toBeUndefined();
     expect(await github.merge(2761, "squash", false, true)).toBeUndefined();
     expect(await github.merge(2778, "squash", false, true)).toBeUndefined();
     const card = train.card(2778);
