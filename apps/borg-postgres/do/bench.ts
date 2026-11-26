@@ -4,7 +4,7 @@
 import { arr, num, obj, opt, raw, str } from "@rustybuns/util/guard";
 
 const B = process.argv[2] ?? "http://127.0.0.1:8799";
-const Reply = obj({ error: opt(str(2000)), pagesWritten: opt(num(0, 1e9)), storedBytes: opt(num(0, 1e10)), rows: opt(arr(raw, 1000)) });
+const Reply = obj({ error: opt(str(2000)), pagesWritten: opt(num(0, 1e9)), storedBytes: opt(num(0, 1e10)), memoryBytes: opt(num(0, 1e10)), rows: opt(arr(raw, 1000)) });
 
 async function get(path: string) {
   const t = performance.now();
@@ -29,7 +29,9 @@ for (let i = 0; i < 5; i++) {
   const n = `pr-${tag}-${i}`;
   add("new database, first query (ms)", (await q(n, "select 1")).ms);
   add("warm query (ms)", (await q(n, "select count(*) from pg_class")).ms);
-  add("10k rows written + saved (ms)", (await q(n, rows10k)).ms);
+  const w = await q(n, rows10k);
+  add("10k rows written + saved (ms)", w.ms);
+  add("wasm memory, 10k rows (MB)", (w.memoryBytes ?? 0) / 1048576);
   const one = await q(n, "insert into notes (body) values ('one more')");
   add("one row written + saved (ms)", one.ms);
   add("pages saved by that row", one.pagesWritten ?? 0);

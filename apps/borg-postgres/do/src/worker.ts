@@ -10,6 +10,7 @@ import { PGlite } from "@electric-sql/pglite";
 import pgliteWasmModule from "./pglite.wasm";
 import pgliteData from "./pglite.data";
 import { PageFS } from "./pagefs.ts";
+import { WASM_MEMORY } from "../memory.ts";
 
 interface Env { PG: DurableObjectNamespace<Pg> }
 const CHUNK = 1_500_000;
@@ -59,7 +60,9 @@ export class Pg extends DurableObject<Env> {
       loadDataDir = new Blob([dump], { type: "application/x-gzip" });
     }
     const t2 = now();
-    this.db = await PGlite.create({ pgliteWasmModule, fsBundle: new Blob([pgliteData]), fs: this.fs, loadDataDir });
+    this.db = await PGlite.create({
+      pgliteWasmModule, fsBundle: new Blob([pgliteData]), initialMemory: WASM_MEMORY, fs: this.fs, loadDataDir,
+    });
     this.boot = { copyMs, bootMs: ms(t2), openMs: ms(t), dumpBytes, storedBytes: this.fs.storedBytes() };
     return this.db;
   }
@@ -71,7 +74,9 @@ export class Pg extends DurableObject<Env> {
     const t = now();
     const before = this.fs.stats.pagesWritten;
     const res = await this.db!.exec(sql);
-    return { fresh, ...(fresh ? this.boot : {}), queryMs: ms(t), pagesWritten: this.fs.stats.pagesWritten - before, rows: res.at(-1)?.rows ?? [] };
+    // A Durable Object has 128 MB for everything; this is PGlite's share (WASM_MEMORY unless it grew).
+    const memoryBytes = this.db!.Module.HEAPU8.buffer.byteLength;
+    return { fresh, ...(fresh ? this.boot : {}), queryMs: ms(t), pagesWritten: this.fs.stats.pagesWritten - before, memoryBytes, rows: res.at(-1)?.rows ?? [] };
   }
 
   /** A tarball to start a copy from: the template's seed, or this database as it is now. */

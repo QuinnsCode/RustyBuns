@@ -10,7 +10,8 @@ setDefaultTimeout(120_000);   // initdb
 function store(db = new Database(":memory:")): PageStore & { db: Database } {
   return {
     db,
-    sql: { exec: (q, ...b) => ({ toArray: () => db.query<never, typeof b>(q).all(...b) }) },
+    // Run at the call, as `ctx.storage.sql.exec` does: PageFS never reads back its CREATE TABLEs.
+    sql: { exec: (q, ...b) => { const rows = db.query<never, typeof b>(q).all(...b); return { toArray: () => rows }; } },
     transactionSync: (fn) => db.transaction(fn)(),
   };
 }
