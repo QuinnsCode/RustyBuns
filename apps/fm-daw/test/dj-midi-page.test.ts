@@ -2,35 +2,19 @@
 // show as tags over the decks without moving anything, a click on the mixer's channel 2 fader and a move of a fader on
 // the controller pairs them (kept across a reload), a knob and a pad pair the same way, the tag's x forgets a pairing,
 // and pulling the controller out shows it gone.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(30_000);
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output", "--autoplay-policy=no-user-gesture-required"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser("--autoplay-policy=no-user-gesture-required");
 
 type Midi = { devices: { name: string; connected: boolean }[]; mappings: Record<string, Record<string, string>>; shown: boolean; armed: string | null; tags: string[] };
 
 test.skipIf(!hasChrome)("a controller: the jog out of the box, tags that move nothing, learn a fader, a knob and a pad, forget one, unplug", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms);
   const open = async () => {
     await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
     await until("the decks", "!!window.qdecks");

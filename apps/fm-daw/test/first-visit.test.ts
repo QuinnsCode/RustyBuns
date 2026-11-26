@@ -1,37 +1,18 @@
 // Someone new on the desk, in headless Chrome over CDP (scripts/chrome.ts): the start card's one Start button turns the
 // sound on, a card says what to try first, and its Play the groove starts the groove playing. Once tried, a later
 // visit in that browser goes straight to the desk with no card.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(30_000);
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  // the dev server's config imports .rustybuns/vite.ts, which `rustybuns boundary` writes (as `bun run build` does)
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  // Chrome's stand-in speakers: real time with no sound card, as scripts/web-plugin-check.ts
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 test.skipIf(!hasChrome)("Start, then Play the groove: two taps from landing to a playing groove, and the hint only once", async () => {
   const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
   await load(chrome.cdp, tab, vite.url, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.fmdaw?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "window.fmdaw?.state()");
   /** A real click (a user gesture, so the audio may start) on the element `selector` finds. */
   const click = async (selector: string) => {
     const r = await page<{ x: number; y: number }>(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
