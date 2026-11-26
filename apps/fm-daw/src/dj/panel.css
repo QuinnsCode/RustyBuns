@@ -175,3 +175,9 @@
 .dj-prefs-keys { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 3px 8px; align-items: center; }
 .dj-prefs-keys span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 #dj .dj-prefs button.on { background: var(--acc); border-color: var(--acc); color: #141416; }
+/* Q Instruments' lesson (lesson.ts): its card over the decks, clear of deck A's CUE and play, and its cap button
+   one more in the header once the decks are open (main.ts moves it there) */
+body > #lesson.lesson-float { z-index: 41; top: auto; bottom: 96px; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+body > .lesson-ask.lesson-float { z-index: 41; }
+#dj .lesson-ask { position: static; width: auto; height: auto; border-radius: 8px; box-shadow: none; background: #1e2025; }
+#dj .lesson-ask[hidden] { display: none; }

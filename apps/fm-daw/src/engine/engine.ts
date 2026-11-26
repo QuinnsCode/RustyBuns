@@ -10,7 +10,7 @@
 // voice resets the engine and outputs silence), peak limiter with instant
 // attack at CEILING, then a hard clamp at CEILING. Nothing leaves louder than
 // -1 dBFS, whatever the patch.
-import { TRACKS, OPS, NPARAMS, VOICES, CEILING, MOD_DEPTH, FB_DEPTH, P, LFO_DIVS, BEND_RANGE, clampParam } from "./params.ts";
+import { TRACKS, OPS, NPARAMS, VOICES, CEILING, MOD_DEPTH, FB_DEPTH, P, LFO_DIVS, BEND_RANGE, DUCK_ATTACK, DUCK_RELEASE, DUCK_SENS, clampParam } from "./params.ts";
 import { TsEq, sendEq, type EqBand, type EqDoc } from "./eq.ts";
 
 /** render() works in chunks this long, so the inserts can filter each track's chunk before the sum. */
@@ -231,9 +231,14 @@ export class TsEngine implements FmEngine {
   private readonly mix = new Float64Array(CHUNK * 2);
   private readonly snd = new Float64Array(CHUNK * 2);
   private readonly snd2 = new Float64Array(CHUNK * 2);
+  // the sidechain: each track's level as a follower hears it (what a track set to duck under it reads), up and back
+  private readonly duckEnv = new Float64Array(TRACKS);
+  private readonly duckAtk: number; private readonly duckRel: number;
 
   constructor(sampleRate: number) {
     this.sr = sampleRate;
+    this.duckAtk = Math.exp(-1 / (DUCK_ATTACK * sampleRate));
+    this.duckRel = Math.exp(-1 / (DUCK_RELEASE * sampleRate));
     this.clickCoef = decayCoef(0.04, sampleRate);
     this.dcR = 1 - (TAU * 10) / sampleRate;
     this.limRel = Math.exp(-1 / (0.1 * sampleRate));
@@ -344,6 +349,7 @@ export class TsEngine implements FmEngine {
     this.limEnv = 0;
     this.lpS.fill(0); this.hpS.fill(0);
     this.chBuf.fill(0); this.chLp.fill(0); this.phZ.fill(0); this.phY.fill(0);
+    this.duckEnv.fill(0);
     for (const q of this.inserts) q.reset();
   }
 
@@ -620,6 +626,13 @@ export class TsEngine implements FmEngine {
             mono = mono - SQRT2 * v1 - v2;
           }
           mono *= this.gainNow[t];
+          // the sidechain: what this track sounds like now goes to its follower; ducked under another, it drops by
+          // that one's (a track before this one is this frame's, after it the last frame's: one sample, unheard)
+          const lvl = Math.abs(mono);
+          const from = (this.params[p + P.DUCK_FROM] | 0) - 1;
+          if (from >= 0 && from !== t) mono *= 1 - this.params[p + P.DUCK] * Math.min(this.duckEnv[from] * DUCK_SENS, 1);
+          const de = this.duckEnv[t];
+          this.duckEnv[t] = lvl + (de - lvl) * (lvl > de ? this.duckAtk : this.duckRel);
           const cb = t * CH_LEN;
           this.chBuf[cb + this.chW] = mono;
           let ml: number, mr: number;

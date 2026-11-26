@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { scratchOf, settings, Sizer, StorageGuard, storageGuard, type Deps, type Seat } from "../live/storage.ts";
+import { scratchOf, settings, sizeOf, StorageGuard, storageGuard, type Deps, type Seat } from "../live/storage.ts";
 
 const GB = 1024 ** 3;
 
@@ -72,23 +72,22 @@ test("a full disk and a worker over the cap warn on the floor but never stop the
   }
 });
 
-test("sizing skips .git, counts a hardlink once, and keeps node_modules for a while", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "rb-storage-"));
-  mkdirSync(path.join(root, ".git"));
-  writeFileSync(path.join(root, ".git", "big"), Buffer.alloc(1 << 20));
-  mkdirSync(path.join(root, "node_modules", "x"), { recursive: true });
-  writeFileSync(path.join(root, "node_modules", "x", "f"), Buffer.alloc(1 << 20));
-  let now = 0;
-  const sizer = new Sizer(() => now);
-  const first = await sizer.size(root);
-  expect(first.bytes).toBeGreaterThanOrEqual(1 << 20);
-  expect(first.bytes).toBeLessThan(2 << 20);
-  expect(first.top[0]!.path).toBe(path.join(root, "node_modules"));
+test("a sandbox's size skips .git, counts a file hardlinked into its scratch once, and sees node_modules grow on the next look", async () => {
+  const MB = 1 << 20;
+  const tree = mkdtempSync(path.join(tmpdir(), "rb-storage-"));
+  const scratch = mkdtempSync(path.join(tmpdir(), "rb-storage-scratch-"));
+  mkdirSync(path.join(tree, ".git"));
+  writeFileSync(path.join(tree, ".git", "big"), Buffer.alloc(8 * MB));
+  mkdirSync(path.join(tree, "node_modules", "x"), { recursive: true });
+  writeFileSync(path.join(tree, "node_modules", "x", "f"), Buffer.alloc(2 * MB));
+  linkSync(path.join(tree, "node_modules", "x", "f"), path.join(scratch, "f"));
+  const first = await sizeOf([tree, scratch, path.join(tree, "missing")]);
+  expect(first.bytes).toBeGreaterThanOrEqual(2 * MB);
+  expect(first.bytes).toBeLessThan(3 * MB);
+  expect(first.top[0]).toEqual({ path: path.join(tree, "node_modules"), bytes: expect.any(Number) });
 
-  writeFileSync(path.join(root, "node_modules", "x", "g"), Buffer.alloc(4 << 20));
-  expect((await sizer.size(root)).bytes).toBe(first.bytes);
-  now += 20 * 60_000;
-  expect((await sizer.size(root)).bytes).toBeGreaterThan(first.bytes + (3 << 20));
+  writeFileSync(path.join(tree, "node_modules", "x", "g"), Buffer.alloc(4 * MB));
+  expect((await sizeOf([tree, scratch])).bytes).toBeGreaterThan(first.bytes + 3 * MB);
 });
 
 test("a worker's scratch folder is named from its directory the way Claude Code does", () => {

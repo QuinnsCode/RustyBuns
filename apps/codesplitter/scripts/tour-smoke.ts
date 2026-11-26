@@ -12,14 +12,17 @@ import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
 import { help } from "../../../scripts/help.ts";
-import { dieWith } from "../../../scripts/chrome.ts";
+import { chromePath, dieWith } from "../../../scripts/chrome.ts";
 
 help(import.meta.path);
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
-const CHROME = arg("chrome") ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// the Mac's Chrome, or a Linux box's /usr/bin/google-chrome (CI's ubuntu runner, #5783); CHROME=/path works too
+const CHROME = arg("chrome") ?? chromePath() ?? "google-chrome";
 
 const call = await local({ GH_CLI: "off" });
-if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
+// Always build: an old dist/client served against new source fails in ways that look unrelated (#6166), and
+// build.ts reads too many files (src/, packages/util, packages/ui) for a timestamp check to catch them all.
+await Bun.$`bun run build.ts`.quiet();
 const shell = serve({ port: 0, assets: "dist/client", runWorkerFirst: ["/api"], reporter: { escaped: () => {} } as any });
 shell.mount(worker as any, call.env);
 
@@ -32,7 +35,7 @@ for (const b of ["fix-a", "fix-b"]) await j("/repos/ryan/office/branches", { nam
 // Two open PRs on Mervin's board: one green, one red, so Ester has something to sort.
 await j("/repos/ryan/office/board", { main: "abc", prs: [
   { pr: 1, head: "h1", ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], title: "fix a" },
-  { pr: 2, head: "h2", ci: "fail", failing: ["apps/a: t1"], tiers: { agree: 1 }, files: 1, clashes: [], title: "fix b" },
+  { pr: 2, head: "h2", ci: "fail", failing: ["apps/a: t1"], ester: [{ test: "apps/a: t1", owner: "own", why: "CI is already red (apps/a: t1)", prs: [2] }], tiers: { agree: 1 }, files: 1, clashes: [], title: "fix b" },
 ] });
 
 // Chrome over CDP, with the page's WebMCP registry stood in for (an agent's browser has document.modelContext).

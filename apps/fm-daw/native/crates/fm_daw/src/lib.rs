@@ -36,12 +36,16 @@ use std::f64::consts::PI;
 
 pub const TRACKS: usize = 12;
 pub const OPS: usize = 4;
-pub const NPARAMS: usize = 61;
+pub const NPARAMS: usize = 63;
 pub const BEND_RANGE: f64 = 12.0;
 pub const VOICES: usize = 8;
 pub const CEILING: f64 = 0.891;
 pub const MOD_DEPTH: f64 = 1.5;
 pub const FB_DEPTH: f64 = 0.4;
+/// The sidechain's follower (params.ts): seconds up and back, and the level (times this) that ducks all the way.
+const DUCK_ATTACK: f64 = 0.002;
+const DUCK_RELEASE: f64 = 0.15;
+const DUCK_SENS: f64 = 4.0;
 /// render() works in chunks this long, so the inserts can filter each track's chunk before the sum.
 const CHUNK: usize = 128;
 
@@ -82,9 +86,11 @@ const P_LFO_RETRIG: usize = 56;
 const P_CHORUS: usize = 57;
 const P_SUPER: usize = 58;
 const P_FOLD: usize = 59;
+const P_DUCK_FROM: usize = 61;
+const P_DUCK: usize = 62;
 
 const OP_RANGES: [(f64, f64); 6] = [(0.25, 16.0), (0.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.0, 1.0), (0.005, 8.0)];
-const TAIL_RANGES: [(f64, f64); 37] = [
+const TAIL_RANGES: [(f64, f64); 39] = [
     (0.0, 3.0), (0.0, 1.0), (0.0, 48.0), (0.005, 2.0), (0.0, 1.0),
     (0.005, 2.0), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0),
     // analog: mode, detune, sub, cutoff, res, fenv amt/attack/decay, lfo rate/cut/pitch, glide, drive
@@ -105,6 +111,8 @@ const TAIL_RANGES: [(f64, f64); 37] = [
     (0.0, 1.0), // supersaw mix: 0 off
     (0.0, 1.0), // wavefolder
     (0.0, 1.0), // send to aux 2
+    (0.0, 12.0), // sidechain: 0 none, else the track (1-based) this one ducks under
+    (0.0, 1.0), // sidechain depth
 ];
 
 /// Beats per LFO cycle for LFO_SYNC 1..8 (params.ts LFO_DIVS).
@@ -259,6 +267,8 @@ pub struct Engine {
     tapped: [u8; TRACKS],
     tap_now: [u8; TRACKS],
     tb: Vec<f64>, mix: Vec<f64>, snd: Vec<f64>, snd2: Vec<f64>,
+    /// The sidechain: each track's level as its follower hears it, and the follower's up and back coefficients.
+    duck_env: [f64; TRACKS], duck_atk: f64, duck_rel: f64,
 }
 
 impl Engine {
@@ -281,6 +291,7 @@ impl Engine {
             tapped: [0; TRACKS],
             tap_now: [0; TRACKS],
             tb: vec![0.0; TRACKS * CHUNK * 2], mix: vec![0.0; CHUNK * 2], snd: vec![0.0; CHUNK * 2], snd2: vec![0.0; CHUNK * 2],
+            duck_env: [0.0; TRACKS], duck_atk: (-1.0 / (DUCK_ATTACK * sr)).exp(), duck_rel: (-1.0 / (DUCK_RELEASE * sr)).exp(),
         };
         for t in 0..TRACKS { for i in 0..NPARAMS { e.set_param(t, i, 0.0); } }
         e
@@ -394,6 +405,7 @@ impl Engine {
         self.lim_env = 0.0;
         for tr in self.tracks.iter_mut() { tr.lp_s = [0.0; 2]; tr.hp_s = [0.0; 2]; tr.ch_lp = 0.0; tr.ph_z = [0.0; PH_STAGES]; tr.ph_y = 0.0; }
         for x in self.ch_buf.iter_mut() { *x = 0.0; }
+        self.duck_env = [0.0; TRACKS];
         for q in self.inserts.iter_mut() { q.reset(); }
     }
 
@@ -694,6 +706,12 @@ impl Engine {
                     if tr.lp_on { let k = tr.lp_k; let (_, low) = svf(&k, &mut tr.lp_s, mono); mono = low; }
                     if tr.hp_on { let k = tr.hp_k; let (band, low) = svf(&k, &mut tr.hp_s, mono); mono = mono - SQRT2 * band - low; }
                     mono *= tr.gain_now;
+                    // the sidechain (engine.ts): this track's level to its follower; ducked under another, it drops by that one's
+                    let lvl = mono.abs();
+                    let from = tr.params[P_DUCK_FROM] as usize;
+                    if from >= 1 && from - 1 != t { mono *= 1.0 - tr.params[P_DUCK] * (self.duck_env[from - 1] * DUCK_SENS).min(1.0); }
+                    let de = self.duck_env[t];
+                    self.duck_env[t] = lvl + (de - lvl) * (if lvl > de { self.duck_atk } else { self.duck_rel });
                     let cb = t * CH_LEN;
                     let cw = self.ch_w;
                     self.ch_buf[cb + cw] = mono;
@@ -1054,6 +1072,22 @@ pub unsafe extern "C" fn fm_amp_process(r: *mut circuit::Rig, buf: *mut f32, fra
 pub unsafe extern "C" fn fm_amp_levels(r: *mut circuit::Rig, out: *mut f32) {
     if out.is_null() { return; }
     if let Some(r) = r.as_mut() { let o = std::slice::from_raw_parts_mut(out, r.links()); r.levels(o); }
+}
+
+/// A scope on link `link`'s node `node` (`encodeNetlist`'s numbering), or none (`link` < 0): 1 if set as asked.
+#[no_mangle]
+pub extern "C" fn fm_amp_set_scope(r: *mut circuit::Rig, link: i32, node: i32) -> u32 {
+    let at = if link < 0 || node < 0 { None } else { Some((link as usize, node as usize)) };
+    unsafe { r.as_mut() }.map_or(0, |r| r.set_scope(at) as u32)
+}
+
+/// The scope's samples since the last call (oldest first, at most `max`) into `out`: how many.
+/// # Safety
+/// `out` must point to at least `max` f32s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_scope(r: *mut circuit::Rig, out: *mut f32, max: u32) -> u32 {
+    if out.is_null() { return 0; }
+    match r.as_mut() { Some(r) => r.take_scope(std::slice::from_raw_parts_mut(out, max as usize)) as u32, None => 0 }
 }
 
 #[no_mangle]

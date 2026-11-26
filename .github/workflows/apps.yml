@@ -176,6 +176,10 @@ jobs:
       # Borg tier 1: the dev host builds and boots on the local twins (scripts/boot.ts).
       - if: matrix.boot
         run: bun ${{ matrix.up }}scripts/boot.ts
+      # The longer check an app asks for when the PR changes what it covers (`slow` in scripts/ci-apps.ts), on the first lane:
+      # codeSplitter's tour (scripts/tour-smoke.ts) in the runner's own Chrome (/usr/bin/google-chrome) on the local twins, #5783.
+      - if: matrix.slow
+        run: ${{ matrix.slow }}
 
   # The container images a PR touched (an app's rustybuns.config.ts bindings): planned once, then one job per image so
   # they build in parallel; each builds for linux/amd64 and boots (rustybuns containers smoke), with a size (and its change

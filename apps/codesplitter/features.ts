@@ -16,6 +16,6 @@ export const FEATURES_DIR = join(import.meta.dir, "src/features");
 
 /** Every feature, in order.txt's order, then any it doesn't name yet, by id. Throws on a feature that isn't whole, or an id in order.txt with no file. */
 export function features(dir = FEATURES_DIR): Feature[] {
-  const files = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown]));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown] as const);
   return ordered(files, readFileSync(join(dir, "order.txt"), "utf8"), Feature, "src/features");
 }

@@ -15,6 +15,8 @@ export function PatchEditor(props: {
   onSound(s: Sound): void;
   /** What plays the track (the track menu), beside the title. */
   head?: React.ReactNode;
+  /** Every track's name and which one this is, for the sidechain's "Duck under" (no picker without it). */
+  duck?: { names: string[]; self: number };
 }) {
   const { track: t, onParam } = props;
   const p = t.params;
@@ -99,6 +101,7 @@ export function PatchEditor(props: {
           <Slider label="Velocity" index={P.VEL} value={p[P.VEL]} onChange={(v) => onParam(P.VEL, v)} />
           <Slider label="Vel tone" index={P.VEL_TONE} value={p[P.VEL_TONE]} onChange={(v) => onParam(P.VEL_TONE, v)} />
           <Slider label="Send" index={P.SEND} value={p[P.SEND]} onChange={(v) => onParam(P.SEND, v)} />
+          {props.duck && <Duck p={p} {...props.duck} onParam={onParam} />}
           <Choice label="Mod" value={p[P.CHORUS] | 0} names={["Off", "I", "II", "I+II", "Flange", "Phase", "Rotary", "Tremolo"]} onPick={(v) => onParam(P.CHORUS, v)}
             title="I, II and I+II: the 80s polysynth bucket-brigade chorus (slow, faster, a fast shallow shimmer). Flange: a short swept delay fed back. Phase: four swept allpasses. Rotary: an organ's spinning speaker horn at its slow speed. Tremolo: the sound swung side to side, as an electric piano's" />
         </fieldset>
@@ -176,6 +179,26 @@ function Choice(props: { label: string; value: number; names: string[]; onPick(v
       </div>
     </div>
   );
+}
+
+/** The sidechain: which track this one ducks under (the kick, so the bass pumps), and how far. A plugin track's Mix has it too. */
+export function Duck({ p, names, self, onParam }: { p: number[]; names: string[]; self: number; onParam(i: number, v: number): void }) {
+  const from = p[P.DUCK_FROM] | 0;
+  return (<>
+    <label className="fader" title="Sidechain: this track dips each time the other one plays, and comes back over 150 ms">
+      <span className="silk">Duck under</span>
+      <select aria-label="Duck under" value={from} onChange={(e) => {
+        const v = Number(e.currentTarget.value);
+        onParam(P.DUCK_FROM, v);
+        if (v && p[P.DUCK] === 0) onParam(P.DUCK, 0.6); // picked with no depth yet: start where a pump is plainly heard
+      }}>
+        <option value={0}>None</option>
+        {names.map((n, k) => k !== self && <option key={k} value={k + 1}>{k + 1} · {n}</option>)}
+      </select>
+      <output>{from ? "sidechain" : ""}</output>
+    </label>
+    {from > 0 && <Slider label="Duck" index={P.DUCK} value={p[P.DUCK]} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => onParam(P.DUCK, v)} />}
+  </>);
 }
 
 /** The LFO both voices share: shape, rate or tempo division, restart on each note. */

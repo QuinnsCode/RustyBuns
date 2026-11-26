@@ -1,9 +1,8 @@
 {
-  "apps/codesplitter/src/env.ts": 3,
+  "apps/codesplitter/src/env.ts": 1,
   "apps/codesplitter/src/identity.ts": 1,
-  "apps/qcrm/src/app/tour-steps.ts": 1,
   "apps/qcrm/src/auth.ts": 1,
-  "apps/qcrm/src/env.ts": 2,
+  "apps/qcrm/src/env.ts": 1,
   "packages/cli/src/gen/wrangler.ts": 1,
   "packages/cli/src/glue/deploy-deps.ts": 1,
   "packages/cli/src/pages-adapter.ts": 1,
@@ -13,7 +12,5 @@
   "packages/shell-bun/src/bindings/kv.ts": 1,
   "packages/shell-bun/src/bindings/storage.ts": 1,
   "packages/shell-bun/src/client.ts": 1,
-  "packages/shell-bun/src/webmcp.ts": 1,
-  "packages/util/src/codemode.ts": 1,
-  "packages/util/src/features.ts": 1
+  "packages/shell-bun/src/webmcp.ts": 1
 }

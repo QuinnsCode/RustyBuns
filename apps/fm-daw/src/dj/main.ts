@@ -9,6 +9,9 @@ import type { JogMode, JogPart } from "./player.ts";
 import type { Press } from "./booth.ts";
 import type { Prefs } from "./prefs.ts";
 import { detectGrid } from "./analyze.ts";
+import { decksNow, MIX_LESSON, watchDecks } from "./lesson.ts";
+import { mountLessonCard } from "../studio/lesson-card.ts";
+import { askedFor, PageLesson } from "../studio/page-lesson.ts";
 
 /** On a narrow screen the decks are a carousel: which piece is in view (0 deck A, 1 the mixer, 2 deck B), or null when all three fit. */
 function carousel(): number | null {
@@ -24,15 +27,28 @@ function start(): DecksPanel {
   panel = mountDecks({ ctx, startOpen: true, onToggle: (open) => { if (!open) setTimeout(() => panel?.open(), 0); } });
   panel.demos();
   document.getElementById("start")?.remove();
+  // the lesson's cap button: one more in the header now, not over deck A's CUE
+  const cap = document.querySelector(".lesson-ask");
+  if (cap) { cap.classList.remove("lesson-float"); document.querySelector("#dj .dj-head-tools")?.prepend(cap); }
   return panel;
 }
 document.querySelector("#start button")?.addEventListener("click", () => void start());
+
+/** Q Instruments' lesson (lesson.ts), read from the decks' own state a few times a second; the cap button in the corner
+ *  (which opens the decks, a press being the gesture audio wants) or ?lesson=mix starts it. */
+const watch = watchDecks();
+const lesson = new PageLesson(MIX_LESSON, () => watch(decksNow(panel ? panel.decks.state() : null)));
+const lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. That's a mix: B is the room's track now, so put the next one on A and go again", offer: { title: MIX_LESSON.title, start: () => { start(); lesson.start(); } } });
+if (askedFor(location.search, MIX_LESSON.id)) lesson.start();
+setInterval(() => lessonCard.frame(), 200);
 
 declare global { interface Window { qdecks: typeof harness } }
 const mx = () => panel?.decks.mixer;
 const harness = {
   /** Open the decks with the demo tracks (the probe has no gesture; headless Chrome lets audio start anyway). */
   start: () => { start(); return harness.state(); },
+  /** Q Instruments' lesson (lesson.ts): "mix" starts it, null leaves it; then the lesson as it stands. */
+  lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === MIX_LESSON.id) lesson.start(); lessonCard.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
   /** The decks, the mixer (mixer.ts's MixerState), what its meters read now (0 to 1), the players' jogs and the close-up's zoom. */
   state: () => {
     if (!panel) return null;
