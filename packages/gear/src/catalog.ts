@@ -363,24 +363,25 @@ const list: Gear[] = [
     speaker: { sensitivity: 106, maxSpl: 129, ratedWatts: 200, ohms: 16, coverage: { h: 50, v: 25 }, lowCut: 250, highCut: 5000, rearLoss: 18 },
   },
   // The sculpted array (Void's Air Motion V2): three moulded fibreglass conical horns (12" LF, 8" MF, 1.5" HF) on a
-  // steel frame, no cabinet, 853.9 x 671.2 x 659.9 mm and 35 kg, 60 x 50 degrees, flown or on a pole in pairs, over the
-  // arc subs. Sound numbers as before (its sheet: 106 dB LF, 137 dB peak).
+  // steel frame, no cabinet, 853.9 x 671.2 x 659.9 mm and 35.4 kg, 60 x 50 degrees, flown or on a pole in pairs, over the
+  // arc subs; 106 dB (its LF) and 137 dB peak, from its sheet (TD10745-2.0).
   {
     id: "sculpted-3way",
     what: "sculpted three-way horn",
     size: box(0.8539, 0.6712, 0.6599),
-    kg: 35,
+    kg: 35.4,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 104, maxSpl: 134, ratedWatts: 800, ohms: 8, coverage: { h: 60, v: 50 }, lowCut: 90, highCut: 20000, rearLoss: 22 },
+    speaker: { sensitivity: 106, maxSpl: 137, ratedWatts: 800, ohms: 8, coverage: { h: 60, v: 50 }, lowCut: 90, highCut: 20000, rearLoss: 22 },
   },
-  // The arc sub (Void's Arcline 118): one 18" in a ported ply box with a bowed grille, 656.8 x 550 x 695.2 mm.
+  // The arc sub (Void's Arcline 118): one 18" in a ported ply box with a bowed grille, 656.8 x 550 x 695.2 mm, 55 kg,
+  // 134 dB peak, 1500 W, from its sheet (TD10753-2.0).
   {
     id: "arc-sub-18",
     what: "low-profile arc sub",
     size: box(0.6568, 0.55, 0.6952),
-    kg: 78,
+    kg: 55,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 101, maxSpl: 136, ratedWatts: 1600, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 38, highCut: 120, rearLoss: 4 },
+    speaker: { sensitivity: 101, maxSpl: 134, ratedWatts: 1500, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 38, highCut: 120, rearLoss: 4 },
   },
   // ---- Desert Gathering's other rigs (systems.ts): our own boxes, each in a well-known family, its numbers from that
   // family's published spec sheets (or, where the sheet is long out of print, typical of the class). ----
@@ -404,15 +405,16 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 105, maxSpl: 140, ratedWatts: 1700, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 29, highCut: 120, rearLoss: 5 },
   },
-  // The sculpted family's triple 21: a hybrid horn bandpass, 105 dB 1 W / 1 m, 146 dB peak, 29-95 Hz +/- 3 dB,
-  // 1479 x 696 x 1218 mm, 214 kg, 6 kW AES.
+  // The sculpted family's triple 21 (Void's Incubus Sub): a hybrid horn bandpass, 105 dB 1 W / 1 m, 148 dB peak
+  // (its sheet, TD10760-2.0), 29-95 Hz +/- 3 dB, 1479 x 696 x 1218 mm, 214 kg, 6 kW AES. The sheet gives 3 x 8 ohms,
+  // one per 21"; with one speaker jack here it stays 4 ohms, so a daisy chain of two doesn't read as a 1.3 ohm load.
   {
     id: "triple-21-sub",
     what: "triple 21\" hybrid horn sub",
     size: box(1.479, 0.696, 1.218),
     kg: 214,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 105, maxSpl: 146, ratedWatts: 6000, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
+    speaker: { sensitivity: 105, maxSpl: 148, ratedWatts: 6000, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 27, highCut: 95, rearLoss: 6 },
   },
   // The tri-amp horn stack, the old touring way, as the Turbosound Flashlight's datasheet gives it: the TFS-780H top (a
   // 12" and a 6.5" on TurboMid horns with bar phase plugs, a 1" on a waveguide, tri-amped, high-Q 25 x 25 degrees)
