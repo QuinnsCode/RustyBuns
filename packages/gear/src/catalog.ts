@@ -308,6 +308,16 @@ const list: Gear[] = [
     // At 63 Hz a horn bin is near omni: about 6 dB front to back, which the cardioid trick (site.ts) builds on.
     speaker: { sensitivity: 109, maxSpl: 141, ratedWatts: 2000, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 120, rearLoss: 6 },
   },
+  {
+    // The 21"'s smaller sibling, two 18"s in the same folded horn: 50-200 Hz, 106 dB at 2 V half space (about 109 dB
+    // 1 W / 1 m), 2 x 450 W AES into 2 x 8 ohm, 93 kg, from its data sheet.
+    id: "horn-sub-18",
+    what: '2 x 18" horn-loaded bass bin',
+    size: box(1.326, 0.496, 0.723),
+    kg: 93,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 109, maxSpl: 138, ratedWatts: 900, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 45, highCut: 200, rearLoss: 6 },
+  },
   // The sculpted array: a moulded composite shell with flowing curves, three conical horns (low-mid, mid, high) in one
   // body, about 850 mm tall and 35 kg, 60 x 50 degrees, flown or on a pole in pairs, over low-profile arc subs. Numbers
   // are typical of that family's published sheets (3-way passive, ~104 dB 1 W / 1 m, ~134 dB peak).
