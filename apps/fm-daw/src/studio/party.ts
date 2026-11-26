@@ -176,3 +176,22 @@ export function whenWords(when: number | null, locale?: string): string {
   if (when === null) return "Open now";
   return new Date(when).toLocaleString(locale, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
+
+// ---- on the owner's eqosys account (#5932): the Worker keeps one store per signed-in person (src/party-store.ts) ----
+/** Who owns a store, as its join links name them: a hash of their eqosys id, never the id itself. */
+export const OWNER = /^[0-9a-f]{24}$/;
+/** The Qollab room the live party is: the same room for everyone who has its join link, on any device. */
+export const partyRoom = (owner: string, id: string) => `party-${owner}-${id}`.slice(0, 64);
+/** GET or PUT /parties?token=: your store on your account, and the owner key your join links carry. */
+export const PartiesReply = obj({ owner: str(24, { re: OWNER }), store: Parties });
+export type PartiesReply = Of<typeof PartiesReply>;
+/** GET /party/<owner>: the live party as anyone with its link sees it (no versions, only the scene on stage). */
+export const LiveParty = obj({ name: str(60, { min: 1 }), when: nul(int(0, 2 ** 53)), room: str(64), performer: str(40, { min: 1 }), studio: Studio });
+export type LiveParty = Of<typeof LiveParty>;
+/** The live party of `owner`'s store, or null when none is live. */
+export function liveParty(s: Parties, owner: string): LiveParty | null {
+  const p = s.parties.find((x) => x.id === s.live);
+  if (!p) return null;
+  const on = sceneOf(p);
+  return { name: p.name, when: p.when, room: partyRoom(owner, p.id), performer: on.performer, studio: on.studio };
+}

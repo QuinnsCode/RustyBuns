@@ -1,6 +1,6 @@
 // Runs several apps' test suites in one CI job, one after another, each in its own folder as its own job would
-// (apps.yml's group rows, from scripts/ci-apps.ts; #5564). Every suite runs, so one red app doesn't hide another's
-// result, and the job fails if any did.
+// (apps.yml's group rows, from scripts/ci-apps.ts; #5564). The job is one lane, so it fails fast (#5920): the apps the
+// PR touched come first, and the first red suite stops it and names the apps it never ran.
 //
 //   bun scripts/ci-group.ts apps/borg 'bun test test' apps/qcrm 'bun test test'
 //
@@ -28,13 +28,13 @@ export function section(log: string, dir: string): string {
 if (import.meta.main) {
   const argv = process.argv.slice(2);
   if (!argv.length || argv.length % 2) throw new Error("usage: bun scripts/ci-group.ts <app dir> <test command> [<app dir> <test command> ...]");
-  const failed: string[] = [];
   for (let i = 0; i < argv.length; i += 2) {
     const [dir, test] = [argv[i]!, argv[i + 1]!];
     console.log(`${MARK}${dir}`);
     const r = Bun.spawnSync(["sh", "-c", test], { cwd: dir, stdout: "inherit", stderr: "inherit" });
-    if (r.exitCode !== 0) failed.push(dir);
+    if (r.exitCode === 0) continue;
+    const rest = argv.filter((_, j) => j > i && j % 2 === 0);
+    console.log(`::error title=failed::${dir}: bun scripts/ci-apps.ts lanes <app> runs one alone${rest.length ? `. Not run after it: ${rest.join(", ")}` : ""}`);
+    process.exit(1);
   }
-  if (failed.length) console.log(`::error title=failed::${failed.join(", ")}: bun scripts/ci-apps.ts lanes <app> runs one alone`);
-  process.exit(failed.length ? 1 : 0);
 }
