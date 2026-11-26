@@ -89,9 +89,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       camInv.copy(camera.matrixWorld).invert();
       const narrow = camera instanceof THREE.PerspectiveCamera ? Math.min(1, Math.max(0.62, camera.aspect)) : 1;
       const carry = hold.carry ? carryFrames(hold.carry, hold.kg) : null;
-      const dt = lowAt < 0 ? 0 : Math.min(0.1, Math.max(0, t - lowAt));
+      const lowDt = lowAt < 0 ? 0 : Math.min(0.1, Math.max(0, t - lowAt));
       lowAt = t;
-      low += ((hold.low ? 1 : 0) - low) * Math.min(1, dt * 7);
+      low += ((hold.low ? 1 : 0) - low) * Math.min(1, lowDt * 7);
       for (const s of sides) {
         const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
         const show = !!hold.show && !carry && what.kind === "rest";
