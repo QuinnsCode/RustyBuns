@@ -23,7 +23,7 @@ import { ROOM_LIST } from "./rooms/index.ts";
 import { acoustics, BANDS, impulse, MATERIAL_IDS, MATERIALS, type Material, PLAIN, wallMaterial } from "./sound.ts";
 import { surface, wallSurface } from "./look.ts";
 import { POLY_KINDS } from "@rustybuns/models/polysynth";
-import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground } from "@rustybuns/gear";
+import { airAbsorption, GENERATOR_IDS, GROUNDS, gear as sheet, gearList, gearListText, powerPlan, speedOfSound, stackWidth, SYSTEM_IDS, SYSTEMS, type Ground, type HeightMap } from "@rustybuns/gear";
 import { arrivals, paSpeakers, rigPlan, rigStacks, roomField, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
 import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, setVenue, stored, switchScene, whenWords, type Done } from "./party.ts";
@@ -237,6 +237,12 @@ const canvas = $("view") as HTMLCanvasElement;
 let build: BuildView | null = null;
 try { build = new BuildView(canvas); } catch { view = "plan"; /* no WebGL: the blueprint only */ }
 if (build) build.venue.onChange = (s) => { if (s.state === "drawn" || s.state === "failed") renderParty(); };
+// a capture's ground, read off its points once it is in, becomes the field's land (pa-room.ts roomField)
+if (build) build.venue.onLand = (src, land) => {
+  const v = room.venue;
+  if (v?.src !== src || v.land) return;
+  if (parties.open ? partyDo(setVenue(parties, { ...v, land })) : apply({ t: "venue", venue: { ...v, land } })) render();
+};
 /** Walls snap to a 25 cm grid, seats and booths to 10 cm. */
 const quarter = (v: number) => Math.round(v * 4) / 4;
 const tenth = (v: number) => Math.round(v * 10) / 10;
@@ -865,7 +871,7 @@ const harness = {
       stacks: rigStacks(room), picked: stackPicked, map: showMap,
       coverage: map ? { ref: +map.ref.toFixed(1), middle: map.middle, mean: +map.stats.mean.toFixed(1), min: +map.stats.min.toFixed(1), max: +map.stats.max.toFixed(1), even: +map.stats.even.toFixed(1) } : null,
       power: rp ? powerPlan(rp) : null,
-      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [] } : null,
+      field: field ? { tempC: field.tempC, humidity: field.humidity, ground: field.ground, speed: +speedOfSound(field.tempC).toFixed(1), banks: room.outdoor?.banks ?? [], captured: !!room.venue?.land } : null,
     };
   },
   /** The coverage map's level at (x, z) on the floor, dB. */
@@ -899,11 +905,12 @@ const harness = {
       };
     },
     make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
-    /** Lay every scene out in a captured venue (any ShareSplat link), or none. */
-    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number } = {}) => {
+    /** Lay every scene out in a captured venue (any ShareSplat link), or none; `land` its ground's heights when they are
+     *  known already (else they are read off the capture once it is in). */
+    venue: (link: string | null, place: { scale?: number; at?: [number, number, number]; yaw?: number; land?: HeightMap } = {}) => {
       const src = link === null ? null : venueSrc(link);
       if (link !== null && !src) return { ok: false, why: "not a ShareSplat link" };
-      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0 } : null)), why };
+      return { ok: partyDo(setVenue(parties, src ? { src, scale: place.scale ?? 1, at: place.at ?? [0, 0, 0], yaw: place.yaw ?? 0, ...(place.land ? { land: place.land } : {}) } : null)), why };
     },
     open: (id?: string) => ({ ok: partyDo(open(parties, id)), why }),
     drop: (id: string) => ({ ok: partyDo(dropParty(parties, id)), why }),
