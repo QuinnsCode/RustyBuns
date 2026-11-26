@@ -40,9 +40,8 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
   for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, bg: l.bg, border: l.border, radius: l.radius, font: l.font }).toEqual({ name, bg: "rgb(28, 33, 40)", border: "rgb(156, 122, 42)", radius: "1px", font: "Courier" });
   expect(skinned.who).toBe("uppercase");
   const house = await looks("?house");
-  // The house look is a skin too: its tiles stand on a thick edge of the outline's colour, and a game's skin gets none of it.
-  for (const [name, l] of Object.entries(house.surfaces)) expect({ name, edge: l.edge.startsWith("rgb(20, 20, 20) 0px 4px 0px 0px") }).toEqual({ name, edge: true });
-  for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, edge: l.edge.includes("0px 4px 0px 0px") }).toEqual({ name, edge: false });
+  // The house look's tiles have one even outline: no thick slab of the outline's colour under them, which read as a broken border on dark.
+  for (const [name, l] of Object.entries({ ...house.surfaces, ...(await looks("?house", true)).surfaces })) expect({ name, slab: / 0px [2-4]px 0px 0px/.test(l.edge) }).toEqual({ name, slab: false });
   for (const [name, l] of Object.entries(house.surfaces)) expect({ name, bg: l.bg, radius: l.radius }).toEqual({ name, bg: "rgb(255, 255, 255)", radius: name === "chip" ? TOKENS["--ui-radius-sm"] : TOKENS["--ui-radius"] });
   // The house look follows a dark system; a game's own skin doesn't.
   for (const [name, l] of Object.entries((await looks("?house", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(23, 23, 26)" });
@@ -76,8 +75,20 @@ test.skipIf(!chromePath())("each game's own paper and face land on the chip, rep
   }
 });
 
+// The house look's buttons and fields are one even outline, light or dark: no slab under a button, no tinted strip inside a field's top.
+test.skipIf(!chromePath())("in the house look every button and field has one even border, light and dark", async () => {
+  for (const dark of [false, true]) {
+    const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
+    await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/?house`, 300);
+    const uneven = await tab.eval<string[]>(`[...document.querySelectorAll(".eq .eq-btn, .eq input, .eq select, .eq textarea")].filter((el) => el.offsetWidth && !el.closest(".eq-badge")).filter((el) => { const s = getComputedStyle(el); return / 0px [1-4]px 0px 0px/.test(s.boxShadow) || s.boxShadow.includes("inset") || s.borderTopColor !== s.borderBottomColor; }).map((el) => el.getAttribute("aria-label") || el.placeholder || el.textContent)`);
+    await tab.close();
+    expect({ dark, uneven }).toEqual({ dark, uneven: [] });
+  }
+});
+
 // The chip's sign-out button sits inside it like a nested tile: its corners curve with the chip's (no rounder), and in
-// the house look it stands on the chip's thick edge instead of a second, thinner one of its own.
+// every look it carries no second edge under its outline.
 test.skipIf(!chromePath())("the chip's button curves with the chip and carries no edge of its own, in every look", async () => {
   for (const query of ["?house", "", "?game=two-fronts", "?game=mythic-masters", "?game=skate-tech-park"]) {
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
@@ -148,36 +159,39 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
 });
 
-// #5573: on a phone the flag's corner is where a chat keeps its Send button; it lifts clear of any control, in every look.
-test.skipIf(!chromePath())("on a phone the Report flag sits on none of the page's controls, and stays on screen", async () => {
+// On a phone the flag's corner is where a chat keeps its Send button: it takes the place the spaces header keeps for it, in every look.
+test.skipIf(!chromePath())("on a phone the Report flag sits in the spaces header, on none of the page's controls", async () => {
   for (const look of ["?house&closed", "?game=two-fronts&closed", "?game=mythic-masters&closed", "?game=skate-tech-park&closed"]) {
     const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${look}`, 300);
-    const got = await tab.eval<{ covered: string[]; onScreen: boolean }>(`(async () => {
+    const got = await tab.eval<{ covered: string[]; onScreen: boolean; inHeader: boolean }>(`(async () => {
       dispatchEvent(new Event("resize"));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const flag = document.querySelector(".rb-report > .eq-btn"), f = flag.getBoundingClientRect();
       const covered = [...document.querySelectorAll("button, input, select, textarea")].filter((el) => !flag.parentElement.contains(el)).filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.left < f.right && r.right > f.left && r.top < f.bottom && r.bottom > f.top; }).map((el) => el.getAttribute("aria-label") || el.placeholder || el.textContent);
-      return { covered, onScreen: f.top >= 0 && f.bottom <= innerHeight };
+      const h = document.querySelector(".rb-spaces-head").getBoundingClientRect();
+      return { covered, onScreen: f.top >= 0 && f.bottom <= innerHeight, inHeader: f.left >= h.left - 1 && f.right <= h.right + 1 && f.top >= h.top - 1 && f.bottom <= h.bottom + 1 };
     })()`);
     await tab.close();
-    expect({ look, ...got }).toEqual({ look, covered: [], onScreen: true });
+    expect({ look, ...got }).toEqual({ look, covered: [], onScreen: true, inHeader: true });
   }
 });
 
-// In a desktop's narrow chat column a message's trash and reply buttons stay beside its words, not on a line of their own.
-test.skipIf(!chromePath())("on a desktop each message's buttons sit beside its words, in every look", async () => {
+// In a desktop's narrow spaces panel the messages take its full width (the members go under them), and a message's trash and
+// reply buttons stay beside its words, not on a line of their own.
+test.skipIf(!chromePath())("on a desktop the messages get the panel's width and each message's buttons sit beside its words, in every look", async () => {
   for (const look of ["?house", "?game=two-fronts", "?game=mythic-masters", "?game=skate-tech-park"]) {
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 }, false);
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${look}`, 300);
-    const got = await tab.eval<{ rows: number; below: string[] }>(`(() => {
+    const got = await tab.eval<{ rows: number; below: string[]; wide: boolean; under: boolean }>(`(() => {
       const rows = [...document.querySelectorAll(".rb-spaces-log li")].filter((li) => li.querySelector(".rb-spaces-acts .eq-btn"));
       const below = rows.filter((li) => li.querySelector(".rb-spaces-acts").getBoundingClientRect().top >= li.querySelector("b").getBoundingClientRect().bottom).map((li) => li.textContent);
-      return { rows: rows.length, below };
+      const body = document.querySelector(".rb-spaces-body").getBoundingClientRect(), chat = document.querySelector(".rb-spaces-chat").getBoundingClientRect(), who = document.querySelector(".rb-spaces-online").getBoundingClientRect();
+      return { rows: rows.length, below, wide: chat.width >= body.width * 0.85, under: who.top >= chat.bottom };
     })()`);
     await tab.close();
     expect(got.rows).toBeGreaterThan(0);
-    expect({ look, below: got.below }).toEqual({ look, below: [] });
+    expect({ look, below: got.below, wide: got.wide, under: got.under }).toEqual({ look, below: [], wide: true, under: true });
   }
 });
 
