@@ -319,8 +319,15 @@ test("voice: a member takes a ticket into a voice channel, and the owner's mute,
   await until(() => orders.length === 1);
   expect(orders.shift()).toEqual({ t: "end", prefix: room });
 
-  // Kick: out of the space, and out of every voice channel on Qlave.
+  // Made a guest, who has no voice channels: Qlave drops them from every one. Made a member again, they have them back.
   const radio = b.voice()[0]!.id;
+  a.c.role(bo.id, "guest");
+  await until(() => b.voice().length === 0 && orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "kick", room: `space:${made.id}:${radio}`, sub: bo.id });
+  a.c.role(bo.id, "member");
+  await until(() => b.voice().length === 1);
+
+  // Kick: out of the space, and out of every voice channel on Qlave.
   a.c.kick(bo.id);
   await until(() => b.gone() === "removed from the space" && orders.length === 1);
   expect(orders.shift()).toEqual({ t: "kick", room: `space:${made.id}:${radio}`, sub: bo.id });
