@@ -169,14 +169,15 @@ No wave solver: a fair try at the physics from the standards.
   hard ground hands back up to 3 dB, grass soaks the low mids near the ground.
 - **Land:** banks on the field as a height map (`banks`): the panel's mountain button stands one across the picked stack's
   throw, the plan draws each, and a crest between a stack and a listener cuts the highs behind it (a thin screen, the
-  barrier loss in place of the ground term) on the map and on Walk in.
+  barrier loss in place of the ground term) on the map and on Walk in. A captured venue brings its own ground: once the
+  splat is in, `groundMap` reads its floor off the points (a 32 by 32 raster at most, the venue's `land`), sampled
+  bilinearly and flat outside it (`heightMap`), the higher of it and any bank where both are (`highest`).
 - `qrooms.edit({ t: "field", tempC, humidity, ground })`, `{ t: "bank", at, yaw, len, h }`, `{ t: "unbank", index }`;
   `qrooms.pa().field`. The journey is the third test in `test/pa-builder.test.ts`; the ISO table is `packages/gear/test/field.test.ts`.
 
 **Missing:**
 - Banks stand on the plan only: the builder's 3D view and the Walk-in room are still flat, and a bank can't be dragged or
   turned on the plan yet.
-- The land from a splat capture's height map, not only drawn banks.
 - Wind, a forecast for the date, noise at the site's edge and wind load on the stacks (later, by the owner's call).
 
 
