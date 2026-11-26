@@ -24,6 +24,7 @@ export interface WranglerJson {
   migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
   triggers?: { crons?: string[] };
+  connect?: { protocol?: string; port: number }[];
   limits?: { cpu_ms?: number };
   placement?: { mode?: string };
   images?: { binding: string };
@@ -70,7 +71,7 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "browser", "queues", "placement", "hyperdrive",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "connect", "images", "send_email", "ratelimits", "ai", "browser", "queues", "placement", "hyperdrive",
   "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize", "containers", "route", "routes", "observability", "limits",
   "account_id", "workers_dev", "preview_urls", "env", "pages_build_output_dir",
 ]);
@@ -246,6 +247,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
       compatibilityFlags: w.compatibility_flags ?? ["nodejs_compat"],
       ...(() => { const b = inferWorkerBuild(scripts, built ? "vite build" : null).build; return b ? { build: b } : {}; })(),
       ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
+      ...(w.connect?.[0] ? { connect: { port: w.connect[0].port } } : {}),
       ...(w.limits?.cpu_ms ? { cpuMs: w.limits.cpu_ms } : {}),
       ...(w.placement?.mode === "smart" ? { placement: { mode: "smart" as const } } : {}),
       ...codeUpdate(w.durable_objects?.code_update_strategy),
