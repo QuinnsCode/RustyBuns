@@ -26,7 +26,7 @@ const BASE = `
 .eq-fold{display:inline-flex;flex:none;padding:0;margin:0;border:0;border-radius:5px;background:none;cursor:pointer}.eq-fold:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
-.rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:calc(max(12px,env(safe-area-inset-bottom)) + var(--eq-lift,0px));z-index:2147483000;display:grid;justify-items:end;gap:6px}
+.rb-report{position:fixed;right:calc(max(12px,env(safe-area-inset-right)) + var(--eq-shift,0px));bottom:calc(max(12px,env(safe-area-inset-bottom)) + var(--eq-lift,0px));z-index:2147483000;display:grid;justify-items:end;gap:6px}
 @media (max-width:600px){.rb-report>.eq-btn{padding:0}.rb-report>.eq-btn>span{display:none}
 .rb-report .eq-form{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:min(60dvh,420px);overflow-y:auto;border-width:var(--ui-border) 0 0;border-radius:var(--ui-radius) var(--ui-radius) 0 0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
 .rb-report .eq-form textarea{min-height:72px}.rb-report:has(.eq-form:not([hidden]))>.eq-btn{display:none}
@@ -69,7 +69,7 @@ const BASE = `
 .rb-lobby-voice li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-lobby-voice li.muted{opacity:.6}.rb-lobby-voice p{margin:0;color:var(--ui-dim)}
 .rb-spaces{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-spaces[hidden]{display:none}
-.rb-spaces h2{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 16px/1.2 var(--ui-font-head)}
+.rb-spaces h2{margin:-8px 0;padding:8px 0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 16px/1.2 var(--ui-font-head)}
 .rb-spaces .eq-btn{min-height:32px;min-width:32px;padding:0 8px}.rb-spaces .eq-btn.icon{padding:0}
 .rb-spaces-head,.rb-spaces-line{display:flex;gap:6px;align-items:center}.rb-spaces-head{flex-wrap:wrap}.rb-spaces-head>.rb-spaces-line{order:1;flex:1 1 100%}.rb-spaces-line input{flex:1;min-width:0}
 .rb-spaces-list,.rb-spaces-log,.rb-spaces-online,.rb-spaces-speakers{list-style:none;margin:0;padding:0}
@@ -77,7 +77,7 @@ const BASE = `
 .rb-spaces-list .rb-spaces-row{flex:1;min-width:0;justify-content:flex-start}
 .rb-spaces-tabs{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.rb-spaces-tabs .rb-spaces-line{flex:1 1 140px}
 .rb-spaces-tabs .eq-btn.on{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-on-accent)}
-.rb-spaces-body{display:flex;gap:8px;min-height:0;flex:1}
+.rb-spaces-body{display:flex;flex-wrap:wrap;gap:8px;min-height:0;flex:1;container-type:inline-size}
 .rb-spaces-chat{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .rb-spaces-log{overflow-y:auto;max-height:40dvh;min-height:80px;overflow-wrap:anywhere}.rb-spaces-log li{display:flex;flex-wrap:wrap;align-items:center;column-gap:.3em;padding:2px 0}
 .rb-spaces-said{flex:1 1 0;min-width:0}
@@ -95,7 +95,9 @@ const BASE = `
 .rb-spaces-speakers li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-spaces-speakers li.muted{opacity:.6}
 .rb-spaces-voice-bar{display:flex;gap:6px}.rb-spaces-join,.rb-spaces-drop{align-self:flex-start}
 .rb-spaces-in-voice{display:inline-flex;margin-left:auto;margin-right:4px}
-@media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;max-width:none;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
+.rb-spaces-flag{display:none;flex:none}
+@media (max-width:600px){.rb-spaces-flag{display:block}}
+@container (max-width:540px){.rb-spaces-chat,.rb-spaces-voice{flex-basis:100%}.rb-spaces-online{flex:1 1 100%;max-width:none;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
 `;
 
 /**
@@ -130,16 +132,14 @@ export const DARK: Theme = {
 };
 
 /**
- * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: fat tiles
- * standing on a thick bottom edge of the one strong outline, paper buttons that press down into theirs, an accent
- * line under each heading, and the chip's name behind an accent dot. Every colour is a token, so it follows light and dark.
+ * The house look's own rules, worn through the same door as a game's (`css`) when a page gives no skin: one even
+ * outline on every tile, button and field (no second, thicker edge under it, which read as a broken border on dark),
+ * buttons that press in, an accent line under each heading, and the chip's name behind an accent dot. Every colour is
+ * a token, so it follows light and dark.
  */
-export const HOUSE = `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-coach,.eq-chip.in{box-shadow:0 4px 0 var(--ui-line),var(--ui-shadow)}
-.eq-btn{box-shadow:0 3px 0 var(--ui-line);margin-bottom:3px}.eq-btn:active{transform:translateY(3px);box-shadow:0 0 0 var(--ui-line)}.eq-btn:disabled{transform:none}
-.rb-spaces-log .eq-btn{box-shadow:0 2px 0 var(--ui-line);margin-bottom:2px}.eq-chip.in .eq-btn{box-shadow:none;margin-bottom:0}.eq-chip.in .eq-btn:active{transform:scale(.97)}
+export const HOUSE = `.eq-btn:active{transform:scale(.97)}.eq-btn:disabled{transform:none}
 .eq-title,.rb-spaces h2{text-decoration:underline 3px var(--ui-accent);text-underline-offset:4px}
 .eq-chip.in .eq-who::before{content:"";display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:var(--ui-accent)}
-.eq input,.eq select,.eq textarea{box-shadow:inset 0 2px 0 var(--ui-accent-soft)}
 .rb-lobby-code{background:var(--ui-accent-soft)}`;
 
 export const skinCss = (skin: Skin = {}) => `:where(.eq){${decls(TOKENS)}}\n@media (prefers-color-scheme:dark){:where(.eq){${decls(DARK)}}}\n.eq{${decls(skin.theme ?? {})}}\n${BASE}\n${skin.theme || skin.css ? skin.css ?? "" : HOUSE}\n${BADGE}`;
