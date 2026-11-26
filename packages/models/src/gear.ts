@@ -69,6 +69,7 @@ export const GEAR_SIZES = {
   "stack-mid-bass": [0.59, 0.845, 0.603],
   "horn-sub-21": [1.686, 0.582, 0.867],
   "horn-sub-18": [1.326, 0.496, 0.723],
+  "horn-sub-24": [0.702, 0.992, 1.056],
   "sculpted-3way": [0.8539, 0.6712, 0.6599],
   "arc-sub-18": [0.6568, 0.55, 0.6952],
   "amp-rack-12u": [0.6, 1.05, 0.75],
@@ -1546,6 +1547,67 @@ const mm = (v: number) => v / 1000;
 const pieceBuild = (): Build => ({ pieces: [], marks: [] });
 
 /**
+ * The 24" bass, as the Funktion-One F124 is drawn on its sheets (F124-F1-WD=T0120-00, TD=T0220-00, DD=T0221-00) and
+ * built, piece by piece (no maker's name): a tall box stood upright, 702 wide, 992 tall and 1056 deep in 18 mm ply and
+ * textured violet, one horn filling its open front. Metres from the box's centre line, floor and front.
+ * - cabinet: the open-fronted shell and its back
+ * - roof: the horn's top wall, sloping from the mouth's top edge down to the throat line 498 up at the back
+ * - shelf: the plate across the mouth, its front edge 397 up, sloping 14 degrees down to the back (the front view sees
+ *   it 220 to 396 up), three round holes 188 across and four 130 across
+ * - centre plate: on the centre line under the roof, its front edge slanting from the floor up to the roof
+ * - driver: the 24" cone low at the back, tilted up into the horn, the back round it near black
+ * - hardware: the driver's access lid in the top with its two slot handles 360 apart, the rear and bottom handles,
+ *   the NL4 panel on the back, the wheel points, the locator recesses at both side faces' corners
+ */
+function f124Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["horn-sub-24"], t = 0.018, f = d / 2, zb = -d / 2 + t, P = pieceBuild;
+  const cab = P(), roof = P(), shelf = P(), plateC = P(), drv = P(), hw = P(), iw = w - 2 * t, throat = mm(498);
+  well(cab, "violet", [w, h, d], d - t, t);
+  // the back below the roof, near black where the light dies
+  cab.pieces.push(box("cavity", [iw, throat - t, 0.004], [0, (throat + t) / 2, zb + 0.003]));
+
+  // ---- roof: one ply wall across the inside, from the mouth's top edge down to the throat line at the back
+  roof.pieces.push(prism("violet", [[f - 0.002, h - t], [f - 0.002, h - t - 0.03], [zb, throat], [zb, throat + t]], iw - 0.002));
+
+  // ---- shelf: a plate laid in its own frame (x across, y back along its slope), turned down 14 degrees to the back
+  const tilt = (14 * Math.PI) / 180, len = mm(730), circ = (x: number, y: number, r: number) =>
+    Array.from({ length: 24 }, (_, j) => { const q = (j / 24) * Math.PI * 2; return [x + Math.cos(q) * r, y + Math.sin(q) * r]; });
+  const holes = [...[-0.216, 0, 0.216].map((x) => circ(x, -mm(240), mm(94))), ...[-0.248, -0.1, 0.1, 0.248].map((x) => circ(x, -mm(500), mm(65)))];
+  const sp = frontPlate("violet", [[-iw / 2, -len], [iw / 2, -len], [iw / 2, 0], [-iw / 2, 0]], holes, t, t);
+  sp.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, mm(397), f - 0.02).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2 - tilt)));
+  shelf.pieces.push(sp);
+  // the screw heads along its back edge, two each side of the centre plate
+  for (const x of [-0.29, -0.23, 0.23, 0.29]) shelf.pieces.push(disc("metal", 0.008, 0.006, "y", [x, mm(397) - Math.sin(tilt) * (len - 0.03) + t, f - 0.02 - Math.cos(tilt) * (len - 0.03)], 8));
+
+  // ---- centre plate: on the centre line, floor to roof, its front edge slanting back as it rises
+  plateC.pieces.push(prism("violet", [[f - 0.06, t], [zb + 0.32, t], [zb + 0.32, throat + 0.03], [f - 0.5, throat + 0.03]], t));
+
+  // ---- driver: the 24" cone low on the back, tilted 30 degrees up into the horn, its rubber roll and dark cone
+  const dm = new THREE.Matrix4().makeTranslation(0, mm(260), zb + 0.17).multiply(new THREE.Matrix4().makeRotationX(-0.52)), dr = mm(230);
+  drv.pieces.push(lathe("knob", [[0, dr, dr], [0.008, dr * 0.92, dr * 0.92], [0.004, dr * 0.84, dr * 0.84]], { seg: 28, m: dm }));
+  drv.pieces.push(...cone(dr * 0.84, 0.1, dm, 24));
+
+  // ---- hardware: the lid on top, the slot handles, the NL4 panel, the wheel points, the locator recesses
+  const lidZ = -d / 2 + mm(113) + mm(268), slot = (at: THREE.Vector3Tuple, s: THREE.Vector3Tuple) => hw.pieces.push(box("cavity", s, at, { bevel: 0.006 }));
+  hw.pieces.push(box("knob", [mm(625), 0.002, mm(536)], [0, h + 0.0008, lidZ], { bevel: 0.0008 }), box("violet", [mm(617), 0.003, mm(528)], [0, h + 0.0015, lidZ], { bevel: 0.001 }));
+  for (const x of [-0.18, 0.18]) {
+    slot([x, h + 0.002, -d / 2 + mm(460)], [mm(130), 0.005, mm(52)]); // lid handles
+    slot([x, mm(498), -d / 2 - 0.002], [mm(130), mm(52), 0.005]); // rear handles
+    slot([x, 0.0005, f - mm(460)], [mm(130), 0.005, mm(52)]); // bottom handles, sunk into the floor face
+    // their pockets standing on the floor inside the mouth
+    hw.pieces.push(box("violet", [mm(160), mm(38), mm(100)], [x, t + mm(19), f - mm(460)], { bevel: 0.004 }));
+  }
+  plate(hw, mm(193), mm(147), [0, mm(674), -d / 2 - 0.004]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [-0.035, mm(690), -d / 2 - 0.008], [0.07, 0, 0]);
+  for (const x of [-1, 1]) for (const y of [mm(130), h - mm(130)]) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]])
+    hw.pieces.push(disc("metal", 0.006, 0.004, "z", [x * (w / 2 - mm(70)) + dx * mm(30), y + dy * mm(40), -d / 2 - 0.001], 8));
+  for (const s of [-1, 1]) for (const y of [mm(85), h - mm(85)]) for (const z of [f - mm(85), -d / 2 + mm(85)])
+    hw.pieces.push(box("cavity", [0.004, mm(81), mm(81)], [s * (w / 2 + 0.0008), y, z], { bevel: 0.004 }));
+  mark(hw, "grab", [w / 2 + 0.012, h / 2, 0], [1, 0, 0]);
+  return { cabinet: cab, roof, shelf, "centre-plate": plateC, driver: drv, hardware: hw };
+}
+
+/**
  * The 15" passive top, as the JBL JRX215 is drawn on its spec sheet (SSJRX215, 2013), piece by piece: a carpeted
  * MDF box narrowing to the back (460 at the front, 353 at the back, 432 deep, 686 tall on 13 mm feet), a hex grille
  * in a steel frame over the whole front, the waveguide plate high up, the 15" under it with a port slot either side
@@ -2560,7 +2622,7 @@ function la108Pieces(): Record<string, Build> {
  * a time or pulled apart (`gearPieces`) and `gear` merges them (`whole`). */
 const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "stack-mid-high": res2Pieces, "stack-mid-bass": f215Pieces,
-  "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218),
+  "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218), "horn-sub-24": f124Pieces,
   "sculpted-3way": airMotionPieces, "triple-21-sub": incubusPieces, "arc-sub-18": arcline118Pieces,
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
@@ -2610,6 +2672,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "stack-mid-bass": whole("stack-mid-bass"),
   "horn-sub-21": whole("horn-sub-21"),
   "horn-sub-18": whole("horn-sub-18"),
+  "horn-sub-24": whole("horn-sub-24"),
   "sculpted-3way": whole("sculpted-3way"),
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
