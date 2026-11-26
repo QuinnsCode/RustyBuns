@@ -106,14 +106,14 @@ const FRAME_PICKUP = -0.07;
 /** How far below the hook part's origin (the chain's end) its bite is. */
 const MOTOR_BITE = 0.143;
 
-const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "cavity", "turbo", "pcblue", "pcgrey"] as const;
+const SLOTS = ["paint", "grille", "metal", "rubber", "panel", "lid", "tolex", "body", "chrome", "knob", "light", "shell", "badge", "ink", "mesh", "coat", "cheek", "glow", "horn", "grime", "plug", "violet", "shade", "cavity", "turbo", "pcblue", "pcgrey"] as const;
 export type GearSlot = (typeof SLOTS)[number];
 /** A material per slot: paint (cabinets), grille, metal (frames, poles), rubber (feet, wheels, ramp), panel (jack
  * plates), lid (the ramp's yellow lid), tolex (guitar amps), body (the guitar), chrome, knob, light (LEDs), shell (the
  * sculpted array's moulded composite), badge (a plain label plate), ink (the white print on a control face); and a hung line array box's own:
  * mesh (its black grille, backed nearly solid), coat (its shell's even pebble coat), cheek (its paler side panels); glow (a
  * lit key's orange, the Qone mixer's one accent); and the dance stack's own: horn (the pale painted lining of
- * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
+ * its mid and high horns), grime (that lining gone dark with dust deep in a throat), plug (the bronze phase plug in a mid horn's throat), violet (its cabinets' dark violet paint), shade (that paint down a horn cell, darkened per vertex as the light falls off toward the throat: see `fade`) and cavity (that paint deep inside a bass mouth, where the sky's light hardly reaches: the light from the room round it is cut to a sixth, as the box would shade it); and the tri-amp rig's turbo (the Flashlight's TurboBlue, a near-black blue, semi-matt and textured); and the connectors' pcblue and pcgrey (powerCON's blue power-in and grey power-out housings). */
 export type GearLook = Record<GearSlot, THREE.Material>;
 
 export function gearLook(): GearLook {
@@ -125,7 +125,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x11091d, 0.86), turbo: std(0x0e1422, 0.82),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x160a2b, 0.86), shade: Object.assign(std(0x160a2b, 0.86), { vertexColors: true }), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
     cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
   };
@@ -1413,6 +1413,28 @@ function brace(x: number, y: number, front: number, w: number, h: number, ys: nu
   return p;
 }
 
+/** A piece in the `shade` paint: its full colour at `lit` and in front of it, falling off along a curve to `floor` of
+ * that colour at `dark` and behind (as the `k`th power of the way between), as daylight dies down a horn cell toward its throat. The fall is in the
+ * piece's vertex colours, so a piece needs vertices along z (a horn wall's curve, a `sheet`'s rows) to show it. */
+function fade(p: Piece, lit: number, dark: number, floor = 0.12, k = 2): Piece {
+  const pos = p.geo.getAttribute("position"), col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const s = clamp((pos.getZ(i) - dark) / (lit - dark), 0, 1), v = floor + (1 - floor) * s ** k;
+    col.fill(v, i * 3, i * 3 + 3);
+  }
+  p.geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  return { geo: p.geo, slot: "shade" };
+}
+
+/** A thin box cut into `rows` along z (so `fade` has vertices to grade across), centred at `at`. */
+function sheet(size: THREE.Vector3Tuple, at: THREE.Vector3Tuple, rows = 12): Piece {
+  let geo: THREE.BufferGeometry = new THREE.BoxGeometry(size[0], size[1], size[2], 1, 1, rows).translate(...at);
+  for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
+  geo = geo.toNonIndexed();
+  geo.computeVertexNormals();
+  return { geo, slot: "shade" };
+}
+
 function slab(slot: GearSlot, pts: number[][], y0: number, y1: number): Piece {
   const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z))), { depth: y1 - y0, bevelEnabled: false });
   geo.rotateX(-Math.PI / 2);
@@ -1551,25 +1573,29 @@ function f215Pieces(): Record<string, Build> {
   const P = (): Build => ({ pieces: [], marks: [] }), cab = P(), walls = P(), braces = P(), chans = P(), hw = P();
   const mid = h / 2, bx = -w / 2 + mm(342), bw = mm(76), cx0 = bx + bw / 2;
   well(cab, "violet", [w, h, d], d - back, t);
-  cab.pieces.push(box("violet", [w - 2 * t, t, d - back], [0, mid, back / 2], { bevel: 0.004 }));
+  // the light dies down each cell toward its throat: the shelf, the horn walls, the fins and a liner on the box's
+  // floor and roof go from the paint's full colour at the mouth to near black at the back (`fade`)
+  const mouth = f - 0.04, hx0 = -w / 2 + t, hx1 = bx - bw / 2, deepZ = (f - 0.003 + zb) / 2, deepL = f - 0.003 - zb;
+  cab.pieces.push(fade(sheet([w - 2 * t, t, d - back], [0, mid, back / 2]), mouth, zb, 0.15));
+  for (const y of [t + 0.001, h - t - 0.001]) cab.pieces.push(fade(sheet([hx1 - hx0, 0.002, deepL], [(hx0 + hx1) / 2, y, deepZ]), mouth, zb, 0.15));
   for (const [y0, y1] of [[t, mid - t / 2], [mid + t / 2, h - t]]) {
     const ch = y1 - y0, cy = (y0 + y1) / 2;
     // the horn wall: a curve x(s) = throat + (mouth - throat) s^2 from the back (s = 0) to the front (s = 1)
     const xf = -w / 2 + t, xt = bx - bw / 2 - mm(50), z0 = zb + 0.005, z1 = f - 0.002, n = 10;
     const curve = Array.from({ length: n + 1 }, (_, i) => { const s = i / n; return [xt + (xf - xt) * s * s, z0 + (z1 - z0) * s]; });
-    walls.pieces.push(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1));
+    walls.pieces.push(fade(slab("violet", [...curve, ...[...curve].reverse().map(([x, z]) => [x! - t, z!])], y0, y1), mouth, zb, 0.12, 6));
     // the brace: set 20 mm back from the front and turned toward the channel, three round 95 mm holes through it (the
     // drawing's ovals are those circles seen at the turn), and the fin behind its horn-side edge to the back
     braces.pieces.push(brace(bx, cy, f - 0.02, bw, ch, [-1, 0, 1].map((k) => k * ch * 0.29), mm(95), BRACE_TURN));
-    braces.pieces.push(box("violet", [t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]));
+    braces.pieces.push(fade(sheet([t, ch, f - 0.038 - zb], [bx - bw / 2 + t / 2, cy, (f - 0.038 + zb) / 2]), mouth, zb, 0.15));
     // the driver channel: near black at its back, a fixing block in its outer corner by the shelf
     chans.pieces.push(box("cavity", [w / 2 - t - cx0, ch, 0.004], [(w / 2 - t + cx0) / 2, cy, zb + 0.003]));
     chans.pieces.push(box("cavity", [bx - bw / 2 - xt, ch, 0.004], [(bx - bw / 2 + xt) / 2, cy, zb + 0.003]));
-    // the channel's walls, floor and roof in shadow from the back to `lit` behind the front, as the photo shows it
-    // falling to near black behind the brace (the light reaches only its mouth)
-    const lit = f - 0.13, L = lit - zb, zc = (lit + zb) / 2, fin = bx - bw / 2 + t, cw = w / 2 - t - fin;
-    chans.pieces.push(box("cavity", [0.002, ch, L], [w / 2 - t - 0.001, cy, zc]), box("cavity", [0.002, ch, L], [fin + 0.001, cy, zc]));
-    for (const y of [y0 + 0.001, y1 - 0.001]) chans.pieces.push(box("cavity", [cw - 0.004, 0.002, L], [fin + cw / 2, y, zc]));
+    // the channel's walls, floor and roof lit only at its mouth, falling to near black a fifth of a metre in, as the
+    // photo shows it behind the brace
+    const fin = bx - bw / 2 + t, cw = w / 2 - t - fin, dim = (p: Piece) => fade(p, f - 0.03, f - 0.22, 0.1);
+    chans.pieces.push(dim(sheet([0.002, ch, deepL], [w / 2 - t - 0.001, cy, deepZ])), dim(sheet([0.002, ch, deepL], [fin + 0.001, cy, deepZ])));
+    for (const y of [y0 + 0.001, y1 - 0.001]) chans.pieces.push(dim(sheet([cw - 0.004, 0.002, deepL], [fin + cw / 2, y, deepZ])));
     const by = y0 === t ? y0 + 0.02 : y1 - 0.02;
     chans.pieces.push(box("violet", [0.07, 0.022, 0.035], [w / 2 - t - 0.035, by, f - 0.06], { bevel: 0.003 }));
   }
