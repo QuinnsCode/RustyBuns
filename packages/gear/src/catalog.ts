@@ -121,8 +121,8 @@ const list: Gear[] = [
   {
     id: "cab-4x12",
     what: "guitar speaker cabinet",
-    size: box(0.76, 0.76, 0.36),
-    kg: 40,
+    size: box(0.77, 0.755, 0.365),
+    kg: 36.5,
     jacks: { "speaker-in": 1 },
     speaker: { sensitivity: 100, maxSpl: 124, ratedWatts: 240, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 80, highCut: 5000, rearLoss: 12 },
   },
@@ -341,21 +341,21 @@ const list: Gear[] = [
   // ---- Desert Gathering's other rigs (systems.ts): our own boxes, each in a well-known family, its numbers from that
   // family's published spec sheets (or, where the sheet is long out of print, typical of the class). ----
   // The synergy horn: three ways summed in one pyramid horn, 50 x 50 degrees; 100 dB (2.83 V, 1 m), 127 dB
-  // continuous and 133 peak, -10 dB at 37 Hz; 28 x 28 x 25.5 in, 60 kg, 4 ohms, 1000 W continuous.
+  // continuous and 133 peak, -10 dB at 37 Hz; 28 x 28 x 25.5 in (711 x 711 x 647 mm), 60 kg, 4 ohms, 1000 W continuous.
   {
     id: "synergy-horn",
     what: "synergy horn, three ways in one horn",
-    size: box(0.711, 0.711, 0.648),
+    size: box(0.711, 0.711, 0.647),
     kg: 60,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 100, maxSpl: 133, ratedWatts: 1000, ohms: 4, coverage: { h: 50, v: 50 }, lowCut: 37, highCut: 20000, rearLoss: 24 },
   },
   // The tapped horn: one 18" driving both ends of a folded horn; 105 dB half space, 134 continuous and 140 peak, 29 Hz
-  // at -10 dB; 1016 x 734 x 572 mm, 72.5 kg, 4 ohms, wants about 3.4 kW.
+  // at -10 dB; 572 wide, 1016 tall, 724 deep (22.5 x 40 x 28.5 in on its drawing), 72.5 kg, 4 ohms, wants about 3.4 kW.
   {
     id: "tapped-horn-18",
     what: '18" tapped horn sub',
-    size: box(0.734, 1.016, 0.572),
+    size: box(0.572, 1.016, 0.724),
     kg: 72.5,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 105, maxSpl: 140, ratedWatts: 1700, ohms: 4, coverage: { h: 360, v: 360 }, lowCut: 29, highCut: 120, rearLoss: 5 },

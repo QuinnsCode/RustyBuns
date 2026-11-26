@@ -29,7 +29,7 @@ The rigs' boxes are generic, named by what they are, with our own looks; their n
 | Box | Numbers | From |
 | --- | --- | --- |
 | `synergy-horn` | 50 x 50 deg, 100 dB (2.83 V, 1 m), 127 dB continuous / 133 peak, -10 dB at 37 Hz, 28 x 28 x 25.5 in, 60 kg, 4 ohms, 1000 W | the maker's SH50 page and dealer sheets |
-| `tapped-horn-18` | 105 dB half space, 134 continuous / 140 peak, 29 Hz at -10 dB, 1016 x 734 x 572 mm, 72.5 kg, 4 ohms, ~3.4 kW amp | the maker's TH118 spec sheet (2022) |
+| `tapped-horn-18` | 105 dB half space, 134 continuous / 140 peak, 29 Hz at -10 dB, 572 x 1016 x 724 mm (w x h x d, 22.5 x 40 x 28.5 in), 72.5 kg, 4 ohms, ~3.4 kW amp | the maker's TH118 spec sheet (2022) |
 | `triple-21-sub` | 105 dB 1 W / 1 m, 146 dB peak, 29-95 Hz +/- 3 dB, 1479 x 696 x 1218 mm, 214 kg, 6 kW AES | the maker's sheet and dealer listings |
 | `stack-mid-high` | the Res2 its model copies (#5937): a 15" bass, an 8" mid and a 1" high, all horn-loaded, 50 x 25 deg, 48 kg, 522 x 920 x 560 mm, a wedge in plan (its sides close 28 deg) | the maker's Res 2 sheet |
 | `tri-amp-top`, `tri-amp-bass` | the Turbosound Flashlight they copy (#5958): TFS-780H (a 12" and a 6.5" on TurboMid horns, a 1" waveguide, 25 x 25 deg, 142 dB peak, 87 kg) over TFS-780L (one 21" on a TurboBass horn, 101 dB, 136 dB peak, 90 kg), both 574 x 825 x 773 mm | the maker's TFS-780 datasheet |
