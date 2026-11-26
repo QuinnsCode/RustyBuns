@@ -1,7 +1,8 @@
 // The jam room's setup lessons (#5861), as a beginner walks each one at the live room's gear wall with their hands:
 // the same Lessons the page shows at the top left and qjam.lesson() reads, on the sesh's patch through the real World
 // (its fake platform). Each journey makes one mistake first and gets the reason in plain words, then puts it right; at
-// the end the lesson is done and the rig plays on as the room's own.
+// the end the lesson is done and the rig plays on as the room's own. All the way, the room's marker floats over the
+// jack, knob or box the next step is about (#6086), and moves on as each step goes green.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { setup, useWorld } from "./world-kit.ts";
 import { decodeServer } from "../src/project.ts";
@@ -10,7 +11,7 @@ import { gearOf, listen } from "../src/room/room.ts";
 import { GearHands } from "../src/studio/gear-hands.ts";
 import { gearPlace, toStudio } from "../src/studio/gear-wall.ts";
 import { hear, newJam, walkTo } from "../src/studio/jam.ts";
-import { Lessons } from "../src/studio/lessons.ts";
+import { Lessons, markAt } from "../src/studio/lessons.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 
 setDefaultTimeout(30_000);
@@ -37,13 +38,20 @@ async function walkIn() {
   /** Look at a knob, hold the click and drag: up turns it up (a pixel is 0.004). */
   const turn = (id: string, knob: string, by: number) => { expect(click(id, knob)).toEqual({ ok: true }); hands.drag(-by / 0.004); hands.turning = null; };
   const now = () => lessons.state()!;
-  return { jam, hands, lessons, g, go, click, turn, now };
+  /** What the marker is over, after checking it floats just above that part in the room. */
+  const marked = () => {
+    const m = now().mark;
+    if (m) expect(markAt(hands.room, m)).not.toBeNull();
+    return m;
+  };
+  return { marked, jam, hands, lessons, g, go, click, turn, now };
 }
 
 test("plug a guitar through a pedal into an amp: straight into the amp is caught, then a gain too hot", async () => {
-  const { lessons, jam, hands, g, go, click, turn, now } = await walkIn();
+  const { lessons, jam, hands, g, go, click, turn, now, marked } = await walkIn();
   expect(lessons.start("guitar", jam)).toEqual({ ok: true });
   expect(now()).toMatchObject({ id: "guitar", next: 0, done: false });
+  expect(marked()).toEqual({ id: "guitar", part: "out" });
 
   // an amp on the rack faces out, its back to the wall: lift Q Lead 50 down onto the cab, where you can get round it
   go([0, -1.9]);
@@ -55,6 +63,10 @@ test("plug a guitar through a pedal into an amp: straight into the amp is caught
   // the guitar's cable straight into the amp's In: the first step says why that isn't it
   go([1.8, 0.6], [-0.6, 0.6]);
   expect(click("guitar", "out")).toEqual({ ok: true });
+  // the guitar's cable in your hand: the marker moves on to a pedal's In
+  const pedal = marked()!;
+  expect(pedal.part).toBe("in");
+  expect(gearOf(hands.room.studio.patch.placed.find((p) => p.id === pedal.id)!)?.kind).toBe("pedal");
   go([1.0, -0.9], [1.6, -0.85]);
   expect(click("lead", "in")).toEqual({ ok: true });
   expect(now().steps[0]).toMatchObject({ done: false });
@@ -68,18 +80,21 @@ test("plug a guitar through a pedal into an amp: straight into the amp is caught
   go([1.0, -0.9], [1.6, -0.85]);
   expect(click("lead", "in")).toEqual({ ok: true });
   expect(now()).toMatchObject({ next: 2 });
+  expect(marked()).toEqual({ id: "lead", part: "speaker" });
 
   // round the cab to the amp's back: its Speaker out into the cab
   go([2.5, -0.9], [2.1, -2.2]);
   expect(click("lead", "speaker")).toEqual({ ok: true });
   expect(click("cab", "in")).toEqual({ ok: true });
-  // Q Lead 50 stands at 7: not too hot, so that's the lesson done
+  // Q Lead 50 stands at 7: not too hot, so that's the lesson done, and nothing left to point at
   expect(now()).toMatchObject({ done: true });
+  expect(marked()).toBeNull();
 
   // the gain right up: too hot, and the card says what that does
   go([2.5, -0.9], [1.6, -0.85]);
   turn("lead", "gain", 0.2);
   expect(now().steps[3].why).toMatch(/Gain too hot \(9 of 10\).*fizz/);
+  expect(marked()).toEqual({ id: "lead", part: "gain" });
   turn("lead", "gain", -0.3);
   expect(now()).toMatchObject({ done: true, next: -1 });
 
@@ -91,9 +106,10 @@ test("plug a guitar through a pedal into an amp: straight into the amp is caught
 });
 
 test("patch a sound wall voice: VCO into the filter's CV is caught, then a shut VCA", async () => {
-  const { lessons, jam, hands, go, turn, now } = await walkIn();
+  const { lessons, jam, hands, go, turn, now, marked } = await walkIn();
   const cable = (a: string, ja: string, b: string, jb: string) => { hands.lookAt(jam, a, ja); const one = hands.click(jam); hands.lookAt(jam, b, jb); return [one, hands.click(jam)]; };
   expect(lessons.start("voice", jam)).toEqual({ ok: true });
+  expect(marked()).toEqual({ id: "wall-vco", part: "saw" });
   go([2.5, 0.5], [2.5, -2.0], [1.84, -2.15]);
 
   // Q Saw into Q Filter's CV: that moves the cutoff, it doesn't carry the sound
@@ -107,13 +123,14 @@ test("patch a sound wall voice: VCO into the filter's CV is caught, then a shut 
   // all cabled, but Q Level's Level is at 0 with nothing in its CV: shut
   expect(now()).toMatchObject({ next: 3 });
   expect(now().steps[3].why).toContain("Q Level is shut");
+  expect(marked()).toEqual({ id: "wall-vca", part: "level" });
   turn("wall-vca", "level", 0.6);
   expect(now()).toMatchObject({ done: true });
   expect(hands.wall()).toMatchObject({ playing: true });
 });
 
 test("set up a PA for a small room: placed, aimed, cabled, and a thump from the wrong switch-on order", async () => {
-  const { lessons, jam, hands, g, go, click, now } = await walkIn();
+  const { lessons, jam, hands, g, go, click, now, marked } = await walkIn();
   // into the room's middle, facing the back wall: the kit lands on the floor in front of you
   const b = hands.room.bounds!, mid = { x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 };
   go([mid.x, mid.z + 1.5]);
@@ -158,11 +175,14 @@ test("set up a PA for a small room: placed, aimed, cabled, and a thump from the 
   cable("pa-mixer", "xlr-out-1", "pa-top-1", "xlr-in");
   cable("pa-mixer", "xlr-out-2", "pa-top-2", "xlr-in");
   expect(now()).toMatchObject({ next: 4 });
+  // all off: the marker is on the mixer's switch first
+  expect(marked()).toEqual({ id: "pa-mixer", part: "power" });
 
   // a speaker on before the mixer: when the mixer goes on, it thumps
   const power = (id: string, on: boolean) => { expect(reach(id, "power")).toEqual({ ok: true }); hands.drag(on ? -250 : 250); hands.turning = null; lessons.state(); };
   power("pa-top-1", true);
   expect(now().steps[4].why).toContain("A speaker is on before the mixer");
+  expect(marked()).toEqual({ id: "pa-top-1", part: "power" });
   power("pa-mixer", true);
   power("pa-top-2", true);
   expect(now().steps[4].why).toContain("thump");
