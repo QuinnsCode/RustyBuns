@@ -74,7 +74,7 @@ export const GEAR_SIZES = {
   "amp-rack-12u": [0.6, 1.05, 0.75],
   "generator-100kva": [1.3, 2.0, 3.6],
   // Desert Gathering's other rigs (packages/gear systems.ts): sizes from the makers' sheets, or typical of the class
-  "synergy-horn": [0.711, 0.711, 0.648],
+  "synergy-horn": [0.711, 0.711, 0.647],
   "tapped-horn-18": [0.734, 1.016, 0.572],
   "triple-21-sub": [1.479, 0.696, 1.218],
   "tri-amp-top": [0.574, 0.825, 0.773],
@@ -1769,28 +1769,80 @@ function backAndFeet(b: Build, [w, h, d]: readonly number[], handleY = 0.6, bars
 }
 
 /**
- * The synergy horn: one square box, 71 cm a side, whose whole front is a single pyramid horn in a textured black coat.
- * The tweeter's compression driver sits at the throat; the four mids fire into the horn's walls through small ports
- * part way up it, and the two 12" woofers through slots near its mouth, so all three ways leave from one point (the
- * box that sums as one source, 50 x 50 degrees). Flying points at the corners.
+ * The synergy horn, as the Danley SH50 is given on its spec sheet (Rev. 202209301629: 711 x 711 x 647 mm, 18 mm
+ * Baltic birch in black polyurea, 2 x 12" + 4 x 5" + 1" in one 50 x 50 degree horn) and shown in the maker's
+ * renders (front, side, back, no grille), piece by piece, no maker's name. The sheet gives no plan drawing, so the
+ * plan is read off the back render: the sides run straight 72 mm, then close 25 degrees each (half the horn's 50, so
+ * boxes side by side splay to an arc) to a 174 mm flat back. Metres from the box's centre line, floor and front.
+ * - cabinet: the top and bottom in the box's plan, the straight and closing sides, the back flat, the front frame
+ *   round the mouth (18 mm), two rubber runners under it
+ * - horn: one flat-walled pyramid from the 675 mm mouth to a 115 mm throat 580 deep, its walls 25 degrees off the
+ *   axis, parallel to the box's closing sides; the compression driver behind the throat
+ * - ports: the four 5" mids' round ports in the side walls part way down, the two 12" woofers' slots in the top and
+ *   bottom walls near the mouth
+ * - grille: the perforated steel sheet inside the frame, held by 22 black screws
+ * - hardware: four hand pockets in each closing side, the M10 points (5 on the top, 5 under, 4 in each side), the
+ *   jack plate low on the back flat with its two speaker jacks, the label recess above it
  */
-function synergyHorn(): Build {
-  const size = GEAR_SIZES["synergy-horn"], [w, h, d] = size, b: Build = { pieces: [], marks: [] }, t = 0.022, deep = d * 0.78, front = d / 2;
-  well(b, "coat", size, deep, t);
-  const W = w - 2 * t, H = h - 2 * t;
-  b.pieces.push(lathe("coat", [[-deep * 0.97, W * 0.035, H * 0.035], [-deep * 0.6, W * 0.2, H * 0.2], [-deep * 0.3, W * 0.35, H * 0.35], [0, W / 2, H / 2]], { p: 7, seg: 32, m: new THREE.Matrix4().makeTranslation(0, h / 2, front - 0.004) }));
-  b.pieces.push(disc("knob", 0.022, 0.012, "z", [0, h / 2, front - deep * 0.95], 12));
-  // the mids' ports: one in each wall, part way up the horn (walls at a fifth of the width there)
-  const mz = front - 0.004 - deep * 0.6, mr = W * 0.2 - 0.002;
-  for (const [x, y, axis] of [[mr, 0, "x"], [-mr, 0, "x"], [0, mr, "y"], [0, -mr, "y"]] as const) b.pieces.push(disc("knob", 0.03, 0.02, axis, [x, h / 2 + y, mz], 12));
-  // the woofers' slots near the mouth, top and bottom walls
-  const wz = front - 0.004 - deep * 0.22, wr = W * 0.39;
-  for (const y of [wr, -wr]) b.pieces.push(box("knob", [W * 0.4, 0.024, 0.07], [0, h / 2 + y, wz]));
-  for (const x of [-1, 1]) for (const y of [0.04, h - 0.04]) b.pieces.push(box("knob", [0.006, 0.05, 0.12], [x * (w / 2 + 0.003), y, -d / 2 + 0.1]));
-  // the touring box's perforated steel grille over the whole mouth, the horn dim behind its holes
-  b.pieces.push(...grilleSlab(W - 0.004, H - 0.004, 0.012, h / 2, front - 0.013, 0.008));
-  backAndFeet(b, size, 0.5);
-  return b;
+function sh50Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["synergy-horn"], P = pieceBuild, cab = P(), horn = P(), ports = P(), grille = P(), hw = P();
+  const t = mm(18), f = d / 2, zb = -d / 2, rim = mm(18), feet = mm(10), cy = (h + feet) / 2;
+  const zk = f - mm(72), bh = mm(87), knee = w / 2;
+  // the right closing side: its run, its turn about y (local +z along it, back to front) and its outward normal
+  const run = Math.hypot(knee - bh, zk - zb), turn = Math.atan2(knee - bh, zk - zb), out: THREE.Vector3Tuple = [Math.cos(turn), 0, -Math.sin(turn)];
+  // a point on a closing side's outside, `s` from the knee (0) to the back (1), `lift` out of it, `y` up; x mirrored by `side`
+  const onSide = (side: number, s: number, y: number, lift = 0): THREE.Vector3Tuple =>
+    [side * (knee + (bh - knee) * s + out[0] * lift), y, zk + (zb - zk) * s + out[2] * lift];
+  const plan = [[-w / 2, f], [w / 2, f], [w / 2, zk], [bh, zb], [-bh, zb], [-w / 2, zk]];
+
+  // cabinet: top and bottom in the plan, the sides straight then closing, the back flat, the frame round the mouth
+  cab.pieces.push(slab("coat", plan, feet, feet + t), slab("coat", plan, h - t, h));
+  for (const s of [-1, 1]) {
+    cab.pieces.push(box("coat", [t, h - feet - 2 * t, f - zk], [s * (w / 2 - t / 2), cy, (f + zk) / 2]));
+    const mid = onSide(s, 0.5, cy, -t / 2);
+    cab.pieces.push(box("coat", [t, h - feet - 2 * t, run], mid, { rot: [0, s * turn, 0] }));
+  }
+  cab.pieces.push(box("coat", [2 * bh, h - feet - 2 * t, t], [0, cy, zb + t / 2]));
+  cab.pieces.push(frontPlate("coat", rect(0, cy, w, h - feet), [rect(0, cy, w - 2 * rim, h - feet - 2 * rim)], f, t));
+  for (const s of [-1, 1]) cab.pieces.push(box("rubber", [mm(100), feet, mm(360)], [s * mm(160), feet / 2, mm(120)], { bevel: 0.003 }));
+
+  // horn: the mouth inside the frame back to the throat, the compression driver's round mouth behind it
+  const deep = mm(580), zf = f - mm(26), mo = (w - 2 * rim) / 2, th = mm(57.5), slope = (mo - th) / deep;
+  horn.pieces.push(frustum("coat", [-mo, mo, cy - mo, cy + mo], [-th, th, cy - th, cy + th], zf, deep));
+  horn.pieces.push(box("cavity", [2 * th, 2 * th, 0.004], [0, cy, zf - deep - 0.002]));
+  horn.pieces.push(disc("knob", mm(25), mm(12), "z", [0, cy, zf - deep - 0.004], 16));
+
+  // ports: a 5" mid's round port (70 mm) in each side wall 300 back, above and below centre; the 12"s' slots
+  // (300 x 50) in the top and bottom walls 120 back
+  const wall = Math.atan(slope), half = (u: number) => mo - slope * u;
+  for (const s of [-1, 1]) for (const dy of [-mm(110), mm(110)]) {
+    const u = mm(300), p = disc("cavity", mm(35), 0.004, "x", [0, 0, 0], 16);
+    p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(s * (half(u) - 0.002), cy + dy, zf - u).multiply(new THREE.Matrix4().makeRotationY(s * wall)));
+    ports.pieces.push(p);
+  }
+  for (const s of [-1, 1]) { const u = mm(120); ports.pieces.push(box("cavity", [mm(300), 0.004, mm(50) / Math.cos(wall)], [0, cy + s * (half(u) - 0.002), zf - u], { rot: [-s * wall, 0, 0] })); }
+
+  // grille: the perforated sheet inside the frame, six black screws along its top and bottom, five down each side
+  const gw = w - 2 * rim - 0.004, gh = h - feet - 2 * rim - 0.004;
+  grille.pieces.push(...grilleSlab(gw, gh, mm(12), cy, f - mm(13), mm(4)));
+  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) grille.pieces.push(...screw([(i / 5 - 0.5) * (gw - 0.03), cy + s * (gh / 2 - 0.011), f + 0.001], "z", 0.004, "knob", 6));
+  for (const s of [-1, 1]) for (let i = 1; i < 6; i++) grille.pieces.push(...screw([s * (gw / 2 - 0.011), cy + (i / 6 - 0.5) * (gh - 0.03), f + 0.001], "z", 0.004, "knob", 6));
+
+  // hardware: the hand pockets (110 x 50) high and low in each closing side, the M10 points, the back's jack plate
+  for (const s of [-1, 1]) for (const a of [0.3, 0.72]) for (const y of [mm(75), h - mm(75)])
+    hw.pieces.push(box("cavity", [0.004, mm(50), mm(110)], onSide(s, a, y, 0.0004), { rot: [0, s * turn, 0], bevel: 0.001 }));
+  for (const s of [-1, 1]) for (const [a, y] of [[0.12, mm(40)], [0.12, h - mm(40)], [0.52, h / 2 + mm(140)], [0.52, h / 2 - mm(140)]] as const) {
+    const p = disc("metal", 0.009, 0.003, "x", [0, 0, 0], 10);
+    p.geo.applyMatrix4(new THREE.Matrix4().makeTranslation(...onSide(s, a, y, 0.0015)).multiply(new THREE.Matrix4().makeRotationY(s * turn)));
+    hw.pieces.push(p);
+  }
+  for (const y of [h + 0.0015, feet - 0.0015]) for (const [x, z] of [[-mm(250), f - mm(45)], [mm(250), f - mm(45)], [-mm(120), zb + mm(200)], [mm(120), zb + mm(200)], [0, zb + mm(40)]])
+    hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x, y, z], 10));
+  plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.004]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.008], [0, -mm(140), 0]);
+  hw.pieces.push(box("cavity", [mm(80), mm(45), 0.004], [0, h / 2 + mm(30), zb - 0.0004], { bevel: 0.001 }));
+  mark(hw, "grab", onSide(1, 0.3, h - mm(75), 0.012), out);
+  return { cabinet: cab, horn, ports, grille, hardware: hw };
 }
 
 /**
@@ -2565,6 +2617,7 @@ const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
   "top-12-powered": () => k2Pieces("top-12-powered"), "fill-8-powered": () => k2Pieces("fill-8-powered"), "sub-18": ks118Pieces, "wedge-12": cp12Pieces, "line-array-10": la108Pieces,
+  "synergy-horn": sh50Pieces,
 };
 
 /** A box built piece by piece, every piece merged into one build. */
@@ -2614,7 +2667,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,
   "generator-100kva": siteGenerator,
-  "synergy-horn": synergyHorn,
+  "synergy-horn": whole("synergy-horn"),
   "tapped-horn-18": tappedHorn,
   "triple-21-sub": whole("triple-21-sub"),
   "tri-amp-top": whole("tri-amp-top"),

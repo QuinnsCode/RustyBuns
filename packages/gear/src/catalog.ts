@@ -341,11 +341,11 @@ const list: Gear[] = [
   // ---- Desert Gathering's other rigs (systems.ts): our own boxes, each in a well-known family, its numbers from that
   // family's published spec sheets (or, where the sheet is long out of print, typical of the class). ----
   // The synergy horn: three ways summed in one pyramid horn, 50 x 50 degrees; 100 dB (2.83 V, 1 m), 127 dB
-  // continuous and 133 peak, -10 dB at 37 Hz; 28 x 28 x 25.5 in, 60 kg, 4 ohms, 1000 W continuous.
+  // continuous and 133 peak, -10 dB at 37 Hz; 28 x 28 x 25.5 in (711 x 711 x 647 mm), 60 kg, 4 ohms, 1000 W continuous.
   {
     id: "synergy-horn",
     what: "synergy horn, three ways in one horn",
-    size: box(0.711, 0.711, 0.648),
+    size: box(0.711, 0.711, 0.647),
     kg: 60,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 100, maxSpl: 133, ratedWatts: 1000, ohms: 4, coverage: { h: 50, v: 50 }, lowCut: 37, highCut: 20000, rearLoss: 24 },
