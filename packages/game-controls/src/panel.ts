@@ -38,6 +38,12 @@ export interface Opts {
   faders?: boolean;
   /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"], or ["wild", "Wilds", "The wilds (wind, birds, rain)"] for a short label with the long name as its tooltip; needs `show: ["audio"]`. */
   sounds?: [id: string, label: string, tip?: string][];
+  /**
+   * Name the four profiles instead of drawing a device icon on each (a game whose profiles are not a gamepad, a keyboard
+   * and a mouse): each button becomes a preset key, an LED (`.gc-led`), its number and the name (`.gc-name`), with
+   * `data-slot` (0 to 3) for a game's own colour per key. The bar gets `gc-presets`.
+   */
+  presets?: [string, string, string, string];
   /** Section titles by id from `SECTIONS` (e.g. { lookX: "Tunnel" }), for a game whose sections mean something else. */
   titles?: Record<string, string>;
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
@@ -150,7 +156,10 @@ export function mountControls(o: Opts) {
   const profBar = Object.assign(document.createElement("div"), { className: "gc-profiles", role: "group", ariaLabel: "Profiles" });
   const profBtns = (["Gamepad2", "Keyboard", "Mouse", "Smartphone"] as const).map((ic, i) => {
     const b = Object.assign(document.createElement("button"), { type: "button", className: "gc-tab gc-prof", name: `profile-${i + 1}`, title: `Profile ${i + 1}`, ariaLabel: `Profile ${i + 1}` });
-    b.append(icon(ic, 18), String(i + 1));
+    b.setAttribute("data-slot", String(i));
+    const name = o.presets?.[i];
+    if (name) b.append(Object.assign(document.createElement("span"), { className: "gc-led" }), Object.assign(document.createElement("b"), { textContent: String(i + 1) }), Object.assign(document.createElement("span"), { className: "gc-name", textContent: name }));
+    else b.append(icon(ic, 18), String(i + 1));
     b.addEventListener("click", () => pick(i));
     profBar.append(b);
     return b;
@@ -168,6 +177,7 @@ export function mountControls(o: Opts) {
     save();
     paintProfiles();
   };
+  if (o.presets) profBar.classList.add("gc-presets");
   card.append(profBar);
   if (!o.tabs && !o.lean) card.append(foldBar());
   if (o.tabs) {

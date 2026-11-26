@@ -799,3 +799,17 @@ html .ui-house .gc-sec::after { content: "CLEARED"; position: absolute; right: 1
   font: 900 14px/1 var(--br-stencil); letter-spacing: 0.16em; color: #c2410c; border: 3px double #c2410c; border-radius: 4px; pointer-events: none;
   -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
 html .ui-house .gc-sec.shut::after { content: none; }
+
+/* Round 16 (#5117): one drawn piece inside the manual, and a white canvas round it. The card holds the sniper's range
+   card (range.svg 1.0 KB: a reticle with posts and mil hash, a clay soldier's bust on the cross with two orange hits,
+   a pencilled stadia ladder and wind note) fixed in its view, so it shows through the sheets wherever the list is
+   scrolled. The sheets are white paper a little see-through, each taped down at its top corner (tape.svg 0.4 KB), and
+   the scrim behind the manual is a white wash, not grey. */
+html .gc-dialog.ui-house { background: #fffffcc4; }
+html .ui-house .gc-card { background: url(/menu/range.svg) 50% 58% / min(92%, 520px) no-repeat scroll, var(--br-brackets),
+  url(/menu/coffee.svg) right -60px top 40% / 200px no-repeat local, #fff; background-repeat: no-repeat; }
+html .ui-house .gc-sec { overflow: hidden;
+  background: linear-gradient(#0000 calc(100% - 16px), #efe6cf calc(100% - 13px)), radial-gradient(120% 90% at 50% 40%, #0000 70%, #c9a86014 90%, #a9813a26),
+    url(/menu/slip.svg) 0 4px / 64px, #ffffffd1; }
+html .ui-house .gc-sec::before { content: ""; position: absolute; z-index: 2; top: -4px; right: -18px; width: 84px; height: 26px; pointer-events: none;
+  transform: rotate(31deg); background: url(/menu/tape.svg) center / 100% 100% no-repeat; }

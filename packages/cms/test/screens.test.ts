@@ -2,7 +2,14 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { localOnly } from "../src/index.ts";
 import { screens, type Screen } from "../src/screens.ts";
+
+test("an editor answers requests addressed to this machine, not a name rebound to it", async () => {
+  const editor = localOnly(async () => new Response("ok"));
+  for (const host of ["localhost:4706", "127.0.0.1:4706", "[::1]:4706"]) expect((await editor(new Request(`http://${host}/`))).status).toBe(200);
+  expect((await editor(new Request("http://evil.example:4706/", { method: "POST", headers: { origin: "http://evil.example:4706" } }))).status).toBe(403);
+});
 
 test("the owner opens a screen, changes its button, saves, and the app's file keeps everything else", async () => {
   const dir = await mkdtemp(join(tmpdir(), "screens-"));

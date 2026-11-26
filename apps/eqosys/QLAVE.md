@@ -91,7 +91,10 @@ no other. Everything else is a space's flow with the `Party` DO in place of the 
 - The page sends `{ t: "talk" }` over the party socket and gets `{ t: "ticket", url, ticket }` back, a ticket like §1's
   with the party's room. The party's `chat` rule decides who may: off, nobody; "host", the host alone.
 - A party mute (the `mute` rule says who may) is sent as `mute` for the room, and a muted member's mute goes before their ticket.
-- The host's take-out or block (when blocked people are kept out) is sent as `kick`.
+- The host's take-out or block is sent as `kick`: a blocked person let in hidden stays in the lobby but out of voice,
+  and gets no ticket.
+- When the host narrows who may talk (chat to "host" or off, or hands over while it is "host"), the room is ended; whoever
+  still may talk asks for a ticket into a new one.
 - The party ending sends `end` with the room's name: its alarm at the party's expiry, the host shortening the party past its
   age, or the host's account deleted. Any account delete that sat in a party sends `erase`.
 - Orders go through the same outbox and retries as a space's (`queue` and `flush` in `src/qollab/qlave.ts`).

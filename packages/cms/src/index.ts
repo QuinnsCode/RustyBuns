@@ -153,6 +153,10 @@ export function cms({ dir, title }: CmsOptions): (req: Request) => Promise<Respo
   };
 }
 
+/** Only requests addressed to this machine: a web page whose own name was rebound to 127.0.0.1 matches its own Origin. */
+export const localOnly = (handle: (req: Request) => Promise<Response>) => async (req: Request): Promise<Response> =>
+  ["localhost", "127.0.0.1", "[::1]"].includes(new URL(req.url).hostname) ? handle(req) : new Response("this editor answers on localhost only", { status: 403 });
+
 export function serveCms(opts: CmsOptions & { port: number }) {
-  return Bun.serve({ hostname: "127.0.0.1", port: opts.port, fetch: cms(opts) });
+  return Bun.serve({ hostname: "127.0.0.1", port: opts.port, fetch: localOnly(cms(opts)) });
 }

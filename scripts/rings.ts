@@ -264,10 +264,21 @@ async function ringRef(repo: string, ring: string): Promise<string | undefined> 
   return r.exitCode === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
 }
 
+const SavingRun = obj({ event: str(60), path: str(300) });
+
+/** Any run can upload an artifact under any name, a stranger's fork PR's among them: builds are saved only by these
+ * workflows on these events (express.yml calls the hourly), and nothing else is downloaded and made executable. */
+export const savesBuilds = (run: { event: string; path: string }) =>
+  ["schedule", "push", "workflow_dispatch", "pull_request_target"].includes(run.event) && /^\.github\/workflows\/(desktop-hourly|express)\.yml(@|$)/.test(run.path);
+
 /** The run that saved <name>, if it was saved and hasn't expired. */
 async function savedRun(repo: string, name: string): Promise<number | undefined> {
-  const out = await Bun.$`gh api ${`repos/${repo}/actions/artifacts?name=${name}&per_page=5`}`.quiet().text();
-  return Artifacts(JSON.parse(out)).artifacts.find((a) => a.name === name && !a.expired)?.workflow_run?.id;
+  const out = await Bun.$`gh api ${`repos/${repo}/actions/artifacts?name=${name}&per_page=100`}`.quiet().text();
+  for (const a of Artifacts(JSON.parse(out)).artifacts) {
+    const id = a.name === name && !a.expired ? a.workflow_run?.id : undefined;
+    if (id && savesBuilds(SavingRun(JSON.parse(await Bun.$`gh api repos/${repo}/actions/runs/${id}`.quiet().text())))) return id;
+  }
+  return undefined;
 }
 
 async function rollback(repo: string, ring: string, app: string, target: string, from?: string) {

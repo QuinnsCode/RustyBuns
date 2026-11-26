@@ -329,3 +329,13 @@ test("scores persist at the podium; a round cut short by an eviction replays fro
   expect(again.match.phase).toBe("podium");
   expect(again.match.sim.hippos.map((h) => h.score)).toEqual(scores);
 });
+
+test("a client saying hello over and over writes the room once", () => {
+  const { ctx, join, say } = setup();
+  const put = ctx.storage.put;
+  let writes = 0;
+  ctx.storage.put = async (k, v) => { writes++; await put(k, v); };
+  const a = join("a", "Ada");
+  for (let i = 0; i < 30; i++) say(a, { t: "hello", v: PROTO_VERSION });
+  expect(writes).toBe(1);
+});

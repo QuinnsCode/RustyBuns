@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { bisect, blameLine, GRACE_MIN, jobsFor, lastBlame, prOf, redRange, revertDue, type Blame, type Verdict } from "./ring-red.ts";
+import { bisect, blameLine, GRACE_MIN, jobsFor, lastBlame, ownBodies, ownPr, prOf, redRange, revertDue, type Blame, type Verdict } from "./ring-red.ts";
 import type { Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
@@ -52,6 +52,12 @@ test("jobsFor: the hourly's job names become the commands it ran; other OSes' sm
 test("prOf reads the squash title's PR, not an issue it closes", () => {
   expect(prOf("fm-daw Shape: automate the EQ bands (closes #4518) (#4530)")).toBe(4530);
   expect(prOf("a commit pushed straight")).toBeUndefined();
+});
+
+test("a stranger's marker and a fork's PR under the same branch name aren't taken for ours", () => {
+  expect(ownBodies([{ body: "ours", viewerDidAuthor: true }, { body: "pasted", viewerDidAuthor: false }])).toEqual(["ours"]);
+  expect(ownPr([{ url: "https://x/fork", isCrossRepository: true }, { url: "https://x/ours", isCrossRepository: false }])).toBe("https://x/ours");
+  expect(ownPr([{ url: "https://x/fork", isCrossRepository: true }])).toBeUndefined();
 });
 
 test("the newest blame marker wins, read back from the issue's comments", () => {
