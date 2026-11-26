@@ -53,6 +53,34 @@ export const BUILDS = {
   strong: { height: 1.73, frame: -0.1, mass: 0.1, muscle: 0.8, belly: -0.2, bust: 0.45, legs: 0.1 },
 } satisfies Record<string, Build>;
 export type BuildName = keyof typeof BUILDS;
+
+/** How a face differs from the middle of the range, each -1 to 1, so two people of one build don't share a face. */
+export interface Face {
+  /** Narrow to wide at the jaw. */
+  jaw: number;
+  /** A small, set-back chin to a long, strong one. */
+  chin: number;
+  /** A short nose to a long one, and a narrow one to a broad one. */
+  nose: number; noseWidth: number;
+  /** A smooth brow to a heavy ridge. */
+  brow: number;
+  /** Flat to high, full cheekbones. */
+  cheeks: number;
+  /** Thin lips to full ones. */
+  lips: number;
+  /** Small eyes to big ones, and close-set to wide-set. */
+  eyes: number; eyeGap: number;
+}
+const FACE_KEYS = ["jaw", "chin", "nose", "noseWidth", "brow", "cheeks", "lips", "eyes", "eyeGap"] as const;
+/** A face from a seed: the same seed, the same face. Most numbers sit near the middle, as faces do. */
+export function faceOf(seed: number): Face {
+  const r = mulberry32(seed * 7919 + 17);
+  const face = {} as Face;
+  for (const k of FACE_KEYS) face[k] = Math.round(((r() + r() + r()) / 1.5 - 1) * 100) / 100;
+  return face;
+}
+/** Eye colours, browns most often, as in a crowd. */
+const EYES = ["#4a2e1a", "#5a3a22", "#3b2416", "#6b4a2b", "#7a5a32", "#5f6a3a", "#4f6f86", "#6c8aa0", "#3f5560"];
 export const BUILD_NAMES = Object.keys(BUILDS) as BuildName[];
 
 export type Top = "puffer" | "shirt" | "tee" | "fur";
@@ -76,17 +104,17 @@ export interface Outfit {
 /** A colour (sRGB hex) for each slot the mesh is painted with; a slot left out takes `DEFAULT_PALETTE`'s. */
 export type Palette = Partial<Record<Slot, string>>;
 
-const SLOTS = ["skin", "lips", "eyeWhite", "iris", "hair", "brow", "top", "topDark", "trim", "bottom", "bottomDark", "boot", "bootDark",
+const SLOTS = ["skin", "lips", "eyeWhite", "iris", "pupil", "hair", "brow", "top", "topDark", "trim", "bottom", "bottomDark", "boot", "bootDark",
   "sole", "hat", "hatDark", "band", "pack", "packDark", "strap", "roll", "belt", "kit", "metal", "glow"] as const;
 export type Slot = (typeof SLOTS)[number];
 export const DEFAULT_PALETTE: Record<Slot, string> = {
-  skin: "#c68a5e", lips: "#9c5a4a", eyeWhite: "#eee9e0", iris: "#2a1c14", hair: "#2a1b12", brow: "#22160e",
+  skin: "#c68a5e", lips: "#9c5a4a", eyeWhite: "#e6ddd2", iris: "#5a3a22", pupil: "#0c0907", hair: "#2a1b12", brow: "#22160e",
   top: "#d9482b", topDark: "#a83a24", trim: "#5e2216", bottom: "#3b3f4a", bottomDark: "#2c2f37", boot: "#5a3b24", bootDark: "#3d2818",
   sole: "#1d1611", hat: "#1aa39a", hatDark: "#127068", band: "#3b2a1a", pack: "#e0a526", packDark: "#86631a", strap: "#654a13",
   roll: "#5a6b3a", belt: "#3b2a1a", kit: "#1e2226", metal: "#c9a646", glow: "#fff8e0",
 };
 
-const SURFACE: Partial<Record<Slot, number>> = { skin: 1, lips: 1, eyeWhite: 2, iris: 2, hair: 3, brow: 3 };
+const SURFACE: Partial<Record<Slot, number>> = { skin: 1, lips: 1, eyeWhite: 2, iris: 2, pupil: 2, hair: 3, brow: 3 };
 
 /** The bones, in skeleton order. `R` is the figure's own right (x < 0 when it faces +z). */
 export const BONES = ["hips", "spine", "chest", "neck", "head", "armR", "foreR", "handR", "armL", "foreL", "handL",
@@ -349,7 +377,7 @@ const TOPS: Record<Top, { thick: number; hem: number; baffles: boolean; sleeve: 
   fur: { thick: 0.02, hem: -1, baffles: false, sleeve: "long" },
 };
 
-function buildMesh(d: Dims, b: Build, o: Outfit): THREE.BufferGeometry {
+function buildMesh(d: Dims, b: Build, o: Outfit, face: Face): THREE.BufferGeometry {
   const m = new Builder(), k = d.k, t = d.torso, top = TOPS[o.top], fur = o.top === "fur";
   const shaggy = (amount: number) => (p: THREE.Vector3) => {
     if (!fur) return;
@@ -470,7 +498,7 @@ function buildMesh(d: Dims, b: Build, o: Outfit): THREE.BufferGeometry {
       { seg: 8, step: 0.025 * k, capBottom: 0.008 * k, m: tm, slot: fur ? "bootDark" : "skin", skin: handB });
   }
 
-  head(m, d, b, o);
+  head(m, d, o, face);
   /** How far forward the front of the top is at (x, y): what a strap lies on. */
   const chestZ = (x: number, y: number) => {
     const r = sample(torsoCtl, y);
@@ -498,9 +526,12 @@ function hairline(a: number): number {
   return lerp(-0.012, -0.062, smooth(1.75, 2.4, a));                  // down to the nape
 }
 
-function head(m: Builder, d: Dims, b: Build, o: Outfit) {
+function head(m: Builder, d: Dims, o: Outfit, fc: Face) {
   const hs = d.hs, eyeY = d.eye, z0 = d.headZ, fur = o.top === "fur";
-  const jaw = lerp(1.05, 0.93, d.g) + 0.03 * d.mu, full = Math.max(0, d.fat), brow = lerp(1.25, 0.6, d.g);
+  const jaw = lerp(1.05, 0.93, d.g) + 0.03 * d.mu + 0.05 * fc.jaw, full = Math.max(0, d.fat), brow = lerp(1.25, 0.6, d.g) * (1 + 0.35 * fc.brow);
+  // Where the eyes sit and how big they are, and the nose's length and width, from the face.
+  const ex = 0.031 + 0.0022 * fc.eyeGap, er = 1 + 0.07 * fc.eyes, nl = 1 + 0.07 * fc.nose, nw = 1 + 0.16 * fc.noseWidth;
+  const tip = -0.054 * nl, wing = -0.041 * nl;
   const ctl = (grow = 0, lift = 0): Ctl[] => SKULL.map(([y, w, f, back, p]) => {
     const low = smooth(0, -0.07, y);                                   // 0 at the eyes, 1 at the jaw
     return { y: eyeY + (y + lift) * hs, w: (w * lerp(1, jaw, low) + 0.006 * full * low + grow) * hs, f: z0 + (f + grow) * hs, b: z0 + (back - grow) * hs + 0.006 * full * low, p };
@@ -511,30 +542,34 @@ function head(m: Builder, d: Dims, b: Build, o: Outfit) {
     if (p.z < z0 + 0.03 * hs) return;
     const x = p.x / hs, y = (p.y - eyeY) / hs, ax = Math.abs(x);
     let dz = 0;
-    dz -= 0.0085 * gauss(ax - 0.031, 0.0125) * gauss(y + 0.0005, 0.0062);                       // eye sockets
+    // eye sockets: shallow enough that the skin runs onto the lids instead of leaving them standing in a pit
+    dz -= 0.0052 * er * gauss(ax - ex, 0.0135 * er) * gauss(y + 0.0005, 0.0068 * er);
     dz += 0.0035 * brow * gauss(y - 0.019, 0.007) * smooth(0.058, 0.03, ax);                  // the brow ridge
-    const down = clamp01((0.008 - y) / 0.05);                                                 // 0 at the bridge, 1 at the tip
-    if (y < 0.014 && y > -0.054) dz += lerp(0.005, 0.027, down ** 1.2) * gauss(x, lerp(0.0075, 0.0135, down)) * smooth(-0.054, -0.043, y);
-    dz += 0.007 * gauss(ax - 0.015, 0.0065) * gauss(y + 0.041, 0.006);                        // the wings of the nose
+    const down = clamp01((0.008 - y) / (0.008 - tip + 0.004));                                // 0 at the bridge, 1 at the tip
+    // the bridge, narrow between the eyes, and a tip that rounds under into the nostrils rather than ending in a ledge
+    if (y < 0.014 && y > tip - 0.006) dz += lerp(0.005, 0.026, down ** 1.2) * gauss(x, lerp(0.0065, 0.0125 * nw, down)) * smooth(tip - 0.006, tip + 0.012, y);
+    dz += 0.0065 * gauss(ax - 0.015 * nw, 0.0062 * nw) * gauss(y - wing, 0.0062);              // the wings of the nose
+    dz -= 0.0022 * gauss(ax - 0.012 * nw, 0.0028) * gauss(y - wing + 0.0035, 0.0024);         // the crease round each wing
     dz += 0.0045 * gauss(x, 0.02) * gauss(y + 0.062, 0.0045);                                 // upper lip
-    dz += 0.0045 * gauss(x, 0.017) * gauss(y + 0.0735, 0.005);                                // lower lip
+    dz -= 0.0012 * gauss(x, 0.0035) * gauss(y + 0.0585, 0.004);                               // the groove under the nose
+    dz += 0.0045 * (1 + 0.3 * fc.lips) * gauss(x, 0.017) * gauss(y + 0.0735, 0.005);         // lower lip
     dz -= 0.003 * gauss(x, 0.02) * gauss(y + 0.0675, 0.002);                                  // where they meet
     dz -= 0.003 * gauss(x, 0.02) * gauss(y + 0.084, 0.005);
-    dz += 0.005 * gauss(x, 0.017) * gauss(y + 0.1, 0.01);                                     // chin
-    dz += (0.004 + 0.004 * full) * gauss(ax - 0.046, 0.018) * gauss(y + 0.03, 0.02);          // cheeks
+    dz += 0.005 * (1 + 0.5 * fc.chin) * gauss(x, 0.017 * (1 + 0.15 * fc.jaw)) * gauss(y + 0.1, 0.01); // chin
+    dz += (0.004 + 0.004 * full + 0.0022 * fc.cheeks) * gauss(ax - 0.046, 0.018) * gauss(y + 0.03 - 0.006 * fc.cheeks, 0.02); // cheeks
     p.z += dz * hs * smooth(0.03, 0.055, (p.z - z0) / hs);
   };
   // Blood shows in the cheeks, the nose and the chin; the sockets, under the nose and under the jaw sit in shadow.
   const faceTone = (p: THREE.Vector3): [number, number] => {
     const x = p.x / hs, y = (p.y - eyeY) / hs, ax = Math.abs(x), front = smooth(0.02, 0.06, (p.z - z0) / hs);
     const flush = front * (0.9 * gauss(ax - 0.044, 0.017) * gauss(y + 0.03, 0.018) + 0.8 * gauss(x, 0.012) * gauss(y + 0.04, 0.011) + 0.35 * gauss(x, 0.02) * gauss(y + 0.1, 0.012));
-    const shade = front * (0.75 * gauss(ax - 0.031, 0.013) * gauss(y - 0.004, 0.008) + 0.6 * gauss(ax - 0.0075, 0.0035) * gauss(y + 0.0475, 0.0028) + 0.12 * gauss(x, 0.014) * gauss(y + 0.084, 0.004))
+    const shade = front * (0.6 * gauss(ax - ex, 0.013) * gauss(y - 0.004, 0.008) + 0.45 * gauss(ax - 0.0075 * nw, 0.003) * gauss(y - tip - 0.0055, 0.0024) + 0.12 * gauss(x, 0.014) * gauss(y + 0.084, 0.004))
       + 0.4 * smooth(-0.095, -0.115, y);
     return [flush, shade];
   };
   m.tube(ctl(), {
     tone: fur ? undefined : faceTone,
-    seg: 48, step: 0.005 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
+    seg: 52, step: 0.0044 * hs, capTop: CROWN * hs, capBottom: 0.02 * hs, front: 0.62,
     bump: (p) => {
       face(p);
       if (!fur || (p.z > z0 + 0.05 * hs && p.y < Y(0.03))) return;
@@ -548,19 +583,30 @@ function head(m: Builder, d: Dims, b: Build, o: Outfit) {
     },
     skin: B.head,
   });
-  // Eyes: a ball in each socket, the iris on its front.
+  // Eyes: a ball in each socket with a coloured iris and a pupil on its front, under lids that make an almond of it:
+  // the upper lid covers the top of the iris, the lower one meets its bottom, so the eye looks out rather than stares.
   for (const s of [-1, 1]) {
-    const em = new THREE.Matrix4().makeTranslation(X(0.031) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-    const r = 0.0118 * hs;
+    const em = new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    const r = 0.0118 * hs * er;
     const ball = (y: number): Ctl => { const w = Math.sqrt(1 - y * y) * r; return { y: y * r, w, f: w, b: -w }; };
-    m.tube([ball(0.45), ball(0.65), ball(0.82), ball(0.92), ball(0.98)],
-      { seg: 12, step: r * 0.14, cuts: [r * 0.82], capTop: r * 0.02, m: em, slot: (y) => (fur ? "glow" : y > r * 0.82 ? "iris" : "eyeWhite"), skin: B.head });
-    if (!fur) m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
-      seg: 20, step: r * 0.1, capTop: r * 0.05, m: em, skin: B.head,
+    m.tube([ball(0.45), ball(0.65), ball(0.8), ball(0.88), ball(0.94), ball(0.985)],
+      // the ball turned a little out toward the temple, as eyes look, so the iris sits mid-opening rather than by the nose
+      { seg: 20, step: r * 0.08, cuts: [r * 0.865, r * 0.972], capTop: r * 0.015, m: new THREE.Matrix4().makeTranslation(X(ex) * s, Y(0.001), z0 + 0.0728 * hs).multiply(new THREE.Matrix4().makeRotationY(0.14 * s)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), slot: (y) => (fur ? "glow" : y > r * 0.972 ? "pupil" : y > r * 0.865 ? "iris" : "eyeWhite"), skin: B.head });
+    if (fur) continue;
+    // The opening, in the lid's own units across (u, toward the temple when positive) and up: the top arcs higher
+    // toward the outer corner, the bottom is flatter, and both close to a point at the corners.
+    const edge = (u: number) => { const w = Math.sqrt(Math.max(0, 1 - (u / 0.92) ** 2)); return [0.36 * w ** 0.8 + 0.04 * u, -0.42 * w ** 1.2 + 0.03 * u] as const; };
+    m.tube([ball(0.3), ball(0.5), ball(0.7), ball(0.85), ball(0.95)].map((c) => ({ ...c, w: c.w * 1.1, f: c.f * 1.1, b: c.b * 1.1, y: c.y * 1.1 })), {
+      seg: 32, step: r * 0.08, capTop: r * 0.05, m: em, skin: B.head,
       // up is -z here (the ball is built looking along y, then turned to look forward)
-      bump: (p) => { const up = -p.z / r, open = smooth(0.38, 0.3, up) * smooth(-0.62, -0.54, up); p.multiplyScalar(lerp(1, 0.78, open)); },
-      slot: (_y, p) => (-p.z / r > 0.24 && -p.z / r < 0.5 ? "brow" : "skin"),
-      tone: (p) => [0.15, -p.z / r > 0 ? 0.45 : 0.25],
+      bump: (p) => {
+        const up = -p.z / r, [hi, lo] = edge((p.x / r) * s);
+        const open = smooth(hi + 0.05, hi - 0.03, up) * smooth(lo - 0.04, lo + 0.03, up);
+        p.multiplyScalar(lerp(1, 0.8, open));
+      },
+      // a dark lash line along the top edge, and the lid's crease a little above it
+      slot: (_y, p) => { const up = -p.z / r, [hi] = edge((p.x / r) * s); return up > hi - 0.05 && up < hi + 0.09 && hi > 0.02 ? "brow" : "skin"; },
+      tone: (p) => { const up = -p.z / r, [hi] = edge((p.x / r) * s); return [0.15, up > 0 ? 0.3 + 0.35 * gauss(up - hi - 0.22, 0.06) : 0.2]; },
     });
     // an ear, and a brow that sits on the ridge
     const ear = new THREE.Matrix4().makeTranslation(X(0.0745) * s, Y(-0.012), z0 - 0.012 * hs).multiply(new THREE.Matrix4().makeRotationY(-0.35 * s)).multiply(new THREE.Matrix4().makeRotationZ(-0.12 * s));
@@ -575,12 +621,12 @@ function head(m: Builder, d: Dims, b: Build, o: Outfit) {
   // The mouth: an upper lip, a fuller lower one, and the dark line where they meet.
   const across = (y: number) => new THREE.Matrix4().makeTranslation(0, Y(y), 0).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
   const lip = (x: number, tall: number, out: number): Ctl => ({ y: X(x), w: X(tall), f: z0 + X(0.1005 + out - 6.5 * x * x), b: z0 + X(0.09 - 6.5 * x * x) });
-  const plump = lerp(0.85, 1.15, d.g);
+  const plump = lerp(0.85, 1.15, d.g) * (1 + 0.22 * fc.lips);
   m.tube([lip(-0.023, 0.0004, 0.001), lip(-0.012, 0.0038 * plump, 0.0036), lip(0, 0.0034 * plump, 0.0042), lip(0.012, 0.0038 * plump, 0.0036), lip(0.023, 0.0004, 0.001)],
     { seg: 8, step: X(0.0075), m: across(-0.0642), slot: "lips", skin: B.head });
   m.tube([lip(-0.021, 0.0004, 0.001), lip(-0.011, 0.0042 * plump, 0.0036), lip(0, 0.0052 * plump, 0.0042), lip(0.011, 0.0042 * plump, 0.0036), lip(0.021, 0.0004, 0.001)],
     { seg: 8, step: X(0.0075), m: across(-0.0712), slot: "lips", skin: B.head });
-  m.tube([lip(-0.024, 0.0009, 0.0028), lip(0, 0.0009, 0.004), lip(0.024, 0.0009, 0.0028)], { seg: 6, step: X(0.012), m: across(-0.0672), slot: "iris", skin: B.head });
+  m.tube([lip(-0.02, 0.0003, 0.0022), lip(0, 0.0006, 0.0036), lip(0.02, 0.0003, 0.0022)], { seg: 6, step: X(0.012), m: across(-0.0672), slot: "pupil", skin: B.head });
 
   // Hair: a sheet over the skull that starts on the hairline, thin at its edge and full a finger above it. Long hair
   // carries on down the back, behind the ears. A hat presses the top of it flat.
@@ -805,11 +851,14 @@ reflectedLight.indirectDiffuse += hSkin * hRim * (reflectedLight.directDiffuse +
 };
 
 /** A figure of this build in this outfit, standing at the origin. */
-export function human(build: Build | BuildName, outfit: Outfit, palette: Palette = {}, seed = 1): Human {
+export function human(build: Build | BuildName, outfit: Outfit, palette: Palette = {}, seed = 1, face: Partial<Face> = {}): Human {
   const b = typeof build === "string" ? BUILDS[build] : build;
-  const key = JSON.stringify([b, outfit]);
+  // The seed picks the face and the eye colour; `face` and `palette.iris` override them.
+  const f: Face = { ...faceOf(seed), ...face };
+  palette = { iris: EYES[Math.floor(mulberry32(seed * 31 + 5)() * EYES.length)]!, ...palette };
+  const key = JSON.stringify([b, outfit, f]);
   let made = meshes.get(key);
-  if (!made) { const dims = measure(b); meshes.set(key, (made = { geo: buildMesh(dims, b, outfit), dims })); }
+  if (!made) { const dims = measure(b); meshes.set(key, (made = { geo: buildMesh(dims, b, outfit, f), dims })); }
   const d = made.dims;
   // The mesh's shape, bones and weights are shared; its colours are its own.
   const geo = new THREE.BufferGeometry();
@@ -833,9 +882,10 @@ export function human(build: Build | BuildName, outfit: Outfit, palette: Palette
   root.add(bones.hips, mesh);
   root.updateMatrixWorld(true);
   mesh.bind(new THREE.Skeleton(BONES.map((n) => bones[n])));
+  const eye = palette.iris;
   const paint = (p: Palette) => {
     const col = geo.getAttribute("color") as THREE.BufferAttribute, c = new THREE.Color();
-    const rgb = SLOTS.map((s) => { c.set(p[s] ?? DEFAULT_PALETTE[s]); return [c.r, c.g, c.b] as const; });
+    const rgb = SLOTS.map((s) => { c.set(p[s] ?? (s === "iris" ? eye : undefined) ?? DEFAULT_PALETTE[s]); return [c.r, c.g, c.b] as const; });
     const skin = SLOTS.indexOf("skin");
     for (let i = 0; i < slots.length; i++) {
       const [r, g, bl] = rgb[slots[i]!]!, flush = tone[i * 2]! * 0.55, lit = 1 - 0.42 * tone[i * 2 + 1]!;

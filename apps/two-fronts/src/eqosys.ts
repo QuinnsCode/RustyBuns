@@ -24,7 +24,7 @@ export const SKIN = {
   css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{background:var(--bolts),var(--steel);background-color:var(--plate);border:8px solid transparent;border-image:var(--edge) 10 round;background-clip:padding-box;padding-inline:18px}
 .eq-chip.in{padding:2px 18px;background:url("/plates/bolt.webp") left 5px center/9px no-repeat,url("/plates/bolt.webp") right 5px center/9px no-repeat,linear-gradient(180deg,#f6d27a,#d8a83f 48%,#a8781f 52%,#8a6118);border:1px solid #5c3f0c;border-radius:2px;box-shadow:inset 0 1px 0 #fff7dcb3,inset 0 -2px 0 #3c260673,0 2px 0 #05070a,0 3px 6px #000a}
 .eq-chip.in .eq-who{color:#24180a;text-shadow:0 1px 0 #fff0c866}
-.eq-chip.in .eq-btn{min-height:26px;min-width:26px}
+.eq-chip.in .eq-btn{min-height:26px;min-width:26px;box-shadow:inset 0 1px 0 #ffffff1f,inset 0 -2px 0 #00000073}
 .eq-chip.in .eq-who::before{content:"";display:inline-block;width:13px;height:13px;margin-right:5px;vertical-align:-1px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2324180a' stroke-width='3.4' stroke-linecap='square'%3E%3Cpath d='m5 11 7-6 7 6M5 19l7-6 7 6'/%3E%3C/svg%3E") center/contain no-repeat;filter:drop-shadow(0 1px 0 #fff0c866)}
 .eq-title,.rb-spaces h2,.eq-who,.eq-toast b:not(.eq-badge *),.eq-toast small,.eq-btn{font-family:var(--f-stencil);font-weight:400;text-transform:uppercase;letter-spacing:.1em}
 .eq-title,.rb-spaces h2,.eq-toast b:not(.eq-badge *){background:linear-gradient(180deg,var(--brass-hi),var(--brass) 60%,#b07f22);-webkit-background-clip:text;background-clip:text;color:transparent}

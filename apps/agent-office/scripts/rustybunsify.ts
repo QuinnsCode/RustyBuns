@@ -24,7 +24,7 @@ import { mergeTrainServer } from "../train/patch.ts";
 import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue, floorGuardSeat } from "./floorguard.ts";
+import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { endedClicks, endedManager } from "./ended.ts";
 import { screenTerminal } from "./screen.ts";
@@ -295,10 +295,6 @@ async function prepare(tag: string) {
     writeFileSync(path.join(srv, rel), change(readFileSync(path.join(srv, rel), "utf8")));
   // a board agent's queued tasks too: the same mark and the same guards, under the word `queue`
   writeFileSync(path.join(srv, "hooks/office-queue.js"), floorGuardQueue(readFileSync(path.join(srv, "hooks/office-queue.js"), "utf8")));
-  // and the queue asks again as it seats one: a task whose app an open PR or a seated worker is changing stays queued (#4956)
-  const seat = floorGuardSeat(readFileSync(path.join(srv, "queue.js"), "utf8"), readFileSync(path.join(srv, "floor.js"), "utf8"));
-  writeFileSync(path.join(srv, "queue.js"), seat.queue);
-  writeFileSync(path.join(srv, "floor.js"), seat.floor);
   // and AGENT_OFFICE_ASK_FIRST holds an agent's request for a person's Allow / Deny (#727): asked at /__rb/asks
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
