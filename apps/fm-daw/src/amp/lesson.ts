@@ -43,4 +43,5 @@ const STEPS: Step<AmpAt>[] = [
 
 export const AMP_LESSON: PageLessonDef<AmpAt> = {
   id: "amp", title: "A clean amp, a drive, an echo", blurb: "Gain down for a clean amp, Q Drive in front to push it, Q Tape in the loop so its repeats stay clean", steps: STEPS,
+  end: () => "Done. That's your rig now: play it, or try the other amps under the same pedals",
 };

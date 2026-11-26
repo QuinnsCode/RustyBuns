@@ -32,7 +32,8 @@ import type { AmpSettings, ChainSlot, FromAmp } from "./messages.ts";
 import type { MountedStage, StageAmp } from "./stage3d.ts";
 import { AMP_LESSON } from "./lesson.ts";
 import { mountLessonCard } from "../studio/lesson-card.ts";
-import { askedFor, PageLesson } from "../studio/page-lesson.ts";
+import { oneAtATime, PageLesson } from "../studio/page-lesson.ts";
+import { BUILD_LESSON, clipperNow } from "./build-lesson.ts";
 import { AMP_SLOT, freshOrder, grip, isMachine, loadChip, moveTo, tidyOrder, type MachineId } from "./pedalboard.ts";
 
 const KEY = "q-amp";
@@ -679,12 +680,24 @@ function frame() {
 }
 requestAnimationFrame(frame);
 
-/** Q Amps' lesson (lesson.ts), read from the page's state as it stands; the cap button in the corner, or ?lesson=amp, starts it. */
-const lesson = new PageLesson(AMP_LESSON, () => ({
+/** Q Amps' lesson (lesson.ts) and Q Builder's (build-lesson.ts), read from the page's state as it stands, one on at a
+ *  time; the cap button in the corner lists them, and ?lesson=amp or ?lesson=build starts one. */
+const ampLesson = new PageLesson(AMP_LESSON, () => ({
   gain: (S.knobs[S.amp] ?? ampOf(S.amp).knobs).gain, lit: S.lit, drive: S.drive, tape: loopOf().tape.on === 1, order: S.order, pedalsHeard: sound.pedals,
 }));
-const lessonCard = mountLessonCard(document.body, lesson, { float: true, done: "Done. That's your rig now: play it, or try the other amps under the same pedals", offer: { title: AMP_LESSON.title, start: () => lesson.start() } });
-if (askedFor(location.search, AMP_LESSON.id)) { lesson.start(); lessonCard.frame(); }
+/** The parts Q Drive's D1 and D2 have held while Q Builder's lesson is on: its last step asks for both ends. */
+const tried = new Set<string>();
+const buildLesson = new PageLesson(BUILD_LESSON, () => {
+  const swaps = S.swaps.drive ?? {};
+  if (S.pedal === "drive") tried.add(clipperNow(swaps));
+  return { pedal: S.pedal, lit: S.lit, board: S.board === 1, drive: S.drive.drive ?? 5, swaps, tried: [...tried] };
+}, () => tried.clear());
+const lessons = oneAtATime([ampLesson, buildLesson]);
+const lessonCard = mountLessonCard(document.body, lessons, { float: true, offer: lessons.list.map((l) => ({ title: l.def.title, start: () => lessons.start(l.def.id) })) });
+{
+  const asked = lessons.asked(location.search);
+  if (asked) { lessons.start(asked); lessonCard.frame(); }
+}
 
 // Ask the page instead of screenshotting it (scripts/probe.ts).
 Object.assign(window, {
@@ -701,8 +714,12 @@ Object.assign(window, {
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
-    /** Q Amps' lesson (lesson.ts): "amp" starts it, null leaves it; then the lesson as it stands. */
-    lesson: (id?: string | null) => { if (id === null) lesson.leave(); else if (id === AMP_LESSON.id) lesson.start(); lessonCard.frame(); return { lesson: lesson.state(), finished: lesson.finished }; },
+    /** The page's lessons: "amp" (Q Amps', lesson.ts) or "build" (Q Builder's, build-lesson.ts) starts one, null leaves it; then the lesson as it stands. */
+    lesson: (id?: string | null) => {
+      if (id === null) lessons.leave(); else if (id) lessons.start(id);
+      lessonCard.frame();
+      return { lesson: lessons.state(), finished: { amp: ampLesson.finished, build: buildLesson.finished } };
+    },
     /** Cut the chain onto worker threads before these links ([] for one thread); the page does this itself when over budget. */
     split: (cuts: number[]) => threads?.split(cuts),
     /** Pull out the cable in a jack, e.g. unplug("head", "speaker"). */

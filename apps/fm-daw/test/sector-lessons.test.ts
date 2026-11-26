@@ -4,6 +4,7 @@
 // a mistake the page lets you make, reads why in plain words, puts it right, and ends with the lesson done.
 import { expect, test } from "bun:test";
 import { AMP_LESSON, type AmpAt } from "../src/amp/lesson.ts";
+import { BUILD_LESSON, type BuildAt } from "../src/amp/build-lesson.ts";
 import { AMP_SLOT, freshOrder, moveTo } from "../src/amp/pedalboard.ts";
 import { STAGE, compile, heard, type Cable } from "../src/circuit/patch.ts";
 import { edit, type Edit } from "../src/studio/builder.ts";
@@ -78,4 +79,43 @@ test("Q Amps: gain down, Q Drive with its board uncabled and then too hot, Q Tap
   expect(now().steps[2].why).toMatch(/^Q Tape sits in front of the amp/);
   s.order = moveTo(s.order, "tape", s.order.length - 1);
   expect(now()).toMatchObject({ done: true });
+});
+
+test("Q Builder: Q Drive's board, a capacitor swapped first, then a MOSFET, then germanium and LEDs, read off the solved circuit", () => {
+  const s: BuildAt = { pedal: null, lit: [], board: true, drive: 5, swaps: {}, tried: [] };
+  const lesson = new PageLesson<BuildAt>(BUILD_LESSON, () => {
+    if (s.pedal === "drive") s.tried = [...new Set([...s.tried, s.swaps.D1 ?? "silicon"])];
+    return s;
+  });
+  lesson.start();
+  const now = () => lesson.state()!;
+
+  // the board view open on the amp's own tube stage: switch Q Drive on to see its board
+  expect(now().steps[0].why).toMatch(/^The board shows the circuit you're playing, the amp's first tube/);
+  s.pedal = "drive"; s.lit = ["drive"];
+  expect(now()).toMatchObject({ next: 1 });
+
+  // C2 isn't a clipping part: the card says what it is and where the diodes are
+  s.swaps = { C2: "2.2" };
+  expect(now().steps[1].why).toMatch(/^C2 is half of the leg .* The clipping diodes are D1 and D2/);
+  s.swaps = { D1: "mosfet" };
+  expect(now().steps[1].why).toMatch(/^A MOSFET opens at about 1\.2 V/);
+
+  // germanium: the solved circuit's peak, under silicon's
+  s.swaps = { D1: "germanium" };
+  const ge = now();
+  expect(ge).toMatchObject({ next: 2 });
+  expect(ge.steps[2].job).toBe("Now the other end: LEDs in D1 and D2");
+  const [, geV, siV] = ge.steps[2].why!.match(/peaks at ([\d.]+) V out of Q Drive, where silicon gave ([\d.]+) V/)!.map(Number);
+  expect(geV).toBeLessThan(siV);
+
+  // LEDs: louder than silicon, and the lesson ends with all three read
+  s.swaps = { D1: "led" };
+  const done = now();
+  expect(done).toMatchObject({ done: true });
+  const [, g, si, led] = done.end!.match(/Germanium peaks at ([\d.]+) V, silicon at ([\d.]+) V, LEDs at ([\d.]+) V/)!.map(Number);
+  expect(g).toBe(geV);
+  expect(si).toBe(siV);
+  expect(led).toBeGreaterThan(si);
+  expect(done.end).toContain("Your board keeps LEDs in D1 and D2");
 });
