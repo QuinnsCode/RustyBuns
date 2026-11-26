@@ -211,9 +211,14 @@ Both start on Q Amp today; Q Builder gets a page of its own with its scope.
 
 ## The front door
 
-`/door.html` names LEARN, BUILD and PLAY, each over its row of cards, each card with a Lucide icon, a short name and a line on what you do there, and
+`/door.html` is the landing page ([#6019](https://github.com/QuinnsCode/RustyBuns/issues/6019)). Its hero is a live field at dusk
+(`src/hero.ts`, drawn by `src/front-hero.ts`): two stacks and the map of their highs (4 kHz, `@rustybuns/gear`'s outdoor model) on the
+grass. The Air and Humidity sliders and the Bank button change the map, and **Hear it from the back** loops a beat through an EQ
+set by what the field took from each band at the back. Start learning and Start building open `/studio.html` and `/rooms.html`.
+Under it, the page names LEARN, BUILD and PLAY, each over its row of cards, each card with a Lucide icon, a short name and a line on what you do there, and
 opening on that sector's first step ([#5860](https://github.com/QuinnsCode/RustyBuns/issues/5860)). Only The
 Event asks you to sign in; the rest work signed out. Every page has a way back: **Paths** first in the row of doors
 along the top (`src/way.ts`), or the round house button in the corner of the decks and the studio builder
-(`mountBack`). `qdoor.state()` for probes; `test/front-door.test.ts` walks every card to its first step and back at
+(`mountBack`). Then the pedal-to-show chain, what works today and a word for crews and classes (`CHAIN`, `LIVE`, `PITCHES` in `src/paths.ts`).
+`qdoor.state()` and `qdoor.hero.state()` / `qdoor.hero.set({ tempC, humidity, bank })` for probes; `test/front-door.test.ts` checks the cards and that the field darkens at the back with dry air and behind a bank, and `test/front-door-paths.test.ts` walks every card to its first step and back at
 phone and desktop sizes. `/` is still the desk, so a link someone was sent lands where it always did.
