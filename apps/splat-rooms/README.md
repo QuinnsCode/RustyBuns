@@ -53,6 +53,8 @@ bun rooms/build.ts --theme parlour --seed 7     # or kitchen, bedroom, cafe, wor
 bun rooms/fronts.ts --theme cafe --out fronts.png   # every model front-on, to check each catalog `turn`
 ```
 
+On the office Mac (`BUILDER_HOST` set) both run as one Blender queue job on the builder Mac: it fetches the Poly Haven models there, writes under `rooms/out/` in its checkout, and the result comes back and is copied to the scenes folder (or `--out`).
+
 ![A built parlour, as splats](docs/built-parlour.jpg)
 ![A built kitchen, as splats](docs/built-kitchen.jpg)
 
