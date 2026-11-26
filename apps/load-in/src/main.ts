@@ -326,7 +326,7 @@ function draw() {
   const away = tgt ? camera.worldToLocal(marker.position.clone()) : null, ndc = tgt ? marker.position.clone().project(camera) : null;
   const arrow = away && ndc ? toward(ndc, away.z > 0) : null;
   $("toward").hidden = !arrow;
-  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = callName(world, cables, tgt.key); }
+  if (arrow && tgt) { $("toward").style.setProperty("--x", `${arrow.x * 100}%`); $("toward").style.setProperty("--y", `${arrow.y * 100}%`); $("toward").style.setProperty("--deg", `${arrow.deg}deg`); $("toward-what").textContent = (gear(tgt.gear).speaker && tapeLabel(tgt.key, tgt.gear)) || callName(world, cables, tgt.key); }
   // In view, the outline and the pool, breathing slowly.
   const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 380), seen = !!tgt && !arrow && tgt !== held;
   goal.visible = seen;
