@@ -711,6 +711,8 @@ function joinLink(): string | null {
   if (!owner || !p || !on) return null;
   const u = new URL(builtLink(location.origin, on, partyRoom(owner, p.id)));
   u.searchParams.set("name", p.name);
+  // the jam page asks the owner's store what's on stage, so a scene switch reaches everyone in the room (#5963)
+  u.searchParams.set("party", owner);
   return u.href;
 }
 /** A <input type="datetime-local"> value and back: empty is open now. */
