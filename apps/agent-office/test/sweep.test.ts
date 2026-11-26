@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepHalfGone, sweepHalfRemoved, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { CLAUDE_TREES, cacheKey, inUse, lockVersions, playwrightBuilds, pruneBunCache, prunePlaywright, slug, sweepBuilt, sweepClaudeTrees, sweepHalfGone, sweepHalfRemoved, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -65,6 +65,34 @@ test("node_modules and ignored build output go from worktrees nobody sits at; a 
   expect([existsSync(path.join(seated, "apps/game/dist")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
   // the empty desk's root node_modules went to the pool for the next hire (#5656), not the bin
   expect(readdirSync(path.join(repo, ".agent-office/node-pool")).map((n) => readdirSync(path.join(repo, ".agent-office/node-pool", n)))).toEqual([["node_modules"]]);
+});
+
+test("Claude Code's own worktrees lose node_modules and ignored dist when idle a day; one a process runs in, one changed today and the code stay", async () => {
+  const repo = tmp();
+  const tree = (name: string, fresh = false) => {
+    const dir = path.join(repo, CLAUDE_TREES, name);
+    for (const m of ["node_modules/effect", "apps/game/node_modules/three", "apps/game/dist"]) mkdirSync(path.join(dir, m), { recursive: true });
+    writeFileSync(path.join(dir, "node_modules/effect/index.js"), Buffer.alloc(1 << 20));
+    writeFileSync(path.join(dir, ".gitignore"), "node_modules\ndist\n");
+    writeFileSync(path.join(dir, "apps/game/main.ts"), "work");
+    Bun.spawnSync(["git", "-C", dir, "init", "-q"], { stdout: "ignore", stderr: "ignore" });
+    const at = (Date.now() - 30 * 3_600_000) / 1000;
+    if (!fresh) for (const f of [".gitignore", "apps/game/main.ts"]) utimesSync(path.join(dir, f), at, at);
+    return dir;
+  };
+  const idle = tree("idle-1"), busy = tree("busy-2"), fresh = tree("fresh-3", true);
+  const procs = [{ pid: 999_999, ppid: 1, pgid: 999_999, age: 0, stat: "S", cwd: path.join(busy, "apps/game"), args: "claude" }];
+  const gone = ["node_modules", "apps/game/node_modules", "apps/game/dist"].map((p) => path.join(idle, p));
+
+  const dry = await sweepClaudeTrees(repo, false, procs);
+  expect([dry.paths.sort(), dry.skipped]).toEqual([[...gone].sort(), 2]);
+  expect(dry.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect(existsSync(path.join(idle, "node_modules"))).toBe(true);
+
+  await sweepClaudeTrees(repo, true, procs);
+  expect(gone.filter((p) => existsSync(p))).toEqual([]);
+  expect([idle, busy, fresh].map((t) => existsSync(path.join(t, "apps/game/main.ts")))).toEqual([true, true, true]);
+  expect([busy, fresh].map((t) => existsSync(path.join(t, "node_modules")))).toEqual([true, true]);
 });
 
 // 2026-11-22: six workers whose PR had merged sat at their desks with "go home once merged" off, 6 GB of node_modules each

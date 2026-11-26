@@ -16,6 +16,8 @@
 //  5. Worktree folders a send-home left half deleted: no `.git`, not in `git worktree list`, an hour old (`sweepHalfGone`,
 //     #5657). What still runs in one ends first. Every floor sweep runs it. And listed worktrees nobody sits at whose
 //     only changes are files deleted by a cut-off remove (`sweepHalfRemoved`, #5913), when the sweep knows who sits where.
+//  6. node_modules and build output in Claude Code's own worktrees, `<repo>/.claude/worktrees` (`sweepClaudeTrees`,
+//     #6181): no process in them and nothing changed for a day. `office:sweep` only, and only lists it unless named.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync, statfsSync } from "node:fs";
@@ -24,7 +26,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { poolModules } from "./install.ts";
-import { endIn } from "./reaper.ts";
+import { endIn, pidsIn, processes, type Proc } from "./reaper.ts";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -166,6 +168,43 @@ export async function sweepBuilt(repo: string, live: string[], go: boolean, now 
     bytes += (sizes.get(p) ?? 0) * 1024;
   }
   return { paths, bytes };
+}
+
+/** Where Claude Code's own worktrees (EnterWorktree) sit in a repo; the office never seats a worker there. */
+export const CLAUDE_TREES = path.join(".claude", "worktrees");
+
+/**
+ * When a Claude Code worktree last changed, as far as git and the files say: its last commit, its index (a checkout or
+ * add writes it), and each file it changed or added that git doesn't ignore. Ignored output (node_modules) doesn't count.
+ */
+async function lastTouched(tree: string): Promise<number> {
+  const commit = Number(await run(["git", "-C", tree, "log", "-1", "--format=%ct"])) * 1000 || 0;
+  const index = await run(["git", "-C", tree, "rev-parse", "--path-format=absolute", "--git-path", "index"]);
+  const changed = (await run(["git", "-C", tree, "ls-files", "-m", "-o", "--exclude-standard"])).split("\n").filter(Boolean);
+  const times = await Promise.all([index, ...changed.map((f) => path.join(tree, f))].filter(Boolean).map(async (p) => { try { return (await lstat(p)).mtimeMs; } catch { return 0; } }));
+  return Math.max(commit, ...times);
+}
+
+/**
+ * Removes (`go`) or lists the `node_modules` and git-ignored build output (the `sweepBuilt` rule) of Claude Code's own
+ * worktrees under `<repo>/.claude/worktrees` (#6181: 831 node_modules in 45 of them, 59 GB counted). Nothing says
+ * whether a session still runs in one, so a tree is skipped while any process's cwd is in it (`procs`, the reaper's
+ * list) or while anything in it changed in the last day. Code and the worktree itself always stay. Never throws.
+ */
+export async function sweepClaudeTrees(repo: string, go: boolean, procs: Proc[] = processes(), now = Date.now()): Promise<Swept & { skipped: number }> {
+  let names: string[];
+  try { names = await readdir(path.join(repo, CLAUDE_TREES)); } catch { return { paths: [], bytes: 0, skipped: 0 }; }
+  const trees = names.map((n) => path.join(repo, CLAUDE_TREES, n)).filter((t) => existsSync(path.join(t, ".git")));
+  // self = -1: the sweep's own shell counts too, so a session sweeping from inside one keeps it
+  const idle = await Promise.all(trees.map(async (t) => !pidsIn(t, procs, -1).length && now - await lastTouched(t) > 86_400_000));
+  const paths = (await Promise.all(trees.filter((_, i) => idle[i]).map((t) => rebuildableIn(t)))).flat();
+  const sizes = await duKb(paths);
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) try { await rm(p, { recursive: true, force: true }); } catch { continue; }
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths, bytes, skipped: idle.filter((i) => !i).length };
 }
 
 // 2026-11-23 (#5657): 50 of 172 folders in the office's worktrees were half-deleted, about 400 MB each: no `.git`, and
