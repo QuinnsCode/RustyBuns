@@ -286,11 +286,25 @@ export async function freePort() { const s = Bun.serve({ port: 0, fetch: () => n
 
 /** True when the app's vite config loads @cloudflare/vite-plugin, whose miniflare dies under `bun --bun` (`#runtimeDispatcher?.close is not a function`). */
 export function needsNode(cwd: string) {
-  return ["ts", "mts", "js"].some((x) => { const f = join(cwd, `vite.config.${x}`); return existsSync(f) && readFileSync(f, "utf8").includes("@cloudflare/vite-plugin"); });
+  const f = viteConfig(cwd);
+  return !!f && readFileSync(f, "utf8").includes("@cloudflare/vite-plugin");
+}
+
+const viteConfig = (cwd: string) => ["ts", "mts", "js"].map((x) => join(cwd, `vite.config.${x}`)).find(existsSync);
+
+/** Writes the app's boundary glue (`.rustybuns/vite.ts`) when its vite config imports it: git ignores that file, so a
+ * fresh worktree or the probe's origin/main copy never has it and vite stops on the import (#5992). True when it ran. */
+export function boundaryGlue(cwd: string): boolean {
+  const config = viteConfig(cwd);
+  if (!config || !readFileSync(config, "utf8").includes("./.rustybuns/vite")) return false;
+  const r = Bun.spawnSync(["bun", join(import.meta.dir, "../packages/cli/src/index.ts"), "boundary"], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (r.exitCode !== 0) throw new Error(`rustybuns boundary failed in ${cwd}:\n${r.stderr.toString().trim().split("\n").slice(-8).join("\n")}`);
+  return true;
 }
 
 /** The app's `vite` dev server on a free port; resolves once it answers. Runs vite on Node when the config needs it (`needsNode`) or `node` says so. */
 export async function startVite(cwd: string, node = needsNode(cwd)): Promise<{ url: string; stop: () => void }> {
+  boundaryGlue(cwd);
   const port = await freePort();
   const server = Bun.spawn(["bun", ...(node ? [] : ["--bun"]), "x", "vite", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "none" } });
   const url = `http://127.0.0.1:${port}/`;

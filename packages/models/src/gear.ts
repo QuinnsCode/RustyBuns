@@ -127,7 +127,7 @@ export function gearLook(): GearLook {
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
     horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x11091d, 0.86), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
-    cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
+    cavity: new THREE.MeshStandardMaterial({ color: 0x050409, roughness: 1, envMapIntensity: 0.02 }),
   };
 }
 
@@ -597,7 +597,7 @@ function cab1960aPieces(): Record<string, Build> {
   hw.pieces.push(disc("chrome", mm(6), 0.002, "z", [0, h * 0.4, zb - 0.001], 8));
   hw.pieces.push(box("knob", [mm(120), mm(75), 0.008], [0, h * 0.83, zb - 0.001], { bevel: 0.002 }));
   for (const x of [-1, 1]) for (const y of [-1, 1]) hw.pieces.push(disc("plug", mm(4), 0.002, "z", [x * mm(48), h * 0.83 + y * mm(26), zb - 0.006], 8));
-  jacks(hw, ["speaker-in"], "back", [0, h * 0.83, zb - 0.001], [0, 0, 0]);
+  socketPanel(hw, "cab-4x12", "back", [0, h * 0.83, zb - 0.005], [mm(110), mm(66)]);
   mark(hw, "grab", [w / 2 + 0.012, h * 0.62, mm(-20)], [1, 0, 0]);
   return { cabinet: cab, grille, piping, corners, hardware: hw };
 }
@@ -1468,12 +1468,24 @@ function res2Pieces(): Record<string, Build> {
   const cab = P(), panel = P(), mid = P(), plugB = P(), drv = P(), hf = P(), band = P(), bass = P();
 
   // ---- cabinet: top and bottom trapezoids, the two slanting sides, the back
+  // the box's outer edges are rounded `er` (its front uprights and the roof's front and sides), as the real box's are
+  const er = 0.012, ex = (z: number) => sideX(z) - er / Math.cos(Math.atan2((w - bw) / 2, d)); // a round's centre line
   const plan = [[-sideX(f), f], [sideX(f), f], [sideX(-d / 2), -d / 2], [-sideX(-d / 2), -d / 2]];
-  cab.pieces.push(slab("violet", plan, 0, t), slab("violet", plan, h - t, h));
+  const roof = [[-sideX(f) + er, f - er], [sideX(f) - er, f - er], [sideX(-d / 2) - er, -d / 2], [-sideX(-d / 2) + er, -d / 2]];
+  cab.pieces.push(slab("violet", plan, 0, t), slab("violet", roof, h - t, h));
   for (const s of [-1, 1]) {
-    const q = [[sideX(f), f], [sideX(f) - t, f], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]].map(([x, z]) => [s * x!, z!]);
-    cab.pieces.push(slab("violet", q, t, h - t));
+    const q = [[sideX(f - er), f - er], [sideX(f) - t, f - er], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]];
+    cab.pieces.push(slab("violet", q.map(([x, z]) => [s * x!, z!]), t, h - er));
+    // the side's last `er` at the front, inside the round, so the face's frame stays full width
+    cab.pieces.push(slab("violet", [[sideX(f) - t, f - er], [ex(f), f - er], [ex(f), f], [sideX(f) - t, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
+    cab.pieces.push(rod("violet", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, 8)); // the front upright
+    cab.pieces.push(rod("violet", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, 8)); // the roof's side
+    const ball = new THREE.SphereGeometry(er, 8, 6);
+    ball.translate(s * ex(f), h - er, f - er);
+    ball.deleteAttribute("normal"); ball.deleteAttribute("uv");
+    cab.pieces.push({ geo: toCreasedNormals(ball.toNonIndexed(), 0.6), slot: "violet" });
   }
+  cab.pieces.push(rod("violet", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, 8)); // the roof's front
   cab.pieces.push(slab("violet", [[-(bw / 2 - t), -d / 2 + t], [bw / 2 - t, -d / 2 + t], [bw / 2 - t, -d / 2], [-(bw / 2 - t), -d / 2]], t, h - t));
   // the hand slot in the top, near the back, and one in each side, sunk dark
   cab.pieces.push(box("knob", [0.2, 0.004, 0.034], [0, h + 0.0005, -d / 2 + 0.07], { bevel: 0.0015 }));
@@ -1494,10 +1506,11 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- mid horn: a rolled lip at the mouth, then the facets back to the throat round the plug
   const zt = f - 0.24, tipA = mm(154), drR = mm(77);
-  const lip = ring8(0, mcy, f - 0.002, mA + 0.012, mC + 0.012), mouth = ring8(0, mcy, f - 0.016, mA, mC);
+  // the bezel: the panel's moulding rolls in 45 degrees round the mouth before the horn's own walls start
+  const lip = ring8(0, mcy, f - 0.002, mA, mC), mouth = ring8(0, mcy, f - 0.02, mA - 0.016, mC - 0.016);
   // three bands of facets, as the photo's walls fold: the corners pulled in faster than the mids, so each wall breaks
   // into long triangles at the mouth and diamonds halfway in
-  const bands = [ring8(0, mcy, f - 0.06, mm(203), mm(126), mm(178), mm(122)), ring8(0, mcy, f - 0.14, mm(178), mm(100), mm(110), mm(98))];
+  const bands = [ring8(0, mcy, f - 0.07, mm(186), mm(114), mm(166), mm(110)), ring8(0, mcy, f - 0.14, mm(172), mm(96), mm(108), mm(94))];
   const throat = ring8(0, mcy, zt, tipA, drR, mm(54), drR);
   mid.pieces.push(ringWalls("horn", [lip, mouth]), ringWalls("horn", [mouth, ...bands, throat]));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
@@ -1522,8 +1535,8 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- bass horn: the mouth to the floor, its walls closing on the throat, the strut, a bracket, the corner fillets
   const by0 = t, by1 = top(551), ty0 = top(811), ty1 = top(655), tA = mm(141.5), bdeep = 0.36;
-  // the walls painted violet near the mouth, going to the near-black of a deep hollow two fifths in, as the light dies
-  const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.4, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
+  // the walls painted violet just at the mouth, going to the near-black of a deep hollow an eighth in, as the light dies
+  const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.12, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
   bass.pieces.push(frustum("violet", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
   bass.pieces.push(box("knob", [tA * 2, ty1 - ty0, 0.006], [0, (ty0 + ty1) / 2, f - 0.004 - bdeep - 0.003]));
   bass.pieces.push(rod("violet", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
@@ -1704,7 +1717,7 @@ function f124Pieces(): Record<string, Build> {
     hw.pieces.push(box("violet", [mm(160), mm(38), mm(100)], [x, t + mm(19), f - mm(460)], { bevel: 0.004 }));
   }
   plate(hw, mm(193), mm(147), [0, mm(674), -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-0.035, mm(690), -d / 2 - 0.008], [0.07, 0, 0]);
+  socketPanel(hw, "horn-sub-24", "back", [0, mm(690), -d / 2 - 0.008], [mm(183), mm(137)]);
   for (const x of [-1, 1]) for (const y of [mm(130), h - mm(130)]) for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]])
     hw.pieces.push(disc("metal", 0.006, 0.004, "z", [x * (w / 2 - mm(70)) + dx * mm(30), y + dy * mm(40), -d / 2 - 0.001], 8));
   for (const s of [-1, 1]) for (const y of [mm(85), h - mm(85)]) for (const z of [f - mm(85), -d / 2 + mm(85)])
@@ -1754,7 +1767,7 @@ function ib218Pieces(): Record<string, Build> {
     for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) hw.pieces.push(disc("metal", 0.005, 0.004, "z", [x + dx * mm(32), y + dy * mm(32), -d / 2 - 0.004], 8));
   }
   plate(hw, mm(86), mm(128), [0, mm(272), -d / 2 - 0.004]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(300), -d / 2 - 0.008], [0, -0.056, 0]);
+  socketPanel(hw, "infra-sub-18", "back", [0, mm(272), -d / 2 - 0.008], [mm(78), mm(120)]);
   mark(hw, "grab", [w / 2 + 0.012, cy, 0], [1, 0, 0]);
   return { cabinet: cab, slot: slotB, grille, hardware: hw };
 }
@@ -1821,9 +1834,9 @@ function skeletalPieces(id: "skeletal-mid-high" | "skeletal-mid"): Record<string
   }
   yoke.pieces.push(box("metal", [ax * 2 + 0.005, 0.005, 0.036], top, { bevel: 0.0015, rot: [-s.swing, 0, 0] }));
 
-  // the jacks on the can's back: the Res 2SH's two NL4s, the Res 2S8's terminal
+  // the jacks on the can's back: the Res 2SH's two NL4s, the Res 2S8's junction box
   plate(drv, 0.09, 0.05, [0, s.my, -d / 2 - 0.004]);
-  jacks(drv, hf ? ["speaker-in", "speaker-out"] : ["speaker-in"], "back", [hf ? -0.02 : 0, s.my, -d / 2 - 0.008], [0.04, 0, 0]);
+  socketPanel(drv, id, "back", [0, s.my, -d / 2 - 0.008], [mm(84), mm(46)]);
   mark(drv, "grab", top, [0, 1, 0]);
   return { face, "mid-horn": mid, plug: plugB, driver: drv, ...(hf ? { "hf-horn": hfB } : {}), yoke };
 }
@@ -2113,7 +2126,7 @@ function sh50Pieces(): Record<string, Build> {
   for (const y of [h + 0.0015, feet - 0.0015]) for (const [x, z] of [[-mm(250), f - mm(45)], [mm(250), f - mm(45)], [-mm(120), zb + mm(200)], [mm(120), zb + mm(200)], [0, zb + mm(40)]])
     hw.pieces.push(disc("metal", 0.009, 0.003, "y", [x, y, z], 10));
   plate(hw, mm(105), mm(240), [0, mm(270), zb - 0.001]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(340), zb - 0.001], [0, -mm(140), 0]);
+  socketPanel(hw, "synergy-horn", "back", [0, mm(270), zb - 0.005], [mm(95), mm(230)]);
   hw.pieces.push(box("cavity", [mm(80), mm(45), 0.004], [0, h / 2 + mm(30), zb - 0.0004], { bevel: 0.001 }));
   mark(hw, "grab", onSide(1, 0.3, h - mm(75), 0.012), out);
   return { cabinet: cab, horn, ports, grille, hardware: hw };
@@ -2181,7 +2194,7 @@ function th118Pieces(): Record<string, Build> {
     if (!(y < ch && z < 0)) hw.pieces.push(disc("metal", 0.009, 0.003, "x", [s * (w / 2 + 0.0015), y, z], 10));
   hw.pieces.push(disc("metal", 0.009, 0.003, "x", [w / 2 + 0.0015, ch + mm(60), zb + mm(60)], 10), disc("metal", 0.009, 0.003, "x", [-w / 2 - 0.0015, ch + mm(60), zb + mm(60)], 10));
   plate(hw, mm(110), mm(240), [-mm(60), h * 0.66, zb - 0.001]);
-  jacks(hw, ["speaker-in", "speaker-out"], "back", [-mm(60), h * 0.66 + mm(60), zb - 0.001], [0, -mm(120), 0]);
+  socketPanel(hw, "tapped-horn-18", "back", [-mm(60), h * 0.66, zb - 0.005], [mm(100), mm(230)]);
   hw.pieces.push(box("cavity", [mm(70), mm(45), 0.004], [mm(130), h * 0.66, zb - 0.0004], { bevel: 0.001 }));
   // the casters: a wheel on a fork either side, half out of the slant
   const nz = -Math.cos(slant), ny = -Math.sin(slant), wz = zb + cw / 2 + nz * mm(20), wy = ch / 2 + ny * mm(20);

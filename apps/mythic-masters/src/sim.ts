@@ -291,6 +291,10 @@ export function swingPhase(f: Fighter, at?: Fighter): "tracking" | "locked" | nu
 export const HANG = { max: 90, safe: 24, climb: 12, roll: 3.2, rollSafe: 18, regrab: 20 } as const;
 /** A spike: knockback mostly down (this much of it), and the hitstun it leaves is short, so there's a jump left to save it. */
 export const SPIKE = { down: 0.75, stun: 14 } as const;
+/** Knockback that parts them (#6042 round 13): a melee blow sends the struck body off at no less than `skid` m/s for each
+ * metre of its own length (twice its radius), so even a light jab skids it back about one body length and the two
+ * separate and circle again, instead of a light hit leaving them locked head to head. */
+export const PART = { skid: 6 } as const;
 
 function start(m: Match, side: number, slot: Slot, i: Input) {
   const f = m.f[side];
@@ -598,7 +602,8 @@ function hit(m: Match, by: number, on: number, move: Move, power: number, from: 
   const up = spike ? -SPIKE.down : Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.18 : 0.25) + (move.field === "gale" ? 0.15 : 0));
   const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1) * piled(m, d);
   const ang = flat(from, d.pos) > 0.05 ? angleTo(from, d.pos) : a.yaw, h = Math.sqrt(1 - up * up);
-  d.vel.x = cos(ang) * kb * h; d.vel.z = sin(ang) * kb * h; d.vel.y = kb * up;
+  const along = ranged || spike || repeat ? kb * h : Math.max(kb * h, PART.skid * 2 * d.b.radius * piled(m, d));
+  d.vel.x = cos(ang) * along; d.vel.z = sin(ang) * along; d.vel.y = kb * up;
   if (d.vel.y > 0) d.onGround = false;
   d.state = "stun"; d.stun = Math.round((10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)) * piled(m, d)); d.act = null; d.t = 0;
   if (spike) d.stun = Math.min(d.stun, SPIKE.stun);
