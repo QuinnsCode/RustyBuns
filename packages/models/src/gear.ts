@@ -125,7 +125,7 @@ export function gearLook(): GearLook {
     shell: std(0x1f6f78, 0.32, 0.1), badge: std(0xd9d6cf, 0.5), ink: std(0xe4e2dc, 0.7),
     mesh: std(0x141518, 0.6, 0.4), coat: std(0x1d1e20, 0.9), cheek: std(0x55574f, 0.92),
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
-    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x1c1733, 0.8), turbo: std(0x0e1422, 0.82),
+    horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x11091d, 0.86), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
     cavity: new THREE.MeshStandardMaterial({ color: 0x050409, roughness: 1, envMapIntensity: 0.02 }),
   };
@@ -1578,6 +1578,11 @@ function f215Pieces(): Record<string, Build> {
     // the driver channel: near black at its back, a fixing block in its outer corner by the shelf
     chans.pieces.push(box("cavity", [w / 2 - t - cx0, ch, 0.004], [(w / 2 - t + cx0) / 2, cy, zb + 0.003]));
     chans.pieces.push(box("cavity", [bx - bw / 2 - xt, ch, 0.004], [(bx - bw / 2 + xt) / 2, cy, zb + 0.003]));
+    // the channel's walls, floor and roof in shadow from the back to `lit` behind the front, as the photo shows it
+    // falling to near black behind the brace (the light reaches only its mouth)
+    const lit = f - 0.13, L = lit - zb, zc = (lit + zb) / 2, fin = bx - bw / 2 + t, cw = w / 2 - t - fin;
+    chans.pieces.push(box("cavity", [0.002, ch, L], [w / 2 - t - 0.001, cy, zc]), box("cavity", [0.002, ch, L], [fin + 0.001, cy, zc]));
+    for (const y of [y0 + 0.001, y1 - 0.001]) chans.pieces.push(box("cavity", [cw - 0.004, 0.002, L], [fin + cw / 2, y, zc]));
     const by = y0 === t ? y0 + 0.02 : y1 - 0.02;
     chans.pieces.push(box("violet", [0.07, 0.022, 0.035], [w / 2 - t - 0.035, by, f - 0.06], { bevel: 0.003 }));
   }
