@@ -34,6 +34,7 @@ export const ACTIONS: Action[] = [
   { key: "I", does: "Plug in your guitar (in the vocal booth, your mic)", icon: "guitar", where: "walk", strip: 2, short: "guitar" },
   { key: "K", does: "A new sound wall module in your hands, for the gear wall's case", icon: "circuit-board", where: "walk" },
   { key: "Q", does: "Picture quality, high or low", icon: "monitor", where: "walk" },
+  { key: "L", does: "Your class: everyone's setup lesson and the steps they've done", icon: "users", where: "walk" },
   { key: "Tab", does: "The instrument's panel: patch, EQ, mixer strip, notes", icon: "sliders-horizontal", where: "seat", at: [...PLAYED, "drums"], strip: 1, short: "the instrument's panel" },
   { key: "Tab", does: "The full mixer: a channel per track and per player, and the returns (sitting at the desk opens it too)", icon: "sliders-horizontal", where: "walk" },
   { key: "A to '", does: "Play notes; Shift plays louder", icon: "keyboard-music", where: "seat", at: PLAYED },

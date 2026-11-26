@@ -3,8 +3,8 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { logFile, parseCamera, record, recent } from "../live/camera.ts";
-import { asksRoute, outboundRoute, pendingAsks } from "../live/floorguard.ts";
-import { mayReach } from "../sandbox/proxy.ts";
+import { asksRoute, outboundRoute, ownAddress, pendingAsks } from "../live/floorguard.ts";
+import { fromBox, mayReach } from "../sandbox/proxy.ts";
 import { boxRoute } from "../sandbox/server.ts";
 import { noDocker } from "./no-docker.ts";
 
@@ -41,6 +41,18 @@ test("an unlisted host is asked about, answered, and logged; a listed one is onl
   const state = await boxRoute(() => dir, noDocker)("GET", new URL("http://x/__rb/box"));
   const seen = (state?.body as { log: { what: string; verdict: string }[] }).log.map((l) => `${l.what} ${l.verdict}`);
   expect(seen).toEqual(["github.com:443 listed", "evil.example.net:443 denied", "registry.example.com:443 allowed"]);
+});
+
+test("the box can't answer its own card, from inside it or round through the proxy", async () => {
+  const held = ask("exfil.example.com");
+  while (!pendingAsks().length) await Bun.sleep(5);
+  const url = new URL(`http://x/__rb/asks/${pendingAsks()[0]!.id}?allow=1`);
+  expect(asksRoute("POST", url, true, undefined, true)?.status).toBe(403);
+  expect(pendingAsks()).toHaveLength(1);
+  asksRoute("POST", new URL(url.href.replace("allow=1", "allow=0")), true, undefined, false);
+  expect(await held).toBe(false);
+  expect(["127.0.0.1", "::1", "::ffff:172.19.0.2", "172.19.0.3", undefined].map((a) => ownAddress(a, ["172.19.0.2"]))).toEqual([true, true, true, false, false]);
+  expect([fromBox("::ffff:172.19.0.2", ["172.19.0.2"]), fromBox("172.17.0.1", ["172.19.0.2"])]).toEqual([true, false]);
 });
 
 test("nobody answering turns the host down, and the office being unreachable does too", async () => {

@@ -6,7 +6,7 @@ import { sign, STUDIOS_MAX, type Handoff, type StudioRole } from "@rustybuns/uti
 import { hubErase, hubOut } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
-import { SPACES_OF, spaceOf } from "./qollab/space.ts";
+import { SPACES_EVER, SPACES_OF, spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 import { SOLE_OWNED, studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
@@ -58,14 +58,15 @@ export const challengeOf = async (verifier: string) => b64url(await digest(verif
 
 /** Trade a code in: the person behind it and the nonce it was asked with, or null for a code that is used, late, for another app, a wrong
  * verifier, or (when the caller names one, as OAuth's redirect_uri) a return URL other than the one the code was sent to. */
-export async function exchange(conf: Env, app: string, code: string, verifier: string, back?: string, now = Date.now()): Promise<{ who: Handoff; nonce: string | null } | null> {
+export async function exchange(conf: Env, app: string, code: string, verifier: string, back?: string, now = Date.now()): Promise<{ who: Handoff; nonce: string | null; web: boolean } | null> {
   // Deleted on the first try, right or wrong: a code is never worth a second guess.
   const row = await conf.DB.prepare("DELETE FROM codes WHERE hash = ? RETURNING user_id, app, challenge, expires_at, nonce, back")
     .bind(await sha256(code)).first<{ user_id: string; app: string; challenge: string; expires_at: number; nonce: string | null; back: string | null }>();
   if (!row || row.app !== app || row.expires_at < now || row.challenge !== await challengeOf(verifier)) return null;
   if (back !== undefined && row.back !== null && sameReturn(back) !== row.back) return null;
   const who = await handoff(conf, row.user_id, app);
-  return who && { who, nonce: row.nonce };
+  // A code that went to a web address is a page's, so what it keeps ends with a sign-out on eqosys; a native app's scheme isn't.
+  return who && { who, nonce: row.nonce, web: /^https?:/.test(row.back ?? "") };
 }
 
 const REFRESH_MS = 30 * 86_400_000;
@@ -137,13 +138,16 @@ export async function signOutApps(conf: Env, userId: string, now = Date.now()) {
 
 /** Sign someone out everywhere: every eqosys session, every native app's refresh token, every token already handed out, and the sockets those opened. */
 export async function signOutEverywhere(conf: Env, userId: string, now = Date.now()) {
-  await conf.DB.batch([
-    conf.DB.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(userId),
-    conf.DB.prepare("DELETE FROM refresh WHERE user_id = ?").bind(userId),
-    cut(conf, userId, "*", now),
-  ]);
+  await endSignIns(conf, userId, now);
   await closeSockets(conf, userId, "*");
 }
+
+/** The database's half of that: nothing the person holds works from here on; what is already open stays open. */
+const endSignIns = (conf: Env, userId: string, now: number) => conf.DB.batch([
+  conf.DB.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(userId),
+  conf.DB.prepare("DELETE FROM refresh WHERE user_id = ?").bind(userId),
+  cut(conf, userId, "*", now),
+]);
 
 /** Whether eqosys has seen proof the person holds their email (a provider that said so). Email and password sign-ups haven't. */
 export const emailVerified = async (conf: Env, userId: string) =>
@@ -203,17 +207,25 @@ export async function setAccess(conf: Env, email: string, app: string, role: str
 const eraseToken = (conf: Env, iss: string, user: { id: string; email: string }) =>
   sign(conf, iss, { user: { ...user, name: user.email }, app: "erase", source: HOME, access: [] }, Date.now(), {}, 60);
 
-/** Tell every app that keeps account data to erase this person, trying each a few times. True when all answered 200. */
+/**
+ * Tell every app that keeps account data to erase this person, trying each a few times. True when all of ours answered 200.
+ * A studio's own game (a listing) is not ours: it is asked only if they ever opened it (the call carries their email), after
+ * ours have all answered (so the token it gets has nothing left to erase in them), and it can't hold the deletion up.
+ */
 async function eraseInApps(conf: Env, iss: string, user: { id: string; email: string }) {
+  const opened = new Set((await conf.DB.prepare("SELECT app FROM links WHERE user_id = ?").bind(user.id).all<{ app: string }>()).results.map((r) => r.app));
+  // appsOf names ours first, then the listings.
   for (const app of await appsOf(conf)) {
-    if (!app.erase) continue;
+    const theirs = !ourApp(app.id);
+    if (!app.erase || (theirs && !opened.has(app.id))) continue;
     let ok = false;
     for (let i = 0; i < 3 && !ok; i++) {
       const token = await eraseToken(conf, iss, user);
       if (!token) return false;
       ok = await fetch(app.erase, { method: "POST", headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }).then((r) => r.status === 200, () => false);
     }
-    if (!ok) return false;
+    if (!ok && !theirs) return false;
+    if (!ok) console.error(`eqosys: ${app.id} didn't answer an erase call`);
   }
   return true;
 }
@@ -234,20 +246,23 @@ async function revokeApple(conf: Env, userId: string) {
 }
 
 /** Delete a person and everything eqosys holds about them: sessions, sign-in methods, links, access, codes, and their hub (friends hear they are gone).
- * Apps with an `erase` URL are asked first; if one won't answer 200 nothing is deleted and this returns false, so trying again is safe. */
+ * Apps with an `erase` URL are asked first; if one of ours won't answer 200 nothing is deleted and this returns false, so trying again is safe. */
 export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const u = await conf.DB.prepare(`SELECT email FROM "user" WHERE id = ?`).bind(userId).first<{ email: string }>();
   if (!u) return false;
   if (!(await eraseInApps(conf, iss, { id: userId, email: u.email }))) return false;
   // The vault first: its key is gone before anything else, so every save sealed with it is unreadable even in D1's history.
   await (await vaultFor(conf, userId))?.shred();
+  // Their sessions and tokens end before anything is swept, so a tab or a game still open can't write a row back behind the sweep.
+  // (Their sockets close below, as each world forgets them.)
+  await endSignIns(conf, userId, Date.now());
   if (conf.HUB) await hubErase(conf.HUB, userId);
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
   // Spaces they own are deleted for everyone (a studio's space only with a studio that goes with them); in the others their messages go.
   const owned = (await conf.DB.prepare(`SELECT id FROM spaces WHERE (owner = ?1 AND studio_id IS NULL) OR studio_id IN (${SOLE_OWNED})`).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
-  const joined = (await conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  const joined = (await conf.DB.prepare(SPACES_EVER).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? `https://space/drop?${new URLSearchParams({ iss })}` : `https://space/erase?${new URLSearchParams({ id: userId, iss })}`)).catch(() => null);
   // And Qlave drops them from every voice room, spaces' and parties' (the spaces they owned end theirs on /drop, the parties
   // they hosted on /erase). Three tries, best effort: a voice room is gone when its last person leaves, so it must not keep an account.
@@ -256,7 +271,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
     ...studioErase(conf, userId),
-    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"),
+    ...owned.flatMap((id) => ["space_members", "space_past"].map((t) => conf.DB.prepare(`DELETE FROM ${t} WHERE space_id = ?`).bind(id))), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"), gone("space_past"),
     // Their posts go with the reactions others pressed on them, then their own reactions.
     conf.DB.prepare("DELETE FROM reactions WHERE ref IN (SELECT 'post:' || id FROM posts WHERE user_id = ?)").bind(userId), gone("posts"), gone("reactions"),
     // Who they blocked, and anyone's block on them.
@@ -268,5 +283,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
     gone('"user"', "id"),
   ]);
+  // Again, for anything already in flight when they were signed out: nothing can make a new one now their row is gone.
+  if (conf.HUB) await hubErase(conf.HUB, userId);
   return true;
 }

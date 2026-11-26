@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
-import { allowedHosts, guardHost, hostName } from "../live/hosts.ts";
+import { allowedHosts, foreignWrite, guardHost, hostName } from "../live/hosts.ts";
 import { unpackPinned, pinnedTest } from "./pinned.ts";
 
 setDefaultTimeout(30_000);
@@ -32,6 +32,14 @@ test("guardHost answers 421 to a name it doesn't know", () => {
   expect(guard({ headers: { host: "localhost:4600" } }, res)).toBe(false);
   expect(guard({ headers: { host: "evil.example" } }, res)).toBe(true);
   expect(status).toBe(421);
+});
+
+test("an added route takes writes from the office's own page only, not another local port's", () => {
+  const req = (method: string, origin?: string) => ({ method, headers: { host: "localhost:4600", origin } });
+  const refused = (method: string, origin?: string, path = "/__rb/box") => foreignWrite(req(method, origin), path, {});
+  expect(refused("POST", "http://localhost:4600")).toBe(false);
+  expect([refused("POST", "http://localhost:5173"), refused("DELETE"), refused("POST", "null")]).toEqual([true, true, true]);
+  expect([refused("GET"), refused("POST", undefined, "/api/login")]).toEqual([false, false]);
 });
 
 pinnedTest("the pinned release still has the request handler and upgrade lines the guard is patched in front of", async () => {

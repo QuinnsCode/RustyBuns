@@ -39,6 +39,7 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "tri-amp-top": { maker: "Turbosound", product: "Flashlight TFS-780H", published: [0.574, 0.825, 0.773], issue: 5958 },
   "tri-amp-bass": { maker: "Turbosound", product: "Flashlight TFS-780L", published: [0.574, 0.825, 0.773], issue: 5958 },
   "sculpted-3way": { maker: "Void", product: "Air Motion V2", published: [0.8539, 0.6712, 0.6599], issue: 5959 },
+  "sculpted-3way-lh": { maker: "Void", product: "Air Motion V2 LH", published: [0.8539, 0.6712, 0.6599], issue: 6064 }, // the left box of a pair
   "arc-sub-18": { maker: "Void", product: "Arcline 118", published: [0.6568, 0.55, 0.6952], issue: 5959 },
   "triple-21-sub": { maker: "Void", product: "Incubus Sub", published: [1.479, 0.696, 1.218], issue: 5959 },
   "top-12-powered": { maker: "QSC", product: "K12.2", published: [0.356, 0.602, 0.35], issue: 5960 },
