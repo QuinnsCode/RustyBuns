@@ -159,6 +159,23 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
 });
 
+// On a desktop the report form's heading reads "Tell the developer" on one line beside the eqosys tag, in every look.
+test.skipIf(!chromePath())("the report form's heading fits on one line beside the tag on a desktop, in every look", async () => {
+  for (const look of ["?house", "?game=two-fronts", "?game=mythic-masters", "?game=skate-tech-park"]) {
+    const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 }, false);
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${look}`, 300);
+    const got = await tab.eval<{ lines: number; fits: boolean }>(`(() => {
+      document.querySelector(".rb-report .eq-form").hidden = false;
+      const t = document.querySelector(".rb-report .eq-title"), range = document.createRange();
+      // From the second letter on: a tome's big red first letter is a taller box of its own on the same line.
+      range.setStart(t.firstChild, 1); range.setEnd(t.firstChild, t.firstChild.length);
+      return { lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size, fits: range.getBoundingClientRect().right <= document.querySelector(".rb-report .eq-head .eq-badge").getBoundingClientRect().left };
+    })()`);
+    await tab.close();
+    expect({ look, ...got }).toEqual({ look, lines: 1, fits: true });
+  }
+});
+
 // On a phone the flag's corner is where a chat keeps its Send button: it takes the place the spaces header keeps for it, in every look.
 test.skipIf(!chromePath())("on a phone the Report flag sits in the spaces header, on none of the page's controls", async () => {
   for (const look of ["?house&closed", "?game=two-fronts&closed", "?game=mythic-masters&closed", "?game=skate-tech-park&closed"]) {

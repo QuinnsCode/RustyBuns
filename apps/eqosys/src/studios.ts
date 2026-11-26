@@ -102,9 +102,13 @@ export async function addMember(conf: Pick<Env, "DB">, studio: string, by: strin
   // A new member counts against the cap; changing someone's role doesn't.
   if (!await roleIn(conf, studio, u) && ((await conf.DB.prepare("SELECT COUNT(*) AS n FROM studio_members WHERE studio_id = ?").bind(studio).first<number>("n")) ?? 0) >= STUDIO_MEMBERS)
     return { ok: false, status: 409, error: `that studio is full (${STUDIO_MEMBERS} people)` };
-  await conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role")
-    .bind(studio, u, role, now).run();
-  return { ok: true, id: studio };
+  // An owner's role is only an owner's to change, and the last owner keeps it: checked in the write, so two changes can't race past it.
+  const put = await conf.DB.prepare(`INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role
+    WHERE studio_members.role <> 'owner' OR (?5 = 'owner' AND (excluded.role = 'owner'
+      OR EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = ?1 AND o.role = 'owner' AND o.user_id <> ?2))) RETURNING user_id`)
+    .bind(studio, u, role, now, mine).first<string>("user_id");
+  if (put) return { ok: true, id: studio };
+  return mine === "owner" ? { ok: false, status: 409, error: "a studio keeps at least one owner" } : { ok: false, status: 403, error: "only an owner changes another owner's role" };
 }
 
 /**
@@ -119,12 +123,15 @@ export async function removeMember(conf: Pick<Env, "DB">, studio: string, by: st
   const out = await conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id = ?1 AND user_id = ?2
     AND (role <> 'owner' OR EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = ?1 AND o.role = 'owner' AND o.user_id <> ?2)) RETURNING user_id`)
     .bind(studio, who).first<string>("user_id");
-  return out ? { ok: true, id: studio } : { ok: false, status: 409, error: "a studio keeps at least one owner" };
+  if (!out) return { ok: false, status: 409, error: "a studio keeps at least one owner" };
+  // A guest row they had in the studio's space would keep them in it after the seat is gone.
+  await conf.DB.prepare("DELETE FROM space_members WHERE space_id IN (SELECT id FROM spaces WHERE studio_id = ?) AND user_id = ?").bind(studio, who).run();
+  return { ok: true, id: studio };
 }
 
 /** Everyone who shares a studio with this person (not them), at most `max`: they see each other online without a friend request (hub.ts). */
 export async function coworkersOf(conf: Pick<Env, "DB">, userId: string, max = 200): Promise<{ id: string; name: string }[]> {
-  const { results } = await conf.DB.prepare(`SELECT DISTINCT u.id, u.name FROM studio_members a JOIN studio_members b ON b.studio_id = a.studio_id
+  const { results } = await conf.DB.prepare(`SELECT DISTINCT u.id, substr(u.name, 1, 100) AS name FROM studio_members a JOIN studio_members b ON b.studio_id = a.studio_id
     JOIN "user" u ON u.id = b.user_id WHERE a.user_id = ?1 AND b.user_id <> ?1 ORDER BY u.name LIMIT ?2`).bind(userId, max).all<{ id: string; name: string }>();
   return results;
 }

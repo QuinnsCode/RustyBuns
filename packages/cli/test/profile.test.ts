@@ -86,6 +86,25 @@ test("bun check type checks even when the app has a \"check\" script of its own"
   } finally { process.chdir(was); }
 });
 
+test("a package.json left in the temp folder doesn't stand in for the type check", async () => {
+  const shared = mkdtempSync(join(tmpdir(), "rb-check-planted-")), dir = mkdtempSync(join(tmpdir(), "rb-check-app-"));
+  writeFileSync(join(shared, "package.json"), JSON.stringify({ scripts: { check: "echo planted script ran" } }));
+  writeFileSync(join(dir, "a.ts"), 'const n: number = "x";\nconsole.log(n);\n');
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, files: ["a.ts"] }));
+  const was = process.cwd(), tmp = process.env.TMPDIR;
+  process.chdir(dir);
+  process.env.TMPDIR = shared;
+  try {
+    const r = await runCheck({ name: "bun", bin: process.execPath }, "tsconfig.json");
+    expect(r.output).not.toContain("planted script ran");
+    expect(r.ok).toBe(false);
+  } finally {
+    process.chdir(was);
+    if (tmp === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = tmp;
+  }
+});
+
 test("fromDir: diagnostics printed elsewhere come back relative to here", () => {
   expect(fromDir("../app/src/a.ts(1,7): error TS2322: nope\nFound 1 error", "/tmp/x", "/tmp/app")).toBe("src/a.ts(1,7): error TS2322: nope\nFound 1 error");
 });

@@ -114,7 +114,7 @@ export function rig(w: World): Rig {
   let r = rigs.get(w);
   if (!r) {
     r = {
-      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, lift: { tent: false, open: false }, master: { tent: -10, open: -9 },
+      yaw: { tent: Math.PI / 2, open: -Math.PI / 2 }, subs: { tent: "omni", open: "omni" }, lift: { tent: false, open: false }, master: { tent: -12, open: -11 },
       phase: Object.fromEntries(Object.keys(FEEDS).map((k) => [k, null])), feeder: { tent: 10, open: 10 },
       snake: { tent: false, open: false }, clock: 0, log: { tent: [], open: [] }, late: null,
     };
@@ -167,10 +167,11 @@ export function stageItems(k: StageKey, yaw: number, mode: SubMode, lifted = fal
       out.push({ key: `${k}-midbass-${n}`, gear: "stack-mid-bass", x: p.x, y: base, z: p.z, rot: yaw, hung: true });
       out.push({ key: `${k}-midhigh-${n}`, gear: "stack-mid-high", x: p.x, y: base + gear("stack-mid-bass").size.h, z: p.z, rot: yaw, hung: true });
     } else {
-      // a pair on the pole, side by side and splayed 15 degrees either way of the side's axis
+      // a pair on the pole, side by side and splayed 15 degrees either way of the side's axis; the left box (seen from
+      // the front) is the left-handed one, so the two LF horns meet in the middle
       for (const [j, splay] of [[1, -0.26], [2, 0.26]] as const) {
         const q = at((j === 1 ? -1 : 1) * PAIR, 0);
-        out.push({ key: `${k}-sculpt-${n}${j}`, gear: "sculpted-3way", x: q.x, y: base, z: q.z, rot: yaw + splay, hung: true });
+        out.push({ key: `${k}-sculpt-${n}${j}`, gear: j === 1 ? "sculpted-3way-lh" : "sculpted-3way", x: q.x, y: base, z: q.z, rot: yaw + splay, hung: true });
       }
     }
   }
@@ -327,7 +328,7 @@ export function stageSources(w: World, k: StageKey, force = false): Source[] {
     };
     const base = topsAt(k, r.lift[k]);
     if (sys === "dance") { box("stack-mid-bass", base + 0.4); box("stack-mid-high", base + 1.0); }
-    else { const y = base + gear("sculpted-3way").size.h / 2; box("sculpted-3way", y, -0.26, -PAIR); box("sculpted-3way", y, 0.26, PAIR); }
+    else { const y = base + gear("sculpted-3way").size.h / 2; box("sculpted-3way-lh", y, -0.26, -PAIR); box("sculpted-3way", y, 0.26, PAIR); }
   }
   return out;
 }

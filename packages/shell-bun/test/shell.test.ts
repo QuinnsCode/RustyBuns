@@ -160,7 +160,14 @@ test("serve: public paths are readable without the token, GET only, and nothing 
   expect((await fetch(shell.url + "/api/catalog/items", { method: "POST" })).status).toBe(403);
   expect((await fetch(shell.url + "/.well-known/b.json")).status).toBe(403);
   expect((await fetch(shell.url + "/api/catalogue")).status).toBe(403);
+  expect((await fetch(shell.url + "/api/catalog/..%2f..%2findex.html")).status).toBe(403);
   expect(seen).toEqual(["public", "public"]);
+  await shell.stop();
+});
+
+test("serve: an open route never receives a caller's x-rb-principal", async () => {
+  const shell = serve({ token: "t0k", open: { "/api/mcp": (req) => new Response(String(req.headers.get("x-rb-principal"))) } });
+  expect(await (await fetch(shell.url + "/api/mcp", { headers: { "x-rb-principal": "host" } })).text()).toBe("null");
   await shell.stop();
 });
 

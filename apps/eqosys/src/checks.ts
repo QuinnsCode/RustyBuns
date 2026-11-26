@@ -1,18 +1,24 @@
 // The machine half of a studio game's review (LIBRARY.md, "In review"): when a game is sent, eqosys checks what it can from a
-// Worker and keeps the answers on the listing, for the super admin's queue (eq_listing_review). Four checks:
+// Worker and keeps the answers on the listing, for the super admin's queue (eq_listing_review). Four checks from the Worker:
 //
 //   https   each origin answers over https (2xx, after redirects, still on https)
 //   loads   the first origin's page is HTML, and every script and stylesheet it names answers
 //   signin  someone in the studio has signed in to it through eqosys (a `links` row: their sign-in came back to its origin)
 //   state   the harness the starter ships, `window.<handle>`, is in its scripts (the handle `bun run new-game` gives this id)
 //
-// A Worker runs no page, so an error thrown while the page runs and what `state()` answers are not seen here: the `state` check's
-// words carry the `bun run probe` line that asks it in headless Chrome. Each check is ok, or not with why, in a short line.
+// and two from a browser that runs the page (browse.ts, Cloudflare Browser Run on the BROWSER binding):
+//
+//   runs     the page threw no errors while it loaded and ran
+//   answers  `window.<handle>.state()` answered
+//
+// With no BROWSER (locally, the desktop) the last two are left out, and the `state` check's words carry the `bun run probe` line
+// that asks the same in headless Chrome. Each check is ok, or not with why, in a short line.
 import { arr, bool, check as read, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
+import { browserRun, SETTLE_MS, type Browse } from "./browse.ts";
 import type { Env } from "./env.ts";
 import type { Listing } from "./listings.ts";
 
-export const NAMES = ["https", "loads", "signin", "state"] as const;
+export const NAMES = ["https", "loads", "signin", "state", "runs", "answers"] as const;
 export type CheckName = (typeof NAMES)[number];
 const Check = obj({ name: oneOf(NAMES), ok: bool(), says: str(4000, { min: 0 }) });
 export type Check = Of<typeof Check>;
@@ -48,7 +54,7 @@ async function filesIn(html: string, base: string): Promise<string[]> {
   return [...out].slice(0, MOST_FILES);
 }
 
-/** Runs the four checks on a game. `get` is the outside web (the global fetch, or `OUTBOUND` in tests). */
+/** Runs the checks on a game. `get` is the outside web (the global fetch, or `OUTBOUND` in tests); the browser is BROWSER (or `PAGE_RUN`). */
 export async function check(conf: Env, l: Listing, now = Date.now()): Promise<Checks> {
   const get = getter(conf);
   const list: Check[] = [];
@@ -89,7 +95,27 @@ export async function check(conf: Env, l: Listing, now = Date.now()): Promise<Ch
   const has = new RegExp(`\\b${handle}\\b`).test(scripts);
   list.push({ name: "state", ok: has, says: has ? `window.${handle} is in its scripts; ask it live: ${probe}` : `no window.${handle} in its scripts (the starter's harness); ask it live: ${probe}` });
 
+  const browse = browserOf(conf);
+  if (browse) list.push(...await live(browse, html === null ? null : home, handle));
+
   return { at: now, list };
+}
+
+const browserOf = (conf: Env): Browse | undefined => conf.PAGE_RUN ?? (conf.BROWSER ? browserRun(conf.BROWSER) : undefined);
+
+/** The `runs` and `answers` checks: the page run in a browser. Not run when the page didn't load. */
+async function live(browse: Browse, home: string | null, handle: string): Promise<Check[]> {
+  const not = (says: string): Check[] => [{ name: "runs", ok: false, says }, { name: "answers", ok: false, says }];
+  if (!home) return not("not run: the page did not load");
+  try {
+    const { errors, state } = await browse(home, handle);
+    return [
+      { name: "runs", ok: !errors.length, says: errors.length ? `it threw ${errors.length === 1 ? "an error" : `${errors.length} errors`} as it ran: ${errors.join("; ")}` : `no errors in its first ${SETTLE_MS / 1000} s in a browser` },
+      { name: "answers", ok: state.ok, says: state.ok ? `${handle}.state() answered ${state.text}` : state.text },
+    ];
+  } catch (e) {
+    return not(`not run: the browser stopped (${e instanceof Error ? e.message : "no reason given"}); check again later`);
+  }
 }
 
 /** A listing's kept checks, or none. */

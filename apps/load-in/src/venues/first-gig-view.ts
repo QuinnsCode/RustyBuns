@@ -43,7 +43,20 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
   const card = document.createElement("div");
   card.className = "bar-card";
   hud.append(card);
-  let last = "", opened: Show | null = null;
+  let last = "", opened: Show | null = null, humming = false, ctx: AudioContext | null = null;
+  // The mic's cable along a power cord: a second of mains hum through the wedge when it starts (60 Hz and its harmonics).
+  const hum = () => {
+    const a = (ctx ??= new AudioContext()), t = a.currentTime;
+    for (const hz of [60, 120, 180]) {
+      const o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = hz;
+      g.gain.setValueAtTime(0.12 * (60 / hz), t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1);
+      o.connect(g).connect(a.destination);
+      o.start(t);
+      o.stop(t + 1);
+    }
+  };
   const atDesk = () => {
     const w = getWorld(), desk = w.items.find((i) => i.gear === "mixer-small");
     return !!desk && desk.key !== w.held?.key && Math.hypot(w.you.x - desk.x, w.you.z - desk.z) <= REACH;
@@ -63,6 +76,9 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
       const w = getWorld(), r = runs();
       people.update(w, crowdOf(w));
       j = judge(w, r, getOn());
+      const hums = j.fed && j.problems.some((p) => p.kind === "hum");
+      if (hums && !humming) hum();
+      humming = hums;
       const list = jobs(w, r, getOn(), j);
       const lines = [
         `<b>${opened ? "Doors open" : "First gig"}</b>`,
@@ -85,6 +101,7 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
     hint: () => (atDesk() ? `V 48 V phantom (${gig(getWorld()).phantom ? "on" : "off"})` : null),
     dispose() {
       people.dispose();
+      void ctx?.close();
       scene.remove(group);
       card.remove();
     },

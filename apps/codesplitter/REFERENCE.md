@@ -239,7 +239,7 @@ The pitch is in [README.md](README.md).
   Any can be sent again by hand.
   A hook's URL can't be a private, loopback or link-local address, and on the desktop each delivery checks where its host resolves first.
   `GET|POST /api/repos/:o/:r/hooks`.
-- **Security audit log.** Making or revoking an API or CI token, adding or removing crew, making, revoking or claiming an invite, flipping visibility, adding or deleting a webhook, setting or removing a deploy key and deleting a repo each leave an append-only row: who, signed in how (cookie, token, OAuth, a queued job, an invite), what, where, when and the caller's country.
+- **Security audit log.** Making or revoking an API or CI token, adding or removing crew, making, revoking or claiming an invite, flipping visibility, adding or deleting a webhook, setting or removing a deploy key and deleting a repo each leave an append-only row: who, signed in how (cookie, token, OAuth, a queued job, an invite) and with which token, what, where, when and the caller's country.
   The owner reads a repo's on its page (`GET /api/repos/:o/:r/audit`, a deleted repo's too), and you read yours under your tokens (`GET /api/tokens/audit`).
   Invite links and CI tokens are kept as SHA-256 hashes, shown once; CI tokens expire (90 days by default).
 - **One command palette (⌘K), one API.** Every action in the UI is a single API call, and the palette shows it next to the command, so people and agents do the same things the same way.

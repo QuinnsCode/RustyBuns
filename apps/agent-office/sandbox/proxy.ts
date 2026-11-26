@@ -3,6 +3,7 @@
 //   ALLOW=host,*.suffix   the only hosts a CONNECT may name (HTTPS only: that is what the model, GitHub and registries speak)
 //   ASK_URL, OUTBOUND_TOKEN   ask the office (live/floorguard.ts outboundRoute) about hosts not on the list, and report the ones that are
 //   FORWARD=host:port     also relays the port the host published to the box, so the page stays reachable on 127.0.0.1
+import { lookup } from "node:dns/promises";
 import net from "node:net";
 
 /** A host is allowed when the list names it, or names `*.suffix` and it's a subdomain of that. */
@@ -32,6 +33,9 @@ export async function mayReach(host: string, port: number, list: string[], offic
   if (!(await answer)) answers.set(key, { answer, until: Date.now() + 2_000 });
   return answer;
 }
+
+/** Whether a connection to the published port comes from the box itself, going round to answer its own cards as a person. */
+export const fromBox = (remote: string | undefined, box: string[]): boolean => box.includes((remote ?? "").replace(/^::ffff:/, ""));
 
 const answers = new Map<string, { answer: Promise<boolean>; until: number }>();
 
@@ -72,7 +76,10 @@ if (import.meta.main) {
   }).listen(3128);
   const to = process.env.FORWARD?.split(":");
   if (to?.[0]) {
-    net.createServer((c) => {
+    net.createServer(async (c) => {
+      c.on("error", () => {});
+      const box = await lookup(to[0]!, { all: true }).then((all) => all.map((a) => a.address), () => []);
+      if (fromBox(c.remoteAddress, box)) return void c.destroy();
       const up = net.connect(Number(to[1]), to[0]!);
       c.pipe(up).pipe(c);
       up.on("error", () => c.destroy());
