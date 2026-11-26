@@ -5,10 +5,14 @@
 import { arr, bool, check, int, obj, opt, raw, str } from "./guard.ts";
 import { parseJson } from "./http.ts";
 
+/** The code a dynamic Worker runs: its modules, and the bindings it gets (a service stub or RPC object each, or a plain string var). */
+export interface WorkerCode {
+  compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: { [binding: string]: object | string };
+  globalOutbound?: unknown; limits?: { cpuMs?: number; subRequests?: number };
+}
 /** The Worker Loader binding, as much of it as we use (the edge's and shell-bun's both fit). */
 export interface WorkerLoaderLike {
-  get(id: string, code: () => { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown; limits?: { cpuMs?: number; subRequests?: number } }):
-    { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
+  get(id: string, code: () => WorkerCode | Promise<WorkerCode>): { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
 }
 
 /** One tool's answer to a program: an HTTP-style status and the JSON text. */
@@ -72,7 +76,7 @@ export interface RunOptions {
   /** Makes one call as the caller; used in-process where there is no edge stub (under Bun). */
   run: (name: string, json: string) => Promise<ToolAnswer>;
   /** The edge's stub of the app's bridge entrypoint for this caller; it replaces `run` as the binding. */
-  bridge?: unknown;
+  bridge?: object;
   input?: unknown;
   maxCalls: number;
   /** Wall time the host waits for an answer. */

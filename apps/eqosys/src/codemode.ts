@@ -7,10 +7,10 @@ export type { Ran, ToolAnswer, WorkerLoaderLike };
 export const MAX_CALLS = 50, RUN_MS = 10_000, CPU_MS = 1_000, MAX_BACK = 20_000, MAX_CODE = 32_000;
 
 /** Makes a stub of the worker's EQBridge entrypoint for one caller; worker.tsx sets it on the edge (under Bun there is none). */
-export const edge: { stub?: (props: unknown) => unknown } = {};
+export const edge: { stub?: (props: unknown) => object | undefined } = {};
 
 /** Run `code` in a Worker of its own; `names` are the tools it may call, `run` makes one call as the caller, `bridge` is the edge's stub of it (else an in-process object). */
-export const execute = (loader: WorkerLoaderLike, code: string, names: string[], run: (name: string, json: string) => Promise<ToolAnswer>, input?: unknown, bridge?: unknown): Promise<Ran> =>
+export const execute = (loader: WorkerLoaderLike, code: string, names: string[], run: (name: string, json: string) => Promise<ToolAnswer>, input?: unknown, bridge?: object): Promise<Ran> =>
   runProgram(loader, code, {
     binding: "EQ", names, run, bridge, input, maxCalls: MAX_CALLS, runMs: RUN_MS, cpuMs: CPU_MS, maxBack: MAX_BACK, maxCode: MAX_CODE,
     unknownMessage: (u) => `no tool ${u.join(", ")}; the tools are ${names.join(", ")}`,
