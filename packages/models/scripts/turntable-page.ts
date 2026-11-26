@@ -10,7 +10,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { GEAR_IDS, type GearId, gear, gearLook } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearLook } from "../src/gear.ts";
 import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 // `close` is a macro shot: the front three-quarter view moved in on the top front corner, where a pixel is about
@@ -130,11 +130,11 @@ function setLook(l: typeof look, done: Promise<unknown>) { look = l; ready = don
 /** `dance-stack`: the stack as the photos show one, two bass bins side by side and three columns of mid-bass and top
  * on them, the outer columns splayed out. */
 function danceStack(): THREE.Group {
-  const g = new THREE.Group(), sh = 0.8, bh = 0.75;
+  const g = new THREE.Group(), sh = 0.8, bh = GEAR_SIZES["stack-mid-bass"][1];
   for (const x of [-0.552, 0.552]) { const s = gear("horn-sub-21", { look }); s.position.x = x; g.add(s); }
   for (const k of [-1, 0, 1]) {
     const col = new THREE.Group();
-    col.position.set(k * 0.77, sh, k ? -0.06 : 0);
+    col.position.set(k * 0.62, sh, k ? -0.06 : 0);
     col.rotation.y = -k * 0.2;
     const mb = gear("stack-mid-bass", { look }), mh = gear("stack-mid-high", { look });
     mh.position.y = bh;

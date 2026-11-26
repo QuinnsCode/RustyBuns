@@ -29,7 +29,7 @@ export type LineupRow = {
 export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "stack-mid-high": { maker: "Funktion-One", product: "Res2", published: [0.484, 0.975, 0.51], issue: 5948 },
   "horn-sub-21": { maker: "Funktion-One", issue: 5948 }, // the horn bass bins the Res2 stacks on
-  "stack-mid-bass": { maker: "Funktion-One", issue: 5957 },
+  "stack-mid-bass": { maker: "Funktion-One", product: "F215 MkII", published: [0.59, 0.845, 0.603], issue: 5957 },
   "tri-amp-top": { maker: "Turbosound", issue: 5958 },
   "tri-amp-bass": { maker: "Turbosound", issue: 5958 },
   "sculpted-3way": { maker: "Void", issue: 5959 },
