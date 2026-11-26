@@ -34,6 +34,32 @@ test("a sent-home worker's scratch folder goes; live worktrees, their subfolders
   for (const [k, n] of Object.entries(names)) expect([k, existsSync(path.join(base, n))]).toEqual([k, k !== "gone"]);
 });
 
+// #4798: a worker sent home with unpushed work keeps its worktree, and its scratch (a 2.9 GB log in one) stayed with it
+test("an empty desk's scratch folder goes once idle a day; a seated worker's, a fresh one's, and any without the seating list stay", async () => {
+  const root = tmp();
+  const repo = path.join(root, "repo");
+  for (const t of ["nibble-1", "sprocket-2", "echo-3"]) mkdirSync(path.join(repo, WORKTREES, t), { recursive: true });
+  const base = path.join(root, "claude-501");
+  const scratch = (tree: string, hoursOld: number) => {
+    const dir = path.join(base, `${slug(path.join(repo, WORKTREES))}-${tree}`);
+    const file = path.join(dir, "session", "scratchpad", "desktop2.log");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, Buffer.alloc(1 << 20));
+    const at = (Date.now() - hoursOld * 3_600_000) / 1000;
+    for (const p of [file, path.dirname(file), path.join(dir, "session"), dir]) utimesSync(p, at, at);
+    return dir;
+  };
+  const seated = scratch("nibble-1", 48), left = scratch("sprocket-2", 48), fresh = scratch("echo-3", 2);
+  const live = [path.join(repo, WORKTREES, "nibble-1")];
+
+  expect((await sweepScratch([repo], true, base)).paths).toEqual([]);
+  const done = await sweepScratch([repo], true, base, live);
+  expect(done.paths).toEqual([left]);
+  expect(done.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect([seated, left, fresh].map((p) => existsSync(p))).toEqual([true, false, true]);
+  expect(existsSync(path.join(repo, WORKTREES, "sprocket-2"))).toBe(true);
+});
+
 test("node_modules and ignored build output go from worktrees nobody sits at; a seated one, a fresh hire's, a checked-in dist and the code stay", async () => {
   const repo = tmp();
   const git = (dir: string, ...a: string[]) => Bun.spawnSync(["git", "-C", dir, ...a], { stdout: "ignore", stderr: "ignore" });

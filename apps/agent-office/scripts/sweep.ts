@@ -52,9 +52,12 @@ let total = 0;
 console.log(`🧹 ${go ? "Sweeping" : "Dry run (--go to free it)"}; repos: ${repos.map((r) => r.replace(homedir(), "~")).join(", ") || "none"}`);
 
 if (want("scratch")) {
-  const r = await sweepScratch(repos, go);
+  // empty desks' scratch too, only when the office says who sits where on every floor
+  const seated = await Promise.all(repos.map(seatedTrees));
+  const live = seated.every(Boolean) ? seated.flatMap((s) => s ?? []) : undefined;
+  const r = await sweepScratch(repos, go, undefined, live);
   total += r.bytes;
-  console.log(`scratch of gone worktrees: ${r.paths.length} folders, ${verb} ${gb(r.bytes)}`);
+  console.log(`scratch of gone worktrees${live ? " and empty desks idle a day" : " (empty desks skipped: `office-workers list` didn't answer)"}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)}`);
 }
 
 if (want("bun")) {
