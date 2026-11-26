@@ -78,7 +78,7 @@ bun test test
 | --- | --- |
 | `PORT` | Where it listens (default 8790). |
 | `CRON_SWANSON_DB` | The SQLite file (default `data/cron-swanson.sqlite`; the Dockerfile uses `/data/...` for a volume). |
-| `CRON_SWANSON_OWNER` | The email of the one eqosys account the page lets in. The page signs in through eqosys and sends its token; the server checks it against eqosys's keys (`@rustybuns/util/token`). |
+| `CRON_SWANSON_OWNER` | The email of the one eqosys account the page lets in. The page signs in through eqosys and sends its token; the server checks it against eqosys's keys (`@rustybuns/util/token`), then asks eqosys's `/oauth/userinfo` once per account that the email is verified, so a password sign-up under your email that never verified it stays out. |
 | `EQOSYS_URL` | Which eqosys signs people in (default `https://eqosys.qntbr.com`). A page signs in against a local one with `localStorage["cron-swanson.eqosys"] = "http://localhost:<port>"`. |
 | `CRON_SWANSON_TOKEN` | The bearer for scripts and apps (`src/sync.ts`): `Authorization: Bearer <token>`. Also the relay's secret. With neither this nor `CRON_SWANSON_OWNER` set, the API is open. |
 | `CRON_SWANSON_RELAY` | The relay Worker's URL (`https://cron-swanson-relay.<you>.workers.dev`). The server nudges it after each change; pages hold a socket to it. |

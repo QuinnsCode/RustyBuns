@@ -12,6 +12,9 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "browser": {
+    "binding": "BROWSER"
+  },
   "d1_databases": [
     {
       "binding": "DB",

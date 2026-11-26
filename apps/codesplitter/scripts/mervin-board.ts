@@ -98,7 +98,7 @@ export const TIERS = ["certain", "agree", "mervin", "differ", "card"] as const s
 export const BoardPr = obj({
   number: int(1, 1e9), title: opt(str(1000)), body: opt(str(70_000)), headRefOid: str(64), headRefName: opt(str(1000)), baseRefName: opt(str(1000)),
   autoMergeRequest: opt(raw),
-  statusCheckRollup: opt(arr(obj({ name: opt(str(1000)), conclusion: opt(nul(str(100, { min: 0 }))), status: opt(str(100, { min: 0 })), startedAt: opt(str(100)), completedAt: opt(str(100)) }), 1000)),
+  statusCheckRollup: opt(arr(obj({ name: opt(str(1000)), workflowName: opt(str(1000)), conclusion: opt(nul(str(100, { min: 0 }))), status: opt(str(100, { min: 0 })), startedAt: opt(str(100)), completedAt: opt(str(100)) }), 1000)),
 });
 export type BoardPr = Of<typeof BoardPr>;
 export const BoardPrs = arr(BoardPr, 1000);

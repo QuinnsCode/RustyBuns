@@ -113,6 +113,11 @@ export function friendLinkButton(h: ReturnType<typeof hub>, say: (note: string) 
   return b;
 }
 
+/** This player among the members: by account id, since names are anyone's to copy; by name when no member has their id
+ *  (a stand-in party, or no token to read). */
+export const meIn = <M extends { id: string; name: string }>(members: M[], id: string | undefined, name: string | undefined): M | undefined =>
+  members.find((m) => m.id === id) ?? members.find((m) => m.name === name);
+
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
 export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub: h, join = joinVoice }: LobbyPanel) {
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
@@ -214,7 +219,7 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   };
 
   const draw = () => {
-    const mine = members.find((m) => m.name === name());
+    const mine = meIn(members, p.me?.(), name());
     // Reads "Party KRTZ: Ada (host), Grace ready" as text; each member is its own mark, a lit dot once ready (the host always is).
     const on = new Set(members.filter((m) => m.host || m.ready).map((m) => m.id)), was = lit;
     lit = members.length ? on : null;

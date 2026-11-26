@@ -74,8 +74,9 @@ export const SYSTEMS: Record<SystemId, System> = {
 };
 
 /** How many amp channels a passive box takes: one a way, as each family's sheet wires it (the three-way tops tri-amped,
- *  the horn stack's mid-high horn two ways); one for a box left out. A powered box brings its own amps: none. */
-const WAYS: Record<string, number> = { "stack-mid-high": 2, "synergy-horn": 3, "sculpted-3way": 3, "tri-amp-top": 3, "line-array-box": 4 };
+ *  the horn stack's mid-high horn two ways); one for a box left out, the synergy horn too (its crossover is inside:
+ *  the SH50 sheet's "single channel amplified"). A powered box brings its own amps: none. */
+const WAYS: Record<string, number> = { "stack-mid-high": 2, "sculpted-3way": 3, "sculpted-3way-lh": 3, "tri-amp-top": 3, "line-array-box": 4 };
 /** The amp channels one box takes: one a way of a passive box, none for a powered box or a dolly. */
 export const boxChannels = (id: string): number => (id === "sand-dolly" || !(gear(id).jacks["speaker-in"] ?? 0) ? 0 : WAYS[id] ?? 1);
 /** The amp channels `stacks` stacks of rig `s` take, from its passive boxes. */

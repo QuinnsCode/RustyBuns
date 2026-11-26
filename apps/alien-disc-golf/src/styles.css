@@ -22,8 +22,19 @@
     linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 18px 18px,
     radial-gradient(120% 70% at 100% 0, rgba(94, 230, 200, 0.07), transparent 60%);
   --panel-art: var(--art), var(--panel);
-  /* The Controls card sits over the panel: the same art on solid glass, so nothing shows through it. */
-  --panel-art-solid: var(--art), var(--glass);
+  /* The scanner's corner brackets as background layers, so a card that scrolls (Controls, the report form) keeps them
+   * on its corners instead of scrolling them away the way the panel's ::before would. */
+  --bracket: rgba(94, 230, 200, 0.45);
+  --brackets: linear-gradient(var(--bracket), var(--bracket)) left 5px top 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px top 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px top 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px top 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px bottom 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left 5px bottom 5px / 1.5px 14px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px bottom 5px / 14px 1.5px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right 5px bottom 5px / 1.5px 14px no-repeat;
+  /* The Controls card and the eqosys surfaces sit over the panel: the same art and brackets on solid glass, so nothing shows through. */
+  --panel-art-solid: var(--brackets), var(--art), var(--glass);
   /* The scorecard: a printout fed from a slot in the panel, on pale stock with the scanner's grid printed faint. */
   --card: #e2eeec;
   --card-ink: #0b1a2b;
@@ -140,6 +151,9 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .wx .rose .face { fill: #030810; }
 .wx .forecast { margin: 0; padding-top: 6px; border-top: 1px dashed var(--edge); }
 .wx .board .wind { margin: 4px 0 0; gap: 3px 10px; }
+/* Each reading on one line ("23 m/s blowing SE"): the rose gives up a few pixels for it. */
+@media (min-width: 721px) { .wx .board { grid-template-columns: 96px 1fr; } }
+.wx .board .wind > span { white-space: nowrap; }
 
 /* The nine punches along the top of the panel while you play. */
 .punches { display: grid; grid-template-columns: repeat(9, 1fr); justify-items: center; list-style: none; margin: 0 0 8px; padding: 0 0 7px; border-bottom: 1px solid var(--edge); }
@@ -254,6 +268,28 @@ body:has(.eq-toast) .toast { top: 150px; }
   html body:has(.rb-report) .rb-pal-btn { bottom: max(10px, env(safe-area-inset-bottom)); }
   /* The report form opens beside the panel, its foot on the panel's foot, so it never covers the scorecard or the throw. */
   html body .rb-report .eq-form { position: fixed; right: 364px; bottom: 58px; width: min(340px, calc(100vw - 388px)); max-height: calc(100% - 128px); overflow-y: auto; }
+}
+/* The Controls card as one more scanner panel: the brackets come with its glass (--panel-art-solid), the heading is the
+ * panels' amber caps over a dashed rule, and a row's name stays on one line. `html` outranks the skin's injected rules. */
+html .ui-house .gc-head { padding-bottom: 8px; border-bottom: 1px dashed var(--edge); }
+html .ui-house .gc-head h2 { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--amber); }
+html .ui-house .gc-sub { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); opacity: 1; }
+html .ui-house .gc-binds { grid-template-columns: auto 1fr auto; }
+html .ui-house .gc-card label { grid-template-columns: auto 1fr 3.5em; }
+html .ui-house .gc-card label:has(> input[type=checkbox]) { grid-template-columns: 1fr auto; }
+html .ui-house .gc-binds > :not(button), html .ui-house .gc-card label > :first-child { white-space: nowrap; }
+@media (max-width: 520px) {
+  /* On a phone the card keeps a margin and all four corners, like the panel under it. */
+  html .gc-dialog.ui-house { padding: 8px; font-size: 14px; }
+  html .ui-house .gc-card { border-radius: 12px; border-bottom: 1px solid var(--edge); max-height: 100%; padding: 16px 14px; }
+}
+/* The report form's kind picker: the scanner's mono caps on glass with a teal chevron, not the browser's stock select. */
+html body .rb-report .eq-form select { appearance: none; -webkit-appearance: none; padding-right: 34px; font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--teal); cursor: pointer;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235ee6c8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px 8px, var(--glass-hi); }
+html body .rb-report .eq-form option { background: var(--glass); color: var(--ink); text-transform: none; }
+@media (max-width: 600px) {
+  /* On a phone the form is a framed panel standing on the screen's foot, not a sheet glued to it. */
+  html body .rb-report .eq-form { left: 8px; right: 8px; bottom: 8px; border-width: 1px; border-radius: 12px; }
 }
 /* A dialog up (Controls, the report form, a how-to) has the screen: the corner buttons step out from over it. */
 body:has(.gc-dialog:not([hidden])) :is(.rb-pal-btn, .rb-report),

@@ -4,6 +4,7 @@ import type { Parties } from "./qollab/party.ts";
 import type { Spaces } from "./qollab/space.ts";
 import type { Vaults } from "./vault.ts";
 import type { WorkerLoaderLike } from "./codemode.ts";
+import type { Browse, BrowserWorker } from "./browse.ts";
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = unknown>(column?: string): Promise<T | null>;
@@ -67,6 +68,10 @@ export interface Env {
   QOLLAB?: Fetcher;
   /** The outside web for a studio game's review checks (checks.ts). Unset, the global fetch; tests set it so no check leaves the machine. */
   OUTBOUND?: Fetcher;
+  /** Cloudflare Browser Run: runs a game's page for the `runs` and `answers` review checks (browse.ts). Unset, those two are left out. */
+  BROWSER?: BrowserWorker;
+  /** Stands in for BROWSER in tests: what running a page in a browser saw (browse.ts `Browse`). */
+  PAGE_RUN?: Browse;
   /** Qollab's binding back to eqosys: its public keys, so Qollab checks a token without holding a signing key for it (door.ts). */
   EQOSYS?: Fetcher;
   /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */

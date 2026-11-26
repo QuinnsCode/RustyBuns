@@ -94,6 +94,8 @@ export const HOME = "eqosys";
 
 /** One of ours by id. Who signs in or calls asks `appOf` in listings.ts, which knows the studios' games too. */
 export const ourApp = (id: unknown) => APPS.find((a) => a.id === id);
+/** Whether a token's app is a studio's own game (a listing, listings.ts): not eqosys's own page and not one of ours here. */
+export const studioGame = (app: string) => app !== HOME && !ourApp(app);
 
 /** Where a link into the app goes: its first origin, or null while it has none or is coming soon. */
 export const playOf = (app: QApp) => (app.soon ? null : app.origins[0] ?? null);

@@ -8,7 +8,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ADMIN, asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
 import { Studios } from "../src/app/Studio.tsx";
+import { deleteAccount } from "../src/members.ts";
 import type { Studio } from "../src/studios.ts";
+import type { Browse } from "../src/browse.ts";
 
 setDefaultTimeout(30_000);
 const GAME = "https://rocket-golf.example";
@@ -23,6 +25,16 @@ const web = (site: Record<string, () => Response>) => ({
     return res;
   },
 });
+/** The browser the `runs` and `answers` checks see (browse.ts): runs the site's scripts under the page against a bare window. */
+const browser = (site: Record<string, () => Response>): Browse => async (url, handle) => {
+  const window: { [k: string]: unknown } = {}, errors: string[] = [];
+  for (const [u, r] of Object.entries(site)) {
+    if (!u.startsWith(url) || !u.endsWith(".js")) continue;
+    try { new Function("window", await r().text())(window); } catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
+  }
+  const h = window[handle];
+  return { errors, state: typeof h === "object" && h !== null && "state" in h && typeof h.state === "function" ? { ok: true, text: JSON.stringify(h.state()) } : { ok: false, text: `no window.${handle}.state() once the page ran` } };
+};
 /** Rocket Golf as the starter makes it: a page, its bundle with the harness on window, and its stylesheet. */
 const ROCKET: Record<string, () => Response> = {
   [`${GAME}/`]: () => new Response('<!doctype html><link rel="stylesheet" href="/assets/main.css"><script type="module" src="/assets/main.js"></script>', { headers: { "content-type": "text/html; charset=utf-8" } }),
@@ -48,7 +60,7 @@ async function formIn(studios: Studio[], label: string) {
 }
 
 test("a studio's game: a draft for its studio, reviewed, listed for everyone, then pulled", async () => {
-  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET) });
+  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET), PAGE_RUN: browser(ROCKET) });
   const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
   const [boss, maya, sam] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com"), await signUp("Sam", "sam@example.com")];
   const run = async (name: string, args: unknown, who: { cookie?: string; bearer?: string }) => {
@@ -82,11 +94,13 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   // Sent, refused with a note, fixed and sent again, then listed.
   expect((await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya })).result.listing.state).toBe("in review");
   expect((await run("eq_listing_review", {}, { cookie: maya })).status).toBe(403);
-  // The queue shows what a machine checked on the way in: Maya signed in from the real site above, and its bundle has the harness.
+  // The queue shows what a machine checked on the way in: Maya signed in from the real site above, its bundle has the harness,
+  // and run in a browser the page threw nothing and the harness answered.
   const [queued] = (await run("eq_listing_review", {}, { cookie: boss })).result.queue;
   expect(queued.id).toBe("rocket-golf");
-  expect(queued.checks.list.map((c: { name: string; ok: boolean }) => [c.name, c.ok])).toEqual([["https", true], ["loads", true], ["signin", true], ["state", true]]);
+  expect(queued.checks.list.map((c: { name: string; ok: boolean }) => [c.name, c.ok])).toEqual([["https", true], ["loads", true], ["signin", true], ["state", true], ["runs", true], ["answers", true]]);
   expect(queued.checks.list[3].says).toContain(`bun run probe --url ${GAME}/ --js "rocketGolf.state()"`);
+  expect(queued.checks.list[5].says).toBe("rocketGolf.state() answered {}");
   expect((await run("eq_apps", {}, { cookie: maya })).result.apps.find((a: { id: string }) => a.id === "rocket-golf")?.checks).toBeUndefined();
   expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "refuse" }, { cookie: boss })).status).toBe(400);
   await run("eq_listing_review", { id: "rocket-golf", verdict: "refuse", note: "Add an erase URL: it keeps scores per account." }, { cookie: boss });
@@ -100,7 +114,15 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
   expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio");
   expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio&e=gamestep");
-  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list" }, { cookie: boss })).result.listing.state).toBe("listed");
+  // Listing takes the `at` the queue gave: origins changed and sent again since that read aren't listed unread.
+  const read = async () => (await run("eq_listing_review", {}, { cookie: boss })).result.queue[0].at as number;
+  const seen = await read();
+  expect((await run("eq_listing_save", { ...draft, origins: ["https://elsewhere.example"] }, { cookie: maya })).result.listing.state).toBe("draft");
+  await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya });
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at: seen }, { cookie: boss })).status).toBe(409);
+  expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
+  await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya });
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at: await read() }, { cookie: boss })).result.listing.state).toBe("listed");
 
   // Listed: the stranger signs in and finds it on the shelf, with the studio's name on it.
   expect((await signIn("sam@example.com")).token).toBeTruthy();
@@ -116,6 +138,12 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect(inbox.reports).toEqual([expect.objectContaining({ kind: "bug", title: "Ball goes through the green", text: "Third hole, every time.", page: "/play", from: expect.stringMatching(/^u_/) })]);
   expect(JSON.stringify(inbox.reports)).not.toContain("sam@example.com");
 
+  // A studio's game is somebody else's code holding the player's token: no studios, no download, no deletion, no say in who their friends are.
+  expect((await run("eq_studios", {}, { bearer: stranger })).status).toBe(403);
+  expect((await run("eq_studio_make", { name: "Mine", kind: "solo" }, { bearer: stranger })).status).toBe(403);
+  expect((await call("/api/privacy/export", { bearer: stranger, origin: GAME })).res.status).toBe(403);
+  expect((await call("/api/account/delete", { json: {}, bearer: stranger, origin: GAME })).res.status).toBe(403);
+
   // The shared achievements: played unlocks, alpha doesn't while it is experimental, its own list is none yet, and tutorial waits for its tutorial.
   const achieve = (id: string) => call("/q/achieve", { json: { id }, bearer: stranger, origin: GAME }).then((r) => r.res.status);
   expect([await achieve("played"), await achieve("alpha"), await achieve("first-basket")]).toEqual([200, 404, 404]);
@@ -128,8 +156,10 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect((await signIn("maya@example.com")).to).toBe("/login?e=app");
 });
 
-test("the machine checks say what is wrong: a dead origin, a missing file, no sign-in yet, no harness", async () => {
-  const { call } = await boot({ OUTBOUND: web({ [`${GAME}/`]: ROCKET[`${GAME}/`]!, [`${GAME}/assets/main.css`]: ROCKET[`${GAME}/assets/main.css`]! }) });
+test("the machine checks say what is wrong: a dead origin, a missing file, no sign-in yet, no harness, a page that throws", async () => {
+  const broken = { [`${GAME}/`]: ROCKET[`${GAME}/`]!, [`${GAME}/assets/main.css`]: ROCKET[`${GAME}/assets/main.css`]! };
+  let page = browser(broken);
+  const { call } = await boot({ OUTBOUND: web(broken), PAGE_RUN: (url, handle) => page(url, handle) });
   const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
   const [boss, maya] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com")];
   const run = async (name: string, args: unknown, cookie: string) => (await (await call(`/api/tools/${name}`, { json: args, cookie })).res.json() as { result?: any; error?: string });
@@ -142,7 +172,56 @@ test("the machine checks say what is wrong: a dead origin, a missing file, no si
   expect(by.loads).toMatchObject({ ok: false, says: `${GAME}/assets/main.js: no answer` });
   expect(by.signin).toMatchObject({ ok: false, says: expect.stringContaining("nobody in the studio") });
   expect(by.state).toMatchObject({ ok: false, says: expect.stringContaining("no window.rocketGolf") });
-  // Asked again after a fix: the checks run again and the queue keeps the new ones.
-  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "check" }, boss)).result.checks.list).toHaveLength(4);
+  expect(by.runs).toMatchObject({ ok: true });
+  expect(by.answers).toMatchObject({ ok: false, says: "no window.rocketGolf.state() once the page ran" });
+  // Asked again after a fix: the checks run again and the queue keeps the new ones. This bundle throws as it starts.
+  page = browser({ ...ROCKET, [`${GAME}/assets/main.js`]: () => new Response("window.rocketGolf = { state: () => ({}) }; undefinedThing.start();") });
+  const again = (await run("eq_listing_review", { id: "rocket-golf", verdict: "check" }, boss)).result.checks.list;
+  expect(again.find((c: { name: string }) => c.name === "runs")).toMatchObject({ ok: false, says: expect.stringContaining("it threw an error as it ran: ") });
+  expect(again.find((c: { name: string }) => c.name === "answers")).toMatchObject({ ok: true });
+  // The browser itself fails (Browser Run out of browsers): the checks say so rather than blame the game.
+  page = async () => { throw new Error("429 too many browsers"); };
+  const down = (await run("eq_listing_review", { id: "rocket-golf", verdict: "check" }, boss)).result.checks.list;
+  expect(down.find((c: { name: string }) => c.name === "runs")?.says).toBe("not run: the browser stopped (429 too many browsers); check again later");
+  expect(down).toHaveLength(6);
   expect((await run("eq_listing_review", { id: "park-hide-seek", verdict: "check" }, boss)).error).toContain("no game");
+});
+
+test("a studio's game takes no name a token already means something by, and only the player's own can hold up their deletion", async () => {
+  const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET) });
+  const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
+  const [boss, maya] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com")];
+  await signUp("Sam", "sam@example.com");
+  const run = async (name: string, args: unknown, cookie: string) => {
+    const { res } = await call(`/api/tools/${name}`, { json: args, cookie });
+    return { status: res.status, ...await res.json() as { result?: any } };
+  };
+  const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, maya)).result.id;
+  const draft = { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME], erase: `${GAME}/erase` };
+  for (const id of ["eqosys", "erase", "qlave", "qlave-admin"]) expect((await run("eq_listing_save", { ...draft, id }, maya)).status).toBe(409);
+
+  // Listed, with an erase URL that never answers 200. Sam never opened it: it isn't told who Sam is, and Sam's deletion goes through.
+  await run("eq_listing_save", draft, maya);
+  await run("eq_listing_send", { id: "rocket-golf" }, maya);
+  const at = (await run("eq_listing_review", {}, boss)).result.queue[0].at;
+  expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list", at }, boss)).status).toBe(200);
+  const real = globalThis.fetch, told: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new Request(input, init).url;
+    if (url === `${GAME}/erase`) { told.push(url); return new Response("no", { status: 500 }); }
+    return url.startsWith("https://") ? new Response("ok") : real(input, init);
+  }) as typeof fetch;
+  try {
+    const gone = async (email: string) => {
+      const { id } = (await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind(email).first<{ id: string }>())!;
+      return deleteAccount(conf, id, "http://eqosys.local");
+    };
+    expect(await gone("sam@example.com")).toBe(true);
+    expect(told).toEqual([]);
+    // Maya opened it once: it is asked, and its refusal still doesn't keep Maya's account.
+    const a = await asks("rocket-golf", GAME);
+    await call("/do/signin", { form: { ...a.form, email: "maya@example.com", password: PASSWORD } });
+    expect(await gone("maya@example.com")).toBe(true);
+    expect(told.length).toBeGreaterThan(0);
+  } finally { globalThis.fetch = real; }
 });

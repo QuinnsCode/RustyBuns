@@ -1,7 +1,7 @@
 // Two friends in one room (together-kit.ts), and a contract told by someone the room can't vouch for (#3800): it goes
 // nowhere until a friend the room trusts walks up beside them.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath } from "../../../scripts/chrome.ts";
+import { chromePath, waitFor } from "../../../scripts/chrome.ts";
 import { noise, settle, stride, together, until } from "./together-kit.ts";
 
 setDefaultTimeout(240_000); // two pages walk the open world together in headless Chrome
@@ -17,7 +17,7 @@ test.skipIf(!chromePath())("a contract read after a jump goes nowhere until a fr
   // No wild one jumps either of them on the way: a lost fight opens the Book and holds the page's poses back.
   await Promise.all([a.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
   await a.eval(`(async () => { mythicMasters.world.teleport(20002, 6206); ${settle} mythicMasters.world.standInside(4.6, -7.9); ${settle} })()`);
-  await until(() => a.eval<number | null>(stage), (s) => s === 0);
+  await waitFor(a, "A reading the board", `(${stage}) === 0`, 12_000, stage);
   await Bun.sleep(1000);
   expect(await b.eval<number | null>(stage)).toBeNull();
   await stride(b, 20002, 6206, 15);
