@@ -92,6 +92,14 @@ export function goLive(s: Parties, id: string | null): Done {
   return { ok: true, store: { ...s, live: id ?? undefined } };
 }
 
+/** Open the plan as The Event (#6020): the open party goes live as it stands, or, with none open, a new one named
+ *  `name` from `studio` (the room as planned) does. Nothing is built again: the stacks, their aim and the power travel in the studio. */
+export function openAsEvent(s: Parties, name: string, studio: StudioDef): Done {
+  if (openParty(s)) return goLive(s, s.open ?? null);
+  const made = makeParty(s, name, null, studio);
+  return made.ok ? goLive(made.store, made.store.open ?? null) : made;
+}
+
 /** Change the open party's name or time. */
 export const reschedule = (s: Parties, patch: { name?: string; when?: number | null }): Done => withParty(s, s.open, (p) => {
   const name = patch.name?.trim();
