@@ -1,10 +1,11 @@
 // Review a model change by picture: `bun scripts/model-review.ts [base] [head] [out.html]` (defaults origin/main, HEAD).
 // Every .glb the head changed against the base is rendered before and after by headless Blender
-// (scripts/glb-sheet.py, three views) and laid side by side in one HTML file. Needs Blender (or BLENDER_PATH).
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+// (scripts/glb-sheet.py, three views, all in one run) and laid side by side in one HTML file. The GLBs are read out of
+// git here and written beside the page (<out>.files/, so it must be in the repo); on the office Mac the run is one
+// Blender queue job on the builder Mac (scripts/blender-queue.ts), elsewhere it needs Blender (or BLENDER_PATH).
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { runBlender } from "@rustybuns/cli/blender";
+import { blender } from "../../../scripts/blender-queue.ts";
 import { modelPaths, sideBySide, type ModelPair } from "../src/model-review.ts";
 import { help } from "../../../scripts/help.ts";
 
@@ -17,24 +18,35 @@ const sh = async (cmd: string[], opts: { cwd?: string } = {}) => {
 };
 const top = (await sh(["git", "rev-parse", "--show-toplevel"])).out.trim();
 const changed = (await sh(["git", "diff", "--name-only", `${base}...${head}`], { cwd: top })).out.split("\n").filter(Boolean);
-const dir = mkdtempSync(join(tmpdir(), "model-review-"));
+const dir = `${resolve(out).replace(/\.html$/, "")}.files`;
 const py = resolve(import.meta.dir, "glb-sheet.py");
 
-async function render(ref: string, path: string, name: string): Promise<string | null> {
+/** The GLB at `ref` written into `dir` as `<name>.glb`; answers its path, or null when it isn't there at that ref. */
+async function glbAt(ref: string, path: string, name: string): Promise<string | null> {
   const blob = Bun.spawn(["git", "show", `${ref}:${path}`], { cwd: top, stdout: "pipe", stderr: "ignore" });
   const bytes = new Uint8Array(await new Response(blob.stdout).arrayBuffer());
-  if ((await blob.exited) !== 0) return null;   // not there at that ref
-  const glb = join(dir, `${name}.glb`), png = join(dir, `${name}.png`);
+  if ((await blob.exited) !== 0) return null;
+  const glb = join(dir, `${name}.glb`);
   writeFileSync(glb, bytes);
-  await runBlender({ script: py, args: [glb, png] });
-  if (!existsSync(png)) throw new Error(`blender wrote no picture of ${path}@${ref}`);
-  return `data:image/png;base64,${readFileSync(png).toString("base64")}`;
+  return glb;
 }
+const png = (glb: string) => glb.replace(/\.glb$/, ".png");
+const picture = (glb: string | null, what: string) => {
+  if (!glb) return null;
+  if (!existsSync(png(glb))) throw new Error(`blender wrote no picture of ${what}`);
+  return `data:image/png;base64,${readFileSync(png(glb)).toString("base64")}`;
+};
 
-const pairs: ModelPair[] = [];
-for (const [i, path] of modelPaths(changed).entries()) {
-  pairs.push({ path, before: await render(base, path, `b${i}`), after: await render(head, path, `a${i}`) });
-  console.log(`rendered ${path}`);
-}
-writeFileSync(out, sideBySide(pairs, `Model changes ${base}..${head}`));
-console.log(`${pairs.length} model(s) -> ${out}`);
+rmSync(dir, { recursive: true, force: true });
+mkdirSync(dir, { recursive: true });
+try {
+  const found = [];
+  for (const [i, path] of modelPaths(changed).entries())
+    found.push({ path, before: await glbAt(base, path, `b${i}`), after: await glbAt(head, path, `a${i}`) });
+  const glbs = found.flatMap((f) => [f.before, f.after]).filter((g): g is string => g !== null);
+  if (glbs.length) await blender({ script: py, args: glbs.flatMap((g) => [g, png(g)]), out: [dir], send: glbs });
+  const pairs: ModelPair[] = found.map((f) => ({ path: f.path, before: picture(f.before, `${f.path}@${base}`), after: picture(f.after, `${f.path}@${head}`) }));
+  for (const p of pairs) console.log(`rendered ${p.path}`);
+  writeFileSync(out, sideBySide(pairs, `Model changes ${base}..${head}`));
+  console.log(`${pairs.length} model(s) -> ${out}`);
+} finally { rmSync(dir, { recursive: true, force: true }); }

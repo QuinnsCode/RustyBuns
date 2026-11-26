@@ -230,6 +230,19 @@ describe("weighty attacks", () => {
     expect(it.pos.x - from).toBeGreaterThan(1.2);
   });
 
+  test("a light jab on a fresh body skids it back most of a body length, so the two part instead of standing head to head", () => {
+    const m = newMatch(skirmisher, bruiser), [me, it] = m.f;
+    Object.assign(me, { pos: { x: 0, y: 0, z: 0 }, yaw: 0 });
+    Object.assign(it, { pos: { x: me.b.radius + it.b.radius + 0.4, y: 0, z: 0 }, yaw: Math.PI });
+    let from = 0, at = -1;
+    for (let t = 0; t < 60 && (at < 0 || t - at < 15); t++) {
+      step(m, [hold({ light: t < 2 }), IDLE]);
+      if (at < 0 && it.state === "stun") { at = t; from = it.pos.x; }
+    }
+    expect(at).toBeGreaterThan(0);
+    expect(it.pos.x - from).toBeGreaterThan(0.8 * 2 * it.b.radius); // was 0.57 m of a 1.52 m body
+  });
+
   // The target slips 70 degrees round the swinger at tick `at` (a sidestep, without the walk): early in the wind-up the
   // swing turns to follow and lands, past its lock it goes where it was pointed and whiffs.
   test.each([["early, the swing follows", 2, true], ["past the lock, it whiffs", 20, false]] as const)("a sidestep %s", (_name, at, lands) => {

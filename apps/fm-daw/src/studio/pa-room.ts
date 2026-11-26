@@ -37,7 +37,8 @@ export const WET = 0.4;
 export interface Speaker { at: [number, number]; yaw: number; side: 0 | 1 | "mono"; spread?: number; boxes?: Source[]; field?: Field }
 
 /** The field an open-air room's sound crosses (@rustybuns/gear field.ts): its air (a mild evening when left out), what
- *  the crowd stands on and its banks as the land's heights. None indoors: a room's floor is flat and its air still. */
+ *  the crowd stands on and the land's heights: its drawn banks and a captured venue's ground, the higher where both
+ *  are. None indoors: a room's floor is flat and its air still. */
 export function roomField(def: StudioDef): Field | undefined {
   const out = def.outdoor;
   if (!out) return undefined;
@@ -118,6 +119,8 @@ export function paSpeakers(def: StudioDef): Speaker[] {
 
 /** Every box the room's PA plays the floor from, as @rustybuns/gear sources: what the builder's coverage map adds up. */
 export const paSources = (def: StudioDef): Source[] => paSpeakers(def).flatMap(boxesOf);
+/** The PA's boxes as both harnesses show them (qrooms.pa() and qjam.state().pa, #6020): where each stands and points, and how loud it goes. */
+export const paBoxes = (def: StudioDef) => paSources(def).map((s) => ({ at: [s.pos.x, s.pos.y, s.pos.z].map((v) => +v.toFixed(2)), yaw: +s.yaw.toFixed(3), pitch: +s.pitch.toFixed(3), maxSpl: s.speaker.maxSpl }));
 const boxesOf = (sp: Speaker): Source[] => sp.boxes ?? [source(DEFAULT_TOP, { x: sp.at[0], y: HORN_Y, z: sp.at[1] }, { yaw: sp.yaw })];
 
 /** An open-air room's rig as @rustybuns/gear plans one (its power, its gear list): the stacks where they stand, the sub

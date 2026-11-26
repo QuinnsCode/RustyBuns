@@ -2,7 +2,7 @@
 // (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
 // sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
 import type { Material } from "./sound.ts";
-import { banks, type Bank, type GeneratorId, type Ground, type SystemId, type Terrain } from "@rustybuns/gear";
+import { banks, heightMap, highest, type Bank, type GeneratorId, type Ground, type HeightMap, type SystemId, type Terrain } from "@rustybuns/gear";
 import type { PolyKind } from "@rustybuns/models/polysynth";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from; `dj` is a DJ booth (two decks and a mixer on a table). */
@@ -77,8 +77,9 @@ export interface StudioDef {
   venue?: Venue;
 }
 
-/** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn. */
-export interface Venue { src: string; scale: number; at: [number, number, number]; yaw: number }
+/** A captured venue: the hosted splat, how big it is drawn (1 = as captured), where its middle sits and its turn, and
+ *  its ground's heights as captured (@rustybuns/gear `groundMap`, read off the splat once it is in; placed the same way). */
+export interface Venue { src: string; scale: number; at: [number, number, number]; yaw: number; land?: HeightMap }
 
 /**
  * An open-air party's rig, drawn by open-air.ts: the speaker stacks (each a horn bin, a mid-bass horn and a mid-high horn
@@ -222,11 +223,15 @@ export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "fr
 /** A prop's footprint, as a box on the floor turned by its yaw. */
 export const propBox = (p: Prop) => ({ cx: p.at[0], cz: p.at[1], hw: p.w / 2, hd: p.d / 2, turn: p.yaw });
 const lands = new WeakMap<readonly Bank[], { key: string; land: Terrain }>();
-/** An open-air room's land: its banks as @rustybuns/gear's height map, the one the sound crosses (pa-room.ts roomField)
+/** An open-air room's land: its banks as @rustybuns/gear's height map and a captured venue's ground, the higher where both are, the one the sound crosses (pa-room.ts roomField)
  *  and your feet stand on (floorAt). Kept per banks list while its banks stay where they are (the builder moves them
  *  in place), so a frame's many asks don't rebuild it. */
 export function roomLand(def: StudioDef): Terrain | undefined {
-  const list = def.outdoor?.banks;
+  if (!def.outdoor) return undefined;
+  const v = def.venue;
+  return highest(bankLand(def.outdoor.banks), v?.land ? heightMap(v.land, v.at, v.yaw, v.scale) : undefined);
+}
+function bankLand(list: readonly Bank[] | undefined): Terrain | undefined {
   if (!list?.length) return undefined;
   const key = JSON.stringify(list), had = lands.get(list);
   if (had?.key === key) return had.land;
