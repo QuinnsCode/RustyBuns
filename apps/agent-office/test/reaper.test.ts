@@ -177,7 +177,8 @@ test("a seated worker's fork loop, or a branch past the memory cap, is ended and
   await reapOnce(() => [floor], (m) => said.push(m), { procs: () => processes().map(hide), swap: () => null });
   expect({ loop: alive(loop), forks: forks.filter(alive).length, claude: alive(claude) }).toEqual({ loop: false, forks: 0, claude: true });
   expect(said.join("\n")).toContain("Runaway in Gadget: 150 copies of `sleep 60`");
-  expect(told[0]).toStartWith("w9 The office ended 151 of your processes");
+  // how many it ended is the machine's (some forks exit or are reaped before the kill lands): the message names the loop
+  expect(told[0]).toMatch(/^w9 The office ended \d+ of your processes: 150 copies of `sleep 60` \(#6154\)/);
   expect(reaperStats().runaways[0]).toContain("Gadget: 150 copies");
 
   // memory: a dev server at 9 GB goes, the session at 9 GB too stays (ending it is the worker's own call)
