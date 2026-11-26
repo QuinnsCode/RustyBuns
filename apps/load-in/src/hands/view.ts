@@ -21,6 +21,8 @@ export type Hold = {
   lead?: { at: V3; color: number; end?: Connector };
   /** looking at your arms: both forearms raised into view (empty hands only) */
   show?: boolean;
+  /** looking at a piece you could take: empty hands drop out of the way so its face and label show */
+  low?: boolean;
 };
 
 const SKIN = 0xb57a58;
@@ -73,6 +75,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   const gripWorld = new THREE.Vector3();
   const fromV = (v: THREE.Vector3): V3 => [v.x, v.y, v.z];
   /** A world-space frame (a carry) in the camera's space. */
+  /** How far the empty hands have dropped (0 up, 1 down), eased toward `hold.low`. */
+  let low = 0, lowAt = -1;
   const toCam = (f: Frame): Frame => {
     const r = (v: V3) => fromV(toV(v, vA).transformDirection(camInv));
     return { o: fromV(toV(f.o, vA).applyMatrix4(camInv)), x: r(f.x), y: r(f.y), z: r(f.z) };
@@ -85,6 +89,9 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       camInv.copy(camera.matrixWorld).invert();
       const narrow = camera instanceof THREE.PerspectiveCamera ? Math.min(1, Math.max(0.62, camera.aspect)) : 1;
       const carry = hold.carry ? carryFrames(hold.carry, hold.kg) : null;
+      const dt = lowAt < 0 ? 0 : Math.min(0.1, Math.max(0, t - lowAt));
+      lowAt = t;
+      low += ((hold.low ? 1 : 0) - low) * Math.min(1, dt * 7);
       for (const s of sides) {
         const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
         const show = !!hold.show && !carry && what.kind === "rest";
@@ -92,6 +99,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view. Not
         // the raised arms: they already reach across the view, and pulled in they cross in the middle (#5157).
         if (!carry && !show && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
+        // Out of the way while you look at a piece: down and a touch apart.
+        if (!carry && !show && what.kind === "rest" && low > 0.001) f.o = [f.o[0] * (1 + 0.12 * low), f.o[1] - 0.075 * low, f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
