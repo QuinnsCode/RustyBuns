@@ -23,7 +23,7 @@ export function readable(look: GearLook) {
 }
 
 /** A neon's `word` is what its tubes spell; without one it is a plain looped tube. */
-type Fixture = { kind: "strip" | "spot" | "neon" | "work" | "pendant"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number]; word?: string };
+type Fixture = { kind: "strip" | "spot" | "neon" | "work" | "pendant" | "wash"; x: number; y: number; z: number; color: number; power: number; to?: [number, number, number]; word?: string };
 
 /** The fixtures in a room, from its size: where a real one would hang them. */
 export function fixtures(l: Level): Fixture[] {
@@ -48,6 +48,15 @@ export function fixtures(l: Level): Fixture[] {
   const pendants: Fixture[] = l.name === "dive-bar"
     ? [0.5, 0.68, 0.86].map((t) => ({ kind: "pendant", x: r.x0 + 0.85, y: top - 0.7, z: r.z0 + d * t, color: 0xffb871, power: 9, to: [r.x0 + 0.75, 0, r.z0 + d * t] }))
     : [];
+  // And washes on its walls, no shadows (cheap): amber up the curtain behind the stage, a warm graze down each brick wall
+  // past the crowd area, so the walk to the stage and the stage itself never fall to black.
+  const washes: Fixture[] = l.name === "dive-bar"
+    ? [
+      { kind: "wash", x: cx, y: top, z: r.z0 + 2.9, color: 0xff9a66, power: 16, to: [cx, 1.5, r.z0 + 0.05] },
+      { kind: "wash", x: r.x1 - 0.35, y: top, z: r.z0 + d * 0.3, color: 0xffc08a, power: 9, to: [r.x1, 0.9, r.z0 + d * 0.42] },
+      { kind: "wash", x: r.x0 + 0.35, y: top, z: r.z0 + d * 0.22, color: 0xffc08a, power: 9, to: [r.x0, 0.9, r.z0 + d * 0.3] },
+    ]
+    : [];
   return [
     { kind: "spot", x: cx - 1.2, y: top, z: r.z0 + 2.6, color: 0xffc47a, power: 40, to: [cx - 0.6, 0, r.z0 + 1.2] },
     { kind: "spot", x: cx + 1.2, y: top, z: r.z0 + 2.6, color: 0xffb36a, power: 40, to: [cx + 0.6, 0, r.z0 + 1.2] },
@@ -55,6 +64,7 @@ export function fixtures(l: Level): Fixture[] {
     { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.45, color: 0xff3fa4, power: 0.9, word: "LIVE MUSIC" },
     { kind: "neon", x: r.x0 + 0.03, y: 1.85, z: r.z0 + d * 0.7, color: 0x3fd8ff, power: 0.8, word: "Cold Beer" },
     ...pendants,
+    ...washes,
     work,
   ];
 }
@@ -155,6 +165,15 @@ export function venueLights(l: Level): THREE.Group {
       s.target.position.copy(to);
       shadows(s, 512);
       g.add(s, s.target);
+    } else if (f.kind === "wash") {
+      // A wall washer: a small can on the ceiling and a wide soft cone, no shadow map.
+      const s = new THREE.SpotLight(f.color, f.power, 7, 0.95, 0.9, 1.2);
+      s.position.set(f.x, f.y - 0.08, f.z);
+      s.target.position.set(...(f.to ?? [f.x, 0, f.z]));
+      g.add(s, s.target);
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.1, 10), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 }));
+      can.position.set(f.x, f.y - 0.05, f.z);
+      g.add(can);
     } else if (f.kind === "neon") {
       // A sign of our own: a looped tube on a backing, washing the wall in its colour.
       const tube = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.018, 6, 28), glow(f.color));

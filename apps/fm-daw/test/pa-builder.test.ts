@@ -119,6 +119,26 @@ test.skipIf(!hasChrome)("out of doors: set the night's air and ground in the out
     expect(bank.banks).toBe(1);
     expect(bank.before - bank.after).toBeGreaterThan(6);
 
+    // on the blueprint, Move drags the bank 12 m off the stack's line and the floor behind where it stood comes back up;
+    // Turn turns it a twelfth
+    const moved = await tab.eval<{ after: number; bank: { at: number[]; yaw: number } }>(`(() => {
+      qrooms.view("plan");
+      const plan = document.getElementById("plan"), m = plan.getScreenCTM();
+      const at = (x, z) => { const p = new DOMPoint(x, z).matrixTransform(m); return { clientX: p.x, clientY: p.y, button: 0, pointerId: 1, bubbles: true }; };
+      const rect = () => plan.querySelector('[data-bank="0"] rect');
+      rect().dispatchEvent(new PointerEvent("pointerdown", at(0, -2)));
+      plan.dispatchEvent(new PointerEvent("pointermove", at(12, -2)));
+      plan.dispatchEvent(new PointerEvent("pointerup", at(12, -2)));
+      const after = qrooms.level(0, 6);
+      document.querySelector('[data-tool="turn"]').click();
+      rect().dispatchEvent(new PointerEvent("pointerdown", at(12, -2)));
+      plan.dispatchEvent(new PointerEvent("pointerup", at(12, -2)));
+      return { after, bank: qrooms.pa().field.banks[0] };
+    })()`);
+    expect(moved.bank.at).toEqual([12, -2]);
+    expect(moved.bank.yaw).toBeCloseTo(Math.PI / 12, 5);
+    expect(Math.abs(moved.after - bank.before)).toBeLessThan(1);
+
     // a second stack: at the back left, its sound lands 4.3 m later, and later still on a freezing night than a hot one
     const late = await tab.eval<{ hot: number; cold: number }>(`(() => {
       qrooms.edit({ t: "stack", at: [8, -8], yaw: 0 });
