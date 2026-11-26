@@ -540,7 +540,24 @@ Round 13 fixed the report notes, round 15 the knock gate, and the iOS kit's sock
 
 ### Still open
 
-- In #5590, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, and `/api/account/delete` on an app's token (an owner's call). MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
+- In #5590, done in round 17 below.
+
+## Round 17, November 26: what round 16 left (#5590)
+
+Source only, overnight while the owner was away. Nothing was deployed.
+
+### Fixed in this round
+
+- **The audit log names which token** (low, codeSplitter). A row said a request signed in with a token or OAuth (`via`) but not which one. It has a `token` column now (the `api_tokens` id; an OAuth grant's tokens are rows there too), set where the request is identified (`viaToken` in `audit.ts`), and an `edit.ts` sub-request carries the outer request's. The log, the export and the API's `AuditEntry` show it (`audit.test.ts`, `edit.test.ts`).
+
+### Kept on purpose (no work, so the next round doesn't reopen them)
+
+- **Anonymous Artifacts read tokens for public repos aren't named in the log.** There is no person and no token row to name, and a read of a public repo changes nothing the log is for (who can get in).
+- **`/api/account/delete` on any app's ten-minute token** (eqosys). Kept as the design: the in-app flow confirms first, the token is short-lived and the app's own, and a re-auth or one-use ticket would change the iOS kit (`Eqosys.swift`) too, which needs Bob. Decided overnight in the owner's place (#6060); hardening is one issue away if the owner wants it.
+
+### Still open
+
+- The code-mode call cap on the edge (`limits.subRequests`) waits on step 5 of MANUAL RUN QuinnsCode/rustybuns-manual#76. If the edge doesn't count a binding's RPC call as a subrequest, count per run in a Durable Object. MANUAL RUN QuinnsCode/rustybuns-manual#116 stays open.
 
 ## Round 18a, November 26: Rusty Buns core
 
@@ -586,3 +603,56 @@ Each with a test that fails without the fix.
 - The guard is a speed bump: a script an agent writes can still do what it refuses. Its rough split still trips on some harmless text.
 - The merge train takes no fork PR at all now: read it and merge it by hand. A same-repository push after the click is still adopted.
 - The box's card is told apart by where the answer comes from, so it rests on the box holding no capability to take another address.
+
+## Round 18c, November 26: Qollab
+
+The vendored skill's quick profile, source only, over `apps/qollab`, eqosys's multiplayer layer (hubs, parties, spaces,
+saves, voice), the panels games mount, and the game worlds on `util/room` and `util/limits`. Commit 468acd8c4. Five
+hunters and two verifiers (about 1.4M tokens); no final coverage critic, so partial coverage, and the verifiers took the
+candidates in two batches rather than one each. Qollab Events (#6077) had not merged and was not read. The run's brief and
+candidates are outside the repo (`~/security-audit-skill/RustyBuns/run-18c/`). Round 18b (eqosys) ran beside this one and
+took the files both rounds reached: `listings.ts`, `qollab/space.ts`, `qollab/hub.ts`, `members.ts`. What the hunt found
+there (a listing taking a service token's audience, a file upload renaming its sender, parallel uploads past the quota,
+ways back into a space after removal, a channel named `constructor`, deletion missing spaces the person had left) is
+that round's to report.
+
+### Fixed in this round
+
+Each with a test.
+
+- **A blocked person let in hidden still reached the host** (medium, parties). The block filtered lists and chat only: they
+  shared the voice room, could mute or report the host, and could stall the start. Blocked means no voice ticket and a
+  voice `kick`; mute and report from them go nowhere; the start does not wait for them (`party-audit.test.ts`).
+- **Narrowing who may talk did not end voice** (low, parties). Chat turned "host" or off left everyone talking. The room
+  ends and whoever still may asks again (`party-audit.test.ts`).
+- **A muted member could unmute themself** under "anyone mutes" (low), and the mute list took any made-up id.
+- **A party past its lifetime kept working for open sockets** (low). Expiry was checked at the door only. A message after
+  it closes everyone, and a reused code closes any socket left on it (`party-audit.test.ts`).
+- **Saves sent at once passed the slot and byte caps** (low). The statement that writes now checks them (`saves.test.ts`).
+- **Copying someone's display name took their buttons away** (low). The party and space panels found "you" by name, so a
+  namesake of the host or owner had no mute or kick, and could be taken for you. They use the account id from the page's
+  own token (`spaces-panel.test.ts`).
+- **A guest list took an id like `toString`** (low, `util/guests`), and the stored list then failed its own guard, losing the
+  block list (`guests.test.ts`).
+- **One Load In crew member could blank the room for the rest** (low). Made-up cable and switch keys pushed the view past
+  what pages read. No new key past the view's caps (`crew.test.ts`).
+- **FM DAW: new chat keys piled up raised hands** past what pages read (low). A new key lowers the old one's hand
+  (`guests.test.ts`).
+- **Park Hide & Seek's vote and report limits did not count repeats** (low). The gate lets a key it has seen through free,
+  and the key was the park or the reported player (`requests.test.ts`).
+- **Git Recon parsed anyone's 1 MB frames** (low). Only whoever may pick the battle gets a big frame read (`edge.test.ts`).
+- **Hippo Tycoon wrote storage on every repeated `hello`** (low). It writes when the room's saved state changes
+  (`room.test.ts`).
+
+### Still open
+
+- #6227: any app's token, a studio's listed game included, opens all of a person's spaces. The owner's call.
+- #6228: a modified client that closes its party socket stays in the party's voice room, off the member list.
+- #6229: leads no verifier settled (Qlave relaying a peer's `server-mute`, and smaller ones).
+
+### Known limits
+
+- `RoomMintGate` counts per Worker isolate: a speed bump, not a quota.
+- A Git Recon room online with no owner yet reads a big frame from anyone in it, since anyone may still pick.
+- A voice ticket lasts a minute, so an order to end a room relies on Qlave refusing tickets for it; Qlave is its own repo
+  and was not read.

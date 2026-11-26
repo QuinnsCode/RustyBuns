@@ -24,7 +24,7 @@ export const SKIN = { theme: THEME, css: `
 .eq-toast{background:var(--panel-art-solid);box-shadow:inset 3px 0 0 var(--teal),var(--lift)}
 .eq-toast small{color:var(--amber);font-family:var(--mono)}
 .eq-form{background:var(--panel-art-solid)}
-.eq-title{color:var(--amber);font-size:14px;text-transform:uppercase;letter-spacing:.08em}
+.eq-title{color:var(--amber);font-size:13px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
 .eq-who{font-family:var(--mono);font-weight:600;font-size:13px}
 .eq-coach{top:auto;bottom:58px;left:12px;right:auto;margin:0;width:min(340px,calc(100vw - 380px))}
 @media (max-width:720px){.eq-toasts{top:96px}.eq-coach{top:112px;bottom:auto;left:0;right:0;margin:0 auto;width:calc(100vw - 24px)}}

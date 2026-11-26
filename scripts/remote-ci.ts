@@ -71,14 +71,16 @@ export async function pool<T>(items: T[], cap: number, fn: (item: T) => Promise<
 }
 
 // A commit of the working tree (untracked files too, .gitignore respected), built in a scratch index so
-// the real index and the stash stack are never touched. HEAD itself when nothing changed.
-export async function snapshot(cwd: string): Promise<string> {
+// the real index and the stash stack are never touched. HEAD itself when nothing changed. `force` (paths from the top)
+// go in although git ignores them: a GLB a Blender job reads out of blender/out.
+export async function snapshot(cwd: string, force: string[] = []): Promise<string> {
   const git = (...args: string[]) => Bun.$`git ${args}`.cwd(cwd).quiet();
   const scratch = `${tmpdir()}/remote-ci-index-${process.pid}-${Date.now()}`;
   await Bun.write(scratch, Bun.file(resolve(cwd, (await git("rev-parse", "--git-path", "index")).text().trim())));
   try {
     const env = { ...process.env, GIT_INDEX_FILE: scratch };
     await Bun.$`git add -A`.cwd(cwd).env(env).quiet();
+    if (force.length) await Bun.$`git add -f -- ${force}`.cwd(cwd).env(env).quiet();
     const tree = (await Bun.$`git write-tree`.cwd(cwd).env(env).quiet()).text().trim();
     const head = (await git("rev-parse", "HEAD")).text().trim();
     if (tree === (await git("rev-parse", "HEAD^{tree}")).text().trim()) return head;

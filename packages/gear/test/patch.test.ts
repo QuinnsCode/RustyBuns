@@ -65,6 +65,14 @@ const gigCables = [
   c("speaker", "rack speaker-out-1", "wedge speaker-in"),
 ];
 
+// The triple 21 (three 8 ohm 21"s on one 8-pin input, 8/3 ohms) off the rack: one box a channel, or linked on to a second.
+const subs = (n: number): Placed[] => [...gig(true).slice(0, 3), ...Array.from({ length: n }, (_, i) => ({ id: `sub${i + 1}`, gear: "triple-21-sub" }))];
+const subCables = (n: number) => [
+  ...gigCables.slice(0, 4),
+  c("speaker", "rack speaker-out-1", "sub1 speaker-in"),
+  ...Array.from({ length: n - 1 }, (_, i) => c("speaker", `sub${i + 1} speaker-out`, `sub${i + 2} speaker-in`)),
+];
+
 const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[]; fed: Record<string, boolean>; problems: string[] }[] = [
   { name: "the garage: guitar, head, cab", placed: garage, cables: garageCables, outlets: [wall(15)], fed: { cab: true }, problems: [] },
   { name: "the garage with the head unplugged", placed: garage, cables: garageCables.slice(1), outlets: [wall(15)], fed: { cab: false }, problems: ["no-power head"] },
@@ -72,6 +80,8 @@ const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[
   { name: "the dive bar's sub with no mains is silent", placed: bar, cables: barCables.filter((x) => x.to[0] !== "sub" || x.kind !== "power"), outlets: [wall(15)], fed: { topL: true, topR: true, sub: false }, problems: ["no-power sub"] },
   { name: "two 8 ohm boxes on a 4 ohm minimum head are fine", placed: chain(2), cables: chainCables(2), outlets: [wall(15)], fed: { box1: true, box2: true }, problems: [] },
   { name: "three are 2.67 ohms and not", placed: chain(3), cables: chainCables(3), outlets: [wall(15)], fed: { box1: false, box2: false, box3: false }, problems: ["low-load head,box1,box2,box3"] },
+  { name: "a triple 21 alone on a 2 ohm rack channel is fed", placed: subs(1), cables: subCables(1), outlets: [wall(15)], fed: { sub1: true }, problems: [] },
+  { name: "two triple 21s linked on one channel are 1.33 ohms and not", placed: subs(2), cables: subCables(2), outlets: [wall(15)], fed: { sub1: false, sub2: false }, problems: ["low-load rack,sub1,sub2"] },
   {
     name: "a speaker cable in a power jack",
     placed: garage,

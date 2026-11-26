@@ -11,7 +11,10 @@ test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", 
     HCLOUD_TOKEN: "x", RAILWAY_API_TOKEN: "x", OP_SERVICE_ACCOUNT_TOKEN: "x", GITHUB_TOKEN: "x", GH_TOKEN: "x",
     AWS_SECRET_ACCESS_KEY: "x", AWS_ACCESS_KEY_ID: "x", GONE: undefined,
   });
-  expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API"]);
+  expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API",
+    "npm_config_manage_package_manager_versions", "pnpm_config_manage_package_manager_versions"]);
+  // pnpm's version switch is off: a clone pinned to another pnpm can't start a self-install loop (#5764)
+  expect(env.npm_config_manage_package_manager_versions).toBe("false");
 });
 
 test("emptyHome swaps HOME, keeps the caches that exist and drops pointers at real config (#1128)", () => {

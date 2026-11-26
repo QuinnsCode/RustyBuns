@@ -16,6 +16,7 @@
 //  5. Worktree folders a send-home left half deleted: no `.git`, not in `git worktree list`, an hour old (`sweepHalfGone`,
 //     #5657). What still runs in one ends first. Every floor sweep runs it. And listed worktrees nobody sits at whose
 //     only changes are files deleted by a cut-off remove (`sweepHalfRemoved`, #5913), when the sweep knows who sits where.
+//     Ones whose only changes are untracked files go too, after those files are pushed to rescue/<name> (`sweepUntracked`, #5946).
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync, statfsSync } from "node:fs";
@@ -25,6 +26,7 @@ import path from "node:path";
 import { arr, check, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { poolModules } from "./install.ts";
 import { endIn } from "./reaper.ts";
+import { changes, type Entry, rescue, rescueRefs, saveCommit } from "../../../scripts/worktree-sweep.ts";
 
 export const WORKTREES = path.join(".agent-office", "worktrees");
 const GB = 1024 ** 3;
@@ -222,7 +224,13 @@ export async function sweepHalfGone(repo: string, go: boolean, end: (dir: string
  * The worktrees of `repo` that git still lists but a cut-off remove left part deleted: not in `live`, an hour old or
  * more, no commit that no remote has, and a `git status` of only unstaged deletions. None when git can't answer.
  */
-export async function halfRemoved(repo: string, live: string[], now = Date.now()): Promise<string[]> {
+export const halfRemoved = (repo: string, live: string[], now = Date.now()) => idleWith(repo, live, now, (l) => l.startsWith(" D "));
+
+/** Like `halfRemoved`, but a `git status` of only untracked files (#5946): what a run left that no `.gitignore` covers. */
+export const untrackedOnly = (repo: string, live: string[], now = Date.now()) => idleWith(repo, live, now, (l) => l.startsWith("?? "));
+
+/** `repo`'s listed worktrees not in `live`, an hour old, nothing unpushed, whose every `git status` line passes `line`. */
+async function idleWith(repo: string, live: string[], now: number, line: (l: string) => boolean): Promise<string[]> {
   const seated = new Set(live.flatMap((p) => { try { return [path.resolve(p), realpathSync(p)]; } catch { return [path.resolve(p)]; } }));
   const out: string[] = [];
   for (const name of (await treesOf(repo)) ?? []) {
@@ -236,7 +244,7 @@ export async function halfRemoved(repo: string, live: string[], now = Date.now()
     // not `run`: its trim would eat the first line's leading space
     const proc = Bun.spawn(["git", "-C", dir, "status", "--porcelain", "-uall"], { stdout: "pipe", stderr: "ignore" });
     const status = (await new Response(proc.stdout).text()).split("\n").filter(Boolean);
-    if ((await proc.exited) !== 0 || !status.length || !status.every((l) => l.startsWith(" D "))) continue;
+    if ((await proc.exited) !== 0 || !status.length || !status.every(line)) continue;
     if (await run(["git", "-C", dir, "rev-list", "--count", "HEAD", "--not", "--remotes"]) !== "0") continue;
     out.push(dir);
   }
@@ -261,25 +269,58 @@ export async function sweepHalfRemoved(repo: string, live: string[], go: boolean
   return { paths: done, bytes };
 }
 
+// #5946: send-home keeps a worktree whose only changes are untracked files a run left (scratch scripts, output no
+// `.gitignore` covers). Those files go to `rescue/<name>` on `remote` the way `scripts/worktree-sweep.ts --rescue` saves
+// them, and only once the push has landed, and the save holds every one of them (none is an env file or deploy state,
+// which are never pushed), is the worktree removed.
+
+/** Pushes `untrackedOnly(repo, live)` worktrees' files to `rescue/<name>`, then removes each one saved. Never throws. */
+export async function sweepUntracked(repo: string, live: string[], end: (dir: string) => Promise<unknown> = endIn, now = Date.now(), remote = "origin"): Promise<Swept> {
+  const paths = await untrackedOnly(repo, live, now);
+  const sizes = await duKb(paths);
+  const done: string[] = [];
+  let bytes = 0;
+  for (const p of paths) {
+    const name = path.basename(p);
+    try {
+      const status = (await run(["git", "-C", p, "status", "--porcelain", "-uall"])).split("\n").filter(Boolean);
+      if ((await changes(p)).length !== status.length) continue; // something in it is never pushed: it stays
+      const save = await saveCommit(p, name);
+      const rescued = (await rescueRefs(p, remote)).get(name);
+      const entry: Entry = { name, path: p, worktree: true, dirty: status.length, unpushed: 0, kb: 0, save, rescued, verdict: rescued === save ? "remove" : "rescue" };
+      if (entry.verdict === "rescue" && (await rescue(repo, [entry], remote)).failed.length) continue;
+      if ((await rescueRefs(p, remote)).get(name) !== save) continue;
+      await end(p);
+    } catch { continue; }
+    const proc = Bun.spawn(["git", "-C", repo, "worktree", "remove", "--force", "--force", p], { stdout: "ignore", stderr: "ignore" });
+    if ((await proc.exited) !== 0) continue;
+    done.push(p);
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths: done, bytes };
+}
+
 /**
  * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
- * worktree paths workers sit at), also the half-removed worktrees git still lists and the `node_modules` and build
- * output of every other worktree.
+ * worktree paths workers sit at), also the half-removed worktrees git still lists, the ones holding only untracked
+ * files (rescued first), and the `node_modules` and build output of every other worktree.
  */
 export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
     const h = await sweepHalfGone(dir, true);
     const hr = live ? await sweepHalfRemoved(dir, live, true) : { paths: [], bytes: 0 };
+    const u = live ? await sweepUntracked(dir, live) : { paths: [], bytes: 0 };
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
     const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
     const m = live ? await sweepBuilt(dir, live, true) : { paths: [], bytes: 0 };
     const said = [
       h.paths.length && `${h.paths.length} half-deleted worktree folder${h.paths.length === 1 ? "" : "s"}`,
       hr.paths.length && `${hr.paths.length} half-removed worktree${hr.paths.length === 1 ? "" : "s"}`,
+      u.paths.length && `${u.paths.length} worktree${u.paths.length === 1 ? "" : "s"} of only untracked files (saved to rescue/<name>)`,
       r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
       m.paths.length && `${m.paths.length} node_modules and build folder${m.paths.length === 1 ? "" : "s"} in worktrees nobody works in`,
     ].filter(Boolean);
-    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + r.bytes + m.bytes)} freed` : "";
+    return said.length ? `🧹 Swept ${said.join(", ")}, ${gb(h.bytes + hr.bytes + u.bytes + r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
 }
 

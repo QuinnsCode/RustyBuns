@@ -10,6 +10,8 @@
   "campaignSub": "A sector of worlds: mines, bases, lanes",
   "armada": "Armada",
   "armadaSub": "A dreadnought and three destroyers",
+  "levels": "Levels",
+  "levelsSub": "Short battles, one idea each, easiest first",
   "computer": "Computer, in the Theater: drag a box to pick ships and wings, right-click to move or attack, right-drag a route round a gravity well to slingshot, K pings with the sensor ship, the minimap and the screen edges move the view. Everywhere: 1-6 pick a wing, F the flagship, G the interdictor. Click a Compact ship to mark it, right-click to order, right-drag to draw a route (Shift adds an arm). Q-Y call plays, A/S/D stance, Z/X/C formation, B broadside, V rake the world, Space foresight, M trance, N command voice. Drag or arrows to pan, wheel to zoom.",
   "phone": "Phone: tap a card to pick it, tap a Compact ship to mark it, then tap a play, or tap the pen and drag a route. Drag to pan, pinch to zoom."
 }

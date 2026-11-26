@@ -57,3 +57,16 @@ test("the biggest setup a repo load makes fits in one message to the world", () 
   expect(setup).not.toBeNull();
   expect(JSON.stringify({ t: "setup", setup }).length).toBeLessThan(250_000);
 });
+
+test("only whoever picks the battle may send a big frame: anyone else's is dropped before it costs their budget", async () => {
+  const { default: World } = await import("../src/net/world.ts");
+  const attached = { id: "guest-1", name: "Mallory", look: { head: "ball", build: "average" }, host: false };
+  const ws = { send() {}, close() {}, serializeAttachment() {}, deserializeAttachment: () => attached, readyState: 1 };
+  const world = new World({ acceptWebSocket() {}, getWebSockets: () => [ws] }, {});
+  let inputs = 0;
+  world.room = { input: () => void inputs++, ack() {} } as unknown as NonNullable<typeof world.room>;
+  const big = JSON.stringify({ t: "setup", junk: "x".repeat(100_000) });
+  for (let i = 0; i < 500; i++) world.webSocketMessage(ws, big);
+  world.webSocketMessage(ws, JSON.stringify({ t: "in", i: { mx: 0, mz: 0, yaw: 0, pitch: 0, b: 0, seq: 1 }, ack: 0 }));
+  expect(inputs).toBe(1);
+});

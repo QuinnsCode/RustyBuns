@@ -3,8 +3,9 @@
 // GitHub's auto-merge trusts the last green run, even when main moved since. Two PRs that pass alone can break
 // together without a conflict (one deletes a name, the other still uses it), and auto-merge lands the second on
 // its stale green, breaking main (2026-10-29). The train looks at the PR at the head of the line: behind main,
-// it updates the branch and waits; green on a head that is 0 behind main, it merges that exact head
-// (`--match-head-commit`); red, it checks main's tip. A check that also fails on main isn't the PR's: the train
+// it updates the branch and waits; green on a head that is 0 behind main, with every check main's rules require
+// reported on it (a fresh head shows its quick checks first, #6004), it merges that exact head
+// (`--match-head-commit`), and a merge GitHub still turns away is tried again a few times; red, it checks main's tip. A check that also fails on main isn't the PR's: the train
 // holds and tells one worker. Otherwise the PR comes out of the line and its worker hears which check failed.
 //
 // The office's "Merge when ready" joins this line instead of turning on `--auto` (apps/agent-office/train/), and
@@ -25,6 +26,8 @@ export interface Spot {
   deleteBranch: boolean;
   /** When `head` was first seen, so a head CI never reports on doesn't hold the line for ever. */
   since?: number;
+  /** How many times GitHub turned the merge of `head` away. */
+  refused?: number;
 }
 
 /** The PR as the train needs it: open or not, its head, whether it conflicts, and its checks on that head. */
@@ -47,6 +50,8 @@ export interface TrainGh {
   failingOn(sha: string): Promise<string[]>;
   update(n: number): Promise<void>;
   merge(n: number, method: Method, head: string, deleteBranch: boolean): Promise<void>;
+  /** The checks `base`'s rules require. A fresh head shows its quick checks before these start (#6004). */
+  required?(base: string): Promise<string[]>;
 }
 
 export interface TrainDeps {
@@ -64,6 +69,8 @@ export interface TrainDeps {
 
 /** How many merged PRs the line keeps showing. */
 const SHOWN = 5;
+/** How many times GitHub may turn one head's merge away before the PR comes out of the line. */
+const REFUSALS = 3;
 
 export class Train {
   private spots: Spot[] = [];
@@ -140,7 +147,7 @@ export class Train {
     if (p.conflicts) return this.pull(s, "conflicts with main", `#${s.pr} conflicts with main, so the merge train took it out. ` +
       `Merge main into it (the rebuild-pr skill), push, and press Merge when ready again.`);
     const fresh = p.head !== s.head;
-    if (fresh) Object.assign(s, { head: p.head, since: this.now() });
+    if (fresh) Object.assign(s, { head: p.head, since: this.now(), refused: 0 });
     const b = await gh.behind(p.head, p.base);
     if (b.by > 0) {
       // update-branch makes a new head; until it shows, the old one is still behind
@@ -160,14 +167,31 @@ export class Train {
         `something on ${p.base} since your last green run breaks with your change. Fix it, push, and press Merge when ready again.`);
     }
     const pending = p.checks.filter((c) => c.state === "pending").length;
-    const quiet = !p.checks.length && this.now() - (s.since ?? 0) >= (this.deps.quietMs ?? 5 * 60_000);
-    if (pending || (!p.checks.length && !quiet)) {
+    // a required check that hasn't shown up on this head is pending, never passed (#6004)
+    const seen = new Set(p.checks.map((c) => c.name));
+    const missing = (await gh.required?.(p.base) ?? []).filter((n) => !seen.has(n));
+    const quiet = this.now() - (s.since ?? 0) >= (this.deps.quietMs ?? 5 * 60_000);
+    if (missing.length && quiet) return this.pull(s, `${missing.join(", ")} never started on ${p.head.slice(0, 9)}`,
+      `#${s.pr}'s head ${p.head.slice(0, 9)} got no ${missing.join(", ")} run, which ${p.base} requires, so the merge train took it out. ` +
+      `That is a GitHub miss (#2828): rebase onto ${p.base}, push with --force-with-lease, and press Merge when ready again.`);
+    if (pending || missing.length || (!p.checks.length && !quiet)) {
       s.state = "checking";
-      s.why = pending ? `CI on ${p.head.slice(0, 9)}: ${pending} running` : `waiting for CI on ${p.head.slice(0, 9)}`;
+      s.why = pending ? `CI on ${p.head.slice(0, 9)}: ${pending} running`
+        : missing.length ? `waiting for ${missing.join(", ")} on ${p.head.slice(0, 9)}` : `waiting for CI on ${p.head.slice(0, 9)}`;
       return;
     }
     this.say(`#${s.pr} green on ${p.base} ${b.tip.slice(0, 9)}: merging ${p.head.slice(0, 9)}`);
-    await gh.merge(s.pr, s.method, p.head, s.deleteBranch);
+    try {
+      await gh.merge(s.pr, s.method, p.head, s.deleteBranch);
+    } catch (e) {
+      // GitHub knows best what its rules still wait on: look again next step, and give up after a few tries
+      const why = `GitHub refused the merge of ${p.head.slice(0, 9)}: ${(e as Error).message}`;
+      s.refused = (s.refused ?? 0) + 1;
+      if (s.refused >= REFUSALS) return this.pull(s, why, `${why}. The merge train tried ${REFUSALS} times and took #${s.pr} out of the line. ` +
+        `Check what ${p.base}'s rules still want on the PR, then press Merge when ready again.`);
+      Object.assign(s, { state: "checking", why: `${why}; trying again` });
+      return this.say(`#${s.pr} ${why}; trying again`);
+    }
     this.done(s, `merged on ${p.base} ${b.tip.slice(0, 9)}`);
   }
 
@@ -229,6 +253,10 @@ const PrView = obj({
 });
 const Compare = obj({ behind_by: num(0, Infinity, 0), base_commit: obj({ sha: str(64) }) });
 const Runs = obj({ check_runs: arr(obj({ name: str(200), conclusion: opt(str(40)) }), 1000, { drop: true }) });
+const Rules = arr(obj({
+  type: str(100),
+  parameters: opt(obj({ required_status_checks: opt(arr(obj({ context: str(200) }), 200, { drop: true })) })),
+}), 500, { drop: true });
 
 const FAILED = new Set(["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"]);
 
@@ -248,7 +276,15 @@ const parse = <T>(g: (v: unknown) => T, out: string, what: string): T => {
 
 /** The train's gh, through a runner that takes gh's arguments and resolves to its stdout. */
 export function ghTrain(gh: (args: string[]) => Promise<string>, repo: string): TrainGh {
+  const required = new Map<string, Promise<string[]>>();
   return {
+    required(base) {
+      // the rules on a branch change rarely: read them once per base; a repo whose rules we can't read requires nothing
+      if (!required.has(base)) required.set(base, gh(["api", `repos/${repo}/rules/branches/${encodeURIComponent(base)}`])
+        .then((out) => parse(Rules, out, "rule list").flatMap((r) => r.type === "required_status_checks" ? r.parameters?.required_status_checks ?? [] : []).map((c) => c.context))
+        .catch(() => []));
+      return required.get(base)!;
+    },
     async pr(n) {
       const p = parse(PrView, await gh(["pr", "view", String(n), "--repo", repo, "--json", "state,headRefOid,baseRefName,mergeable,statusCheckRollup,isCrossRepository"]), "PR");
       return {

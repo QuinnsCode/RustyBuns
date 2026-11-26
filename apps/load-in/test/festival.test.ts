@@ -132,3 +132,13 @@ test("a rack left by the desk drives 40 m of speaker cable and loses level", () 
   }
   expect(far.score).toBeLessThan(near.score);
 });
+
+test("each sculpted pair has the left-handed box on its left, seen from the front, so the LF horns meet in the middle", () => {
+  const w = newWorld(FESTIVAL), yaw = rig(w).yaw.open;
+  for (const n of ["l", "r"]) {
+    const [a, b] = [1, 2].map((j) => at(w, `open-sculpt-${n}${j}`));
+    expect([a!.gear, b!.gear]).toEqual(["sculpted-3way-lh", "sculpted-3way"]);
+    // across the stage's front, the left-handed box is the one on the left (negative across)
+    expect((b!.x - a!.x) * Math.cos(yaw) - (b!.z - a!.z) * Math.sin(yaw)).toBeGreaterThan(0);
+  }
+});
