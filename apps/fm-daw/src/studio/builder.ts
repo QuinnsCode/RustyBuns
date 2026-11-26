@@ -197,6 +197,8 @@ export type Edit =
   | { t: "field"; tempC?: number; humidity?: number; ground?: Ground }
   | { t: "bank"; at: [number, number]; yaw: number; len: number; h: number }
   | { t: "unbank"; index: number }
+  | { t: "moveBank"; index: number; at: [number, number] }
+  | { t: "turnBank"; index: number; yaw: number }
   | { t: "venue"; venue: Venue | null };
 const tag = <T extends string>(t: T) => oneOf([t]);
 const EDITS: Guard<Edit>[] = [
@@ -232,6 +234,8 @@ const EDITS: Guard<Edit>[] = [
   obj({ t: tag("field"), tempC: opt(TEMP_C), humidity: opt(HUMIDITY), ground: opt(oneOf(GROUNDS)) }),
   obj({ t: tag("bank"), ...BANK }),
   obj({ t: tag("unbank"), index: int(0, MAX_BANKS - 1) }),
+  obj({ t: tag("moveBank"), index: int(0, MAX_BANKS - 1), at: XZ }),
+  obj({ t: tag("turnBank"), index: int(0, MAX_BANKS - 1), yaw: BANK.yaw }),
   obj({ t: tag("venue"), venue: nul(VENUE) }),
 ];
 
@@ -496,6 +500,14 @@ export function edit(def: StudioDef, e: Edit): Built {
       if (e.humidity !== undefined) air.humidity = e.humidity;
       out.air = air;
       if (e.ground) out.ground = e.ground;
+      break;
+    }
+    case "moveBank": case "turnBank": {
+      const b = next.outdoor?.banks?.[e.index];
+      if (!b) return no("there is no such bank");
+      if (e.t === "moveBank") b.at = e.at;
+      // kept within a turn either way, as the guard takes it back
+      else b.yaw = Math.atan2(Math.sin(e.yaw), Math.cos(e.yaw));
       break;
     }
     case "bank": case "unbank": {
