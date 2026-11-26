@@ -26,7 +26,11 @@ import { POLY_KINDS } from "@rustybuns/models/polysynth";
 import { GENERATOR_IDS, gear as sheet, gearList, gearListText, powerPlan, stackWidth, SYSTEM_IDS, SYSTEMS } from "@rustybuns/gear";
 import { arrivals, paSpeakers, rigPlan, rigStacks, roomPa, roomRig } from "./pa-room.ts";
 import { delayCanvas, delayMap, floorMap, heatCanvas, mapAt, type DelayMap, type FloorMap } from "./coverage.ts";
-import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, reschedule, restore, saveVersion, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { addScene, dropParty, dropScene, everyone, goLive, keepStudio, liveStudio, makeParty, open, openParty, openScene, PARTIES, partyRoom, reschedule, restore, saveVersion, stored, switchScene, whenWords, type Done } from "./party.ts";
+import { partySync } from "./party-sync.ts";
+import { eqosys } from "@rustybuns/util/eqosys";
+import { APP, EQOSYS, SIGN_IN_FROM } from "../account.ts";
+import { SKIN } from "../guest-list.ts";
 
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
 const plan = document.querySelector<SVGSVGElement>("#plan")!;
@@ -37,6 +41,11 @@ const KINDS = ["keys", "drums", "bass", "desk", "booth", "couch"] as const;
 /** Your parties (party.ts): with one open, the builder edits the scene on its stage. */
 let parties = stored((() => { try { return localStorage.getItem(PARTIES); } catch { return null; } })());
 let room: StudioDef = openScene(parties)?.studio ?? yours() ?? structuredClone(ROOM_LIST[0]);
+// Signed in with eqosys (on the front door), your parties are on your account (#5932): `owner` names you in join links
+// once the account answers; until then, and signed out, they are this browser's alone.
+const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: SKIN });
+const sync = partySync(location.origin, () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; });
+let owner: string | null = null;
 let picked: string | undefined = room.spots[0]?.id;
 let why = "";
 /** The PA stack picked on the plan (an index into the room's stacks), and whether the coverage map and the delay view show. */
@@ -45,6 +54,7 @@ let stackPicked: number | null = null, showMap = false, showDelay = false;
 /** Keep the room: in the open party's scene, and as the room /jam.html walks into (the live party's stage while one is live). */
 function save() {
   if (openParty(parties)) parties = keepStudio(parties, room).store;
+  if (owner) sync.push(parties);
   try {
     localStorage.setItem(PARTIES, JSON.stringify(parties));
     localStorage.setItem(YOURS, JSON.stringify(liveStudio(parties) ?? room));
@@ -695,6 +705,14 @@ function partyDo(d: Done): boolean {
   render();
   return d.ok;
 }
+/** The live party's join link, for anyone on any device: its own room, carrying the scene on stage; null signed out. */
+function joinLink(): string | null {
+  const p = parties.parties.find((q) => q.id === parties.live), on = liveStudio(parties);
+  if (!owner || !p || !on) return null;
+  const u = new URL(builtLink(location.origin, on, partyRoom(owner, p.id)));
+  u.searchParams.set("name", p.name);
+  return u.href;
+}
 /** A <input type="datetime-local"> value and back: empty is open now. */
 const toLocal = (ms: number | null) => ms === null ? "" : new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const fromLocal = (v: string) => { const ms = v ? new Date(v).getTime() : NaN; return Number.isFinite(ms) ? ms : null; };
@@ -708,11 +726,12 @@ function renderParty() {
       <div class="row"><button type="button" class="go" id="party-make">Make a party</button></div>
       <p class="hint">Its first scene is the room you have now. Each performer gets a scene of their own.</p>`;
   } else {
-    const live = parties.live === p.id;
+    const live = parties.live === p.id, join = joinLink();
     host.innerHTML = `<h2>Party</h2>
       <div class="row"><label>Name<input id="party-rename" maxlength="60" value="${esc(p.name)}"></label><label>Starts (empty: open now)<input id="party-when" type="datetime-local" value="${toLocal(p.when)}"></label></div>
       <div class="row"><button type="button" id="party-live" class="${live ? "go" : ""}" aria-pressed="${live}">${live ? "Live" : "Go live"}</button><button type="button" id="party-close">All parties</button></div>
       <p class="hint">${live ? "The room people join: Enter walks its scene on stage." : parties.live ? "Another party is live; only one is at a time." : "Not live yet: you can change it before or during the event."}</p>
+      ${live ? join ? `<div class="row"><a class="button" id="party-join" href="${esc(join)}" target="_blank" rel="noopener">Join link</a><button type="button" id="party-copy">Copy link</button></div>` : `<p class="hint">Sign in with eqosys on the front door to give it a join link for any device.</p>` : ""}
       <h2>Scenes</h2>
       <ul class="scenes">${p.scenes.map((s) => `<li><button type="button" data-scene="${s.id}" aria-pressed="${s.id === p.scene}">${esc(s.performer)}</button><span class="hint">${s.studio.spots.length} seat${s.studio.spots.length === 1 ? "" : "s"}</span>${p.scenes.length > 1 ? x(`data-scene-drop="${s.id}"`, `Take ${s.performer}'s scene out`) : ""}</li>`).join("")}</ul>
       <div class="row"><label>Next performer<input id="scene-name" maxlength="40"></label><button type="button" id="scene-add">Add scene</button></div>
@@ -727,6 +746,11 @@ function renderParty() {
   if (p) document.getElementById("party-when")?.addEventListener("change", () => partyDo(reschedule(parties, { when: fromLocal(val("party-when")) })));
   document.getElementById("party-live")?.addEventListener("click", () => partyDo(goLive(parties, parties.live === p?.id ? null : p?.id ?? null)));
   document.getElementById("party-close")?.addEventListener("click", () => partyDo(open(parties, undefined)));
+  document.getElementById("party-copy")?.addEventListener("click", (e) => {
+    const b = e.currentTarget, link = joinLink();
+    if (!(b instanceof HTMLButtonElement) || !link) return;
+    void navigator.clipboard?.writeText(link).then(() => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy link"; }, 1600); }, () => {});
+  });
   document.getElementById("scene-add")?.addEventListener("click", () => partyDo(addScene(parties, val("scene-name"), room)));
   document.getElementById("scene-all")?.addEventListener("click", () => partyDo(everyone(parties)));
   document.getElementById("version-save")?.addEventListener("click", () => partyDo(saveVersion(parties, val("version-note"), Date.now())));
@@ -799,6 +823,8 @@ const harness = {
       return {
         open: p ? { id: p.id, name: p.name, when: p.when, scene: p.scene, scenes: p.scenes.map((s) => ({ id: s.id, performer: s.performer, seats: s.studio.spots.length })), versions: p.versions.map((v) => ({ n: v.n, note: v.note })) } : null,
         live: parties.live ?? null, parties: parties.parties.map((q) => q.id),
+        /** Your owner key once your eqosys account answered (null: this browser's parties alone), and the live party's join link. */
+        owner, join: joinLink(),
       };
     },
     make: (name: string, when: number | null = null) => ({ ok: partyDo(makeParty(parties, name, when, room)), why }),
@@ -819,3 +845,10 @@ const harness = {
 };
 window.qrooms = harness;
 render();
+// your account's parties: what it keeps opens here (another device's work); an account with none takes this browser's
+void eq.ready.then(() => sync.pull()).then((got) => {
+  if (!got) return;
+  owner = got.owner;
+  if (got.store.parties.length) partyDo({ ok: true, store: got.store });
+  else { sync.push(parties); render(); }
+});
