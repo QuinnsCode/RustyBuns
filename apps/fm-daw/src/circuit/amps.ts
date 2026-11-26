@@ -63,38 +63,40 @@ export const AMPS: AmpDef[] = [
 /**
  * A pedal: its circuit at its one knob (0 to 10) with the player's part swaps, what the knob is called (Drive if not
  * said), what moves its `VarR`s, and its board (`circuits/<board>.tsx`), if it has one: a pedal dropped on the bench doesn't.
+ * Every pedal with a board also reads another copy of it as `net`'s `json`: a remake of it, which
+ * is how Q Builder retests one.
  */
-export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps) => Netlist; mods?: (k: number) => Mod[] }
+export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps, json?: unknown) => Netlist; mods?: (k: number) => Mod[] }
 
 export const PEDALS: PedalDef[] = [
-  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s) => overdrive(d / 10, s) },
-  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", board: "fuzz", net: (d, s) => fuzz(d / 10, s) },
-  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s) => hardClip(10e3 + (d / 10) * 190e3, s) },
+  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s, j) => overdrive(d / 10, s, j) },
+  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", board: "fuzz", net: (d, s, j) => fuzz(d / 10, s, j) },
+  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s, j) => hardClip(10e3 + (d / 10) * 190e3, s, j) },
   {
     id: "phase", name: "Q Phase", knob: "Rate", blurb: "Four all-pass stages, JFETs as their resistors, one LFO on the gates, some fed back: two notches sweeping.",
-    board: "phase", net: (_, s) => phaser(s), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
+    board: "phase", net: (_, s, j) => phaser(s, j), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
   },
   {
     id: "vibe", name: "Q Vibe", knob: "Speed", blurb: "Four phase stages, four LDRs, one lamp. The lamp heats faster than it cools, so the throb leans.",
-    board: "vibe", net: (_, s) => vibe(s), mods: (k) => [{ ctl: "lamp", hz: 0.5 + (k / 10) * 9, pow: 2, lag: [[0.02, 0.07], [0.004, 0.05]] }],
+    board: "vibe", net: (_, s, j) => vibe(s, j), mods: (k) => [{ ctl: "lamp", hz: 0.5 + (k / 10) * 9, pow: 2, lag: [[0.02, 0.07], [0.004, 0.05]] }],
   },
   {
     id: "trem", name: "Q Trem", knob: "Rate", blurb: "An LED blinking on an LDR that shunts the signal to ground. The LDR recovers slowly, so each dip has a soft back.",
-    board: "trem", net: (_, s) => opticalTremolo(s), mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
+    board: "trem", net: (_, s, j) => opticalTremolo(s, j), mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
   },
-  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz. An expression pedal (MIDI CC 11) rocks it.", board: "wah", net: (k, s) => wah(k / 10, s) },
+  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz. An expression pedal (MIDI CC 11) rocks it.", board: "wah", net: (k, s, j) => wah(k / 10, s, j) },
   {
     id: "autowah", name: "Q Envelope", knob: "Sens", blurb: "The same wah, its treadle pushed by how hard you play: a quick attack, then it falls back to the heel.",
-    board: "autowah", net: (_, s) => envelopeWah(s), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
+    board: "autowah", net: (_, s, j) => envelopeWah(s, j), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
   },
   {
     id: "comp", name: "Q Squeeze", knob: "Sustain", blurb: "Optical compressor: the output lights an LED that darkens an LDR ahead of the gain. The LDR's slow recovery is the smooth release.",
-    board: "comp", net: (k, s) => opticalComp(k / 10, s), mods: () => [{ ctl: "led", sens: 0.4, lag: [[0.01, 0.6]] }],
+    board: "comp", net: (k, s, j) => opticalComp(k / 10, s, j), mods: () => [{ ctl: "led", sens: 0.4, lag: [[0.01, 0.6]] }],
   },
-  { id: "octave", name: "Q Octave", knob: "Fuzz", blurb: "A fuzz, then two diodes keeping the higher of it and its mirror: the wave folds, the pitch doubles.", board: "octave", net: (k, s) => octaveUp(k / 10, s) },
+  { id: "octave", name: "Q Octave", knob: "Fuzz", blurb: "A fuzz, then two diodes keeping the higher of it and its mirror: the wave folds, the pitch doubles.", board: "octave", net: (k, s, j) => octaveUp(k / 10, s, j) },
   {
     id: "germ", name: "Q Germ", knob: "Warm", blurb: "Two germanium transistors. They leak more as the room warms, and the bias moves: cold is spitty, 25 °C at 4, hot is mush.",
-    board: "germ", net: (k, s) => germaniumFuzz(5 + k * 5, s),
+    board: "germ", net: (k, s, j) => germaniumFuzz(5 + k * 5, s, j),
   },
 ];
 

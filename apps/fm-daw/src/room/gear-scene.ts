@@ -3,7 +3,7 @@
 // wall, every box where it stands now (or in someone's hands), the cables sagging between their jacks, and what tells
 // you what a click will do: a ghost where the box you carry would land, and the jacks a cable in your hand can go into.
 import * as THREE from "three";
-import { type Aim, type Room, gearOf, hand, handAt, heldId, item, jackAt, knobValue, landingPose, openJacks, placedNow, sag, theirLeads } from "./room.ts";
+import { type Aim, type Room, type Vec3, gearOf, hand, handAt, heldId, item, jackAt, knobValue, landingPose, openJacks, placedNow, sag, theirLeads } from "./room.ts";
 import { type GearModel, caseModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
 const cableMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.6 });
@@ -18,8 +18,21 @@ export class GearScene {
   private cables = new Map<string, { mesh: THREE.Mesh; ends: string }>();
   private lit = new Set<THREE.Mesh>();
   private ghost: { gear: string; box: THREE.Group } | null = null;
+  /** The setup lesson's marker over the gear its next step is about: a small cone pointing down, bobbing. */
+  private marker = markerModel();
+  /** Where the marker points now (null: hidden), for the harness. */
+  marked: Vec3 | null = null;
 
-  constructor() { this.group.add(rackModel(), pedalWallModel(), caseModel()); }
+  constructor() { this.group.add(rackModel(), pedalWallModel(), caseModel(), this.marker); }
+
+  /** Point the lesson's marker at `at` (the gear room's frame), or hide it; `t` in seconds bobs it. */
+  mark(at: Vec3 | null, t: number) {
+    this.marked = at;
+    this.marker.visible = !!at;
+    if (!at) return;
+    this.marker.position.set(at[0], at[1] + 0.02 + 0.015 * Math.sin(t * 4), at[2]);
+    this.marker.rotation.y = t * 1.5;
+  }
 
   /** Draw the room's patch as it is now, and light what `aim` points at. */
   sync(room: Room, aim: Aim | null) {
@@ -92,6 +105,19 @@ export class GearScene {
     this.ghost.box.position.set(to.at[0], to.at[1] + 0.002, to.at[2]);
     this.ghost.box.rotation.y = to.turn;
   }
+}
+
+/** A warm cone, tip down at its origin, drawn over everything so a jack behind a cable still shows it. */
+function markerModel(): THREE.Group {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffb46b, depthTest: false, transparent: true, opacity: 0.95 });
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 12), mat);
+  cone.rotation.x = Math.PI;
+  cone.position.y = 0.05;
+  cone.renderOrder = 10;
+  const g = new THREE.Group();
+  g.add(cone);
+  g.visible = false;
+  return g;
 }
 
 function glow(ring: THREE.Mesh, v: number) {

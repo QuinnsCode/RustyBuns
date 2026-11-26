@@ -34,7 +34,7 @@ describe("audit log", () => {
 
     const repo = await (await call("ryan", "/api/repos/ryan/lab/audit")).json() as any[];
     expect(actions(repo)).toEqual(["repo.visibility", "crew.add", "crew.remove", "invite.create", "invite.claim", "ci_token.create", "ci_token.revoke", "hook.create", "hook.delete"]);
-    expect(repo.at(-1)).toMatchObject({ actor: "ryan", via: "token", action: "repo.visibility", detail: "private" });
+    expect(repo.at(-1)).toMatchObject({ actor: "ryan", via: "token", token: t.id, action: "repo.visibility", detail: "private" });
     expect(repo.find((r) => r.action === "invite.claim")).toMatchObject({ actor: expect.stringMatching(/^agent-bot-/), via: "invite", target: inv.id });
     expect(repo.find((r) => r.action === "hook.create")).toMatchObject({ target: hook.id, detail: "ci.example" });
     expect(JSON.stringify(repo)).not.toContain(inv.token);
@@ -43,7 +43,7 @@ describe("audit log", () => {
 
     const mine = await (await call("ryan", "/api/tokens/audit")).json() as any[];
     expect(actions(mine)[0]).toBe("token.create");
-    expect(mine.at(-1)).toMatchObject({ action: "token.create", target: t.id, via: "cookie", country: "NZ", detail: "admin: ci" });
+    expect(mine.at(-1)).toMatchObject({ action: "token.create", target: t.id, via: "cookie", token: null, country: "NZ", detail: "admin: ci" });
     expect(mine[0]).toMatchObject({ action: "token.revoke", target: t.id });
     expect(await (await call("sam", "/api/tokens/audit")).json()).toEqual([]);
 
