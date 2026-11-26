@@ -33,6 +33,7 @@
     "./director": "./src/director.ts",
     "./dom": "./src/dom.ts",
     "./eqosys": "./src/eqosys.ts",
+    "./events": "./src/events.ts",
     "./features": "./src/features.ts",
     "./guard": "./src/guard.ts",
     "./http": "./src/http.ts",

@@ -127,7 +127,7 @@ export function gearLook(): GearLook {
     glow: new THREE.MeshStandardMaterial({ color: 0xee6a1f, emissive: 0xee6a1f, emissiveIntensity: 0.7, roughness: 0.5 }),
     horn: std(0x7a7e75, 0.7), grime: std(0x4a4a42, 0.85), plug: std(0x6e5636, 0.5, 0.55), violet: std(0x11091d, 0.86), turbo: std(0x0e1422, 0.82),
     pcblue: std(0x1f63c4, 0.42), pcgrey: std(0xa3a8ae, 0.5),
-    cavity: new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.9, envMapIntensity: 0.16 }),
+    cavity: new THREE.MeshStandardMaterial({ color: 0x050409, roughness: 1, envMapIntensity: 0.02 }),
   };
 }
 
@@ -1468,12 +1468,24 @@ function res2Pieces(): Record<string, Build> {
   const cab = P(), panel = P(), mid = P(), plugB = P(), drv = P(), hf = P(), band = P(), bass = P();
 
   // ---- cabinet: top and bottom trapezoids, the two slanting sides, the back
+  // the box's outer edges are rounded `er` (its front uprights and the roof's front and sides), as the real box's are
+  const er = 0.012, ex = (z: number) => sideX(z) - er / Math.cos(Math.atan2((w - bw) / 2, d)); // a round's centre line
   const plan = [[-sideX(f), f], [sideX(f), f], [sideX(-d / 2), -d / 2], [-sideX(-d / 2), -d / 2]];
-  cab.pieces.push(slab("violet", plan, 0, t), slab("violet", plan, h - t, h));
+  const roof = [[-sideX(f) + er, f - er], [sideX(f) - er, f - er], [sideX(-d / 2) - er, -d / 2], [-sideX(-d / 2) + er, -d / 2]];
+  cab.pieces.push(slab("violet", plan, 0, t), slab("violet", roof, h - t, h));
   for (const s of [-1, 1]) {
-    const q = [[sideX(f), f], [sideX(f) - t, f], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]].map(([x, z]) => [s * x!, z!]);
-    cab.pieces.push(slab("violet", q, t, h - t));
+    const q = [[sideX(f - er), f - er], [sideX(f) - t, f - er], [sideX(-d / 2) - t, -d / 2], [sideX(-d / 2), -d / 2]];
+    cab.pieces.push(slab("violet", q.map(([x, z]) => [s * x!, z!]), t, h - er));
+    // the side's last `er` at the front, inside the round, so the face's frame stays full width
+    cab.pieces.push(slab("violet", [[sideX(f) - t, f - er], [ex(f), f - er], [ex(f), f], [sideX(f) - t, f]].map(([x, z]) => [s * x!, z!]), t, h - er));
+    cab.pieces.push(rod("violet", [s * ex(f), t, f - er], [s * ex(f), h - er, f - er], er, 8)); // the front upright
+    cab.pieces.push(rod("violet", [s * ex(f), h - er, f - er], [s * ex(-d / 2), h - er, -d / 2], er, 8)); // the roof's side
+    const ball = new THREE.SphereGeometry(er, 8, 6);
+    ball.translate(s * ex(f), h - er, f - er);
+    ball.deleteAttribute("normal"); ball.deleteAttribute("uv");
+    cab.pieces.push({ geo: toCreasedNormals(ball.toNonIndexed(), 0.6), slot: "violet" });
   }
+  cab.pieces.push(rod("violet", [-ex(f), h - er, f - er], [ex(f), h - er, f - er], er, 8)); // the roof's front
   cab.pieces.push(slab("violet", [[-(bw / 2 - t), -d / 2 + t], [bw / 2 - t, -d / 2 + t], [bw / 2 - t, -d / 2], [-(bw / 2 - t), -d / 2]], t, h - t));
   // the hand slot in the top, near the back, and one in each side, sunk dark
   cab.pieces.push(box("knob", [0.2, 0.004, 0.034], [0, h + 0.0005, -d / 2 + 0.07], { bevel: 0.0015 }));
@@ -1494,10 +1506,11 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- mid horn: a rolled lip at the mouth, then the facets back to the throat round the plug
   const zt = f - 0.24, tipA = mm(154), drR = mm(77);
-  const lip = ring8(0, mcy, f - 0.002, mA + 0.012, mC + 0.012), mouth = ring8(0, mcy, f - 0.016, mA, mC);
+  // the bezel: the panel's moulding rolls in 45 degrees round the mouth before the horn's own walls start
+  const lip = ring8(0, mcy, f - 0.002, mA, mC), mouth = ring8(0, mcy, f - 0.02, mA - 0.016, mC - 0.016);
   // three bands of facets, as the photo's walls fold: the corners pulled in faster than the mids, so each wall breaks
   // into long triangles at the mouth and diamonds halfway in
-  const bands = [ring8(0, mcy, f - 0.06, mm(203), mm(126), mm(178), mm(122)), ring8(0, mcy, f - 0.14, mm(178), mm(100), mm(110), mm(98))];
+  const bands = [ring8(0, mcy, f - 0.07, mm(186), mm(114), mm(166), mm(110)), ring8(0, mcy, f - 0.14, mm(172), mm(96), mm(108), mm(94))];
   const throat = ring8(0, mcy, zt, tipA, drR, mm(54), drR);
   mid.pieces.push(ringWalls("horn", [lip, mouth]), ringWalls("horn", [mouth, ...bands, throat]));
   // the throat's back, round the driver: a flat dark face closing the hexagon the walls end on
@@ -1522,8 +1535,8 @@ function res2Pieces(): Record<string, Build> {
 
   // ---- bass horn: the mouth to the floor, its walls closing on the throat, the strut, a bracket, the corner fillets
   const by0 = t, by1 = top(551), ty0 = top(811), ty1 = top(655), tA = mm(141.5), bdeep = 0.36;
-  // the walls painted violet near the mouth, going to the near-black of a deep hollow two fifths in, as the light dies
-  const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.4, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
+  // the walls painted violet just at the mouth, going to the near-black of a deep hollow an eighth in, as the light dies
+  const mouthB = [-pw, pw, by0, by1], throatB = [-tA, tA, ty0, ty1], k = 0.12, part = mouthB.map((v, i) => v + (throatB[i]! - v) * k);
   bass.pieces.push(frustum("violet", mouthB, part, f - 0.004, bdeep * k), frustum("cavity", part, throatB, f - 0.004 - bdeep * k, bdeep * (1 - k)));
   bass.pieces.push(box("knob", [tA * 2, ty1 - ty0, 0.006], [0, (ty0 + ty1) / 2, f - 0.004 - bdeep - 0.003]));
   bass.pieces.push(rod("violet", [0, by0, f - 0.04], [0, ty1, f - 0.004 - bdeep + 0.02], 0.012, 6));
