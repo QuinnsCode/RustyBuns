@@ -10,6 +10,7 @@
 // the board on Bob and the one over ssh are the same code. It sees the shells remote-ci.ts starts over ssh (their
 // command line holds the whole script); a process started some other way is outside it.
 import { took, Record as RunGuard } from "./builder-bar.ts";
+import { fold, SH_LOCK_HOLDER, type Job as BlenderJob } from "./blender-queue.ts";
 import { check } from "../packages/util/src/guard.ts";
 import { battery, CUT_CHECK, GATE, plan, PUSH_MS, REMOTE_PATH, STALE_MIN, type Battery, type RunRecord } from "./remote-ci.ts";
 import type { QueueReply } from "../apps/test-swarm/src/api.ts";
@@ -26,6 +27,8 @@ for f in runs/*.json; do [ -f "$f" ] || continue; s=${"$"}{f#runs/}; s=${"$"}{s%
 for f in runs/wait/*.json; do [ -f "$f" ] && echo "@wait $(mt "$f") $(tr -d '\n' < "$f")"; done
 ls -t runs/done/*.json 2>/dev/null | head -n 10 | while read -r f; do echo "@done $(tr -d '\n' < "$f")"; done
 pmset -g batt 2>/dev/null | sed 's/^/@batt /'
+[ -f blender/queue.jsonl ] && sed 's/^/@bq /' blender/queue.jsonl
+h=$(${SH_LOCK_HOLDER}) && echo "@bholder $h"
 ${"$"}{PS:-ps -axww -o pid=,etime=,command=} | awk 'index($0, "/.bun/bin:/opt/homebrew/bin") && !index($0, "@now") { print "@ps " $0 }'
 `;
 
@@ -35,6 +38,8 @@ export type Proc = { pid: number; secs: number; script: string };
 export type Shot = {
   now: number; serving: number; slots: { name: string; sha: string }[]; locks: { slot: string; at: number }[];
   runs: Live[]; waiting: (RunRecord & { at: number })[]; done: RunRecord[]; batt: Battery; procs: Proc[]; error?: string;
+  /** The Blender queue's running and waiting jobs, and who holds Bob's one Blender (a job, a test, a warm Blender). */
+  blender: BlenderJob[]; blenderHolder?: string;
 };
 
 // a colour or cursor code (built from a string: a regex literal with ESC in it reads as a mistake to the linter)
@@ -48,8 +53,8 @@ const etime = (s: string) => {
 const record = (json: string) => { try { return check(RunGuard, JSON.parse(json)) ?? undefined; } catch { return undefined; } };
 
 export function parseShot(text: string): Shot {
-  const shot: Shot = { now: 0, serving: 0, slots: [], locks: [], runs: [], waiting: [], done: [], batt: { onPower: true, pct: 100 }, procs: [] };
-  const batt: string[] = [];
+  const shot: Shot = { now: 0, serving: 0, slots: [], locks: [], runs: [], waiting: [], done: [], batt: { onPower: true, pct: 100 }, procs: [], blender: [] };
+  const batt: string[] = [], bq: string[] = [];
   for (const line of text.split("\n")) {
     const m = line.match(/^@(\w+) ?(.*)$/);
     if (!m) continue;
@@ -64,10 +69,13 @@ export function parseShot(text: string): Shot {
     else if (kind === "wait") { const r = record([b, ...more].join(" ")); if (r) shot.waiting.push({ ...r, at: Number(a) * 1000 }); }
     else if (kind === "done") { const r = record(rest); if (r) shot.done.push(r); }
     else if (kind === "batt") batt.push(rest);
+    else if (kind === "bq") bq.push(rest);
+    else if (kind === "bholder") shot.blenderHolder = rest.trim();
     else if (kind === "error") shot.error = rest;
     else if (kind === "ps") { const p = rest.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/); if (p) shot.procs.push({ pid: Number(p[1]), secs: etime(p[2]!), script: p[3]! }); }
   }
   shot.batt = battery(batt.join("\n"));
+  shot.blender = fold(bq.join("\n")).filter((j) => j.state === "running" || j.state === "waiting");
   shot.slots.sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }));
   shot.waiting.sort((x, y) => x.started - y.started);
   return shot;
@@ -253,12 +261,19 @@ export function board(v: View, look: Look): string {
     `${paint("dim", `${i + 1}.`)} ${j.state === "leased" ? `${paint("pink", spin)} ${paint("blue", j.runner)}` : paint("gray", "queued")} ${j.suite} ${paint("dim", j.sha.slice(0, 8))} ${paint("gray", j.branch)} ` +
       paint("dim", j.state === "leased" ? `· lease ends in ${took(Math.max(0, j.until - shot.now))}` : `· asked ${ago(shot.now, j.at)}${j.tries ? ` · try ${j.tries + 1}` : ""}`)));
 
+  // the Blender queue (scripts/blender-queue.ts): who has his one Blender, then its jobs in line; shown when there are any
+  const bl = shot.blender.length || shot.blenderHolder ? box("blender", "yellow", [
+    ...(shot.blenderHolder ? [`${paint("pink", spin)} ${paint("gray", `has Blender: pid ${shot.blenderHolder}`)}`] : []),
+    ...shot.blender.map((j) => `${j.state === "running" ? paint("pink", spin) : paint("dim", "○")} ${paint("blue", j.who)} ${paint("gray", j.cmd.join(" "))} ` +
+      paint("dim", j.state === "running" && j.started ? `· ${took(shot.now - j.started)}` : `· asked ${ago(shot.now, j.added)}`)),
+  ]) : [];
+
   const done = box("finished", "gray", shot.done.slice(0, 10).map((r) => {
     const end = r.ended ?? r.started, okay = r.code === 0;
     return `${okay ? paint("green", "✓ pass") : paint("red", `✗ fail${r.code === undefined ? "" : ` ${r.code}`}`)} ${paint("gray", took(end - r.started).padStart(7))} ${paint("blue", r.who)} ${r.cmd} ${paint("dim", `· ${ago(shot.now, end)}`)}`;
   }));
 
-  return [...head, ...odd, ...slots, ...waiting, ...swarm, ...done].join("\n");
+  return [...head, ...odd, ...slots, ...waiting, ...bl, ...swarm, ...done].join("\n");
 }
 
 /** One plain line per thing that changed between two views: a run started or finished, a slot stalled, an unexpected command. */

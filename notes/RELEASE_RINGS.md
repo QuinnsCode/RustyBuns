@@ -47,6 +47,9 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
 6. `daily-ring.yml` at 10:17 UTC: `rings.ts pick daily` (3 green hourlies in a row), phone smoke at every size, vite builds of changed web apps (no deploys). Bob's natives gate it once he can report back.
 7. Stable: Monday pick, release notes from squash titles, one `MANUAL RUN:` taste issue, owner pushes the `v` tag.
    Built: `stable.yml` runs `scripts/stable.ts` (#4494); it picks nothing until the daily ring writes `ring/daily`.
+   The tag goes on the pick itself (#4528): `npm-publish.yml` sets the tag's version at pack time
+   (`check-release.ts --set`), so no bump PR lands on top first and nothing unsoaked ships. Main's
+   `packages/*/package.json` trail the tags; `stable.ts` names the next patch after the last tag.
 
 Express lane (#4586): an owner-only `express` label runs every ring's sweep on that commit right away, with no clock and
 no soak. Every sweep must still pass and stable still needs the owner's OK. A red sweep drops it into the normal lane at

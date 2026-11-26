@@ -1206,7 +1206,7 @@ const letGo = (from: "party" | "journal", i: number, can: boolean) => {
  * opening has it (#3747); a turned page, a folio or a shut book ends it (null), and every page after starts on the
  * Book's demand in one line, so the chapter starts at the top of the leaf. */
 let front: Tab | null | undefined;
-const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"], ["factions", "footprints", "Factions"]];
+const TABS: [Tab, string][] = [["lineup", "Line-up"], ["bestiary", "Bestiary"], ["regions", "Regions"], ["factions", "Factions"]];
 /** A leaf of the tome swings over on its spine when you change chapter, the whole page you were reading on its front
  * and the next one's facing half on its back: forward from the right, back from the left (a phone's single page
  * turns from its left edge). */
@@ -1229,8 +1229,9 @@ function drawJournal(edit = true) {
   const j = journey;
   if (!j) return;
   drawDemand();
-  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}" title="${label}" aria-label="${label}">${icon(ic)}<span class="rl">${label}</span></button>`).join("");
-  $("#runningHead").textContent = TABS.find(([id]) => id === tab)?.[2] ?? ""; // the bookmark takes the chapter's colour
+  // a chapter's ribbon carries its word, and on a phone the closed ones only its initial, stitched like a monogram
+  $("#journalTabs").innerHTML = TABS.map(([id, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}" title="${label}" aria-label="${label}"><span class="ri" aria-hidden="true">${label[0]}</span><span class="rl">${label}</span></button>`).join("");
+  $("#runningHead").textContent = TABS.find(([id]) => id === tab)?.[1] ?? ""; // the bookmark takes the chapter's colour
   for (const [c] of TABS) $("#journal").querySelector(".tome")?.classList.toggle(`c-${c}`, c === tab);
   const body = $("#journalBody");
   body.classList.toggle("folio-on", !!openFolio && tab === "bestiary");
@@ -1445,7 +1446,11 @@ $("#journalBody").addEventListener("click", (e) => {
   picked = -1; saveJourney(); drawJournal();
   world.show(j.party.map(asCreature));
 });
-$("#closeJournal").innerHTML = icon("x");
+// closing the compendium breaks its wax seal: a lump of red wax, a pressed ring and the Book's eye in it, not a glyph
+$("#closeJournal").innerHTML = `<svg class="seal" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="mmSeal" cx="38%" cy="34%" r="70%"><stop offset="0" stop-color="#b23a26"/><stop offset=".55" stop-color="#7d1a10"/><stop offset="1" stop-color="#4a0d07"/></radialGradient></defs>`
+  + `<path fill="url(#mmSeal)" d="M20 2.5c3.2-.3 5.6 1.8 8.4 2.6 2.9.9 5.4 2.6 6.3 5.6.8 2.6 2.9 4.6 2.6 7.8-.3 2.9-.4 5.3-1.9 7.7-1.5 2.5-2.4 5.3-5.1 6.8-2.6 1.5-5.2 3.4-8.6 3.3-3.1-.1-5.7-1.3-8.2-2.8-2.7-1.6-5.4-3-6.6-6-1.1-2.7-1.9-5.2-1.6-8.3.3-3 .6-5.9 2.4-8.2 1.9-2.4 4.2-4 6.9-5.2 2-.9 3.4-2.1 5.4-3.3z"/>`
+  + `<circle cx="20" cy="20.5" r="11.5" fill="none" stroke="#3d0a05" stroke-width="1.6" opacity=".7"/><circle cx="20" cy="20" r="11.5" fill="none" stroke="#d9654c" stroke-width=".7" opacity=".55"/>`
+  + `<path d="M12.5 20.5q7.5-6.5 15 0q-7.5 6.5-15 0z" fill="none" stroke="#2e0703" stroke-width="1.7"/><path d="M12.5 19.8q7.5-6.5 15 0" fill="none" stroke="#e8866a" stroke-width=".8" opacity=".75"/><circle cx="20" cy="20.5" r="2.8" fill="#2e0703"/><circle cx="19.2" cy="19.6" r=".8" fill="#f0a088" opacity=".8"/></svg>`;
 for (const [id, c] of [["#titleFrontis", "title"], ["#bookFrontis", "title"], ["#versusFrontis", "title"], ["#youEmblem", "lineup"], ["#foeEmblem", "bestiary"]] as const) $(id).innerHTML = emblem(c); // the title scroll's, the Book's five's and the versus book's engravings
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
 // the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)

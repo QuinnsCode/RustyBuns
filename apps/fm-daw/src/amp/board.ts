@@ -65,9 +65,14 @@ export class BoardView {
   private readOnly = false;
   private pcb: (() => Promise<string>) | null = null;
   private schematic: (() => Promise<string>) | null = null;
+  private probed: string | null = null;
 
-  /** `onSwap(socket, choice)`: a choice of null puts the stock part back; socket null resets the whole board. */
-  constructor(private readonly onSwap: (socket: string | null, choice: string | null) => void) {
+  /**
+   * `onSwap(socket, choice)`: a choice of null puts the stock part back; socket null resets the whole board. With `onNet`,
+   * a click on a schematic trace that isn't on a socket hands over its net's connectivity key (Q Builder's scope).
+   */
+  constructor(private readonly onSwap: (socket: string | null, choice: string | null) => void, private readonly onNet?: (key: string) => void) {
+    this.el.classList.toggle("nets", !!onNet);
     this.menu.hidden = true;
     this.menu.setAttribute("role", "menu");
     this.tabs = SIDES.map((s) => {
@@ -125,6 +130,12 @@ export class BoardView {
     void this.draw();
   }
 
+  /** Lights the net with this connectivity key (the scope's), or none. */
+  probe(key: string | null): void {
+    this.probed = key;
+    void this.draw();
+  }
+
   /** How hard the board is working, 0 to 1: the parts that bend the signal glow with it. */
   glow(level: number): void {
     this.el.style.setProperty("--signal", level.toFixed(3));
@@ -154,11 +165,14 @@ export class BoardView {
       g.classList.toggle("empty", !!s && swaps[s.id] === "none");
       if (s) g.setAttribute("aria-label", `${s.parts.join(" ")}: ${holding(s, swaps)}`);
     }
+    for (const t of this.art.querySelectorAll<SVGElement>("[data-subcircuit-connectivity-map-key]")) t.classList.toggle("probed", !!this.probed && t.dataset.subcircuitConnectivityMapKey === this.probed);
   }
 
   private pick(e: MouseEvent): void {
     const g = e.target instanceof Element ? e.target.closest<SVGElement>("[data-part]") : null;
     const s = g && this.sockets.find((x) => x.parts.includes(g.dataset.part ?? ""));
+    const net = !s && this.onNet && e.target instanceof Element ? e.target.closest<SVGElement>("[data-subcircuit-connectivity-map-key]") : null;
+    if (net) { this.menu.hidden = true; this.onNet?.(net.dataset.subcircuitConnectivityMapKey ?? ""); return; }
     if (!g || !s || !this.swaps || this.readOnly) { this.menu.hidden = true; return; }
     const now = this.swaps[s.id];
     const item = (label: string, note: string, choice: string, on: boolean) => {

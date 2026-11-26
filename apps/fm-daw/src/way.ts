@@ -4,7 +4,7 @@
 import { EQOSYS } from "./account.ts";
 import { DOOR, DOOR_OPEN, iconSvg } from "./paths.ts";
 
-export type Here = "paths" | "character" | "jam" | "gear" | "amp" | "speakers" | "desk" | "remote";
+export type Here = "paths" | "character" | "jam" | "gear" | "amp" | "builder" | "speakers" | "desk" | "remote";
 /** Each place, its page and the word on its door. The lobby and the jam room are one page (jam.html): no ?room is the lobby. */
 export const PLACES: Record<Here, { page: string; label: string; title: string }> = {
   paths: { page: DOOR, label: "Paths", title: "Qollab Studio's front door: learn, build, play" },
@@ -12,11 +12,12 @@ export const PLACES: Record<Here, { page: string; label: string; title: string }
   jam: { page: "/jam.html", label: "Jam room", title: "Qollab Studio: the jam room (the lobby when you're not in a room)" },
   gear: { page: "/studio.html", label: "Gear room", title: "Qollab Studio: the gear room, amps and pedals to cable" },
   amp: { page: "/amp.html", label: "Q Amp", title: "Qollab Studio: Q Amp, the amp as circuits" },
+  builder: { page: "/builder.html", label: "Q Builder", title: "Qollab Studio: Q Builder, a pedal's board to change, scope and remake" },
   speakers: { page: "/speakers.html", label: "Speakers", title: "Qollab Studio: speaker boxes from their build plans, the walls and the sound" },
   desk: { page: "/", label: "Desk", title: "Qollab Studio: the FM DAW desk" },
   remote: { page: "/remote.html", label: "Remote", title: "Qollab Studio: the remote, one screen for a phone (master faders and the instrument you're at)" },
 };
-const ORDER: Here[] = ["paths", "character", "jam", "gear", "amp", "speakers", "desk", "remote"];
+const ORDER: Here[] = ["paths", "character", "jam", "gear", "amp", "builder", "speakers", "desk", "remote"];
 const KEEP = ["room", "studio", "name"];
 
 /** The doors from `here`: every other place, carrying the room in `search` along (never to eqosys or the front door, which need none). */

@@ -32,7 +32,9 @@ pincer on it, **Shift+G** to send your interdictor to the lane, **B** to broadsi
 bastion falls, **V** rakes the base. Or draw a play: right-drag a route from your wings round to a ship, and Shift+right-drag a
 second arm; the arms wait for each other and strike together. Orders to wings take 2 s on the radio (Command Voice, **N**,
 makes them instant), and there is no pause. *Campaign* is a sector of worlds to take turn by turn; *Armada* puts you on a
-dreadnought whose three destroyers run their own wings.
+dreadnought whose three destroyers run their own wings. New to it? *Levels* is eight short battles, easiest first, each
+teaching one idea (a torpedo run, the role triangle, split shields, an escort, the fog, the lane, the rake, a last stand);
+the list says what each one teaches before you start it.
 
 **Controls:** Theater, desktop: drag a box to pick, right-click to move or attack, right-drag a route, **K** ping,
 the minimap (click to look, right-click to order) and the screen edges or arrows move the view, the middle button
@@ -54,7 +56,7 @@ bun run dev                     # in the browser
 bun test                        # the battles and the campaign, played by the tests
 ```
 
-Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`), `&seed=4`, `&look=holo`.
+Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`, `levels`), `/?battle=level&level=escort-run` (an id or a number), `&seed=4`, `&look=holo`.
 
 ## What's in it
 
@@ -63,6 +65,7 @@ Jump links: `/?battle=theater` (or `quick`, `armada`, `campaign`), `&seed=4`, `&
 | `src/sim/world.ts` | the battle: ships, wings, torpedoes, shields by arc, broadsides, point defence, the rake, the lane, one `step`. No DOM. |
 | `src/sim/plays.ts` | the playbook: wing plays (`runPlay`) and the same plays for a fleet of destroyers (`runFleetPlay`) |
 | `src/sim/ai.ts` | the Compact admiral and its tempers, the captains that run a ship and its wings, and `autoCommander` (a by-the-book player for tests, the menu and an empty seat) |
+| `src/sim/levels.ts` | the levels: each one a battle built as data, the line it teaches, and its intended play as a brain (the test plays it to a win, and a fleet with no orders to a loss) |
 | `src/sim/theater.ts` | the Theater: sensors and the fog (rifts, heat shear, pings, firing gives you away), mines, strongpoints and supply, requisitions, the Pyre system. Gravity wells are `wellAt` in `world.ts`. |
 | `src/view/fog.ts`, `minimap.ts` | the fog of war over the table (explored, seen, the veils) and the minimap |
 | `src/sim/scenarios.ts` | the battles: the assault on a base, a picket, a strike on a half-built base, the Armada |
