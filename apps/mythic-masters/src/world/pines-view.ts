@@ -1,7 +1,8 @@
 // The Pine Barrens' landmarks of pines.ts drawn: Batsto's stucco mansion and its tower, the ironstone gristmill, the
 // sawmill and a row of weathered cedar cottages by a tea-brown lake; the galvanised fire tower with its glass cab on
-// Apple Pie Hill; the cranberry bogs, flooded red or still in bronze vines, each behind a sandy dyke with a sluice
-// gate; Atsion Lake's cedar water with its beach, dock and ring of dark white cedars; and the sand road's two wheel
+// Apple Pie Hill; the cranberry bogs, a floating mat of berries or still in bronze vines, each behind a sandy dyke
+// with a board flume for its sluice; Atsion Lake's cedar water with its beach, dock, ring of dark white cedars and
+// the crooked pitch pines over them across the water; and the sand road's two wheel
 // ruts and tea-coloured puddles. Every part is one merged, vertex-coloured mesh built once (about
 // thirty draw calls, only near one of them), stood on the drawn ground every half second while you are in range.
 import * as THREE from "three";
@@ -12,8 +13,9 @@ import { PUDDLES, RUTS, SIGHTS, type Part, type PartKind } from "./pines.ts";
 const SEEN_R = 1500, TOWER_SEEN_R = 2600, PUDDLE_R = 240, PUDDLE_CAP = 96, RUT_R = 150, RUT_CAP = 260;
 const STUCCO = 0xf0e6cc, ROOF = 0x55585a, SHUTTER = 0x2f4a36, TRIM = 0xeeeae0, GLASS = 0x22282e, CEDAR = 0xb4a68e, CEDAR_DARK = 0x655243,
   SHINGLE = 0x4a4541, IRONSTONE = 0x8b5a3e, MORTAR = 0x9a7a62, TIN = 0x7c5c48, DOOR = 0x4a3626, BRICK = 0x8a4a3a, STEEL = 0x9aa1a6,
-  CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0x8c8460, PLANK = 0x5e4a36, TEA = 0x7a4a1c, LOGS = 0x7a5a3c,
-  BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640], SEDGE = [0x8a8a4a, 0x6e7a3c, 0xa69a5c, 0x7c6e3a, 0x5c6a34];
+  CAB = 0xd4d2c8, CAB_GLASS = 0x3c4c5a, DYKE = 0xbfb08a, PLANK = 0x5e4a36, TEA = 0x7a4a1c, LOGS = 0x7a5a3c,
+  BEACH = 0xf0dcae, CEDAR_BARK = 0x6a4a36, CEDAR_LEAF = [0x2c4436, 0x33503c, 0x283c30, 0x3a5640], SEDGE = [0x8a8a4a, 0x6e7a3c, 0xa69a5c, 0x7c6e3a, 0x5c6a34],
+  PITCH_BARK = 0x4a3a30, PITCH_LEAF = [0x3e5a34, 0x46623a, 0x354e2e, 0x50683e];
 
 type G = THREE.BufferGeometry;
 /** A geometry painted one colour, non-indexed and without uvs, so any of them merge. */
@@ -126,6 +128,22 @@ function build(p: Part, seed: number): G[] {
       out.push(paint(new THREE.ConeGeometry(w * 0.22, h * 0.14, 6).translate(0, h * 0.97, 0), CEDAR_LEAF[0]!));
       return out;
     }
+    // A pitch pine as it grows on the barrens' poor sand: a short trunk that kinks as it climbs, a few bare limbs, and
+    // an open, flat-topped crown of separate tufts, `w` across, the sky showing between them
+    case "pitch": {
+      const rnd = mulberry32(seed), h = 7 + 4 * rnd(), out: G[] = [];
+      let at = V(0, 0, 0);
+      for (let k = 1; k <= 3; k++) {
+        const next = V((rnd() - 0.5) * 1.2, (h * 0.78 * k) / 3, (rnd() - 0.5) * 1.2);
+        out.push(rod(at, next, 0.24 - 0.05 * k, PITCH_BARK)); at = next;
+      }
+      for (let i = 0; i < 7; i++) {
+        const a = rnd() * Math.PI * 2, r = (w / 2) * (0.25 + 0.75 * rnd()), y = h * (0.62 + 0.36 * rnd()), tip = V(Math.cos(a) * r, y, Math.sin(a) * r);
+        out.push(rod(V(at.x * 0.8, y - 1.2, at.z * 0.8), tip, 0.06, PITCH_BARK));
+        out.push(paint(new THREE.IcosahedronGeometry(1, 0).scale(1.1 + 0.9 * rnd(), 0.55 + 0.35 * rnd(), 1.1 + 0.9 * rnd()).translate(tip.x, tip.y + 0.3, tip.z), PITCH_LEAF[Math.floor(rnd() * PITCH_LEAF.length)]!));
+      }
+      return out;
+    }
     // a sedge tussock: thin arching blades from one foot, green-gold and straw, as wide as w
     case "sedge": {
       const rnd = mulberry32(seed), out: G[] = [], pos: number[] = [], col: number[] = [], c = new THREE.Color();
@@ -144,17 +162,21 @@ function build(p: Part, seed: number): G[] {
     }
     case "shed": return [box(w, 4, d, CEDAR, 0, 0.6, 0), gable(w, d, 1.2, TIN, 2.6, 0.3), box(0.9, 1.8, 0.08, DOOR, 0, 0.9, f)];
     case "lake": return [surface(w, d, seed, pickOf([TEA, 0x84521f, 0x6e4319, 0x8f5c26]), true)];
-    case "bog": return [surface(w, d, seed, (r) => [0xa3192a, 0xb8262e, 0x8e1424, 0xc8333a, 0x7a1a22][Math.floor(r() * 5)]!)];
+    // a flooded bed at harvest: the berries float up in a mat, deep cranberry mottled darker and brighter in drifts,
+    // with dark tea water showing where the mat thins and a little green-bronze of vine at its edges
+    case "bog": return [surface(w, d, seed, (r, u, v) => {
+      const drift = Math.sin(u * 9.1 + Math.sin(v * 5.3) * 2) * Math.sin(v * 13.7 + u * 3.1), edge = Math.min(u, 1 - u, v, 1 - v);
+      if (drift < -0.55 || (edge < 0.04 && r() < 0.5)) return r() < 0.6 ? 0x3a2414 : 0x4e4428;
+      return (drift > 0.4 ? [0xa8222c, 0x9a1e28, 0xb42a30] : [0x7a1822, 0x6a1620, 0x862028, 0x5e1a1e])[Math.floor(r() * (drift > 0.4 ? 3 : 4))]!;
+    })];
     // vines in rows along the bed: deep bronze and green, a little red where the berries are
     case "vines": return [surface(w, d, seed, (r, u) => (Math.floor(u * 8) % 2 ? [0x4e4a2a, 0x5a3e26, 0x46502c] : [0x5c2e22, 0x4a3a24, 0x6a2a26])[Math.floor(r() * 3)]!)];
     case "dyke": {
       const t = 1.4, hd = d / 2, hw = w / 2;
       return [box(w, 2.3, t, DYKE, 0, -0.65, hd), box(w, 2.3, t, DYKE, 0, -0.65, -hd), box(t, 2.3, d, DYKE, hw, -0.65, 0), box(t, 2.3, d, DYKE, -hw, -0.65, 0)];
     }
-    case "sluice": return [
-      box(w, 1.6, d, PLANK, 0, 0, 0), box(w * 0.8, 0.08, d + 0.3, 0x3a2e22, 0, 0.82, 0), box(0.2, 1.6, 0.2, PLANK, -w / 2, 1.2, 0), box(0.2, 1.6, 0.2, PLANK, w / 2, 1.2, 0),
-      box(w + 0.2, 0.22, 0.24, PLANK, 0, 2.0, 0), rod(V(0, 0.8, 0), V(0, 2.5, 0), 0.05, 0x3a3a3a), paint(new THREE.TorusGeometry(0.4, 0.05, 5, 12).rotateX(Math.PI / 2).translate(0, 2.5, 0), 0x2f2f2f),
-    ];
+    // a flume through the dyke: a low box of grey, weathered boards set flush in the bank, its stop-log boards on top
+    case "sluice": return [box(w, 1.0, d, 0x7e7468, 0, -0.2, 0), box(w * 0.8, 0.06, d + 0.2, 0x6a6054, 0, 0.32, 0)];
     case "firetower": {
       // A galvanised lattice: four legs leaning in from a 6 m square to a 2.6 m one at 18 m, girts at each landing,
       // crossed braces between them on all four faces, a stair inside, and the cab on top.
@@ -188,7 +210,7 @@ function build(p: Part, seed: number): G[] {
 /** How a part meets uneven ground: a building's foot sits at its lowest corner (its walls go on down), water and banks
  *  at the highest, so a flooded bed never shows ground through it, and a lake just over its highest ground (never more than 0.6 m over its lowest, so it never floats). */
 /** A sight's plants: merged into one mesh round its middle, not a mesh each. */
-const GROVE: ReadonlySet<PartKind> = new Set(["cedar", "sedge"]);
+const GROVE: ReadonlySet<PartKind> = new Set(["cedar", "pitch", "sedge"]);
 const HIGH: ReadonlySet<PartKind> = new Set(["bog", "vines", "dyke", "sluice", "beach"]);
 
 export function pinesView(group: THREE.Group, groundY: (x: number, z: number) => number) {
