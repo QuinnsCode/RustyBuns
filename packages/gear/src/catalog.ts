@@ -328,6 +328,16 @@ const list: Gear[] = [
     jacks: { "speaker-in": 1, "speaker-out": 1 },
     speaker: { sensitivity: 107, maxSpl: 139, ratedWatts: 1500, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 160, rearLoss: 6 },
   },
+  {
+    // The Infrabass 218: two 18"s for the lowest octave in a closed box the F218's size, from its data sheet (D0059-00):
+    // 25-80 Hz, 100 dB at 2 V (about 103 dB 1 W / 1 m), 2 x 600 W AES into 2 x 8 ohm, 90 kg, two NL4s.
+    id: "infra-sub-18",
+    what: '2 x 18" infrasonic bass',
+    size: box(1.326, 0.496, 0.723),
+    kg: 90,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 103, maxSpl: 134, ratedWatts: 1200, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 25, highCut: 80, rearLoss: 3 },
+  },
   // The sculpted array (Void's Air Motion V2): three moulded fibreglass conical horns (12" LF, 8" MF, 1.5" HF) on a
   // steel frame, no cabinet, 853.9 x 671.2 x 659.9 mm and 35 kg, 60 x 50 degrees, flown or on a pole in pairs, over the
   // arc subs. Sound numbers as before (its sheet: 106 dB LF, 137 dB peak).

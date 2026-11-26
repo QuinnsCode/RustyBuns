@@ -70,6 +70,7 @@ export const GEAR_SIZES = {
   "horn-sub-21": [1.686, 0.582, 0.867],
   "horn-sub-18": [1.326, 0.496, 0.723],
   "horn-sub-24": [0.702, 0.992, 1.056],
+  "infra-sub-18": [1.326, 0.496, 0.723],
   "sculpted-3way": [0.8539, 0.6712, 0.6599],
   "arc-sub-18": [0.6568, 0.55, 0.6952],
   "amp-rack-12u": [0.6, 1.05, 0.75],
@@ -1608,6 +1609,52 @@ function f124Pieces(): Record<string, Build> {
 }
 
 /**
+ * The infrasonic bass, as the Funktion-One Infrabass 218 is drawn on its data sheet (IB218-F1-DS=D0059-00) and its 2002
+ * product drawing, piece by piece (no maker's name: the face either side of the slot, where it is embossed, stays
+ * plain): two 18"s in a closed box of 18 mm birch ply, the F218's size (1326 x 496 x 723), textured violet.
+ * - cabinet: the box either side of a slot 239 wide down the middle of the front, and behind the slot
+ * - slot: its two ply walls, the near-black well at its back and the floor curving up into it
+ * - grille: the hex-perforated steel bowed into the slot, flush at the top and 130 back at its foot
+ * - hardware: an access lid in each side with two kidney handles, the four caster plates and the NL4 plate on the back
+ */
+function ib218Pieces(): Record<string, Build> {
+  const [w, h, d] = GEAR_SIZES["infra-sub-18"], t = 0.018, f = d / 2, sw = mm(239), deep = 0.2, P = pieceBuild;
+  const cab = P(), slotB = P(), grille = P(), hw = P(), side = (w - sw) / 2, cy = h / 2;
+  // ---- cabinet: the top and bottom run across the slot, the two halves either side of it and the block behind it
+  for (const y of [t / 2, h - t / 2]) cab.pieces.push(box("violet", [w, t, d], [0, y, 0], { bevel: 0.006 }));
+  for (const s of [-1, 1]) cab.pieces.push(box("violet", [side, h - 2 * t, d], [s * (sw / 2 + side / 2), cy, 0], { bevel: 0.002 }));
+  cab.pieces.push(box("violet", [sw + 0.002, h - 2 * t, d - deep], [0, cy, -d / 2 + (d - deep) / 2]));
+  // the back is one sheet across all three
+  cab.pieces.push(box("violet", [w - 0.004, h - 2 * t, 0.002], [0, cy, -d / 2 - 0.0008]));
+  // ---- slot: the walls a shade in, the dark back, the curved floor where the grille ends
+  for (const s of [-1, 1]) slotB.pieces.push(box("violet", [0.004, h - 2 * t, deep], [s * (sw / 2 - 0.002), cy, f - deep / 2], { bevel: 0.001 }));
+  slotB.pieces.push(box("cavity", [sw - 0.008, h - 2 * t, 0.004], [0, cy, f - deep + 0.003]));
+  slotB.pieces.push(prism("cavity", [[f - 0.02, t], [f - deep, t], [f - deep, mm(110)], [f - 0.14, mm(64)], [f - 0.06, mm(28)]], sw - 0.008));
+  // ---- grille: six bands down the slot, each turned to follow the bow
+  const bands = 6, y0 = mm(70), y1 = h - t, z = (y: number) => f - 0.004 - 0.13 * (1 - (y - y0) / (y1 - y0)) ** 2;
+  for (let i = 0; i < bands; i++) {
+    const ya = y0 + ((y1 - y0) * i) / bands, yb = y0 + ((y1 - y0) * (i + 1)) / bands, ym = (ya + yb) / 2, tilt = Math.atan2(z(yb) - z(ya), yb - ya);
+    const m = new THREE.Matrix4().makeTranslation(0, ym, z(ym)).multiply(new THREE.Matrix4().makeRotationX(tilt));
+    grille.pieces.push(...grilleSlab(sw - 0.01, Math.hypot(yb - ya, z(yb) - z(ya)) + 0.002, 0.004, 0, -0.004, 0.002, m));
+  }
+  // ---- hardware: the access lids with their kidney handles, the caster plates, the NL4 plate
+  const lidZ = f - mm(265) - mm(201);
+  for (const s of [-1, 1]) {
+    hw.pieces.push(box("knob", [0.002, mm(445), mm(411)], [s * (w / 2 + 0.0008), cy, lidZ], { bevel: 0.0008 }));
+    hw.pieces.push(box("violet", [0.003, mm(437), mm(403)], [s * (w / 2 + 0.0015), cy, lidZ], { bevel: 0.001 }));
+    for (const y of [cy - mm(119), cy + mm(119)]) hw.pieces.push(box("cavity", [0.005, mm(103), mm(46)], [s * (w / 2 + 0.002), y, f - mm(368)], { bevel: 0.002 }));
+  }
+  for (const x of [-0.435, 0.435]) for (const y of [mm(74), mm(401)]) {
+    hw.pieces.push(box("metal", [mm(86), mm(86), 0.004], [x, y, -d / 2 - 0.002], { bevel: 0.001 }));
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) hw.pieces.push(disc("metal", 0.005, 0.004, "z", [x + dx * mm(32), y + dy * mm(32), -d / 2 - 0.004], 8));
+  }
+  plate(hw, mm(86), mm(128), [0, mm(272), -d / 2 - 0.004]);
+  jacks(hw, ["speaker-in", "speaker-out"], "back", [0, mm(300), -d / 2 - 0.008], [0, -0.056, 0]);
+  mark(hw, "grab", [w / 2 + 0.012, cy, 0], [1, 0, 0]);
+  return { cabinet: cab, slot: slotB, grille, hardware: hw };
+}
+
+/**
  * The 15" passive top, as the JBL JRX215 is drawn on its spec sheet (SSJRX215, 2013), piece by piece: a carpeted
  * MDF box narrowing to the back (460 at the front, 353 at the back, 432 deep, 686 tall on 13 mm feet), a hex grille
  * in a steel frame over the whole front, the waveguide plate high up, the 15" under it with a port slot either side
@@ -2622,7 +2669,7 @@ function la108Pieces(): Record<string, Build> {
  * a time or pulled apart (`gearPieces`) and `gear` merges them (`whole`). */
 const PIECES: Partial<Record<GearId, () => Record<string, Build>>> = {
   "stack-mid-high": res2Pieces, "stack-mid-bass": f215Pieces,
-  "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218), "horn-sub-24": f124Pieces,
+  "horn-sub-21": () => binPieces("horn-sub-21", F221), "horn-sub-18": () => binPieces("horn-sub-18", F218), "horn-sub-24": f124Pieces, "infra-sub-18": ib218Pieces,
   "sculpted-3way": airMotionPieces, "triple-21-sub": incubusPieces, "arc-sub-18": arcline118Pieces,
   "tri-amp-top": tfs780hPieces, "tri-amp-bass": tfs780lPieces,
   "top-15-passive": jrx215Pieces, "wedge-12-passive": prx412mPieces, "line-array-box": a12Pieces,
@@ -2673,6 +2720,7 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "horn-sub-21": whole("horn-sub-21"),
   "horn-sub-18": whole("horn-sub-18"),
   "horn-sub-24": whole("horn-sub-24"),
+  "infra-sub-18": whole("infra-sub-18"),
   "sculpted-3way": whole("sculpted-3way"),
   "arc-sub-18": whole("arc-sub-18"),
   "amp-rack-12u": ampRack12,

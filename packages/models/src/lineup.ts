@@ -31,6 +31,7 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "horn-sub-21": { maker: "Funktion-One", product: "F221", published: [1.686, 0.582, 0.867], issue: 5948 }, // the horn bass bins the Res2 stacks on
   "horn-sub-18": { maker: "Funktion-One", product: "F218 MkII", published: [1.326, 0.496, 0.723], issue: 5948 },
   "horn-sub-24": { maker: "Funktion-One", product: "F124", published: [0.702, 0.992, 1.056], issue: 6013 },
+  "infra-sub-18": { maker: "Funktion-One", product: "Infrabass 218", published: [1.326, 0.496, 0.723], issue: 6013 },
   "stack-mid-bass": { maker: "Funktion-One", product: "F215 MkII", published: [0.59, 0.845, 0.603], issue: 5957 },
   "tri-amp-top": { maker: "Turbosound", product: "Flashlight TFS-780H", published: [0.574, 0.825, 0.773], issue: 5958 },
   "tri-amp-bass": { maker: "Turbosound", product: "Flashlight TFS-780L", published: [0.574, 0.825, 0.773], issue: 5958 },
