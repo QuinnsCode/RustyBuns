@@ -7,7 +7,7 @@ import { arr, obj, oneOf, str, type Of } from "./guard.ts";
 
 /** Every connector type, by its trade name. */
 export const CONNECTOR_TYPES = [
-  "nl4", "nl8", "xlr3", "combo", "trs", "ts", "rca",
+  "nl4", "nl8", "nl2-combo", "ep6", "xlr3", "combo", "trs", "trs-mini", "ts", "rca", "ethercon",
   "powercon-blue", "powercon-grey", "powercon-true1", "iec", "edison",
   "spade", "coax", "multipin",
 ] as const;
@@ -70,6 +70,15 @@ export const CONNECTORS: { readonly [T in ConnectorType]: Connector & { type: T 
     type: "nl8", name: "speakON NL8", carries: "speaker", pins: speakonPins(4), lock: "twist", genders: ["none"], colour: "black", takes: ["nl4"],
     what: "The bigger eight-pole speakON: four amp channels down one cable, for a three- or four-way box. Its socket also takes an NL4.",
   },
+  "nl2-combo": {
+    type: "nl2-combo", name: "speakON/jack combo", carries: "speaker", pins: speakonPins(1), lock: "twist", genders: ["female"], colour: "black", takes: ["nl4", "ts"],
+    what: "A passive monitor's speaker socket that takes a speakON (only its 1+/1- pair) or a quarter-inch speaker lead in the same hole.",
+  },
+  ep6: {
+    type: "ep6", name: "EP-6", carries: "speaker", lock: "screw", genders: ["male", "female"], colour: "black", takes: [],
+    pins: [pin("1", "low-mid minus"), pin("2", "low-mid plus"), pin("3", "high-mid minus"), pin("4", "high-mid plus"), pin("5", "high minus"), pin("6", "high plus")],
+    what: "A round six-pin multipin from the tri-amp horn era: three amp channels down one speaker cable, screwed on with a collar.",
+  },
   xlr3: {
     type: "xlr3", name: "XLR", carries: "signal", lock: "latch", genders: ["male", "female"], colour: "black", takes: [],
     pins: [pin("1", "ground: the cable's shield"), pin("2", "hot: the signal"), pin("3", "cold: the signal upside down, so noise cancels")],
@@ -85,6 +94,11 @@ export const CONNECTORS: { readonly [T in ConnectorType]: Connector & { type: T 
     pins: [pin("T", "tip: hot"), pin("R", "ring: cold"), pin("S", "sleeve: ground")],
     what: "A quarter-inch jack with a tip, a ring and a sleeve: a balanced line, or a stereo pair on headphones.",
   },
+  "trs-mini": {
+    type: "trs-mini", name: "3.5 mm jack", carries: "signal", lock: "friction", genders: ["male", "female"], colour: "black", takes: [],
+    pins: [pin("T", "tip: left"), pin("R", "ring: right"), pin("S", "sleeve: ground")],
+    what: "The small headphone-size jack: a phone or a laptop played straight into a powered speaker.",
+  },
   ts: {
     type: "ts", name: "quarter-inch TS", carries: "signal", lock: "friction", genders: ["male", "female"], colour: "black", takes: [],
     pins: [pin("T", "tip: the signal"), pin("S", "sleeve: ground")],
@@ -94,6 +108,11 @@ export const CONNECTORS: { readonly [T in ConnectorType]: Connector & { type: T 
     type: "rca", name: "RCA", carries: "signal", lock: "friction", genders: ["male", "female"], colour: "black", takes: [],
     pins: [pin("C", "centre: the signal"), pin("S", "shell: ground")],
     what: "The small phono plug on a turntable, a media player or hi-fi: unbalanced, short runs only.",
+  },
+  ethercon: {
+    type: "ethercon", name: "etherCON", carries: "digital", lock: "latch", genders: ["female"], colour: "black", takes: [],
+    pins: [pin("1-8", "a network cable's eight wires: audio over the network (Dante) and control")],
+    what: "A network socket in a metal latching shell: a powered line array box takes its audio and its settings over it.",
   },
   "powercon-blue": {
     type: "powercon-blue", name: "powerCON in (blue)", carries: "mains", pins: mains, lock: "twist", genders: ["none"], colour: "blue", takes: [],

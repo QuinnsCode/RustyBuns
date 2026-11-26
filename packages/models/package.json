@@ -24,6 +24,7 @@
     "./catalog": "./src/catalog.ts",
     "./scenery": "./src/scenery.ts",
     "./gear": "./src/gear.ts",
+    "./panels": "./src/panels.ts",
     "./lineup": "./src/lineup.ts",
     "./surfaces": "./src/surfaces.ts",
     "./textures/*": "./textures/*",
