@@ -50,14 +50,15 @@ test.skipIf(!hasChrome)("a page that never loads names what it waits on, and a w
     const stalled = await load(chrome.cdp, tab, url("/stuck"), 0, 2000).then(() => null, (e: unknown) => e);
     expect(stalled).toBeInstanceOf(LoadStalled);
     expect(stalled instanceof LoadStalled && stalled.pending).toContain(url("/never.png"));
-    expect(String(stalled)).toContain("/stuck never finished loading after 2.0 s: still waiting on /never.png");
+    // the time it says is the time it waited, which a busy runner overshoots by a tenth or two
+    expect(String(stalled)).toMatch(/\/stuck never finished loading after 2\.\d s: still waiting on .*\/never\.png/);
 
     await load(chrome.cdp, tab, url("/fine"), 0, 5000);
     await until(tab, "window.n === 1", "the script", 2000);
     const t0 = Date.now();
     const never = await until(tab, "window.n + 1", "n to reach 3", 1000).then(() => null, (e: unknown) => e);
     expect(never).toBeInstanceOf(NeverTrue);
-    expect(String(never)).toContain("n to reach 3 never came true in 1.0 s (last look: 2)");
+    expect(String(never)).toMatch(/n to reach 3 never came true in 1\.\d s \(last look: 2\)/);
     expect(Date.now() - t0).toBeLessThan(2000);
   } finally { await tab.close(); }
 });

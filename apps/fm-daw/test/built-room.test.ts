@@ -1,27 +1,13 @@
 // A room you build, walked into (#5843), in headless Chrome over CDP (scripts/chrome.ts): on /rooms.html start from
 // the Desert Gathering, park a camper van and set a fire pit out of doors, take the link qrooms.enter() hands out
 // (the room rides in it: a fresh browser has none of the page's storage), and walk up to each in /jam.html.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
 // the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
 setDefaultTimeout(240_000); // vite serves cold, then a 3D room is built and walked in headless Chrome's software GL
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 30_000, 50);

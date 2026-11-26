@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { arr, check, num, obj, opt, rec, str, type Guard, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { blockerMark } from "../apps/agent-office/ester/blockers.ts";
 import { appDir, appDirs, appOf as appOfPath } from "./app-dirs.ts";
 
 const REPO = "QuinnsCode/RustyBuns", WORKFLOWS = ["apps.yml", "typecheck.yml"];
@@ -399,7 +400,7 @@ async function failures(rows: Row[], using: Map<string, Set<string>>, logs: bool
 }
 
 export type Failed = { suite: string; tests: string[]; touched?: boolean; at: string; pr: number | string; run: number };
-export type Blocker = { day: string; test: string; prs: (number | string)[]; untouched: number; first: string; last: string; runs: number[] };
+export type Blocker = { day: string; test: string; prs: (number | string)[]; untouched: number; first: string; last: string; runs: number[]; suites: string[] };
 
 /** The same test failing on 3+ PRs in one day is main broken (or a flake), whatever those PRs touched: a PR that
  * moved packages/util "touches" qcrm, yet didn't break its demo. A job with no test names counts only when untouched.
@@ -412,7 +413,7 @@ export function blockersOf(fails: Failed[], min = 3): Blocker[] {
   }
   return [...blocks].map(([k, fs]) => {
     const [d, test] = k.split("\t") as [string, string], times = fs.map((f) => f.at).sort();
-    return { day: d, test, prs: [...new Set(fs.map((f) => f.pr))], untouched: new Set(fs.filter((f) => f.touched === false).map((f) => f.pr)).size, first: times[0]!, last: times.at(-1)!, runs: [...new Set(fs.map((f) => f.run))] };
+    return { day: d, test, prs: [...new Set(fs.map((f) => f.pr))], untouched: new Set(fs.filter((f) => f.touched === false).map((f) => f.pr)).size, first: times[0]!, last: times.at(-1)!, runs: [...new Set(fs.map((f) => f.run))], suites: [...new Set(fs.map((f) => f.suite))] };
   }).filter((b) => b.prs.length >= min).sort((a, b) => b.prs.length - a.prs.length);
 }
 
@@ -438,6 +439,7 @@ export function issuesFor(blockers: Blocker[], existing: Issue[], cap = 5): { ti
         `Runs: ${b.runs.slice(0, 10).map((r) => `https://github.com/${REPO}/actions/runs/${r}`).join(" ")}`,
         "", "Fix it on main (or skip the flake and file it), then close this. Opened by `bun scripts/ci-report.ts --file` (ci-blockers.yml).",
         "", `<!-- ${dayMark} -->`,
+        blockerMark({ test: b.test, prs: b.prs.filter((p): p is number => typeof p === "number"), checks: b.suites }),
       ].join("\n"),
     });
   }

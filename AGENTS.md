@@ -29,7 +29,7 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
   images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob only while he serves (`~/builder/serve` on him: the owner turns him on for runs)
-  and wait otherwise (one suite at a time on battery, wait under 20%). Losing him mid-run waits and starts over, never fails. Shut, the
+  and wait otherwise (on battery up to three suites at once, none new under 20%, and at 13% he cuts them all off). Losing him or a cut-off mid-run waits and starts over, never fails. Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
   and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob not serving) `run` runs the test here, and a base-ref run
@@ -90,7 +90,9 @@ Dexter counts code-mode programs and tool calls per reply: a session at 0 progra
 - `bun run issue <n> [n ...]`: an issue's brief (header, PRs that close it, body cut at a paragraph, last three comments); `--full` for all of it.
 - `bun run probe <app> [path] [--js <expr>]`: a game's state as JSON from headless Chrome, plus its errors, in one call: no tabs,
   navigate, resize, script and screenshot. `--list` names each game's `window` handle (`mythicMasters`, `twoFronts`, `golf`, `__recon`)
-  and what it does; `--shot out.png` when you need to see it; `--url` for a server already running. A new game gets a handle on
+  and what it does; `--shot out.png` when you need to see it; `--url` for a server already running.
+  A PR that changes how an app looks runs `--before-after <dir>` (origin/main's copy of the app next to your working
+  tree, one `before-after.html`), publishes that page as an artifact and links it under `Before / after` in its body. A new game gets a handle on
   `window` with a `state()` and a row in `HANDLES` (`scripts/probe.ts`), so the next agent asks instead of screenshots.
 - `bun run climbs`: every open hill climb (a score chased round by round) with its last score, target and days idle.
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it, `--wait` to keep trying each minute while the office is full) hands

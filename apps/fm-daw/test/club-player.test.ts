@@ -5,28 +5,15 @@
 // and the close-up's bars, which stay a screen's worth at every zoom so it draws at 60 fps on a long track. Then the
 // nudge (a tap a press, the 10x one held), a hand on the waveform holding the track like a record, a key of your own
 // from Settings (src/dj/prefs.ts), and the waveform's colours: a kick at the bass end, a clap at the highs.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 import { bars, BEND_MAX, midiJog, peakLevels, TICKS_PER_TURN, toneOf, ZOOMS } from "../src/dj/player.ts";
 import { actionOf, bindKey, DEFAULT_PREFS, Prefs } from "../src/dj/prefs.ts";
 import { check } from "@rustybuns/util/guard";
 
 setDefaultTimeout(120_000); // vite serves the decks page cold, then plays audio in headless Chrome
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 interface Deck { playing: boolean; pos: number; rate: number; cue: number }
 interface Player { mode: "vinyl" | "cd"; touched: boolean; bend: number }
@@ -35,10 +22,7 @@ test.skipIf(!hasChrome)("a night on the club players: scratch, nudge, CD mode, c
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.qdecks?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "window.qdecks?.state()");
   const mouse = (type: string, x: number, y: number) => tab.call("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
   const centre = (sel: string) => page<{ x: number; y: number; r: number }>(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, r: b.width / 2 }; })()`);
   const deck = () => page<Deck>("qdecks.state().decks[0]");
@@ -107,10 +91,7 @@ test.skipIf(!hasChrome)("the nudge, a hand on the waveform, and a key of your ow
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.qdecks?.state()").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "window.qdecks?.state()");
   const mouse = (type: string, x: number, y: number) => tab.call("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
   const click = async (sel: string) => { const b = await box(sel); await mouse("mousePressed", b.x, b.y); await mouse("mouseReleased", b.x, b.y); };
   const box = (sel: string) => page<{ x: number; y: number; w: number; h: number; top: number }>(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width, h: b.height, top: b.y }; })()`);

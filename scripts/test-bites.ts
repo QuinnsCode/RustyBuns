@@ -226,8 +226,10 @@ export async function changedSource(repo: string, base: string): Promise<Map<str
   return addedLines(diff);
 }
 
-/** Changed source lines (not tests) that `tests` never ran, by file; a file they never loaded maps to "unloaded". */
-export async function unrunLines(repo: string, base: string, tests: string[], by = Infinity): Promise<Map<string, number[] | "unloaded">> {
+/** Changed source lines (not tests) that `tests` never ran, by file; a file they never loaded maps to "unloaded".
+ *  One test file a run, so `by` (epoch ms) holds: past it no file starts (each goes in `late`) and the one running is
+ *  stopped. An app's twenty browser files in one run outlived CI's 20 minutes (#5940). */
+export async function unrunLines(repo: string, base: string, tests: string[], by = Infinity, late: string[] = []): Promise<Map<string, number[] | "unloaded">> {
   const out = new Map<string, number[] | "unloaded">();
   if (!tests.length) return out;
   const added = await changedSource(repo, base);
@@ -235,10 +237,15 @@ export async function unrunLines(repo: string, base: string, tests: string[], by
   const hits = new Map<string, Map<number, number>>();
   const scratch = mkdtempSync(join(tmpdir(), "test-lines-"));
   try {
-    for (const [cwd, group] of Map.groupBy(tests, (t) => home(repo, t))) {
-      if (Date.now() > by) break; // what wasn't run reads as never loaded: a report, not a gate
-      const dir = join(scratch, String(hits.size));
-      await $`bun test --coverage --coverage-reporter=lcov --coverage-dir=${dir} ${group.map((t) => "./" + relative(cwd, join(repo, t)))}`.cwd(cwd).quiet().nothrow();
+    for (const [i, test] of tests.entries()) {
+      // what wasn't run reads as never loaded: a report, not a gate
+      if (Date.now() > by) { late.push(test); continue; }
+      const cwd = home(repo, test), dir = join(scratch, String(i));
+      const run = Bun.spawn(["bun", "test", "--coverage", "--coverage-reporter=lcov", `--coverage-dir=${dir}`, "./" + relative(cwd, join(repo, test))], { cwd, stdout: "ignore", stderr: "ignore", detached: true });
+      const stop = setTimeout(() => void killGroup(run, 2000), Math.max(1000, Math.min(by - Date.now(), 2 ** 31 - 1)));
+      await run.exited;
+      clearTimeout(stop);
+      await killGroup(run, 0);
       const lcov = Bun.file(join(dir, "lcov.info"));
       if (!(await lcov.exists())) continue;
       let seen: Map<number, number> | undefined;
@@ -293,14 +300,15 @@ if (import.meta.main) {
   // short still says what it checked
   const mi = process.argv.indexOf("--minutes");
   const by = Date.now() + (mi > 0 ? Number(process.argv[mi + 1]) || 12 : 12) * 60_000;
-  const late: string[] = [];
+  const late: string[] = [], unlined: string[] = [];
   const each = (file: string, passes: boolean) => passes && console.log(`${file}: passes on ${base} too, proves nothing`);
   // the run on the base and the coverage run on this tree don't touch each other: side by side, not one after the other
   const tests = await onlyTests(repo, base);
   const [passing, unrun] = await Promise.all([
     tests ? files : passesOnBase(repo, base, files, { by, late, each }),
-    process.argv.includes("--lines") ? unrunLines(repo, base, files, by) : undefined,
+    process.argv.includes("--lines") ? unrunLines(repo, base, files, by, unlined) : undefined,
   ]);
+  if (unlined.length) console.log(`out of time: ${unlined.length} not run for --lines (their lines count as not loaded): ${unlined.join(", ")}`);
   if (tests) {
     console.log(`only tests changed since ${base}: they pass there as here, so none was run on it`);
     for (const f of passing) each(f, true);

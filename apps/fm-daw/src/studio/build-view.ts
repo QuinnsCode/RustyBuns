@@ -99,10 +99,13 @@ export class BuildView {
     new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
-  /** Draw `room`, with `picked` ringed, and the outside walls as `walls` says. */
-  show(room: StudioDef, picked: string | undefined, walls: WallsMode = this.walls) {
+  private heatMap: HTMLCanvasElement | null = null;
+  private heatTex: THREE.Texture | null = null;
+  /** Draw `room`, with `picked` ringed, the outside walls as `walls` says, and `heat` (coverage.ts heatCanvas, the PA's
+   *  coverage over the whole ground) on the floor when given. */
+  show(room: StudioDef, picked: string | undefined, walls: WallsMode = this.walls, heat: HTMLCanvasElement | null = null) {
     const fresh = this.room?.size.w !== room.size.w || this.room?.size.d !== room.size.d;
-    this.room = room; this.picked = picked; this.walls = walls;
+    this.room = room; this.picked = picked; this.walls = walls; this.heatMap = heat;
     if (fresh) { this.dist = Math.max(room.size.w, room.size.d) * 1.15 + 4; this.target.set(0, 0, 0); }
     this.build();
   }
@@ -133,10 +136,18 @@ export class BuildView {
     // the outside walls: a wall between you and the room is cut down to a skirting (in cutaway)
     const cam = this.camera.position, T = 0.14;
     const sides: [Side, number, number, number, number][] = [["front", 0, d / 2 + T / 2, w + 2 * T, T], ["back", 0, -d / 2 - T / 2, w + 2 * T, T], ["left", -w / 2 - T / 2, 0, T, d], ["right", w / 2 + T / 2, 0, T, d]];
-    // out of doors there are no walls: the rig's stacks and the rugs stand on the sand instead
+    // the stacks you placed, indoors or out (pa-room.ts rigStacks)
+    const rig = roomRig(room);
+    for (const [i, st] of rigStacks(room).entries()) add(new THREE.Group().add(paStack(st.at, st.yaw, undefined, rig.stack, st.splay, st.pins)), `stack:${i}`, { stack: i });
+    // the coverage map laid on the floor, just over the grid
+    this.heatTex?.dispose(); this.heatTex = null;
+    if (this.heatMap) {
+      const tex = this.heatTex = new THREE.CanvasTexture(this.heatMap); tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.LinearFilter;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.8, depthWrite: false }));
+      m.position.y = 0.012; m.renderOrder = 1; this.root.add(m);
+    }
+    // out of doors there are no walls: the rugs stand on the sand instead
     if (room.outdoor) {
-      const rig = roomRig(room);
-      for (const [i, st] of rigStacks(room).entries()) add(new THREE.Group().add(paStack(st.at, st.yaw, undefined, rig.stack, st.splay, st.pins)), `stack:${i}`, { stack: i });
       this.root.add(rugs(room.outdoor));
       // the fire pit and the parked vans, as the room stands them
       if (room.outdoor.fire) { const f = firePit(room.outdoor.seed + 5).group; f.position.set(room.outdoor.fire.at[0], 0, room.outdoor.fire.at[1]); this.root.add(f); }

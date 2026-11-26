@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { blockerOf } from "../ester/blockers.ts";
 import { failedTests, spreadWatch, waitLine, type Gh, type SpreadFloor } from "../live/spread.ts";
 
 const NOW = Date.parse("2026-11-25T06:00:00Z");
@@ -76,6 +77,8 @@ test("a test red on three PRs gets one issue, one hire and a word to each PR's w
   expect(r.issues[0]!.body).toContain("https://x/runs/3");
   expect(r.issues[0]!.body).toContain("Checks: test fm-daw\n");
   for (const n of [5879, 5880, 5884, 5887]) expect(r.issues[0]!.body).toContain(`#${n}`);
+  // Mervin and scripts/after.ts read the blocker back from the body's mark
+  expect(blockerOf(r.issues[0]!)).toMatchObject({ test: SLOW, prs: [5879, 5880, 5884, 5887], checks: ["test fm-daw"], issue: r.issues[0]!.number });
   expect(queued).toEqual([{ prompt: expect.stringContaining("Fixes #6000"), issue: 6000 }]);
   // 5887 is red on another test too, so its worker isn't told to just wait
   expect(told).toEqual(["w1", "w2", "w3"].map((id) => ({ id, text: waitLine(SLOW, 6000) })));

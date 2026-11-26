@@ -31,6 +31,7 @@ import { screenTerminal } from "./screen.ts";
 import { plainCheckout, slowCheckout, startFromDefault } from "./checkout.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
+import { MACHINE_PATCHES } from "../live/breaker.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
 import { aotName, requireAot } from "./aot.ts";
 
@@ -73,7 +74,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended checkout pool breaker`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -180,6 +181,17 @@ async function prepare(tag: string) {
     "                if (why)\n                    this.events.toast(`${info.name}'s bun install: ${why}`, 'warn');\n" +
     "                if (this.workers.get(id) === w)\n                    this.launch(w, __rbFirst, undefined);\n            });\n" +
     "        else\n            this.launch(w, __rbFirst, undefined);\n");
+
+  // 6c. a slow breaker on the worker ceiling (live/breaker.ts): CPU or memory at 90% for 30 s holds it at the workers
+  // there now, and each 2 minutes under 90% opens it by one, back to the normal cap; the queues look again on each step
+  for (const [from, to] of MACHINE_PATCHES) patch("machine.js", from, to);
+  prepend("office/services.js", "import { holdMachine as __rbHoldMachine } from '../rb-breaker.js';\n");
+  patch("office/services.js", "    machine.start();\n",
+    "    machine.start();\n    __rbHoldMachine(machine, () => setImmediate(() => { for (const f of floors.values()) f.queue.pump(); }));\n");
+  patch("hooks/office-workers.js", "            ...(ctx.ledger.hiringPaused ? { hiringPaused: ctx.ledger.hiringPaused } : {}),\n",
+    "            ...(ctx.ledger.hiringPaused ? { hiringPaused: ctx.ledger.hiringPaused } : {}),\n            ...(ctx.machine.__rbWhy?.() ? { cooling: ctx.machine.__rbWhy() } : {}),\n");
+  patch("../../../bin/office-workers.js", "${view?.hiringPaused ? ` · hiring paused: ${view.hiringPaused}` : ''}`",
+    "${view?.hiringPaused ? ` · hiring paused: ${view.hiringPaused}` : ''}${view?.cooling ? ` · ${view.cooling}` : ''}`");
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
@@ -423,7 +435,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["live/screen.ts", "rb-screen.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/breaker.ts", "rb-breaker.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/reaper.ts", "rb-reaper.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["live/screen.ts", "rb-screen.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {

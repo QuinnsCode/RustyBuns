@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { HANDLES, MAX_OUT, asyncBody, listLines, parse, show } from "./probe.ts";
 
 test("the app, path and flags parse, and a game's default expression is its state", () => {
@@ -29,3 +32,16 @@ test("--js is an async function body: statements run and the last expression is 
   expect(await run("const x = 6; return x")).toBe(6);
   expect(await run("[1, 2].map(n => { const m = n * 2; return m }) // doubled")).toEqual([2, 4]);
 });
+
+test("--before-after shoots the base's copy of an app and the working tree's, side by side in one page (#5909)", async () => {
+  const out = mkdtempSync(join(tmpdir(), "probe-pair-"));
+  const run = Bun.spawnSync(["bun", "scripts/probe.ts", "hello-world", "--before-after", out, "--base", "HEAD", "--settle", "500", "--js", "document.title"], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe" });
+  const said = run.stdout.toString() + run.stderr.toString();
+  expect(run.exitCode, said).toBe(0);
+  expect(said).toContain("before (HEAD):");
+  const png = (f: string) => [...readFileSync(join(out, f)).subarray(1, 4)].map((c) => String.fromCharCode(c)).join("");
+  expect([png("before.png"), png("after.png")]).toEqual(["PNG", "PNG"]);
+  const html = readFileSync(join(out, "before-after.html"), "utf8");
+  expect(html.match(/data:image\/png;base64,/g)?.length).toBe(2);
+  expect(html).toContain("Before: HEAD");
+}, 180_000);

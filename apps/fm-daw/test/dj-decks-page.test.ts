@@ -2,25 +2,12 @@
 // again and the jog stretches the loop clockwise and shortens it back; OUT once more is done, RELOOP plays on out of
 // it. Then +8% with master tempo on still sounds (the stretch in the deck's worklet), filter 1's LFO keeps to deck A's
 // beat, and with the BRAKE knob up, pause coasts the record to a stop instead of cutting it.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite, waitFor } from "./browser-kit.ts";
 
 setDefaultTimeout(120_000); // vite serves the decks page cold, then plays audio in headless Chrome
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output", "--autoplay-policy=no-user-gesture-required"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser("--autoplay-policy=no-user-gesture-required");
 
 type Deck = { playing: boolean; pos: number; rate: number; speed: number; loop: { start: number; end: number } | null; loopIn: number | null; adjust: string | null; grid: { bpm: number; offset: number } | null };
 
@@ -28,10 +15,7 @@ test.skipIf(!hasChrome)("deck A: loop in and out, the jog stretching the loop, m
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("window.qdecks?.state()?.decks").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "window.qdecks?.state()?.decks");
   const a = () => page<Deck>("qdecks.state().decks[0]");
   const loudest = () => page<number>(`(async () => { let m = 0; for (let i = 0; i < 20; i++) { m = Math.max(m, qdecks.state().meters.channels[1]); await new Promise((r) => setTimeout(r, 20)); } return m; })()`);
 
@@ -100,10 +84,7 @@ test.skipIf(!hasChrome)("loading tracks: deck B's upload button, a drop on lane 
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  const until = async (what: string, expr: string, ms = 30_000) => {
-    for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await page(expr).catch(() => false)) return;
-    throw new Error(`never saw ${what}; state: ${JSON.stringify(await page("({ decks: qdecks.state()?.decks.map((d) => d.name), library: qdecks.state()?.library, waiting: qdecks.state()?.waiting })").catch(() => null))}`);
-  };
+  const until = (what: string, expr: string, ms?: number) => waitFor(tab, what, expr, ms, "({ decks: qdecks.state()?.decks.map((d) => d.name), library: qdecks.state()?.library, waiting: qdecks.state()?.waiting })");
   await until("the decks", "!!window.qdecks");
   await page("qdecks.start()");
   await until("the demo tracks on", "qdecks.state().decks.every((d) => d.name)");
@@ -138,7 +119,7 @@ test.skipIf(!hasChrome)("a flick of deck A's close-up coasts on and slows to a s
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  for (const end = Date.now() + 30_000; !(await page("!!window.qdecks?.start()?.decks.every((d) => d.length)").catch(() => false)); await Bun.sleep(100)) if (Date.now() > end) throw new Error("no demo tracks");
+  await waitFor(tab, "the demo tracks", "window.qdecks?.start()?.decks.every((d) => d.length)");
   await page(`(window.hand = ${HAND}, true)`);
   // the coast runs on the page's frames: a starved runner gets a clear word, not a wrong position
   const frames = await page<number>("new Promise((k) => { let n = 0; const f = () => (++n < 10 ? requestAnimationFrame(f) : k(n)); requestAnimationFrame(f); setTimeout(() => k(n), 3000); })");
@@ -164,7 +145,7 @@ test.skipIf(!hasChrome)("deck A's overview: paused, a click puts the track there
   const tab = await openTab(chrome.cdp, { w: 1280, h: 900 });
   await load(chrome.cdp, tab, `${vite.url}/decks.html`, 0);
   const page = <T>(expr: string) => tab.eval<T>(`(async () => (${expr}))()`);
-  for (const end = Date.now() + 30_000; !(await page("!!window.qdecks?.start()?.decks.every((d) => d.length)").catch(() => false)); await Bun.sleep(100)) if (Date.now() > end) throw new Error("no demo tracks");
+  await waitFor(tab, "the demo tracks", "window.qdecks?.start()?.decks.every((d) => d.length)");
   // a hand on deck A's overview at each fraction of its width in turn (down on the first, up after the last); deck A's spot after
   await page(`(window.over = async (...xs) => {
     const c = document.querySelector(".dj-a .dj-over"), r = c.getBoundingClientRect(), y = r.top + r.height / 2;
@@ -178,7 +159,7 @@ test.skipIf(!hasChrome)("deck A's overview: paused, a click puts the track there
   expect(await page<number>("over(0.5)")).toBeCloseTo(0.5, 1);
   expect(await page<number>("over(0.2, 0.4, 0.7)")).toBeCloseTo(0.7, 1);
   await page("qdecks.play(0)");
-  for (const end = Date.now() + 5000; !(await page<boolean>("qdecks.state().decks[0].playing")); await Bun.sleep(50)) if (Date.now() > end) throw new Error("deck A never played");
+  await waitFor(tab, "deck A playing", "qdecks.state().decks[0].playing", 5000);
   const before = await page<number>("qdecks.state().decks[0].pos / qdecks.state().decks[0].length");
   const after = await page<number>("over(0.1, 0.2)");
   expect(Math.abs(after - before)).toBeLessThan(0.05);

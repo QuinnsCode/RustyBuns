@@ -8,6 +8,7 @@
 //   POST /extend  { lease, seconds? }        still on it: the lease runs on
 //   POST /report  { lease, ok, log }         how it went; 409 when the lease ran out first
 //   GET  /jobs?sha=                          where each suite of a SHA stands
+//   GET  /queue                              every job not finished, in lease order, with who holds it (the builder board)
 import { json } from "@rustybuns/util/http";
 import { sha256 } from "@rustybuns/util/bytes";
 import type { QueueEnv } from "./queue.ts";

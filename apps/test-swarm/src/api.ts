@@ -34,6 +34,18 @@ export const JobsReply = obj({
 });
 export type JobsReply = Of<typeof JobsReply>;
 
+/**
+ * GET /queue: every job not finished, oldest first (the order runners take them). A leased job names its runner and
+ * when its lease runs out (`until`, ms); one whose lease ran out shows as queued again, as the next lease will treat it.
+ */
+export const QueueReply = obj({
+  jobs: arr(obj({
+    sha: Sha, branch: str(200), suite: Suite, state: oneOf(["queued", "leased"]), runner: str(80, { dflt: "" }),
+    at: int(0, Number.MAX_SAFE_INTEGER), until: int(0, Number.MAX_SAFE_INTEGER), tries: int(0, 1e6),
+  }), 1000),
+});
+export type QueueReply = Of<typeof QueueReply>;
+
 /** A lease runs this long when the runner doesn't say. */
 export const LEASE_SECONDS = 600;
 /** The commit statuses main's ruleset asks for. */

@@ -4,6 +4,10 @@ Reference photos of real sound gear, kept only so a judge can compare the proced
 thing. They are never shipped in a game, a build or a page. Every photo is public domain, CC0 or CC BY; each is
 credited below with its source page. Photos were shrunk to at most 900 px on the long side.
 
+Photos of the real products the speaker models copy (`LINEUP` in `src/lineup.ts`, #5942) are not ours to publish,
+so they are never committed: they live in `~/.cache/rustybuns/gear-refs/` on the office Mac and on Bob, and each
+photo's source is linked in that model's issue.
+
 | file | what | source | author | licence |
 | --- | --- | --- | --- | --- |
 | top-12-powered-1.jpg | 12-inch two-way moulded plastic PA top on a pole, back: recessed handle, pole cup, input plate | https://commons.wikimedia.org/wiki/File:100th_CS_%27light-up%27_sound_system_131206-F-FE537-0052.jpg | Gina Randall (US Air Force) | Public domain |

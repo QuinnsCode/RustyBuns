@@ -2,26 +2,12 @@
 // /rooms.html start from the Desert Gathering, clear its stacks and place two, aim one off at the edge of the ground and
 // watch the coverage map drop on the floor it left, put the rig on the small generator and read why it fails, then take
 // the gear list and the plan drawing away.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
 setDefaultTimeout(240_000); // vite serves cold, then redraws a room's coverage map in software GL
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+useBrowser();
 
 type Tab = Awaited<ReturnType<typeof openTab>>;
 const until = (tab: Tab, ready: string) => pageUntil(tab, ready, ready, 30_000, 50);
@@ -71,5 +57,35 @@ test.skipIf(!hasChrome)("place two stacks, aim one away and see the floor go qui
     expect(out.plan.name).toBe("desert-gathering-plan.svg");
     expect(out.plan.text.startsWith("<svg")).toBe(true);
     expect(out.plan.text).toContain("<image");
+  } finally { await tab.close(); }
+});
+
+test.skipIf(!hasChrome)("indoors: stand two stacks in the scoring hall, read the far one landing late at the back, see the coverage on the 3D floor", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 720 });
+  try {
+    await load(chrome.cdp, tab, `${vite.url}rooms.html`, 0);
+    await until(tab, "!!window.qrooms");
+    // a stack in each front corner of the hall's floor: the room's own PA, its power and its gear list
+    const placed = await tab.eval<{ ok: boolean[]; pa: Pa; list: string | undefined }>(`(() => {
+      qrooms.load("scoring-hall");
+      const ok = [qrooms.edit({ t: "stack", at: [-11, -14] }).ok, qrooms.edit({ t: "stack", at: [11, -14] }).ok];
+      return { ok, pa: qrooms.pa(), list: qrooms.download("list")?.text };
+    })()`);
+    expect(placed.ok).toEqual([true, true]);
+    expect(placed.pa.stacks.map((s) => s.at)).toEqual([[-11, -14], [11, -14]]);
+    expect(placed.pa.coverage!.mean).toBeGreaterThan(80);
+    expect(placed.pa.power!.racks).toBeGreaterThan(0);
+    expect(placed.list).toContain("2 x stack-mid-high");
+
+    // at the back of the floor on the left, the right-hand stack's sound comes 7.6 m further: 22 ms after the left's, a
+    // smear the delay view marks amber there (a delay tower's place)
+    const late = await tab.eval<{ at: { ms: number; down: number }[]; cells: { smear: number; echo: number } | null }>(`({ at: qrooms.delay(-11, 14), cells: qrooms.showDelay(true) })`);
+    expect(late.at[0]!.ms).toBe(0);
+    expect(late.at[1]!.ms).toBeCloseTo(((Math.hypot(22, 28) - 28) / 343) * 1000, 0);
+    expect(late.cells!.smear).toBeGreaterThan(0);
+
+    // the coverage map on the 3D view's floor, not a jump to the blueprint
+    const seen = await tab.eval<{ view: string; heatOnFloor: boolean }>(`(() => { qrooms.showDelay(false); qrooms.view("3d"); qrooms.showMap(true); return qrooms.view(); })()`);
+    expect(seen).toEqual({ view: "3d", heatOnFloor: true });
   } finally { await tab.close(); }
 });

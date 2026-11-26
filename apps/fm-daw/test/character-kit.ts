@@ -1,29 +1,18 @@
 // Your character as a dialog over the jam room (#5819), in headless Chrome over CDP (scripts/chrome.ts): the top bar's
 // Character door opens the picker over the room, a new hair and Save close it, and the figure in the room wears the new
 // hair with no page load; Cancel leaves the look as it was. On a laptop and at phone width, where it fills the screen.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { chromePath, launchChrome, load, openTab, startVite, until as pageUntil } from "../../../scripts/chrome.ts";
+// One screen size a file (character-*.test.ts), so CI's lanes can run them side by side (#5922).
+import { expect, test } from "bun:test";
+import { load, openTab, until as pageUntil } from "../../../scripts/chrome.ts";
+import { chrome, hasChrome, useBrowser, vite } from "./browser-kit.ts";
 
-// the room is a 3D scene, drawn in software on CI's runners: a case takes most of a minute there
-setDefaultTimeout(240_000); // the jam room in software GL, at laptop and phone sizes
-let chrome: Awaited<ReturnType<typeof launchChrome>>;
-let vite: Awaited<ReturnType<typeof startVite>>;
-// The linux-arm64 and Windows drop runners have no Chrome (#5553), so the check runs where one is, as the other Chrome tests do.
-const hasChrome = !!chromePath();
-beforeAll(async () => {
-  if (!hasChrome) return;
-  const app = join(import.meta.dir, "..");
-  if (!existsSync(join(app, ".rustybuns/vite.ts"))) {
-    const made = Bun.spawnSync(["bunx", "rustybuns", "boundary"], { cwd: app, stdout: "pipe", stderr: "pipe" });
-    if (made.exitCode !== 0) throw new Error(`rustybuns boundary: ${made.stderr.toString()}`);
-  }
-  [chrome, vite] = await Promise.all([launchChrome(["--disable-audio-output"]), startVite(app)]);
-});
-afterAll(() => { chrome?.stop(); vite?.stop(); });
+/** The Character dialog's journey on a `w` x `h` screen, as this file's one test. */
+export function characterOn(screen: string, w: number, h: number) {
+  useBrowser();
+  test.skipIf(!hasChrome)(`on ${screen}: Character opens over the room, new hair and Save put it on you there`, () => dialog(w, h));
+}
 
-test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as const)("on %s: Character opens over the room, new hair and Save put it on you there", async (_, w, h) => {
+async function dialog(w: number, h: number) {
   const tab = await openTab(chrome.cdp, { w, h });
   try {
     await load(chrome.cdp, tab, `${vite.url}jam.html?room=look-dialog&studio=desert-gathering&quality=low`, 0);
@@ -61,4 +50,4 @@ test.skipIf(!hasChrome).each([["a laptop", 1280, 720], ["a phone", 390, 844]] as
     expect(await page<boolean>("window.__same === true")).toBe(true);
     expect(await page<number>("document.documentElement.scrollWidth")).toBe(w);
   } finally { await tab.close(); }
-});
+}
