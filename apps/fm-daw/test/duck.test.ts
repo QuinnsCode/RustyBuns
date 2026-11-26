@@ -52,7 +52,9 @@ const ways: [string, (depth: number) => Promise<Float32Array>][] = [
     const p = groove(depth, false, true), secs = seconds(p), n = bounceFrames(p, SR, secs);
     const mono = held(SR, n), pcm = new Float32Array(n * 2);
     for (let f = 0; f < n; f++) { pcm[2 * f] = mono[f]; pcm[2 * f + 1] = mono[f]; }
-    return left(renderProject(new TsEngine(SR), p, SR, secs, 1, undefined, (t) => (t === BASS ? pcm : undefined)));
+    const bounce = (heard: boolean) => left(renderProject(new TsEngine(SR), p, SR, secs, 1, undefined, (t) => (heard && t === BASS ? pcm : undefined)));
+    const a = bounce(true), b = bounce(false);
+    return a.map((v, i) => v - b[i]);
   }],
 ];
 
