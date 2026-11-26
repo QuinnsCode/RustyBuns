@@ -7,7 +7,7 @@
 //              one cued on a hit landing (a fighter stunned), frames 0.2 s apart, no close-ups; and six frames from a heavy
 //              swing locking near the other (its dodge and the punish after, #3511 round 3), shot up to four times and
 //              kept from the first try whose defender dashes inside it (#4046 round 5: the sim dashes out about half the
-//              time, but one try at random rarely caught it)
+//              time, but one try at random rarely caught it); and a staged ring-out (`--only ringout`), 0.1 s apart
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
 //   --only <scene>  shoot just that fight (`--only skirmisher`)
@@ -110,6 +110,23 @@ try {
         await Bun.sleep(2500);
       }
       if (tab.noise.length) console.log(`${scene} noise: ${[...new Set(tab.noise)].slice(0, 3).join("; ")}`);
+    } finally { await tab.close(); }
+  }
+  // A ring-out, staged (a bot fight throws one out only now and then): the skirmisher knocked off the lip, frames 0.1 s
+  // apart until the fight ends on it (#5732 round 12: the side camera used to follow the fall under the pitch).
+  if (combat && (!process.argv.includes("--only") || only === "ringout")) {
+    const tab = await openTab(cdp, { w: 1280, h: 720 });
+    try {
+      await load(cdp, tab, `${vite.url}?a=wampus-cat&b=black-shuck&skin=stadium&watch=1`, 2500);
+      await tab.eval(`mythicMasters.camera(${JSON.stringify(lock ? "lock" : "side")})`);
+      await Bun.sleep(6000); // past the intro, the clock running
+      await tab.eval(`mythicMasters.fall(0)`);
+      let shots = 0;
+      for (; shots < 8; shots++) {
+        if (await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
+        await shoot(tab, `ringout-b${shots}`); await Bun.sleep(HIT_GAP);
+      }
+      console.log(`ringout: ${shots} frames`);
     } finally { await tab.close(); }
   }
   for (const id of CLOSE) {
