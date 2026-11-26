@@ -8,8 +8,8 @@
 //   synergy      one box that sums all three ways in a single horn (a point source by construction) over tapped-horn
 //                18s: flat and coherent, 50 x 50, very low, very little colour.
 //   sculpted     moulded three-way shells on hybrid-horn triple 21s: deep, smooth sub, a sweet, open top, 60 x 50.
-//   tri-amp      the old touring stack: high-Q horn tops (two horn-loaded 10"s and a waveguide) over horn-loaded 2 x 15s:
-//                mid-forward and narrow (35 x 25), the top end rolled off a little.
+//   tri-amp      the old touring stack: high-Q horn tops (a 12" and a 6.5" on horns and a waveguide) over a horn-loaded 21":
+//                mid-forward and narrow (25 x 25), the top end rolled off a little.
 //   line-array   today's festival rig on the ground: three powered line array boxes stacked on two 18" subs: very wide
 //                (110 degrees) and even across the floor, clean, a little lift up top.
 import { gear, type SpeakerSpec } from "./catalog.ts";
@@ -59,7 +59,7 @@ export const SYSTEMS: Record<SystemId, System> = {
   },
   "tri-amp": {
     id: "tri-amp", name: "Tri-amp stack",
-    about: "The old touring way: narrow horn tops, two horn-loaded 10s and a waveguide, over horn-loaded 2 x 15 bass. Mid-forward and long-throwing.",
+    about: "The old touring way: narrow horn tops, a horn-loaded 12 and 6.5 and a waveguide, over a horn-loaded 21 bass. Mid-forward and long-throwing.",
     setup: "Bass bins on the ground, tops on them, two or three stacks a side for a big floor, every box tri-amped: three amp channels a box from a crossover in the rack. Narrow tops, so the stacks are aimed box by box at their part of the floor.",
     stack: ["sand-dolly", "tri-amp-bass", "tri-amp-top"], top: "tri-amp-top", sub: "tri-amp-bass",
     voicing: [{ hz: 1600, db: 3, q: 1.2 }, { hz: 12000, db: -2, q: 0.8 }],

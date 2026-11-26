@@ -142,6 +142,8 @@ export const inAudience = (k: StageKey, yaw: number, x: number, z: number) => { 
 /** Where a stage's desk should go: 28 m out on its axis. */
 export const mixSpot = (k: StageKey, yaw: number) => onStage(k, yaw, 0, 28);
 const SIDE = 6, FRONT = 4;
+/** How far either side of the pole each box of a sculpted pair stands: half a box and a gap, so the pair splays clear. */
+const PAIR = gear("sculpted-3way").size.w / 2 + 0.03;
 /** The bottom of a stage's tops: on the subs, on the scaffold wing, or flown. */
 const topsAt = (k: StageKey, lifted: boolean) => {
   const sh = gear(STAGES[k].system === "dance" ? "horn-sub-21" : "arc-sub-18").size.h;
@@ -165,9 +167,9 @@ export function stageItems(k: StageKey, yaw: number, mode: SubMode, lifted = fal
       out.push({ key: `${k}-midbass-${n}`, gear: "stack-mid-bass", x: p.x, y: base, z: p.z, rot: yaw, hung: true });
       out.push({ key: `${k}-midhigh-${n}`, gear: "stack-mid-high", x: p.x, y: base + gear("stack-mid-bass").size.h, z: p.z, rot: yaw, hung: true });
     } else {
-      // a pair on the pole, splayed 15 degrees either way of the side's axis
+      // a pair on the pole, side by side and splayed 15 degrees either way of the side's axis
       for (const [j, splay] of [[1, -0.26], [2, 0.26]] as const) {
-        const q = at((j === 1 ? -0.24 : 0.24), 0);
+        const q = at((j === 1 ? -1 : 1) * PAIR, 0);
         out.push({ key: `${k}-sculpt-${n}${j}`, gear: "sculpted-3way", x: q.x, y: base, z: q.z, rot: yaw + splay, hung: true });
       }
     }
@@ -325,7 +327,7 @@ export function stageSources(w: World, k: StageKey, force = false): Source[] {
     };
     const base = topsAt(k, r.lift[k]);
     if (sys === "dance") { box("stack-mid-bass", base + 0.4); box("stack-mid-high", base + 1.0); }
-    else { box("sculpted-3way", base + 0.45, -0.26, -0.24); box("sculpted-3way", base + 0.45, 0.26, 0.24); }
+    else { const y = base + gear("sculpted-3way").size.h / 2; box("sculpted-3way", y, -0.26, -PAIR); box("sculpted-3way", y, 0.26, PAIR); }
   }
   return out;
 }
