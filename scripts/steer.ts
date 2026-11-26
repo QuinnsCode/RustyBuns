@@ -5,6 +5,7 @@
 //   bun run steer --text "..."       a task's own words ("issue #N" in them pulls that issue's body in, as task-specs does)
 //   bun run steer --eval             hold out the last 2 weeks of PRs and score the guesses against what happened
 //   bun run steer --sync             refresh the saved history now (a call does it itself when it is 6 hours old)
+//   bun run steer --dump docs.json   write the history as tasks, for scripts/steer-vec-exp.ts on the builder (#6200)
 //
 // History lives in one SQLite file, ~/.rustybuns/steer.sqlite: every PR (title, body, state), every issue, the squash
 // commits' files on main, and each worker session's task and steer count from Claude Code's transcripts (which last
@@ -17,7 +18,7 @@ import { Database } from "bun:sqlite";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { arr, int, nul, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, bool, int, nul, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { taskFiles } from "../packages/util/src/overlap.ts";
 import { help } from "./help.ts";
 import { OpenPr, overlaps } from "./preflight.ts";
@@ -106,7 +107,12 @@ function openPrs(db: Database, fresh = false): OpenPr[] {
 
 /** One past task: a PR (merged or closed) or a session that never opened one. `text` is what BM25 reads; its first
  *  `ask` characters are what was asked (the session's task, or the issues the PR names), the query `--eval` replays. */
-export interface Doc { pr?: number; title: string; text: string; ask: number; files: string[]; app: string; created: number; merged: boolean; steers?: number }
+/** A commit row's files, saved as a JSON list. */
+const fileList = (json = "[]") => arr(str(500), 1e5)(JSON.parse(json));
+
+export const Doc = obj({ pr: opt(int(1, 1e7)), title: str(1000, { min: 0 }), text: str(1e6, { min: 0 }), ask: int(0, 1e6), files: arr(str(500), 1e5),
+  app: str(200, { min: 0 }), created: int(0, 1e14), merged: bool(), steers: opt(int(0, 1e6)) });
+export type Doc = Of<typeof Doc>;
 
 /** The history as tasks to search: each PR with the issues it names and the session that made it, then the sessions that made none. */
 export function load(db: Database): Doc[] {
@@ -126,7 +132,7 @@ export function load(db: Database): Doc[] {
   const named = (ns: number[]) => ns.map((n) => issues.get(n)).filter((i) => i !== undefined).join("\n");
   const asked = (s: (typeof sessions)[number]) => `${s.task}\n${named(linked(s.task.slice(0, 300)))}`;
   const docs: Doc[] = prs.map((p) => {
-    const s = sessionOf.get(p.number), f: string[] = JSON.parse(files.get(p.number) ?? "[]");
+    const s = sessionOf.get(p.number), f = fileList(files.get(p.number));
     const ask = s ? asked(s) : named((p.links ?? "").split(",").filter(Boolean).map(Number));
     return { pr: p.number, title: p.title, text: `${ask}\n${p.title}\n${p.body}`, ask: ask.trim() ? ask.length : 0, files: f, app: appOf(f), created: p.created, merged: p.merged !== null, steers: s?.steers };
   });
@@ -197,7 +203,7 @@ function fillOutcomes(db: Database): number {
     if (r.outcome || !r.issue) return l;
     const p = prs.filter((p) => p.created >= r.at && linked(p.body).includes(r.issue!)).sort((a, b) => a.created - b.created)[0];
     if (!p) return l;
-    const f: string[] = JSON.parse(files.get(p.number) ?? "[]");
+    const f = fileList(files.get(p.number));
     n++;
     return JSON.stringify({ ...JSON.parse(l), outcome: { pr: p.number, merged: p.merged !== null, app: appOf(f), fileHit: r.files.some((x) => f.includes(x)) } });
   });
@@ -212,6 +218,8 @@ if (import.meta.main) {
   if (argv.includes("--sync") || Date.now() - Number(getMeta(db, "synced") ?? 0) > 6 * HOUR) sync(db);
   if (argv.includes("--sync")) process.exit(0);
   const docs = load(db);
+  const dump = flag("--dump");
+  if (dump) { writeFileSync(dump, JSON.stringify(docs satisfies Doc[])); console.log(`wrote ${docs.length} tasks to ${dump}`); process.exit(0); }
   if (argv.includes("--eval")) { evaluate(docs, Number(flag("--days") ?? 14)); process.exit(0); }
   const n = Number(argv.find((a) => /^#?\d+$/.test(a))?.replace("#", ""));
   let text = flag("--text") ?? "", title = short(text.trim().split("\n")[0] ?? "", 80);

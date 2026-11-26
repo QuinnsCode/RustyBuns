@@ -1,11 +1,14 @@
-// Experiment (#6200), run on Bob: steer --eval with BM25 alone and with the text model blended in.
-// bun scripts/steer-vec-exp.ts <docs.json>
+// Experiment (#6200): steer --eval with BM25 alone, the text model alone, and the two blended, on the same held-out
+// two weeks. It builds the embedder and fetches the model, so it runs on the builder:
+//   bun run steer --dump steer-docs.json     (here, where the history is)
+//   bun run builder run . bun scripts/steer-vec-exp.ts steer-docs.json
 import { readFileSync } from "node:fs";
 import { bm25 } from "./steer-score.ts";
-import { evaluate, type Doc } from "./steer.ts";
+import { arr } from "../packages/util/src/guard.ts";
+import { Doc, evaluate } from "./steer.ts";
 import { BIN, blend, DIM, embed, ensureModel, nearest } from "./steer-vec.ts";
 
-const docs: Doc[] = JSON.parse(readFileSync(process.argv[2]!, "utf8"));
+const docs = arr(Doc, 1e6)(JSON.parse(readFileSync(process.argv[2]!, "utf8")));
 if (!(await Bun.file(BIN).exists())) {
   const b = Bun.spawnSync(["cargo", "build", "--release", "--quiet"], { cwd: `${import.meta.dir}/steer-embed`, stdout: "inherit", stderr: "inherit" });
   if (b.exitCode !== 0) process.exit(1);
