@@ -15,6 +15,9 @@ export type Icon = (typeof ICONS)[number];
 /** A prompt the fighters draw is one short line: the list's run to about 40 characters. */
 export const PROMPT_MAX = 80;
 
+/** The one call the cron makes: `fetch`, or a fake in tests. */
+export type Fetcher = (url: string, init: { signal: AbortSignal }) => Promise<Response>;
+
 const HOUR = 3_600_000;
 export const hourStart = (ms: number) => Math.floor(ms / HOUR) * HOUR;
 export const fightRef = (id: string) => `fight:${id}`;
@@ -27,7 +30,7 @@ export const drawable = (p: Pick<Post, "text">) => !!p.text.trim() && p.text.len
  * The prompt for the fight starting at `now`: the most reacted one posted in the hour before (newest first on a tie),
  * else the list's. Read signed out, so the cron needs no token; eqosys away or slow, the list's.
  */
-export async function fightPrompt(base: string, now: number, fetcher: typeof fetch = fetch): Promise<{ prompt: string; post: Post | null }> {
+export async function fightPrompt(base: string, now: number, fetcher: Fetcher = fetch): Promise<{ prompt: string; post: Post | null }> {
   const end = hourStart(now);
   const q = new URLSearchParams({ app: APP, kind: "prompt", sort: "top", since: String(end - HOUR) });
   const res = await fetcher(`${base.replace(/\/$/, "")}/q/posts?${q}`, { signal: AbortSignal.timeout(5_000) }).catch(() => null);

@@ -3,7 +3,7 @@
 // since then, most reacted first, newest first on a tie).
 import { describe, expect, test } from "bun:test";
 import type { Post } from "@rustybuns/util/board";
-import { fightPrompt } from "../src/board.ts";
+import { fightPrompt, type Fetcher } from "../src/board.ts";
 import { promptFor } from "../src/engine/prompts.ts";
 
 const H = 3_600_000, hour = 500_000 * H;
@@ -12,13 +12,13 @@ const post = (id: string, text: string, at: number, reacts: number): Post =>
 
 function qollab(posts: Post[]) {
   const asked: string[] = [];
-  const fetcher = (async (u: string | URL | Request) => {
+  const fetcher: Fetcher = async (u) => {
     const url = new URL(String(u));
     asked.push(url.search);
     const since = Number(url.searchParams.get("since"));
     const feed = posts.filter((p) => p.at >= since).sort((a, b) => b.reacts - a.reacts || b.at - a.at);
     return Response.json({ posts: feed });
-  }) as typeof fetch;
+  };
   return { fetcher, asked };
 }
 
@@ -46,10 +46,10 @@ describe("the next fight's prompt", () => {
   });
 
   test.each([
-    ["nobody posted", (async () => Response.json({ posts: [] })) as typeof fetch],
-    ["eqosys is down", (async () => { throw new Error("down"); }) as typeof fetch],
-    ["eqosys answers something odd", (async () => Response.json({ posts: [{ id: 1 }] })) as typeof fetch],
-  ])("the list's prompt when %s", async (_why, fetcher) => {
+    ["nobody posted", async () => Response.json({ posts: [] })],
+    ["eqosys is down", async () => { throw new Error("down"); }],
+    ["eqosys answers something odd", async () => Response.json({ posts: [{ id: 1 }] })],
+  ] satisfies [string, Fetcher][])("the list's prompt when %s", async (_why, fetcher) => {
     expect(await fightPrompt("https://eqosys.test", hour + 60_000, fetcher)).toEqual({ prompt: promptFor(hour + 60_000), post: null });
   });
 });
