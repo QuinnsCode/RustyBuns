@@ -10,11 +10,13 @@ const out = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[
 const url = arg("--url", "http://localhost:5173"), studio = arg("--studio", "live-room"), quality = arg("--quality", "high");
 const settle = "await new Promise((r) => setTimeout(r, 1200)); return qjam.state().you;";
 const firstPerson = "if (qjam.state().you.cam !== 'first') qjam.cam();";
+// sitting at the desk opens the mixer over the view a moment later: shut it, so the shot shows the room
+const closeDesk = "await new Promise((r) => setTimeout(r, 800)); qjam.desk(false); qjam.lane(false);";
 const SPOTS: Record<string, string> = {
   corner: `qjam.start(); qjam.walkTo(4, 3.9); qjam.look(Math.PI / 4 - 0.05, -0.12); ${firstPerson} ${settle}`,
   keys: `qjam.start(); qjam.walkTo(2.6, 1.2); qjam.sit('keys'); qjam.look(0.35, -0.32); ${firstPerson} ${settle}`,
   // the desk sits behind the glass: in through the control room door at its right end
-  desk: `qjam.start(); qjam.walkTo(3.6, -0.6); qjam.walkTo(3.6, -2.6); qjam.walkTo(0.2, -2.6); qjam.sit('desk'); qjam.look(Math.PI + 0.1, -0.12); ${firstPerson} ${settle}`,
+  desk: `qjam.start(); qjam.walkTo(3.6, -0.6); qjam.walkTo(3.6, -2.6); qjam.walkTo(0.2, -2.6); qjam.sit('desk'); qjam.look(Math.PI + 0.1, -0.12); ${firstPerson} ${closeDesk} ${settle}`,
 };
 
 /** Rooms whose live-room spots land in a wall: their own three, walked to round the furniture. */
