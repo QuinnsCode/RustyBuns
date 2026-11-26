@@ -7,6 +7,7 @@ import { newKey } from "@rustybuns/util/token";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ADMIN, asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
+import { arr, check, obj, str } from "@rustybuns/util/guard";
 import { Studios } from "../src/app/Studio.tsx";
 import { deleteAccount } from "../src/members.ts";
 import type { Studio } from "../src/studios.ts";
@@ -42,6 +43,13 @@ const ROCKET: Record<string, () => Response> = {
   [`${GAME}/assets/main.css`]: () => new Response("body{margin:0}"),
 };
 
+/** A HUB that writes down whose tabs it was told to close and for which app ("<id> <app>"): the hub an order reaches and the others it passes it on to. */
+const hubOf = (shut: string[]) => ({ idFromName: (name: string) => name, get: (id: unknown) => ({ fetch: async (req: Request) => {
+  const url = new URL(req.url), app = url.searchParams.get("app");
+  if (url.pathname === "/out") for (const who of [String(id), ...(check(obj({ more: arr(str(), 100) }), await req.json())?.more ?? [])]) shut.push(`${who} ${app}`);
+  return Response.json({ ok: true });
+} }) });
+
 /** The Studio tab as this person sees it, and what one of its forms posts as it stands: each field's name and value. */
 async function formIn(studios: Studio[], label: string) {
   const html = renderToStaticMarkup(createElement(Studios, { studios, unlocks: new Map() }));
@@ -60,8 +68,10 @@ async function formIn(studios: Studio[], label: string) {
 }
 
 test("a studio's game: a draft for its studio, reviewed, listed for everyone, then pulled", async () => {
-  const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET), PAGE_RUN: browser(ROCKET) });
+  const shut: string[] = [];
+  const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), OUTBOUND: web(ROCKET), PAGE_RUN: browser(ROCKET), HUB: hubOf(shut) });
   const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
+  const idOf = (email: string) => conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind(email).first<string>("id");
   const [boss, maya, sam] = [await signUp("Boss", ADMIN), await signUp("Maya", "maya@example.com"), await signUp("Sam", "sam@example.com")];
   const run = async (name: string, args: unknown, who: { cookie?: string; bearer?: string }) => {
     const { res } = await call(`/api/tools/${name}`, { json: args, ...who });
@@ -151,9 +161,27 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
 
   // Pulled by its studio: off the shelf, the maker's token stops at the door, and a sign-in for it is refused.
   expect((await run("eq_listing_pull", { id: "rocket-golf" }, { cookie: maya })).result.listing.state).toBe("pulled");
+  // Every tab its tokens opened closes, the maker's and the player's.
+  expect(shut).toEqual(expect.arrayContaining([`${await idOf("maya@example.com")} rocket-golf`, `${await idOf("sam@example.com")} rocket-golf`]));
   expect((await run("eq_whoami", {}, { bearer: mine.token! })).status).toBe(401);
   expect(await shelf(sam)).toBeUndefined();
   expect((await signIn("maya@example.com")).to).toBe("/login?e=app");
+});
+
+test("taken out of a studio, a maker's tabs on its draft game close", async () => {
+  const shut: string[] = [];
+  const { conf, call } = await boot({ HUB: hubOf(shut) });
+  const signUp = async (name: string, email: string) => (await call("/do/signup", { form: { ...(await asks("park-hide-seek", PARK)).form, name, email, password: PASSWORD } })).cookie;
+  const [maya, kim] = [await signUp("Maya", "maya@example.com"), await signUp("Kim", "kim@example.com")];
+  const tool = async (name: string, args: unknown, cookie: string) => (await (await call(`/api/tools/${name}`, { json: args, cookie })).res.json()) as { result?: { id?: string } };
+  const studio = (await tool("eq_studio_make", { name: "Acme", kind: "team" }, maya)).result!.id!;
+  await tool("eq_listing_save", { studio, id: "rocket-golf", name: "Rocket Golf", genre: "Games", origins: [GAME] }, maya);
+  await call("/do/studio-add", { form: { studio, email: "kim@example.com", role: "maker" }, cookie: maya });
+  await call("/do/studio-join", { form: { studio, answer: "yes" }, cookie: kim });
+  const kimId = await conf.DB.prepare(`SELECT id FROM "user" WHERE email = ?`).bind("kim@example.com").first<string>("id");
+  expect(await conf.DB.prepare("SELECT role FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(studio, kimId).first<string>("role")).toBe("maker");
+  expect((await call("/do/studio-remove", { form: { studio, email: "kim@example.com" }, cookie: maya })).to).toBe("/?tab=studio");
+  expect(shut).toEqual([`${kimId} rocket-golf`]);
 });
 
 test("the machine checks say what is wrong: a dead origin, a missing file, no sign-in yet, no harness, a page that throws", async () => {
