@@ -189,6 +189,7 @@ button.wrong { background: #4a1d1d; border-color: var(--red); }
 .scorecard header, .scorecard footer { display: flex; justify-content: space-between; gap: 8px; font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--card-dim); }
 .scorecard header { padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px solid rgba(11, 26, 43, 0.25); }
 .scorecard footer { flex-direction: column; justify-content: flex-start; gap: 3px; text-transform: none; letter-spacing: 0; margin-top: 4px; padding-right: 96px; min-height: 40px; }
+.scorecard h2 .nb { white-space: nowrap; }
 .scorecard h2 { color: var(--amber-deep); border-bottom-color: rgba(11, 26, 43, 0.25); padding-right: 74px; min-height: 48px; display: flex; align-items: center; }
 /* The total, rubber-stamped on once the card has printed: a double ring in the result's ink, a little crooked, the ink
  * worn thin in specks. Teal under par, rust over, the deep amber for even. */
@@ -299,6 +300,35 @@ html .ui-house .gc-binds { grid-template-columns: auto 1fr auto; }
 html .ui-house .gc-card label { grid-template-columns: auto 1fr 3.5em; }
 html .ui-house .gc-card label:has(> input[type=checkbox]) { grid-template-columns: 1fr auto; }
 html .ui-house .gc-binds > :not(button), html .ui-house .gc-card label > :first-child { white-space: nowrap; }
+/* Each section is a readout like the forecast board: a dark well under a header strip in the scanner's mono caps, a
+ * teal lamp on the open ones, dashed rules between rows. */
+html .ui-house .gc-sec { background: #030810; border-color: var(--edge); border-radius: 10px; }
+html .ui-house .gc-sec-h { min-height: 40px; padding: 0 12px; font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--teal);
+  background: linear-gradient(rgba(94, 230, 200, 0.08), rgba(94, 230, 200, 0.01)); border-bottom: 1px solid var(--edge); }
+html .ui-house .gc-sec-h::before { content: ""; flex: none; order: -1; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+html .ui-house .gc-sec-h svg { opacity: 0.8; }
+html .ui-house .gc-sec.shut .gc-sec-h { color: var(--dim); border-bottom-color: transparent; background: none; }
+html .ui-house .gc-sec.shut .gc-sec-h::before { background: var(--edge); box-shadow: none; }
+html .ui-house .gc-sec-b { padding: 8px 12px 12px; }
+html .ui-house .gc-keys { gap: 0 12px; }
+html .ui-house .gc-keys :is(dt, dd) { display: flex; align-items: center; min-height: 32px; padding: 4px 0; border-bottom: 1px dashed var(--edge); }
+html .ui-house .gc-keys dt { font: 600 12px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--amber); }
+html .ui-house .gc-card label { border-bottom: 1px dashed var(--edge); }
+html .ui-house .gc-card output { font: 12px var(--mono); color: var(--teal); }
+html .ui-house .gc-key { background: var(--glass); color: var(--teal); letter-spacing: 0.08em; }
+/* The dead-zone fader: a recessed slot with tick marks every tenth and a lit bar for the knob. */
+html .ui-house .gc-card input[type=range] { appearance: none; -webkit-appearance: none; height: 24px; margin: 0; background: transparent; cursor: pointer; }
+html .ui-house .gc-card input[type=range]::-webkit-slider-runnable-track { height: 8px; border: 1px solid var(--edge); border-radius: 3px;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(94, 230, 200, 0.25) calc(10% - 1px) 10%), var(--glass); }
+html .ui-house .gc-card input[type=range]::-moz-range-track { height: 8px; border: 1px solid var(--edge); border-radius: 3px; background: var(--glass); }
+html .ui-house .gc-card input[type=range]::-moz-range-progress { height: 8px; border-radius: 3px; background: var(--teal-soft); }
+html .ui-house .gc-card input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 22px; margin-top: -8px; border: 1px solid var(--on-teal); border-radius: 3px; background: var(--teal); box-shadow: 0 0 8px rgba(94, 230, 200, 0.7); }
+html .ui-house .gc-card input[type=range]::-moz-range-thumb { width: 10px; height: 22px; border: 1px solid var(--on-teal); border-radius: 3px; background: var(--teal); box-shadow: 0 0 8px rgba(94, 230, 200, 0.7); }
+/* The toggle: a squared switch on the glass, an unlit knob off and a glowing teal one on. */
+html .ui-house .gc-card input[type=checkbox] { width: 44px; height: 24px; border-radius: 5px; border-color: var(--edge); background: #030810; }
+html .ui-house .gc-card input[type=checkbox]::after { width: 16px; height: 16px; border-radius: 3px; background: var(--edge); }
+html .ui-house .gc-card input[type=checkbox]:checked { background: var(--teal-soft); border-color: var(--teal); }
+html .ui-house .gc-card input[type=checkbox]:checked::after { transform: translateX(20px); background: var(--teal); box-shadow: 0 0 8px var(--teal); }
 @media (max-width: 520px) {
   /* On a phone the card keeps a margin and all four corners, like the panel under it. */
   html .gc-dialog.ui-house { padding: 8px; font-size: 14px; }
