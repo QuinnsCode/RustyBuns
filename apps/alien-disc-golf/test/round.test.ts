@@ -117,10 +117,11 @@ describe("a round of Alien Disc Golf", () => {
     // Thrown and landed: the tutorial is done, for good in this browser.
     await tab.until("the tutorial done", `golf.state().tutorial.learned && !golf.state().tutorial.running`);
     const clock = () => tab.page<number>(`parseFloat(document.querySelector("#swim-clock").textContent)`);
-    const first = await tab.state(), clock1 = await clock();
+    // Paddling goes on in the same call that takes the first sample, so no unpaddled frames fall in the window
+    // (on a slow-framed Chrome a frame is a tenth of a swim second); the window is a second of swim, not of wall clock.
+    const first = await tab.page<State>("(golf.paddle(true), golf.state())"), clock1 = await clock();
     expect(distanceKm(first.lie, sea.landing)).toBeLessThan(1);
-    await tab.page("golf.paddle(true)");
-    await sleep(1000);
+    await tab.until("a second of paddling", `golf.state().phase !== "swim" || golf.state().swim.t >= ${first.swim!.t + 1}`);
     const later = await tab.state();
     expect(later.swim!.paddling).toBe(true);
     expect(later.swim!.t).toBeGreaterThan(first.swim!.t);

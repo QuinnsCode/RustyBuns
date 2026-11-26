@@ -6,7 +6,7 @@
 // rather than skip it (a skip still plays a 0.4 s fade, a few frames at the loop's 0.1 s step), so a step takes a frame
 // or two, not a dozen (#4618).
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { chromePath, launchChrome, load, openTab, startVite, waitFor } from "../../../scripts/chrome.ts";
 import { PACKS } from "../src/packs.ts";
 
 setDefaultTimeout(180_000); // vite serves the game cold, then walks the isle into a lair fight in headless Chrome
@@ -32,7 +32,7 @@ test.skipIf(!chromePath())("off the boat, the cave mouth on the fell opens onto 
       }
     };
     await load(chrome.cdp, tab, new URL("/?world=1&a=hodag&draw=0&quality=low", vite.url).href, 3000);
-    await until("the world", "!!mythicMasters.world.state()", Boolean);
+    await waitFor(tab, "the world", "!!mythicMasters.world.state()", 60_000);
     expect(await tab.eval<boolean>("mythicMasters.world.ferry()")).toBe(true);
     const isle = await until<Isle>("the island", "mythicMasters.world.state().isle", (s) => !!s);
     const fell = isle!.places.find((q) => q.name === pack.lair.place)!;

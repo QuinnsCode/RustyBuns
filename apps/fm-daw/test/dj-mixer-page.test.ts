@@ -28,6 +28,9 @@ test.skipIf(!hasChrome)("deck A through channel 2: kill, filter, crossfader assi
   const inView = await page<boolean[]>(`[...document.querySelectorAll(".dj-play, .mx-l .mx-dial")].map((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })`);
   expect(inView).toEqual([true, true, true, true]);
   await page("qdecks.play(0)");
+  // the demo track is 60 s and a slow CI runner takes longer than that to get through this page (#6102): a loop keeps A playing
+  await page("qdecks.loop(0, 16)");
+  await until("A looping", "!!qdecks.state().decks[0].loop");
   await until("A in channel 2 and the master", "qdecks.state().meters.channels[1] > 0.05 && qdecks.state().meters.master[0] > 0.05");
   expect(await loudest("channels[2]")).toBeLessThan(0.01); // B isn't playing
 

@@ -4,9 +4,9 @@
 // needs (cached in ~/.cache/splat-rooms), 3. has headless Blender drop the props and cover every surface in
 // splats (bake.py), 4. packs them into the compressed PLY the games read (pack.ts), beside labels.json,
 // structure.json, occupancy.json and CREDITS.md. Output lands in the scenes folder as built_<theme>_<seed>.
-import { rmSync } from "node:fs";
+import { cpSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { arr, num, obj, str } from "@rustybuns/util/guard";
 import { runBlender } from "@rustybuns/cli/blender";
@@ -15,6 +15,7 @@ import { credit, hdri, inBatches, model, texture } from "./polyhaven.ts";
 import { occupancy, recipe, structure } from "./recipe.ts";
 import { packPly, ROW } from "./pack.ts";
 import { planRound } from "../src/game/round.ts";
+import { queued } from "../../../scripts/blender-queue.ts";
 
 const { values: args } = parseArgs({
   options: {
@@ -30,7 +31,20 @@ const theme = THEMES[args.theme!];
 if (!theme) throw new Error(`no theme "${args.theme}"; have ${Object.keys(THEMES).join(", ")}`);
 const seed = Number(args.seed);
 const SCENES = (process.env.SPLAT_ROOMS_DIR ?? "~/Documents/SplatRooms").replace(/^~/, homedir());
-const out = args.out ?? join(SCENES, `built_${args.theme}_${seed}`);
+const name = `built_${args.theme}_${seed}`;
+// On the office Mac the whole build is a Blender queue job on the builder Mac (scripts/blender-queue.ts): it fetches the
+// Poly Haven models there and writes inside the tree (rooms/out/, ignored), and the scene is copied out once it is back.
+const inTree = join(import.meta.dir, "out", name);
+await queued([inTree], {
+  args: ["--theme", args.theme!, "--seed", String(seed), "--samples", args.samples!, "--device", args.device!, ...(args.preview ? ["--preview"] : []), "--out", relative(process.cwd(), inTree)],
+  then: () => {
+    const to = resolve(args.out ?? join(SCENES, name));
+    cpSync(inTree, to, { recursive: true });
+    rmSync(inTree, { recursive: true, force: true });
+    console.log(`-> ${to}`);
+  },
+});
+const out = args.out ?? join(SCENES, name);
 await Bun.$`mkdir -p ${out}`.quiet();
 
 const Credits = arr(obj({ id: str(200), name: str(200), by: str(400) }), 200);
