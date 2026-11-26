@@ -17,7 +17,7 @@ import type { Visitors as Counts } from "../visitors.ts";
 import type { Load } from "../scale.ts";
 import { SCALE_CSS, Scale } from "./Scale.tsx";
 import { STUDIO_CSS, Studios } from "./Studio.tsx";
-import type { Studio } from "../studios.ts";
+import type { Invite, Studio } from "../studios.ts";
 import { clipsOf } from "../trailers.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -41,7 +41,9 @@ export const MESSAGES: Record<string, string> = {
   link: "That sign-in couldn't be added. It may already belong to another account.",
   last: "That is your only way to sign in, so it stays.",
   nolink: "That friend link is no longer good. Ask them for a new one.",
-  nobody: "Nobody has signed up with that email yet.",
+  invites: "That studio has 50 invites waiting already. Take some back first.",
+  noinvite: "That invite isn't waiting for you any more.",
+  joinfull: "Couldn't join: that studio is full, or it would make you the owner of more than three studios.",
   studio: "Only a studio's owner or admin adds or takes out people, only an owner makes or takes out another owner, and a studio keeps one owner.",
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
@@ -749,7 +751,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invites, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; invites?: Invite[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -774,7 +776,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} invite={invite} origin={origin} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
-        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} origin={origin} />}
+        {tab === "studio" && studios && <Studios studios={studios} invites={invites ?? []} unlocks={unlocks} origin={origin} />}
 
         {tab === "people" && everyone && (
           <>

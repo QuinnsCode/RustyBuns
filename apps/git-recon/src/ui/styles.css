@@ -837,3 +837,16 @@ html .ui-house .gc-key.on { background: linear-gradient(#2a2a27, #141414); }
   html .gc-dialog.ui-house::after { content: ""; position: fixed; top: calc(34vh - 8px); right: calc(50% + 400px); width: 84px; height: 26px; pointer-events: none;
     background: url(/menu/tape.svg) center / 100% 100% no-repeat; transform: rotate(-12deg); }
 }
+
+/* Round 18 (#6284): the head and foot bands are white paper like the canvas (grit and the double rules and stamps kept,
+   with a thin kraft strip at the very edge where they meet the card), and where the range card has no room beside
+   the manual it is cut down to a slip (strip.svg 1.7 KB: a small reticle, the RANGE CARD title, a CLASSIFIED stamp)
+   pinned in the manual itself, left of the fold keys above the first sheet, where no text runs. */
+html .ui-house .gc-card { --gr-plate: url(/menu/grit.svg) 0 0 / 180px, linear-gradient(#fffdf8, #f7f4ec); }
+html .ui-house .gc-head { box-shadow: inset 0 5px 0 #e2d4b0, 0 6px 10px -8px #14141455; }
+html .ui-house .gr-foot { box-shadow: inset 0 -5px 0 #e2d4b0; }
+@media not ((min-width: 1040px) and (min-height: 560px)) {
+  html .ui-house .gc-profiles + .gc-fold { align-items: center; }
+  html .ui-house .gc-profiles + .gc-fold::before { content: ""; flex: 0 1 176px; height: 56px; margin-right: auto; pointer-events: none;
+    background: url(/menu/strip.svg) left center / contain no-repeat; transform: rotate(-2deg); filter: drop-shadow(2px 3px 0 #14141422); }
+}

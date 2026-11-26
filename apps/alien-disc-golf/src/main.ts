@@ -267,7 +267,7 @@ function renderPanel() {
     const forecast = wind.source === "noaa" ? `Forecast: ${esc(wind.label)}` : "Forecast: synthetic";
     panel.innerHTML = `<div class="slot" aria-hidden="true"><i></i></div><div class="scorecard"><header><span>Alien Disc Golf · Planet Earth</span><span>Course #${seed}</span></header>
       <div class="stamp ${d < 0 ? "under" : d > 0 ? "over" : "even"}" aria-hidden="true"><small>Total</small><b>${total}</b><span>par ${par}</span></div>
-      <h2>${icon("flag")} Round over: ${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</h2>
+      <h2>${icon("flag")} <span>Round over: <span class="nb">${d === 0 ? "even par" : d > 0 ? `${d} over` : `${-d} under`}</span></span></h2>
       <table class="card"><tr><th>Hole</th><th>Par</th><th>Strokes</th><th></th></tr>${rows}<tr><th>Total</th><th>${par}</th><th>${total}</th><th>${toPar}</th></tr></table>
       <footer><span>${lieGlyph(false)}dry ${lieGlyph(true)}swam</span><span>${forecast}</span></footer></div>
       <div class="actions card-actions"><button type="button" id="again" class="primary">${icon("rotate-ccw")} Same course</button><button type="button" id="new">${icon("globe")} New course</button><button type="button" id="share" title="Copy a link to this course">${icon("share")}</button></div>`;
