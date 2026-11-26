@@ -111,7 +111,7 @@ test("the big arena struck: the hang lowered before its boxes go, and the crew p
   const rows: [string[], number][] = [
     [[1, 2, 3, 4, 5, 6, 7, 8].map((k) => `box-${k}`), t.z1 - 0.3],
     [[9, 10, 11, 12, 13, 14, 15, 16].map((k) => `box-${k}`), t.z1 - 0.55 - 0.4],
-    [["sub-1", "sub-2", "sub-3", "sub-4"], t.z1 - 1.1 - 0.5],
+    [["sub-1", "sub-2", "sub-3", "sub-4"], t.z1 - 1.1 - 0.53],
   ];
   for (const [keys, z] of rows) {
     const half = keys.length / 2;

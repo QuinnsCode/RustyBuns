@@ -36,11 +36,11 @@ export const LINEUP: Partial<Record<GearId, LineupRow>> = {
   "sculpted-3way": { maker: "Void", product: "Air Motion V2", published: [0.8539, 0.6712, 0.6599], issue: 5959 },
   "arc-sub-18": { maker: "Void", product: "Arcline 118", published: [0.6568, 0.55, 0.6952], issue: 5959 },
   "triple-21-sub": { maker: "Void", product: "Incubus Sub", published: [1.479, 0.696, 1.218], issue: 5959 },
-  "top-12-powered": { maker: "QSC", issue: 5960 },
-  "fill-8-powered": { maker: "QSC", issue: 5960 },
-  "sub-18": { maker: "QSC", issue: 5960 },
-  "wedge-12": { maker: "QSC", issue: 5960 },
-  "line-array-10": { maker: "QSC", issue: 5960 },
+  "top-12-powered": { maker: "QSC", product: "K12.2", published: [0.356, 0.602, 0.35], issue: 5960 },
+  "fill-8-powered": { maker: "QSC", product: "K8.2", published: [0.28, 0.449, 0.269], issue: 5960 },
+  "sub-18": { maker: "QSC", product: "KS118", published: [0.52, 0.638, 0.784], issue: 5960 },
+  "wedge-12": { maker: "QSC", product: "CP12", issue: 5960 }, // laid on its monitor flat: 350 x 516 x 323 upright, 515 x 375 x 453 as it lies
+  "line-array-10": { maker: "QSC", product: "LA108", published: [0.512, 0.271, 0.374], issue: 5960 },
   "top-15-passive": { maker: "JBL", product: "JRX215", published: [0.46, 0.699, 0.432], issue: 5960 },
   // its sheet's 353 x 574 x 399 standing up, laid as a stage monitor on its 30-degree facet (the owner's call, 2026-11-26)
   "wedge-12-passive": { maker: "JBL", product: "PRX412M", published: [0.574, 0.41, 0.487], issue: 5960 },
