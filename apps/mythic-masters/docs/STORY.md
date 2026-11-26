@@ -181,7 +181,7 @@ Region 3, from level 18.
 **unlock**
 
 - **The canoe** (Great North Woods: Boundary Waters, level 21; idea). After the portage, the canoe is yours. Lakes and slow rivers in the north woods become roads. *Opens: paddling lakes and slow rivers.* *After: Portage.*
-- **The road to the Great Lakes and Lake Champlain** (Great North Woods: The hidebehind, level 26; built, from the game). Beating Hidebehind opens the road from the Great North Woods to the Great Lakes and Lake Champlain. *Opens: region 5, Great Lakes and Lake Champlain, from level 34.* *After: Hidebehind at The hidebehind.*
+- **The road to the Great Lakes and Lake Champlain** (Great North Woods: The hidebehind, level 26; built, from the game). Beating Hidebehind opens the road from the Great North Woods to the Great Lakes and Lake Champlain. *Opens: region 5, Great Lakes and Lake Champlain, from level 26.* *After: Hidebehind at The hidebehind.*
 
 **world**
 
@@ -199,36 +199,36 @@ Region 3, from level 18.
 
 ## 4. Great Lakes and Lake Champlain
 
-Region 5, from level 34.
+Region 5, from level 26.
 
 *Water as wide as a sea, lighthouses and ferries, an island with no cars, and a long lake between mountains where something keeps surfacing.*
 
 **main**
 
-- **The torn page** (Great Lakes and Lake Champlain: The photograph, level 39; idea). In the corner of the 1977 Champ photograph there is a pale square on the water: a page. The Book has a stub where a leaf was cut. Champ's water holds it; beating Champ lets you dive for it. *After: Margin notes, 1910.*
-- **Champ at Champ's water** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). The last stone of the Great Lakes and Lake Champlain trail: the region's mythic, Champ, in its lair. Beat it and the Book can hold it.
-- **The page comes home** (Great Lakes and Lake Champlain: Champ's water, level 42; idea, owner writes). The wet page goes back in at the stub and the Book reads it out: a list of names, crossed through, region by region. Owner writes what the page says. *After: The torn page, Champ at Champ's water.*
+- **The torn page** (Great Lakes and Lake Champlain: The photograph, level 31; idea). In the corner of the 1977 Champ photograph there is a pale square on the water: a page. The Book has a stub where a leaf was cut. Champ's water holds it; beating Champ lets you dive for it. *After: Margin notes, 1910.*
+- **Champ at Champ's water** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). The last stone of the Great Lakes and Lake Champlain trail: the region's mythic, Champ, in its lair. Beat it and the Book can hold it.
+- **The page comes home** (Great Lakes and Lake Champlain: Champ's water, level 34; idea, owner writes). The wet page goes back in at the stub and the Book reads it out: a list of names, crossed through, region by region. Owner writes what the page says. *After: The torn page, Champ at Champ's water.*
 
 **sub**
 
 - **A wet letter** (The Frog Watch; built). The Frog Watch dry the letter by their torches and add a pressed frog (rubber) for the Blurry Society. *After: Written backwards.*
-- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 34; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot.*
-- **The Frames** (the Office: The Frames, level 37; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
-- **The Count** (the Institute: The Count, level 37; built, from the game). Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held. *After: Field Guide.*
-- **The Road Shut** (Lamplighters: The Road Shut, level 38; built, from the game). Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant. *After: Tall Tales.*
+- **The tripod at Niagara** (Great Lakes and Lake Champlain: Niagara, level 26; idea). Gary's tripod stands on the Canadian side of the falls, still running. The tape in it is of you, from the day before. He is ahead of you on purpose. *After: Hold the shot.*
+- **The Frames** (the Office: The Frames, level 29; built, from the game). The Office called your camcorder evidence and asked for the tape. *After: The Wooden One.*
+- **The Count** (the Institute: The Count, level 29; built, from the game). Ms. Carrow counted deliverables on Isle Royale: twelve needed, nine held. *After: Field Guide.*
+- **The Road Shut** (Lamplighters: The Road Shut, level 30; built, from the game). Wren Ashby shut the road west at Lake Champlain and asked me for a promise about the giant. *After: Tall Tales.*
 
 **side**
 
-- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 37; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: The Frames.*
-- **The wolf count** (Great Lakes and Lake Champlain: Isle Royale, level 37; idea). Wolves and moose on Isle Royale have been counted every winter since 1958, the longest study of its kind. Help the count from a snow camp; one set of tracks is not a wolf's. *After: The Isle Royale Brute.*
-- **The Lake Erie Prowler** (The Lake Erie Prowler, level 38; built, from the game). A sighting board in Lake Erie: the trucker saw the Dover Demon. Three signs lead to its lair.
-- **The Isle Royale Brute** (The Isle Royale Brute, level 41; built, from the game). A sighting board in Isle Royale: the trucker saw the Beast of Bray Road. Three signs lead to its lair.
+- **No cars on Mackinac** (Great Lakes and Lake Champlain: Mackinac Island, level 29; idea). Cars have been banned on Mackinac Island since 1898. The Office's sedan is stuck at the ferry dock. Deliver their forms by bicycle before the last boat. *After: The Frames.*
+- **The wolf count** (Great Lakes and Lake Champlain: Isle Royale, level 29; idea). Wolves and moose on Isle Royale have been counted every winter since 1958, the longest study of its kind. Help the count from a snow camp; one set of tracks is not a wolf's. *After: The Isle Royale Brute.*
+- **The Lake Erie Prowler** (The Lake Erie Prowler, level 30; built, from the game). A sighting board in Lake Erie: the trucker saw the Dover Demon. Three signs lead to its lair.
+- **The Isle Royale Brute** (The Isle Royale Brute, level 33; built, from the game). A sighting board in Isle Royale: the trucker saw the Beast of Bray Road. Three signs lead to its lair.
 
 **unlock**
 
-- **The road to the Pacific Northwest rainforest** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Pacific Northwest rainforest. *Opens: region 4, Pacific Northwest rainforest, from level 26.* *After: Champ at Champ's water.*
-- **The road to the Ozarks and the southern plains** (Great Lakes and Lake Champlain: Champ's water, level 42; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Ozarks and the southern plains. *Opens: region 8, Ozarks and the southern plains, from level 58.* *After: Champ at Champ's water.*
-- **The second pen** (Great Lakes and Lake Champlain: Champ's water, level 42; idea). The Book grows a second pen loop in its spine and wants it filled. With two pens, a bind gets a fourth try. *Opens: a fourth try when binding.* *After: The page comes home.*
+- **The road to the Pacific Northwest rainforest** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Pacific Northwest rainforest. *Opens: region 4, Pacific Northwest rainforest, from level 34.* *After: Champ at Champ's water.*
+- **The road to the Ozarks and the southern plains** (Great Lakes and Lake Champlain: Champ's water, level 34; built, from the game). Beating Champ opens the road from the Great Lakes and Lake Champlain to the Ozarks and the southern plains. *Opens: region 8, Ozarks and the southern plains, from level 58.* *After: Champ at Champ's water.*
+- **The second pen** (Great Lakes and Lake Champlain: Champ's water, level 34; idea). The Book grows a second pen loop in its spine and wants it filled. With two pens, a bind gets a fourth try. *Opens: a fourth try when binding.* *After: The page comes home.*
 
 **world**
 
@@ -245,32 +245,32 @@ Region 5, from level 34.
 
 ## 5. Pacific Northwest rainforest
 
-Region 4, from level 26.
+Region 4, from level 34.
 
 *Green on green: moss over everything, giant trees, mist off the sea, a volcano with its side blown out.*
 
 **main**
 
-- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 28; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, The Count.*
-- **Sasquatch at Sasquatch's ridge** (Pacific Northwest rainforest: Sasquatch's ridge, level 34; built, from the game). The last stone of the Pacific Northwest rainforest trail: the region's mythic, Sasquatch, in its lair. Beat it and the Book can hold it.
+- **What the ash holds** (Pacific Northwest rainforest: Mount St. Helens, level 36; idea, owner writes). The 1980 ash under the Mount St. Helens forest has rust-coloured flecks in it, and the wild ones roam thickest where the ash lies deepest. Dr. Vale's ash cores say the flecks are not from the volcano. The land itself is waking them. *After: The page comes home, The Count.*
+- **Sasquatch at Sasquatch's ridge** (Pacific Northwest rainforest: Sasquatch's ridge, level 42; built, from the game). The last stone of the Pacific Northwest rainforest trail: the region's mythic, Sasquatch, in its lair. Beat it and the Book can hold it.
 
 **sub**
 
 - **A blurry photograph** (The Blurry Society; built). The Blurry Society send their best photograph, which shows nothing at all, to the Antler Choir. *After: A wet letter.*
-- **The Long Study** (the Institute: The Long Study, level 28; built, from the game). Toby Reyes asked for one specimen out of the cold room at Mount St. Helens. *After: The Count.*
-- **The Tandem** (the Office: The Tandem, level 30; built, from the game). At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
-- **Night Boat** (Lamplighters: Night Boat, level 30; built, from the game). Pip asked me to ride the night boat down Redwood Creek with three passengers. *After: The Road Shut.*
+- **The Long Study** (the Institute: The Long Study, level 36; built, from the game). Toby Reyes asked for one specimen out of the cold room at Mount St. Helens. *After: The Count.*
+- **The Tandem** (the Office: The Tandem, level 38; built, from the game). At Bluff Creek Control started Protocol QUIET, and Agent Quist asked what the Book does with them. *After: The Frames.*
+- **Night Boat** (Lamplighters: Night Boat, level 38; built, from the game). Pip asked me to ride the night boat down Redwood Creek with three passengers. *After: The Road Shut.*
 
 **side**
 
-- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 26; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: The Count.*
-- **The Lake Quinault Brute** (The Lake Quinault Brute, level 30; built, from the game). A sighting board in Lake Quinault: the birdwatcher saw the Splintercat. Three signs lead to its lair.
-- **The missing frames** (Pacific Northwest rainforest: The film, level 30; idea). The 1967 Bluff Creek film runs about a minute. A collector says there were more frames, cut and lost. Find three cans of film at the creek's old camps. *After: The Bluff Creek Prowler.*
-- **The Bluff Creek Prowler** (The Bluff Creek Prowler, level 33; built, from the game). A sighting board in Bluff Creek: the farmhand saw the Wampus Cat. Three signs lead to its lair.
+- **Count the rings** (Pacific Northwest rainforest: Hoh Rain Forest, level 34; idea). Toby Reyes needs the rings of a fallen Sitka spruce in the Hoh counted before dark. Every ring has a year; one ring is scorched in a year with no fire on record. *After: The Count.*
+- **The Lake Quinault Brute** (The Lake Quinault Brute, level 38; built, from the game). A sighting board in Lake Quinault: the birdwatcher saw the Splintercat. Three signs lead to its lair.
+- **The missing frames** (Pacific Northwest rainforest: The film, level 38; idea). The 1967 Bluff Creek film runs about a minute. A collector says there were more frames, cut and lost. Find three cans of film at the creek's old camps. *After: The Bluff Creek Prowler.*
+- **The Bluff Creek Prowler** (The Bluff Creek Prowler, level 41; built, from the game). A sighting board in Bluff Creek: the farmhand saw the Wampus Cat. Three signs lead to its lair.
 
 **unlock**
 
-- **The road to the Southwest desert** (Pacific Northwest rainforest: Sasquatch's ridge, level 34; built, from the game). Beating Sasquatch opens the road from the Pacific Northwest rainforest to the Southwest desert. *Opens: region 6, Southwest desert, from level 42.* *After: Sasquatch at Sasquatch's ridge.*
+- **The road to the Southwest desert** (Pacific Northwest rainforest: Sasquatch's ridge, level 42; built, from the game). Beating Sasquatch opens the road from the Pacific Northwest rainforest to the Southwest desert. *Opens: region 6, Southwest desert, from level 42.* *After: Sasquatch at Sasquatch's ridge.*
 
 **world**
 

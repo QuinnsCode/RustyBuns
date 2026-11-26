@@ -24,7 +24,7 @@ import { CLUES, HUNTS, LEVEL_UP, STEP } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, HOUSES, PATH_HALF } from "./world/night.ts";
 import { SHELTER_R } from "./world/poi.ts";
-import { GATES, WILD_EVERY } from "./world/world.ts";
+import { GATES, road, WILD_EVERY } from "./world/world.ts";
 
 export interface Rule {
   n: number;
@@ -140,7 +140,7 @@ export const RULES: Rule[] = [
     says: [
       `Each region's trail has ${SECTIONS} sections. A keeper stands on the stone of each one. Beat it or bind it and the next section opens. You cannot skip a stone.`,
       `The keeper of section ${SECTIONS} is the region's boss, in its lair.`,
-      `Levels rise along the trail. The boss is ${BOSS_OVER} levels over the first keeper, and each region starts ${TRAIL_STEP} levels over the one before it by number.`,
+      `Levels rise along the trail. The boss is ${BOSS_OVER} levels over the first keeper, and each region starts ${TRAIL_STEP} levels over the one before it on the road (${road().join(", ")}), at the level of that region's boss.`,
     ],
   },
   {
