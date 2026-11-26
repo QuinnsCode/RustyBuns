@@ -41,6 +41,23 @@ That is the whole idea. The same app then runs as a desktop file, a Worker, a se
 
 **So we use both.** The app is a little bigger: a hot path has a Rust engine and a TypeScript twin that gives the same answer. In return, the code moves to a lot more places: wasm in the page, FFI on the desktop and server, plain TypeScript where Rust cannot load. You maintain **features, not implementations**. The tests say what the feature does, both twins pass them, and you can change the implementation under it.
 
+## The stack: VASE
+
+A browser, Vite, and a server (Bun, a Cloudflare Worker, or a box in another cloud). That is basically it. We call it **VASE**:
+
+| | Part | What it does |
+|---|---|---|
+| **V** | **Vite** | builds the page, with any framework on top |
+| **A** | **Alchemy** | your infrastructure as TypeScript: `plan`, `deploy`, `drift` and `destroy`, and more |
+| **S** | **Server** | the same `fetch` handler on Bun (desktop or a box) or on the edge (a Worker) |
+| **E** | **Effect** | Alchemy brings it along. We use it where it fits (child processes, sockets, saves, deploys, retries) and we encourage you to use it more |
+
+**TypeScript to power it. Rust to superpower it,** when you want it or need it.
+
+And Rust is not the only one. `bun:ffi` loads anything that exports a C ABI, so your superpower can also be:
+C, C++, Zig, Rust, Go, Swift, Odin, Nim, D, Hare, V, Crystal, Fortran, Ada, Pascal, Haskell, OCaml, Objective-C, assembly, and the C that `bun:ffi` compiles on the fly with TinyCC.
+We test Rust. The rest are a header file and a `dlopen` away. [What Rusty Buns stands on](FEATURES.md#what-rusty-buns-stands-on)
+
 ## Get started
 
 ```sh
